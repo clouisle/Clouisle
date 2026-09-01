@@ -1,16 +1,17 @@
 # Implementation Plan
 
 ## Active
-- **agent-chat-ordered-reasoning** — Complete. Agent reasoning, tasks, text, and tool executions stay chronological inside the collapsible ChainOfThought surface, with the header text identifying the current operation. See `docs/plan/agent-chat-ordered-reasoning.md`
+- **agent-chat-ordered-reasoning** — Complete. Stream and history data retain occurrence order, while Agent messages restore one aggregated collapsible ChainOfThought at the top with reasoning, tasks, and reasoning-associated tool executions. See `docs/plan/agent-chat-ordered-reasoning.md`
   - [x] 1. Register approved feature plan
   - [x] 2. Make live/reconnect stream state occurrence-ordered
   - [x] 3. Align persisted-history reconstruction with the supported order
-  - [x] 4. Replace the global thought panel with an ordered assistant renderer
+  - [x] 4. Replace the global thought panel with an ordered assistant renderer (superseded by Stage 10)
   - [x] 5. Update focused regression coverage
   - [x] 6. Full verification and cleanup
   - [x] 7. Nest tool-call nodes inside collapsible thought process (superseded)
   - [x] 8. Separate reasoning, task, tool, and answer surfaces (superseded)
-  - [x] 9. Keep activity nested and label the current operation
+  - [x] 9. Keep activity nested and label the current operation (superseded by Stage 10)
+  - [x] 10. Restore one aggregated thought panel at the top of each assistant message
 - **model-prompt-caching-visibility** — Complete. Provider-reported cache hit/write token details flow through `Usage`, all chat adapters, message persistence, message_end SSE, and the token-stats popover. Cache hit rate is intentionally not displayed. Verified: 3316 backend + 2242 frontend tests, tsc and Ruff clean. See `docs/plan/model-prompt-caching-visibility.md`
   - [x] 1. Usage 类型扩展 + 全部 adapter 解析
   - [x] 2. chat.py 记账与 SSE 透传

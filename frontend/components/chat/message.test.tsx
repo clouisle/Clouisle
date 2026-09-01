@@ -496,12 +496,12 @@ describe('message behavior', () => {
     const thought = container.querySelector('[data-chat-thought-process="true"]')
     expect(container.textContent).toContain('chat.task.foundSources')
     expect(container.textContent).toContain('chat.task.compressingContext')
-    expect(container.textContent).not.toContain('chat.task.generating')
+    expect(container.textContent).toContain('chat.task.generating')
     expect(thought).not.toBeNull()
     expect(thought?.querySelector('[data-chat-tool-node="true"]')).not.toBeNull()
     expect(thought?.textContent).toContain('Inspecting evidence')
-    expect(thought?.querySelector('h3')?.textContent).toContain('chat.reasoning.toolCallExecuting tool=repo/read')
-    expect([...container.querySelectorAll('[data-step-status]')].map((item) => item.getAttribute('data-step-status'))).toEqual(['complete', 'active', 'active'])
+    expect(thought?.querySelector('h3')?.textContent).toBe('chat.reasoning.thought')
+    expect([...container.querySelectorAll('[data-step-status]')].map((item) => item.getAttribute('data-step-status'))).toEqual(['complete', 'active', 'active', 'active', 'error', 'pending', 'error'])
     expect(container.querySelector('[data-streaming="true"]')).not.toBeNull()
     expect([...container.querySelectorAll('[data-tool-state]')].map((item) => item.getAttribute('data-tool-state'))).toEqual(['input-available', 'output-error', 'input-streaming'])
 
@@ -509,7 +509,7 @@ describe('message behavior', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
-  test('changes the thought header with the active operation', () => {
+  test('keeps a stable header for the aggregated thought process', () => {
     const thinking = renderToStaticMarkup(<Message
       message={{
         id: 'active-thinking',
@@ -517,7 +517,8 @@ describe('message behavior', () => {
         parts: [{ type: 'reasoning', text: 'Still thinking', state: 'streaming' }],
       }}
     />)
-    expect(thinking).toContain('chat.reasoning.thinkingActive')
+    expect(thinking).toContain('chat.reasoning.thought')
+    expect(thinking).not.toContain('chat.reasoning.thinkingActive')
 
     const executing = renderToStaticMarkup(<Message
       message={{
@@ -526,7 +527,8 @@ describe('message behavior', () => {
         parts: [{ type: 'tool-call', toolCallId: 'executing', toolName: 'inspect', toolDisplayName: 'Inspect repository', input: {}, state: 'running' }],
       }}
     />)
-    expect(executing).toContain('chat.reasoning.toolCallExecuting tool=Inspect repository')
+    expect(executing).not.toContain('data-chat-thought-process="true"')
+    expect(executing).toContain('Inspect repository')
 
     const completed = renderToStaticMarkup(<Message
       message={{
@@ -539,8 +541,9 @@ describe('message behavior', () => {
         ],
       }}
     />)
-    expect(completed).toContain('chat.reasoning.toolCallCompleted tool=Inspect repository')
-    expect(completed).not.toContain('chat.task.generating')
+    expect(completed).toContain('data-chat-thought-process="true"')
+    expect(completed).toContain('Inspect repository')
+    expect(completed).toContain('chat.task.generating')
 
     const failed = renderToStaticMarkup(<Message
       message={{
@@ -552,8 +555,8 @@ describe('message behavior', () => {
         ],
       }}
     />)
-    expect(failed).toContain('chat.reasoning.toolCallFailed tool=Inspect repository')
-
+    expect(failed).not.toContain('data-chat-thought-process="true"')
+    expect(failed).toContain('Inspect repository')
     const finalStep = renderToStaticMarkup(<Message
       message={{
         id: 'final-reasoning-step',
@@ -564,8 +567,8 @@ describe('message behavior', () => {
         ],
       }}
     />)
-    expect(finalStep).toContain('chat.reasoning.thinkingCompleted seconds=2')
-    expect(finalStep).not.toContain('chat.reasoning.taskAction')
+    expect(finalStep).toContain('chat.reasoning.thought')
+    expect(finalStep).toContain('chat.reasoning.thoughtFor seconds=2')
   })
 
 
@@ -600,11 +603,11 @@ describe('message behavior', () => {
       expect.stringContaining('chat.task.compressionCompletedSummary before=90000 after=1000 saved=89000 count=1'),
       expect.stringContaining('after compression'),
     ])
-    expect(container.querySelectorAll('[data-chat-thought-process="true"]')).toHaveLength(2)
-    expect(container.querySelectorAll('[data-chat-thought-process="true"]')[0]?.textContent).toContain('chat.task.compressionCompletedSummary')
+    expect(container.querySelectorAll('[data-chat-thought-process="true"]')).toHaveLength(1)
+    expect(container.querySelector('[data-chat-thought-process="true"]')?.textContent).toContain('chat.task.compressionCompletedSummary')
   })
 
-  test('renders repeated reasoning blocks at their original timeline positions', () => {
+  test('aggregates repeated reasoning blocks at the top of the message', () => {
     const html = renderToStaticMarkup(<Message
       message={{
         id: 'alternating-timeline',
@@ -624,13 +627,12 @@ describe('message behavior', () => {
     const tool = html.indexOf('Lookup')
     const secondReasoning = html.lastIndexOf('Repeated thought')
     expect(firstReasoning).toBeGreaterThanOrEqual(0)
-    expect(secondReasoning).toBeGreaterThan(firstReasoning)
-    expect(html.indexOf('Answer A')).toBeGreaterThan(firstReasoning)
-    expect(tool).toBeGreaterThan(html.indexOf('Answer A'))
+    expect(tool).toBeGreaterThan(firstReasoning)
     expect(secondReasoning).toBeGreaterThan(tool)
-    expect(html.indexOf('Answer B')).toBeGreaterThan(secondReasoning)
+    expect(html.indexOf('Answer A')).toBeGreaterThan(secondReasoning)
+    expect(html.indexOf('Answer B')).toBeGreaterThan(html.indexOf('Answer A'))
     expect(html.match(/Repeated thought/g)).toHaveLength(2)
-    expect(html.match(/data-chat-thought-process="true"/g)).toHaveLength(2)
+    expect(html.match(/data-chat-thought-process="true"/g)).toHaveLength(1)
   })
 
   test('keeps each tool execution inside its thought process', () => {
@@ -652,12 +654,12 @@ describe('message behavior', () => {
     expect(thought).not.toBeNull()
     expect(tool).not.toBeNull()
     expect(tool?.getAttribute('data-tool-default-open')).toBe('false')
-    expect(tool?.className).toContain('mb-2')
-    expect(tool?.className).not.toContain('my-0')
+    expect(tool?.className).toContain('mt-2')
+    expect(tool?.className).not.toContain('mb-2')
     expect(thought?.textContent).toContain('Lookup')
     expect(thought?.textContent).not.toContain('Final answer')
-    expect(thought?.querySelector('h3')?.textContent).toContain('Lookup')
-    expect(thought?.querySelector('h3')?.textContent).toContain('chat.reasoning.toolCallCompleted tool=Lookup')
+    expect(thought?.querySelector('h3')?.textContent).toBe('chat.reasoning.thought')
+    expect(thought?.textContent).toContain('Lookup')
     expect(container.textContent).toContain('Final answer')
   })
 
@@ -1056,7 +1058,7 @@ describe('message behavior', () => {
     expect(html).toContain('chat.task.searchingKnowledge')
     expect(html).toContain('chat.task.compressingContext')
     expect(html).toContain('chat.task.compressingContext')
-    expect(html).not.toContain('chat.task.generating')
+    expect(html).toContain('chat.task.generating')
     expect(html).toContain('image failed')
     expect(html).toContain('video failed')
     expect(html).toContain('$')

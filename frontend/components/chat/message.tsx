@@ -3,7 +3,7 @@
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import { useLocale, useTranslations } from 'next-intl'
-import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye, Volume2, Pencil } from 'lucide-react'
+import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye, Volume2, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   Block,
@@ -49,7 +49,7 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import type { ChatMessage, ChatPreviewPayload, CodePreviewPayload, MessagePart, SourceDocumentPart, SourceUrlPart, FilePart, ImagePart, TaskPart, UserInputRequestPart, MediaResultPart } from './types'
+import type { ChatMessage, ChatPreviewPayload, CodePreviewPayload, MessagePart, SourceDocumentPart, SourceUrlPart, FilePart, ImagePart, TaskPart, ToolCallPart, McpToolCallPart, UserInputRequestPart, MediaResultPart } from './types'
 import {
   isTextPart,
   isReasoningPart,
@@ -526,6 +526,15 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       }
     }, [message.parts])
     const iterationCapLabel = t('iterationCapReached').trim()
+    const taskParts = React.useMemo(() => otherParts.filter(isTaskPart), [otherParts])
+    const reasoningParts = React.useMemo(() => otherParts.filter(isReasoningPart), [otherParts])
+    const toolCallParts = React.useMemo(
+      () => otherParts.filter(part => isToolCallPart(part) || isMcpToolCallPart(part)),
+      [otherParts]
+    )
+    const textParts = React.useMemo(() => otherParts.filter(isTextPart), [otherParts])
+    const hasReasoning = reasoningParts.length > 0
+
 
     // Get text content for copying (strip citation markers)
     const textContent = React.useMemo(() => {
@@ -848,6 +857,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
 
       if (isToolCallPart(part) || isMcpToolCallPart(part)) {
         if (hideToolCalls) return null
+        if (hasReasoning && !hideReasoning) return null
         const toolName = isToolCallPart(part)
           ? (part.toolDisplayName || part.toolName)
           : `${part.serverName}/${part.toolName}`
@@ -861,10 +871,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           <Tool
             key={index}
             defaultOpen={false}
-            className="mb-2 rounded-md border bg-muted/30"
-            data-chat-timeline-index={index}
-            data-chat-tool-node="true"
-            data-tool-call-id={part.toolCallId}
+            className="my-2"
           >
             <ToolHeader title={toolName} type="tool-call" state={state} />
             <AIToolContent>
@@ -889,10 +896,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           <Tool
             key={index}
             defaultOpen={false}
-            className="mb-2 rounded-md border bg-muted/30"
-            data-chat-timeline-index={index}
-            data-chat-tool-node="true"
-            data-tool-call-id={part.toolCallId}
+            className="my-2"
           >
             <ToolHeader title={toolName} type="tool-call" state={state} />
             <AIToolContent>
@@ -996,6 +1000,8 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       activeSpeechSentence,
       documentSources,
       hasIterationCapMarker,
+      hasReasoning,
+      hideReasoning,
       hideToolCalls,
       isStreaming,
       iterationCapLabel,
@@ -1016,7 +1022,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const showPreservedErrorNote = Boolean(
       isErroredMessage && message.metadata?.preservedPartialProgress
     )
-    const textParts = React.useMemo(() => otherParts.filter(isTextPart), [otherParts])
     const fileParts = React.useMemo(() => otherParts.filter(isFilePart), [otherParts])
     const visibleContentEntries = React.useMemo(() => {
       return otherPartEntries.filter(({ part }) => {
@@ -1030,7 +1035,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const hasVisibleTimelineContent = visibleContentEntries.some(({ part }) => {
       if (isStoppedPart(part)) return false
       if (isReasoningPart(part)) return !hideReasoning
-      if (isTaskPart(part)) return !hideReasoning && part.taskType !== 'thinking' && part.taskType !== 'generating'
+      if (isTaskPart(part)) return !hideReasoning
       if (isToolCallPart(part) || isMcpToolCallPart(part)) return !hideToolCalls
       if (isToolResultPart(part) || isMcpToolResultPart(part)) return !hideToolCalls
       if (isTextPart(part)) return Boolean(part.text.trim())
@@ -1053,6 +1058,17 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       && !showPreservedErrorNote
       && !hasVisibleTimelineContent
       && !isLoadingMessage
+    )
+    const hasTasks = taskParts.length > 0
+    const hasChainOfThought = (hasReasoning || hasTasks) && !hideReasoning
+    const isChainOfThoughtStreaming = !hasTextContent && (
+      taskParts.some(part => part.state === 'running')
+      || reasoningParts.some(part => part.state === 'streaming')
+      || (hasReasoning && toolCallParts.some(part => (
+        (isToolCallPart(part) || isMcpToolCallPart(part))
+        && (part.state === 'pending' || part.state === 'running')
+      )))
+      || isStreaming
     )
 
     // Convert task state to step status
@@ -1109,198 +1125,167 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         }
         return tTask('compressingContext')
       }
-      // Thinking and response generation are not rendered as thought steps.
+      if (taskPart.taskType === 'generating') {
+        return tTask('generating')
+      }
+      // Thinking tasks do not have a separate visible step.
       return ''
     }, [tTask])
 
-    const getThoughtAction = React.useCallback((entries: Array<{ part: MessagePart; index: number }>) => {
-      for (let entryIndex = entries.length - 1; entryIndex >= 0; entryIndex -= 1) {
-        const part = entries[entryIndex].part
-        if (isToolCallPart(part) || isMcpToolCallPart(part)) {
-          return {
-            type: 'tool' as const,
-            label: isToolCallPart(part)
-              ? part.toolDisplayName || part.toolName
-              : `${part.serverName}/${part.toolName}`,
-            state: part.state,
-          }
-        }
-        if (isTaskPart(part) && part.taskType !== 'thinking' && part.taskType !== 'generating') {
-          return { type: 'task' as const, label: getTaskTitle(part) }
-        }
-        if (isReasoningPart(part)) {
-          return {
-            type: 'reasoning' as const,
-            state: part.state,
-            duration: part.duration,
-          }
-        }
+    // Convert tool call state to step status
+    const getToolCallStepStatus = React.useCallback((state: 'pending' | 'running' | 'done' | 'error' | undefined) => {
+      switch (state) {
+        case 'running': return 'active' as const
+        case 'done': return 'complete' as const
+        case 'error': return 'error' as const
+        default: return 'pending' as const
       }
+    }, [])
 
-      return null
-    }, [getTaskTitle])
+    // Get tool call label with state
+    const getToolCallLabel = React.useCallback((toolPart: ToolCallPart | McpToolCallPart) => {
+      const name = isToolCallPart(toolPart)
+        ? (toolPart.toolDisplayName || toolPart.toolName)
+        : `${toolPart.serverName}/${toolPart.toolName}`
+      switch (toolPart.state) {
+        case 'running': return t('toolRunning', { name })
+        case 'done': return t('toolCompleted', { name })
+        case 'error': return t('toolFailed', { name })
+        default: return name
+      }
+    }, [t])
 
-    const getThoughtTitle = React.useCallback((entries: Array<{ part: MessagePart; index: number }>, isStreaming: boolean) => {
-      const action = getThoughtAction(entries)
-      if (action?.type === 'tool') {
-        if (action.state === 'error') return tReasoning('toolCallFailed', { tool: action.label })
-        if (action.state === 'done') return tReasoning('toolCallCompleted', { tool: action.label })
-        return tReasoning('toolCallExecuting', { tool: action.label })
-      }
-      if (action?.type === 'task') return tReasoning('taskAction', { task: action.label })
-      if (action?.type === 'reasoning') {
-        if (action.state === 'streaming' || (action.state === undefined && isStreaming)) {
-          return tReasoning('thinkingActive')
-        }
-        return tReasoning('thinkingCompleted', { seconds: action.duration ? Math.ceil(action.duration / 1000) : 0 })
-      }
-      return isStreaming
-        ? tReasoning('thinkingActive')
-        : tReasoning('thinkingCompleted', { seconds: 0 })
-    }, [getThoughtAction, tReasoning])
     const renderOrdinaryPart = React.useCallback((part: MessagePart, index: number) => {
-      if (
-        isReasoningPart(part)
-        || isTaskPart(part)
-        || isToolCallPart(part)
-        || isMcpToolCallPart(part)
-        || isToolResultPart(part)
-        || isMcpToolResultPart(part)
-      ) {
+      if (isReasoningPart(part) || isTaskPart(part)) {
         return null
       }
       return renderPart ? renderPart(part, index) : renderDefaultPart(part, index)
     }, [renderDefaultPart, renderPart])
 
-    const renderThoughtEntry = React.useCallback((part: MessagePart, index: number) => {
-      if (isReasoningPart(part)) {
-        const title = part.state === 'streaming'
-          ? tReasoning('thinking')
-          : tReasoning('thoughtFor', { seconds: part.duration ? Math.ceil(part.duration / 1000) : 0 })
-        return (
-          <ChainOfThoughtStep
-            key={index}
-            data-chat-timeline-index={index}
-            icon={Brain}
-            label={title}
-            status={part.state === 'streaming' ? 'active' : 'complete'}
-          >
-            {part.text && (
-              <pre className="text-xs text-muted-foreground/70 whitespace-pre-wrap break-words font-sans">
-                {part.text}
-              </pre>
-            )}
-          </ChainOfThoughtStep>
-        )
-      }
+    const buildChainOfThoughtSteps = React.useCallback(() => {
+      const steps: React.ReactNode[] = []
 
-      if (isTaskPart(part)) {
-        const icon = part.taskType === 'rag'
-          ? SearchIcon
-          : part.taskType === 'compression' ? Timer : SparklesIcon
-        return (
+      taskParts.filter(part => part.taskType === 'rag').forEach((taskPart, index) => {
+        steps.push(
           <ChainOfThoughtStep
-            key={index}
-            data-chat-timeline-index={index}
-            icon={icon}
-            label={getTaskTitle(part)}
-            status={getStepStatus(part.state)}
+            key={`rag-${index}`}
+            icon={SearchIcon}
+            label={getTaskTitle(taskPart)}
+            status={getStepStatus(taskPart.state)}
           />
         )
-      }
+      })
 
-      if (
-        isToolCallPart(part)
-        || isMcpToolCallPart(part)
-        || isToolResultPart(part)
-        || isMcpToolResultPart(part)
-      ) {
-        // The Tool header is the disclosure node inside the thought process.
-        return renderDefaultPart(part, index)
-      }
-
-      return null
-    }, [getStepStatus, getTaskTitle, renderDefaultPart, tReasoning])
-
-    const isThoughtEntry = React.useCallback((entry: { part: MessagePart; index: number }) => {
-      const { part, index } = entry
-      if (isReasoningPart(part)) return !hideReasoning
-      if (isTaskPart(part)) return !hideReasoning && part.taskType !== 'thinking' && part.taskType !== 'generating'
-      if (isToolCallPart(part) || isMcpToolCallPart(part)) return !hideToolCalls
-      if (isToolResultPart(part) || isMcpToolResultPart(part)) {
-        return !hideToolCalls && !pairedToolResultIndexes.has(index)
-      }
-      return false
-    }, [hideReasoning, hideToolCalls, pairedToolResultIndexes])
-
-    const isThoughtEntryStreaming = React.useCallback((part: MessagePart) => {
-      if (isReasoningPart(part)) return part.state === 'streaming'
-      if (isTaskPart(part)) return part.state === 'running'
-      if (isToolCallPart(part) || isMcpToolCallPart(part)) {
-        return part.state === 'pending' || part.state === 'running'
-      }
-      return false
-    }, [])
-
-    const renderThoughtGroup = React.useCallback((entries: Array<{ part: MessagePart; index: number }>) => {
-      const isThoughtStreaming = entries.some(({ part }) => isThoughtEntryStreaming(part))
-      const title = getThoughtTitle(entries, isThoughtStreaming)
-      const firstIndex = entries[0]?.index ?? 0
-
-      return (
-        <ChainOfThought
-          key={`thought-${firstIndex}`}
-          data-chat-timeline-index={firstIndex}
-          data-chat-thought-process="true"
-          isStreaming={isThoughtStreaming}
-          open={chainOfThoughtOpen}
-          onOpenChange={onChainOfThoughtOpenChange}
-          defaultOpen={isThoughtStreaming}
-        >
-          <ChainOfThoughtHeader title={title} icon={Brain} />
-          <ChainOfThoughtContent>
-            {entries.map(({ part, index }) => renderThoughtEntry(part, index))}
-          </ChainOfThoughtContent>
-        </ChainOfThought>
-      )
-    }, [chainOfThoughtOpen, getThoughtTitle, isThoughtEntryStreaming, onChainOfThoughtOpenChange, renderThoughtEntry])
-
-    const renderOrderedTimeline = React.useCallback(() => {
-      const rendered: React.ReactNode[] = []
-      let thoughtEntries: Array<{ part: MessagePart; index: number }> = []
-      let hasReasoning = false
-
-      const flushThoughtEntries = () => {
-        if (thoughtEntries.length === 0) return
-        rendered.push(renderThoughtGroup(thoughtEntries))
-        thoughtEntries = []
-        hasReasoning = false
-      }
-
-      for (const entry of visibleContentEntries) {
-        if (
-          (isToolResultPart(entry.part) || isMcpToolResultPart(entry.part))
-          && pairedToolResultIndexes.has(entry.index)
-        ) continue
-        if (isThoughtEntry(entry)) {
-          // Each reasoning iteration gets its own disclosure container. Tool
-          // and task nodes following it stay inside that iteration's process.
-          if (isReasoningPart(entry.part) && hasReasoning) {
-            flushThoughtEntries()
+      otherPartEntries.forEach(({ part, index }) => {
+        if (isTaskPart(part)) {
+          if (part.taskType === 'compression') {
+            steps.push(
+              <ChainOfThoughtStep
+                key={`compression-${index}`}
+                icon={Timer}
+                label={getTaskTitle(part)}
+                status={getStepStatus(part.state)}
+              />
+            )
           }
-          thoughtEntries.push(entry)
-          if (isReasoningPart(entry.part)) hasReasoning = true
-          continue
+          return
         }
 
-        flushThoughtEntries()
-        if (isTextPart(entry.part) && entry.part.text.length === 0) continue
-        rendered.push(renderOrdinaryPart(entry.part, entry.index))
-      }
-      flushThoughtEntries()
+        if (!hasReasoning) return
 
+        if (isToolCallPart(part) || isMcpToolCallPart(part)) {
+          if (hideToolCalls) return
+          const toolName = isToolCallPart(part)
+            ? (part.toolDisplayName || part.toolName)
+            : `${part.serverName}/${part.toolName}`
+          const result = toolResultsByCallIndex.get(index)
+          const state = part.state === 'error' ? 'output-error'
+            : part.state === 'done' ? 'output-available'
+              : part.state === 'running' ? 'input-available'
+                : 'input-streaming'
+
+          steps.push(
+            <ChainOfThoughtStep
+              key={`tool-${part.toolCallId}-${index}`}
+              icon={Wrench}
+              label={getToolCallLabel(part)}
+              status={getToolCallStepStatus(part.state)}
+            >
+              <Tool defaultOpen={false} className="mt-2">
+                <ToolHeader
+                  title={toolName}
+                  type="tool-call"
+                  state={state}
+                />
+                <AIToolContent>
+                  <ToolInput input={part.input} />
+                  {result && (isToolResultPart(result) || isMcpToolResultPart(result)) && (
+                    (isToolResultPart(result) && shouldDisplayMediaResultInBody(result.output))
+                      ? null
+                      : renderToolResultContent(result.output, result.isError)
+                  )}
+                </AIToolContent>
+              </Tool>
+            </ChainOfThoughtStep>
+          )
+          return
+        }
+
+        if (isReasoningPart(part)) {
+          steps.push(
+            <ChainOfThoughtStep
+              key={`reasoning-${index}`}
+              icon={Brain}
+              label={part.state === 'streaming'
+                ? tReasoning('thinking')
+                : tReasoning('thoughtFor', { seconds: part.duration ? Math.ceil(part.duration / 1000) : 0 })}
+              status={part.state === 'streaming' ? 'active' : 'complete'}
+            >
+              {part.text && (
+                <pre className="text-xs text-muted-foreground/70 whitespace-pre-wrap break-words font-sans">
+                  {part.text}
+                </pre>
+              )}
+            </ChainOfThoughtStep>
+          )
+        }
+      })
+
+      taskParts.filter(part => part.taskType === 'generating').forEach((taskPart, index) => {
+        steps.push(
+          <ChainOfThoughtStep
+            key={`generating-${index}`}
+            icon={SparklesIcon}
+            label={getTaskTitle(taskPart)}
+            status={getStepStatus(taskPart.state)}
+          />
+        )
+      })
+
+      return steps
+    }, [
+      getStepStatus,
+      getTaskTitle,
+      getToolCallLabel,
+      getToolCallStepStatus,
+      hasReasoning,
+      hideToolCalls,
+      otherPartEntries,
+      renderToolResultContent,
+      tReasoning,
+      taskParts,
+      toolResultsByCallIndex,
+    ])
+
+    const renderVisibleContent = React.useCallback(() => {
+      const rendered: React.ReactNode[] = []
+      for (const { part, index } of visibleContentEntries) {
+        if (isTextPart(part) && part.text.length === 0) continue
+        rendered.push(renderOrdinaryPart(part, index))
+      }
       return rendered
-    }, [isThoughtEntry, pairedToolResultIndexes, renderOrdinaryPart, renderThoughtGroup, visibleContentEntries])
+    }, [renderOrdinaryPart, visibleContentEntries])
+
 
     const messageBody = React.useMemo(() => (
       <>
@@ -1315,6 +1300,19 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         <MessageContent>
           {isUser && runInputLabel && (
             <div className="mb-1 text-xs text-muted-foreground">{runInputLabel}</div>
+          )}
+          {isAssistant && hasChainOfThought && (
+            <ChainOfThought
+              isStreaming={isChainOfThoughtStreaming}
+              open={chainOfThoughtOpen}
+              onOpenChange={onChainOfThoughtOpenChange}
+              defaultOpen={false}
+            >
+              <ChainOfThoughtHeader title={tReasoning('thought')} />
+              <ChainOfThoughtContent>
+                {buildChainOfThoughtSteps()}
+              </ChainOfThoughtContent>
+            </ChainOfThought>
           )}
           {isEditing ? (
             <div className="space-y-2">
@@ -1363,7 +1361,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
               <span className="text-sm">{loadingLabel ?? t('thinking')}</span>
             </div>
           ) : (
-            renderOrderedTimeline()
+            renderVisibleContent()
           )}
           {isErroredMessage && (
             <div className={cn('flex flex-col gap-1 text-xs', !isStandaloneErrorMessage && 'mt-3')}>
@@ -1398,11 +1396,15 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       </>
     ), [
       allSources,
+      buildChainOfThoughtSteps,
       cancelEdit,
+      chainOfThoughtOpen,
       conversationId,
       editDraft,
       fileParts,
+      hasChainOfThought,
       isAssistant,
+      isChainOfThoughtStreaming,
       isEditing,
       isErroredMessage,
       isLoadingMessage,
@@ -1412,16 +1414,18 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       isSavingEdit,
       isStandaloneErrorMessage,
       isUser,
+      onChainOfThoughtOpenChange,
       onOpenCodePreview,
       preservedErrorNote,
       renderDefaultPart,
-      renderOrderedTimeline,
       renderPart,
+      renderVisibleContent,
       runInputLabel,
       saveEdit,
       showPreservedErrorNote,
       streamErrorMessage,
       t,
+      tReasoning,
       textContent,
     ])
 

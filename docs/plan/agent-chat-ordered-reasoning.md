@@ -1,5 +1,5 @@
 # Ordered Agent Reasoning Timeline
-**Status: Complete — Stage 9 keeps tasks and tool executions inside each collapsible ChainOfThought and makes its header identify the current operation.**
+**Status: Complete — Stage 10 restores the pre-timeline presentation: one aggregated ChainOfThought at the top of each assistant message. Stream/history state remains occurrence-ordered underneath.**
 
 ## Background & Goals
 
@@ -121,7 +121,7 @@ Tool call plus its result remains one execution card, anchored at the call posit
 
 - **Acceptance**: Live and historical Agent messages display each reasoning iteration and tool execution in chronological order; no distinct reasoning/tool occurrences are collapsed; hide flags and rich tool results retain their existing contracts; all focused and required gates pass.
 
-### Stage 9: Keep activity nested and label the current operation
+### Stage 9: Keep activity nested and label the current operation (superseded by Stage 10)
 
 - **Files modified**: `frontend/components/chat/message.tsx`, `frontend/components/chat/message.test.tsx`, `frontend/i18n/en/chat.json`, `frontend/i18n/zh/chat.json`, `frontend/i18n/types/chat.ts`, and the implementation-plan documents.
 - **Specific logic**:
@@ -132,6 +132,18 @@ Tool call plus its result remains one execution card, anchored at the call posit
 - **Observed**: The revised message renderer passed 42 focused tests; the full frontend suite passed (2278 tests across 515 files), frontend coverage and LCOV completeness passed for 489 eligible files, TypeScript, ESLint, translation lint, and diff checks passed. No application service or browser was started.
 
 - **Acceptance**: Tool and task details remain inside the collapsible thought process; response generation is not counted as a thought step; and the header identifies the last rendered operation with localized status text.
+
+### Stage 10: Restore the aggregated thought panel
+
+- **Files modified**: `frontend/components/chat/message.tsx`, `frontend/components/chat/message.test.tsx`, and the implementation-plan documents.
+- **Specific logic**:
+  1. Keep the occurrence-ordered stream and persisted `Message.parts` data as the source of truth, but restore the message-level presentation boundary.
+  2. Render one `ChainOfThought` before assistant text. Aggregate RAG tasks first, then compression/reasoning/tool steps in part order, and response-generation tasks last, matching the previous assistant-message layout.
+  3. Keep normal/MCP tool calls inside the aggregate when reasoning is present; otherwise preserve the existing standalone tool-card fallback. Keep tool result pairing, rich output rendering, source footers, error handling, and hide flags unchanged.
+  4. Update message regressions to assert one top-level thought panel and answer content after it; remove assertions that require multiple reasoning panels or interleaved thought/text DOM order.
+- **Validation**: `cd frontend && bun test --isolate components/chat/message.test.tsx && bunx tsc --noEmit && bunx eslint components/chat/message.tsx components/chat/message.test.tsx`; `git diff --check`.
+- **Observed**: The focused message suite passed 42 tests; TypeScript, ESLint, and diff checks passed.
+
 
 ## Testing Strategy
 
