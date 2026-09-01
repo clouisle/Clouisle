@@ -31,6 +31,7 @@ export {
   AgentNodeConfig,
   type AgentNodeConfigType,
   defaultAgentNodeConfig,
+  getAgentNodeOutputVariables,
   KnowledgeRetrievalNodeConfig,
   type KnowledgeRetrievalNodeConfigType,
   defaultKnowledgeRetrievalNodeConfig,

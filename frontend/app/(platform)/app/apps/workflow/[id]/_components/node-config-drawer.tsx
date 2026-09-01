@@ -59,6 +59,7 @@ import {
   AgentNodeConfig,
   type AgentNodeConfigType,
   defaultAgentNodeConfig,
+  getAgentNodeOutputVariables,
   KnowledgeRetrievalNodeConfig,
   type KnowledgeRetrievalNodeConfigType,
   defaultKnowledgeRetrievalNodeConfig,
@@ -920,14 +921,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
       // Agent 节点输出变量：回复别名及可供下游节点使用的执行详情
       if (nodeType === 'agent') {
         const aConfig = (n.data as { agentConfig?: AgentNodeConfigType })?.agentConfig || defaultAgentNodeConfig
-        const outputVar = aConfig.outputVariable || 'response'
-        const outputDefinitions = [
-          { name: outputVar, type: 'String', isArray: false, isIterable: false },
-          { name: 'toolCalls', type: 'Array', isArray: true, isIterable: true },
-          { name: 'usage', type: 'Object', isArray: false, isIterable: true },
-          { name: 'dialogue', type: 'Array', isArray: true, isIterable: true },
-          { name: 'artifacts', type: 'Array', isArray: true, isIterable: true },
-        ]
+        const outputDefinitions = getAgentNodeOutputVariables(aConfig)
         outputDefinitions.forEach(output => {
           if (filterType === 'iterable' && !output.isIterable) return
           variables.push({

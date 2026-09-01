@@ -56,6 +56,54 @@ export const defaultAgentNodeConfig: AgentNodeConfig = {
   outputVariable: 'response',
 }
 
+export interface AgentNodeOutputVariable {
+  name: string
+  type: 'String' | 'Array' | 'Object'
+  isArray: boolean
+  isIterable: boolean
+}
+
+const AGENT_RUNTIME_OUTPUT_VARIABLES: AgentNodeOutputVariable[] = [
+  { name: 'response', type: 'String', isArray: false, isIterable: false },
+  { name: 'toolCalls', type: 'Array', isArray: true, isIterable: true },
+  { name: 'usage', type: 'Object', isArray: false, isIterable: true },
+  { name: 'dialogue', type: 'Array', isArray: true, isIterable: true },
+  { name: 'artifacts', type: 'Array', isArray: true, isIterable: true },
+]
+
+export function getAgentNodeOutputVariables(
+  config: Pick<AgentNodeConfig, 'outputVariable'> | undefined,
+): AgentNodeOutputVariable[] {
+  const alias = config?.outputVariable?.trim()
+  if (!alias || AGENT_RUNTIME_OUTPUT_VARIABLES.some((output) => output.name === alias)) {
+    return AGENT_RUNTIME_OUTPUT_VARIABLES
+  }
+  return [
+    { name: alias, type: 'String', isArray: false, isIterable: false },
+    ...AGENT_RUNTIME_OUTPUT_VARIABLES,
+  ]
+}
+
+function getAgentInputMappings(
+  agentVariables: VariableDefinition[],
+  existingMappings: AgentInputMapping[],
+): AgentInputMapping[] {
+  const existingByName = new Map(existingMappings.map((mapping) => [mapping.name, mapping]))
+  return agentVariables.map((variable) => {
+    const existing = existingByName.get(variable.name)
+    const definition = {
+      name: variable.name,
+      type: variable.type,
+      label: variable.label || undefined,
+      required: variable.required,
+      description: variable.description || undefined,
+    }
+    return existing?.type === variable.type
+      ? { ...existing, ...definition }
+      : { ...definition, source: 'constant', constantValue: variable.default ?? '' }
+  })
+}
+
 interface AgentNodeConfigProps {
   config: AgentNodeConfig
   variables: AvailableVariable[]
@@ -128,23 +176,14 @@ export function AgentNodeConfig({
       try {
         const detail = await agentsApi.getAgent(safeConfig.agentId)
         
-        // 自动生成输入映射
-        if (detail.variables && detail.variables.length > 0) {
-          const mappings: AgentInputMapping[] = detail.variables.map((v: VariableDefinition) => ({
-            name: v.name,
-            type: v.type,
-            label: v.label || undefined,
-            required: v.required,
-            description: v.description || undefined,
-            source: 'constant',
-            constantValue: v.default || '',
-          }))
-          
-          onConfigChange({
-            ...safeConfig,
-            inputMappings: mappings,
-          })
-        }
+        const mappings = getAgentInputMappings(
+          detail.variables || [],
+          safeConfig.inputMappings,
+        )
+        onConfigChange({
+          ...safeConfig,
+          inputMappings: mappings,
+        })
       } catch {
         // ignore error
       }
@@ -636,13 +675,14 @@ export function AgentNodeConfig({
             <p className="text-[10px] text-destructive">{t('configCommon.invalidVariableName')}</p>
           )}
           
-          {/* 输出预览 */}
-          <div className="bg-muted/30 rounded-lg p-2.5">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono font-medium">{safeConfig.outputVariable || 'response'}</span>
-              <span className="text-[10px] text-muted-foreground">String</span>
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-1">{t('configAgent.agentResponseContent')}</p>
+          <div className="space-y-2 bg-muted/30 rounded-lg p-2.5">
+            {getAgentNodeOutputVariables(safeConfig).map((output) => (
+              <div key={output.name} className="flex items-center gap-2">
+                <span className="text-xs font-mono font-medium">{output.name}</span>
+                <span className="text-[10px] text-muted-foreground">{output.type}</span>
+              </div>
+            ))}
+            <p className="text-[10px] text-muted-foreground">{t('configAgent.agentResponseContent')}</p>
           </div>
         </CollapsibleContent>
       </Collapsible>

@@ -12,11 +12,12 @@
   - [x] 8. Separate reasoning, task, tool, and answer surfaces (superseded)
   - [x] 9. Keep activity nested and label the current operation (superseded by Stage 10)
   - [x] 10. Restore one aggregated thought panel at the top of each assistant message
-- **workflow-agent-node-capabilities** — Complete. Workflow Agent nodes now forward mapped files/images, invoke the configured Agent TeamModel, expose response/tool calls/usage/dialogue/artifacts, and render those outputs in run details. See `docs/plan/workflow-agent-node-capabilities.md`
+- **workflow-agent-node-capabilities** — Complete. Workflow Agent nodes forward mapped files/images, invoke the configured Agent TeamModel, and expose response/tool-call/usage/dialogue/artifact outputs. Selected Agent input variables now refresh without dropping compatible mappings, while the fixed output contract and a distinct response alias remain available downstream. See `docs/plan/workflow-agent-node-capabilities.md`
   - [x] 1. Backend AgentService contract
   - [x] 2. Workflow Agent executor integration
   - [x] 3. Workflow output contracts and presentation
   - [x] 4. Regression coverage and cleanup
+  - [x] 5. Agent-selected variable contract correction
 - **workflow-log-tracing** — Complete. Persisted workflow logs now present ordered, expandable node traces with the same typed output renderer as test runs. See `docs/plan/workflow-log-tracing.md`
   - [x] 1. Persisted trace contract review
   - [x] 2. Historical trace presentation

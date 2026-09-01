@@ -39,7 +39,7 @@ mock.module('@/lib/api/agents', () => ({ agentsApi: { getAgents, getAgent } }))
 mock.module('../utils', () => ({ isValidVariableName: (name: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) }))
 mock.module('../types', () => ({ extractVariableDisplayName: (value: string) => value.replace(/[{}]/g, '') }))
 
-const { AgentNodeConfig, defaultAgentNodeConfig } = await import('./agent-node-config')
+const { AgentNodeConfig, defaultAgentNodeConfig, getAgentNodeOutputVariables } = await import('./agent-node-config')
 
 function descendants(value: unknown): Node[] {
   if (Array.isArray(value)) return value.flatMap(descendants)
@@ -85,6 +85,15 @@ beforeEach(() => {
   getAgent.mockClear()
   getAgents.mockImplementation(async () => ({ items: [] }))
   getAgent.mockImplementation(async () => ({ variables: [] }))
+})
+
+test('declares the fixed Agent runtime outputs and one distinct response alias', () => {
+  expect(getAgentNodeOutputVariables({ outputVariable: 'response' }).map((output) => output.name)).toEqual([
+    'response', 'toolCalls', 'usage', 'dialogue', 'artifacts',
+  ])
+  expect(getAgentNodeOutputVariables({ outputVariable: 'answer' }).map((output) => output.name)).toEqual([
+    'answer', 'response', 'toolCalls', 'usage', 'dialogue', 'artifacts',
+  ])
 })
 
 test('selects a published agent and clears stale mappings before detail loading', () => {
@@ -141,4 +150,43 @@ test('loads mappings after an earlier agent-list failure and ignores the recover
   expect(getAgent).toHaveBeenCalledWith('agent-1')
   expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({ inputMappings: [{ name: 'query', type: 'string', label: 'Query', required: true, description: 'Question', source: 'constant', constantValue: 'hello' }] }))
   expect(setState).toHaveBeenCalledWith(false)
+})
+
+test('reconciles selected Agent inputs without losing compatible mappings or retaining stale fields', async () => {
+  const onConfigChange = mock(() => {})
+  getAgent.mockImplementation(async () => ({ variables: [
+    { name: 'topic', type: 'string', label: 'Topic', required: true, description: 'Current topic', default: '' },
+    { name: 'limit', type: 'number', label: 'Limit', required: false, description: '', default: 5 },
+  ] }))
+  render({
+    agentId: 'agent-1',
+    inputMappings: [
+      { name: 'topic', type: 'string', required: false, source: 'variable', variableRef: '{{start.topic}}', variableRefNodeLabel: 'Start' },
+      { name: 'removed', type: 'string', required: false, source: 'constant', constantValue: 'stale' },
+    ],
+    outputVariable: 'response',
+  }, { onConfigChange })
+
+  await Promise.all(effects.map(effect => effect()))
+
+  expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({
+    inputMappings: [
+      { name: 'topic', type: 'string', label: 'Topic', required: true, description: 'Current topic', source: 'variable', variableRef: '{{start.topic}}', variableRefNodeLabel: 'Start' },
+      { name: 'limit', type: 'number', label: 'Limit', required: false, description: undefined, source: 'constant', constantValue: 5 },
+    ],
+  }))
+})
+
+test('clears mappings when the selected Agent no longer declares inputs', async () => {
+  const onConfigChange = mock(() => {})
+  getAgent.mockImplementation(async () => ({ variables: [] }))
+  render({
+    agentId: 'agent-1',
+    inputMappings: [{ name: 'removed', type: 'string', required: false, source: 'constant', constantValue: 'stale' }],
+    outputVariable: 'response',
+  }, { onConfigChange })
+
+  await Promise.all(effects.map(effect => effect()))
+
+  expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({ inputMappings: [] }))
 })

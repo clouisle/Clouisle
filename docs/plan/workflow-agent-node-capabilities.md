@@ -48,6 +48,12 @@ The existing workflow run node output surface already renders arbitrary node out
 - **Specific logic**: Add observable-contract tests, remove no unrelated compatibility paths, and keep existing output names backward compatible.
 - **Validation**: Run targeted backend pytest, targeted frontend Bun tests, TypeScript, lint, and diff checks.
 
+### Stage 5: Agent-selected variable contract correction
+- **Status**: Complete
+- **Files modified**: `frontend/app/(platform)/app/apps/workflow/[id]/_components/node-config/configs/agent-node-config.tsx`, `frontend/app/(platform)/app/apps/workflow/[id]/_components/node-config-drawer.tsx`, and their focused tests.
+- **Specific logic**: Treat the selected Agent's declared variables as the node's dynamic input contract; preserve compatible user mappings while removing stale fields. Keep the selected Agent's output contract fixed to `response`, `toolCalls`, `usage`, `dialogue`, and `artifacts`, and add the configured response alias only when distinct. Reuse one declaration helper in the node configuration and downstream variable picker.
+- **Validation**: Focused tests cover input replacement/preservation, empty Agent variables, fixed output declarations, aliases, and duplicate prevention; run TypeScript, ESLint, i18n lint, and diff checks.
+
 ## Testing Strategy
 
 - Happy path: text-only Agent, image input, file input, multiple attachments, configured Agent model, tool call plus artifact result, stream and non-stream execution.
