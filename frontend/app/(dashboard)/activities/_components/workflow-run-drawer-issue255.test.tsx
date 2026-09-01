@@ -124,6 +124,38 @@ describe('dashboard workflow run drawer issue #255 coverage', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
+  test('renders waiting runs with the waiting status label', async () => {
+    getWorkflowRun.mockImplementation(async () => ({ ...run, status: 'waiting' } as never))
+    render()
+    await flush()
+    const tree = render()
+    const badges = descendants(tree).filter((item) => item.type === 'Badge')
+    expect(badges.some((item) => text(item).includes('waiting'))).toBe(true)
+    expect(badges.some((item) => text(item).includes('pending'))).toBe(false)
+  })
+  test('allows expanding trace details with partial token metrics', async () => {
+    getRunNodeExecutions.mockResolvedValue([{
+      ...node,
+      inputs: null,
+      config_snapshot: null,
+      outputs: null,
+      error_message: null,
+      model_used: null,
+      total_tokens: null,
+      prompt_tokens: 9,
+      completion_tokens: null,
+    }] as never)
+    render()
+    await flush()
+
+    const tree = render()
+    const traceToggle = descendants(tree).find(
+      (item) => item.type === 'button' && item.props['aria-expanded'] === false
+    )
+    expect(traceToggle).toBeDefined()
+  })
+
+
   test('keeps the trace tab informative when the run has no persisted node executions', async () => {
     getRunNodeExecutions.mockResolvedValue([])
     render()

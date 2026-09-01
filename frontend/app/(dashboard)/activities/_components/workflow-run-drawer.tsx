@@ -84,6 +84,12 @@ function StatusBadge({ status, tWorkflow }: { status: string; tWorkflow: Workflo
       className: 'bg-gray-500/10 text-gray-700 dark:text-gray-400 border-gray-500/20',
       label: tWorkflow('pending'),
     },
+    waiting: {
+      icon: <Clock className="h-3 w-3" />,
+      className: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',
+      label: tWorkflow('waiting'),
+    },
+
     cancelled: {
       icon: <Ban className="h-3 w-3" />,
       className: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border-yellow-500/20',
@@ -122,7 +128,14 @@ function NodeExecutionTraceCard({
 }) {
   const [isExpanded, setIsExpanded] = React.useState(false)
   const hasDetails = Boolean(
-    node.inputs || node.config_snapshot || node.outputs || node.error_message || node.model_used || node.total_tokens
+    node.inputs ||
+    node.config_snapshot ||
+    node.outputs ||
+    node.error_message ||
+    node.model_used ||
+    (node.total_tokens !== null && node.total_tokens !== undefined) ||
+    (node.prompt_tokens !== null && node.prompt_tokens !== undefined) ||
+    (node.completion_tokens !== null && node.completion_tokens !== undefined)
   )
 
   return (
