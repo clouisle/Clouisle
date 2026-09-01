@@ -258,11 +258,15 @@ class AgentNodeExecutor(NodeExecutor):
                 return ExecutionResult(error="attachments_not_enabled")
             configured_turns = config.get("maxTurns")
             agent_turns = getattr(agent, "max_iterations", None)
-            max_turns = (
-                int(configured_turns or agent_turns or 10)
-                if isinstance(configured_turns or agent_turns, int)
-                else 10
-            )
+            candidate_turns = configured_turns or agent_turns or 10
+            try:
+                max_turns = (
+                    int(candidate_turns)
+                    if isinstance(candidate_turns, (int, str))
+                    else 10
+                )
+            except (TypeError, ValueError, OverflowError):
+                max_turns = 10
             output_var = str(config.get("outputVariable") or "response")
             outputs: dict[str, Any]
             if config.get("stream", True):

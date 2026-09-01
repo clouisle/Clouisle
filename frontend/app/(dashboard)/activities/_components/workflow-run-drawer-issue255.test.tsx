@@ -117,6 +117,7 @@ describe('dashboard workflow run drawer issue #255 coverage', () => {
     traceToggle.props.onClick()
     const trace = descendants(render())
     expect(trace.some((item) => item.type === 'pre' && text(item).includes('"query": "hello"'))).toBe(true)
+    expect(text(trace)).toContain('runDrawer.input')
     expect(trace.some((item) => item.type === 'pre' && text(item).includes('Research {{query}}'))).toBe(true)
     expect(renderNodeOutput).toHaveBeenCalledWith('agent', { response: 'Complete' }, expect.any(Function))
 

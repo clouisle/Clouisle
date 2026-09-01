@@ -203,6 +203,23 @@ test('reconciles selected Agent inputs without losing compatible mappings or ret
     ],
   }))
 })
+test('ignores stale Agent detail responses after effect cleanup', async () => {
+  let resolveDetail!: (value: Props) => void
+  getAgent.mockImplementation(() => new Promise<Props>((resolve) => {
+    resolveDetail = resolve
+  }))
+  const onConfigChange = mock(() => {})
+  render({ agentId: 'agent-1', inputMappings: [], outputVariable: 'response' }, { onConfigChange })
+
+  const runDetailEffect = effects[1] as unknown as () => (() => void) | undefined
+  const cleanup = runDetailEffect()
+  cleanup?.()
+  resolveDetail({ variables: [{ name: 'stale', type: 'string' }] })
+  await Promise.resolve()
+  await Promise.resolve()
+
+  expect(onConfigChange).not.toHaveBeenCalled()
+})
 
 test('clears mappings when the selected Agent no longer declares inputs', async () => {
   const onConfigChange = mock(() => {})

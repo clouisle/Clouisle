@@ -261,7 +261,7 @@ class TestAgentNodeExecutorBehavior:
                 ],
             }.get
         )
-        agent = SimpleNamespace(enable_attachments=True, max_iterations=5)
+        agent = SimpleNamespace(enable_attachments=True, max_iterations=7)
         agent_service.chat = AsyncMock(
             return_value={
                 "response": "Done",
@@ -285,6 +285,7 @@ class TestAgentNodeExecutorBehavior:
                             "variableRef": "{{start.attachments}}",
                         },
                     ],
+                    "maxTurns": "5",
                     "stream": False,
                 }
             }
