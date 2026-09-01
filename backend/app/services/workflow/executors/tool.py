@@ -232,10 +232,17 @@ class AgentNodeExecutor(NodeExecutor):
                 continue
             value = resolved_attachments[name]
             values = value if isinstance(value, list) else [value]
+            attachment_type = (
+                str(mapping.get("attachmentType") or "").lower()
+                if isinstance(mapping, dict)
+                else ""
+            )
             for item in values:
                 if item is None:
                     continue
-                if self._is_image_attachment(item):
+                if attachment_type in {"image", "images"} or self._is_image_attachment(
+                    item
+                ):
                     images.append(item)
                 else:
                     files.append(item)
@@ -342,15 +349,8 @@ class AgentNodeExecutor(NodeExecutor):
 
     @staticmethod
     def _is_image_attachment(value: Any) -> bool:
-        if isinstance(value, dict):
-            media_type = str(value.get("mime_type") or value.get("type") or "")
-            if media_type.startswith("image/") or media_type in {"image", "image_url"}:
-                return True
-            value = value.get("url") or ""
-        url = str(value).split("?", maxsplit=1)[0].lower()
-        return url.startswith("data:image/") or url.endswith(
-            (".avif", ".bmp", ".gif", ".jpeg", ".jpg", ".png", ".webp")
-        )
+        """Recognize only the explicit image record used by Agent chat."""
+        return isinstance(value, dict) and value.get("type") == "image_url"
 
     @staticmethod
     def _extract_artifacts(value: Any) -> list[dict[str, Any]]:

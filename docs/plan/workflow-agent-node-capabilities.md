@@ -57,8 +57,8 @@ The existing workflow run node output surface already renders arbitrary node out
 ### Stage 6: Agent attachment input mappings
 - **Status**: Complete
 - **Files modified**: `frontend/app/(platform)/app/apps/workflow/[id]/_components/node-config/configs/agent-node-config.tsx`, `backend/app/services/workflow/executors/tool.py`, their focused tests, and workflow translations.
-- **Specific logic**: When a selected Agent enables attachments, declare one `attachments` mapping separate from prompt variables. Resolve the mapped upload collection separately from normal context inputs; classify images by MIME metadata or URL and forward both image and non-image items through the shared AgentService.
-- **Validation**: Focused frontend configuration tests and workflow executor tests cover enabled/disabled attachment contracts and mixed attachment delivery; run TypeScript, lint, i18n lint, and diff checks.
+- **Specific logic**: When a selected Agent enables attachments, declare one `attachments` mapping separate from prompt variables. Persist the selected workflow input type on that mapping, then route image variables natively and file variables through the shared parser. Direct-chat `type: "image_url"` records retain their native image semantics; do not infer media type from MIME values or URL suffixes.
+- **Validation**: Focused frontend configuration tests and workflow executor tests cover enabled/disabled attachment contracts, direct-chat image records, and explicitly selected image-variable delivery; run TypeScript, lint, i18n lint, and diff checks.
 
 ## Testing Strategy
 

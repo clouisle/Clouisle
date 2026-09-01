@@ -49,6 +49,8 @@ export interface AgentInputMapping {
   variableRef?: string   // 变量引用 {{node.var}}
   variableRefNodeLabel?: string
   constantValue?: string // 常量值
+  // Selected workflow input type for the unified attachment mapping.
+  attachmentType?: string
 }
 
 // 默认配置
@@ -309,7 +311,7 @@ export function AgentNodeConfig({
     popoverId: string,
     currentRef?: string,
     currentLabel?: string,
-    onSelect: (variableRef: string, label: string) => void = () => {}
+    onSelect: (variableRef: string, label: string, type: string) => void = () => {}
   ) => {
     return (
       <Popover
@@ -375,9 +377,9 @@ export function AgentNodeConfig({
                           // 使用 variable.id（格式为 nodeId.paramName）而不是 variable.name
                           onSelect(
                             `{{${variable.id}}}`,
-                            variable.isSystem ? t('nodesCommon.system') : variable.groupLabel
+                            variable.isSystem ? t('nodesCommon.system') : variable.groupLabel,
+                            variable.type,
                           )
-                          onOpenVariablePopoverChange(null)
                           onVariableSearchChange('')
                         }}
                       >
@@ -706,12 +708,13 @@ export function AgentNodeConfig({
                   'attachment-input',
                   mapping.variableRef,
                   mapping.variableRefNodeLabel,
-                  (variableRef, label) => {
+                  (variableRef, label, attachmentType) => {
                     handleUpdateAttachmentMapping(mapping.name, {
                       source: 'variable',
                       variableRef,
                       variableRefNodeLabel: label,
                       constantValue: undefined,
+                      attachmentType,
                     })
                   },
                 )}

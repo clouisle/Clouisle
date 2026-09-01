@@ -207,7 +207,10 @@ class TestAgentNodeExecutorBehavior:
             side_effect={
                 "{{start.message}}": "Describe these assets",
                 "{{start.attachments}}": [
-                    {"url": "https://example.test/image.png", "mime_type": "image/png"},
+                    {
+                        "url": "https://example.test/image.png",
+                        "type": "image_url",
+                    },
                     {
                         "url": "https://example.test/report.pdf",
                         "mime_type": "application/pdf",
@@ -259,9 +262,7 @@ class TestAgentNodeExecutorBehavior:
             agent=agent,
             message="Describe these assets",
             context={},
-            images=[
-                {"url": "https://example.test/image.png", "mime_type": "image/png"}
-            ],
+            images=[{"url": "https://example.test/image.png", "type": "image_url"}],
             files=[
                 {
                     "url": "https://example.test/report.pdf",
@@ -272,6 +273,42 @@ class TestAgentNodeExecutorBehavior:
             max_turns=5,
             user_locale="en",
         )
+
+    @pytest.mark.anyio
+    async def test_attachment_mapping_routes_selected_image_variable_without_url_inference(
+        self, context, run, agent_service
+    ):
+        context.resolve_variable_ref = AsyncMock(
+            side_effect={"{{start.photo}}": "https://example.test/photo"}.get
+        )
+        agent = SimpleNamespace(enable_attachments=True, max_iterations=5)
+        agent_service.chat = AsyncMock(return_value={})
+        node = {
+            "data": {
+                "agentConfig": {
+                    "agentId": "agent-1",
+                    "attachmentMappings": [
+                        {
+                            "name": "attachments",
+                            "type": "files",
+                            "attachmentType": "images",
+                            "source": "variable",
+                            "variableRef": "{{start.photo}}",
+                        },
+                    ],
+                    "stream": False,
+                }
+            }
+        }
+
+        with patch("app.models.agent.Agent.filter") as agent_filter:
+            agent_filter.return_value.first = AsyncMock(return_value=agent)
+            await AgentNodeExecutor().execute(node, context, run)
+
+        assert agent_service.chat.await_args.kwargs["images"] == [
+            "https://example.test/photo"
+        ]
+        assert agent_service.chat.await_args.kwargs["files"] is None
 
     @pytest.mark.anyio
     async def test_rejects_attachments_when_agent_disables_them(

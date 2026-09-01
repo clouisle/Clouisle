@@ -101,6 +101,16 @@ test('declares the fixed Agent runtime outputs and one distinct response alias',
   ])
 })
 
+test('preserves the selected attachment source type', () => {
+  expect(getAgentAttachmentMappings(true, [{
+    name: 'attachments', type: 'files', required: false, source: 'variable',
+    variableRef: '{{start.images}}', attachmentType: 'images',
+  }])).toEqual([{
+    name: 'attachments', type: 'files', required: false, source: 'variable',
+    variableRef: '{{start.images}}', attachmentType: 'images',
+  }])
+})
+
 test('declares one workflow attachment mapping only for Agents with uploads enabled', () => {
   const existing = [
     { name: 'attachments', type: 'files', required: true, source: 'variable' as const, variableRef: '{{start.uploads}}', variableRefNodeLabel: 'Start' },
