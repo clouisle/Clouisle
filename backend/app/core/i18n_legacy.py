@@ -34,6 +34,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "agent_created": {"en": "Agent created successfully", "zh": "智能体创建成功"},
     "agent_deleted": {"en": "Agent deleted successfully", "zh": "智能体删除成功"},
     "agent_duplicated": {"en": "Agent duplicated successfully", "zh": "智能体复制成功"},
+    "agent_model_unavailable": {
+        "en": "Configured agent model is unavailable",
+        "zh": "配置的智能体模型不可用",
+    },
     "agent_name_exists": {
         "en": "Agent with this name already exists",
         "zh": "该智能体名称已存在",
@@ -181,6 +185,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Delete memory relation",
         "zh": "删除记忆关系",
     },
+    "audit_log_delete_message": {"en": "Delete message", "zh": "删除消息"},
     "audit_log_delete_model": {
         "en": "Delete model configuration",
         "zh": "删除模型配置",
@@ -195,7 +200,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "audit_log_delete_tool": {"en": "Delete tool", "zh": "删除工具"},
     "audit_log_delete_user": {"en": "Delete user", "zh": "删除用户"},
     "audit_log_delete_workflow": {"en": "Delete workflow", "zh": "删除工作流"},
-    "audit_log_delete_message": {"en": "Delete message", "zh": "删除消息"},
     "audit_log_disable_totp": {
         "en": "Disable two-factor authentication",
         "zh": "禁用双因素认证",
@@ -622,10 +626,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Applied a context summary before the next model call",
         "zh": "已在下一次模型调用前应用上下文摘要",
     },
-    "context_summarization_failed": {
-        "en": "Please clear or shorten the conversation history, then try again.",
-        "zh": "请清理或缩短会话历史后重试。",
-    },
     "chat_file_upload_instruction": {
         "en": "[The user uploaded the following files, please use the markitdown tool to parse the file content:]",
         "zh": "[用户上传了以下文件，请使用 markitdown 工具解析文件内容:]",
@@ -728,6 +728,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "code_tool_execution_failed": {
         "en": "Code tool execution failed",
         "zh": "代码工具执行失败",
+    },
+    "context_summarization_failed": {
+        "en": "Please clear or shorten the conversation history, then try again.",
+        "zh": "请清理或缩短会话历史后重试。",
     },
     "conversation_created": {
         "en": "Conversation created successfully",

@@ -314,6 +314,13 @@ mock.module('./node-config', () => ({
   defaultLLMNodeConfig: defaultNodeConfig,
   defaultSubWorkflowNodeConfig: defaultNodeConfig,
   defaultAgentNodeConfig: defaultNodeConfig,
+  getAgentNodeOutputVariables: () => [
+    { name: 'response', type: 'String', isArray: false, isIterable: false },
+    { name: 'toolCalls', type: 'Array', isArray: true, isIterable: true },
+    { name: 'usage', type: 'Object', isArray: false, isIterable: true },
+    { name: 'dialogue', type: 'Array', isArray: true, isIterable: true },
+    { name: 'artifacts', type: 'Array', isArray: true, isIterable: true },
+  ],
   defaultKnowledgeRetrievalNodeConfig: defaultNodeConfig,
   defaultPauseNodeConfig: defaultNodeConfig,
   NodeConfigPanel: (props: Record<string, unknown>) => jsx('node-config-panel', props),

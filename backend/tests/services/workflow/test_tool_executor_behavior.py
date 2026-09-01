@@ -385,6 +385,169 @@ class TestAgentNodeExecutorBehavior:
         assert result.error == "attachments_not_enabled"
         agent_service.chat.assert_not_called()
 
+    @pytest.mark.anyio
+    async def test_streaming_preserves_structured_events_and_artifact_details(
+        self, context, run, agent_service
+    ):
+        agent = SimpleNamespace(enable_attachments=False)
+
+        async def chat_stream(**_kwargs):
+            for chunk in (
+                "hello",
+                {"tool_call": {"id": "call-1"}},
+                {
+                    "tool_result": {
+                        "tool_call_id": "call-1",
+                        "result": {
+                            "artifacts": [{"name": "artifact"}, "ignored"],
+                            "display_result": {"files": [{"name": "nested"}]},
+                        },
+                    }
+                },
+                {"usage": {"total_tokens": 2}},
+                {"unhandled": True},
+                {
+                    "dialogue": [{"role": "assistant", "content": "final"}],
+                    "artifacts": [{"name": "final"}],
+                },
+            ):
+                yield chunk
+
+        agent_service.chat_stream = chat_stream
+        node = {
+            "data": {
+                "config": {
+                    "agentId": "agent-1",
+                    "outputVariable": "answer",
+                    "stream": True,
+                }
+            }
+        }
+
+        with (
+            patch("app.models.agent.Agent.filter") as agent_filter,
+            patch(
+                "app.services.workflow.executors.tool.StreamManager.publish_token",
+                new=AsyncMock(),
+            ) as publish_token,
+        ):
+            agent_filter.return_value.first = AsyncMock(return_value=agent)
+            result = await AgentNodeExecutor().execute(node, context, run)
+
+        assert result.outputs == {
+            "response": "hello",
+            "toolCalls": [{"id": "call-1"}],
+            "usage": {"total_tokens": 2},
+            "dialogue": [{"role": "assistant", "content": "final"}],
+            "artifacts": [{"name": "final"}],
+            "answer": "hello",
+        }
+        publish_token.assert_awaited_once_with("", "hello")
+
+    @pytest.mark.anyio
+    async def test_non_streaming_routes_declared_mapping_types_and_locale_fallback(
+        self, context, agent_service
+    ):
+        context.resolve_variable_ref = AsyncMock(
+            side_effect={
+                "{{start.photos}}": [{"url": "photo"}, None],
+                "{{start.document}}": [None, {"url": "document"}],
+                "{{start.topic}}": "topic",
+                "{{start.selected_photo}}": "selected photo",
+                "{{start.more}}": [
+                    None,
+                    {"type": "image_url", "url": "detected image"},
+                    {"url": "plain file"},
+                ],
+            }.get
+        )
+        run = MagicMock(triggered_by_id="user-1", triggered_by=None)
+        run.fetch_related = AsyncMock()
+        agent = SimpleNamespace(enable_attachments=True, max_iterations=4)
+        agent_service.chat = AsyncMock(return_value={})
+        node = {
+            "data": {
+                "agentConfig": {
+                    "agentId": "agent-1",
+                    "messageSource": "constant",
+                    "messageConstantValue": "constant prompt",
+                    "inputMappings": [
+                        {
+                            "name": "photos",
+                            "type": "images",
+                            "source": "variable",
+                            "variableRef": "{{start.photos}}",
+                        },
+                        {
+                            "name": "document",
+                            "type": "file",
+                            "source": "variable",
+                            "variableRef": "{{start.document}}",
+                        },
+                        {
+                            "name": "topic",
+                            "type": "string",
+                            "source": "variable",
+                            "variableRef": "{{start.topic}}",
+                        },
+                        {},
+                    ],
+                    "attachmentMappings": [
+                        {
+                            "name": "selected_photo",
+                            "attachmentType": "images",
+                            "source": "variable",
+                            "variableRef": "{{start.selected_photo}}",
+                        },
+                        {
+                            "name": "more",
+                            "type": "files",
+                            "source": "variable",
+                            "variableRef": "{{start.more}}",
+                        },
+                    ],
+                    "stream": False,
+                }
+            }
+        }
+
+        with patch("app.models.agent.Agent.filter") as agent_filter:
+            agent_filter.return_value.first = AsyncMock(return_value=agent)
+            result = await AgentNodeExecutor().execute(node, context, run)
+
+        assert result.success
+        agent_service.chat.assert_awaited_once_with(
+            agent=agent,
+            message="constant prompt",
+            context={"topic": "topic"},
+            images=[
+                {"url": "photo"},
+                "selected photo",
+                {"type": "image_url", "url": "detected image"},
+            ],
+            files=[{"url": "document"}, {"url": "plain file"}],
+            user_id="user-1",
+            max_turns=4,
+            user_locale="en",
+        )
+
+    def test_output_metadata_includes_a_distinct_alias(self):
+        names = [
+            item["name"]
+            for item in AgentNodeExecutor().get_output_variables(
+                {"outputVariable": "answer"}
+            )
+        ]
+
+        assert names == [
+            "answer",
+            "response",
+            "toolCalls",
+            "usage",
+            "dialogue",
+            "artifacts",
+        ]
+
 
 class TestHTTPRequestNodeExecutorBehavior:
     @pytest.mark.anyio

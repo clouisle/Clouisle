@@ -17,7 +17,7 @@ const icons = Object.fromEntries([
 let states: unknown[] = []
 let stateIndex = 0
 let effects: (() => void | Promise<void>)[] = []
-const setters = Array.from({ length: 7 }, () => mock(() => {}))
+const setters = Array.from({ length: 9 }, () => mock(() => {}))
 const getAgents = mock(async () => ({ items: [] as Props[] }))
 const getAgent = mock(async () => ({ variables: [] as Props[] }))
 
