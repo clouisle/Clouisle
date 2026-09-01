@@ -290,8 +290,7 @@ class TestAgentNodeExecutorBehavior:
                     "attachmentMappings": [
                         {
                             "name": "attachments",
-                            "type": "files",
-                            "attachmentType": "images",
+                            "type": "images",
                             "source": "variable",
                             "variableRef": "{{start.photo}}",
                         },

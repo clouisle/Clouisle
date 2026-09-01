@@ -233,7 +233,7 @@ class AgentNodeExecutor(NodeExecutor):
             value = resolved_attachments[name]
             values = value if isinstance(value, list) else [value]
             attachment_type = (
-                str(mapping.get("attachmentType") or "").lower()
+                str(mapping.get("attachmentType") or mapping.get("type") or "").lower()
                 if isinstance(mapping, dict)
                 else ""
             )
