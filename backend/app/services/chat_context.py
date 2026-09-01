@@ -619,20 +619,6 @@ async def _build_messages_with_file_content(
         file_content,
     )
 
-    def _override_meta(hist_msg: Any, *, tool_calls: Any = None) -> dict[str, Any]:
-        return {
-            "round_id": _get_override_value(hist_msg, "round_id"),
-            "round_role": _get_override_value(hist_msg, "round_role"),
-            "is_round_canonical": _get_override_value(hist_msg, "is_round_canonical"),
-            "tool_call_id": _get_override_value(hist_msg, "tool_call_id")
-            or (_get_override_value(hist_msg, "id") if False else None),
-            "tool_calls": tool_calls,
-            "source_role": _normalize_override_role(
-                _get_override_value(hist_msg, "role")
-            ),
-            "source_message_id": None,
-        }
-
     if history_override is not None and not active_round_delta:
         has_current_round_user_in_override = any(
             _normalize_override_role(_get_override_value(hist_msg, "role")) == "user"
