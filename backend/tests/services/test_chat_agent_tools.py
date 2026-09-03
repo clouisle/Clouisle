@@ -165,3 +165,26 @@ def test_validate_user_answers_accepts_complete_multi_question_answers():
         },
         {"target": "cloud"},
     )
+
+
+def test_validate_user_answers_accepts_custom_text_for_option_questions():
+    validate_user_answers(
+        {
+            "questions": [
+                {"id": "target", "question": "Where?", "options": ["cloud", "local"]},
+            ]
+        },
+        {"target": "self-hosted"},
+    )
+
+
+def test_validate_user_answers_allows_only_empty_explicit_skips():
+    pending_input = {
+        "questions": [
+            {"id": "target", "question": "Where?", "options": ["cloud"]},
+        ]
+    }
+
+    validate_user_answers(pending_input, {}, skipped=True)
+    with pytest.raises(ValueError, match="skipped answers must be empty"):
+        validate_user_answers(pending_input, {"target": "cloud"}, skipped=True)

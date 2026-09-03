@@ -2,8 +2,8 @@
 
 Single source of truth for assembling an agent's system prompt: the user-authored
 base prompt, template variable substitution, and the capability-driven instruction
-sections (Markdown output rules, memory guidance, sandbox guidance, language
-instruction).
+sections (Markdown output rules, memory guidance, user-input guidance, sandbox
+guidance, language instruction).
 
 Both the chat endpoint (via ``chat_context._build_system_prompt``) and the workflow
 Agent path (via ``AgentService``) delegate to :func:`build_system_prompt` so that
@@ -90,6 +90,17 @@ User: "What's my name?"
 - Then answer using the result
 """
 
+ASK_USER_SYSTEM_INSTRUCTION = """
+## User Input Requests
+
+You can call `ask_user` when an answer, decision, confirmation, or clarification from the user is necessary before you can continue. Do not ask the same question in ordinary assistant text.
+
+- Use the tool only when the needed information is not already available. Keep the number of questions as small as possible.
+- Provide `questions` as a non-empty array. Every item needs a unique, stable `id` and concise user-facing `question` text.
+- Add `options` only for clear discrete choices; omit it for an open-ended answer. Set `required` to `false` only when an answer is genuinely optional.
+- The tool pauses the run until the user responds. After calling it, wait for the tool result before continuing.
+"""
+
 SANDBOX_SYSTEM_INSTRUCTION = """
 ## Sandbox Environment Guidance
 
@@ -153,7 +164,7 @@ WORKFLOW_MODE = "workflow"
 
 # Sections logged at info when applied (the capability-driven ones); always-on
 # sections (Markdown, language) are silent to match prior noise levels.
-_LOGGED_SECTIONS = frozenset({"memory", "sandbox"})
+_LOGGED_SECTIONS = frozenset({"memory", "user_input", "sandbox"})
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +256,13 @@ def _memory_applies(agent: Agent, mode: str) -> bool:
     return bool(getattr(agent, "enable_memory", False)) and mode == CHAT_MODE
 
 
+def _ask_user_applies(agent: Agent, mode: str) -> bool:
+    # The durable chat run is the only path that injects the ask_user tool.
+    return (
+        bool(getattr(agent, "enable_user_input_request", False)) and mode == CHAT_MODE
+    )
+
+
 def _sandbox_applies(agent: Agent, _mode: str) -> bool:
     return has_sandbox_tools(agent)
 
@@ -256,7 +274,7 @@ def _append_constant(constant: str) -> Callable[[str, Agent, str | None], str]:
     return transform
 
 
-# Order matters: Markdown -> Memory -> Sandbox -> Language.
+# Order matters: Markdown -> Memory -> Sandbox -> User input -> Language.
 # This preserves the historical chat-endpoint ordering exactly.
 SECTIONS: tuple[PromptSection, ...] = (
     PromptSection(
@@ -273,6 +291,11 @@ SECTIONS: tuple[PromptSection, ...] = (
         name="sandbox",
         applies=_sandbox_applies,
         transform=_append_constant(SANDBOX_SYSTEM_INSTRUCTION),
+    ),
+    PromptSection(
+        name="user_input",
+        applies=_ask_user_applies,
+        transform=_append_constant(ASK_USER_SYSTEM_INSTRUCTION),
     ),
     PromptSection(
         name="language",

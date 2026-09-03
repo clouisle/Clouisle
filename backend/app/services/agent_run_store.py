@@ -152,8 +152,10 @@ async def park_run_waiting(
 def validate_user_answers(
     pending_input: dict[str, Any] | None,
     answers: Any,
+    *,
+    skipped: bool = False,
 ) -> None:
-    """Validate answer keys, required fields, and option values."""
+    """Validate answer keys, required fields, and explicit skips."""
     if not isinstance(pending_input, dict):
         raise ValueError("pending questions are invalid")
     questions = pending_input.get("questions")
@@ -161,6 +163,8 @@ def validate_user_answers(
         raise ValueError("pending questions are invalid")
     if not isinstance(answers, dict):
         raise ValueError("answers must be an object")
+    if not isinstance(skipped, bool):
+        raise ValueError("skipped must be a boolean")
 
     question_ids: set[str] = set()
     for item in questions:
@@ -187,6 +191,11 @@ def validate_user_answers(
             raise ValueError("pending questions are invalid")
         question_ids.add(question_id)
 
+    if skipped:
+        if answers:
+            raise ValueError("skipped answers must be empty")
+        return
+
     unknown = set(answers) - question_ids
     if unknown:
         raise ValueError("answers contain an unknown question id")
@@ -195,6 +204,7 @@ def validate_user_answers(
         question_id = item["id"]
         has_answer = question_id in answers
         answer = answers.get(question_id)
+        options = item.get("options")
         if item.get("required", True) and (
             not has_answer
             or answer is None
@@ -202,10 +212,9 @@ def validate_user_answers(
             or (isinstance(answer, (list, dict)) and not answer)
         ):
             raise ValueError(f"answer required for {question_id}")
-        options = item.get("options")
         if has_answer and isinstance(options, list) and options:
-            if not isinstance(answer, str) or answer not in options:
-                raise ValueError(f"answer is not a valid option for {question_id}")
+            if not isinstance(answer, str) or not answer.strip():
+                raise ValueError(f"answer must be a non-empty string for {question_id}")
 
 
 async def submit_user_answers(
@@ -213,13 +222,17 @@ async def submit_user_answers(
     *,
     tool_call_id: str,
     answers: dict[str, Any],
+    skipped: bool = False,
 ) -> AgentRun | None:
     """Consume one waiting interaction and persist its matching tool result.
 
     The row lock makes duplicate submissions harmless: only the first caller
     can change ``waiting`` to ``queued`` and create the tool-result message.
     """
-    result_content = json.dumps({"answers": answers}, ensure_ascii=False, default=str)
+    result_payload: dict[str, Any] = {"answers": answers}
+    if skipped:
+        result_payload["skipped"] = True
+    result_content = json.dumps(result_payload, ensure_ascii=False, default=str)
     async with in_transaction() as conn:
         run = await (
             AgentRun.filter(id=run_id).using_db(conn).select_for_update().first()
@@ -232,7 +245,7 @@ async def submit_user_answers(
         ):
             return None
 
-        validate_user_answers(run.pending_tool_input, answers)
+        validate_user_answers(run.pending_tool_input, answers, skipped=skipped)
         await Message.create(
             conversation_id=run.conversation_id,
             role=MessageRole.TOOL,

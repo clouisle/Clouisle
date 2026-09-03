@@ -2142,6 +2142,7 @@ async def post_run_answer(
             run_id,
             tool_call_id=body.tool_call_id,
             answers=body.answers,
+            skipped=body.skipped,
         )
     except ValueError as exc:
         raise BusinessError(

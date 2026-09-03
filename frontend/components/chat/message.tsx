@@ -68,7 +68,6 @@ import {
   isIterationCapReachedPart,
 } from './types'
 import { SourceContent } from './message-parts'
-import { AskUserForm, normalizeAskUserQuestions } from './ask-user-form'
 import {
   getImageAssetUrl,
   getVideoAssetUrl,
@@ -114,6 +113,10 @@ const chatStreamdownPlugins: PluginConfig = {
 const SPEECH_STARTED_EVENT = 'clouisle:chat-speech-started'
 const SPEECH_HIGHLIGHT_CLASS = 'rounded-sm bg-yellow-200/80 px-0.5 text-foreground shadow-[inset_0_-0.45em_0_rgba(250,204,21,0.45)] dark:bg-yellow-300/35 dark:shadow-[inset_0_-0.45em_0_rgba(250,204,21,0.28)]'
 type ChatSpeechStartedEvent = CustomEvent<{ messageId: string }>
+
+function isAskUserInteractionPart(part: MessagePart) {
+  return (isToolCallPart(part) || isToolResultPart(part)) && part.toolName === 'ask_user'
+}
 
 type ParsedCodeFence = {
   language: string
@@ -403,10 +406,6 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   onFeedback?: (type: 'positive' | 'negative') => void
   /** Callback for switching version */
   onSwitchVersion?: (versionIndex: number) => void
-  /** Tool call id of the ask_user interaction currently waiting for answers. */
-  pendingAskUserToolCallId?: string | null
-  /** Submit one structured answer set for a waiting ask_user interaction. */
-  onSubmitAskUser?: (toolCallId: string, answers: Record<string, unknown>) => Promise<void>
   /** Callback when a generated image is selected as a later reference */
   onSelectImageReference?: (image: { asset_ref: string; url: string }) => void
   /** Callback when a previewable code block is opened */
@@ -441,8 +440,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       onEditMessage,
       onFeedback,
       onSwitchVersion,
-      pendingAskUserToolCallId,
-      onSubmitAskUser,
       onSelectImageReference,
       onOpenCodePreview,
       hideToolCalls = false,
@@ -838,14 +835,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         pairedToolResultIndexes: pairedResultIndexes,
       }
     }, [otherPartEntries])
-    const hasPendingAskUser = pendingAskUserToolCallId !== null && pendingAskUserToolCallId !== undefined
-      && otherPartEntries.some(({ part, index }) => (
-        isToolCallPart(part)
-        && part.toolName === 'ask_user'
-        && part.toolCallId === pendingAskUserToolCallId
-        && !toolResultsByCallIndex.has(index)
-      ))
-
 
     const renderDefaultPart = React.useCallback((part: MessagePart, index: number) => {
       if (isTextPart(part)) {
@@ -865,50 +854,33 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         )
       }
 
+      if (isAskUserInteractionPart(part)) return null
+
       if (isToolCallPart(part) || isMcpToolCallPart(part)) {
         const result = toolResultsByCallIndex.get(index)
-        const isAskUserPending = isToolCallPart(part)
-          && part.toolName === 'ask_user'
-          && !result
-          && part.toolCallId === pendingAskUserToolCallId
-        if (hideToolCalls && !isAskUserPending) return null
+        if (hideToolCalls) return null
         if (hasReasoning && !hideReasoning) return null
         const toolName = isToolCallPart(part)
           ? (part.toolDisplayName || part.toolName)
           : `${part.serverName}/${part.toolName}`
-        const state = isAskUserPending
-          ? 'input-available'
-          : part.state === 'error' ? 'output-error'
-            : part.state === 'done' ? 'output-available'
-              : part.state === 'running' ? 'input-available'
-                : 'input-streaming'
+        const state = part.state === 'error' ? 'output-error'
+          : part.state === 'done' ? 'output-available'
+            : part.state === 'running' ? 'input-available'
+              : 'input-streaming'
 
         return (
           <Tool
             key={index}
-            defaultOpen={isAskUserPending}
+            defaultOpen={false}
             className="my-2"
           >
             <ToolHeader title={toolName} type="tool-call" state={state} />
             <AIToolContent>
-              {isAskUserPending ? (
-                <AskUserForm
-                  questions={normalizeAskUserQuestions(part.input)}
-                  disabled={Boolean(isStreaming) || !onSubmitAskUser}
-                  onSubmit={async (answers) => {
-                    if (!onSubmitAskUser) return
-                    await onSubmitAskUser(part.toolCallId, answers)
-                  }}
-                />
-              ) : (
-                <>
-                  <ToolInput input={part.input} />
-                  {result && (isToolResultPart(result) || isMcpToolResultPart(result)) && (
-                    (isToolResultPart(result) && shouldDisplayMediaResultInBody(result.output))
-                      ? null
-                      : renderToolResultContent(result.output, result.isError)
-                  )}
-                </>
+              <ToolInput input={part.input} />
+              {result && (isToolResultPart(result) || isMcpToolResultPart(result)) && (
+                (isToolResultPart(result) && shouldDisplayMediaResultInBody(result.output))
+                  ? null
+                  : renderToolResultContent(result.output, result.isError)
               )}
             </AIToolContent>
           </Tool>
@@ -1020,10 +992,8 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       isStreaming,
       iterationCapLabel,
       onOpenCodePreview,
-      onSubmitAskUser,
       openLightbox,
       pairedToolResultIndexes,
-      pendingAskUserToolCallId,
       renderToolResultContent,
       t,
       toolResultsByCallIndex,
@@ -1040,6 +1010,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const fileParts = React.useMemo(() => otherParts.filter(isFilePart), [otherParts])
     const visibleContentEntries = React.useMemo(() => {
       return otherPartEntries.filter(({ part }) => {
+        if (isAskUserInteractionPart(part)) return false
         if (isFilePart(part)) return false
         if (isErroredMessage && !showPreservedErrorNote && streamErrorMessage && isTextPart(part)) {
           return part.text.trim() !== streamErrorMessage.trim()
@@ -1047,17 +1018,12 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         return true
       })
     }, [isErroredMessage, otherPartEntries, showPreservedErrorNote, streamErrorMessage])
-    const hasVisibleTimelineContent = visibleContentEntries.some(({ part, index }) => {
+    const hasVisibleTimelineContent = visibleContentEntries.some(({ part }) => {
+      if (isAskUserInteractionPart(part)) return false
       if (isStoppedPart(part)) return false
       if (isReasoningPart(part)) return !hideReasoning
       if (isTaskPart(part)) return !hideReasoning
-      if (isToolCallPart(part) || isMcpToolCallPart(part)) {
-        if (!hideToolCalls) return true
-        return isToolCallPart(part)
-          && part.toolName === 'ask_user'
-          && !toolResultsByCallIndex.has(index)
-          && part.toolCallId === pendingAskUserToolCallId
-      }
+      if (isToolCallPart(part) || isMcpToolCallPart(part)) return !hideToolCalls
       if (isToolResultPart(part) || isMcpToolResultPart(part)) return !hideToolCalls
       if (isTextPart(part)) return Boolean(part.text.trim())
       return true
@@ -1065,12 +1031,15 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const hasTextContent = textParts.some(part => part.text.length > 0)
     const hasMessageContent = hasTextContent
       || otherParts.some(part => (
-        isReasoningPart(part)
-        || (isTaskPart(part) && part.taskType !== 'thinking' && part.taskType !== 'generating')
-        || isToolCallPart(part)
-        || isMcpToolCallPart(part)
-        || isToolResultPart(part)
-        || isMcpToolResultPart(part)
+        !isAskUserInteractionPart(part)
+        && (
+          isReasoningPart(part)
+          || (isTaskPart(part) && part.taskType !== 'thinking' && part.taskType !== 'generating')
+          || isToolCallPart(part)
+          || isMcpToolCallPart(part)
+          || isToolResultPart(part)
+          || isMcpToolResultPart(part)
+        )
       ))
       || isErroredMessage
     const isLoadingMessage = Boolean(message.metadata?.isLoading && !hasVisibleTimelineContent)
@@ -1215,21 +1184,16 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         if (!hasReasoning) return
 
         if (isToolCallPart(part) || isMcpToolCallPart(part)) {
+          if (isAskUserInteractionPart(part)) return
           const toolName = isToolCallPart(part)
             ? (part.toolDisplayName || part.toolName)
             : `${part.serverName}/${part.toolName}`
           const result = toolResultsByCallIndex.get(index)
-          const isAskUserPending = isToolCallPart(part)
-            && part.toolName === 'ask_user'
-            && !result
-            && part.toolCallId === pendingAskUserToolCallId
-          if (hideToolCalls && !isAskUserPending) return
-          const state = isAskUserPending
-            ? 'input-available'
-            : part.state === 'error' ? 'output-error'
-              : part.state === 'done' ? 'output-available'
-                : part.state === 'running' ? 'input-available'
-                  : 'input-streaming'
+          if (hideToolCalls) return
+          const state = part.state === 'error' ? 'output-error'
+            : part.state === 'done' ? 'output-available'
+              : part.state === 'running' ? 'input-available'
+                : 'input-streaming'
 
           steps.push(
             <ChainOfThoughtStep
@@ -1238,31 +1202,18 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
               label={getToolCallLabel(part)}
               status={getToolCallStepStatus(part.state)}
             >
-              <Tool defaultOpen={isAskUserPending} className="mt-2">
+              <Tool defaultOpen={false} className="mt-2">
                 <ToolHeader
                   title={toolName}
                   type="tool-call"
                   state={state}
                 />
                 <AIToolContent>
-                  {isAskUserPending ? (
-                    <AskUserForm
-                      questions={normalizeAskUserQuestions(part.input)}
-                      disabled={Boolean(isStreaming) || !onSubmitAskUser}
-                      onSubmit={async (answers) => {
-                        if (!onSubmitAskUser) return
-                        await onSubmitAskUser(part.toolCallId, answers)
-                      }}
-                    />
-                  ) : (
-                    <>
-                      <ToolInput input={part.input} />
-                      {result && (isToolResultPart(result) || isMcpToolResultPart(result)) && (
-                        (isToolResultPart(result) && shouldDisplayMediaResultInBody(result.output))
-                          ? null
-                          : renderToolResultContent(result.output, result.isError)
-                      )}
-                    </>
+                  <ToolInput input={part.input} />
+                  {result && (isToolResultPart(result) || isMcpToolResultPart(result)) && (
+                    (isToolResultPart(result) && shouldDisplayMediaResultInBody(result.output))
+                      ? null
+                      : renderToolResultContent(result.output, result.isError)
                   )}
                 </AIToolContent>
               </Tool>
@@ -1310,10 +1261,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       getToolCallStepStatus,
       hasReasoning,
       hideToolCalls,
-      isStreaming,
-      onSubmitAskUser,
       otherPartEntries,
-      pendingAskUserToolCallId,
       renderToolResultContent,
       tReasoning,
       taskParts,
@@ -1347,7 +1295,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           {isAssistant && hasChainOfThought && (
             <ChainOfThought
               isStreaming={isChainOfThoughtStreaming}
-              open={hasPendingAskUser ? true : chainOfThoughtOpen}
+              open={chainOfThoughtOpen}
               onOpenChange={onChainOfThoughtOpenChange}
               defaultOpen={false}
             >
@@ -1446,7 +1394,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       editDraft,
       fileParts,
       hasChainOfThought,
-      hasPendingAskUser,
       isAssistant,
       isChainOfThoughtStreaming,
       isEditing,
@@ -1472,6 +1419,14 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       tReasoning,
       textContent,
     ])
+
+    const isAskUserOnlyMessage = isAssistant
+      && otherParts.length > 0
+      && otherParts.every(isAskUserInteractionPart)
+
+    if (isAskUserOnlyMessage && !isErroredMessage && !isManuallyStoppedMessage) {
+      return null
+    }
 
     return (
       <div
@@ -1633,8 +1588,6 @@ function areMessagePropsEqual(prev: Readonly<MessageProps>, next: Readonly<Messa
     && prev.onEditMessage === next.onEditMessage
     && prev.onFeedback === next.onFeedback
     && prev.onSwitchVersion === next.onSwitchVersion
-    && prev.pendingAskUserToolCallId === next.pendingAskUserToolCallId
-    && prev.onSubmitAskUser === next.onSubmitAskUser
     && prev.onSelectImageReference === next.onSelectImageReference
     && prev.onOpenCodePreview === next.onOpenCodePreview
     && prev.hideToolCalls === next.hideToolCalls

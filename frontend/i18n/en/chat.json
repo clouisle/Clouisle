@@ -184,7 +184,12 @@
       "attachmentsDisabledDuringRun": "Attachments are disabled while the agent is running",
       "askUser": {
         "title": "Questions",
+        "progress": "Question {current} of {total}",
+        "previous": "Previous",
+        "next": "Next",
+        "customAnswer": "Or enter a custom answer",
         "answerRequired": "This question requires an answer.",
+        "skipAll": "Skip all questions",
         "submit": "Submit answers",
         "submitting": "Submitting…"
       }

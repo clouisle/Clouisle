@@ -964,6 +964,9 @@ class RunAnswerCreate(BaseModel):
 
     tool_call_id: str = Field(..., min_length=1, max_length=200)
     answers: dict[str, Any] = Field(default_factory=dict)
+    skipped: bool = Field(
+        default=False, description="User declined every pending question"
+    )
 
 
 class RunInputCreate(BaseModel):

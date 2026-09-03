@@ -246,7 +246,7 @@ describe('message rendering', () => {
     expect(hidden).toContain('chat.reasoning.thought')
   })
 
-  test('keeps a pending ask_user form visible when tool calls are hidden', () => {
+  test('keeps ask_user interaction content out of conversation nodes', () => {
     const markup = renderToStaticMarkup(<Message
       message={{
         id: 'pending-ask-user',
@@ -266,18 +266,39 @@ describe('message rendering', () => {
             },
             state: 'pending' as const,
           },
+          {
+            type: 'tool-result' as const,
+            toolCallId: 'ask-1',
+            toolName: 'ask_user',
+            output: { target: 'cloud' },
+          },
         ],
       }}
-      hideToolCalls
-      pendingAskUserToolCallId="ask-1"
-      onSubmitAskUser={async () => undefined}
     />)
 
-    expect(markup).toContain('Where should this go?')
-    expect(markup).toContain('cloud')
-    expect(markup).toContain('local')
-    expect(markup).toContain('data-chat-thought-process="true"')
-    expect(markup).toContain('data-open="true"')
+    expect(markup).toContain('chat.reasoning.thought')
+    expect(markup).not.toContain('Where should this go?')
+    expect(markup).not.toContain('cloud')
+    expect(markup).not.toContain('local')
+    expect(markup).not.toContain('Ask user')
+  })
+
+  test('omits an assistant message containing only ask_user plumbing', () => {
+    const markup = renderToStaticMarkup(<Message
+      message={{
+        id: 'ask-user-only',
+        role: 'assistant',
+        parts: [{
+          type: 'tool-call' as const,
+          toolCallId: 'ask-1',
+          toolName: 'ask_user',
+          input: { questions: [{ id: 'target', question: 'Where?' }] },
+          state: 'pending' as const,
+        }],
+      }}
+    />)
+
+    expect(markup).toBe('')
   })
 
   test('renders iteration cap and stopped markers once', () => {
@@ -1186,7 +1207,7 @@ describe('message behavior', () => {
     const variants = [
       { isStreaming: true }, { renderPart: () => <span>custom</span> }, { showCopy: false }, { showFeedback: true },
       { onRegenerate: () => {} }, { onEditMessage: async () => {} }, { onFeedback: () => {} }, { onSwitchVersion: () => {} },
-      { pendingAskUserToolCallId: null }, { onSubmitAskUser: async () => {} }, { onOpenCodePreview: () => {} }, { hideToolCalls: true }, { chainOfThoughtOpen: true },
+      { onOpenCodePreview: () => {} }, { hideToolCalls: true }, { chainOfThoughtOpen: true },
       { onChainOfThoughtOpenChange: () => {} }, { onRequestScrollIntoView: () => {} }, { className: 'changed' },
     ]
     act(() => root.render(<Message {...base} />))

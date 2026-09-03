@@ -1,8 +1,10 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import type { AgentRunAnswerPayload } from '@/lib/api';
 import { ChatContainer } from './chat-container';
 import { ChatInput, type ChatInputFile } from './chat-input';
+import { PendingAskUserForm } from './ask-user-form';
 import type { ChatMessage, MessagePart } from './types';
 
 interface ChatProps {
@@ -23,7 +25,7 @@ interface ChatProps {
   inputDisabled?: boolean;
   // Callbacks
   pendingAskUserToolCallId?: string | null;
-  onSubmitAskUser?: (toolCallId: string, answers: Record<string, unknown>) => Promise<void>;
+  onSubmitAskUser?: (toolCallId: string, answer: AgentRunAnswerPayload) => Promise<void>;
   // Layout
   inputPosition?: 'bottom' | 'sticky';
   containerClassName?: string;
@@ -64,8 +66,6 @@ export function Chat({
         autoScroll={autoScroll}
         renderPart={renderPart}
         emptyState={emptyState}
-        pendingAskUserToolCallId={pendingAskUserToolCallId}
-        onSubmitAskUser={onSubmitAskUser}
         className={containerClassName}
       />
 
@@ -76,13 +76,19 @@ export function Chat({
           inputPosition === 'sticky' && 'sticky bottom-0'
         )}
       >
+        <PendingAskUserForm
+          messages={messages}
+          pendingToolCallId={pendingAskUserToolCallId}
+          disabled={isStreaming}
+          onSubmit={onSubmitAskUser}
+        />
         <ChatInput
           value={inputValue}
           onChange={onInputChange}
           onSubmit={onSubmit}
           onStop={onStop}
           placeholder={placeholder}
-          disabled={inputDisabled}
+          disabled={inputDisabled || Boolean(pendingAskUserToolCallId)}
           isLoading={isLoading}
           isStreaming={isStreaming}
           allowAttachments={allowAttachments}

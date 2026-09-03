@@ -149,8 +149,8 @@ export interface UseChatReturn {
   pendingAskUserToolCallId: string | null
   /** Send a message with optional images (vision) and/or file URLs (file upload) */
   sendMessage: (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[]) => Promise<void>
-  /** Submit one structured answer set for the waiting ask_user interaction. */
-  submitAskUser: (toolCallId: string, answers: Record<string, unknown>) => Promise<void>
+  /** Submit one structured answer result for the waiting ask_user interaction. */
+  submitAskUser: (toolCallId: string, answer: Omit<AgentRunAnswerInput, 'tool_call_id'>) => Promise<void>
   /** Regenerate (retry) a message by ID */
   regenerate: (messageId: string) => Promise<void>
   /** Edit a user message and regenerate the downstream response */
@@ -1421,7 +1421,10 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     await consumeStream(session, () => api.regenerateStream(agentId, messageId, variables))
   }, [agentId, api, consumeStream, sendMessage, setCurrentStatus, variables])
 
-  const submitAskUser = useCallback(async (toolCallId: string, answers: Record<string, unknown>) => {
+  const submitAskUser = useCallback(async (
+    toolCallId: string,
+    answer: Omit<AgentRunAnswerInput, 'tool_call_id'>
+  ) => {
     const activeRunId = runIdRef.current ?? activeSessionRef.current?.runId ?? null
     if (!activeRunId) {
       throw new Error('No active run to answer')
@@ -1435,7 +1438,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     try {
       const result = await runApi.postRunAnswer(agentId, activeRunId, {
         tool_call_id: toolCallId,
-        answers,
+        ...answer,
       })
       if (runIdRef.current === activeRunId && result?.status) {
         setCurrentRunStatus(result.status)

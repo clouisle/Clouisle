@@ -580,6 +580,36 @@ async def test_submit_user_answers_persists_one_result_and_is_idempotent(
 
 
 @pytest.mark.asyncio
+async def test_submit_user_answers_persists_an_explicit_skip(monkeypatch, fake_redis):
+    run = _waiting_run()
+    message_create = AsyncMock()
+    monkeypatch.setattr(agent_run_store, "in_transaction", lambda: _Transaction())
+    monkeypatch.setattr(
+        agent_run_store.AgentRun,
+        "filter",
+        lambda **_kwargs: _LockedRunQuery(run),
+    )
+    monkeypatch.setattr(agent_run_store.Message, "create", message_create)
+
+    submitted = await agent_run_store.submit_user_answers(
+        run.id,
+        tool_call_id="call-1",
+        answers={},
+        skipped=True,
+    )
+
+    assert submitted is run
+    assert run.status == AgentRunStatus.QUEUED
+    assert run.worker_payload["history_override"][-1]["content"] == (
+        '{"answers": {}, "skipped": true}'
+    )
+    assert run.worker_payload["resume_tool_result"]["result"] == (
+        '{"answers": {}, "skipped": true}'
+    )
+    message_create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_submit_user_answers_rejects_mismatch_invalid_answers_and_terminal_runs(
     monkeypatch, fake_redis
 ):
@@ -606,6 +636,16 @@ async def test_submit_user_answers_rejects_mismatch_invalid_answers_and_terminal
             run.id,
             tool_call_id="call-1",
             answers={},
+        )
+    assert run.status == AgentRunStatus.WAITING
+    message_create.assert_not_awaited()
+
+    with pytest.raises(ValueError, match="skipped answers must be empty"):
+        await agent_run_store.submit_user_answers(
+            run.id,
+            tool_call_id="call-1",
+            answers={"target": "cloud"},
+            skipped=True,
         )
     assert run.status == AgentRunStatus.WAITING
     message_create.assert_not_awaited()

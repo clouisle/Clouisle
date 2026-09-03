@@ -6,6 +6,7 @@ const component = (name: string) => Object.assign(() => null, { displayName: nam
 const Button = component('Button')
 const ChatContainer = component('ChatContainer')
 const ChatInput = component('ChatInput')
+const PendingAskUserForm = component('PendingAskUserForm')
 let states: unknown[] = []
 let stateIndex = 0
 let variableForm: Record<string, unknown>
@@ -20,6 +21,7 @@ const resetVariables = mock(() => undefined)
 const reset = mock(() => undefined)
 const regenerate = mock(() => undefined)
 const switchVersion = mock(() => undefined)
+const submitAskUser = mock(() => Promise.resolve())
 const stop = mock(() => undefined)
 class ApiError extends Error {
   constructor(public code: number, message: string, public data?: unknown) { super(message) }
@@ -53,7 +55,7 @@ mock.module('@/components/ui/collapsible', () => ({
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/lib/api', () => ({ ApiError, uploadApi: { uploadFileWithProgress: uploadFile } }))
 mock.module('@/components/chat', () => ({
-  ChatContainer, ChatInput, VariableForm: component('VariableForm'), useVariableForm: () => variableForm,
+  ChatContainer, ChatInput, PendingAskUserForm, VariableForm: component('VariableForm'), useVariableForm: () => variableForm,
 }))
 mock.module('@/hooks/use-chat', () => ({
   useChat: (options: { onError: () => void }) => { chatOptions = options; return chat },
@@ -90,7 +92,7 @@ beforeEach(() => {
   }
   chat = {
     messages: [], error: null, isLoading: false, isStreaming: false, sendMessage,
-    regenerate, switchVersion, stop, reset,
+    regenerate, switchVersion, stop, reset, pendingAskUserToolCallId: null, submitAskUser,
   }
   errorKey = null
   sendMessage.mockClear()
@@ -103,6 +105,7 @@ beforeEach(() => {
   reset.mockClear()
   regenerate.mockClear()
   switchVersion.mockClear()
+  submitAskUser.mockClear()
   stop.mockClear()
   Object.defineProperty(globalThis, 'FileReader', { configurable: true, value: class {
     result: string | null = null
@@ -132,6 +135,38 @@ describe('AgentPreviewPanel', () => {
     await (questions[0].props.onClick as () => Promise<void>)()
     await flush()
     expect(sendMessage.mock.calls.map((call) => call[0])).toEqual(['First?'])
+  })
+
+  test('places pending ask_user above the preview composer', async () => {
+    chat = {
+      ...chat,
+      messages: [{
+        id: 'ask-message',
+        role: 'assistant',
+        parts: [{
+          type: 'tool-call',
+          toolCallId: 'ask-1',
+          toolName: 'ask_user',
+          input: { questions: [{ id: 'target', question: 'Where?', options: ['cloud'] }] },
+          state: 'pending',
+        }],
+      }],
+      pendingAskUserToolCallId: 'ask-1',
+    }
+    const tree = render()
+    const pending = find(tree, PendingAskUserForm)[0]
+    const container = find(tree, ChatContainer)[0]
+
+    expect(pending.props).toMatchObject({
+      messages: chat.messages,
+      pendingToolCallId: 'ask-1',
+      disabled: false,
+      onSubmit: submitAskUser,
+    })
+    expect(container.props.pendingAskUserToolCallId).toBeUndefined()
+    expect(container.props.onSubmitAskUser).toBeUndefined()
+    await (pending.props.onSubmit as (toolCallId: string, answer: { answers: Record<string, unknown>; skipped?: boolean }) => Promise<void>)('ask-1', { answers: { target: 'cloud' } })
+    expect(submitAskUser).toHaveBeenCalledWith('ask-1', { answers: { target: 'cloud' } })
   })
 
   test('converts images and uploads documents with progress before sending', async () => {

@@ -19,11 +19,13 @@ def _agent(
     tools_config=None,
     system_prompt="Base prompt",
     enable_memory=False,
+    enable_user_input_request=False,
 ):
     return SimpleNamespace(
         id="agent-1",
         system_prompt=system_prompt,
         enable_memory=enable_memory,
+        enable_user_input_request=enable_user_input_request,
         tools_config=tools_config or [],
     )
 
@@ -90,6 +92,34 @@ def test_chat_mode_injects_memory_when_enabled():
         invocation_mode=CHAT_MODE,
     )
     assert "## Memory System" in prompt
+
+
+def test_chat_mode_injects_ask_user_guidance_when_enabled():
+    prompt = build_system_prompt(
+        _agent(enable_user_input_request=True),
+        user_message="hi",
+        user_locale="en",
+        invocation_mode=CHAT_MODE,
+    )
+    assert "## User Input Requests" in prompt
+    assert "call `ask_user`" in prompt
+
+
+def test_ask_user_guidance_requires_the_chat_tool_injection_path():
+    disabled_prompt = build_system_prompt(
+        _agent(enable_user_input_request=False),
+        user_message="hi",
+        user_locale="en",
+        invocation_mode=CHAT_MODE,
+    )
+    workflow_prompt = build_system_prompt(
+        _agent(enable_user_input_request=True),
+        user_message="hi",
+        user_locale="en",
+        invocation_mode=WORKFLOW_MODE,
+    )
+    assert "## User Input Requests" not in disabled_prompt
+    assert "## User Input Requests" not in workflow_prompt
 
 
 def test_chat_mode_skips_sandbox_without_sandbox_tools():

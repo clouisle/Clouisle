@@ -377,7 +377,11 @@ export interface AgentRunStatusOut {
 export interface AgentRunAnswerInput {
   tool_call_id: string
   answers: Record<string, unknown>
+  /** Explicitly decline every question; answers must then be empty. */
+  skipped?: boolean
 }
+
+export type AgentRunAnswerPayload = Omit<AgentRunAnswerInput, 'tool_call_id'>
 export interface AgentRunStartOut {
   run_id: string
   conversation_id: string

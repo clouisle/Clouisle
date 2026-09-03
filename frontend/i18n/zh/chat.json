@@ -184,7 +184,12 @@
       "attachmentsDisabledDuringRun": "Agent 运行期间无法上传附件",
       "askUser": {
         "title": "待回答问题",
+        "progress": "第 {current} / {total} 题",
+        "previous": "上一题",
+        "next": "下一题",
+        "customAnswer": "或输入自定义回答",
         "answerRequired": "该问题需要回答。",
+        "skipAll": "跳过全部问题",
         "submit": "提交回答",
         "submitting": "提交中…"
       }

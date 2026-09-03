@@ -6,7 +6,7 @@ import { useChat } from './use-chat'
 import { useWorkflowRun } from './use-workflow-run'
 import type { ChatMessage, ExecutionNode, ExecutionState } from '@/components/chat/types'
 import type { ChatImageContent, ChatFileUrl } from '@/lib/api'
-import type { AgentRunStatus } from '@/lib/api/agents'
+import type { AgentRunAnswerPayload, AgentRunStatus } from '@/lib/api/agents'
 
 export type RunType = 'agent' | 'workflow'
 
@@ -32,8 +32,8 @@ export interface UseRunReturn {
   runStatus?: AgentRunStatus | null
   /** Tool call id of the ask_user interaction the server is waiting on. */
   pendingAskUserToolCallId?: string | null
-  /** Submit one structured answer set for the waiting ask_user interaction. */
-  submitAskUser?: (toolCallId: string, answers: Record<string, unknown>) => Promise<void>
+  /** Submit one structured answer result for the waiting ask_user interaction. */
+  submitAskUser?: (toolCallId: string, answer: AgentRunAnswerPayload) => Promise<void>
   sendMessage: (
     text: string,
     images?: ChatImageContent[],

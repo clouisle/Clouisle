@@ -9,7 +9,7 @@ import { ApiError, publicAgentsApi, type PublicAgent } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { ChatContainer, ChatInput, VariableForm, useVariableForm } from '@/components/chat'
+import { ChatContainer, ChatInput, PendingAskUserForm, VariableForm, useVariableForm } from '@/components/chat'
 import { useRun } from '@/hooks/use-run'
 import { extractVariables } from '@/lib/utils/extract-variables'
 import { cn } from '@/lib/utils'
@@ -88,6 +88,8 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
     variables: variableValues,
     onConversationChange: handleConversationChange,
   })
+
+  const hasPendingAskUser = Boolean(pendingAskUserToolCallId)
 
   const handleSendMessage = async (text: string) => {
     if (!text.trim()) return
@@ -175,8 +177,6 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
             hideReasoning={Boolean(metadata.hide_reasoning)}
             conversationId={conversationId}
             className="flex-1 min-h-0 overflow-y-auto"
-            pendingAskUserToolCallId={pendingAskUserToolCallId ?? null}
-            onSubmitAskUser={submitAskUser}
             emptyState={
               <div className="flex-1 flex flex-col items-center justify-center px-4">
                 <div className="mb-8">
@@ -194,7 +194,15 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
             }
           />
           <div className="relative pb-4 shrink-0">
-            {hasVisibleVariables && (
+            {hasPendingAskUser && (
+              <PendingAskUserForm
+                messages={messages}
+                pendingToolCallId={pendingAskUserToolCallId}
+                disabled={Boolean(isStreaming)}
+                onSubmit={submitAskUser}
+              />
+            )}
+            {!hasPendingAskUser && hasVisibleVariables && (
               <div className="mx-auto max-w-3xl px-4">
                 <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
                   <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden w-[70%] mx-auto">

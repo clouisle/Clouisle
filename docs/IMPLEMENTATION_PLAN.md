@@ -7,6 +7,16 @@
   - [x] 3. Remove legacy question protocol
   - [x] 4. Build multi-question chat UI
   - [x] 5. Run regression verification and cleanup
+- **ask-user-composer-pagination** — Complete. Active `ask_user` interactions now render above Agent composers rather than in assistant messages, present one question per page, retain prior answers, and submit one final structured answer map. Verified: 121 focused isolated frontend tests, TypeScript, and scoped ESLint clean. See `docs/plan/ask-user-composer-pagination.md`
+  - [x] 1. Build paginated composer question interaction
+  - [x] 2. Remove message-node interaction rendering
+  - [x] 3. Wire every Agent chat composer
+  - [x] 4. Verify and clean up
+- **ask-user-custom-answers-and-skip** — In progress. Allow custom text alongside ask_user choices and permit users to explicitly skip every question while preserving a model-visible durable result. See `docs/plan/ask-user-custom-answers-and-skip.md`
+  - [ ] 1. Define custom-answer and explicit-skip contract
+  - [ ] 2. Extend durable answer submission
+  - [ ] 3. Add composer custom-answer and skip controls
+  - [ ] 4. Verify adapters and regressions
 - **agent-chat-ordered-reasoning** — Complete. Stream and history data retain occurrence order, while Agent messages restore one aggregated collapsible ChainOfThought at the top with reasoning, tasks, and reasoning-associated tool executions. See `docs/plan/agent-chat-ordered-reasoning.md`
   - [x] 1. Register approved feature plan
   - [x] 2. Make live/reconnect stream state occurrence-ordered

@@ -49,6 +49,7 @@ import { cn } from '@/lib/utils'
 import {
   ChatContainer,
   ChatInput,
+  PendingAskUserForm,
   VariableForm,
   useVariableForm,
   type ChatInputFile,
@@ -644,6 +645,16 @@ export default function PublicChatPage({
   const showHistory = !embedMode || embedCfg.show_history !== false
   const allowNew = !embedMode || embedCfg.allow_new !== false
 
+  const hasPendingAskUser = Boolean(pendingAskUserToolCallId)
+  const pendingAskUserPanel = (
+    <PendingAskUserForm
+      messages={messages}
+      pendingToolCallId={pendingAskUserToolCallId}
+      disabled={Boolean(isStreaming)}
+      onSubmit={submitAskUser}
+    />
+  )
+
   // Variable panel (collapsible form shown when the agent declares input
   // variables) and the composer itself. They are kept separate so the
   // composer can act as the vertical-center anchor of the welcome column;
@@ -732,7 +743,7 @@ export default function PublicChatPage({
 
   const inputArea = (
     <>
-      {variablePanel}
+      {hasPendingAskUser ? pendingAskUserPanel : variablePanel}
       {composer}
     </>
   )
@@ -1023,8 +1034,6 @@ export default function PublicChatPage({
               onRegenerate={embedMode ? undefined : regenerate}
               onEditMessage={embedMode ? undefined : editMessage}
               onSwitchVersion={embedMode ? undefined : switchVersion}
-              pendingAskUserToolCallId={pendingAskUserToolCallId}
-              onSubmitAskUser={submitAskUser}
               onSelectImageReference={agent.enable_attachments && !chatLoading ? ({ asset_ref, url }) => {
                 setSelectedImageRefs(current => current.some(item => item.asset_ref === asset_ref)
                   ? current

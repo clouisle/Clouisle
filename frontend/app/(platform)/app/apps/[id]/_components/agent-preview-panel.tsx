@@ -11,6 +11,7 @@ import { uploadApi } from '@/lib/api'
 import {
   ChatContainer,
   ChatInput,
+  PendingAskUserForm,
   VariableForm,
   useVariableForm,
   type ChatInputFile,
@@ -90,6 +91,8 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
     variables: variableValues,
     onError: () => setShowError(true),
   })
+
+  const hasPendingAskUser = Boolean(pendingAskUserToolCallId)
 
   // Handle submit - check if required variables are filled
   const handleSubmit = async (message: string, submittedFiles?: ChatInputFile[]) => {
@@ -260,8 +263,6 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
           className="h-full"
           onRegenerate={regenerate}
           onSwitchVersion={switchVersion}
-          pendingAskUserToolCallId={pendingAskUserToolCallId}
-          onSubmitAskUser={submitAskUser}
           emptyState={
             <div className="text-center text-muted-foreground py-8 px-4">
               <div className="flex justify-center mb-4">
@@ -292,7 +293,15 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
       {/* Input Area with Variables */}
       <div className="relative pb-4 shrink-0">
         {/* Variable Panel - Collapsible above input */}
-        {hasVisibleVariables && (
+        {hasPendingAskUser && (
+          <PendingAskUserForm
+            messages={messages}
+            pendingToolCallId={pendingAskUserToolCallId}
+            disabled={Boolean(isStreaming)}
+            onSubmit={submitAskUser}
+          />
+        )}
+        {!hasPendingAskUser && hasVisibleVariables && (
           <div className="px-4">
             <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
               <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden w-full mx-auto">

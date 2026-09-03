@@ -8,6 +8,7 @@ mock.module('@/lib/utils', () => ({
 }))
 mock.module('./chat-container', () => ({ ChatContainer: 'ChatContainer' }))
 mock.module('./chat-input', () => ({ ChatInput: 'ChatInput' }))
+mock.module('./ask-user-form', () => ({ PendingAskUserForm: 'PendingAskUserForm' }))
 
 const { Chat } = await import('./chat')
 
@@ -51,7 +52,7 @@ describe('Chat', () => {
     })
   })
 
-  test('forwards loading, streaming, and layout callbacks', () => {
+  test('forwards loading, streaming, and layout callbacks', async () => {
     const onInputChange = mock(() => undefined)
     const onSubmit = mock(() => undefined)
     const onStop = mock(() => undefined)
@@ -73,14 +74,21 @@ describe('Chat', () => {
       onSubmitAskUser,
     })
     const container = find(tree, 'ChatContainer')
+    const askUserForm = find(tree, 'PendingAskUserForm')
     const input = find(tree, 'ChatInput')
     const inputArea = ((tree as ElementNode).props?.children as ElementNode[])[1]
 
     expect(container.props).toMatchObject({
       className: 'message-list',
       isStreaming: true,
-      pendingAskUserToolCallId: 'ask-1',
-      onSubmitAskUser,
+    })
+    expect(container.props?.pendingAskUserToolCallId).toBeUndefined()
+    expect(container.props?.onSubmitAskUser).toBeUndefined()
+    expect(askUserForm.props).toMatchObject({
+      messages,
+      pendingToolCallId: 'ask-1',
+      disabled: true,
+      onSubmit: onSubmitAskUser,
     })
     expect(input.props).toMatchObject({
       value: 'Draft',
@@ -99,11 +107,11 @@ describe('Chat', () => {
     ;(input.props?.onChange as (value: string) => void)('Updated')
     ;(input.props?.onSubmit as (message: string) => void)('Send')
     ;(input.props?.onStop as () => void)()
-    ;(container.props?.onSubmitAskUser as (toolCallId: string, answers: Record<string, unknown>) => Promise<void>)('ask-1', { q: 'a' })
+    await (askUserForm.props?.onSubmit as (toolCallId: string, answer: { answers: Record<string, unknown>; skipped?: boolean }) => Promise<void>)('ask-1', { answers: {}, skipped: true })
 
     expect(onInputChange).toHaveBeenCalledWith('Updated')
     expect(onSubmit).toHaveBeenCalledWith('Send')
     expect(onStop).toHaveBeenCalledTimes(1)
-    expect(onSubmitAskUser).toHaveBeenCalledWith('ask-1', { q: 'a' })
+    expect(onSubmitAskUser).toHaveBeenCalledWith('ask-1', { answers: {}, skipped: true })
   })
 })

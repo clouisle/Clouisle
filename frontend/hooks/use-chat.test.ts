@@ -267,7 +267,7 @@ describe('useChat', () => {
     })
     expect(result.messages[1].parts).toContainEqual({ type: 'text', text: 'Hi there', state: 'done' })
   })
-  it('exposes the waiting ask_user interaction and resumes it with answers', async () => {
+  it('exposes the waiting ask_user interaction and resumes it with an explicit skip', async () => {
     const runEvent = (sequence: number, type: string, payload: Record<string, unknown>) => ({
       event: type,
       data: { run_id: 'run-1', sequence, timestamp: '2026-08-31T00:00:00Z', type, payload },
@@ -337,14 +337,70 @@ describe('useChat', () => {
       state: 'pending',
     })
 
-    await result.submitAskUser('call-ask', { deploy_to: 'cloud', region: 'cn' })
+    await result.submitAskUser('call-ask', { answers: {}, skipped: true })
 
     expect(postRunAnswer).toHaveBeenCalledWith('agent-1', 'run-1', {
       tool_call_id: 'call-ask',
-      answers: { deploy_to: 'cloud', region: 'cn' },
+      answers: {},
+      skipped: true,
     })
     expect(result.pendingAskUserToolCallId).toBeNull()
     void sending
+  })
+
+  it('restores a waiting ask_user interaction from the persisted run snapshot', async () => {
+    const storage = new Map<string, string>()
+    const originalWindow = globalThis.window
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        sessionStorage: {
+          getItem: (key: string) => storage.get(key) ?? null,
+          setItem: (key: string, value: string) => storage.set(key, value),
+          removeItem: (key: string) => storage.delete(key),
+        },
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+      },
+    })
+    try {
+      const hang = deferred<Response>()
+      const streamRun = mock(() => ({ stream: hang.promise, abort: mock() }))
+      const durableApi = {
+        ...agentsApi,
+        streamRun,
+        getRunStatus,
+      } as unknown as NonNullable<HookOptions['api']>
+      getRunStatus.mockResolvedValue({
+        id: 'run-1',
+        agent_id: 'agent-1',
+        conversation_id: 'conversation-1',
+        mode: 'send',
+        status: 'waiting',
+        pending_tool_call_id: 'call-ask',
+      })
+      storage.set(
+        'clouisle:agent-run:agent-1:conversation-1',
+        JSON.stringify({ runId: 'run-1', lastSequence: 4 }),
+      )
+      options = { agentId: 'agent-1', conversationId: 'conversation-1', api: durableApi }
+      renderHookHarness()
+      result.setConversationId('conversation-1')
+      await flush()
+
+      result.reconnect()
+      for (let i = 0; i < 5; i += 1) await flush()
+
+      expect(getRunStatus).toHaveBeenCalledWith('agent-1', 'run-1')
+      expect(streamRun).toHaveBeenCalledWith('agent-1', 'run-1', 4)
+      expect(result.runStatus).toBe('waiting')
+      expect(result.pendingAskUserToolCallId).toBe('call-ask')
+    } finally {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: originalWindow,
+      })
+    }
   })
 
   it('reconciles the optimistic user ID from durable start before message_start', async () => {

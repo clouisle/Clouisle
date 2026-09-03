@@ -6,7 +6,15 @@ export { Chat } from './chat';
 export { ChatContainer } from './chat-container';
 export { ChatInput, type ChatInputFile, type AttachmentConfig } from './chat-input';
 export { Message } from './message';
-export { AskUserForm, normalizeAskUserQuestions, type AskUserFormProps } from './ask-user-form';
+export {
+  AskUserForm,
+  PendingAskUserForm,
+  getPendingAskUserRequest,
+  normalizeAskUserQuestions,
+  type AskUserFormProps,
+  type PendingAskUserFormProps,
+  type PendingAskUserRequest,
+} from './ask-user-form';
 export { VariableForm, useVariableForm } from './variable-form';
 export { PauseRequestActions, type PauseRequestActionsProps } from './pause-request-actions';
 export { ImageLightbox, VideoLightbox, useLightbox } from './image-lightbox';

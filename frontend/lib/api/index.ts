@@ -130,6 +130,7 @@ export {
   type AgentRunEventOut,
   type AskUserQuestion,
   type AgentRunAnswerInput,
+  type AgentRunAnswerPayload,
 } from './agents'
 
 export {

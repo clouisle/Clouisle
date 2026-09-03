@@ -151,7 +151,6 @@ describe('ChatContainer issue #255 coverage', () => {
     const onRegenerate = mock()
     const onEditMessage = mock(async () => {})
     const onSwitchVersion = mock()
-    const onSubmitAskUser = mock(async () => {})
     const onOpenCodePreview = mock()
     const renderPart = mock()
     const messages = [message('user-1', 'user'), message('assistant-1')]
@@ -160,33 +159,31 @@ describe('ChatContainer issue #255 coverage', () => {
       onRegenerate,
       onEditMessage,
       onSwitchVersion,
-      pendingAskUserToolCallId: 'ask-1',
-      onSubmitAskUser,
       onOpenCodePreview,
       renderPart,
       hideToolCalls: true,
       isStreaming: true,
     }, true)
-    tree = render({ messages, onRegenerate, onEditMessage, onSwitchVersion, pendingAskUserToolCallId: 'ask-1', onSubmitAskUser, onOpenCodePreview, renderPart, hideToolCalls: true, isStreaming: true })
+    tree = render({ messages, onRegenerate, onEditMessage, onSwitchVersion, onOpenCodePreview, renderPart, hideToolCalls: true, isStreaming: true })
     const [user, assistant] = findAll(tree, 'message')
 
     expect(user.props).toMatchObject({ isStreaming: false, hideToolCalls: true, onRegenerate: undefined, onEditMessage: undefined })
     expect(assistant.props).toMatchObject({ isStreaming: true, onEditMessage: undefined })
     expect(assistant.props.chainOfThoughtOpen).toBeUndefined()
     expect(assistant.props.onChainOfThoughtOpenChange).toBeUndefined()
+    expect(assistant.props.pendingAskUserToolCallId).toBeUndefined()
+    expect(assistant.props.onSubmitAskUser).toBeUndefined()
 
-    const idleTree = render({ messages, onRegenerate, onEditMessage, onSwitchVersion, pendingAskUserToolCallId: 'ask-1', onSubmitAskUser, onOpenCodePreview, renderPart, hideToolCalls: true })
+    const idleTree = render({ messages, onRegenerate, onEditMessage, onSwitchVersion, onOpenCodePreview, renderPart, hideToolCalls: true })
     const idleUser = findAll(idleTree, 'message')[0]
     await (idleUser.props.onEditMessage as (content: string) => Promise<void>)('edited')
     ;(assistant.props.onRegenerate as () => void)()
     ;(assistant.props.onSwitchVersion as (index: number) => void)(2)
-    await (assistant.props.onSubmitAskUser as (toolCallId: string, answers: Record<string, unknown>) => Promise<void>)('ask-1', { q: 'a' })
     ;(assistant.props.onOpenCodePreview as (payload: unknown) => void)({ code: 'x' })
 
     expect(onEditMessage).toHaveBeenCalledWith('user-1', 'edited')
     expect(onRegenerate).toHaveBeenCalledWith('assistant-1')
     expect(onSwitchVersion).toHaveBeenCalledWith('assistant-1', 2)
-    expect(onSubmitAskUser).toHaveBeenCalledWith('ask-1', { q: 'a' })
     expect(onOpenCodePreview).toHaveBeenCalledWith({ code: 'x' })
   })
 
@@ -388,8 +385,7 @@ describe('ChatContainer issue #255 coverage', () => {
   test('memo comparison notices each delegated prop change', () => {
     const shared = {
       message: message('a'), isCurrentStreaming: false, renderPart: mock(), onRegenerate: mock(),
-      onEditMessage: mock(), onSwitchVersion: mock(), pendingAskUserToolCallId: null, onSubmitAskUser: mock(), onOpenCodePreview: mock(),
-      hideToolCalls: false,
+      onEditMessage: mock(), onSwitchVersion: mock(), onOpenCodePreview: mock(), hideToolCalls: false,
       onRequestScrollIntoView: mock(), setMessageElement: mock(),
     }
     expect(memoCompare?.(shared, shared)).toBe(true)

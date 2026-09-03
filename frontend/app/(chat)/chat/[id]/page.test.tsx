@@ -32,6 +32,8 @@ let chatState = {
   isStreaming: false,
   conversationId: null as string | null,
   runStatus: null as string | null,
+  pendingAskUserToolCallId: null as string | null,
+  submitAskUser: undefined as ((toolCallId: string, answer: { answers: Record<string, unknown>; skipped?: boolean }) => Promise<void>) | undefined,
 }
 let chatOptions: {
   onConversationChange?: () => void
@@ -40,6 +42,7 @@ let chatOptions: {
 let variableValues: Record<string, unknown> = {}
 let chatContainerProps: Record<string, unknown> = {}
 let chatInputProps: Record<string, unknown> = {}
+let pendingAskUserFormProps: Record<string, unknown> = {}
 let observerCallback: IntersectionObserverCallback | undefined
 let faviconHref: string | null = null
 const router = { push }
@@ -121,6 +124,10 @@ mock.module('@/components/chat', () => ({
     chatInputProps = props
     return <button data-chat-input onClick={() => (props.onSubmit as (message: string) => void)('typed message')}>input</button>
   },
+  PendingAskUserForm: (props: Record<string, unknown>) => {
+    pendingAskUserFormProps = props
+    return <div data-pending-ask-user-form />
+  },
   VariableForm: ({ onChange }: { onChange: (values: Record<string, unknown>) => void }) => <button data-variable-form onClick={() => onChange({ required: 'filled' })}>variables</button>,
   useVariableForm: () => ({ values: variableValues, setValues: (values: Record<string, unknown>) => { variableValues = values }, fieldErrors: {}, validate: validateVariables }),
 }))
@@ -168,10 +175,14 @@ async function click(text: string, index = 0) {
 beforeEach(() => {
   token = 'token'
   query = new URLSearchParams()
-  chatState = { messages: [], isLoading: false, isStreaming: false, conversationId: null, runStatus: null }
+  chatState = {
+    messages: [], isLoading: false, isStreaming: false, conversationId: null, runStatus: null,
+    pendingAskUserToolCallId: null, submitAskUser: undefined,
+  }
   variableValues = {}
   chatContainerProps = {}
   chatInputProps = {}
+  pendingAskUserFormProps = {}
   observerCallback = undefined
   faviconHref = null
   for (const fn of [push, getPublicAgent, getConversations, getConversation, deleteConversation, updateConversation, uploadFileWithProgress, convertBackendMessages, sendMessage, regenerate, editMessage, switchVersion, stop, resetChat, setMessages, setConversationId, validateVariables, toastError, disconnect, observe, historyPush, historyReplace]) fn.mockReset()
@@ -302,15 +313,34 @@ describe('PublicChatPage', () => {
     expect(output()).not.toContain('runStatusWaiting')
   })
 
-  test('forwards the pending ask_user interaction and answer submission', async () => {
-    chatState.messages = [{ id: 'm1', role: 'assistant', parts: [] }]
+  test('places pending ask_user above the composer and forwards final answers', async () => {
+    const submitAskUser = mock(async () => undefined)
+    chatState.messages = [{
+      id: 'm1',
+      role: 'assistant',
+      parts: [{
+        type: 'tool-call',
+        toolCallId: 'call-ask',
+        toolName: 'ask_user',
+        input: { questions: [{ id: 'target', question: 'Where?', options: ['cloud'] }] },
+        state: 'pending',
+      }],
+    }]
     chatState.pendingAskUserToolCallId = 'call-ask'
-    chatState.submitAskUser = mock(async () => undefined)
+    chatState.submitAskUser = submitAskUser
     render()
     await flush()
 
-    expect(chatContainerProps.pendingAskUserToolCallId).toBe('call-ask')
-    expect(chatContainerProps.onSubmitAskUser).toBe(chatState.submitAskUser)
+    expect(chatContainerProps.pendingAskUserToolCallId).toBeUndefined()
+    expect(chatContainerProps.onSubmitAskUser).toBeUndefined()
+    expect(pendingAskUserFormProps).toMatchObject({
+      messages: chatState.messages,
+      pendingToolCallId: 'call-ask',
+      onSubmit: submitAskUser,
+    })
+
+    await (pendingAskUserFormProps.onSubmit as (toolCallId: string, answer: { answers: Record<string, unknown>; skipped?: boolean }) => Promise<void>)('call-ask', { answers: { target: 'cloud' } })
+    expect(submitAskUser).toHaveBeenCalledWith('call-ask', { answers: { target: 'cloud' } })
   })
 
 
