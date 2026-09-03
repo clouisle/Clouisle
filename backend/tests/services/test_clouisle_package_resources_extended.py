@@ -77,8 +77,8 @@ def agent(**overrides):
         "hide_reasoning": False,
         "tools_config": [],
         "enable_attachments": False,
+        "enable_user_input_request": True,
         "attachment_config": {},
-        "enable_user_input_request": False,
         "enable_memory": False,
         "memory_config": {},
         "context_compression_config": {},
@@ -179,6 +179,7 @@ async def test_agent_export_adapts_model_tool_and_kb_dependencies(monkeypatch):
         "knowledge_base",
     }
     assert payload["knowledge_base_configs"][0]["score_threshold"] == 0.2
+    assert payload["enable_user_input_request"] is True
 
 
 @pytest.mark.asyncio

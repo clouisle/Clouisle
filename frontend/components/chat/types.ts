@@ -155,17 +155,6 @@ export interface TaskPart {
 }
 
 /**
- * User input request part - for interactive option selection
- */
-export interface UserInputRequestPart {
-  type: 'user-input-request'
-  question: string
-  options: string[]
-  state?: 'pending' | 'answered'
-  selectedOption?: string
-}
-
-/**
  * Output truncated warning part
  */
 export interface TruncatedPart {
@@ -203,7 +192,6 @@ export type MessagePart =
   | MediaResultPart
   | StepStartPart
   | TaskPart
-  | UserInputRequestPart
   | TruncatedPart
   | StoppedPart
   | IterationCapReachedPart
@@ -326,10 +314,6 @@ export function isStepStartPart(part: MessagePart): part is StepStartPart {
 
 export function isTaskPart(part: MessagePart): part is TaskPart {
   return part.type === 'task'
-}
-
-export function isUserInputRequestPart(part: MessagePart): part is UserInputRequestPart {
-  return part.type === 'user-input-request'
 }
 
 export function isTruncatedPart(part: MessagePart): part is TruncatedPart {

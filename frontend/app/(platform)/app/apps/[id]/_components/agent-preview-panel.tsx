@@ -77,7 +77,10 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
     isLoading,
     isStreaming,
     conversationId,
+    runStatus,
+    pendingAskUserToolCallId,
     sendMessage,
+    submitAskUser,
     regenerate,
     switchVersion,
     stop,
@@ -257,9 +260,8 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
           className="h-full"
           onRegenerate={regenerate}
           onSwitchVersion={switchVersion}
-          onSelectOption={(option) => {
-            void handleSubmit(option, [])
-          }}
+          pendingAskUserToolCallId={pendingAskUserToolCallId}
+          onSubmitAskUser={submitAskUser}
           emptyState={
             <div className="text-center text-muted-foreground py-8 px-4">
               <div className="flex justify-center mb-4">
@@ -334,7 +336,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
           onSubmit={handleSubmit}
           onStop={stop}
           placeholder={needsVariableInput && !variablesValid ? tVars('fillRequired') : t('placeholder')}
-          disabled={isLoading && !isStreaming}
+          disabled={(isLoading && !isStreaming) || runStatus === 'waiting'}
           isLoading={isLoading}
           isStreaming={isStreaming}
           allowAttachments={agent.enable_attachments}

@@ -2,11 +2,11 @@
 
 ## Background & Goals
 
-- Problem to solve: Agent conversations embedded into external websites via script still use the older embed streaming hook path. The shared chat renderer has been optimized, but embedded streaming still commits React state for every text/reasoning SSE chunk and repeatedly scans full streamed text for user-input XML.
+- Problem to solve: Agent conversations embedded into external websites via script still use the older embed streaming hook path. The shared chat renderer has been optimized, but embedded streaming still commits React state for every text/reasoning SSE chunk and repeatedly scans full streamed text for interactive question handling.
 - Success criteria:
   - Embedded chat streams long answers with fewer React renders.
   - Existing embed iframe/script behavior stays unchanged.
-  - Reasoning, RAG/source tasks, tool calls/results, user-input request cards, stop, and errors still render correctly.
+  - Reasoning, RAG/source tasks, tool calls/results, durable `ask_user` forms, stop, and errors still render correctly.
   - No new dependencies, new renderer, browser automation, or service startup are introduced.
 
 ## High-Level Design
@@ -18,7 +18,7 @@
   - mutate streaming refs on SSE events
   - schedule text/reasoning UI commits with `requestAnimationFrame` or `setTimeout(..., 16)`
   - flush structural/final/error events immediately
-- Keep XML parsing behavior but gate the expensive full-text scan until `<user_input_request>` is likely present.
+- Keep ordinary text parsing independent from structured tool events; avoid rescanning the full message on every chunk.
 
 ## Implementation Plan
 
@@ -42,8 +42,7 @@
 
 - **Files modified**: `frontend/hooks/use-embed-chat.ts`
 - **Specific logic**:
-  - Add local `userInputRequestCandidateSeen` and `userInputRequestScanTail` in `sendMessage()`.
-  - Only call `parseUserInputRequestSegments()` after detecting the start tag.
+  - Keep structured tool events on their own path and avoid full-text rescans for ordinary deltas.
   - Reset scan state after parsing completes.
 - **Validation**: Confirm ordinary text deltas do not join/scan the full message on every chunk.
 
@@ -69,7 +68,7 @@
 
 - Happy path tests:
   - Embedded chat can send and stream a long text response.
-  - Reasoning, RAG/source, tool call/result, and user-input request parts still appear in order.
+  - Reasoning, RAG/source, tool call/result, and `ask_user` form parts still appear in order.
   - Existing iframe events for ready, close, conversation changes, and errors remain untouched.
 - Error path tests:
   - Stop/abort does not leave scheduled updates alive.

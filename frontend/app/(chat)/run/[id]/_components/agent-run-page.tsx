@@ -81,7 +81,7 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
     router.replace(`/run/${id}?${nextSearchParams.toString()}`)
   }, [id, router, searchParams])
 
-  const { messages, isStreaming, isLoading: runLoading, sendMessage, stop, conversationId, runId, runStatus, reconnect } = useRun({
+  const { messages, isStreaming, isLoading: runLoading, sendMessage, stop, conversationId, runId, runStatus, pendingAskUserToolCallId, submitAskUser, reconnect } = useRun({
     id,
     type: 'agent',
     conversationId: searchParams.get('conversation') || undefined,
@@ -127,15 +127,17 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
           ? t('status.stopping')
           : runStatus === 'completing'
             ? t('status.completing')
-            : runStatus === 'completed'
-              ? t('status.success')
-              : runStatus === 'stopped'
-                ? t('status.cancelled')
-                : runStatus === 'failed'
-                  ? t('status.failed')
-                  : t('status.interrupted')
+            : runStatus === 'waiting'
+              ? t('status.waiting')
+              : runStatus === 'completed'
+                ? t('status.success')
+                : runStatus === 'stopped'
+                  ? t('status.cancelled')
+                  : runStatus === 'failed'
+                    ? t('status.failed')
+                    : t('status.interrupted')
     : null
-  const runActive = runStatus === 'queued' || runStatus === 'running' || runStatus === 'stopping' || runStatus === 'completing'
+  const runActive = runStatus === 'queued' || runStatus === 'running' || runStatus === 'stopping' || runStatus === 'completing' || runStatus === 'waiting'
   const showReconnect = Boolean(runId && runActive)
 
   return (
@@ -173,7 +175,8 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
             hideReasoning={Boolean(metadata.hide_reasoning)}
             conversationId={conversationId}
             className="flex-1 min-h-0 overflow-y-auto"
-            onSelectOption={(option) => void handleSendMessage(option)}
+            pendingAskUserToolCallId={pendingAskUserToolCallId ?? null}
+            onSubmitAskUser={submitAskUser}
             emptyState={
               <div className="flex-1 flex flex-col items-center justify-center px-4">
                 <div className="mb-8">
@@ -204,7 +207,7 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
                 </Collapsible>
               </div>
             )}
-            <ChatInput value={input} onChange={setInput} onSubmit={handleSendMessage} onStop={stop} placeholder={needsVariableInput && !variablesValid ? tVars('fillRequired') : t('typePlaceholder')} disabled={false} isLoading={runLoading} isStreaming={isStreaming} />
+            <ChatInput value={input} onChange={setInput} onSubmit={handleSendMessage} onStop={stop} placeholder={needsVariableInput && !variablesValid ? tVars('fillRequired') : t('typePlaceholder')} disabled={runStatus === 'waiting'} isLoading={runLoading} isStreaming={isStreaming} />
             {metadata.powered_by_text && <p className="text-[11px] text-center text-muted-foreground mt-2">{metadata.powered_by_text}</p>}
           </div>
         </div>

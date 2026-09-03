@@ -171,7 +171,7 @@ export type ChatMessages = {
       linkSafetyCancel: string
       linkSafetyContinue: string
       runStatusQueued: string
-      runStatusRunning: string
+      runStatusWaiting: string
       runStatusStopping: string
       runStatusCompleting: string
       runStatusCompleted: string
@@ -184,10 +184,12 @@ export type ChatMessages = {
       committedSteering: string
       committedFollowUp: string
       attachmentsDisabledDuringRun: string
-    }
-    userInputRequest: {
-      pending: string
-      answered: string
+      askUser: {
+        title: string
+        answerRequired: string
+        submit: string
+        submitting: string
+      }
     }
     lightbox: {
       zoomOut: string

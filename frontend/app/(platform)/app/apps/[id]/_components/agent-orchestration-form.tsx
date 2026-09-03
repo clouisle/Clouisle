@@ -10,7 +10,6 @@ import {
   Database,
   Wrench,
   FileUp,
-  MessageSquare,
   Brain,
   ImageIcon,
   Clapperboard,
@@ -197,7 +196,9 @@ export function AgentOrchestrationForm({
     agent.tools_config || []
   )
   const [enableAttachments, setEnableAttachments] = React.useState(agent.enable_attachments || false)
-  const [enableUserInputRequest, setEnableUserInputRequest] = React.useState(agent.enable_user_input_request || false)
+  const [enableUserInputRequest, setEnableUserInputRequest] = React.useState(
+    agent.enable_user_input_request || false
+  )
   const [enableMemory, setEnableMemory] = React.useState(agent.enable_memory || false)
   const [memoryConfig, setMemoryConfig] = React.useState(
     agent.memory_config || {
@@ -277,7 +278,7 @@ export function AgentOrchestrationForm({
   const [kbCollapsed, setKbCollapsed] = React.useState(true)
   const [toolsCollapsed, setToolsCollapsed] = React.useState(true)
   const [attachmentsCollapsed, setAttachmentsCollapsed] = React.useState(true)
-  const [userInputRequestCollapsed, setUserInputRequestCollapsed] = React.useState(true)
+  const [userInputCollapsed, setUserInputCollapsed] = React.useState(true)
   const [memoryCollapsed, setMemoryCollapsed] = React.useState(true)
   const [imageGenerationCollapsed, setImageGenerationCollapsed] = React.useState(true)
   const [videoGenerationCollapsed, setVideoGenerationCollapsed] = React.useState(true)
@@ -380,7 +381,6 @@ export function AgentOrchestrationForm({
     capabilities: {
       enable_attachments: enableAttachments,
       attachment_config: enableAttachments ? attachmentConfig : null,
-      enable_user_input_request: enableUserInputRequest,
       enable_memory: enableMemory,
       memory_config: enableMemory ? memoryConfig : null,
       enable_image_generation: enableImageGeneration,
@@ -388,7 +388,7 @@ export function AgentOrchestrationForm({
       enable_video_generation: enableVideoGeneration,
       video_generation_config: enableVideoGeneration ? videoGenerationConfig : null,
     },
-  }), [agent.name, agent.description, toolsConfig, availableTools, knowledgeBases, knowledgeBaseConfigs, variables, ragMode, enableAttachments, attachmentConfig, enableUserInputRequest, enableMemory, memoryConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig])
+  }), [agent.name, agent.description, toolsConfig, availableTools, knowledgeBases, knowledgeBaseConfigs, variables, ragMode, enableAttachments, attachmentConfig, enableMemory, memoryConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig])
 
   return (
     <div className="space-y-3">
@@ -696,28 +696,29 @@ export function AgentOrchestrationForm({
         </div>
       </ConfigCard>
 
-      {/* User Input Request Section */}
+      {/* User Input Section */}
       <ConfigCard
         data-testid="agent-user-input-section"
-        icon={MessageSquare}
-        iconColor="text-purple-500"
-        title={t('userInputRequest.title')}
-        tooltip={t('userInputRequest.tooltip')}
+        icon={HelpCircle}
+        iconColor="text-violet-500"
+        title={t('userInput.title')}
+        tooltip={t('userInput.tooltip')}
         action={
           <Switch
             checked={enableUserInputRequest}
             onCheckedChange={setEnableUserInputRequest}
           />
         }
-        collapsed={userInputRequestCollapsed}
-        onToggle={() => setUserInputRequestCollapsed(!userInputRequestCollapsed)}
+        collapsed={userInputCollapsed}
+        onToggle={() => setUserInputCollapsed(!userInputCollapsed)}
       >
-        <div className="space-y-4 py-2">
+        <div className="py-2">
           <p className="text-xs text-muted-foreground">
-            {t('userInputRequest.description')}
+            {t('userInput.description')}
           </p>
         </div>
       </ConfigCard>
+
 
       {/* Memory Section */}
       <ConfigCard

@@ -87,13 +87,6 @@ const appConfigSteps: OnboardingStep[] = [
     overlayClickAction: false,
   },
   {
-    target: '[data-testid="agent-user-input-section"]',
-    content: 'onboarding.step14c.description',
-    title: 'onboarding.step14c.title',
-    placement: 'left',
-    overlayClickAction: false,
-  },
-  {
     target: '[data-testid="agent-memory-section"]',
     content: 'onboarding.step14d.description',
     title: 'onboarding.step14d.title',

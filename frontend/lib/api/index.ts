@@ -112,7 +112,6 @@ export {
   type SSEToolCall,
   type SSEToolResult,
   type SSEMediaResult,
-  type SSEUserInputRequest,
   type AgentVideoGenerationStatus,
   type AdminConversationListItem,
   type AdminConversationWithMessages,
@@ -129,6 +128,8 @@ export {
   type AgentRunStatusOut,
   type AgentRunStartOut,
   type AgentRunEventOut,
+  type AskUserQuestion,
+  type AgentRunAnswerInput,
 } from './agents'
 
 export {

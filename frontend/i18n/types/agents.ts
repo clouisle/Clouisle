@@ -42,8 +42,6 @@ export type AgentsMessages = {
       suggestedQuestionsPlaceholder: string
       promptDesc: string
       variableHint: string
-      enableUserInputRequest: string
-      enableUserInputRequestDesc: string
       documents: string
       kbComingSoon: string
       tabs: {
@@ -161,8 +159,6 @@ export type AgentsMessages = {
         variableNotFound: string
         createVariable: string
         undefinedVariablesHint: string
-        enableUserInputRequest: string
-        enableUserInputRequestDesc: string
         systemVars: {
           query: string
           queryDesc: string
@@ -302,11 +298,6 @@ export type AgentsMessages = {
         maxContentLengthHint: string
         characters: string
         contextHint: string
-      }
-      userInputRequest: {
-        title: string
-        tooltip: string
-        description: string
       }
       memory: {
         title: string

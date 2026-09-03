@@ -178,7 +178,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Entity detail sheet with relationship navigation
 
 #### 🎯 Agent Features
-- Agent user input request feature with XML-based structured input
+- Agent interactive question tool with structured multi-question input
 - Multiple choice options support in conversations
 - Dynamic question generation during chat flow
 - Memory configuration in agent orchestration form

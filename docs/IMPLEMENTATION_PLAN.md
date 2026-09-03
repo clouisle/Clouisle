@@ -1,6 +1,12 @@
 # Implementation Plan
 
 ## Active
+- **yun-146-agent-question-tool** — Complete. Replaced text-markup single-question prompting with the durable model-callable `ask_user` tool, AgentRun waiting/resume, structured multi-question chat forms, and complete legacy protocol removal. See `docs/plan/yun-146-agent-question-tool.md`
+  - [x] 1. Implement ask_user tool contract
+  - [x] 2. Add durable waiting and answer resumption
+  - [x] 3. Remove legacy question protocol
+  - [x] 4. Build multi-question chat UI
+  - [x] 5. Run regression verification and cleanup
 - **agent-chat-ordered-reasoning** — Complete. Stream and history data retain occurrence order, while Agent messages restore one aggregated collapsible ChainOfThought at the top with reasoning, tasks, and reasoning-associated tool executions. See `docs/plan/agent-chat-ordered-reasoning.md`
   - [x] 1. Register approved feature plan
   - [x] 2. Make live/reconnect stream state occurrence-ordered
@@ -563,6 +569,6 @@
 
 - **agent-context-compression** — Complete (superseded by `agent-simple-context-summary`). The original shared compression pipeline and SSE integration were replaced by the 90% preflight summary flow.
 
-- **agent-chat-parity** — Aligned non-streaming agent chat request semantics with the streaming path for file parsing, vision inputs, history overrides, user-input-request prompting, and tool metadata/timeouts.
+- **agent-chat-parity** — Aligned non-streaming agent chat request semantics with the streaming path for file parsing, vision inputs, history overrides, and tool metadata/timeouts.
 
 - **backend-babel-i18n-migration** — Introduced a Babel-backed backend i18n runtime with compatibility fallback so existing `t()`, `msg_key`, `BusinessError`, and `ResponseCode` flows stayed compatible during migration.

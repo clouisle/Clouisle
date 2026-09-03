@@ -22,7 +22,13 @@ import {
   type SSEToolResult,
   type SSEMediaResult,
 } from '@/lib/api'
-import type { AgentRunEventOut, AgentRunStartOut, AgentRunStatus, AgentRunStatusOut } from '@/lib/api/agents'
+import type {
+  AgentRunAnswerInput,
+  AgentRunEventOut,
+  AgentRunStartOut,
+  AgentRunStatus,
+  AgentRunStatusOut,
+} from '@/lib/api/agents'
 import type {
   ChatMessage,
   MessagePart,
@@ -34,7 +40,6 @@ import type {
   ToolResultPart,
   McpToolCallPart,
   McpToolResultPart,
-  UserInputRequestPart,
   MediaResultPart,
 } from '@/components/chat'
 import { getErrorMessage as getApiErrorMessage } from '@/lib/api/client'
@@ -93,6 +98,7 @@ export interface ChatStreamApi {
     runId: string,
     body: { delivery: 'steer' | 'follow_up' | 'auto'; content?: string; request_id?: string }
   ): Promise<AgentRunStatusOut>
+  postRunAnswer?(agentId: string, runId: string, body: AgentRunAnswerInput): Promise<AgentRunStatusOut>
   stopRun?(agentId: string, runId: string): Promise<AgentRunStatusOut>
 }
 
@@ -118,6 +124,7 @@ const defaultChatApi: ChatStreamApi = {
   getRunStatus: (agentId, runId) => publicAgentsApi.getRunStatus(agentId, runId),
   getRunEvents: (agentId, runId, afterSequence) => publicAgentsApi.getRunEvents(agentId, runId, afterSequence),
   postRunInput: (agentId, runId, body) => publicAgentsApi.postRunInput(agentId, runId, body),
+  postRunAnswer: (agentId, runId, body) => publicAgentsApi.postRunAnswer(agentId, runId, body),
   stopRun: (agentId, runId) => publicAgentsApi.stopRun(agentId, runId),
 }
 
@@ -138,8 +145,12 @@ export interface UseChatReturn {
   runId: string | null
   /** Latest server-authoritative run status. */
   runStatus: AgentRunStatus | null
+  /** Tool call id of the ask_user interaction the server is waiting on. */
+  pendingAskUserToolCallId: string | null
   /** Send a message with optional images (vision) and/or file URLs (file upload) */
   sendMessage: (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[]) => Promise<void>
+  /** Submit one structured answer set for the waiting ask_user interaction. */
+  submitAskUser: (toolCallId: string, answers: Record<string, unknown>) => Promise<void>
   /** Regenerate (retry) a message by ID */
   regenerate: (messageId: string) => Promise<void>
   /** Edit a user message and regenerate the downstream response */
@@ -183,6 +194,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       getRunStatus: api.getRunStatus ?? (useDefaultRunControls ? publicAgentsApi.getRunStatus : undefined),
       getRunEvents: api.getRunEvents ?? (useDefaultRunControls ? publicAgentsApi.getRunEvents : undefined),
       postRunInput: api.postRunInput ?? (useDefaultRunControls ? publicAgentsApi.postRunInput : undefined),
+      postRunAnswer: api.postRunAnswer ?? (useDefaultRunControls ? publicAgentsApi.postRunAnswer : undefined),
       stopRun: api.stopRun ?? (useDefaultRunControls ? publicAgentsApi.stopRun : undefined),
     }
   }, [api])
@@ -195,6 +207,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   const [conversationId, setConversationIdState] = useState<string | null>(initialConversationId ?? null)
   const [runId, setRunId] = useState<string | null>(null)
   const [runStatus, setRunStatus] = useState<AgentRunStatus | null>(null)
+  const [pendingAskUserToolCallId, setPendingAskUserToolCallIdState] = useState<string | null>(null)
 
   const messagesRef = useRef(messages)
   messagesRef.current = messages
@@ -202,6 +215,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   const conversationIdRef = useRef<string | null>(conversationId)
   const runIdRef = useRef<string | null>(null)
   const runStatusRef = useRef<AgentRunStatus | null>(null)
+  const pendingAskUserToolCallIdRef = useRef<string | null>(null)
   const lastSequenceRef = useRef(0)
   const appliedSequenceKeysRef = useRef(new Set<string>())
   const subscriptionAbortRef = useRef<(() => void) | null>(null)
@@ -235,6 +249,11 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   const setCurrentRunStatus = useCallback((next: AgentRunStatus | null) => {
     runStatusRef.current = next
     setRunStatus(next)
+  }, [])
+
+  const setPendingAskUserToolCallId = useCallback((next: string | null) => {
+    pendingAskUserToolCallIdRef.current = next
+    setPendingAskUserToolCallIdState(next)
   }, [])
 
   const waitForRunEnd = useCallback((targetRunId: string) => {
@@ -650,7 +669,26 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       const nextStatus = data.status as AgentRunStatus | undefined
       if (nextStatus) {
         setCurrentRunStatus(nextStatus)
-        if (isActiveRunStatus(nextStatus)) setCurrentStatus('streaming')
+        if (isActiveRunStatus(nextStatus)) {
+          setCurrentStatus('streaming')
+        } else if (nextStatus === 'waiting') {
+          setCurrentStatus('idle')
+        }
+      }
+      if (nextStatus === 'waiting') {
+        const pendingId = typeof data.pending_tool_call_id === 'string'
+          ? data.pending_tool_call_id
+          : null
+        if (pendingId) {
+          setPendingAskUserToolCallId(pendingId)
+          const targetSession = session ?? activeSessionRef.current
+          if (targetSession && markSegmentAskUserPending(targetSession.state, pendingId)) {
+            syncStreamingState(targetSession)
+            renderSession(targetSession, true)
+          }
+        }
+      } else {
+        setPendingAskUserToolCallId(null)
       }
       storeRunSnapshot()
       return
@@ -777,6 +815,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         clearStoredRunSnapshot()
         sessionsByRunRef.current.delete(terminalRunId)
       }
+      setPendingAskUserToolCallId(null)
       setCurrentStatus('idle')
       if (!envelope || envelope.run_id === runIdRef.current) {
         runIdRef.current = null
@@ -814,6 +853,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     setConversationId,
     setCurrentRunStatus,
     setCurrentStatus,
+    setPendingAskUserToolCallId,
     storeRunSnapshot,
     syncStreamingState,
     trackRun,
@@ -828,7 +868,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     let timer: ReturnType<typeof setTimeout> | null = null
     let streamAbort: (() => void) | null = null
     const scheduleRetry = () => {
-      if (cancelled || runIdRef.current !== targetRunId || !isActiveRunStatus(runStatusRef.current)) return
+      if (cancelled || runIdRef.current !== targetRunId || !isReconnectableRunStatus(runStatusRef.current)) return
       timer = globalThis.setTimeout(() => {
         timer = null
         startSubscription(targetRunId)
@@ -877,7 +917,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       } catch {
         // Keep the durable run alive. The next focus or polling turn retries the replay endpoint.
       }
-      if (cancelled || runIdRef.current !== targetRunId || !isActiveRunStatus(runStatusRef.current)) return
+      if (cancelled || runIdRef.current !== targetRunId || !isReconnectableRunStatus(runStatusRef.current)) return
       timer = globalThis.setTimeout(() => { void poll() }, 1000)
     }
 
@@ -899,21 +939,28 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     try {
       const current = await runApi.getRunStatus(agentId, stored.runId)
       setCurrentRunStatus(current.status)
-      if (!isActiveRunStatus(current.status)) {
+      if (!isReconnectableRunStatus(current.status)) {
         clearStoredRunSnapshot(targetConversationId)
         if (runIdRef.current === stored.runId) {
           runIdRef.current = null
           setRunId(null)
         }
+        setPendingAskUserToolCallId(null)
         setCurrentStatus('idle')
         return
       }
-      setCurrentStatus('streaming')
+      if (current.status === 'waiting') {
+        setPendingAskUserToolCallId(current.pending_tool_call_id ?? null)
+        setCurrentStatus('idle')
+      } else {
+        setPendingAskUserToolCallId(null)
+        setCurrentStatus('streaming')
+      }
       startSubscription(stored.runId)
     } catch {
       // A transient status failure must not stop a server-owned run.
     }
-  }, [agentId, clearStoredRunSnapshot, runApi, setCurrentRunStatus, setCurrentStatus, startSubscription, trackRun])
+  }, [agentId, clearStoredRunSnapshot, runApi, setCurrentRunStatus, setCurrentStatus, setPendingAskUserToolCallId, startSubscription, trackRun])
 
   const reconnect = useCallback(() => {
     void reconnectToRun()
@@ -1050,7 +1097,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         applyIncomingEvent(event, session)
       }
       if (connectionEpochRef.current !== epoch) return
-      if (session.runId && isActiveRunStatus(runStatusRef.current)) {
+      if (session.runId && isReconnectableRunStatus(runStatusRef.current)) {
+        if (runStatusRef.current === 'waiting') setCurrentStatus('idle')
         startSubscription(session.runId)
         return
       }
@@ -1061,8 +1109,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       resetStreamingState()
     } catch (reason) {
       if (connectionEpochRef.current !== epoch || (reason instanceof Error && reason.name === 'AbortError')) return
-      if (session.runId && runIdRef.current === session.runId && !terminalRunsRef.current.has(session.runId)) {
-        setCurrentStatus('streaming')
+      if (session.runId && runIdRef.current === session.runId && !terminalRunsRef.current.has(session.runId) && isReconnectableRunStatus(runStatusRef.current)) {
+        setCurrentStatus(isActiveRunStatus(runStatusRef.current) ? 'streaming' : 'idle')
         startSubscription(session.runId)
         return
       }
@@ -1094,6 +1142,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   const sendMessage = useCallback(async (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[]) => {
     const content = message.trim()
     if (!content && !images?.length && !fileUrls?.length) return
+    if (runStatusRef.current === 'waiting') return
     if (statusRef.current === 'loading' || statusRef.current === 'streaming') {
       if (images?.length || fileUrls?.length) return
       await submitRunInput(content)
@@ -1106,6 +1155,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     appliedSequenceKeysRef.current.clear()
     setRunId(null)
     setCurrentRunStatus(null)
+    setPendingAskUserToolCallId(null)
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -1175,7 +1225,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     } else {
       await consumeStream(session, () => api.chatStream(agentId, request))
     }
-  }, [agentId, api, consumeStream, onConversationChange, reconcileOptimisticUserMessage, setConversationId, setCurrentRunStatus, setCurrentStatus, submitRunInput, syncStreamingState, trackRun, variables])
+  }, [agentId, api, consumeStream, onConversationChange, reconcileOptimisticUserMessage, setConversationId, setCurrentRunStatus, setCurrentStatus, setPendingAskUserToolCallId, submitRunInput, syncStreamingState, trackRun, variables])
 
   const stop = useCallback(async () => {
     let activeRunId = runIdRef.current ?? activeSessionRef.current?.runId ?? null
@@ -1204,7 +1254,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     }
 
     if (activeRunId && runApi.stopRun && (
-      isActiveRunStatus(runStatusRef.current) || statusRef.current === 'loading' || statusRef.current === 'streaming'
+      isReconnectableRunStatus(runStatusRef.current) || statusRef.current === 'loading' || statusRef.current === 'streaming'
     )) {
       setCurrentRunStatus('stopping')
       const terminal = waitForRunEnd(activeRunId)
@@ -1251,12 +1301,13 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     pendingRunInputsRef.current = []
     setRunId(null)
     setCurrentRunStatus(null)
+    setPendingAskUserToolCallId(null)
     resetStreamingState()
     setMessages(initialMessages)
     setConversationId(null)
     setError(null)
     setCurrentStatus('idle')
-  }, [disconnectLocalSubscription, initialMessages, resetStreamingState, setConversationId, setCurrentRunStatus, setCurrentStatus])
+  }, [disconnectLocalSubscription, initialMessages, resetStreamingState, setConversationId, setCurrentRunStatus, setCurrentStatus, setPendingAskUserToolCallId])
 
   const switchVersion = useCallback(async (messageId: string, versionIndex: number) => {
     if (statusRef.current !== 'idle') return
@@ -1370,6 +1421,37 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     await consumeStream(session, () => api.regenerateStream(agentId, messageId, variables))
   }, [agentId, api, consumeStream, sendMessage, setCurrentStatus, variables])
 
+  const submitAskUser = useCallback(async (toolCallId: string, answers: Record<string, unknown>) => {
+    const activeRunId = runIdRef.current ?? activeSessionRef.current?.runId ?? null
+    if (!activeRunId) {
+      throw new Error('No active run to answer')
+    }
+    if (pendingAskUserToolCallIdRef.current !== toolCallId) {
+      throw new Error('This question is no longer awaiting an answer')
+    }
+    if (!runApi.postRunAnswer) {
+      throw new Error('Answer submission is not available')
+    }
+    try {
+      const result = await runApi.postRunAnswer(agentId, activeRunId, {
+        tool_call_id: toolCallId,
+        answers,
+      })
+      if (runIdRef.current === activeRunId && result?.status) {
+        setCurrentRunStatus(result.status)
+      }
+      setPendingAskUserToolCallId(null)
+      // Reconnect so the resumed worker's events (tool result, next turn)
+      // reach this subscriber; buffered events replay by sequence.
+      startSubscription(activeRunId)
+    } catch (reason) {
+      const chatError: ChatError = { message: reason instanceof Error ? reason.message : '' }
+      setError(chatError)
+      onError?.(chatError)
+      throw reason
+    }
+  }, [agentId, onError, runApi, setCurrentRunStatus, setPendingAskUserToolCallId, startSubscription])
+
   return {
     messages,
     status,
@@ -1379,7 +1461,9 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     isStreaming,
     runId,
     runStatus,
+    pendingAskUserToolCallId,
     sendMessage,
+    submitAskUser,
     regenerate,
     editMessage,
     switchVersion,
@@ -1413,7 +1497,7 @@ type StreamToolResultPart = ToolResultPart | McpToolResultPart
  * fixed prelude to the rest of the thinking timeline.
  */
 interface ContentSegment {
-  type: 'text' | 'tool' | 'reasoning' | 'task' | 'user-input-request' | 'media-result' | 'truncated' | 'iteration-cap-reached'
+  type: 'text' | 'tool' | 'reasoning' | 'task' | 'media-result' | 'truncated' | 'iteration-cap-reached'
   // For text type
   text?: string
   // For tool type
@@ -1427,8 +1511,6 @@ interface ContentSegment {
   reasoningDuration?: number
   // For task type
   task?: TaskPart
-  // For user-input-request type
-  userInputRequest?: UserInputRequestPart
   // For media-result type
   mediaResult?: MediaResultPart
 }
@@ -1539,6 +1621,11 @@ function getEventMessageId(event: NormalizedStreamEvent): string | null {
 
 function isActiveRunStatus(status: AgentRunStatus | null): boolean {
   return status === 'queued' || status === 'running' || status === 'stopping' || status === 'completing'
+}
+
+function isReconnectableRunStatus(status: AgentRunStatus | null): boolean {
+  // waiting keeps the run reconnectable while the worker is parked for an answer.
+  return isActiveRunStatus(status) || status === 'waiting'
 }
 
 function runStorageKey(agentId: string, conversationId: string): string {
@@ -1687,9 +1774,6 @@ function createAssistantStreamStateFromParts(parts: MessagePart[]): AssistantStr
       case 'source-document':
         state.ragSources.push(part)
         break
-      case 'user-input-request':
-        state.segments.push({ type: 'user-input-request', userInputRequest: { ...part } })
-        break
       case 'media-result':
         state.segments.push({ type: 'media-result', mediaResult: { ...part } })
         break
@@ -1780,6 +1864,18 @@ function findToolSegment(segments: ContentSegment[], toolCallId: string): Conten
     segment.type === 'tool'
     && (segment.toolCall?.toolCallId === toolCallId || segment.toolResult?.toolCallId === toolCallId)
   ))
+}
+
+function markSegmentAskUserPending(
+  state: AssistantStreamState,
+  toolCallId: string,
+): boolean {
+  const segment = findToolSegment(state.segments, toolCallId)
+  if (!segment?.toolCall || segment.toolResult || segment.toolCall.toolName !== 'ask_user') {
+    return false
+  }
+  segment.toolCall = { ...segment.toolCall, state: 'pending' }
+  return true
 }
 
 function mergeMcpToolCall(existing: McpToolCallPart, incoming: McpToolCallPart): McpToolCallPart {
@@ -1898,25 +1994,7 @@ function applyAssistantStreamEvent(
 
       const textSegment = getCurrentTextSegment()
       textSegment.text = (textSegment.text || '') + data.delta
-      const text = textSegment.text
-      const xmlMatch = text.match(/<user_input_request>([\s\S]*?)<\/user_input_request>/)
-      if (xmlMatch) {
-        const question = xmlMatch[1].match(/<question>([\s\S]*?)<\/question>/)?.[1].trim()
-        const options = Array.from(
-          xmlMatch[1].matchAll(/<option>([\s\S]*?)<\/option>/g),
-          match => match[1].trim()
-        )
-        if (question && options.length >= 2) {
-          const start = text.indexOf('<user_input_request>')
-          const end = text.indexOf('</user_input_request>') + '</user_input_request>'.length
-          textSegment.text = `${text.slice(0, start)}${text.slice(end)}`.trim()
-          const segmentIndex = state.segments.indexOf(textSegment)
-          state.segments.splice(segmentIndex + 1, 0, {
-            type: 'user-input-request',
-            userInputRequest: { type: 'user-input-request', question, options, state: 'pending' },
-          })
-        }
-      }
+
       return true
     }
 
@@ -2062,8 +2140,6 @@ function buildMessageParts(
     } else if (segment.type === 'tool') {
       if (segment.toolCall) parts.push(segment.toolCall)
       if (segment.toolResult) parts.push(segment.toolResult)
-    } else if (segment.type === 'user-input-request' && segment.userInputRequest) {
-      parts.push(segment.userInputRequest)
     } else if (segment.type === 'media-result' && segment.mediaResult) {
       parts.push(segment.mediaResult)
     } else if (segment.type === 'truncated') {
@@ -2091,7 +2167,6 @@ function hasRenderableStreamingProgress(
       if (segment.type === 'reasoning') return true
       if (segment.type === 'tool') return Boolean(segment.toolCall || segment.toolResult)
       if (segment.type === 'task') return Boolean(segment.task)
-      if (segment.type === 'user-input-request') return Boolean(segment.userInputRequest)
       if (segment.type === 'media-result') return Boolean(segment.mediaResult)
       return segment.type === 'truncated' || segment.type === 'iteration-cap-reached'
     })

@@ -6,6 +6,7 @@ import type {
   VariableDefinition,
   VariableType,
   AttachmentConfig,
+  AgentRunAnswerInput,
 } from '@/lib/api'
 import type { ChatMessage } from '@/components/chat'
 
@@ -134,6 +135,7 @@ export function createEmbedChatAdapter(agentId: string, apiKey: string): ChatPag
     getRunStatus: (id, runId) => embedApi.getRunStatus(id, runId, apiKey),
     getRunEvents: (id, runId, afterSequence) => embedApi.getRunEvents(id, runId, apiKey, afterSequence),
     postRunInput: (id, runId, body) => embedApi.postRunInput(id, runId, body, apiKey),
+    postRunAnswer: (id, runId, body: AgentRunAnswerInput) => embedApi.postRunAnswer(id, runId, body, apiKey),
     stopRun: (id, runId) => embedApi.stopRun(id, runId, apiKey),
 
     // Versioning/edit endpoints are not available in embed mode; the UI hides them.

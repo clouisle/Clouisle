@@ -113,7 +113,6 @@ const baseAgent = {
   opening_message: 'Hello',
   suggested_questions: ['First?'],
   visibility: 'private',
-  enable_user_input_request: false,
   enable_memory: false,
   memory_config: null,
   knowledge_bases: [{ knowledge_base: { id: 'kb-1' } }],
@@ -162,7 +161,7 @@ test('skips loading without a team and tolerates API failures', async () => {
   await runEffect()
 
   expect(getTeamModels).toHaveBeenCalledWith('team-1', 'chat')
-  expect(states[15]).toBe(false)
+  expect(states[14]).toBe(false)
 })
 
 test('loads only enabled team data and renders model and knowledge-base branches', async () => {
@@ -188,7 +187,6 @@ test('applies field callbacks and submits the enabled-memory payload', async () 
   change(findById(tree, 'openingMessage'), '')
   change(findById(tree, 'suggestedQuestions'), ' Keep? \n\nSecond?\n  ')
   change(findById(tree, 'systemPrompt'), '')
-  ;(findById(tree, 'enableUserInputRequest')?.props.onCheckedChange as (value: boolean) => void)(true)
   ;(findById(tree, 'enableMemory')?.props.onCheckedChange as (value: boolean) => void)(true)
 
   tree = render()
@@ -209,7 +207,6 @@ test('applies field callbacks and submits the enabled-memory payload', async () 
     opening_message: null,
     suggested_questions: [' Keep? ', 'Second?'],
     visibility: 'team',
-    enable_user_input_request: true,
     enable_memory: true,
     memory_config: {
       max_memories_per_retrieval: 25,

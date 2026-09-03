@@ -266,6 +266,14 @@ async def _rebuild_context(
     )
 
     mode = AgentRunMode(payload["mode"])
+    if mode == AgentRunMode.NON_STREAM and tools_openai:
+        # ask_user pauses the run for an interactive answer; a non-stream API
+        # caller has no UI to answer, so the model must never see the tool.
+        tools_openai = [
+            tool
+            for tool in tools_openai
+            if tool.get("function", {}).get("name") != "ask_user"
+        ]
     tools = _tools_definitions(tools_openai)
     is_streaming = mode != AgentRunMode.NON_STREAM
 
@@ -345,6 +353,7 @@ async def _rebuild_context(
         protected_round_id=UUID(payload["round_id"]),
         user_locale=payload.get("locale"),
         max_iterations=agent.max_iterations or 5,
+        iteration_offset=int(payload.get("iteration_offset", 0)),
         streaming=is_streaming,
         execute_tool_call=__import__(
             "app.api.v1.endpoints.chat_tools", fromlist=["execute_tool_call"]
@@ -417,6 +426,8 @@ def _tools_definitions(tools_openai: list[dict] | None):
 
 async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
     """Execute one run payload to terminal and persist the canonical round."""
+    payload = dict(payload)
+    resume_tool_result = payload.pop("resume_tool_result", None)
     run = await agent_run_store.get_run(UUID(payload["run_id"]))
     if not run:
         raise LookupError("run not found")
@@ -500,6 +511,13 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             await run.save(update_fields=["canonical_message_id"])
         canonical_message_id = canonical.id
         publisher_task = asyncio.create_task(publish_queued_events())
+        if isinstance(resume_tool_result, dict):
+            await stream.publish(
+                "tool_result",
+                resume_tool_result,
+                round_id=run.active_round_id,
+                message_id=canonical.id,
+            )
         rag_contexts = user_msg.rag_context or []
         if agent.rag_mode == RAGMode.AUTO:
             await stream.publish("rag_start", {})
@@ -573,9 +591,64 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
         loop_context.input_consumed = _input_consumed
         loop_context.stop_requested = _stop_requested
 
+        waiting_tool_call_id: str | None = None
+
+        async def _pause_for_user(**interaction: Any) -> None:
+            nonlocal waiting_tool_call_id
+            tool_call_id = str(interaction["tool_call_id"])
+            tool_name = str(interaction["tool_name"])
+            tool_input = interaction["arguments"]
+            waiting_tool_call_id = tool_call_id
+            resume_payload = dict(payload)
+            # The current round's protocol entries are held in the in-memory
+            # history override until the model turn completes. Carry them
+            # across the durable pause so the resumed provider sees the
+            # original ask_user call before its answer result.
+            resume_payload["history_override"] = list(
+                loop_context.working_history_override or []
+            )
+            resume_payload["first_round_index"] = int(interaction["round_index"]) + 1
+            resume_payload["created_message_count"] = loop_context.created_message_count
+            resume_payload["iteration_offset"] = int(interaction["iteration_index"])
+            await agent_run_store.park_run_waiting(
+                run,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                tool_input=tool_input,
+                round_id=interaction["round_id"],
+                round_index=int(interaction["round_index"]),
+                iteration_index=int(interaction["iteration_index"]),
+                worker_payload=resume_payload,
+            )
+
+        loop_context.pause_for_user = _pause_for_user
+
         async for _chunk in loop.run():
             pass
         result = loop.result
+        if result.waiting_for_user:
+            # The tool-call event is queued by AgentLoop after the pause hook;
+            # drain it before publishing the waiting status so replay order is
+            # tool_call -> run_status.
+            await flush_queued_events()
+            pending_tool_call_id = waiting_tool_call_id or run.pending_tool_call_id
+            if not pending_tool_call_id:
+                raise RuntimeError("AgentRun is waiting without a pending tool call")
+            await stream.publish(
+                "run_status",
+                {
+                    "status": AgentRunStatus.WAITING.value,
+                    "pending_tool_call_id": pending_tool_call_id,
+                    "pending_tool_name": run.pending_tool_name,
+                    "pending_tool_input": run.pending_tool_input,
+                },
+                round_id=run.active_round_id,
+                message_id=run.canonical_message_id,
+            )
+            return {
+                "status": AgentRunStatus.WAITING.value,
+                "tool_call_id": pending_tool_call_id,
+            }
 
         if result.deadline_exceeded:
             await agent_run_store.drop_pending_inputs(run.id)
@@ -629,7 +702,6 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             "status": AgentRunStatus.COMPLETED.value,
             "message_id": str(canonical.id),
         }
-
     except Exception as exc:
         await flush_queued_events()
         logger.exception("Agent run %s failed", run.id)

@@ -225,7 +225,6 @@ describe('useChat issue 255 branches', () => {
       { event: 'rag_context', data: { contexts: [{ document_id: 'doc', document_name: 'Doc', content: 'chunk', kb_id: 'kb', kb_name: 'KB', score: 1 }] } },
       { event: 'compression_start', data: {} },
       { event: 'compression_end', data: { before_tokens: 9, after_tokens: 4 } },
-      { event: 'content_delta', data: { delta: '<user_input_request><question>Continue?</question><options><option>Yes</option><option>No</option></options></user_input_request>' } },
       { event: 'tool_call', data: { tool_call_id: 'a', tool_name: 'o', arguments: {} } },
       { event: 'tool_call', data: { tool_call_id: 'a', tool_name: 'one', arguments: { value: 1 } } },
       { event: 'tool_call', data: { tool_call_id: 'b', tool_name: 'two', arguments: {} } },
@@ -242,7 +241,6 @@ describe('useChat issue 255 branches', () => {
 
     expect(parts).toContainEqual(expect.objectContaining({ type: 'reasoning', text: 'reason', state: 'done' }))
     expect(parts).toContainEqual(expect.objectContaining({ type: 'source-document', documentId: 'doc' }))
-    expect(parts).toContainEqual(expect.objectContaining({ type: 'user-input-request', question: 'Continue?' }))
     expect(parts).toContainEqual(expect.objectContaining({ type: 'tool-call', toolCallId: 'b', state: 'error' }))
     expect(parts.filter((part) => part.type === 'tool-call')).toHaveLength(2)
     expect(parts).toContainEqual(expect.objectContaining({

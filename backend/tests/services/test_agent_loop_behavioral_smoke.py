@@ -34,6 +34,7 @@ from app.llm.types import (
     ToolCall,
     Usage,
 )
+from app.llm.tools.interaction import ToolInteractionRequest
 from app.services.agent_loop import AgentLoop, AgentLoopContext, ContextTurn
 
 
@@ -453,3 +454,107 @@ async def test_stream_emits_tool_call_before_tool_execution(monkeypatch):
     ]
     assert events[3][1]["is_error"] is False
     assert loop.result.full_content == "done"
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_pauses_after_persisting_ask_user_call(monkeypatch):
+    """An ask_user call persists its assistant step and waits non-terminally."""
+    from app.services import agent_round
+
+    persist_step = AsyncMock(return_value=2)
+    persist_result = AsyncMock(return_value=3)
+    monkeypatch.setattr(agent_round, "persist_assistant_step", persist_step)
+    monkeypatch.setattr(agent_round, "persist_tool_result", persist_result)
+
+    call_id = "call-ask"
+    response = _resp(
+        tool_calls=[
+            ToolCall(
+                id=call_id,
+                function=FunctionCall(
+                    name="ask_user",
+                    arguments=json.dumps(
+                        {
+                            "questions": [
+                                {
+                                    "id": "target",
+                                    "question": "Where?",
+                                    "options": ["cloud", "local"],
+                                },
+                                {"id": "note", "question": "Note?", "required": False},
+                            ]
+                        }
+                    ),
+                ),
+            )
+        ]
+    )
+    pause = {}
+    events: list[tuple[str, dict]] = []
+
+    async def team_chat(**_kwargs):
+        return response
+
+    async def build_turn(**_kwargs):
+        return ContextTurn(
+            prepared=SimpleNamespace(
+                messages=[LLMMessage(role=MessageRole.USER, content="choose")]
+            )
+        )
+
+    async def tool_runner(tool_name, _arguments, **_kwargs):
+        assert tool_name == "ask_user"
+        return ToolInteractionRequest(
+            tool_name="ask_user",
+            arguments={
+                "questions": [
+                    {
+                        "id": "target",
+                        "question": "Where?",
+                        "options": ["cloud", "local"],
+                        "required": True,
+                    },
+                    {"id": "note", "question": "Note?", "required": False},
+                ]
+            },
+        )
+
+    async def pause_for_user(**kwargs):
+        pause.update(kwargs)
+
+    def formatter(name: str, payload: dict) -> str:
+        events.append((name, payload))
+        return name
+
+    context = AgentLoopContext(
+        agent=SimpleNamespace(id=uuid4(), team_id=uuid4()),
+        conversation=SimpleNamespace(id=uuid4()),
+        user=SimpleNamespace(id=uuid4()),
+        user_message="choose",
+        model_id="m",
+        tokenizer_model_id=None,
+        model_provider="p",
+        model_context_limit=100_000,
+        model_max_output_tokens=1000,
+        model_used="m",
+        max_iterations=3,
+        streaming=False,
+        round_id=uuid4(),
+        team_chat=team_chat,
+        build_turn=build_turn,
+        execute_tool_call=tool_runner,
+        pause_for_user=pause_for_user,
+        formatter=formatter,
+    )
+
+    loop = AgentLoop(context)
+    output = [chunk async for chunk in loop.run()]
+
+    assert output == ["tool_call"]
+    assert loop.result.waiting_for_user is True
+    assert pause["tool_call_id"] == call_id
+    assert pause["tool_name"] == "ask_user"
+    assert pause["arguments"]["questions"][0]["id"] == "target"
+    persist_step.assert_awaited_once()
+    assert persist_step.await_args.kwargs["tool_calls"][0]["id"] == call_id
+    persist_result.assert_not_awaited()

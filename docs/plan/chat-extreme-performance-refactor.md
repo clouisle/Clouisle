@@ -148,7 +148,7 @@
 - Regression scope:
   - Agent hidden tool calls.
   - Knowledge source display.
-  - User input request XML card.
+  - Durable `ask_user` tool form and structured answer submission.
   - Message version switching.
   - Code preview canvas.
   - i18n keys in `en` and `zh` remain synced.

@@ -30,6 +30,10 @@ export interface UseRunReturn {
   conversationId?: string | null
   runId?: string | null
   runStatus?: AgentRunStatus | null
+  /** Tool call id of the ask_user interaction the server is waiting on. */
+  pendingAskUserToolCallId?: string | null
+  /** Submit one structured answer set for the waiting ask_user interaction. */
+  submitAskUser?: (toolCallId: string, answers: Record<string, unknown>) => Promise<void>
   sendMessage: (
     text: string,
     images?: ChatImageContent[],
@@ -148,6 +152,8 @@ export function useRun(options: UseRunOptions): UseRunReturn {
       conversationId: agentChat.conversationId,
       runId: agentChat.runId,
       runStatus: agentChat.runStatus,
+      pendingAskUserToolCallId: agentChat.pendingAskUserToolCallId,
+      submitAskUser: agentChat.submitAskUser,
       sendMessage: agentChat.sendMessage,
       stop: agentChat.stop,
       reconnect: agentChat.reconnect,

@@ -22,7 +22,8 @@ interface ChatProps {
   allowAttachments?: boolean;
   inputDisabled?: boolean;
   // Callbacks
-  onSelectOption?: (option: string) => void;
+  pendingAskUserToolCallId?: string | null;
+  onSubmitAskUser?: (toolCallId: string, answers: Record<string, unknown>) => Promise<void>;
   // Layout
   inputPosition?: 'bottom' | 'sticky';
   containerClassName?: string;
@@ -46,7 +47,8 @@ export function Chat({
   allowAttachments = true,
   inputDisabled = false,
   // Callbacks
-  onSelectOption,
+  pendingAskUserToolCallId,
+  onSubmitAskUser,
   // Layout
   inputPosition = 'bottom',
   containerClassName,
@@ -62,7 +64,8 @@ export function Chat({
         autoScroll={autoScroll}
         renderPart={renderPart}
         emptyState={emptyState}
-        onSelectOption={onSelectOption}
+        pendingAskUserToolCallId={pendingAskUserToolCallId}
+        onSubmitAskUser={onSubmitAskUser}
         className={containerClassName}
       />
 

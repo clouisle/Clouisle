@@ -170,10 +170,23 @@ describe('AgentOrchestrationForm', () => {
       memory_config: null,
       enable_attachments: false,
       attachment_config: null,
+      enable_user_input_request: false,
       image_generation_config: null,
       video_generation_config: null,
       rag_mode: 'agentic',
     }))
+  })
+
+  test('publishes the user-input toggle and changes it from the card switch', () => {
+    const onUpdate = mock(() => undefined)
+    let tree = render(onUpdate).tree
+    const card = findByTestId(tree, 'agent-user-input-section')
+    const toggle = card.props.action as Node
+
+    ;(toggle.props.onCheckedChange as (checked: boolean) => void)(true)
+    tree = render(onUpdate).tree
+
+    expect(onUpdate.mock.calls.at(-1)?.[0].enable_user_input_request).toBe(true)
   })
 
   test('loads only current-team resources and tolerates a rejected resource request', async () => {
@@ -206,7 +219,7 @@ describe('AgentOrchestrationForm', () => {
     getKnowledgeBases.mockRejectedValue(new Error('offline'))
     render()
     await flush()
-    expect(states[27]).toEqual([])
+    expect(states[25]).toEqual([])
   })
 
   test('applies prompt, variable, knowledge-base, and every tool-kind callback', () => {
@@ -260,6 +273,7 @@ describe('AgentOrchestrationForm', () => {
       enable_memory: true,
       enable_image_generation: true,
       enable_video_generation: true,
+      enable_user_input_request: true,
     } as never
     const onUpdate = mock(() => undefined)
     const tree = render(onUpdate, enabledAgent).tree
@@ -311,7 +325,7 @@ describe('AgentOrchestrationForm', () => {
 
     for (const testId of [
       'agent-variables-section', 'agent-kb-section', 'agent-tools-section', 'agent-attachments-section',
-      'agent-user-input-section', 'agent-memory-section',
+      'agent-user-input-section',
       'agent-image-generation-section', 'agent-video-generation-section',
     ]) {
       const card = findByTestId(tree, testId)
@@ -379,7 +393,7 @@ describe('AgentOrchestrationForm', () => {
     const onUpdate = mock(() => undefined)
     render(onUpdate)
     await flush()
-    expect(states[27]).toEqual([])
+    expect(states[25]).toEqual([])
 
     currentTeam = { id: 'team-2' }
     getKnowledgeBases.mockResolvedValue({ items: [{ id: 'kb-2', name: 'Recovered', team: { id: 'team-2' } }] })

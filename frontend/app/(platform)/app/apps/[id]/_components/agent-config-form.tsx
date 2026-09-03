@@ -37,7 +37,6 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
   const [openingMessage, setOpeningMessage] = React.useState(agent.opening_message || '')
   const [suggestedQuestions, setSuggestedQuestions] = React.useState<string[]>(agent.suggested_questions || [])
   const [visibility, setVisibility] = React.useState(agent.visibility)
-  const [enableUserInputRequest, setEnableUserInputRequest] = React.useState(agent.enable_user_input_request || false)
   const [enableMemory, setEnableMemory] = React.useState(agent.enable_memory || false)
   const [maxMemoriesPerRetrieval, setMaxMemoriesPerRetrieval] = React.useState(
     agent.memory_config?.max_memories_per_retrieval || 10
@@ -98,7 +97,6 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
       opening_message: openingMessage || null,
       suggested_questions: suggestedQuestions.filter(q => q.trim()),
       visibility,
-      enable_user_input_request: enableUserInputRequest,
       enable_memory: enableMemory,
       memory_config: enableMemory ? {
         max_memories_per_retrieval: maxMemoriesPerRetrieval,
@@ -225,21 +223,6 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
                 </p>
               </div>
 
-              <div className="flex items-center justify-between space-x-2 rounded-lg border p-4">
-                <div className="space-y-0.5">
-                  <Label htmlFor="enableUserInputRequest" className="text-base">
-                    {t('settings.enableUserInputRequest')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('settings.enableUserInputRequestDesc')}
-                  </p>
-                </div>
-                <Switch
-                  id="enableUserInputRequest"
-                  checked={enableUserInputRequest}
-                  onCheckedChange={setEnableUserInputRequest}
-                />
-              </div>
             </CardContent>
           </Card>
         </TabsContent>

@@ -291,6 +291,27 @@ describe('PublicChatPage', () => {
     expect(chatContainerProps.loadingLabel).toBe('runStatusQueued')
     expect(output()).not.toContain('runStatusQueued')
   })
+  test('places the waiting label in the conversation while answers are pending', async () => {
+    chatState.messages = [{ id: 'assistant-waiting', role: 'assistant', parts: [], metadata: { isLoading: true } }]
+    chatState.runStatus = 'waiting'
+    render()
+    await flush()
+
+    expect(chatContainerProps.loadingLabel).toBe('runStatusWaiting')
+    expect(chatInputProps.disabled).toBe(true)
+    expect(output()).not.toContain('runStatusWaiting')
+  })
+
+  test('forwards the pending ask_user interaction and answer submission', async () => {
+    chatState.messages = [{ id: 'm1', role: 'assistant', parts: [] }]
+    chatState.pendingAskUserToolCallId = 'call-ask'
+    chatState.submitAskUser = mock(async () => undefined)
+    render()
+    await flush()
+
+    expect(chatContainerProps.pendingAskUserToolCallId).toBe('call-ask')
+    expect(chatContainerProps.onSubmitAskUser).toBe(chatState.submitAskUser)
+  })
 
 
   test('renders the agent-powered footer text and hides it when unset', async () => {
@@ -461,7 +482,7 @@ describe('PublicChatPage', () => {
     console.error = consoleError
   })
 
-  test('sends suggested and option messages while enforcing variable validation', async () => {
+  test('sends suggested messages while enforcing variable validation', async () => {
     getPublicAgent.mockResolvedValueOnce({
       ...agent,
       variables: [{ name: 'required', type: 'string', required: true, hidden: false }],
@@ -474,10 +495,7 @@ describe('PublicChatPage', () => {
     expect(sendMessage).not.toHaveBeenCalled()
     expect(nodeText(renderer!.root)).toContain('0/1')
 
-    await act(async () => (chatContainerProps.onSelectOption as (option: string) => void)('Selected option'))
-    expect(sendMessage).toHaveBeenCalledWith('Selected option', undefined, undefined)
-
-    await act(async () => (chatInputProps.onSubmit as (message: string) => Promise<void>)('   '))
+    await act(async () => (chatInputProps.onSubmit as (message: string) => Promise<void>)('typed message'))
     expect(sendMessage).toHaveBeenCalledTimes(1)
   })
 

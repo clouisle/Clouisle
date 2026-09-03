@@ -54,6 +54,7 @@ def test_agent_create_defaults_and_nested_mapping_validation():
             "team_id": str(team_id),
             "tools_config": [{"type": "builtin", "name": "search"}],
             "attachment_config": {"parser": {"type": "builtin"}},
+            "enable_user_input_request": True,
             "memory_config": {"importance_threshold": "high"},
             "context_compression_config": {"summary_max_tokens": 2000},
             "image_generation_config": {"allowed_providers": ["image-provider"]},
@@ -73,6 +74,7 @@ def test_agent_create_defaults_and_nested_mapping_validation():
     assert agent.visibility == "team"
     assert agent.tools_config == [ToolConfig(type="builtin", name="search")]
     assert agent.attachment_config.max_files == 5
+    assert agent.enable_user_input_request is True
     assert agent.memory_config.max_memories_per_retrieval == 10
     assert agent.context_compression_config.summary_max_tokens == 2000
     assert agent.image_generation_config.default_width == 1024
@@ -217,6 +219,7 @@ def test_agent_output_converts_orm_attributes_and_serializes_nested_types():
     )
     assert serialized["id"] == str(source.id)
     assert serialized["created_at"] == now.isoformat().replace("+00:00", "Z")
+    assert serialized["enable_user_input_request"] is False
     assert serialized["variables"][0]["name"] == "query"
 
 

@@ -5,7 +5,12 @@
 
 import { API_BASE_URL } from '@/lib/constants'
 import { getErrorMessage } from './client'
-import type { AgentRunEventOut, AgentRunStartOut, AgentRunStatusOut } from './agents'
+import type {
+  AgentRunAnswerInput,
+  AgentRunEventOut,
+  AgentRunStartOut,
+  AgentRunStatusOut,
+} from './agents'
 
 export interface EmbedWorkflowInfo {
   id: string
@@ -238,6 +243,17 @@ export const embedApi = {
     apiKey: string,
   ): Promise<AgentRunStatusOut> => requestEmbedRun<AgentRunStatusOut>(
     `/embed/agents/${agentId}/chat/runs/${runId}/inputs`,
+    apiKey,
+    { method: 'POST', body: JSON.stringify(body) },
+  ),
+
+  postRunAnswer: (
+    agentId: string,
+    runId: string,
+    body: AgentRunAnswerInput,
+    apiKey: string,
+  ): Promise<AgentRunStatusOut> => requestEmbedRun<AgentRunStatusOut>(
+    `/embed/agents/${agentId}/chat/runs/${runId}/answers`,
     apiKey,
     { method: 'POST', body: JSON.stringify(body) },
   ),

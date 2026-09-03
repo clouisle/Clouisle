@@ -31,7 +31,7 @@ Agent 系统提示词的"条件注入"(沙箱指引、记忆指引、Markdown �
 
 新增 `backend/app/services/system_prompt.py` 作为唯一管理器,收纳:
 1. 所有指令常量(`MARKDOWN_IMAGE_DISPLAY_INSTRUCTION`、`MEMORY_SYSTEM_INSTRUCTION`、`SANDBOX_SYSTEM_INSTRUCTION`、`LANGUAGE_INSTRUCTIONS`、`FILE_CONTENT_PLACEHOLDER`)
-2. 所有 helper(`has_sandbox_tools`、`append_prompt_section`、`get_language_instruction`、`build_system_prompt_with_language`、`get_user_input_request_instruction`)
+2. 所有 helper(`has_sandbox_tools`、`append_prompt_section`、`get_language_instruction`、`build_system_prompt_with_language`)
 3. 声明式规则表 `SECTIONS`(每条规则:`name` / `applies(agent, mode)` / `transform(base, agent, locale)`)
 4. 单一入口 `build_system_prompt(agent, *, base_prompt, user_message, variables, user_locale, invocation_mode)`
 
@@ -43,10 +43,9 @@ Agent 系统提示词的"条件注入"(沙箱指引、记忆指引、Markdown �
 | Sandbox 指引 | `has_sandbox_tools(agent)`(查 tools_config) | ✅ | ✅ | 两路径都执行沙箱工具;**工作流补上即修复缺口** |
 | 语言指令 | `build_system_prompt_with_language(base, locale)` | ✅ | ✅ | 通用;工作流需补 locale 入参 |
 | Memory 指引 | `enable_memory and mode=="chat"` | ✅ | ❌ | 工作流未装配 memory 工具,注入会让模型调用不存在的 `search_memory` |
-| UserInput 指引 | `enable_user_input_request and mode=="chat"` | ✅ | ❌ | 工作流无前端解析 `<user_input_request>` XML,注入会产出被忽略的 XML |
 
 ### 组装顺序(严格保持主路径现状)
-base + 模板替换(`{{key}}`/`{{query}}`/`{{fileContent}}`) -> Markdown -> Memory -> Sandbox -> 语言 -> UserInput
+base + 模板替换(`{{key}}`/`{{query}}`/`{{fileContent}}`) -> Markdown -> Memory -> Sandbox -> 语言
 
 ### 调用关系
 ```text
@@ -97,7 +96,6 @@ workflow/tool.py -> AgentService.chat/chat_stream(user_locale=...) -> _build_mes
 
 ### Error/negative path
 - 工作流:enable_memory=True->**不**注入记忆指引
-- 工作流:enable_user_input_request=True->**不**注入 UserInput 指引
 - 无沙箱工具->不注入沙箱指引
 
 ### 回归范围
@@ -110,7 +108,7 @@ workflow/tool.py -> AgentService.chat/chat_stream(user_locale=...) -> _build_mes
 | 风险 | 缓解 |
 |---|---|
 | 工作流 Agent 现在始终带系统消息(空 prompt 也注入 Markdown+语言) | 与主路径对齐的预期行为;语言由触发用户 locale 驱动,默认 en |
-| `enable_memory`/`enable_user_input_request` 的工作流 Agent 不注入对应指引 | 正确行为:工作流未装配对应工具/解析器;若未来补齐工具,只需放宽规则门控 |
+| 工作流 Agent 不注入聊天专用能力指引 | 正确行为:工作流未装配对应工具;若未来补齐工具,只需放宽规则门控 |
 | chat_context 测试直接导入迁移符号 | 重新导出保持导入路径不变 |
 | 覆盖率门禁 | workflow 模式新分支需测试覆盖 |
 

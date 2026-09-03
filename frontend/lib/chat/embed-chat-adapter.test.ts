@@ -5,6 +5,7 @@ const streamRun = mock(() => ({ stream: Promise.resolve(new Response()), abort: 
 const getRunStatus = mock(async () => ({ id: 'run-1', agent_id: 'agent-1', conversation_id: 'conv-1', mode: 'send', status: 'running' }))
 const getRunEvents = mock(async () => [])
 const postRunInput = mock(async () => ({ id: 'run-1', agent_id: 'agent-1', conversation_id: 'conv-1', mode: 'send', status: 'running' }))
+const postRunAnswer = mock(async () => ({ id: 'run-1', agent_id: 'agent-1', conversation_id: 'conv-1', mode: 'send', status: 'queued' }))
 const stopRun = mock(async () => ({ id: 'run-1', agent_id: 'agent-1', conversation_id: 'conv-1', mode: 'send', status: 'stopping' }))
 
 
@@ -21,6 +22,7 @@ mock.module('@/lib/api/embed', () => ({
     getRunStatus,
     getRunEvents,
     postRunInput,
+    postRunAnswer,
     stopRun,
   },
 }))
@@ -107,6 +109,9 @@ describe('createEmbedChatAdapter', () => {
     await expect(adapter.getRunStatus?.('agent-1', 'run-1')).resolves.toMatchObject({ status: 'running' })
     await expect(adapter.getRunEvents?.('agent-1', 'run-1', 4)).resolves.toEqual([])
     await expect(adapter.postRunInput?.('agent-1', 'run-1', { delivery: 'steer', content: 'focus' })).resolves.toMatchObject({ status: 'running' })
+    const answers = { deploy_to: 'cloud' }
+    await expect(adapter.postRunAnswer?.('agent-1', 'run-1', { tool_call_id: 'call-ask', answers })).resolves.toMatchObject({ status: 'queued' })
+    expect(postRunAnswer).toHaveBeenCalledWith('agent-1', 'run-1', { tool_call_id: 'call-ask', answers }, 'key-123')
     await expect(adapter.stopRun?.('agent-1', 'run-1')).resolves.toMatchObject({ status: 'stopping' })
   })
 

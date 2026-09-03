@@ -249,6 +249,7 @@ async def test_duplicate_copies_safe_configuration_and_knowledge(monkeypatch):
         "allow_model_override"
         not in create_agent.await_args.kwargs["image_generation_config"]
     )
+    assert create_agent.await_args.kwargs["enable_user_input_request"] is False
     assert (
         "allow_model_override"
         not in create_agent.await_args.kwargs["video_generation_config"]
@@ -307,6 +308,7 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
     assert item.name == "Updated Agent"
     assert item.visibility is AgentVisibility.PRIVATE
     assert item.attachment_config["max_file_size"] == 1024
+    assert item.enable_user_input_request is True
     assert item.memory_config["max_memories_per_retrieval"] == 4
     assert item.rag_mode.value == "auto"
     assert item.variables[0]["name"] == "topic"

@@ -51,11 +51,11 @@ describe('Chat', () => {
     })
   })
 
-  test('forwards loading, streaming, layout, and interaction callbacks', () => {
+  test('forwards loading, streaming, and layout callbacks', () => {
     const onInputChange = mock(() => undefined)
     const onSubmit = mock(() => undefined)
     const onStop = mock(() => undefined)
-    const onSelectOption = mock(() => undefined)
+    const onSubmitAskUser = mock(async () => undefined)
     const tree = render({
       className: 'chat-shell',
       containerClassName: 'message-list',
@@ -69,13 +69,19 @@ describe('Chat', () => {
       onInputChange,
       onSubmit,
       onStop,
-      onSelectOption,
+      pendingAskUserToolCallId: 'ask-1',
+      onSubmitAskUser,
     })
     const container = find(tree, 'ChatContainer')
     const input = find(tree, 'ChatInput')
     const inputArea = ((tree as ElementNode).props?.children as ElementNode[])[1]
 
-    expect(container.props).toMatchObject({ className: 'message-list', isStreaming: true, onSelectOption })
+    expect(container.props).toMatchObject({
+      className: 'message-list',
+      isStreaming: true,
+      pendingAskUserToolCallId: 'ask-1',
+      onSubmitAskUser,
+    })
     expect(input.props).toMatchObject({
       value: 'Draft',
       className: 'composer',
@@ -93,11 +99,11 @@ describe('Chat', () => {
     ;(input.props?.onChange as (value: string) => void)('Updated')
     ;(input.props?.onSubmit as (message: string) => void)('Send')
     ;(input.props?.onStop as () => void)()
-    ;(container.props?.onSelectOption as (option: string) => void)('Option A')
+    ;(container.props?.onSubmitAskUser as (toolCallId: string, answers: Record<string, unknown>) => Promise<void>)('ask-1', { q: 'a' })
 
     expect(onInputChange).toHaveBeenCalledWith('Updated')
     expect(onSubmit).toHaveBeenCalledWith('Send')
     expect(onStop).toHaveBeenCalledTimes(1)
-    expect(onSelectOption).toHaveBeenCalledWith('Option A')
+    expect(onSubmitAskUser).toHaveBeenCalledWith('ask-1', { q: 'a' })
   })
 })

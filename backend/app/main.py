@@ -91,6 +91,7 @@ async def lifespan(app: FastAPI):
         init_message_history_index,
         init_conversation_context_summary_columns,
         init_assets_tables,
+        init_agent_run_fields,
         init_agent_user_input_request,
         init_agent_hide_tool_calls_field,
         init_agent_hide_message_actions_reasoning_fields,
@@ -191,9 +192,14 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Conversation context summary migration failed: {e}")
 
     try:
+        await init_agent_run_fields()
+    except Exception as e:
+        logger.warning(f"AgentRun fields migration failed: {e}")
+
+    try:
         await init_agent_user_input_request()
     except Exception as e:
-        logger.warning(f"Agent enable_user_input_request migration failed: {e}")
+        logger.warning(f"Agent user input request migration failed: {e}")
 
     try:
         await init_agent_hide_tool_calls_field()

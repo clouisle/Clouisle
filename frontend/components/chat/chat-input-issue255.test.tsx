@@ -127,4 +127,37 @@ describe('ChatInput attachment interactions', () => {
     act(() => { imageRemove?.props.onClick() })
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:old')
   })
+  test('blocks attachment selection, paste, and drop while disabled', () => {
+    const onFilesChange = mock(() => undefined)
+    const preventDefault = mock(() => undefined)
+    const stopPropagation = mock(() => undefined)
+    const image = attachment('photo.png', 'image/png')
+    const tree = render({
+      disabled: true,
+      files: [],
+      onFilesChange,
+      allowAttachments: true,
+      enableFileUpload: true,
+    })
+    const fileInput = tree.root.findAllByType('input').find((node) => node.props.type === 'file')
+    expect(fileInput?.props.disabled).toBe(true)
+
+    act(() => { fileInput?.props.onChange({ target: { files: [image] } }) })
+    act(() => {
+      textarea(tree).props.onPaste({
+        preventDefault,
+        clipboardData: { items: [item(image)] },
+      })
+    })
+    act(() => {
+      const zone = tree.root.children[0] as TestRenderer.ReactTestInstance
+      zone.props.onDrop({
+        preventDefault,
+        stopPropagation,
+        dataTransfer: { files: [image] },
+      })
+    })
+
+    expect(onFilesChange).not.toHaveBeenCalled()
+  })
 })

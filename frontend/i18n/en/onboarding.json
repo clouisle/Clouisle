@@ -244,10 +244,6 @@
       "title": "Attachments",
       "description": "Enable attachments when users need to share files or images with your Agent. You can then set the maximum amount of extracted content the Agent receives."
     },
-    "step14c": {
-      "title": "User Input Request",
-      "description": "When enabled, your Agent can proactively request additional information from users during conversations. The Agent will ask you when it needs more details to complete a task."
-    },
     "step14d": {
       "title": "Memory",
       "description": "When enabled, your Agent remembers important information from conversations and maintains context across sessions. Ideal for personal assistants or customer service scenarios requiring long-term memory."

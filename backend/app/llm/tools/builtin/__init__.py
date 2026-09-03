@@ -11,6 +11,7 @@ from .file_parser import register_file_parser_tools
 from ..bash import register_bash_tool
 from ..sandbox_files import register_sandbox_file_tools
 from .media import register_media_tools
+from .ask_user import register_ask_user_tool
 
 
 def register_all_builtin_tools() -> None:
@@ -22,6 +23,7 @@ def register_all_builtin_tools() -> None:
     register_media_tools()
     register_bash_tool()
     register_sandbox_file_tools()
+    register_ask_user_tool()
 
 
 __all__ = [
@@ -33,4 +35,5 @@ __all__ = [
     "register_media_tools",
     "register_bash_tool",
     "register_sandbox_file_tools",
+    "register_ask_user_tool",
 ]

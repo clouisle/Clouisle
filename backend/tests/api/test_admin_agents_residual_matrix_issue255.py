@@ -77,8 +77,8 @@ def _agent(**overrides):
         "hide_reasoning": False,
         "tools_config": [],
         "enable_attachments": False,
-        "attachment_config": {},
         "enable_user_input_request": False,
+        "attachment_config": {},
         "enable_memory": False,
         "memory_config": {},
         "context_compression_config": {},
@@ -233,8 +233,8 @@ async def test_update_agent_applies_optional_fields_and_replaces_knowledge_bases
         model_id=model_id,
         tools_config=[SimpleNamespace(model_dump=lambda: {"type": "builtin"})],
         enable_attachments=True,
-        attachment_config={"parser": None},
         enable_user_input_request=True,
+        attachment_config={"parser": None},
         enable_memory=True,
         memory_config=SimpleNamespace(model_dump=lambda: {"auto_extract": True}),
         context_compression_config=SimpleNamespace(
@@ -285,6 +285,7 @@ async def test_update_agent_applies_optional_fields_and_replaces_knowledge_bases
     assert item.attachment_config == {"parser": None}
     assert item.rag_mode == RAGMode.OFF
     assert item.variables == [{"name": "topic"}]
+    assert item.enable_user_input_request is True
     assert item.embed_config == {"theme": "dark"}
     item.save.assert_awaited_once()
     create_kb.assert_awaited_once()
@@ -479,6 +480,7 @@ async def test_duplicate_and_delete_copy_safe_fields_and_audit(admin):
     assert response["data"] == {"id": created.id}
     assert create.await_args.kwargs["image_generation_config"] == {"width": 1}
     assert create.await_args.kwargs["video_generation_config"] == {"duration": 1}
+    assert create.await_args.kwargs["enable_user_input_request"] is False
     create_kb.assert_awaited_once()
 
     with (

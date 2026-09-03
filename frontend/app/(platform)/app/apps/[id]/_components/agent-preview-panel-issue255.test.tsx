@@ -112,7 +112,7 @@ beforeEach(() => {
 })
 
 describe('AgentPreviewPanel', () => {
-  test('gates invalid submissions, then sends suggested and selected prompts', async () => {
+  test('gates invalid submissions, then sends suggested prompts', async () => {
     variableForm = { ...variableForm, needsInput: true, isValid: false }
     validate.mockReturnValue(false)
     let tree = render({ ...baseAgent, variables: [{ name: 'topic', type: 'text', required: true }] } as never)
@@ -130,9 +130,8 @@ describe('AgentPreviewPanel', () => {
     const questions = descendants(container.props.emptyState).filter((node) => node.type === 'button')
     expect(questions).toHaveLength(3)
     await (questions[0].props.onClick as () => Promise<void>)()
-    ;(container.props.onSelectOption as (option: string) => void)('Chosen')
     await flush()
-    expect(sendMessage.mock.calls.map((call) => call[0])).toEqual(['First?', 'Chosen'])
+    expect(sendMessage.mock.calls.map((call) => call[0])).toEqual(['First?'])
   })
 
   test('converts images and uploads documents with progress before sending', async () => {

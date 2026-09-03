@@ -39,13 +39,9 @@ describe('message converter', () => {
     ])
   })
 
-  it('converts assistant reasoning, user input requests, status, and metadata', () => {
+  it('converts assistant reasoning, status, and metadata', () => {
     const converted = convertBackendMessage(message({
-      content: `Partial answer
-<user_input_request>
-  <question>Choose a path</question>
-  <options><option>Alpha</option><option>Beta</option></options>
-</user_input_request>`,
+      content: 'Partial answer',
       reasoning_content: 'Consider both paths',
       duration_ms: 1250,
       round_status: 'max_iterations_reached',
@@ -58,7 +54,6 @@ describe('message converter', () => {
       parts: [
         { type: 'reasoning', text: 'Consider both paths', state: 'done', duration: 1250 },
         { type: 'text', text: 'Partial answer', state: 'done' },
-        { type: 'user-input-request', question: 'Choose a path', options: ['Alpha', 'Beta'], state: 'answered' },
         { type: 'iteration-cap-reached' },
         { type: 'stopped' },
       ],
@@ -130,14 +125,6 @@ describe('message converter', () => {
     })
     // The renderer types timing.duration_ms as a number; null must never be emitted.
     expect(converted?.metadata?.timing).not.toHaveProperty('duration_ms')
-  })
-
-  it('keeps malformed user input request XML as text', () => {
-    const content = '<user_input_request><question>Choose one</question><options><option>Only</option></options></user_input_request>'
-
-    expect(convertBackendMessage(message({ content }))?.parts).toEqual([
-      { type: 'text', text: content, state: 'done' },
-    ])
   })
 
   it('converts ordered assistant steps and their tool results', () => {

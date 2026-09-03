@@ -8,7 +8,6 @@ def _agent(*, tools_config=None, system_prompt="Base prompt"):
         id="agent-1",
         system_prompt=system_prompt,
         enable_memory=False,
-        enable_user_input_request=False,
         tools_config=tools_config or [],
     )
 

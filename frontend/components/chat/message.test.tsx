@@ -95,7 +95,6 @@ mock.module('@/components/ai-elements/tool', () => ({
 }))
 mock.module('./image-lightbox', () => ({ ImageLightbox: ({ src, alt, isOpen }: { src: string; alt: string; isOpen: boolean }) => isOpen ? <div role="dialog" aria-label={alt}>{src}</div> : null, useLightbox: () => ({ isOpen: false, imageSrc: '', imageAlt: '', openLightbox, closeLightbox: mock(() => {}) }) }))
 mock.module('./message-parts', () => ({ SourceContent: ({ sources }: { sources: unknown[] }) => <aside>sources:{sources.length}</aside> }))
-mock.module('./user-input-request-card', () => ({ UserInputRequestCard: ({ question, options, onSelectOption }: { question: string; options: string[]; onSelectOption?: (option: string) => void }) => <fieldset><legend>{question}</legend>{options.map((option) => <button key={option} onClick={() => onSelectOption?.(option)}>{option}</button>)}</fieldset> }))
 mock.module('streamdown', () => ({
   Block: ({ content }: { content: string }) => (
     <div data-streamdown="code-block">
@@ -247,6 +246,40 @@ describe('message rendering', () => {
     expect(hidden).toContain('chat.reasoning.thought')
   })
 
+  test('keeps a pending ask_user form visible when tool calls are hidden', () => {
+    const markup = renderToStaticMarkup(<Message
+      message={{
+        id: 'pending-ask-user',
+        role: 'assistant',
+        metadata: { isLoading: true },
+        parts: [
+          { type: 'reasoning', text: 'Need clarification', state: 'done' as const },
+          {
+            type: 'tool-call' as const,
+            toolCallId: 'ask-1',
+            toolName: 'ask_user',
+            toolDisplayName: 'Ask user',
+            input: {
+              questions: [
+                { id: 'target', question: 'Where should this go?', options: ['cloud', 'local'], required: true },
+              ],
+            },
+            state: 'pending' as const,
+          },
+        ],
+      }}
+      hideToolCalls
+      pendingAskUserToolCallId="ask-1"
+      onSubmitAskUser={async () => undefined}
+    />)
+
+    expect(markup).toContain('Where should this go?')
+    expect(markup).toContain('cloud')
+    expect(markup).toContain('local')
+    expect(markup).toContain('data-chat-thought-process="true"')
+    expect(markup).toContain('data-open="true"')
+  })
+
   test('renders iteration cap and stopped markers once', () => {
     const html = renderToStaticMarkup(<Message
       message={{
@@ -355,8 +388,7 @@ describe('message behavior', () => {
     expect(container.querySelector('textarea')).toBeNull()
   })
 
-  test('routes sources, files, images, media, options, and boundary markers', () => {
-    const onSelectOption = mock(() => {})
+  test('routes sources, files, images, media, and boundary markers', () => {
     const html = renderToStaticMarkup(<Message
       message={{
         id: 'mixed',
@@ -367,11 +399,9 @@ describe('message behavior', () => {
           { type: 'file', filename: 'hidden.pdf', url: '/hidden.pdf' },
           { type: 'image', url: '/uploaded.png', alt: 'Uploaded chart' },
           { type: 'media-result', output: { kind: 'media.video', success: true, prompt: 'Demo', status: 'processing', progress: 0.42 } },
-          { type: 'user-input-request', question: 'Choose one', options: ['Alpha', 'Beta'] },
           { type: 'truncated' },
         ],
       }}
-      onSelectOption={onSelectOption}
     />)
 
     expect(html).toContain('sources:2')
@@ -379,15 +409,7 @@ describe('message behavior', () => {
     expect(html).toContain('alt="Uploaded chart"')
     expect(html).toContain('chat.message.videoProcessing')
     expect(html).toContain('chat.message.progress')
-    expect(html).toContain('Choose one')
     expect(html).toContain('chat.message.outputTruncated')
-
-    const container = render(<Message
-      message={{ id: 'option', role: 'assistant', parts: [{ type: 'user-input-request', question: 'Choose one', options: ['Alpha', 'Beta'] }] }}
-      onSelectOption={onSelectOption}
-    />)
-    act(() => button(container, 'Beta').click())
-    expect(onSelectOption).toHaveBeenCalledWith('Beta')
   })
 
 
@@ -1164,7 +1186,7 @@ describe('message behavior', () => {
     const variants = [
       { isStreaming: true }, { renderPart: () => <span>custom</span> }, { showCopy: false }, { showFeedback: true },
       { onRegenerate: () => {} }, { onEditMessage: async () => {} }, { onFeedback: () => {} }, { onSwitchVersion: () => {} },
-      { onSelectOption: () => {} }, { onOpenCodePreview: () => {} }, { hideToolCalls: true }, { chainOfThoughtOpen: true },
+      { pendingAskUserToolCallId: null }, { onSubmitAskUser: async () => {} }, { onOpenCodePreview: () => {} }, { hideToolCalls: true }, { chainOfThoughtOpen: true },
       { onChainOfThoughtOpenChange: () => {} }, { onRequestScrollIntoView: () => {} }, { className: 'changed' },
     ]
     act(() => root.render(<Message {...base} />))

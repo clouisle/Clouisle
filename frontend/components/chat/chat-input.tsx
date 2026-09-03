@@ -135,7 +135,7 @@ export function ChatInput({
   const files = controlledFiles ?? internalFiles;
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const setFiles = onFilesChange ?? setInternalFiles;
-  const attachmentsDisabledDuringRun = isLoading || isStreaming;
+  const attachmentsDisabledDuringRun = disabled || isLoading || isStreaming;
 
   const documentMaxFileSize = fileUploadConfig?.max_file_size || GENERAL_UPLOAD_MAX_FILE_SIZE_BYTES;
   const validateFileSize = useCallback((file: File) => {

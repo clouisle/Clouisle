@@ -124,7 +124,6 @@ data: <json_data>
 | `compression_end` | Context compression finished |
 | `output_truncated` | Output was truncated due to max output token limit |
 | `iteration_cap_reached` | The agent reached the max tool-call iteration cap |
-| `user_input_request` | Declared event type; currently **no emitter** exists in the backend |
 | `message_end` | Message ended with token usage statistics |
 | `error` | Error occurred |
 

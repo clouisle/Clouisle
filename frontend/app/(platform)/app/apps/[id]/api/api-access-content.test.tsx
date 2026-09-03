@@ -165,7 +165,6 @@ describe('ApiAccessContent', () => {
     expect(container.textContent).toContain('Customer ID')
     expect(container.textContent).toContain('user_message_id')
     expect(container.textContent).toContain('version_number')
-    expect(container.textContent).not.toContain('user_input_request')
     expect(container.textContent).not.toContain('Draft agent')
   })
 

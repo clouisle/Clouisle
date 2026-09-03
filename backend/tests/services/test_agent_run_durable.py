@@ -483,3 +483,157 @@ async def test_finalize_completed_sets_initial_conversation_title(monkeypatch):
     )
 
     assert conversation_update.await_args.kwargs["title"] == ("x" * 50) + "..."
+
+
+class _Transaction:
+    async def __aenter__(self):
+        return object()
+
+    async def __aexit__(self, *_args):
+        return False
+
+
+class _LockedRunQuery:
+    def __init__(self, run):
+        self.run = run
+
+    def using_db(self, _conn):
+        return self
+
+    def select_for_update(self):
+        return self
+
+    async def first(self):
+        return self.run
+
+
+def _waiting_run():
+    run = _fake_run(
+        status=AgentRunStatus.WAITING,
+        pending_tool_call_id="call-1",
+        pending_tool_name="ask_user",
+        pending_tool_input={
+            "questions": [
+                {"id": "target", "question": "Where?", "options": ["cloud", "local"]},
+                {"id": "note", "question": "Note?", "required": False},
+            ]
+        },
+        pending_tool_round_id=uuid4(),
+        pending_tool_round_index=4,
+        pending_tool_iteration_index=2,
+        worker_payload={"history_override": []},
+    )
+    run.active_round_id = run.pending_tool_round_id
+    return run
+
+
+@pytest.mark.asyncio
+async def test_submit_user_answers_persists_one_result_and_is_idempotent(
+    monkeypatch, fake_redis
+):
+    run = _waiting_run()
+    message_create = AsyncMock()
+    monkeypatch.setattr(agent_run_store, "in_transaction", lambda: _Transaction())
+    monkeypatch.setattr(
+        agent_run_store.AgentRun,
+        "filter",
+        lambda **_kwargs: _LockedRunQuery(run),
+    )
+    monkeypatch.setattr(agent_run_store.Message, "create", message_create)
+
+    submitted = await agent_run_store.submit_user_answers(
+        run.id,
+        tool_call_id="call-1",
+        answers={"target": "cloud", "note": "ship it"},
+    )
+
+    assert submitted is run
+    assert run.status == AgentRunStatus.QUEUED
+    assert run.pending_tool_call_id is None
+    assert run.worker_payload["history_override"][-1] == {
+        "role": "tool",
+        "content": '{"answers": {"target": "cloud", "note": "ship it"}}',
+        "round_id": str(run.active_round_id),
+        "round_index": 4,
+        "round_role": "tool_result",
+        "is_round_canonical": False,
+        "iteration_index": 2,
+        "tool_call_id": "call-1",
+        "tool_name": "ask_user",
+    }
+    assert run.worker_payload["resume_tool_result"] == {
+        "tool_call_id": "call-1",
+        "tool_name": "ask_user",
+        "tool_display_name": "Ask user",
+        "result": '{"answers": {"target": "cloud", "note": "ship it"}}',
+        "is_error": False,
+    }
+    message_create.assert_awaited_once()
+
+    duplicate = await agent_run_store.submit_user_answers(
+        run.id,
+        tool_call_id="call-1",
+        answers={"target": "cloud", "note": "ship it"},
+    )
+    assert duplicate is None
+    message_create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_submit_user_answers_rejects_mismatch_invalid_answers_and_terminal_runs(
+    monkeypatch, fake_redis
+):
+    run = _waiting_run()
+    message_create = AsyncMock()
+    monkeypatch.setattr(agent_run_store, "in_transaction", lambda: _Transaction())
+    monkeypatch.setattr(
+        agent_run_store.AgentRun,
+        "filter",
+        lambda **_kwargs: _LockedRunQuery(run),
+    )
+    monkeypatch.setattr(agent_run_store.Message, "create", message_create)
+
+    mismatched = await agent_run_store.submit_user_answers(
+        run.id,
+        tool_call_id="wrong-call",
+        answers={"target": "cloud"},
+    )
+    assert mismatched is None
+    assert run.status == AgentRunStatus.WAITING
+
+    with pytest.raises(ValueError, match="answer required for target"):
+        await agent_run_store.submit_user_answers(
+            run.id,
+            tool_call_id="call-1",
+            answers={},
+        )
+    assert run.status == AgentRunStatus.WAITING
+    message_create.assert_not_awaited()
+
+    run.status = AgentRunStatus.STOPPED
+    terminal = await agent_run_store.submit_user_answers(
+        run.id,
+        tool_call_id="call-1",
+        answers={"target": "cloud"},
+    )
+    assert terminal is None
+    message_create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stop_waiting_run_clears_pending_interaction(monkeypatch, fake_redis):
+    run = _waiting_run()
+    monkeypatch.setattr(agent_run_store, "in_transaction", lambda: _Transaction())
+    monkeypatch.setattr(
+        agent_run_store.AgentRun,
+        "filter",
+        lambda **_kwargs: _LockedRunQuery(run),
+    )
+
+    stopped = await agent_run_store.stop_waiting_run(run.id)
+
+    assert stopped is run
+    assert run.status == AgentRunStatus.STOPPED
+    assert run.finished_at is not None
+    assert run.pending_tool_call_id is None
+    assert run.pending_tool_input is None

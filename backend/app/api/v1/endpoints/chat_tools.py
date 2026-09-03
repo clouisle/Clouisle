@@ -185,6 +185,10 @@ async def execute_tool_call(
     from app.core.i18n import t
     from app.models.tool import Tool, CustomToolType
     from app.llm.tools import tool_registry
+
+    if tool_name == "ask_user":
+        return await tool_registry.execute(tool_name, arguments)
+
     from app.services.error_messages import exception_to_user_message
 
     if tool_name in {"inspect_asset", "read_asset", "parse_asset", "materialize_asset"}:

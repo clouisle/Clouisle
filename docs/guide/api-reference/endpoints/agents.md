@@ -292,7 +292,7 @@ POST /api/v1/agents
 | `tools_credentials` | object | No | Tool credentials (API keys, tokens, etc.) |
 | `enable_attachments` | boolean | No | Enable file and image attachments (default: false) |
 | `attachment_config` | object | No | Attachment limits configuration |
-| `enable_user_input_request` | boolean | No | Enable user input request (default: false) |
+| `enable_user_input_request` | boolean | No | Enable the model-callable `ask_user` tool (default: false) |
 | `enable_memory` | boolean | No | Enable memory across conversations (default: false) |
 | `memory_config` | object | No | Memory configuration |
 | `context_compression_config` | object | No | Context compression configuration |

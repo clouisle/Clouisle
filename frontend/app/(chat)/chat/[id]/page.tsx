@@ -203,7 +203,9 @@ export default function PublicChatPage({
     isStreaming,
     conversationId,
     runStatus,
+    pendingAskUserToolCallId,
     sendMessage,
+    submitAskUser,
     regenerate,
     editMessage,
     switchVersion,
@@ -715,7 +717,7 @@ export default function PublicChatPage({
         onSubmit={handleSubmit}
         onStop={stop}
         placeholder={t('typePlaceholder')}
-        disabled={false}
+        disabled={runStatus === 'waiting'}
         isLoading={chatLoading}
         isStreaming={isStreaming}
         allowAttachments={agent.enable_attachments}
@@ -1010,7 +1012,7 @@ export default function PublicChatPage({
               messages={messages}
               isStreaming={isStreaming}
               isLoading={chatLoading}
-              loadingLabel={runStatus === 'queued' ? tChatMessage('runStatusQueued') : undefined}
+              loadingLabel={runStatus === 'queued' ? tChatMessage('runStatusQueued') : runStatus === 'waiting' ? tChatMessage('runStatusWaiting') : undefined}
               hideToolCalls={agent.hide_tool_calls}
               hideMessageActions={agent.hide_message_actions}
               hideReasoning={agent.hide_reasoning}
@@ -1021,9 +1023,8 @@ export default function PublicChatPage({
               onRegenerate={embedMode ? undefined : regenerate}
               onEditMessage={embedMode ? undefined : editMessage}
               onSwitchVersion={embedMode ? undefined : switchVersion}
-              onSelectOption={(option) => {
-                void handleSubmit(option, [])
-              }}
+              pendingAskUserToolCallId={pendingAskUserToolCallId}
+              onSubmitAskUser={submitAskUser}
               onSelectImageReference={agent.enable_attachments && !chatLoading ? ({ asset_ref, url }) => {
                 setSelectedImageRefs(current => current.some(item => item.asset_ref === asset_ref)
                   ? current

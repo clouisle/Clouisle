@@ -277,6 +277,7 @@ def test_resource_field_serialization_rewrites_only_mapped_ids():
         "hide_message_actions": False,
         "hide_reasoning": False,
         "enable_memory": True,
+        "enable_user_input_request": True,
     }
 
     fields = resources._agent_fields(
@@ -288,6 +289,7 @@ def test_resource_field_serialization_rewrites_only_mapped_ids():
     assert fields["model_id"] == mapped_model
     assert fields["max_iterations"] == 7
     assert fields["enable_memory"] is True
+    assert fields["enable_user_input_request"] is True
     assert payload["tools_config"][0]["tool_id"] == "source-tool"
 
     defaults = resources._tool_fields({"name": "Tool"})

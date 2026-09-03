@@ -129,7 +129,6 @@ mock.module('@/components/ai-elements/tool', () => ({
 }))
 mock.module('./image-lightbox', () => ({ ImageLightbox: () => null, useLightbox: () => ({ isOpen: false, imageSrc: '', imageAlt: '', openLightbox: mock(() => {}), closeLightbox: mock(() => {}) }) }))
 mock.module('./message-parts', () => ({ SourceContent: ({ sources }: { sources: unknown[] }) => <aside>sources:{sources.length}</aside>, FileListContent: ({ files }: { files: Array<{ filename?: string }> }) => <div>{files.map((file) => file.filename).join(',')}</div> }))
-mock.module('./user-input-request-card', () => ({ UserInputRequestCard: ({ question, options }: { question: string; options?: string[] }) => <div>{question}{options?.join(',')}</div> }))
 mock.module('streamdown', () => ({
   Block: ({ content }: { content: string }) => <pre>{content}</pre>,
   Streamdown: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
