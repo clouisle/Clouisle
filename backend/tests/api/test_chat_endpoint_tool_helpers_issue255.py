@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import chat
+from app.llm.tools.builtin import register_all_builtin_tools
 from app.models.agent import RAGMode
 
 
@@ -162,6 +163,8 @@ async def test_agent_tools_cover_skill_and_mcp_failures_without_network(
     monkeypatch,
 ):
     from app.models.tool import Tool
+
+    register_all_builtin_tools()
     from app.services.skill import SkillService
 
     current_agent = agent(

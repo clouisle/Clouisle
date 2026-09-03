@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import chat
+from app.llm.tools.builtin import register_all_builtin_tools
 from app.models.agent import RAGMode
 
 
@@ -128,6 +129,7 @@ async def test_agent_tools_cover_media_dedup_custom_skill_and_mcp(monkeypatch):
 @pytest.mark.anyio
 async def test_agent_tools_skip_unavailable_optional_sources(monkeypatch):
     query = _FirstQuery(SimpleNamespace(name="remote", mcp_config={"url": "test"}))
+    register_all_builtin_tools()
     monkeypatch.setattr("app.models.tool.Tool.filter", Mock(return_value=query))
     monkeypatch.setattr(
         "app.services.skill.SkillService.get_skill_for_team",

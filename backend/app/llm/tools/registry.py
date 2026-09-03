@@ -39,6 +39,16 @@ class ToolConcurrency(str, Enum):
     EXCLUSIVE = "exclusive"
 
 
+NON_SELECTABLE_BUILTIN_TOOLS: set[str] = {
+    # Tools that must never appear in the user-facing catalog or be attached
+    # through agent ``tools_config``; each is injected only by its dedicated
+    # feature switch.
+    "ask_user",
+    "generate_image",
+    "generate_video",
+}
+
+
 class ToolInfo(BaseModel):
     """工具信息"""
 

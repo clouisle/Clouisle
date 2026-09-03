@@ -63,7 +63,7 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
-from app.llm.tools import tool_registry
+from app.llm.tools import tool_registry, NON_SELECTABLE_BUILTIN_TOOLS
 from app.llm.types import ChatStreamChunk, Message as LLMChatMessage, ToolCall
 from app.llm.token_counter import (
     count_message_tokens,
@@ -934,12 +934,12 @@ Examples of when to search:
 
         if tool_type == "builtin":
             tool_name = config.get("name")
-            if tool_name:
+            # Feature-switch tools are never user-selectable.
+            if tool_name and tool_name not in NON_SELECTABLE_BUILTIN_TOOLS:
                 builtin_tools = tool_registry.to_openai_tools([tool_name])
                 sandbox_tools = tool_registry.to_openai_sandbox_tools([tool_name])
                 for builtin_tool in [*builtin_tools, *sandbox_tools]:
                     append_openai_tool(builtin_tool)
-
         elif tool_type == "custom":
             tool_id = config.get("tool_id")
             if tool_id:
