@@ -74,6 +74,8 @@ mock.module('@/components/ui/tooltip', () => ({ Tooltip: passthrough(), TooltipC
 mock.module('@/components/ui/collapsible', () => ({ Collapsible: passthrough(), CollapsibleContent: passthrough(), CollapsibleTrigger: passthrough('button') }))
 
 mock.module('@/components/chat', () => ({
+  AgentChatEmptyState: () => null,
+  AgentChatSurface: () => null,
   ChatContainer: ({ messages }: { messages: Array<{ content?: string }> }) => <div data-testid="chat-container">{messages.map((m, i) => <p key={i}>{m.content}</p>)}</div>,
   ChatInput: ({ value, placeholder, onSubmit }: { value: string; placeholder?: string; onSubmit: (v: string) => void }) => <form onSubmit={(e) => { e.preventDefault(); onSubmit(value || 'hello') }}><input aria-label="chat" placeholder={placeholder} value={value} onChange={noop} /><button type="submit">send</button></form>,
   PendingAskUserForm: () => null,
