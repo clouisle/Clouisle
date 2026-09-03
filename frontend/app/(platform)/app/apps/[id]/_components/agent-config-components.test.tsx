@@ -76,6 +76,7 @@ mock.module('@/components/ui/collapsible', () => ({ Collapsible: passthrough(), 
 mock.module('@/components/chat', () => ({
   ChatContainer: ({ messages }: { messages: Array<{ content?: string }> }) => <div data-testid="chat-container">{messages.map((m, i) => <p key={i}>{m.content}</p>)}</div>,
   ChatInput: ({ value, placeholder, onSubmit }: { value: string; placeholder?: string; onSubmit: (v: string) => void }) => <form onSubmit={(e) => { e.preventDefault(); onSubmit(value || 'hello') }}><input aria-label="chat" placeholder={placeholder} value={value} onChange={noop} /><button type="submit">send</button></form>,
+  PendingAskUserForm: () => null,
   VariableForm: () => <div data-testid="variable-form" />,
   useVariableForm: () => ({ values: {}, setValues: noop, needsInput: false, isValid: true, fieldErrors: {}, validate: () => true, reset: noop }),
 }))
