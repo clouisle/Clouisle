@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { createElement } from 'react'
-import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestInstance, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 import type { Agent } from '@/lib/api'
 import type { Workflow } from '@/lib/api/workflows'

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 import type { WorkflowResultNode } from './workflow-result-renderer'
 
 const textWithCitations = mock(() => <span data-mock="text" />)

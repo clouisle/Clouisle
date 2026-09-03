@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from 'bun:test'
 import * as React from 'react'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 mock.module('@/components/ui/collapsible', () => ({
   Collapsible: ({ children, open, onOpenChange }: { children: React.ReactNode; open: boolean; onOpenChange: (open: boolean) => void }) => (

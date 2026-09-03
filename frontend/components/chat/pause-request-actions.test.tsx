@@ -1,6 +1,6 @@
 import { afterEach, expect, mock, test } from 'bun:test'
 import React from 'react'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const getPendingPauseRequest = mock(() => Promise.resolve(null))
 const submitPauseRequest = mock(() => Promise.resolve({ pause_request_id: 'p', status: 'submitted' }))

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import React from 'react'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 import { Alert, AlertAction, AlertDescription, AlertTitle } from './alert'
 import { Badge } from './badge'

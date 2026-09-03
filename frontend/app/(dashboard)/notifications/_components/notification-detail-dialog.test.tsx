@@ -1,6 +1,6 @@
 import { expect, mock, test } from "bun:test";
 import React from "react";
-import { act, create } from "react-test-renderer";
+import { act, create } from "@/test-utils/rtl-renderer";
 
 mock.module("next-intl", () => ({
   useLocale: () => 'en',

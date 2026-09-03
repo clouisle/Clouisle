@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, mock, test } from "bun:test";
 import React from "react";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { act, create, type ReactTestRenderer } from "@/test-utils/rtl-renderer";
 
 const getAPIKeys = mock(() => Promise.resolve({ items: [] }));
 const deactivateAPIKey = mock(() => Promise.resolve({}));

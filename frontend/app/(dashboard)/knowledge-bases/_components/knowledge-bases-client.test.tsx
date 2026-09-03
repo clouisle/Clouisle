@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const getKnowledgeBases = mock(() => Promise.resolve({ items: [], total: 0 }))
 const updateKnowledgeBase = mock(() => Promise.resolve({}))

@@ -1,8 +1,10 @@
-import { beforeEach, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
 
 const jsx = (type: unknown, props: Record<string, unknown> | null) => ({ type, props: props ?? {} })
 const element = function Element() {}
 
+const originalApiUrl = process.env.NEXT_PUBLIC_API_URL
+const originalFetch = globalThis.fetch
 let stateValues: unknown[] = []
 let stateIndex = 0
 const stateUpdates: unknown[][] = []
@@ -133,7 +135,14 @@ function clickByClass(tree: unknown, className: string) {
 beforeEach(() => {
   resetHooks()
   mock.restore()
+  delete process.env.NEXT_PUBLIC_API_URL
   Object.assign(navigator, { clipboard: { writeText } })
+})
+
+afterEach(() => {
+  if (originalApiUrl === undefined) delete process.env.NEXT_PUBLIC_API_URL
+  else process.env.NEXT_PUBLIC_API_URL = originalApiUrl
+  globalThis.fetch = originalFetch
 })
 
 test('settings drawer exposes visible choices and calls focused actions', () => {

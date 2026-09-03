@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
-import TestRenderer, { act } from 'react-test-renderer'
+import TestRenderer, { act } from '@/test-utils/rtl-renderer'
 
 import type { ChatInputFile } from './chat-input'
 

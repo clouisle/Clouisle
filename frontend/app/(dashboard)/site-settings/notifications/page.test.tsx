@@ -1,6 +1,6 @@
 import { afterEach, expect, mock, test } from 'bun:test'
 import React from 'react'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const getEmail = mock(() => Promise.resolve({ smtp_enabled: true }))
 const getDingTalk = mock(() => Promise.resolve({ dingtalk_enabled: false }))

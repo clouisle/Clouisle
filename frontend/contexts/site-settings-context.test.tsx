@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import React from 'react'
 import { NextIntlClientProvider } from 'next-intl'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 import { siteSettingsApi, type PublicSiteSettings } from '@/lib/api'
 import { SiteSettingsProvider, useSiteSettings } from './site-settings-context'

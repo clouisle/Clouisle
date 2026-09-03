@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from 'bun:test'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const codeToHtml = mock(async (code: string, options: { theme: string }) =>
   `<pre data-theme="${options.theme}">${code}</pre>`,

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
-import { act, create, type ReactTestRenderer, type ReactTestInstance } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer, type ReactTestInstance } from '@/test-utils/rtl-renderer'
 
 const getCurrentUser = mock(() => Promise.resolve({
   username: 'Alice Smith',

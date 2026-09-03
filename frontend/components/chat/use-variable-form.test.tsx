@@ -1,6 +1,6 @@
 import { afterEach, expect, mock, test } from 'bun:test'
 import React from 'react'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 // 直接驱动 useVariableForm hook 的行为测试（运行页起始表单/暂停表单的状态机）。
 let lastForm: ReturnType<typeof useVariableForm> | null = null

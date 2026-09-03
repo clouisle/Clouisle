@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { Window } from 'happy-dom'
 import * as React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -146,6 +146,9 @@ async function renderApiContent(agent: Partial<Agent> = {}) {
   return { container, document, writeText }
 }
 
+beforeEach(() => {
+  delete process.env.NEXT_PUBLIC_API_URL
+})
 afterEach(async () => {
   if (root) {
     await act(async () => root!.unmount())
@@ -154,6 +157,7 @@ afterEach(async () => {
   container = null
   cleanupWindow?.close()
   cleanupWindow = null
+  delete process.env.NEXT_PUBLIC_API_URL
   toastSuccess.mockClear()
 })
 

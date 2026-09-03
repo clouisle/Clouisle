@@ -1,6 +1,6 @@
 import React from 'react'
 import { beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const push = mock(() => undefined)
 const router = { push }

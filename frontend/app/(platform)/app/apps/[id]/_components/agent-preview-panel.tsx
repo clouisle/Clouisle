@@ -2,23 +2,18 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { RotateCcw, Sparkles, AlertCircle, X, ChevronUp, ChevronDown } from 'lucide-react'
+import { RotateCcw, AlertCircle, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ApiError, type Agent, type ChatFileUrl } from '@/lib/api'
 import { uploadApi } from '@/lib/api'
 import {
-  ChatContainer,
-  ChatInput,
-  PendingAskUserForm,
-  VariableForm,
+  AgentChatEmptyState,
+  AgentChatSurface,
   useVariableForm,
   type ChatInputFile,
 } from '@/components/chat'
 import { useChat, type ChatError, type ChatImageContent, getErrorMsgKey } from '@/hooks/use-chat'
-import { cn } from '@/lib/utils'
-
 // Helper function to convert File to base64 data URL
 async function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -71,8 +66,6 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
     reset: resetVariables,
   } = useVariableForm(agent.variables || [])
 
-  // Check if there are any visible variables
-  const hasVisibleVariables = (agent.variables || []).some((v) => !v.hidden)
   
   const {
     messages,
@@ -85,6 +78,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
     sendMessage,
     submitAskUser,
     regenerate,
+    editMessage,
     switchVersion,
     stop,
     reset,
@@ -94,7 +88,6 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
     onError: () => setShowError(true),
   })
 
-  const hasPendingAskUser = Boolean(pendingAskUserToolCallId)
 
   // Handle submit - check if required variables are filled
   const handleSubmit = async (message: string, submittedFiles?: ChatInputFile[]) => {
@@ -219,14 +212,6 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
     return err.message || tError('unknown')
   }
 
-  // Count required variables
-  const requiredCount = (agent.variables || []).filter((v) => !v.hidden && v.required).length
-  const filledRequiredCount = (agent.variables || []).filter((v) => {
-    if (v.hidden || !v.required) return false
-    const value = variableValues[v.name]
-    if (v.type === 'checkbox') return true
-    return value !== undefined && value !== null && value !== ''
-  }).length
 
   return (
     <div className="flex flex-col h-full min-h-0 max-h-full overflow-hidden">
@@ -252,113 +237,51 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
         </div>
       )}
 
-      {/* Messages */}
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <ChatContainer
-          messages={messages}
-          isStreaming={isStreaming}
-          isLoading={isLoading}
-          hideToolCalls={agent.hide_tool_calls}
-          hideMessageActions={agent.hide_message_actions}
-          hideReasoning={agent.hide_reasoning}
-          conversationId={conversationId}
-          className="h-full"
-          onRegenerate={regenerate}
-          onSwitchVersion={switchVersion}
-          emptyState={
-            <div className="text-center text-muted-foreground py-8 px-4">
-              <div className="flex justify-center mb-4">
-                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Sparkles className="h-6 w-6 text-primary" />
-                </div>
-              </div>
-              <p className="text-sm">{t('empty')}</p>
-              {/* Suggested questions */}
-              {agent.suggested_questions && agent.suggested_questions.length > 0 && (
-                <div className="mt-4 flex flex-wrap justify-center gap-2">
-                  {agent.suggested_questions.slice(0, 3).map((question, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleSubmit(question)}
-                      className="px-3 py-1.5 text-xs rounded-full border bg-background hover:bg-muted transition-colors cursor-pointer"
-                    >
-                      {question}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          }
-        />
-      </div>
-
-      {/* Input Area with Variables */}
-      <div className="relative pb-4 shrink-0">
-        {/* Variable Panel - Collapsible above input */}
-        {hasPendingAskUser && (
-          <PendingAskUserForm
-            messages={messages}
-            pendingToolCallId={pendingAskUserToolCallId}
-            disabled={Boolean(isStreaming)}
-            onSubmit={submitAskUser}
+      <AgentChatSurface
+        messages={messages}
+        isStreaming={isStreaming}
+        isLoading={isLoading}
+        hideToolCalls={agent.hide_tool_calls}
+        hideMessageActions={agent.hide_message_actions}
+        hideReasoning={agent.hide_reasoning}
+        conversationId={conversationId}
+        onRegenerate={regenerate}
+        onEditMessage={editMessage}
+        onSwitchVersion={switchVersion}
+        emptyState={
+          <AgentChatEmptyState
+            agentName={agent.name}
+            icon={agent.icon}
+            avatarUrl={agent.avatar_url}
+            openingMessage={agent.opening_message}
+            fallbackMessage={t('empty')}
+            suggestedQuestions={agent.suggested_questions}
+            onSuggestedQuestion={handleSubmit}
           />
-        )}
-        {!hasPendingAskUser && hasVisibleVariables && (
-          <div className="px-4">
-            <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
-              <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden w-full mx-auto">
-                <CollapsibleTrigger className="flex items-center justify-between w-full px-2.5 py-1.5 text-xs hover:bg-muted/50 transition-colors">
-                  <span className="text-muted-foreground">
-                    {tVars('title')}
-                    {requiredCount > 0 && (
-                      <span className={cn(
-                        "ml-1.5",
-                        filledRequiredCount === requiredCount ? "text-green-600" : "text-orange-500"
-                      )}>
-                        {filledRequiredCount}/{requiredCount}
-                      </span>
-                    )}
-                  </span>
-                  {variablesOpen ? (
-                    <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                  ) : (
-                    <ChevronUp className="h-3 w-3 text-muted-foreground" />
-                  )}
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <div className="px-2.5 pb-2.5 pt-0.5">
-                    <VariableForm
-                      variables={agent.variables || []}
-                      values={variableValues}
-                      onChange={setVariableValues}
-                      fieldErrors={variableFieldErrors}
-                      className="space-y-2"
-                    />
-                  </div>
-                </CollapsibleContent>
-              </div>
-            </Collapsible>
-          </div>
-        )}
-
-        <ChatInput
-          value={input}
-          onChange={setInput}
-          onSubmit={handleSubmit}
-          onStop={stop}
-          placeholder={needsVariableInput && !variablesValid ? tVars('fillRequired') : t('placeholder')}
-          disabled={(isLoading && !isStreaming) || runStatus === 'waiting'}
-          isLoading={isLoading}
-          isStreaming={isStreaming}
-          allowAttachments={agent.enable_attachments}
-          enableFileUpload={agent.enable_attachments}
-          fileUploadConfig={agent.attachment_config}
-          files={files}
-          onFilesChange={setFiles}
-          isUploading={isUploading}
-          className="max-w-none"
-        />
-      </div>
+        }
+        inputValue={input}
+        onInputChange={setInput}
+        onSubmit={handleSubmit}
+        onStop={stop}
+        placeholder={needsVariableInput && !variablesValid ? tVars('fillRequired') : t('placeholder')}
+        inputDisabled={(isLoading && !isStreaming) || runStatus === 'waiting'}
+        allowAttachments={agent.enable_attachments}
+        enableFileUpload={agent.enable_attachments}
+        fileUploadConfig={agent.attachment_config}
+        files={files}
+        onFilesChange={setFiles}
+        isUploading={isUploading}
+        pendingAskUserToolCallId={pendingAskUserToolCallId}
+        onSubmitAskUser={submitAskUser}
+        variables={agent.variables || []}
+        variableValues={variableValues}
+        onVariablesChange={setVariableValues}
+        variableFieldErrors={variableFieldErrors}
+        variablesOpen={variablesOpen}
+        onVariablesOpenChange={setVariablesOpen}
+        poweredByText={agent.powered_by_text}
+        className="flex-1"
+      />
     </div>
   )
 }

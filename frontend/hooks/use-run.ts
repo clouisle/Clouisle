@@ -45,6 +45,7 @@ export interface UseRunReturn {
   reconnect?: () => void
   reset: () => void
   regenerate?: (messageId: string) => Promise<void>
+  editMessage?: (messageId: string, content: string) => Promise<void>
   switchVersion?: (messageId: string, versionIndex: number) => Promise<void>
 }
 
@@ -159,6 +160,7 @@ export function useRun(options: UseRunOptions): UseRunReturn {
       reconnect: agentChat.reconnect,
       reset: agentChat.reset,
       regenerate: agentChat.regenerate,
+      editMessage: agentChat.editMessage,
       switchVersion: agentChat.switchVersion,
     }
   } else {

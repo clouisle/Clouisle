@@ -3,7 +3,7 @@ import React from 'react'
 import { NextIntlClientProvider } from 'next-intl'
 import { AppRouterContext } from 'next/dist/shared/lib/app-router-context.shared-runtime'
 import { SearchParamsContext } from 'next/dist/shared/lib/hooks-client-context.shared-runtime'
-import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestInstance, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 import { toast } from 'sonner'
 
 import authMessages from '@/i18n/en/auth.json'

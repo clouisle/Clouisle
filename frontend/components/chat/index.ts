@@ -5,6 +5,7 @@ export * from './types';
 export { Chat } from './chat';
 export { ChatContainer } from './chat-container';
 export { ChatInput, type ChatInputFile, type AttachmentConfig } from './chat-input';
+export { AgentChatEmptyState, AgentChatSurface, type AgentChatEmptyStateProps, type AgentChatSurfaceProps } from './agent-chat-surface';
 export { Message } from './message';
 export {
   AskUserForm,

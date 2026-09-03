@@ -1,6 +1,6 @@
 import React from 'react'
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const listMcpTools = mock(async () => ({ tools: [] as Array<{ name: string; description?: string; parameters: Record<string, unknown> }> }))
 const toastInfo = mock(() => undefined)

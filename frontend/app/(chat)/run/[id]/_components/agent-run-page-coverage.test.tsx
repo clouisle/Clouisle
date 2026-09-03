@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const routerPush = mock(() => {})
 const routerReplace = mock(() => {})
@@ -100,19 +100,26 @@ const Button = (props: ButtonProps) => {
 const Alert = ({ children }: React.PropsWithChildren) => children
 const AlertDescription = ({ children }: React.PropsWithChildren) => children
 const AlertTitle = ({ children }: React.PropsWithChildren) => children
-const Collapsible = ({ children }: React.PropsWithChildren) => children
-const CollapsibleContent = ({ children }: React.PropsWithChildren) => children
-const CollapsibleTrigger = ({ children }: React.PropsWithChildren) => children
-const ChatContainer = ({ emptyState }: { emptyState?: React.ReactNode }) => emptyState ?? null
-const ChatInput = (props: Record<string, unknown>) => {
-  inputProps = props as unknown as InputProps
-  return null
+const AgentChatEmptyState = ({ suggestedQuestions = [], onSuggestedQuestion }: { suggestedQuestions?: string[]; onSuggestedQuestion: (question: string) => void }) => (
+  React.createElement('div', null, suggestedQuestions.map((question) => React.createElement('button', {
+    key: question,
+    onClick: () => onSuggestedQuestion(question),
+  })))
+)
+const AgentChatSurface = (props: Record<string, unknown>) => {
+  inputProps = { onSubmit: props.onSubmit as InputProps['onSubmit'] }
+  pendingAskUserProps = props.pendingAskUserToolCallId
+    ? {
+        pendingToolCallId: props.pendingAskUserToolCallId as string,
+        onSubmit: props.onSubmitAskUser as PendingAskUserProps['onSubmit'],
+      }
+    : undefined
+  const variables = props.variables as Array<{ hidden?: boolean }> | undefined
+  const variablePanel = variables?.some((variable) => !variable.hidden)
+    ? React.createElement('div', { className: 'rounded-t-lg border border-b-0 bg-muted/30 w-[70%]' })
+    : null
+  return React.createElement(React.Fragment, null, props.emptyState, variablePanel)
 }
-const PendingAskUserForm = (props: Record<string, unknown>) => {
-  pendingAskUserProps = props as unknown as PendingAskUserProps
-  return null
-}
-const VariableForm = () => null
 const useVariableForm = () => ({
   ...formConfig,
   setValues: mock(() => {}),
@@ -131,8 +138,7 @@ mock.module('lucide-react', () => ({ AlertCircle: () => null, ChevronDown: () =>
 mock.module('@/lib/api', () => ({ ApiError: MockApiError, publicAgentsApi: { getPublicAgent } }))
 mock.module('@/components/ui/button', () => ({ Button }))
 mock.module('@/components/ui/alert', () => ({ Alert, AlertDescription, AlertTitle }))
-mock.module('@/components/ui/collapsible', () => ({ Collapsible, CollapsibleContent, CollapsibleTrigger }))
-mock.module('@/components/chat', () => ({ ChatContainer, ChatInput, PendingAskUserForm, VariableForm, useVariableForm }))
+mock.module('@/components/chat', () => ({ AgentChatEmptyState, AgentChatSurface, useVariableForm }))
 mock.module('@/hooks/use-run', () => ({ useRun }))
 mock.module('@/lib/utils/extract-variables', () => ({ extractVariables }))
 mock.module('@/lib/utils', () => ({ cn }))
@@ -207,6 +213,14 @@ describe('AgentRunPage uncovered durable-run paths', () => {
     expect(inputProps).toBeDefined()
     expect(runOptions?.conversationId).toBe('existing')
 
+    const suggestedQuestion = renderer!.root.findAllByType('button').find((button) => button.props.onClick)
+    expect(suggestedQuestion).toBeDefined()
+    await act(async () => {
+      suggestedQuestion!.props.onClick()
+    })
+    expect(sendMessage).toHaveBeenCalledWith('What can you do?')
+
+    sendMessage.mockClear()
     await act(async () => {
       await inputProps!.onSubmit('  ')
     })
@@ -257,7 +271,7 @@ describe('AgentRunPage uncovered durable-run paths', () => {
 
     const reconnectButton = buttonProps.find((props) => props.onClick)
     expect(reconnectButton).toBeDefined()
-    reconnectButton!.onClick()
+    reconnectButton!.onClick!()
     expect(reconnect).toHaveBeenCalled()
   })
   test('keeps the configure panel at the intended 70 percent width', async () => {
@@ -277,5 +291,10 @@ describe('AgentRunPage uncovered durable-run paths', () => {
 
     expect(renderer!.toJSON()).toBeDefined()
     expect(getPublicAgent).toHaveBeenCalledWith('agent-1')
+
+    const backButton = buttonProps.find((props) => props.onClick)
+    expect(backButton).toBeDefined()
+    backButton!.onClick!()
+    expect(routerPush).toHaveBeenCalledWith('/')
   })
 })

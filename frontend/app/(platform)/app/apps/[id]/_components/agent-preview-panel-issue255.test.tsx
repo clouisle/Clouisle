@@ -1,12 +1,64 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 
 interface Node { type: unknown; props: Record<string, unknown> }
-const jsx = (type: unknown, props: Record<string, unknown>): Node => ({ type, props })
+const jsx = (type: unknown, props: Record<string, unknown>): Node => type === surfaceRenderer ? surfaceRenderer!(props) : ({ type, props })
 const component = (name: string) => Object.assign(() => null, { displayName: name })
 const Button = component('Button')
 const ChatContainer = component('ChatContainer')
 const ChatInput = component('ChatInput')
 const PendingAskUserForm = component('PendingAskUserForm')
+const AgentChatSurface = (props: Record<string, unknown>) => {
+  const emptyState = props.emptyState as Node | undefined
+  const renderedEmptyState = emptyState?.type === AgentChatEmptyState
+    ? AgentChatEmptyState(emptyState.props)
+    : emptyState
+  const variables = props.variables as Array<{ hidden?: boolean }> | undefined
+  const variablePanel = variables?.some((variable) => !variable.hidden)
+    ? jsx('div', { className: 'rounded-t-lg border bg-muted/30 w-[70%]' })
+    : null
+  return jsx('AgentChatSurface', {
+    children: [
+      jsx(ChatContainer, {
+        messages: props.messages,
+        emptyState: renderedEmptyState,
+        onRegenerate: props.onRegenerate,
+        onEditMessage: props.onEditMessage,
+        onSwitchVersion: props.onSwitchVersion,
+      }),
+      props.pendingAskUserToolCallId
+        ? jsx(PendingAskUserForm, {
+            messages: props.messages,
+            pendingToolCallId: props.pendingAskUserToolCallId,
+            disabled: props.isStreaming,
+            onSubmit: props.onSubmitAskUser,
+          })
+        : null,
+      variablePanel,
+      jsx(ChatInput, {
+        value: props.inputValue,
+        onChange: props.onInputChange,
+        onSubmit: props.onSubmit,
+        onStop: props.onStop,
+        placeholder: props.placeholder,
+        disabled: props.inputDisabled,
+        isLoading: props.isLoading,
+        isStreaming: props.isStreaming,
+        allowAttachments: props.allowAttachments,
+        files: props.files,
+        onFilesChange: props.onFilesChange,
+        isUploading: props.isUploading,
+      }),
+    ],
+  })
+}
+const surfaceRenderer = AgentChatSurface
+const AgentChatEmptyState = (props: Record<string, unknown>) => jsx('AgentChatEmptyState', {
+  children: (props.suggestedQuestions as string[] | undefined)?.map((question, index) => jsx('button', {
+    key: `${question}-${index}`,
+    onClick: () => (props.onSuggestedQuestion as (question: string) => void)(question),
+    children: question,
+  })),
+})
 let states: unknown[] = []
 let stateIndex = 0
 let variableForm: Record<string, unknown>
@@ -20,6 +72,7 @@ const validate = mock(() => true)
 const resetVariables = mock(() => undefined)
 const reset = mock(() => undefined)
 const regenerate = mock(() => undefined)
+const editMessage = mock(() => undefined)
 const switchVersion = mock(() => undefined)
 const submitAskUser = mock(() => Promise.resolve())
 const stop = mock(() => undefined)
@@ -55,7 +108,8 @@ mock.module('@/components/ui/collapsible', () => ({
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/lib/api', () => ({ ApiError, uploadApi: { uploadFileWithProgress: uploadFile } }))
 mock.module('@/components/chat', () => ({
-  ChatContainer, ChatInput, PendingAskUserForm, VariableForm: component('VariableForm'), useVariableForm: () => variableForm,
+  AgentChatSurface, AgentChatEmptyState, ChatContainer, ChatInput, PendingAskUserForm,
+  VariableForm: component('VariableForm'), useVariableForm: () => variableForm,
 }))
 mock.module('@/hooks/use-chat', () => ({
   useChat: (options: { onError: () => void }) => { chatOptions = options; return chat },
@@ -92,7 +146,7 @@ beforeEach(() => {
   }
   chat = {
     messages: [], error: null, isLoading: false, isStreaming: false, sendMessage,
-    regenerate, switchVersion, stop, reset, pendingAskUserToolCallId: null, submitAskUser,
+    regenerate, editMessage, switchVersion, stop, reset, pendingAskUserToolCallId: null, submitAskUser,
   }
   errorKey = null
   sendMessage.mockClear()
@@ -104,9 +158,9 @@ beforeEach(() => {
   resetVariables.mockClear()
   reset.mockClear()
   regenerate.mockClear()
+  editMessage.mockClear()
   switchVersion.mockClear()
   submitAskUser.mockClear()
-  stop.mockClear()
   Object.defineProperty(globalThis, 'FileReader', { configurable: true, value: class {
     result: string | null = null
     onload: (() => void) | null = null
@@ -125,13 +179,14 @@ describe('AgentPreviewPanel', () => {
     expect(sendMessage).not.toHaveBeenCalled()
     expect(validate).toHaveBeenCalledTimes(1)
     expect(input.props.placeholder).toBe('chat.variables.fillRequired')
-    expect(text(tree)).toContain('0/1')
+    const variablePanel = descendants(tree).find((node) => String(node.props.className).includes('rounded-t-lg') && String(node.props.className).includes('bg-muted/30'))
+    expect(variablePanel?.props.className).toContain('w-[70%]')
 
     variableForm = { ...variableForm, needsInput: false, isValid: true }
     tree = render()
     const container = find(tree, ChatContainer)[0]
     const questions = descendants(container.props.emptyState).filter((node) => node.type === 'button')
-    expect(questions).toHaveLength(3)
+    expect(questions).toHaveLength(4)
     await (questions[0].props.onClick as () => Promise<void>)()
     await flush()
     expect(sendMessage.mock.calls.map((call) => call[0])).toEqual(['First?'])

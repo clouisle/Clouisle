@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, expect, mock, spyOn, test } from 'bun:test'
 import React from 'react'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const toastError = mock(() => {})
 let query = ''
