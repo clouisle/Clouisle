@@ -167,12 +167,21 @@ reconnects resume via `after_sequence` without duplicates. Run-scoped events:
 event: run_start
 data: {"status": "running", "run_id": "run-123"}
 
+event: run_status
+data: {"status": "waiting", "pending_tool_call_id": "call-123", "pending_tool_name": "ask_user", "pending_tool_input": {"questions": [...]}}
+
 event: input_accepted
 data: {"kind": "steer", "content": "..."}
 
 event: run_end
 data: {"status": "completed", "message_id": "msg-456"}
 ```
+
+`run_status` reports run lifecycle transitions. Besides `running`, a run can
+enter `waiting` when the model calls the `ask_user` tool: the payload carries
+the pending `tool_call_id`, `pending_tool_name` and `pending_tool_input` so the
+client can render the question form. Submit answers through the run answer
+endpoint to resume.
 
 `run_end` is exactly one terminal event per run (`completed | stopped |
 failed | interrupted`). Streams stop after a terminal event.

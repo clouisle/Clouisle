@@ -127,7 +127,7 @@ The following toggles control the chat experience:
 | **Hide message actions** | off | Hide token usage / speed stats in the chat UI |
 | **Hide reasoning** | off | Hide reasoning / chain-of-thought in the chat UI |
 | **Enable attachments** | off | Allow file and image attachments (limits configurable) |
-| **Enable interactive questions** | off | Allow the agent to pause and ask one or more structured questions in a single form during chat |
+| **Enable interactive questions** | off | Allow the agent to pause and ask one or more structured questions; users can pick options, type custom text, or skip |
 | **Enable memory** | off | Remember user information across conversations (memory config: max memories per retrieval, auto-extract, importance threshold) |
 
 ## Knowledge Base Configuration
