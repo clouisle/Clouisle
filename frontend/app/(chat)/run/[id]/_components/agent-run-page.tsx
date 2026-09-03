@@ -34,7 +34,10 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
       try {
         setIsLoading(true)
         setError(null)
-        setMetadata(await publicAgentsApi.getPublicAgent(id))
+        const data = await publicAgentsApi.getPublicAgent(id)
+        setMetadata(data)
+        // Default-collapse the variable panel unless required inputs must be filled
+        setVariablesOpen(extractVariables(data, 'agent').some(v => !v.hidden && v.required))
       } catch (err) {
         const isNotFound = err instanceof ApiError && (err.code === 404 || (err.code >= 4000 && err.code < 5000))
         setError(new Error(isNotFound ? t('notFound') : t('loadError')))

@@ -52,7 +52,9 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
   const tError = useTranslations('errors')
   const [input, setInput] = React.useState('')
   const [showError, setShowError] = React.useState(false)
-  const [variablesOpen, setVariablesOpen] = React.useState(true)
+  const [variablesOpen, setVariablesOpen] = React.useState(
+    () => (agent.variables || []).some(v => !v.hidden && v.required)
+  )
   
   // File upload state with progress tracking
   const [files, setFiles] = React.useState<ChatInputFile[]>([])

@@ -284,6 +284,8 @@ export default function PublicChatPage({
         // Fetch agent info
         const agentData = await adapter.getAgent(resolvedParams.id)
         setAgent(agentData)
+        // Default-collapse the variable panel unless required inputs must be filled
+        setVariablesOpen((agentData.variables || []).some(v => !v.hidden && v.required))
 
         // Fetch conversations (first page)
         setLoadingConversations(true)
@@ -663,7 +665,7 @@ export default function PublicChatPage({
   const variablePanel = (
     <>
       {variables.length > 0 && variables.some(v => !v.hidden) && (
-        <div className="mx-auto max-w-3xl px-4">
+        <div className="w-full mx-auto max-w-3xl px-4">
           <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
             <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden w-[70%] mx-auto">
               <CollapsibleTrigger className="flex items-center justify-between w-full px-2.5 py-1.5 text-xs hover:bg-muted/50 transition-colors">
@@ -1049,7 +1051,7 @@ export default function PublicChatPage({
                     header/footer height asymmetry). Welcome content hugs the
                     composer; the section scrolls on short viewports so it can
                     never push the composer off the center line. */}
-                <div className="flex w-full flex-1 min-h-0 min-w-0 flex-col items-center justify-end overflow-y-auto pb-4">
+                <div className="flex w-full flex-1 min-h-0 min-w-0 flex-col items-center justify-end overflow-y-auto">
                 {/* Agent Icon */}
                 <div className="mb-8">
                   {displayIcon ? (
