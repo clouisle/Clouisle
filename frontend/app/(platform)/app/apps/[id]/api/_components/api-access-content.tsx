@@ -222,21 +222,21 @@ while (true) {
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Header */}
-      <div className="border-b px-6 py-4 shrink-0">
+      <div className="border-b px-6 py-2.5 shrink-0">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold">{t('title')}</h1>
-            <p className="text-sm text-muted-foreground mt-1">{t('description')}</p>
+          <div className="min-w-0">
+            <h1 className="text-base font-medium leading-tight">{t('title')}</h1>
+            <p className="text-xs text-muted-foreground truncate">{t('description')}</p>
           </div>
           <a
             href="/app/api-keys"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3"
+            className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-7 px-2.5 shrink-0 ml-4"
           >
-            <Key className="h-4 w-4" />
+            <Key className="h-3 w-3" />
             {t('manageApiKeys')}
-            <ExternalLink className="h-3 w-3" />
+            <ExternalLink className="h-2.5 w-2.5" />
           </a>
         </div>
       </div>
