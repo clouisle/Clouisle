@@ -11,7 +11,6 @@ import {
 import {
   Plus,
   StopCircle,
-  Loader2,
   X,
   FileIcon,
   ArrowUp,
@@ -512,9 +511,10 @@ export function ChatInput({
           />
         </div>
 
-        {/* Submit and Stop Controls */}
+        {/* Submit and Stop Controls — mutually exclusive: stop while a run
+            is active, otherwise send */}
         <div className="flex items-center gap-1">
-          {showStop && (
+          {showStop ? (
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -530,32 +530,29 @@ export function ChatInput({
               />
               <TooltipContent>{t('stop')}</TooltipContent>
             </Tooltip>
-          )}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  aria-label={t('send')}
-                  className={cn(
-                    'flex h-9 w-9 items-center justify-center rounded-full transition-colors',
-                    canSubmit
-                      ? 'bg-foreground text-background hover:bg-foreground/90 dark:bg-white dark:hover:bg-white/90'
-                      : 'bg-muted text-muted-foreground cursor-not-allowed dark:bg-white/10'
-                  )}
-                  onClick={handleSubmit}
-                  disabled={!canSubmit}
-                >
-                  {isLoading && !isStreaming ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
+          ) : (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label={t('send')}
+                    className={cn(
+                      'flex h-9 w-9 items-center justify-center rounded-full transition-colors',
+                      canSubmit
+                        ? 'bg-foreground text-background hover:bg-foreground/90 dark:bg-white dark:hover:bg-white/90'
+                        : 'bg-muted text-muted-foreground cursor-not-allowed dark:bg-white/10'
+                    )}
+                    onClick={handleSubmit}
+                    disabled={!canSubmit}
+                  >
                     <ArrowUp className="h-5 w-5" />
-                  )}
-                </button>
-              }
-            />
-            <TooltipContent>{t('send')}</TooltipContent>
-          </Tooltip>
+                  </button>
+                }
+              />
+              <TooltipContent>{t('send')}</TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </div>
     </div>
