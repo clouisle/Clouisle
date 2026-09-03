@@ -342,6 +342,20 @@ describe('PublicChatPage', () => {
     await (pendingAskUserFormProps.onSubmit as (toolCallId: string, answer: { answers: Record<string, unknown>; skipped?: boolean }) => Promise<void>)('call-ask', { answers: { target: 'cloud' } })
     expect(submitAskUser).toHaveBeenCalledWith('call-ask', { answers: { target: 'cloud' } })
   })
+  test('keeps the configure panel at the intended 70 percent width', async () => {
+    getPublicAgent.mockResolvedValueOnce({
+      ...agent,
+      variables: [{ name: 'query', type: 'string', required: true, hidden: false }],
+    })
+    render()
+    await flush()
+
+    const panels = renderer!.root.findAll((node) => {
+      const className = node.props.className
+      return typeof className === 'string' && className.includes('rounded-t-lg') && className.includes('bg-muted/30')
+    })
+    expect(panels[0].props.className).toContain('w-[70%]')
+  })
 
 
   test('renders the agent-powered footer text and hides it when unset', async () => {
