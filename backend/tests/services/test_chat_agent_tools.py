@@ -127,18 +127,61 @@ async def test_ask_user_uses_one_array_contract_for_one_and_many_questions():
     "questions",
     [
         [],
+        "not-a-list",
+        [{"id": "target", "question": "Where?"}] * 21,
+        ["not-an-object"],
         [{"id": "", "question": "Where?"}],
+        [{"id": "   ", "question": "Where?"}],
         [{"id": "target", "question": ""}],
+        [{"id": "t" * 101, "question": "Where?"}],
+        [{"id": "target", "question": "q" * 2001}],
         [
             {"id": "target", "question": "Where?"},
             {"id": "target", "question": "Again?"},
         ],
+        [{"id": "target", "question": "Where?", "options": "cloud"}],
+        [{"id": "target", "question": "Where?", "options": ["cloud"] * 51}],
         [{"id": "target", "question": "Where?", "options": ["", "cloud"]}],
+        [{"id": "target", "question": "Where?", "options": [1, 2]}],
+        [{"id": "target", "question": "Where?", "options": ["o" * 501]}],
+        [{"id": "target", "question": "Where?", "required": "yes"}],
     ],
 )
 async def test_ask_user_rejects_malformed_questions(questions):
     with pytest.raises(ValueError):
         await ask_user(questions)
+
+
+@pytest.mark.anyio
+async def test_ask_user_normalizes_and_strips_valid_questions():
+    request = await ask_user(
+        [
+            {
+                "id": "  target  ",
+                "question": "  Where to deploy?  ",
+                "options": ["  cloud  ", "local"],
+                "required": False,
+            }
+        ]
+    )
+    assert request.arguments == {
+        "questions": [
+            {
+                "id": "target",
+                "question": "Where to deploy?",
+                "options": ["cloud", "local"],
+                "required": False,
+            }
+        ]
+    }
+
+
+@pytest.mark.anyio
+async def test_ask_user_defaults_required_true_and_omits_empty_options():
+    request = await ask_user([{"id": "target", "question": "Where?"}])
+    assert request.arguments == {
+        "questions": [{"id": "target", "question": "Where?", "required": True}]
+    }
 
 
 @pytest.mark.parametrize(
