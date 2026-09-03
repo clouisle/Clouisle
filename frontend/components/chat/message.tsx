@@ -574,7 +574,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
 
     const saveEdit = React.useCallback(async () => {
       const nextContent = editDraft.trim()
-      if (!onEditMessage || !nextContent || nextContent === textContent) return
+      if (!onEditMessage || !nextContent) return
       setIsSavingEdit(true)
       try {
         await onEditMessage(nextContent)
@@ -583,7 +583,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       } finally {
         setIsSavingEdit(false)
       }
-    }, [editDraft, onEditMessage, textContent])
+    }, [editDraft, onEditMessage])
 
     const resetSpeechState = React.useCallback(() => {
       speechUtteranceRef.current = null
@@ -1339,7 +1339,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                   type="button"
                   size="sm"
                   onClick={() => void saveEdit()}
-                  disabled={isSavingEdit || !editDraft.trim() || editDraft.trim() === textContent}
+                  disabled={isSavingEdit || !editDraft.trim()}
                 >
                   {isSavingEdit && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
                   {t('saveEdit')}
@@ -1417,7 +1417,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       streamErrorMessage,
       t,
       tReasoning,
-      textContent,
     ])
 
     const isAskUserOnlyMessage = isAssistant

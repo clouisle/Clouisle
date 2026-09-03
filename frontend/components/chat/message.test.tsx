@@ -384,7 +384,7 @@ describe('message behavior', () => {
     expect(onFeedback.mock.calls).toEqual([['positive'], ['negative']])
   })
 
-  test('edits user text with save and escape boundaries', async () => {
+  test('edits user text with send and escape boundaries', async () => {
     const onEditMessage = mock(async () => {})
     const container = render(<Message
       message={{ id: 'user-edit', role: 'user', parts: [{ type: 'text', text: 'Original' }] }}
@@ -394,16 +394,24 @@ describe('message behavior', () => {
     act(() => button(container, 'chat.message.edit').click())
     const textarea = container.querySelector('textarea')!
     expect(textarea.value).toBe('Original')
-    expect(button(container, 'chat.message.saveEdit').disabled).toBe(true)
 
+    // Sending an unchanged message is allowed
+    await act(async () => button(container, 'chat.message.saveEdit').click())
+    expect(onEditMessage).toHaveBeenCalledWith('Original')
+    expect(container.querySelector('textarea')).toBeNull()
+
+    // A revised message submits the trimmed draft
+    act(() => button(container, 'chat.message.edit').click())
+    const revised = container.querySelector('textarea')!
     act(() => {
-      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, '  Revised  ')
-      textarea.dispatchEvent(new window.Event('input', { bubbles: true }))
+      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')!.set!.call(revised, '  Revised  ')
+      revised.dispatchEvent(new window.Event('input', { bubbles: true }))
     })
     await act(async () => button(container, 'chat.message.saveEdit').click())
     expect(onEditMessage).toHaveBeenCalledWith('Revised')
     expect(container.querySelector('textarea')).toBeNull()
 
+    // Escape closes the editor without submitting
     act(() => button(container, 'chat.message.edit').click())
     act(() => container.querySelector('textarea')!.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     expect(container.querySelector('textarea')).toBeNull()
