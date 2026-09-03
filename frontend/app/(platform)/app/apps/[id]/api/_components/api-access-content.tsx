@@ -243,7 +243,8 @@ while (true) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        <div className="p-6 max-w-4xl space-y-8">
+        <div className="p-6 max-w-4xl mx-auto space-y-8">
+
           {/* Agent Status Alert */}
           {agent.status === 'draft' && (
             <Alert variant="destructive">
