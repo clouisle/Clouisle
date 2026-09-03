@@ -460,16 +460,13 @@
         "outputTruncated": "输出已被截断，已达到最大输出 token 限制",
         "iterationCapReached": "本轮已达到最大工具调用轮次，并以终止提示结束",
         "messageEnd": "消息结束，包含用量、耗时、version_number 和 version_count",
-        "error": "错误代码和消息"
-      },
-      "runLifecycleTitle": "运行生命周期事件",
-      "runLifecycleDescription": "Agent 聊天运行是持久化的。这些运行级别的事件带有包含 run_id、sequence、timestamp、round_id、message_id 和 type 的信封，以便重连时通过 after_sequence 恢复且不重复：",
-      "runEvents": {
+        "error": "错误代码和消息",
         "runStart": "运行开始，包含 run_id 和状态",
         "runStatus": "运行状态转换。当模型调用 ask_user 时进入 waiting 状态 — 载荷包含 pending_tool_call_id、pending_tool_name 和 pending_tool_input，客户端可据此渲染问题表单",
         "inputAccepted": "已提交的转向/追问已被接受",
         "runEnd": "终止事件（completed | stopped | failed | interrupted）"
       },
+      "runLifecycleTitle": "运行生命周期事件",
       "answerTitle": "提交答案",
       "answerDescription": "当运行等待用户答案时，提交结构化答案以恢复运行：",
       "answerEndpoint": "POST /api/v1/agents/{agent_id}/chat/runs/{run_id}/answers",

@@ -460,11 +460,7 @@
         "outputTruncated": "Output was truncated due to max output token limit",
         "iterationCapReached": "The round hit the maximum tool-call iterations and ended with a terminal notice",
         "messageEnd": "Message ended with usage, timing, version_number, and version_count",
-        "error": "Error code and message"
-      },
-      "runLifecycleTitle": "Run Lifecycle Events",
-      "runLifecycleDescription": "Agent chat runs are durable. These run-scoped events carry an envelope with run_id, sequence, timestamp, round_id, message_id and type so reconnects resume via after_sequence without duplicates:",
-      "runEvents": {
+        "error": "Error code and message",
         "runStart": "Run started; contains run_id and status",
         "runStatus": "Run status transition. Enter waiting when the model calls ask_user — the payload carries pending_tool_call_id, pending_tool_name, and pending_tool_input so the client can render the question form",
         "inputAccepted": "A queued steering/follow-up was committed",
