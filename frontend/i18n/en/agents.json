@@ -462,6 +462,24 @@
         "messageEnd": "Message ended with usage, timing, version_number, and version_count",
         "error": "Error code and message"
       },
+      "runLifecycleTitle": "Run Lifecycle Events",
+      "runLifecycleDescription": "Agent chat runs are durable. These run-scoped events carry an envelope with run_id, sequence, timestamp, round_id, message_id and type so reconnects resume via after_sequence without duplicates:",
+      "runEvents": {
+        "runStart": "Run started; contains run_id and status",
+        "runStatus": "Run status transition. Enter waiting when the model calls ask_user — the payload carries pending_tool_call_id, pending_tool_name, and pending_tool_input so the client can render the question form",
+        "inputAccepted": "A queued steering/follow-up was committed",
+        "runEnd": "Terminal event (completed | stopped | failed | interrupted)"
+      },
+      "answerTitle": "Submit Answers",
+      "answerDescription": "When a run is waiting for user answers, submit structured answers to resume it:",
+      "answerEndpoint": "POST /api/v1/agents/{agent_id}/chat/runs/{run_id}/answers",
+      "answerBody": "Request body:",
+      "answerFields": {
+        "toolCallId": "Pending tool-call ID from the run_status waiting event",
+        "answers": "ID-keyed answer map; each value is the chosen option or a custom string",
+        "skipped": "Explicitly skip every question (sends an empty answer map)"
+      },
+      "answerNote": "The run must be in waiting status and the tool_call_id must match the pending interaction.",
       "messageEndExample": "message_end event data example:",
       "codeExamples": "Code Examples",
       "tabs": {

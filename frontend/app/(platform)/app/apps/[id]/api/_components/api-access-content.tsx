@@ -196,8 +196,28 @@ while (true) {
     { event: 'output_truncated', description: t('events.outputTruncated') },
     { event: 'iteration_cap_reached', description: t('events.iterationCapReached') },
     { event: 'message_end', description: t('events.messageEnd') },
-    { event: 'error', description: t('events.error') },
   ]
+
+  // Run lifecycle events
+  const runEvents = [
+    { event: 'run_start', description: t('events.runStart') },
+    { event: 'run_status', description: t('events.runStatus') },
+    { event: 'input_accepted', description: t('events.inputAccepted') },
+    { event: 'run_end', description: t('events.runEnd') },
+  ]
+
+  // Answer endpoint
+  const answerEndpoint = `${apiBaseUrl}/api/v1/agents/${agent.id}/chat/runs/{run_id}/answers`
+
+  // Sample answer body
+  const sampleAnswerBody = JSON.stringify({
+    tool_call_id: "call-123",
+    answers: {
+      deployment_target: "云端"
+    },
+    skipped: false,
+  }, null, 2)
+
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -341,6 +361,52 @@ while (true) {
               }, null, 2)}
               language="json"
             />
+          </Section>
+
+          {/* Run Lifecycle Events */}
+          <Section title={t('runLifecycleTitle')}>
+            <p className="text-sm text-muted-foreground mb-3">{t('runLifecycleDescription')}</p>
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="text-left px-4 py-2 font-medium">{t('event')}</th>
+                    <th className="text-left px-4 py-2 font-medium">{t('eventDescription')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {runEvents.map((item) => (
+                    <tr key={item.event} className="border-t">
+                      <td className="px-4 py-2"><code>{item.event}</code></td>
+                      <td className="px-4 py-2 text-muted-foreground">{item.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+
+          {/* Submit Answers */}
+          <Section title={t('answerTitle')}>
+            <p className="text-sm text-muted-foreground mb-3">{t('answerDescription')}</p>
+            <CodeBlock code={answerEndpoint} language="text" />
+            <p className="text-sm text-muted-foreground mt-4 mb-2">{t('answerBody')}</p>
+            <CodeBlock code={sampleAnswerBody} language="json" />
+            <div className="mt-4 space-y-2">
+              <div className="flex gap-2">
+                <code className="text-sm bg-muted px-2 py-1 rounded">tool_call_id</code>
+                <span className="text-sm text-muted-foreground">— {t('answerFields.toolCallId')}</span>
+              </div>
+              <div className="flex gap-2">
+                <code className="text-sm bg-muted px-2 py-1 rounded">answers</code>
+                <span className="text-sm text-muted-foreground">— {t('answerFields.answers')}</span>
+              </div>
+              <div className="flex gap-2">
+                <code className="text-sm bg-muted px-2 py-1 rounded">skipped</code>
+                <span className="text-sm text-muted-foreground">— {t('answerFields.skipped')}</span>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground mt-3">{t('answerNote')}</p>
           </Section>
 
           {/* Code Examples */}

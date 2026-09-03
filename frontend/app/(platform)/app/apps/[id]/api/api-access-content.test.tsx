@@ -62,10 +62,20 @@ const messages: Record<string, string> = {
   'agents.apiAccess.events.mediaResult': 'Media result',
   'agents.apiAccess.events.compressionStart': 'Compression started',
   'agents.apiAccess.events.compressionEnd': 'Compression ended',
-  'agents.apiAccess.events.outputTruncated': 'Output truncated',
-  'agents.apiAccess.events.iterationCapReached': 'Iteration cap reached',
-  'agents.apiAccess.events.messageEnd': 'Message ended',
-  'agents.apiAccess.events.error': 'Error event',
+  'agents.apiAccess.events.runStart': 'Run started',
+  'agents.apiAccess.events.runStatus': 'Run status transition',
+  'agents.apiAccess.events.inputAccepted': 'Input accepted',
+  'agents.apiAccess.events.runEnd': 'Terminal event',
+  'agents.apiAccess.runLifecycleTitle': 'Run Lifecycle Events',
+  'agents.apiAccess.runLifecycleDescription': 'Agent chat runs are durable.',
+  'agents.apiAccess.answerTitle': 'Submit Answers',
+  'agents.apiAccess.answerDescription': 'When a run is waiting for user answers.',
+  'agents.apiAccess.answerEndpoint': 'POST /api/v1/agents/{agent_id}/chat/runs/{run_id}/answers',
+  'agents.apiAccess.answerBody': 'Request body:',
+  'agents.apiAccess.answerFields.toolCallId': 'Pending tool-call ID',
+  'agents.apiAccess.answerFields.answers': 'ID-keyed answer map',
+  'agents.apiAccess.answerFields.skipped': 'Explicitly skip every question',
+  'agents.apiAccess.answerNote': 'The run must be in waiting status.',
   'common.copiedToClipboard': 'Copied',
 }
 
@@ -168,6 +178,26 @@ describe('ApiAccessContent', () => {
     expect(container.textContent).not.toContain('Draft agent')
   })
 
+  test('documents run lifecycle events and the answer endpoint', async () => {
+    const { container } = await renderApiContent()
+
+    expect(container.textContent).toContain('Run Lifecycle Events')
+    expect(container.textContent).toContain('run_start')
+    expect(container.textContent).toContain('run_status')
+    expect(container.textContent).toContain('run_end')
+    expect(container.textContent).toContain('Submit Answers')
+    expect(container.textContent).toContain('/api/v1/agents/agent-123/chat/runs/{run_id}/answers')
+    expect(container.textContent).toContain('tool_call_id')
+    expect(container.textContent).toContain('skipped')
+  })
+
+  test('keeps the answer endpoint in sync with the configured API base URL', async () => {
+    process.env.NEXT_PUBLIC_API_URL = 'https://api.example.test'
+    const { container } = await renderApiContent()
+
+    expect(container.textContent).toContain('https://api.example.test/api/v1/agents/agent-123/chat/runs/{run_id}/answers')
+
+  })
   test('uses configured API base URL in endpoint and examples', async () => {
     process.env.NEXT_PUBLIC_API_URL = 'https://api.example.test'
     const { container } = await renderApiContent()
