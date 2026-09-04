@@ -36,7 +36,7 @@ mock.module('@/lib/api', () => ({ ApiError: MockApiError, publicAgentsApi: { get
 mock.module('@/components/ui/button', () => ({ Button: (p: Record<string, unknown>) => ({ type: 'button', props: p }) }))
 mock.module('@/components/ui/alert', () => ({ Alert: (p: Record<string, unknown>) => ({ type: 'div', props: p }), AlertDescription: (p: Record<string, unknown>) => ({ type: 'div', props: p }), AlertTitle: (p: Record<string, unknown>) => ({ type: 'h5', props: p }) }))
 mock.module('@/components/ui/collapsible', () => ({ Collapsible: (p: Record<string, unknown>) => ({ type: 'div', props: p }), CollapsibleContent: (p: Record<string, unknown>) => ({ type: 'div', props: p }), CollapsibleTrigger: (p: Record<string, unknown>) => ({ type: 'button', props: p }) }))
-mock.module('@/components/chat', () => ({ ChatContainer: () => null, ChatInput: () => null, VariableForm: () => null, useVariableForm: () => ({ values: {}, setValues: mock(() => {}), needsInput: false, fieldErrors: {}, validate: () => true }) }))
+mock.module('@/components/chat', () => ({ ChatContainer: () => null, ChatInput: () => null, AgentChatSurface: () => null, AgentChatEmptyState: () => null, PendingAskUserForm: () => null, VariableForm: () => null, useVariableForm: () => ({ values: {}, setValues: mock(() => {}), needsInput: false, fieldErrors: {}, validate: () => true }) }))
 const sendMessageMock = mock(async () => {})
 mock.module('@/hooks/use-run', () => ({ useRun: () => ({ messages: [], isLoading: false, isStreaming: false, input: '', setInput: mock(() => {}), sendMessage: sendMessageMock, stop: mock(() => {}), reset: mock(() => {}), conversationId: null, runId: null, runStatus: null, reconnect: mock(() => {}), chatOptions: {} }) }))
 mock.module('@/lib/utils/extract-variables', () => ({ extractVariables: () => [] }))
@@ -120,6 +120,7 @@ describe('AgentRunPage', () => {
     mock.module('@/components/chat', () => ({
       ChatContainer: (p: Record<string, unknown> & { emptyState?: unknown }) => p.emptyState ?? null,
       ChatInput: (p: Record<string, unknown>) => ({ type: 'chat-input', props: p }),
+      PendingAskUserForm: (p: Record<string, unknown>) => ({ type: 'pending-ask-user-form', props: p }),
       VariableForm: (p: Record<string, unknown>) => ({ type: 'variable-form', props: p }),
       useVariableForm: () => ({ values: {}, setValues: mock(() => {}), needsInput: false, fieldErrors: {}, validate: () => true }),
     }))
@@ -141,6 +142,7 @@ describe('AgentRunPage', () => {
     mock.module('@/components/chat', () => ({
       ChatContainer: () => null,
       ChatInput: (p: Record<string, unknown>) => ({ type: 'chat-input', props: p }),
+      PendingAskUserForm: (p: Record<string, unknown>) => ({ type: 'pending-ask-user-form', props: p }),
       VariableForm: (p: Record<string, unknown>) => ({ type: 'variable-form', props: p }),
       useVariableForm: () => ({ values: {}, setValues: mock(() => {}), needsInput: false, fieldErrors: {}, validate: () => true }),
     }))

@@ -1,6 +1,6 @@
 import { afterEach, expect, mock, test } from "bun:test";
 import React from "react";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { act, create, type ReactTestRenderer } from "@/test-utils/rtl-renderer";
 
 const writeText = mock(() => Promise.resolve());
 Object.assign(globalThis, { navigator: { clipboard: { writeText } } });

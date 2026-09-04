@@ -13,7 +13,6 @@ import type {
   ToolCallPart,
   ToolResultPart,
   SourceDocumentPart,
-  UserInputRequestPart,
 } from '@/components/chat'
 import { isSourcePart } from '@/components/chat'
 import {
@@ -101,61 +100,6 @@ export interface BackendMessage {
   is_active?: boolean
   version_number?: number
   version_count?: number
-}
-
-/**
- * Parse user input request from XML format in message content
- * Returns the parsed request and the content with XML removed
- */
-function parseUserInputRequest(content: string): {
-  userInputRequest: UserInputRequestPart | null
-  cleanContent: string
-} {
-  // Match <user_input_request>...</user_input_request>
-  const regex = /<user_input_request>([\s\S]*?)<\/user_input_request>/
-  const match = content.match(regex)
-
-  if (!match) {
-    return { userInputRequest: null, cleanContent: content }
-  }
-
-  const xmlContent = match[1]
-
-  // Extract question
-  const questionMatch = xmlContent.match(/<question>([\s\S]*?)<\/question>/)
-  const question = questionMatch ? questionMatch[1].trim() : ''
-
-  // Extract options
-  const optionsMatch = xmlContent.match(/<options>([\s\S]*?)<\/options>/)
-  const options: string[] = []
-
-  if (optionsMatch) {
-    const optionsContent = optionsMatch[1]
-    const optionMatches = optionsContent.matchAll(/<option>([\s\S]*?)<\/option>/g)
-    for (const optionMatch of optionMatches) {
-      const option = optionMatch[1].trim()
-      if (option) {
-        options.push(option)
-      }
-    }
-  }
-
-  // Only create request if we have valid question and options
-  if (!question || options.length < 2) {
-    return { userInputRequest: null, cleanContent: content }
-  }
-
-  const userInputRequest: UserInputRequestPart = {
-    type: 'user-input-request',
-    question,
-    options,
-    state: 'answered', // Historical messages are already answered
-  }
-
-  // Remove XML from content
-  const cleanContent = content.replace(regex, '').trim()
-
-  return { userInputRequest, cleanContent }
 }
 
 function appendStoppedPart(parts: MessagePart[]): MessagePart[] {
@@ -388,14 +332,7 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
       } as ReasoningPart)
     }
 
-    let contentToAdd = message.content
-    let userInputRequestPart: UserInputRequestPart | null = null
-
-    if (message.content) {
-      const { userInputRequest, cleanContent } = parseUserInputRequest(message.content)
-      userInputRequestPart = userInputRequest
-      contentToAdd = cleanContent
-    }
+    const contentToAdd = message.content
 
     if (contentToAdd) {
       parts.push({
@@ -403,10 +340,6 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
         text: contentToAdd,
         state: 'done',
       } as TextPart)
-    }
-
-    if (userInputRequestPart) {
-      parts.push(userInputRequestPart)
     }
 
     if (message.tool_calls && Array.isArray(message.tool_calls)) {

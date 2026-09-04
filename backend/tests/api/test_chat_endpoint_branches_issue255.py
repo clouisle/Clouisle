@@ -11,7 +11,9 @@ from app.models.agent import (
     MessageRoundRole,
     MessageRoundStatus,
 )
+from app.models.agent_run import AgentRunStatus
 from app.schemas.response import BusinessError
+from app.schemas.agent import RunAnswerCreate
 
 
 def _query_with_first(value):
@@ -233,3 +235,67 @@ async def test_persist_partial_round_error_skips_empty_untraced_round(monkeypatc
         model_used=None,
         start_time=0,
     )
+
+
+@pytest.mark.asyncio
+async def test_post_run_answer_forwards_explicit_skip(monkeypatch):
+    agent_id = uuid4()
+    run_id = uuid4()
+    original = SimpleNamespace(status=AgentRunStatus.WAITING)
+    resumed = SimpleNamespace(worker_payload={})
+    submit = AsyncMock(return_value=resumed)
+    current_user = SimpleNamespace(id=uuid4())
+    monkeypatch.setattr(
+        chat, "_split_run_auth", MagicMock(return_value=(current_user, None))
+    )
+    monkeypatch.setattr(chat.deps, "check_api_key_agent_access", AsyncMock())
+    monkeypatch.setattr(chat, "_load_owned_run", AsyncMock(return_value=original))
+    from app.services import agent_run_store
+    from app.tasks.agent import run_agent_task
+
+    monkeypatch.setattr(agent_run_store, "submit_user_answers", submit)
+    monkeypatch.setattr(
+        run_agent_task,
+        "apply_async",
+        MagicMock(return_value=SimpleNamespace(id=None)),
+    )
+    monkeypatch.setattr(
+        chat, "_run_to_out", MagicMock(return_value={"id": str(run_id)})
+    )
+    monkeypatch.setattr(chat, "success", lambda *, data: {"data": data})
+
+    result = await chat.post_run_answer(
+        agent_id,
+        run_id,
+        RunAnswerCreate(tool_call_id="call-1", answers={}, skipped=True),
+        auth_result=(current_user, None),
+    )
+
+    submit.assert_awaited_once_with(
+        run_id,
+        tool_call_id="call-1",
+        answers={},
+        skipped=True,
+    )
+    assert result == {"data": {"id": str(run_id)}}
+
+
+@pytest.mark.asyncio
+async def test_load_owned_run_allows_superuser_to_access_any_conversation(monkeypatch):
+    agent_id = uuid4()
+    run_id = uuid4()
+    conv_id = uuid4()
+    run = SimpleNamespace(id=run_id, agent_id=agent_id, conversation_id=conv_id)
+    conv = SimpleNamespace(id=conv_id)
+
+    from app.models.agent_run import AgentRun
+    from app.models.agent import Conversation as _Conv
+
+    monkeypatch.setattr(AgentRun, "get_or_none", AsyncMock(return_value=run))
+    monkeypatch.setattr(_Conv, "get_or_none", AsyncMock(return_value=conv))
+
+    superuser = SimpleNamespace(id=uuid4(), is_superuser=True)
+    loaded = await chat._load_owned_run(agent_id, run_id, superuser)
+
+    assert loaded is run
+    _Conv.get_or_none.assert_awaited_once_with(id=conv_id)

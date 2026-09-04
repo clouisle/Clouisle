@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const createPermission = mock(() => Promise.resolve())
 const updatePermission = mock(() => Promise.resolve())

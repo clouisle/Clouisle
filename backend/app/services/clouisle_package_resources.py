@@ -535,7 +535,9 @@ class AgentPackageAdapter(ResourcePackageAdapter):
             "tools_config": _copy_json(agent.tools_config) or [],
             "enable_attachments": agent.enable_attachments,
             "attachment_config": _copy_json(agent.attachment_config) or {},
-            "enable_user_input_request": agent.enable_user_input_request,
+            "enable_user_input_request": getattr(
+                agent, "enable_user_input_request", False
+            ),
             "enable_memory": agent.enable_memory,
             "memory_config": _copy_json(agent.memory_config) or {},
             "context_compression_config": _copy_json(agent.context_compression_config)

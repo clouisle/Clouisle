@@ -179,7 +179,6 @@ describe('ChatContainer', () => {
     const onRegenerate = mock(() => {})
     const onEditMessage = mock(() => Promise.resolve())
     const onSwitchVersion = mock(() => {})
-    const onSelectOption = mock(() => {})
     const onOpenCodePreview = mock(() => {})
     const messages = [
       textMessage('u1', 'user', 'hello'),
@@ -192,7 +191,6 @@ describe('ChatContainer', () => {
         onRegenerate={onRegenerate}
         onEditMessage={onEditMessage}
         onSwitchVersion={onSwitchVersion}
-        onSelectOption={onSelectOption}
         onOpenCodePreview={onOpenCodePreview}
         hideToolCalls
       />
@@ -201,15 +199,15 @@ describe('ChatContainer', () => {
     await (messageProps[0].onEditMessage as (content: string) => Promise<void>)('edited')
     ;(messageProps[1].onRegenerate as () => void)()
     ;(messageProps[1].onSwitchVersion as (version: number) => void)(2)
-    ;(messageProps[0].onSelectOption as (option: string) => void)('yes')
 
     expect(messageProps[0].onRegenerate).toBeUndefined()
     expect(messageProps[1].onEditMessage).toBeUndefined()
     expect(onEditMessage).toHaveBeenCalledWith('u1', 'edited')
     expect(onRegenerate).toHaveBeenCalledWith('a1')
     expect(onSwitchVersion).toHaveBeenCalledWith('a1', 2)
-    expect(onSelectOption).toHaveBeenCalledWith('yes')
     expect(messageProps.every((props) => props.hideToolCalls === true)).toBe(true)
+    expect(messageProps.every((props) => props.pendingAskUserToolCallId === undefined)).toBe(true)
+    expect(messageProps.every((props) => props.onSubmitAskUser === undefined)).toBe(true)
     expect(messageProps.every((props) => props.onOpenCodePreview === onOpenCodePreview)).toBe(true)
   })
   test('withholds editing until a user message is persisted and the run is idle', () => {

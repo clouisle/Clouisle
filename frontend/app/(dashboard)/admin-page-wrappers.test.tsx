@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from 'bun:test'
 import React, { type ReactNode } from 'react'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 

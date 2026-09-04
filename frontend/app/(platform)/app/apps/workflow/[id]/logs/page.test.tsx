@@ -1,6 +1,6 @@
 import React from 'react'
-import { beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const push = mock(() => undefined)
 const router = { push }
@@ -83,11 +83,11 @@ let WorkflowLogsPage: React.ComponentType
 async function flush() {
   await act(async () => { await Promise.resolve(); await Promise.resolve() })
 }
+let currentRenderer: ReactTestRenderer | null = null
 
 async function render() {
-  let renderer!: ReactTestRenderer
-  await act(async () => { renderer = create(<WorkflowLogsPage />) })
-  return renderer
+  await act(async () => { currentRenderer = create(<WorkflowLogsPage />) })
+  return currentRenderer!
 }
 
 function text(renderer: ReactTestRenderer) {
@@ -106,6 +106,14 @@ beforeEach(() => {
   getWorkflowRuns.mockImplementation(async () => pageOne)
 })
 
+afterEach(async () => {
+  if (currentRenderer) {
+    await act(async () => {
+      currentRenderer?.unmount()
+    })
+    currentRenderer = null
+  }
+})
 describe('WorkflowLogsPage', () => {
   test('shows loading, then renders safe run state and opens its detail drawer', async () => {
     let resolveWorkflow!: (value: typeof workflow) => void

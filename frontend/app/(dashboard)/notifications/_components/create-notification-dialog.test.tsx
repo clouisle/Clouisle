@@ -1,6 +1,6 @@
 import { beforeEach, expect, mock, test } from "bun:test";
 import React from "react";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { act, create, type ReactTestRenderer } from "@/test-utils/rtl-renderer";
 
 const adminCreate = mock(() => Promise.resolve());
 const getTeams = mock(() => Promise.resolve({ items: [] }));

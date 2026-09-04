@@ -49,6 +49,7 @@ import { cn } from '@/lib/utils'
 import {
   ChatContainer,
   ChatInput,
+  PendingAskUserForm,
   VariableForm,
   useVariableForm,
   type ChatInputFile,
@@ -203,7 +204,9 @@ export default function PublicChatPage({
     isStreaming,
     conversationId,
     runStatus,
+    pendingAskUserToolCallId,
     sendMessage,
+    submitAskUser,
     regenerate,
     editMessage,
     switchVersion,
@@ -281,6 +284,8 @@ export default function PublicChatPage({
         // Fetch agent info
         const agentData = await adapter.getAgent(resolvedParams.id)
         setAgent(agentData)
+        // Default-collapse the variable panel unless required inputs must be filled
+        setVariablesOpen((agentData.variables || []).some(v => !v.hidden && v.required))
 
         // Fetch conversations (first page)
         setLoadingConversations(true)
@@ -642,6 +647,16 @@ export default function PublicChatPage({
   const showHistory = !embedMode || embedCfg.show_history !== false
   const allowNew = !embedMode || embedCfg.allow_new !== false
 
+  const hasPendingAskUser = Boolean(pendingAskUserToolCallId)
+  const pendingAskUserPanel = (
+    <PendingAskUserForm
+      messages={messages}
+      pendingToolCallId={pendingAskUserToolCallId}
+      disabled={Boolean(isStreaming)}
+      onSubmit={submitAskUser}
+    />
+  )
+
   // Variable panel (collapsible form shown when the agent declares input
   // variables) and the composer itself. They are kept separate so the
   // composer can act as the vertical-center anchor of the welcome column;
@@ -650,7 +665,7 @@ export default function PublicChatPage({
   const variablePanel = (
     <>
       {variables.length > 0 && variables.some(v => !v.hidden) && (
-        <div className="mx-auto max-w-3xl px-4">
+        <div className="w-full mx-auto max-w-3xl px-4">
           <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
             <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden w-[70%] mx-auto">
               <CollapsibleTrigger className="flex items-center justify-between w-full px-2.5 py-1.5 text-xs hover:bg-muted/50 transition-colors">
@@ -715,7 +730,7 @@ export default function PublicChatPage({
         onSubmit={handleSubmit}
         onStop={stop}
         placeholder={t('typePlaceholder')}
-        disabled={false}
+        disabled={runStatus === 'waiting'}
         isLoading={chatLoading}
         isStreaming={isStreaming}
         allowAttachments={agent.enable_attachments}
@@ -730,7 +745,7 @@ export default function PublicChatPage({
 
   const inputArea = (
     <>
-      {variablePanel}
+      {hasPendingAskUser ? pendingAskUserPanel : variablePanel}
       {composer}
     </>
   )
@@ -1010,7 +1025,7 @@ export default function PublicChatPage({
               messages={messages}
               isStreaming={isStreaming}
               isLoading={chatLoading}
-              loadingLabel={runStatus === 'queued' ? tChatMessage('runStatusQueued') : undefined}
+              loadingLabel={runStatus === 'queued' ? tChatMessage('runStatusQueued') : runStatus === 'waiting' ? tChatMessage('runStatusWaiting') : undefined}
               hideToolCalls={agent.hide_tool_calls}
               hideMessageActions={agent.hide_message_actions}
               hideReasoning={agent.hide_reasoning}
@@ -1021,9 +1036,6 @@ export default function PublicChatPage({
               onRegenerate={embedMode ? undefined : regenerate}
               onEditMessage={embedMode ? undefined : editMessage}
               onSwitchVersion={embedMode ? undefined : switchVersion}
-              onSelectOption={(option) => {
-                void handleSubmit(option, [])
-              }}
               onSelectImageReference={agent.enable_attachments && !chatLoading ? ({ asset_ref, url }) => {
                 setSelectedImageRefs(current => current.some(item => item.asset_ref === asset_ref)
                   ? current
@@ -1039,7 +1051,7 @@ export default function PublicChatPage({
                     header/footer height asymmetry). Welcome content hugs the
                     composer; the section scrolls on short viewports so it can
                     never push the composer off the center line. */}
-                <div className="flex w-full flex-1 min-h-0 min-w-0 flex-col items-center justify-end overflow-y-auto pb-4">
+                <div className="flex w-full flex-1 min-h-0 min-w-0 flex-col items-center justify-end overflow-y-auto">
                 {/* Agent Icon */}
                 <div className="mb-8">
                   {displayIcon ? (

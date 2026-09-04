@@ -55,7 +55,6 @@ The tool list shows:
 
 **File Tools:**
 - **MarkItDown**: Parse PDF, Word, Excel, PowerPoint, and text files
-
 **Generation Tools:**
 - **Generate Image**: Generate images
 - **Generate Video**: Generate videos
@@ -66,6 +65,8 @@ The tool list shows:
 - **Artifact**: Collect files from the sandbox workspace
 
 > **Note:** Knowledge base retrieval is not a built-in tool; it is configured per agent as RAG.
+>
+> **Note:** Image generation, video generation, and interactive questions (`ask_user`) are not shown in this catalog. They are enabled per agent through their dedicated feature switches (`enable_image_generation`, `enable_video_generation`, `enable_user_input_request`) and injected automatically — not attachable through `tools_config`.
 
 ### Configure Built-in Tools
 

@@ -3,16 +3,14 @@
 import * as React from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { AlertCircle, ChevronDown, ChevronUp, Loader2, RefreshCw, Sparkles } from 'lucide-react'
+import { AlertCircle, Loader2, RefreshCw, Sparkles } from 'lucide-react'
 import Image from 'next/image'
 import { ApiError, publicAgentsApi, type PublicAgent } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { ChatContainer, ChatInput, VariableForm, useVariableForm } from '@/components/chat'
+import { AgentChatEmptyState, AgentChatSurface, useVariableForm } from '@/components/chat'
 import { useRun } from '@/hooks/use-run'
 import { extractVariables } from '@/lib/utils/extract-variables'
-import { cn } from '@/lib/utils'
 
 interface AgentRunPageProps {
   id: string
@@ -34,7 +32,10 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
       try {
         setIsLoading(true)
         setError(null)
-        setMetadata(await publicAgentsApi.getPublicAgent(id))
+        const data = await publicAgentsApi.getPublicAgent(id)
+        setMetadata(data)
+        // Default-collapse the variable panel unless required inputs must be filled
+        setVariablesOpen(extractVariables(data, 'agent').some(v => !v.hidden && v.required))
       } catch (err) {
         const isNotFound = err instanceof ApiError && (err.code === 404 || (err.code >= 4000 && err.code < 5000))
         setError(new Error(isNotFound ? t('notFound') : t('loadError')))
@@ -55,25 +56,6 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
     fieldErrors: variableFieldErrors,
     validate: validateVariables,
   } = useVariableForm(variables)
-  const hasVisibleVariables = variables.some((variable) => !variable.hidden)
-  const requiredCount = variables.filter((variable) => !variable.hidden && variable.required).length
-  const filledRequiredCount = variables.filter((variable) => {
-    if (variable.hidden || !variable.required) return false
-    const value = variableValues[variable.name]
-    if (variable.type === 'checkbox') return true
-    if (variable.type === 'array') {
-      if (Array.isArray(value)) return value.length > 0
-      if (typeof value === 'string' && value.trim()) {
-        try {
-          return Array.isArray(JSON.parse(value)) && JSON.parse(value).length > 0
-        } catch {
-          return false
-        }
-      }
-      return false
-    }
-    return value !== undefined && value !== null && value !== ''
-  }).length
 
   const handleConversationChange = React.useCallback((nextConversationId: string) => {
     const nextSearchParams = new URLSearchParams(searchParams.toString())
@@ -81,13 +63,14 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
     router.replace(`/run/${id}?${nextSearchParams.toString()}`)
   }, [id, router, searchParams])
 
-  const { messages, isStreaming, isLoading: runLoading, sendMessage, stop, conversationId, runId, runStatus, reconnect } = useRun({
+  const { messages, isStreaming, isLoading: runLoading, sendMessage, stop, conversationId, runId, runStatus, pendingAskUserToolCallId, submitAskUser, reconnect, regenerate, editMessage, switchVersion } = useRun({
     id,
     type: 'agent',
     conversationId: searchParams.get('conversation') || undefined,
     variables: variableValues,
     onConversationChange: handleConversationChange,
   })
+
 
   const handleSendMessage = async (text: string) => {
     if (!text.trim()) return
@@ -127,15 +110,17 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
           ? t('status.stopping')
           : runStatus === 'completing'
             ? t('status.completing')
-            : runStatus === 'completed'
-              ? t('status.success')
-              : runStatus === 'stopped'
-                ? t('status.cancelled')
-                : runStatus === 'failed'
-                  ? t('status.failed')
-                  : t('status.interrupted')
+            : runStatus === 'waiting'
+              ? t('status.waiting')
+              : runStatus === 'completed'
+                ? t('status.success')
+                : runStatus === 'stopped'
+                  ? t('status.cancelled')
+                  : runStatus === 'failed'
+                    ? t('status.failed')
+                    : t('status.interrupted')
     : null
-  const runActive = runStatus === 'queued' || runStatus === 'running' || runStatus === 'stopping' || runStatus === 'completing'
+  const runActive = runStatus === 'queued' || runStatus === 'running' || runStatus === 'stopping' || runStatus === 'completing' || runStatus === 'waiting'
   const showReconnect = Boolean(runId && runActive)
 
   return (
@@ -163,52 +148,48 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
             )}
           </div>
         </header>
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          <ChatContainer
-            messages={messages}
-            isStreaming={isStreaming}
-            isLoading={runLoading}
-            hideToolCalls={Boolean(metadata.hide_tool_calls)}
-            hideMessageActions={Boolean(metadata.hide_message_actions)}
-            hideReasoning={Boolean(metadata.hide_reasoning)}
-            conversationId={conversationId}
-            className="flex-1 min-h-0 overflow-y-auto"
-            onSelectOption={(option) => void handleSendMessage(option)}
-            emptyState={
-              <div className="flex-1 flex flex-col items-center justify-center px-4">
-                <div className="mb-8">
-                  {displayIcon ? isIconUrl ? (
-                    <div className="relative h-20 w-20 rounded-full overflow-hidden ring-2 ring-border"><Image src={displayIcon} alt={metadata.name} fill unoptimized className="object-cover" /></div>
-                  ) : <div className="h-20 w-20 rounded-full bg-muted flex items-center justify-center ring-2 ring-border"><span className="text-4xl">{displayIcon}</span></div> : <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center"><Sparkles className="h-6 w-6 text-primary" /></div>}
-                </div>
-                <h1 className="text-2xl md:text-3xl font-medium text-foreground text-center mb-4 max-w-3xl">{metadata.opening_message || t('welcomeMessage')}</h1>
-                {metadata.suggested_questions && metadata.suggested_questions.length > 0 && (
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-w-3xl mt-8">
-                    {metadata.suggested_questions.slice(0, 4).map((question, index) => <button key={index} onClick={() => void handleSendMessage(question)} className="px-4 py-2 text-sm text-foreground/80 border border-border rounded-lg hover:bg-accent transition-colors cursor-pointer w-full text-center">{question}</button>)}
-                  </div>
-                )}
-              </div>
-            }
-          />
-          <div className="relative pb-4 shrink-0">
-            {hasVisibleVariables && (
-              <div className="mx-auto max-w-3xl px-4">
-                <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
-                  <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden w-[70%] mx-auto">
-                    <CollapsibleTrigger className="flex items-center justify-between w-full px-2.5 py-1.5 text-xs hover:bg-muted/50 transition-colors">
-                      <span className="text-muted-foreground">{tVars('title')}{requiredCount > 0 && <span className={cn('ml-1.5', filledRequiredCount === requiredCount ? 'text-green-600' : 'text-orange-500')}>{filledRequiredCount}/{requiredCount}</span>}</span>
-                      {variablesOpen ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronUp className="h-3 w-3 text-muted-foreground" />}
-                    </CollapsibleTrigger>
-                    <CollapsibleContent><div className="px-2.5 pb-2.5 pt-0.5"><VariableForm variables={variables} values={variableValues} onChange={setVariableValues} fieldErrors={variableFieldErrors} className="space-y-2" /></div></CollapsibleContent>
-                  </div>
-                </Collapsible>
-              </div>
-            )}
-            <ChatInput value={input} onChange={setInput} onSubmit={handleSendMessage} onStop={stop} placeholder={needsVariableInput && !variablesValid ? tVars('fillRequired') : t('typePlaceholder')} disabled={false} isLoading={runLoading} isStreaming={isStreaming} />
-            {metadata.powered_by_text && <p className="text-[11px] text-center text-muted-foreground mt-2">{metadata.powered_by_text}</p>}
-          </div>
+        <AgentChatSurface
+          messages={messages}
+          isStreaming={isStreaming}
+          isLoading={runLoading}
+          loadingLabel={runStatus === 'queued' || runStatus === 'waiting' ? runStatusLabel ?? undefined : undefined}
+          hideToolCalls={Boolean(metadata.hide_tool_calls)}
+          hideMessageActions={Boolean(metadata.hide_message_actions)}
+          hideReasoning={Boolean(metadata.hide_reasoning)}
+          conversationId={conversationId}
+          onRegenerate={regenerate}
+          onEditMessage={editMessage}
+          onSwitchVersion={switchVersion}
+          emptyState={
+            <AgentChatEmptyState
+              agentName={metadata.name}
+              icon={metadata.icon}
+              avatarUrl={metadata.avatar_url}
+              openingMessage={metadata.opening_message}
+              fallbackMessage={t('welcomeMessage')}
+              suggestedQuestions={metadata.suggested_questions}
+              onSuggestedQuestion={handleSendMessage}
+            />
+          }
+          inputValue={input}
+          onInputChange={setInput}
+          onSubmit={handleSendMessage}
+          onStop={stop}
+          placeholder={needsVariableInput && !variablesValid ? tVars('fillRequired') : t('typePlaceholder')}
+          inputDisabled={runStatus === 'waiting'}
+          pendingAskUserToolCallId={pendingAskUserToolCallId}
+          onSubmitAskUser={submitAskUser}
+          variables={variables}
+          variableValues={variableValues}
+          onVariablesChange={setVariableValues}
+          variableFieldErrors={variableFieldErrors}
+          variablesOpen={variablesOpen}
+          onVariablesOpenChange={setVariablesOpen}
+          allowAttachments={false}
+          poweredByText={metadata.powered_by_text}
+          className="flex-1"
+        />
         </div>
       </div>
-    </div>
   )
 }

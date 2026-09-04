@@ -7,7 +7,6 @@ from .config import (
 )
 from .general import (
     get_item_value,
-    parse_user_input_request,
     get_tool_execution_payloads,
     append_generated_images,
     collect_conversation_images,
@@ -45,7 +44,6 @@ from .version_utils import (
 __all__ = [
     "get_streaming_config",
     "get_item_value",
-    "parse_user_input_request",
     "get_tool_execution_payloads",
     "append_generated_images",
     "collect_conversation_images",

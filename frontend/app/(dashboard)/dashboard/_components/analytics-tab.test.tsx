@@ -1,6 +1,6 @@
 import { expect, mock, test } from "bun:test";
 import React from "react";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { act, create, type ReactTestRenderer } from "@/test-utils/rtl-renderer";
 
 const chart = (name: string) => {
   const Component = (props: Record<string, unknown>) => (

@@ -24,7 +24,7 @@ from app.models.tool import (
     ToolType as DBToolType,
     CustomToolType as DBCustomToolType,
 )
-from app.llm.tools import tool_registry
+from app.llm.tools import tool_registry, NON_SELECTABLE_BUILTIN_TOOLS
 from app.llm.tools.mcp_client import execute_mcp_tool, list_mcp_tools
 from app.llm.tools.executors import execute_http_tool
 from app.services.error_messages import resolve_user_visible_error
@@ -73,7 +73,6 @@ from app.schemas.tool import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-AGENT_ONLY_BUILTIN_TOOLS = {"generate_image", "generate_video"}
 SANDBOX_BUILTIN_TOOLS = {"artifact", "bash", "edit", "read", "write"}
 
 
@@ -177,7 +176,7 @@ def get_builtin_tools(user_locale: str | None = None) -> list[ToolOut]:
     """
     tools = []
     for tool_info in tool_registry.get_all_tools():
-        if tool_info.name in AGENT_ONLY_BUILTIN_TOOLS:
+        if tool_info.name in NON_SELECTABLE_BUILTIN_TOOLS:
             continue
         tools.append(_tool_info_to_out(tool_info, user_locale))
 

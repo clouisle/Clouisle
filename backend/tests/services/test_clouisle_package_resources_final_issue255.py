@@ -117,7 +117,6 @@ async def test_agent_export_without_model_tools_or_permission(monkeypatch):
         tools_config=[{"name": "ignored"}],
         enable_attachments=False,
         attachment_config={},
-        enable_user_input_request=False,
         enable_memory=False,
         memory_config={},
         context_compression_config={},

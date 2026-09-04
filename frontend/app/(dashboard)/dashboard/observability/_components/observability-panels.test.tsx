@@ -1,6 +1,6 @@
 import { afterEach, expect, mock, test } from 'bun:test'
 import React from 'react'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const getAgentDetail = mock(() => Promise.resolve({
   agent: { agent_id: 'agent-1', agent_name: 'Agent One', request_count: 12, error_count: 1, timeout_count: 1, success_rate: 91, timeout_rate: 6, ttft_p95_ms: 3200, p50_ms: 100, p90_ms: 200, p95_ms: 300, p99_ms: 400, total_tokens: 1200, avg_tokens: 100 },

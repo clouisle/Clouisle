@@ -20,7 +20,6 @@ import {
   isToolPart,
   isToolResultPart,
   isTruncatedPart,
-  isUserInputRequestPart,
   type MessagePart,
 } from './types'
 
@@ -40,7 +39,6 @@ const cases: Array<[string, Guard, string[]]> = [
   ['media result', isMediaResultPart, ['media-result']],
   ['step start', isStepStartPart, ['step-start']],
   ['task', isTaskPart, ['task']],
-  ['user input request', isUserInputRequestPart, ['user-input-request']],
   ['truncated', isTruncatedPart, ['truncated']],
   ['stopped', isStoppedPart, ['stopped']],
   ['iteration cap', isIterationCapReachedPart, ['iteration-cap-reached']],
@@ -63,7 +61,6 @@ const parts = [
   'media-result',
   'step-start',
   'task',
-  'user-input-request',
   'truncated',
   'stopped',
   'iteration-cap-reached',

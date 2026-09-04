@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import React from 'react'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const success = mock(() => {})
 const normalizeValidationErrors = mock((error: unknown) => error as Record<string, string>)

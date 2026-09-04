@@ -193,7 +193,32 @@ steering/follow-up was committed), `run_end` (exactly one terminal event with
 | GET | `/api/v1/agents/{agent_id}/chat/runs/{run_id}` | Run status (owner-scoped) |
 | GET | `/api/v1/agents/{agent_id}/chat/runs/{run_id}/events?after_sequence=N` | Replay buffered events after N |
 | POST | `/api/v1/agents/{agent_id}/chat/runs/{run_id}/inputs` | Queue steering/follow-up (`delivery: steer / follow_up / auto`) |
-| POST | `/api/v1/agents/{agent_id}/chat/runs/{run_id}/stop` | Cooperative stop (idempotent) |
+| POST | `/api/v1/agents/{agent_id}/chat/runs/{run_id}/answers` | Submit structured answers for a waiting `ask_user` call |
+Submit answers for a waiting `ask_user` call:
+
+```
+POST /api/v1/agents/{agent_id}/chat/runs/{run_id}/answers
+```
+
+**Request body:**
+```json
+{
+  "tool_call_id": "call-123",
+  "answers": {
+    "deployment_target": "云端"
+  },
+  "skipped": false
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `tool_call_id` | string | Yes | Pending tool-call ID from the `run_status` waiting event |
+| `answers` | object | No | ID-keyed answer map; each value is the chosen option or a custom string |
+| `skipped` | boolean | No | Explicitly skip every question (sends `{ "answers": {}, "skipped": true }`) |
+
+The run must be in `waiting` status and the `tool_call_id` must match the pending interaction. On success the run resumes from its paused state.
+
 
 While a run is active, the composer can queue steering (mid-work) or
 follow-up (final boundary) instead of being disabled; stop sends a server

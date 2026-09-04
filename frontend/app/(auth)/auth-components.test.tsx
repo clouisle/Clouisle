@@ -4,7 +4,7 @@ import { NextIntlClientProvider } from 'next-intl'
 import { AppRouterContext } from 'next/dist/shared/lib/app-router-context.shared-runtime'
 import { SearchParamsContext } from 'next/dist/shared/lib/hooks-client-context.shared-runtime'
 import { ThemeProvider } from 'next-themes'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 import authMessages from '@/i18n/en/auth.json'
 import commonMessages from '@/i18n/en/common.json'

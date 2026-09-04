@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import chat
+from app.llm.tools.builtin import register_all_builtin_tools
 from app.models.agent import RAGMode
 
 
@@ -36,6 +37,7 @@ def agent(**overrides):
         "team": SimpleNamespace(id=uuid4()),
         "model_id": None,
         "tools_config": [],
+        "enable_user_input_request": True,
         "enable_memory": False,
         "memory_config": {},
         "rag_mode": RAGMode.OFF,
@@ -146,6 +148,7 @@ async def test_agent_tools_assemble_memory_rag_builtin_and_custom(monkeypatch):
     by_name = {item["function"]["name"]: item for item in tools}
 
     assert set(by_name) == {
+        "ask_user",
         "search_memory",
         "knowledge_search",
         "generate_image",
@@ -160,6 +163,8 @@ async def test_agent_tools_cover_skill_and_mcp_failures_without_network(
     monkeypatch,
 ):
     from app.models.tool import Tool
+
+    register_all_builtin_tools()
     from app.services.skill import SkillService
 
     current_agent = agent(
@@ -185,7 +190,9 @@ async def test_agent_tools_cover_skill_and_mcp_failures_without_network(
         AsyncMock(side_effect=RuntimeError("offline")),
     )
 
-    assert await chat.get_agent_tools(current_agent) == []
+    assert [
+        tool["function"]["name"] for tool in await chat.get_agent_tools(current_agent)
+    ] == ["ask_user"]
 
 
 @pytest.mark.anyio

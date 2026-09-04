@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import chat
+from app.llm.tools.builtin import register_all_builtin_tools
 from app.models.agent import RAGMode
 
 
@@ -21,6 +22,7 @@ def _agent(tools_config, **overrides):
         "id": uuid4(),
         "team_id": uuid4(),
         "tools_config": tools_config,
+        "enable_user_input_request": True,
         "enable_memory": False,
         "rag_mode": RAGMode.OFF,
         "enable_image_generation": False,
@@ -127,6 +129,7 @@ async def test_agent_tools_cover_media_dedup_custom_skill_and_mcp(monkeypatch):
 @pytest.mark.anyio
 async def test_agent_tools_skip_unavailable_optional_sources(monkeypatch):
     query = _FirstQuery(SimpleNamespace(name="remote", mcp_config={"url": "test"}))
+    register_all_builtin_tools()
     monkeypatch.setattr("app.models.tool.Tool.filter", Mock(return_value=query))
     monkeypatch.setattr(
         "app.services.skill.SkillService.get_skill_for_team",
@@ -144,7 +147,9 @@ async def test_agent_tools_skip_unavailable_optional_sources(monkeypatch):
         ]
     )
 
-    assert await chat.get_agent_tools(agent) == []
+    assert [tool["function"]["name"] for tool in await chat.get_agent_tools(agent)] == [
+        "ask_user"
+    ]
 
 
 @pytest.mark.anyio
@@ -197,6 +202,7 @@ async def test_tool_display_names_cover_media_builtin_custom_skill_and_mcp(monke
     names = await chat.get_tool_display_names(agent, "en")
 
     assert names == {
+        "ask_user": "Ask user",
         "generate_image": "en:image.key",
         "generate_video": "generate_video",
         "clock": "Clock",

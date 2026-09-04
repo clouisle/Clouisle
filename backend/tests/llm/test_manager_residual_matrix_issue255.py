@@ -161,9 +161,8 @@ async def test_team_model_authorization_matrix():
 
     disabled = SimpleNamespace(is_enabled=False)
     with patch("app.llm.manager.TeamModel.filter", return_value=query(disabled)):
-        with pytest.raises(ModelDisabledError, match="disabled for team"):
+        with pytest.raises(ModelDisabledError, match="disabled for this team"):
             await manager._get_team_model("team-1", None)
-
     enabled = SimpleNamespace(is_enabled=True)
     with patch("app.llm.manager.TeamModel.filter", return_value=query(enabled)):
         assert await manager._get_team_model("team-1", None) == (config, enabled)

@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'bun:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { act as rendererAct, create as createRenderer, type ReactTestRenderer } from 'react-test-renderer'
+import { act as rendererAct, create as createRenderer, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 import type { FilePart } from './types'
 
 const icon = ({ name, className }: { name: string; className?: string }) => (

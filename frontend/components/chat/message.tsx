@@ -49,7 +49,7 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import type { ChatMessage, ChatPreviewPayload, CodePreviewPayload, MessagePart, SourceDocumentPart, SourceUrlPart, FilePart, ImagePart, TaskPart, ToolCallPart, McpToolCallPart, UserInputRequestPart, MediaResultPart } from './types'
+import type { ChatMessage, ChatPreviewPayload, CodePreviewPayload, MessagePart, SourceDocumentPart, SourceUrlPart, FilePart, ImagePart, TaskPart, ToolCallPart, McpToolCallPart, MediaResultPart } from './types'
 import {
   isTextPart,
   isReasoningPart,
@@ -63,13 +63,11 @@ import {
   isImagePart,
   isMediaResultPart,
   isTaskPart,
-  isUserInputRequestPart,
   isTruncatedPart,
   isStoppedPart,
   isIterationCapReachedPart,
 } from './types'
 import { SourceContent } from './message-parts'
-import { UserInputRequestCard } from './user-input-request-card'
 import {
   getImageAssetUrl,
   getVideoAssetUrl,
@@ -115,6 +113,10 @@ const chatStreamdownPlugins: PluginConfig = {
 const SPEECH_STARTED_EVENT = 'clouisle:chat-speech-started'
 const SPEECH_HIGHLIGHT_CLASS = 'rounded-sm bg-yellow-200/80 px-0.5 text-foreground shadow-[inset_0_-0.45em_0_rgba(250,204,21,0.45)] dark:bg-yellow-300/35 dark:shadow-[inset_0_-0.45em_0_rgba(250,204,21,0.28)]'
 type ChatSpeechStartedEvent = CustomEvent<{ messageId: string }>
+
+function isAskUserInteractionPart(part: MessagePart) {
+  return (isToolCallPart(part) || isToolResultPart(part)) && part.toolName === 'ask_user'
+}
 
 type ParsedCodeFence = {
   language: string
@@ -404,8 +406,6 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   onFeedback?: (type: 'positive' | 'negative') => void
   /** Callback for switching version */
   onSwitchVersion?: (versionIndex: number) => void
-  /** Callback when user selects an option from user input request */
-  onSelectOption?: (option: string) => void
   /** Callback when a generated image is selected as a later reference */
   onSelectImageReference?: (image: { asset_ref: string; url: string }) => void
   /** Callback when a previewable code block is opened */
@@ -440,7 +440,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       onEditMessage,
       onFeedback,
       onSwitchVersion,
-      onSelectOption,
       onSelectImageReference,
       onOpenCodePreview,
       hideToolCalls = false,
@@ -575,7 +574,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
 
     const saveEdit = React.useCallback(async () => {
       const nextContent = editDraft.trim()
-      if (!onEditMessage || !nextContent || nextContent === textContent) return
+      if (!onEditMessage || !nextContent) return
       setIsSavingEdit(true)
       try {
         await onEditMessage(nextContent)
@@ -584,7 +583,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       } finally {
         setIsSavingEdit(false)
       }
-    }, [editDraft, onEditMessage, textContent])
+    }, [editDraft, onEditMessage])
 
     const resetSpeechState = React.useCallback(() => {
       speechUtteranceRef.current = null
@@ -855,13 +854,15 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         )
       }
 
+      if (isAskUserInteractionPart(part)) return null
+
       if (isToolCallPart(part) || isMcpToolCallPart(part)) {
+        const result = toolResultsByCallIndex.get(index)
         if (hideToolCalls) return null
         if (hasReasoning && !hideReasoning) return null
         const toolName = isToolCallPart(part)
           ? (part.toolDisplayName || part.toolName)
           : `${part.serverName}/${part.toolName}`
-        const result = toolResultsByCallIndex.get(index)
         const state = part.state === 'error' ? 'output-error'
           : part.state === 'done' ? 'output-available'
             : part.state === 'running' ? 'input-available'
@@ -952,21 +953,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         )
       }
 
-      if (isUserInputRequestPart(part)) {
-        const userInputPart = part as UserInputRequestPart
-        return (
-          <UserInputRequestCard
-            key={index}
-            question={userInputPart.question}
-            options={userInputPart.options}
-            state={userInputPart.state}
-            selectedOption={userInputPart.selectedOption}
-            onSelectOption={onSelectOption}
-            isStreaming={isStreaming}
-          />
-        )
-      }
-
       if (isTruncatedPart(part)) {
         return (
           <div
@@ -1006,7 +992,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       isStreaming,
       iterationCapLabel,
       onOpenCodePreview,
-      onSelectOption,
       openLightbox,
       pairedToolResultIndexes,
       renderToolResultContent,
@@ -1025,6 +1010,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const fileParts = React.useMemo(() => otherParts.filter(isFilePart), [otherParts])
     const visibleContentEntries = React.useMemo(() => {
       return otherPartEntries.filter(({ part }) => {
+        if (isAskUserInteractionPart(part)) return false
         if (isFilePart(part)) return false
         if (isErroredMessage && !showPreservedErrorNote && streamErrorMessage && isTextPart(part)) {
           return part.text.trim() !== streamErrorMessage.trim()
@@ -1033,6 +1019,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       })
     }, [isErroredMessage, otherPartEntries, showPreservedErrorNote, streamErrorMessage])
     const hasVisibleTimelineContent = visibleContentEntries.some(({ part }) => {
+      if (isAskUserInteractionPart(part)) return false
       if (isStoppedPart(part)) return false
       if (isReasoningPart(part)) return !hideReasoning
       if (isTaskPart(part)) return !hideReasoning
@@ -1044,12 +1031,15 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const hasTextContent = textParts.some(part => part.text.length > 0)
     const hasMessageContent = hasTextContent
       || otherParts.some(part => (
-        isReasoningPart(part)
-        || (isTaskPart(part) && part.taskType !== 'thinking' && part.taskType !== 'generating')
-        || isToolCallPart(part)
-        || isMcpToolCallPart(part)
-        || isToolResultPart(part)
-        || isMcpToolResultPart(part)
+        !isAskUserInteractionPart(part)
+        && (
+          isReasoningPart(part)
+          || (isTaskPart(part) && part.taskType !== 'thinking' && part.taskType !== 'generating')
+          || isToolCallPart(part)
+          || isMcpToolCallPart(part)
+          || isToolResultPart(part)
+          || isMcpToolResultPart(part)
+        )
       ))
       || isErroredMessage
     const isLoadingMessage = Boolean(message.metadata?.isLoading && !hasVisibleTimelineContent)
@@ -1194,11 +1184,12 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         if (!hasReasoning) return
 
         if (isToolCallPart(part) || isMcpToolCallPart(part)) {
-          if (hideToolCalls) return
+          if (isAskUserInteractionPart(part)) return
           const toolName = isToolCallPart(part)
             ? (part.toolDisplayName || part.toolName)
             : `${part.serverName}/${part.toolName}`
           const result = toolResultsByCallIndex.get(index)
+          if (hideToolCalls) return
           const state = part.state === 'error' ? 'output-error'
             : part.state === 'done' ? 'output-available'
               : part.state === 'running' ? 'input-available'
@@ -1348,7 +1339,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                   type="button"
                   size="sm"
                   onClick={() => void saveEdit()}
-                  disabled={isSavingEdit || !editDraft.trim() || editDraft.trim() === textContent}
+                  disabled={isSavingEdit || !editDraft.trim()}
                 >
                   {isSavingEdit && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
                   {t('saveEdit')}
@@ -1426,8 +1417,15 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       streamErrorMessage,
       t,
       tReasoning,
-      textContent,
     ])
+
+    const isAskUserOnlyMessage = isAssistant
+      && otherParts.length > 0
+      && otherParts.every(isAskUserInteractionPart)
+
+    if (isAskUserOnlyMessage && !isErroredMessage && !isManuallyStoppedMessage) {
+      return null
+    }
 
     return (
       <div
@@ -1589,7 +1587,6 @@ function areMessagePropsEqual(prev: Readonly<MessageProps>, next: Readonly<Messa
     && prev.onEditMessage === next.onEditMessage
     && prev.onFeedback === next.onFeedback
     && prev.onSwitchVersion === next.onSwitchVersion
-    && prev.onSelectOption === next.onSelectOption
     && prev.onSelectImageReference === next.onSelectImageReference
     && prev.onOpenCodePreview === next.onOpenCodePreview
     && prev.hideToolCalls === next.hideToolCalls

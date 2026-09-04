@@ -18,7 +18,6 @@ def _agent():
         id=uuid4(),
         system_prompt="Base {{fileContent}} prompt",
         enable_memory=False,
-        enable_user_input_request=False,
         tools_config=[],
         enable_attachments=True,
         attachment_config={

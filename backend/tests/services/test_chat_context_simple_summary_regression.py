@@ -18,7 +18,6 @@ def _agent():
         team_id=uuid4(),
         system_prompt="",
         enable_memory=False,
-        enable_user_input_request=False,
         tools_config=[],
         context_compression_config={},
     )

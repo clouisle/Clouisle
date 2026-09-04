@@ -6,7 +6,7 @@ import { useChat } from './use-chat'
 import { useWorkflowRun } from './use-workflow-run'
 import type { ChatMessage, ExecutionNode, ExecutionState } from '@/components/chat/types'
 import type { ChatImageContent, ChatFileUrl } from '@/lib/api'
-import type { AgentRunStatus } from '@/lib/api/agents'
+import type { AgentRunAnswerPayload, AgentRunStatus } from '@/lib/api/agents'
 
 export type RunType = 'agent' | 'workflow'
 
@@ -30,6 +30,10 @@ export interface UseRunReturn {
   conversationId?: string | null
   runId?: string | null
   runStatus?: AgentRunStatus | null
+  /** Tool call id of the ask_user interaction the server is waiting on. */
+  pendingAskUserToolCallId?: string | null
+  /** Submit one structured answer result for the waiting ask_user interaction. */
+  submitAskUser?: (toolCallId: string, answer: AgentRunAnswerPayload) => Promise<void>
   sendMessage: (
     text: string,
     images?: ChatImageContent[],
@@ -41,6 +45,7 @@ export interface UseRunReturn {
   reconnect?: () => void
   reset: () => void
   regenerate?: (messageId: string) => Promise<void>
+  editMessage?: (messageId: string, content: string) => Promise<void>
   switchVersion?: (messageId: string, versionIndex: number) => Promise<void>
 }
 
@@ -148,11 +153,14 @@ export function useRun(options: UseRunOptions): UseRunReturn {
       conversationId: agentChat.conversationId,
       runId: agentChat.runId,
       runStatus: agentChat.runStatus,
+      pendingAskUserToolCallId: agentChat.pendingAskUserToolCallId,
+      submitAskUser: agentChat.submitAskUser,
       sendMessage: agentChat.sendMessage,
       stop: agentChat.stop,
       reconnect: agentChat.reconnect,
       reset: agentChat.reset,
       regenerate: agentChat.regenerate,
+      editMessage: agentChat.editMessage,
       switchVersion: agentChat.switchVersion,
     }
   } else {

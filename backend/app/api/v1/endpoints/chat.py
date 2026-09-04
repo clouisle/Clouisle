@@ -53,6 +53,7 @@ from app.schemas.agent import (
     RunStartOut,
     RunEventOut,
     RunInputCreate,
+    RunAnswerCreate,
 )
 from app.models.agent_run import AgentRun as _AgentRunModel
 
@@ -62,7 +63,7 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
-from app.llm.tools import tool_registry
+from app.llm.tools import tool_registry, NON_SELECTABLE_BUILTIN_TOOLS
 from app.llm.types import ChatStreamChunk, Message as LLMChatMessage, ToolCall
 from app.llm.token_counter import (
     count_message_tokens,
@@ -748,6 +749,11 @@ async def get_agent_tools(agent: Agent) -> list[dict]:
         openai_tools.append(tool_def)
         seen_tool_names.add(function_name)
 
+    # Expose the interactive question tool only when enabled for this agent.
+    if getattr(agent, "enable_user_input_request", False):
+        for builtin_tool in tool_registry.to_openai_tools(["ask_user"]):
+            append_openai_tool(builtin_tool)
+
     # Add memory tools if enabled
     if agent.enable_memory:
         memory_tools = get_memory_tools()
@@ -928,12 +934,12 @@ Examples of when to search:
 
         if tool_type == "builtin":
             tool_name = config.get("name")
-            if tool_name:
+            # Feature-switch tools are never user-selectable.
+            if tool_name and tool_name not in NON_SELECTABLE_BUILTIN_TOOLS:
                 builtin_tools = tool_registry.to_openai_tools([tool_name])
                 sandbox_tools = tool_registry.to_openai_sandbox_tools([tool_name])
                 for builtin_tool in [*builtin_tools, *sandbox_tools]:
                     append_openai_tool(builtin_tool)
-
         elif tool_type == "custom":
             tool_id = config.get("tool_id")
             if tool_id:
@@ -1052,6 +1058,9 @@ async def get_tool_display_names(
     from app.core.i18n import t
 
     display_names: dict[str, str] = {}
+    if getattr(agent, "enable_user_input_request", False):
+        display_names["ask_user"] = "Ask user"
+
     tools_config = list(agent.tools_config or [])
 
     # Add attachment tool display names if attachments are enabled
@@ -1807,6 +1816,8 @@ async def _enqueue_existing_message_run(
         message_start=message_start,
         rag_contexts=rag_contexts,
     )
+    run.worker_payload = payload
+    await run.save(update_fields=["worker_payload"])
     try:
         from app.tasks.agent import run_agent_task
 
@@ -1955,6 +1966,8 @@ async def _enqueue_durable_chat_run(
         branch_parent_id=user_branch_parent_id,
         locale=current_user.locale,
     )
+    run.worker_payload = payload
+    await run.save(update_fields=["worker_payload"])
 
     try:
         from app.tasks.agent import run_agent_task
@@ -2108,6 +2121,83 @@ async def post_run_input(
 
 
 @router.post(
+    "/{agent_id}/chat/runs/{run_id}/answers",
+    response_model=Response[RunOut],
+)
+async def post_run_answer(
+    agent_id: UUID,
+    run_id: UUID,
+    body: RunAnswerCreate,
+    auth_result: Any = Depends(deps.get_current_user_or_api_key),
+) -> Any:
+    """Validate and submit one answer set for a waiting ask_user call."""
+    current_user, api_key = _split_run_auth(auth_result)
+    await deps.check_api_key_agent_access(api_key, agent_id)
+    run = await _load_owned_run(agent_id, run_id, current_user)
+    from app.models.agent_run import AgentRunStatus
+    from app.services.agent_run_store import submit_user_answers
+
+    try:
+        resumed = await submit_user_answers(
+            run_id,
+            tool_call_id=body.tool_call_id,
+            answers=body.answers,
+            skipped=body.skipped,
+        )
+    except ValueError as exc:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg=str(exc),
+            status_code=400,
+        ) from exc
+
+    if resumed is None:
+        if run.status != AgentRunStatus.WAITING:
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg="run is not waiting for user answers",
+                status_code=409,
+            )
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg="tool call does not match the pending interaction",
+            status_code=409,
+        )
+
+    try:
+        from app.tasks.agent import run_agent_task
+
+        payload = resumed.worker_payload
+        if not isinstance(payload, dict):
+            raise RuntimeError("run resume payload is missing")
+        task_result = run_agent_task.apply_async(args=(payload,))
+        task_id = getattr(task_result, "id", None)
+        if task_id:
+            resumed.celery_task_id = task_id
+            await resumed.save(update_fields=["celery_task_id"])
+    except Exception as exc:
+        from app.models.agent_run import AgentRunStatus
+        from app.services.agent_run_store import transition_run
+        from app.services.agent_run_stream import AgentRunStream
+
+        await transition_run(
+            resumed,
+            AgentRunStatus.FAILED,
+            error_code="enqueue_failed",
+            error_message=str(exc),
+        )
+        stream = AgentRunStream(run_id)
+        await stream.seed_sequence()
+        await stream.publish(
+            "error", {"code": "enqueue_failed", "msg": "Unable to resume run"}
+        )
+        await stream.publish("run_end", {"status": "failed"})
+        raise
+
+    return success(data=_run_to_out(resumed))
+
+
+@router.post(
     "/{agent_id}/chat/runs/{run_id}/stop",
     response_model=Response[RunOut],
 )
@@ -2116,7 +2206,7 @@ async def stop_run(
     run_id: UUID,
     auth_result: Any = Depends(deps.get_current_user_or_api_key),
 ) -> Any:
-    """Cooperative stop: persist ``stopping`` and wake the worker."""
+    """Cooperatively stop a run, including a non-terminal waiting run."""
     current_user, api_key = _split_run_auth(auth_result)
     await deps.check_api_key_agent_access(api_key, agent_id)
     run = await _load_owned_run(agent_id, run_id, current_user)
@@ -2125,6 +2215,20 @@ async def stop_run(
         AgentRunStatus,
     )
     from app.services.agent_run_store import enqueue_input, transition_run
+
+    if run.status == AgentRunStatus.WAITING:
+        from app.services.agent_run_store import stop_waiting_run
+
+        stopped = await stop_waiting_run(run_id)
+
+        if stopped is not None:
+            from app.services.agent_run_stream import AgentRunStream
+
+            stream = AgentRunStream(run_id)
+            await stream.seed_sequence()
+            await stream.publish("run_end", {"status": "stopped"})
+            return success(data=_run_to_out(stopped))
+        run = await _AgentRunModel.get_or_none(id=run_id) or run
 
     if run.status not in (
         AgentRunStatus.RUNNING,
@@ -2162,7 +2266,12 @@ async def _load_owned_run(
             msg_key="run_not_found",
             status_code=404,
         )
-    conversation = await _Conv.get_or_none(id=run.conversation_id, user=current_user)
+    if getattr(current_user, "is_superuser", False):
+        conversation = await _Conv.get_or_none(id=run.conversation_id)
+    else:
+        conversation = await _Conv.get_or_none(
+            id=run.conversation_id, user=current_user
+        )
     if not conversation:
         raise BusinessError(
             code=ResponseCode.FORBIDDEN,
@@ -2177,6 +2286,9 @@ def _run_to_out(run: _AgentRunModel) -> RunOut:
         id=run.id,
         agent_id=run.agent_id,
         conversation_id=run.conversation_id,
+        pending_tool_call_id=getattr(run, "pending_tool_call_id", None),
+        pending_tool_name=getattr(run, "pending_tool_name", None),
+        pending_tool_input=getattr(run, "pending_tool_input", None),
         mode=run.mode.value if hasattr(run.mode, "value") else str(run.mode),
         status=run.status.value if hasattr(run.status, "value") else str(run.status),
         source_message_id=run.source_message_id,

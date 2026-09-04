@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 import * as React from 'react'
-import { act, create } from 'react-test-renderer'
+import { act, create } from '@/test-utils/rtl-renderer'
 
 function primitive(name: string) {
   function Primitive({ children, render, ...props }: React.PropsWithChildren<Record<string, unknown>>) {

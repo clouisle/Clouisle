@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import React from 'react'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 import { permissionsApi, rolesApi } from '@/lib/api/admin/roles'
 import { ApiError } from '@/lib/api/client'

@@ -123,8 +123,8 @@ def agent(**overrides):
         "hide_reasoning": False,
         "tools_config": [],
         "enable_attachments": False,
-        "attachment_config": {},
         "enable_user_input_request": False,
+        "attachment_config": {},
         "enable_memory": False,
         "memory_config": {},
         "context_compression_config": {},
@@ -357,6 +357,7 @@ async def test_create_agent_persists_config_and_knowledge_binding(monkeypatch):
             }
         ],
         enable_memory=True,
+        enable_user_input_request=True,
         memory_config={"max_memories_per_retrieval": 6},
         enable_video_generation=True,
         video_generation_config={"default_model_ref": "dummy/model"},
@@ -387,6 +388,7 @@ async def test_create_agent_persists_config_and_knowledge_binding(monkeypatch):
     assert result["msg"]
     assert create.await_args.kwargs["tools_config"][0]["name"] == "clock"
     assert create.await_args.kwargs["memory_config"]["max_memories_per_retrieval"] == 6
+    assert create.await_args.kwargs["enable_user_input_request"] is True
     binding_create.assert_awaited_once()
     agents.AuditLogService.log.assert_awaited_once()
 
@@ -401,6 +403,7 @@ async def test_update_agent_updates_config_tools_and_kb(monkeypatch):
         tools_config=[{"type": "builtin", "name": "clock"}],
         enable_attachments=True,
         attachment_config={"max_files": 2},
+        enable_user_input_request=True,
         enable_memory=True,
         memory_config={"max_memories_per_retrieval": 4},
         enable_image_generation=True,
@@ -432,6 +435,7 @@ async def test_update_agent_updates_config_tools_and_kb(monkeypatch):
     assert result["data"]["name"] == "Updated"
     assert item.tools_config[0]["name"] == "clock"
     assert item.embed_config == {"allowed_domains": ["example.test"]}
+    assert item.enable_user_input_request is True
     assert any(call[0] == "delete" for call in kb_query.calls)
     item.save.assert_awaited_once()
 
@@ -482,6 +486,7 @@ async def test_delete_publish_and_unpublish(monkeypatch):
 @pytest.mark.anyio
 async def test_duplicate_copies_bindings_and_strips_internal_media_config(monkeypatch):
     source = agent(
+        enable_user_input_request=True,
         image_generation_config={"allow_model_override": True, "max_images": 3},
         video_generation_config={"allow_model_override": True, "poll_timeout_s": 30},
     )
@@ -509,6 +514,7 @@ async def test_duplicate_copies_bindings_and_strips_internal_media_config(monkey
 
     assert result["data"] == {"ok": True}
     assert create.await_args.kwargs["visibility"] == AgentVisibility.PRIVATE
+    assert create.await_args.kwargs["enable_user_input_request"] is True
     assert create.await_args.kwargs["image_generation_config"] == {"max_images": 3}
     assert create.await_args.kwargs["video_generation_config"] == {"poll_timeout_s": 30}
     binding_create.assert_awaited_once()
@@ -859,6 +865,7 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
         "system_prompt",
         "model_id",
         "powered_by_text",
+        "enable_user_input_request",
     } <= set(fields)
 
 

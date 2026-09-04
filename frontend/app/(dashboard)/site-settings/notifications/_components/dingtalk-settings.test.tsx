@@ -1,6 +1,6 @@
-import { beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { createElement } from 'react'
-import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestInstance, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 import type { DingTalkSettings } from '@/lib/api/admin/site-settings'
 
@@ -43,13 +43,13 @@ const settings: DingTalkSettings = {
   dingtalk_app_secret: 'app-secret',
   dingtalk_agent_id: 'agent-id',
 }
+let currentRenderer: ReactTestRenderer | null = null
 
 function renderTab(onSettingsChange: (value: DingTalkSettings) => void): ReactTestRenderer {
-  let renderer: ReactTestRenderer
   act(() => {
-    renderer = create(createElement(DingTalkSettingsTab, { settings, onSettingsChange, canUpdate: true }))
+    currentRenderer = create(createElement(DingTalkSettingsTab, { settings, onSettingsChange, canUpdate: true }))
   })
-  return renderer!
+  return currentRenderer!
 }
 
 function findElements(renderer: ReactTestRenderer, type: string): ReactTestInstance[] {
@@ -64,6 +64,15 @@ beforeEach(() => {
   updateDingTalk.mockClear()
   sendTestDingTalk.mockClear()
   success.mockClear()
+})
+
+afterEach(() => {
+  if (currentRenderer) {
+    act(() => {
+      currentRenderer?.unmount()
+    })
+    currentRenderer = null
+  }
 })
 
 describe('DingTalkSettingsTab callbacks', () => {

@@ -5,13 +5,22 @@ export * from './types';
 export { Chat } from './chat';
 export { ChatContainer } from './chat-container';
 export { ChatInput, type ChatInputFile, type AttachmentConfig } from './chat-input';
+export { AgentChatEmptyState, AgentChatSurface, type AgentChatEmptyStateProps, type AgentChatSurfaceProps } from './agent-chat-surface';
 export { Message } from './message';
+export {
+  AskUserForm,
+  PendingAskUserForm,
+  getPendingAskUserRequest,
+  normalizeAskUserQuestions,
+  type AskUserFormProps,
+  type PendingAskUserFormProps,
+  type PendingAskUserRequest,
+} from './ask-user-form';
 export { VariableForm, useVariableForm } from './variable-form';
 export { PauseRequestActions, type PauseRequestActionsProps } from './pause-request-actions';
 export { ImageLightbox, VideoLightbox, useLightbox } from './image-lightbox';
 export { ExecutionTimeline } from './execution-timeline';
 export { NodeCard } from './node-card';
-export { UserInputRequestCard, type UserInputRequestCardProps } from './user-input-request-card';
 export { ArtifactFile, ArtifactFileList, type ArtifactFileListProps } from './artifact-file-list';
 
 // Message Parts

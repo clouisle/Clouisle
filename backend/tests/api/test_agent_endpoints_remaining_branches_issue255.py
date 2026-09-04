@@ -76,7 +76,6 @@ def agent(**overrides):
         "tools_config": [],
         "enable_attachments": False,
         "attachment_config": None,
-        "enable_user_input_request": False,
         "enable_memory": False,
         "memory_config": None,
         "context_compression_config": None,

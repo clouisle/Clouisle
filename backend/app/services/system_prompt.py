@@ -2,8 +2,8 @@
 
 Single source of truth for assembling an agent's system prompt: the user-authored
 base prompt, template variable substitution, and the capability-driven instruction
-sections (Markdown output rules, memory guidance, sandbox guidance, language
-instruction, user-input-request format).
+sections (Markdown output rules, memory guidance, user-input guidance, sandbox
+guidance, language instruction).
 
 Both the chat endpoint (via ``chat_context._build_system_prompt``) and the workflow
 Agent path (via ``AgentService``) delegate to :func:`build_system_prompt` so that
@@ -90,6 +90,17 @@ User: "What's my name?"
 - Then answer using the result
 """
 
+ASK_USER_SYSTEM_INSTRUCTION = """
+## User Input Requests
+
+You can call `ask_user` when an answer, decision, confirmation, or clarification from the user is necessary before you can continue. Do not ask the same question in ordinary assistant text.
+
+- Use the tool only when the needed information is not already available. Keep the number of questions as small as possible.
+- Provide `questions` as a non-empty array. Every item needs a unique, stable `id` and concise user-facing `question` text.
+- Add `options` only for clear discrete choices; omit it for an open-ended answer. Set `required` to `false` only when an answer is genuinely optional.
+- The tool pauses the run until the user responds. After calling it, wait for the tool result before continuing.
+"""
+
 SANDBOX_SYSTEM_INSTRUCTION = """
 ## Sandbox Environment Guidance
 
@@ -153,7 +164,7 @@ WORKFLOW_MODE = "workflow"
 
 # Sections logged at info when applied (the capability-driven ones); always-on
 # sections (Markdown, language) are silent to match prior noise levels.
-_LOGGED_SECTIONS = frozenset({"memory", "sandbox"})
+_LOGGED_SECTIONS = frozenset({"memory", "user_input", "sandbox"})
 
 
 # ---------------------------------------------------------------------------
@@ -183,61 +194,6 @@ def build_system_prompt_with_language(
     if instruction in system_prompt:
         return system_prompt
     return f"{system_prompt}\n\n{instruction}"
-
-
-def get_user_input_request_instruction(locale: str = "en") -> str:
-    """Get user input request instruction for system prompt."""
-    if normalize_locale(locale) == "zh":
-        return """## 用户输入请求功能
-
-当你需要用户从预定义选项中选择时，可以使用以下 XML 格式：
-
-<user_input_request>
-<question>你的问题文本</question>
-<options>
-<option>选项 1</option>
-<option>选项 2</option>
-<option>选项 3</option>
-</options>
-</user_input_request>
-
-**使用规则：**
-- 问题应该清晰简洁
-- 提供 2-6 个选项（超过 6 个也会显示，但建议控制数量以保持界面简洁）
-- 每个选项应该简短（建议不超过 50 字符）
-- 用户可以点击选项或输入自定义文本
-- 在一条消息中只使用一次
-- 不要在 user_input_request 标签外添加其他内容
-
-**使用场景：**
-- 需要用户做出选择时
-- 提供快捷操作选项时
-- 引导对话流程时"""
-    return """## User Input Request Feature
-
-When you need the user to choose from predefined options, use this XML format:
-
-<user_input_request>
-<question>Your question text</question>
-<options>
-<option>Option 1</option>
-<option>Option 2</option>
-<option>Option 3</option>
-</options>
-</user_input_request>
-
-**Rules:**
-- Keep questions clear and concise
-- Provide 2-6 options
-- Keep each option short (recommended max 50 characters)
-- Users can click an option or type custom text
-- Use only once per message
-- Do not add any other content outside the user_input_request tags
-
-**Use cases:**
-- When you need the user to make a choice
-- When offering quick action options
-- When guiding the conversation flow"""
 
 
 def has_sandbox_tools(agent: Agent) -> bool:
@@ -300,9 +256,8 @@ def _memory_applies(agent: Agent, mode: str) -> bool:
     return bool(getattr(agent, "enable_memory", False)) and mode == CHAT_MODE
 
 
-def _user_input_applies(agent: Agent, mode: str) -> bool:
-    # The <user_input_request> XML is parsed by the chat frontend only; a workflow
-    # has no parser, so emitting it would produce ignored/broken output.
+def _ask_user_applies(agent: Agent, mode: str) -> bool:
+    # The durable chat run is the only path that injects the ask_user tool.
     return (
         bool(getattr(agent, "enable_user_input_request", False)) and mode == CHAT_MODE
     )
@@ -319,7 +274,7 @@ def _append_constant(constant: str) -> Callable[[str, Agent, str | None], str]:
     return transform
 
 
-# Order matters: Markdown -> Memory -> Sandbox -> Language -> UserInput.
+# Order matters: Markdown -> Memory -> Sandbox -> User input -> Language.
 # This preserves the historical chat-endpoint ordering exactly.
 SECTIONS: tuple[PromptSection, ...] = (
     PromptSection(
@@ -338,17 +293,15 @@ SECTIONS: tuple[PromptSection, ...] = (
         transform=_append_constant(SANDBOX_SYSTEM_INSTRUCTION),
     ),
     PromptSection(
+        name="user_input",
+        applies=_ask_user_applies,
+        transform=_append_constant(ASK_USER_SYSTEM_INSTRUCTION),
+    ),
+    PromptSection(
         name="language",
         applies=_always,
         transform=lambda base, _agent, locale: build_system_prompt_with_language(
             base, locale
-        ),
-    ),
-    PromptSection(
-        name="user_input",
-        applies=_user_input_applies,
-        transform=lambda base, _agent, locale: append_prompt_section(
-            base, get_user_input_request_instruction(locale or "en")
         ),
     ),
 )
@@ -379,7 +332,7 @@ def build_system_prompt(
         user_message: current user message, used to substitute ``{{query}}``.
         variables: template variables substituted as ``{{key}}`` in the base.
         user_locale: user locale (e.g. ``"en"``, ``"zh-CN"``) for the language
-            and user-input-request instructions.
+            instruction.
         invocation_mode: ``"chat"`` (interactive endpoint) or ``"workflow"``
             (agent node in a workflow pipeline). Gates chat-only sections.
 

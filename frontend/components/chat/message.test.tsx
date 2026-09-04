@@ -95,7 +95,6 @@ mock.module('@/components/ai-elements/tool', () => ({
 }))
 mock.module('./image-lightbox', () => ({ ImageLightbox: ({ src, alt, isOpen }: { src: string; alt: string; isOpen: boolean }) => isOpen ? <div role="dialog" aria-label={alt}>{src}</div> : null, useLightbox: () => ({ isOpen: false, imageSrc: '', imageAlt: '', openLightbox, closeLightbox: mock(() => {}) }) }))
 mock.module('./message-parts', () => ({ SourceContent: ({ sources }: { sources: unknown[] }) => <aside>sources:{sources.length}</aside> }))
-mock.module('./user-input-request-card', () => ({ UserInputRequestCard: ({ question, options, onSelectOption }: { question: string; options: string[]; onSelectOption?: (option: string) => void }) => <fieldset><legend>{question}</legend>{options.map((option) => <button key={option} onClick={() => onSelectOption?.(option)}>{option}</button>)}</fieldset> }))
 mock.module('streamdown', () => ({
   Block: ({ content }: { content: string }) => (
     <div data-streamdown="code-block">
@@ -247,6 +246,61 @@ describe('message rendering', () => {
     expect(hidden).toContain('chat.reasoning.thought')
   })
 
+  test('keeps ask_user interaction content out of conversation nodes', () => {
+    const markup = renderToStaticMarkup(<Message
+      message={{
+        id: 'pending-ask-user',
+        role: 'assistant',
+        metadata: { isLoading: true },
+        parts: [
+          { type: 'reasoning', text: 'Need clarification', state: 'done' as const },
+          {
+            type: 'tool-call' as const,
+            toolCallId: 'ask-1',
+            toolName: 'ask_user',
+            toolDisplayName: 'Ask user',
+            input: {
+              questions: [
+                { id: 'target', question: 'Where should this go?', options: ['cloud', 'local'], required: true },
+              ],
+            },
+            state: 'pending' as const,
+          },
+          {
+            type: 'tool-result' as const,
+            toolCallId: 'ask-1',
+            toolName: 'ask_user',
+            output: { target: 'cloud' },
+          },
+        ],
+      }}
+    />)
+
+    expect(markup).toContain('chat.reasoning.thought')
+    expect(markup).not.toContain('Where should this go?')
+    expect(markup).not.toContain('cloud')
+    expect(markup).not.toContain('local')
+    expect(markup).not.toContain('Ask user')
+  })
+
+  test('omits an assistant message containing only ask_user plumbing', () => {
+    const markup = renderToStaticMarkup(<Message
+      message={{
+        id: 'ask-user-only',
+        role: 'assistant',
+        parts: [{
+          type: 'tool-call' as const,
+          toolCallId: 'ask-1',
+          toolName: 'ask_user',
+          input: { questions: [{ id: 'target', question: 'Where?' }] },
+          state: 'pending' as const,
+        }],
+      }}
+    />)
+
+    expect(markup).toBe('')
+  })
+
   test('renders iteration cap and stopped markers once', () => {
     const html = renderToStaticMarkup(<Message
       message={{
@@ -330,7 +384,7 @@ describe('message behavior', () => {
     expect(onFeedback.mock.calls).toEqual([['positive'], ['negative']])
   })
 
-  test('edits user text with save and escape boundaries', async () => {
+  test('edits user text with send and escape boundaries', async () => {
     const onEditMessage = mock(async () => {})
     const container = render(<Message
       message={{ id: 'user-edit', role: 'user', parts: [{ type: 'text', text: 'Original' }] }}
@@ -340,23 +394,30 @@ describe('message behavior', () => {
     act(() => button(container, 'chat.message.edit').click())
     const textarea = container.querySelector('textarea')!
     expect(textarea.value).toBe('Original')
-    expect(button(container, 'chat.message.saveEdit').disabled).toBe(true)
 
+    // Sending an unchanged message is allowed
+    await act(async () => button(container, 'chat.message.saveEdit').click())
+    expect(onEditMessage).toHaveBeenCalledWith('Original')
+    expect(container.querySelector('textarea')).toBeNull()
+
+    // A revised message submits the trimmed draft
+    act(() => button(container, 'chat.message.edit').click())
+    const revised = container.querySelector('textarea')!
     act(() => {
-      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, '  Revised  ')
-      textarea.dispatchEvent(new window.Event('input', { bubbles: true }))
+      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')!.set!.call(revised, '  Revised  ')
+      revised.dispatchEvent(new window.Event('input', { bubbles: true }))
     })
     await act(async () => button(container, 'chat.message.saveEdit').click())
     expect(onEditMessage).toHaveBeenCalledWith('Revised')
     expect(container.querySelector('textarea')).toBeNull()
 
+    // Escape closes the editor without submitting
     act(() => button(container, 'chat.message.edit').click())
     act(() => container.querySelector('textarea')!.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     expect(container.querySelector('textarea')).toBeNull()
   })
 
-  test('routes sources, files, images, media, options, and boundary markers', () => {
-    const onSelectOption = mock(() => {})
+  test('routes sources, files, images, media, and boundary markers', () => {
     const html = renderToStaticMarkup(<Message
       message={{
         id: 'mixed',
@@ -367,11 +428,9 @@ describe('message behavior', () => {
           { type: 'file', filename: 'hidden.pdf', url: '/hidden.pdf' },
           { type: 'image', url: '/uploaded.png', alt: 'Uploaded chart' },
           { type: 'media-result', output: { kind: 'media.video', success: true, prompt: 'Demo', status: 'processing', progress: 0.42 } },
-          { type: 'user-input-request', question: 'Choose one', options: ['Alpha', 'Beta'] },
           { type: 'truncated' },
         ],
       }}
-      onSelectOption={onSelectOption}
     />)
 
     expect(html).toContain('sources:2')
@@ -379,15 +438,7 @@ describe('message behavior', () => {
     expect(html).toContain('alt="Uploaded chart"')
     expect(html).toContain('chat.message.videoProcessing')
     expect(html).toContain('chat.message.progress')
-    expect(html).toContain('Choose one')
     expect(html).toContain('chat.message.outputTruncated')
-
-    const container = render(<Message
-      message={{ id: 'option', role: 'assistant', parts: [{ type: 'user-input-request', question: 'Choose one', options: ['Alpha', 'Beta'] }] }}
-      onSelectOption={onSelectOption}
-    />)
-    act(() => button(container, 'Beta').click())
-    expect(onSelectOption).toHaveBeenCalledWith('Beta')
   })
 
 
@@ -1164,7 +1215,7 @@ describe('message behavior', () => {
     const variants = [
       { isStreaming: true }, { renderPart: () => <span>custom</span> }, { showCopy: false }, { showFeedback: true },
       { onRegenerate: () => {} }, { onEditMessage: async () => {} }, { onFeedback: () => {} }, { onSwitchVersion: () => {} },
-      { onSelectOption: () => {} }, { onOpenCodePreview: () => {} }, { hideToolCalls: true }, { chainOfThoughtOpen: true },
+      { onOpenCodePreview: () => {} }, { hideToolCalls: true }, { chainOfThoughtOpen: true },
       { onChainOfThoughtOpenChange: () => {} }, { onRequestScrollIntoView: () => {} }, { className: 'changed' },
     ]
     act(() => root.render(<Message {...base} />))

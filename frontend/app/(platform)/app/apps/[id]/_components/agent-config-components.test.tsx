@@ -74,8 +74,11 @@ mock.module('@/components/ui/tooltip', () => ({ Tooltip: passthrough(), TooltipC
 mock.module('@/components/ui/collapsible', () => ({ Collapsible: passthrough(), CollapsibleContent: passthrough(), CollapsibleTrigger: passthrough('button') }))
 
 mock.module('@/components/chat', () => ({
+  AgentChatEmptyState: () => null,
+  AgentChatSurface: () => null,
   ChatContainer: ({ messages }: { messages: Array<{ content?: string }> }) => <div data-testid="chat-container">{messages.map((m, i) => <p key={i}>{m.content}</p>)}</div>,
   ChatInput: ({ value, placeholder, onSubmit }: { value: string; placeholder?: string; onSubmit: (v: string) => void }) => <form onSubmit={(e) => { e.preventDefault(); onSubmit(value || 'hello') }}><input aria-label="chat" placeholder={placeholder} value={value} onChange={noop} /><button type="submit">send</button></form>,
+  PendingAskUserForm: () => null,
   VariableForm: () => <div data-testid="variable-form" />,
   useVariableForm: () => ({ values: {}, setValues: noop, needsInput: false, isValid: true, fieldErrors: {}, validate: () => true, reset: noop }),
 }))
@@ -96,7 +99,7 @@ const knowledgeBase = { id: 'kb-1', name: 'Handbook', document_count: 3 }
 const agentFixture = {
   id: 'agent-1', name: 'Support Agent', description: 'Helps users', icon: '', avatar_url: '', visibility: 'private', status: 'published', model_id: 'tm-1', model: teamModel.model,
   system_prompt: 'Be useful', opening_message: 'Hi there', suggested_questions: ['How do I start?'], suggestedQuestions: ['How do I start?'], variables: [], knowledge_bases: [], tools_config: [], rag_mode: 'agentic',
- enable_attachments: false, enable_user_input_request: false, enable_memory: false, memory_config: null, enable_image_generation: false, image_generation_config: null, enable_video_generation: false, video_generation_config: null,
+  enable_attachments: false, enable_memory: false, memory_config: null, enable_image_generation: false, image_generation_config: null, enable_video_generation: false, video_generation_config: null,
   embed_config: { enabled: true, allowed_domains: ['https://example.com'], theme: { mode: 'auto', primary_color: '#6366f1' }, bubble: { position: 'bottom-right', icon: null, greeting: 'Hello' } },
 }
 

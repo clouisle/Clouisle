@@ -8,7 +8,6 @@ import pytest
 from app.api.v1.endpoints.chat_helpers.general import (
     _safe_json_loads,
     collect_conversation_images,
-    parse_user_input_request,
 )
 from app.api.v1.endpoints.chat_tools import (
     _get_builtin_tool_credentials,
@@ -20,24 +19,6 @@ from app.api.v1.endpoints.chat_tools import (
 
 def test_safe_json_loads_returns_none_for_empty_value_issue255():
     assert _safe_json_loads("") is None
-
-
-@pytest.mark.parametrize(
-    "content",
-    [
-        "ordinary response",
-        """<user_input_request>
-        <question>   </question>
-        <options><option>Yes</option><option>No</option></options>
-        </user_input_request>""",
-        """<user_input_request>
-        <question>Choose</question>
-        <options><option>Only one</option></options>
-        </user_input_request>""",
-    ],
-)
-def test_parse_user_input_request_rejects_residual_invalid_shapes_issue255(content):
-    assert parse_user_input_request(content) == (None, content)
 
 
 def test_collect_conversation_images_filters_residual_sources_issue255():

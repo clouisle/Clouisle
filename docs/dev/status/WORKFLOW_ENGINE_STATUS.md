@@ -6,8 +6,7 @@
 
 Native object/array passthrough between nodes plus a structural TypeSpec
 system that auto-infers from debug runs. See
-`docs/dev/design/app-platform/WORKFLOW_TYPE_SYSTEM.md` and tracker
-`docs/plan/workflow-typed-variables.md`.
+`docs/dev/design/app-platform/WORKFLOW_TYPE_SYSTEM.md`.
 
 - `types.py` — TypeSpec / WorkflowValue / NodeOutputDecl / `to_text` /
   `infer_type_spec` / `merge_type_spec`

@@ -10,7 +10,6 @@ from app.api.v1.endpoints.chat_helpers.general import (
     get_compression_trigger,
     get_item_value,
     get_tool_execution_payloads,
-    parse_user_input_request,
 )
 from app.llm.tools.builtin.media import ToolExecutionResult
 from app.models.agent import MessageRole
@@ -121,25 +120,6 @@ def test_ignores_failed_malformed_and_source_less_results():
 
     assert images == []
     assert inventory == []
-
-
-def test_parses_valid_user_input_request_and_preserves_invalid_content():
-    content = (
-        "Before <user_input_request><question>Pick &amp; choose</question>"
-        "<options><option>One</option><option>Two</option>"
-        f"<option>{'x' * 201}</option></options></user_input_request> After"
-    )
-
-    request, remaining = parse_user_input_request(content)
-
-    assert request == {"question": "Pick & choose", "options": ["One", "Two"]}
-    assert remaining == "Before  After"
-    assert parse_user_input_request(
-        "<user_input_request><question>Only</question></user_input_request>"
-    ) == (
-        None,
-        "<user_input_request><question>Only</question></user_input_request>",
-    )
 
 
 def test_builds_tool_payloads_for_structured_dict_and_empty_results():

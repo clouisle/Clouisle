@@ -303,16 +303,15 @@ class ModelManager:
 
         if not team_model:
             raise ModelNotFoundError(
-                message=f"Team {team_id} is not authorized to use model {model_config.name}",
+                message=f"Model {model_config.name} is not authorized for this team",
                 model=str(model_config.id),
             )
 
         if not team_model.is_enabled:
             raise ModelDisabledError(
-                message=f"Model {model_config.name} is disabled for team {team_id}",
+                message=f"Model {model_config.name} is disabled for this team",
                 model=str(model_config.id),
             )
-
         return model_config, team_model
 
     async def resolve_team_chat_model(

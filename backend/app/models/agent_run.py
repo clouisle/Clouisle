@@ -32,6 +32,7 @@ class AgentRunStatus(str, Enum):
     STOPPED = "stopped"
     FAILED = "failed"
     INTERRUPTED = "interrupted"
+    WAITING = "waiting"
 
 
 class AgentRunMode(str, Enum):
@@ -101,6 +102,14 @@ class AgentRun(models.Model):
     active_round_id = fields.UUIDField(
         null=True, description="Round id of the run's visible branch"
     )
+    # Durable worker resume and model-callable interaction state
+    worker_payload: dict | None = fields.JSONField(null=True)  # type: ignore[assignment]
+    pending_tool_call_id = fields.CharField(max_length=200, null=True)
+    pending_tool_name = fields.CharField(max_length=200, null=True)
+    pending_tool_input: dict | None = fields.JSONField(null=True)  # type: ignore[assignment]
+    pending_tool_round_id = fields.UUIDField(null=True)
+    pending_tool_round_index = fields.IntField(null=True)
+    pending_tool_iteration_index = fields.IntField(null=True)
 
     # Lifecycle
     status = fields.CharEnumField(

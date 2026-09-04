@@ -50,7 +50,6 @@ from app.services.system_prompt import (
     build_system_prompt,
     build_system_prompt_with_language,
     get_language_instruction,
-    get_user_input_request_instruction,
     has_sandbox_tools as _has_sandbox_tools,
 )
 
@@ -69,7 +68,6 @@ __all__ = [
     "build_system_prompt",
     "build_system_prompt_with_language",
     "get_language_instruction",
-    "get_user_input_request_instruction",
 ]
 
 logger = logging.getLogger(__name__)

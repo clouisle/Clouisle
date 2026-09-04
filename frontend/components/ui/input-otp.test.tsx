@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 import * as React from 'react'
-import { act, create } from 'react-test-renderer'
+import { act, create } from '@/test-utils/rtl-renderer'
 
 let slots: Array<{ char?: string; hasFakeCaret?: boolean; isActive?: boolean }> = []
 

@@ -1438,52 +1438,59 @@ async def init_permission_is_system_field():
     logger.info("Permission is_system migration complete")
 
 
-async def init_agent_user_input_request():
-    """
-    Add enable_user_input_request field to agents table if it doesn't exist.
-    This handles the migration for the user input request feature.
-    Must be called BEFORE Tortoise.generate_schemas() to avoid schema mismatch.
-    """
-    logger.info("Checking agent enable_user_input_request field...")
-
+async def init_agent_run_fields():
+    """Add durable worker and user-interaction fields to AgentRun."""
     conn = Tortoise.get_connection("default")
-
-    # Check if agents table exists first
-    _, tables = await conn.execute_query("""
+    _, tables = await conn.execute_query(
+        """
         SELECT table_name FROM information_schema.tables
-        WHERE table_name = 'agents' AND table_schema = 'public'
-    """)
-
+        WHERE table_name = 'agent_runs' AND table_schema = 'public'
+        """
+    )
     if not tables:
-        logger.info(
-            "Agents table does not exist yet, skipping enable_user_input_request migration"
-        )
         return
 
-    # Check if enable_user_input_request column exists
-    _, rows = await conn.execute_query("""
+    await execute_startup_migration_query(
+        conn,
+        """
+        ALTER TABLE agent_runs
+            ADD COLUMN IF NOT EXISTS worker_payload JSONB,
+            ADD COLUMN IF NOT EXISTS pending_tool_call_id VARCHAR(200),
+            ADD COLUMN IF NOT EXISTS pending_tool_name VARCHAR(200),
+            ADD COLUMN IF NOT EXISTS pending_tool_input JSONB,
+            ADD COLUMN IF NOT EXISTS pending_tool_round_id UUID,
+            ADD COLUMN IF NOT EXISTS pending_tool_round_index INTEGER,
+            ADD COLUMN IF NOT EXISTS pending_tool_iteration_index INTEGER
+        """,
+    )
+
+
+async def init_agent_user_input_request():
+    """Add the Agent ask_user enablement field when upgrading an existing database."""
+    conn = Tortoise.get_connection("default")
+    _, tables = await conn.execute_query(
+        """
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+        """
+    )
+    if not tables:
+        return
+
+    _, rows = await conn.execute_query(
+        """
         SELECT column_name FROM information_schema.columns
         WHERE table_name = 'agents' AND column_name = 'enable_user_input_request'
-    """)
-
+        """
+    )
     if not rows:
-        logger.info("Adding enable_user_input_request column to agents table...")
-        try:
-            await execute_startup_migration_query(
-                conn,
-                """
-                ALTER TABLE agents
-                ADD COLUMN enable_user_input_request BOOLEAN NOT NULL DEFAULT FALSE
-                """,
-            )
-            logger.info("Added enable_user_input_request column to agents table")
-        except Exception as e:
-            logger.error(f"Could not add enable_user_input_request column: {e}")
-            raise
-    else:
-        logger.info("enable_user_input_request column already exists")
-
-    logger.info("Agent enable_user_input_request migration complete")
+        await execute_startup_migration_query(
+            conn,
+            """
+            ALTER TABLE agents
+            ADD COLUMN enable_user_input_request BOOLEAN NOT NULL DEFAULT FALSE
+            """,
+        )
 
 
 async def init_skills_table():

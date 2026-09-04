@@ -1,6 +1,6 @@
 import React from 'react'
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
-import { act, create, type ReactTestRenderer } from 'react-test-renderer'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const toastSuccess = mock(() => {})
 const toastError = mock(() => {})
@@ -49,7 +49,8 @@ mock.module('@/components/ui/select', () => ({
   Select: ({ children, value, onValueChange }: React.PropsWithChildren<{ value: string; onValueChange: (value: string) => void }>) =>
     <select value={value} onChange={(event) => onValueChange(event.target.value)}>{children}</select>,
   SelectContent: childrenOnly,
-  SelectItem: ({ children, value }: React.PropsWithChildren<{ value: string }>) => <option value={value}>{children}</option>,
+  SelectItem: ({ children, value }: React.PropsWithChildren<{ value: string }>) =>
+    <option value={value}>{typeof children === 'string' ? children : value}</option>,
   SelectTrigger: childrenOnly,
   SelectValue: childrenOnly,
 }))

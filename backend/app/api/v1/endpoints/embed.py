@@ -32,6 +32,7 @@ from app.schemas.agent import (
     EmbedAgentInfo,
     RunEventOut,
     RunInputCreate,
+    RunAnswerCreate,
     RunOut,
     RunStartOut,
 )
@@ -346,6 +347,26 @@ async def embed_post_run_input(
     from app.api.v1.endpoints.chat import post_run_input
 
     return await post_run_input(agent_id, run_id, body, (user, api_key))
+
+
+@router.post(
+    "/agents/{agent_id}/chat/runs/{run_id}/answers",
+    response_model=Response[RunOut],
+)
+async def embed_post_run_answer(
+    agent_id: UUID,
+    run_id: UUID,
+    body: RunAnswerCreate,
+    request: Request,
+    auth_result: tuple[User, APIKey] = Depends(get_embed_auth),
+):
+    """Submit one structured answer set for an embed Agent run."""
+    user, api_key = auth_result
+    await _get_embed_agent(agent_id, api_key, request)
+
+    from app.api.v1.endpoints.chat import post_run_answer
+
+    return await post_run_answer(agent_id, run_id, body, (user, api_key))
 
 
 @router.post(

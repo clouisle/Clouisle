@@ -40,8 +40,6 @@
       "suggestedQuestionsPlaceholder": "One question per line",
       "promptDesc": "Define the agent's role and behavior",
       "variableHint": "Use '{{variableName}}' format to insert variables",
-      "enableUserInputRequest": "Enable User Input Request",
-      "enableUserInputRequestDesc": "Allow the agent to request user input with predefined options during conversation",
       "documents": "{count} documents",
       "kbComingSoon": "Knowledge base linking feature coming soon",
       "tabs": {
@@ -159,8 +157,6 @@
         "variableNotFound": "Variable \"{query}\" not found",
         "createVariable": "Create variable \"{name}\"",
         "undefinedVariablesHint": "The following variables are undefined. Click to add to variable list:",
-        "enableUserInputRequest": "Enable User Input Request",
-        "enableUserInputRequestDesc": "Allow the agent to request user input with predefined options during conversation",
         "systemVars": {
           "query": "User Input",
           "queryDesc": "The user's current question"
@@ -301,10 +297,10 @@
         "characters": "chars",
         "contextHint": "Attachments remain available as Assets. They are not automatically parsed into the conversation context."
       },
-      "userInputRequest": {
-        "title": "User Input Request",
-        "tooltip": "Allow the agent to request user input during conversation",
-        "description": "When enabled, the agent can proactively ask users questions and provide predefined options for selection during conversation."
+      "userInput": {
+        "title": "Interactive Questions",
+        "tooltip": "Allow the agent to ask structured questions during a conversation",
+        "description": "When enabled, the agent can pause and ask one or more questions in a single form before continuing."
       },
       "memory": {
         "title": "Memory",
@@ -464,8 +460,23 @@
         "outputTruncated": "Output was truncated due to max output token limit",
         "iterationCapReached": "The round hit the maximum tool-call iterations and ended with a terminal notice",
         "messageEnd": "Message ended with usage, timing, version_number, and version_count",
-        "error": "Error code and message"
+        "error": "Error code and message",
+        "runStart": "Run started; contains run_id and status",
+        "runStatus": "Run status transition. Enter waiting when the model calls ask_user — the payload carries pending_tool_call_id, pending_tool_name, and pending_tool_input so the client can render the question form",
+        "inputAccepted": "A queued steering/follow-up was committed",
+        "runEnd": "Terminal event (completed | stopped | failed | interrupted)"
       },
+      "runLifecycleTitle": "Run Lifecycle Events",
+      "runLifecycleDescription": "Agent chat runs are durable. These run-scoped events carry an envelope with run_id, sequence, timestamp, round_id, message_id and type so reconnects resume via after_sequence without duplicates:",
+      "answerDescription": "When a run is waiting for user answers, submit structured answers to resume it:",
+      "answerEndpoint": "POST /api/v1/agents/{agent_id}/chat/runs/{run_id}/answers",
+      "answerBody": "Request body:",
+      "answerFields": {
+        "toolCallId": "Pending tool-call ID from the run_status waiting event",
+        "answers": "ID-keyed answer map; each value is the chosen option or a custom string",
+        "skipped": "Explicitly skip every question (sends an empty answer map)"
+      },
+      "answerNote": "The run must be in waiting status and the tool_call_id must match the pending interaction.",
       "messageEndExample": "message_end event data example:",
       "codeExamples": "Code Examples",
       "tabs": {

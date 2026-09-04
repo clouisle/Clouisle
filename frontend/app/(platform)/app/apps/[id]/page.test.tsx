@@ -141,6 +141,7 @@ describe('AgentEditor', () => {
     await (toolbarProps.onPublish as () => Promise<void>)()
 
     expect(updateAgent).toHaveBeenCalledWith('agent-1', expect.objectContaining({
+      enable_user_input_request: false,
       name: '',
       memory_config: null,
       attachment_config: null,
@@ -166,9 +167,9 @@ describe('AgentEditor', () => {
       variables: [{ name: 'topic' }],
       knowledge_base_configs: [{ knowledge_base_id: 'kb-1' }],
       rag_mode: 'auto',
+      enable_user_input_request: true,
 
       enable_attachments: true,
-      enable_user_input_request: true,
       enable_memory: true,
       memory_config: { max_memories_per_retrieval: 3 },
       enable_image_generation: true,

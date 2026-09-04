@@ -27,8 +27,6 @@ interface ChatContainerProps {
   onEditMessage?: (messageId: string, content: string) => Promise<void>;
   /** Callback when version is switched for a message */
   onSwitchVersion?: (messageId: string, versionIndex: number) => void;
-  /** Callback when user selects an option from user input request */
-  onSelectOption?: (option: string) => void;
   /** Callback when a generated image is selected as a later reference */
   onSelectImageReference?: (image: { asset_ref: string; url: string }) => void;
   /** Show scroll to bottom button when not at bottom */
@@ -140,7 +138,6 @@ interface ChatMessageRowProps {
   onRegenerate?: (messageId: string) => void;
   onEditMessage?: (messageId: string, content: string) => Promise<void>;
   onSwitchVersion?: (messageId: string, versionIndex: number) => void;
-  onSelectOption?: (option: string) => void;
   onSelectImageReference?: (image: { asset_ref: string; url: string }) => void;
   onOpenCodePreview?: (payload: ChatPreviewPayload) => void;
   hideToolCalls: boolean;
@@ -160,7 +157,6 @@ const ChatMessageRow = memo(function ChatMessageRow({
   onRegenerate,
   onEditMessage,
   onSwitchVersion,
-  onSelectOption,
   onSelectImageReference,
   onOpenCodePreview,
   hideToolCalls,
@@ -201,7 +197,6 @@ const ChatMessageRow = memo(function ChatMessageRow({
         onRegenerate={message.role === 'assistant' && onRegenerate ? handleRegenerate : undefined}
         onEditMessage={message.role === 'user' && onEditMessage && message.metadata?.pendingPersistence !== true ? handleEditMessage : undefined}
         onSwitchVersion={onSwitchVersion ? handleSwitchVersion : undefined}
-        onSelectOption={onSelectOption}
         onSelectImageReference={onSelectImageReference}
         onOpenCodePreview={onOpenCodePreview}
         hideToolCalls={hideToolCalls}
@@ -220,7 +215,6 @@ const ChatMessageRow = memo(function ChatMessageRow({
   && prev.onRegenerate === next.onRegenerate
   && prev.onEditMessage === next.onEditMessage
   && prev.onSwitchVersion === next.onSwitchVersion
-  && prev.onSelectOption === next.onSelectOption
   && prev.onSelectImageReference === next.onSelectImageReference
   && prev.onOpenCodePreview === next.onOpenCodePreview
   && prev.hideToolCalls === next.hideToolCalls
@@ -243,7 +237,6 @@ export function ChatContainer({
   onRegenerate,
   onEditMessage,
   onSwitchVersion,
-  onSelectOption,
   onSelectImageReference,
   showScrollToBottom = true,
   onOpenCodePreview,
@@ -612,7 +605,6 @@ export function ChatContainer({
                 onRegenerate={onRegenerate}
                 onEditMessage={isLoading || isStreaming ? undefined : onEditMessage}
                 onSwitchVersion={onSwitchVersion}
-                onSelectOption={onSelectOption}
                 onSelectImageReference={onSelectImageReference}
                 onOpenCodePreview={onOpenCodePreview}
                 hideToolCalls={hideToolCalls}

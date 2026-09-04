@@ -9,7 +9,6 @@ from app.services.system_prompt import (
     FILE_CONTENT_PLACEHOLDER,
     WORKFLOW_MODE,
     build_system_prompt,
-    get_user_input_request_instruction,
     has_sandbox_tools,
     normalize_locale,
 )
@@ -68,13 +67,6 @@ def test_normalize_locale_returns_base_subtag():
     assert normalize_locale(None) == "en"
 
 
-def test_user_input_instruction_normalizes_region_and_case():
-    assert "用户输入请求功能" in get_user_input_request_instruction("zh-CN")
-    assert "用户输入请求功能" in get_user_input_request_instruction("ZH")
-    assert "User Input Request Feature" in get_user_input_request_instruction("en-US")
-    assert "User Input Request Feature" in get_user_input_request_instruction("en")
-
-
 # ---------------------------------------------------------------------------
 # Chat mode (interactive endpoint) parity
 # ---------------------------------------------------------------------------
@@ -92,15 +84,42 @@ def test_chat_mode_injects_sandbox_markdown_and_language():
     assert "## Response Language\nYou MUST respond in English only." in prompt
 
 
-def test_chat_mode_injects_memory_and_user_input_when_enabled():
+def test_chat_mode_injects_memory_when_enabled():
     prompt = build_system_prompt(
-        _agent(enable_memory=True, enable_user_input_request=True),
+        _agent(enable_memory=True),
         user_message="hi",
         user_locale="en",
         invocation_mode=CHAT_MODE,
     )
     assert "## Memory System" in prompt
-    assert "## User Input Request Feature" in prompt
+
+
+def test_chat_mode_injects_ask_user_guidance_when_enabled():
+    prompt = build_system_prompt(
+        _agent(enable_user_input_request=True),
+        user_message="hi",
+        user_locale="en",
+        invocation_mode=CHAT_MODE,
+    )
+    assert "## User Input Requests" in prompt
+    assert "call `ask_user`" in prompt
+
+
+def test_ask_user_guidance_requires_the_chat_tool_injection_path():
+    disabled_prompt = build_system_prompt(
+        _agent(enable_user_input_request=False),
+        user_message="hi",
+        user_locale="en",
+        invocation_mode=CHAT_MODE,
+    )
+    workflow_prompt = build_system_prompt(
+        _agent(enable_user_input_request=True),
+        user_message="hi",
+        user_locale="en",
+        invocation_mode=WORKFLOW_MODE,
+    )
+    assert "## User Input Requests" not in disabled_prompt
+    assert "## User Input Requests" not in workflow_prompt
 
 
 def test_chat_mode_skips_sandbox_without_sandbox_tools():
@@ -196,20 +215,6 @@ def test_workflow_mode_skips_memory_guidance_even_when_enabled():
     assert "## Memory System" not in prompt
 
 
-def test_workflow_mode_skips_user_input_guidance_even_when_enabled():
-    """Workflow has no frontend parser for <user_input_request> XML."""
-    prompt = build_system_prompt(
-        _agent(
-            tools_config=[{"type": "builtin", "name": "bash"}],
-            enable_user_input_request=True,
-        ),
-        user_message="run",
-        user_locale="en",
-        invocation_mode=WORKFLOW_MODE,
-    )
-    assert "## User Input Request" not in prompt
-
-
 def test_workflow_mode_locale_none_defaults_to_english():
     prompt = build_system_prompt(
         _agent(system_prompt="base"),
@@ -257,7 +262,6 @@ async def test_agent_service_workflow_build_messages_injects_sandbox_skips_memor
         system_prompt="You are a helper.",
         tools_config=[{"type": "builtin", "name": "bash"}],
         enable_memory=True,
-        enable_user_input_request=True,
         rag_mode=RAGMode.OFF,
         team_id=None,
     )
@@ -270,7 +274,6 @@ async def test_agent_service_workflow_build_messages_injects_sandbox_skips_memor
     assert "## Markdown Output" in system_content
     assert "## Response Language" in system_content
     assert "## Memory System" not in system_content
-    assert "## User Input Request" not in system_content
 
 
 @pytest.mark.anyio
@@ -283,7 +286,6 @@ async def test_agent_service_workflow_appends_context_to_base_prompt():
         system_prompt="You are a helper.",
         tools_config=[],
         enable_memory=False,
-        enable_user_input_request=False,
         rag_mode=RAGMode.OFF,
         team_id=None,
     )

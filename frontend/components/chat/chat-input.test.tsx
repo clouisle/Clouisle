@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
-import TestRenderer, { act } from 'react-test-renderer'
+import TestRenderer, { act } from '@/test-utils/rtl-renderer'
 
 import type { ChatInputFile } from './chat-input'
 
@@ -118,22 +118,23 @@ describe('ChatInput', () => {
     expect(buttons(renderChatInput({ value: 'hello' })).at(-1)?.props.disabled).toBe(false)
   })
 
-  test('keeps stop available while sending steering during streaming', () => {
+  test('shows stop instead of send while streaming, with stop stopping the run', () => {
     const onStop = mock(() => undefined)
     const onSubmit = mock(() => undefined)
     const tree = renderChatInput({ value: 'hello', isStreaming: true, onStop, onSubmit })
     const stopButton = buttons(tree).find((button) => button.props['aria-label'] === 'stop')
     const sendButton = buttons(tree).find((button) => button.props['aria-label'] === 'send')
 
-    act(() => {
-      sendButton?.props.onClick()
-    })
+    // Mutually exclusive: while a run is streaming only the stop button renders
+    expect(stopButton).toBeDefined()
+    expect(sendButton).toBeUndefined()
+
     act(() => {
       stopButton?.props.onClick()
     })
 
-    expect(onSubmit).toHaveBeenCalledWith('hello', undefined)
     expect(onStop).toHaveBeenCalledTimes(1)
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 
   test('keeps stop available while a run is queued', () => {

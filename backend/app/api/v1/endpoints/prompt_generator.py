@@ -158,7 +158,6 @@ def build_context_string(context: PromptGenerateContext | None, language: str) -
     enabled_capabilities = []
     capability_names = {
         "enable_attachments": label("文件与图片", "Files and Images"),
-        "enable_user_input_request": label("用户输入请求", "User Input Request"),
         "enable_memory": label("记忆", "Memory"),
         "enable_image_generation": label("图片生成", "Image Generation"),
         "enable_video_generation": label("视频生成", "Video Generation"),

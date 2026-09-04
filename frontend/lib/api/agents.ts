@@ -343,8 +343,17 @@ export type AgentRunStatus =
   | 'stopped'
   | 'failed'
   | 'interrupted'
+  | 'waiting'
 
 export type AgentRunMode = 'send' | 'edit' | 'regenerate' | 'non_stream'
+
+/** One pending ask_user interaction question shown to the user. */
+export interface AskUserQuestion {
+  id: string
+  question: string
+  options?: string[]
+  required?: boolean
+}
 
 export interface AgentRunStatusOut {
   id: string
@@ -359,7 +368,20 @@ export interface AgentRunStatusOut {
   error_message?: string | null
   started_at?: string | null
   finished_at?: string | null
+  pending_tool_call_id?: string | null
+  pending_tool_name?: string | null
+  pending_tool_input?: Record<string, unknown> | null
 }
+
+/** Structured answer payload for a pending ask_user interaction. */
+export interface AgentRunAnswerInput {
+  tool_call_id: string
+  answers: Record<string, unknown>
+  /** Explicitly decline every question; answers must then be empty. */
+  skipped?: boolean
+}
+
+export type AgentRunAnswerPayload = Omit<AgentRunAnswerInput, 'tool_call_id'>
 export interface AgentRunStartOut {
   run_id: string
   conversation_id: string
@@ -544,7 +566,6 @@ export type SSEEventType =
   | 'media_result'
   | 'rag_start'
   | 'rag_context'
-  | 'user_input_request'
   | 'compression_start'
   | 'compression_end'
   | 'output_truncated'
@@ -560,11 +581,6 @@ export interface SSEMessageStart {
 
 export interface SSEContentDelta {
   delta: string
-}
-
-export interface SSEUserInputRequest {
-  question: string
-  options: string[]
 }
 
 export interface SSERagContext {
@@ -939,6 +955,18 @@ export const agentsApi = {
       stream,
       abort: () => controller.abort(),
     }
+  },
+
+  /** Submit one structured answer set for a waiting ask_user run. */
+  postRunAnswer: async (
+    agentId: string,
+    runId: string,
+    body: AgentRunAnswerInput
+  ): Promise<AgentRunStatusOut> => {
+    return api.post<AgentRunStatusOut>(
+      `/agents/${agentId}/chat/runs/${runId}/answers`,
+      body
+    )
   },
 
   getVideoGenerationStatus: async (
@@ -1466,6 +1494,20 @@ export const publicAgentsApi = {
   ): Promise<AgentRunStatusOut> => {
     return api.post<AgentRunStatusOut>(
       `/agents/${agentId}/chat/runs/${runId}/inputs`,
+      body
+    )
+  },
+
+  /**
+   * Submit one structured answer set for a waiting ask_user run.
+   */
+  postRunAnswer: async (
+    agentId: string,
+    runId: string,
+    body: AgentRunAnswerInput
+  ): Promise<AgentRunStatusOut> => {
+    return api.post<AgentRunStatusOut>(
+      `/agents/${agentId}/chat/runs/${runId}/answers`,
       body
     )
   },

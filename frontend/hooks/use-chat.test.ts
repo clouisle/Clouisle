@@ -38,6 +38,7 @@ const switchMessageVersion = mock(() => Promise.resolve())
 const getRunStatus = mock(() => Promise.resolve())
 const getRunEvents = mock(() => Promise.resolve([]))
 const postRunInput = mock(() => Promise.resolve())
+const postRunAnswer = mock(() => Promise.resolve({ status: 'queued' }))
 const stopRun = mock(() => Promise.resolve())
 const agentsApi = {
   chatStream,
@@ -51,6 +52,7 @@ const agentsApi = {
   getRunStatus,
   getRunEvents,
   postRunInput,
+  postRunAnswer,
   stopRun,
 }
 
@@ -160,6 +162,7 @@ beforeEach(() => {
     getRunStatus,
     getRunEvents,
     postRunInput,
+    postRunAnswer,
     stopRun,
   ]) apiMock.mockReset()
   getConversation.mockResolvedValue({ messages: [] })
@@ -167,6 +170,7 @@ beforeEach(() => {
   switchMessageVersion.mockResolvedValue()
   getRunEvents.mockResolvedValue([])
   postRunInput.mockResolvedValue({ status: 'running' })
+  postRunAnswer.mockResolvedValue({ status: 'queued' })
   stopRun.mockResolvedValue({ status: 'stopping' })
   streamEvents = []
   options = { agentId: 'agent-1' }
@@ -263,6 +267,142 @@ describe('useChat', () => {
     })
     expect(result.messages[1].parts).toContainEqual({ type: 'text', text: 'Hi there', state: 'done' })
   })
+  it('exposes the waiting ask_user interaction and resumes it with an explicit skip', async () => {
+    const runEvent = (sequence: number, type: string, payload: Record<string, unknown>) => ({
+      event: type,
+      data: { run_id: 'run-1', sequence, timestamp: '2026-08-31T00:00:00Z', type, payload },
+    })
+    const startRun = mock(async () => ({
+      run_id: 'run-1',
+      conversation_id: 'conversation-1',
+      user_message_id: 'user-1',
+      status: 'queued' as const,
+      stream_url: '/agents/agent-1/chat/runs/run-1/stream',
+    }))
+    // The consumed stream resolves and replays the waiting events; the
+    // hand-over subscription after the waiting status stays open (never
+    // settles) so the hook keeps waiting for the resume instead of retrying.
+    const hang = deferred<Response>()
+    const streamRun = mock(() => {
+      if (streamRun.mock.calls.length === 1) {
+        return { stream: Promise.resolve(new Response()), abort: mock() }
+      }
+      return { stream: hang.promise, abort: mock() }
+    })
+    const durableApi = {
+      ...agentsApi,
+      startRun,
+      streamRun,
+    } as unknown as NonNullable<HookOptions['api']>
+    options = { agentId: 'agent-1', api: durableApi }
+    renderHookHarness()
+
+    const questions = {
+      questions: [
+        { id: 'deploy_to', question: 'Where to deploy?', options: ['cloud', 'local'], required: true },
+        { id: 'region', question: 'Which region?', required: false },
+      ],
+    }
+    streamEvents = [
+      runEvent(1, 'run_start', { status: 'running', run_id: 'run-1' }),
+      runEvent(2, 'message_start', { conversation_id: 'conversation-1', message_id: 'assistant-1', user_message_id: 'user-1' }),
+      runEvent(3, 'tool_call', {
+        tool_call_id: 'call-ask',
+        tool_name: 'ask_user',
+        tool_display_name: 'Ask user',
+        arguments: questions,
+      }),
+      runEvent(4, 'run_status', {
+        status: 'waiting',
+        pending_tool_call_id: 'call-ask',
+        pending_tool_name: 'ask_user',
+        pending_tool_input: questions,
+      }),
+    ]
+
+    const sending = result.sendMessage('deploy it')
+    // Let the durable start, the consumed event stream, and the waiting
+    // status settle before asserting the exposed interaction state.
+    for (let i = 0; i < 20; i += 1) await flush()
+    renderHookHarness()
+
+    expect(result.runStatus).toBe('waiting')
+    expect(result.pendingAskUserToolCallId).toBe('call-ask')
+    expect(result.messages[1].parts).toContainEqual({
+      type: 'tool-call',
+      toolCallId: 'call-ask',
+      toolName: 'ask_user',
+      toolDisplayName: 'Ask user',
+      input: questions,
+      state: 'pending',
+    })
+
+    await result.submitAskUser('call-ask', { answers: {}, skipped: true })
+
+    expect(postRunAnswer).toHaveBeenCalledWith('agent-1', 'run-1', {
+      tool_call_id: 'call-ask',
+      answers: {},
+      skipped: true,
+    })
+    expect(result.pendingAskUserToolCallId).toBeNull()
+    void sending
+  })
+
+  it('restores a waiting ask_user interaction from the persisted run snapshot', async () => {
+    const storage = new Map<string, string>()
+    const originalWindow = globalThis.window
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        sessionStorage: {
+          getItem: (key: string) => storage.get(key) ?? null,
+          setItem: (key: string, value: string) => storage.set(key, value),
+          removeItem: (key: string) => storage.delete(key),
+        },
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+      },
+    })
+    try {
+      const hang = deferred<Response>()
+      const streamRun = mock(() => ({ stream: hang.promise, abort: mock() }))
+      const durableApi = {
+        ...agentsApi,
+        streamRun,
+        getRunStatus,
+      } as unknown as NonNullable<HookOptions['api']>
+      getRunStatus.mockResolvedValue({
+        id: 'run-1',
+        agent_id: 'agent-1',
+        conversation_id: 'conversation-1',
+        mode: 'send',
+        status: 'waiting',
+        pending_tool_call_id: 'call-ask',
+      })
+      storage.set(
+        'clouisle:agent-run:agent-1:conversation-1',
+        JSON.stringify({ runId: 'run-1', lastSequence: 4 }),
+      )
+      options = { agentId: 'agent-1', conversationId: 'conversation-1', api: durableApi }
+      renderHookHarness()
+      result.setConversationId('conversation-1')
+      await flush()
+
+      result.reconnect()
+      for (let i = 0; i < 5; i += 1) await flush()
+
+      expect(getRunStatus).toHaveBeenCalledWith('agent-1', 'run-1')
+      expect(streamRun).toHaveBeenCalledWith('agent-1', 'run-1', 4)
+      expect(result.runStatus).toBe('waiting')
+      expect(result.pendingAskUserToolCallId).toBe('call-ask')
+    } finally {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: originalWindow,
+      })
+    }
+  })
+
   it('reconciles the optimistic user ID from durable start before message_start', async () => {
     const userMessageId = '11111111-1111-1111-1111-111111111111'
     const runEvent = (sequence: number, type: string, payload: Record<string, unknown>) => ({
@@ -396,25 +536,6 @@ describe('useChat', () => {
     })
     expect(result.messages[1].parts).toContainEqual({ type: 'text', text: 'partial answer', state: 'done' })
     expect(result.messages[1].parts).toContainEqual({ type: 'task', taskType: 'generating', state: 'completed' })
-  })
-
-  it('renders structured user input requests split across stream chunks', async () => {
-    streamEvents = [
-      { event: 'content_delta', data: { delta: 'Before <user_input_request><question>Pick one</question>' } },
-      { event: 'content_delta', data: { delta: '<options><option>A</option><option>B</option></options></user_input_request> after' } },
-      { event: 'message_end', data: {} },
-    ]
-    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
-
-    await result.sendMessage('question')
-
-    expect(result.messages[1].parts).toContainEqual({ type: 'text', text: 'Before  after', state: 'done' })
-    expect(result.messages[1].parts).toContainEqual({
-      type: 'user-input-request',
-      question: 'Pick one',
-      options: ['A', 'B'],
-      state: 'pending',
-    })
   })
 
   it('renders tool status before slow arguments and result arrive', async () => {

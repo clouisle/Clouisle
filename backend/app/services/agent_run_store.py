@@ -22,6 +22,7 @@ import logging
 from typing import Any
 from uuid import UUID, uuid4
 
+from tortoise.transactions import in_transaction
 from app.core.redis import get_redis
 from app.core.timezone import now_utc
 from app.models.agent_run import (
@@ -32,6 +33,7 @@ from app.models.agent_run import (
     AgentRunMode,
     AgentRunStatus,
 )
+from app.models.agent import Message, MessageRole, MessageRoundRole
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +101,264 @@ async def transition_run(
         run.error_message = error_message
     await run.save()
     await _write_state_cache(run.id, status)
+    return run
+
+
+async def park_run_waiting(
+    run: AgentRun,
+    *,
+    tool_call_id: str,
+    tool_name: str,
+    tool_input: dict[str, Any],
+    round_id: UUID,
+    round_index: int,
+    iteration_index: int,
+    worker_payload: dict[str, Any] | None = None,
+) -> AgentRun:
+    """Atomically persist a pending interaction before its event is published."""
+    updated_at = now_utc()
+    updates: dict[str, Any] = {
+        "status": AgentRunStatus.WAITING,
+        "pending_tool_call_id": tool_call_id,
+        "pending_tool_name": tool_name,
+        "pending_tool_input": tool_input,
+        "pending_tool_round_id": round_id,
+        "pending_tool_round_index": round_index,
+        "pending_tool_iteration_index": iteration_index,
+        "updated_at": updated_at,
+    }
+    if worker_payload is not None:
+        updates["worker_payload"] = worker_payload
+    updated = await AgentRun.filter(id=run.id, status=AgentRunStatus.RUNNING).update(
+        **updates
+    )
+    if updated != 1:
+        raise RuntimeError("AgentRun is no longer running")
+
+    run.status = AgentRunStatus.WAITING
+    run.pending_tool_call_id = tool_call_id
+    run.pending_tool_name = tool_name
+    run.pending_tool_input = tool_input
+    run.pending_tool_round_id = round_id
+    run.pending_tool_round_index = round_index
+    run.pending_tool_iteration_index = iteration_index
+    run.updated_at = updated_at
+    if worker_payload is not None:
+        run.worker_payload = worker_payload
+    await _write_state_cache(run.id, AgentRunStatus.WAITING)
+    return run
+
+
+def validate_user_answers(
+    pending_input: dict[str, Any] | None,
+    answers: Any,
+    *,
+    skipped: bool = False,
+) -> None:
+    """Validate answer keys, required fields, and explicit skips."""
+    if not isinstance(pending_input, dict):
+        raise ValueError("pending questions are invalid")
+    questions = pending_input.get("questions")
+    if not isinstance(questions, list) or not questions:
+        raise ValueError("pending questions are invalid")
+    if not isinstance(answers, dict):
+        raise ValueError("answers must be an object")
+    if not isinstance(skipped, bool):
+        raise ValueError("skipped must be a boolean")
+
+    question_ids: set[str] = set()
+    for item in questions:
+        if not isinstance(item, dict):
+            raise ValueError("pending questions are invalid")
+        question_id = item.get("id")
+        question = item.get("question")
+        if not isinstance(question_id, str) or not question_id.strip():
+            raise ValueError("pending questions are invalid")
+        if question_id in question_ids:
+            raise ValueError("pending questions are invalid")
+        if not isinstance(question, str) or not question.strip():
+            raise ValueError("pending questions are invalid")
+        options = item.get("options")
+        if options is not None and (
+            not isinstance(options, list)
+            or any(
+                not isinstance(option, str) or not option.strip() for option in options
+            )
+        ):
+            raise ValueError("pending questions are invalid")
+        required = item.get("required", True)
+        if not isinstance(required, bool):
+            raise ValueError("pending questions are invalid")
+        question_ids.add(question_id)
+
+    if skipped:
+        if answers:
+            raise ValueError("skipped answers must be empty")
+        return
+
+    unknown = set(answers) - question_ids
+    if unknown:
+        raise ValueError("answers contain an unknown question id")
+
+    for item in questions:
+        question_id = item["id"]
+        has_answer = question_id in answers
+        answer = answers.get(question_id)
+        options = item.get("options")
+        is_required = item.get("required", True)
+        if is_required and (
+            not has_answer
+            or answer is None
+            or (isinstance(answer, str) and not answer.strip())
+            or (isinstance(answer, (list, dict)) and not answer)
+        ):
+            raise ValueError(f"answer required for {question_id}")
+        if has_answer and isinstance(options, list) and options:
+            if not is_required and (
+                answer is None or (isinstance(answer, str) and not answer.strip())
+            ):
+                continue
+            if not isinstance(answer, str) or not answer.strip():
+                raise ValueError(f"answer must be a non-empty string for {question_id}")
+
+
+async def submit_user_answers(
+    run_id: UUID,
+    *,
+    tool_call_id: str,
+    answers: dict[str, Any],
+    skipped: bool = False,
+) -> AgentRun | None:
+    """Consume one waiting interaction and persist its matching tool result.
+
+    The row lock makes duplicate submissions harmless: only the first caller
+    can change ``waiting`` to ``queued`` and create the tool-result message.
+    """
+    result_payload: dict[str, Any] = {"answers": answers}
+    if skipped:
+        result_payload["skipped"] = True
+    result_content = json.dumps(result_payload, ensure_ascii=False, default=str)
+    async with in_transaction() as conn:
+        run = await (
+            AgentRun.filter(id=run_id).using_db(conn).select_for_update().first()
+        )
+        if (
+            run is None
+            or run.status != AgentRunStatus.WAITING
+            or run.pending_tool_call_id != tool_call_id
+            or getattr(run, "pending_tool_name", None) != "ask_user"
+        ):
+            return None
+
+        validate_user_answers(run.pending_tool_input, answers, skipped=skipped)
+        await Message.create(
+            conversation_id=run.conversation_id,
+            role=MessageRole.TOOL,
+            content=result_content,
+            tool_call_id=tool_call_id,
+            tool_name=run.pending_tool_name,
+            round_id=run.pending_tool_round_id or run.active_round_id,
+            round_index=run.pending_tool_round_index or 0,
+            round_role=MessageRoundRole.TOOL_RESULT,
+            is_round_canonical=False,
+            iteration_index=run.pending_tool_iteration_index,
+            using_db=conn,
+        )
+
+        worker_payload = dict(run.worker_payload or {})
+        exclude_ids = list(worker_payload.get("exclude_message_ids") or [])
+        if run.canonical_message_id:
+            canonical_id = str(run.canonical_message_id)
+            if canonical_id not in exclude_ids:
+                exclude_ids.append(canonical_id)
+        worker_payload["exclude_message_ids"] = exclude_ids
+        history_override = list(worker_payload.get("history_override") or [])
+        history_override.append(
+            {
+                "role": "tool",
+                "content": result_content,
+                "round_id": str(run.pending_tool_round_id or run.active_round_id),
+                "round_index": run.pending_tool_round_index or 0,
+                "round_role": "tool_result",
+                "is_round_canonical": False,
+                "iteration_index": run.pending_tool_iteration_index,
+                "tool_call_id": tool_call_id,
+                "tool_name": run.pending_tool_name or "ask_user",
+            }
+        )
+        worker_payload["history_override"] = history_override
+        worker_payload["resume_tool_result"] = {
+            "tool_call_id": tool_call_id,
+            "tool_name": "ask_user",
+            "tool_display_name": "Ask user",
+            "result": result_content,
+            "is_error": False,
+        }
+        if run.pending_tool_round_index is not None:
+            worker_payload["first_round_index"] = run.pending_tool_round_index + 1
+        worker_payload["created_message_count"] = (
+            int(worker_payload.get("created_message_count", 2)) + 1
+        )
+        run.status = AgentRunStatus.QUEUED
+        run.worker_payload = worker_payload
+        run.pending_tool_call_id = None
+        run.pending_tool_name = None
+        run.pending_tool_input = None
+        run.pending_tool_round_id = None
+        run.pending_tool_round_index = None
+        run.pending_tool_iteration_index = None
+        run.updated_at = now_utc()
+        await run.save(
+            using_db=conn,
+            update_fields=[
+                "status",
+                "worker_payload",
+                "pending_tool_call_id",
+                "pending_tool_name",
+                "pending_tool_input",
+                "pending_tool_round_id",
+                "pending_tool_round_index",
+                "pending_tool_iteration_index",
+                "updated_at",
+            ],
+        )
+
+    await _write_state_cache(run_id, AgentRunStatus.QUEUED)
+    return run
+
+
+async def stop_waiting_run(run_id: UUID) -> AgentRun | None:
+    """Atomically stop a run that is waiting for user answers."""
+    async with in_transaction() as conn:
+        run = await (
+            AgentRun.filter(id=run_id).using_db(conn).select_for_update().first()
+        )
+        if run is None or run.status != AgentRunStatus.WAITING:
+            return None
+        run.status = AgentRunStatus.STOPPED
+        run.finished_at = now_utc()
+        run.updated_at = now_utc()
+        run.pending_tool_call_id = None
+        run.pending_tool_name = None
+        run.pending_tool_input = None
+        run.pending_tool_round_id = None
+        run.pending_tool_round_index = None
+        run.pending_tool_iteration_index = None
+        await run.save(
+            using_db=conn,
+            update_fields=[
+                "status",
+                "finished_at",
+                "updated_at",
+                "pending_tool_call_id",
+                "pending_tool_name",
+                "pending_tool_input",
+                "pending_tool_round_id",
+                "pending_tool_round_index",
+                "pending_tool_iteration_index",
+            ],
+        )
+    await _write_state_cache(run_id, AgentRunStatus.STOPPED)
     return run
 
 

@@ -148,6 +148,31 @@ describe('embed API', () => {
       },
     )
 
+    fetchSpy.mockResolvedValueOnce(Response.json({ data: { ...status, status: 'queued' } }))
+    const answers = { deploy_to: 'cloud', region: 'cn' }
+    await expect(embedApi.postRunAnswer('agent-1', 'run-1', { tool_call_id: 'call-ask', answers }, 'secret')).resolves.toMatchObject({ status: 'queued' })
+    expect(fetchSpy).toHaveBeenLastCalledWith(
+      'http://localhost:8000/api/v1/embed/agents/agent-1/chat/runs/run-1/answers',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' },
+        body: JSON.stringify({ tool_call_id: 'call-ask', answers }),
+      },
+    )
+
+    fetchSpy.mockResolvedValueOnce(Response.json({ data: { ...status, status: 'queued' } }))
+    await expect(embedApi.postRunAnswer('agent-1', 'run-1', {
+      tool_call_id: 'call-ask', answers: {}, skipped: true,
+    }, 'secret')).resolves.toMatchObject({ status: 'queued' })
+    expect(fetchSpy).toHaveBeenLastCalledWith(
+      'http://localhost:8000/api/v1/embed/agents/agent-1/chat/runs/run-1/answers',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret' },
+        body: JSON.stringify({ tool_call_id: 'call-ask', answers: {}, skipped: true }),
+      },
+    )
+
     fetchSpy.mockResolvedValueOnce(Response.json({ data: { ...status, status: 'stopping' } }))
     await expect(embedApi.stopRun('agent-1', 'run-1', 'secret')).resolves.toMatchObject({ status: 'stopping' })
   })

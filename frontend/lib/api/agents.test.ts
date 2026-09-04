@@ -238,6 +238,46 @@ describe('streaming agent API requests', () => {
     await stream.stream
   })
 
+  it('posts structured answers for a waiting ask_user run', async () => {
+    const post = spyOnApi('post').mockResolvedValue({
+      id: 'run-1',
+      agent_id: 'agent-1',
+      conversation_id: 'conversation-1',
+      mode: 'send',
+      status: 'queued',
+    })
+    const answers = { deploy_to: 'cloud', region: 'cn' }
+
+    await agentsApi.postRunAnswer('agent-1', 'run-1', { tool_call_id: 'call-ask', answers })
+
+    expect(post).toHaveBeenCalledWith('/agents/agent-1/chat/runs/run-1/answers', {
+      tool_call_id: 'call-ask',
+      answers,
+    })
+  })
+
+  it('posts an explicit skipped result for a waiting ask_user run', async () => {
+    const post = spyOnApi('post').mockResolvedValue({
+      id: 'run-1',
+      agent_id: 'agent-1',
+      conversation_id: 'conversation-1',
+      mode: 'send',
+      status: 'queued',
+    })
+
+    await agentsApi.postRunAnswer('agent-1', 'run-1', {
+      tool_call_id: 'call-ask',
+      answers: {},
+      skipped: true,
+    })
+
+    expect(post).toHaveBeenCalledWith('/agents/agent-1/chat/runs/run-1/answers', {
+      tool_call_id: 'call-ask',
+      answers: {},
+      skipped: true,
+    })
+  })
+
   it('propagates streaming fetch failures unchanged', async () => {
     const failure = new Error('stream unavailable')
     spyOnFetch().mockRejectedValue(failure)

@@ -603,7 +603,7 @@ async def duplicate_agent(
         tools_config=agent.tools_config,
         enable_attachments=agent.enable_attachments,
         attachment_config=agent.attachment_config,
-        enable_user_input_request=agent.enable_user_input_request,
+        enable_user_input_request=getattr(agent, "enable_user_input_request", False),
         enable_memory=agent.enable_memory,
         memory_config=agent.memory_config,
         context_compression_config=agent.context_compression_config,

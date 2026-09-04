@@ -110,10 +110,8 @@ class Agent(models.Model):
     attachment_config: dict = fields.JSONField(
         default=dict, description="Attachment limits and accepted file types"
     )  # type: ignore[assignment]
-
-    # User input request configuration
     enable_user_input_request = fields.BooleanField(
-        default=False, description="Enable user input request with predefined options"
+        default=False, description="Enable the model-callable ask_user tool"
     )
 
     # Memory configuration

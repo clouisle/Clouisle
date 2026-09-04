@@ -1,6 +1,6 @@
 import { afterEach, expect, mock, test } from "bun:test";
 import React from "react";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { act, create, type ReactTestRenderer } from "@/test-utils/rtl-renderer";
 
 const search = new Map<string, string>();
 const postMessage = mock(() => {});
@@ -35,8 +35,12 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let renderer: ReactTestRenderer | undefined;
 
 afterEach(() => {
-  renderer?.unmount();
-  renderer = undefined;
+  if (renderer) {
+    act(() => {
+      renderer?.unmount();
+    });
+    renderer = undefined;
+  }
   search.clear();
   lastProps = undefined;
 });

@@ -43,6 +43,7 @@ from app.api.v1.endpoints.chat_sse import (
     build_tool_result_sse_event,
 )
 from app.api.v1.endpoints.chat_tools import execute_tool_call
+from app.llm.tools.interaction import ToolInteractionRequest
 from app.llm.types import ChatStreamChunk, FinishReason, StopReason
 from app.services import agent_round
 
@@ -111,7 +112,9 @@ class AgentLoopContext:
     protected_round_id: UUID | str | None = None
     user_locale: str | None = None
     max_iterations: int = 5
-    enable_user_input_request: bool = False
+    iteration_offset: int = 0
+    # Durable AgentRun callback used by model-callable interaction tools.
+    pause_for_user: Callable[..., Any] | None = None
     # how one model turn is produced
     streaming: bool = True
     # context building (route-supplied): builds + finalizes provider context
@@ -148,13 +151,14 @@ class AgentLoopContext:
 
 @dataclass(slots=True)
 class AgentLoopResult:
-    """Terminal state produced by the loop for route finalization."""
+    """Terminal or durable-pause state produced by the loop."""
 
     full_content: str = ""
     full_reasoning: str = ""
     max_iterations_reached: bool = False
     deadline_exceeded: bool = False
     manually_stopped: bool = False
+    waiting_for_user: bool = False
     aggregate_input_tokens: int = 0
     aggregate_output_tokens: int = 0
     aggregate_cache_read_tokens: int = 0
@@ -382,6 +386,30 @@ class AgentLoop:
                 current_images=image_pool,
                 conversation_id=ctx.conversation.id,
             )
+            if isinstance(tool_result, ToolInteractionRequest):
+                if tool_result.tool_name != tool_name:
+                    raise ValueError("tool interaction name mismatch")
+                call_sse = build_tool_call_sse_event(
+                    tool_call_id=tc.id,
+                    tool_name=tool_name,
+                    tool_display_name=display_name,
+                    arguments=tool_result.arguments,
+                )
+                return (
+                    call_sse,
+                    "",
+                    None,
+                    {
+                        "id": tc.id,
+                        "name": tool_name,
+                        "arguments": tool_result.arguments,
+                        "display_result": "",
+                        "llm_result": "",
+                        "display_name": display_name,
+                        "interaction": tool_result,
+                    },
+                )
+
             display_result, llm_result = get_tool_execution_payloads(tool_result)
             if ctx.append_generated_images is not None:
                 ctx.append_generated_images(image_pool, image_inventory, display_result)
@@ -581,7 +609,7 @@ class AgentLoop:
         full_content = ""
         full_reasoning = ""
 
-        for iteration in range(1, ctx.max_iterations + 1):
+        for iteration in range(ctx.iteration_offset + 1, ctx.max_iterations + 1):
             # ---- deadline guard (primary normal guard) ------------------------
             if ctx.deadline_seconds is not None and (
                 time.time() - start_time > ctx.deadline_seconds
@@ -616,6 +644,7 @@ class AgentLoop:
                         else None
                     )
                     return
+
                 if new_last_event_time > self._last_event_time:
                     heartbeat_event = self._emit(HEARTBEAT, {})
                     if heartbeat_event:
@@ -765,8 +794,9 @@ class AgentLoop:
                                 continue
                             streamed_tool_calls[call_id] = tool_call
                             started_tool_call_ids.add(call_id)
+                            tool_name = getattr(tool_call.function, "name", None) or ""
                             call_sse = self._build_tool_call_sse(tool_call)
-                            if call_sse:
+                            if call_sse and tool_name != "ask_user":
                                 event = self._emit(TOOL_CALL, {"sse": call_sse})
                                 if event:
                                     yield event
@@ -922,7 +952,7 @@ class AgentLoop:
                 self._consecutive_pause_turns = 0
                 assert ctx.round_id is not None
                 pending_tool_calls: list[dict[str, Any]] = []
-                called_now: list[Any] = []
+                pause_record: dict[str, Any] | None = None
                 for group in self._partition_tool_batch(collected_tool_calls):
                     if ctx.is_disconnected and await ctx.is_disconnected():
                         self.result.manually_stopped = True
@@ -962,7 +992,6 @@ class AgentLoop:
                                 )
                             else:
                                 pending_tool_calls.append(record)
-                            called_now.append(tc)
                         break
 
                     # Shared group runs concurrently; exclusive group runs alone.
@@ -1031,14 +1060,15 @@ class AgentLoop:
                                 )
                             else:
                                 pending_tool_calls.append(record)
-                            called_now.append(tc)
                     else:
                         for tc in group:
+                            tool_name = getattr(tc.function, "name", None) or ""
                             previous_call = streamed_tool_calls.get(
                                 getattr(tc, "id", None)
                             )
-                            if previous_call is None or _tool_call_changed(
-                                previous_call, tc
+                            if tool_name != "ask_user" and (
+                                previous_call is None
+                                or _tool_call_changed(previous_call, tc)
                             ):
                                 call_sse = self._build_tool_call_sse(tc)
                                 if call_sse:
@@ -1055,6 +1085,10 @@ class AgentLoop:
                                 image_pool=ctx.image_pool,
                                 image_inventory=ctx.image_inventory,
                             )
+                            if record.get("interaction") is not None:
+                                pause_record = record
+                                pending_tool_calls.append(record)
+                                break
                             event = self._emit(TOOL_RESULT, {"sse": result_sse})
                             if event:
                                 yield event
@@ -1071,25 +1105,27 @@ class AgentLoop:
                                 )
                             else:
                                 pending_tool_calls.append(record)
-                            called_now.append(tc)
+                        if pause_record is not None:
+                            break
 
                 if not ctx.persist_step_per_tool and pending_tool_calls:
                     valid_tool_calls = [p for p in pending_tool_calls if p["name"]]
                     if valid_tool_calls:
                         step_index = self._next_round_index()
+                        tool_call_payload = [
+                            {
+                                "id": p["id"],
+                                "name": p["name"],
+                                "display_name": p["display_name"],
+                                "arguments": p["arguments"],
+                            }
+                            for p in valid_tool_calls
+                        ]
                         await agent_round.persist_assistant_step(
                             conversation=ctx.conversation,
                             content=iteration_content,
                             reasoning_content=iteration_reasoning or None,
-                            tool_calls=[
-                                {
-                                    "id": p["id"],
-                                    "name": p["name"],
-                                    "display_name": p["display_name"],
-                                    "arguments": p["arguments"],
-                                }
-                                for p in valid_tool_calls
-                            ],
+                            tool_calls=tool_call_payload,
                             model_used=ctx.model_used,
                             round_id=ctx.round_id,
                             round_index=step_index,
@@ -1100,21 +1136,18 @@ class AgentLoop:
                             role="assistant",
                             content=iteration_content,
                             reasoning_content=iteration_reasoning or None,
-                            tool_calls=[
-                                {
-                                    "id": p["id"],
-                                    "name": p["name"],
-                                    "display_name": p["display_name"],
-                                    "arguments": p["arguments"],
-                                }
-                                for p in valid_tool_calls
-                            ],
+                            tool_calls=tool_call_payload,
                             round_index=step_index,
                             iteration=iteration,
                         )
                         ctx.created_message_count += 1
+
+                    pause_tool_index: int | None = None
                     for p_data in pending_tool_calls:
                         tool_index = self._next_round_index()
+                        if p_data.get("interaction") is not None:
+                            pause_tool_index = tool_index
+                            continue
                         await agent_round.persist_tool_result(
                             conversation=ctx.conversation,
                             content=p_data["display_result"],
@@ -1134,6 +1167,85 @@ class AgentLoop:
                             iteration=iteration,
                         )
                         ctx.created_message_count += 1
+                elif ctx.persist_step_per_tool and pause_record is not None:
+                    step_index = self._next_round_index()
+                    tool_call_payload = [
+                        {
+                            "id": pause_record["id"],
+                            "name": pause_record["name"],
+                            "display_name": pause_record["display_name"],
+                            "arguments": pause_record["arguments"],
+                        }
+                    ]
+                    await agent_round.persist_assistant_step(
+                        conversation=ctx.conversation,
+                        content=iteration_content,
+                        reasoning_content=iteration_reasoning or None,
+                        tool_calls=tool_call_payload,
+                        model_used=ctx.model_used,
+                        round_id=ctx.round_id,
+                        round_index=step_index,
+                        iteration_index=iteration,
+                        branch_parent_id=ctx.step_branch_parent_id,
+                    )
+                    self._append_history(
+                        role="assistant",
+                        content=iteration_content,
+                        reasoning_content=iteration_reasoning or None,
+                        tool_calls=tool_call_payload,
+                        round_index=step_index,
+                        iteration=iteration,
+                    )
+                    ctx.created_message_count += 1
+                    pause_tool_index = self._next_round_index()
+                else:
+                    pause_tool_index = None
+
+                if pause_record is not None:
+                    if ctx.pause_for_user is None or pause_tool_index is None:
+                        raise RuntimeError("ask_user requires a durable pause callback")
+                    interaction = pause_record["interaction"]
+                    await ctx.pause_for_user(
+                        tool_call_id=pause_record["id"],
+                        tool_name=pause_record["name"],
+                        arguments=interaction.arguments,
+                        round_id=ctx.round_id,
+                        round_index=pause_tool_index,
+                        iteration_index=iteration,
+                        display_name=pause_record["display_name"],
+                    )
+                    call_sse = build_tool_call_sse_event(
+                        tool_call_id=pause_record["id"],
+                        tool_name=pause_record["name"],
+                        tool_display_name=pause_record["display_name"],
+                        arguments=interaction.arguments,
+                    )
+                    event = self._emit(TOOL_CALL, {"sse": call_sse})
+                    if event:
+                        yield event
+                    self.result.waiting_for_user = True
+                    self.result.full_content = full_content
+                    self.result.full_reasoning = full_reasoning
+                    self.result.aggregate_input_tokens = aggregate_input_tokens
+                    self.result.aggregate_output_tokens = aggregate_output_tokens
+                    self.result.aggregate_cache_read_tokens = (
+                        aggregate_cache_read_tokens
+                    )
+                    self.result.aggregate_cache_creation_tokens = (
+                        aggregate_cache_creation_tokens
+                    )
+                    self.result.aggregate_total_input_tokens = (
+                        aggregate_total_input_tokens
+                    )
+                    self.result.created_message_count = ctx.created_message_count
+                    self.result.final_round_index = self._round_index
+                    self.result.duration_ms = int((time.time() - start_time) * 1000)
+                    self.result.first_token_ms = (
+                        int((first_token_time - start_time) * 1000)
+                        if first_token_time is not None
+                        else None
+                    )
+                    return
 
                 if iteration >= ctx.max_iterations:
                     max_iterations_reached = True

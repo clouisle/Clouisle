@@ -109,7 +109,7 @@
       "notHelpful": "Not helpful",
       "regenerate": "Regenerate",
       "edit": "Edit",
-      "saveEdit": "Save",
+      "saveEdit": "Send",
       "cancelEdit": "Cancel",
       "editPlaceholder": "Edit your message...",
       "listen": "Listen",
@@ -169,7 +169,7 @@
       "linkSafetyCancel": "Cancel",
       "linkSafetyContinue": "Continue",
       "runStatusQueued": "Queued",
-      "runStatusRunning": "Running",
+      "runStatusWaiting": "Waiting for answers",
       "runStatusStopping": "Stopping",
       "runStatusCompleting": "Completing",
       "runStatusCompleted": "Completed",
@@ -181,11 +181,18 @@
       "queuedFollowUp": "Queued follow-up",
       "committedSteering": "Steering added",
       "committedFollowUp": "Follow-up added",
-      "attachmentsDisabledDuringRun": "Attachments are disabled while the agent is running"
-    },
-    "userInputRequest": {
-      "pending": "Please select an option:",
-      "answered": "You selected:"
+      "attachmentsDisabledDuringRun": "Attachments are disabled while the agent is running",
+      "askUser": {
+        "title": "Questions",
+        "progress": "Question {current} of {total}",
+        "previous": "Previous",
+        "next": "Next",
+        "customAnswer": "Or enter a custom answer",
+        "answerRequired": "This question requires an answer.",
+        "skipAll": "Skip all questions",
+        "submit": "Submit answers",
+        "submitting": "Submitting…"
+      }
     },
     "lightbox": {
       "zoomOut": "Zoom out (-)",

@@ -63,7 +63,7 @@ event: error
 data: {"code": 1000, "msg": "Something went wrong, please try again later"}
 ```
 
-**Event types:** `message_start`, `rag_start`, `rag_context`, `reasoning_start`, `reasoning_delta`, `reasoning_end`, `content_delta`, `tool_call`, `tool_result`, `media_result`, `compression_start`, `compression_end`, `output_truncated`, `iteration_cap_reached`, `message_end`, `error` (see [SSE Streaming](./sse-streaming.md) for the full reference; `user_input_request` is declared but has no emitter).
+**Event types:** `message_start`, `rag_start`, `rag_context`, `reasoning_start`, `reasoning_delta`, `reasoning_end`, `content_delta`, `tool_call`, `tool_result`, `media_result`, `compression_start`, `compression_end`, `output_truncated`, `iteration_cap_reached`, `message_end`, `error` (see [SSE Streaming](./sse-streaming.md) for the full reference).
 
 ### Client Example (JavaScript)
 

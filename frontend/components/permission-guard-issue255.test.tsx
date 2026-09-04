@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { act, create } from 'react-test-renderer'
+import { act, create } from '@/test-utils/rtl-renderer'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
-import TestRenderer, { act } from 'react-test-renderer'
+import TestRenderer, { act, type ReactTestInstance } from '@/test-utils/rtl-renderer'
 
 import type { ChatInputFile } from './chat-input'
 
@@ -95,7 +95,7 @@ describe('ChatInput attachment interactions', () => {
     const onFilesChange = mock(() => undefined)
     const event = { preventDefault: mock(() => undefined), stopPropagation: mock(() => undefined) }
     const tree = render({ files: [existing], onFilesChange, allowAttachments: true, enableFileUpload: true, maxFiles: 3 })
-    const zone = tree.root.children[0] as TestRenderer.ReactTestInstance
+    const zone = tree.root.children[0] as ReactTestInstance
 
     act(() => { zone.props.onDragEnter(event) })
     expect(tree.root.findAllByType('p').some((node) => node.children.includes('dropFiles'))).toBe(true)
@@ -126,5 +126,38 @@ describe('ChatInput attachment interactions', () => {
     const imageRemove = tree.root.findAllByType('button').find((button) => button.props.className?.includes('-top-1.5'))
     act(() => { imageRemove?.props.onClick() })
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:old')
+  })
+  test('blocks attachment selection, paste, and drop while disabled', () => {
+    const onFilesChange = mock(() => undefined)
+    const preventDefault = mock(() => undefined)
+    const stopPropagation = mock(() => undefined)
+    const image = attachment('photo.png', 'image/png')
+    const tree = render({
+      disabled: true,
+      files: [],
+      onFilesChange,
+      allowAttachments: true,
+      enableFileUpload: true,
+    })
+    const fileInput = tree.root.findAllByType('input').find((node) => node.props.type === 'file')
+    expect(fileInput?.props.disabled).toBe(true)
+
+    act(() => { fileInput?.props.onChange({ target: { files: [image] } }) })
+    act(() => {
+      textarea(tree).props.onPaste({
+        preventDefault,
+        clipboardData: { items: [item(image)] },
+      })
+    })
+    act(() => {
+      const zone = tree.root.children[0] as ReactTestInstance
+      zone.props.onDrop({
+        preventDefault,
+        stopPropagation,
+        dataTransfer: { files: [image] },
+      })
+    })
+
+    expect(onFilesChange).not.toHaveBeenCalled()
   })
 })

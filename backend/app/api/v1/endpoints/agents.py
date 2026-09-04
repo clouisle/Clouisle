@@ -198,7 +198,7 @@ async def build_agent_out(agent: Agent) -> dict:
         "attachment_config": agent.attachment_config
         if agent.attachment_config
         else None,
-        "enable_user_input_request": agent.enable_user_input_request,
+        "enable_user_input_request": getattr(agent, "enable_user_input_request", False),
         "enable_memory": agent.enable_memory,
         "memory_config": agent.memory_config if agent.memory_config else None,
         "context_compression_config": agent.context_compression_config
@@ -658,8 +658,6 @@ async def update_agent(
         )
         agent.attachment_config = cast(dict[str, Any], attachment_config)
         updated_fields.append("attachment_config")
-
-    # Update enable_user_input_request
     if agent_in.enable_user_input_request is not None:
         agent.enable_user_input_request = agent_in.enable_user_input_request
         updated_fields.append("enable_user_input_request")
@@ -897,7 +895,7 @@ async def duplicate_agent(
         tools_config=agent.tools_config,
         enable_attachments=agent.enable_attachments,
         attachment_config=agent.attachment_config,
-        enable_user_input_request=agent.enable_user_input_request,
+        enable_user_input_request=getattr(agent, "enable_user_input_request", False),
         enable_memory=agent.enable_memory,
         memory_config=agent.memory_config,
         context_compression_config=agent.context_compression_config,
