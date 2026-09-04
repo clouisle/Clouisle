@@ -4,10 +4,10 @@
 
 # <p align="center">Clouisle（云屿）</p>
 
-<p align="center"><b>开源 AI Agent 平台 · 工作流自动化 · 知识管理</b></p>
+<p align="center"><b>新一代多智能体协同平台与工作流编排引擎</b></p>
 
 <p align="center">
-构建、部署和管理智能 AI Agent，支持 RAG 知识检索、可视化工作流自动化与企业级安全。
+构建、编排和部署面向生产的 AI 智能体团队与可视化工作流，支持安全沙箱执行、混合知识检索（RAG）与企业级安全底座。
 </p>
 
 <p align="center">

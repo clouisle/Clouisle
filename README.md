@@ -4,10 +4,10 @@
 
 # <p align="center">Clouisle</p>
 
-<p align="center"><b>Open-Source AI Agent Platform with Workflow Automation & Knowledge Management</b></p>
+<p align="center"><b>Next-Generation Multi-Agent Collaboration Platform and Workflow Engine</b></p>
 
 <p align="center">
-Build, deploy, and manage intelligent AI agents with RAG-powered knowledge retrieval, visual workflow automation, and enterprise-grade security.
+Build, orchestrate, and deploy production-ready AI agent teams and visual workflows with sandboxed execution, hybrid RAG, and enterprise-grade security.
 </p>
 
 <p align="center">
