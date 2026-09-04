@@ -52,6 +52,8 @@ jobs:
           file: deploy/dockerfiles/backend.Dockerfile
           push: true
           platforms: linux/amd64
+          provenance: false
+          sbom: false
           tags: |
             ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/clouisle-backend:${{ steps.version.outputs.VERSION }}
             ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/clouisle-backend:latest
@@ -85,6 +87,8 @@ jobs:
           file: deploy/dockerfiles/sandbox-worker.Dockerfile
           push: true
           platforms: linux/amd64
+          provenance: false
+          sbom: false
           tags: |
             ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/clouisle-sandbox-worker:${{ steps.version.outputs.VERSION }}
             ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/clouisle-sandbox-worker:latest
@@ -118,6 +122,8 @@ jobs:
           file: deploy/dockerfiles/frontend.Dockerfile
           push: true
           platforms: linux/amd64
+          provenance: false
+          sbom: false
           build-args: |
             NEXT_PUBLIC_APP_VERSION=${{ steps.version.outputs.VERSION }}
             NEXT_PUBLIC_BUILD_DATE=${{ github.event.head_commit.timestamp }}
