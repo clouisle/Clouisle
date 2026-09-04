@@ -205,7 +205,8 @@ def validate_user_answers(
         has_answer = question_id in answers
         answer = answers.get(question_id)
         options = item.get("options")
-        if item.get("required", True) and (
+        is_required = item.get("required", True)
+        if is_required and (
             not has_answer
             or answer is None
             or (isinstance(answer, str) and not answer.strip())
@@ -213,6 +214,10 @@ def validate_user_answers(
         ):
             raise ValueError(f"answer required for {question_id}")
         if has_answer and isinstance(options, list) and options:
+            if not is_required and (
+                answer is None or (isinstance(answer, str) and not answer.strip())
+            ):
+                continue
             if not isinstance(answer, str) or not answer.strip():
                 raise ValueError(f"answer must be a non-empty string for {question_id}")
 
@@ -291,7 +296,9 @@ async def submit_user_answers(
         }
         if run.pending_tool_round_index is not None:
             worker_payload["first_round_index"] = run.pending_tool_round_index + 1
-
+        worker_payload["created_message_count"] = (
+            int(worker_payload.get("created_message_count", 2)) + 1
+        )
         run.status = AgentRunStatus.QUEUED
         run.worker_payload = worker_payload
         run.pending_tool_call_id = None

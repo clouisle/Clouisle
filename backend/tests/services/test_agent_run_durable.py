@@ -568,6 +568,7 @@ async def test_submit_user_answers_persists_one_result_and_is_idempotent(
         "result": '{"answers": {"target": "cloud", "note": "ship it"}}',
         "is_error": False,
     }
+    assert run.worker_payload["created_message_count"] == 3
     message_create.assert_awaited_once()
 
     duplicate = await agent_run_store.submit_user_answers(

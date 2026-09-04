@@ -488,7 +488,7 @@ async def test_team_model_requires_enabled_authorization(
 
     with pytest.raises(ModelNotFoundError, match="not authorized"):
         await manager._get_team_model("team", None)
-    with pytest.raises(ModelDisabledError, match="disabled for team"):
+    with pytest.raises(ModelDisabledError, match="disabled for this team"):
         await manager._get_team_model("team", None)
 
 

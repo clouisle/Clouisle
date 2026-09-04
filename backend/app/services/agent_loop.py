@@ -1167,54 +1167,85 @@ class AgentLoop:
                             iteration=iteration,
                         )
                         ctx.created_message_count += 1
+                elif ctx.persist_step_per_tool and pause_record is not None:
+                    step_index = self._next_round_index()
+                    tool_call_payload = [
+                        {
+                            "id": pause_record["id"],
+                            "name": pause_record["name"],
+                            "display_name": pause_record["display_name"],
+                            "arguments": pause_record["arguments"],
+                        }
+                    ]
+                    await agent_round.persist_assistant_step(
+                        conversation=ctx.conversation,
+                        content=iteration_content,
+                        reasoning_content=iteration_reasoning or None,
+                        tool_calls=tool_call_payload,
+                        model_used=ctx.model_used,
+                        round_id=ctx.round_id,
+                        round_index=step_index,
+                        iteration_index=iteration,
+                        branch_parent_id=ctx.step_branch_parent_id,
+                    )
+                    self._append_history(
+                        role="assistant",
+                        content=iteration_content,
+                        reasoning_content=iteration_reasoning or None,
+                        tool_calls=tool_call_payload,
+                        round_index=step_index,
+                        iteration=iteration,
+                    )
+                    ctx.created_message_count += 1
+                    pause_tool_index = self._next_round_index()
+                else:
+                    pause_tool_index = None
 
-                    if pause_record is not None:
-                        if ctx.pause_for_user is None or pause_tool_index is None:
-                            raise RuntimeError(
-                                "ask_user requires a durable pause callback"
-                            )
-                        interaction = pause_record["interaction"]
-                        await ctx.pause_for_user(
-                            tool_call_id=pause_record["id"],
-                            tool_name=pause_record["name"],
-                            arguments=interaction.arguments,
-                            round_id=ctx.round_id,
-                            round_index=pause_tool_index,
-                            iteration_index=iteration,
-                            display_name=pause_record["display_name"],
-                        )
-                        call_sse = build_tool_call_sse_event(
-                            tool_call_id=pause_record["id"],
-                            tool_name=pause_record["name"],
-                            tool_display_name=pause_record["display_name"],
-                            arguments=interaction.arguments,
-                        )
-                        event = self._emit(TOOL_CALL, {"sse": call_sse})
-                        if event:
-                            yield event
-                        self.result.waiting_for_user = True
-                        self.result.full_content = full_content
-                        self.result.full_reasoning = full_reasoning
-                        self.result.aggregate_input_tokens = aggregate_input_tokens
-                        self.result.aggregate_output_tokens = aggregate_output_tokens
-                        self.result.aggregate_cache_read_tokens = (
-                            aggregate_cache_read_tokens
-                        )
-                        self.result.aggregate_cache_creation_tokens = (
-                            aggregate_cache_creation_tokens
-                        )
-                        self.result.aggregate_total_input_tokens = (
-                            aggregate_total_input_tokens
-                        )
-                        self.result.created_message_count = ctx.created_message_count
-                        self.result.final_round_index = self._round_index
-                        self.result.duration_ms = int((time.time() - start_time) * 1000)
-                        self.result.first_token_ms = (
-                            int((first_token_time - start_time) * 1000)
-                            if first_token_time is not None
-                            else None
-                        )
-                        return
+                if pause_record is not None:
+                    if ctx.pause_for_user is None or pause_tool_index is None:
+                        raise RuntimeError("ask_user requires a durable pause callback")
+                    interaction = pause_record["interaction"]
+                    await ctx.pause_for_user(
+                        tool_call_id=pause_record["id"],
+                        tool_name=pause_record["name"],
+                        arguments=interaction.arguments,
+                        round_id=ctx.round_id,
+                        round_index=pause_tool_index,
+                        iteration_index=iteration,
+                        display_name=pause_record["display_name"],
+                    )
+                    call_sse = build_tool_call_sse_event(
+                        tool_call_id=pause_record["id"],
+                        tool_name=pause_record["name"],
+                        tool_display_name=pause_record["display_name"],
+                        arguments=interaction.arguments,
+                    )
+                    event = self._emit(TOOL_CALL, {"sse": call_sse})
+                    if event:
+                        yield event
+                    self.result.waiting_for_user = True
+                    self.result.full_content = full_content
+                    self.result.full_reasoning = full_reasoning
+                    self.result.aggregate_input_tokens = aggregate_input_tokens
+                    self.result.aggregate_output_tokens = aggregate_output_tokens
+                    self.result.aggregate_cache_read_tokens = (
+                        aggregate_cache_read_tokens
+                    )
+                    self.result.aggregate_cache_creation_tokens = (
+                        aggregate_cache_creation_tokens
+                    )
+                    self.result.aggregate_total_input_tokens = (
+                        aggregate_total_input_tokens
+                    )
+                    self.result.created_message_count = ctx.created_message_count
+                    self.result.final_round_index = self._round_index
+                    self.result.duration_ms = int((time.time() - start_time) * 1000)
+                    self.result.first_token_ms = (
+                        int((first_token_time - start_time) * 1000)
+                        if first_token_time is not None
+                        else None
+                    )
+                    return
 
                 if iteration >= ctx.max_iterations:
                     max_iterations_reached = True

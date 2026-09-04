@@ -231,3 +231,18 @@ def test_validate_user_answers_allows_only_empty_explicit_skips():
     validate_user_answers(pending_input, {}, skipped=True)
     with pytest.raises(ValueError, match="skipped answers must be empty"):
         validate_user_answers(pending_input, {"target": "cloud"}, skipped=True)
+
+
+def test_validate_user_answers_allows_empty_string_for_optional_options_question():
+    pending_input = {
+        "questions": [
+            {
+                "id": "optional_env",
+                "question": "Deploy env?",
+                "options": ["staging", "production"],
+                "required": False,
+            }
+        ]
+    }
+    validate_user_answers(pending_input, {"optional_env": ""})
+    validate_user_answers(pending_input, {"optional_env": "   "})

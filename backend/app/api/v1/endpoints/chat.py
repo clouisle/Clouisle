@@ -2266,7 +2266,12 @@ async def _load_owned_run(
             msg_key="run_not_found",
             status_code=404,
         )
-    conversation = await _Conv.get_or_none(id=run.conversation_id, user=current_user)
+    if getattr(current_user, "is_superuser", False):
+        conversation = await _Conv.get_or_none(id=run.conversation_id)
+    else:
+        conversation = await _Conv.get_or_none(
+            id=run.conversation_id, user=current_user
+        )
     if not conversation:
         raise BusinessError(
             code=ResponseCode.FORBIDDEN,

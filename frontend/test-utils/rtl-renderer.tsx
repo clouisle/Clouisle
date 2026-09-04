@@ -709,6 +709,7 @@ class DomRenderer implements ReactTestRenderer {
 
   unmount() {
     flushSync(() => this.reactRoot.unmount())
+    this.container.remove()
   }
 }
 

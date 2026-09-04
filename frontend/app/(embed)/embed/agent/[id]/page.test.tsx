@@ -35,8 +35,12 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let renderer: ReactTestRenderer | undefined;
 
 afterEach(() => {
-  renderer?.unmount();
-  renderer = undefined;
+  if (renderer) {
+    act(() => {
+      renderer?.unmount();
+    });
+    renderer = undefined;
+  }
   search.clear();
   postMessage.mockClear();
   addEventListener.mockClear();

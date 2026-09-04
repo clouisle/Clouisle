@@ -278,3 +278,24 @@ async def test_post_run_answer_forwards_explicit_skip(monkeypatch):
         skipped=True,
     )
     assert result == {"data": {"id": str(run_id)}}
+
+
+@pytest.mark.asyncio
+async def test_load_owned_run_allows_superuser_to_access_any_conversation(monkeypatch):
+    agent_id = uuid4()
+    run_id = uuid4()
+    conv_id = uuid4()
+    run = SimpleNamespace(id=run_id, agent_id=agent_id, conversation_id=conv_id)
+    conv = SimpleNamespace(id=conv_id)
+
+    from app.models.agent_run import AgentRun
+    from app.models.agent import Conversation as _Conv
+
+    monkeypatch.setattr(AgentRun, "get_or_none", AsyncMock(return_value=run))
+    monkeypatch.setattr(_Conv, "get_or_none", AsyncMock(return_value=conv))
+
+    superuser = SimpleNamespace(id=uuid4(), is_superuser=True)
+    loaded = await chat._load_owned_run(agent_id, run_id, superuser)
+
+    assert loaded is run
+    _Conv.get_or_none.assert_awaited_once_with(id=conv_id)

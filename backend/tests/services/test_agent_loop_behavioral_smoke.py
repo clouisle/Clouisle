@@ -558,3 +558,83 @@ async def test_agent_loop_pauses_after_persisting_ask_user_call(monkeypatch):
     persist_step.assert_awaited_once()
     assert persist_step.await_args.kwargs["tool_calls"][0]["id"] == call_id
     persist_result.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_pauses_ask_user_with_persist_step_per_tool(monkeypatch):
+    """ask_user pauses correctly even when persist_step_per_tool is True."""
+    from app.services import agent_round
+
+    persist_step = AsyncMock(return_value=2)
+    persist_result = AsyncMock(return_value=3)
+    monkeypatch.setattr(agent_round, "persist_assistant_step", persist_step)
+    monkeypatch.setattr(agent_round, "persist_tool_result", persist_result)
+
+    call_id = "call-ask-step"
+    response = _resp(
+        tool_calls=[
+            ToolCall(
+                id=call_id,
+                function=FunctionCall(
+                    name="ask_user",
+                    arguments=json.dumps(
+                        {"questions": [{"id": "target", "question": "Where?"}]}
+                    ),
+                ),
+            )
+        ]
+    )
+    pause = {}
+
+    async def team_chat(**_kwargs):
+        return response
+
+    async def build_turn(**_kwargs):
+        return ContextTurn(
+            prepared=SimpleNamespace(
+                messages=[LLMMessage(role=MessageRole.USER, content="choose")]
+            )
+        )
+
+    async def tool_runner(tool_name, _arguments, **_kwargs):
+        return ToolInteractionRequest(
+            tool_name="ask_user",
+            arguments={
+                "questions": [{"id": "target", "question": "Where?", "required": True}]
+            },
+        )
+
+    async def pause_for_user(**kwargs):
+        pause.update(kwargs)
+
+    context = AgentLoopContext(
+        agent=SimpleNamespace(id=uuid4(), team_id=uuid4()),
+        conversation=SimpleNamespace(id=uuid4()),
+        user=SimpleNamespace(id=uuid4()),
+        user_message="choose",
+        model_id="m",
+        tokenizer_model_id=None,
+        model_provider="p",
+        model_context_limit=100_000,
+        model_max_output_tokens=1000,
+        model_used="m",
+        max_iterations=3,
+        streaming=False,
+        persist_step_per_tool=True,
+        round_id=uuid4(),
+        team_chat=team_chat,
+        build_turn=build_turn,
+        execute_tool_call=tool_runner,
+        pause_for_user=pause_for_user,
+        formatter=lambda name, payload: name,
+    )
+
+    loop = AgentLoop(context)
+    output = [chunk async for chunk in loop.run()]
+
+    assert output == ["tool_call"]
+    assert loop.result.waiting_for_user is True
+    assert pause["tool_call_id"] == call_id
+    persist_step.assert_awaited_once()
+    assert persist_step.await_args.kwargs["tool_calls"][0]["id"] == call_id
+    persist_result.assert_not_awaited()
