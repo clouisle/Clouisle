@@ -58,11 +58,11 @@ Modern enterprises face a common challenge: **data fragmentation, low reusabilit
 
 **Clouisle transforms this reality** by providing:
 
-- **Intelligent Knowledge Management**: Hybrid search (vector + lexical) with reranking, configurable chunking, and multi-format document processing
-- **Agent-Native Architecture**: AI agents that retrieve, reason, execute tools, and generate media — with streaming, thinking/reasoning mode, and conversation memory
-- **Visual Workflow Automation**: Drag-and-drop workflow builder with 15+ node types, versioning, and multiple execution triggers
-- **Enterprise-Grade Security**: Multi-tenancy, RBAC, SSO (OIDC/SAML/CAS), TOTP two-factor authentication, and comprehensive audit logging
-- **Flexible Integration**: 24+ LLM providers, MCP tool protocol, sandboxed code execution, and API key management
+- **Multi-Agent & Collaborative Runtime**: Stateful AI agents and agent teams capable of reasoning, sandboxed tool execution, human-in-the-loop interaction, and durable execution
+- **Visual Workflow Orchestration**: Graph-based workflow builder with 15+ node types, nested sub-workflows, human approval steps, and execution profiling
+- **Intelligent Knowledge & Evaluation**: Hybrid search (vector + lexical) with reranking, multi-format parsing, and automated retrieval evaluation labs
+- **Enterprise-Grade Security & Governance**: Multi-tenancy, granular RBAC, SSO (OIDC/SAML/CAS), TOTP 2FA, field-level audit diffs, and centralized observability
+- **Production Portability**: Standardized `.clouisle` packages for safe multi-environment migration, 24+ LLM providers, and rootless sandboxed execution
 
 > Think of Clouisle as a **living intelligence layer** that evolves with your business.
 
@@ -70,39 +70,41 @@ Modern enterprises face a common challenge: **data fragmentation, low reusabilit
 
 ## Features
 
-### AI Agent Management
+### AI Agent & Multi-Agent Collaboration
 
 - **Multi-Model Support**: Configure agents with different LLM providers, parameters, and thinking/reasoning modes
-- **RAG Integration**: Multiple retrieval modes — disabled, citation, and rewrite — with knowledge base binding
+- **Human-in-the-Loop & Durable State**: Model-driven interactive inputs via durable `ask_user` tool with options, freeform answers, run-pause/resume lifecycle, and explicit skip
+- **RAG Integration**: Multiple retrieval modes — `off` (disabled), `auto` (automatic retrieval), and `agentic` (Agent-driven tool retrieval) — with knowledge base binding
 - **Streaming & Thinking**: Real-time streaming responses with reasoning/thinking content support
-- **Conversation Management**: Multi-turn conversations with branching, manual stop, token usage tracking, and session memory
+- **Conversation Management**: Multi-turn conversations with version branching, manual stop, token usage tracking, and session memory
 - **Media Generation**: Built-in support for text-to-image, video, and audio generation within conversations
-- **Tool System**: Built-in tools (web search, calculator, file parser), custom HTTP API tools, and MCP protocol integration
-- **Context Compression**: Automatic conversation context compression for long-running sessions
+- **Tool System & Skills**: Built-in tools, custom HTTP API tools, reusable Skill packages, and MCP protocol integration
+- **Context Compression**: Automatic 3-level conversation context compression for long-running sessions
 - **Visibility Control**: Private, team, or public access levels with RBAC enforcement
 
 ### Visual Workflow Builder
 
 - **No-Code Interface**: Drag-and-drop workflow creation with real-time node configuration
-- **15+ Node Types**: LLM, Agent, Condition, Code Execution (Python), Knowledge Retriever, HTTP Request, Tool, Sub-workflow, Media Generation, Iteration, and more
+- **15+ Node Types**: LLM, Agent, Condition, Question Classifier, Code Execution (Python), Knowledge Retriever, HTTP Request, Tool, Sub-workflow, Media Generation, Iteration/Loop, Pause/Approval, Template, Variable Assignment/Aggregation, Parameter Extractor, and Answer
+- **Human-in-the-Loop Approval**: Pause nodes with configurable multi-strategy approval, form variables, and deep-link resumes
 - **Execution Triggers**: Manual, scheduled (Cron), webhook, or API — flexible for any use case
 - **Versioning**: Draft/publish lifecycle with version history and rollback
-- **Real-Time Monitoring**: Streaming execution with live node-level status updates
+- **Real-Time Monitoring**: Streaming execution with live node-level status updates and trace timeline
 - **Debug Mode**: Step-by-step testing with variable inspection before deployment
 - **Sub-Workflows**: Nest and reuse workflows as sub-workflow nodes
-- **Profiling & Metrics**: Execution profiling with per-node latency and cost tracking
+- **Profiling & Metrics**: Execution profiling with per-node latency, cost, and token tracking
 
 ### Knowledge Base System
 
 - **Multi-Format Support**: PDF, DOCX, XLSX, Markdown, and more via MarkItDown
 - **Hybrid Search**: Vector similarity (Qdrant) + BM25 lexical search (pg_search) with Reciprocal Rank Fusion
-- **Configurable Chunking**: Customizable chunk size, overlap, and separator with preview
+- **Retrieval Evaluation Lab**: Built-in retrieval hit testing and recall evaluation to benchmark chunking and search strategies
+- **Configurable Chunking**: Customizable chunk size, overlap, and separator with preview and failed-chunk retry
 - **Reranking**: Optional reranking pipeline to improve retrieval accuracy
 - **Embedding Management**: Configurable embedding models and vector dimensions
-- **Async Document Processing**: Background processing via Celery with status tracking
+- **Async Document Processing**: Background processing via Celery with status tracking and batch operations
 - **Lexical Search**: PostgreSQL-powered full-text search with Chinese segmentation (jieba)
 - **Search Modes**: Vector-only, full-text only, or hybrid with configurable weight tuning
-
 ### LLM Provider Support
 
 Supports 24+ providers out of the box, plus any OpenAI-compatible endpoint.
@@ -159,7 +161,9 @@ Supports 24+ providers out of the box, plus any OpenAI-compatible endpoint.
 - **RBAC**: Role-based permission system with custom roles and permission presets
 - **SSO**: OIDC, OAuth2, SAML 2.0, and CAS single sign-on support
 - **Two-Factor Authentication**: TOTP-based 2FA for enhanced account security
-- **Audit Logging**: Comprehensive action tracking with before/after snapshots and user attribution
+- **Audit Logging**: Comprehensive action tracking with before/after field-level diff snapshots and user attribution
+- **Admin Observability**: Comprehensive dashboards tracking token consumption, latency, error rates, and system health
+- **Clouisle Packages**: Standardized `.clouisle` packages for safe, secret-free export/import and cross-environment asset migration (Agents, Workflows, Tools, and KBs)
 - **Notification System**: In-app, email, DingTalk, WeChat Work, Feishu, Slack, and webhook channels
 - **API Key Management**: Scoped API keys with expiration, usage tracking, and team access control
 - **Site Settings**: Configurable site-wide settings with localization support (en/zh)
@@ -170,9 +174,8 @@ Supports 24+ providers out of the box, plus any OpenAI-compatible endpoint.
 - **Built-in Tools**: Time/Date, Calculator, Web Search (Tavily), File Parser, and Python Code Interpreter
 - **Custom Tools**: Configurable HTTP API tools with authentication (API key, Bearer, Basic) and variable mapping
 - **MCP Integration**: Model Context Protocol for standardized tool capabilities and resource access
-- **Sandboxed Execution**: Secure, isolated Python code execution environment with resource limits
+- **Sandboxed Execution**: Secure, isolated Python/Node.js code execution environment with rootless container isolation and resource limits
 - **Tool Registry**: Centralized tool management with credential injection and lifecycle hooks
-
 ---
 
 ## Quick Start
@@ -310,17 +313,18 @@ Configure via the admin dashboard:
 
 ## Roadmap
 
-- [x] Multi-provider LLM support (15+ providers)
-- [x] Visual workflow builder
-- [x] Knowledge base with RAG
-- [x] Enterprise SSO (OIDC, SAML, OAuth2)
+- [x] Multi-provider LLM support (24+ providers)
+- [x] Visual workflow builder with human-in-the-loop approval
+- [x] Hybrid RAG knowledge base with evaluation lab
+- [x] Enterprise SSO (OIDC, SAML, CAS, OAuth2)
 - [x] Multi-channel notifications
-- [x] Comprehensive audit logging
+- [x] Field-level audit logging & diff snapshots
+- [x] Admin observability & performance dashboard
+- [x] Standardized `.clouisle` asset packages for cross-environment migration
+- [ ] Multi-agent team orchestration and group collaboration
 - [ ] Industry-specific agent templates
-- [ ] Advanced analytics dashboard
-- [ ] Plugin marketplace
+- [ ] Plugin & tool marketplace
 - [ ] Mobile application
-
 ---
 
 ## Contributing
