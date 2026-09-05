@@ -64,7 +64,7 @@ def test_process_document_all_failed_records_progress_and_error(monkeypatch, doc
 
     class Store:
         async def store_chunks_with_progress(
-            self, _document, _chunks, *, kb_id, progress_callback
+            self, _document, _chunks, *, kb_id, progress_callback, **_kwargs
         ):
             assert kb_id == document.knowledge_base.id
             await progress_callback(0, 2, 2)

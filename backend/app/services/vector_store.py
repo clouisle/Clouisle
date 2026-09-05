@@ -96,6 +96,7 @@ async def _get_qdrant_client() -> Any:
         _qdrant_client = AsyncQdrantClient(
             url=settings.QDRANT_URL,
             api_key=settings.QDRANT_API_KEY,
+            timeout=60.0,
         )
     return _qdrant_client
 
@@ -728,6 +729,7 @@ class VectorStore:
         chunks: list[dict[str, Any]],
         kb_id: UUID | None = None,
         progress_callback: Callable[..., Any] | None = None,
+        batch_size: int = 1,
     ) -> list[DocumentChunk]:
         """
         Store document chunks with per-chunk embedding and progress reporting.
@@ -753,6 +755,102 @@ class VectorStore:
         embedded_count = 0
         failed_count = 0
         total = len(chunks)
+        if batch_size > 1:
+            chunk_objs: list[DocumentChunk] = []
+            for chunk_data in chunks:
+                embedding_id = f"doc_{document.id}_chunk_{chunk_data['chunk_index']}"
+                chunk_obj = await DocumentChunk.create(
+                    document=document,
+                    content=chunk_data["content"],
+                    chunk_index=chunk_data["chunk_index"],
+                    token_count=chunk_data.get("token_count", 0),
+                    metadata=chunk_data.get("metadata"),
+                    embedding_id=embedding_id,
+                    status="pending",
+                )
+                chunk_objs.append(chunk_obj)
+
+            for i in range(0, total, batch_size):
+                batch_objs = chunk_objs[i : i + batch_size]
+                batch_data = chunks[i : i + batch_size]
+                texts = [c["content"] for c in batch_data]
+                try:
+                    embeddings = await self.embed_texts(texts)
+                    detected_dim = len(embeddings[0]) if embeddings else None
+                    if embedded_count == 0 and detected_dim is not None:
+                        self._detected_dimension = detected_dim
+                        if isinstance(resolved_kb_id, UUID):
+                            await _ensure_kb_dimension(resolved_kb_id, detected_dim)
+
+                    chunk_ids = [c.id for c in batch_objs]
+                    payloads = [
+                        {
+                            "kb_id": str(resolved_kb_id) if resolved_kb_id else "",
+                            "document_id": str(document.id),
+                        }
+                        for _ in batch_objs
+                    ]
+                    await self._batch_store_embeddings(
+                        chunk_ids, embeddings, dimension=detected_dim, payloads=payloads
+                    )
+
+                    for chunk_obj in batch_objs:
+                        chunk_obj.status = "embedded"
+                        chunk_obj.error_message = cast(Any, None)
+                        await chunk_obj.save(update_fields=["status", "error_message"])
+                        embedded_count += 1
+                    created_chunks.extend(batch_objs)
+                except Exception as batch_exc:
+                    logger.warning(
+                        f"Batch embedding failed for document {document.id}, falling back to per-chunk: {batch_exc}"
+                    )
+                    for chunk_obj, chunk_data in zip(batch_objs, batch_data):
+                        try:
+                            single_embeddings = await self.embed_texts(
+                                [chunk_data["content"]]
+                            )
+                            single_emb = single_embeddings[0]
+                            dim = len(single_emb)
+                            if embedded_count == 0 and isinstance(resolved_kb_id, UUID):
+                                self._detected_dimension = dim
+                                await _ensure_kb_dimension(resolved_kb_id, dim)
+                            await self._store_embedding(
+                                chunk_obj.id,
+                                single_emb,
+                                dimension=dim,
+                                payload={
+                                    "kb_id": str(resolved_kb_id)
+                                    if resolved_kb_id
+                                    else "",
+                                    "document_id": str(document.id),
+                                },
+                            )
+                            chunk_obj.status = "embedded"
+                            chunk_obj.error_message = cast(Any, None)
+                            await chunk_obj.save(
+                                update_fields=["status", "error_message"]
+                            )
+                            embedded_count += 1
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to embed chunk {chunk_obj.id} (index {chunk_data['chunk_index']}): {e}"
+                            )
+                            chunk_obj.status = "failed"
+                            chunk_obj.error_message = "document_process_failed"
+                            chunk_meta = dict(
+                                getattr(chunk_obj, "metadata", None) or {}
+                            )
+                            chunk_meta["error_detail"] = str(e)[:500]
+                            chunk_obj.metadata = chunk_meta
+                            await chunk_obj.save(
+                                update_fields=["status", "error_message", "metadata"]
+                            )
+                            failed_count += 1
+                        created_chunks.append(chunk_obj)
+
+                if progress_callback:
+                    await progress_callback(embedded_count, failed_count, total)
+            return created_chunks
 
         for chunk_data in chunks:
             embedding_id = f"doc_{document.id}_chunk_{chunk_data['chunk_index']}"
@@ -800,14 +898,18 @@ class VectorStore:
                 )
                 chunk_obj.status = "failed"
                 chunk_obj.error_message = "document_process_failed"
-                await chunk_obj.save(update_fields=["status", "error_message"])
+                chunk_meta = dict(getattr(chunk_obj, "metadata", None) or {})
+                chunk_meta["error_detail"] = str(e)[:500]
+                chunk_obj.metadata = chunk_meta
+                await chunk_obj.save(
+                    update_fields=["status", "error_message", "metadata"]
+                )
                 failed_count += 1
 
             created_chunks.append(chunk_obj)
 
             if progress_callback:
                 await progress_callback(embedded_count, failed_count, total)
-
         return created_chunks
 
     async def search(
@@ -1497,6 +1599,45 @@ class VectorStore:
 
         logger.info(f"Added vector for chunk {chunk.id}")
         return True
+
+    async def add_chunk_vectors_batch(
+        self,
+        kb_id: UUID,
+        chunks: list[DocumentChunk],
+        *,
+        using_db: BaseDBAsyncClient | None = None,
+    ) -> list[DocumentChunk]:
+        """Add vector embeddings for multiple chunks in batch."""
+        if not chunks:
+            return []
+        texts = [c.content for c in chunks]
+        embeddings = await self.embed_texts(texts)
+        if not embeddings:
+            return []
+        dim = len(embeddings[0])
+        await _ensure_kb_dimension(kb_id, dim)
+
+        chunk_ids = [c.id for c in chunks]
+        payloads = [
+            {
+                "kb_id": str(kb_id),
+                "document_id": str(c.document_id),
+            }
+            for c in chunks
+        ]
+        await self._batch_store_embeddings(
+            chunk_ids, embeddings, dimension=dim, payloads=payloads
+        )
+
+        for chunk in chunks:
+            chunk.embedding_id = f"kb_{kb_id}_chunk_{chunk.id}"
+            chunk.status = "embedded"
+            chunk.error_message = cast(Any, None)
+            await chunk.save(
+                using_db=using_db,
+                update_fields=["embedding_id", "status", "error_message"],
+            )
+        return chunks
 
     async def delete_kb_vectors(self, kb_id: UUID) -> int:
         """

@@ -367,7 +367,7 @@ def test_rechunk_file_success_persists_progress_and_cleans_metadata():
     vector_store = MagicMock()
     vector_store.delete_document_vectors = AsyncMock(return_value=2)
 
-    async def store_chunks(_document, _chunks, *, kb_id, progress_callback):
+    async def store_chunks(_document, _chunks, *, kb_id, progress_callback, **_kw):
         assert kb_id == document.knowledge_base.id
         await progress_callback(1, 0, 1)
         return created

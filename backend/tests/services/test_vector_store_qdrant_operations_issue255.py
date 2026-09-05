@@ -61,6 +61,7 @@ async def test_qdrant_client_is_created_once(monkeypatch):
     factory.assert_called_once_with(
         url=vector_store.settings.QDRANT_URL,
         api_key=vector_store.settings.QDRANT_API_KEY,
+        timeout=60.0,
     )
 
 
