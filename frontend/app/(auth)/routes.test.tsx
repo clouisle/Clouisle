@@ -99,7 +99,7 @@ describe('auth route wrappers', () => {
 
     const result = await AuthLayout({ children: 'route content' }) as any
 
-    expect(fetchMock).toHaveBeenCalledWith('http://api.test/site-settings/public', expect.any(Object))
+    expect(fetchMock).toHaveBeenCalledWith('http://api.test/site-settings/public', expect.objectContaining({ cache: 'no-store' }))
     expect(result.type).toBe('auth-layout-shell')
     expect(result.props).toMatchObject({
       layout: 'split', previewImageAlt: 'previewImageAlt', brandingSettings: { site_name: 'Acme' }, children: 'route content',

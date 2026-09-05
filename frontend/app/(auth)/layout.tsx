@@ -40,7 +40,8 @@ async function getPublicSettings(): Promise<Pick<PublicSiteSettings,
 
   try {
     const response = await fetch(`${getServerApiBaseUrl()}/site-settings/public`, {
-      next: { revalidate: 300 }, // Cache for 5 minutes
+      // Site settings are mutable; the auth layout must reflect changes immediately.
+      cache: 'no-store',
       headers: {
         'Cache-Control': 'no-cache',
       },
