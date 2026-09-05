@@ -371,6 +371,9 @@ describe('useChat', () => {
         streamRun,
         getRunStatus,
       } as unknown as NonNullable<HookOptions['api']>
+      const pendingInput = {
+        questions: [{ id: 'target', question: 'Where?', options: ['cloud'], required: true }],
+      }
       getRunStatus.mockResolvedValue({
         id: 'run-1',
         agent_id: 'agent-1',
@@ -378,7 +381,10 @@ describe('useChat', () => {
         mode: 'send',
         status: 'waiting',
         pending_tool_call_id: 'call-ask',
+        pending_tool_name: 'ask_user',
+        pending_tool_input: pendingInput,
       })
+
       storage.set(
         'clouisle:agent-run:agent-1:conversation-1',
         JSON.stringify({ runId: 'run-1', lastSequence: 4 }),
@@ -395,11 +401,111 @@ describe('useChat', () => {
       expect(streamRun).toHaveBeenCalledWith('agent-1', 'run-1', 4)
       expect(result.runStatus).toBe('waiting')
       expect(result.pendingAskUserToolCallId).toBe('call-ask')
+      renderHookHarness()
+      const assistant = result.messages.find((message) => message.role === 'assistant')
+      expect(assistant).toMatchObject({
+        id: 'assistant-run-run-1',
+        metadata: { isLoading: true },
+      })
+      expect(assistant?.parts).toContainEqual({
+        type: 'tool-call',
+        toolCallId: 'call-ask',
+        toolName: 'ask_user',
+        toolDisplayName: 'ask_user',
+        input: pendingInput,
+        state: 'pending',
+      })
     } finally {
       Object.defineProperty(globalThis, 'window', {
         configurable: true,
         value: originalWindow,
       })
+    }
+  })
+
+  it('persists the durable run snapshot before the first stream event', async () => {
+    const storage = new Map<string, string>()
+    const originalWindow = globalThis.window
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        sessionStorage: {
+          getItem: (key: string) => storage.get(key) ?? null,
+          setItem: (key: string, value: string) => storage.set(key, value),
+          removeItem: (key: string) => storage.delete(key),
+        },
+      },
+    })
+    try {
+      const stream = deferred<Response>()
+      const startRun = mock(async () => ({
+        run_id: 'run-1',
+        conversation_id: 'conversation-1',
+
+        user_message_id: 'user-1',
+        status: 'queued' as const,
+        stream_url: '/agents/agent-1/chat/runs/run-1/stream',
+      }))
+      const streamRun = mock(() => ({ stream: stream.promise, abort: mock() }))
+      const durableApi = { ...agentsApi, startRun, streamRun } as unknown as NonNullable<HookOptions['api']>
+      options = { agentId: 'agent-1', api: durableApi }
+      renderHookHarness()
+
+      const sending = result.sendMessage('hello')
+      for (let i = 0; i < 5; i += 1) await flush()
+
+      expect(storage.get('clouisle:agent-run:agent-1:conversation-1')).toBe(
+        JSON.stringify({ runId: 'run-1', lastSequence: 0 }),
+      )
+      void sending
+    } finally {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow })
+    }
+  })
+  it('reloads authoritative history when refresh finds a terminal run', async () => {
+    const storage = new Map<string, string>([
+      ['clouisle:agent-run:agent-1:conversation-1', JSON.stringify({ runId: 'run-1', lastSequence: 4 })],
+    ])
+    const originalWindow = globalThis.window
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        sessionStorage: {
+          getItem: (key: string) => storage.get(key) ?? null,
+          setItem: (key: string, value: string) => storage.set(key, value),
+          removeItem: (key: string) => storage.delete(key),
+        },
+      },
+    })
+    try {
+      const finalMessages = [{
+        id: 'assistant-final',
+        role: 'assistant' as const,
+        parts: [{ type: 'text' as const, text: 'done' }],
+      }]
+      getRunStatus.mockResolvedValue({
+        id: 'run-1',
+        agent_id: 'agent-1',
+        conversation_id: 'conversation-1',
+        mode: 'send',
+        status: 'completed',
+      })
+      getConversation.mockResolvedValue({ messages: finalMessages })
+      const durableApi = { ...agentsApi, getRunStatus, getConversation } as unknown as NonNullable<HookOptions['api']>
+      options = { agentId: 'agent-1', conversationId: 'conversation-1', api: durableApi }
+      renderHookHarness()
+
+      result.setConversationId('conversation-1')
+      await flush()
+      result.reconnect()
+      for (let i = 0; i < 5; i += 1) await flush()
+      renderHookHarness()
+
+      expect(getConversation).toHaveBeenCalledWith('conversation-1')
+      expect(result.messages).toEqual(finalMessages)
+      expect(storage.has('clouisle:agent-run:agent-1:conversation-1')).toBe(false)
+    } finally {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow })
     }
   })
 

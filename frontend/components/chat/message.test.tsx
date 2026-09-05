@@ -809,7 +809,7 @@ describe('message behavior', () => {
     expect(container.firstElementChild?.getAttribute('data-role')).toBe('user')
   })
 
-  test('saves edits with keyboard shortcuts and disables controls while saving', async () => {
+  test('exits edit mode immediately without a send loading state', async () => {
     let finishSave!: () => void
     const onEditMessage = mock(() => new Promise<void>((resolve) => { finishSave = resolve }))
     const container = render(<Message message={{ id: 'edit-keyboard', role: 'user', parts: [{ type: 'text', text: 'Original' }] }} onEditMessage={onEditMessage} />)
@@ -820,13 +820,14 @@ describe('message behavior', () => {
       Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'Changed')
       textarea.dispatchEvent(new window.Event('input', { bubbles: true }))
     })
-    act(() => textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })))
+    act(() => button(container, 'chat.message.saveEdit').click())
 
     expect(onEditMessage).toHaveBeenCalledWith('Changed')
-    expect(container.querySelector('textarea')?.disabled).toBe(true)
-    expect(button(container, 'chat.message.cancelEdit').disabled).toBe(true)
-    await act(async () => finishSave())
     expect(container.querySelector('textarea')).toBeNull()
+    expect(button(container, 'chat.message.saveEdit')).toBeUndefined()
+    expect(container.querySelector('.animate-spin')).toBeNull()
+
+    await act(async () => finishSave())
   })
 
   test('opens fenced code previews with a stable payload only after streaming', async () => {

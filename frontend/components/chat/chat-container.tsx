@@ -210,6 +210,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
 }, (prev, next) => (
   prev.message === next.message
   && prev.isCurrentStreaming === next.isCurrentStreaming
+  && prev.loadingLabel === next.loadingLabel
   && prev.renderPart === next.renderPart
   && prev.afterContent === next.afterContent
   && prev.onRegenerate === next.onRegenerate

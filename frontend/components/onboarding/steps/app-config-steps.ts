@@ -183,13 +183,6 @@ const appConfigSteps: OnboardingStep[] = [
     overlayClickAction: false,
   },
   {
-    target: '[data-testid="settings-max-iterations"]',
-    content: 'onboarding.step14r.description',
-    title: 'onboarding.step14r.title',
-    placement: 'left',
-    overlayClickAction: false,
-  },
-  {
     target: '[data-testid="settings-hide-tool-calls"]',
     content: 'onboarding.step14s.description',
     title: 'onboarding.step14s.title',

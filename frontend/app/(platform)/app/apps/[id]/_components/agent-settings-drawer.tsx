@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { Bot, ChevronDown, MessageSquare, Wrench, AlertCircle } from 'lucide-react'
+import { Bot, ChevronDown, MessageSquare, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTeam } from '@/contexts/team-context'
 import { Input } from '@/components/ui/input'
@@ -32,11 +32,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -65,8 +60,8 @@ interface AgentSettingsDrawerProps {
   // Model settings
   modelId: string | null
   onModelChange: (modelId: string | null) => void
-  maxIterations: number
-  onMaxIterationsChange: (value: number) => void
+  maxIterations?: number
+  onMaxIterationsChange?: (value: number) => void
   hideToolCalls: boolean
   onHideToolCallsChange: (value: boolean) => void
   hideMessageActions: boolean
@@ -125,8 +120,6 @@ export function AgentSettingsDrawer({
   onVisibilityChange,
   modelId,
   onModelChange,
-  maxIterations,
-  onMaxIterationsChange,
   hideToolCalls,
   onHideToolCallsChange,
   hideMessageActions,
@@ -296,36 +289,6 @@ export function AgentSettingsDrawer({
               <p className="text-xs text-muted-foreground">
                 {ts('modelParamsHint')}
               </p>
-
-              {/* Max Iterations */}
-              <div data-testid="settings-max-iterations" className="space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <Label className="text-xs">{ts('maxIterationsLabel')}</Label>
-                  <Tooltip>
-                    <TooltipTrigger>
-                      <Wrench className="h-3 w-3 text-muted-foreground" />
-                    </TooltipTrigger>
-                    <TooltipContent side="right">
-                      <p className="max-w-xs text-xs">{ts('maxIterationsTooltip')}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                <Input
-                  type="number"
-                  value={maxIterations}
-                  onChange={(e) => {
-                    const val = Number(e.target.value)
-                    if (val >= 1 && val <= 200) {
-                      onMaxIterationsChange(val)
-                    }
-                  }}
-                  min={1}
-                  max={200}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {ts('maxIterationsHint')}
-                </p>
-              </div>
 
               <div data-testid="settings-hide-tool-calls" className="flex items-start justify-between gap-3 rounded-lg border p-3">
                 <div className="space-y-1">

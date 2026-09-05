@@ -45,6 +45,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
   const tVars = useTranslations('chat.variables')
   const tCommon = useTranslations('common')
   const tError = useTranslations('errors')
+  const tMessage = useTranslations('chat.message')
   const [input, setInput] = React.useState('')
   const [showError, setShowError] = React.useState(false)
   const [variablesOpen, setVariablesOpen] = React.useState(
@@ -241,6 +242,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
         messages={messages}
         isStreaming={isStreaming}
         isLoading={isLoading}
+        loadingLabel={runStatus === 'queued' ? tMessage('runStatusQueued') : runStatus === 'waiting' ? tMessage('runStatusWaiting') : runStatus === 'stopping' ? tMessage('runStatusStopping') : undefined}
         hideToolCalls={agent.hide_tool_calls}
         hideMessageActions={agent.hide_message_actions}
         hideReasoning={agent.hide_reasoning}

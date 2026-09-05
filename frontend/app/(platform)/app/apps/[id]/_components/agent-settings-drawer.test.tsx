@@ -146,7 +146,7 @@ describe('AgentSettingsDrawer', () => {
     expect(states[0]).toEqual([])
   })
 
-  test('delegates editable fields, visibility, switch, and valid iteration values', () => {
+  test('delegates editable fields, visibility, and switch', () => {
     const tree = render()
     ;(find(tree, ImageUpload)[0].props.onChange as (value: string) => void)('/new.png')
     const inputs = find(tree, Input)
@@ -158,7 +158,6 @@ describe('AgentSettingsDrawer', () => {
     ;(textareas.find((node) => node.props.id === 'description')!.props.onChange as (event: unknown) => void)({ target: { value: 'New description' } })
     ;(find(tree, Select)[0].props.onValueChange as (value: string) => void)('team')
     ;(find(tree, Select)[0].props.onValueChange as (value: string) => void)('')
-    ;(inputs.find((node) => node.props.type === 'number')!.props.onChange as (event: unknown) => void)({ target: { value: '200' } })
     ;(find(tree, Switch)[0].props.onCheckedChange as (value: boolean) => void)(true)
 
     expect(callbacks.onIconChange).toHaveBeenCalledWith('/new.png')
@@ -166,18 +165,11 @@ describe('AgentSettingsDrawer', () => {
     expect(callbacks.onPoweredByTextChange).toHaveBeenCalledWith('New footer')
     expect(callbacks.onDescriptionChange).toHaveBeenCalledWith('New description')
     expect(callbacks.onVisibilityChange.mock.calls).toEqual([['team']])
-    expect(callbacks.onMaxIterationsChange).toHaveBeenCalledWith(200)
     expect(callbacks.onHideToolCallsChange).toHaveBeenCalledWith(true)
   })
 
-  test('rejects out-of-range iterations and normalizes suggested questions on blur', () => {
+  test('normalizes suggested questions on blur', () => {
     const tree = render()
-    const inputs = find(tree, Input)
-    const iterations = inputs.find((node) => node.props.type === 'number')!
-    ;(iterations.props.onChange as (event: unknown) => void)({ target: { value: '0' } })
-    ;(iterations.props.onChange as (event: unknown) => void)({ target: { value: '201' } })
-    expect(callbacks.onMaxIterationsChange).not.toHaveBeenCalled()
-
     const textareas = find(tree, Textarea)
     const opening = textareas.find((node) => node.props.id === 'openingMessage')!
     const questions = textareas.find((node) => node.props.id === 'suggestedQuestions')!

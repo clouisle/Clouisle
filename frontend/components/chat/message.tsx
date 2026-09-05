@@ -465,7 +465,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const [activeSpeechSentence, setActiveSpeechSentence] = React.useState<string | null>(null)
     const [isEditing, setIsEditing] = React.useState(false)
     const [editDraft, setEditDraft] = React.useState('')
-    const [isSavingEdit, setIsSavingEdit] = React.useState(false)
     const speechUtteranceRef = React.useRef<SpeechSynthesisUtterance | null>(null)
     const speechSessionRef = React.useRef(0)
     const isUser = message.role === 'user'
@@ -575,14 +574,9 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const saveEdit = React.useCallback(async () => {
       const nextContent = editDraft.trim()
       if (!onEditMessage || !nextContent) return
-      setIsSavingEdit(true)
-      try {
-        await onEditMessage(nextContent)
-        setIsEditing(false)
-        setEditDraft('')
-      } finally {
-        setIsSavingEdit(false)
-      }
+      setIsEditing(false)
+      setEditDraft('')
+      await onEditMessage(nextContent)
     }, [editDraft, onEditMessage])
 
     const resetSpeechState = React.useCallback(() => {
@@ -1322,7 +1316,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                 }}
                 placeholder={t('editPlaceholder')}
                 className="min-h-24 resize-y bg-background text-foreground"
-                disabled={isSavingEdit}
                 autoFocus
               />
               <div className="flex justify-end gap-2">
@@ -1331,7 +1324,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                   variant="ghost"
                   size="sm"
                   onClick={cancelEdit}
-                  disabled={isSavingEdit}
                 >
                   {t('cancelEdit')}
                 </Button>
@@ -1339,9 +1331,8 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                   type="button"
                   size="sm"
                   onClick={() => void saveEdit()}
-                  disabled={isSavingEdit || !editDraft.trim()}
+                  disabled={!editDraft.trim()}
                 >
-                  {isSavingEdit && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
                   {t('saveEdit')}
                 </Button>
               </div>
@@ -1400,9 +1391,8 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       isErroredMessage,
       isLoadingMessage,
       loadingLabel,
-      message.metadata?.errorCode,
+      message.metadata,
       isManuallyStoppedMessage,
-      isSavingEdit,
       isStandaloneErrorMessage,
       isUser,
       onChainOfThoughtOpenChange,

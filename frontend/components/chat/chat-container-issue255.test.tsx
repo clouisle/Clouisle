@@ -384,13 +384,30 @@ describe('ChatContainer issue #255 coverage', () => {
 
   test('memo comparison notices each delegated prop change', () => {
     const shared = {
-      message: message('a'), isCurrentStreaming: false, renderPart: mock(), onRegenerate: mock(),
-      onEditMessage: mock(), onSwitchVersion: mock(), onOpenCodePreview: mock(), hideToolCalls: false,
-      onRequestScrollIntoView: mock(), setMessageElement: mock(),
+      message: message('a'), isCurrentStreaming: false, loadingLabel: 'Queued', renderPart: () => null, afterContent: undefined,
+      onRegenerate: () => {}, onEditMessage: () => {}, onSwitchVersion: () => {}, onSelectImageReference: () => {},
+      onOpenCodePreview: () => {}, hideToolCalls: false, hideMessageActions: false, hideReasoning: false,
+      conversationId: 'conversation', onRequestScrollIntoView: () => {}, setMessageElement: () => {},
     }
     expect(memoCompare?.(shared, shared)).toBe(true)
-    for (const key of Object.keys(shared)) {
-      expect(memoCompare?.(shared, { ...shared, [key]: key === 'hideToolCalls' ? true : mock() })).toBe(false)
-    }
+    const changedProps = [
+      { ...shared, message: message('b') },
+      { ...shared, isCurrentStreaming: true },
+      { ...shared, loadingLabel: 'Running' },
+      { ...shared, renderPart: () => null },
+      { ...shared, afterContent: null },
+      { ...shared, onRegenerate: () => {} },
+      { ...shared, onEditMessage: () => {} },
+      { ...shared, onSwitchVersion: () => {} },
+      { ...shared, onSelectImageReference: () => {} },
+      { ...shared, onOpenCodePreview: () => {} },
+      { ...shared, hideToolCalls: true },
+      { ...shared, hideMessageActions: true },
+      { ...shared, hideReasoning: true },
+      { ...shared, conversationId: 'other-conversation' },
+      { ...shared, onRequestScrollIntoView: () => {} },
+      { ...shared, setMessageElement: () => {} },
+    ]
+    for (const changed of changedProps) expect(memoCompare?.(shared, changed)).toBe(false)
   })
 })

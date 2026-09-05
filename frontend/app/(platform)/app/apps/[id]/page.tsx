@@ -376,8 +376,6 @@ export function AgentEditor({
         onVisibilityChange={setVisibility}
         modelId={modelId}
         onModelChange={setModelId}
-        maxIterations={maxIterations}
-        onMaxIterationsChange={setMaxIterations}
         hideToolCalls={hideToolCalls}
         onHideToolCallsChange={setHideToolCalls}
         hideMessageActions={hideMessageActions}
