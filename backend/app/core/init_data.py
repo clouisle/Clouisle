@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import Any
 
 from tortoise import Tortoise
 
@@ -71,6 +72,20 @@ async def execute_startup_migration_query(conn, query: str):
         )
     finally:
         await conn.execute_query("RESET lock_timeout")
+
+
+async def _execute_ddl(conn: Any, query: str) -> None:
+    """Execute DDL script, using execute_script on real PostgreSQL/asyncpg connections
+
+    to support multiple commands without prepared-statement errors, while falling
+    back to execute_query when execute_script is not available or for mocked connections.
+    """
+    if hasattr(conn, "execute_script"):
+        dialect = getattr(getattr(conn, "capabilities", None), "dialect", "")
+        if dialect != "sqlite":
+            await conn.execute_script(query)
+            return
+    await conn.execute_query(query)
 
 
 async def init_postgres_lexical_search() -> None:
@@ -330,7 +345,9 @@ async def init_workflow_tables():
     logger.info("Created node_executions table")
 
     # Create indexes for better query performance
-    await conn.execute_query("""
+    await _execute_ddl(
+        conn,
+        """
         CREATE INDEX IF NOT EXISTS idx_workflows_team_id ON workflows(team_id);
         CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
         CREATE INDEX IF NOT EXISTS idx_workflows_created_by ON workflows(created_by_id);
@@ -341,7 +358,8 @@ async def init_workflow_tables():
         CREATE INDEX IF NOT EXISTS idx_node_executions_run_id ON node_executions(run_id);
         CREATE INDEX IF NOT EXISTS idx_node_executions_node_id ON node_executions(node_id);
         CREATE INDEX IF NOT EXISTS idx_node_executions_status ON node_executions(status);
-    """)
+    """,
+    )
     logger.info("Created workflow indexes")
 
     logger.info("Workflow tables initialization complete")
@@ -1569,7 +1587,9 @@ async def init_skills_table():
         )
     """)
 
-    await conn.execute_query("""
+    await _execute_ddl(
+        conn,
+        """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_skills_system_name
         ON skills(name)
         WHERE team_id IS NULL;
@@ -1580,7 +1600,8 @@ async def init_skills_table():
         CREATE INDEX IF NOT EXISTS idx_skill_import_sessions_team_id ON skill_import_sessions(team_id);
         CREATE INDEX IF NOT EXISTS idx_skill_import_sessions_status ON skill_import_sessions(status);
         CREATE INDEX IF NOT EXISTS idx_skill_import_sessions_expires_at ON skill_import_sessions(expires_at);
-    """)
+    """,
+    )
 
     logger.info("skills table initialization complete")
 
@@ -1621,11 +1642,14 @@ async def init_tool_shares_table():
     logger.info("Created tool_shares table")
 
     # Create indexes for better query performance
-    await conn.execute_query("""
+    await _execute_ddl(
+        conn,
+        """
         CREATE INDEX IF NOT EXISTS idx_tool_shares_tool_id ON tool_shares(tool_id);
         CREATE INDEX IF NOT EXISTS idx_tool_shares_team_id ON tool_shares(shared_with_team_id);
         CREATE INDEX IF NOT EXISTS idx_tool_shares_shared_by ON tool_shares(shared_by_id);
-    """)
+    """,
+    )
     logger.info("Created tool_shares indexes")
 
     logger.info("tool_shares table initialization complete")
@@ -1690,7 +1714,9 @@ async def init_notification_tables():
             )
         """)
 
-        await conn.execute_query("""
+        await _execute_ddl(
+            conn,
+            """
             CREATE INDEX IF NOT EXISTS idx_notifications_scope_created_at
                 ON notifications(scope, created_at);
             CREATE INDEX IF NOT EXISTS idx_notifications_team_id_created_at
@@ -1709,7 +1735,8 @@ async def init_notification_tables():
                 ON notification_audits(notification_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_notification_audits_user_id_created_at
                 ON notification_audits(user_id, created_at);
-        """)
+        """,
+        )
 
         logger.info("Notification tables created")
     else:
@@ -1740,12 +1767,15 @@ async def init_notification_tables():
             )
         """)
 
-        await conn.execute_query("""
+        await _execute_ddl(
+            conn,
+            """
             CREATE INDEX IF NOT EXISTS idx_notification_deliveries_notification_channel
                 ON notification_deliveries(notification_id, channel);
             CREATE INDEX IF NOT EXISTS idx_notification_deliveries_status_created
                 ON notification_deliveries(status, created_at);
-        """)
+        """,
+        )
 
         logger.info("notification_deliveries table created")
     else:

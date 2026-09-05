@@ -373,6 +373,8 @@
         "taskBacklog": "Task backlog",
         "taskBacklogDesc": "Current pending count for every registered Celery task. Zero-backlog tasks remain visible.",
         "tasks": {
+          "runAgentTask": "Run Agent task",
+          "sendNotification": "Send system notification",
           "createAuditLog": "Create audit log",
           "backfillLexicalIndex": "Backfill lexical index",
           "embedDocumentChunks": "Vectorize document chunks",
@@ -386,6 +388,7 @@
           "runSandboxJob": "Run sandbox job",
           "extractSessionMemory": "Extract session memory",
           "cancelWorkflow": "Cancel workflow",
+          "resumeWorkflow": "Resume workflow",
           "runWorkflow": "Run workflow",
           "sendDingTalkNotification": "Send DingTalk notification",
           "sendEmailNotification": "Send email notification",

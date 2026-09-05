@@ -203,12 +203,14 @@ test('renders token source/model data and both empty-list boundaries', () => {
   unmount(empty)
 })
 
-test('renders every current task backlog without generic aggregation', () => {
-  const renderer = render(<panels.WorkersPanel workers={{ status: 'error', worker_count: 2, active_tasks: 1, reserved_tasks: 2, scheduled_tasks: 3, queues: [{ queue: 'default', pending: 2 }, { queue: 'knowledge', pending: 4 }, { queue: 'workflow', pending: 0 }, { queue: 'sandbox', pending: 0 }], tasks: [{ task: 'app.tasks.knowledge_base.embed_document_chunks_task', queue: 'knowledge', pending: 4 }, { task: 'send_notification_email', queue: 'default', pending: 2 }, { task: 'app.tasks.workflow.run_workflow_task', queue: 'workflow', pending: 0 }], error: 'broker down' }} />)
+test('renders task backlog with resume workflow and handles duplicate task names gracefully', () => {
+  const renderer = render(<panels.WorkersPanel workers={{ status: 'error', worker_count: 2, active_tasks: 1, reserved_tasks: 2, scheduled_tasks: 3, queues: [{ queue: 'default', pending: 2 }, { queue: 'knowledge', pending: 4 }, { queue: 'workflow', pending: 0 }, { queue: 'sandbox', pending: 0 }], tasks: [{ task: 'app.tasks.knowledge_base.embed_document_chunks_task', queue: 'knowledge', pending: 4 }, { task: 'send_notification_email', queue: 'default', pending: 2 }, { task: 'app.tasks.workflow.run_workflow_task', queue: 'workflow', pending: 1 }, { task: 'app.tasks.workflow.resume_workflow_task', queue: 'workflow', pending: 2 }, { task: 'app.tasks.agent.run_agent_task', queue: 'default', pending: 3 }, { task: 'run_agent_task', queue: 'default', pending: 1 }], error: 'broker down' }} />)
   expect(text(renderer)).toContain('broker down')
   expect(text(renderer)).toContain('workers.tasks.embedDocumentChunks')
   expect(text(renderer)).toContain('workers.tasks.sendEmailNotification')
   expect(text(renderer)).toContain('workers.tasks.runWorkflow')
+  expect(text(renderer)).toContain('workers.tasks.resumeWorkflow')
+  expect(text(renderer)).toContain('workers.tasks.runAgentTask')
   expect(text(renderer)).toContain('status.error')
   unmount(renderer)
 })

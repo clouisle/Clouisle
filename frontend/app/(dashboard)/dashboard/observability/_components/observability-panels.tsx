@@ -539,11 +539,30 @@ export function TokensPanel({ tokens }: { tokens: TokenResponse | null }) {
 
 export function WorkersPanel({ workers }: { workers: WorkerResponse | null }) {
   const t = useTranslations('dashboard.observability')
+  const pendingTasks = React.useMemo(() => {
+    const tasks = workers?.tasks ?? []
+    const byKey = new Map<string, { key: string; label: string; value: number; tone: Tone }>()
+    for (const [index, task] of tasks.entries()) {
+      const label = workerTaskLabel(task.task, t)
+      const existing = byKey.get(label)
+      if (existing) {
+        existing.value += task.pending
+        if (task.pending > 0) existing.tone = 'warning'
+      } else {
+        byKey.set(label, {
+          key: `${task.task}-${task.queue || ''}-${index}`,
+          label,
+          value: task.pending,
+          tone: task.pending > 0 ? ('warning' as Tone) : ('neutral' as Tone),
+        })
+      }
+    }
+    return Array.from(byKey.values()).sort((a, b) => b.value - a.value)
+  }, [workers?.tasks, t])
+
   if (!workers) return <ObservabilityEmpty />
   const pendingTotal = (workers.queues ?? []).reduce((sum, queue) => sum + queue.pending, 0)
-  const pendingTasks = workers.tasks ?? []
   const statusTone = toneForStatus(workers.status)
-
   return (
     <div className="space-y-6">
       {workers.error && (
@@ -559,15 +578,43 @@ export function WorkersPanel({ workers }: { workers: WorkerResponse | null }) {
         <ConsoleMetric label={t('workers.inFlight')} value={formatNumber(workers.active_tasks + workers.reserved_tasks + workers.scheduled_tasks)} />
         <ConsoleMetric label={t('workers.pendingQueues')} value={formatNumber(pendingTotal)} tone={pendingTotal > 0 ? 'warning' : 'success'} />
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('workers.taskBacklog')}</CardTitle>
-          <CardDescription>{t('workers.taskBacklogDesc')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <DistributionBarList items={pendingTasks.map((task) => ({ label: workerTaskLabel(task.task, t), value: task.pending, tone: task.pending > 0 ? 'warning' as Tone : 'neutral' as Tone }))} total={Math.max(pendingTotal, 1)} valueLabel={t('health.pending')} />
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-3 gap-4">
+        <ConsoleMetric label={t('health.activeTasks')} value={formatNumber(workers.active_tasks)} tone={workers.active_tasks > 0 ? 'info' : 'neutral'} />
+        <ConsoleMetric label={t('health.reservedTasks')} value={formatNumber(workers.reserved_tasks)} tone="neutral" />
+        <ConsoleMetric label={t('health.scheduledTasks')} value={formatNumber(workers.scheduled_tasks)} tone="neutral" />
+      </div>
+      <div className="grid gap-6 lg:grid-cols-12">
+        <Card className="lg:col-span-5">
+          <CardHeader>
+            <CardTitle>{t('health.workerQueues')}</CardTitle>
+            <CardDescription>{t('health.workerQueuesDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DistributionBarList
+              items={(workers.queues ?? []).map((queue) => ({
+                label: queue.queue,
+                value: queue.pending,
+                tone: queue.pending > 0 ? ('warning' as Tone) : ('neutral' as Tone),
+              }))}
+              total={Math.max(...(workers.queues ?? []).map((queue) => queue.pending), 1)}
+              valueLabel={t('health.pending')}
+            />
+          </CardContent>
+        </Card>
+        <Card className="lg:col-span-7">
+          <CardHeader>
+            <CardTitle>{t('workers.taskBacklog')}</CardTitle>
+            <CardDescription>{t('workers.taskBacklogDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DistributionBarList
+              items={pendingTasks}
+              total={Math.max(pendingTotal, 1)}
+              valueLabel={t('health.pending')}
+            />
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }
@@ -916,21 +963,38 @@ function ResourceRow({ label, icon: Icon, data, valueKey, suffix, actionKey }: {
   )
 }
 
-function DistributionBarList({ items, total, valueLabel, showPercent }: { items: Array<{ label: string; value: number; tone?: Tone }>; total: number; valueLabel?: string; showPercent?: boolean }) {
+function DistributionBarList({
+  items,
+  total,
+  valueLabel,
+  showPercent,
+}: {
+  items: Array<{ key?: string; label: string; value: number; tone?: Tone }>
+  total: number
+  valueLabel?: string
+  showPercent?: boolean
+}) {
   if (!items.length) return <ObservabilityEmpty />
   return (
     <div className="space-y-4">
-      {items.map((item) => {
+      {items.map((item, index) => {
         const percent = percentOf(item.value, total)
         const tone = item.tone ?? 'neutral'
         return (
-          <div key={item.label} className="space-y-1.5">
+          <div key={item.key ?? `${item.label}-${index}`} className="space-y-1.5">
             <div className="flex items-center justify-between gap-3 text-sm">
               <span className="truncate font-medium">{item.label}</span>
-              <span className="text-muted-foreground">{formatCompactNumber(item.value)}{valueLabel ? ` ${valueLabel}` : ''}{showPercent ? ` · ${formatPercent(percent)}` : ''}</span>
+              <span className="text-muted-foreground">
+                {formatCompactNumber(item.value)}
+                {valueLabel ? ` ${valueLabel}` : ''}
+                {showPercent ? ` · ${formatPercent(percent)}` : ''}
+              </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-muted">
-              <div className={`h-full ${toneBarClass(tone)}`} style={{ width: `${Math.max(percent, item.value > 0 ? 2 : 0)}%` }} />
+              <div
+                className={`h-full ${toneBarClass(tone)}`}
+                style={{ width: `${Math.max(percent, item.value > 0 ? 2 : 0)}%` }}
+              />
             </div>
           </div>
         )

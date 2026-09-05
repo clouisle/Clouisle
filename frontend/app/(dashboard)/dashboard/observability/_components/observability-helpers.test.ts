@@ -50,6 +50,10 @@ describe('observability helpers', () => {
     expect(timeoutTypeLabel('custom', t)).toBe('custom')
     expect(workerTaskLabel('app.tasks.knowledge_base.embed_document_chunks_task', t)).toBe('translated:workers.tasks.embedDocumentChunks')
     expect(workerTaskLabel('send_notification_email', t)).toBe('translated:workers.tasks.sendEmailNotification')
+    expect(workerTaskLabel('app.tasks.workflow.resume_workflow_task', t)).toBe('translated:workers.tasks.resumeWorkflow')
+    expect(workerTaskLabel('resume_workflow_task', t)).toBe('translated:workers.tasks.resumeWorkflow')
+    expect(workerTaskLabel('app.tasks.agent.run_agent_task', t)).toBe('translated:workers.tasks.runAgentTask')
+    expect(workerTaskLabel('run_agent_task', t)).toBe('translated:workers.tasks.runAgentTask')
     expect(workerTaskLabel('custom', t)).toBe('custom')
   })
 

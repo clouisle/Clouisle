@@ -5,32 +5,95 @@ function translate(t: ObservabilityTranslator, key: string) {
   return t(key as never)
 }
 const WORKER_TASK_KEYS: Record<string, string> = {
-  'app.tasks.audit_log.create_audit_log_task': 'createAuditLog',
-  'app.tasks.knowledge_base.backfill_lexical_index_task': 'backfillLexicalIndex',
-  'app.tasks.knowledge_base.embed_document_chunks_task': 'embedDocumentChunks',
-  'app.tasks.knowledge_base.index_document_lexically_task': 'indexDocumentLexically',
-  'app.tasks.knowledge_base.process_document_task': 'processDocument',
-  'app.tasks.knowledge_base.process_url_document_task': 'processUrlDocument',
-  'app.tasks.knowledge_base.rechunk_document_task': 'rechunkDocument',
-  'app.tasks.knowledge_base.reprocess_document_task': 'reprocessDocument',
-  'app.tasks.knowledge_base.retry_failed_chunk_task': 'retryFailedChunk',
-  'app.tasks.knowledge_base.retry_failed_chunks_task': 'retryFailedChunks',
-  'app.tasks.sandbox.run_sandbox_job_task': 'runSandboxJob',
-  'app.tasks.session_memory.extract_session_memory_task': 'extractSessionMemory',
-  'app.tasks.workflow.cancel_workflow_task': 'cancelWorkflow',
+  // Agent
+  'run_agent_task': 'runAgentTask',
+  'app.tasks.agent.run_agent_task': 'runAgentTask',
+
+  // Workflow
+  'run_workflow_task': 'runWorkflow',
   'app.tasks.workflow.run_workflow_task': 'runWorkflow',
-  'send_notification_dingtalk': 'sendDingTalkNotification',
-  'send_notification_email': 'sendEmailNotification',
-  'send_notification_feishu': 'sendFeishuNotification',
-  'send_notification_slack': 'sendSlackNotification',
-  'send_notification_webhook': 'sendWebhookNotification',
-  'send_notification_wechat': 'sendWeChatNotification',
-  'tasks.archive_old_audit_logs': 'archiveAuditLogs',
-  'tasks.check_api_key_expiration': 'checkApiKeyExpiration',
-  'tasks.check_password_expiration': 'checkPasswordExpiration',
+  'resume_workflow_task': 'resumeWorkflow',
+  'app.tasks.workflow.resume_workflow_task': 'resumeWorkflow',
+  'cancel_workflow_task': 'cancelWorkflow',
+  'app.tasks.workflow.cancel_workflow_task': 'cancelWorkflow',
+
+  // Knowledge Base
+  'backfill_lexical_index_task': 'backfillLexicalIndex',
+  'app.tasks.knowledge_base.backfill_lexical_index_task': 'backfillLexicalIndex',
+  'embed_document_chunks_task': 'embedDocumentChunks',
+  'app.tasks.knowledge_base.embed_document_chunks_task': 'embedDocumentChunks',
+  'index_document_lexically_task': 'indexDocumentLexically',
+  'app.tasks.knowledge_base.index_document_lexically_task': 'indexDocumentLexically',
+  'process_document_task': 'processDocument',
+  'app.tasks.knowledge_base.process_document_task': 'processDocument',
+  'process_url_document_task': 'processUrlDocument',
+  'app.tasks.knowledge_base.process_url_document_task': 'processUrlDocument',
+  'rechunk_document_task': 'rechunkDocument',
+  'app.tasks.knowledge_base.rechunk_document_task': 'rechunkDocument',
+  'reprocess_document_task': 'reprocessDocument',
+  'app.tasks.knowledge_base.reprocess_document_task': 'reprocessDocument',
+  'retry_failed_chunk_task': 'retryFailedChunk',
+  'app.tasks.knowledge_base.retry_failed_chunk_task': 'retryFailedChunk',
+  'retry_failed_chunks_task': 'retryFailedChunks',
+  'app.tasks.knowledge_base.retry_failed_chunks_task': 'retryFailedChunks',
+
+  // Sandbox
+  'run_sandbox_job_task': 'runSandboxJob',
+  'app.tasks.sandbox.run_sandbox_job_task': 'runSandboxJob',
+  'cleanup_expired_sandbox_sessions': 'cleanupSandboxSessions',
+  'cleanup_expired_sandbox_sessions_task': 'cleanupSandboxSessions',
   'tasks.cleanup_expired_sandbox_sessions': 'cleanupSandboxSessions',
+  'app.tasks.sandbox.cleanup_expired_sandbox_sessions_task': 'cleanupSandboxSessions',
+
+  // Session Memory
+  'extract_session_memory_task': 'extractSessionMemory',
+  'app.tasks.session_memory.extract_session_memory_task': 'extractSessionMemory',
+
+  // Notifications
+  'send_notification_task': 'sendNotification',
+  'app.tasks.notification.send_notification_task': 'sendNotification',
+  'send_notification_email': 'sendEmailNotification',
+  'send_notification_email_task': 'sendEmailNotification',
+  'app.tasks.notification.send_notification_email_task': 'sendEmailNotification',
+  'send_notification_dingtalk': 'sendDingTalkNotification',
+  'send_notification_dingtalk_task': 'sendDingTalkNotification',
+  'app.tasks.notification.send_notification_dingtalk_task': 'sendDingTalkNotification',
+  'send_notification_wechat': 'sendWeChatNotification',
+  'send_notification_wechat_task': 'sendWeChatNotification',
+  'app.tasks.notification.send_notification_wechat_task': 'sendWeChatNotification',
+  'send_notification_feishu': 'sendFeishuNotification',
+  'send_notification_feishu_task': 'sendFeishuNotification',
+  'app.tasks.notification.send_notification_feishu_task': 'sendFeishuNotification',
+  'send_notification_webhook': 'sendWebhookNotification',
+  'send_notification_webhook_task': 'sendWebhookNotification',
+  'app.tasks.notification.send_notification_webhook_task': 'sendWebhookNotification',
+  'send_notification_slack': 'sendSlackNotification',
+  'send_notification_slack_task': 'sendSlackNotification',
+  'app.tasks.notification.send_notification_slack_task': 'sendSlackNotification',
+
+  // Audit & Security & Usage
+  'create_audit_log_task': 'createAuditLog',
+  'app.tasks.audit_log.create_audit_log_task': 'createAuditLog',
+  'archive_old_audit_logs': 'archiveAuditLogs',
+  'archive_old_audit_logs_task': 'archiveAuditLogs',
+  'tasks.archive_old_audit_logs': 'archiveAuditLogs',
+  'app.tasks.audit_log.archive_old_audit_logs_task': 'archiveAuditLogs',
+  'check_api_key_expiration': 'checkApiKeyExpiration',
+  'check_api_key_expiration_task': 'checkApiKeyExpiration',
+  'tasks.check_api_key_expiration': 'checkApiKeyExpiration',
+  'app.tasks.api_key.check_api_key_expiration_task': 'checkApiKeyExpiration',
+  'check_password_expiration': 'checkPasswordExpiration',
+  'check_password_expiration_task': 'checkPasswordExpiration',
+  'tasks.check_password_expiration': 'checkPasswordExpiration',
+  'app.tasks.password_expiration.check_password_expiration_task': 'checkPasswordExpiration',
+  'reset_daily_usage': 'resetDailyUsage',
+  'reset_daily_usage_task': 'resetDailyUsage',
   'tasks.reset_daily_usage': 'resetDailyUsage',
+  'app.tasks.usage.reset_daily_usage_task': 'resetDailyUsage',
+  'reset_monthly_usage': 'resetMonthlyUsage',
+  'reset_monthly_usage_task': 'resetMonthlyUsage',
   'tasks.reset_monthly_usage': 'resetMonthlyUsage',
+  'app.tasks.usage.reset_monthly_usage_task': 'resetMonthlyUsage',
 }
 
 
@@ -77,7 +140,8 @@ export function sourceLabel(source: string | null | undefined, t: ObservabilityT
 export function workerTaskLabel(task: string | null | undefined, t: ObservabilityTranslator) {
   if (!task) return '-'
   if (task.startsWith('unrecognized:')) return translate(t, 'workers.tasks.unrecognized')
-  const key = WORKER_TASK_KEYS[task]
+  if (task.startsWith('unscanned:')) return translate(t, 'workers.tasks.unrecognized')
+  const key = WORKER_TASK_KEYS[task] || WORKER_TASK_KEYS[task.split('.').pop() || '']
   return key ? translate(t, `workers.tasks.${key}`) : task
 }
 

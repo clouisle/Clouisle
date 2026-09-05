@@ -373,6 +373,8 @@
         "taskBacklog": "任务积压",
         "taskBacklogDesc": "列出每个已注册 Celery 任务的当前等待数量；无积压的任务也会显示。",
         "tasks": {
+          "runAgentTask": "执行 Agent 任务",
+          "sendNotification": "发送系统通知",
           "createAuditLog": "创建审计日志",
           "backfillLexicalIndex": "回填词法索引",
           "embedDocumentChunks": "文档分段向量化",
@@ -386,6 +388,7 @@
           "runSandboxJob": "执行沙箱任务",
           "extractSessionMemory": "提取会话记忆",
           "cancelWorkflow": "取消工作流",
+          "resumeWorkflow": "恢复工作流",
           "runWorkflow": "执行工作流",
           "sendDingTalkNotification": "发送钉钉通知",
           "sendEmailNotification": "发送邮件通知",
