@@ -231,21 +231,21 @@ async def test_edit_validation_rejects_non_user_message(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_edit_validation_rejects_unchanged_content(monkeypatch):
+async def test_edit_validation_accepts_unchanged_nonempty_content(monkeypatch):
     env = _edit_env(monkeypatch)
 
-    with pytest.raises(BusinessError) as exc_info:
-        await chat_api.edit_user_message_stream(
-            env.agent.id,
-            env.original.id,
-            EditMessageRequest(content="original question"),
-            SimpleNamespace(),
-            env.user,
-        )
+    response = await chat_api.edit_user_message_stream(
+        env.agent.id,
+        env.original.id,
+        EditMessageRequest(content=" original question "),
+        SimpleNamespace(),
+        env.user,
+    )
 
-    assert exc_info.value.code == ResponseCode.BAD_REQUEST
-    assert exc_info.value.msg_key == "message_content_unchanged"
-    env.enqueue.assert_not_awaited()
+    edited, _assistant = env.created
+    assert response.media_type == "text/event-stream"
+    assert edited.content == "original question"
+    assert env.enqueue.await_count == 1
 
 
 @pytest.mark.anyio

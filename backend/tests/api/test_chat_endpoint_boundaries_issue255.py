@@ -514,7 +514,6 @@ async def test_switch_version_rejects_other_group_and_activates_valid_branch(
         ("missing", ResponseCode.NOT_FOUND, "message_not_found", 404),
         ("wrong_role", ResponseCode.BAD_REQUEST, "can_only_edit_user_message", 400),
         ("empty", ResponseCode.BAD_REQUEST, "message_content_required", 400),
-        ("unchanged", ResponseCode.BAD_REQUEST, "message_content_unchanged", 400),
         ("forbidden", ResponseCode.FORBIDDEN, "access_denied", 403),
         ("missing_agent", ResponseCode.NOT_FOUND, "agent_not_found", 404),
     ],
@@ -534,8 +533,6 @@ async def test_edit_user_message_stream_rejects_invalid_preflight(
         current_message = message(role=MessageRole.ASSISTANT)
     elif case == "empty":
         requested_content = "   "
-    elif case == "unchanged":
-        requested_content = " original "
     elif case == "forbidden":
         conversation = None
     elif case == "missing_agent":

@@ -296,3 +296,103 @@ async def test_stop_endpoint_idempotent(monkeypatch):
     run.status = AgentRunStatus.COMPLETED
     await stop_run(run.agent_id, run.id, SimpleNamespace(id=run.user_id))
     assert transitions == []  # terminal -> idempotent no-op
+
+
+@pytest.mark.asyncio
+async def test_stop_endpoint_queued_run_stops_immediately(monkeypatch):
+    """Stopping a queued run transitions to STOPPED immediately and emits run_end."""
+    from app.api.v1.endpoints.chat import stop_run
+    from app.models.agent_run import AgentRunStatus as S
+
+    run = _run(status=S.QUEUED)
+    run.celery_task_id = "task-queued-1"
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat._load_owned_run",
+        AsyncMock(return_value=run),
+    )
+
+    stopped_run = _run(status=S.STOPPED)
+    stopped_run.celery_task_id = "task-queued-1"
+    monkeypatch.setattr(
+        agent_run_store,
+        "stop_queued_run",
+        AsyncMock(return_value=stopped_run),
+    )
+
+    published_events = []
+
+    class _FakeStream:
+        def __init__(self, run_id):
+            self.run_id = run_id
+
+        async def seed_sequence(self):
+            pass
+
+        async def publish(self, event, data, **kw):
+            published_events.append((event, data))
+
+    monkeypatch.setattr("app.services.agent_run_stream.AgentRunStream", _FakeStream)
+
+    revoked = []
+
+    class _FakeCeleryControl:
+        def revoke(self, task_id, **kw):
+            revoked.append(task_id)
+
+    fake_celery = SimpleNamespace(control=_FakeCeleryControl())
+    monkeypatch.setattr("app.core.celery.celery_app", fake_celery)
+
+    res = await stop_run(run.agent_id, run.id, SimpleNamespace(id=run.user_id))
+    assert res["data"].status == "stopped"
+    assert revoked == ["task-queued-1"]
+    assert published_events == [("run_end", {"status": "stopped"})]
+
+
+@pytest.mark.asyncio
+async def test_stop_queued_run_store_branches(monkeypatch):
+    """stop_queued_run handles matching, non-matching, and missing runs."""
+
+    class _Tx:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, *args):
+            return False
+
+    class _Query:
+        def __init__(self, item):
+            self.item = item
+
+        def using_db(self, _conn):
+            return self
+
+        def select_for_update(self):
+            return self
+
+        async def first(self):
+            return self.item
+
+    monkeypatch.setattr(agent_run_store, "in_transaction", lambda: _Tx())
+    monkeypatch.setattr(agent_run_store, "_write_state_cache", AsyncMock())
+
+    # 1. Missing run
+    monkeypatch.setattr(agent_run_store.AgentRun, "filter", lambda **_kw: _Query(None))
+    assert await agent_run_store.stop_queued_run(uuid4()) is None
+
+    # 2. Non-queued run
+    running_run = _run(status=AgentRunStatus.RUNNING)
+    monkeypatch.setattr(
+        agent_run_store.AgentRun, "filter", lambda **_kw: _Query(running_run)
+    )
+    assert await agent_run_store.stop_queued_run(running_run.id) is None
+
+    # 3. Queued run
+    queued_run = _run(status=AgentRunStatus.QUEUED)
+    monkeypatch.setattr(
+        agent_run_store.AgentRun, "filter", lambda **_kw: _Query(queued_run)
+    )
+    stopped = await agent_run_store.stop_queued_run(queued_run.id)
+    assert stopped is queued_run
+    assert stopped.status == AgentRunStatus.STOPPED
+    queued_run.save.assert_awaited_once()

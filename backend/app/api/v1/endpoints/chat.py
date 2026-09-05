@@ -1606,12 +1606,6 @@ async def edit_user_message_stream(
             msg_key="message_content_required",
             status_code=400,
         )
-    if edited_content == message.content.strip():
-        raise BusinessError(
-            code=ResponseCode.BAD_REQUEST,
-            msg_key="message_content_unchanged",
-            status_code=400,
-        )
 
     conversation = await Conversation.filter(
         id=message.conversation_id,
@@ -2222,6 +2216,25 @@ async def stop_run(
         stopped = await stop_waiting_run(run_id)
 
         if stopped is not None:
+            from app.services.agent_run_stream import AgentRunStream
+
+            stream = AgentRunStream(run_id)
+            await stream.seed_sequence()
+            await stream.publish("run_end", {"status": "stopped"})
+            return success(data=_run_to_out(stopped))
+        run = await _AgentRunModel.get_or_none(id=run_id) or run
+    if run.status == AgentRunStatus.QUEUED:
+        from app.services.agent_run_store import stop_queued_run
+
+        stopped = await stop_queued_run(run_id)
+        if stopped is not None:
+            if getattr(stopped, "celery_task_id", None):
+                try:
+                    from app.core.celery import celery_app
+
+                    celery_app.control.revoke(stopped.celery_task_id, terminate=True)
+                except Exception:
+                    pass
             from app.services.agent_run_stream import AgentRunStream
 
             stream = AgentRunStream(run_id)

@@ -223,7 +223,6 @@ async def test_switch_message_version_activates_target_branch(monkeypatch):
             "can_only_edit_user_message",
         ),
         (message(), "   ", None, None, "message_content_required"),
-        (message(content="same"), " same ", None, None, "message_content_unchanged"),
         (message(), "edited", None, None, "access_denied"),
         (message(), "edited", object(), None, "agent_not_found"),
     ],

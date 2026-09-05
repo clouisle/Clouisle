@@ -850,9 +850,6 @@ msgstr "只能编辑用户消息"
 msgid "message_content_required"
 msgstr "消息内容不能为空"
 
-msgid "message_content_unchanged"
-msgstr "消息内容未改变"
-
 msgid "code_execution_failed"
 msgstr "代码执行失败"
 

@@ -1393,10 +1393,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Message content is required",
         "zh": "消息内容不能为空",
     },
-    "message_content_unchanged": {
-        "en": "Message content is unchanged",
-        "zh": "消息内容未改变",
-    },
     "message_deleted": {"en": "Message deleted successfully", "zh": "消息删除成功"},
     "message_not_found": {"en": "Message not found", "zh": "消息未找到"},
     "minimax_api_error": {"en": "MiniMax API error", "zh": "MiniMax API 错误"},

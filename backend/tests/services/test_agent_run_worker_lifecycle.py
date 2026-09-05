@@ -186,6 +186,9 @@ def patched_store(monkeypatch, fake_redis):
     monkeypatch.setattr(worker.agent_run_store, "release_run_lock", _release)
     monkeypatch.setattr(worker.agent_run_store, "drop_pending_inputs", _drop)
     monkeypatch.setattr(worker.agent_run_store, "heartbeat_run_lock", _heartbeat)
+    monkeypatch.setattr(
+        worker.agent_run_store, "has_pending_inputs", AsyncMock(return_value=False)
+    )
     monkeypatch.setattr(worker, "_create_placeholder", _create_placeholder)
     monkeypatch.setattr(worker, "_rebuild_context", _rebuild_context)
 

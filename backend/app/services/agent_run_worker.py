@@ -46,6 +46,7 @@ from app.models.agent import (
 )
 from app.models.agent_run import (
     AgentRun,
+    AgentRunInputKind,
     AgentRunMode,
     AgentRunStatus,
 )
@@ -352,7 +353,7 @@ async def _rebuild_context(
         round_id=UUID(payload["round_id"]),
         protected_round_id=UUID(payload["round_id"]),
         user_locale=payload.get("locale"),
-        max_iterations=agent.max_iterations or 5,
+        max_iterations=None,
         iteration_offset=int(payload.get("iteration_offset", 0)),
         streaming=is_streaming,
         execute_tool_call=__import__(
@@ -431,6 +432,21 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
     run = await agent_run_store.get_run(UUID(payload["run_id"]))
     if not run:
         raise LookupError("run not found")
+    if run.status in (
+        AgentRunStatus.STOPPED,
+        AgentRunStatus.COMPLETED,
+        AgentRunStatus.FAILED,
+    ):
+        return {"status": run.status.value}
+    if (
+        run.status == AgentRunStatus.STOPPING
+        or await agent_run_store.has_pending_inputs(run.id, kind=AgentRunInputKind.STOP)
+    ):
+        await agent_run_store.transition_run(run, AgentRunStatus.STOPPED)
+        stream = AgentRunStream(run.id)
+        await stream.seed_sequence()
+        await stream.publish("run_end", {"status": "stopped"})
+        return {"status": AgentRunStatus.STOPPED.value}
     agent = await Agent.get_or_none(id=UUID(payload["agent_id"]))
     conversation = await Conversation.get_or_none(id=UUID(payload["conversation_id"]))
     if not agent or not conversation:

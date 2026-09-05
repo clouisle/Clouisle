@@ -66,7 +66,6 @@ def _user(active=True):
             "can_only_edit_user_message",
         ),
         (_message(), "   ", None, None, "message_content_required"),
-        (_message(content="same"), " same ", None, None, "message_content_unchanged"),
         (_message(), "changed", None, None, "access_denied"),
         (_message(), "changed", SimpleNamespace(id=uuid4()), None, "agent_not_found"),
     ],

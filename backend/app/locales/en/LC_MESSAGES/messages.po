@@ -849,9 +849,6 @@ msgstr "Can only edit user messages"
 msgid "message_content_required"
 msgstr "Message content is required"
 
-msgid "message_content_unchanged"
-msgstr "Message content is unchanged"
-
 msgid "code_execution_failed"
 msgstr "Code execution failed"
 

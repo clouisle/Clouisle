@@ -111,7 +111,7 @@ class AgentLoopContext:
     round_id: UUID | None = None
     protected_round_id: UUID | str | None = None
     user_locale: str | None = None
-    max_iterations: int = 5
+    max_iterations: int | None = None
     iteration_offset: int = 0
     # Durable AgentRun callback used by model-callable interaction tools.
     pause_for_user: Callable[..., Any] | None = None
@@ -609,7 +609,11 @@ class AgentLoop:
         full_content = ""
         full_reasoning = ""
 
-        for iteration in range(ctx.iteration_offset + 1, ctx.max_iterations + 1):
+        iteration = ctx.iteration_offset
+        while True:
+            if ctx.max_iterations is not None and iteration >= ctx.max_iterations:
+                break
+            iteration += 1
             # ---- deadline guard (primary normal guard) ------------------------
             if ctx.deadline_seconds is not None and (
                 time.time() - start_time > ctx.deadline_seconds
@@ -1247,7 +1251,7 @@ class AgentLoop:
                     )
                     return
 
-                if iteration >= ctx.max_iterations:
+                if ctx.max_iterations is not None and iteration >= ctx.max_iterations:
                     max_iterations_reached = True
                     cap_text = ctx.cap_content() if ctx.cap_content else ""
                     event = self._emit(ITERATION_CAP_REACHED, {"content": cap_text})

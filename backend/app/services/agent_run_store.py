@@ -362,6 +362,25 @@ async def stop_waiting_run(run_id: UUID) -> AgentRun | None:
     return run
 
 
+async def stop_queued_run(run_id: UUID) -> AgentRun | None:
+    """Atomically stop a run that is queued before worker execution starts."""
+    async with in_transaction() as conn:
+        run = await (
+            AgentRun.filter(id=run_id).using_db(conn).select_for_update().first()
+        )
+        if run is None or run.status != AgentRunStatus.QUEUED:
+            return None
+        run.status = AgentRunStatus.STOPPED
+        run.finished_at = now_utc()
+        run.updated_at = now_utc()
+        await run.save(
+            using_db=conn,
+            update_fields=["status", "finished_at", "updated_at"],
+        )
+    await _write_state_cache(run_id, AgentRunStatus.STOPPED)
+    return run
+
+
 # ---------- conversation lock (Redis lease) ----------
 
 
