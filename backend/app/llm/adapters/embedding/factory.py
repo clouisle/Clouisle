@@ -46,6 +46,8 @@ def create_embedding_model(model_config: Model | ModelConfig) -> Embeddings:
             model=model_id,
             api_key=api_key,
             base_url=base_url,
+            request_timeout=60.0,
+            max_retries=2,
         )
 
     elif provider == ModelProvider.AZURE_OPENAI:
@@ -71,18 +73,24 @@ def create_embedding_model(model_config: Model | ModelConfig) -> Embeddings:
             api_key=api_key,
         )
 
-    elif provider in [
-        ModelProvider.DEEPSEEK,
-        ModelProvider.MOONSHOT,
-        ModelProvider.ZHIPU,
-        ModelProvider.QWEN,
-        ModelProvider.BAICHUAN,
-        ModelProvider.MINIMAX,
-        ModelProvider.VOLCENGINE,
-        ModelProvider.XAI,
-        ModelProvider.OLLAMA,
-        ModelProvider.CUSTOM,
-    ]:
+    elif (
+        provider
+        in [
+            ModelProvider.OPENAI_RESPONSES,
+            ModelProvider.DEEPSEEK,
+            ModelProvider.MOONSHOT,
+            ModelProvider.ZHIPU,
+            ModelProvider.QWEN,
+            ModelProvider.BAICHUAN,
+            ModelProvider.MINIMAX,
+            ModelProvider.VOLCENGINE,
+            ModelProvider.SILICONFLOW,
+            ModelProvider.XAI,
+            ModelProvider.OLLAMA,
+            ModelProvider.CUSTOM,
+        ]
+        or base_url is not None
+    ):
         from langchain_openai import OpenAIEmbeddings
 
         # 这些供应商一般兼容 OpenAI API
@@ -94,6 +102,7 @@ def create_embedding_model(model_config: Model | ModelConfig) -> Embeddings:
             ModelProvider.BAICHUAN: "https://api.baichuan-ai.com/v1",
             ModelProvider.MINIMAX: "https://api.minimax.chat/v1",
             ModelProvider.VOLCENGINE: "https://ark.cn-beijing.volces.com/api/v3",
+            ModelProvider.SILICONFLOW: "https://api.siliconflow.cn/v1",
             ModelProvider.XAI: "https://api.x.ai/v1",
             ModelProvider.OLLAMA: "http://localhost:11434/v1",
         }
@@ -110,6 +119,8 @@ def create_embedding_model(model_config: Model | ModelConfig) -> Embeddings:
             api_key=api_key or SecretStr("ollama"),
             base_url=final_base_url,
             check_embedding_ctx_length=False,
+            request_timeout=60.0,
+            max_retries=2,
         )
 
     else:
