@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-31T02:51:53.461Z
+// GENERATED — 2026-09-05T12:35:15.047Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {
@@ -299,6 +299,11 @@ export type AgentsMessages = {
         characters: string
         contextHint: string
       }
+      userInput: {
+        title: string
+        tooltip: string
+        description: string
+      }
       memory: {
         title: string
         tooltip: string
@@ -458,7 +463,22 @@ export type AgentsMessages = {
         iterationCapReached: string
         messageEnd: string
         error: string
+        runStart: string
+        runStatus: string
+        inputAccepted: string
+        runEnd: string
       }
+      runLifecycleTitle: string
+      runLifecycleDescription: string
+      answerDescription: string
+      answerEndpoint: string
+      answerBody: string
+      answerFields: {
+        toolCallId: string
+        answers: string
+        skipped: string
+      }
+      answerNote: string
       messageEndExample: string
       codeExamples: string
       tabs: {

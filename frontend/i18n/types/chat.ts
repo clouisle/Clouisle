@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-31T21:38:28.563Z
+// GENERATED — 2026-09-05T12:35:15.049Z
 // Source: i18n/en/chat.json
 export type ChatMessages = {
   chat: {
@@ -186,7 +186,12 @@ export type ChatMessages = {
       attachmentsDisabledDuringRun: string
       askUser: {
         title: string
+        progress: string
+        previous: string
+        next: string
+        customAnswer: string
         answerRequired: string
+        skipAll: string
         submit: string
         submitting: string
       }

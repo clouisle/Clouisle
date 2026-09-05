@@ -1,4 +1,4 @@
-// GENERATED — 2026-08-31T02:51:53.465Z
+// GENERATED — 2026-09-05T12:35:15.050Z
 // Source: i18n/en/dashboard.json
 export type DashboardMessages = {
   dashboard: {
@@ -375,6 +375,8 @@ export type DashboardMessages = {
         taskBacklog: string
         taskBacklogDesc: string
         tasks: {
+          runAgentTask: string
+          sendNotification: string
           createAuditLog: string
           backfillLexicalIndex: string
           embedDocumentChunks: string
@@ -388,6 +390,7 @@ export type DashboardMessages = {
           runSandboxJob: string
           extractSessionMemory: string
           cancelWorkflow: string
+          resumeWorkflow: string
           runWorkflow: string
           sendDingTalkNotification: string
           sendEmailNotification: string
