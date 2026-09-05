@@ -55,7 +55,7 @@ import {
   type ChatInputFile,
   type ChatPreviewPayload,
 } from '@/components/chat'
-import { useChat, type ChatImageContent } from '@/hooks/use-chat'
+import { getStoredRunSnapshot, useChat, type ChatImageContent } from '@/hooks/use-chat'
 import { defaultChatAdapter, type ChatPageAdapter } from '@/lib/chat/chat-adapter'
 import {Alert, AlertDescription, AlertTitle} from "@/components/ui/alert";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
@@ -117,6 +117,8 @@ export default function PublicChatPage({
     return true
   })
   const [conversations, setConversations] = React.useState<ConversationListItem[]>([])
+  const [runningConversationIds, setRunningConversationIds] = React.useState<Set<string>>(() => new Set())
+
   const [loadingConversations, setLoadingConversations] = React.useState(false)
   const [conversationPage, setConversationPage] = React.useState(1)
   const [hasMoreConversations, setHasMoreConversations] = React.useState(true)
@@ -197,6 +199,25 @@ export default function PublicChatPage({
     return [{ id: 'greeting', role: 'assistant' as const, parts: [{ type: 'text' as const, text: greeting }], createdAt: new Date() }]
   }, [embedMode, agent])
 
+  const syncConversationUrl = React.useCallback(
+    (nextConversationId: string | null, mode: 'push' | 'replace' = 'push') => {
+      if (embedMode || !resolvedParams) return
+
+      const nextParams = new URLSearchParams(searchParams.toString())
+      if (nextConversationId) {
+        nextParams.set('conversation', nextConversationId)
+      } else {
+        nextParams.delete('conversation')
+      }
+
+      const query = nextParams.toString()
+      const newUrl = query ? `/chat/${resolvedParams.id}?${query}` : `/chat/${resolvedParams.id}`
+      const historyMethod = mode === 'push' ? window.history.pushState : window.history.replaceState
+      historyMethod.call(window.history, {}, '', newUrl)
+    },
+    [resolvedParams, searchParams, embedMode]
+  )
+
   // Use chat hook
   const {
     messages,
@@ -218,11 +239,19 @@ export default function PublicChatPage({
     agentId: agent?.id || '',
     variables: variableValues,
     onConversationChange: (id) => {
+      // Keep the active conversation addressable after a browser refresh.
+      syncConversationUrl(id)
       // Refresh conversation list when new conversation is created
       refreshConversations()
       onExternalConversationChange?.(id)
     },
-    onStreamEnd: refreshConversations,
+    onStreamEnd: () => {
+      void refreshConversations()
+      // Conversation titles are generated asynchronously by the backend
+      // after the run completes.  A second refresh after a short delay
+      // picks up the title once it is ready.
+      globalThis.setTimeout(() => { void refreshConversations() }, 3000)
+    },
     api: adapter,
     initialMessages: greetingMessages,
   })
@@ -310,24 +339,57 @@ export default function PublicChatPage({
     fetchData()
   }, [resolvedParams, isLoggedIn, t, adapter])
 
-  const syncConversationUrl = React.useCallback(
-    (nextConversationId: string | null, mode: 'push' | 'replace' = 'push') => {
-      if (embedMode || !resolvedParams) return
+  // Refresh active durable run statuses so background conversations stay identifiable.
+  React.useEffect(() => {
+    const getRunStatus = adapter.getRunStatus
+    if (embedMode || !resolvedParams || !getRunStatus || conversations.length === 0) {
+      setRunningConversationIds(new Set())
+      return
+    }
 
-      const nextParams = new URLSearchParams(searchParams.toString())
-      if (nextConversationId) {
-        nextParams.set('conversation', nextConversationId)
-      } else {
-        nextParams.delete('conversation')
+    let cancelled = false
+    const refreshRunStatuses = async () => {
+      const runningIds = await Promise.all(conversations.map(async (conversation) => {
+        const snapshot = getStoredRunSnapshot(resolvedParams.id, conversation.id)
+        if (!snapshot) return null
+        try {
+          const status = await getRunStatus(resolvedParams.id, snapshot.runId)
+          return status.status === 'queued'
+            || status.status === 'running'
+            || status.status === 'stopping'
+            || status.status === 'completing'
+            ? conversation.id
+            : null
+        } catch {
+          return null
+        }
+      }))
+
+      if (!cancelled) {
+        const nextRunningIds = new Set(runningIds.filter((id): id is string => id !== null))
+        setRunningConversationIds((previous) => {
+          if (previous.size === nextRunningIds.size) {
+            let unchanged = true
+            for (const id of previous) {
+              if (!nextRunningIds.has(id)) {
+                unchanged = false
+                break
+              }
+            }
+            if (unchanged) return previous
+          }
+          return nextRunningIds
+        })
       }
+    }
 
-      const query = nextParams.toString()
-      const newUrl = query ? `/chat/${resolvedParams.id}?${query}` : `/chat/${resolvedParams.id}`
-      const historyMethod = mode === 'replace' ? window.history.replaceState : window.history.pushState
-      historyMethod.call(window.history, {}, '', newUrl)
-    },
-    [resolvedParams, searchParams, embedMode]
-  )
+    void refreshRunStatuses()
+    const interval = globalThis.setInterval(() => { void refreshRunStatuses() }, 2000)
+    return () => {
+      cancelled = true
+      globalThis.clearInterval(interval)
+    }
+  }, [adapter, conversations, embedMode, resolvedParams])
 
   // Load conversation from URL parameter
   React.useEffect(() => {
@@ -424,7 +486,19 @@ export default function PublicChatPage({
       setLoadingConversation(true)
       const { messages: chatMessages } = await adapter.getConversation(conv.id)
 
-      setMessages(chatMessages)
+      // If this conversation has a live background run, append a loading
+      // placeholder so the spinner appears immediately while reconnectToRun
+      // awaits getRunStatus — preventing a blank-message flash.
+      const snapshot = resolvedParams ? getStoredRunSnapshot(resolvedParams.id, conv.id) : null
+      const lastMsg = chatMessages[chatMessages.length - 1]
+      const needsPlaceholder = Boolean(
+        snapshot
+        && (!lastMsg || lastMsg.role !== 'assistant' || !lastMsg.parts.some(p => p.type === 'text' && (p as { text?: string }).text))
+      )
+      const loadingMessages = needsPlaceholder
+        ? [...chatMessages, { id: `assistant-run-${snapshot!.runId}`, role: 'assistant' as const, parts: [], createdAt: new Date(), metadata: { isLoading: true } }]
+        : chatMessages
+      setMessages(loadingMessages)
       setConversationId(conv.id)
 
       suppressUrlConversationReloadRef.current = true
@@ -844,6 +918,9 @@ export default function PublicChatPage({
                       <p className="flex-1 text-sm text-foreground truncate">
                         {conv.title || t('untitledChat')}
                       </p>
+                      {runningConversationIds.has(conv.id) && (
+                        <Loader2 aria-label={tCommon('loading')} className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                      )}
                       <DropdownMenu>
                         <DropdownMenuTrigger onClick={(e) => e.stopPropagation()}>
                           <span
@@ -1025,7 +1102,7 @@ export default function PublicChatPage({
               messages={messages}
               isStreaming={isStreaming}
               isLoading={chatLoading}
-              loadingLabel={runStatus === 'queued' ? tChatMessage('runStatusQueued') : runStatus === 'waiting' ? tChatMessage('runStatusWaiting') : undefined}
+              loadingLabel={runStatus === 'queued' ? tChatMessage('runStatusQueued') : runStatus === 'waiting' ? tChatMessage('runStatusWaiting') : runStatus === 'stopping' ? tChatMessage('runStatusStopping') : undefined}
               hideToolCalls={agent.hide_tool_calls}
               hideMessageActions={agent.hide_message_actions}
               hideReasoning={agent.hide_reasoning}
