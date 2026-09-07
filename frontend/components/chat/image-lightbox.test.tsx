@@ -3,6 +3,7 @@ import { Window } from 'happy-dom'
 import * as React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { clearAuthenticatedAssetCache, setAuthenticatedAssetToken } from './authenticated-asset'
 
 const window = new Window({ url: 'http://localhost' })
 Object.assign(globalThis, {
@@ -118,28 +119,31 @@ describe('ImageLightbox', () => {
   })
 
   test('shows prompts, pans zoomed images, and downloads through browser APIs', async () => {
-    const fetchImage = mock(async () => ({
-      blob: async () => new Blob(['image']),
-    }))
-    const createObjectUrl = mock(() => 'blob:image')
+    const src = '/api/v1/upload/files/generated-images/2026/09/image.png'
+    const fetchImage = mock(async () => new Response('image', { status: 200 }))
+    let objectUrlSequence = 0
+    const createObjectUrl = mock(() => `blob:image-${++objectUrlSequence}`)
     const revokeObjectUrl = mock(() => {})
     const originalFetch = globalThis.fetch
-    const originalCreateObjectUrl = window.URL.createObjectURL
-    const originalRevokeObjectUrl = window.URL.revokeObjectURL
+    const originalCreateObjectUrl = URL.createObjectURL
+    const originalRevokeObjectUrl = URL.revokeObjectURL
     globalThis.fetch = fetchImage as typeof fetch
-    window.URL.createObjectURL = createObjectUrl
-    window.URL.revokeObjectURL = revokeObjectUrl
+    URL.createObjectURL = createObjectUrl
+    URL.revokeObjectURL = revokeObjectUrl
     const consoleError = mock(() => {})
     const originalConsoleError = console.error
     console.error = consoleError
+    setAuthenticatedAssetToken('embed-key')
 
     try {
       renderImage({
-        src: '/image.png',
+        src,
         alt: 'Generated prompt',
         isOpen: true,
         onClose: mock(() => {}),
       })
+
+      await act(async () => {})
 
       const promptButton = (label: string) =>
         Array.from(document.body.querySelectorAll('button')).find((b) => b.textContent?.includes(label))!
@@ -184,17 +188,21 @@ describe('ImageLightbox', () => {
       expect(document.body.textContent).toContain('115%')
 
       await act(async () => document.body.querySelector('button[aria-label="download"]')!.click())
-      expect(fetchImage).toHaveBeenCalledWith('/image.png')
-      expect(createObjectUrl).toHaveBeenCalled()
-      expect(revokeObjectUrl).toHaveBeenCalledWith('blob:image')
+      expect(fetchImage).toHaveBeenCalledWith(src, {
+        headers: { Authorization: 'Bearer embed-key' },
+      })
+      expect(createObjectUrl).toHaveBeenCalledTimes(2)
+      expect(revokeObjectUrl).toHaveBeenCalledWith('blob:image-2')
 
       fetchImage.mockRejectedValueOnce(new Error('download failed'))
       await act(async () => document.body.querySelector('button[aria-label="download"]')!.click())
       expect(consoleError).toHaveBeenCalledWith('Failed to download image:', expect.any(Error))
     } finally {
+      clearAuthenticatedAssetCache()
+      setAuthenticatedAssetToken(null)
       globalThis.fetch = originalFetch
-      window.URL.createObjectURL = originalCreateObjectUrl
-      window.URL.revokeObjectURL = originalRevokeObjectUrl
+      URL.createObjectURL = originalCreateObjectUrl
+      URL.revokeObjectURL = originalRevokeObjectUrl
       console.error = originalConsoleError
     }
   })

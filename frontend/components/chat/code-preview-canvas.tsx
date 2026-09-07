@@ -14,6 +14,7 @@ import { CodeBlock } from '@/components/ai-elements/code-block'
 import { SegmentItem } from './message-parts'
 import type { ChatPreviewPayload, CodePreviewPayload, FilePreviewPayload, SourceDocumentPreviewPayload } from './types'
 import { FilePreviewPanel } from '@/components/file-preview'
+import { fetchAuthenticatedAssetBlob, getAuthenticatedApiAssetUrl, useAuthenticatedAssetToken } from './authenticated-asset'
 import type { BundledLanguage } from 'shiki'
 
 type MermaidTheme = NonNullable<MermaidConfig['theme']>
@@ -646,10 +647,18 @@ function ChatFilePreviewCanvas({
   isResizing?: boolean
 }) {
   const t = useTranslations('chat.message')
+  const assetToken = useAuthenticatedAssetToken()
+
+  const authenticatedUrl = file.url ? getAuthenticatedApiAssetUrl(file.url) : null
+  const loadFile = React.useCallback(async () => {
+    if (!authenticatedUrl) throw new Error('File URL is not an authenticated API asset')
+    return fetchAuthenticatedAssetBlob(authenticatedUrl, assetToken)
+  }, [assetToken, authenticatedUrl])
 
   return (
     <FilePreviewPanel
       file={file}
+      loadFile={authenticatedUrl ? loadFile : undefined}
       isResizing={isResizing}
       onClose={onClose}
       labels={{

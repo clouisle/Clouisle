@@ -335,17 +335,17 @@ export function FilePreviewPanel({
   }, [file.filename, file.mimeType, file.size, file.url, loadFile, maxPreviewBytes, mode])
 
   const handleDownload = React.useCallback(() => {
-    const href = previewUrl || file.url || (blob ? URL.createObjectURL(blob) : null)
+    const loadedBlobUrl = !previewUrl && blob ? URL.createObjectURL(blob) : null
+    const href = previewUrl || loadedBlobUrl || file.url
     if (!href) return
 
-    const isTemporaryUrl = !previewUrl && !file.url
     const link = document.createElement('a')
     link.href = href
     link.download = file.filename
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
-    if (isTemporaryUrl) URL.revokeObjectURL(href)
+    if (loadedBlobUrl) URL.revokeObjectURL(loadedBlobUrl)
   }, [blob, file.filename, file.url, previewUrl])
 
   let body: React.ReactNode

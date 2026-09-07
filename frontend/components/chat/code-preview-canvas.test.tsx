@@ -626,7 +626,7 @@ test('mermaid re-fits when the viewport resizes until the user adjusts manually'
 })
 
 test('artifact preview loads same-origin content and renders it in the matching mode', async () => {
-  globalThis.fetch = mock(async () => ({ ok: true, text: async () => 'graph TD; A-->B;' }))
+  globalThis.fetch = mock(async () => new Response('graph TD; A-->B;', { status: 200 }))
   const tree = render({
     id: 'art',
     kind: 'artifact',

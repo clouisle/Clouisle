@@ -55,11 +55,11 @@ class MediaGenerationNodeExecutor(NodeExecutor):
 
             if mode == "image":
                 tool_result = await self._execute_image(
-                    config, context, prompt, model_id
+                    config, context, prompt, model_id, run=run
                 )
             else:
                 tool_result = await self._execute_video(
-                    config, context, prompt, model_id
+                    config, context, prompt, model_id, run=run
                 )
 
             return self._to_execution_result(tool_result, config)
@@ -73,6 +73,8 @@ class MediaGenerationNodeExecutor(NodeExecutor):
         context: "ExecutionContext",
         prompt: str,
         model_id: str,
+        *,
+        run: "WorkflowRun | None" = None,
     ) -> dict[str, Any]:
         images = await self._resolve_images(
             context,
@@ -80,6 +82,11 @@ class MediaGenerationNodeExecutor(NodeExecutor):
             or config.get("referenceImageVariableRef")
             or config.get("referenceImagesVariable"),
         )
+        asset_context: dict[str, Any] = {}
+        if run is not None:
+            asset_context["workflow_run_id"] = getattr(run, "id", None)
+            if getattr(run, "triggered_by_id", None) is not None:
+                asset_context["user"] = SimpleNamespace(id=run.triggered_by_id)
         return await generate_image(
             prompt=prompt,
             width=_optional_int(config.get("width")),
@@ -99,6 +106,7 @@ class MediaGenerationNodeExecutor(NodeExecutor):
             or config.get("extra_params")
             or None,
             agent=self._media_agent(model_id, config),
+            **asset_context,
         )
 
     async def _execute_video(
@@ -107,12 +115,19 @@ class MediaGenerationNodeExecutor(NodeExecutor):
         context: "ExecutionContext",
         prompt: str,
         model_id: str,
+        *,
+        run: "WorkflowRun | None" = None,
     ) -> dict[str, Any]:
         start_images = await self._resolve_images(
             context,
             config.get("startImageVariable") or config.get("startImageVariableRef"),
         )
         current_images = start_images[:1] if start_images else None
+        asset_context: dict[str, Any] = {}
+        if run is not None:
+            asset_context["workflow_run_id"] = getattr(run, "id", None)
+            if getattr(run, "triggered_by_id", None) is not None:
+                asset_context["user"] = SimpleNamespace(id=run.triggered_by_id)
         return await generate_video(
             prompt=prompt,
             duration=_optional_float(config.get("duration")),
@@ -133,6 +148,7 @@ class MediaGenerationNodeExecutor(NodeExecutor):
             or None,
             agent=self._media_agent(model_id, config),
             current_images=current_images,
+            **asset_context,
         )
 
     async def _build_prompt(

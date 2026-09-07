@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 from uuid import uuid4
 
 import pytest
+from app.models.asset import AssetScopeType
 from app.core.config import settings
 from app.core.i18n import t
 from app.schemas.response import BusinessError, ResponseCode
@@ -631,7 +632,12 @@ class TestSandboxManager:
     async def test_session_artifact_is_registered_without_asset_inputs(
         self, tmp_path: Path, monkeypatch
     ):
-        team_id, user_id, artifact_id = uuid4(), uuid4(), uuid4()
+        team_id, user_id, conversation_id, artifact_id = (
+            uuid4(),
+            uuid4(),
+            uuid4(),
+            uuid4(),
+        )
         artifact_store = FakeArtifactStore(
             artifacts=[
                 SandboxArtifact(
@@ -659,14 +665,19 @@ class TestSandboxManager:
                     agent_id="agent-1",
                     team_id=str(team_id),
                     user_id=str(user_id),
+                    conversation_id=str(conversation_id),
                 )
             ),
             touch=AsyncMock(),
         )
         register = AsyncMock(return_value=SimpleNamespace(id=artifact_id))
+        get_or_create_ref = AsyncMock(return_value=SimpleNamespace(ref="a1b2"))
         monkeypatch.setattr("app.services.sandbox.manager.sandbox_session_store", store)
         monkeypatch.setattr("app.services.asset.asset_service.register", register)
 
+        monkeypatch.setattr(
+            "app.services.asset.asset_service.get_or_create_ref", get_or_create_ref
+        )
         result = await manager.execute(
             SandboxJob(
                 command=["python3"],
@@ -678,6 +689,11 @@ class TestSandboxManager:
         assert result.artifacts[0].asset_id == artifact_id
         assert register.await_args.kwargs["team_id"] == team_id
         assert register.await_args.kwargs["created_by_id"] == user_id
+        get_or_create_ref.assert_awaited_once_with(
+            scope_type=AssetScopeType.CONVERSATION,
+            scope_id=conversation_id,
+            asset=register.return_value,
+        )
 
     async def test_run_job_handles_timeout_and_failed_command(self, tmp_path: Path):
         workspace_manager = SandboxWorkspaceManager(root=str(tmp_path))

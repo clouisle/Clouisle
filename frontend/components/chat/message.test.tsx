@@ -1197,7 +1197,7 @@ describe('message behavior', () => {
     expect(container.textContent).toContain('hook text')
   })
 
-  test('shows authenticated image failures and reuses successful cached assets', async () => {
+  test('shows authenticated image failures and isolates cached assets by credential', async () => {
     render(<Message message={{ id: 'image-hooks', role: 'assistant', parts: [{ type: 'text', text: 'image' }] }} />)
     const components = lastStreamdownProps.components as { img: React.ComponentType<React.ComponentProps<'img'>> }
     globalThis.fetch = mock(async () => ({ ok: false })) as unknown as typeof fetch
@@ -1206,8 +1206,10 @@ describe('message behavior', () => {
     await act(async () => { await Promise.resolve(); await Promise.resolve() })
     expect(failed.textContent).toContain('Unavailable image')
 
-    const cached = render(React.createElement(components.img, { src: '/api/v1/files/one', alt: 'Cached image' }))
-    expect(cached.querySelector('img')?.getAttribute('src')).toBe('blob:secured')
+    const isolated = render(React.createElement(components.img, { src: '/api/v1/files/one', alt: 'Cached image' }))
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(isolated.querySelector('img')).toBeNull()
+    expect(isolated.textContent).toContain('Cached image')
   })
 
   test('normalizes empty and invalid math while preserving code blocks', () => {

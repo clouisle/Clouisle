@@ -28,6 +28,7 @@ class MediaAssetService:
         team_id: UUID | None = None,
         created_by_id: UUID | None = None,
         conversation_id: UUID | None = None,
+        workflow_run_id: UUID | None = None,
     ) -> ImageContent | None:
         if content is None:
             return None
@@ -38,11 +39,18 @@ class MediaAssetService:
             team_id=team_id,
             created_by_id=created_by_id,
             conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
         )
         return ImageContent(**normalized.model_dump(mode="json"))
 
     async def normalize_video(
-        self, content: VideoContent | None
+        self,
+        content: VideoContent | None,
+        *,
+        team_id: UUID | None = None,
+        created_by_id: UUID | None = None,
+        conversation_id: UUID | None = None,
+        workflow_run_id: UUID | None = None,
     ) -> VideoContent | None:
         if content is None:
             return None
@@ -50,6 +58,10 @@ class MediaAssetService:
             content,
             category=self.VIDEO_CATEGORY,
             default_mime_type=self._get_video_mime_type(content),
+            team_id=team_id,
+            created_by_id=created_by_id,
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
         )
         return VideoContent(**normalized.model_dump(mode="json"))
 
@@ -62,6 +74,7 @@ class MediaAssetService:
         team_id: UUID | None = None,
         created_by_id: UUID | None = None,
         conversation_id: UUID | None = None,
+        workflow_run_id: UUID | None = None,
     ) -> ImageContent | VideoContent:
         if content.base64:
             return await self._save_inline_media(
@@ -71,6 +84,7 @@ class MediaAssetService:
                 team_id=team_id,
                 created_by_id=created_by_id,
                 conversation_id=conversation_id,
+                workflow_run_id=workflow_run_id,
             )
 
         if content.file_path:
@@ -81,6 +95,7 @@ class MediaAssetService:
                 team_id=team_id,
                 created_by_id=created_by_id,
                 conversation_id=conversation_id,
+                workflow_run_id=workflow_run_id,
             )
 
         if content.url and self._should_mirror_remote_url(content.url):
@@ -91,6 +106,7 @@ class MediaAssetService:
                 team_id=team_id,
                 created_by_id=created_by_id,
                 conversation_id=conversation_id,
+                workflow_run_id=workflow_run_id,
             )
 
         return self._strip_non_url_fields(content)
@@ -104,6 +120,7 @@ class MediaAssetService:
         team_id: UUID | None = None,
         created_by_id: UUID | None = None,
         conversation_id: UUID | None = None,
+        workflow_run_id: UUID | None = None,
     ) -> ImageContent | VideoContent:
         payload = content.base64 or ""
         detected_content_type, encoded = self._split_data_url(payload)
@@ -130,6 +147,7 @@ class MediaAssetService:
             team_id=team_id,
             created_by_id=created_by_id,
             conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
         )
 
     async def _save_local_media(
@@ -141,6 +159,7 @@ class MediaAssetService:
         team_id: UUID | None = None,
         created_by_id: UUID | None = None,
         conversation_id: UUID | None = None,
+        workflow_run_id: UUID | None = None,
     ) -> ImageContent | VideoContent:
         file_path = Path(content.file_path or "")
         if not file_path.exists() or not file_path.is_file():
@@ -166,6 +185,7 @@ class MediaAssetService:
             team_id=team_id,
             created_by_id=created_by_id,
             conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
         )
 
     async def _save_remote_media(
@@ -177,6 +197,7 @@ class MediaAssetService:
         team_id: UUID | None = None,
         created_by_id: UUID | None = None,
         conversation_id: UUID | None = None,
+        workflow_run_id: UUID | None = None,
     ) -> ImageContent | VideoContent:
         url = content.url or ""
         timeout = httpx.Timeout(self.REMOTE_TIMEOUT)
@@ -209,6 +230,7 @@ class MediaAssetService:
             team_id=team_id,
             created_by_id=created_by_id,
             conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
         )
 
     async def _build_persisted_content(
@@ -221,15 +243,19 @@ class MediaAssetService:
         team_id: UUID | None,
         created_by_id: UUID | None,
         conversation_id: UUID | None,
+        workflow_run_id: UUID | None,
     ) -> ImageContent | VideoContent:
-        normalized = self._build_url_only_content(content, upload_info["url"])
-        if not isinstance(content, ImageContent) or (
-            team_id is None and created_by_id is None
-        ):
-            return normalized
-
         from app.models.asset import AssetScopeType, AssetSource
         from app.services.asset import asset_service
+
+        normalized = self._build_url_only_content(content, upload_info["url"])
+        scope: tuple[AssetScopeType, UUID] | None = None
+        if conversation_id is not None:
+            scope = (AssetScopeType.CONVERSATION, conversation_id)
+        elif workflow_run_id is not None:
+            scope = (AssetScopeType.WORKFLOW_RUN, workflow_run_id)
+        if scope is None:
+            return normalized
 
         asset = await asset_service.register_bytes(
             storage_key=upload_info["storage_key"],
@@ -239,16 +265,19 @@ class MediaAssetService:
             source=AssetSource.GENERATED_MEDIA,
             team_id=team_id,
             created_by_id=created_by_id,
-            provenance={"conversation_id": str(conversation_id)}
-            if conversation_id
-            else None,
+            provenance={
+                "conversation_id": str(conversation_id)
+                if conversation_id is not None
+                else None,
+                "workflow_run_id": str(workflow_run_id)
+                if workflow_run_id is not None
+                else None,
+            },
         )
-        if conversation_id is None:
-            return normalized
 
         binding = await asset_service.get_or_create_ref(
-            scope_type=AssetScopeType.CONVERSATION,
-            scope_id=conversation_id,
+            scope_type=scope[0],
+            scope_id=scope[1],
             asset=asset,
         )
         payload = normalized.model_dump(mode="json")

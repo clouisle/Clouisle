@@ -10,6 +10,7 @@ import {
   Package,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { downloadAuthenticatedAsset, useAuthenticatedAssetToken } from './authenticated-asset';
 import { isArtifactPreviewable } from './artifact-utils';
 import { FileTypeIcon } from '@/components/file-type-icon';
 import type { FilePart } from './types';
@@ -86,6 +87,7 @@ function formatFileSize(bytes?: number): string {
 
 export function ArtifactFile({ file, onOpenPreview, className }: ArtifactFileProps) {
   const t = useTranslations('chat.file')
+  const assetToken = useAuthenticatedAssetToken()
   const previewable = Boolean(file.url && isArtifactPreviewable(file))
 
   return (
@@ -113,14 +115,16 @@ export function ArtifactFile({ file, onOpenPreview, className }: ArtifactFilePro
       )}
 
       {file.url && (
-        <a
-          href={file.url}
-          download={file.filename}
+        <button
+          type="button"
+          onClick={() => {
+            void downloadAuthenticatedAsset(file.url as string, file.filename, assetToken);
+          }}
           className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground"
           aria-label={`${t('download')}: ${file.filename}`}
         >
           <Download className="h-4 w-4" />
-        </a>
+        </button>
       )}
     </div>
   )

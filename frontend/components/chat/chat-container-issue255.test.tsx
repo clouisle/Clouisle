@@ -58,6 +58,7 @@ mock.module('lucide-react', () => ({
   FileType: (props: Record<string, unknown>) => jsx('file-type', props),
   FileVideo: (props: Record<string, unknown>) => jsx('file-video', props),
   Link: (props: Record<string, unknown>) => jsx('link', props),
+  Package: (props: Record<string, unknown>) => jsx('package', props),
 }))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/components/ui/button', () => ({ Button: (props: Record<string, unknown>) => jsx('button', props) }))

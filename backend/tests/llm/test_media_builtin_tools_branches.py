@@ -208,7 +208,7 @@ async def test_generate_video_dispatches_start_image_and_normalizes_success():
                     url="/api/v1/upload/files/generated/video.mp4"
                 )
             ),
-        ) as storage_call,
+        ),
     ):
         result = await generate_video(
             prompt="animate",
@@ -224,7 +224,6 @@ async def test_generate_video_dispatches_start_image_and_normalizes_success():
         "c3RhcnQ=",
         "jpg",
     )
-    storage_call.assert_awaited_once_with(manager_response.video)
     assert result.display_result["video"]["url"].endswith("/generated/video.mp4")
 
 

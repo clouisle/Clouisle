@@ -39,6 +39,7 @@ mock.module('lucide-react', () => ({
   Loader2: Icon,
   Pencil: Icon,
   Plus: Icon,
+  Package: Icon,
   RefreshCw: Icon,
   SearchIcon: Icon,
   SparklesIcon: Icon,

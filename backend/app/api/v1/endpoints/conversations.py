@@ -14,6 +14,16 @@ from tortoise.expressions import Q
 from tortoise.functions import Count
 
 from app.api import deps
+from app.api.conversation_access import (
+    has_conversation_team_admin_access,
+    has_global_conversation_access as _has_global_dashboard_access,
+)
+
+__all__ = [
+    "_has_global_dashboard_access",
+    "has_conversation_team_admin_access",
+    "router",
+]
 from app.core.i18n import t
 from app.core.timezone import now, to_utc
 from app.models.user import User, Team, TeamMember
@@ -73,25 +83,6 @@ async def check_team_access(team_id: UUID, user: User) -> Team:
         )
 
     return team
-
-
-def _has_global_dashboard_access(user: User) -> bool:
-    if user.is_superuser:
-        return True
-    return any(
-        perm.code in ("admin:dashboard:access", "*")
-        for role in user.roles
-        for perm in role.permissions
-    )
-
-
-async def has_conversation_team_admin_access(user: User, team_id: UUID | None) -> bool:
-    if _has_global_dashboard_access(user):
-        return True
-    if not team_id:
-        return False
-    membership = await TeamMember.filter(team_id=team_id, user=user).first()
-    return bool(membership and membership.role in ["owner", "admin"])
 
 
 async def get_user_team_agent_ids(

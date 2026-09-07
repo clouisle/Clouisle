@@ -50,7 +50,7 @@ const report: FilePart = {
   size: 2048,
 }
 
-test('renders localized artifact file actions and a browser download link', () => {
+test('renders localized artifact file actions as buttons', () => {
   const html = renderToStaticMarkup(<ArtifactFileList files={[report]} onOpenPreview={() => {}} />)
 
   expect(html).toContain('data-artifact-file-list')
@@ -64,8 +64,6 @@ test('renders localized artifact file actions and a browser download link', () =
   expect(html).toContain('2.0 KB')
   expect(html).toContain('aria-label="Preview: report.csv"')
   expect(html).toContain('aria-label="Download: report.csv"')
-  expect(html).toContain('href="/files/report.csv"')
-  expect(html).toContain('download="report.csv"')
 })
 
 test('shows three artifacts by default and expands the remaining files', () => {
@@ -108,9 +106,9 @@ test('renders preview for supported documents and omits it without a callback', 
   const noCallbackHtml = renderToStaticMarkup(<ArtifactFileList files={[report]} />)
 
   expect(supportedHtml).toContain('aria-label="Preview: report.docx"')
-  expect(supportedHtml).toContain('download="report.docx"')
+  expect(supportedHtml).toContain('aria-label="Download: report.docx"')
   expect(noCallbackHtml).not.toContain('aria-label="Preview: report.csv"')
-  expect(noCallbackHtml).toContain('download="report.csv"')
+  expect(noCallbackHtml).toContain('aria-label="Download: report.csv"')
 })
 
 test('renders nothing for an empty artifact list', () => {

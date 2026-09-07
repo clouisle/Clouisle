@@ -109,8 +109,10 @@ class SandboxManager:
             )
         )
 
-        asset_team_id: UUID | None = None
-        asset_user_id: UUID | None = None
+        asset_team_id: UUID | None = self._optional_uuid(job.metadata.get("team_id"))
+        asset_user_id: UUID | None = self._optional_uuid(job.metadata.get("user_id"))
+        conversation_id: UUID | None = None
+        workflow_run_id = self._optional_uuid(job.metadata.get("workflow_run_id"))
         if session_id:
             session = await sandbox_session_store.get(session_id)
             if session is None:
@@ -121,6 +123,9 @@ class SandboxManager:
                 raise ValueError("Sandbox session not found or expired")
             asset_team_id = UUID(session.team_id) if session.team_id else None
             asset_user_id = UUID(session.user_id) if session.user_id else None
+            conversation_id = self._optional_uuid(
+                getattr(session, "conversation_id", None)
+            )
             workspace = self.workspace_manager.prepare_session(session_id)
             should_cleanup = False
         else:
@@ -145,6 +150,8 @@ class SandboxManager:
                 metadata,
                 team_id=asset_team_id,
                 user_id=asset_user_id,
+                conversation_id=conversation_id,
+                workflow_run_id=workflow_run_id,
             )
         finally:
             if session_id:
@@ -617,6 +624,8 @@ async function __execute__() {{
         *,
         team_id: UUID | None = None,
         user_id: UUID | None = None,
+        conversation_id: UUID | None = None,
+        workflow_run_id: UUID | None = None,
     ):
         if not job.artifacts:
             metadata.collect_ms = 0
@@ -641,6 +650,8 @@ async function __execute__() {{
             job=job,
             team_id=team_id,
             user_id=user_id,
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
         )
         metadata.mark_collect_completed(datetime.now(UTC))
         return artifacts
@@ -652,15 +663,20 @@ async function __execute__() {{
         job: SandboxJob,
         team_id: UUID | None,
         user_id: UUID | None,
+        conversation_id: UUID | None,
+        workflow_run_id: UUID | None,
     ) -> None:
-        from app.models.asset import AssetSource
+        from app.models.asset import AssetScopeType, AssetSource
         from app.services.asset import asset_service
 
-        if team_id is None and user_id is None:
+        scope: tuple[AssetScopeType, UUID] | None = None
+        if conversation_id is not None:
+            scope = (AssetScopeType.CONVERSATION, conversation_id)
+        elif workflow_run_id is not None:
+            scope = (AssetScopeType.WORKFLOW_RUN, workflow_run_id)
+        if scope is None:
             return
         for artifact in artifacts:
-            if artifact.file_type != "file":
-                continue
             storage_key = self._artifact_storage_key(artifact.url)
             if storage_key is None or not artifact.checksum:
                 continue
@@ -678,7 +694,21 @@ async function __execute__() {{
                     "workspace_path": artifact.path,
                 },
             )
+            await asset_service.get_or_create_ref(
+                scope_type=scope[0],
+                scope_id=scope[1],
+                asset=asset,
+            )
             artifact.asset_id = asset.id
+
+    @staticmethod
+    def _optional_uuid(value: Any) -> UUID | None:
+        if value is None:
+            return None
+        try:
+            return UUID(str(value))
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _artifact_storage_key(url: str) -> str | None:

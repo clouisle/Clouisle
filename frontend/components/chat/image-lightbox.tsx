@@ -7,6 +7,8 @@ import { X, ZoomIn, ZoomOut, RotateCw, Download, MessageSquareText, ChevronUp } 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { downloadAuthenticatedAsset, useAuthenticatedAssetToken } from './authenticated-asset'
+import { AuthenticatedImage, AuthenticatedVideo } from './authenticated-media'
 
 interface ImageLightboxProps {
   src: string
@@ -17,6 +19,7 @@ interface ImageLightboxProps {
 
 export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps) {
   const t = useTranslations('chat.lightbox')
+  const assetToken = useAuthenticatedAssetToken()
   const [scale, setScale] = React.useState(1)
   const [rotation, setRotation] = React.useState(0)
   const [position, setPosition] = React.useState({ x: 0, y: 0 })
@@ -88,16 +91,7 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
 
   const handleDownload = async () => {
     try {
-      const response = await fetch(src)
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = alt || 'image'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      window.URL.revokeObjectURL(url)
+      await downloadAuthenticatedAsset(src, alt || 'image', assetToken)
     } catch (err) {
       console.error('Failed to download image:', err)
     }
@@ -248,7 +242,7 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
           if (scale === 1) handleZoomIn()
         }}
       >
-        <img
+        <AuthenticatedImage
           src={src}
           alt={alt || 'Preview'}
           className="max-w-full max-h-[90vh] object-contain transition-transform duration-200"
@@ -273,6 +267,7 @@ interface VideoLightboxProps {
 
 export function VideoLightbox({ src, isOpen, onClose }: VideoLightboxProps) {
   const t = useTranslations('chat.lightbox')
+  const assetToken = useAuthenticatedAssetToken()
 
   React.useEffect(() => {
     if (!isOpen) return
@@ -300,14 +295,16 @@ export function VideoLightbox({ src, isOpen, onClose }: VideoLightboxProps) {
       <div className="absolute right-4 top-4 z-10 flex gap-2">
         <Tooltip>
           <TooltipTrigger
-            onClick={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation()
+              void downloadAuthenticatedAsset(src, 'video', assetToken)
+            }}
             render={
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20"
                 aria-label={t('download')}
-                render={<a href={src} download />}
               >
                 <Download className="h-5 w-5" />
               </Button>
@@ -335,7 +332,7 @@ export function VideoLightbox({ src, isOpen, onClose }: VideoLightboxProps) {
           <TooltipContent>{t('close')}</TooltipContent>
         </Tooltip>
       </div>
-      <video
+      <AuthenticatedVideo
         src={src}
         controls
         autoPlay
