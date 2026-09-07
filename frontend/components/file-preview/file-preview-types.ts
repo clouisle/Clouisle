@@ -4,6 +4,7 @@ export type FilePreviewMode =
   | 'audio'
   | 'pdf'
   | 'docx'
+  | 'pptx'
   | 'spreadsheet'
   | 'html'
   | 'markdown'
@@ -20,6 +21,11 @@ export interface PreviewFile {
 
 const DOCX_MIME_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+])
+
+const PPTX_MIME_TYPES = new Set([
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.ms-powerpoint',
 ])
 
 const SPREADSHEET_MIME_TYPES = new Set([
@@ -41,7 +47,8 @@ export function getFilePreviewMode(file: Pick<PreviewFile, 'filename' | 'mimeTyp
   if (mimeType.startsWith('audio/') || /\.(?:mp3|wav|ogg|m4a)$/.test(filename)) return 'audio'
   if (mimeType === 'application/pdf' || filename.endsWith('.pdf')) return 'pdf'
   if (DOCX_MIME_TYPES.has(mimeType) || filename.endsWith('.docx')) return 'docx'
-  if (SPREADSHEET_MIME_TYPES.has(mimeType) || /\.(?:csv|xlsx|xls|xlsm|ods)$/.test(filename)) return 'spreadsheet'
+  if (PPTX_MIME_TYPES.has(mimeType) || /\.(?:pptx|ppt)$/.test(filename)) return 'pptx'
+  if (SPREADSHEET_MIME_TYPES.has(mimeType) || /\.(?:csv|xlsx|xls|xlsm|ods|tsv)$/.test(filename)) return 'spreadsheet'
   if (mimeType === 'text/html' || /\.x?html?$/.test(filename)) return 'html'
   if (mimeType === 'text/markdown' || /\.(?:md|markdown)$/.test(filename)) return 'markdown'
   if (/\.(?:mmd|mermaid)$/.test(filename)) return 'mermaid'
@@ -63,7 +70,7 @@ export function isFilePreviewable(file: Pick<PreviewFile, 'filename' | 'mimeType
 
 export function getDocumentMimeType(filename: string, documentType?: string): string | undefined {
   const extension = filename.toLowerCase().split('.').pop()
-  const type = extension && /^(?:pdf|docx|csv|xlsx|xls|xlsm|ods|html?|md|markdown|txt|json|xml)$/.test(extension)
+    const type = extension && /^(?:pdf|docx|pptx|ppt|csv|xlsx|xls|xlsm|ods|tsv|html?|md|markdown|txt|json|xml)$/.test(extension)
     ? extension
     : documentType
   switch (type) {
@@ -71,6 +78,12 @@ export function getDocumentMimeType(filename: string, documentType?: string): st
       return 'application/pdf'
     case 'docx':
       return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    case 'pptx':
+      return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    case 'ppt':
+      return 'application/vnd.ms-powerpoint'
+    case 'tsv':
+      return 'text/tab-separated-values'
     case 'csv':
       return 'text/csv'
     case 'xlsx':

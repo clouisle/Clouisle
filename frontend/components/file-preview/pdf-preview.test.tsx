@@ -2,16 +2,7 @@ import { afterEach, expect, mock, test } from 'bun:test'
 import { Window } from 'happy-dom'
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DocxPreview } from './docx-preview'
-mock.module('@extend-ai/react-docx', () => ({
-  useDocxModel: (file?: ArrayBuffer) => ({
-    model: file ? { sections: [] } : null,
-    error: null,
-    isLoading: false,
-  }),
-  ReactDocxViewer: (props: Record<string, unknown>) => <div data-testid="docx-viewer" {...props} />,
-}))
-
+import { PdfPreview } from './pdf-preview'
 
 const window = new Window({ url: 'http://localhost' })
 Object.assign(globalThis, {
@@ -38,30 +29,15 @@ function render(element: React.ReactElement) {
   return container
 }
 
-test('renders DocxPreview with loaded docx model', async () => {
-  const blob = new Blob(['docx-mock-content'], {
-    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  })
+test('renders PdfPreview component with a target element', async () => {
+  const blob = new Blob(['%PDF-1.4 mock content'], { type: 'application/pdf' })
   const onError = mock(() => {})
-  const container = render(<DocxPreview blob={blob} onError={onError} />)
+  const container = render(<PdfPreview blob={blob} onError={onError} />)
 
   await act(async () => {
     await Bun.sleep(10)
   })
 
+  expect(onError).not.toHaveBeenCalled()
   expect(container.querySelector('div')).toBeTruthy()
-})
-
-test('triggers onError on docx array buffer load failure', async () => {
-  const blob = {
-    arrayBuffer: () => Promise.reject(new Error('Corrupt docx')),
-  } as unknown as Blob
-  const onError = mock(() => {})
-  render(<DocxPreview blob={blob} onError={onError} />)
-
-  await act(async () => {
-    await Bun.sleep(10)
-  })
-
-  expect(onError).toHaveBeenCalledTimes(1)
 })

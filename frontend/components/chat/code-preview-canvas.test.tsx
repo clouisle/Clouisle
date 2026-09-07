@@ -120,6 +120,7 @@ class TestBlob {
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react', () => ({
+  version: '19.2.8',
   memo: <T,>(component: T) => component,
   useCallback: <T,>(callback: T) => callback,
   useEffect: (effect: () => void | (() => void)) => effects.push(effect),

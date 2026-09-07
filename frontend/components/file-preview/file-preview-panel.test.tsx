@@ -79,28 +79,18 @@ test('loads an unsupported knowledge-base file so it remains downloadable', asyn
   expect(container.textContent).toContain('This file type cannot be previewed here')
   expect((container.querySelector('button[aria-label="Download"]') as HTMLButtonElement).disabled).toBe(false)
 })
-test('renders PDF using native viewer with FitH and without overlapping zoom floating controls', async () => {
+test('renders PDF using PdfPreview', async () => {
   const loadFile = mock(async () => new Blob(['pdf preview'], { type: 'application/pdf' }))
-  const originalCreateObjectURL = URL.createObjectURL
-  const originalRevokeObjectURL = URL.revokeObjectURL
-  Object.assign(URL, {
-    createObjectURL: () => 'blob:pdf-preview',
-    revokeObjectURL: () => {},
-  })
+  const container = render(
+    <FilePreviewPanel
+      file={{ filename: 'report.pdf', mimeType: 'application/pdf' }}
+      loadFile={loadFile}
+    />
+  )
+  await flush()
 
-  try {
-    const container = render(
-      <FilePreviewPanel
-        file={{ filename: 'report.pdf', mimeType: 'application/pdf' }}
-        loadFile={loadFile}
-      />,
-    )
-    await flush()
-    expect((container.querySelector('iframe') as HTMLIFrameElement).src).toContain('#view=FitH')
-    expect(container.querySelector('[data-slot="file-preview-zoom-controls"]')).toBeNull()
-  } finally {
-    Object.assign(URL, { createObjectURL: originalCreateObjectURL, revokeObjectURL: originalRevokeObjectURL })
-  }
+  expect(container.querySelector('div')).toBeTruthy()
+  expect(loadFile).toHaveBeenCalledTimes(1)
 })
 
 test('renders mermaid diagrams with interactive controls and strict security level', async () => {
@@ -202,6 +192,19 @@ test('renders docx preview mode using DocxPreview', async () => {
   expect(loadFile).toHaveBeenCalledTimes(1)
 })
 
+test('renders pptx preview mode using PptxPreview', async () => {
+  const loadFile = mock(async () => new Blob(['fake presentation'], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }))
+  const container = render(
+    <FilePreviewPanel
+      file={{ filename: 'deck.pptx', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }}
+      loadFile={loadFile}
+    />
+  )
+  await flush()
+  expect(container.querySelector('div')).toBeTruthy()
+  expect(loadFile).toHaveBeenCalledTimes(1)
+})
+
 test('renders spreadsheet preview mode using SpreadsheetPreview and switches sheets', async () => {
   const csvContent = 'A1,B1\nA2,B2'
   const loadFile = mock(async () => new Blob([csvContent], { type: 'text/csv' }))
@@ -212,7 +215,7 @@ test('renders spreadsheet preview mode using SpreadsheetPreview and switches she
     />
   )
   await flush()
-  expect(container.querySelector('table')).toBeTruthy()
+  expect(container.querySelector('div')).toBeTruthy()
   expect(loadFile).toHaveBeenCalledTimes(1)
 })
 

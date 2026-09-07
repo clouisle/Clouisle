@@ -2,16 +2,7 @@ import { afterEach, expect, mock, test } from 'bun:test'
 import { Window } from 'happy-dom'
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { DocxPreview } from './docx-preview'
-mock.module('@extend-ai/react-docx', () => ({
-  useDocxModel: (file?: ArrayBuffer) => ({
-    model: file ? { sections: [] } : null,
-    error: null,
-    isLoading: false,
-  }),
-  ReactDocxViewer: (props: Record<string, unknown>) => <div data-testid="docx-viewer" {...props} />,
-}))
-
+import { PptxPreview } from './pptx-preview'
 
 const window = new Window({ url: 'http://localhost' })
 Object.assign(globalThis, {
@@ -38,26 +29,28 @@ function render(element: React.ReactElement) {
   return container
 }
 
-test('renders DocxPreview with loaded docx model', async () => {
-  const blob = new Blob(['docx-mock-content'], {
-    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+test('renders PptxPreview when given a valid presentation blob', async () => {
+  const blob = new Blob([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], {
+    type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   })
   const onError = mock(() => {})
-  const container = render(<DocxPreview blob={blob} onError={onError} />)
+  const container = render(<PptxPreview blob={blob} onError={onError} />)
 
   await act(async () => {
     await Bun.sleep(10)
   })
 
+  expect(onError).not.toHaveBeenCalled()
   expect(container.querySelector('div')).toBeTruthy()
 })
 
-test('triggers onError on docx array buffer load failure', async () => {
+test('calls onError when blob arrayBuffer reading fails', async () => {
   const blob = {
-    arrayBuffer: () => Promise.reject(new Error('Corrupt docx')),
+    arrayBuffer: () => Promise.reject(new Error('Corrupt blob')),
   } as unknown as Blob
+
   const onError = mock(() => {})
-  render(<DocxPreview blob={blob} onError={onError} />)
+  render(<PptxPreview blob={blob} onError={onError} />)
 
   await act(async () => {
     await Bun.sleep(10)

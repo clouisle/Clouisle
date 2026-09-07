@@ -5,6 +5,8 @@ import type { IframeHTMLAttributes } from 'react'
 import { AlertTriangle, Download, Expand, ShieldAlert, ZoomIn, ZoomOut, X } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import { DocxPreview } from './docx-preview'
+import { PdfPreview } from './pdf-preview'
+import { PptxPreview } from './pptx-preview'
 import { PreviewZoomViewport, type PreviewZoomFitMode } from './preview-zoom-viewport'
 import { SpreadsheetPreview } from './spreadsheet-preview'
 import { getFilePreviewMode, type FilePreviewMode, type PreviewFile } from './file-preview-types'
@@ -164,19 +166,12 @@ function isTextMode(mode: FilePreviewMode): boolean {
 }
 function getZoomFitMode(mode: FilePreviewMode): PreviewZoomFitMode | null {
   switch (mode) {
-    case 'docx':
-    case 'spreadsheet':
-      return 'width'
     case 'image':
     case 'video':
       return 'contain'
     default:
       return null
   }
-}
-
-function getPdfPreviewUrl(url: string): string {
-  return `${url}${url.includes('#') ? '&' : '#'}view=FitH`
 }
 
 function readBlobText(blob: Blob): Promise<string> {
@@ -224,6 +219,7 @@ export function FilePreviewPanel({
   const [textContent, setTextContent] = React.useState('')
   const [parseFailed, setParseFailed] = React.useState(false)
   const handleDocxError = React.useCallback(() => setParseFailed(true), [])
+  const handlePptxError = React.useCallback(() => setParseFailed(true), [])
 
   React.useEffect(() => {
     let cancelled = false
@@ -405,8 +401,8 @@ export function FilePreviewPanel({
     body = <video src={previewUrl} controls playsInline className="block max-w-none bg-black object-contain" />
   } else if (mode === 'audio' && previewUrl) {
     body = <div className="flex h-full items-center justify-center p-8"><audio src={previewUrl} controls className="w-full max-w-xl" /></div>
-  } else if (mode === 'pdf' && previewUrl) {
-    body = <iframe title={file.filename} src={getPdfPreviewUrl(previewUrl)} className="h-full w-full border-0 bg-white" />
+  } else if (mode === 'pdf' && blob) {
+    body = <PdfPreview blob={blob} onError={handleDocxError} />
   } else if (mode === 'html' && previewUrl) {
     body = isResizing
       ? <div data-preview-resize-placeholder className="flex h-full items-center justify-center text-sm text-muted-foreground">{resolvedLabels.loading}</div>
@@ -419,6 +415,8 @@ export function FilePreviewPanel({
       />
   } else if (mode === 'docx' && blob) {
     body = <DocxPreview blob={blob} onError={handleDocxError} />
+  } else if (mode === 'pptx' && blob) {
+    body = <PptxPreview blob={blob} onError={handlePptxError} />
   } else if (mode === 'spreadsheet' && blob) {
     body = (
       <SpreadsheetPreview
@@ -429,6 +427,7 @@ export function FilePreviewPanel({
           rowsLimited: resolvedLabels.rowsLimited,
           parseError: resolvedLabels.parseError,
         }}
+        onError={handleDocxError}
       />
     )
   } else if (mode === 'markdown') {
@@ -438,7 +437,6 @@ export function FilePreviewPanel({
   } else {
     body = <pre className="h-full overflow-auto p-4 text-sm"><code>{textContent}</code></pre>
   }
-
   const zoomFitMode = status === 'ready' && !parseFailed ? getZoomFitMode(mode) : null
   const previewBody = zoomFitMode ? (
     <PreviewZoomViewport

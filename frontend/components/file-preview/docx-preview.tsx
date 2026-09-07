@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { ReactDocxViewer, useDocxModel } from '@extend-ai/react-docx'
 
 interface DocxPreviewProps {
   blob: Blob
@@ -8,42 +9,40 @@ interface DocxPreviewProps {
 }
 
 export function DocxPreview({ blob, onError }: DocxPreviewProps) {
-  const bodyRef = React.useRef<HTMLDivElement>(null)
-  const stylesRef = React.useRef<HTMLDivElement>(null)
+  const [arrayBuffer, setArrayBuffer] = React.useState<ArrayBuffer | undefined>(undefined)
 
   React.useEffect(() => {
     let cancelled = false
-    const body = bodyRef.current
-    const styles = stylesRef.current
-    if (!body || !styles) return
-
-    body.replaceChildren()
-    styles.replaceChildren()
-
-    void import('docx-preview')
-      .then(({ renderAsync }) => {
-        if (cancelled || !body || !styles) return
-        return renderAsync(blob, body, styles, {
-          breakPages: true,
-          inWrapper: true,
-          useBase64URL: true,
-        })
+    void blob.arrayBuffer()
+      .then((buf) => {
+        if (!cancelled) setArrayBuffer(buf)
       })
       .catch(() => {
         if (!cancelled) onError()
       })
-
     return () => {
       cancelled = true
-      body.replaceChildren()
-      styles.replaceChildren()
     }
   }, [blob, onError])
 
+  const { model, error } = useDocxModel(arrayBuffer)
+
+  React.useEffect(() => {
+    if (error) {
+      onError()
+    }
+  }, [error, onError])
+
+  if (!arrayBuffer || !model) {
+    return null
+  }
+
   return (
-    <div className="w-fit bg-muted/20 p-4">
-      <div ref={stylesRef} className="hidden" aria-hidden="true" />
-      <div ref={bodyRef} className="w-fit" />
+    <div className="h-full w-full overflow-auto bg-muted/20 p-6 flex justify-center">
+      <ReactDocxViewer
+        model={model}
+        className="w-full max-w-4xl shadow-sm rounded-md"
+      />
     </div>
   )
 }
