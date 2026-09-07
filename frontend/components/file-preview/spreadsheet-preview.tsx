@@ -12,6 +12,7 @@ interface SpreadsheetPreviewLabels {
 
 interface SpreadsheetPreviewProps {
   blob: Blob
+  filename?: string
   labels: SpreadsheetPreviewLabels
   onError?: () => void
 }
@@ -33,7 +34,7 @@ function decodeSpreadsheetText(bytes: Uint8Array): string {
   }
 }
 
-export function SpreadsheetPreview({ blob, labels, onError }: SpreadsheetPreviewProps) {
+export function SpreadsheetPreview({ blob, filename, labels, onError }: SpreadsheetPreviewProps) {
   const [arrayBuffer, setArrayBuffer] = React.useState<ArrayBuffer | null>(null)
   const [hasError, setHasError] = React.useState(false)
 
@@ -90,7 +91,11 @@ export function SpreadsheetPreview({ blob, labels, onError }: SpreadsheetPreview
     <div className="h-full w-full overflow-hidden bg-background">
       <XlsxViewer
         file={arrayBuffer}
+        fileName={filename}
         className="h-full w-full border-0"
+        rounded={false}
+        readOnly
+        showDefaultToolbar={false}
       />
     </div>
   )

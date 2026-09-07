@@ -421,6 +421,7 @@ export function FilePreviewPanel({
     body = (
       <SpreadsheetPreview
         blob={blob}
+        filename={file.filename}
         labels={{
           loading: resolvedLabels.loading,
           sheet: resolvedLabels.sheet,
