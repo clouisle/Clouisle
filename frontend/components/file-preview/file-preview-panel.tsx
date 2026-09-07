@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import type { IframeHTMLAttributes } from 'react'
-import { Download, Expand, ZoomIn, ZoomOut, X } from 'lucide-react'
+import { AlertTriangle, Download, Expand, ShieldAlert, ZoomIn, ZoomOut, X } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import { DocxPreview } from './docx-preview'
 import { PreviewZoomViewport, type PreviewZoomFitMode } from './preview-zoom-viewport'
@@ -14,6 +14,8 @@ export interface FilePreviewLabels {
   loading: string
   unavailable: string
   loadError: string
+  permissionDenied?: string
+  unauthorized?: string
   tooLarge: string
   download: string
   close: string
@@ -41,6 +43,8 @@ const DEFAULT_LABELS: FilePreviewLabels = {
   loading: 'Loading preview...',
   unavailable: 'This file type cannot be previewed here. Download the file to open it.',
   loadError: 'The file preview could not be loaded. Download the file to open it.',
+  permissionDenied: 'You do not have permission to view or download this file.',
+  unauthorized: 'You need to be logged in to view or download this file.',
   tooLarge: 'This file is too large to preview. Download the file to open it.',
   download: 'Download',
   close: 'Close',
@@ -53,7 +57,7 @@ const DEFAULT_LABELS: FilePreviewLabels = {
 }
 const IFRAME_PROCESS_ISOLATION = { credentialless: '' } as unknown as IframeHTMLAttributes<HTMLIFrameElement>
 
-type PreviewStatus = 'loading' | 'ready' | 'error' | 'too-large' | 'unsupported'
+type PreviewStatus = 'loading' | 'ready' | 'error' | 'too-large' | 'unsupported' | 'forbidden' | 'unauthorized'
 
 let mermaidModulePromise: Promise<typeof import('mermaid')> | null = null
 
@@ -325,7 +329,16 @@ export function FilePreviewPanel({
     void load()
       .catch((error: unknown) => {
         if (cancelled) return
-        setStatus(error instanceof Error && error.message === 'File preview is too large' ? 'too-large' : 'error')
+        const message = error instanceof Error ? error.message : String(error)
+        if (message === 'File preview is too large') {
+          setStatus('too-large')
+        } else if (message.includes('403') || message.includes('permission_denied') || message.includes('access_denied')) {
+          setStatus('forbidden')
+        } else if (message.includes('401') || message.includes('not_authenticated') || message.includes('unauthorized')) {
+          setStatus('unauthorized')
+        } else {
+          setStatus('error')
+        }
       })
 
     return () => {
@@ -356,16 +369,32 @@ export function FilePreviewPanel({
         <span>{resolvedLabels.loading}</span>
       </div>
     )
-  } else if (status === 'too-large' || status === 'error' || status === 'unsupported' || parseFailed) {
+  } else if (
+    status === 'too-large' ||
+    status === 'error' ||
+    status === 'unsupported' ||
+    status === 'forbidden' ||
+    status === 'unauthorized' ||
+    parseFailed
+  ) {
     const message = status === 'too-large'
       ? resolvedLabels.tooLarge
       : status === 'unsupported'
         ? resolvedLabels.unavailable
-        : resolvedLabels.loadError
+        : status === 'forbidden'
+          ? (resolvedLabels.permissionDenied || resolvedLabels.loadError)
+          : status === 'unauthorized'
+            ? (resolvedLabels.unauthorized || resolvedLabels.loadError)
+            : resolvedLabels.loadError
+    const iconNode = status === 'forbidden' || status === 'unauthorized' ? (
+      <ShieldAlert className="h-6 w-6 text-destructive" />
+    ) : (
+      <AlertTriangle className="h-6 w-6 text-amber-500" />
+    )
     body = (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center text-muted-foreground">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted">
-          <span aria-hidden="true" className="text-xl">□</span>
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted/70">
+          {iconNode}
         </div>
         <p className="max-w-sm text-sm">{message}</p>
       </div>
@@ -436,7 +465,7 @@ export function FilePreviewPanel({
           <button
             type="button"
             onClick={handleDownload}
-            disabled={!file.url && !blob && !previewUrl}
+            disabled={status === 'forbidden' || status === 'unauthorized' || (!file.url && !blob && !previewUrl)}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
             aria-label={resolvedLabels.download}
           >

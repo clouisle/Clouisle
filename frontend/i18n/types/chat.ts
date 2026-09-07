@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-07T03:18:12.021Z
+// GENERATED — 2026-09-07T05:56:54.041Z
 // Source: i18n/en/chat.json
 export type ChatMessages = {
   chat: {
@@ -182,6 +182,7 @@ export type ChatMessages = {
       artifactPreviewLoading: string
       artifactPreviewUnavailable: string
       artifactPreviewLoadError: string
+      artifactPreviewPermissionDenied: string
       artifactPreviewTooLarge: string
       filePreviewSheet: string
       filePreviewRowsLimited: string

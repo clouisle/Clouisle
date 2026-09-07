@@ -180,6 +180,7 @@
       "artifactPreviewLoading": "Loading artifact preview...",
       "artifactPreviewUnavailable": "This file type cannot be previewed here. Download the artifact to open it.",
       "artifactPreviewLoadError": "The artifact preview could not be loaded. Download the file to open it.",
+      "artifactPreviewPermissionDenied": "You do not have permission to view or download this artifact.",
       "artifactPreviewTooLarge": "This file is too large to preview. Download the file to open it.",
       "filePreviewSheet": "Sheet",
       "filePreviewRowsLimited": "Showing the first {rows} rows and {columns} columns.",

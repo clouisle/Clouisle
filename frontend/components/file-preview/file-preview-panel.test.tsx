@@ -215,3 +215,39 @@ test('renders spreadsheet preview mode using SpreadsheetPreview', async () => {
   expect(loadFile).toHaveBeenCalledTimes(1)
 })
 
+test('renders permission denied message and disables download on 403 load error', async () => {
+  const loadFile = mock(async () => {
+    throw new Error('asset_load_failed:403')
+  })
+  const container = render(
+    <FilePreviewPanel
+      file={{ filename: 'secret.pdf', mimeType: 'application/pdf' }}
+      loadFile={loadFile}
+      labels={{
+        permissionDenied: 'Custom permission denied message',
+      }}
+    />
+  )
+  await flush()
+
+  expect(container.textContent).toContain('Custom permission denied message')
+  const downloadButton = container.querySelector('button[aria-label="Download"]') as HTMLButtonElement
+  expect(downloadButton.disabled).toBe(true)
+})
+
+test('renders warning icon on generic load error', async () => {
+  const loadFile = mock(async () => {
+    throw new Error('network failure')
+  })
+  const container = render(
+    <FilePreviewPanel
+      file={{ filename: 'document.pdf', mimeType: 'application/pdf' }}
+      loadFile={loadFile}
+    />
+  )
+  await flush()
+
+  expect(container.textContent).toContain('The file preview could not be loaded.')
+  expect(container.querySelector('svg.text-amber-500')).toBeTruthy()
+})
+

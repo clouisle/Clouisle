@@ -180,6 +180,7 @@
       "artifactPreviewLoading": "正在加载产物预览...",
       "artifactPreviewUnavailable": "此文件类型暂不支持在线预览,请下载产物后打开。",
       "artifactPreviewLoadError": "无法加载产物预览,请下载文件后打开。",
+      "artifactPreviewPermissionDenied": "当前没有查看或下载该产物的权限。",
       "artifactPreviewTooLarge": "文件过大,无法在线预览,请下载文件后打开。",
       "filePreviewSheet": "工作表",
       "filePreviewRowsLimited": "仅显示前 {rows} 行和 {columns} 列。",

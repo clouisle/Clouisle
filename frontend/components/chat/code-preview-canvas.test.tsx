@@ -147,12 +147,21 @@ mock.module('next-intl', () => ({
 }))
 mock.module('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'dark' }) }))
 mock.module('lucide-react', () => ({
+  AlertTriangle: icon('AlertTriangle'),
   Check: icon('Check'),
   Copy: icon('Copy'),
   Download: icon('Download'),
   Expand: icon('Expand'),
+  FileAudio: icon('FileAudio'),
+  FileCode: icon('FileCode'),
+  FileIcon: icon('FileIcon'),
+  FileImage: icon('FileImage'),
   FileText: icon('FileText'),
+  FileType: icon('FileType'),
+  FileVideo: icon('FileVideo'),
+  Link: icon('Link'),
   Loader2: icon('Loader2'),
+  ShieldAlert: icon('ShieldAlert'),
   ZoomIn: icon('ZoomIn'),
   ZoomOut: icon('ZoomOut'),
   X: icon('X'),

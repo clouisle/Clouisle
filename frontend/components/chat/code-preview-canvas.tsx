@@ -666,6 +666,7 @@ function ChatFilePreviewCanvas({
         loading: t('artifactPreviewLoading'),
         unavailable: t('artifactPreviewUnavailable'),
         loadError: t('artifactPreviewLoadError'),
+        permissionDenied: t('artifactPreviewPermissionDenied'),
         tooLarge: t('artifactPreviewTooLarge'),
         download: t('mermaidDownloadLabel'),
         close: t('closeCodePreview'),
