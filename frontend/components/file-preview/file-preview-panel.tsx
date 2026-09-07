@@ -2,18 +2,27 @@
 
 import * as React from 'react'
 import type { IframeHTMLAttributes } from 'react'
-import { Download, Expand, ZoomIn, ZoomOut, X } from 'lucide-react'
+import dynamic from 'next/dynamic'
+import { AlertTriangle, Download, Expand, ShieldAlert, ZoomIn, ZoomOut, X } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import { DocxPreview } from './docx-preview'
+import { PptxPreview } from './pptx-preview'
 import { PreviewZoomViewport, type PreviewZoomFitMode } from './preview-zoom-viewport'
 import { SpreadsheetPreview } from './spreadsheet-preview'
 import { getFilePreviewMode, type FilePreviewMode, type PreviewFile } from './file-preview-types'
+
+const PdfPreview = dynamic(
+  () => import('./pdf-preview').then((mod) => mod.PdfPreview),
+  { ssr: false },
+)
 
 export interface FilePreviewLabels {
   title: string
   loading: string
   unavailable: string
   loadError: string
+  permissionDenied?: string
+  unauthorized?: string
   tooLarge: string
   download: string
   close: string
@@ -23,12 +32,17 @@ export interface FilePreviewLabels {
   zoomIn: string
   zoomOut: string
   fitToView: string
+  toggleThumbnails?: string
+  thumbnails?: string
+  fitToWidth?: string
+  pageNumber?: (values: { page: number }) => string
 }
 
 export interface FilePreviewPanelProps {
   file: PreviewFile
   labels?: Partial<FilePreviewLabels>
   loadFile?: () => Promise<Blob>
+  locale?: string
   onClose?: () => void
   isResizing?: boolean
   maxPreviewBytes?: number
@@ -41,6 +55,8 @@ const DEFAULT_LABELS: FilePreviewLabels = {
   loading: 'Loading preview...',
   unavailable: 'This file type cannot be previewed here. Download the file to open it.',
   loadError: 'The file preview could not be loaded. Download the file to open it.',
+  permissionDenied: 'You do not have permission to view or download this file.',
+  unauthorized: 'You need to be logged in to view or download this file.',
   tooLarge: 'This file is too large to preview. Download the file to open it.',
   download: 'Download',
   close: 'Close',
@@ -50,10 +66,14 @@ const DEFAULT_LABELS: FilePreviewLabels = {
   zoomIn: 'Zoom in',
   zoomOut: 'Zoom out',
   fitToView: 'Fit to view',
+  toggleThumbnails: 'Toggle thumbnails',
+  thumbnails: 'Thumbnails',
+  fitToWidth: 'Fit to width',
+  pageNumber: ({ page }) => `Page ${page}`,
 }
 const IFRAME_PROCESS_ISOLATION = { credentialless: '' } as unknown as IframeHTMLAttributes<HTMLIFrameElement>
 
-type PreviewStatus = 'loading' | 'ready' | 'error' | 'too-large' | 'unsupported'
+type PreviewStatus = 'loading' | 'ready' | 'error' | 'too-large' | 'unsupported' | 'forbidden' | 'unauthorized'
 
 let mermaidModulePromise: Promise<typeof import('mermaid')> | null = null
 
@@ -160,19 +180,12 @@ function isTextMode(mode: FilePreviewMode): boolean {
 }
 function getZoomFitMode(mode: FilePreviewMode): PreviewZoomFitMode | null {
   switch (mode) {
-    case 'docx':
-    case 'spreadsheet':
-      return 'width'
     case 'image':
     case 'video':
       return 'contain'
     default:
       return null
   }
-}
-
-function getPdfPreviewUrl(url: string): string {
-  return `${url}${url.includes('#') ? '&' : '#'}view=FitH`
 }
 
 function readBlobText(blob: Blob): Promise<string> {
@@ -196,10 +209,20 @@ async function fetchPreviewResponse(url: string): Promise<Response> {
   return response
 }
 
+function isProtectedRawUrl(url: string | undefined): boolean {
+  if (!url) return false
+  try {
+    return new URL(url, window.location.href).pathname.startsWith('/api/v1/')
+  } catch {
+    return false
+  }
+}
+
 export function FilePreviewPanel({
   file,
   labels,
   loadFile,
+  locale,
   onClose,
   isResizing = false,
   maxPreviewBytes = DEFAULT_MAX_PREVIEW_BYTES,
@@ -220,6 +243,7 @@ export function FilePreviewPanel({
   const [textContent, setTextContent] = React.useState('')
   const [parseFailed, setParseFailed] = React.useState(false)
   const handleDocxError = React.useCallback(() => setParseFailed(true), [])
+  const handlePptxError = React.useCallback(() => setParseFailed(true), [])
 
   React.useEffect(() => {
     let cancelled = false
@@ -237,24 +261,25 @@ export function FilePreviewPanel({
       return
     }
 
-    const applyBlob = async (loadedBlob: Blob) => {
+    const applyBlob = async (loadedBlob: Blob): Promise<boolean> => {
       if (loadedBlob.size > maxPreviewBytes) {
         if (!cancelled) setStatus('too-large')
-        return
+        return false
       }
       if (isTextMode(mode)) {
         const content = await readBlobText(loadedBlob)
         if (!cancelled) setTextContent(content)
-        return
+        return true
       }
 
       createdObjectUrl = URL.createObjectURL(loadedBlob)
       if (cancelled) {
         URL.revokeObjectURL(createdObjectUrl)
         createdObjectUrl = null
-        return
+        return false
       }
       setPreviewUrl(createdObjectUrl)
+      return true
     }
     const load = async () => {
       if (loadFile) {
@@ -317,7 +342,7 @@ export function FilePreviewPanel({
 
         const loadedBlob = await response.blob()
         if (!cancelled) setBlob(loadedBlob)
-        await applyBlob(loadedBlob)
+        if (!(await applyBlob(loadedBlob))) return
       }
       if (!cancelled && mode !== 'unsupported') setStatus('ready')
     }
@@ -325,7 +350,16 @@ export function FilePreviewPanel({
     void load()
       .catch((error: unknown) => {
         if (cancelled) return
-        setStatus(error instanceof Error && error.message === 'File preview is too large' ? 'too-large' : 'error')
+        const message = error instanceof Error ? error.message : String(error)
+        if (message === 'File preview is too large') {
+          setStatus('too-large')
+        } else if (message.includes('403') || message.includes('permission_denied') || message.includes('access_denied')) {
+          setStatus('forbidden')
+        } else if (message.includes('401') || message.includes('not_authenticated') || message.includes('unauthorized')) {
+          setStatus('unauthorized')
+        } else {
+          setStatus('error')
+        }
       })
 
     return () => {
@@ -335,17 +369,17 @@ export function FilePreviewPanel({
   }, [file.filename, file.mimeType, file.size, file.url, loadFile, maxPreviewBytes, mode])
 
   const handleDownload = React.useCallback(() => {
-    const href = previewUrl || file.url || (blob ? URL.createObjectURL(blob) : null)
+    const loadedBlobUrl = !previewUrl && blob ? URL.createObjectURL(blob) : null
+    const href = previewUrl || loadedBlobUrl || (isProtectedRawUrl(file.url) ? null : file.url)
     if (!href) return
 
-    const isTemporaryUrl = !previewUrl && !file.url
     const link = document.createElement('a')
     link.href = href
     link.download = file.filename
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
-    if (isTemporaryUrl) URL.revokeObjectURL(href)
+    if (loadedBlobUrl) URL.revokeObjectURL(loadedBlobUrl)
   }, [blob, file.filename, file.url, previewUrl])
 
   let body: React.ReactNode
@@ -356,16 +390,32 @@ export function FilePreviewPanel({
         <span>{resolvedLabels.loading}</span>
       </div>
     )
-  } else if (status === 'too-large' || status === 'error' || status === 'unsupported' || parseFailed) {
+  } else if (
+    status === 'too-large' ||
+    status === 'error' ||
+    status === 'unsupported' ||
+    status === 'forbidden' ||
+    status === 'unauthorized' ||
+    parseFailed
+  ) {
     const message = status === 'too-large'
       ? resolvedLabels.tooLarge
       : status === 'unsupported'
         ? resolvedLabels.unavailable
-        : resolvedLabels.loadError
+        : status === 'forbidden'
+          ? (resolvedLabels.permissionDenied || resolvedLabels.loadError)
+          : status === 'unauthorized'
+            ? (resolvedLabels.unauthorized || resolvedLabels.loadError)
+            : resolvedLabels.loadError
+    const iconNode = status === 'forbidden' || status === 'unauthorized' ? (
+      <ShieldAlert className="h-6 w-6 text-destructive" />
+    ) : (
+      <AlertTriangle className="h-6 w-6 text-amber-500" />
+    )
     body = (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center text-muted-foreground">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted">
-          <span aria-hidden="true" className="text-xl">□</span>
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted/70">
+          {iconNode}
         </div>
         <p className="max-w-sm text-sm">{message}</p>
       </div>
@@ -376,8 +426,8 @@ export function FilePreviewPanel({
     body = <video src={previewUrl} controls playsInline className="block max-w-none bg-black object-contain" />
   } else if (mode === 'audio' && previewUrl) {
     body = <div className="flex h-full items-center justify-center p-8"><audio src={previewUrl} controls className="w-full max-w-xl" /></div>
-  } else if (mode === 'pdf' && previewUrl) {
-    body = <iframe title={file.filename} src={getPdfPreviewUrl(previewUrl)} className="h-full w-full border-0 bg-white" />
+  } else if (mode === 'pdf' && blob) {
+    body = <PdfPreview blob={blob} locale={locale} onError={handleDocxError} />
   } else if (mode === 'html' && previewUrl) {
     body = isResizing
       ? <div data-preview-resize-placeholder className="flex h-full items-center justify-center text-sm text-muted-foreground">{resolvedLabels.loading}</div>
@@ -389,17 +439,41 @@ export function FilePreviewPanel({
         className="h-full w-full border-0 bg-white"
       />
   } else if (mode === 'docx' && blob) {
-    body = <DocxPreview blob={blob} onError={handleDocxError} />
+    body = (
+      <DocxPreview
+        blob={blob}
+        filename={file.filename}
+        labels={{
+          loading: resolvedLabels.loading,
+          parseError: resolvedLabels.parseError,
+          zoomIn: resolvedLabels.zoomIn,
+          zoomOut: resolvedLabels.zoomOut,
+          zoomReset: resolvedLabels.fitToView,
+          toggleThumbnails: resolvedLabels.toggleThumbnails,
+          thumbnails: resolvedLabels.thumbnails,
+          fitToWidth: resolvedLabels.fitToWidth,
+          pageNumber: resolvedLabels.pageNumber,
+        }}
+        onError={handleDocxError}
+      />
+    )
+  } else if (mode === 'pptx' && blob) {
+    body = <PptxPreview blob={blob} onError={handlePptxError} />
   } else if (mode === 'spreadsheet' && blob) {
     body = (
       <SpreadsheetPreview
         blob={blob}
+        filename={file.filename}
         labels={{
           loading: resolvedLabels.loading,
           sheet: resolvedLabels.sheet,
           rowsLimited: resolvedLabels.rowsLimited,
           parseError: resolvedLabels.parseError,
+          zoomIn: resolvedLabels.zoomIn,
+          zoomOut: resolvedLabels.zoomOut,
+          zoomReset: resolvedLabels.fitToView,
         }}
+        onError={handleDocxError}
       />
     )
   } else if (mode === 'markdown') {
@@ -409,7 +483,6 @@ export function FilePreviewPanel({
   } else {
     body = <pre className="h-full overflow-auto p-4 text-sm"><code>{textContent}</code></pre>
   }
-
   const zoomFitMode = status === 'ready' && !parseFailed ? getZoomFitMode(mode) : null
   const previewBody = zoomFitMode ? (
     <PreviewZoomViewport
@@ -436,7 +509,7 @@ export function FilePreviewPanel({
           <button
             type="button"
             onClick={handleDownload}
-            disabled={!file.url && !blob && !previewUrl}
+            disabled={status === 'forbidden' || status === 'unauthorized' || (!file.url && !blob && !previewUrl) || (isProtectedRawUrl(file.url) && !blob && !previewUrl)}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
             aria-label={resolvedLabels.download}
           >

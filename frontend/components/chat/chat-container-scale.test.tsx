@@ -40,6 +40,7 @@ mock.module('lucide-react', () => ({
   FileType: () => <svg data-icon="file-type" />,
   FileVideo: () => <svg data-icon="file-video" />,
   Link: () => <svg data-icon="link" />,
+  Package: () => <svg data-icon="package" />,
 }))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/components/ui/button', () => ({

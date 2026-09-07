@@ -9,6 +9,7 @@ Object.assign(globalThis, {
   window,
   document: window.document,
   navigator: window.navigator,
+  Element: window.Element,
   HTMLElement: window.HTMLElement,
   Node: window.Node,
   Event: window.Event,
@@ -34,6 +35,34 @@ async function flush() {
     await Bun.sleep(0)
   })
 }
+
+test('keeps an oversized loader blob downloadable without replacing the too-large status', async () => {
+  const loadFile = mock(async () => new Blob(['oversized'], { type: 'text/plain' }))
+  const container = render(
+    <FilePreviewPanel
+      file={{ filename: 'large.txt', mimeType: 'text/plain' }}
+      loadFile={loadFile}
+      maxPreviewBytes={1}
+    />
+  )
+  await flush()
+
+  expect(container.textContent).toContain('This file is too large to preview.')
+  const downloadButton = container.querySelector('button[aria-label="Download"]') as HTMLButtonElement
+  expect(downloadButton.disabled).toBe(false)
+})
+
+test('does not fall back to downloading a protected raw URL', async () => {
+  const container = render(
+    <FilePreviewPanel
+      file={{ filename: 'secret.bin', mimeType: 'application/octet-stream', url: '/api/v1/assets/secret' }}
+    />
+  )
+  await flush()
+
+  const downloadButton = container.querySelector('button[aria-label="Download"]') as HTMLButtonElement
+  expect(downloadButton.disabled).toBe(true)
+})
 
 test('loads text from a provided file loader and keeps it downloadable', async () => {
   const loadFile = mock(async () => new Blob(['hello preview'], { type: 'text/plain' }))
@@ -79,28 +108,69 @@ test('loads an unsupported knowledge-base file so it remains downloadable', asyn
   expect(container.textContent).toContain('This file type cannot be previewed here')
   expect((container.querySelector('button[aria-label="Download"]') as HTMLButtonElement).disabled).toBe(false)
 })
-test('renders PDF using native viewer with FitH and without overlapping zoom floating controls', async () => {
-  const loadFile = mock(async () => new Blob(['pdf preview'], { type: 'application/pdf' }))
-  const originalCreateObjectURL = URL.createObjectURL
-  const originalRevokeObjectURL = URL.revokeObjectURL
-  Object.assign(URL, {
-    createObjectURL: () => 'blob:pdf-preview',
-    revokeObjectURL: () => {},
-  })
+
+test('loads a same-origin text preview from its URL', async () => {
+  window.location.href = 'http://localhost/'
+  const originalFetch = globalThis.fetch
+  const originalWindowFetch = window.fetch
+  const fetchMock = mock(async () => new Response('remote preview', {
+    status: 200,
+    headers: { 'content-type': 'text/plain' },
+  }))
+  globalThis.fetch = fetchMock as unknown as typeof fetch
+  Object.assign(window, { fetch: fetchMock })
 
   try {
     const container = render(
       <FilePreviewPanel
-        file={{ filename: 'report.pdf', mimeType: 'application/pdf' }}
-        loadFile={loadFile}
-      />,
+        file={{ filename: 'remote.txt', mimeType: 'text/plain', url: '/api/v1/files/remote.txt' }}
+      />
     )
     await flush()
-    expect((container.querySelector('iframe') as HTMLIFrameElement).src).toContain('#view=FitH')
-    expect(container.querySelector('[data-slot="file-preview-zoom-controls"]')).toBeNull()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('remote preview')
   } finally {
-    Object.assign(URL, { createObjectURL: originalCreateObjectURL, revokeObjectURL: originalRevokeObjectURL })
+    globalThis.fetch = originalFetch
+    Object.assign(window, { fetch: originalWindowFetch })
   }
+})
+
+test('maps a URL preview 403 response to a permission error', async () => {
+  window.location.href = 'http://localhost/'
+  const originalFetch = globalThis.fetch
+  const originalWindowFetch = window.fetch
+  const fetchMock = mock(async () => new Response(null, { status: 403 }))
+  globalThis.fetch = fetchMock as unknown as typeof fetch
+  Object.assign(window, { fetch: fetchMock })
+
+  try {
+    const container = render(
+      <FilePreviewPanel
+        file={{ filename: 'restricted.txt', mimeType: 'text/plain', url: '/api/v1/files/restricted.txt' }}
+      />
+    )
+    await flush()
+
+    expect(container.textContent).toContain('You do not have permission')
+    expect((container.querySelector('button[aria-label="Download"]') as HTMLButtonElement).disabled).toBe(true)
+  } finally {
+    globalThis.fetch = originalFetch
+    Object.assign(window, { fetch: originalWindowFetch })
+  }
+})
+test('renders PDF using PdfPreview', async () => {
+  const loadFile = mock(async () => new Blob(['pdf preview'], { type: 'application/pdf' }))
+  const container = render(
+    <FilePreviewPanel
+      file={{ filename: 'report.pdf', mimeType: 'application/pdf' }}
+      loadFile={loadFile}
+    />
+  )
+  await flush()
+
+  expect(container.querySelector('div')).toBeTruthy()
+  expect(loadFile).toHaveBeenCalledTimes(1)
 })
 
 test('renders mermaid diagrams with interactive controls and strict security level', async () => {
@@ -202,8 +272,22 @@ test('renders docx preview mode using DocxPreview', async () => {
   expect(loadFile).toHaveBeenCalledTimes(1)
 })
 
-test('renders spreadsheet preview mode using SpreadsheetPreview', async () => {
-  const loadFile = mock(async () => new Blob(['fake sheet'], { type: 'text/csv' }))
+test('renders pptx preview mode using PptxPreview', async () => {
+  const loadFile = mock(async () => new Blob(['fake presentation'], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }))
+  const container = render(
+    <FilePreviewPanel
+      file={{ filename: 'deck.pptx', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }}
+      loadFile={loadFile}
+    />
+  )
+  await flush()
+  expect(container.querySelector('div')).toBeTruthy()
+  expect(loadFile).toHaveBeenCalledTimes(1)
+})
+
+test('renders spreadsheet preview mode using SpreadsheetPreview and switches sheets', async () => {
+  const csvContent = 'A1,B1\nA2,B2'
+  const loadFile = mock(async () => new Blob([csvContent], { type: 'text/csv' }))
   const container = render(
     <FilePreviewPanel
       file={{ filename: 'data.csv', mimeType: 'text/csv' }}
@@ -213,5 +297,41 @@ test('renders spreadsheet preview mode using SpreadsheetPreview', async () => {
   await flush()
   expect(container.querySelector('div')).toBeTruthy()
   expect(loadFile).toHaveBeenCalledTimes(1)
+})
+
+test('renders permission denied message and disables download on 403 load error', async () => {
+  const loadFile = mock(async () => {
+    throw new Error('asset_load_failed:403')
+  })
+  const container = render(
+    <FilePreviewPanel
+      file={{ filename: 'secret.pdf', mimeType: 'application/pdf' }}
+      loadFile={loadFile}
+      labels={{
+        permissionDenied: 'Custom permission denied message',
+      }}
+    />
+  )
+  await flush()
+
+  expect(container.textContent).toContain('Custom permission denied message')
+  const downloadButton = container.querySelector('button[aria-label="Download"]') as HTMLButtonElement
+  expect(downloadButton.disabled).toBe(true)
+})
+
+test('renders warning icon on generic load error', async () => {
+  const loadFile = mock(async () => {
+    throw new Error('network failure')
+  })
+  const container = render(
+    <FilePreviewPanel
+      file={{ filename: 'document.pdf', mimeType: 'application/pdf' }}
+      loadFile={loadFile}
+    />
+  )
+  await flush()
+
+  expect(container.textContent).toContain('The file preview could not be loaded.')
+  expect(container.querySelector('svg.text-amber-500')).toBeTruthy()
 })
 

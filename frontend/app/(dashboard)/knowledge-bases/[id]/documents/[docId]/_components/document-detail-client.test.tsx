@@ -23,7 +23,7 @@ Object.defineProperty(globalThis, 'window', {
   },
 })
 
-mock.module('next-intl', () => ({ useTranslations: () => translate }))
+mock.module('next-intl', () => ({ useTranslations: () => translate, useLocale: () => 'en' }))
 mock.module('next/navigation', () => ({ useRouter: () => router }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
 mock.module('@/lib/api', () => ({ adminKnowledgeBasesApi: api }))
@@ -35,7 +35,7 @@ const ui = {
   AlertDialogAction: 'alert-action', AlertDialogCancel: 'alert-cancel',
   AlertDialogContent: 'alert-content', AlertDialogDescription: 'alert-description',
   AlertDialogFooter: 'alert-footer', AlertDialogHeader: 'alert-header', AlertDialogTitle: 'alert-title',
-  Tooltip: 'tooltip', TooltipContent: 'tooltip-content', TooltipTrigger: 'tooltip-trigger',
+  Tooltip: 'tooltip', TooltipContent: 'tooltip-content', TooltipTrigger: 'tooltip-trigger', TooltipProvider: 'tooltip-provider',
 }
 for (const path of [
   '@/components/ui/button', '@/components/ui/badge', '@/components/ui/input', '@/components/ui/label',
@@ -45,7 +45,9 @@ for (const path of [
 mock.module('lucide-react', () => Object.fromEntries([
   'ArrowLeft', 'Play', 'RefreshCw', 'Trash2', 'Settings2', 'FileText', 'Loader2', 'CheckCircle',
   'XCircle', 'Clock', 'ChevronLeft', 'ChevronRight', 'Save', 'RotateCcw', 'Plus', 'GripVertical',
-  'AlertTriangle', 'Eye', 'Download', 'X', 'Expand', 'ZoomIn', 'ZoomOut',
+  'AlertTriangle', 'Eye', 'Download', 'X', 'Expand', 'ZoomIn', 'ZoomOut', 'ShieldAlert',
+  'ChevronDown', 'ChevronDownIcon', 'ChevronUp', 'ChevronUpIcon', 'PanelLeft', 'CheckIcon',
+  'ChevronRightIcon', 'CircleIcon',
 ].map(name => [name, name])))
 
 interface HookSlot { value?: unknown; deps?: readonly unknown[]; cleanup?: () => void }

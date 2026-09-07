@@ -73,8 +73,10 @@
     },
     "file": {
       "download": "下载",
+      "downloadFailed": "文件下载失败",
       "preview": "预览",
       "files": "文件",
+      "artifacts": "产物列表",
       "showMore": "展开其余 {count} 个",
       "showLess": "收起",
       "images": "图片"
@@ -179,6 +181,8 @@
       "artifactPreviewLoading": "正在加载产物预览...",
       "artifactPreviewUnavailable": "此文件类型暂不支持在线预览,请下载产物后打开。",
       "artifactPreviewLoadError": "无法加载产物预览,请下载文件后打开。",
+      "artifactPreviewPermissionDenied": "当前没有查看或下载该产物的权限。",
+      "artifactPreviewUnauthorized": "请登录后查看或下载该产物。",
       "artifactPreviewTooLarge": "文件过大,无法在线预览,请下载文件后打开。",
       "filePreviewSheet": "工作表",
       "filePreviewRowsLimited": "仅显示前 {rows} 行和 {columns} 列。",
@@ -186,6 +190,10 @@
       "filePreviewZoomIn": "放大",
       "filePreviewZoomOut": "缩小",
       "filePreviewFitToView": "自适应",
+      "filePreviewToggleThumbnails": "切换缩略图",
+      "filePreviewThumbnails": "缩略图",
+      "filePreviewFitToWidth": "适应宽度",
+      "filePreviewPageNumber": "第 {page} 页",
       "previewScriptsEnabled": "脚本在沙箱 iframe 中运行",
       "linkSafetyTitle": "要打开链接吗？",
       "linkSafetyDescription": "该链接由聊天内容生成，打开前请先确认。",
@@ -222,6 +230,7 @@
       "zoomIn": "放大 (+)",
       "rotate": "旋转 (R)",
       "download": "下载",
+      "downloadFailed": "文件下载失败",
       "close": "关闭 (Esc)",
       "showPrompt": "查看提示词",
       "hidePrompt": "收起提示词"

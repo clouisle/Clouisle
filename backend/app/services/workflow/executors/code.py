@@ -110,6 +110,14 @@ class CodeNodeExecutor(NodeExecutor):
                 timeout=CODE_TIMEOUT,
                 source=SandboxJobSource.WORKFLOW,
             )
+            job.metadata.update(
+                {
+                    "workflow_run_id": str(run.id),
+                    "user_id": str(run.triggered_by_id)
+                    if run.triggered_by_id is not None
+                    else None,
+                }
+            )
             sandbox_result = await sandbox_gateway.submit_and_wait(
                 job,
                 timeout_seconds=CODE_TIMEOUT + 5,

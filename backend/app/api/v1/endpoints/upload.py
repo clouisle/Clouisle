@@ -27,6 +27,10 @@ from app.services.file_parser import (
     FileParseConfig,
 )
 from app.services.asset import asset_service
+from app.services.asset_access import (
+    PROTECTED_FILE_CATEGORIES,
+    authorize_protected_asset,
+)
 from app.services.audit_log import AuditLogService
 from app.services.upload_storage import get_upload_storage_backend
 
@@ -543,15 +547,18 @@ async def get_file(
     year: str,
     month: str,
     filename: str,
+    authenticated: tuple[User, APIKey | None] | None = Depends(
+        deps.get_current_user_or_api_key_optional
+    ),
 ) -> Any:
-    """
-    获取上传的文件（公开访问）
-    """
+    """Return public uploads or an authorized scoped generated asset."""
     category = _validate_path_segment(category, "category")
     year = _validate_path_segment(year, "year")
     month = _validate_path_segment(month, "month")
     filename = _validate_path_segment(filename, "filename")
     storage_key = f"{category}/{year}/{month}/{filename}"
+    if category in PROTECTED_FILE_CATEGORIES:
+        await authorize_protected_asset(storage_key, authenticated=authenticated)
     storage = await _upload_storage()
 
     if not await storage.exists(storage_key):

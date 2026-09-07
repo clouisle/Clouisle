@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { Check, Copy, Download, Expand, FileText, Loader2, ZoomIn, ZoomOut, X } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { useTheme } from 'next-themes'
 import { Streamdown } from 'streamdown'
 import type { MermaidConfig } from 'mermaid'
@@ -14,6 +14,7 @@ import { CodeBlock } from '@/components/ai-elements/code-block'
 import { SegmentItem } from './message-parts'
 import type { ChatPreviewPayload, CodePreviewPayload, FilePreviewPayload, SourceDocumentPreviewPayload } from './types'
 import { FilePreviewPanel } from '@/components/file-preview'
+import { fetchAuthenticatedAssetBlob, getAuthenticatedApiAssetUrl, useAuthenticatedAssetToken } from './authenticated-asset'
 import type { BundledLanguage } from 'shiki'
 
 type MermaidTheme = NonNullable<MermaidConfig['theme']>
@@ -646,10 +647,20 @@ function ChatFilePreviewCanvas({
   isResizing?: boolean
 }) {
   const t = useTranslations('chat.message')
+  const locale = useLocale()
+  const assetToken = useAuthenticatedAssetToken()
+
+  const authenticatedUrl = file.url ? getAuthenticatedApiAssetUrl(file.url) : null
+  const loadFile = React.useCallback(async () => {
+    if (!authenticatedUrl) throw new Error('File URL is not an authenticated API asset')
+    return fetchAuthenticatedAssetBlob(authenticatedUrl, assetToken)
+  }, [assetToken, authenticatedUrl])
 
   return (
     <FilePreviewPanel
       file={file}
+      loadFile={authenticatedUrl ? loadFile : undefined}
+      locale={locale}
       isResizing={isResizing}
       onClose={onClose}
       labels={{
@@ -657,6 +668,8 @@ function ChatFilePreviewCanvas({
         loading: t('artifactPreviewLoading'),
         unavailable: t('artifactPreviewUnavailable'),
         loadError: t('artifactPreviewLoadError'),
+        permissionDenied: t('artifactPreviewPermissionDenied'),
+        unauthorized: t('artifactPreviewUnauthorized'),
         tooLarge: t('artifactPreviewTooLarge'),
         download: t('mermaidDownloadLabel'),
         close: t('closeCodePreview'),
@@ -666,6 +679,10 @@ function ChatFilePreviewCanvas({
         zoomIn: t('filePreviewZoomIn'),
         zoomOut: t('filePreviewZoomOut'),
         fitToView: t('filePreviewFitToView'),
+        toggleThumbnails: t('filePreviewToggleThumbnails'),
+        thumbnails: t('filePreviewThumbnails'),
+        fitToWidth: t('filePreviewFitToWidth'),
+        pageNumber: ({ page }) => t('filePreviewPageNumber', { page }),
       }}
     />
   )

@@ -293,6 +293,7 @@ mock.module('./nodes/answer-node', () => ({ AnswerNode: (props: Record<string, u
 mock.module('./nodes/comment-node', () => ({ CommentNode: (props: Record<string, unknown>) => jsx('comment-node', props), COMMENT_COLORS: ['yellow'] }))
 mock.module('./start-node-selector', () => ({ StartNodeSelector: (props: Record<string, unknown>) => jsx('start-node-selector', props), StartNodeType: { Trigger: 'trigger' } }))
 mock.module('./workflow-settings-drawer', () => ({ WorkflowSettingsDrawer: (props: Record<string, unknown>) => jsx('workflow-settings-drawer', props) }))
+mock.module('./workflow-run-drawer', () => ({ WorkflowRunDrawer: (props: Record<string, unknown>) => jsx('workflow-run-drawer', props) }))
 mock.module('./add-node-popover', () => ({ AddNodePopover: (props: Record<string, unknown>) => jsx('add-node-popover', props) }))
 mock.module('./workflow-publish-dialog', () => ({ WorkflowPublishDialog: (props: Record<string, unknown>) => jsx('workflow-publish-dialog', props) }))
 mock.module('./validation-checklist', () => ({ ValidationChecklist: (props: Record<string, unknown>) => jsx('validation-checklist', props) }))
@@ -360,10 +361,9 @@ const run = {
   executed_nodes: 0, failed_nodes: 0, skipped_nodes: 0, total_token_usage: {},
 }
 
-const [{ default: WorkflowEditorPage, WorkflowEditorContent }, { default: WorkflowLogsPage }, { WorkflowRunDrawer }, { NodeConfigDrawer }] = await Promise.all([
+const [{ default: WorkflowEditorPage, WorkflowEditorContent }, { default: WorkflowLogsPage }, { NodeConfigDrawer }] = await Promise.all([
   import('../page'),
   import('../logs/page'),
-  import('./workflow-run-drawer'),
   import('./node-config-drawer'),
 ])
 
@@ -388,9 +388,7 @@ describe('workflow route coverage imports', () => {
     expect(nodes.some((node) => String(node.props.className).includes('h-full'))).toBe(true)
   })
 
-  test('keeps drawer closed branches cheap but covered', () => {
-    const runDrawer = WorkflowRunDrawer({ workflow: workflow as never, variables: [], open: false, onClose: noop }) as TestNode
-    expect(runDrawer.props.className).toContain('pointer-events-none')
+  test('keeps node config closed branches cheap', () => {
     expect(NodeConfigDrawer({ node: null, allNodes: [], allEdges: [], open: false, onClose: noop, onUpdate: noop })).toBeNull()
   })
 })

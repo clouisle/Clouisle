@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-06T11:41:22.939Z
+// GENERATED — 2026-09-07T05:56:54.043Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -120,6 +120,8 @@ export type KnowledgeBasesMessages = {
     previewOriginalLoading: string
     previewOriginalUnavailable: string
     previewOriginalLoadError: string
+    previewOriginalPermissionDenied: string
+    previewOriginalUnauthorized: string
     previewOriginalTooLarge: string
     previewOriginalDownload: string
     previewOriginalClose: string
@@ -129,6 +131,10 @@ export type KnowledgeBasesMessages = {
     previewOriginalZoomIn: string
     previewOriginalZoomOut: string
     previewOriginalFitToView: string
+    previewOriginalToggleThumbnails: string
+    previewOriginalThumbnails: string
+    previewOriginalFitToWidth: string
+    previewOriginalPageNumber: string
     viewSourceUrl: string
     downloadStarted: string
     downloadFailed: string

@@ -36,6 +36,8 @@ class ToolExecutor:
         arguments: dict[str, Any],
         user_id: str | None = None,
         team_id: UUID | None = None,
+        conversation_id: UUID | str | None = None,
+        workflow_run_id: UUID | str | None = None,
     ) -> Any:
         """
         Execute a tool with the given arguments.
@@ -60,6 +62,8 @@ class ToolExecutor:
                 tool_name=tool.name,
                 arguments=arguments,
                 team_id=team_id,
+                conversation_id=conversation_id,
+                workflow_run_id=workflow_run_id,
             )
         elif tool_type == ToolType.CUSTOM.value:
             return await self._execute_custom_tool(
@@ -84,8 +88,10 @@ class ToolExecutor:
         tool_name: str,
         arguments: dict[str, Any],
         team_id: UUID | None = None,
+        conversation_id: UUID | str | None = None,
+        workflow_run_id: UUID | str | None = None,
     ) -> Any:
-        """Execute a builtin tool with credentials support."""
+        """Execute a builtin tool with credentials and asset scope context."""
         # Worker processes may not have imported the builtin registration path yet.
         if tool_registry.get_tool(tool_name) is None:
             from app.llm.tools.builtin import register_all_builtin_tools
@@ -98,12 +104,19 @@ class ToolExecutor:
             team_id=team_id,
         )
 
+        context: dict[str, Any] = {}
+        if conversation_id is not None:
+            context["conversation_id"] = conversation_id
+        if workflow_run_id is not None:
+            context["workflow_run_id"] = workflow_run_id
+
         # Execute the tool
         try:
             result = await tool_registry.execute(
                 name=tool_name,
                 arguments=arguments,
                 credentials=credentials,
+                **context,
             )
             return result
         except Exception as e:

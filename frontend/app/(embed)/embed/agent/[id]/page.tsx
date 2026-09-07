@@ -4,6 +4,7 @@ import * as React from 'react'
 import { useSearchParams, useParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { createEmbedChatAdapter } from '@/lib/chat/embed-chat-adapter'
+import { setAuthenticatedAssetToken } from '@/components/chat/authenticated-asset'
 import PublicChatPage from '@/app/(chat)/chat/[id]/page'
 import { Suspense } from 'react'
 
@@ -27,6 +28,12 @@ function EmbedAgentContent() {
     window.parent.postMessage({ type: 'clouisle:ready' }, '*')
     return () => window.removeEventListener('message', handler)
   }, [])
+
+  React.useEffect(() => {
+    setAuthenticatedAssetToken(apiKey || null)
+    return () => setAuthenticatedAssetToken(null)
+  }, [apiKey])
+
 
   const adapter = React.useMemo(
     () => (apiKey ? createEmbedChatAdapter(agentId, apiKey) : null),

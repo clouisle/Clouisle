@@ -41,6 +41,7 @@ mock.module('react', () => ({
 }))
 mock.module('next/navigation', () => ({ useRouter: () => ({ push }) }))
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: () => (key: string, values?: Record<string, unknown>) =>
     values ? `${key}:${JSON.stringify(values)}` : key,
 }))

@@ -9,6 +9,7 @@ import pytest
 
 from app.llm.errors import InvalidRequestError, ProviderError
 from app.llm.types import ImageContent, VideoContent
+from app.models.asset import AssetScopeType
 from app.services.media_asset_service import MediaAssetService
 
 
@@ -164,3 +165,37 @@ async def test_normalize_image_registers_generated_asset_and_scoped_ref(
     assert register_kwargs["team_id"] == team_id
     assert register_kwargs["created_by_id"] == user_id
     asset_service.get_or_create_ref.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_normalize_video_registers_workflow_scoped_asset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow_run_id = uuid4()
+    save_upload = AsyncMock(
+        return_value={
+            "url": "/api/v1/upload/files/generated-videos/2026/09/video.mp4",
+            "storage_key": "generated-videos/2026/09/video.mp4",
+            "filename": "video.mp4",
+        }
+    )
+    asset = SimpleNamespace(id=uuid4())
+    asset_service = SimpleNamespace(
+        register_bytes=AsyncMock(return_value=asset),
+        get_or_create_ref=AsyncMock(return_value=SimpleNamespace(ref="b2c3")),
+    )
+    monkeypatch.setattr(media_module, "save_generated_upload", save_upload)
+    monkeypatch.setattr("app.services.asset.asset_service", asset_service)
+
+    normalized = await MediaAssetService().normalize_video(
+        VideoContent(base64=base64.b64encode(b"video").decode(), format="mp4"),
+        workflow_run_id=workflow_run_id,
+    )
+
+    assert normalized is not None
+    assert normalized.asset_ref == "b2c3"
+    asset_service.get_or_create_ref.assert_awaited_once_with(
+        scope_type=AssetScopeType.WORKFLOW_RUN,
+        scope_id=workflow_run_id,
+        asset=asset,
+    )

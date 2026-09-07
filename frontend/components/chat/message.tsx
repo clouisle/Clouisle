@@ -15,6 +15,8 @@ import { bundledLanguages, codeToTokens } from 'shiki'
 import type { BundledLanguage, BundledTheme } from 'shiki'
 import { createMathPlugin } from '@streamdown/math'
 import { ImageLightbox, useLightbox } from './image-lightbox'
+import { AuthenticatedImage, AuthenticatedVideo } from './authenticated-media'
+import { useAuthenticatedAssetUrl } from './authenticated-asset'
 import {
   Popover,
   PopoverTrigger,
@@ -713,7 +715,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                         aria-label={`${t('openCodePreview')}: ${parsedOutput.prompt || t('generatedImageAlt')}`}
                         onClick={() => openLightbox(imageUrl, parsedOutput.prompt)}
                       >
-                        <img
+                        <AuthenticatedImage
                           src={imageUrl}
                           alt={parsedOutput.prompt || t('generatedImageAlt')}
                           className="h-auto w-full object-cover"
@@ -762,7 +764,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         return (
           <div className="space-y-3">
             {videoUrl ? (
-              <video
+              <AuthenticatedVideo
                 controls
                 playsInline
                 className="max-h-96 w-full rounded-lg border bg-black"
@@ -938,7 +940,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             aria-label={`${t('openCodePreview')}: ${imagePart.alt || t('generatedImageAlt')}`}
             onClick={() => openLightbox(imagePart.url, imagePart.alt)}
           >
-            <img
+            <AuthenticatedImage
               src={imagePart.url}
               alt={imagePart.alt || 'Uploaded image'}
               className="h-auto w-full object-cover"
@@ -1780,157 +1782,29 @@ function PreviewableMarkdownBlock({
   )
 }
 
-function getAuthenticatedApiAssetUrl(src: string): string | null {
-  return src.startsWith('/api/v1/') ? src : null
-}
-
-function isBlockedImageSrc(src: string): boolean {
-  const normalized = src.trim().toLowerCase()
-  return normalized.startsWith('javascript:') || normalized.startsWith('data:') || normalized.startsWith('vbscript:')
-}
-
-type AuthenticatedMarkdownImageCacheEntry = {
-  objectUrl?: string
-  promise?: Promise<string>
-}
-
-const MAX_AUTHENTICATED_MARKDOWN_IMAGE_CACHE_SIZE = 100
-const authenticatedMarkdownImageCache = new Map<string, AuthenticatedMarkdownImageCacheEntry>()
-
-function setAuthenticatedMarkdownImageCache(src: string, entry: AuthenticatedMarkdownImageCacheEntry) {
-  if (entry.objectUrl && authenticatedMarkdownImageCache.size >= MAX_AUTHENTICATED_MARKDOWN_IMAGE_CACHE_SIZE) {
-    const oldestKey = authenticatedMarkdownImageCache.keys().next().value
-    if (oldestKey !== undefined) {
-      const oldestEntry = authenticatedMarkdownImageCache.get(oldestKey)
-      if (oldestEntry?.objectUrl) URL.revokeObjectURL(oldestEntry.objectUrl)
-      authenticatedMarkdownImageCache.delete(oldestKey)
-    }
-  }
-
-  authenticatedMarkdownImageCache.set(src, entry)
-}
-
 type AuthenticatedMarkdownImageProps = Omit<React.ComponentProps<'img'>, 'src' | 'alt'> & {
   src?: string
   alt?: string
   onPreview?: (src: string, alt?: string) => void
 }
 
-function getCachedAuthenticatedImageUrl(src: string): string | null {
-  return authenticatedMarkdownImageCache.get(src)?.objectUrl ?? null
-}
-
-function getInitialMarkdownImageUrl(src: string): string | null {
-  if (!src || isBlockedImageSrc(src)) {
-    return null
-  }
-
-  const authenticatedUrl = getAuthenticatedApiAssetUrl(src)
-  return authenticatedUrl ? getCachedAuthenticatedImageUrl(authenticatedUrl) : src
-}
-
-function loadAuthenticatedMarkdownImage(src: string): Promise<string> {
-  const cached = authenticatedMarkdownImageCache.get(src)
-  if (cached?.objectUrl) {
-    return Promise.resolve(cached.objectUrl)
-  }
-  if (cached?.promise) {
-    return cached.promise
-  }
-
-  const token = localStorage.getItem('access_token')
-  const headers = token ? { Authorization: `Bearer ${token}` } : undefined
-  const promise = fetch(src, { headers })
-    .then((response) => {
-      if (!response.ok) throw new Error('image_load_failed')
-      return response.blob()
-    })
-    .then((blob) => {
-      const objectUrl = URL.createObjectURL(blob)
-      setAuthenticatedMarkdownImageCache(src, { objectUrl })
-      return objectUrl
-    })
-    .catch((error) => {
-      authenticatedMarkdownImageCache.delete(src)
-      throw error
-    })
-
-  setAuthenticatedMarkdownImageCache(src, { promise })
-  return promise
-}
-
 function AuthenticatedMarkdownImage({ src = '', alt = '', onPreview, ...props }: AuthenticatedMarkdownImageProps) {
   const t = useTranslations('chat.message')
-  const [prevSrc, setPrevSrc] = React.useState(src)
-  const [objectUrl, setObjectUrl] = React.useState<string | null>(() => getInitialMarkdownImageUrl(src))
-  const [failed, setFailed] = React.useState(() => Boolean(src && isBlockedImageSrc(src)))
+  const asset = useAuthenticatedAssetUrl(src)
 
-  if (src !== prevSrc) {
-    setPrevSrc(src)
-    setObjectUrl(getInitialMarkdownImageUrl(src))
-    setFailed(Boolean(src && isBlockedImageSrc(src)))
-  }
-
-  React.useEffect(() => {
-    let cancelled = false
-
-    setFailed(false)
-    if (!src) {
-      setObjectUrl(null)
-      return () => {
-        cancelled = true
-      }
-    }
-    if (isBlockedImageSrc(src)) {
-      setObjectUrl(null)
-      setFailed(true)
-      return () => {
-        cancelled = true
-      }
-    }
-    const authenticatedUrl = getAuthenticatedApiAssetUrl(src)
-    if (!authenticatedUrl) {
-      setObjectUrl(src)
-      return () => {
-        cancelled = true
-      }
-    }
-
-    const cachedObjectUrl = getCachedAuthenticatedImageUrl(authenticatedUrl)
-    if (cachedObjectUrl) {
-      setObjectUrl(cachedObjectUrl)
-      return () => {
-        cancelled = true
-      }
-    }
-
-    setObjectUrl(null)
-    loadAuthenticatedMarkdownImage(authenticatedUrl)
-      .then((url) => {
-        if (!cancelled) setObjectUrl(url)
-      })
-      .catch((error) => {
-        if (!cancelled && (error as Error).name !== 'AbortError') setFailed(true)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [src])
-
-  if (failed || !objectUrl) {
+  if (!asset.src) {
     return <span className="text-muted-foreground">{alt || src}</span>
   }
 
   return (
     <span className="relative inline-block max-w-full">
-      <img {...props} src={objectUrl} alt={alt} loading="lazy" />
+      <img {...props} src={asset.src} alt={alt} loading="lazy" />
       {onPreview && (
         <button
           type="button"
           className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md bg-background/90 text-foreground shadow-sm transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={`${t('openCodePreview')}: ${alt || t('generatedImageAlt')}`}
-          onClick={() => onPreview(objectUrl, alt)}
+          onClick={() => onPreview(asset.src as string, alt)}
         >
           <Eye className="h-4 w-4" />
         </button>

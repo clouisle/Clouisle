@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-06T11:41:22.922Z
+// GENERATED — 2026-09-07T05:56:54.041Z
 // Source: i18n/en/chat.json
 export type ChatMessages = {
   chat: {
@@ -75,8 +75,10 @@ export type ChatMessages = {
     }
     file: {
       download: string
+      downloadFailed: string
       preview: string
       files: string
+      artifacts: string
       showMore: string
       showLess: string
       images: string
@@ -181,6 +183,8 @@ export type ChatMessages = {
       artifactPreviewLoading: string
       artifactPreviewUnavailable: string
       artifactPreviewLoadError: string
+      artifactPreviewPermissionDenied: string
+      artifactPreviewUnauthorized: string
       artifactPreviewTooLarge: string
       filePreviewSheet: string
       filePreviewRowsLimited: string
@@ -188,6 +192,10 @@ export type ChatMessages = {
       filePreviewZoomIn: string
       filePreviewZoomOut: string
       filePreviewFitToView: string
+      filePreviewToggleThumbnails: string
+      filePreviewThumbnails: string
+      filePreviewFitToWidth: string
+      filePreviewPageNumber: string
       previewScriptsEnabled: string
       linkSafetyTitle: string
       linkSafetyDescription: string
@@ -224,6 +232,7 @@ export type ChatMessages = {
       zoomIn: string
       rotate: string
       download: string
+      downloadFailed: string
       close: string
       showPrompt: string
       hidePrompt: string

@@ -23,6 +23,7 @@ async def execute_tool_call(
     session_id: str | None = None,
     current_images: list[Any] | None = None,
     conversation_id: Any = None,
+    workflow_run_id: Any = None,
 ) -> Any:
     """Execute a tool call and return the result."""
     tool_timeouts = tool_timeouts or {}
@@ -40,16 +41,17 @@ async def execute_tool_call(
         execute_tool_call as shared_execute_tool_call,
     )
 
-    return await shared_execute_tool_call(
-        tool_name,
-        arguments,
-        agent=agent,
-        tool_timeouts=tool_timeouts,
-        user=user,
-        session_id=session_id,
-        current_images=current_images,
-        conversation_id=conversation_id,
-    )
+    shared_kwargs: dict[str, Any] = {
+        "agent": agent,
+        "tool_timeouts": tool_timeouts,
+        "user": user,
+        "session_id": session_id,
+        "current_images": current_images,
+        "conversation_id": conversation_id,
+    }
+    if workflow_run_id is not None:
+        shared_kwargs["workflow_run_id"] = workflow_run_id
+    return await shared_execute_tool_call(tool_name, arguments, **shared_kwargs)
 
 
 async def execute_http_tool(tool: Tool, arguments: dict, timeout: float = 30.0) -> str:

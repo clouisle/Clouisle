@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pytest
 
@@ -129,8 +130,15 @@ class TestMediaGenerationNodeExecutor:
                 AsyncMock(return_value=team_model)
             )
 
+            run_id, user_id = uuid4(), uuid4()
             result = await executor.execute(
-                node, context, SimpleNamespace(workflow_id="workflow-1")
+                node,
+                context,
+                SimpleNamespace(
+                    id=run_id,
+                    workflow_id="workflow-1",
+                    triggered_by_id=user_id,
+                ),
             )
 
         assert result.success is True
@@ -147,6 +155,8 @@ class TestMediaGenerationNodeExecutor:
         assert kwargs["prompt"] == "make a cat"
         assert kwargs["images"] == [{"base64": "cmVm", "format": "png"}]
         assert kwargs["agent"].image_generation_config["default_model_ref"] == "model-1"
+        assert kwargs["workflow_run_id"] == run_id
+        assert kwargs["user"].id == user_id
 
     @pytest.mark.anyio
     async def test_execute_video_passes_start_image_as_current_image(self):
@@ -198,8 +208,15 @@ class TestMediaGenerationNodeExecutor:
                 AsyncMock(return_value=team_model)
             )
 
+            run_id, user_id = uuid4(), uuid4()
             result = await executor.execute(
-                node, context, SimpleNamespace(workflow_id="workflow-1")
+                node,
+                context,
+                SimpleNamespace(
+                    id=run_id,
+                    workflow_id="workflow-1",
+                    triggered_by_id=user_id,
+                ),
             )
 
         assert result.success is True
@@ -211,6 +228,8 @@ class TestMediaGenerationNodeExecutor:
         assert kwargs["start_image_index"] == 1
         assert kwargs["current_images"] == [{"url": "https://x.test/a.png"}]
         assert kwargs["agent"].video_generation_config["default_model_ref"] == "model-1"
+        assert kwargs["workflow_run_id"] == run_id
+        assert kwargs["user"].id == user_id
 
     def test_video_output_alias_contains_only_url(self):
         result = MediaGenerationNodeExecutor()._to_execution_result(

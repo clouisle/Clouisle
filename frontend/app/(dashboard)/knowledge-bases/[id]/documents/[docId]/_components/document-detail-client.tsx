@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
@@ -70,6 +70,7 @@ interface EditableChunk extends DocumentChunk {
 
 export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDetailClientProps) {
   const t = useTranslations('knowledgeBases')
+  const locale = useLocale()
   const commonT = useTranslations('common')
   const router = useRouter()
 
@@ -930,12 +931,15 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                   size: document.file_size,
                 }}
                 loadFile={loadOriginalFile}
+                locale={locale}
                 onClose={() => setIsOriginalPreviewOpen(false)}
                 labels={{
                   title: t('previewOriginalTitle'),
                   loading: t('previewOriginalLoading'),
                   unavailable: t('previewOriginalUnavailable'),
                   loadError: t('previewOriginalLoadError'),
+                  permissionDenied: t('previewOriginalPermissionDenied'),
+                  unauthorized: t('previewOriginalUnauthorized'),
                   tooLarge: t('previewOriginalTooLarge'),
                   download: t('downloadOriginal'),
                   close: t('previewOriginalClose'),
@@ -945,6 +949,10 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                   zoomIn: t('previewOriginalZoomIn'),
                   zoomOut: t('previewOriginalZoomOut'),
                   fitToView: t('previewOriginalFitToView'),
+                  toggleThumbnails: t('previewOriginalToggleThumbnails'),
+                  thumbnails: t('previewOriginalThumbnails'),
+                  fitToWidth: t('previewOriginalFitToWidth'),
+                  pageNumber: ({ page }) => t('previewOriginalPageNumber', { page }),
                 }}
               />
             </div>

@@ -56,6 +56,8 @@ class ToolNodeExecutor(NodeExecutor):
         from app.models.tool import Tool
         from app.models.workflow import Workflow
         from app.services.tool import ToolExecutor
+
+        tool_executor = ToolExecutor()
         import time
 
         node_data = node.get("data", {})
@@ -91,12 +93,12 @@ class ToolNodeExecutor(NodeExecutor):
 
         try:
             # Execute tool
-            tool_executor = ToolExecutor()
             if tool_type == "builtin" and tool_name:
                 result = await tool_executor.execute_builtin_tool(
                     tool_name=tool_name,
                     arguments=inputs,
                     team_id=workflow_team_id,
+                    workflow_run_id=run.id,
                 )
             else:
                 # Load tool
@@ -283,6 +285,7 @@ class AgentNodeExecutor(NodeExecutor):
                     images=images or None,
                     files=files or None,
                     user_id=str(run.triggered_by_id) if run.triggered_by_id else None,
+                    workflow_run_id=run.id,
                     max_turns=max_turns,
                     user_locale=user_locale,
                 ):
@@ -321,6 +324,7 @@ class AgentNodeExecutor(NodeExecutor):
                     images=images or None,
                     files=files or None,
                     user_id=str(run.triggered_by_id) if run.triggered_by_id else None,
+                    workflow_run_id=run.id,
                     max_turns=max_turns,
                     user_locale=user_locale,
                 )

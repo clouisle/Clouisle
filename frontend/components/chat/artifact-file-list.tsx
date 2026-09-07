@@ -2,13 +2,16 @@
 
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
 import {
   ChevronDown,
   ChevronUp,
   Download,
   Eye,
+  Package,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { downloadAuthenticatedAsset, useAuthenticatedAssetToken } from './authenticated-asset';
 import { isArtifactPreviewable } from './artifact-utils';
 import { FileTypeIcon } from '@/components/file-type-icon';
 import type { FilePart } from './types';
@@ -25,12 +28,17 @@ export function ArtifactFileList({ files, className, onOpenPreview }: ArtifactFi
 
   return (
     <div className={cn('overflow-hidden rounded-xl border border-border/60 bg-card/30', className)} data-artifact-file-list>
-      <div className="divide-y divide-border/60">
+      <div className="flex items-center gap-2 border-b border-border/60 bg-muted/20 px-3 py-2 text-xs font-medium text-foreground">
+        <Package className="h-3.5 w-3.5 text-muted-foreground" />
+        <span>{t('artifacts')}</span>
+        <span className="text-muted-foreground">({files.length})</span>
+      </div>
+      <div>
         {visibleFiles.map((file) => (
           <ArtifactFile
             key={file.path ?? file.url ?? file.filename}
             file={file}
-            className="rounded-none border-0 bg-transparent px-3 py-2"
+            className="rounded-none border-0 border-b border-border/60 bg-transparent px-3 py-2 last:border-b-0"
             onOpenPreview={onOpenPreview}
           />
         ))}
@@ -80,6 +88,7 @@ function formatFileSize(bytes?: number): string {
 
 export function ArtifactFile({ file, onOpenPreview, className }: ArtifactFileProps) {
   const t = useTranslations('chat.file')
+  const assetToken = useAuthenticatedAssetToken()
   const previewable = Boolean(file.url && isArtifactPreviewable(file))
 
   return (
@@ -107,14 +116,18 @@ export function ArtifactFile({ file, onOpenPreview, className }: ArtifactFilePro
       )}
 
       {file.url && (
-        <a
-          href={file.url}
-          download={file.filename}
+        <button
+          type="button"
+          onClick={() => {
+            void downloadAuthenticatedAsset(file.url as string, file.filename, assetToken).catch(() => {
+              toast.error(t('downloadFailed'))
+            })
+          }}
           className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground"
           aria-label={`${t('download')}: ${file.filename}`}
         >
           <Download className="h-4 w-4" />
-        </a>
+        </button>
       )}
     </div>
   )

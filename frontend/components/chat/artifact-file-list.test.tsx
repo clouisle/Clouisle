@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { act as rendererAct, create as createRenderer, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 import type { FilePart } from './types'
 
+const toastError = mock(() => {})
 const icon = ({ name, className }: { name: string; className?: string }) => (
   <svg data-icon={name} className={className} />
 )
@@ -12,14 +13,18 @@ mock.module('next-intl', () => ({
   useTranslations: () => (key: string, values?: Record<string, unknown>) => {
     if (key === 'preview') return 'Preview'
     if (key === 'download') return 'Download'
+    if (key === 'downloadFailed') return 'Download failed'
     if (key === 'showMore') return `Show ${values?.count ?? ''} more`
     if (key === 'showLess') return 'Show less'
+    if (key === 'artifacts') return 'Artifacts'
     return 'Files'
   },
 }))
+mock.module('sonner', () => ({ toast: { error: toastError } }))
 mock.module('lucide-react', () => ({
   ChevronDown: (props: { className?: string }) => icon({ ...props, name: 'ChevronDown' }),
   ChevronUp: (props: { className?: string }) => icon({ ...props, name: 'ChevronUp' }),
+  Package: (props: { className?: string }) => icon({ ...props, name: 'Package' }),
   FileIcon: (props: { className?: string }) => icon({ ...props, name: 'FileIcon' }),
   FileImage: (props: { className?: string }) => icon({ ...props, name: 'FileImage' }),
   FileVideo: (props: { className?: string }) => icon({ ...props, name: 'FileVideo' }),
@@ -48,10 +53,13 @@ const report: FilePart = {
   size: 2048,
 }
 
-test('renders localized artifact file actions and a browser download link', () => {
+test('renders localized artifact file actions as buttons', () => {
   const html = renderToStaticMarkup(<ArtifactFileList files={[report]} onOpenPreview={() => {}} />)
 
   expect(html).toContain('data-artifact-file-list')
+  expect(html).toContain('Artifacts')
+  expect(html).toContain('(1)')
+  expect(html).toContain('data-icon="Package"')
   expect(html).not.toContain('Generated files')
   expect(html).toContain('data-icon="FileType"')
   expect(html).toContain('text-green-500')
@@ -59,8 +67,24 @@ test('renders localized artifact file actions and a browser download link', () =
   expect(html).toContain('2.0 KB')
   expect(html).toContain('aria-label="Preview: report.csv"')
   expect(html).toContain('aria-label="Download: report.csv"')
-  expect(html).toContain('href="/files/report.csv"')
-  expect(html).toContain('download="report.csv"')
+})
+
+test('surfaces failed artifact downloads', async () => {
+  toastError.mockClear()
+  let renderer!: ReactTestRenderer
+  const blocked: FilePart = { ...report, url: 'javascript:alert(1)' }
+
+  rendererAct(() => {
+    renderer = createRenderer(<ArtifactFile file={blocked} />)
+  })
+
+  try {
+    rendererAct(() => renderer.root.findByProps({ 'aria-label': 'Download: report.csv' }).props.onClick())
+    await Bun.sleep(0)
+    expect(toastError).toHaveBeenCalledWith('Download failed')
+  } finally {
+    rendererAct(() => renderer.unmount())
+  }
 })
 
 test('shows three artifacts by default and expands the remaining files', () => {
@@ -103,9 +127,9 @@ test('renders preview for supported documents and omits it without a callback', 
   const noCallbackHtml = renderToStaticMarkup(<ArtifactFileList files={[report]} />)
 
   expect(supportedHtml).toContain('aria-label="Preview: report.docx"')
-  expect(supportedHtml).toContain('download="report.docx"')
+  expect(supportedHtml).toContain('aria-label="Download: report.docx"')
   expect(noCallbackHtml).not.toContain('aria-label="Preview: report.csv"')
-  expect(noCallbackHtml).toContain('download="report.csv"')
+  expect(noCallbackHtml).toContain('aria-label="Download: report.csv"')
 })
 
 test('renders nothing for an empty artifact list', () => {

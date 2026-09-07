@@ -3,6 +3,7 @@ import { Window } from 'happy-dom'
 import * as React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { clearAuthenticatedAssetCache, setAuthenticatedAssetToken } from './authenticated-asset'
 
 const window = new Window({ url: 'http://localhost' })
 Object.assign(globalThis, {
@@ -21,9 +22,11 @@ const dom = { window }
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true
 
+const toastError = mock(() => {})
 mock.module('next-intl', () => ({
   useTranslations: () => (key: string) => key,
 }))
+mock.module('sonner', () => ({ toast: { error: toastError } }))
 
 mock.module('@/components/ui/button', () => ({
   Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
@@ -118,28 +121,31 @@ describe('ImageLightbox', () => {
   })
 
   test('shows prompts, pans zoomed images, and downloads through browser APIs', async () => {
-    const fetchImage = mock(async () => ({
-      blob: async () => new Blob(['image']),
-    }))
-    const createObjectUrl = mock(() => 'blob:image')
+    const src = '/api/v1/upload/files/generated-images/2026/09/image.png'
+    const fetchImage = mock(async () => new Response('image', { status: 200 }))
+    let objectUrlSequence = 0
+    const createObjectUrl = mock(() => `blob:image-${++objectUrlSequence}`)
     const revokeObjectUrl = mock(() => {})
     const originalFetch = globalThis.fetch
-    const originalCreateObjectUrl = window.URL.createObjectURL
-    const originalRevokeObjectUrl = window.URL.revokeObjectURL
+    const originalCreateObjectUrl = URL.createObjectURL
+    const originalRevokeObjectUrl = URL.revokeObjectURL
     globalThis.fetch = fetchImage as typeof fetch
-    window.URL.createObjectURL = createObjectUrl
-    window.URL.revokeObjectURL = revokeObjectUrl
+    URL.createObjectURL = createObjectUrl
+    URL.revokeObjectURL = revokeObjectUrl
     const consoleError = mock(() => {})
     const originalConsoleError = console.error
     console.error = consoleError
+    setAuthenticatedAssetToken('embed-key')
 
     try {
       renderImage({
-        src: '/image.png',
+        src,
         alt: 'Generated prompt',
         isOpen: true,
         onClose: mock(() => {}),
       })
+
+      await act(async () => {})
 
       const promptButton = (label: string) =>
         Array.from(document.body.querySelectorAll('button')).find((b) => b.textContent?.includes(label))!
@@ -184,17 +190,21 @@ describe('ImageLightbox', () => {
       expect(document.body.textContent).toContain('115%')
 
       await act(async () => document.body.querySelector('button[aria-label="download"]')!.click())
-      expect(fetchImage).toHaveBeenCalledWith('/image.png')
-      expect(createObjectUrl).toHaveBeenCalled()
-      expect(revokeObjectUrl).toHaveBeenCalledWith('blob:image')
+      expect(fetchImage).toHaveBeenCalledWith(src, {
+        headers: { Authorization: 'Bearer embed-key' },
+      })
+      expect(createObjectUrl).toHaveBeenCalledTimes(2)
+      expect(revokeObjectUrl).toHaveBeenCalledWith('blob:image-2')
 
       fetchImage.mockRejectedValueOnce(new Error('download failed'))
       await act(async () => document.body.querySelector('button[aria-label="download"]')!.click())
       expect(consoleError).toHaveBeenCalledWith('Failed to download image:', expect.any(Error))
     } finally {
+      clearAuthenticatedAssetCache()
+      setAuthenticatedAssetToken(null)
       globalThis.fetch = originalFetch
-      window.URL.createObjectURL = originalCreateObjectUrl
-      window.URL.revokeObjectURL = originalRevokeObjectUrl
+      URL.createObjectURL = originalCreateObjectUrl
+      URL.revokeObjectURL = originalRevokeObjectUrl
       console.error = originalConsoleError
     }
   })
@@ -225,6 +235,29 @@ describe('ImageLightbox', () => {
         .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
     )
     expect(onClose).toHaveBeenCalledTimes(3)
+  })
+
+  test('surfaces video download failures', async () => {
+    const originalFetch = globalThis.fetch
+    const originalConsoleError = console.error
+    const fetchVideo = mock(async () => new Response('denied', { status: 403 }))
+    const consoleError = mock(() => {})
+    globalThis.fetch = fetchVideo as typeof fetch
+    console.error = consoleError
+    toastError.mockClear()
+
+    try {
+      render(<VideoLightbox src="/api/v1/upload/files/generated-videos/2026/09/video.mp4" isOpen onClose={mock(() => {})} />)
+      await act(async () => {
+        document.body.querySelector('button[aria-label="download"]')!.click()
+        await Bun.sleep(0)
+      })
+      expect(consoleError).toHaveBeenCalledWith('Failed to download video:', expect.any(Error))
+      expect(toastError).toHaveBeenCalledWith('downloadFailed')
+    } finally {
+      globalThis.fetch = originalFetch
+      console.error = originalConsoleError
+    }
   })
 
   test('exposes an open and close state controller', () => {

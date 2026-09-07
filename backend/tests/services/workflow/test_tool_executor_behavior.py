@@ -72,6 +72,7 @@ class TestAgentNodeExecutorBehavior:
             assert kwargs["context"] == {"token": "secret"}
             assert kwargs["user_id"] == "user-1"
             assert kwargs["max_turns"] == 3
+            assert kwargs["workflow_run_id"] == run.id
             for chunk in (
                 "first ",
                 {"tool_call": {"name": "search"}},
@@ -157,6 +158,7 @@ class TestAgentNodeExecutorBehavior:
             images=None,
             files=None,
             user_id=None,
+            workflow_run_id=run.id,
             max_turns=10,
             user_locale="en",
         )
@@ -314,6 +316,7 @@ class TestAgentNodeExecutorBehavior:
                 }
             ],
             user_id="user-1",
+            workflow_run_id=run.id,
             max_turns=5,
             user_locale="en",
         )
@@ -529,6 +532,7 @@ class TestAgentNodeExecutorBehavior:
             files=[{"url": "document"}, {"url": "plain file"}],
             user_id="user-1",
             max_turns=4,
+            workflow_run_id=run.id,
             user_locale="en",
         )
 

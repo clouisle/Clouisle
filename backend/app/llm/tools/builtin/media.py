@@ -309,6 +309,7 @@ async def normalize_image_generation_response(
     team_id: UUID | None = None,
     created_by_id: UUID | None = None,
     conversation_id: UUID | None = None,
+    workflow_run_id: UUID | None = None,
 ) -> ImageGenerationResponse | None:
     if response is None:
         return None
@@ -320,6 +321,7 @@ async def normalize_image_generation_response(
             team_id=team_id,
             created_by_id=created_by_id,
             conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
         )
         if normalized_image is None:
             continue
@@ -336,6 +338,11 @@ async def normalize_image_generation_response(
 
 async def normalize_video_generation_response(
     response: VideoGenerationResponse | None,
+    *,
+    team_id: UUID | None = None,
+    created_by_id: UUID | None = None,
+    conversation_id: UUID | None = None,
+    workflow_run_id: UUID | None = None,
 ) -> VideoGenerationResponse | None:
     if response is None:
         return None
@@ -343,7 +350,13 @@ async def normalize_video_generation_response(
     return VideoGenerationResponse(
         task_id=response.task_id,
         status=response.status,
-        video=await media_asset_service.normalize_video(response.video),
+        video=await media_asset_service.normalize_video(
+            response.video,
+            team_id=team_id,
+            created_by_id=created_by_id,
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
+        ),
         progress=response.progress,
         error=response.error,
         model=response.model,
@@ -481,6 +494,7 @@ async def generate_image(
     user: Any | None = None,
     current_images: list[Any] | None = None,
     conversation_id: Any = None,
+    workflow_run_id: Any = None,
 ) -> dict[str, Any]:
     """Generate images through the unified model manager."""
     resolved_model_ref: str | None = None
@@ -555,6 +569,7 @@ async def generate_image(
             team_id=getattr(agent, "team_id", None),
             created_by_id=getattr(user, "id", None),
             conversation_id=normalized_conversation_id,
+            workflow_run_id=UUID(str(workflow_run_id)) if workflow_run_id else None,
         )
         display_result = build_image_tool_result(
             prompt,
@@ -597,6 +612,9 @@ async def generate_video(
     extra_params: dict[str, Any] | None = None,
     agent: Any | None = None,
     current_images: list[Any] | None = None,
+    user: Any | None = None,
+    conversation_id: Any = None,
+    workflow_run_id: Any = None,
 ) -> dict[str, Any]:
     """Generate videos through the unified model manager."""
     resolved_model_ref: str | None = None
@@ -657,7 +675,13 @@ async def generate_video(
                 if _normalize_status(response.status) not in PENDING_VIDEO_STATUSES:
                     break
 
-        response = await normalize_video_generation_response(response)
+        response = await normalize_video_generation_response(
+            response,
+            team_id=getattr(agent, "team_id", None),
+            created_by_id=getattr(user, "id", None),
+            conversation_id=UUID(str(conversation_id)) if conversation_id else None,
+            workflow_run_id=UUID(str(workflow_run_id)) if workflow_run_id else None,
+        )
         display_result = build_video_tool_result(
             prompt,
             response,

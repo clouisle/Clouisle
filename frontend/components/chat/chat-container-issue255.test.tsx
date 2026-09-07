@@ -44,6 +44,7 @@ mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for(
 mock.module('next-intl', () => ({
   useTranslations: () => (key: string, values?: Record<string, unknown>) => `${key}:${values?.count ?? ''}`,
 }))
+mock.module('sonner', () => ({ toast: { error: () => {} } }))
 mock.module('lucide-react', () => ({
   ArrowDown: (props: Record<string, unknown>) => jsx('arrow-down', props),
   ChevronDown: (props: Record<string, unknown>) => jsx('chevron-down', props),
@@ -58,6 +59,7 @@ mock.module('lucide-react', () => ({
   FileType: (props: Record<string, unknown>) => jsx('file-type', props),
   FileVideo: (props: Record<string, unknown>) => jsx('file-video', props),
   Link: (props: Record<string, unknown>) => jsx('link', props),
+  Package: (props: Record<string, unknown>) => jsx('package', props),
 }))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/components/ui/button', () => ({ Button: (props: Record<string, unknown>) => jsx('button', props) }))
