@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { DocxPreview } from './docx-preview'
 
 const mockImportDocxFile = mock(() => Promise.resolve())
+const mockRevealPage = mock(() => {})
 
 mock.module('@extend-ai/react-docx', () => ({
   useDocxEditor: () => ({
@@ -15,18 +16,65 @@ mock.module('@extend-ai/react-docx', () => ({
     importError: null,
     currentPage: 1,
     totalPages: 3,
+    revealPage: mockRevealPage,
   }),
-  DocxEditorViewer: (props: Record<string, unknown>) => <div data-testid="docx-viewer" {...props} />,
+  useDocxPageThumbnails: () => ({
+    thumbnails: [
+      {
+        pageIndex: 0,
+        pageNumber: 1,
+        widthPx: 100,
+        heightPx: 140,
+        pixelWidthPx: 200,
+        pixelHeightPx: 280,
+        scale: 0.12,
+        paint: mock(() => true),
+      },
+      {
+        pageIndex: 1,
+        pageNumber: 2,
+        widthPx: 100,
+        heightPx: 140,
+        pixelWidthPx: 200,
+        pixelHeightPx: 280,
+        scale: 0.12,
+        paint: mock(() => true),
+      },
+    ],
+  }),
+  DocxEditorViewer: (props: Record<string, unknown>) => {
+    const safeProps = Object.fromEntries(
+      Object.entries(props).filter(([key]) => !key.startsWith('page') && key !== 'editor')
+    )
+    return <div data-testid="docx-viewer" {...safeProps} />
+  },
 }))
+
+class TestResizeObserver {
+  private readonly callback: ResizeObserverCallback
+
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback
+  }
+
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  trigger() {
+    this.callback([], this as unknown as ResizeObserver)
+  }
+}
 
 const window = new Window({ url: 'http://localhost' })
 Object.assign(globalThis, {
   window,
   document: window.document,
   navigator: window.navigator,
+  Element: window.Element,
   HTMLElement: window.HTMLElement,
   Node: window.Node,
   Event: window.Event,
+  ResizeObserver: TestResizeObserver as unknown as typeof ResizeObserver,
 })
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -44,12 +92,13 @@ function render(element: React.ReactElement) {
   return container
 }
 
-test('renders DocxPreview with toolbar and handles zoom actions', async () => {
+test('renders DocxPreview with unified toolbar, wheel zoom support, and thumbnail rail', async () => {
   const blob = new Blob(['docx-mock-content'], {
     type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   })
   const onError = mock(() => {})
   let container!: HTMLDivElement
+
   await act(async () => {
     container = render(
       <DocxPreview
@@ -60,7 +109,9 @@ test('renders DocxPreview with toolbar and handles zoom actions', async () => {
           parseError: 'Parse error',
           zoomIn: 'Zoom in',
           zoomOut: 'Zoom out',
-          zoomReset: 'Reset zoom',
+          zoomReset: 'Fit to width',
+          toggleThumbnails: 'Toggle thumbnails',
+          fitToWidth: 'Fit to width',
         }}
         onError={onError}
       />
@@ -69,9 +120,10 @@ test('renders DocxPreview with toolbar and handles zoom actions', async () => {
   })
 
   expect(container.textContent).toContain('quarterly-report.docx')
-  expect(container.textContent).toContain('1 / 3')
-  expect(container.textContent).toContain('100%')
+  expect(container.textContent).toContain('1/3')
+  expect(container.textContent).toContain('Fit')
   expect(container.querySelector('[data-testid="docx-viewer"]')).toBeTruthy()
+  expect(container.querySelector('[data-testid="docx-thumbnail-sidebar"]')).toBeTruthy()
 
   const zoomInBtn = container.querySelector('button[aria-label="Zoom in"]') as HTMLButtonElement
   const zoomOutBtn = container.querySelector('button[aria-label="Zoom out"]') as HTMLButtonElement
@@ -87,6 +139,65 @@ test('renders DocxPreview with toolbar and handles zoom actions', async () => {
     await Bun.sleep(1)
   })
   expect(container.textContent).toContain('100%')
+
+  const resetFitBtn = container.querySelector('button[aria-label="Fit to width"]') as HTMLButtonElement
+  expect(resetFitBtn).toBeTruthy()
+  await act(async () => {
+    resetFitBtn?.click()
+    await Bun.sleep(1)
+  })
+  expect(container.textContent).toContain('Fit')
+
+  // Test Wheel Zoom with metaKey / ctrlKey
+  const viewport = container.querySelector('[data-testid="docx-viewport"]') as HTMLDivElement
+  await act(async () => {
+    const wheelEvent = new window.Event('wheel') as unknown as WheelEvent
+    Object.assign(wheelEvent, { deltaY: -100, metaKey: true, ctrlKey: false, deltaMode: 0, preventDefault: () => {} })
+    viewport.dispatchEvent(wheelEvent)
+    await Bun.sleep(1)
+  })
+  expect(container.textContent).not.toContain('(Fit)')
+})
+
+test('supports thumbnail sidebar toggle and page selection', async () => {
+  const blob = new Blob(['docx-mock-content'])
+  let container!: HTMLDivElement
+
+  await act(async () => {
+    container = render(
+      <DocxPreview
+        blob={blob}
+        labels={{
+          loading: 'Loading...',
+          parseError: 'Error',
+          toggleThumbnails: 'Toggle thumbnails',
+        }}
+      />
+    )
+    await Bun.sleep(20)
+  })
+
+  expect(container.querySelector('[data-testid="docx-thumbnail-sidebar"]')).toBeTruthy()
+
+  const toggleBtn = container.querySelector('button[aria-label="Toggle thumbnails"]') as HTMLButtonElement
+  await act(async () => {
+    toggleBtn?.click()
+    await Bun.sleep(1)
+  })
+  expect(container.querySelector('[data-testid="docx-thumbnail-sidebar"]')).toBeNull()
+
+  await act(async () => {
+    toggleBtn?.click()
+    await Bun.sleep(1)
+  })
+  expect(container.querySelector('[data-testid="docx-thumbnail-sidebar"]')).toBeTruthy()
+
+  const page2Btn = container.querySelector('button[aria-label="Page 2"]') as HTMLButtonElement
+  await act(async () => {
+    page2Btn?.click()
+    await Bun.sleep(1)
+  })
+  expect(mockRevealPage).toHaveBeenCalledWith(1)
 })
 
 test('triggers onError on docx import failure', async () => {
