@@ -38,6 +38,24 @@ function cellToText(value: unknown): string {
   }
   return String(value)
 }
+function isBinarySpreadsheet(bytes: Uint8Array): boolean {
+  if (bytes.length < 4) return false
+  // Zip based format: xlsx, ods (starts with PK..: 0x50, 0x4B)
+  if (bytes[0] === 0x50 && bytes[1] === 0x4B) return true
+  // Compound File Binary Format: legacy xls (starts with 0xD0, 0xCF, 0x11, 0xE0)
+  if (bytes[0] === 0xD0 && bytes[1] === 0xCF && bytes[2] === 0x11 && bytes[3] === 0xE0) return true
+  return false
+}
+
+function decodeSpreadsheetText(bytes: Uint8Array): string {
+  try {
+    const utf8Decoder = new TextDecoder('utf-8', { fatal: true })
+    return utf8Decoder.decode(bytes)
+  } catch {
+    const gbkDecoder = new TextDecoder('gb18030')
+    return gbkDecoder.decode(bytes)
+  }
+}
 
 export function SpreadsheetPreview({ blob, labels }: SpreadsheetPreviewProps) {
   const [sheets, setSheets] = React.useState<SpreadsheetSheet[]>([])
@@ -52,9 +70,12 @@ export function SpreadsheetPreview({ blob, labels }: SpreadsheetPreviewProps) {
     setActiveSheet(0)
     setHasError(false)
     void blob.arrayBuffer()
-      .then((data) => import('xlsx').then((XLSX) => ({ data, XLSX })))
-      .then(({ data, XLSX }) => {
-        const workbook = XLSX.read(data, { type: 'array', cellDates: true, cellText: true })
+      .then((buffer) => import('xlsx').then((XLSX) => ({ buffer, XLSX })))
+      .then(({ buffer, XLSX }) => {
+        const bytes = new Uint8Array(buffer)
+        const workbook = isBinarySpreadsheet(bytes)
+          ? XLSX.read(buffer, { type: 'array', cellDates: true, cellText: true })
+          : XLSX.read(decodeSpreadsheetText(bytes), { type: 'string', cellDates: true, cellText: true })
         const parsedSheets = workbook.SheetNames.map((name) => {
           const sheet = workbook.Sheets[name]
           const range = sheet?.['!ref'] ? XLSX.utils.decode_range(sheet['!ref']) : null
@@ -123,50 +144,75 @@ export function SpreadsheetPreview({ blob, labels }: SpreadsheetPreviewProps) {
 
   const sheet = sheets[activeSheet]
   return (
-    <div className="flex w-max flex-col">
-      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b bg-muted/20 px-3 py-2">
-        <span className="mr-2 shrink-0 text-xs font-medium text-muted-foreground">{labels.sheet}</span>
-        {sheets.map((item, index) => (
-          <button
-            key={`${item.name}-${index}`}
-            type="button"
-            className={`shrink-0 rounded-md px-2.5 py-1 text-xs transition-colors ${index === activeSheet ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground hover:bg-background/70'}`}
-            onClick={() => setActiveSheet(index)}
-          >
-            {item.name}
-          </button>
-        ))}
-      </div>
-      <div className="p-3">
+    <div className="flex w-max min-w-full flex-col">
+      {sheets.length > 1 && (
+        <div
+          data-no-drag
+          className="sticky left-0 top-0 z-20 flex shrink-0 items-center gap-2 border-b bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+        >
+          <div className="inline-flex h-8 items-center rounded-lg bg-muted p-1 text-muted-foreground">
+            {sheets.map((item, index) => {
+              const isActive = index === activeSheet
+              return (
+                <button
+                  key={`${item.name}-${index}`}
+                  type="button"
+                  className={`inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 ${
+                    isActive
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'hover:bg-background/50 hover:text-foreground'
+                  }`}
+                  onClick={() => setActiveSheet(index)}
+                >
+                  {item.name}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      <div className="p-4">
         {sheet.truncated && (
           <p className="mb-3 text-xs text-muted-foreground">
             {labels.rowsLimited({ rows: MAX_ROWS, columns: MAX_COLUMNS })}
           </p>
         )}
-        <table className="w-max border-collapse text-xs">
-          <thead>
-            <tr>
-              <th className="sticky top-0 z-10 border bg-muted px-2 py-1 text-right font-medium text-muted-foreground">#</th>
-              {Array.from({ length: sheet.visibleColumnCount }, (_, index) => (
-                <th key={index} className="sticky top-0 z-10 border bg-muted px-2 py-1 text-left font-medium text-muted-foreground">
-                  {index + 1}
+        <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
+          <table className="w-max border-collapse text-xs">
+            <thead>
+              <tr className="border-b bg-muted/50 transition-colors">
+                <th className="sticky top-0 z-10 border-r bg-muted/80 px-3 py-2 text-right font-mono text-[11px] font-medium text-muted-foreground select-none">
+                  #
                 </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sheet.rows.map((row, rowIndex) => (
-              <tr key={rowIndex}>
-                <th className="border bg-muted/50 px-2 py-1 text-right font-medium text-muted-foreground">{rowIndex + 1}</th>
-                {Array.from({ length: sheet.visibleColumnCount }, (_, columnIndex) => (
-                  <td key={columnIndex} className="max-w-80 whitespace-pre-wrap break-words border px-2 py-1 align-top">
-                    {row[columnIndex] || ''}
-                  </td>
+                {Array.from({ length: sheet.visibleColumnCount }, (_, index) => (
+                  <th
+                    key={index}
+                    className="sticky top-0 z-10 border-r last:border-r-0 bg-muted/80 px-3 py-2 text-left font-mono text-[11px] font-medium text-muted-foreground select-none"
+                  >
+                    {index + 1}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-border/60">
+              {sheet.rows.map((row, rowIndex) => (
+                <tr key={rowIndex} className="transition-colors hover:bg-muted/30">
+                  <th className="border-r bg-muted/30 px-3 py-1.5 text-right font-mono text-[11px] font-normal text-muted-foreground select-none">
+                    {rowIndex + 1}
+                  </th>
+                  {Array.from({ length: sheet.visibleColumnCount }, (_, columnIndex) => (
+                    <td
+                      key={columnIndex}
+                      className="max-w-80 whitespace-pre-wrap break-words border-r last:border-r-0 px-3 py-1.5 align-top text-foreground/90"
+                    >
+                      {row[columnIndex] || ''}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )
