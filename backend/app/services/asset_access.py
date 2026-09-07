@@ -54,7 +54,12 @@ async def authorize_protected_asset(
                 conversation, user
             ):
                 continue
-            await check_api_key_agent_access(api_key, conversation.agent_id)
+            try:
+                await check_api_key_agent_access(api_key, conversation.agent_id)
+            except BusinessError as error:
+                if error.msg_key != "api_key_no_agent_access":
+                    raise
+                continue
             return asset
 
         if ref.scope_type == AssetScopeType.WORKFLOW_RUN:
@@ -67,7 +72,12 @@ async def authorize_protected_asset(
                 continue
             if not await _can_access_workflow_run(run, user):
                 continue
-            await check_api_key_workflow_access(api_key, run.workflow_id)
+            try:
+                await check_api_key_workflow_access(api_key, run.workflow_id)
+            except BusinessError as error:
+                if error.msg_key != "api_key_no_workflow_access":
+                    raise
+                continue
             return asset
 
     raise BusinessError(
