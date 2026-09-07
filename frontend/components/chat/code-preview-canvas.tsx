@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { Check, Copy, Download, Expand, FileText, Loader2, ZoomIn, ZoomOut, X } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { useTheme } from 'next-themes'
 import { Streamdown } from 'streamdown'
 import type { MermaidConfig } from 'mermaid'
@@ -647,6 +647,7 @@ function ChatFilePreviewCanvas({
   isResizing?: boolean
 }) {
   const t = useTranslations('chat.message')
+  const locale = useLocale()
   const assetToken = useAuthenticatedAssetToken()
 
   const authenticatedUrl = file.url ? getAuthenticatedApiAssetUrl(file.url) : null
@@ -659,6 +660,7 @@ function ChatFilePreviewCanvas({
     <FilePreviewPanel
       file={file}
       loadFile={authenticatedUrl ? loadFile : undefined}
+      locale={locale}
       isResizing={isResizing}
       onClose={onClose}
       labels={{
@@ -667,6 +669,7 @@ function ChatFilePreviewCanvas({
         unavailable: t('artifactPreviewUnavailable'),
         loadError: t('artifactPreviewLoadError'),
         permissionDenied: t('artifactPreviewPermissionDenied'),
+        unauthorized: t('artifactPreviewUnauthorized'),
         tooLarge: t('artifactPreviewTooLarge'),
         download: t('mermaidDownloadLabel'),
         close: t('closeCodePreview'),
@@ -676,6 +679,10 @@ function ChatFilePreviewCanvas({
         zoomIn: t('filePreviewZoomIn'),
         zoomOut: t('filePreviewZoomOut'),
         fitToView: t('filePreviewFitToView'),
+        toggleThumbnails: t('filePreviewToggleThumbnails'),
+        thumbnails: t('filePreviewThumbnails'),
+        fitToWidth: t('filePreviewFitToWidth'),
+        pageNumber: ({ page }) => t('filePreviewPageNumber', { page }),
       }}
     />
   )

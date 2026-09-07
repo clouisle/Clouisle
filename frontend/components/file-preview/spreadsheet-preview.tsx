@@ -8,8 +8,10 @@ interface SpreadsheetPreviewLabels {
   sheet: string
   rowsLimited: (values: { rows: number; columns: number }) => string
   parseError: string
+  zoomIn?: string
+  zoomOut?: string
+  zoomReset?: string
 }
-
 interface SpreadsheetPreviewProps {
   blob: Blob
   filename?: string
@@ -95,7 +97,90 @@ export function SpreadsheetPreview({ blob, filename, labels, onError }: Spreadsh
         className="h-full w-full border-0"
         rounded={false}
         readOnly
-        showDefaultToolbar
+        showDefaultToolbar={false}
+        toolbar={(controller) => {
+          const {
+            activeTabIndex,
+            canZoomIn,
+            canZoomOut,
+            defaultZoomScale,
+            displayFileName,
+            resetZoom,
+            setActiveTabIndex,
+            tabs,
+            zoomIn,
+            zoomOut,
+            zoomScale,
+          } = controller
+
+          return (
+            <div className="flex flex-col border-b bg-background">
+              <div className="flex min-h-12 items-center justify-between gap-3 px-4">
+                <div className="min-w-0 truncate text-xs font-semibold text-foreground/90">
+                  {displayFileName}
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center overflow-hidden rounded-lg border bg-background shadow-xs">
+                    <button
+                      type="button"
+                      disabled={!canZoomOut}
+                      onClick={zoomOut}
+                      className="inline-flex h-8 w-8 items-center justify-center border-r bg-transparent text-sm font-semibold text-foreground transition-colors hover:bg-muted disabled:cursor-default disabled:text-muted-foreground disabled:hover:bg-transparent"
+                      aria-label={labels.zoomOut || 'Zoom out'}
+                    >
+                      -
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetZoom}
+                      className="inline-flex h-8 min-w-15 items-center justify-center px-2 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
+                      style={{
+                        background: Math.round(zoomScale) === Math.round(defaultZoomScale) ? 'transparent' : 'var(--muted)',
+                      }}
+                      aria-label={labels.zoomReset || 'Reset zoom'}
+                    >
+                      {Math.round(zoomScale)}%
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canZoomIn}
+                      onClick={zoomIn}
+                      className="inline-flex h-8 w-8 items-center justify-center border-l bg-transparent text-sm font-semibold text-foreground transition-colors hover:bg-muted disabled:cursor-default disabled:text-muted-foreground disabled:hover:bg-transparent"
+                      aria-label={labels.zoomIn || 'Zoom in'}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+              {tabs.length > 1 && (
+                <div className="overflow-x-auto border-t bg-muted/20 px-3 py-1.5">
+                  <div className="inline-flex items-center gap-1 rounded-lg border bg-muted/40 p-0.5" role="tablist" aria-label="Workbook sheets">
+                    {tabs.map((tab, index) => {
+                      const selected = index === activeTabIndex
+                      return (
+                        <button
+                          key={tab.name}
+                          type="button"
+                          role="tab"
+                          aria-selected={selected}
+                          onClick={() => setActiveTabIndex(index)}
+                          className={`rounded-md px-3 py-1 text-xs font-medium transition-all ${
+                            selected
+                              ? 'bg-background text-foreground shadow-xs font-semibold'
+                              : 'text-muted-foreground hover:bg-background/50 hover:text-foreground'
+                          }`}
+                        >
+                          {tab.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        }}
       />
     </div>
   )

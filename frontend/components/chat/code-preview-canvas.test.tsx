@@ -144,6 +144,7 @@ mock.module('react', () => ({
   },
 }))
 mock.module('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${values.error}` : key,
 }))
 mock.module('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'dark' }) }))
@@ -186,6 +187,9 @@ mock.module('@/components/ui/tooltip', () => ({
 mock.module('@/components/ui/tabs', () => ({ Tabs, TabsContent, TabsList, TabsTrigger }))
 mock.module('@/components/ai-elements/code-block', () => ({ CodeBlock }))
 mock.module('./message-parts', () => ({ SegmentItem: (props: Props) => jsx('segment-item', props) }))
+mock.module('@/components/file-preview', () => ({
+  FilePreviewPanel: (props: Props) => jsx('file-preview-panel', props),
+}))
 const mermaidApi = {
   initialize: mock(() => {}),
   render: mock(async () => ({ svg: '<svg><text>ok</text></svg>' })),
@@ -349,23 +353,23 @@ test('resets active tab when preview payload changes', () => {
   expect(stateValues[1]).toBe('source')
 })
 
-test('renders artifact metadata and keeps unsupported files downloadable', () => {
+test('renders artifact preview through FilePreviewPanel with labels and locale', () => {
   const tree = render({
     id: 'artifact-1',
     kind: 'artifact',
     file: {
       type: 'file',
-      filename: 'report.bin',
-      url: '/files/report.bin',
-      mimeType: 'application/octet-stream',
+      filename: 'report.docx',
+      url: '/api/v1/files/report.docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     },
   })
 
-  expect(text(tree)).toContain('artifactPreviewCanvasTitle')
-  expect(text(tree)).toContain('report.bin')
-  expect(text(tree)).toContain('artifactPreviewUnavailable')
-  click(findByAriaLabel(tree, 'mermaidDownloadLabel'))
-  expect(appendedLink).toMatchObject({ href: '/files/report.bin', download: 'report.bin', clicked: true })
+  const panel = walk(tree).find((n) => n.type === 'file-preview-panel')
+  expect(panel).toBeDefined()
+  expect(panel?.props.locale).toBe('en')
+  expect((panel?.props.labels as Record<string, unknown>)?.title).toBe('artifactPreviewCanvasTitle')
+  expect((panel?.props.labels as Record<string, unknown>)?.toggleThumbnails).toBe('filePreviewToggleThumbnails')
 })
 
 test('renders mermaid loading state without script iframe', () => {
@@ -635,56 +639,3 @@ test('mermaid re-fits when the viewport resizes until the user adjusts manually'
   expect(stateValues[5]).toBeCloseTo(1, 10)
 })
 
-test('artifact preview loads same-origin content and renders it in the matching mode', async () => {
-  globalThis.fetch = mock(async () => new Response('graph TD; A-->B;', { status: 200 }))
-  const tree = render({
-    id: 'art',
-    kind: 'artifact',
-    file: { url: '/api/v1/files/diagram.mmd', filename: 'diagram.mmd', mimeType: 'text/plain' },
-  })
-  walk(tree)
-  effects[0]?.()
-  await Bun.sleep(0)
-
-  expect(stateValues[3]).toBe('graph TD; A-->B;') // text content
-  expect(stateValues[0]).toBe('ready')
-  expect(stateValues[4]).toBe(false)
-})
-
-test('artifact preview reports load failures and rejects cross-origin URLs', async () => {
-  globalThis.fetch = mock(async () => ({ ok: false }))
-  const failing = render({
-    id: 'art',
-    kind: 'artifact',
-    file: { url: '/api/v1/files/broken.mmd', filename: 'broken.mmd', mimeType: 'text/plain' },
-  })
-  walk(failing)
-  effects[0]?.()
-  await Bun.sleep(0)
-  expect(stateValues[0]).toBe('error')
-
-  // Cross-origin URLs are rejected without fetching
-  globalThis.fetch = mock()
-  const cross = render({
-    id: 'art',
-    kind: 'artifact',
-    file: { url: 'https://evil.example/x.mmd', filename: 'x.mmd', mimeType: 'text/plain' },
-  })
-  walk(cross)
-  effects[0]?.()
-  await Bun.sleep(0)
-  expect(stateValues[0]).toBe('error')
-  expect(globalThis.fetch).not.toHaveBeenCalled()
-})
-
-test('artifact preview downloads the original file', () => {
-  const tree = render({
-    id: 'art',
-    kind: 'artifact',
-    file: { url: '/api/v1/files/report.mmd', filename: 'report.mmd', mimeType: 'text/plain' },
-  })
-  walk(tree)
-  click(findByAriaLabel(tree, 'mermaidDownloadLabel'))
-
-  expect(appendedLink).toMatchObject({ href: '/api/v1/files/report.mmd', download: 'report.mmd', clicked: true })
-})

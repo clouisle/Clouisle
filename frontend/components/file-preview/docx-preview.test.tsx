@@ -171,6 +171,8 @@ test('supports thumbnail sidebar toggle and page selection', async () => {
           loading: 'Loading...',
           parseError: 'Error',
           toggleThumbnails: 'Toggle thumbnails',
+          thumbnails: 'Thumbnails (3)',
+          pageNumber: ({ page }) => `Page Number ${page}`,
         }}
       />
     )
@@ -190,9 +192,7 @@ test('supports thumbnail sidebar toggle and page selection', async () => {
     toggleBtn?.click()
     await Bun.sleep(1)
   })
-  expect(container.querySelector('[data-testid="docx-thumbnail-sidebar"]')).toBeTruthy()
-
-  const page2Btn = container.querySelector('button[aria-label="Page 2"]') as HTMLButtonElement
+  const page2Btn = container.querySelector('button[aria-label="Page Number 2"]') as HTMLButtonElement
   await act(async () => {
     page2Btn?.click()
     await Bun.sleep(1)

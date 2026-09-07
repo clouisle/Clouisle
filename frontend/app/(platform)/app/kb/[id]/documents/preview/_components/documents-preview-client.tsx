@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
@@ -56,6 +56,7 @@ interface DocumentPreviewState {
 
 export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: DocumentsPreviewClientProps) {
   const t = useTranslations('knowledgeBases')
+  const locale = useLocale()
   const router = useRouter()
 
   // 知识库信息
@@ -635,12 +636,15 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
                     size: state.document.file_size,
                   }}
                   loadFile={loadActiveOriginalFile}
+                  locale={locale}
                   onClose={() => setOriginalPreviewDocId(null)}
                   labels={{
                     title: t('previewOriginalTitle'),
                     loading: t('previewOriginalLoading'),
                     unavailable: t('previewOriginalUnavailable'),
                     loadError: t('previewOriginalLoadError'),
+                    permissionDenied: t('previewOriginalPermissionDenied'),
+                    unauthorized: t('previewOriginalUnauthorized'),
                     tooLarge: t('previewOriginalTooLarge'),
                     download: t('downloadOriginal'),
                     close: t('previewOriginalClose'),
@@ -650,6 +654,10 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
                     zoomIn: t('previewOriginalZoomIn'),
                     zoomOut: t('previewOriginalZoomOut'),
                     fitToView: t('previewOriginalFitToView'),
+                    toggleThumbnails: t('previewOriginalToggleThumbnails'),
+                    thumbnails: t('previewOriginalThumbnails'),
+                    fitToWidth: t('previewOriginalFitToWidth'),
+                    pageNumber: ({ page }) => t('previewOriginalPageNumber', { page }),
                   }}
                 />
               )

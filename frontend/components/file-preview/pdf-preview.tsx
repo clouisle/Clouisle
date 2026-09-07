@@ -5,6 +5,7 @@ import EmbedPDF, { defineChrome, group, item, custom } from '@embedpdf/viewer'
 
 interface PdfPreviewProps {
   blob: Blob
+  locale?: string
   onError?: () => void
 }
 
@@ -72,8 +73,7 @@ const readOnlyPdfChrome = defineChrome({
     },
   },
 })
-
-export function PdfPreview({ blob, onError }: PdfPreviewProps) {
+export function PdfPreview({ blob, locale, onError }: PdfPreviewProps) {
   const containerRef = React.useRef<HTMLDivElement>(null)
 
   React.useEffect(() => {
@@ -89,6 +89,7 @@ export function PdfPreview({ blob, onError }: PdfPreviewProps) {
       element = EmbedPDF.init({
         target: container,
         src: objectUrl,
+        locale: locale || 'auto',
         disabledCategories: ['annotate', 'shapes', 'insert', 'form', 'redact', 'comment'],
         chrome: readOnlyPdfChrome,
       })
@@ -107,7 +108,7 @@ export function PdfPreview({ blob, onError }: PdfPreviewProps) {
         container.replaceChildren()
       }
     }
-  }, [blob, onError])
+  }, [blob, locale, onError])
 
   return (
     <div className="h-full w-full overflow-hidden bg-muted/10">

@@ -54,6 +54,13 @@ test('renders workbook sheets and handles loading gracefully', async () => {
     await Bun.sleep(10)
   })
   expect(container.querySelector('div')).toBeTruthy()
+  // Ensure download button inside spreadsheet viewer is absent (download is owned by FilePreviewPanel header)
+  expect(container.querySelector('button[aria-label="Download workbook"]')).toBeNull()
+  expect(container.querySelector('button[title="Download workbook"]')).toBeNull()
+  expect(container.querySelector('button[aria-label="Zoom in"]')).toBeTruthy()
+  expect(container.querySelector('button[aria-label="Zoom out"]')).toBeTruthy()
+  expect(container.querySelector('button[aria-label="Reset zoom"]')).toBeTruthy()
+  expect(container.querySelector('button[aria-label="Reset zoom"]')?.textContent).toContain('100%')
 })
 
 test('decodes GBK / GB18030 encoded CSV without garbled characters', async () => {

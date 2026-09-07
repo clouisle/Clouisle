@@ -27,12 +27,17 @@ export interface FilePreviewLabels {
   zoomIn: string
   zoomOut: string
   fitToView: string
+  toggleThumbnails?: string
+  thumbnails?: string
+  fitToWidth?: string
+  pageNumber?: (values: { page: number }) => string
 }
 
 export interface FilePreviewPanelProps {
   file: PreviewFile
   labels?: Partial<FilePreviewLabels>
   loadFile?: () => Promise<Blob>
+  locale?: string
   onClose?: () => void
   isResizing?: boolean
   maxPreviewBytes?: number
@@ -56,6 +61,10 @@ const DEFAULT_LABELS: FilePreviewLabels = {
   zoomIn: 'Zoom in',
   zoomOut: 'Zoom out',
   fitToView: 'Fit to view',
+  toggleThumbnails: 'Toggle thumbnails',
+  thumbnails: 'Thumbnails',
+  fitToWidth: 'Fit to width',
+  pageNumber: ({ page }) => `Page ${page}`,
 }
 const IFRAME_PROCESS_ISOLATION = { credentialless: '' } as unknown as IframeHTMLAttributes<HTMLIFrameElement>
 
@@ -199,6 +208,7 @@ export function FilePreviewPanel({
   file,
   labels,
   loadFile,
+  locale,
   onClose,
   isResizing = false,
   maxPreviewBytes = DEFAULT_MAX_PREVIEW_BYTES,
@@ -402,7 +412,7 @@ export function FilePreviewPanel({
   } else if (mode === 'audio' && previewUrl) {
     body = <div className="flex h-full items-center justify-center p-8"><audio src={previewUrl} controls className="w-full max-w-xl" /></div>
   } else if (mode === 'pdf' && blob) {
-    body = <PdfPreview blob={blob} onError={handleDocxError} />
+    body = <PdfPreview blob={blob} locale={locale} onError={handleDocxError} />
   } else if (mode === 'html' && previewUrl) {
     body = isResizing
       ? <div data-preview-resize-placeholder className="flex h-full items-center justify-center text-sm text-muted-foreground">{resolvedLabels.loading}</div>
@@ -424,6 +434,10 @@ export function FilePreviewPanel({
           zoomIn: resolvedLabels.zoomIn,
           zoomOut: resolvedLabels.zoomOut,
           zoomReset: resolvedLabels.fitToView,
+          toggleThumbnails: resolvedLabels.toggleThumbnails,
+          thumbnails: resolvedLabels.thumbnails,
+          fitToWidth: resolvedLabels.fitToWidth,
+          pageNumber: resolvedLabels.pageNumber,
         }}
         onError={handleDocxError}
       />
@@ -440,6 +454,9 @@ export function FilePreviewPanel({
           sheet: resolvedLabels.sheet,
           rowsLimited: resolvedLabels.rowsLimited,
           parseError: resolvedLabels.parseError,
+          zoomIn: resolvedLabels.zoomIn,
+          zoomOut: resolvedLabels.zoomOut,
+          zoomReset: resolvedLabels.fitToView,
         }}
         onError={handleDocxError}
       />

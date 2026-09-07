@@ -44,11 +44,12 @@ export interface DocxPreviewLabels {
   zoomOut?: string
   zoomReset?: string
   toggleThumbnails?: string
+  thumbnails?: string
   page?: string
+  pageNumber?: (values: { page: number }) => string
   of?: string
   fitToWidth?: string
 }
-
 export interface DocxPreviewProps {
   blob: Blob
   filename?: string
@@ -78,10 +79,12 @@ function ToolbarTooltip({
 function DocxThumbnailItemCard({
   thumbnail,
   isActive,
+  label,
   onSelect,
 }: {
   thumbnail: DocxPageThumbnailItem
   isActive: boolean
+  label: string
   onSelect: () => void
 }) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null)
@@ -100,7 +103,7 @@ function DocxThumbnailItemCard({
         'group flex flex-col items-center gap-1.5 p-1.5 rounded-lg text-left transition-all hover:bg-accent/60 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
         isActive ? 'bg-accent text-accent-foreground font-semibold ring-1 ring-border' : 'text-muted-foreground'
       )}
-      aria-label={`Page ${thumbnail.pageNumber}`}
+      aria-label={label}
     >
       <div className="relative overflow-hidden rounded-md border bg-background shadow-xs transition-shadow group-hover:shadow-sm">
         <canvas
@@ -411,7 +414,7 @@ export function DocxPreview({
               className="w-36 shrink-0 border-r bg-muted/20 flex flex-col overflow-hidden transition-[width] duration-150"
             >
               <div className="flex h-9 items-center justify-between border-b px-3 text-[11px] font-semibold text-muted-foreground">
-                <span>{labels?.page || 'Thumbnails'}</span>
+                <span>{labels?.thumbnails || labels?.page || 'Thumbnails'}</span>
                 <span className="tabular-nums">{totalPages}</span>
               </div>
               <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
@@ -421,6 +424,7 @@ export function DocxPreview({
                       key={t.pageIndex}
                       thumbnail={t}
                       isActive={activePageIndex === t.pageIndex}
+                      label={labels?.pageNumber?.({ page: t.pageNumber }) || `Page ${t.pageNumber}`}
                       onSelect={() => handleSelectPage(t.pageIndex)}
                     />
                   ))

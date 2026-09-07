@@ -29,10 +29,10 @@ function render(element: React.ReactElement) {
   return container
 }
 
-test('renders PdfPreview component with a target element', async () => {
+test('renders PdfPreview component with a target element and locale', async () => {
   const blob = new Blob(['%PDF-1.4 mock content'], { type: 'application/pdf' })
   const onError = mock(() => {})
-  const container = render(<PdfPreview blob={blob} onError={onError} />)
+  const container = render(<PdfPreview blob={blob} locale="zh" onError={onError} />)
 
   await act(async () => {
     await Bun.sleep(10)

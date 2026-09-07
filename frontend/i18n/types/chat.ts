@@ -183,6 +183,7 @@ export type ChatMessages = {
       artifactPreviewUnavailable: string
       artifactPreviewLoadError: string
       artifactPreviewPermissionDenied: string
+      artifactPreviewUnauthorized: string
       artifactPreviewTooLarge: string
       filePreviewSheet: string
       filePreviewRowsLimited: string
@@ -190,6 +191,10 @@ export type ChatMessages = {
       filePreviewZoomIn: string
       filePreviewZoomOut: string
       filePreviewFitToView: string
+      filePreviewToggleThumbnails: string
+      filePreviewThumbnails: string
+      filePreviewFitToWidth: string
+      filePreviewPageNumber: string
       previewScriptsEnabled: string
       linkSafetyTitle: string
       linkSafetyDescription: string
