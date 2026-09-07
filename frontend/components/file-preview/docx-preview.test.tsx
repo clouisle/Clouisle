@@ -52,17 +52,22 @@ mock.module('@extend-ai/react-docx', () => ({
 }))
 
 class TestResizeObserver {
+  static latest: TestResizeObserver | null = null
   private readonly callback: ResizeObserverCallback
 
   constructor(callback: ResizeObserverCallback) {
     this.callback = callback
+    TestResizeObserver.latest = this
   }
 
   observe() {}
   unobserve() {}
   disconnect() {}
-  trigger() {
-    this.callback([], this as unknown as ResizeObserver)
+  trigger(width: number) {
+    this.callback(
+      [{ contentRect: { width } } as ResizeObserverEntry],
+      this as unknown as ResizeObserver,
+    )
   }
 }
 
@@ -161,6 +166,25 @@ test('renders DocxPreview with unified toolbar, wheel zoom support, and thumbnai
     await Bun.sleep(1)
   })
   expect(container.textContent).not.toContain('(Fit)')
+})
+
+test('recalculates fit zoom from the resized viewport width', async () => {
+  const blob = new Blob(['docx-mock-content'])
+  let container!: HTMLDivElement
+
+  await act(async () => {
+    container = render(<DocxPreview blob={blob} />)
+    await Bun.sleep(10)
+  })
+
+  const viewport = container.querySelector('[data-testid="docx-viewport"]') as HTMLDivElement
+  await act(async () => {
+    TestResizeObserver.latest?.trigger(1000)
+    await Bun.sleep(1)
+  })
+
+  expect(viewport).toBeTruthy()
+  expect(container.textContent).toContain('116% (Fit)')
 })
 
 test('supports thumbnail sidebar toggle and page selection', async () => {

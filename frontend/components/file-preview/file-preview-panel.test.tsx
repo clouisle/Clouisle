@@ -64,7 +64,6 @@ test('does not fall back to downloading a protected raw URL', async () => {
   expect(downloadButton.disabled).toBe(true)
 })
 
-
 test('loads text from a provided file loader and keeps it downloadable', async () => {
   const loadFile = mock(async () => new Blob(['hello preview'], { type: 'text/plain' }))
   const createObjectURL = mock(() => 'blob:preview')
@@ -108,6 +107,57 @@ test('loads an unsupported knowledge-base file so it remains downloadable', asyn
   expect(loadFile).toHaveBeenCalledTimes(1)
   expect(container.textContent).toContain('This file type cannot be previewed here')
   expect((container.querySelector('button[aria-label="Download"]') as HTMLButtonElement).disabled).toBe(false)
+})
+
+test('loads a same-origin text preview from its URL', async () => {
+  window.location.href = 'http://localhost/'
+  const originalFetch = globalThis.fetch
+  const originalWindowFetch = window.fetch
+  const fetchMock = mock(async () => new Response('remote preview', {
+    status: 200,
+    headers: { 'content-type': 'text/plain' },
+  }))
+  globalThis.fetch = fetchMock as unknown as typeof fetch
+  Object.assign(window, { fetch: fetchMock })
+
+  try {
+    const container = render(
+      <FilePreviewPanel
+        file={{ filename: 'remote.txt', mimeType: 'text/plain', url: '/api/v1/files/remote.txt' }}
+      />
+    )
+    await flush()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('remote preview')
+  } finally {
+    globalThis.fetch = originalFetch
+    Object.assign(window, { fetch: originalWindowFetch })
+  }
+})
+
+test('maps a URL preview 403 response to a permission error', async () => {
+  window.location.href = 'http://localhost/'
+  const originalFetch = globalThis.fetch
+  const originalWindowFetch = window.fetch
+  const fetchMock = mock(async () => new Response(null, { status: 403 }))
+  globalThis.fetch = fetchMock as unknown as typeof fetch
+  Object.assign(window, { fetch: fetchMock })
+
+  try {
+    const container = render(
+      <FilePreviewPanel
+        file={{ filename: 'restricted.txt', mimeType: 'text/plain', url: '/api/v1/files/restricted.txt' }}
+      />
+    )
+    await flush()
+
+    expect(container.textContent).toContain('You do not have permission')
+    expect((container.querySelector('button[aria-label="Download"]') as HTMLButtonElement).disabled).toBe(true)
+  } finally {
+    globalThis.fetch = originalFetch
+    Object.assign(window, { fetch: originalWindowFetch })
+  }
 })
 test('renders PDF using PdfPreview', async () => {
   const loadFile = mock(async () => new Blob(['pdf preview'], { type: 'application/pdf' }))
