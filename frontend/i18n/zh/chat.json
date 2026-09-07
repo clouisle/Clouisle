@@ -228,6 +228,7 @@
     "lightbox": {
       "zoomOut": "缩小 (-)",
       "zoomIn": "放大 (+)",
+      "rotate": "旋转 (R)",
       "download": "下载",
       "downloadFailed": "文件下载失败",
       "close": "关闭 (Esc)",

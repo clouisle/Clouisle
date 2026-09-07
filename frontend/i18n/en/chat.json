@@ -228,6 +228,7 @@
     "lightbox": {
       "zoomOut": "Zoom out (-)",
       "zoomIn": "Zoom in (+)",
+      "rotate": "Rotate (R)",
       "download": "Download",
       "downloadFailed": "Failed to download file",
       "close": "Close (Esc)",
