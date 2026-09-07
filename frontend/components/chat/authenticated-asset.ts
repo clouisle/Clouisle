@@ -8,16 +8,31 @@ type AuthenticatedAssetCacheEntry = {
 
 const MAX_AUTHENTICATED_ASSET_CACHE_SIZE = 100
 const authenticatedAssetCache = new Map<string, AuthenticatedAssetCacheEntry>()
+const authenticatedAssetTokenListeners = new Set<() => void>()
 
 let authenticatedAssetToken: string | null = null
 
 export function setAuthenticatedAssetToken(token: string | null): void {
+  if (authenticatedAssetToken === token) return
   authenticatedAssetToken = token
+  for (const listener of authenticatedAssetTokenListeners) listener()
+}
+
+function subscribeAuthenticatedAssetToken(listener: () => void): () => void {
+  authenticatedAssetTokenListeners.add(listener)
+  return () => authenticatedAssetTokenListeners.delete(listener)
+}
+
+function getAuthenticatedAssetToken(): string | null {
+  return authenticatedAssetToken || getDefaultAssetToken()
 }
 
 export function useAuthenticatedAssetToken(): string | null {
-  if (authenticatedAssetToken) return authenticatedAssetToken
-  return getDefaultAssetToken()
+  return React.useSyncExternalStore(
+    subscribeAuthenticatedAssetToken,
+    getAuthenticatedAssetToken,
+    getAuthenticatedAssetToken,
+  )
 }
 
 function getDefaultAssetToken(): string | null {
@@ -92,17 +107,44 @@ export function isBlockedAssetSrc(src: string): boolean {
     && !normalized.startsWith('data:image/')
     && !normalized.startsWith('data:video/')
 }
+export function isAllowedAssetDownloadUrl(src: string): boolean {
+  if (isBlockedAssetSrc(src)) return false
+  try {
+    const parsed = new URL(src, window.location.href)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'blob:'
+  } catch {
+    return false
+  }
+}
+
 export function getAuthenticatedApiAssetUrl(src: string): string | null {
   if (src.startsWith('/api/v1/')) return src
+
   try {
-    const parsed = new URL(src, typeof window !== 'undefined' ? window.location.origin : 'http://localhost')
-    if (parsed.pathname.startsWith('/api/v1/')) {
+    const parsed = new URL(
+      src,
+      typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+    )
+    if (!parsed.pathname.startsWith('/api/v1/')) return null
+
+    const browserOrigin = typeof window !== 'undefined' ? window.location.origin : null
+    if (parsed.origin === browserOrigin || parsed.origin === getConfiguredApiOrigin()) {
       return `${parsed.pathname}${parsed.search}`
     }
   } catch {
     return null
   }
   return null
+}
+
+function getConfiguredApiOrigin(): string | null {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL
+  if (!apiUrl) return null
+  try {
+    return new URL(apiUrl).origin
+  } catch {
+    return null
+  }
 }
 
 export function getCachedAuthenticatedAssetUrl(
@@ -112,20 +154,27 @@ export function getCachedAuthenticatedAssetUrl(
   return authenticatedAssetCache.get(getAssetCacheKey(src, token))?.objectUrl ?? null
 }
 
+function deleteAuthenticatedAssetCache(cacheKey: string): void {
+  const entry = authenticatedAssetCache.get(cacheKey)
+  if (entry?.objectUrl) URL.revokeObjectURL(entry.objectUrl)
+  authenticatedAssetCache.delete(cacheKey)
+}
+
 function setAuthenticatedAssetCache(
   cacheKey: string,
   entry: AuthenticatedAssetCacheEntry,
-) {
-  if (entry.objectUrl && authenticatedAssetCache.size >= MAX_AUTHENTICATED_ASSET_CACHE_SIZE) {
-    const oldestKey = authenticatedAssetCache.keys().next().value
-    if (oldestKey !== undefined) {
-      const oldestEntry = authenticatedAssetCache.get(oldestKey)
-      if (oldestEntry?.objectUrl) URL.revokeObjectURL(oldestEntry.objectUrl)
-      authenticatedAssetCache.delete(oldestKey)
-    }
+): void {
+  const previous = authenticatedAssetCache.get(cacheKey)
+  if (previous?.objectUrl && previous.objectUrl !== entry.objectUrl) {
+    URL.revokeObjectURL(previous.objectUrl)
   }
-
   authenticatedAssetCache.set(cacheKey, entry)
+
+  while (authenticatedAssetCache.size > MAX_AUTHENTICATED_ASSET_CACHE_SIZE) {
+    const oldestKey = authenticatedAssetCache.keys().next().value
+    if (oldestKey === undefined) return
+    deleteAuthenticatedAssetCache(oldestKey)
+  }
 }
 
 export function clearAuthenticatedAssetCache(): void {
@@ -160,11 +209,17 @@ export function loadAuthenticatedAssetUrl(
   const promise = fetchAuthenticatedAssetBlob(src, token)
     .then((blob) => {
       const objectUrl = URL.createObjectURL(blob)
+      if (authenticatedAssetCache.get(cacheKey)?.promise !== promise) {
+        URL.revokeObjectURL(objectUrl)
+        throw new Error('asset_load_evicted')
+      }
       setAuthenticatedAssetCache(cacheKey, { objectUrl })
       return objectUrl
     })
     .catch((error) => {
-      authenticatedAssetCache.delete(cacheKey)
+      if (authenticatedAssetCache.get(cacheKey)?.promise === promise) {
+        authenticatedAssetCache.delete(cacheKey)
+      }
       throw error
     })
 
@@ -187,6 +242,9 @@ export async function downloadAuthenticatedAsset(
       objectUrl = URL.createObjectURL(blob)
       shouldRevoke = true
     } else {
+      if (!isAllowedAssetDownloadUrl(url)) {
+        throw new Error('asset_download_not_allowed')
+      }
       objectUrl = url
     }
 
