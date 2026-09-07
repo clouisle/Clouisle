@@ -393,7 +393,7 @@ export function FilePreviewPanel({
     )
     body = (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center text-muted-foreground">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted/70">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted/70">
           {iconNode}
         </div>
         <p className="max-w-sm text-sm">{message}</p>

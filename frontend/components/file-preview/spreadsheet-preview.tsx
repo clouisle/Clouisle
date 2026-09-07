@@ -148,18 +148,18 @@ export function SpreadsheetPreview({ blob, labels }: SpreadsheetPreviewProps) {
       {sheets.length > 1 && (
         <div
           data-no-drag
-          className="sticky left-0 top-0 z-20 flex shrink-0 items-center gap-2 border-b bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+          className="sticky left-0 top-0 z-20 flex shrink-0 items-center gap-2 border-b bg-background/95 px-3 py-1.5 backdrop-blur supports-[backdrop-filter]:bg-background/80"
         >
-          <div className="inline-flex h-8 items-center rounded-lg bg-muted p-1 text-muted-foreground">
+          <div className="inline-flex h-7 items-center rounded-md bg-muted/60 p-0.5 text-muted-foreground">
             {sheets.map((item, index) => {
               const isActive = index === activeSheet
               return (
                 <button
                   key={`${item.name}-${index}`}
                   type="button"
-                  className={`inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 ${
+                  className={`inline-flex items-center justify-center whitespace-nowrap rounded-[4px] px-2.5 py-0.5 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 ${
                     isActive
-                      ? 'bg-background text-foreground shadow-sm'
+                      ? 'bg-background text-foreground shadow-xs'
                       : 'hover:bg-background/50 hover:text-foreground'
                   }`}
                   onClick={() => setActiveSheet(index)}
@@ -171,13 +171,13 @@ export function SpreadsheetPreview({ blob, labels }: SpreadsheetPreviewProps) {
           </div>
         </div>
       )}
-      <div className="p-4">
+      <div className="p-3">
         {sheet.truncated && (
-          <p className="mb-3 text-xs text-muted-foreground">
+          <p className="mb-2 text-xs text-muted-foreground">
             {labels.rowsLimited({ rows: MAX_ROWS, columns: MAX_COLUMNS })}
           </p>
         )}
-        <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
+        <div className="overflow-hidden rounded-md border bg-card">
           <table className="w-max border-collapse text-xs">
             <thead>
               <tr className="border-b bg-muted/50 transition-colors">
