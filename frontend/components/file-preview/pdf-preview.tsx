@@ -1,7 +1,14 @@
 'use client'
 
 import * as React from 'react'
-import EmbedPDF, { defineChrome, group, item, custom } from '@embedpdf/viewer'
+import EmbedPDF, {
+  custom,
+  defineChrome,
+  group,
+  item,
+  type EmbedPdfViewerElement,
+  type ViewerHandle,
+} from '@embedpdf/viewer'
 
 interface PdfPreviewProps {
   blob: Blob
@@ -73,13 +80,56 @@ const readOnlyPdfChrome = defineChrome({
     },
   },
 })
+
+function subscribeToDocumentErrors(
+  element: EmbedPdfViewerElement,
+  onError: (() => void) | undefined,
+) {
+  if (!onError) return () => {}
+
+  let unsubscribe: (() => void) | null = null
+  const subscribe = (viewer: ViewerHandle | null) => {
+    if (!viewer || unsubscribe) return
+    const hasDocumentError = () =>
+      viewer.documents.list().some(({ status }) => status === 'error')
+    if (hasDocumentError()) {
+      onError()
+    }
+
+    unsubscribe = viewer.watch(
+      hasDocumentError,
+      (hasError, hadError) => {
+        if (hasError && !hadError) {
+          onError()
+        }
+      },
+    )
+  }
+
+  const handleReady = (event: Event) => {
+    const viewer =
+      (event as CustomEvent<{ viewer?: ViewerHandle }>).detail?.viewer ??
+      element.viewer
+    subscribe(viewer)
+  }
+
+  element.addEventListener('epdf:ready', handleReady)
+  subscribe(element.viewer)
+
+  return () => {
+    element.removeEventListener('epdf:ready', handleReady)
+    unsubscribe?.()
+  }
+}
+
 export function PdfPreview({ blob, locale, onError }: PdfPreviewProps) {
   const containerRef = React.useRef<HTMLDivElement>(null)
 
   React.useEffect(() => {
     const container = containerRef.current
     let objectUrl: string | null = null
-    let element: HTMLElement | null = null
+    let element: EmbedPdfViewerElement | null = null
+    let unsubscribeFromDocumentErrors: (() => void) | null = null
 
     if (!container) return
 
@@ -93,11 +143,13 @@ export function PdfPreview({ blob, locale, onError }: PdfPreviewProps) {
         disabledCategories: ['annotate', 'shapes', 'insert', 'form', 'redact', 'comment'],
         chrome: readOnlyPdfChrome,
       })
+      unsubscribeFromDocumentErrors = subscribeToDocumentErrors(element, onError)
     } catch {
       onError?.()
     }
 
     return () => {
+      unsubscribeFromDocumentErrors?.()
       if (objectUrl) {
         URL.revokeObjectURL(objectUrl)
       }

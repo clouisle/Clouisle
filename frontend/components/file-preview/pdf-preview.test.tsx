@@ -23,6 +23,11 @@ Object.assign(globalThis, {
   Event: window.Event,
 })
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+function createViewerElement() {
+  return document.createElement('div')
+}
+
+init.mockImplementation(createViewerElement)
 const originalCreateObjectURL = URL.createObjectURL
 const originalRevokeObjectURL = URL.revokeObjectURL
 
@@ -33,7 +38,7 @@ afterEach(() => {
   URL.createObjectURL = originalCreateObjectURL
   URL.revokeObjectURL = originalRevokeObjectURL
   init.mockReset()
-  init.mockImplementation(() => ({} as HTMLElement))
+  init.mockImplementation(createViewerElement)
 })
 
 function render(element: React.ReactElement) {
@@ -80,4 +85,47 @@ test('reports synchronous PDF viewer initialization errors', async () => {
   })
 
   expect(onError).toHaveBeenCalledTimes(1)
+})
+
+test('reports asynchronous PDF document open errors', async () => {
+  URL.createObjectURL = mock(() => 'blob:pdf') as typeof URL.createObjectURL
+  URL.revokeObjectURL = mock(() => {}) as typeof URL.revokeObjectURL
+
+  let documents = [{ id: 'doc-1', status: 'loading' }]
+  let watchCallback: ((current: boolean, previous: boolean) => void) | undefined
+  const unsubscribe = mock(() => {})
+  const viewer = {
+    documents: { list: () => documents },
+    watch: mock(
+      (
+        _selector: () => boolean,
+        callback: (current: boolean, previous: boolean) => void,
+      ) => {
+        watchCallback = callback
+        return unsubscribe
+      },
+    ),
+  }
+  const element = document.createElement('div')
+  init.mockImplementation(() => element)
+  const onError = mock(() => {})
+  const blob = new Blob(['%PDF-1.4 mock content'], { type: 'application/pdf' })
+
+  render(<PdfPreview blob={blob} locale="zh" onError={onError} />)
+  act(() => {
+    element.dispatchEvent(new window.CustomEvent('epdf:ready', { detail: { viewer } }))
+  })
+
+  expect(watchCallback).toBeDefined()
+  expect(onError).not.toHaveBeenCalled()
+
+  documents = [{ id: 'doc-1', status: 'error' }]
+  act(() => watchCallback?.(true, false))
+  act(() => watchCallback?.(true, true))
+
+  expect(onError).toHaveBeenCalledTimes(1)
+
+  const root = roots.pop()
+  act(() => root?.unmount())
+  expect(unsubscribe).toHaveBeenCalledTimes(1)
 })
