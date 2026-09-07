@@ -6,18 +6,19 @@ import { DocxPreview } from './docx-preview'
 
 const mockImportDocxFile = mock(() => Promise.resolve())
 const mockRevealPage = mock(() => {})
+const mockEditor = {
+  model: { sections: [] },
+  fileName: 'document.docx',
+  importDocxFile: mockImportDocxFile,
+  isImporting: false,
+  importError: null,
+  currentPage: 1,
+  totalPages: 3,
+  revealPage: mockRevealPage,
+}
 
 mock.module('@extend-ai/react-docx', () => ({
-  useDocxEditor: () => ({
-    model: { sections: [] },
-    fileName: 'document.docx',
-    importDocxFile: mockImportDocxFile,
-    isImporting: false,
-    importError: null,
-    currentPage: 1,
-    totalPages: 3,
-    revealPage: mockRevealPage,
-  }),
+  useDocxEditor: () => mockEditor,
   useDocxPageThumbnails: () => ({
     thumbnails: [
       {
@@ -75,6 +76,9 @@ Object.assign(globalThis, {
   Node: window.Node,
   Event: window.Event,
   ResizeObserver: TestResizeObserver as unknown as typeof ResizeObserver,
+  requestAnimationFrame: (cb: FrameRequestCallback) => setTimeout(cb, 0),
+  cancelAnimationFrame: (id: number) => clearTimeout(id),
+  getComputedStyle: window.getComputedStyle.bind(window),
 })
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -200,6 +204,41 @@ test('supports thumbnail sidebar toggle and page selection', async () => {
   expect(mockRevealPage).toHaveBeenCalledWith(1)
 })
 
+test('synchronizes the active thumbnail with editor.currentPage after rerender', async () => {
+  const blob = new Blob(['docx-mock-content'])
+  let container!: HTMLDivElement
+  const rerenderRef = { current: () => {} }
+
+  function EditorHarness() {
+    const [, setRevision] = React.useState(0)
+    React.useEffect(() => {
+      rerenderRef.current = () => setRevision((revision) => revision + 1)
+    })
+    return <DocxPreview blob={blob} />
+  }
+
+  await act(async () => {
+    container = render(<EditorHarness />)
+    await Bun.sleep(10)
+  })
+
+  const page1Btn = container.querySelector('button[aria-label="Page 1"]') as HTMLButtonElement
+  const page2Btn = container.querySelector('button[aria-label="Page 2"]') as HTMLButtonElement
+  expect(page1Btn.className).toContain('font-semibold')
+  expect(page2Btn.className).not.toContain('font-semibold')
+
+  mockEditor.currentPage = 2
+  await act(async () => {
+    rerenderRef.current()
+    await Bun.sleep(10)
+  })
+
+  expect(page1Btn.className).not.toContain('font-semibold')
+  expect(page2Btn.className).toContain('font-semibold')
+  expect(container.textContent).toContain('2/3')
+
+  mockEditor.currentPage = 1
+})
 test('triggers onError on docx import failure', async () => {
   mockImportDocxFile.mockImplementationOnce(() => Promise.reject(new Error('Import failed')))
   const blob = new Blob(['corrupt-docx'])

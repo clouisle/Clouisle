@@ -133,7 +133,7 @@ export function DocxPreview({
   const [manualZoomScale, setManualZoomScale] = React.useState<number>(100)
   const [isLoaded, setIsLoaded] = React.useState(false)
   const [sidebarOpen, setSidebarOpen] = React.useState(true)
-  const [activePageIndex, setActivePageIndex] = React.useState(0)
+  const [selectedPageIndex, setSelectedPageIndex] = React.useState(0)
 
   const viewportRef = React.useRef<HTMLDivElement | null>(null)
 
@@ -146,7 +146,8 @@ export function DocxPreview({
 
   const displayFileName = filename || editor.fileName || 'Document.docx'
   const totalPages = editor.totalPages || 1
-  const currentPage = editor.currentPage || activePageIndex + 1
+  const currentPage = editor.currentPage || selectedPageIndex + 1
+  const activePageIndex = currentPage - 1
   const effectiveZoomScale = isAutoFit ? autoFitScale : manualZoomScale
 
   const calculateFitZoom = React.useCallback((viewportWidth: number) => {
@@ -284,7 +285,7 @@ export function DocxPreview({
 
   const handleSelectPage = React.useCallback(
     (pageIndex: number) => {
-      setActivePageIndex(pageIndex)
+      setSelectedPageIndex(pageIndex)
       if (typeof editor === 'object' && editor !== null && 'revealPage' in editor) {
         const reveal = editor.revealPage
         if (typeof reveal === 'function') {
