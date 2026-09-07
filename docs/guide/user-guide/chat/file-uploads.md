@@ -19,7 +19,7 @@ Clouisle allows you to upload files during chat conversations to:
 | **PDF** | `.pdf` | 10 MB | Portable Document Format |
 | **Word** | `.doc`, `.docx` | 10 MB | Microsoft Word documents |
 | **Excel** | `.xls`, `.xlsx` | 10 MB | Microsoft Excel spreadsheets |
-| **PowerPoint** | `.ppt`, `.pptx` | 10 MB | Microsoft PowerPoint presentations |
+| **PowerPoint** | `.pptx` | 10 MB | Microsoft PowerPoint presentations |
 | **Text** | `.txt`, `.md` | 10 MB | Plain text and Markdown |
 | **CSV** | `.csv` | 10 MB | Comma-separated values |
 | **JSON** | `.json` | 10 MB | JSON data files |
@@ -151,9 +151,11 @@ You can attach several files to one message (subject to the agent's configured m
 ### Privacy
 
 **File handling:**
-- Files are stored on the server (no client-side encryption)
-- Files are only accessible to users who can access the conversation
-- Deleting a conversation removes its message links; it does not currently guarantee deletion of the uploaded asset
+- Files are stored on the server (no client-side encryption).
+- Chat submission authorizes referenced Assets before attaching them to a message.
+- Generated images, generated videos, and sandbox artifacts use protected download categories; viewing or downloading them requires an authenticated user or API key with access to the related conversation or workflow run.
+- Non-protected upload URLs can be fetched directly by URL, so do not use them for sensitive data unless your deployment adds an access boundary.
+- Deleting a conversation removes its message links; it does not currently guarantee deletion of the uploaded asset.
 
 > **Note:** There is no virus scanning of uploaded files.
 
@@ -210,4 +212,4 @@ If you need assistance with file uploads:
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-08

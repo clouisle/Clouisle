@@ -119,13 +119,23 @@ data: <json_data>
 | `content_delta` | Response content delta (text token) |
 | `tool_call` | Tool call with tool name and arguments |
 | `tool_result` | Tool execution result |
-| `media_result` | UI-only media payload for rendering in the assistant body (not for LLM replay) |
+| `media_result` | UI-only generated image/video payload; protected URLs require authentication and are not LLM replay text |
 | `compression_start` | Context compression started |
 | `compression_end` | Context compression finished |
 | `output_truncated` | Output was truncated due to max output token limit |
 | `iteration_cap_reached` | The agent reached the max tool-call iteration cap |
 | `message_end` | Message ended with token usage statistics |
 | `error` | Error occurred |
+
+`media_result` example:
+
+```text
+event: media_result
+data: {"kind":"media.image","success":true,"images":[{"image":{"url":"/api/v1/upload/files/generated-images/2026/09/9a8b7c6d5e4f_55667788.png","asset_ref":"a1b2","format":"png"}}]}
+```
+
+The event is for rendering in the assistant body and is not fed back into the model's text history. Fetch URLs in protected categories with the active JWT or API key; do not expose or guess the four-character `asset_ref`.
+
 
 ## Agent Chat Streaming
 
@@ -841,4 +851,4 @@ function handleEvent(eventType, data) {
 
 ---
 
-**Last Updated**: 2026-03-15
+**Last Updated**: 2026-09-08
