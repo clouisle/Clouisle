@@ -16,6 +16,18 @@ interface PdfPreviewProps {
   onError?: () => void
 }
 
+const pdfViewerStrings = {
+  zh: {
+    commands: {
+      sidebar: '侧边栏',
+    },
+    demo: {
+      thumbnails: '缩略图',
+      outline: '大纲',
+    },
+  },
+} as const
+
 // Clean, read-only PDF viewing toolbar without annotation, form, or redaction edit modes
 const readOnlyPdfChrome = defineChrome({
   frame: {
@@ -139,6 +151,7 @@ export function PdfPreview({ blob, locale, onError }: PdfPreviewProps) {
       element = EmbedPDF.init({
         target: container,
         src: objectUrl,
+        strings: pdfViewerStrings,
         locale: locale || 'auto',
         disabledCategories: ['annotate', 'shapes', 'insert', 'form', 'redact', 'comment'],
         chrome: readOnlyPdfChrome,

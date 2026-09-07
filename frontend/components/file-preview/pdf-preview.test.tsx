@@ -64,10 +64,23 @@ test('initializes PdfPreview with a generated source and locale', async () => {
 
   expect(onError).not.toHaveBeenCalled()
   expect(init).toHaveBeenCalledTimes(1)
-  const options = init.mock.calls[0]?.[0] as { target?: HTMLElement; src?: string; locale?: string }
+  const options = init.mock.calls[0]?.[0] as {
+    target?: HTMLElement
+    src?: string
+    locale?: string
+    strings?: {
+      zh?: {
+        commands?: { sidebar?: string }
+        demo?: { thumbnails?: string; outline?: string }
+      }
+    }
+  }
   expect(options.target).toBe(container.firstElementChild?.firstElementChild)
   expect(options.src).toBe('blob:pdf')
   expect(options.locale).toBe('zh')
+  expect(options.strings?.zh?.commands?.sidebar).toBe('侧边栏')
+  expect(options.strings?.zh?.demo?.thumbnails).toBe('缩略图')
+  expect(options.strings?.zh?.demo?.outline).toBe('大纲')
 })
 
 test('reports synchronous PDF viewer initialization errors', async () => {
