@@ -138,6 +138,8 @@ export function DocxPreview({
   const viewportRef = React.useRef<HTMLDivElement | null>(null)
 
   const editor = useDocxEditor()
+  const editorRef = React.useRef(editor)
+  editorRef.current = editor
   const { thumbnails } = useDocxPageThumbnails(editor, {
     resolution: 110,
     maxWidthPx: 110,
@@ -228,7 +230,7 @@ export function DocxPreview({
       type: DOCX_MIME_TYPE,
     })
 
-    void editor
+    void editorRef.current
       .importDocxFile(file)
       .then(() => {
         if (!cancelled) {
@@ -244,7 +246,7 @@ export function DocxPreview({
     return () => {
       cancelled = true
     }
-  }, [blob, displayFileName, editor, onError])
+  }, [blob, displayFileName, onError])
 
   React.useEffect(() => {
     if (editor.importError) {

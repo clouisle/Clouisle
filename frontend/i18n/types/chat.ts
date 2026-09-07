@@ -75,6 +75,7 @@ export type ChatMessages = {
     }
     file: {
       download: string
+      downloadFailed: string
       preview: string
       files: string
       artifacts: string
@@ -231,6 +232,7 @@ export type ChatMessages = {
       zoomIn: string
       rotate: string
       download: string
+      downloadFailed: string
       close: string
       showPrompt: string
       hidePrompt: string

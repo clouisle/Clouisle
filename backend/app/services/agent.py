@@ -53,6 +53,8 @@ class AgentService:
         user_locale: str | None = None,
         images: list[Any] | None = None,
         files: list[Any] | None = None,
+        conversation_id: Any = None,
+        workflow_run_id: Any = None,
     ) -> dict[str, Any]:
         """Execute a non-streaming chat and return normalized trace data."""
         messages = await self._build_messages(
@@ -129,7 +131,15 @@ class AgentService:
                 )
             )
             for tool_call in response_tool_calls:
-                tool_result = await self._execute_tool(agent=agent, tool_call=tool_call)
+                tool_kwargs: dict[str, Any] = {
+                    "agent": agent,
+                    "tool_call": tool_call,
+                }
+                if conversation_id is not None:
+                    tool_kwargs["conversation_id"] = conversation_id
+                if workflow_run_id is not None:
+                    tool_kwargs["workflow_run_id"] = workflow_run_id
+                tool_result = await self._execute_tool(**tool_kwargs)
                 artifacts.extend(self._extract_artifacts(tool_result))
                 dialogue.append(
                     {
@@ -166,6 +176,8 @@ class AgentService:
         user_locale: str | None = None,
         images: list[Any] | None = None,
         files: list[Any] | None = None,
+        conversation_id: Any = None,
+        workflow_run_id: Any = None,
     ) -> AsyncIterator[str | dict]:
         """Execute a streaming chat and yield normalized trace events."""
         messages = await self._build_messages(
@@ -242,9 +254,15 @@ class AgentService:
                     )
                 )
                 for tool_call in accumulated_tool_calls:
-                    tool_result = await self._execute_tool(
-                        agent=agent, tool_call=tool_call
-                    )
+                    tool_kwargs: dict[str, Any] = {
+                        "agent": agent,
+                        "tool_call": tool_call,
+                    }
+                    if conversation_id is not None:
+                        tool_kwargs["conversation_id"] = conversation_id
+                    if workflow_run_id is not None:
+                        tool_kwargs["workflow_run_id"] = workflow_run_id
+                    tool_result = await self._execute_tool(**tool_kwargs)
                     artifacts.extend(self._extract_artifacts(tool_result))
                     dialogue.append(
                         {
@@ -488,6 +506,8 @@ class AgentService:
         self,
         agent: Agent,
         tool_call: ToolCall,
+        conversation_id: Any = None,
+        workflow_run_id: Any = None,
     ) -> Any:
         """Execute a tool call and return the result."""
         from app.llm.tools import tool_registry
@@ -583,6 +603,12 @@ class AgentService:
             f"[TOOL EXEC] Calling tool_registry.execute with credentials: {bool(credentials)}"
         )
 
+        scope_context: dict[str, Any] = {}
+        if conversation_id is not None:
+            scope_context["conversation_id"] = conversation_id
+        if workflow_run_id is not None:
+            scope_context["workflow_run_id"] = workflow_run_id
+
         # Execute the tool
         try:
             result = await tool_registry.execute(
@@ -591,6 +617,7 @@ class AgentService:
                 credentials=credentials,
                 agent=agent,
                 team_id=str(agent.team_id) if agent.team_id else None,
+                **scope_context,
             )
             return result
         except Exception as e:

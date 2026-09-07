@@ -42,6 +42,39 @@ class TestToolExecutor:
         )
 
     @pytest.mark.anyio
+    async def test_execute_builtin_tool_forwards_asset_scope_ids(self):
+        executor = ToolExecutor()
+        conversation_id = UUID("00000000-0000-0000-0000-000000000001")
+        workflow_run_id = UUID("00000000-0000-0000-0000-000000000002")
+
+        with (
+            patch.object(
+                executor,
+                "_get_tool_credentials",
+                new=AsyncMock(return_value={}),
+            ),
+            patch(
+                "app.services.tool.tool_registry.execute",
+                new=AsyncMock(return_value={"ok": True}),
+            ) as mock_execute,
+        ):
+            result = await executor.execute_builtin_tool(
+                tool_name="generate_image",
+                arguments={"prompt": "a cat"},
+                conversation_id=conversation_id,
+                workflow_run_id=workflow_run_id,
+            )
+
+        assert result == {"ok": True}
+        mock_execute.assert_awaited_once_with(
+            name="generate_image",
+            arguments={"prompt": "a cat"},
+            credentials={},
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
+        )
+
+    @pytest.mark.anyio
     async def test_execute_dispatches_custom_tools_with_model_enum(self):
         executor = ToolExecutor()
         tool = MagicMock()

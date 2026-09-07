@@ -4,6 +4,7 @@ import * as React from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslations } from 'next-intl'
 import { X, ZoomIn, ZoomOut, RotateCw, Download, MessageSquareText, ChevronUp } from 'lucide-react'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -94,6 +95,7 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
       await downloadAuthenticatedAsset(src, alt || 'image', assetToken)
     } catch (err) {
       console.error('Failed to download image:', err)
+      toast.error(t('downloadFailed'))
     }
   }
 
@@ -297,7 +299,10 @@ export function VideoLightbox({ src, isOpen, onClose }: VideoLightboxProps) {
           <TooltipTrigger
             onClick={(event) => {
               event.stopPropagation()
-              void downloadAuthenticatedAsset(src, 'video', assetToken)
+              void downloadAuthenticatedAsset(src, 'video', assetToken).catch((error) => {
+                console.error('Failed to download video:', error)
+                toast.error(t('downloadFailed'))
+              })
             }}
             render={
               <Button

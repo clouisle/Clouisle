@@ -180,6 +180,7 @@ async def execute_tool_call(
     session_id: str | None = None,
     current_images: list[Any] | None = None,
     conversation_id: Any = None,
+    workflow_run_id: Any = None,
 ) -> Any:
     """Execute a tool and return the result payload."""
     from app.core.i18n import t
@@ -494,6 +495,9 @@ async def execute_tool_call(
                 and _tool_accepts_credentials(tool_info.handler)
             ):
                 credentials = await _get_builtin_tool_credentials(tool_name, agent)
+            scope_context: dict[str, Any] = {}
+            if workflow_run_id is not None:
+                scope_context["workflow_run_id"] = workflow_run_id
             return await tool_registry.execute(
                 tool_name,
                 arguments,
@@ -503,6 +507,7 @@ async def execute_tool_call(
                 user=user,
                 current_images=current_images,
                 conversation_id=conversation_id,
+                **scope_context,
             )
         except Exception as e:
             logger.exception("Builtin tool execution failed: %s", e)

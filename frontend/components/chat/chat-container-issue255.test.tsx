@@ -44,6 +44,7 @@ mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for(
 mock.module('next-intl', () => ({
   useTranslations: () => (key: string, values?: Record<string, unknown>) => `${key}:${values?.count ?? ''}`,
 }))
+mock.module('sonner', () => ({ toast: { error: () => {} } }))
 mock.module('lucide-react', () => ({
   ArrowDown: (props: Record<string, unknown>) => jsx('arrow-down', props),
   ChevronDown: (props: Record<string, unknown>) => jsx('chevron-down', props),

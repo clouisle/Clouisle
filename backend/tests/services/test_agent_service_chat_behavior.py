@@ -80,6 +80,47 @@ async def test_chat_executes_tool_then_aggregates_final_response_usage():
 
 
 @pytest.mark.anyio
+async def test_execute_tool_forwards_workflow_scope_to_builtin_tool():
+    agent = SimpleNamespace(id="agent-1", team_id=None)
+    tool_call = ToolCall(
+        id="call-1",
+        function=FunctionCall(name="generate_image", arguments="{}"),
+    )
+    service = AgentService()
+    global_query = SimpleNamespace(first=AsyncMock(return_value=None))
+
+    with (
+        patch(
+            "app.llm.tools.tool_registry.get_tool",
+            return_value=SimpleNamespace(handler=object()),
+        ),
+        patch(
+            "app.models.tool_config.ToolConfig.filter",
+            return_value=global_query,
+        ),
+        patch(
+            "app.llm.tools.tool_registry.execute",
+            new=AsyncMock(return_value={"ok": True}),
+        ) as execute,
+    ):
+        result = await service._execute_tool(
+            agent,
+            tool_call,
+            workflow_run_id="workflow-run-1",
+        )
+
+    assert result == {"ok": True}
+    execute.assert_awaited_once_with(
+        name="generate_image",
+        arguments={},
+        credentials={},
+        agent=agent,
+        team_id=None,
+        workflow_run_id="workflow-run-1",
+    )
+
+
+@pytest.mark.anyio
 async def test_chat_resolves_configured_team_model_before_invocation():
     agent = SimpleNamespace(team_id="team-1", model_id="team-model")
     response = SimpleNamespace(content="Done", tool_calls=[], usage=None)

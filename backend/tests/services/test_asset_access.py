@@ -46,6 +46,27 @@ async def test_protected_asset_hides_missing_or_unscoped_records(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_protected_asset_allows_creator_for_legacy_unscoped_record(monkeypatch):
+    user = SimpleNamespace(id=uuid4(), is_superuser=False, roles=[])
+    asset = SimpleNamespace(id=uuid4(), created_by_id=user.id)
+    monkeypatch.setattr(
+        asset_access.Asset,
+        "filter",
+        lambda **_: SimpleNamespace(first=AsyncMock(return_value=asset)),
+    )
+    monkeypatch.setattr(
+        asset_access.AssetScopeRef, "filter", AsyncMock(return_value=[])
+    )
+
+    result = await asset_access.authorize_protected_asset(
+        "sandbox-artifacts/2026/09/legacy.txt",
+        authenticated=(user, None),
+    )
+
+    assert result is asset
+
+
+@pytest.mark.asyncio
 async def test_protected_asset_denies_user_without_scope_access(monkeypatch):
     asset_id = uuid4()
     conversation_id = uuid4()

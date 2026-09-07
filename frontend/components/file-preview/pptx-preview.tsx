@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { ReactPptxViewer } from '@extend-ai/react-pptx'
-
+import '@extend-ai/react-pptx/styles.css'
 interface PptxPreviewProps {
   blob: Blob
   onError: () => void

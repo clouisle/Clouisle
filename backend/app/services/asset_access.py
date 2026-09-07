@@ -23,7 +23,7 @@ async def authorize_protected_asset(
     *,
     authenticated: tuple[User, APIKey | None] | None,
 ) -> Asset:
-    """Authorize a protected file through its conversation or workflow scope."""
+    """Authorize a protected file through its scope or legacy owner policy."""
     if authenticated is None:
         raise BusinessError(
             code=ResponseCode.UNAUTHORIZED,
@@ -41,8 +41,12 @@ async def authorize_protected_asset(
 
     refs = await AssetScopeRef.filter(asset_id=asset.id)
     if not refs:
+        # Scope references were added after some protected assets already existed.
+        # Keep those legacy records usable only by their creator (or a superuser)
+        # without exposing them to unrelated users or returning a false 404 to the owner.
+        if user.is_superuser or getattr(asset, "created_by_id", None) == user.id:
+            return asset
         raise _not_found()
-
     for ref in refs:
         if ref.scope_type == AssetScopeType.CONVERSATION:
             conversation = (

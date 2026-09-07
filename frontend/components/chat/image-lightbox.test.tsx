@@ -22,9 +22,11 @@ const dom = { window }
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true
 
+const toastError = mock(() => {})
 mock.module('next-intl', () => ({
   useTranslations: () => (key: string) => key,
 }))
+mock.module('sonner', () => ({ toast: { error: toastError } }))
 
 mock.module('@/components/ui/button', () => ({
   Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
@@ -233,6 +235,29 @@ describe('ImageLightbox', () => {
         .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
     )
     expect(onClose).toHaveBeenCalledTimes(3)
+  })
+
+  test('surfaces video download failures', async () => {
+    const originalFetch = globalThis.fetch
+    const originalConsoleError = console.error
+    const fetchVideo = mock(async () => new Response('denied', { status: 403 }))
+    const consoleError = mock(() => {})
+    globalThis.fetch = fetchVideo as typeof fetch
+    console.error = consoleError
+    toastError.mockClear()
+
+    try {
+      render(<VideoLightbox src="/api/v1/upload/files/generated-videos/2026/09/video.mp4" isOpen onClose={mock(() => {})} />)
+      await act(async () => {
+        document.body.querySelector('button[aria-label="download"]')!.click()
+        await Bun.sleep(0)
+      })
+      expect(consoleError).toHaveBeenCalledWith('Failed to download video:', expect.any(Error))
+      expect(toastError).toHaveBeenCalledWith('downloadFailed')
+    } finally {
+      globalThis.fetch = originalFetch
+      console.error = originalConsoleError
+    }
   })
 
   test('exposes an open and close state controller', () => {

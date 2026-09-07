@@ -37,6 +37,7 @@ class TestToolNodeExecutorCompatibility:
         context.resolve_variable_ref = AsyncMock()
 
         run = MagicMock()
+        run.id = "run-1"
         run.triggered_by_id = "user-1"
         run.workflow_id = "workflow-1"
 
@@ -63,6 +64,7 @@ class TestToolNodeExecutorCompatibility:
             tool_name="get_current_time",
             arguments={"timezone_name": "Asia/Shanghai"},
             team_id="team-1",
+            workflow_run_id="run-1",
         )
 
     @pytest.mark.anyio

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
 import {
   ChevronDown,
   ChevronUp,
@@ -118,7 +119,9 @@ export function ArtifactFile({ file, onOpenPreview, className }: ArtifactFilePro
         <button
           type="button"
           onClick={() => {
-            void downloadAuthenticatedAsset(file.url as string, file.filename, assetToken);
+            void downloadAuthenticatedAsset(file.url as string, file.filename, assetToken).catch(() => {
+              toast.error(t('downloadFailed'))
+            })
           }}
           className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground"
           aria-label={`${t('download')}: ${file.filename}`}

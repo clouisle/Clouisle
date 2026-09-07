@@ -73,6 +73,7 @@
     },
     "file": {
       "download": "下载",
+      "downloadFailed": "文件下载失败",
       "preview": "预览",
       "files": "文件",
       "artifacts": "产物列表",
@@ -227,8 +228,8 @@
     "lightbox": {
       "zoomOut": "缩小 (-)",
       "zoomIn": "放大 (+)",
-      "rotate": "旋转 (R)",
       "download": "下载",
+      "downloadFailed": "文件下载失败",
       "close": "关闭 (Esc)",
       "showPrompt": "查看提示词",
       "hidePrompt": "收起提示词"

@@ -21,7 +21,13 @@ interface SpreadsheetPreviewProps {
 
 function isBinarySpreadsheet(bytes: Uint8Array): boolean {
   if (bytes.length < 4) return false
-  if (bytes[0] === 0x50 && bytes[1] === 0x4B) return true
+  if (
+    bytes[0] === 0x50 &&
+    bytes[1] === 0x4B &&
+    ((bytes[2] === 0x03 && bytes[3] === 0x04) ||
+      (bytes[2] === 0x05 && bytes[3] === 0x06) ||
+      (bytes[2] === 0x07 && bytes[3] === 0x08))
+  ) return true
   if (bytes[0] === 0xD0 && bytes[1] === 0xCF && bytes[2] === 0x11 && bytes[3] === 0xE0) return true
   return false
 }
