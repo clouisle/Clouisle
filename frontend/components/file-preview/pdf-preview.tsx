@@ -10,6 +10,10 @@ interface PdfPreviewProps {
 
 // Clean, read-only PDF viewing toolbar without annotation, form, or redaction edit modes
 const readOnlyPdfChrome = defineChrome({
+  frame: {
+    tabs: 'never',
+    header: false,
+  },
   bars: {
     main: {
       id: 'main',
