@@ -36,7 +36,7 @@ export function ArtifactFileList({ files, className, onOpenPreview }: ArtifactFi
           <ArtifactFile
             key={file.path ?? file.url ?? file.filename}
             file={file}
-            className="rounded-none border-x-0 border-t-0 border-b border-border/60 bg-transparent px-3 py-2 last:border-b-0"
+            className="rounded-none border-0 border-b border-border/60 bg-transparent px-3 py-2 last:border-b-0"
             onOpenPreview={onOpenPreview}
           />
         ))}
