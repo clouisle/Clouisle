@@ -414,7 +414,20 @@ export function FilePreviewPanel({
         className="h-full w-full border-0 bg-white"
       />
   } else if (mode === 'docx' && blob) {
-    body = <DocxPreview blob={blob} onError={handleDocxError} />
+    body = (
+      <DocxPreview
+        blob={blob}
+        filename={file.filename}
+        labels={{
+          loading: resolvedLabels.loading,
+          parseError: resolvedLabels.parseError,
+          zoomIn: resolvedLabels.zoomIn,
+          zoomOut: resolvedLabels.zoomOut,
+          zoomReset: resolvedLabels.fitToView,
+        }}
+        onError={handleDocxError}
+      />
+    )
   } else if (mode === 'pptx' && blob) {
     body = <PptxPreview blob={blob} onError={handlePptxError} />
   } else if (mode === 'spreadsheet' && blob) {
