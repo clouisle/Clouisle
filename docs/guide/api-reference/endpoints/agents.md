@@ -631,7 +631,7 @@ POST /api/v1/agents/{agent_id}/chat
 | `variables` | object | No | Variable values for the chat input form |
 | `history_override` | array | No | Override conversation history (used for version switching/regeneration) |
 
-Use the upload response fields as-is. The URL includes the category, date path, and generated storage filename; do not build `/upload/files/{asset_id}` URLs. For generated media, an `asset_ref` is scoped to a conversation or workflow run and is only valid in that scope.
+The upload response names the MIME field `content_type`, while `ChatRequest.file_urls` requires `mime_type`; map `content_type` to `mime_type` before reusing the metadata. Preserve the returned `asset_id`, `url`, `filename`, and `size`; the URL already includes the category, date path, and generated storage filename. Do not build `/upload/files/{asset_id}` URLs. For generated media, an `asset_ref` is scoped to a conversation or workflow run and is only valid in that scope.
 
 ### Request Example
 

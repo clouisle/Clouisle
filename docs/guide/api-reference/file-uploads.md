@@ -27,7 +27,7 @@ Clouisle exposes several upload endpoints, each with its own purpose and file-ty
 - **JSON**: `.json`
 - **PowerPoint**: `.pptx`
 
-Images, archives (`.zip`, `.tar`), and video are **not** accepted here — use the generic upload endpoints below.
+Images and video are **not** accepted here; use the appropriate upload flow instead.
 
 ### Generic Upload (`/api/v1/upload/image` and `/api/v1/upload/file`)
 
@@ -149,7 +149,7 @@ curl -X POST "$API_BASE_URL/api/v1/upload/image?category=general" \
 }
 ```
 
-The returned `filename` is a generated storage name. Use the returned `url` rather than reconstructing a path from the original filename.
+The returned `filename` is a generated storage name; use the returned `url` rather than reconstructing a path from the original filename. When reusing this response in `ChatRequest.file_urls`, map `content_type` to the required `mime_type`; retain `asset_id`, `url`, `filename`, and `size`.
 
 ### 4. Upload a Generic File
 
@@ -188,7 +188,7 @@ GET /api/v1/upload/files/{category}/{year}/{month}/{filename}
 
 - Non-protected categories such as `general`, `avatar`, and `icon` are served at the returned URL.
 - `sandbox-artifacts`, `generated-images`, and `generated-videos` are protected categories. A request must include a valid JWT or `clou_` API key with access to the related conversation or workflow run.
-- Protected asset authorization is evaluated against the asset scope; an authenticated user without access receives HTTP `403` (`code: 3000`). Missing credentials receive HTTP `401` (`code: 2000`).
+- Missing protected assets, or assets without a scope reference when the requester is neither the creator nor a superuser, return HTTP `404` (`code: 4000`). A scoped asset that fails access checks returns HTTP `403` (`code: 3000`); missing credentials return HTTP `401` (`code: 2000`).
 - Generated media used inside a conversation or workflow may include an `asset_ref`, a four-character scope-local reference for model tools. It is not a public download token and must not be guessed or shared as a substitute for authorization.
 
 Treat non-protected upload URLs as shareable file URLs only when the selected category and deployment policy allow it. Do not expose protected URLs or tokens in logs, prompts, or client-side telemetry.
@@ -433,7 +433,7 @@ if result['code'] != 0:
 **Solutions:**
 1. Convert to a supported format (see lists above)
 2. Check the file extension and MIME type
-3. Images and archives are only accepted by the generic upload endpoints, not KB document upload
+3. Images are only accepted by the generic image/file upload endpoints, not by KB document upload.
 
 ## Related Documentation
 
