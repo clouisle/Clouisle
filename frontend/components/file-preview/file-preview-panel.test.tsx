@@ -36,6 +36,35 @@ async function flush() {
   })
 }
 
+test('keeps an oversized loader blob downloadable without replacing the too-large status', async () => {
+  const loadFile = mock(async () => new Blob(['oversized'], { type: 'text/plain' }))
+  const container = render(
+    <FilePreviewPanel
+      file={{ filename: 'large.txt', mimeType: 'text/plain' }}
+      loadFile={loadFile}
+      maxPreviewBytes={1}
+    />
+  )
+  await flush()
+
+  expect(container.textContent).toContain('This file is too large to preview.')
+  const downloadButton = container.querySelector('button[aria-label="Download"]') as HTMLButtonElement
+  expect(downloadButton.disabled).toBe(false)
+})
+
+test('does not fall back to downloading a protected raw URL', async () => {
+  const container = render(
+    <FilePreviewPanel
+      file={{ filename: 'secret.bin', mimeType: 'application/octet-stream', url: '/api/v1/assets/secret' }}
+    />
+  )
+  await flush()
+
+  const downloadButton = container.querySelector('button[aria-label="Download"]') as HTMLButtonElement
+  expect(downloadButton.disabled).toBe(true)
+})
+
+
 test('loads text from a provided file loader and keeps it downloadable', async () => {
   const loadFile = mock(async () => new Blob(['hello preview'], { type: 'text/plain' }))
   const createObjectURL = mock(() => 'blob:preview')

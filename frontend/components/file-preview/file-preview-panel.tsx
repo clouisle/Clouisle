@@ -204,6 +204,15 @@ async function fetchPreviewResponse(url: string): Promise<Response> {
   return response
 }
 
+function isProtectedRawUrl(url: string | undefined): boolean {
+  if (!url) return false
+  try {
+    return new URL(url, window.location.href).pathname.startsWith('/api/v1/')
+  } catch {
+    return false
+  }
+}
+
 export function FilePreviewPanel({
   file,
   labels,
@@ -247,24 +256,25 @@ export function FilePreviewPanel({
       return
     }
 
-    const applyBlob = async (loadedBlob: Blob) => {
+    const applyBlob = async (loadedBlob: Blob): Promise<boolean> => {
       if (loadedBlob.size > maxPreviewBytes) {
         if (!cancelled) setStatus('too-large')
-        return
+        return false
       }
       if (isTextMode(mode)) {
         const content = await readBlobText(loadedBlob)
         if (!cancelled) setTextContent(content)
-        return
+        return true
       }
 
       createdObjectUrl = URL.createObjectURL(loadedBlob)
       if (cancelled) {
         URL.revokeObjectURL(createdObjectUrl)
         createdObjectUrl = null
-        return
+        return false
       }
       setPreviewUrl(createdObjectUrl)
+      return true
     }
     const load = async () => {
       if (loadFile) {
@@ -327,7 +337,7 @@ export function FilePreviewPanel({
 
         const loadedBlob = await response.blob()
         if (!cancelled) setBlob(loadedBlob)
-        await applyBlob(loadedBlob)
+        if (!(await applyBlob(loadedBlob))) return
       }
       if (!cancelled && mode !== 'unsupported') setStatus('ready')
     }
@@ -355,7 +365,7 @@ export function FilePreviewPanel({
 
   const handleDownload = React.useCallback(() => {
     const loadedBlobUrl = !previewUrl && blob ? URL.createObjectURL(blob) : null
-    const href = previewUrl || loadedBlobUrl || file.url
+    const href = previewUrl || loadedBlobUrl || (isProtectedRawUrl(file.url) ? null : file.url)
     if (!href) return
 
     const link = document.createElement('a')
@@ -494,7 +504,7 @@ export function FilePreviewPanel({
           <button
             type="button"
             onClick={handleDownload}
-            disabled={status === 'forbidden' || status === 'unauthorized' || (!file.url && !blob && !previewUrl)}
+            disabled={status === 'forbidden' || status === 'unauthorized' || (!file.url && !blob && !previewUrl) || (isProtectedRawUrl(file.url) && !blob && !previewUrl)}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
             aria-label={resolvedLabels.download}
           >
