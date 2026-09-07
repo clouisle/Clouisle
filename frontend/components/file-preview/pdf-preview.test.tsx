@@ -71,7 +71,7 @@ test('initializes PdfPreview with a generated source and locale', async () => {
     strings?: {
       zh?: {
         commands?: { sidebar?: string }
-        demo?: { thumbnails?: string; outline?: string }
+        demo?: { thumbnails?: string }
       }
     }
   }
@@ -80,7 +80,39 @@ test('initializes PdfPreview with a generated source and locale', async () => {
   expect(options.locale).toBe('zh')
   expect(options.strings?.zh?.commands?.sidebar).toBe('侧边栏')
   expect(options.strings?.zh?.demo?.thumbnails).toBe('缩略图')
-  expect(options.strings?.zh?.demo?.outline).toBe('大纲')
+})
+
+test('removes the unsupported outline tab from the PDF sidebar', async () => {
+  URL.createObjectURL = mock(() => 'blob:pdf') as typeof URL.createObjectURL
+  URL.revokeObjectURL = mock(() => {}) as typeof URL.revokeObjectURL
+
+  const element = document.createElement('div')
+  init.mockImplementation(() => element)
+  render(<PdfPreview blob={new Blob(['%PDF-1.4'], { type: 'application/pdf' })} locale="zh" />)
+
+  const shadowRoot = element.attachShadow({ mode: 'open' })
+  const aside = shadowRoot.appendChild(document.createElement('aside'))
+  const header = aside.appendChild(document.createElement('div'))
+  const thumbnails = header.appendChild(document.createElement('span'))
+  thumbnails.textContent = '缩略图'
+  const outline = header.appendChild(document.createElement('span'))
+  outline.textContent = '大纲'
+
+  act(() => {
+    element.dispatchEvent(new window.CustomEvent('epdf:ready'))
+  })
+
+  expect(header.querySelectorAll('span')).toHaveLength(1)
+  expect(header.textContent).toBe('缩略图')
+
+  const rerenderedOutline = header.appendChild(document.createElement('span'))
+  rerenderedOutline.textContent = '大纲'
+  await act(async () => {
+    await Bun.sleep(0)
+  })
+
+  expect(header.querySelectorAll('span')).toHaveLength(1)
+  expect(header.textContent).toBe('缩略图')
 })
 
 test('reports synchronous PDF viewer initialization errors', async () => {

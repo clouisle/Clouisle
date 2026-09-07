@@ -23,10 +23,54 @@ const pdfViewerStrings = {
     },
     demo: {
       thumbnails: '缩略图',
-      outline: '大纲',
     },
   },
 } as const
+
+/**
+ * @embedpdf/viewer currently renders an Outline label without an outline
+ * capability. Remove that placeholder from its open shadow DOM so the sidebar
+ * does not advertise a control that cannot work.
+ */
+function removeUnsupportedOutlineTab(element: EmbedPdfViewerElement) {
+  const MutationObserver = element.ownerDocument.defaultView?.MutationObserver
+
+  if (!MutationObserver) return () => {}
+
+  let observer: {
+    disconnect: () => void
+    observe: (target: Node, options?: MutationObserverInit) => void
+  } | null = null
+
+  const bindShadowRoot = () => {
+    const shadowRoot = element.shadowRoot
+    if (!shadowRoot) return
+
+    const removeTab = () => {
+      const header = shadowRoot.querySelector('aside')?.firstElementChild
+      if (!header) return
+
+      const labels = Array.from(header.children).filter(
+        (child): child is HTMLSpanElement => child.tagName === 'SPAN',
+      )
+      labels[1]?.remove()
+    }
+
+    removeTab()
+    if (!observer) {
+      observer = new MutationObserver(removeTab)
+      observer.observe(shadowRoot, { childList: true, subtree: true })
+    }
+  }
+
+  element.addEventListener('epdf:ready', bindShadowRoot)
+  bindShadowRoot()
+
+  return () => {
+    element.removeEventListener('epdf:ready', bindShadowRoot)
+    observer?.disconnect()
+  }
+}
 
 // Clean, read-only PDF viewing toolbar without annotation, form, or redaction edit modes
 const readOnlyPdfChrome = defineChrome({
@@ -142,6 +186,7 @@ export function PdfPreview({ blob, locale, onError }: PdfPreviewProps) {
     let objectUrl: string | null = null
     let element: EmbedPdfViewerElement | null = null
     let unsubscribeFromDocumentErrors: (() => void) | null = null
+    let removeUnsupportedOutline: (() => void) | null = null
 
     if (!container) return
 
@@ -156,12 +201,14 @@ export function PdfPreview({ blob, locale, onError }: PdfPreviewProps) {
         disabledCategories: ['annotate', 'shapes', 'insert', 'form', 'redact', 'comment'],
         chrome: readOnlyPdfChrome,
       })
+      removeUnsupportedOutline = removeUnsupportedOutlineTab(element)
       unsubscribeFromDocumentErrors = subscribeToDocumentErrors(element, onError)
     } catch {
       onError?.()
     }
 
     return () => {
+      removeUnsupportedOutline?.()
       unsubscribeFromDocumentErrors?.()
       if (objectUrl) {
         URL.revokeObjectURL(objectUrl)
