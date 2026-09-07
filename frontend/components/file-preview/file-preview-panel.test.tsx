@@ -202,8 +202,9 @@ test('renders docx preview mode using DocxPreview', async () => {
   expect(loadFile).toHaveBeenCalledTimes(1)
 })
 
-test('renders spreadsheet preview mode using SpreadsheetPreview', async () => {
-  const loadFile = mock(async () => new Blob(['fake sheet'], { type: 'text/csv' }))
+test('renders spreadsheet preview mode using SpreadsheetPreview and switches sheets', async () => {
+  const csvContent = 'A1,B1\nA2,B2'
+  const loadFile = mock(async () => new Blob([csvContent], { type: 'text/csv' }))
   const container = render(
     <FilePreviewPanel
       file={{ filename: 'data.csv', mimeType: 'text/csv' }}
@@ -211,7 +212,7 @@ test('renders spreadsheet preview mode using SpreadsheetPreview', async () => {
     />
   )
   await flush()
-  expect(container.querySelector('div')).toBeTruthy()
+  expect(container.querySelector('table')).toBeTruthy()
   expect(loadFile).toHaveBeenCalledTimes(1)
 })
 

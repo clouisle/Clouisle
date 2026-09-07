@@ -271,6 +271,10 @@ export function PreviewZoomViewport({
   }, [pan, zoom])
 
   const handlePointerDown = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null
+    if (target?.closest('button, a, input, select, textarea, [role="button"], [data-no-drag]')) {
+      return
+    }
     dragStartRef.current = {
       x: event.clientX,
       y: event.clientY,
