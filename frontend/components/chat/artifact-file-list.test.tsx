@@ -14,12 +14,14 @@ mock.module('next-intl', () => ({
     if (key === 'download') return 'Download'
     if (key === 'showMore') return `Show ${values?.count ?? ''} more`
     if (key === 'showLess') return 'Show less'
+    if (key === 'artifacts') return 'Artifacts'
     return 'Files'
   },
 }))
 mock.module('lucide-react', () => ({
   ChevronDown: (props: { className?: string }) => icon({ ...props, name: 'ChevronDown' }),
   ChevronUp: (props: { className?: string }) => icon({ ...props, name: 'ChevronUp' }),
+  Package: (props: { className?: string }) => icon({ ...props, name: 'Package' }),
   FileIcon: (props: { className?: string }) => icon({ ...props, name: 'FileIcon' }),
   FileImage: (props: { className?: string }) => icon({ ...props, name: 'FileImage' }),
   FileVideo: (props: { className?: string }) => icon({ ...props, name: 'FileVideo' }),
@@ -52,6 +54,9 @@ test('renders localized artifact file actions and a browser download link', () =
   const html = renderToStaticMarkup(<ArtifactFileList files={[report]} onOpenPreview={() => {}} />)
 
   expect(html).toContain('data-artifact-file-list')
+  expect(html).toContain('Artifacts')
+  expect(html).toContain('(1)')
+  expect(html).toContain('data-icon="Package"')
   expect(html).not.toContain('Generated files')
   expect(html).toContain('data-icon="FileType"')
   expect(html).toContain('text-green-500')

@@ -7,6 +7,7 @@ import {
   ChevronUp,
   Download,
   Eye,
+  Package,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { isArtifactPreviewable } from './artifact-utils';
@@ -25,12 +26,17 @@ export function ArtifactFileList({ files, className, onOpenPreview }: ArtifactFi
 
   return (
     <div className={cn('overflow-hidden rounded-xl border border-border/60 bg-card/30', className)} data-artifact-file-list>
-      <div className="divide-y divide-border/60">
+      <div className="flex items-center gap-2 border-b border-border/60 bg-muted/20 px-3 py-2 text-xs font-medium text-foreground">
+        <Package className="h-3.5 w-3.5 text-muted-foreground" />
+        <span>{t('artifacts')}</span>
+        <span className="text-muted-foreground">({files.length})</span>
+      </div>
+      <div>
         {visibleFiles.map((file) => (
           <ArtifactFile
             key={file.path ?? file.url ?? file.filename}
             file={file}
-            className="rounded-none border-0 bg-transparent px-3 py-2"
+            className="rounded-none border-x-0 border-t-0 border-b border-border/60 bg-transparent px-3 py-2 last:border-b-0"
             onOpenPreview={onOpenPreview}
           />
         ))}
