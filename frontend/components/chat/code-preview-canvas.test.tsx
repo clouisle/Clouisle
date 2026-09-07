@@ -142,6 +142,7 @@ mock.module('react', () => ({
     if (stateValues[index] === undefined) stateValues[index] = initial
     return [stateValues[index] as T, (value) => setStateValue(index, value)]
   },
+  useSyncExternalStore: <T,>(_subscribe: unknown, getSnapshot: () => T) => getSnapshot(),
 }))
 mock.module('next-intl', () => ({
   useLocale: () => 'en',

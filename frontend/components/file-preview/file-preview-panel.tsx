@@ -2,14 +2,19 @@
 
 import * as React from 'react'
 import type { IframeHTMLAttributes } from 'react'
+import dynamic from 'next/dynamic'
 import { AlertTriangle, Download, Expand, ShieldAlert, ZoomIn, ZoomOut, X } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import { DocxPreview } from './docx-preview'
-import { PdfPreview } from './pdf-preview'
 import { PptxPreview } from './pptx-preview'
 import { PreviewZoomViewport, type PreviewZoomFitMode } from './preview-zoom-viewport'
 import { SpreadsheetPreview } from './spreadsheet-preview'
 import { getFilePreviewMode, type FilePreviewMode, type PreviewFile } from './file-preview-types'
+
+const PdfPreview = dynamic(
+  () => import('./pdf-preview').then((mod) => mod.PdfPreview),
+  { ssr: false },
+)
 
 export interface FilePreviewLabels {
   title: string
