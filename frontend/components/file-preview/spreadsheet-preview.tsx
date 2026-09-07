@@ -95,7 +95,7 @@ export function SpreadsheetPreview({ blob, filename, labels, onError }: Spreadsh
         className="h-full w-full border-0"
         rounded={false}
         readOnly
-        showDefaultToolbar={false}
+        showDefaultToolbar
       />
     </div>
   )
