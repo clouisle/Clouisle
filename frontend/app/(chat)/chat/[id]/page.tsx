@@ -503,10 +503,22 @@ export default function PublicChatPage({
       // awaits getRunStatus — preventing a blank-message flash.
       const snapshot = resolvedParams ? getStoredRunSnapshot(resolvedParams.id, conv.id) : null
       const lastMsg = chatMessages[chatMessages.length - 1]
-      const needsPlaceholder = Boolean(
-        snapshot
-        && (!lastMsg || lastMsg.role !== 'assistant' || !lastMsg.parts.some(p => p.type === 'text' && (p as { text?: string }).text))
+      const hasCompletedAssistantContent = Boolean(
+        lastMsg
+        && lastMsg.role === 'assistant'
+        && (
+          lastMsg.parts.some((p) => {
+            if (p.type === 'text') return Boolean(p.text && p.text.trim().length > 0)
+            if (p.type === 'reasoning') return Boolean(p.text && p.text.trim().length > 0)
+            if (p.type === 'tool-call' || p.type === 'mcp-tool-call') return true
+            if (p.type === 'tool-result' || p.type === 'mcp-tool-result') return true
+            return false
+          })
+          || lastMsg.metadata?.isError
+          || lastMsg.metadata?.isManuallyStopped
+        )
       )
+      const needsPlaceholder = Boolean(snapshot && !hasCompletedAssistantContent)
       const loadingMessages = needsPlaceholder
         ? [...chatMessages, { id: `assistant-run-${snapshot!.runId}`, role: 'assistant' as const, parts: [], createdAt: new Date(), metadata: { isLoading: true } }]
         : chatMessages

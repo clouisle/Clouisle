@@ -438,6 +438,52 @@ describe('useChat', () => {
       })
     }
   })
+  it('reuses an existing trailing loading placeholder message instead of appending a duplicate', async () => {
+    const storage = new Map<string, string>([
+      ['clouisle:agent-run:agent-1:conversation-1', JSON.stringify({ runId: 'run-1', lastSequence: 0 })],
+    ])
+    const originalWindow = globalThis.window
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        sessionStorage: {
+          getItem: (key: string) => storage.get(key) ?? null,
+          setItem: (key: string, value: string) => storage.set(key, value),
+          removeItem: (key: string) => storage.delete(key),
+        },
+      },
+    })
+    try {
+      getRunStatus.mockResolvedValue({
+        id: 'run-1',
+        agent_id: 'agent-1',
+        conversation_id: 'conversation-1',
+        mode: 'send',
+        status: 'running',
+        canonical_message_id: 'canonical-msg-1',
+      })
+      const initialMessages = [
+        { id: 'u1', role: 'user' as const, parts: [{ type: 'text' as const, text: 'hello' }] },
+        { id: 'assistant-run-run-1', role: 'assistant' as const, parts: [], metadata: { isLoading: true } },
+      ]
+      options = { agentId: 'agent-1', conversationId: 'conversation-1', initialMessages }
+      stateSlots = []
+      refSlots = []
+      renderHookHarness()
+      result.reconnect()
+      for (let i = 0; i < 5; i += 1) await flush()
+
+      renderHookHarness()
+      const assistantMessages = result.messages.filter((message) => message.role === 'assistant')
+      expect(assistantMessages).toHaveLength(1)
+      expect(assistantMessages[0].id).toBe('assistant-run-run-1')
+    } finally {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: originalWindow,
+      })
+    }
+  })
   it('ignores a stale run-status response after switching conversations', async () => {
     const storage = new Map<string, string>([
       ['clouisle:agent-run:agent-1:conversation-a', JSON.stringify({ runId: 'run-a', lastSequence: 2 })],

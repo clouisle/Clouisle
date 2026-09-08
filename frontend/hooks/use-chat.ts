@@ -396,22 +396,36 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
     if (!messageId) return null
     const existingMessage = messagesRef.current.find((message) => message.id === messageId)
+    // If no exact ID match, check if there is an unattached placeholder message
+    // (e.g. `assistant-run-${runId}`) at the tail we can adopt.
+    const lastMessage = messagesRef.current[messagesRef.current.length - 1]
+    const adoptablePlaceholderId = !existingMessage
+      && runIdForSession
+      && lastMessage?.role === 'assistant'
+      && (lastMessage.id === `assistant-run-${runIdForSession}` || (lastMessage.metadata?.isLoading && lastMessage.parts.length === 0))
+      ? lastMessage.id
+      : null
+
+    const adoptedMessage = adoptablePlaceholderId ? lastMessage : existingMessage
+    const effectiveDisplayId = adoptablePlaceholderId ?? messageId
+
     const session: AssistantStreamSession = {
       mode: 'reconnect',
-      displayMessageId: messageId,
+      displayMessageId: effectiveDisplayId,
       backendMessageId: messageId,
-      state: existingMessage ? createAssistantStreamStateFromParts(existingMessage.parts) : createAssistantStreamState(),
-      versionNumber: existingMessage?.versionNumber ?? 1,
-      versionCount: existingMessage?.versionCount ?? 1,
+      keepDisplayIdOnStart: Boolean(adoptablePlaceholderId),
+      state: adoptedMessage ? createAssistantStreamStateFromParts(adoptedMessage.parts) : createAssistantStreamState(),
+      versionNumber: adoptedMessage?.versionNumber ?? 1,
+      versionCount: adoptedMessage?.versionCount ?? 1,
       receivedTerminalEvent: false,
       receivedMessageEnd: false,
       endNotified: false,
       runId: runIdForSession,
     }
     setMessages((previous) => {
-      if (!previous.some((message) => message.id === messageId)) {
+      if (!previous.some((message) => message.id === effectiveDisplayId)) {
         return [...previous, {
-          id: messageId,
+          id: effectiveDisplayId,
           role: 'assistant',
           parts: [],
           createdAt: new Date(),
@@ -419,7 +433,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         }]
       }
       return previous.map((message) => (
-        message.id === messageId
+        message.id === effectiveDisplayId
           ? { ...message, metadata: { ...message.metadata, isLoading: true, isManuallyStopped: false } }
           : message
       ))
