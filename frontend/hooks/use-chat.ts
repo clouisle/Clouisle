@@ -1855,7 +1855,14 @@ function areChatMessagesEqual(a: ChatMessage, b: ChatMessage): boolean {
   const keysB = Object.keys(metaB)
   if (keysA.length !== keysB.length) return false
   for (const key of keysA) {
-    if (metaA[key] !== metaB[key]) return false
+    const valA = metaA[key]
+    const valB = metaB[key]
+    if (valA === valB) continue
+    if (typeof valA === 'object' && valA !== null && typeof valB === 'object' && valB !== null) {
+      if (JSON.stringify(valA) !== JSON.stringify(valB)) return false
+    } else {
+      return false
+    }
   }
   return true
 }

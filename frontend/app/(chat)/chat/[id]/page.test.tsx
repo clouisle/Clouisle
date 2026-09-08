@@ -315,20 +315,48 @@ describe('PublicChatPage', () => {
 
   test('prevents empty chat flash and preserves sidebar conversation items on refresh', async () => {
     query = new URLSearchParams('conversation=conv-1')
+    let resolveConversation!: (value: { messages: unknown[] }) => void
+    getConversation.mockImplementationOnce(() => new Promise((resolve) => { resolveConversation = resolve }))
+
     render()
     await flush()
 
-    // On initial load with conversation in URL, ChatContainer should receive loaded messages without key recreation
+    // While initial conversation load is pending, skeleton is rendered and no empty-chat welcome state appears
+    expect(renderer!.root.findAllByProps({ 'data-testid': 'chat-history-loading-skeleton' })).toHaveLength(1)
+    expect(output()).not.toContain('welcomeMessage')
+
+    // Resolve conversation load
+    await act(async () => {
+      resolveConversation({ messages: ['backend message'] })
+      await Promise.resolve()
+    })
+    await flush()
+
+    // ChatContainer is mounted with loaded messages and conversationId is updated
     expect(setConversationId).toHaveBeenCalledWith('conv-1')
-    expect(setMessages).toHaveBeenCalled()
+    expect(setMessages).toHaveBeenCalledWith([{ id: 'converted-0', role: 'user', content: 'backend message' }])
+    expect(renderer!.root.findAllByProps({ 'data-chat-container': true })).toHaveLength(1)
+    expect(output()).toContain('First chat')
+    expect(output()).toContain('untitledChat')
 
     // When onStreamEnd triggers refreshConversations with identical items
-    getConversations.mockResolvedValueOnce({ items: conversations, total: 2 })
+    let resolveRefresh!: (value: { items: typeof conversations; total: number }) => void
+    getConversations.mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve }))
     await act(async () => {
       chatOptions.onStreamEnd?.()
       await Promise.resolve()
     })
+    await act(async () => {
+      resolveRefresh({ items: conversations, total: 2 })
+      await Promise.resolve()
+    })
+    await flush()
+
     expect(getConversations).toHaveBeenCalledTimes(2)
+    // Verify continuity of rendered sidebar entries
+    expect(output()).toContain('First chat')
+    expect(output()).toContain('untitledChat')
+    expect(renderer!.root.findAllByProps({ 'data-chat-container': true })).toHaveLength(1)
   })
 
   test('places the queued label in the conversation instead of below the composer', async () => {

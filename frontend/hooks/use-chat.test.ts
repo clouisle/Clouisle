@@ -1421,8 +1421,14 @@ describe('useChat', () => {
   })
 
   it('preserves existing message references during history reload to prevent UI flicker', async () => {
-    const msg1: ChatMessage = { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'hello' }] }
-    const msg2: ChatMessage = { id: 'm2', role: 'assistant', parts: [{ type: 'text', text: 'hi there' }] }
+    const msgId = '11111111-1111-1111-1111-111111111111'
+    const msg1: ChatMessage = { id: msgId, role: 'user', parts: [{ type: 'text', text: 'hello' }] }
+    const msg2: ChatMessage = {
+      id: '22222222-2222-2222-2222-222222222222',
+      role: 'assistant',
+      parts: [{ type: 'text', text: 'hi there' }],
+      metadata: { usage: { prompt_tokens: 10, total_tokens: 30 }, timing: { duration_ms: 50 } },
+    }
     const initial = [msg1, msg2]
     options = { agentId: 'agent-1', conversationId: 'conversation-1' }
     renderHookHarness()
@@ -1430,18 +1436,27 @@ describe('useChat', () => {
     result.setMessages(initial)
     await flush()
 
-    // Server returns identical messages but in newly instantiated objects
+    // Server returns identical messages and equivalent usage/timing metadata in freshly constructed objects
     const freshServerObjects: ChatMessage[] = [
-      { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'hello' }] },
-      { id: 'm2', role: 'assistant', parts: [{ type: 'text', text: 'hi there' }] },
+      { id: msgId, role: 'user', parts: [{ type: 'text', text: 'hello' }] },
+      {
+        id: '22222222-2222-2222-2222-222222222222',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'hi there' }],
+        metadata: { usage: { prompt_tokens: 10, total_tokens: 30 }, timing: { duration_ms: 50 } },
+      },
     ]
     getConversation.mockResolvedValue({ messages: freshServerObjects })
-    streamEvents = [{ event: 'message_start', data: { message_id: 'm3' } }, { event: 'message_end', data: {} }]
+    getMessageVersions.mockResolvedValueOnce([{ id: 'v1' }])
     switchMessageVersion.mockResolvedValue(undefined)
 
-    // Trigger a history reload via switchVersion or editMessage
-    await result.switchVersion?.('m1', 0)
+    // Trigger a history reload via switchVersion
+    await result.switchVersion?.(msgId, 0)
     await flush()
+
+    expect(getMessageVersions).toHaveBeenCalledWith('agent-1', msgId)
+    expect(switchMessageVersion).toHaveBeenCalledWith('agent-1', msgId, 'v1')
+    expect(getConversation).toHaveBeenCalledWith('conversation-1')
 
     // The message references must be preserved exactly
     expect(result.messages[0]).toBe(msg1)

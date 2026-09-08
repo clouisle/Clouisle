@@ -125,6 +125,7 @@ export default function PublicChatPage({
   const [hasMoreConversations, setHasMoreConversations] = React.useState(true)
   const [loadingMore, setLoadingMore] = React.useState(false)
   const [loadingConversation, setLoadingConversation] = React.useState(() => {
+    if (embedMode) return false
     if (typeof window !== 'undefined') {
       return Boolean(new URLSearchParams(window.location.search).get('conversation'))
     }
@@ -190,20 +191,19 @@ export default function PublicChatPage({
     try {
       const convData = await adapter.getConversations(resolvedParams.id, { page: 1, pageSize: 5 })
       setConversations((prev) => {
-        if (prev.length <= convData.items.length) {
-          if (
-            prev.length === convData.items.length &&
-            prev.every((item, idx) => item.id === convData.items[idx]?.id && item.title === convData.items[idx]?.title)
-          ) {
-            return prev
-          }
-          return convData.items
+        const incomingIds = new Set(convData.items.map((item) => item.id))
+        const remainingPrev = prev.filter((item) => !incomingIds.has(item.id))
+        let merged = [...convData.items, ...remainingPrev]
+        if (typeof convData.total === 'number' && convData.total >= 0 && merged.length > convData.total) {
+          merged = merged.slice(0, convData.total)
         }
-        const updated = [...convData.items, ...prev.slice(convData.items.length)]
-        if (prev.every((item, idx) => item.id === updated[idx]?.id && item.title === updated[idx]?.title)) {
+        if (
+          prev.length === merged.length &&
+          prev.every((item, idx) => item.id === merged[idx]?.id && item.title === merged[idx]?.title)
+        ) {
           return prev
         }
-        return updated
+        return merged
       })
       setConversationPage(1)
       setHasMoreConversations(convData.items.length >= 5 && convData.total > convData.items.length)
