@@ -866,6 +866,13 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         if (hasIterationCapMarker && part.text.trim() === iterationCapLabel) {
           return null
         }
+        if (isUser) {
+          return (
+            <div key={index} className="whitespace-pre-wrap break-words">
+              {part.text}
+            </div>
+          )
+        }
         return (
           <TextWithCitations
             key={index}
@@ -1026,6 +1033,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       hideReasoning,
       hideToolCalls,
       isStreaming,
+      isUser,
       iterationCapLabel,
       onOpenCodePreview,
       openLightbox,
