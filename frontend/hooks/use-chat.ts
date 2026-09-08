@@ -397,11 +397,13 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
     const adoptedMessage = adoptablePlaceholderId ? lastMessage : existingMessage
     const effectiveDisplayId = adoptablePlaceholderId ?? messageId
+    const sessionConversationId = activeRunConversationRef.current ?? conversationIdRef.current
 
     if (runIdForSession) {
       const existing = sessionsByRunRef.current.get(runIdForSession)
       if (existing) {
         existing.reloadAfterTerminal = true
+        if (sessionConversationId) existing.conversationId = sessionConversationId
         if (effectiveDisplayId && existing.displayMessageId !== effectiveDisplayId) {
           existing.displayMessageId = effectiveDisplayId
         }
@@ -432,6 +434,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       receivedMessageEnd: false,
       endNotified: false,
       runId: runIdForSession,
+      conversationId: sessionConversationId ?? undefined,
     }
     setMessages((previous) => {
       if (!previous.some((message) => message.id === effectiveDisplayId)) {
@@ -744,6 +747,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       if (!session) return
       const nextConversationId = startData.conversation_id
       if (nextConversationId) {
+        session.conversationId = nextConversationId
         activeRunConversationRef.current = nextConversationId
         if (conversationIdRef.current !== nextConversationId) {
           setConversationId(nextConversationId)
@@ -819,6 +823,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       const terminalStatus = data.status as AgentRunStatus | undefined
       const terminalSession = session ?? (eventMessageId ? ensureSession(eventMessageId, envelope?.run_id) : null)
       if (terminalSession) {
+        const terminalConversationId = terminalSession.conversationId
         if (terminalStatus === 'stopped') {
           markAssistantStopped(terminalSession)
         } else if (terminalStatus === 'failed') {
@@ -830,11 +835,15 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         } else if (!terminalSession.receivedMessageEnd) {
           finishAssistantMessage(terminalSession)
         }
-        if (terminalSession.reloadAfterTerminal) {
-          void reloadConversationMessages().catch(() => undefined)
+        if (terminalSession.reloadAfterTerminal && terminalConversationId) {
+          void reloadConversationMessages(
+            terminalConversationId,
+            () => conversationIdRef.current === terminalConversationId,
+          ).catch(() => undefined)
         }
         notifyStreamEnd(terminalSession)
       }
+
       if (terminalStatus) setCurrentRunStatus(terminalStatus)
       const terminalRunId = envelope?.run_id ?? runIdRef.current
       if (terminalRunId) {
@@ -1178,6 +1187,15 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     start: () => { stream: Promise<Response>; abort: () => void } | Promise<{ stream: Promise<Response>; abort: () => void }>,
     options: { reloadAfterTerminal?: boolean; reloadOnError?: boolean } = {}
   ) => {
+    const reloadTerminalConversation = async () => {
+      const terminalConversationId = session.conversationId
+      if (!terminalConversationId) return
+      await reloadConversationMessages(
+        terminalConversationId,
+        () => conversationIdRef.current === terminalConversationId,
+      )
+    }
+
     const epoch = ++connectionEpochRef.current
     try {
       const { stream, abort } = await start()
@@ -1204,7 +1222,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         return
       }
       if (!session.receivedTerminalEvent) finishAssistantMessage(session)
-      if (options.reloadAfterTerminal) await reloadConversationMessages().catch(() => undefined)
+      if (options.reloadAfterTerminal) await reloadTerminalConversation().catch(() => undefined)
+
       setCurrentStatus('idle')
       notifyStreamEnd(session)
       resetStreamingState()
@@ -1218,7 +1237,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       const chatError: ChatError = { message: reason instanceof Error ? reason.message : '' }
       onError?.(chatError)
       markAssistantError(session, chatError)
-      if (options.reloadOnError) await reloadConversationMessages().catch(() => undefined)
+      if (options.reloadOnError) await reloadTerminalConversation().catch(() => undefined)
+
       setCurrentStatus('idle')
       notifyStreamEnd(session)
       resetStreamingState()
@@ -1284,6 +1304,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       receivedTerminalEvent: false,
       receivedMessageEnd: false,
       endNotified: false,
+      conversationId: conversationIdRef.current ?? undefined,
     }
     activeSessionRef.current = session
     syncStreamingState(session)
@@ -1304,6 +1325,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         await consumeStream(session, async () => {
           const started = await api.startRun!(agentId, request)
           session.runId = started.run_id
+          session.conversationId = started.conversation_id
+
           reconcileOptimisticUserMessage(session, started.user_message_id)
           trackRun(started.run_id, started.conversation_id)
           storeRunSnapshot(started.conversation_id)
@@ -1494,6 +1517,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       receivedMessageEnd: false,
       endNotified: false,
       reloadAfterTerminal: true,
+      conversationId: conversationIdRef.current ?? undefined,
     }
     activeSessionRef.current = session
     syncStreamingState(session)
@@ -1548,6 +1572,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       receivedMessageEnd: false,
       endNotified: false,
       keepDisplayIdOnStart: true,
+      conversationId: conversationIdRef.current ?? undefined,
     }
     activeSessionRef.current = session
     await consumeStream(session, () => api.regenerateStream(agentId, messageId, variables))
@@ -1676,6 +1701,7 @@ interface AssistantStreamSession {
   keepDisplayIdOnStart?: boolean
   reloadAfterTerminal?: boolean
   runId?: string
+  conversationId?: string
 }
 
 interface PendingRunInput {
