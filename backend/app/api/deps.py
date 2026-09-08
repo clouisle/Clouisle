@@ -189,8 +189,6 @@ async def _authenticate_jwt(token: str) -> User:
 async def get_current_active_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    user_locale = getattr(current_user, "locale", None) if current_user else None
-    set_language(await resolve_language(user_locale))
     if not current_user.is_active:
         raise BusinessError(
             code=ResponseCode.INACTIVE_USER,
@@ -200,6 +198,9 @@ async def get_current_active_user(
                 else "inactive_user"
             ),
         )
+    # Set language from user's locale preference if set, else system default
+    user_locale = getattr(current_user, "locale", None) if current_user else None
+    set_language(await resolve_language(user_locale))
     return current_user
 
 
