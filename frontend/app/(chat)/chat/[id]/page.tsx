@@ -930,33 +930,44 @@ export default function PublicChatPage({
                       <p className="flex-1 text-sm text-foreground truncate">
                         {conv.title || t('untitledChat')}
                       </p>
-                      {runningConversationIds.has(conv.id) && (
-                        <Loader2 aria-label={tCommon('loading')} className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
-                      )}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger onClick={(e) => e.stopPropagation()}>
-                          <span
-                            className="h-7 w-7 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-md hover:bg-accent transition-colors"
+                      <div className="relative flex h-7 w-7 shrink-0 items-center justify-center">
+                        {runningConversationIds.has(conv.id) && (
+                          <Loader2
+                            aria-label={tCommon('loading')}
+                            className="h-4 w-4 shrink-0 animate-spin text-muted-foreground transition-opacity group-hover:opacity-0"
+                          />
+                        )}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            onClick={(e) => e.stopPropagation()}
+                            className={cn(
+                              "absolute inset-0 flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                              runningConversationIds.has(conv.id)
+                                ? "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                                : "opacity-0 group-hover:opacity-100"
+                            )}
                           >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </span>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={(e) => handleRenameClick(conv, e as unknown as React.MouseEvent)}
-                          >
-                            <Pencil className="h-4 w-4 mr-2" />
-                            {t('rename')}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onClick={(e) => handleDeleteClick(conv, e as unknown as React.MouseEvent)}
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            {t('delete')}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                            <span className="flex h-7 w-7 items-center justify-center">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </span>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={(e) => handleRenameClick(conv, e as unknown as React.MouseEvent)}
+                            >
+                              <Pencil className="mr-2 h-4 w-4" />
+                              {t('rename')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onClick={(e) => handleDeleteClick(conv, e as unknown as React.MouseEvent)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              {t('delete')}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
                   ))}
                   {/* Sentinel element for infinite scroll */}

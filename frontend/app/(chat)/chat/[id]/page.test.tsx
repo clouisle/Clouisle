@@ -344,7 +344,29 @@ describe('PublicChatPage', () => {
     await flush()
 
     expect(getRunStatus).toHaveBeenCalledWith('agent-1', 'run-1')
-    expect(renderer!.root.findAllByType('i').filter((node) => node.props.className === 'h-4 w-4 shrink-0 animate-spin text-muted-foreground')).toHaveLength(1)
+    expect(renderer!.root.findAllByType('i').filter((node) => node.props.className?.includes('animate-spin') && node.props.className?.includes('group-hover:opacity-0'))).toHaveLength(1)
+  })
+
+  test('renders running indicator overlapping dropdown actions slot with hover swapping classes', async () => {
+    getStoredRunSnapshot.mockImplementation((agentId: string, conversationId: string) => (
+      agentId === 'agent-1' && conversationId === 'conv-1' ? { runId: 'run-1', lastSequence: 0 } : null
+    ))
+    getRunStatus.mockResolvedValue({ status: 'running' })
+
+    render()
+    await flush()
+
+    const loader = renderer!.root.findAllByType('i').find((node) => node.props.className?.includes('group-hover:opacity-0'))
+    expect(loader).toBeDefined()
+    expect(loader!.props['aria-label']).toBe('loading')
+
+    const dropdownTriggers = renderer!.root.findAllByType('button').filter((node) => {
+      const className = node.props.className
+      return typeof className === 'string' && className.includes('absolute inset-0')
+    })
+    expect(dropdownTriggers).toHaveLength(2)
+    expect(dropdownTriggers[0].props.className).toContain('opacity-0 group-hover:opacity-100')
+    expect(dropdownTriggers[0].props.className).toContain('focus-visible:opacity-100')
   })
 
   test('removes stored snapshot for completed background conversation', async () => {
@@ -383,7 +405,7 @@ describe('PublicChatPage', () => {
       await Promise.resolve()
     })
     expect(getRunStatus).toHaveBeenCalledWith('agent-1', 'replacement-run')
-    expect(renderer!.root.findAllByType('i').filter((node) => node.props.className === 'h-4 w-4 shrink-0 animate-spin text-muted-foreground')).toHaveLength(1)
+    expect(renderer!.root.findAllByType('i').filter((node) => node.props.className?.includes('animate-spin') && node.props.className?.includes('group-hover:opacity-0'))).toHaveLength(1)
 
     await act(async () => {
       resolveOldStatus({ status: 'completed' })
@@ -391,7 +413,7 @@ describe('PublicChatPage', () => {
     })
 
     expect(removeRunSnapshot).not.toHaveBeenCalled()
-    expect(renderer!.root.findAllByType('i').filter((node) => node.props.className === 'h-4 w-4 shrink-0 animate-spin text-muted-foreground')).toHaveLength(1)
+    expect(renderer!.root.findAllByType('i').filter((node) => node.props.className?.includes('animate-spin') && node.props.className?.includes('group-hover:opacity-0'))).toHaveLength(1)
   })
   test('places pending ask_user above the composer and forwards final answers', async () => {
     const submitAskUser = mock(async () => undefined)
