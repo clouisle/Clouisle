@@ -1420,6 +1420,49 @@ describe('useChat', () => {
     expect(result.status).toBe('idle')
   })
 
+  it('preserves existing message references during history reload to prevent UI flicker', async () => {
+    const msgId = '11111111-1111-1111-1111-111111111111'
+    const msg1: ChatMessage = { id: msgId, role: 'user', parts: [{ type: 'text', text: 'hello' }] }
+    const msg2: ChatMessage = {
+      id: '22222222-2222-2222-2222-222222222222',
+      role: 'assistant',
+      parts: [{ type: 'text', text: 'hi there' }],
+      metadata: { usage: { prompt_tokens: 10, total_tokens: 30 }, timing: { duration_ms: 50 } },
+    }
+    const initial = [msg1, msg2]
+    options = { agentId: 'agent-1', conversationId: 'conversation-1' }
+    renderHookHarness()
+    result.setConversationId('conversation-1')
+    result.setMessages(initial)
+    await flush()
+
+    // Server returns identical messages and equivalent usage/timing metadata in freshly constructed objects
+    const freshServerObjects: ChatMessage[] = [
+      { id: msgId, role: 'user', parts: [{ type: 'text', text: 'hello' }] },
+      {
+        id: '22222222-2222-2222-2222-222222222222',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'hi there' }],
+        metadata: { usage: { prompt_tokens: 10, total_tokens: 30 }, timing: { duration_ms: 50 } },
+      },
+    ]
+    getConversation.mockResolvedValue({ messages: freshServerObjects })
+    getMessageVersions.mockResolvedValueOnce([{ id: 'v1' }])
+    switchMessageVersion.mockResolvedValue(undefined)
+
+    // Trigger a history reload via switchVersion
+    await result.switchVersion?.(msgId, 0)
+    await flush()
+
+    expect(getMessageVersions).toHaveBeenCalledWith('agent-1', msgId)
+    expect(switchMessageVersion).toHaveBeenCalledWith('agent-1', msgId, 'v1')
+    expect(getConversation).toHaveBeenCalledWith('conversation-1')
+
+    // The message references must be preserved exactly
+    expect(result.messages[0]).toBe(msg1)
+    expect(result.messages[1]).toBe(msg2)
+  })
+
   it('marks edit-stream compression as errored when the stream fails', async () => {
     const userId = '11111111-1111-1111-1111-111111111111'
     const reloadStarted = deferred<void>()

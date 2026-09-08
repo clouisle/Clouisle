@@ -124,7 +124,13 @@ export default function PublicChatPage({
   const [conversationPage, setConversationPage] = React.useState(1)
   const [hasMoreConversations, setHasMoreConversations] = React.useState(true)
   const [loadingMore, setLoadingMore] = React.useState(false)
-  const [loadingConversation, setLoadingConversation] = React.useState(false)
+  const [loadingConversation, setLoadingConversation] = React.useState(() => {
+    if (embedMode) return false
+    if (typeof window !== 'undefined') {
+      return Boolean(new URLSearchParams(window.location.search).get('conversation'))
+    }
+    return false
+  })
   const loadMoreRef = React.useRef<HTMLDivElement>(null)
   const suppressUrlConversationReloadRef = React.useRef(false)
 
@@ -184,7 +190,21 @@ export default function PublicChatPage({
     if (!resolvedParams) return
     try {
       const convData = await adapter.getConversations(resolvedParams.id, { page: 1, pageSize: 5 })
-      setConversations(convData.items)
+      setConversations((prev) => {
+        const incomingIds = new Set(convData.items.map((item) => item.id))
+        const remainingPrev = prev.filter((item) => !incomingIds.has(item.id))
+        let merged = [...convData.items, ...remainingPrev]
+        if (typeof convData.total === 'number' && convData.total >= 0 && merged.length > convData.total) {
+          merged = merged.slice(0, convData.total)
+        }
+        if (
+          prev.length === merged.length &&
+          prev.every((item, idx) => item.id === merged[idx]?.id && item.title === merged[idx]?.title)
+        ) {
+          return prev
+        }
+        return merged
+      })
       setConversationPage(1)
       setHasMoreConversations(convData.items.length >= 5 && convData.total > convData.items.length)
     } catch {
@@ -406,10 +426,13 @@ export default function PublicChatPage({
   // Load conversation from URL parameter
   React.useEffect(() => {
     const loadConversationFromUrl = async () => {
-      if (embedMode || !resolvedParams || !agent || loadingConversations) return
+      if (embedMode || !resolvedParams || !agent) return
 
       const conversationParam = searchParams.get('conversation')
-      if (!conversationParam) return
+      if (!conversationParam) {
+        setLoadingConversation(false)
+        return
+      }
 
       if (suppressUrlConversationReloadRef.current) {
         suppressUrlConversationReloadRef.current = false
@@ -417,26 +440,52 @@ export default function PublicChatPage({
       }
 
       // Don't reload if already loaded
-      if (conversationParam === conversationId) return
+      if (conversationParam === conversationId) {
+        setLoadingConversation(false)
+        return
+      }
       setSelectedImageRefs([])
       dismissPreview()
 
       try {
         setLoadingConversation(true)
         const { messages: chatMessages } = await adapter.getConversation(conversationParam)
-        setMessages(chatMessages)
+        const snapshot = getStoredRunSnapshot(resolvedParams.id, conversationParam)
+        const lastMsg = chatMessages[chatMessages.length - 1]
+        const hasCompletedAssistantContent = Boolean(
+          lastMsg
+          && lastMsg.role === 'assistant'
+          && (
+            lastMsg.parts.some((p) => {
+              if (p.type === 'text') return Boolean(p.text && p.text.trim().length > 0)
+              if (p.type === 'reasoning') return Boolean(p.text && p.text.trim().length > 0)
+              if (p.type === 'tool-call' || p.type === 'mcp-tool-call') return true
+              if (p.type === 'tool-result' || p.type === 'mcp-tool-result') return true
+              return false
+            })
+            || lastMsg.metadata?.isError
+            || lastMsg.metadata?.isManuallyStopped
+          )
+        )
+        const needsPlaceholder = Boolean(snapshot && !hasCompletedAssistantContent)
+        const loadingMessages = needsPlaceholder
+          ? [...chatMessages, { id: `assistant-run-${snapshot!.runId}`, role: 'assistant' as const, parts: [], createdAt: new Date(), metadata: { isLoading: true } }]
+          : chatMessages
+        setMessages(loadingMessages)
         setConversationId(conversationParam)
       } catch (err) {
         console.error('Failed to load conversation from URL:', err)
         // If conversation not found, clear the URL parameter
         syncConversationUrl(null, 'replace')
+        const errorMessage = err instanceof Error && err.message ? err.message : t('loadConversationFailed')
+        toast.error(errorMessage)
       } finally {
         setLoadingConversation(false)
       }
     }
 
     loadConversationFromUrl()
-  }, [resolvedParams, agent, loadingConversations, searchParams, conversationId, setConversationId, setMessages, syncConversationUrl, adapter, embedMode, dismissPreview])
+  }, [resolvedParams, agent, searchParams, conversationId, setConversationId, setMessages, syncConversationUrl, adapter, embedMode, dismissPreview, t])
 
   // Load more conversations
   const loadMoreConversations = React.useCallback(async () => {
@@ -529,6 +578,8 @@ export default function PublicChatPage({
       syncConversationUrl(conv.id)
     } catch (err) {
       console.error('Failed to load conversation:', err)
+      const errorMessage = err instanceof Error && err.message ? err.message : t('loadConversationFailed')
+      toast.error(errorMessage)
     } finally {
       setLoadingConversation(false)
     }
@@ -1133,7 +1184,6 @@ export default function PublicChatPage({
           ) : (
             /* Messages using ChatContainer */
             <ChatContainer
-              key={conversationId ?? 'new-chat'}
               messages={messages}
               isStreaming={isStreaming}
               isLoading={chatLoading}

@@ -313,6 +313,52 @@ describe('PublicChatPage', () => {
     })
   })
 
+  test('prevents empty chat flash and preserves sidebar conversation items on refresh', async () => {
+    query = new URLSearchParams('conversation=conv-1')
+    let resolveConversation!: (value: { messages: unknown[] }) => void
+    getConversation.mockImplementationOnce(() => new Promise((resolve) => { resolveConversation = resolve }))
+
+    render()
+    await flush()
+
+    // While initial conversation load is pending, skeleton is rendered and no empty-chat welcome state appears
+    expect(renderer!.root.findAllByProps({ 'data-testid': 'chat-history-loading-skeleton' })).toHaveLength(1)
+    expect(output()).not.toContain('welcomeMessage')
+
+    // Resolve conversation load
+    await act(async () => {
+      resolveConversation({ messages: ['backend message'] })
+      await Promise.resolve()
+    })
+    await flush()
+
+    // ChatContainer is mounted with loaded messages and conversationId is updated
+    expect(setConversationId).toHaveBeenCalledWith('conv-1')
+    expect(setMessages).toHaveBeenCalledWith([{ id: 'converted-0', role: 'user', content: 'backend message' }])
+    expect(renderer!.root.findAllByProps({ 'data-chat-container': true })).toHaveLength(1)
+    expect(output()).toContain('First chat')
+    expect(output()).toContain('untitledChat')
+
+    // When onStreamEnd triggers refreshConversations with identical items
+    let resolveRefresh!: (value: { items: typeof conversations; total: number }) => void
+    getConversations.mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve }))
+    await act(async () => {
+      chatOptions.onStreamEnd?.()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      resolveRefresh({ items: conversations, total: 2 })
+      await Promise.resolve()
+    })
+    await flush()
+
+    expect(getConversations).toHaveBeenCalledTimes(2)
+    // Verify continuity of rendered sidebar entries
+    expect(output()).toContain('First chat')
+    expect(output()).toContain('untitledChat')
+    expect(renderer!.root.findAllByProps({ 'data-chat-container': true })).toHaveLength(1)
+  })
+
   test('places the queued label in the conversation instead of below the composer', async () => {
     chatState.messages = [{ id: 'assistant-loading', role: 'assistant', parts: [], metadata: { isLoading: true } }]
     chatState.isLoading = true
@@ -738,6 +784,7 @@ describe('PublicChatPage', () => {
     await flush()
     expect(historyReplace).toHaveBeenCalledWith({}, '', '/chat/agent-1?source=share')
     expect(output()).not.toContain('private conversation detail')
+    expect(toastError).toHaveBeenCalledWith('private conversation detail')
     act(() => renderer!.unmount())
 
     getPublicAgent.mockRejectedValueOnce(new Error('private agent detail'))
@@ -762,7 +809,7 @@ describe('PublicChatPage', () => {
     await act(async () => firstChat.props.onClick())
     expect(getConversation).toHaveBeenCalledWith('conv-1')
     expect(console.error).toHaveBeenCalledWith('Failed to load conversation:', expect.any(Error))
-
+    expect(toastError).toHaveBeenCalledWith('select failed')
     getConversation.mockResolvedValueOnce({ messages: [] })
     await act(async () => firstChat.props.onClick())
     await flush()

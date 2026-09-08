@@ -30,6 +30,7 @@
     "deleteConversationDescription": "确定要删除对话“{title}”吗？此操作无法撤销。",
     "confirmDeleteConversation": "确认删除",
     "deleteConversationFailed": "删除对话失败，请稍后重试。",
+    "loadConversationFailed": "加载对话失败，请稍后重试。",
     "conversationTitle": "标题",
     "conversationTitlePlaceholder": "输入对话标题...",
     "cancel": "取消",
