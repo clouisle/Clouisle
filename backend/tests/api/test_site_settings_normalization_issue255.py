@@ -42,3 +42,22 @@ async def test_get_public_settings_includes_default_language(monkeypatch):
     )
     response = await get_public_settings()
     assert response["data"].default_language == "zh"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("falsey_lang", [None, ""])
+async def test_get_public_settings_default_language_falsey_fallback(
+    monkeypatch, falsey_lang
+):
+    from app.api.v1.endpoints.site_settings import get_public_settings
+    from app.models import SiteSetting
+
+    monkeypatch.setattr(
+        SiteSetting,
+        "get_all_by_category",
+        lambda public_only=True: __import__("asyncio").sleep(
+            0, result={"default_language": falsey_lang}
+        ),
+    )
+    response = await get_public_settings()
+    assert response["data"].default_language == "en"

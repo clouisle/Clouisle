@@ -140,9 +140,7 @@ def backfill_lexical_index_task(
 
 
 def _get_document_error_lang(document: Document, user_locale: str = "en") -> str:
-    if document.uploaded_by_id:
-        return user_locale
-    return "en"
+    return user_locale
 
 
 def _get_dimension_mismatch_error(document: Document, user_locale: str = "en") -> str:
@@ -255,8 +253,9 @@ async def _finish_upload_gateway_retry_exhaustion(
         return await _finish_already_finished_task(document, task_id)
 
     kb = document.knowledge_base
-    user_locale = (
-        getattr(document.uploaded_by, "locale", "en") if document.uploaded_by else "en"
+    uploader = getattr(document, "uploaded_by", None)
+    user_locale = await resolve_language(
+        getattr(uploader, "locale", None) if uploader else None
     )
     logger.error(
         "Upload gateway retries exhausted for document %s: %s", document_id, error
@@ -441,10 +440,10 @@ async def _process_document(document_id: str, task_id: str | None) -> dict[str, 
 
     kb = document.knowledge_base
     # Get uploader's locale for notifications
-    user_locale = (
-        getattr(document.uploaded_by, "locale", "en") if document.uploaded_by else "en"
+    uploader = getattr(document, "uploaded_by", None)
+    user_locale = await resolve_language(
+        getattr(uploader, "locale", None) if uploader else None
     )
-
     existing_chunks = await DocumentChunk.filter(document_id=doc_uuid).count()
     if existing_chunks > 0:
         return await _embed_existing_document_chunks(document_id, task_id)
@@ -855,10 +854,9 @@ def rechunk_document_task(self, document_id: str) -> dict:
 
         kb = document.knowledge_base
         # Get uploader's locale for notifications
-        user_locale = (
-            getattr(document.uploaded_by, "locale", "en")
-            if document.uploaded_by
-            else "en"
+        uploader = getattr(document, "uploaded_by", None)
+        user_locale = await resolve_language(
+            getattr(uploader, "locale", None) if uploader else None
         )
 
         try:
@@ -1103,8 +1101,9 @@ async def _embed_existing_document_chunks(
     kb = document.knowledge_base
     kb_id = cast(UUID, kb.id)
     kb_team_id = cast(UUID, kb.team_id)
-    user_locale = (
-        getattr(document.uploaded_by, "locale", "en") if document.uploaded_by else "en"
+    uploader = getattr(document, "uploaded_by", None)
+    user_locale = await resolve_language(
+        getattr(uploader, "locale", None) if uploader else None
     )
 
     async def _refresh_kb_stats() -> None:
@@ -1406,10 +1405,9 @@ def retry_failed_chunks_task(self, document_id: str) -> dict:
             return await _finish_already_finished_task(document, task_id)
 
         kb = document.knowledge_base
-        user_locale = (
-            getattr(document.uploaded_by, "locale", "en")
-            if document.uploaded_by
-            else "en"
+        uploader = getattr(document, "uploaded_by", None)
+        user_locale = await resolve_language(
+            getattr(uploader, "locale", None) if uploader else None
         )
 
         try:
@@ -1643,10 +1641,9 @@ def retry_failed_chunk_task(self, document_id: str, chunk_id: str) -> dict:
             return await _finish_already_finished_task(document, task_id)
 
         kb = document.knowledge_base
-        user_locale = (
-            getattr(document.uploaded_by, "locale", "en")
-            if document.uploaded_by
-            else "en"
+        uploader = getattr(document, "uploaded_by", None)
+        user_locale = await resolve_language(
+            getattr(uploader, "locale", None) if uploader else None
         )
 
         chunk = await DocumentChunk.filter(id=chunk_uuid, document_id=doc_uuid).first()

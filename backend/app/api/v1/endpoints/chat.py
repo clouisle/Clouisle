@@ -1914,12 +1914,13 @@ async def _enqueue_durable_chat_run(
         )
 
     await update_message_stats(agent, token_usage=None)
+    effective_locale = await resolve_language(getattr(current_user, "locale", None))
     streaming_config = get_streaming_config(agent)
     _, updated_file_urls = await build_file_content_for_context(
         agent=agent,
         file_urls=chat_in.file_urls,
         legacy_files=chat_in.files,
-        user_locale=await resolve_language(getattr(current_user, "locale", None)),
+        user_locale=effective_locale,
         tool_timeouts=streaming_config["tool_timeouts"],
         user=current_user,
     )
@@ -1963,7 +1964,7 @@ async def _enqueue_durable_chat_run(
         ),
         variables=chat_in.variables,
         branch_parent_id=user_branch_parent_id,
-        locale=await resolve_language(getattr(current_user, "locale", None)),
+        locale=effective_locale,
     )
     run.worker_payload = payload
     await run.save(update_fields=["worker_payload"])

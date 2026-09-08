@@ -104,6 +104,8 @@ async def _authenticate_api_key(api_key_str: str) -> tuple[User, APIKey]:
             .prefetch_related("roles__permissions")
             .first()
         )
+    user_locale = getattr(user, "locale", None) if user else None
+    set_language(await resolve_language(user_locale))
 
     if not user or not user.is_active:
         raise BusinessError(
@@ -115,7 +117,6 @@ async def _authenticate_api_key(api_key_str: str) -> tuple[User, APIKey]:
             ),
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
-
     # 更新最后使用时间
     matched_api_key.last_used_at = now_utc()
     await matched_api_key.save(update_fields=["last_used_at"])
@@ -164,6 +165,8 @@ async def _authenticate_jwt(token: str) -> User:
             status_code=status.HTTP_404_NOT_FOUND,
         )
 
+    user_locale = getattr(user, "locale", None) if user else None
+    set_language(await resolve_language(user_locale))
     # 检查单一会话模式
     from app.models.site_setting import SiteSetting
     from app.core.redis import get_user_session
@@ -186,6 +189,8 @@ async def _authenticate_jwt(token: str) -> User:
 async def get_current_active_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
+    user_locale = getattr(current_user, "locale", None) if current_user else None
+    set_language(await resolve_language(user_locale))
     if not current_user.is_active:
         raise BusinessError(
             code=ResponseCode.INACTIVE_USER,
@@ -195,9 +200,6 @@ async def get_current_active_user(
                 else "inactive_user"
             ),
         )
-    # Set language from user's locale preference if set, else system default
-    user_locale = getattr(current_user, "locale", None) if current_user else None
-    set_language(await resolve_language(user_locale))
     return current_user
 
 

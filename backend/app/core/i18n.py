@@ -103,6 +103,7 @@ def set_language(lang: str) -> None:
 
 
 _cached_default_language: str = Language.EN.value
+_cached_default_language_version: int = 0
 
 
 async def get_default_language() -> str:
@@ -111,12 +112,15 @@ async def get_default_language() -> str:
     This is used for system messages when no specific user locale is available,
     such as team notifications, webhook-triggered workflows, etc.
     """
-    global _cached_default_language
+    global _cached_default_language, _cached_default_language_version
     from app.models.site_setting import SiteSetting
 
+    read_version = _cached_default_language_version
     try:
         lang = await SiteSetting.get_value("default_language", "en")
-        _cached_default_language = normalize_language(str(lang))
+        # Only update cache if no newer write has updated the cache version
+        if _cached_default_language_version == read_version:
+            _cached_default_language = normalize_language(str(lang))
     except Exception:
         pass
     return _cached_default_language
@@ -128,8 +132,9 @@ def get_default_language_sync() -> str:
 
 
 def set_default_language_cache(lang: str | None) -> None:
-    """Update cached default language."""
-    global _cached_default_language
+    """Update cached default language and advance cache version."""
+    global _cached_default_language, _cached_default_language_version
+    _cached_default_language_version += 1
     if lang:
         _cached_default_language = normalize_language(lang)
 

@@ -32,7 +32,7 @@ from app.core.email import (
 )
 from app.core.captcha import create_captcha_proof, generate_captcha, verify_captcha
 from app.core.timezone import now_utc
-from app.core.i18n import get_default_language, resolve_language, t
+from app.core.i18n import get_default_language, normalize_language, resolve_language, t
 from app.models.user import User
 from app.models.site_setting import SiteSetting
 from app.schemas.token import Token
@@ -764,7 +764,7 @@ async def register(
         "force_password_change_first_login", False
     )
 
-    registration_locale = await resolve_language(user_in.locale)
+    registration_locale = normalize_language(user_in.locale) if user_in.locale else None
 
     # Create user
     hashed_password = security.get_password_hash(user_in.password)
@@ -813,6 +813,7 @@ async def register(
             resource_name=user.username,
             operation="create",
             status="success",
+            changes={"after": AuditLogService.snapshot(user, "user")},
             request=request,
             metadata={"is_first_user": True, "is_superuser": True},
         )
@@ -842,6 +843,7 @@ async def register(
         resource_name=user.username,
         operation="create",
         status="success",
+        changes={"after": AuditLogService.snapshot(user, "user")},
         request=request,
         metadata={
             "require_approval": require_approval,

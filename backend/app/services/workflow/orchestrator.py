@@ -859,7 +859,9 @@ class WorkflowOrchestrator:
                             workflow_name=workflow.name,
                             error=error[:200]
                             if error
-                            else t("unknown_error"),  # Truncate long errors
+                            else t(
+                                "unknown_error", lang=default_lang
+                            ),  # Truncate long errors
                         ),
                         data={
                             "workflow_id": str(workflow.id),
