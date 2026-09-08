@@ -105,6 +105,8 @@ export interface SourceDocumentPart {
   }
 }
 
+export type CitationSourcePart = SourceUrlPart | SourceDocumentPart
+
 /**
  * File/Document part - for uploaded documents
  */

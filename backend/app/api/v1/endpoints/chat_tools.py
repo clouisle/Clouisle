@@ -6,6 +6,8 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
+from app.services.citations import stable_citation_id, with_rag_citation_ids
+
 if TYPE_CHECKING:
     from app.models.agent import Agent
     from app.models.tool import Tool
@@ -140,6 +142,7 @@ async def _execute_asset_tool(
                     "ref": ref,
                     "filename": asset.display_filename,
                     "content": text,
+                    "citation_id": stable_citation_id("asset", asset.id),
                 },
                 ensure_ascii=False,
             )
@@ -160,6 +163,7 @@ async def _execute_asset_tool(
                 "filename": parsed.filename,
                 "content": parsed.content,
                 "truncated": parsed.truncated,
+                "citation_id": stable_citation_id("asset", asset.id),
             },
             ensure_ascii=False,
         )
@@ -247,7 +251,9 @@ async def execute_tool_call(
                 RetrievalRequest(query=query, targets=targets, top_k=top_k)
             )
             return json.dumps(
-                {"contexts": response.results}, ensure_ascii=False, default=str
+                {"contexts": with_rag_citation_ids(response.results)},
+                ensure_ascii=False,
+                default=str,
             )
         except Exception as e:
             logger.exception("RAG search failed: %s", e)

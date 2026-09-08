@@ -97,8 +97,16 @@ mock.module('@/components/ai-elements/tool', () => ({
   ToolInput: ({ input }: { input: unknown }) => <pre>{JSON.stringify(input)}</pre>,
   ToolOutput: ({ output, errorText }: { output?: unknown; errorText?: string }) => <pre>{errorText ?? JSON.stringify(output)}</pre>,
 }))
+mock.module('@/components/ai-elements/inline-citation', () => ({
+  InlineCitation: ({ children, ...props }: React.ComponentProps<'span'>) => <span {...props}>{children}</span>,
+  InlineCitationCard: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  InlineCitationCardBody: ({ children, ...props }: React.ComponentProps<'div'>) => <div {...props}>{children}</div>,
+  InlineCitationCardTrigger: ({ label, sources, ...props }: React.ComponentProps<'button'> & { label?: React.ReactNode; sources: string[] }) => <button type="button" data-source-count={sources.length} {...props}>{label}</button>,
+  InlineCitationQuote: ({ children, ...props }: React.ComponentProps<'blockquote'>) => <blockquote {...props}>{children}</blockquote>,
+  InlineCitationSource: ({ children, title, url, ...props }: React.ComponentProps<'div'> & { title?: string; url?: string }) => <div {...props}>{title && <h4>{title}</h4>}{url && <p>{url}</p>}{children}</div>,
+}))
 mock.module('./image-lightbox', () => ({ ImageLightbox: ({ src, alt, isOpen }: { src: string; alt: string; isOpen: boolean }) => isOpen ? <div role="dialog" aria-label={alt}>{src}</div> : null, useLightbox: () => ({ isOpen: false, imageSrc: '', imageAlt: '', openLightbox, closeLightbox: mock(() => {}) }) }))
-mock.module('./message-parts', () => ({ SourceContent: ({ sources }: { sources: unknown[] }) => <aside>sources:{sources.length}</aside> }))
+mock.module('./message-parts', () => ({ SourceContent: ({ sources }: { sources: Array<{ sourceId?: string }> }) => <aside>sources:{sources.length}:{sources.map(source => source.sourceId).join(',')}</aside> }))
 mock.module('streamdown', () => ({
   Block: ({ content }: { content: string }) => (
     <div data-streamdown="code-block">
@@ -451,8 +459,9 @@ describe('message behavior', () => {
         id: 'mixed',
         role: 'assistant',
         parts: [
-          { type: 'source-url', url: 'https://example.test', title: 'Example' },
-          { type: 'source-document', documentName: 'Guide', content: 'Citation' },
+          { type: 'text', text: 'Web[[cite:web_source]] Document[[cite:doc_source]]', state: 'done' },
+          { type: 'source-url', sourceId: 'web_source', url: 'https://example.test', title: 'Example' },
+          { type: 'source-document', sourceId: 'doc_source', documentName: 'Guide', content: 'Citation' },
           { type: 'file', filename: 'hidden.pdf', url: '/hidden.pdf' },
           { type: 'image', url: '/uploaded.png', alt: 'Uploaded chart' },
           { type: 'media-result', output: { kind: 'media.video', success: true, prompt: 'Demo', status: 'processing', progress: 0.42 } },
@@ -467,6 +476,32 @@ describe('message behavior', () => {
     expect(html).toContain('chat.message.videoProcessing')
     expect(html).toContain('chat.message.progress')
     expect(html).toContain('chat.message.outputTruncated')
+  })
+
+  test('lists only sources cited by the assistant answer', () => {
+    const cited = renderToStaticMarkup(<Message message={{
+      id: 'partially-cited',
+      role: 'assistant',
+      parts: [
+        { type: 'text', text: 'Supported claim[[cite:used_source]]', state: 'done' },
+        { type: 'source-url', sourceId: 'used_source', url: 'https://example.test/used' },
+        { type: 'source-url', sourceId: 'unused_source', url: 'https://example.test/unused' },
+      ],
+    }} />)
+    const uncited = renderToStaticMarkup(<Message message={{
+      id: 'uncited',
+      role: 'assistant',
+      parts: [
+        { type: 'text', text: 'No source marker', state: 'done' },
+        { type: 'source-document', sourceId: 'unused_document', documentName: 'Unused', content: 'Unused material' },
+      ],
+    }} />)
+
+    expect(cited).toContain('sources:1')
+    expect(cited).not.toContain('sources:2')
+    expect(cited).toContain('used_source')
+    expect(cited).not.toContain('unused_source')
+    expect(uncited).not.toContain('sources:')
   })
 
 
@@ -582,7 +617,7 @@ describe('message behavior', () => {
     expect(thought?.querySelector('h3')?.textContent).toBe('chat.reasoning.actionCallingToolsParallel count=2')
     expect([...container.querySelectorAll('[data-step-status]')].map((item) => item.getAttribute('data-step-status'))).toEqual(['complete', 'active', 'active', 'active', 'error', 'pending', 'error'])
     expect(container.querySelector('[data-streaming="true"]')).not.toBeNull()
-    expect([...container.querySelectorAll('[data-tool-state]')].map((item) => item.getAttribute('data-tool-state'))).toEqual(['input-available', 'output-error', 'input-streaming'])
+    expect([...container.querySelectorAll('[data-tool-state]')].map((item) => item.getAttribute('data-tool-state'))).toEqual(['output-available', 'input-available', 'output-error', 'input-streaming'])
 
     act(() => button(container, 'toggle reasoning').click())
     expect(onOpenChange).toHaveBeenCalledWith(false)
@@ -660,6 +695,63 @@ describe('message behavior', () => {
     />)
     expect(finalStep).toContain('chat.reasoning.thoughtFor seconds=2')
     expect(finalStep).not.toContain('chat.reasoning.thinkingDefault')
+  })
+
+  test('keeps thought process actively updating during later tool iterations even with text present', () => {
+    const multiRoundExecuting = renderToStaticMarkup(<Message
+      isStreaming
+      message={{
+        id: 'multi-round-executing',
+        role: 'assistant',
+        parts: [
+          { type: 'reasoning', text: 'First round done', state: 'done', duration: 1500 },
+          { type: 'text', text: 'I will now search the web for more information.', state: 'streaming' },
+          { type: 'tool-call', toolCallId: 't2', toolName: 'web_search', input: { q: 'latest' }, state: 'running' },
+        ],
+      }}
+    />)
+    expect(multiRoundExecuting).toContain('data-chat-thought-process="true"')
+    expect(multiRoundExecuting).toContain('data-streaming="true"')
+    expect(multiRoundExecuting).toContain('<h3>chat.reasoning.actionSearchingWeb</h3>')
+    expect(multiRoundExecuting).not.toContain('<h3>chat.reasoning.thoughtFor')
+  })
+
+  test('renders naive rag in thought process as an expandable tool-like card with parameters and results', () => {
+    const container = render(<Message
+      chainOfThoughtOpen
+      message={{
+        id: 'rag-detail-message',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'task',
+            taskType: 'rag',
+            state: 'completed',
+            info: {
+              count: 1,
+              query: 'how to configure',
+              contexts: [
+                {
+                  document_id: 'doc-1',
+                  document_name: 'Config Guide',
+                  content: 'Relevant snippet content',
+                  score: 0.95,
+                  kb_name: 'Manual',
+                },
+              ],
+            },
+          },
+          { type: 'text', text: 'Here is the answer', state: 'done' },
+        ],
+      }}
+    />)
+    const thought = container.querySelector('[data-chat-thought-process="true"]')
+    expect(thought).not.toBeNull()
+    expect(thought?.textContent).toContain('chat.task.foundSources')
+    expect(thought?.textContent).toContain('chat.task.searchingKnowledge')
+    expect(thought?.textContent).toContain('how to configure')
+    expect(thought?.textContent).toContain('Config Guide')
+    expect(thought?.textContent).toContain('Relevant snippet content')
   })
 
 
@@ -977,7 +1069,7 @@ describe('message behavior', () => {
     })
   })
 
-  test('normalizes citations, strong markers, and math outside code', () => {
+  test('normalizes strong markers and math outside code without altering text markers', () => {
     const html = renderToStaticMarkup(<Message message={{
       id: 'normalized-text',
       role: 'assistant',
@@ -988,16 +1080,51 @@ describe('message behavior', () => {
     }} />)
 
     expect(html).toContain('&lt;strong&gt;Bold&lt;/strong&gt;suffix')
-    expect(html).toContain(' [1]')
-    expect(html).not.toContain('(ref:9)')
+    expect(html).toContain('[ref:1]')
+    expect(html).toContain('(ref:9)')
     expect(html).toContain('$$')
-    expect(html).toContain('` [1]`')
   })
 
-  test('copies citation-free text and reports clipboard failures', async () => {
+  test('renders canonical and legacy known citation markers as inline source cards', () => {
+    const legacyCitationMarker = '\ue200cite\ue202web_b2\ue200'
+    renderToStaticMarkup(<Message message={{
+      id: 'cited-answer',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'text',
+          text: `Supported claim[[cite:web_b2]] Legacy${legacyCitationMarker} Unknown[[cite:missing]]`,
+          state: 'done',
+        },
+        { type: 'source-url', sourceId: 'web_b2', title: 'News', url: 'https://example.test/news', snippet: 'Latest update' },
+      ],
+    }} />)
+
+    expect(lastStreamdownProps.children).toBe('Supported claim[1](#clouisle-citation=web_b2) Legacy[1](#clouisle-citation=web_b2) Unknown')
+    const CitationLink = (lastStreamdownProps.components as {
+      a: React.ComponentType<React.ComponentProps<'a'>>
+    }).a
+    const card = renderToStaticMarkup(<CitationLink href="#clouisle-citation=web_b2">1</CitationLink>)
+    expect(card).toContain('data-citation-id="web_b2"')
+    expect(card).toContain('News')
+    expect(card).toContain('https://example.test/news')
+    expect(card).toContain('Latest update')
+
+    renderToStaticMarkup(<Message
+      isStreaming
+      message={{
+        id: 'streaming-citation',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'Still writing[[cite:web_', state: 'streaming' }],
+      }}
+    />)
+    expect(lastStreamdownProps.children).toBe('Still writing')
+  })
+
+  test('copies full message text and reports clipboard failures', async () => {
     const writeText = mock(async () => {})
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
-    const container = render(<Message message={{ id: 'copy', role: 'assistant', parts: [{ type: 'text', text: 'Answer [[cite:1]]' }] }} />)
+    const container = render(<Message message={{ id: 'copy', role: 'assistant', parts: [{ type: 'text', text: 'Answer[[cite:web_b2]]' }] }} />)
 
     await act(async () => button(container, 'chat.message.copy').click())
     expect(writeText).toHaveBeenCalledWith('Answer')
@@ -1037,7 +1164,7 @@ describe('message behavior', () => {
     ;(globalThis as typeof globalThis & { SpeechSynthesisUtterance: typeof Utterance }).SpeechSynthesisUtterance = Utterance
     const onRequestScrollIntoView = mock(() => {})
     const container = render(<Message
-      message={{ id: 'speech', role: 'assistant', parts: [{ type: 'text', text: '# Dr. Smith has **one** item. Next item! `code` 🎉' }] }}
+      message={{ id: 'speech', role: 'assistant', parts: [{ type: 'text', text: '# Dr. Smith has **one** item. Next item! `code` 🎉[[cite:web_b2]]' }] }}
       onRequestScrollIntoView={onRequestScrollIntoView}
     />)
     await act(async () => {})

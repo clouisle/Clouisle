@@ -41,72 +41,31 @@ mock.module("@/components/ui/tooltip", () => ({
   TooltipContent: (props: Record<string, unknown>) => jsx("tooltip-content", props),
 }));
 
-const { TextContent } = await import("./text-content");
+const { TextContent, TextContentComponent } = await import("./text-content");
+const RenderTextContent = (TextContentComponent || (typeof TextContent === 'function' ? TextContent : (TextContent as unknown as { type: (props: unknown) => unknown }).type)) as unknown as typeof TextContent;
 
-type Tree = { type: unknown; props: Record<string, unknown> };
-
-function resolve(node: ReactNode): Tree | ReactNode {
-  if (!node || typeof node !== "object" || !("type" in node)) return node;
-  const tree = node as Tree;
-  return typeof tree.type === "function"
-    ? resolve(
-        (tree.type as (props: Record<string, unknown>) => ReactNode)(
-          tree.props,
-        ),
-      )
-    : tree;
-}
 
 function streamdownProps(
   part: React.ComponentProps<typeof TextContent>["part"],
 ) {
-  const tree = TextContent({ part }) as Tree;
+  const tree = RenderTextContent({ part }) as Tree;
   return (tree.props.children as Tree[])[0].props;
 }
 
 describe("TextContent", () => {
-  test("normalizes citation formats before sending markdown to Streamdown", () => {
+  test("passes raw markdown directly to Streamdown without citation replacement", () => {
     const props = streamdownProps({
       type: "text",
       text: "One [[ref:1]], [ref:2], (ref:3), and [[cite:4]].",
     });
 
     expect(props.children).toBe(
-      "One <cite-1>, <cite-2>, <cite-3>, and <cite-4>.",
+      "One [[ref:1]], [ref:2], (ref:3), and [[cite:4]].",
     );
   });
 
-  test("renders citation badges with source metadata and forwards clicks", () => {
-    const clicked: number[] = [];
-    const tree = TextContent({
-      part: { type: "text", text: "Answer [[cite:1]]" },
-      sources: [
-        { type: "source-document", documentName: "Guide", content: "Source" },
-      ],
-      onCitationClick: (index) => clicked.push(index),
-    }) as Tree;
-    const streamdown = (tree.props.children as Tree[])[0];
-    const paragraph = streamdown.props.components.p as (
-      props: Record<string, unknown>,
-    ) => ReactNode;
-    const rendered = paragraph({
-      children: "Answer <cite-1>",
-      node: { children: [] },
-    }) as Tree;
-    const fragment = resolve(rendered.props.children) as Tree;
-    const tooltip = resolve((fragment.props.children as ReactNode[])[1]) as Tree;
-    const badge = resolve((tooltip.props.children as ReactNode[])[0]) as Tree;
-
-    expect(badge).toMatchObject({
-      type: "button",
-      props: { "aria-label": "Guide", children: 1 },
-    });
-    badge.props.onClick();
-    expect(clicked).toEqual([1]);
-  });
-
   test("uses block paragraphs for image nodes and shows the streaming cursor", () => {
-    const tree = TextContent({
+    const tree = RenderTextContent({
       part: { type: "text", text: "![image](url)", state: "streaming" },
     }) as Tree;
     const children = tree.props.children as Tree[];

@@ -51,7 +51,15 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import type { ChatMessage, ChatPreviewPayload, CodePreviewPayload, MessagePart, SourceDocumentPart, SourceUrlPart, FilePart, ImagePart, TaskPart, ToolCallPart, McpToolCallPart, MediaResultPart } from './types'
+import {
+  InlineCitation,
+  InlineCitationCard,
+  InlineCitationCardBody,
+  InlineCitationCardTrigger,
+  InlineCitationQuote,
+  InlineCitationSource,
+} from '@/components/ai-elements/inline-citation'
+import type { ChatMessage, ChatPreviewPayload, CodePreviewPayload, MessagePart, CitationSourcePart, FilePart, ImagePart, TaskPart, ToolCallPart, McpToolCallPart, MediaResultPart } from './types'
 import {
   isTextPart,
   isReasoningPart,
@@ -80,6 +88,24 @@ import {
   shouldDisplayMediaResultInBody,
 } from '@/lib/utils/tool-result'
 
+const CITATION_MARKER_REGEX = /\[\[cite:([A-Za-z0-9_-]{1,128})\]\]/g
+const CITATION_PROTOCOL_MARKER_REGEX = /\[\[cite:[^\]\r\n]{0,256}\]\]/g
+const INCOMPLETE_CITATION_SUFFIX_REGEX = /\[\[(?:c|ci|cit|cite|cite:[^\]\r\n]*)?$/
+const LEGACY_CITATION_MARKER_REGEX = /\ue200cite\ue202([A-Za-z0-9_-]{1,128})\ue200/g
+const LEGACY_CITATION_PROTOCOL_MARKER_REGEX = /\ue200cite\ue202[^\ue200]*\ue200/g
+const LEGACY_INCOMPLETE_CITATION_SUFFIX_REGEX = /\ue200(?:cite(?:\ue202[^\ue200]*)?)?$/
+const CITATION_HREF_PREFIX = '#clouisle-citation='
+
+function stripCitationMarkers(text: string) {
+  if (!text || (!text.includes('[[') && !text.includes('\ue200'))) {
+    return text || ''
+  }
+  return text
+    .replace(CITATION_PROTOCOL_MARKER_REGEX, '')
+    .replace(LEGACY_CITATION_PROTOCOL_MARKER_REGEX, '')
+    .replace(INCOMPLETE_CITATION_SUFFIX_REGEX, '')
+    .replace(LEGACY_INCOMPLETE_CITATION_SUFFIX_REGEX, '')
+}
 const CODE_FENCE_REGEX = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)\r?\n([\s\S]*?)(?:\r?\n)?(`{3,}|~{3,})[ \t\r\n]*$/
 const STREAMING_REHYPE_PLUGINS = [
   defaultRehypePlugins.sanitize,
@@ -160,7 +186,7 @@ function getSpeechSynthesis() {
 const SPEECH_EMOJI_REGEX = /(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|[☀-➿])[️︎]?(?:‍(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|[☀-➿])[️︎]?)*|[\u{1F3FB}-\u{1F3FF}]/gu
 
 function getSpeechText(text: string) {
-  return text
+  return stripCitationMarkers(text)
     .replace(/```[\s\S]*?```/g, '')
     .replace(/`([^`]+)`/g, '$1')
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
@@ -493,22 +519,17 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     // renderers use the original message index for stable keys and callbacks.
     const {
       allSources,
-      documentSources,
       otherParts,
       otherPartEntries,
       hasIterationCapMarker,
     } = React.useMemo(() => {
-      const nextAllSources: Array<SourceUrlPart | SourceDocumentPart> = []
-      const nextDocumentSources: SourceDocumentPart[] = []
+      const nextAllSources: CitationSourcePart[] = []
       const nextOtherPartEntries: Array<{ part: MessagePart; index: number }> = []
       let nextHasIterationCapMarker = false
       const parts = message.parts || []
       for (const [index, part] of parts.entries()) {
         if (isSourcePart(part)) {
-          nextAllSources.push(part as SourceUrlPart | SourceDocumentPart)
-          if (isSourceDocumentPart(part)) {
-            nextDocumentSources.push(part)
-          }
+          nextAllSources.push(part as CitationSourcePart)
           continue
         }
 
@@ -520,12 +541,19 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
 
       return {
         allSources: nextAllSources,
-        documentSources: nextDocumentSources,
         otherParts: nextOtherPartEntries.map(({ part }) => part),
         otherPartEntries: nextOtherPartEntries,
         hasIterationCapMarker: nextHasIterationCapMarker,
       }
     }, [message.parts])
+    const citedSources = React.useMemo(() => {
+      if (allSources.length === 0) return []
+      const citedSourceIds = collectCitedSourceIds(otherParts)
+      if (citedSourceIds.size === 0) return []
+      return allSources.filter(source => (
+        source.sourceId ? citedSourceIds.has(source.sourceId) : false
+      ))
+    }, [allSources, otherParts])
     const iterationCapLabel = t('iterationCapReached').trim()
     const taskParts = React.useMemo(() => otherParts.filter(isTaskPart), [otherParts])
     const reasoningParts = React.useMemo(() => otherParts.filter(isReasoningPart), [otherParts])
@@ -537,7 +565,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const hasReasoning = reasoningParts.length > 0
 
 
-    // Get text content for copying (strip citation markers)
+    // Get text content for copying
     const textContent = React.useMemo(() => {
       const parts: string[] = []
       for (const part of message.parts || []) {
@@ -545,7 +573,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           isTextPart(part)
           && !(hasIterationCapMarker && part.text.trim() === iterationCapLabel)
         ) {
-          parts.push(part.text.replace(/\[\[cite:\d+\]\]/g, ''))
+          parts.push(stripCitationMarkers(part.text))
         }
       }
       return parts.join('\n').trim()
@@ -842,7 +870,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           <TextWithCitations
             key={index}
             text={part.text}
-            sources={documentSources}
+            sources={citedSources}
             isStreaming={isStreaming && part.state !== 'done'}
             activeSpeechSentence={activeSpeechSentence}
             onOpenCodePreview={onOpenCodePreview}
@@ -992,7 +1020,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       return null
     }, [
       activeSpeechSentence,
-      documentSources,
+      citedSources,
       hasIterationCapMarker,
       hasReasoning,
       hideReasoning,
@@ -1059,14 +1087,21 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     )
     const hasTasks = taskParts.length > 0
     const hasChainOfThought = (hasReasoning || hasTasks) && !hideReasoning
-    const isChainOfThoughtStreaming = !hasTextContent && (
+    const activeToolActions = React.useMemo(() => {
+      return getActiveToolActions(message.parts || [])
+    }, [message.parts])
+    const hasActiveThoughtActivity = (
       taskParts.some(part => part.state === 'running')
       || reasoningParts.some(part => part.state === 'streaming')
-      || (hasReasoning && toolCallParts.some(part => (
+      || activeToolActions.length > 0
+      || toolCallParts.some(part => (
         (isToolCallPart(part) || isMcpToolCallPart(part))
         && (part.state === 'pending' || part.state === 'running')
-      )))
-      || isStreaming
+      ))
+    )
+    const isChainOfThoughtStreaming = Boolean(
+      hasActiveThoughtActivity
+      || (isStreaming && !hasTextContent)
     )
 
     // Compute total reasoning duration if available
@@ -1082,12 +1117,9 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       return hasDuration ? totalMs : null
     }, [reasoningParts])
 
-    const activeToolActions = React.useMemo(() => {
-      return getActiveToolActions(message.parts || [])
-    }, [message.parts])
 
     const chainOfThoughtTitle = React.useMemo(() => {
-      if (isChainOfThoughtStreaming) {
+      if (hasActiveThoughtActivity) {
         if (activeToolActions.length === 1) {
           const action = activeToolActions[0]
           switch (action.category) {
@@ -1113,12 +1145,15 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         }
         return tReasoning('thinkingDefault')
       }
+      if (isStreaming && !hasTextContent) {
+        return tReasoning('thinkingDefault')
+      }
       if (totalReasoningDuration !== null) {
         const seconds = Math.max(1, Math.ceil(totalReasoningDuration / 1000))
         return tReasoning('thoughtFor', { seconds })
       }
       return tReasoning('thought')
-    }, [activeToolActions, isChainOfThoughtStreaming, totalReasoningDuration, tReasoning])
+    }, [activeToolActions, hasActiveThoughtActivity, hasTextContent, isStreaming, totalReasoningDuration, tReasoning])
     // Convert task state to step status
     const getStepStatus = React.useCallback((state: TaskPart['state']) => {
       switch (state) {
@@ -1132,8 +1167,10 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     // Render task title based on type and state
     const getTaskTitle = React.useCallback((taskPart: TaskPart) => {
       if (taskPart.taskType === 'rag') {
-        if (taskPart.state === 'completed' && typeof taskPart.info === 'number') {
-          return tTask('foundSources', { count: taskPart.info })
+        const info = (taskPart.info && typeof taskPart.info === 'object') ? taskPart.info as Record<string, unknown> : null
+        const sourceCount = typeof info?.count === 'number' ? info.count : typeof taskPart.info === 'number' ? taskPart.info : null
+        if (taskPart.state === 'completed' && sourceCount !== null) {
+          return tTask('foundSources', { count: sourceCount })
         }
         return tTask('searchingKnowledge')
       }
@@ -1214,13 +1251,55 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       const steps: React.ReactNode[] = []
 
       taskParts.filter(part => part.taskType === 'rag').forEach((taskPart, index) => {
+        const info = (taskPart.info && typeof taskPart.info === 'object') ? taskPart.info as Record<string, unknown> : null
+        const query = typeof info?.query === 'string' ? info.query : undefined
+        const contexts = Array.isArray(info?.contexts)
+          ? info.contexts
+          : allSources.filter(isSourceDocumentPart).map((src) => ({
+              document_id: src.documentId,
+              document_name: src.documentName,
+              content: src.content,
+              score: src.metadata?.score,
+              kb_id: src.metadata?.kb_id,
+              kb_name: src.metadata?.kb_name,
+            }))
+        const toolState = taskPart.state === 'error'
+          ? 'output-error'
+          : taskPart.state === 'completed'
+            ? 'output-available'
+            : taskPart.state === 'running'
+              ? 'input-available'
+              : 'input-streaming'
+
         steps.push(
           <ChainOfThoughtStep
             key={`rag-${index}`}
             icon={SearchIcon}
             label={getTaskTitle(taskPart)}
             status={getStepStatus(taskPart.state)}
-          />
+          >
+            <Tool defaultOpen={false} className="mt-2">
+              <ToolHeader
+                title={tTask('searchingKnowledge')}
+                type="tool-call"
+                state={toolState}
+              />
+              <AIToolContent>
+                {query && (
+                  <ToolInput input={{ query }} />
+                )}
+                {taskPart.state === 'completed' && (
+                  <ToolOutput
+                    output={{
+                      count: contexts.length,
+                      contexts: contexts.length > 0 ? contexts : [],
+                    }}
+                    errorText={undefined}
+                  />
+                )}
+              </AIToolContent>
+            </Tool>
+          </ChainOfThoughtStep>
         )
       })
 
@@ -1313,6 +1392,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
 
       return steps
     }, [
+      allSources,
       getStepStatus,
       getTaskTitle,
       getToolCallLabel,
@@ -1322,6 +1402,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       otherPartEntries,
       renderToolResultContent,
       tReasoning,
+      tTask,
       taskParts,
       toolResultsByCallIndex,
     ])
@@ -1436,12 +1517,12 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           )}
         </MessageContent>
 
-        {isAssistant && allSources.length > 0 && (
-          <SourceContent sources={allSources} onOpenCodePreview={onOpenCodePreview} />
+        {isAssistant && citedSources.length > 0 && (
+          <SourceContent sources={citedSources} onOpenCodePreview={onOpenCodePreview} />
         )}
       </>
     ), [
-      allSources,
+      citedSources,
       buildChainOfThoughtSteps,
       cancelEdit,
       chainOfThoughtTitle,
@@ -1891,15 +1972,53 @@ const BARE_LATEX_FORMULA_LINE_REGEX = /^(\s*)(\\(?:cos|sin|tan|log|ln|text|frac|
 const MATH_COMMAND_REGEX = /\\[A-Za-z]+/
 const TIGHT_STRONG_MARKER_REGEX = /\*\*([^*\n]+?)\*\*(?=[\p{Script=Han}\p{Letter}\p{Number}])/gu
 
+function collectCitedSourceIds(parts: MessagePart[]) {
+  const sourceIds = new Set<string>()
+  for (const part of parts) {
+    if (!isTextPart(part)) continue
+    const text = part.text
+    if (!text || (!text.includes('[[cite:') && !text.includes('\ue200cite'))) continue
+
+    if (!text.includes('`')) {
+      for (const match of text.matchAll(CITATION_MARKER_REGEX)) {
+        sourceIds.add(match[1])
+      }
+      for (const match of segmentMatchAll(text, LEGACY_CITATION_MARKER_REGEX)) {
+        sourceIds.add(match[1])
+      }
+      continue
+    }
+
+    for (const segment of text.split(CODE_BLOCK_REGEX)) {
+      if (!segment || segment.startsWith('`')) continue
+      if (!segment.includes('[[cite:') && !segment.includes('\ue200cite')) continue
+      for (const match of segment.matchAll(CITATION_MARKER_REGEX)) {
+        sourceIds.add(match[1])
+      }
+      for (const match of segmentMatchAll(segment, LEGACY_CITATION_MARKER_REGEX)) {
+        sourceIds.add(match[1])
+      }
+    }
+  }
+  return sourceIds
+}
+
+function segmentMatchAll(text: string, regex: RegExp) {
+  return text.matchAll(regex)
+}
 function normalizeTightStrongMarkers(input: string) {
-  if (!input) {
-    return ''
+  if (!input || !input.includes('**')) {
+    return input || ''
+  }
+
+  if (!input.includes('`')) {
+    return input.replace(TIGHT_STRONG_MARKER_REGEX, '<strong>$1</strong>')
   }
 
   return input
     .split(CODE_BLOCK_REGEX)
     .map((segment) => {
-      if (!segment || segment.startsWith('`')) {
+      if (!segment || segment.startsWith('`') || !segment.includes('**')) {
         return segment
       }
       return segment.replace(TIGHT_STRONG_MARKER_REGEX, '<strong>$1</strong>')
@@ -1965,21 +2084,67 @@ function normalizeBareMathDelimiters(input: string) {
     .join('')
 }
 
-const CITE_MARKER_REGEX = /\[\[cite:(\d+)\]\]/g
-
-function normalizeCitationMarkers(input: string, normalizeMath: boolean) {
+function normalizeMessageText(input: string, normalizeMath: boolean) {
   const normalized = normalizeMath ? normalizeBareMathDelimiters(input) : input
   return normalizeTightStrongMarkers(normalized)
-    .replace(/\[\[ref:(\d+)\]\]/gi, '[[cite:$1]]')
-    .replace(/\[ref:(\d+)\]/gi, '[[cite:$1]]')
-    .replace(/\(ref:(\d+)\)/gi, '[[cite:$1]]')
 }
+function prepareCitationMarkdown(
+  text: string,
+  sources: CitationSourcePart[],
+  isStreaming: boolean
+) {
+  const normalizedText = normalizeMessageText(text, !isStreaming)
+  const hasCitationPrefix = normalizedText.includes('[[') || normalizedText.includes('\ue200')
 
-function formatCitationMarker(index: number, sources: SourceDocumentPart[]) {
-  if (index < 1 || index > sources.length) {
-    return ''
+  if (!hasCitationPrefix) {
+    return normalizedText
   }
-  return ` [${index}]`
+
+  let sourceIndexById: Map<string, number> | null = null
+  if (sources.length > 0) {
+    sourceIndexById = new Map()
+    for (let i = 0; i < sources.length; i++) {
+      const id = sources[i].sourceId
+      if (id && !sourceIndexById.has(id)) {
+        sourceIndexById.set(id, i + 1)
+      }
+    }
+  }
+
+  const renderCitation = (_marker: string, sourceId: string) => {
+    const index = sourceIndexById?.get(sourceId)
+    return index ? `[${index}](${CITATION_HREF_PREFIX}${encodeURIComponent(sourceId)})` : ''
+  }
+
+  if (!normalizedText.includes('`')) {
+    return normalizedText
+      .replace(CITATION_MARKER_REGEX, renderCitation)
+      .replace(LEGACY_CITATION_MARKER_REGEX, renderCitation)
+      .replace(CITATION_PROTOCOL_MARKER_REGEX, '')
+      .replace(LEGACY_CITATION_PROTOCOL_MARKER_REGEX, '')
+      .replace(INCOMPLETE_CITATION_SUFFIX_REGEX, '')
+      .replace(LEGACY_INCOMPLETE_CITATION_SUFFIX_REGEX, '')
+  }
+
+  return normalizedText
+    .split(CODE_BLOCK_REGEX)
+    .map((segment) => {
+      if (!segment) return ''
+      if (segment.startsWith('`')) {
+        return stripCitationMarkers(segment)
+      }
+      if (!segment.includes('[[') && !segment.includes('\ue200')) {
+        return segment
+      }
+      return segment
+        .replace(CITATION_MARKER_REGEX, renderCitation)
+        .replace(LEGACY_CITATION_MARKER_REGEX, renderCitation)
+        .replace(CITATION_PROTOCOL_MARKER_REGEX, '')
+        .replace(LEGACY_CITATION_PROTOCOL_MARKER_REGEX, '')
+        .replace(INCOMPLETE_CITATION_SUFFIX_REGEX, '')
+        .replace(LEGACY_INCOMPLETE_CITATION_SUFFIX_REGEX, '')
+    })
+    .join('')
 }
 
 export const TextWithCitations = React.memo(function TextWithCitations({
@@ -1991,25 +2156,17 @@ export const TextWithCitations = React.memo(function TextWithCitations({
   onOpenImage,
 }: {
   text: string
-  sources: SourceDocumentPart[]
+  sources: CitationSourcePart[]
   isStreaming?: boolean
   activeSpeechSentence?: string | null
   onOpenCodePreview?: (payload: ChatPreviewPayload) => void
   onOpenImage?: (src: string, alt?: string) => void
 }) {
   const containerRef = React.useRef<HTMLDivElement>(null)
-  const hasSources = sources.length > 0
 
-  const processedText = React.useMemo(() => {
-    const normalized = normalizeCitationMarkers(text, !isStreaming)
-    if (!hasSources) {
-      return normalized.replace(CITE_MARKER_REGEX, '')
-    }
-    return normalized.replace(CITE_MARKER_REGEX, (_, rawIndex: string) => (
-      formatCitationMarker(Number.parseInt(rawIndex, 10), sources)
-    ))
-  }, [text, hasSources, sources, isStreaming])
-
+  const processedText = React.useMemo(() => (
+    prepareCitationMarkdown(text, sources, isStreaming)
+  ), [text, sources, isStreaming])
   const clearSpeechHighlight = React.useCallback(() => {
     const highlightedElements = containerRef.current?.querySelectorAll('mark[data-speech-highlight="true"]')
     if (!highlightedElements) {
@@ -2094,6 +2251,38 @@ export const TextWithCitations = React.memo(function TextWithCitations({
   const rehypePlugins = isStreaming ? STREAMING_REHYPE_PLUGINS : undefined
 
   const components = React.useMemo(() => ({
+    a: ({ href, children, ...props }: React.ComponentProps<'a'>) => {
+      if (!href?.startsWith(CITATION_HREF_PREFIX)) {
+        return <a href={href} {...props}>{children}</a>
+      }
+      const encodedSourceId = href.slice(CITATION_HREF_PREFIX.length)
+      const source = sources.find((candidate) => (
+        candidate.sourceId && encodeURIComponent(candidate.sourceId) === encodedSourceId
+      ))
+      if (!source) return null
+
+      const isUrlSource = source.type === 'source-url'
+      const url = isUrlSource ? source.url : undefined
+      const title = isUrlSource ? source.title : source.documentName
+      const description = isUrlSource ? source.snippet : source.content
+
+      return (
+        <InlineCitation data-citation-id={source.sourceId}>
+          <InlineCitationCard>
+            <InlineCitationCardTrigger
+              sources={url ? [url] : [title || source.sourceId || 'source']}
+              label={children}
+              aria-label={title || source.sourceId}
+            />
+            <InlineCitationCardBody className="p-3.5 max-w-[24rem]">
+              <InlineCitationSource title={title} url={url}>
+                {description && <InlineCitationQuote>{description}</InlineCitationQuote>}
+              </InlineCitationSource>
+            </InlineCitationCardBody>
+          </InlineCitationCard>
+        </InlineCitation>
+      )
+    },
     img: ({ src, alt, ...props }: React.ComponentProps<'img'>) => (
       <AuthenticatedMarkdownImage
         src={typeof src === 'string' ? src : undefined}
@@ -2120,7 +2309,7 @@ export const TextWithCitations = React.memo(function TextWithCitations({
       }
       return <p {...props}>{children}</p>
     },
-  }), [onOpenImage])
+  }), [onOpenImage, sources])
 
   const renderMarkdownBlock = React.useCallback((props: React.ComponentProps<typeof Block>) => (
     <PreviewableMarkdownBlock

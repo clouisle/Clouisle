@@ -63,6 +63,7 @@ mock.module('@/lib/api/client', () => ({ getErrorMessage: (key: string) => `api.
 mock.module('@/lib/utils/message-converter', () => ({ convertBackendMessages: (messages: Message[]) => messages }))
 mock.module('@/lib/utils/tool-result', () => ({
   parseToolResultOutput: (output: unknown) => output,
+  extractToolCitationSources: () => [],
   shouldDisplayMediaResultInBody: (output: { hidden?: boolean }) => !output.hidden,
 }))
 

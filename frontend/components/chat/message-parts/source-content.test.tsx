@@ -131,6 +131,26 @@ describe("SourceContent", () => {
     ).toBeDefined();
   });
 
+  test("displays page title when available and falls back to hostname when missing or whitespace", () => {
+    const sources = [
+      { type: "source-url" as const, url: "https://example.com/page1", title: "Documentation Guide" },
+      { type: "source-url" as const, url: "https://sub.example.com/page2", title: "   " },
+      { type: "source-url" as const, url: "https://blog.example.com/page3" },
+    ];
+    const tree = render(sources);
+    find(tree, (node) => node.props["aria-expanded"] === false).props.onClick();
+    const expanded = render(sources);
+    const links = [
+      find(expanded, (node) => node.type === "a" && node.props.href === "https://example.com/page1"),
+      find(expanded, (node) => node.type === "a" && node.props.href === "https://sub.example.com/page2"),
+      find(expanded, (node) => node.type === "a" && node.props.href === "https://blog.example.com/page3"),
+    ];
+
+    expect(find(links[0], (node) => node.type === "span").props.children).toBe("Documentation Guide");
+    expect(find(links[1], (node) => node.type === "span").props.children).toBe("sub.example.com");
+    expect(find(links[2], (node) => node.type === "span").props.children).toBe("blog.example.com");
+  });
+
   test("opens preview with document segments when a document is selected", () => {
     const onOpenCodePreview = mock(() => {});
     const sources = Array.from({ length: 6 }, (_, index) => ({

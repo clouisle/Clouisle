@@ -3,12 +3,13 @@ from types import SimpleNamespace
 from app.services.chat_context import _build_system_prompt
 
 
-def _agent(*, tools_config=None, system_prompt="Base prompt"):
+def _agent(*, tools_config=None, system_prompt="Base prompt", rag_mode=None):
     return SimpleNamespace(
         id="agent-1",
         system_prompt=system_prompt,
         enable_memory=False,
         tools_config=tools_config or [],
+        rag_mode=rag_mode,
     )
 
 
@@ -64,6 +65,20 @@ def test_build_system_prompt_skips_sandbox_guidance_without_sandbox_tools():
 
     assert "## Sandbox Environment Guidance" not in prompt
     assert "Base prompt" in prompt
+
+
+def test_build_system_prompt_injects_source_citation_contract_for_rag_chat():
+    prompt = _build_system_prompt(
+        agent=_agent(rag_mode="auto"),
+        conversation=_conversation(),
+        user_message="answer from the knowledge base",
+        user_locale="en",
+    )
+
+    assert "## Source Citations" in prompt
+    assert "[[cite:SOURCE_ID]]" in prompt
+    assert "every sentence or list item" in prompt
+    assert "Never substitute numeric references" in prompt
 
 
 def test_build_system_prompt_formats_sections_with_clear_spacing():

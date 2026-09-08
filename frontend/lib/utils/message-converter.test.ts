@@ -161,6 +161,46 @@ describe('message converter', () => {
     ])
   })
 
+  it('restores citation sources from persisted Agentic tool results', () => {
+    const converted = convertBackendMessage(message({
+      content: 'Cited answer[[cite:web_result_1]]',
+      steps: [
+        {
+          id: 'assistant-step',
+          role: 'assistant',
+          tool_calls: [{ id: 'web-call', name: 'web_search', arguments: { query: 'latest' } }],
+          created_at: '2026-07-19T00:00:01.000Z',
+          round_index: 1,
+        },
+        {
+          id: 'tool-step',
+          role: 'tool',
+          content: JSON.stringify({
+            success: true,
+            results: [{
+              citation_id: 'web_result_1',
+              title: 'Latest result',
+              url: 'https://example.test/latest',
+              content: 'Current information',
+            }],
+          }),
+          tool_call_id: 'web-call',
+          tool_name: 'web_search',
+          created_at: '2026-07-19T00:00:02.000Z',
+          round_index: 2,
+        },
+      ],
+    }))
+
+    expect(converted?.parts).toContainEqual({
+      type: 'source-url',
+      sourceId: 'web_result_1',
+      title: 'Latest result',
+      url: 'https://example.test/latest',
+      snippet: 'Current information',
+    })
+  })
+
   it('reconstructs multiple persisted iterations and keeps the final answer last', () => {
     const converted = convertBackendMessage(message({
       content: 'Final answer',

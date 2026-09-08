@@ -61,6 +61,7 @@ mock.module('@/lib/api/client', () => ({
 
 mock.module('@/lib/utils/tool-result', () => ({
   parseToolResultOutput: (output: unknown) => output,
+  extractToolCitationSources: () => [],
   shouldDisplayMediaResultInBody: () => true,
 }))
 mock.module('@/lib/utils/message-converter', () => ({

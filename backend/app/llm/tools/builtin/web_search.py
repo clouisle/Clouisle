@@ -13,6 +13,7 @@ import httpx
 from markitdown import MarkItDown
 
 from app.core.i18n import t
+from app.services.citations import stable_citation_id, with_web_citation_ids
 from ..registry import tool_registry, ToolParameter
 
 logger = logging.getLogger(__name__)
@@ -101,7 +102,7 @@ async def _tavily_search(
             return {
                 "query": query,
                 "answer": data.get("answer"),
-                "results": results,
+                "results": with_web_citation_ids(results),
                 "success": True,
             }
 
@@ -139,9 +140,16 @@ async def fetch_webpage(url: str, max_length: int = 5000) -> dict:
             asyncio.to_thread(MarkItDown().convert, url), timeout=30
         )
         text = (result.text_content or "").strip()
+        title = (getattr(result, "title", None) or "").strip() or None
         if len(text) > max_length:
             text = text[:max_length] + "..."
-        return {"url": url, "content": text, "success": True}
+        return {
+            "url": url,
+            "title": title,
+            "content": text,
+            "citation_id": stable_citation_id("web", url),
+            "success": True,
+        }
     except Exception as e:
         status_code = getattr(getattr(e, "response", None), "status_code", None)
         if status_code is not None:

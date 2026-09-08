@@ -35,6 +35,7 @@ import type {
   TextPart,
   ReasoningPart,
   SourceDocumentPart,
+  SourceUrlPart,
   TaskPart,
   ToolCallPart,
   ToolResultPart,
@@ -43,7 +44,7 @@ import type {
   MediaResultPart,
 } from '@/components/chat'
 import { getErrorMessage as getApiErrorMessage } from '@/lib/api/client'
-import { parseToolResultOutput, shouldDisplayMediaResultInBody } from '@/lib/utils/tool-result'
+import { extractToolCitationSources, parseToolResultOutput, shouldDisplayMediaResultInBody } from '@/lib/utils/tool-result'
 
 export type ChatStatus = 'idle' | 'loading' | 'streaming' | 'error'
 
@@ -1631,7 +1632,7 @@ interface StreamingState {
   segments: ContentSegment[]
   reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>
   currentReasoningIndex: number
-  ragSources: SourceDocumentPart[]
+  ragSources: Array<SourceDocumentPart | SourceUrlPart>
   taskState: TaskState
 }
 
@@ -1955,7 +1956,7 @@ interface AssistantStreamState {
   segments: ContentSegment[]
   reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>
   currentReasoningIndex: number
-  ragSources: SourceDocumentPart[]
+  ragSources: Array<SourceDocumentPart | SourceUrlPart>
   taskState: TaskState
 }
 
@@ -2139,7 +2140,7 @@ function applyAssistantStreamEvent(
       const data = event.data as SSERagContext
       state.ragSources = data.contexts.map(context => ({
         type: 'source-document' as const,
-        sourceId: context.document_id,
+        sourceId: context.citation_id || context.document_id,
         documentId: context.document_id,
         documentName: context.document_name,
         content: context.content,
@@ -2151,7 +2152,11 @@ function applyAssistantStreamEvent(
       }))
       state.taskState.rag = 'completed'
       state.taskState.ragSourceCount = state.ragSources.length
-      ensureTimelineTask(state.segments, 'rag', 'completed', state.ragSources.length)
+      ensureTimelineTask(state.segments, 'rag', 'completed', {
+        count: state.ragSources.length,
+        query: data.query,
+        contexts: data.contexts,
+      })
       return true
     }
 
@@ -2196,6 +2201,29 @@ function applyAssistantStreamEvent(
         toolDisplayName: data.tool_display_name,
         output: parseToolResultOutput(data.result),
         isError: data.is_error,
+      }
+      const knownSourceIds = new Set(state.ragSources.map((source) => source.sourceId).filter(Boolean))
+      for (const source of extractToolCitationSources(data.tool_name, result.output)) {
+        if (knownSourceIds.has(source.citationId)) continue
+        knownSourceIds.add(source.citationId)
+        if (source.type === 'url' && source.url) {
+          state.ragSources.push({
+            type: 'source-url',
+            sourceId: source.citationId,
+            url: source.url,
+            title: source.title,
+            snippet: source.content,
+          })
+        } else if (source.type === 'document') {
+          state.ragSources.push({
+            type: 'source-document',
+            sourceId: source.citationId,
+            documentId: source.documentId,
+            documentName: source.title,
+            content: source.content || '',
+            metadata: source.metadata,
+          })
+        }
       }
       const existingSegment = findToolSegment(state.segments, data.tool_call_id)
       if (existingSegment) {
@@ -2248,7 +2276,7 @@ function applyAssistantStreamEvent(
  */
 function buildMessageParts(
   segments: ContentSegment[],
-  sources: SourceDocumentPart[],
+  sources: Array<SourceDocumentPart | SourceUrlPart>,
   isStreaming: boolean
 ): MessagePart[] {
   const parts: MessagePart[] = []
@@ -2295,7 +2323,7 @@ function buildMessageParts(
 
 function hasRenderableStreamingProgress(
   segments: ContentSegment[],
-  ragSources: SourceDocumentPart[],
+  ragSources: Array<SourceDocumentPart | SourceUrlPart>,
   taskState: TaskState
 ): boolean {
   return (
@@ -2319,7 +2347,7 @@ function buildErroredMessageParts(state: {
   segments: ContentSegment[]
   reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>
   currentReasoningIndex?: number
-  ragSources: SourceDocumentPart[]
+  ragSources: Array<SourceDocumentPart | SourceUrlPart>
   taskState: TaskState
   errorText: string
 }): { parts: MessagePart[]; preservedProgress: boolean } {

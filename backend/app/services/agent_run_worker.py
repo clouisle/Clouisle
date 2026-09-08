@@ -612,7 +612,10 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
         if agent.rag_mode == RAGMode.AUTO:
             await stream.publish("rag_start", {})
             if rag_contexts:
-                await stream.publish("rag_context", {"contexts": rag_contexts})
+                await stream.publish(
+                    "rag_context",
+                    {"contexts": rag_contexts, "query": user_msg.content},
+                )
         await stream.publish(
             "message_start",
             {

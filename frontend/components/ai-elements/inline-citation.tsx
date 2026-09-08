@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Carousel,
@@ -13,9 +14,9 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { cn } from "@/lib/utils";
-import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 import {
   type ComponentProps,
+  type ReactNode,
   createContext,
   useCallback,
   useContext,
@@ -55,22 +56,32 @@ export const InlineCitationCard = (props: InlineCitationCardProps) => (
 
 export type InlineCitationCardTriggerProps = ComponentProps<typeof Badge> & {
   sources: string[];
+  label?: ReactNode;
 };
 
 export const InlineCitationCardTrigger = ({
   sources,
+  label,
   className,
   ...props
-}: InlineCitationCardTriggerProps) => (
-  <HoverCardTrigger render={<Badge className={cn("ml-1 rounded-full", className)} variant="secondary" {...props} />}>{sources[0] ? (
-            <>
-              {new URL(sources[0]).hostname}{" "}
-              {sources.length > 1 && `+${sources.length - 1}`}
-            </>
-          ) : (
-            "unknown"
-          )}</HoverCardTrigger>
-);
+}: InlineCitationCardTriggerProps) => {
+  let hostname = "unknown";
+  if (sources[0]) {
+    try {
+      hostname = new URL(sources[0]).hostname;
+    } catch {
+      hostname = sources[0];
+    }
+  }
+
+  return (
+    <HoverCardTrigger
+      render={<Badge className={cn("ml-1 rounded-full", className)} variant="secondary" {...props} />}
+    >
+      {label ?? (sources.length > 1 ? `${hostname} +${sources.length - 1}` : hostname)}
+    </HoverCardTrigger>
+  );
+};
 
 export type InlineCitationCardBodyProps = ComponentProps<"div">;
 
@@ -78,7 +89,13 @@ export const InlineCitationCardBody = ({
   className,
   ...props
 }: InlineCitationCardBodyProps) => (
-  <HoverCardContent className={cn("relative w-80 p-0", className)} {...props} />
+  <HoverCardContent
+    className={cn(
+      "relative w-[min(calc(100vw-2rem),24rem)] max-h-80 overflow-y-auto overflow-x-hidden p-0 break-words [scrollbar-width:thin]",
+      className
+    )}
+    {...props}
+  />
 );
 
 const CarouselApiContext = createContext<CarouselApi | undefined>(undefined);
@@ -205,7 +222,7 @@ export const InlineCitationCarouselPrev = ({
       type="button"
       {...props}
     >
-      <ArrowLeftIcon className="size-4 text-muted-foreground" />
+      <ChevronLeft className="size-4 text-muted-foreground" />
     </button>
   );
 };
@@ -232,7 +249,7 @@ export const InlineCitationCarouselNext = ({
       type="button"
       {...props}
     >
-      <ArrowRightIcon className="size-4 text-muted-foreground" />
+      <ChevronRight className="size-4 text-muted-foreground" />
     </button>
   );
 };
@@ -276,7 +293,7 @@ export const InlineCitationQuote = ({
 }: InlineCitationQuoteProps) => (
   <blockquote
     className={cn(
-      "border-muted border-l-2 pl-3 text-muted-foreground text-sm italic",
+      "border-muted border-l-2 pl-3 text-muted-foreground text-xs leading-relaxed line-clamp-6 break-words whitespace-pre-wrap",
       className
     )}
     {...props}

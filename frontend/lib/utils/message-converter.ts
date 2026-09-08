@@ -12,11 +12,14 @@ import type {
   ReasoningPart,
   ToolCallPart,
   ToolResultPart,
+  TaskPart,
   SourceDocumentPart,
+  SourceUrlPart,
 } from '@/components/chat'
 import { isSourcePart } from '@/components/chat'
 import {
   inferToolResultIsError,
+  extractToolCitationSources,
   parseToolResultOutput,
   shouldDisplayMediaResultInBody,
 } from '@/lib/utils/tool-result'
@@ -73,6 +76,7 @@ export interface BackendMessage {
   reasoning_content?: string | null
   // RAG context
   rag_context?: Array<{
+    citation_id?: string
     document_id: string
     document_name: string
     content: string
@@ -186,6 +190,38 @@ function buildAssistantStepParts(step: BackendMessageStep, durationMs?: number):
 
   return parts
 }
+function appendToolResultCitations(parts: MessagePart[]): MessagePart[] {
+  const knownSourceIds = new Set(
+    parts.filter(isSourcePart).map((part) => part.sourceId).filter(Boolean)
+  )
+  const citationParts: Array<SourceUrlPart | SourceDocumentPart> = []
+  for (const part of parts) {
+    if (part.type !== 'tool-result') continue
+    for (const source of extractToolCitationSources(part.toolName, part.output)) {
+      if (knownSourceIds.has(source.citationId)) continue
+      knownSourceIds.add(source.citationId)
+      if (source.type === 'url' && source.url) {
+        citationParts.push({
+          type: 'source-url',
+          sourceId: source.citationId,
+          url: source.url,
+          title: source.title,
+          snippet: source.content,
+        })
+      } else if (source.type === 'document') {
+        citationParts.push({
+          type: 'source-document',
+          sourceId: source.citationId,
+          documentId: source.documentId,
+          documentName: source.title,
+          content: source.content || '',
+          metadata: source.metadata,
+        })
+      }
+    }
+  }
+  return citationParts.length > 0 ? [...parts, ...citationParts] : parts
+}
 
 /**
  * Convert a backend Message to a frontend ChatMessage
@@ -210,7 +246,7 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
     return null
   }
 
-  const parts: MessagePart[] = []
+  let parts: MessagePart[] = []
 
   if (message.role === 'user') {
     // User message: text + images + files
@@ -355,6 +391,9 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
       }
     }
   }
+  if (message.role === 'assistant') {
+    parts = appendToolResultCitations(parts)
+  }
 
   let finalParts = parts
   if (message.role === 'assistant' && message.round_status === 'max_iterations_reached') {
@@ -442,9 +481,9 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
     return result
   }
 
-  // Track RAG context from user messages to attach to the following assistant message
+  // Track RAG context and user query to attach to the following assistant message
   let pendingRagContext: BackendMessage['rag_context'] = null
-
+  let pendingRagQuery: string | undefined = undefined
   const aggregateRagContext = (
     contexts: BackendMessage['rag_context']
   ): BackendMessage['rag_context'] => {
@@ -490,8 +529,8 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
     // Capture RAG context from user messages
     if (message.role === 'user' && message.rag_context && Array.isArray(message.rag_context)) {
       pendingRagContext = aggregateRagContext(message.rag_context)
+      pendingRagQuery = message.content
     }
-
     const chatMessage = convertBackendMessage(message)
     if (!chatMessage) continue
 
@@ -541,7 +580,7 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
       if (pendingRagContext && pendingRagContext.length > 0) {
         const sources = pendingRagContext.map((ctx) => ({
           type: 'source-document',
-          sourceId: ctx.document_id,
+          sourceId: ctx.citation_id || ctx.document_id,
           documentId: ctx.document_id,
           documentName: ctx.document_name,
           content: ctx.content,
@@ -551,11 +590,32 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
             score: ctx.score,
           },
         } as SourceDocumentPart))
+        const ragTaskPart: TaskPart = {
+          type: 'task',
+          taskType: 'rag',
+          state: 'completed',
+          info: {
+            count: sources.length,
+            query: pendingRagQuery,
+            contexts: pendingRagContext,
+          },
+        }
+        const hasExistingRagTask = chatMessage.parts.some(
+          (part) => part.type === 'task' && (part as TaskPart).taskType === 'rag'
+        )
         const nonSourceParts = chatMessage.parts.filter((part) => !isSourcePart(part))
         const existingSources = chatMessage.parts.filter(isSourcePart)
-        chatMessage.parts = [...nonSourceParts, ...existingSources, ...sources]
+        chatMessage.parts = [
+          ...(hasExistingRagTask ? [] : [ragTaskPart]),
+          ...nonSourceParts,
+          ...existingSources,
+          ...sources,
+        ]
         pendingRagContext = null
+        pendingRagQuery = undefined
       }
+
+      chatMessage.parts = appendToolResultCitations(chatMessage.parts)
     }
 
     result.push(chatMessage)

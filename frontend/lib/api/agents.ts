@@ -584,7 +584,9 @@ export interface SSEContentDelta {
 }
 
 export interface SSERagContext {
+  query?: string
   contexts: Array<{
+    citation_id?: string
     kb_id: string
     kb_name: string
     document_id: string
