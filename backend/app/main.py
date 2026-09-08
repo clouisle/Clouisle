@@ -21,6 +21,7 @@ from app.core.i18n import (
     get_code_message,
     has_translation,
     get_language,
+    get_default_language,
 )
 from app.core.redis import close_redis
 from app.schemas.response import success, error, ResponseCode, BusinessError
@@ -567,13 +568,14 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 # Language middleware to set language from Accept-Language header
 class LanguageMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        # Get language from Accept-Language header or X-Language header
-        lang = request.headers.get("X-Language") or request.headers.get(
-            "Accept-Language", "en"
+        header_lang = request.headers.get("X-Language") or request.headers.get(
+            "Accept-Language"
         )
-        # Parse Accept-Language (e.g., "zh-CN,zh;q=0.9,en;q=0.8" -> "zh")
-        lang = lang.split(",")[0].split(";")[0].strip()
-        set_language(lang)
+        if header_lang:
+            lang = header_lang.split(",")[0].split(";")[0].strip()
+            set_language(lang)
+        else:
+            set_language(await get_default_language())
         response = await call_next(request)
         return response
 

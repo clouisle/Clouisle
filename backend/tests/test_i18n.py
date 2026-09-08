@@ -118,3 +118,81 @@ def test_code_message_uses_unknown_error_for_unmapped_or_invalid_codes(monkeypat
     assert i18n.get_code_message(999999, lang="zh") == "unknown_error"
 
     assert translated_keys == [("unknown_error", "zh")]
+
+
+@pytest.mark.asyncio
+async def test_resolve_language_follows_user_system_default_precedence(monkeypatch):
+    # 1. User specified -> user wins over system and default
+    monkeypatch.setattr(
+        i18n,
+        "get_default_language",
+        lambda: __import__("asyncio").sleep(0, result="zh"),
+    )
+    assert await i18n.resolve_language("en") == "en"
+
+    monkeypatch.setattr(
+        i18n,
+        "get_default_language",
+        lambda: __import__("asyncio").sleep(0, result="en"),
+    )
+    assert await i18n.resolve_language("zh-CN") == "zh"
+
+    # 2. No user specified -> system wins over default
+    monkeypatch.setattr(
+        i18n,
+        "get_default_language",
+        lambda: __import__("asyncio").sleep(0, result="zh"),
+    )
+    assert await i18n.resolve_language(None) == "zh"
+    assert await i18n.resolve_language("") == "zh"
+
+    # 3. Neither specified -> default ('en') wins
+    monkeypatch.setattr(
+        i18n, "get_default_language", lambda: __import__("asyncio").sleep(0, result="")
+    )
+    assert await i18n.resolve_language(None) == "en"
+
+
+def test_resolve_language_sync_follows_user_system_default_precedence(monkeypatch):
+    # 1. User specified -> user wins over system and default
+    i18n.set_default_language_cache("zh")
+    assert i18n.resolve_language_sync("en") == "en"
+
+    i18n.set_default_language_cache("en")
+    assert i18n.resolve_language_sync("zh-CN") == "zh"
+
+    # 2. No user specified -> system wins over default
+    i18n.set_default_language_cache("zh")
+    assert i18n.resolve_language_sync(None) == "zh"
+    assert i18n.resolve_language_sync("") == "zh"
+
+    # 3. Neither specified -> default ('en') wins
+    i18n.set_default_language_cache(None)
+    monkeypatch.setattr(i18n, "_cached_default_language", "")
+    assert i18n.resolve_language_sync(None) == "en"
+
+
+def test_system_prompt_and_terminal_content_follow_user_system_default_precedence():
+    from app.services.system_prompt import build_system_prompt
+    from app.api.v1.endpoints.chat import build_max_iterations_terminal_content
+    from types import SimpleNamespace
+
+    agent = SimpleNamespace(id="agent-test", system_prompt="", tools_config=[])
+
+    try:
+        # System is configured as Chinese
+        i18n.set_default_language_cache("zh")
+
+        # Case A: user has no preference -> system default (zh) applies
+        prompt = build_system_prompt(agent, user_locale=None)
+        assert "## 回复语言\n你必须使用中文回复。不要使用其他语言。" in prompt
+        terminal = build_max_iterations_terminal_content(user_locale=None)
+        assert "本轮已达到最大工具调用轮次" in terminal
+
+        # Case B: user explicitly requests English -> user (en) wins over system (zh)
+        prompt_en = build_system_prompt(agent, user_locale="en")
+        assert "## Response Language\nYou MUST respond in English only." in prompt_en
+        terminal_en = build_max_iterations_terminal_content(user_locale="en")
+        assert "maximum tool-call iterations" in terminal_en
+    finally:
+        i18n.set_default_language_cache("en")

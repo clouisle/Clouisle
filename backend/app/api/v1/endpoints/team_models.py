@@ -10,7 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request
 
 from app.api import deps
-from app.core.i18n import t
+from app.core.i18n import t, get_default_language
 from app.models import Model, Team, TeamModel
 from app.models.notification import AutoNotificationType
 from app.models.user import TeamMember, User
@@ -160,12 +160,14 @@ async def add_team_model(
     team_model = await TeamModel.get(id=team_model.id).prefetch_related("model")
 
     # 发送模型授权通知给团队
+    default_lang = await get_default_language()
     await AutoNotificationService.send_to_team(
         notification_type=AutoNotificationType.TEAM_MODEL_GRANTED,
         team_id=team.id,
-        title=t("notify_team_model_granted_title"),
+        title=t("notify_team_model_granted_title", lang=default_lang),
         content=t(
             "notify_team_model_granted_content",
+            lang=default_lang,
             model_name=model.name,
             team_name=team.name,
         ),
@@ -338,12 +340,14 @@ async def remove_team_model(
     await team_model.delete()
 
     # 发送模型授权撤销通知给团队
+    default_lang = await get_default_language()
     await AutoNotificationService.send_to_team(
         notification_type=AutoNotificationType.TEAM_MODEL_REVOKED,
         team_id=team_id_for_notify,
-        title=t("notify_team_model_revoked_title"),
+        title=t("notify_team_model_revoked_title", lang=default_lang),
         content=t(
             "notify_team_model_revoked_content",
+            lang=default_lang,
             model_name=model_name,
             team_name=team_name,
         ),
@@ -462,12 +466,14 @@ async def batch_add_team_models(
     # 发送批量授权通知
     if results:
         model_names = [r["model"]["name"] for r in results]
+        default_lang = await get_default_language()
         await AutoNotificationService.send_to_team(
             notification_type=AutoNotificationType.TEAM_MODEL_GRANTED,
             team_id=team.id,
-            title=t("notify_team_model_granted_title"),
+            title=t("notify_team_model_granted_title", lang=default_lang),
             content=t(
                 "notify_team_model_granted_content",
+                lang=default_lang,
                 model_name=", ".join(model_names),
                 team_name=team.name,
             ),
@@ -532,12 +538,14 @@ async def batch_remove_team_models(
 
     # 发送批量撤销通知
     if deleted_count > 0 and model_names:
+        default_lang = await get_default_language()
         await AutoNotificationService.send_to_team(
             notification_type=AutoNotificationType.TEAM_MODEL_REVOKED,
             team_id=team.id,
-            title=t("notify_team_model_revoked_title"),
+            title=t("notify_team_model_revoked_title", lang=default_lang),
             content=t(
                 "notify_team_model_revoked_content",
+                lang=default_lang,
                 model_name=", ".join(model_names),
                 team_name=team.name,
             ),
@@ -548,7 +556,6 @@ async def batch_remove_team_models(
                 "team_name": team.name,
             },
         )
-
     await AuditLogService.log(
         user=current_user,
         action="batch_remove_team_models",

@@ -18,6 +18,7 @@ const defaultSettings: PublicSiteSettings = {
   site_description: '',
   site_url: '',
   site_icon: '',
+  default_language: 'en',
   theme_mode: 'system',
   theme_primary_color: '',
   theme_primary_foreground_color: '',

@@ -56,7 +56,7 @@ class UserBase(BaseModel):
     approval_status: Optional[str] = "approved"
     is_superuser: Optional[bool] = False
     avatar_url: Optional[str] = None
-    locale: Optional[str] = "en"
+    locale: Optional[str] = None
 
 
 class UserCreate(UserBase):

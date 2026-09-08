@@ -250,14 +250,16 @@ async def _rebuild_context(
     )
     chat_model = await resolve_agent_chat_model(agent)
     tools_openai = await _load_tools(agent)
-    tool_display_names = await _load_tool_display_names(
-        agent, payload.get("locale") or "en"
-    )
+    from app.core.i18n import resolve_language, set_language
+
+    effective_locale = await resolve_language(payload.get("locale"))
+    set_language(effective_locale)
+    tool_display_names = await _load_tool_display_names(agent, effective_locale)
     file_content, _ = await build_file_content_for_context(
         agent=agent,
         file_urls=payload.get("file_urls") or [],
         legacy_files=payload.get("legacy_files") or [],
-        user_locale=payload.get("locale"),
+        user_locale=effective_locale,
         tool_timeouts=streaming_config["tool_timeouts"],
         user=SimpleNamespace(id=conversation.user_id),
     )
@@ -320,7 +322,7 @@ async def _rebuild_context(
         conversation=conversation,
         user=SimpleNamespace(
             id=conversation.user_id,
-            locale=payload.get("locale") or "en",
+            locale=effective_locale,
         ),
         user_message=image_inventory_text,
         model_id=chat_model.model_id,
@@ -352,7 +354,7 @@ async def _rebuild_context(
         history_before_message_created_at=history_before,
         round_id=UUID(payload["round_id"]),
         protected_round_id=UUID(payload["round_id"]),
-        user_locale=payload.get("locale"),
+        user_locale=effective_locale,
         max_iterations=None,
         iteration_offset=int(payload.get("iteration_offset", 0)),
         streaming=is_streaming,
@@ -368,9 +370,7 @@ async def _rebuild_context(
         formatter=_RunFormatter(event_queue, agent=agent),
         first_round_index=int(payload.get("first_round_index", 1)),
         created_message_count=int(payload.get("created_message_count", 2)),
-        cap_content=lambda: build_max_iterations_terminal_content(
-            payload.get("locale") or "en"
-        ),
+        cap_content=lambda: build_max_iterations_terminal_content(effective_locale),
     )
 
     async def build_turn(**kwargs):
@@ -456,6 +456,10 @@ async def _transition_active_run(
 async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
     """Execute one run payload to terminal and persist the canonical round."""
     payload = dict(payload)
+    from app.core.i18n import resolve_language, set_language
+
+    worker_locale = await resolve_language(payload.get("locale"))
+    set_language(worker_locale)
     resume_tool_result = payload.pop("resume_tool_result", None)
     run = await agent_run_store.get_run(UUID(payload["run_id"]))
     if not run:
@@ -917,8 +921,11 @@ async def _finalize_completed(
     )
     from app.models.agent import Message as M
 
+    from app.core.i18n import resolve_language
+
+    effective_locale = await resolve_language(locale)
     terminal_content = (
-        build_max_iterations_terminal_content(locale or "en")
+        build_max_iterations_terminal_content(effective_locale)
         if result.max_iterations_reached
         else result.full_content or ""
     )

@@ -102,16 +102,70 @@ def set_language(lang: str) -> None:
     current_language.set(normalize_language(lang))
 
 
+_cached_default_language: str = Language.EN.value
+
+
 async def get_default_language() -> str:
     """Get default language from site settings.
 
     This is used for system messages when no specific user locale is available,
     such as team notifications, webhook-triggered workflows, etc.
     """
+    global _cached_default_language
     from app.models.site_setting import SiteSetting
 
-    lang = await SiteSetting.get_value("default_language", "en")
-    return normalize_language(str(lang))
+    try:
+        lang = await SiteSetting.get_value("default_language", "en")
+        _cached_default_language = normalize_language(str(lang))
+    except Exception:
+        pass
+    return _cached_default_language
+
+
+def get_default_language_sync() -> str:
+    """Get cached default language from site settings synchronously."""
+    return _cached_default_language
+
+
+def set_default_language_cache(lang: str | None) -> None:
+    """Update cached default language."""
+    global _cached_default_language
+    if lang:
+        _cached_default_language = normalize_language(lang)
+
+
+async def resolve_language(
+    user_locale: str | None = None,
+    default_override: str | None = None,
+) -> str:
+    """Resolve language according to: User > System (SiteSetting) > Default ('en').
+
+    Args:
+        user_locale: Explicit user locale (from user.locale or request/parameter).
+        default_override: Optional fallback if system default is absent.
+
+    Returns:
+        Normalized language code ('en', 'zh', etc.).
+    """
+    if user_locale and str(user_locale).strip():
+        return normalize_language(user_locale)
+    system_default = await get_default_language()
+    if system_default and str(system_default).strip():
+        return normalize_language(system_default)
+    return normalize_language(default_override or Language.EN.value)
+
+
+def resolve_language_sync(
+    user_locale: str | None = None,
+    default_override: str | None = None,
+) -> str:
+    """Resolve language synchronously according to: User > System (Cached) > Default ('en')."""
+    if user_locale and str(user_locale).strip():
+        return normalize_language(user_locale)
+    system_default = get_default_language_sync()
+    if system_default and str(system_default).strip():
+        return normalize_language(system_default)
+    return normalize_language(default_override or Language.EN.value)
 
 
 def t(key: str, lang: Optional[str] = None, **kwargs) -> str:

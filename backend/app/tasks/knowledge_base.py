@@ -11,12 +11,13 @@ from uuid import UUID
 from celery import shared_task
 from tortoise.functions import Sum
 
-from app.core.i18n import t, get_default_language
+from app.core.i18n import t, get_default_language, resolve_language
 from app.models.knowledge_base import (
     Document,
     DocumentChunk,
     DocumentStatus,
 )
+from app.models.user import User
 from app.models.notification import AutoNotificationType
 from app.services.auto_notification import AutoNotificationService
 from app.services.document_processor import document_processor
@@ -299,19 +300,23 @@ async def _send_doc_indexed_notification(
     team_id: UUID,
     chunk_count: int,
     token_count: int,
-    user_locale: str = "en",
+    user_locale: str | None = None,
 ) -> None:
     """Send notification when document is indexed successfully."""
     try:
         # Send to uploader if available, otherwise to team
         if document.uploaded_by_id:
+            user = await User.filter(id=document.uploaded_by_id).first()
+            effective_locale = await resolve_language(
+                getattr(user, "locale", None) if user else user_locale
+            )
             await AutoNotificationService.send_to_user(
                 notification_type=AutoNotificationType.KB_DOC_INDEXED,
                 user_id=document.uploaded_by_id,
-                title=t("notify_kb_doc_indexed_title", lang=user_locale),
+                title=t("notify_kb_doc_indexed_title", lang=effective_locale),
                 content=t(
                     "notify_kb_doc_indexed_content",
-                    lang=user_locale,
+                    lang=effective_locale,
                     doc_name=document.name,
                     kb_name=kb_name,
                     chunk_count=chunk_count,
@@ -358,19 +363,23 @@ async def _send_doc_failed_notification(
     kb_name: str,
     team_id: UUID,
     error: str,
-    user_locale: str = "en",
+    user_locale: str | None = None,
 ) -> None:
     """Send notification when document indexing fails."""
     try:
         # Send to uploader if available, otherwise to team
         if document.uploaded_by_id:
+            user = await User.filter(id=document.uploaded_by_id).first()
+            effective_locale = await resolve_language(
+                getattr(user, "locale", None) if user else user_locale
+            )
             await AutoNotificationService.send_to_user(
                 notification_type=AutoNotificationType.KB_DOC_FAILED,
                 user_id=document.uploaded_by_id,
-                title=t("notify_kb_doc_failed_title", lang=user_locale),
+                title=t("notify_kb_doc_failed_title", lang=effective_locale),
                 content=t(
                     "notify_kb_doc_failed_content",
-                    lang=user_locale,
+                    lang=effective_locale,
                     doc_name=document.name,
                     kb_name=kb_name,
                     error=error[:200],  # Truncate error message

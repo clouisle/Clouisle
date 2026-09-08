@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from app.core.config import settings
 from app.core.redis import is_token_blacklisted
 from app.core.timezone import now_utc
-from app.core.i18n import set_language
+from app.core.i18n import set_language, resolve_language
 from app.models.user import User, ScopedRoleAssignment
 from app.models.api_key import APIKey
 from app.schemas.token import TokenPayload
@@ -56,9 +56,9 @@ async def get_current_user_or_api_key(
         # 否则尝试 JWT 认证
         user = await _authenticate_jwt(auth_token)
 
-    # Set language from user's locale preference
-    if hasattr(user, "locale") and user.locale:
-        set_language(user.locale)
+    # Set language from user's locale preference if set, else system default
+    user_locale = getattr(user, "locale", None) if user else None
+    set_language(await resolve_language(user_locale))
 
     return user, api_key
 
@@ -195,9 +195,9 @@ async def get_current_active_user(
                 else "inactive_user"
             ),
         )
-    # Set language from user's locale preference
-    if hasattr(current_user, "locale") and current_user.locale:
-        set_language(current_user.locale)
+    # Set language from user's locale preference if set, else system default
+    user_locale = getattr(current_user, "locale", None) if current_user else None
+    set_language(await resolve_language(user_locale))
     return current_user
 
 

@@ -177,8 +177,10 @@ _CITATION_SOURCE_BUILTIN_TOOLS = frozenset({"web_search", "fetch_webpage"})
 
 
 def normalize_locale(user_locale: str | None) -> str:
-    """Return the base language subtag, defaulting to ``en``."""
-    return (user_locale or "en").lower().split("-")[0]
+    """Return the base language subtag, defaulting to system default or ``en``."""
+    from app.core.i18n import resolve_language_sync
+
+    return resolve_language_sync(user_locale)
 
 
 def get_language_instruction(user_locale: str | None = None) -> str:
