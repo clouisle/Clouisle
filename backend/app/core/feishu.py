@@ -13,6 +13,7 @@ from typing import Optional
 import httpx
 
 from app.models.site_setting import SiteSetting
+from app.core.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ async def send_feishu_webhook(
     title: str,
     content: str,
     link_url: Optional[str] = None,
+    locale: Optional[str] = None,
 ) -> bool:
     """
     通过 Webhook 发送飞书群机器人消息
@@ -80,7 +82,8 @@ async def send_feishu_webhook(
         # 构建消息内容
         markdown_content = f"**{title}**\n\n{content}"
         if link_url:
-            markdown_content += f"\n\n[查看详情]({link_url})"
+            view_label = t("view_details", lang=locale) if locale else t("view_details")
+            markdown_content += f"\n\n[{view_label}]({link_url})"
 
         # 构建卡片消息
         message: dict = {
@@ -112,7 +115,9 @@ async def send_feishu_webhook(
                             "tag": "button",
                             "text": {
                                 "tag": "plain_text",
-                                "content": "查看详情",
+                                "content": t("view_details", lang=locale)
+                                if locale
+                                else t("view_details"),
                             },
                             "type": "primary",
                             "url": link_url,
@@ -186,6 +191,7 @@ async def send_feishu_app_message(
     link_url: Optional[str] = None,
     receive_id: str = "",
     receive_id_type: str = "open_id",
+    locale: Optional[str] = None,
 ) -> bool:
     """
     通过企业应用发送消息
@@ -243,7 +249,9 @@ async def send_feishu_app_message(
                             "tag": "button",
                             "text": {
                                 "tag": "plain_text",
-                                "content": "查看详情",
+                                "content": t("view_details", lang=locale)
+                                if locale
+                                else t("view_details"),
                             },
                             "type": "primary",
                             "url": link_url,
@@ -288,6 +296,7 @@ async def send_feishu_notification(
     link_url: Optional[str] = None,
     receive_id: str = "",
     receive_id_type: str = "open_id",
+    locale: Optional[str] = None,
 ) -> bool:
     """
     发送飞书通知（自动选择 Webhook 或企业应用方式）
@@ -306,7 +315,7 @@ async def send_feishu_notification(
 
     if config["notification_type"] == "app" and receive_id:
         return await send_feishu_app_message(
-            title, content, link_url, receive_id, receive_id_type
+            title, content, link_url, receive_id, receive_id_type, locale=locale
         )
     else:
-        return await send_feishu_webhook(title, content, link_url)
+        return await send_feishu_webhook(title, content, link_url, locale=locale)

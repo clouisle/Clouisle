@@ -19,6 +19,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "You don't have access to this agent",
         "zh": "您无权访问此智能体",
     },
+    "agent_context_required": {
+        "en": "Agent context is required",
+        "zh": "需要智能体上下文",
+    },
     "agent_context_required_for_knowledge_search": {
         "en": "Agent context required for knowledge_search",
         "zh": "knowledge_search 需要 Agent 上下文",
@@ -59,6 +63,22 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "already_team_member": {
         "en": "User is already a member of this team",
         "zh": "用户已是该团队成员",
+    },
+    "answer_must_be_string": {
+        "en": "Answer must be a non-empty string for {question_id}",
+        "zh": "{question_id} 的回答必须为非空字符串",
+    },
+    "answer_required_for_question": {
+        "en": "Answer required for {question_id}",
+        "zh": "{question_id} 的回答为必填项",
+    },
+    "answers_must_be_object": {
+        "en": "Answers must be an object",
+        "zh": "回答内容必须是对象",
+    },
+    "answers_unknown_question_id": {
+        "en": "Answers contain an unknown question id",
+        "zh": "回答包含未知的问题 ID",
     },
     "api_key_activated": {
         "en": "API key activated successfully",
@@ -847,6 +867,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Document is currently being processed",
         "zh": "文档正在处理中",
     },
+    "document_processing_failed": {
+        "en": "Document processing failed",
+        "zh": "文档处理失败",
+    },
     "document_processing_failed_generic": {
         "en": "Document processing failed",
         "zh": "文档处理失败",
@@ -869,6 +893,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Duplicate input parameter names found: {names}",
         "zh": "发现重复的输入参数名称：{names}",
     },
+    "duplicate_name": {"en": "Name already exists", "zh": "名称已存在"},
     "email_already_registered": {
         "en": "Email already registered",
         "zh": "邮箱已被注册",
@@ -1042,6 +1067,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "file_too_large": {"en": "File too large", "zh": "文件过大"},
     "file_uploaded": {"en": "File uploaded successfully", "zh": "文件上传成功"},
     "files_parsed": {"en": "Files parsed successfully", "zh": "文件批量解析成功"},
+    "forbidden": {"en": "Forbidden", "zh": "禁止访问"},
     "force_password_change_required": {
         "en": "You are required to change your password before continuing.",
         "zh": "您需要先修改密码才能继续。",
@@ -1129,6 +1155,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "权限不足，无法访问此工具",
     },
     "insufficient_privileges": {"en": "Insufficient privileges", "zh": "权限不足"},
+    "internal_error": {"en": "Internal server error", "zh": "内部服务错误"},
     "internal_server_error": {"en": "Internal Server Error", "zh": "服务器内部错误"},
     "invalid_api_key": {"en": "Invalid API key", "zh": "无效的 API 密钥"},
     "invalid_api_key_format": {
@@ -1150,6 +1177,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "无效的 Kling API Key",
     },
     "invalid_luma_api_key": {"en": "Invalid Luma API key", "zh": "无效的 Luma API Key"},
+    "invalid_mcp_tool_name": {
+        "en": "Invalid MCP tool name",
+        "zh": "无效的 MCP 工具名称",
+    },
     "invalid_mcp_tool_name_format": {
         "en": "Invalid MCP tool name format: {tool_name}",
         "zh": "无效的 MCP 工具名称格式：{tool_name}",
@@ -1471,6 +1502,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "model_call_failed": {"en": "Model call failed", "zh": "模型调用失败"},
     "model_created": {"en": "Model created successfully", "zh": "模型创建成功"},
     "model_deleted": {"en": "Model deleted successfully", "zh": "模型删除成功"},
+    "model_disabled": {"en": "Model is disabled", "zh": "模型已被禁用"},
     "model_discovery_api_key_required": {
         "en": "API key is required to fetch the model list",
         "zh": "获取模型列表需要 API Key",
@@ -1589,6 +1621,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "不支持的模型类型",
     },
     "model_updated": {"en": "Model updated successfully", "zh": "模型更新成功"},
+    "model_vision_not_supported": {
+        "en": "Model does not support vision",
+        "zh": "模型不支持视觉能力",
+    },
     "no_audio_data_provided": {"en": "No audio data provided", "zh": "未提供音频数据"},
     "no_changes": {"en": "No changes", "zh": "无变更"},
     "no_chat_model_available": {
@@ -1608,6 +1644,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "No user message found for regeneration",
         "zh": "未找到可用于重新生成的用户消息",
     },
+    "no_users_found": {"en": "No users found", "zh": "未找到用户"},
+    "no_users_selected": {"en": "No users selected", "zh": "未选择用户"},
     "node_label_start": {"en": "Start", "zh": "开始"},
     "node_not_found_in_execution_plan": {
         "en": "Node not found in execution plan",
@@ -1639,6 +1677,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "notification_created": {
         "en": "Notification created successfully",
         "zh": "通知创建成功",
+    },
+    "notification_creation_failed": {
+        "en": "Failed to create notification",
+        "zh": "创建通知失败",
     },
     "notification_deleted": {
         "en": "Notification deleted successfully",
@@ -1918,9 +1960,21 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Password does not meet security requirements",
         "zh": "密码不符合安全要求",
     },
+    "password_validation_failed": {
+        "en": "Password validation failed",
+        "zh": "密码验证失败",
+    },
     "pending_approval_user": {
         "en": "Your account is pending admin approval",
         "zh": "您的账户正在等待管理员审核",
+    },
+    "pending_interaction_mismatch": {
+        "en": "Tool call does not match the pending interaction",
+        "zh": "工具调用与当前等待的交互不匹配",
+    },
+    "pending_questions_invalid": {
+        "en": "Pending questions are invalid",
+        "zh": "等待确认的问题无效",
     },
     "permission_code_exists": {
         "en": "Permission code already exists",
@@ -1975,7 +2029,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Query parameter is required",
         "zh": "缺少 query 参数",
     },
+    "rag_search_failed": {"en": "Knowledge base search failed", "zh": "知识库检索失败"},
     "rate_limit_exceeded": {"en": "Rate limit exceeded", "zh": "触发速率限制"},
+    "rate_limited": {
+        "en": "Rate limit exceeded. Please try again later.",
+        "zh": "请求过于频繁，请稍后再试。",
+    },
     "registration_disabled": {
         "en": "Registration is currently disabled",
         "zh": "注册功能已关闭",
@@ -2026,6 +2085,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "role_with_name_exists": {
         "en": "Role with this name already exists",
         "zh": "该角色名已存在",
+    },
+    "run_not_found": {"en": "Run not found", "zh": "运行记录未找到"},
+    "run_not_waiting_for_answers": {
+        "en": "Run is not waiting for user answers",
+        "zh": "运行未处于等待用户输入状态",
     },
     "runway_api_error": {"en": "Runway API error", "zh": "Runway API 错误"},
     "runway_endpoint_not_found": {
@@ -2345,6 +2409,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Zip package contains too many files",
         "zh": "Zip 包文件数量过多",
     },
+    "skipped_answers_must_be_empty": {
+        "en": "Skipped answers must be empty",
+        "zh": "跳过时回答内容必须为空",
+    },
+    "skipped_must_be_boolean": {
+        "en": "Skipped must be a boolean",
+        "zh": "跳过标识必须是布尔值",
+    },
     "slack_not_configured": {
         "en": "Slack service is not configured",
         "zh": "Slack 服务未配置",
@@ -2364,6 +2436,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "smtp_not_enabled": {"en": "Email service is not enabled", "zh": "邮件服务未启用"},
     "some_users_not_found": {"en": "Some users not found", "zh": "部分用户不存在"},
     "source_url_required": {"en": "Source URL is required", "zh": "源URL不能为空"},
+    "sso_authentication_failed": {
+        "en": "SSO authentication failed",
+        "zh": "SSO 认证失败",
+    },
     "sso_cas_response_parse_failed": {
         "en": "Failed to parse CAS response",
         "zh": "CAS 响应解析失败",
@@ -2372,6 +2448,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "sso_connection_not_found": {
         "en": "SSO connection not found",
         "zh": "SSO 连接未找到",
+    },
+    "sso_invalid_configuration": {
+        "en": "Invalid SSO configuration",
+        "zh": "SSO 配置无效",
     },
     "sso_invalid_icon_url": {
         "en": "Icon URL must start with http:// or https://",
@@ -2474,6 +2554,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Model authorized to team successfully",
         "zh": "模型授权成功",
     },
+    "team_model_exists": {"en": "Team model already exists", "zh": "团队模型已存在"},
     "team_model_not_found": {
         "en": "Team model authorization not found",
         "zh": "未找到团队模型授权",
@@ -2699,12 +2780,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Unsupported SSO protocol",
         "zh": "不支持的 SSO 协议",
     },
+    "unsupported_tool_type": {"en": "Unsupported tool type", "zh": "不支持的工具类型"},
     "user_activated": {"en": "User activated successfully", "zh": "用户激活成功"},
     "user_already_active": {"en": "User is already active", "zh": "用户已经是激活状态"},
     "user_already_inactive": {
         "en": "User is already inactive",
         "zh": "用户已经是禁用状态",
     },
+    "user_context_required": {"en": "User context is required", "zh": "需要用户上下文"},
     "user_context_required_for_memory_tools": {
         "en": "User context required for memory tools",
         "zh": "记忆工具需要用户上下文",
@@ -2789,6 +2872,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "The selected video model does not support uploaded images as starting-frame references yet",
         "zh": "当前选择的视频模型暂不支持将上传图片作为首帧参考",
     },
+    "view_details": {"en": "View Details", "zh": "查看详情"},
     "volcengine_api_error": {"en": "Volcengine API error", "zh": "Volcengine API 错误"},
     "volcengine_endpoint_not_found": {
         "en": "Volcengine endpoint not found",
@@ -2864,6 +2948,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "企业微信消息发送失败",
     },
     "welcome_message": {"en": "Welcome to Clouisle API", "zh": "欢迎使用 Clouisle API"},
+    "workflow_access_denied": {
+        "en": "You do not have access to this workflow",
+        "zh": "您无权访问此工作流",
+    },
     "workflow_approval_pending": {"en": "Awaiting approval", "zh": "等待审批"},
     "workflow_approval_rejected": {"en": "Approval was rejected", "zh": "审批未通过"},
     "workflow_auto_saved_before_restore": {

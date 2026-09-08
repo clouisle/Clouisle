@@ -2147,9 +2147,56 @@ async def post_run_answer(
             skipped=body.skipped,
         )
     except ValueError as exc:
+        raw = str(exc).strip()
+        if raw == "pending questions are invalid":
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="pending_questions_invalid",
+                status_code=400,
+            ) from exc
+        if raw == "answers must be an object":
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="answers_must_be_object",
+                status_code=400,
+            ) from exc
+        if raw == "skipped must be a boolean":
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="skipped_must_be_boolean",
+                status_code=400,
+            ) from exc
+        if raw == "skipped answers must be empty":
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="skipped_answers_must_be_empty",
+                status_code=400,
+            ) from exc
+        if raw == "answers contain an unknown question id":
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="answers_unknown_question_id",
+                status_code=400,
+            ) from exc
+        if raw.startswith("answer required for "):
+            qid = raw.removeprefix("answer required for ").strip()
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="answer_required_for_question",
+                question_id=qid,
+                status_code=400,
+            ) from exc
+        if raw.startswith("answer must be a non-empty string for "):
+            qid = raw.removeprefix("answer must be a non-empty string for ").strip()
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="answer_must_be_string",
+                question_id=qid,
+                status_code=400,
+            ) from exc
         raise BusinessError(
             code=ResponseCode.BAD_REQUEST,
-            msg=str(exc),
+            msg_key="validation_error",
             status_code=400,
         ) from exc
 
@@ -2157,12 +2204,12 @@ async def post_run_answer(
         if run.status != AgentRunStatus.WAITING:
             raise BusinessError(
                 code=ResponseCode.BAD_REQUEST,
-                msg="run is not waiting for user answers",
+                msg_key="run_not_waiting_for_answers",
                 status_code=409,
             )
         raise BusinessError(
             code=ResponseCode.BAD_REQUEST,
-            msg="tool call does not match the pending interaction",
+            msg_key="pending_interaction_mismatch",
             status_code=409,
         )
 

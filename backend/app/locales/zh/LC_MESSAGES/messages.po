@@ -2919,3 +2919,96 @@ msgstr "节点 {node_id} 没有上游连接"
 
 msgid "workflow_validation_failed_with_errors"
 msgstr "工作流校验失败：{errors}"
+
+msgid "internal_error"
+msgstr "内部服务错误"
+
+msgid "forbidden"
+msgstr "禁止访问"
+
+msgid "duplicate_name"
+msgstr "名称已存在"
+
+msgid "rate_limited"
+msgstr "请求过于频繁，请稍后再试。"
+
+msgid "document_processing_failed"
+msgstr "文档处理失败"
+
+msgid "team_model_exists"
+msgstr "团队模型已存在"
+
+msgid "model_vision_not_supported"
+msgstr "模型不支持视觉能力"
+
+msgid "model_disabled"
+msgstr "模型已被禁用"
+
+msgid "sso_authentication_failed"
+msgstr "SSO 认证失败"
+
+msgid "sso_invalid_configuration"
+msgstr "SSO 配置无效"
+
+msgid "agent_context_required"
+msgstr "需要智能体上下文"
+
+msgid "user_context_required"
+msgstr "需要用户上下文"
+
+msgid "run_not_found"
+msgstr "运行记录未找到"
+
+msgid "workflow_access_denied"
+msgstr "您无权访问此工作流"
+
+msgid "password_validation_failed"
+msgstr "密码验证失败"
+
+msgid "no_users_found"
+msgstr "未找到用户"
+
+msgid "no_users_selected"
+msgstr "未选择用户"
+
+msgid "notification_creation_failed"
+msgstr "创建通知失败"
+
+msgid "rag_search_failed"
+msgstr "知识库检索失败"
+
+msgid "invalid_mcp_tool_name"
+msgstr "无效的 MCP 工具名称"
+
+msgid "unsupported_tool_type"
+msgstr "不支持的工具类型"
+
+msgid "run_not_waiting_for_answers"
+msgstr "运行未处于等待用户输入状态"
+
+msgid "pending_interaction_mismatch"
+msgstr "工具调用与当前等待的交互不匹配"
+
+msgid "pending_questions_invalid"
+msgstr "等待确认的问题无效"
+
+msgid "answers_must_be_object"
+msgstr "回答内容必须是对象"
+
+msgid "skipped_must_be_boolean"
+msgstr "跳过标识必须是布尔值"
+
+msgid "skipped_answers_must_be_empty"
+msgstr "跳过时回答内容必须为空"
+
+msgid "answers_unknown_question_id"
+msgstr "回答包含未知的问题 ID"
+
+msgid "answer_required_for_question"
+msgstr "{question_id} 的回答为必填项"
+
+msgid "answer_must_be_string"
+msgstr "{question_id} 的回答必须为非空字符串"
+
+msgid "view_details"
+msgstr "查看详情"

@@ -242,20 +242,34 @@ def get_code_message(code: int, lang: Optional[str] = None) -> str:
 
     # Map ResponseCode to translation key
     code_to_key = {
+        # 成功
         ResponseCode.SUCCESS: "success",
+        # 通用错误 (1000-1999)
         ResponseCode.UNKNOWN_ERROR: "unknown_error",
         ResponseCode.VALIDATION_ERROR: "validation_error",
+        ResponseCode.BAD_REQUEST: "bad_request",
+        ResponseCode.INTERNAL_ERROR: "internal_error",
+        ResponseCode.FORBIDDEN: "forbidden",
+        # 认证错误 (2000-2999)
         ResponseCode.UNAUTHORIZED: "unauthorized",
         ResponseCode.INVALID_TOKEN: "invalid_token",
         ResponseCode.TOKEN_EXPIRED: "token_expired",
         ResponseCode.INVALID_CREDENTIALS: "invalid_credentials",
         ResponseCode.INACTIVE_USER: "inactive_user",
+        # 权限错误 (3000-3999)
         ResponseCode.PERMISSION_DENIED: "permission_denied",
         ResponseCode.INSUFFICIENT_PRIVILEGES: "insufficient_privileges",
+        ResponseCode.NOT_TEAM_MEMBER: "not_team_member",
+        ResponseCode.TEAM_ADMIN_REQUIRED: "team_admin_required",
+        ResponseCode.TEAM_OWNER_REQUIRED: "team_owner_required",
+        # 资源错误 (4000-4999)
         ResponseCode.NOT_FOUND: "not_found",
         ResponseCode.USER_NOT_FOUND: "user_not_found",
         ResponseCode.ROLE_NOT_FOUND: "role_not_found",
         ResponseCode.PERMISSION_NOT_FOUND: "permission_not_found",
+        ResponseCode.TEAM_NOT_FOUND: "team_not_found",
+        ResponseCode.TEAM_MEMBER_NOT_FOUND: "team_member_not_found",
+        # 注册相关错误 (5000-5099)
         ResponseCode.REGISTRATION_DISABLED: "registration_disabled",
         ResponseCode.ALREADY_EXISTS: "already_exists",
         ResponseCode.USERNAME_EXISTS: "username_exists",
@@ -265,18 +279,77 @@ def get_code_message(code: int, lang: Optional[str] = None) -> str:
         ResponseCode.VERIFICATION_CODE_EXPIRED: "verification_token_invalid",
         ResponseCode.EMAIL_SEND_FAILED: "smtp_not_configured",
         ResponseCode.EMAIL_SEND_TOO_FREQUENT: "email_send_too_frequent",
+        # 资源重复错误 (5100-5199)
         ResponseCode.ROLE_NAME_EXISTS: "role_name_exists",
         ResponseCode.PERMISSION_CODE_EXISTS: "permission_code_exists",
+        ResponseCode.TEAM_NAME_EXISTS: "team_name_exists",
+        ResponseCode.ALREADY_TEAM_MEMBER: "already_team_member",
+        ResponseCode.DUPLICATE_NAME: "duplicate_name",
+        # 操作禁止错误 (5200-5299)
         ResponseCode.CANNOT_DELETE_SYSTEM_ROLE: "cannot_delete_system_role",
         ResponseCode.CANNOT_DELETE_SUPERUSER: "cannot_delete_superuser",
         ResponseCode.CANNOT_DELETE_SYSTEM_PERMISSION: "cannot_delete_system_permission",
         ResponseCode.CANNOT_UPDATE_SYSTEM_PERMISSION: "cannot_update_system_permission",
         ResponseCode.CANNOT_MODIFY_SYSTEM_ROLE: "cannot_modify_system_role",
+        ResponseCode.CANNOT_DELETE_DEFAULT_TEAM: "cannot_delete_default_team",
+        ResponseCode.CANNOT_ADD_AS_OWNER: "cannot_add_as_owner",
+        ResponseCode.CANNOT_CHANGE_OWNER_ROLE: "cannot_change_owner_role",
+        ResponseCode.CANNOT_PROMOTE_TO_OWNER: "cannot_promote_to_owner",
+        ResponseCode.CANNOT_REMOVE_OWNER: "cannot_remove_owner",
+        ResponseCode.OWNER_CANNOT_LEAVE: "owner_cannot_leave",
         ResponseCode.ROLE_IN_USE: "role_in_use",
+        ResponseCode.USER_ALREADY_ACTIVE: "user_already_active",
+        ResponseCode.USER_ALREADY_INACTIVE: "user_already_inactive",
+        ResponseCode.CANNOT_DEACTIVATE_SUPERUSER: "cannot_deactivate_superuser",
+        # 登录安全错误 (5300-5399)
         ResponseCode.ACCOUNT_LOCKED: "account_locked",
         ResponseCode.TOO_MANY_LOGIN_ATTEMPTS: "account_locked_after_attempts",
         ResponseCode.CAPTCHA_REQUIRED: "captcha_required",
         ResponseCode.CAPTCHA_INVALID: "captcha_invalid",
+        ResponseCode.PASSWORD_EXPIRED: "password_expired",
+        ResponseCode.FORCE_PASSWORD_CHANGE_REQUIRED: "force_password_change_required",
+        ResponseCode.PASSWORD_MIN_AGE_NOT_MET: "password_min_age_not_met",
+        ResponseCode.PASSWORD_RECENTLY_USED: "password_recently_used",
+        # TOTP 2FA errors (5310-5319)
+        ResponseCode.TOTP_REQUIRED: "totp_required",
+        ResponseCode.TOTP_INVALID: "totp_invalid",
+        ResponseCode.TOTP_RATE_LIMITED: "totp_rate_limited",
+        ResponseCode.TOTP_NOT_ENABLED: "totp_not_enabled",
+        ResponseCode.TOTP_ALREADY_ENABLED: "totp_already_enabled",
+        ResponseCode.TOTP_SETUP_EXPIRED: "totp_setup_expired",
+        ResponseCode.TOTP_SETUP_REQUIRED: "totp_setup_required",
+        # 速率限制错误 (5400-5499)
+        ResponseCode.RATE_LIMITED: "rate_limited",
+        # 知识库错误 (6000-6099)
+        ResponseCode.KB_NOT_FOUND: "kb_not_found",
+        ResponseCode.KB_NAME_EXISTS: "kb_name_exists",
+        ResponseCode.DOCUMENT_NOT_FOUND: "document_not_found",
+        ResponseCode.INVALID_DOCUMENT_TYPE: "invalid_document_type",
+        ResponseCode.DOCUMENT_PROCESSING_FAILED: "document_processing_failed",
+        ResponseCode.CHUNK_NOT_FOUND: "chunk_not_found",
+        ResponseCode.DOCUMENT_PROCESSING: "document_processing",
+        # 模型相关错误 (6100-6199)
+        ResponseCode.MODEL_NOT_FOUND: "model_not_found",
+        ResponseCode.TEAM_MODEL_NOT_FOUND: "team_model_not_found",
+        ResponseCode.TEAM_MODEL_EXISTS: "team_model_exists",
+        ResponseCode.MODEL_QUOTA_EXCEEDED: "model_quota_exceeded",
+        ResponseCode.MODEL_NOT_AUTHORIZED: "model_not_authorized",
+        ResponseCode.MODEL_VISION_NOT_SUPPORTED: "model_vision_not_supported",
+        ResponseCode.MODEL_DISABLED: "model_disabled",
+        # Agent 相关错误 (6200-6299)
+        ResponseCode.AGENT_NOT_FOUND: "agent_not_found",
+        ResponseCode.AGENT_ACCESS_DENIED: "agent_access_denied",
+        ResponseCode.AGENT_NOT_PUBLISHED: "agent_not_published",
+        ResponseCode.CONVERSATION_NOT_FOUND: "conversation_not_found",
+        ResponseCode.MESSAGE_NOT_FOUND: "message_not_found",
+        # SSO 相关错误 (6300-6399)
+        ResponseCode.SSO_PROVIDER_NOT_FOUND: "sso_provider_not_found",
+        ResponseCode.SSO_SESSION_EXPIRED: "sso_session_expired",
+        ResponseCode.SSO_REGISTRATION_DISABLED: "sso_registration_disabled",
+        ResponseCode.SSO_AUTHENTICATION_FAILED: "sso_authentication_failed",
+        ResponseCode.SSO_INVALID_CONFIGURATION: "sso_invalid_configuration",
+        ResponseCode.SSO_PROVIDER_NAME_EXISTS: "sso_provider_name_exists",
+        ResponseCode.PASSWORD_LOGIN_DISABLED: "password_login_disabled",
     }
 
     try:

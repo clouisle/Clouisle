@@ -313,9 +313,9 @@ async def test_post_run_answer_rejects_non_waiting_and_wrong_tool(monkeypatch):
         chat, "_split_run_auth", MagicMock(return_value=(current_user, None))
     )
 
-    for status, expected_message in (
-        (AgentRunStatus.RUNNING, "run is not waiting for user answers"),
-        (AgentRunStatus.WAITING, "tool call does not match the pending interaction"),
+    for status, expected_msg_key in (
+        (AgentRunStatus.RUNNING, "run_not_waiting_for_answers"),
+        (AgentRunStatus.WAITING, "pending_interaction_mismatch"),
     ):
         monkeypatch.setattr(
             chat,
@@ -335,7 +335,7 @@ async def test_post_run_answer_rejects_non_waiting_and_wrong_tool(monkeypatch):
             )
 
         assert exc_info.value.status_code == 409
-        assert exc_info.value.msg == expected_message
+        assert exc_info.value.msg_key == expected_msg_key
 
 
 @pytest.mark.asyncio
@@ -561,3 +561,66 @@ async def test_stop_run_running_race_returns_terminal_reload(monkeypatch):
     result = await chat.stop_run(uuid4(), run_id, auth_result=(current_user, None))
 
     assert result == {"data": terminal}
+
+
+@pytest.mark.parametrize(
+    "error_text, expected_key, expected_kwargs",
+    [
+        ("pending questions are invalid", "pending_questions_invalid", {}),
+        ("answers must be an object", "answers_must_be_object", {}),
+        ("skipped must be a boolean", "skipped_must_be_boolean", {}),
+        ("skipped answers must be empty", "skipped_answers_must_be_empty", {}),
+        (
+            "answers contain an unknown question id",
+            "answers_unknown_question_id",
+            {},
+        ),
+        (
+            "answer required for target",
+            "answer_required_for_question",
+            {"question_id": "target"},
+        ),
+        (
+            "answer must be a non-empty string for target",
+            "answer_must_be_string",
+            {"question_id": "target"},
+        ),
+        ("unknown value error", "validation_error", {}),
+    ],
+)
+@pytest.mark.asyncio
+async def test_post_run_answer_value_error_converts_to_business_error(
+    monkeypatch, error_text, expected_key, expected_kwargs
+):
+    from app.services import agent_run_store
+
+    agent_id = uuid4()
+    run_id = uuid4()
+    current_user = SimpleNamespace(id=uuid4())
+    monkeypatch.setattr(chat.deps, "check_api_key_agent_access", AsyncMock())
+    monkeypatch.setattr(
+        chat, "_split_run_auth", MagicMock(return_value=(current_user, None))
+    )
+    monkeypatch.setattr(
+        chat,
+        "_load_owned_run",
+        AsyncMock(return_value=SimpleNamespace(status=AgentRunStatus.WAITING)),
+    )
+    monkeypatch.setattr(
+        agent_run_store,
+        "submit_user_answers",
+        AsyncMock(side_effect=ValueError(error_text)),
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await chat.post_run_answer(
+            agent_id,
+            run_id,
+            RunAnswerCreate(tool_call_id="call-1", answers={}),
+            auth_result=(current_user, None),
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.msg_key == expected_key
+    for k, v in expected_kwargs.items():
+        assert exc_info.value.kwargs.get(k) == v
