@@ -76,6 +76,22 @@ mock.module('@/lib/utils/message-converter', () => ({
 
 mock.module('@/lib/utils/tool-result', () => ({
   parseToolResultOutput: (output: unknown) => output,
+  extractToolCitationSources: (toolName: string, output: unknown) => {
+    const results = toolName === 'web_search' && output && typeof output === 'object' && 'results' in output && Array.isArray(output.results)
+      ? output.results
+      : []
+    return results.flatMap((result) => (
+      result && typeof result === 'object' && 'citation_id' in result && typeof result.citation_id === 'string'
+        ? [{
+            type: 'url' as const,
+            citationId: result.citation_id,
+            title: 'title' in result && typeof result.title === 'string' ? result.title : undefined,
+            content: 'content' in result && typeof result.content === 'string' ? result.content : undefined,
+            url: 'url' in result && typeof result.url === 'string' ? result.url : undefined,
+          }]
+        : []
+    ))
+  },
   shouldDisplayMediaResultInBody: () => true,
 }))
 
@@ -892,13 +908,13 @@ describe('useChat', () => {
       { event: 'reasoning_start', data: {} },
       { event: 'reasoning_delta', data: { delta: 'think' } },
       { event: 'reasoning_end', data: {} },
-      { event: 'rag_context', data: { contexts: [{ document_id: 'doc-1', document_name: 'Doc', content: 'chunk', kb_id: 'kb-1', kb_name: 'KB', score: 0.8 }] } },
+      { event: 'rag_context', data: { contexts: [{ citation_id: 'rag_doc_1', document_id: 'doc-1', document_name: 'Doc', content: 'chunk', kb_id: 'kb-1', kb_name: 'KB', score: 0.8 }] } },
       { event: 'compression_start', data: {} },
       { event: 'compression_end', data: { before_tokens: 20, after_tokens: 10 } },
-      { event: 'tool_call', data: { tool_call_id: 'tool-1', tool_name: 'sea', tool_display_name: 'sea', arguments: {} } },
-      { event: 'tool_call', data: { tool_call_id: 'tool-1', tool_name: 'search', tool_display_name: 'Search', arguments: { q: 'coverage' } } },
+      { event: 'tool_call', data: { tool_call_id: 'tool-1', tool_name: 'web', tool_display_name: 'web', arguments: {} } },
+      { event: 'tool_call', data: { tool_call_id: 'tool-1', tool_name: 'web_search', tool_display_name: 'Search', arguments: { q: 'coverage' } } },
       { event: 'tool_call', data: { tool_call_id: 'tool-2', tool_name: 'lookup', tool_display_name: 'Lookup', arguments: {} } },
-      { event: 'tool_result', data: { tool_call_id: 'tool-1', tool_name: 'search', tool_display_name: 'Search', result: { ok: true }, is_error: false } },
+      { event: 'tool_result', data: { tool_call_id: 'tool-1', tool_name: 'web_search', tool_display_name: 'Search', result: { success: true, results: [{ citation_id: 'web_result_1', title: 'Result', url: 'https://example.test/result', content: 'Web excerpt' }] }, is_error: false } },
       { event: 'tool_result', data: { tool_call_id: 'tool-2', tool_name: 'lookup', tool_display_name: 'Lookup', result: 'failed', is_error: true } },
       { event: 'media_result', data: { kind: 'image', url: '/cat.png' } },
       { event: 'output_truncated', data: {} },
@@ -912,6 +928,8 @@ describe('useChat', () => {
     const parts = result.messages[1].parts
     expect(parts.map((part) => part.type)).toContain('reasoning')
     expect(parts).toContainEqual(expect.objectContaining({ type: 'source-document', documentId: 'doc-1' }))
+    expect(parts).toContainEqual(expect.objectContaining({ type: 'source-document', sourceId: 'rag_doc_1' }))
+    expect(parts).toContainEqual(expect.objectContaining({ type: 'source-url', sourceId: 'web_result_1', url: 'https://example.test/result' }))
     expect(parts).toContainEqual(expect.objectContaining({ type: 'task', taskType: 'compression', state: 'completed' }))
     const reasoningIndex = parts.findIndex((part) => part.type === 'reasoning')
     const compressionIndex = parts.findIndex((part) => part.type === 'task' && part.taskType === 'compression')
@@ -923,7 +941,7 @@ describe('useChat', () => {
     expect(parts).toContainEqual(expect.objectContaining({
       type: 'tool-call',
       toolCallId: 'tool-1',
-      toolName: 'search',
+      toolName: 'web_search',
       input: { q: 'coverage' },
     }))
     expect(parts).toContainEqual(expect.objectContaining({ type: 'tool-call', toolCallId: 'tool-2', state: 'error' }))

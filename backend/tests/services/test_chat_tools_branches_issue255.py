@@ -115,7 +115,8 @@ async def test_knowledge_search_aggregates_results_and_handles_provider_error():
             agent=SimpleNamespace(id="agent-1"),
         )
 
-    assert json.loads(result) == {
+    payload = json.loads(result)
+    assert payload == {
         "contexts": [
             {
                 "kb_id": "kb-1",
@@ -124,9 +125,11 @@ async def test_knowledge_search_aggregates_results_and_handles_provider_error():
                 "document_name": "Guide",
                 "content": "Answer",
                 "score": 0.9,
+                "citation_id": payload["contexts"][0]["citation_id"],
             }
         ]
     }
+    assert payload["contexts"][0]["citation_id"].startswith("rag_")
     request = retrieve.await_args.args[0]
     assert request.query == "policy"
     assert request.top_k == 2

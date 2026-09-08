@@ -19,6 +19,7 @@ from app.services.retrieval import (
     retrieve,
     validated_search_mode,
 )
+from app.services.citations import CITATION_MARKER_TEMPLATE, with_rag_citation_ids
 
 if TYPE_CHECKING:
     from app.models.agent import Agent
@@ -213,18 +214,24 @@ async def perform_rag_retrieval(
         )
         return []
 
-    return [
-        {
-            "kb_id": result["kb_id"],
-            "kb_name": result["kb_name"],
-            "document_id": str(result.get("document_id")),
-            "document_name": result.get("document_name"),
-            "content": result.get("content"),
-            "score": result.get("score"),
-            "metadata": result.get("metadata") or {},
-        }
-        for result in response.results
-    ]
+    return with_rag_citation_ids(
+        [
+            {
+                "kb_id": result["kb_id"],
+                "kb_name": result["kb_name"],
+                "document_id": (
+                    str(result["document_id"])
+                    if result.get("document_id") is not None
+                    else None
+                ),
+                "document_name": result.get("document_name"),
+                "content": result.get("content"),
+                "score": result.get("score"),
+                "metadata": result.get("metadata") or {},
+            }
+            for result in response.results
+        ]
+    )
 
 
 def aggregate_rag_contexts(rag_contexts: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -249,6 +256,8 @@ def aggregate_rag_contexts(rag_contexts: list[dict[str, Any]]) -> list[dict[str,
 
         if key in index_map:
             idx = index_map[key]
+            if not aggregated[idx].get("citation_id") and ctx.get("citation_id"):
+                aggregated[idx]["citation_id"] = ctx.get("citation_id")
             if ctx.get("content"):
                 aggregated[idx]["content_parts"].append(ctx.get("content"))
             aggregated[idx]["metadata"].append(ctx.get("metadata") or {})
@@ -270,6 +279,7 @@ def aggregate_rag_contexts(rag_contexts: list[dict[str, Any]]) -> list[dict[str,
                 "kb_name": ctx.get("kb_name"),
                 "document_id": ctx.get("document_id"),
                 "document_name": ctx.get("document_name"),
+                "citation_id": ctx.get("citation_id"),
                 "score": ctx.get("score"),
                 "metadata": [ctx.get("metadata") or {}],
                 "content_parts": [ctx.get("content")] if ctx.get("content") else [],
@@ -280,40 +290,43 @@ def aggregate_rag_contexts(rag_contexts: list[dict[str, Any]]) -> list[dict[str,
         item["content"] = "\n\n".join([p for p in item.get("content_parts", []) if p])
         item.pop("content_parts", None)
 
-    return aggregated
+    return with_rag_citation_ids(aggregated)
 
 
 def build_rag_prompt(rag_contexts: list[dict[str, Any]], user_message: str) -> str:
-    """Build user message with RAG context and citation instructions.
+    """Build user message with RAG context.
 
     Args:
         rag_contexts: List of aggregated retrieval results
         user_message: Original user message
 
     Returns:
-        Enhanced prompt with RAG context and citation format instructions
+        Enhanced prompt with RAG context
     """
     if not rag_contexts:
         return user_message
 
     rag_contexts = aggregate_rag_contexts(rag_contexts)
 
-    # Build numbered references
     references = []
-    for i, ctx in enumerate(rag_contexts, 1):
+    for ctx in rag_contexts:
         references.append(
-            f"[[ref:{i}]] {ctx['kb_name']} - {ctx['document_name']}:\n{ctx['content']}"
+            "\n".join(
+                (
+                    f"citation_id: {ctx['citation_id']}",
+                    f"source: {ctx['kb_name']} - {ctx['document_name']}",
+                    "content:",
+                    ctx["content"],
+                )
+            )
         )
 
     context_text = "\n\n---\n\n".join(references)
 
-    return f"""The following reference materials may help you answer the user's question.
-Use them ONLY if they are relevant to the question.
+    return f"""The following reference materials may help answer the user's question. Use only relevant material.
 
-Citation format requirement:
-- Use ONLY [[cite:N]] where N is the reference number.
-- Do NOT use (ref:N), [ref:N], "ref:N", or any other citation format.
-Only cite sources you actually use. Do not cite if the information comes from your general knowledge.
+If the answer uses a factual statement from a reference, every sentence or list item containing that statement MUST end with the exact source marker `{CITATION_MARKER_TEMPLATE}`, replacing `SOURCE_ID` with that reference's `citation_id`.
+Do not use numeric references such as `[1]` or `[39]`. Never invent, alter, translate, shorten, or renumber a citation ID.
 
 Reference Materials:
 
@@ -321,6 +334,4 @@ Reference Materials:
 
 ---
 
-User question: {user_message}
-
-Remember: Only use [[cite:N]] citations when you actually use information from the references above."""
+User question: {user_message}"""

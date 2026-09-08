@@ -19,6 +19,8 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
+from app.services.citations import CITATION_INSTRUCTION
+
 if TYPE_CHECKING:
     from app.models.agent import Agent
 
@@ -29,6 +31,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 FILE_CONTENT_PLACEHOLDER = "{{fileContent}}"
+
 
 MARKDOWN_IMAGE_DISPLAY_INSTRUCTION = r"""## Markdown Output
 
@@ -164,7 +167,8 @@ WORKFLOW_MODE = "workflow"
 
 # Sections logged at info when applied (the capability-driven ones); always-on
 # sections (Markdown, language) are silent to match prior noise levels.
-_LOGGED_SECTIONS = frozenset({"memory", "user_input", "sandbox"})
+_LOGGED_SECTIONS = frozenset({"memory", "user_input", "sandbox", "citations"})
+_CITATION_SOURCE_BUILTIN_TOOLS = frozenset({"web_search", "fetch_webpage"})
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +222,23 @@ def has_sandbox_tools(agent: Agent) -> bool:
     return False
 
 
+def has_source_citation_capability(agent: Agent) -> bool:
+    """Return whether chat can supply sources carrying stable citation IDs."""
+    rag_mode = getattr(agent, "rag_mode", "off")
+    rag_mode_value = getattr(rag_mode, "value", rag_mode)
+    if rag_mode_value in {"auto", "agentic"}:
+        return True
+    if bool(getattr(agent, "enable_attachments", False)):
+        return True
+
+    tools_config = getattr(agent, "tools_config", None) or []
+    return any(
+        config.get("type") == "builtin"
+        and config.get("name") in _CITATION_SOURCE_BUILTIN_TOOLS
+        for config in tools_config
+    )
+
+
 def append_prompt_section(base: str, section: str | None) -> str:
     """Append a section to the base prompt with a blank-line separator."""
     normalized_section = (section or "").strip()
@@ -267,6 +288,10 @@ def _sandbox_applies(agent: Agent, _mode: str) -> bool:
     return has_sandbox_tools(agent)
 
 
+def _citations_apply(agent: Agent, mode: str) -> bool:
+    return mode == CHAT_MODE and has_source_citation_capability(agent)
+
+
 def _append_constant(constant: str) -> Callable[[str, Agent, str | None], str]:
     def transform(base: str, _agent: Agent, _locale: str | None) -> str:
         return append_prompt_section(base, constant)
@@ -274,13 +299,18 @@ def _append_constant(constant: str) -> Callable[[str, Agent, str | None], str]:
     return transform
 
 
-# Order matters: Markdown -> Memory -> Sandbox -> User input -> Language.
-# This preserves the historical chat-endpoint ordering exactly.
+# Order matters: Markdown -> Citations -> Memory -> Sandbox -> User input -> Language.
+# Citation guidance precedes capability workflows and remains provider-neutral.
 SECTIONS: tuple[PromptSection, ...] = (
     PromptSection(
         name="markdown",
         applies=_always,
         transform=_append_constant(MARKDOWN_IMAGE_DISPLAY_INSTRUCTION),
+    ),
+    PromptSection(
+        name="citations",
+        applies=_citations_apply,
+        transform=_append_constant(CITATION_INSTRUCTION),
     ),
     PromptSection(
         name="memory",

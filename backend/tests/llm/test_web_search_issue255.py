@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from app.llm.tools.builtin import web_search as subject
+from app.services.citations import stable_citation_id
 
 
 class FakeClient:
@@ -42,12 +43,14 @@ def http_error(status_code=503):
     return httpx.HTTPStatusError("rejected", request=request, response=response)
 
 
-def install_markitdown(monkeypatch, *, text_content="", exc=None):
+def install_markitdown(monkeypatch, *, text_content="", title=None, exc=None):
     converter = MagicMock()
     if exc is not None:
         converter.convert.side_effect = exc
     else:
-        converter.convert.return_value = SimpleNamespace(text_content=text_content)
+        converter.convert.return_value = SimpleNamespace(
+            text_content=text_content, title=title
+        )
     monkeypatch.setattr(subject, "MarkItDown", lambda: converter)
     return converter
 
@@ -125,20 +128,22 @@ async def test_tavily_posts_expected_payload_and_normalizes_results(monkeypatch)
         },
     )
     response.raise_for_status.assert_called_once_with()
-    assert result == {
-        "query": "cloud security",
-        "answer": "A concise answer",
-        "results": [
-            {
-                "title": "Result",
-                "url": "https://example.test/page",
-                "content": "Excerpt",
-                "score": 0.9,
-            },
-            {"title": "", "url": "", "content": "", "score": None},
-        ],
-        "success": True,
-    }
+    assert result["query"] == "cloud security"
+    assert result["answer"] == "A concise answer"
+    assert result["success"] is True
+    assert all(item["citation_id"].startswith("web_") for item in result["results"])
+    assert [
+        {key: value for key, value in item.items() if key != "citation_id"}
+        for item in result["results"]
+    ] == [
+        {
+            "title": "Result",
+            "url": "https://example.test/page",
+            "content": "Excerpt",
+            "score": 0.9,
+        },
+        {"title": "", "url": "", "content": "", "score": None},
+    ]
 
 
 @pytest.mark.anyio
@@ -171,14 +176,18 @@ async def test_tavily_maps_provider_failures(monkeypatch, failure, expected_erro
 
 @pytest.mark.anyio
 async def test_fetch_webpage_converts_url_via_markitdown_and_truncates(monkeypatch):
-    converter = install_markitdown(monkeypatch, text_content="x" * 100)
+    converter = install_markitdown(
+        monkeypatch, text_content="x" * 100, title="  Page Title  "
+    )
 
     result = await subject.fetch_webpage("https://example.test/page", 10)
 
     converter.convert.assert_called_once_with("https://example.test/page")
     assert result == {
         "url": "https://example.test/page",
+        "title": "Page Title",
         "content": "xxxxxxxxxx...",
+        "citation_id": stable_citation_id("web", "https://example.test/page"),
         "success": True,
     }
 

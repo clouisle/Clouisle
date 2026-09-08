@@ -10,6 +10,7 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints.chat_tools import _execute_asset_tool
+from app.services.citations import stable_citation_id
 from app.schemas.response import BusinessError
 
 
@@ -144,6 +145,7 @@ async def test_read_asset_returns_text():
     data = json.loads(result)
     assert data["content"] == "hello world"
     assert data["ref"] == "abcd"
+    assert data["citation_id"] == stable_citation_id("asset", asset.id)
 
 
 @pytest.mark.asyncio
@@ -210,6 +212,7 @@ async def test_parse_asset_returns_parsed_content():
     data = json.loads(result)
     assert data["content"] == "parsed content"
     assert "truncated" in data
+    assert data["citation_id"] == stable_citation_id("asset", asset.id)
     parse_config = parse_file.await_args.args[2]
     assert parse_config.max_content_length == 1234
     assert parse_config.truncate_strategy == "middle"

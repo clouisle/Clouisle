@@ -50,6 +50,23 @@ describe('chain of thought AI element', () => {
     expect(changes).toEqual([true])
   })
 
+  test('keeps the expand toggle next to the Chain of Thought title', () => {
+    const renderer = render(
+      <ChainOfThought defaultOpen={false}>
+        <ChainOfThoughtHeader title="Reasoning" />
+      </ChainOfThought>,
+    )
+    const header = renderer.root.findByType('button')
+    const headerMarkup = JSON.stringify(renderer.toJSON())
+
+    expect(header.props.className).toContain('group')
+    expect(header.props.className).toContain('gap-2')
+    expect(headerMarkup).not.toContain('ml-auto')
+    expect(headerMarkup).toContain('opacity-0')
+    expect(headerMarkup).toContain('group-hover:opacity-100')
+    expect(headerMarkup).toContain('group-focus-visible:opacity-100')
+  })
+
   test('auto-closes once after streaming ends', () => {
     jest.useFakeTimers()
     const changes: boolean[] = []

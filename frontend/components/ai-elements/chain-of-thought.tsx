@@ -114,7 +114,7 @@ export const ChainOfThoughtHeader = memo(
       <button
         type="button"
         className={cn(
-          "flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",
+          "group flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",
           className
         )}
         onClick={() => setIsOpen(!isOpen)}
@@ -132,7 +132,7 @@ export const ChainOfThoughtHeader = memo(
         )}
         <ChevronDownIcon
           className={cn(
-            "size-4 ml-auto transition-transform",
+            "size-4 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100",
             isOpen ? "rotate-180" : "rotate-0"
           )}
         />

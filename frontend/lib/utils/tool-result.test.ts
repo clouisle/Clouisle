@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import {
+  extractToolCitationSources,
   getImageAssetUrl,
   getVideoAssetUrl,
   inferToolResultIsError,
@@ -21,6 +22,101 @@ describe('parseToolResultOutput', () => {
   it('preserves malformed and empty string output', () => {
     expect(parseToolResultOutput('')).toBe('')
     expect(parseToolResultOutput('{invalid')).toBe('{invalid')
+  })
+})
+
+describe('extractToolCitationSources', () => {
+  it('extracts structured sources from Agentic RAG and web search results', () => {
+    expect(extractToolCitationSources('knowledge_search', {
+      contexts: [{
+        citation_id: 'rag_a1',
+        document_id: 'doc-1',
+        document_name: 'Guide',
+        content: 'Policy text',
+        kb_id: 'kb-1',
+        score: 0.9,
+      }],
+    })).toEqual([expect.objectContaining({
+      type: 'document',
+      citationId: 'rag_a1',
+      documentId: 'doc-1',
+      title: 'Guide',
+      content: 'Policy text',
+    })])
+    expect(extractToolCitationSources('web_search', JSON.stringify({
+      results: [{
+        citation_id: 'web_b2',
+        title: 'News',
+        url: 'https://example.test/news',
+        content: 'Latest update',
+      }],
+    }))).toEqual([{
+      type: 'url',
+      citationId: 'web_b2',
+      title: 'News',
+      url: 'https://example.test/news',
+      content: 'Latest update',
+    }])
+  })
+
+  it('extracts sources from fetched webpages and attachment content tools', () => {
+    expect(extractToolCitationSources('fetch_webpage', {
+      citation_id: 'web_page_1',
+      url: 'https://example.test/page',
+      title: '  Page Title  ',
+      content: 'Page body',
+      success: true,
+    })).toEqual([{
+      type: 'url',
+      citationId: 'web_page_1',
+      title: 'Page Title',
+      url: 'https://example.test/page',
+      content: 'Page body',
+    }])
+    expect(extractToolCitationSources('fetch_webpage', {
+      citation_id: 'web_page_2',
+      url: 'https://example.test/page2',
+      title: '   ',
+      content: 'Page body 2',
+      success: true,
+    })).toEqual([{
+      type: 'url',
+      citationId: 'web_page_2',
+      url: 'https://example.test/page2',
+      content: 'Page body 2',
+    }])
+    expect(extractToolCitationSources('parse_asset', JSON.stringify({
+      citation_id: 'asset_doc_1',
+      ref: 'a1b2',
+      filename: 'report.pdf',
+      content: 'Parsed report',
+      truncated: false,
+    }))).toEqual([{
+      type: 'document',
+      citationId: 'asset_doc_1',
+      documentId: 'a1b2',
+      title: 'report.pdf',
+      content: 'Parsed report',
+      metadata: { ref: 'a1b2', truncated: false },
+    }])
+    expect(extractToolCitationSources('read_asset', {
+      citation_id: 'asset_text_1',
+      ref: 'c3d4',
+      filename: 'notes.txt',
+      content: 'Notes',
+    })).toEqual([expect.objectContaining({
+      type: 'document',
+      citationId: 'asset_text_1',
+      documentId: 'c3d4',
+      title: 'notes.txt',
+      content: 'Notes',
+    })])
+  })
+
+  it('ignores unrelated, malformed, and uncited tool results', () => {
+    expect(extractToolCitationSources('calculator', { results: [] })).toEqual([])
+    expect(extractToolCitationSources('knowledge_search', { contexts: [{}] })).toEqual([])
+    expect(extractToolCitationSources('web_search', '{invalid')).toEqual([])
   })
 })
 

@@ -20,12 +20,16 @@ def _agent(
     system_prompt="Base prompt",
     enable_memory=False,
     enable_user_input_request=False,
+    enable_attachments=False,
+    rag_mode="off",
 ):
     return SimpleNamespace(
         id="agent-1",
         system_prompt=system_prompt,
         enable_memory=enable_memory,
         enable_user_input_request=enable_user_input_request,
+        enable_attachments=enable_attachments,
+        rag_mode=rag_mode,
         tools_config=tools_config or [],
     )
 
@@ -103,6 +107,48 @@ def test_chat_mode_injects_ask_user_guidance_when_enabled():
     )
     assert "## User Input Requests" in prompt
     assert "call `ask_user`" in prompt
+
+
+@pytest.mark.parametrize(
+    "agent",
+    [
+        _agent(rag_mode="auto"),
+        _agent(rag_mode="agentic"),
+        _agent(tools_config=[{"type": "builtin", "name": "web_search"}]),
+        _agent(tools_config=[{"type": "builtin", "name": "fetch_webpage"}]),
+        _agent(enable_attachments=True),
+    ],
+)
+def test_chat_mode_injects_source_citation_contract_for_source_capabilities(agent):
+    prompt = build_system_prompt(agent, invocation_mode=CHAT_MODE)
+
+    assert "## Source Citations" in prompt
+    assert "[[cite:SOURCE_ID]]" in prompt
+    assert "Never substitute numeric references" in prompt
+    assert "if it uses any supplied source information" in prompt
+
+
+@pytest.mark.parametrize(
+    "agent",
+    [
+        _agent(),
+        _agent(tools_config=[{"type": "builtin", "name": "generate_image"}]),
+        _agent(tools_config=[{"type": "custom", "tool_id": "weather-tool"}]),
+    ],
+)
+def test_chat_mode_skips_source_citation_contract_without_source_capabilities(agent):
+    prompt = build_system_prompt(agent, invocation_mode=CHAT_MODE)
+
+    assert "## Source Citations" not in prompt
+
+
+def test_workflow_mode_skips_source_citation_contract():
+    prompt = build_system_prompt(
+        _agent(rag_mode="auto", enable_attachments=True),
+        invocation_mode=WORKFLOW_MODE,
+    )
+
+    assert "## Source Citations" not in prompt
 
 
 def test_ask_user_guidance_requires_the_chat_tool_injection_path():

@@ -184,7 +184,7 @@ export const SourceContent = memo(function SourceContent({ sources, onOpenCodePr
 });
 
 function getUrlDisplayText(source: SourceUrlPart, fallback: string) {
-  if (source.title) return source.title;
+  if (source.title?.trim()) return source.title.trim();
 
   try {
     return new URL(source.url).hostname;

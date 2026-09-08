@@ -72,28 +72,17 @@ function click(element: Element) {
 }
 
 describe('chat message part renderers', () => {
-  it('renders normalized citations, invokes their callback, and shows the streaming cursor', () => {
-    const onCitationClick = mock(() => {})
+  it('renders text content directly and shows the streaming cursor', () => {
     const container = render(
       <TextContent
         part={{ type: 'text', text: 'See [ref:1] and (ref:2).', state: 'streaming' }}
-        sources={[
-          { type: 'source-document', documentName: 'Guide', content: 'one' },
-          { type: 'source-document', documentName: 'FAQ', content: 'two' },
-        ]}
-        onCitationClick={onCitationClick}
       />
     )
 
-    const badges = container.querySelectorAll('button')
-    expect(Array.from(badges, (badge) => badge.textContent)).toEqual(['1', '2'])
-    expect(badges[0].getAttribute('aria-label')).toBe('Guide')
+    expect(container.textContent).toContain('See [ref:1] and (ref:2).')
+    expect(container.querySelectorAll('button')).toHaveLength(0)
     expect(container.querySelector('.animate-blink')).not.toBeNull()
-
-    click(badges[1])
-    expect(onCitationClick).toHaveBeenCalledWith(2)
   })
-
   it('shows streaming reasoning, then lets completed reasoning collapse after displaying duration', () => {
     const container = render(
       <ReasoningContent

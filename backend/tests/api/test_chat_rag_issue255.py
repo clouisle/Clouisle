@@ -386,17 +386,19 @@ async def test_perform_rag_retrieval_supports_lexical_only_and_isolates_failures
     assert request.targets[0].embedding_model_id is None
     assert request.targets[1].rerank_model_id == successful_kb.rerank_model_id
     assert request.targets[2].score_threshold == 0.2
-    assert results == [
-        {
-            "kb_id": str(successful_kb.id),
-            "kb_name": "Handbook",
-            "document_id": str(document_id),
-            "document_name": "Guide",
-            "content": "Answer",
-            "score": 0.9,
-            "metadata": {},
-        }
-    ]
+    assert len(results) == 1
+    assert results[0]["citation_id"].startswith("rag_")
+    assert {
+        key: value for key, value in results[0].items() if key != "citation_id"
+    } == {
+        "kb_id": str(successful_kb.id),
+        "kb_name": "Handbook",
+        "document_id": str(document_id),
+        "document_name": "Guide",
+        "content": "Answer",
+        "score": 0.9,
+        "metadata": {},
+    }
 
 
 @pytest.mark.asyncio
@@ -462,7 +464,14 @@ def test_aggregate_rag_contexts_merges_documents_and_keeps_best_numeric_score():
         },
     ]
 
-    assert aggregate_rag_contexts(contexts) == [
+    aggregated = aggregate_rag_contexts(contexts)
+    assert len(aggregated) == 2
+    assert aggregated[0]["citation_id"].startswith("rag_")
+    assert aggregated[1]["citation_id"].startswith("rag_")
+    assert [
+        {key: value for key, value in item.items() if key != "citation_id"}
+        for item in aggregated
+    ] == [
         {
             "kb_id": "kb-1",
             "kb_name": "KB",
@@ -489,32 +498,35 @@ def test_build_rag_prompt_returns_plain_message_without_context():
     assert build_rag_prompt([], "plain question") == "plain question"
 
 
-def test_build_rag_prompt_numbers_aggregated_references():
-    prompt = build_rag_prompt(
-        [
-            {
-                "kb_id": "kb-1",
-                "kb_name": "Policies",
-                "document_id": "doc-1",
-                "document_name": "Leave",
-                "content": "part one",
-                "score": 0.4,
-            },
-            {
-                "kb_id": "kb-1",
-                "kb_name": "Policies",
-                "document_id": "doc-1",
-                "document_name": "Leave",
-                "content": "part two",
-                "score": 0.7,
-            },
-        ],
-        "How much leave?",
-    )
+def test_build_rag_prompt_uses_stable_aggregated_source_ids():
+    contexts = [
+        {
+            "kb_id": "kb-1",
+            "kb_name": "Policies",
+            "document_id": "doc-1",
+            "document_name": "Leave",
+            "content": "part one",
+            "score": 0.4,
+        },
+        {
+            "kb_id": "kb-1",
+            "kb_name": "Policies",
+            "document_id": "doc-1",
+            "document_name": "Leave",
+            "content": "part two",
+            "score": 0.7,
+        },
+    ]
+    aggregated = aggregate_rag_contexts(contexts)
+    prompt = build_rag_prompt(contexts, "How much leave?")
 
-    assert "[[ref:1]] Policies - Leave:\npart one\n\npart two" in prompt
-    assert "[[ref:2]]" not in prompt
-    assert "Use ONLY [[cite:N]]" in prompt
+    assert len(aggregated) == 1
+    citation_id = aggregated[0]["citation_id"]
+    assert citation_id.startswith("rag_")
+    assert f"citation_id: {citation_id}" in prompt
+    assert "source: Policies - Leave\ncontent:\npart one\n\npart two" in prompt
+    assert "[[cite:SOURCE_ID]]" in prompt
+    assert "Do not use numeric references such as `[1]` or `[39]`" in prompt
     assert "User question: How much leave?" in prompt
 
 
