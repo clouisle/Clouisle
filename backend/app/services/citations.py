@@ -15,6 +15,7 @@ If you use factual information from a citable source, every sentence or list ite
 
 Rules:
 - Replace `SOURCE_ID` with the exact `citation_id` supplied by the source. Preserve every character; never invent, alter, translate, shorten, or renumber an ID.
+- Always use the exact prefix `[[cite:SOURCE_ID]]`. Do not write `[[citation_id:SOURCE_ID]]` or `[[citation:SOURCE_ID]]`.
 - Put the marker directly after the supported claim, outside bold text, links, code, and mathematical expressions.
 - Repeat the marker for each independently sourced sentence or list item. If multiple sources support one claim, append one marker per source.
 - Never substitute numeric references such as `[1]` or `[39]`, Markdown footnotes, URLs, source titles, or a bibliography for the required marker.

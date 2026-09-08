@@ -754,6 +754,38 @@ describe('message behavior', () => {
     expect(thought?.textContent).toContain('Relevant snippet content')
   })
 
+  test('recognizes citations with citation_id prefix inside bold list items', () => {
+    const container = render(<Message
+      message={{
+        id: 'citation-prefix-tolerance',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'text',
+            text: '- **纽约与洛杉矶学区暂停部分生成式 AI 使用**[[citation_id:web_ff0d501c1315fba5]]。',
+            state: 'done',
+          },
+          {
+            type: 'source-url',
+            sourceId: 'web_ff0d501c1315fba5',
+            url: 'https://example.com/ai-news',
+            title: 'AI in Schools',
+          },
+        ],
+      }}
+    />)
+
+    expect(container.textContent).toContain('纽约与洛杉矶学区暂停部分生成式 AI 使用')
+    expect(container.textContent).not.toContain('[[citation_id:web_ff0d501c1315fba5]]')
+    expect(container.textContent).toContain('[1](#clouisle-citation=web_ff0d501c1315fba5)')
+    const CitationLink = (lastStreamdownProps.components as {
+      a: React.ComponentType<React.ComponentProps<'a'>>
+    }).a
+    const card = renderToStaticMarkup(<CitationLink href="#clouisle-citation=web_ff0d501c1315fba5">1</CitationLink>)
+    expect(card).toContain('AI in Schools')
+    expect(card).toContain('https://example.com/ai-news')
+  })
+
 
   test('renders compression at its original reasoning timeline position', () => {
     const container = render(<Message

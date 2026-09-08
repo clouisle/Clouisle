@@ -88,9 +88,9 @@ import {
   shouldDisplayMediaResultInBody,
 } from '@/lib/utils/tool-result'
 
-const CITATION_MARKER_REGEX = /\[\[cite:([A-Za-z0-9_-]{1,128})\]\]/g
-const CITATION_PROTOCOL_MARKER_REGEX = /\[\[cite:[^\]\r\n]{0,256}\]\]/g
-const INCOMPLETE_CITATION_SUFFIX_REGEX = /\[\[(?:c|ci|cit|cite|cite:[^\]\r\n]*)?$/
+const CITATION_MARKER_REGEX = /\[\[(?:cite|citation|citation_id):([A-Za-z0-9_-]{1,128})\]\]/g
+const CITATION_PROTOCOL_MARKER_REGEX = /\[\[(?:cite|citation|citation_id):[^\]\r\n]{0,256}\]\]/g
+const INCOMPLETE_CITATION_SUFFIX_REGEX = /\[\[(?:c|ci|cit|cite|citation|citation_id)(?::[^\]\r\n]*)?$/
 const LEGACY_CITATION_MARKER_REGEX = /\ue200cite\ue202([A-Za-z0-9_-]{1,128})\ue200/g
 const LEGACY_CITATION_PROTOCOL_MARKER_REGEX = /\ue200cite\ue202[^\ue200]*\ue200/g
 const LEGACY_INCOMPLETE_CITATION_SUFFIX_REGEX = /\ue200(?:cite(?:\ue202[^\ue200]*)?)?$/
@@ -1977,7 +1977,7 @@ function collectCitedSourceIds(parts: MessagePart[]) {
   for (const part of parts) {
     if (!isTextPart(part)) continue
     const text = part.text
-    if (!text || (!text.includes('[[cite:') && !text.includes('\ue200cite'))) continue
+    if (!text || (!text.includes('[[') && !text.includes('\ue200cite'))) continue
 
     if (!text.includes('`')) {
       for (const match of text.matchAll(CITATION_MARKER_REGEX)) {
@@ -1991,7 +1991,7 @@ function collectCitedSourceIds(parts: MessagePart[]) {
 
     for (const segment of text.split(CODE_BLOCK_REGEX)) {
       if (!segment || segment.startsWith('`')) continue
-      if (!segment.includes('[[cite:') && !segment.includes('\ue200cite')) continue
+      if (!segment.includes('[[') && !segment.includes('\ue200cite')) continue
       for (const match of segment.matchAll(CITATION_MARKER_REGEX)) {
         sourceIds.add(match[1])
       }
