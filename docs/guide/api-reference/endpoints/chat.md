@@ -49,18 +49,13 @@ POST /api/v1/agents/{agent_id}/chat
 {
   "message": "What are your business hours?",
   "conversation_id": "conv-123",
-  "files": [
-    {
-      "name": "document.pdf",
-      "url": "https://example.com/document.pdf",
-      "type": "application/pdf"
-    }
-  ],
   "file_urls": [
     {
-      "asset_id": "asset-456",
-      "url": "https://your-domain.com/api/v1/upload/files/asset-456",
-      "filename": "report.pdf"
+      "asset_id": "550e8400-e29b-41d4-a716-446655440000",
+      "url": "https://your-domain.com/api/v1/upload/files/general/2026/09/7f3a1c9d2b10_a1b2c3d4.pdf",
+      "filename": "7f3a1c9d2b10_a1b2c3d4.pdf",
+      "size": 1048576,
+      "mime_type": "application/pdf"
     }
   ],
   "variables": {
@@ -74,14 +69,17 @@ POST /api/v1/agents/{agent_id}/chat
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `message` | string | Yes | User message (max 32000 chars) |
-| `images` | array | No | Images for vision (name, url, type) |
-| `files` | array | No | Parsed files for upload (deprecated, use `file_urls`) |
-| `file_urls` | array | No | Raw uploaded Asset metadata (`asset_id`, `url`, `filename`) |
+| `images` | array | No | Vision images (`asset_id` or `asset_ref`, `type`, `url`) |
+| `files` | array | No | Parsed file content (deprecated, use `file_urls`) |
+| `file_urls` | array | No | Uploaded Asset metadata: `asset_id`, `filename`, `url`, `size`, and `mime_type` |
 | `conversation_id` | string | No | Conversation UUID (creates new if not provided) |
 | `variables` | object | No | Variable values for the chat input form |
 | `history_override` | array | No | Override conversation history (used for version switching/regeneration) |
 
+The upload response names the MIME field `content_type`, while `ChatRequest.file_urls` requires `mime_type`; map `content_type` to `mime_type` before reusing the metadata. Preserve the returned `asset_id`, `url`, `filename`, and `size`; the URL already includes the category, date path, and generated storage filename. Do not build `/upload/files/{asset_id}` URLs. For generated media, an `asset_ref` is scoped to a conversation or workflow run and is only valid in that scope.
+
 ### Request Example
+
 
 ```bash
 curl -X POST "https://your-domain.com/api/v1/agents/agent-123/chat" \
@@ -173,7 +171,20 @@ data: {"usage": {"prompt_tokens": 150, "completion_tokens": 25, "total_tokens": 
 
 See [SSE Streaming](../sse-streaming.md) for details.
 
+`media_result` is a UI-only result for generated media and is not replayed to the model as text. Inspect `success` before rendering:
+
+```text
+event: media_result
+data: {"kind":"media.image","success":true,"images":[{"image":{"url":"/api/v1/upload/files/generated-images/2026/09/9a8b7c6d5e4f_55667788.png","asset_ref":"a1b2","format":"png"}}]}
+
+event: media_result
+data: {"kind":"media.image","success":false,"images":[],"error":"Image generation failed"}
+```
+
+When `success` is `false`, handle the `error` field and show a failure state instead of treating the event as a successfully generated asset. Fetch protected media with the active JWT or API key; clients should surface authorization, unavailable, and too-large preview states instead of falling back to an unauthenticated raw URL.
+
 ### Durable Runs and Control
+
 
 Chat execution is backed by a durable `AgentRun` so a browser disconnect never
 stops the model loop. The streaming endpoints stream the same SSE events as
@@ -693,4 +704,4 @@ console.log('Conversation ID:', response.conversation_id);
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-08

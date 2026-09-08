@@ -27,7 +27,7 @@ Clouisle exposes several upload endpoints, each with its own purpose and file-ty
 - **JSON**: `.json`
 - **PowerPoint**: `.pptx`
 
-Images, archives (`.zip`, `.tar`), and video are **not** accepted here — use the generic upload endpoints below.
+Images and video are **not** accepted here; use the appropriate upload flow instead.
 
 ### Generic Upload (`/api/v1/upload/image` and `/api/v1/upload/file`)
 
@@ -139,8 +139,8 @@ curl -X POST "$API_BASE_URL/api/v1/upload/image?category=general" \
   "code": 0,
   "data": {
     "asset_id": "550e8400-e29b-41d4-a716-446655440000",
-    "url": "/uploads/general/2026/02/avatar.png",
-    "filename": "avatar.png",
+    "url": "/api/v1/upload/files/general/2026/09/7f3a1c9d2b10_a1b2c3d4.png",
+    "filename": "7f3a1c9d2b10_a1b2c3d4.png",
     "original_name": "avatar.png",
     "size": 20480,
     "content_type": "image/png"
@@ -149,11 +149,13 @@ curl -X POST "$API_BASE_URL/api/v1/upload/image?category=general" \
 }
 ```
 
+The returned `filename` is a generated storage name; use the returned `url` rather than reconstructing a path from the original filename. When reusing this response in `ChatRequest.file_urls`, map `content_type` to the required `mime_type`; retain `asset_id`, `url`, `filename`, and `size`.
+
 ### 4. Upload a Generic File
 
 **Endpoint:** `POST /api/v1/upload/file`
 
-Accepts images and documents (up to 10 MB). Same response shape as image upload.
+Accepts images and supported documents (up to 10 MB). The response has the same shape as image upload.
 
 ### 5. Upload a Sandbox Artifact
 
@@ -166,15 +168,30 @@ Used by sandbox executions to upload produced artifacts. Authentication is optio
 {
   "code": 0,
   "data": {
-    "path": "sandbox-artifacts/2026/02/artifact.txt",
-    "url": "/uploads/sandbox-artifacts/2026/02/artifact.txt",
-    "filename": "artifact.txt",
+    "path": "sandbox-artifacts/2026/09/2c4d6e8f0a12_11223344.txt",
+    "url": "/api/v1/upload/files/sandbox-artifacts/2026/09/2c4d6e8f0a12_11223344.txt",
+    "filename": "2c4d6e8f0a12_11223344.txt",
     "size": 512,
     "content_type": "text/plain"
   },
   "msg": "success"
 }
 ```
+
+### Accessing Uploaded and Generated Files
+
+Upload and generated-media responses return a relative URL. The download route is:
+
+```
+GET /api/v1/upload/files/{category}/{year}/{month}/{filename}
+```
+
+- Non-protected categories such as `general`, `avatar`, and `icon` are served at the returned URL.
+- `sandbox-artifacts`, `generated-images`, and `generated-videos` are protected categories. A request must include a valid JWT or `clou_` API key with access to the related conversation or workflow run.
+- Missing protected assets, or assets without a scope reference when the requester is neither the creator nor a superuser, return HTTP `404` (`code: 4000`). A scoped asset that fails access checks returns HTTP `403` (`code: 3000`); missing credentials return HTTP `401` (`code: 2000`).
+- Generated media used inside a conversation or workflow may include an `asset_ref`, a four-character scope-local reference for model tools. It is not a public download token and must not be guessed or shared as a substitute for authorization.
+
+Treat non-protected upload URLs as shareable file URLs only when the selected category and deployment policy allow it. Do not expose protected URLs or tokens in logs, prompts, or client-side telemetry.
 
 ### 6. Parse a File (Extract Text)
 
@@ -416,7 +433,7 @@ if result['code'] != 0:
 **Solutions:**
 1. Convert to a supported format (see lists above)
 2. Check the file extension and MIME type
-3. Images and archives are only accepted by the generic upload endpoints, not KB document upload
+3. Images are only accepted by the generic image/file upload endpoints, not by KB document upload.
 
 ## Related Documentation
 
@@ -426,4 +443,4 @@ if result['code'] != 0:
 
 ---
 
-**Last Updated**: 2026-08-14
+**Last Updated**: 2026-09-08

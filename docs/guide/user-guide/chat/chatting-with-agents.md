@@ -151,14 +151,16 @@ When an agent needs human input or clarification before proceeding, it invokes t
 #### 3. Generated Artifacts & File Preview (`ArtifactFileList`)
 
 When an agent or sandbox code execution generates output files (spreadsheets, charts, reports, images, code snippets):
-- **Artifact List**: Rendered cleanly at the bottom of the assistant message after generation completes (avoiding streaming layout shift).
-- **Interactive Previews**:
-  - **Images**: Click to open the full-screen `ImageLightbox` zoom and inspect view.
-  - **Documents**: Built-in online preview for PDF, DOCX, XLSX/CSV, and Markdown files.
-  - **Code & Diagrams**: Visual code preview canvas and Mermaid chart renderer.
-  - **Direct Download**: One-click download button for every generated asset.
+- **Artifact list header**: Shows a package icon and the total file count. The list initially shows up to three files and provides **Show more** for the remainder.
+- **Interactive previews**: Images open in the lightbox; PDF, DOCX, PPTX, XLSX/CSV, Markdown, HTML, text, audio, video, and Mermaid files use the shared preview panel when their type is supported.
+- **Document controls**: DOCX previews provide thumbnails, page navigation, fit-to-width, and zoom controls. Spreadsheet previews provide sheet tabs and zoom controls without a second in-viewer download action.
+- **Direct download**: Artifact rows and the preview header expose download actions, subject to the authenticated user's or API key's asset permissions.
 
-#### 4. Source Citations (RAG)
+#### 4. Protected assets and preview failures
+
+Generated images, generated videos, and sandbox artifacts are protected assets. The UI fetches them with the active session/API token and does not fall back to a raw unauthenticated URL. The preview panel reports distinct states for unsupported types, files too large for preview, unauthorized access, permission denial, and load/parse failures. A file that is too large to preview may still be downloadable when the user is authorized.
+
+#### 5. Source Citations (RAG)
 
 When knowledge base retrieval is active:
 - Sources are listed with document titles, chunk indexes, and similarity match percentages.
@@ -385,4 +387,4 @@ If you need assistance:
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-08

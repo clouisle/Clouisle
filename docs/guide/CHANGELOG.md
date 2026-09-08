@@ -9,6 +9,24 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+#### Chat and File Previews
+- Added a unified artifact list with file counts, expandable results, authenticated downloads, and shared previews for common document, media, and code formats.
+- Added DOCX thumbnails, page synchronization, responsive fit-to-width, and zoom controls; added read-only PDF and spreadsheet preview controls.
+
+### Changed
+
+#### Assets and Media
+- Persisted generated images and videos as scoped Assets and exposed conversation/workflow-scoped media references for model use.
+- Updated CSV handling for GBK/GB18030 content and removed duplicate spreadsheet viewer downloads.
+
+### Fixed
+
+#### Asset Access and Previews
+- Protected generated images, generated videos, and sandbox artifacts with scope-aware authorization and authenticated client downloads.
+- Preserved explicit too-large, unauthorized, permission-denied, unsupported, and parse-failure preview states without falling back to unprotected URLs.
+
 ## [0.2.9] - 2026-06-09
 
 ### Added
