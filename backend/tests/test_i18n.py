@@ -153,6 +153,35 @@ async def test_resolve_language_follows_user_system_default_precedence(monkeypat
     assert await i18n.resolve_language(None) == "en"
 
 
+@pytest.mark.asyncio
+async def test_get_default_language_discards_stale_fetch_if_cache_updated(monkeypatch):
+    import asyncio
+    from app.models import SiteSetting
+
+    i18n.set_default_language_cache("en")
+
+    async def slow_get_value(key, default):
+        await asyncio.sleep(0.01)
+        return "es"
+
+    monkeypatch.setattr(SiteSetting, "get_value", slow_get_value)
+
+    fetch_task = asyncio.create_task(i18n.get_default_language())
+    await asyncio.sleep(
+        0
+    )  # Yield to allow fetch_task to begin and capture read_version
+
+    # Simulate concurrent settings write advancing cache version while fetch is in-flight
+    i18n.set_default_language_cache("zh")
+    assert i18n.get_default_language_sync() == "zh"
+
+    result = await fetch_task
+    # Stale read should not overwrite "zh"
+    assert i18n.get_default_language_sync() == "zh"
+    assert result == "zh"
+    i18n.set_default_language_cache("en")
+
+
 def test_resolve_language_sync_follows_user_system_default_precedence(monkeypatch):
     # 1. User specified -> user wins over system and default
     i18n.set_default_language_cache("zh")

@@ -135,8 +135,7 @@ def set_default_language_cache(lang: str | None) -> None:
     """Update cached default language and advance cache version."""
     global _cached_default_language, _cached_default_language_version
     _cached_default_language_version += 1
-    if lang:
-        _cached_default_language = normalize_language(lang)
+    _cached_default_language = normalize_language(lang)
 
 
 async def resolve_language(
