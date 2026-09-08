@@ -17,7 +17,6 @@ from app.models.knowledge_base import (
     DocumentChunk,
     DocumentStatus,
 )
-from app.models.user import User
 from app.models.notification import AutoNotificationType
 from app.services.auto_notification import AutoNotificationService
 from app.services.document_processor import document_processor
@@ -306,7 +305,7 @@ async def _send_doc_indexed_notification(
     try:
         # Send to uploader if available, otherwise to team
         if document.uploaded_by_id:
-            user = await User.filter(id=document.uploaded_by_id).first()
+            user = getattr(document, "uploaded_by", None)
             effective_locale = await resolve_language(
                 getattr(user, "locale", None) if user else user_locale
             )
@@ -369,7 +368,7 @@ async def _send_doc_failed_notification(
     try:
         # Send to uploader if available, otherwise to team
         if document.uploaded_by_id:
-            user = await User.filter(id=document.uploaded_by_id).first()
+            user = getattr(document, "uploaded_by", None)
             effective_locale = await resolve_language(
                 getattr(user, "locale", None) if user else user_locale
             )
