@@ -386,18 +386,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   }, [renderSession])
 
   const ensureSession = useCallback((messageId: string | null, runIdForSession?: string) => {
-    if (runIdForSession) {
-      const existing = sessionsByRunRef.current.get(runIdForSession)
-      if (existing) {
-        activeSessionRef.current = existing
-        return existing
-      }
-    }
-
-    if (!messageId) return null
-    const existingMessage = messagesRef.current.find((message) => message.id === messageId)
-    // If no exact ID match, check if there is an unattached placeholder message
-    // (e.g. `assistant-run-${runId}`) at the tail we can adopt.
+    const existingMessage = messageId ? messagesRef.current.find((message) => message.id === messageId) : undefined
     const lastMessage = messagesRef.current[messagesRef.current.length - 1]
     const adoptablePlaceholderId = !existingMessage
       && runIdForSession
@@ -409,11 +398,33 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     const adoptedMessage = adoptablePlaceholderId ? lastMessage : existingMessage
     const effectiveDisplayId = adoptablePlaceholderId ?? messageId
 
+    if (runIdForSession) {
+      const existing = sessionsByRunRef.current.get(runIdForSession)
+      if (existing) {
+        existing.reloadAfterTerminal = true
+        if (effectiveDisplayId && existing.displayMessageId !== effectiveDisplayId) {
+          existing.displayMessageId = effectiveDisplayId
+        }
+        if (messageId && existing.backendMessageId !== messageId) {
+          existing.backendMessageId = messageId
+        }
+        if (adoptedMessage && existing.state.segments.length === 0 && adoptedMessage.parts.length > 0) {
+          existing.state = createAssistantStreamStateFromParts(adoptedMessage.parts)
+        }
+        activeSessionRef.current = existing
+        syncStreamingState(existing)
+        return existing
+      }
+    }
+
+    if (!effectiveDisplayId) return null
+
     const session: AssistantStreamSession = {
       mode: 'reconnect',
       displayMessageId: effectiveDisplayId,
       backendMessageId: messageId,
       keepDisplayIdOnStart: Boolean(adoptablePlaceholderId),
+      reloadAfterTerminal: true,
       state: adoptedMessage ? createAssistantStreamStateFromParts(adoptedMessage.parts) : createAssistantStreamState(),
       versionNumber: adoptedMessage?.versionNumber ?? 1,
       versionCount: adoptedMessage?.versionCount ?? 1,
@@ -2108,8 +2119,20 @@ function applyAssistantStreamEvent(
 
     case 'reasoning_delta': {
       const data = event.data as { delta: string }
-      const block = state.reasoningBlocks[state.currentReasoningIndex]
-      if (!block) return false
+      let block = state.reasoningBlocks[state.currentReasoningIndex]
+      if (!block) {
+        const startTime = Date.now()
+        const reasoningIndex = state.reasoningBlocks.push({ text: '', startTime, state: 'streaming' }) - 1
+        state.currentReasoningIndex = reasoningIndex
+        state.segments.push({
+          type: 'reasoning',
+          reasoningIndex,
+          reasoningText: '',
+          reasoningState: 'streaming',
+          reasoningStartTime: startTime,
+        })
+        block = state.reasoningBlocks[reasoningIndex]
+      }
       block.text += data.delta
       const reasoningSegment = state.segments.find(
         segment => segment.type === 'reasoning' && segment.reasoningIndex === state.currentReasoningIndex
