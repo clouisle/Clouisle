@@ -120,6 +120,31 @@ def test_code_message_uses_unknown_error_for_unmapped_or_invalid_codes(monkeypat
     assert translated_keys == [("unknown_error", "zh")]
 
 
+def test_all_response_codes_mapped_to_valid_translation_keys():
+    from app.schemas.response import ResponseCode
+
+    for code in ResponseCode:
+        msg_key = None
+
+        def mock_t(key, lang=None, **kwargs):
+            nonlocal msg_key
+            msg_key = key
+            return key
+
+        old_t = i18n.t
+        i18n.t = mock_t
+        try:
+            i18n.get_code_message(code)
+        finally:
+            i18n.t = old_t
+
+        if code != ResponseCode.UNKNOWN_ERROR:
+            assert msg_key != "unknown_error", f"{code} mapped to unknown_error"
+            assert i18n.has_translation(msg_key), (
+                f"{code} key {msg_key} missing from catalog"
+            )
+
+
 @pytest.mark.asyncio
 async def test_resolve_language_follows_user_system_default_precedence(monkeypatch):
     # 1. User specified -> user wins over system and default
