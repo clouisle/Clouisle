@@ -9,7 +9,6 @@ from typing import Optional
 import httpx
 
 from app.models.site_setting import SiteSetting
-from app.core.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +31,18 @@ async def send_wechat_webhook(
     title: str,
     content: str,
     link_url: Optional[str] = None,
-    locale: Optional[str] = None,
 ) -> bool:
-    """通过企业微信群机器人 Webhook 发送消息"""
+    """
+    通过 Webhook 发送企业微信群机器人消息
+
+    Args:
+        title: 消息标题
+        content: 消息内容
+        link_url: 链接地址（可选）
+
+    Returns:
+        bool: 是否发送成功
+    """
     config = await get_wechat_config()
 
     if not config["enabled"]:
@@ -49,8 +57,7 @@ async def send_wechat_webhook(
         # 构建 Markdown 消息
         markdown_content = f"### {title}\n\n{content}"
         if link_url:
-            view_label = t("view_details", lang=locale) if locale else t("view_details")
-            markdown_content += f"\n\n[{view_label}]({link_url})"
+            markdown_content += f"\n\n[查看详情]({link_url})"
 
         # 构建消息体
         message = {
@@ -117,9 +124,19 @@ async def send_wechat_app_message(
     content: str,
     link_url: Optional[str] = None,
     to_user: str = "@all",
-    locale: Optional[str] = None,
 ) -> bool:
-    """通过企业应用发送消息"""
+    """
+    通过企业应用发送消息
+
+    Args:
+        title: 消息标题
+        content: 消息内容
+        link_url: 链接地址（可选）
+        to_user: 接收者用户ID列表，多个用|分隔，@all表示全部
+
+    Returns:
+        bool: 是否发送成功
+    """
     config = await get_wechat_config()
 
     if not config["enabled"]:
@@ -139,8 +156,7 @@ async def send_wechat_app_message(
         # 构建 Markdown 消息
         markdown_content = f"### {title}\n\n{content}"
         if link_url:
-            view_label = t("view_details", lang=locale) if locale else t("view_details")
-            markdown_content += f"\n\n[{view_label}]({link_url})"
+            markdown_content += f"\n\n[查看详情]({link_url})"
 
         # 构建消息体
         message = {
@@ -176,7 +192,6 @@ async def send_wechat_notification(
     content: str,
     link_url: Optional[str] = None,
     to_user: str = "@all",
-    locale: Optional[str] = None,
 ) -> bool:
     """
     发送企业微信通知（自动选择 Webhook 或企业应用方式）
@@ -193,8 +208,6 @@ async def send_wechat_notification(
     config = await get_wechat_config()
 
     if config["notification_type"] == "app":
-        return await send_wechat_app_message(
-            title, content, link_url, to_user, locale=locale
-        )
+        return await send_wechat_app_message(title, content, link_url, to_user)
     else:
-        return await send_wechat_webhook(title, content, link_url, locale=locale)
+        return await send_wechat_webhook(title, content, link_url)

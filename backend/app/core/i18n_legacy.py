@@ -2872,7 +2872,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "The selected video model does not support uploaded images as starting-frame references yet",
         "zh": "当前选择的视频模型暂不支持将上传图片作为首帧参考",
     },
-    "view_details": {"en": "View Details", "zh": "查看详情"},
     "volcengine_api_error": {"en": "Volcengine API error", "zh": "Volcengine API 错误"},
     "volcengine_endpoint_not_found": {
         "en": "Volcengine endpoint not found",

@@ -451,7 +451,6 @@ async def _send_notification_dingtalk(notification_id: UUID) -> bool:
         title=title,
         content=content,
         link_url=ctx.notification.link_url,
-        locale="zh",
     )
 
     if result:
@@ -510,7 +509,6 @@ async def _send_notification_wechat(notification_id: UUID) -> bool:
         title=title,
         content=content,
         link_url=ctx.notification.link_url,
-        locale="zh",
     )
 
     if result:
@@ -569,7 +567,6 @@ async def _send_notification_feishu(notification_id: UUID) -> bool:
         title=title,
         content=content,
         link_url=ctx.notification.link_url,
-        locale="zh",
     )
 
     if result:

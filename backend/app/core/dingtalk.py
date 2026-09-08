@@ -14,7 +14,6 @@ from urllib.parse import quote_plus
 import httpx
 
 from app.models.site_setting import SiteSetting
-from app.core.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -63,16 +62,16 @@ async def send_dingtalk_webhook(
     title: str,
     content: str,
     link_url: Optional[str] = None,
-    locale: Optional[str] = None,
 ) -> bool:
     """
-    通过钉钉机器人 Webhook 发送消息
+    通过 Webhook 发送钉钉机器人消息
 
     Args:
         title: 消息标题
         content: 消息内容
         link_url: 链接地址（可选）
-        locale: 语言（可选）
+
+    Returns:
         bool: 是否发送成功
     """
     config = await get_dingtalk_config()
@@ -104,8 +103,7 @@ async def send_dingtalk_webhook(
         # 构建 Markdown 消息
         markdown_text = f"### {title}\n\n{content}"
         if link_url:
-            view_label = t("view_details", lang=locale) if locale else t("view_details")
-            markdown_text += f"\n\n[{view_label}]({link_url})"
+            markdown_text += f"\n\n[查看详情]({link_url})"
 
         # 构建消息体
         message = {
@@ -173,7 +171,6 @@ async def send_dingtalk_app_message(
     title: str,
     content: str,
     link_url: Optional[str] = None,
-    locale: Optional[str] = None,
 ) -> bool:
     """
     通过企业内部应用发送工作通知
@@ -206,8 +203,7 @@ async def send_dingtalk_app_message(
         # 构建 Markdown 消息
         markdown_text = f"### {title}\n\n{content}"
         if link_url:
-            view_label = t("view_details", lang=locale) if locale else t("view_details")
-            markdown_text += f"\n\n[{view_label}]({link_url})"
+            markdown_text += f"\n\n[查看详情]({link_url})"
 
         # 构建消息体
         message = {
@@ -248,7 +244,6 @@ async def send_dingtalk_notification(
     content: str,
     link_url: Optional[str] = None,
     user_id_list: Optional[list[str]] = None,
-    locale: Optional[str] = None,
 ) -> bool:
     """
     发送钉钉通知（自动选择 Webhook 或企业应用方式）
@@ -266,9 +261,7 @@ async def send_dingtalk_notification(
 
     if config["notification_type"] == "app" and user_id_list:
         # 使用企业内部应用发送
-        return await send_dingtalk_app_message(
-            user_id_list, title, content, link_url, locale=locale
-        )
+        return await send_dingtalk_app_message(user_id_list, title, content, link_url)
     else:
         # 使用 Webhook 机器人发送
-        return await send_dingtalk_webhook(title, content, link_url, locale=locale)
+        return await send_dingtalk_webhook(title, content, link_url)

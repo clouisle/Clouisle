@@ -3008,6 +3008,3 @@ msgstr "Answer required for {question_id}"
 
 msgid "answer_must_be_string"
 msgstr "Answer must be a non-empty string for {question_id}"
-
-msgid "view_details"
-msgstr "View Details"
