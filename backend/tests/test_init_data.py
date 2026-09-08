@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, call
+from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
@@ -1760,3 +1760,18 @@ async def test_execute_ddl_falls_back_to_query_for_sqlite_connection() -> None:
 
     conn.execute_script.assert_not_awaited()
     conn.execute_query.assert_awaited_once_with("CREATE TABLE example")
+
+
+@pytest.mark.asyncio
+async def test_init_conversation_memory_watermark_column(monkeypatch):
+    conn = MagicMock()
+    execute_mock = AsyncMock()
+    monkeypatch.setattr(
+        init_data.Tortoise, "get_connection", MagicMock(return_value=conn)
+    )
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", execute_mock)
+
+    await init_data.init_conversation_memory_watermark_column()
+
+    execute_mock.assert_awaited_once()
+    assert "memory_extracted_watermark_id" in execute_mock.await_args.args[1]

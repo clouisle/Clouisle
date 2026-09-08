@@ -1076,6 +1076,35 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "public": False,
         "desc": "Auto notification configuration",
     },
+    # Memory
+    "memory_async_extraction_enabled": {
+        "value": False,
+        "type": "bool",
+        "category": "memory",
+        "public": False,
+        "desc": "Enable asynchronous background memory extraction from conversations",
+    },
+    "memory_extraction_model_id": {
+        "value": "",
+        "type": "string",
+        "category": "memory",
+        "public": False,
+        "desc": "Model ID used for asynchronous memory extraction (empty for fallback)",
+    },
+    "memory_extraction_cooldown_seconds": {
+        "value": 180,
+        "type": "int",
+        "category": "memory",
+        "public": False,
+        "desc": "Cooldown window in seconds before background memory extraction is triggered",
+    },
+    "memory_extraction_max_pending_turns": {
+        "value": 6,
+        "type": "int",
+        "category": "memory",
+        "public": False,
+        "desc": "Maximum pending unextracted conversation turns before triggering background extraction immediately",
+    },
 }
 
 

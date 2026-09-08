@@ -847,6 +847,20 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
         await stream.publish(
             "run_end", {"status": "completed", "message_id": str(canonical.id)}
         )
+        try:
+            from app.tasks.memory import schedule_background_memory_extraction
+
+            await schedule_background_memory_extraction(
+                conversation_id=conversation.id,
+                agent_id=agent.id,
+                user_id=run.user_id,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to schedule background memory extraction for conversation %s",
+                conversation.id,
+                exc_info=True,
+            )
         return {
             "status": AgentRunStatus.COMPLETED.value,
             "message_id": str(canonical.id),

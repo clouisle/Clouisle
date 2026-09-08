@@ -1344,6 +1344,18 @@ async def init_conversation_context_summary_columns() -> None:
     logger.info("Conversation context summary columns initialized")
 
 
+async def init_conversation_memory_watermark_column() -> None:
+    """Add memory extraction watermark column to conversations."""
+    logger.info("Initializing conversation memory watermark column...")
+    conn = Tortoise.get_connection("default")
+    await execute_startup_migration_query(
+        conn,
+        "ALTER TABLE conversations "
+        "ADD COLUMN IF NOT EXISTS memory_extracted_watermark_id UUID",
+    )
+    logger.info("Conversation memory watermark column initialized")
+
+
 async def init_assets_tables() -> None:
     """Create durable Asset metadata and scoped reference tables."""
     logger.info("Initializing Asset tables...")
