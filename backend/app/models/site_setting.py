@@ -79,6 +79,13 @@ class SiteSetting(models.Model):
                 setting.description = description
             setting.is_public = is_public
             await setting.save()
+        if key == "default_language":
+            try:
+                from app.core.i18n import set_default_language_cache
+
+                set_default_language_cache(str(value) if value is not None else None)
+            except Exception:
+                pass
         return setting
 
     @classmethod

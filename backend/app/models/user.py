@@ -158,7 +158,7 @@ class User(models.Model):
     )
     locale = fields.CharField(
         max_length=10,
-        default="en",
+        null=True,
         description="User preferred locale (e.g., en, zh)",
     )
     created_at = fields.DatetimeField(auto_now_add=True)

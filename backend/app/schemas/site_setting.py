@@ -33,6 +33,7 @@ class PublicSiteSettingsResponse(BaseModel):
     site_description: str = ""
     site_url: str = ""
     site_icon: str = ""
+    default_language: str = "en"
     auth_page_layout: str = "centered"
     theme_mode: str = "system"
     theme_primary_color: str = ""

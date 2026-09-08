@@ -25,7 +25,7 @@ from app.models.workflow import (
 from app.models.user import Team
 from app.models.notification import AutoNotificationType
 from app.core.redis import get_redis
-from app.core.i18n import t, get_default_language
+from app.core.i18n import t, get_default_language, resolve_language
 from app.services.auto_notification import AutoNotificationService
 
 from .context import ExecutionContext
@@ -710,11 +710,12 @@ class WorkflowOrchestrator:
                 # Send to triggering user if available, otherwise to team
                 if run.triggered_by_id:
                     await run.fetch_related("triggered_by")
-                    user_locale = (
-                        getattr(run.triggered_by, "locale", "en")
+                    triggered_user_locale = (
+                        getattr(run.triggered_by, "locale", None)
                         if run.triggered_by
-                        else "en"
+                        else None
                     )
+                    user_locale = await resolve_language(triggered_user_locale)
                     await AutoNotificationService.send_to_user(
                         notification_type=AutoNotificationType.WORKFLOW_RUN_SUCCESS,
                         user_id=run.triggered_by_id,
@@ -817,11 +818,12 @@ class WorkflowOrchestrator:
                 # Send to triggering user if available, otherwise to team
                 if run.triggered_by_id:
                     await run.fetch_related("triggered_by")
-                    user_locale = (
-                        getattr(run.triggered_by, "locale", "en")
+                    triggered_user_locale = (
+                        getattr(run.triggered_by, "locale", None)
                         if run.triggered_by
-                        else "en"
+                        else None
                     )
+                    user_locale = await resolve_language(triggered_user_locale)
                     await AutoNotificationService.send_to_user(
                         notification_type=AutoNotificationType.WORKFLOW_RUN_FAILED,
                         user_id=run.triggered_by_id,
@@ -832,7 +834,9 @@ class WorkflowOrchestrator:
                             workflow_name=workflow.name,
                             error=error[:200]
                             if error
-                            else t("unknown_error"),  # Truncate long errors
+                            else t(
+                                "unknown_error", lang=user_locale
+                            ),  # Truncate long errors
                         ),
                         data={
                             "workflow_id": str(workflow.id),
@@ -855,7 +859,9 @@ class WorkflowOrchestrator:
                             workflow_name=workflow.name,
                             error=error[:200]
                             if error
-                            else t("unknown_error"),  # Truncate long errors
+                            else t(
+                                "unknown_error", lang=default_lang
+                            ),  # Truncate long errors
                         ),
                         data={
                             "workflow_id": str(workflow.id),

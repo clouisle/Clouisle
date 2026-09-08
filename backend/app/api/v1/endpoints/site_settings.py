@@ -88,6 +88,7 @@ async def get_public_settings():
             site_description=settings.get("site_description", ""),
             site_url=settings.get("site_url", ""),
             site_icon=settings.get("site_icon", ""),
+            default_language=settings.get("default_language") or "en",
             auth_page_layout=settings.get("auth_page_layout", "centered"),
             theme_mode=_normalize_enum(
                 settings.get("theme_mode"), THEME_MODE_VALUES, "system"

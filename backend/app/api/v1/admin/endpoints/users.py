@@ -8,7 +8,7 @@ from tortoise.expressions import Q
 
 from app.api import deps
 from app.core import security
-from app.core.i18n import t
+from app.core.i18n import t, resolve_language
 from app.core.password import validate_password
 from app.core.email import (
     send_email,
@@ -385,11 +385,12 @@ async def activate_user(
         ),
     )
 
+    user_locale = await resolve_language(getattr(user, "locale", None))
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.USER_ACTIVATED,
         user_id=user.id,
-        title=t("notify_user_activated_title", lang=user.locale),
-        content=t("notify_user_activated_content", lang=user.locale),
+        title=t("notify_user_activated_title", lang=user_locale),
+        content=t("notify_user_activated_content", lang=user_locale),
     )
 
     return success(
@@ -444,11 +445,12 @@ async def deactivate_user(
         ),
     )
 
+    user_locale = await resolve_language(getattr(user, "locale", None))
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.USER_DEACTIVATED,
         user_id=user.id,
-        title=t("notify_user_deactivated_title", lang=user.locale),
-        content=t("notify_user_deactivated_content", lang=user.locale),
+        title=t("notify_user_deactivated_title", lang=user_locale),
+        content=t("notify_user_deactivated_content", lang=user_locale),
     )
 
     return success(
@@ -535,11 +537,12 @@ async def update_user(
     )
 
     if password_changed:
+        user_locale = await resolve_language(getattr(user, "locale", None))
         await AutoNotificationService.send_to_user(
             notification_type=AutoNotificationType.USER_PASSWORD_RESET,
             user_id=user.id,
-            title=t("notify_user_password_reset_title", lang=user.locale),
-            content=t("notify_user_password_reset_content", lang=user.locale),
+            title=t("notify_user_password_reset_title", lang=user_locale),
+            content=t("notify_user_password_reset_content", lang=user_locale),
         )
 
     return success(
@@ -611,11 +614,12 @@ async def force_password_change(
     await user.save()
 
     # Send notification to user
+    user_locale = await resolve_language(getattr(user, "locale", None))
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.PASSWORD_FORCE_CHANGE,
         user_id=user.id,
-        title=t("notify_password_force_change_title", lang=user.locale),
-        content=t("notify_password_force_change_content", lang=user.locale),
+        title=t("notify_password_force_change_title", lang=user_locale),
+        content=t("notify_password_force_change_content", lang=user_locale),
         level=NotificationLevel.HIGH,
     )
 
@@ -777,11 +781,12 @@ async def bulk_force_password_change(
             audit_diffs.append({"user_id": str(user.id), **diff})
 
         # Send notification
+        user_locale = await resolve_language(getattr(user, "locale", None))
         await AutoNotificationService.send_to_user(
             notification_type=AutoNotificationType.PASSWORD_FORCE_CHANGE,
             user_id=user.id,
-            title=t("notify_password_force_change_title", lang=user.locale),
-            content=t("notify_password_force_change_content", lang=user.locale),
+            title=t("notify_password_force_change_title", lang=user_locale),
+            content=t("notify_password_force_change_content", lang=user_locale),
             level=NotificationLevel.HIGH,
         )
         success_count += 1

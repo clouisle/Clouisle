@@ -281,6 +281,38 @@ def test_workflow_mode_locale_drives_language_instruction():
     assert "你必须使用中文回复" in prompt
 
 
+def test_system_prompt_uses_system_default_language_when_user_locale_none():
+    from app.core import i18n
+
+    try:
+        i18n.set_default_language_cache("zh")
+        prompt = build_system_prompt(
+            _agent(system_prompt="base"),
+            user_message="hi",
+            user_locale=None,
+            invocation_mode=WORKFLOW_MODE,
+        )
+        assert "你必须使用中文回复" in prompt
+    finally:
+        i18n.set_default_language_cache("en")
+
+
+def test_system_prompt_user_locale_overrides_system_default_language():
+    from app.core import i18n
+
+    try:
+        i18n.set_default_language_cache("zh")
+        prompt = build_system_prompt(
+            _agent(system_prompt="base"),
+            user_message="hi",
+            user_locale="en",
+            invocation_mode=WORKFLOW_MODE,
+        )
+        assert "You MUST respond in English only." in prompt
+    finally:
+        i18n.set_default_language_cache("en")
+
+
 def test_base_prompt_override_is_used_instead_of_agent_prompt():
     prompt = build_system_prompt(
         _agent(system_prompt="original"),

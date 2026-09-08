@@ -9,7 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request
 
 from app.api import deps
-from app.core.i18n import t, get_default_language
+from app.core.i18n import t, get_default_language, resolve_language
 from app.models.user import Team, TeamMember, User
 from app.models.notification import AutoNotificationType
 from app.schemas.team import (
@@ -258,13 +258,14 @@ async def add_team_member(
         },
     )
 
+    user_locale = await resolve_language(getattr(user_to_add, "locale", None))
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.TEAM_MEMBER_ADDED,
         user_id=user_to_add.id,
-        title=t("notify_team_member_added_title", lang=user_to_add.locale),
+        title=t("notify_team_member_added_title", lang=user_locale),
         content=t(
             "notify_team_member_added_content",
-            lang=user_to_add.locale,
+            lang=user_locale,
             team_name=team.name,
             operator=current_user.username,
             role=member_in.role,
@@ -361,13 +362,14 @@ async def update_team_member(
     membership.role = member_in.role
     await membership.save()
 
+    user_locale = await resolve_language(getattr(target_user, "locale", None))
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.TEAM_ROLE_CHANGED,
         user_id=target_user.id,
-        title=t("notify_team_role_changed_title", lang=target_user.locale),
+        title=t("notify_team_role_changed_title", lang=user_locale),
         content=t(
             "notify_team_role_changed_content",
-            lang=target_user.locale,
+            lang=user_locale,
             team_name=team.name,
             old_role=old_role,
             new_role=member_in.role,
@@ -463,13 +465,14 @@ async def remove_team_member(
         },
     )
 
+    user_locale = await resolve_language(getattr(target_user, "locale", None))
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.TEAM_MEMBER_REMOVED,
         user_id=target_user.id,
-        title=t("notify_team_member_removed_title", lang=target_user.locale),
+        title=t("notify_team_member_removed_title", lang=user_locale),
         content=t(
             "notify_team_member_removed_content",
-            lang=target_user.locale,
+            lang=user_locale,
             team_name=team.name,
         ),
     )
@@ -598,28 +601,30 @@ async def transfer_ownership(
     team = await Team.get(id=team_id).prefetch_related("owner")
 
     assert new_owner is not None
+    new_owner_locale = await resolve_language(getattr(new_owner, "locale", None))
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.TEAM_OWNERSHIP_TRANSFERRED,
         user_id=new_owner.id,
-        title=t("notify_team_ownership_received_title", lang=new_owner.locale),
+        title=t("notify_team_ownership_received_title", lang=new_owner_locale),
         content=t(
             "notify_team_ownership_received_content",
-            lang=new_owner.locale,
+            lang=new_owner_locale,
             team_name=team.name,
             old_owner=(
-                old_owner.username if old_owner else t("unknown", lang=new_owner.locale)
+                old_owner.username if old_owner else t("unknown", lang=new_owner_locale)
             ),
         ),
     )
 
     if old_owner:
+        old_owner_locale = await resolve_language(getattr(old_owner, "locale", None))
         await AutoNotificationService.send_to_user(
             notification_type=AutoNotificationType.TEAM_OWNERSHIP_TRANSFERRED,
             user_id=old_owner.id,
-            title=t("notify_team_ownership_transferred_title", lang=old_owner.locale),
+            title=t("notify_team_ownership_transferred_title", lang=old_owner_locale),
             content=t(
                 "notify_team_ownership_transferred_content",
-                lang=old_owner.locale,
+                lang=old_owner_locale,
                 team_name=team.name,
                 new_owner=new_owner.username,
             ),

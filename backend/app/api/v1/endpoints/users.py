@@ -7,7 +7,7 @@ from pydantic import EmailStr
 from app.api import deps
 from app.core import security
 from app.core.email import verify_code
-from app.core.i18n import t
+from app.core.i18n import t, resolve_language
 from app.core.password import validate_password, translate_password_validation_errors
 from app.models.user import User
 from app.models.site_setting import SiteSetting
@@ -249,11 +249,12 @@ async def change_password(
         request=request,
     )
 
+    user_locale = await resolve_language(getattr(current_user, "locale", None))
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.SECURITY_PASSWORD_CHANGED,
         user_id=current_user.id,
-        title=t("notify_password_changed_title", lang=current_user.locale),
-        content=t("notify_password_changed_content", lang=current_user.locale),
+        title=t("notify_password_changed_title", lang=user_locale),
+        content=t("notify_password_changed_content", lang=user_locale),
         level=NotificationLevel.HIGH,
     )
 

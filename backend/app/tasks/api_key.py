@@ -6,7 +6,7 @@ import logging
 from datetime import timedelta
 
 from app.core.celery import celery_app
-from app.core.i18n import t
+from app.core.i18n import t, resolve_language
 from app.core.timezone import now_utc
 from app.models.api_key import APIKey
 from app.models.notification import AutoNotificationType, NotificationLevel
@@ -72,7 +72,7 @@ async def _check_api_key_expiration():
             continue
 
         # 获取用户语言偏好
-        user_locale = getattr(api_key.user, "locale", "en")
+        user_locale = await resolve_language(getattr(api_key.user, "locale", None))
 
         await AutoNotificationService.send_to_user(
             notification_type=AutoNotificationType.APIKEY_EXPIRING,
@@ -110,7 +110,7 @@ async def _check_api_key_expiration():
 
     for api_key in expired_keys:
         # 获取用户语言偏好
-        user_locale = getattr(api_key.user, "locale", "en")
+        user_locale = await resolve_language(getattr(api_key.user, "locale", None))
 
         await AutoNotificationService.send_to_user(
             notification_type=AutoNotificationType.APIKEY_EXPIRED,

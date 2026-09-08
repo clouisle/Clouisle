@@ -52,7 +52,7 @@ from app.schemas.response import (
 from app.services.audit_log import AuditLogService
 from app.services.auto_notification import AutoNotificationService
 from app.models.notification import AutoNotificationType
-from app.core.i18n import t
+from app.core.i18n import t, get_default_language
 from app.core.timezone import now_utc
 from app.api.v1.endpoints.chat import build_message_round_payloads
 from app.services.message_branching import get_visible_conversation_messages
@@ -818,11 +818,16 @@ async def publish_agent(
 
     # 发送团队通知
     if agent.team_id:
+        default_lang = await get_default_language()
         await AutoNotificationService.send_to_team(
             notification_type=AutoNotificationType.AGENT_PUBLISHED,
             team_id=UUID(str(agent.team_id)),
-            title=t("notify_agent_published_title"),
-            content=t("notify_agent_published_content", agent_name=agent.name),
+            title=t("notify_agent_published_title", lang=default_lang),
+            content=t(
+                "notify_agent_published_content",
+                lang=default_lang,
+                agent_name=agent.name,
+            ),
         )
 
     agent_data = await build_agent_out(agent)
@@ -859,11 +864,16 @@ async def unpublish_agent(
 
     # 发送团队通知
     if agent.team_id:
+        default_lang = await get_default_language()
         await AutoNotificationService.send_to_team(
             notification_type=AutoNotificationType.AGENT_UNPUBLISHED,
             team_id=UUID(str(agent.team_id)),
-            title=t("notify_agent_unpublished_title"),
-            content=t("notify_agent_unpublished_content", agent_name=agent.name),
+            title=t("notify_agent_unpublished_title", lang=default_lang),
+            content=t(
+                "notify_agent_unpublished_content",
+                lang=default_lang,
+                agent_name=agent.name,
+            ),
         )
 
     agent_data = await build_agent_out(agent)

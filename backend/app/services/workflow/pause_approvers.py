@@ -11,7 +11,7 @@ import logging
 from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
-from app.core.i18n import t
+from app.core.i18n import t, resolve_language
 from app.models.notification import (
     AutoNotificationType,
     Notification,
@@ -129,7 +129,7 @@ async def notify_pause_pending(
             else "notify_workflow_input_pending_content"
         )
         for user in users:
-            lang = user.locale or "en"
+            lang = await resolve_language(getattr(user, "locale", None))
             user_content = t(
                 content_key,
                 lang=lang,

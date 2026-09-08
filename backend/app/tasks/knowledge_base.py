@@ -11,7 +11,7 @@ from uuid import UUID
 from celery import shared_task
 from tortoise.functions import Sum
 
-from app.core.i18n import t, get_default_language
+from app.core.i18n import t, get_default_language, resolve_language
 from app.models.knowledge_base import (
     Document,
     DocumentChunk,
@@ -140,9 +140,7 @@ def backfill_lexical_index_task(
 
 
 def _get_document_error_lang(document: Document, user_locale: str = "en") -> str:
-    if document.uploaded_by_id:
-        return user_locale
-    return "en"
+    return user_locale
 
 
 def _get_dimension_mismatch_error(document: Document, user_locale: str = "en") -> str:
@@ -255,8 +253,9 @@ async def _finish_upload_gateway_retry_exhaustion(
         return await _finish_already_finished_task(document, task_id)
 
     kb = document.knowledge_base
-    user_locale = (
-        getattr(document.uploaded_by, "locale", "en") if document.uploaded_by else "en"
+    uploader = getattr(document, "uploaded_by", None)
+    user_locale = await resolve_language(
+        getattr(uploader, "locale", None) if uploader else None
     )
     logger.error(
         "Upload gateway retries exhausted for document %s: %s", document_id, error
@@ -299,19 +298,23 @@ async def _send_doc_indexed_notification(
     team_id: UUID,
     chunk_count: int,
     token_count: int,
-    user_locale: str = "en",
+    user_locale: str | None = None,
 ) -> None:
     """Send notification when document is indexed successfully."""
     try:
         # Send to uploader if available, otherwise to team
         if document.uploaded_by_id:
+            user = getattr(document, "uploaded_by", None)
+            effective_locale = await resolve_language(
+                getattr(user, "locale", None) if user else user_locale
+            )
             await AutoNotificationService.send_to_user(
                 notification_type=AutoNotificationType.KB_DOC_INDEXED,
                 user_id=document.uploaded_by_id,
-                title=t("notify_kb_doc_indexed_title", lang=user_locale),
+                title=t("notify_kb_doc_indexed_title", lang=effective_locale),
                 content=t(
                     "notify_kb_doc_indexed_content",
-                    lang=user_locale,
+                    lang=effective_locale,
                     doc_name=document.name,
                     kb_name=kb_name,
                     chunk_count=chunk_count,
@@ -358,19 +361,23 @@ async def _send_doc_failed_notification(
     kb_name: str,
     team_id: UUID,
     error: str,
-    user_locale: str = "en",
+    user_locale: str | None = None,
 ) -> None:
     """Send notification when document indexing fails."""
     try:
         # Send to uploader if available, otherwise to team
         if document.uploaded_by_id:
+            user = getattr(document, "uploaded_by", None)
+            effective_locale = await resolve_language(
+                getattr(user, "locale", None) if user else user_locale
+            )
             await AutoNotificationService.send_to_user(
                 notification_type=AutoNotificationType.KB_DOC_FAILED,
                 user_id=document.uploaded_by_id,
-                title=t("notify_kb_doc_failed_title", lang=user_locale),
+                title=t("notify_kb_doc_failed_title", lang=effective_locale),
                 content=t(
                     "notify_kb_doc_failed_content",
-                    lang=user_locale,
+                    lang=effective_locale,
                     doc_name=document.name,
                     kb_name=kb_name,
                     error=error[:200],  # Truncate error message
@@ -433,10 +440,10 @@ async def _process_document(document_id: str, task_id: str | None) -> dict[str, 
 
     kb = document.knowledge_base
     # Get uploader's locale for notifications
-    user_locale = (
-        getattr(document.uploaded_by, "locale", "en") if document.uploaded_by else "en"
+    uploader = getattr(document, "uploaded_by", None)
+    user_locale = await resolve_language(
+        getattr(uploader, "locale", None) if uploader else None
     )
-
     existing_chunks = await DocumentChunk.filter(document_id=doc_uuid).count()
     if existing_chunks > 0:
         return await _embed_existing_document_chunks(document_id, task_id)
@@ -847,10 +854,9 @@ def rechunk_document_task(self, document_id: str) -> dict:
 
         kb = document.knowledge_base
         # Get uploader's locale for notifications
-        user_locale = (
-            getattr(document.uploaded_by, "locale", "en")
-            if document.uploaded_by
-            else "en"
+        uploader = getattr(document, "uploaded_by", None)
+        user_locale = await resolve_language(
+            getattr(uploader, "locale", None) if uploader else None
         )
 
         try:
@@ -1095,8 +1101,9 @@ async def _embed_existing_document_chunks(
     kb = document.knowledge_base
     kb_id = cast(UUID, kb.id)
     kb_team_id = cast(UUID, kb.team_id)
-    user_locale = (
-        getattr(document.uploaded_by, "locale", "en") if document.uploaded_by else "en"
+    uploader = getattr(document, "uploaded_by", None)
+    user_locale = await resolve_language(
+        getattr(uploader, "locale", None) if uploader else None
     )
 
     async def _refresh_kb_stats() -> None:
@@ -1398,10 +1405,9 @@ def retry_failed_chunks_task(self, document_id: str) -> dict:
             return await _finish_already_finished_task(document, task_id)
 
         kb = document.knowledge_base
-        user_locale = (
-            getattr(document.uploaded_by, "locale", "en")
-            if document.uploaded_by
-            else "en"
+        uploader = getattr(document, "uploaded_by", None)
+        user_locale = await resolve_language(
+            getattr(uploader, "locale", None) if uploader else None
         )
 
         try:
@@ -1635,10 +1641,9 @@ def retry_failed_chunk_task(self, document_id: str, chunk_id: str) -> dict:
             return await _finish_already_finished_task(document, task_id)
 
         kb = document.knowledge_base
-        user_locale = (
-            getattr(document.uploaded_by, "locale", "en")
-            if document.uploaded_by
-            else "en"
+        uploader = getattr(document, "uploaded_by", None)
+        user_locale = await resolve_language(
+            getattr(uploader, "locale", None) if uploader else None
         )
 
         chunk = await DocumentChunk.filter(id=chunk_uuid, document_id=doc_uuid).first()

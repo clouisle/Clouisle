@@ -32,7 +32,7 @@ from app.core.email import (
 )
 from app.core.captcha import create_captcha_proof, generate_captcha, verify_captcha
 from app.core.timezone import now_utc
-from app.core.i18n import t, get_default_language, normalize_language
+from app.core.i18n import get_default_language, normalize_language, resolve_language, t
 from app.models.user import User
 from app.models.site_setting import SiteSetting
 from app.schemas.token import Token
@@ -211,13 +211,14 @@ async def login_access_token(
 
         if locked:
             # 发送账户锁定通知
+            user_locale = await resolve_language(getattr(user, "locale", None))
             await AutoNotificationService.send_to_user(
                 notification_type=AutoNotificationType.SECURITY_ACCOUNT_LOCKED,
                 user_id=user.id,
-                title=t("notify_account_locked_title", lang=user.locale),
+                title=t("notify_account_locked_title", lang=user_locale),
                 content=t(
                     "notify_account_locked_content",
-                    lang=user.locale,
+                    lang=user_locale,
                     lockout_minutes=(lockout_seconds or 0) // 60,
                 ),
                 level=NotificationLevel.HIGH,
@@ -315,13 +316,14 @@ async def login_access_token(
 
     # Send anomaly notification if detected
     if is_anomaly:
+        user_locale = await resolve_language(getattr(user, "locale", None))
         await AutoNotificationService.send_to_user(
             notification_type=AutoNotificationType.SECURITY_LOGIN_ANOMALY,
             user_id=user.id,
-            title=t("notify_login_anomaly_title", lang=user.locale),
+            title=t("notify_login_anomaly_title", lang=user_locale),
             content=t(
                 "notify_login_anomaly_content",
-                lang=user.locale,
+                lang=user_locale,
                 ip_address=anomaly_details.get("ip_address", "unknown"),
                 login_time=anomaly_details.get("login_time", ""),
                 user_agent=anomaly_details.get("user_agent", "Unknown")[:100],
@@ -545,13 +547,14 @@ async def verify_totp(
 
     # Send anomaly notification if detected
     if is_anomaly:
+        user_locale = await resolve_language(getattr(user, "locale", None))
         await AutoNotificationService.send_to_user(
             notification_type=AutoNotificationType.SECURITY_LOGIN_ANOMALY,
             user_id=user.id,
-            title=t("notify_login_anomaly_title", lang=user.locale),
+            title=t("notify_login_anomaly_title", lang=user_locale),
             content=t(
                 "notify_login_anomaly_content",
-                lang=user.locale,
+                lang=user_locale,
                 ip_address=anomaly_details.get("ip_address", "unknown"),
                 login_time=anomaly_details.get("login_time", ""),
                 user_agent=anomaly_details.get("user_agent", "Unknown")[:100],
@@ -761,7 +764,7 @@ async def register(
         "force_password_change_first_login", False
     )
 
-    registration_locale = normalize_language(user_in.locale)
+    registration_locale = normalize_language(user_in.locale) if user_in.locale else None
 
     # Create user
     hashed_password = security.get_password_hash(user_in.password)
@@ -810,6 +813,7 @@ async def register(
             resource_name=user.username,
             operation="create",
             status="success",
+            changes={"after": AuditLogService.snapshot(user, "user")},
             request=request,
             metadata={"is_first_user": True, "is_superuser": True},
         )
@@ -839,6 +843,7 @@ async def register(
         resource_name=user.username,
         operation="create",
         status="success",
+        changes={"after": AuditLogService.snapshot(user, "user")},
         request=request,
         metadata={
             "require_approval": require_approval,

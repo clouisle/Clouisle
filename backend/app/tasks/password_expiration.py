@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 
 from app.core.celery import celery_app
-from app.core.i18n import t
+from app.core.i18n import t, resolve_language
 from app.models.user import User
 from app.models.site_setting import SiteSetting
 from app.models.notification import AutoNotificationType, NotificationLevel
@@ -96,7 +96,7 @@ async def _check_password_expiration():
                 not user.password_expiration_notified_at
                 or (now - user.password_expiration_notified_at).days >= 1
             ):
-                user_locale = getattr(user, "locale", "en")
+                user_locale = await resolve_language(getattr(user, "locale", None))
 
                 await AutoNotificationService.send_to_user(
                     notification_type=AutoNotificationType.PASSWORD_EXPIRED,
@@ -130,7 +130,7 @@ async def _check_password_expiration():
             ):
                 continue
 
-            user_locale = getattr(user, "locale", "en")
+            user_locale = await resolve_language(getattr(user, "locale", None))
 
             await AutoNotificationService.send_to_user(
                 notification_type=AutoNotificationType.PASSWORD_EXPIRING,

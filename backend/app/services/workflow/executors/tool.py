@@ -251,11 +251,14 @@ class AgentNodeExecutor(NodeExecutor):
 
         try:
             agent_service = AgentService()
-            user_locale = "en"
+            from app.core.i18n import resolve_language
+
+            triggered_user_locale = None
             if run.triggered_by_id:
                 await run.fetch_related("triggered_by")
                 if run.triggered_by:
-                    user_locale = getattr(run.triggered_by, "locale", None) or "en"
+                    triggered_user_locale = getattr(run.triggered_by, "locale", None)
+            user_locale = await resolve_language(triggered_user_locale)
             if (images or files) and not getattr(agent, "enable_attachments", False):
                 return ExecutionResult(error="attachments_not_enabled")
             configured_turns = config.get("maxTurns")

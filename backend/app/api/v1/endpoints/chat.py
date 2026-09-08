@@ -23,7 +23,7 @@ from tortoise.expressions import F, Q
 from tortoise.transactions import in_transaction
 
 from app.api import deps
-from app.core.i18n import t
+from app.core.i18n import resolve_language, t
 from app.models.asset import MessageAsset
 from app.models.user import User, Team
 from app.models.model import TeamModel
@@ -662,7 +662,10 @@ def get_round_terminal_status(
 
 
 def build_max_iterations_terminal_content(user_locale: str | None = None) -> str:
-    return t("chat_max_iterations_reached", lang=user_locale)
+    from app.core.i18n import resolve_language_sync
+
+    effective_locale = resolve_language_sync(user_locale)
+    return t("chat_max_iterations_reached", lang=effective_locale)
 
 
 async def round_has_persisted_trace(message: Message | None) -> bool:
@@ -1801,7 +1804,7 @@ async def _enqueue_existing_message_run(
         canonical_message_id=canonical_message_id,
         in_place_retry=in_place_retry,
         branch_parent_id=branch_parent_id,
-        locale=current_user.locale,
+        locale=await resolve_language(getattr(current_user, "locale", None)),
         include_current_user_message=include_current_user_message,
         history_before_message_created_at=history_before_message_created_at,
         exclude_message_ids=exclude_message_ids,
@@ -1911,12 +1914,13 @@ async def _enqueue_durable_chat_run(
         )
 
     await update_message_stats(agent, token_usage=None)
+    effective_locale = await resolve_language(getattr(current_user, "locale", None))
     streaming_config = get_streaming_config(agent)
     _, updated_file_urls = await build_file_content_for_context(
         agent=agent,
         file_urls=chat_in.file_urls,
         legacy_files=chat_in.files,
-        user_locale=current_user.locale,
+        user_locale=effective_locale,
         tool_timeouts=streaming_config["tool_timeouts"],
         user=current_user,
     )
@@ -1960,7 +1964,7 @@ async def _enqueue_durable_chat_run(
         ),
         variables=chat_in.variables,
         branch_parent_id=user_branch_parent_id,
-        locale=current_user.locale,
+        locale=effective_locale,
     )
     run.worker_payload = payload
     await run.save(update_fields=["worker_payload"])

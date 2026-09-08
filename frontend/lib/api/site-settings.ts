@@ -24,6 +24,7 @@ export interface PublicSiteSettings {
   site_description: string
   site_url: string
   site_icon: string
+  default_language?: string
   auth_page_layout: AuthPageLayout
   theme_mode: ThemeMode
   theme_primary_color: string
