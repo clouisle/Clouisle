@@ -30,6 +30,7 @@
     "deleteConversationDescription": "Are you sure you want to delete conversation \"{title}\"? This action cannot be undone.",
     "confirmDeleteConversation": "Confirm Delete",
     "deleteConversationFailed": "Failed to delete conversation. Please try again.",
+    "loadConversationFailed": "Failed to load conversation. Please try again.",
     "conversationTitle": "Title",
     "conversationTitlePlaceholder": "Enter conversation title...",
     "cancel": "Cancel",

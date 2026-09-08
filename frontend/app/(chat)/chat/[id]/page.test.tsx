@@ -313,6 +313,24 @@ describe('PublicChatPage', () => {
     })
   })
 
+  test('prevents empty chat flash and preserves sidebar conversation items on refresh', async () => {
+    query = new URLSearchParams('conversation=conv-1')
+    render()
+    await flush()
+
+    // On initial load with conversation in URL, ChatContainer should receive loaded messages without key recreation
+    expect(setConversationId).toHaveBeenCalledWith('conv-1')
+    expect(setMessages).toHaveBeenCalled()
+
+    // When onStreamEnd triggers refreshConversations with identical items
+    getConversations.mockResolvedValueOnce({ items: conversations, total: 2 })
+    await act(async () => {
+      chatOptions.onStreamEnd?.()
+      await Promise.resolve()
+    })
+    expect(getConversations).toHaveBeenCalledTimes(2)
+  })
+
   test('places the queued label in the conversation instead of below the composer', async () => {
     chatState.messages = [{ id: 'assistant-loading', role: 'assistant', parts: [], metadata: { isLoading: true } }]
     chatState.isLoading = true
@@ -738,6 +756,7 @@ describe('PublicChatPage', () => {
     await flush()
     expect(historyReplace).toHaveBeenCalledWith({}, '', '/chat/agent-1?source=share')
     expect(output()).not.toContain('private conversation detail')
+    expect(toastError).toHaveBeenCalledWith('private conversation detail')
     act(() => renderer!.unmount())
 
     getPublicAgent.mockRejectedValueOnce(new Error('private agent detail'))
@@ -762,7 +781,7 @@ describe('PublicChatPage', () => {
     await act(async () => firstChat.props.onClick())
     expect(getConversation).toHaveBeenCalledWith('conv-1')
     expect(console.error).toHaveBeenCalledWith('Failed to load conversation:', expect.any(Error))
-
+    expect(toastError).toHaveBeenCalledWith('select failed')
     getConversation.mockResolvedValueOnce({ messages: [] })
     await act(async () => firstChat.props.onClick())
     await flush()

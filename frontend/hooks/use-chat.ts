@@ -466,9 +466,12 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     const { messages: convertedMessages } = await api.getConversation(targetConversationId)
     if (isCurrent && !isCurrent()) return
     const currentById = new Map(messagesRef.current.map((message) => [message.id, message]))
-    setMessages(convertedMessages.map((message) => {
+    const nextMessages = convertedMessages.map((message) => {
       const previous = currentById.get(message.id)
-      if (!previous?.metadata) return message
+      if (!previous?.metadata) {
+        if (previous && areChatMessagesEqual(previous, message)) return previous
+        return message
+      }
       const transientKeys = ['errorCode', 'errorMessage', 'preservedPartialProgress', 'isManuallyStopped', 'runInputState', 'runInputKind', 'runInputSequence']
       const transientMetadata = Object.fromEntries(
         transientKeys
@@ -479,10 +482,19 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           .map((key) => [key, previous.metadata?.[key]])
       )
       if (previous.metadata.isError === true) transientMetadata.isError = true
-      return Object.keys(transientMetadata).length > 0
+      const resolvedMessage = Object.keys(transientMetadata).length > 0
         ? { ...message, metadata: { ...message.metadata, ...transientMetadata } }
         : message
-    }))
+      if (previous && areChatMessagesEqual(previous, resolvedMessage)) return previous
+      return resolvedMessage
+    })
+    if (
+      nextMessages.length === messagesRef.current.length &&
+      nextMessages.every((msg, idx) => msg === messagesRef.current[idx])
+    ) {
+      return
+    }
+    setMessages(nextMessages)
   }, [api])
 
   const notifyStreamEnd = useCallback((session: AssistantStreamSession) => {
@@ -1822,6 +1834,30 @@ export function removeRunSnapshot(agentId: string, conversationId: string) {
   } catch {
     // The run still remains recoverable while this hook instance is mounted.
   }
+}
+
+function areChatMessagesEqual(a: ChatMessage, b: ChatMessage): boolean {
+  if (a === b) return true
+  if (a.id !== b.id || a.role !== b.role) return false
+  if (a.versionNumber !== b.versionNumber || a.versionCount !== b.versionCount) return false
+  if (a.parts.length !== b.parts.length) return false
+  for (let i = 0; i < a.parts.length; i++) {
+    const partA = a.parts[i]
+    const partB = b.parts[i]
+    if (partA.type !== partB.type) return false
+    if (JSON.stringify(partA) !== JSON.stringify(partB)) return false
+  }
+  const metaA = a.metadata
+  const metaB = b.metadata
+  if (!metaA && !metaB) return true
+  if (!metaA || !metaB) return false
+  const keysA = Object.keys(metaA)
+  const keysB = Object.keys(metaB)
+  if (keysA.length !== keysB.length) return false
+  for (const key of keysA) {
+    if (metaA[key] !== metaB[key]) return false
+  }
+  return true
 }
 
 function createRunInputRequestId(): string {

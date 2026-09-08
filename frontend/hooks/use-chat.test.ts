@@ -1420,6 +1420,34 @@ describe('useChat', () => {
     expect(result.status).toBe('idle')
   })
 
+  it('preserves existing message references during history reload to prevent UI flicker', async () => {
+    const msg1: ChatMessage = { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'hello' }] }
+    const msg2: ChatMessage = { id: 'm2', role: 'assistant', parts: [{ type: 'text', text: 'hi there' }] }
+    const initial = [msg1, msg2]
+    options = { agentId: 'agent-1', conversationId: 'conversation-1' }
+    renderHookHarness()
+    result.setConversationId('conversation-1')
+    result.setMessages(initial)
+    await flush()
+
+    // Server returns identical messages but in newly instantiated objects
+    const freshServerObjects: ChatMessage[] = [
+      { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'hello' }] },
+      { id: 'm2', role: 'assistant', parts: [{ type: 'text', text: 'hi there' }] },
+    ]
+    getConversation.mockResolvedValue({ messages: freshServerObjects })
+    streamEvents = [{ event: 'message_start', data: { message_id: 'm3' } }, { event: 'message_end', data: {} }]
+    switchMessageVersion.mockResolvedValue(undefined)
+
+    // Trigger a history reload via switchVersion or editMessage
+    await result.switchVersion?.('m1', 0)
+    await flush()
+
+    // The message references must be preserved exactly
+    expect(result.messages[0]).toBe(msg1)
+    expect(result.messages[1]).toBe(msg2)
+  })
+
   it('marks edit-stream compression as errored when the stream fails', async () => {
     const userId = '11111111-1111-1111-1111-111111111111'
     const reloadStarted = deferred<void>()
