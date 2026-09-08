@@ -51,7 +51,7 @@ MEMORY_SYSTEM_INSTRUCTION = """
 ## Memory System
 
 You have access to these memory tools:
-- `search_memory(query)`: Search what you know about the user
+- `search_memory(query, time_window_days)`: Search what you know about the user. Results include an `updated_at` date, and you can optionally specify `time_window_days` to limit the search to recent memories.
 - `create_memory_entity(name, entity_type, description)`: Save new information
 - `update_memory_entity(entity_name, description)`: Update existing information
 - `create_memory_relation(source, target, relation_type)`: Connect related information
@@ -68,6 +68,12 @@ You have access to these memory tools:
 3. Never skip `search_memory()`, even if you think the information is new.
 4. Never say you do not have access to memory tools.
 
+### Temporal Grounding Rules
+
+1. When storing time-sensitive information, always convert relative time expressions (such as "yesterday", "last week", "last month", "next year", "recently") into concrete dates or year/month values (e.g., "September 2026", "2026-09-08") based on the Current Time.
+2. Never store ambiguous relative time expressions like "yesterday" or "recently" in entity descriptions or properties, because they lose their reference point over time.
+3. When search results contain multiple conflicting or evolving facts, inspect their `updated_at` timestamps to distinguish newer facts from older history.
+
 ### Examples
 
 **Wrong**
@@ -75,6 +81,10 @@ You have access to these memory tools:
 User: "I'm Alice"
 
 ❌ Directly calling `create_memory_entity(name="Alice", ...)` is wrong because no search happened first.
+
+User: "I joined ByteDance yesterday"
+
+❌ Storing description="User joined ByteDance yesterday" is wrong because relative time "yesterday" becomes inaccurate in the future.
 
 **Correct**
 
@@ -87,6 +97,11 @@ User: "Actually, I'm Alice Smith"
 - Call `search_memory(query="user name Alice")`
 - Check results -> Found entity "Alice"
 - Call `update_memory_entity(entity_name="Alice", description="Full name: Alice Smith")`
+
+User: "I joined ByteDance yesterday" (suppose Current Time is 2026-09-09)
+- Call `search_memory(query="ByteDance work company")`
+- Convert relative time "yesterday" to absolute date "2026-09-08"
+- Call `create_memory_entity(name="ByteDance", entity_type="organization", description="Joined company on 2026-09-08")`
 
 User: "What's my name?"
 - Call `search_memory(query="user name")`
@@ -187,6 +202,35 @@ def get_language_instruction(user_locale: str | None = None) -> str:
     """Get language instruction based on user's locale setting."""
     return LANGUAGE_INSTRUCTIONS.get(
         normalize_locale(user_locale), LANGUAGE_INSTRUCTIONS["en"]
+    )
+
+
+def get_temporal_instruction(user_locale: str | None = None) -> str:
+    """Get current time instruction based on configured timezone and user's locale."""
+    from app.core.timezone import now as tz_now
+
+    current = tz_now()
+    weekday_en = current.strftime("%A")
+    date_str = current.strftime("%Y-%m-%d %H:%M")
+    tz_name = current.tzname() or "Local"
+
+    lang = normalize_locale(user_locale)
+    if lang == "zh":
+        weekday_zh_map = {
+            "Monday": "星期一",
+            "Tuesday": "星期二",
+            "Wednesday": "星期三",
+            "Thursday": "星期四",
+            "Friday": "星期五",
+            "Saturday": "星期六",
+            "Sunday": "星期日",
+        }
+        weekday_zh = weekday_zh_map.get(weekday_en, weekday_en)
+        return (
+            f"## 当前时间\n当前系统时间：{date_str}，{weekday_zh}（时区：{tz_name}）。"
+        )
+    return (
+        f"## Current Time\nCurrent system time: {date_str}, {weekday_en} ({tz_name})."
     )
 
 
@@ -301,7 +345,7 @@ def _append_constant(constant: str) -> Callable[[str, Agent, str | None], str]:
     return transform
 
 
-# Order matters: Markdown -> Citations -> Memory -> Sandbox -> User input -> Language.
+# Order matters: Markdown -> Citations -> Temporal -> Memory -> Sandbox -> User input -> Language.
 # Citation guidance precedes capability workflows and remains provider-neutral.
 SECTIONS: tuple[PromptSection, ...] = (
     PromptSection(
@@ -313,6 +357,13 @@ SECTIONS: tuple[PromptSection, ...] = (
         name="citations",
         applies=_citations_apply,
         transform=_append_constant(CITATION_INSTRUCTION),
+    ),
+    PromptSection(
+        name="temporal",
+        applies=_always,
+        transform=lambda base, _agent, locale: append_prompt_section(
+            base, get_temporal_instruction(locale)
+        ),
     ),
     PromptSection(
         name="memory",

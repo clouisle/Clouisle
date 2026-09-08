@@ -53,7 +53,30 @@ from app.models.tool import CustomToolType
             "search_memory",
             {"query": "Ada"},
             "handle_search_memory",
-            {"user_id": "user-1", "query": "Ada", "top_k": 5},
+            {
+                "user_id": "user-1",
+                "query": "Ada",
+                "top_k": 5,
+                "time_window_days": None,
+                "entity_type": None,
+            },
+        ),
+        (
+            "search_memory",
+            {
+                "query": "Ada",
+                "top_k": "3",
+                "time_window_days": "14",
+                "entity_type": "skill",
+            },
+            "handle_search_memory",
+            {
+                "user_id": "user-1",
+                "query": "Ada",
+                "top_k": 3,
+                "time_window_days": 14,
+                "entity_type": "skill",
+            },
         ),
     ],
 )

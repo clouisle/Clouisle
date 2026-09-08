@@ -5,7 +5,8 @@ Handles entity and relation CRUD, vector embeddings, and graph traversal.
 
 import importlib
 import logging
-from datetime import UTC, datetime
+import math
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -29,6 +30,50 @@ logger = logging.getLogger(__name__)
 
 def _memory_tool_error() -> str:
     return t("memory_tool_execution_failed")
+
+
+def _format_entity_date(dt: Any) -> str | None:
+    """Format datetime or date-like value to YYYY-MM-DD string."""
+    if dt is None:
+        return None
+    if isinstance(dt, datetime):
+        return dt.strftime("%Y-%m-%d")
+    if isinstance(dt, str):
+        return dt[:10]
+    return str(dt)
+
+
+def _calculate_recency_score(
+    entity: Any, now: datetime, half_life_days: float = 30.0
+) -> float:
+    """Calculate exponential recency decay score in [0.0, 1.0]."""
+    entity_time = getattr(entity, "updated_at", None) or getattr(
+        entity, "created_at", None
+    )
+    if not entity_time:
+        return 1.0
+    if isinstance(entity_time, str):
+        try:
+            entity_time = datetime.fromisoformat(entity_time)
+        except Exception:
+            return 1.0
+    if entity_time.tzinfo is None:
+        entity_time = entity_time.replace(tzinfo=UTC)
+    delta_seconds = max(0.0, (now - entity_time).total_seconds())
+    delta_days = delta_seconds / 86400.0
+    decay_rate = math.log(2) / max(half_life_days, 1.0)
+    return math.exp(-decay_rate * delta_days)
+
+
+def _calculate_combined_score(
+    similarity: float,
+    recency: float,
+    recency_weight: float = 0.15,
+) -> float:
+    """Combine vector similarity and recency decay score."""
+    sim = max(0.0, min(1.0, float(similarity)))
+    w = max(0.0, min(1.0, float(recency_weight)))
+    return (1.0 - w) * sim + w * recency
 
 
 _qdrant_client: Any = None
@@ -81,6 +126,16 @@ async def _ensure_memory_collection(dimension: int) -> str:
             field_name="user_id",
             field_schema=qmodels.PayloadSchemaType.KEYWORD,
         )
+        try:
+            await client.create_payload_index(
+                collection_name=collection,
+                field_name="updated_at_ts",
+                field_schema=qmodels.PayloadSchemaType.INTEGER,
+            )
+        except Exception as e:
+            logger.debug(
+                f"Payload index updated_at_ts already exists or not supported: {e}"
+            )
         logger.info(f"Created memory collection: {collection}")
 
     _memory_collections.add(collection)
@@ -314,18 +369,22 @@ class MemoryService:
         query: str,
         top_k: int = 10,
         entity_type: EntityType | None = None,
+        time_window_days: int | None = None,
+        recency_weight: float = 0.15,
     ) -> list[MemoryEntity]:
         """
-        Search entities using vector similarity.
+        Search entities using vector similarity, with optional time window filtering and recency decay scoring.
 
         Args:
             user_id: User ID (for data isolation)
             query: Search query
             top_k: Number of results
             entity_type: Filter by entity type
+            time_window_days: Filter to entities updated within last N days
+            recency_weight: Weight [0.0, 1.0] for recency decay in final ranking
 
         Returns:
-            List of matching entities
+            List of matching entities in ranked order
         """
         logger.info(
             f"Searching memory for user {user_id}, query: '{query}', top_k: {top_k}"
@@ -369,6 +428,18 @@ class MemoryService:
                 )
             )
 
+        if time_window_days and time_window_days > 0:
+            cutoff_ts = int(
+                (datetime.now(UTC) - timedelta(days=time_window_days)).timestamp()
+            )
+            range_cls = getattr(qmodels, "Range", None)
+            if range_cls is not None:
+                conditions.append(
+                    qmodels.FieldCondition(
+                        key="updated_at_ts",
+                        range=range_cls(gte=cutoff_ts),
+                    )
+                )
         query_filter = qmodels.Filter(must=conditions)
 
         # Search in Qdrant
@@ -381,10 +452,9 @@ class MemoryService:
                 query_filter=query_filter,
             )
             results = response.points
-            logger.info(f"Qdrant search returned {len(results)} results")
             for i, result in enumerate(results):
                 logger.info(
-                    f"  Result {i + 1}: id={result.id}, score={result.score}, payload={result.payload}"
+                    f"  Result {i + 1}: id={getattr(result, 'id', None)}, score={getattr(result, 'score', None)}, payload={getattr(result, 'payload', None)}"
                 )
         except Exception as e:
             logger.error(f"Qdrant search failed: {e}")
@@ -399,13 +469,65 @@ class MemoryService:
 
         logger.info(f"Found {len(entities)} entities in database")
 
-        # Update access tracking
-        for entity in entities:
+        # Map entities by ID to preserve candidate order and apply recency scoring
+        entity_map = {getattr(e, "id", None): e for e in entities}
+        ordered_candidates = [
+            entity_map[eid] for eid in entity_ids if eid in entity_map
+        ]
+        # Preserve any unmapped entities (e.g. mocked entities without ID in unit tests)
+        if len(ordered_candidates) < len(entities):
+            for e in entities:
+                if e not in ordered_candidates:
+                    ordered_candidates.append(e)
+
+        now = datetime.now(UTC)
+
+        # Time window filter at entity level (safeguard against missing Qdrant timestamps)
+        if time_window_days and time_window_days > 0:
+            cutoff_dt = now - timedelta(days=time_window_days)
+            filtered = []
+            for e in ordered_candidates:
+                e_time = (
+                    getattr(e, "updated_at", None)
+                    or getattr(e, "created_at", None)
+                    or now
+                )
+                if isinstance(e_time, str):
+                    try:
+                        e_time = datetime.fromisoformat(e_time)
+                    except Exception:
+                        e_time = now
+                if e_time.tzinfo is None:
+                    e_time = e_time.replace(tzinfo=UTC)
+                if e_time >= cutoff_dt:
+                    filtered.append(e)
+            ordered_candidates = filtered
+
+        # Compute combined score for recency decay re-ranking
+        score_by_id = {
+            UUID(str(point.id)): getattr(point, "score", 0.0)
+            for point in results
+            if getattr(point, "id", None) is not None
+        }
+
+        def sort_key(entity: Any) -> float:
+            eid = getattr(entity, "id", None)
+            sim = score_by_id.get(eid, 0.0) if eid else 0.0
+            if recency_weight > 0:
+                recency = _calculate_recency_score(entity, now)
+                return _calculate_combined_score(sim, recency, recency_weight)
+            return float(sim)
+
+        ordered_candidates.sort(key=sort_key, reverse=True)
+        final_entities = ordered_candidates[:top_k]
+
+        # Update access tracking for returned entities
+        for entity in final_entities:
             entity.access_count += 1
-            entity.last_accessed_at = datetime.now(UTC)
+            entity.last_accessed_at = now
             await entity.save()
 
-        return entities
+        return final_entities
 
     @staticmethod
     async def get_entity_subgraph(
@@ -492,10 +614,25 @@ class MemoryService:
         client = await _get_qdrant_client()
         point_id = str(entity.id)
 
+        updated_at = getattr(entity, "updated_at", None) or datetime.now(UTC)
+        if isinstance(updated_at, str):
+            try:
+                updated_at = datetime.fromisoformat(updated_at)
+            except Exception:
+                updated_at = datetime.now(UTC)
+        if updated_at.tzinfo is None:
+            updated_at = updated_at.replace(tzinfo=UTC)
+        updated_at_ts = int(updated_at.timestamp())
+
         payload = {
             "user_id": str(entity.user_id),
-            "entity_type": entity.entity_type.value,
+            "entity_type": (
+                entity.entity_type.value
+                if hasattr(entity.entity_type, "value")
+                else str(entity.entity_type)
+            ),
             "name": entity.name,
+            "updated_at_ts": updated_at_ts,
         }
 
         logger.info(f"Upserting to Qdrant: point_id={point_id}, payload={payload}")
@@ -915,6 +1052,8 @@ class MemoryService:
         user_id: UUID,
         query: str,
         top_k: int = 5,
+        time_window_days: int | None = None,
+        entity_type: str | None = None,
     ) -> dict[str, Any]:
         """
         Tool handler for searching memory.
@@ -923,17 +1062,40 @@ class MemoryService:
             Result dict for LLM
         """
         try:
+            parsed_entity_type = None
+            if entity_type:
+                try:
+                    parsed_entity_type = EntityType(entity_type)
+                except ValueError:
+                    parsed_entity_type = None
+
+            parsed_days = None
+            if time_window_days is not None:
+                try:
+                    parsed_days = int(time_window_days)
+                    if parsed_days <= 0:
+                        parsed_days = None
+                except (ValueError, TypeError):
+                    parsed_days = None
+
             entities = await MemoryService.search_entities(
                 user_id=user_id,
                 query=query,
                 top_k=top_k,
+                entity_type=parsed_entity_type,
+                time_window_days=parsed_days,
             )
 
             results = [
                 {
                     "name": e.name,
-                    "type": e.entity_type.value,
+                    "type": (
+                        e.entity_type.value
+                        if hasattr(e.entity_type, "value")
+                        else str(e.entity_type)
+                    ),
                     "description": e.description,
+                    "updated_at": _format_entity_date(getattr(e, "updated_at", None)),
                 }
                 for e in entities
             ]

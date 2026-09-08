@@ -297,10 +297,26 @@ async def execute_tool_call(
                     properties=arguments.get("properties"),
                 )
             else:
+                top_k_raw = arguments.get("top_k", 5)
+                try:
+                    top_k_val = int(top_k_raw)
+                except (ValueError, TypeError):
+                    top_k_val = 5
+
+                time_window_raw = arguments.get("time_window_days")
+                try:
+                    time_window_val = (
+                        int(time_window_raw) if time_window_raw is not None else None
+                    )
+                except (ValueError, TypeError):
+                    time_window_val = None
+
                 result = await MemoryService.handle_search_memory(
                     user_id=user_id,
                     query=arguments.get("query", ""),
-                    top_k=arguments.get("top_k", 5),
+                    top_k=top_k_val,
+                    time_window_days=time_window_val,
+                    entity_type=arguments.get("entity_type"),
                 )
             return json.dumps(result, ensure_ascii=False)
         except Exception as e:

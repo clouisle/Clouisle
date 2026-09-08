@@ -108,18 +108,29 @@ UPDATE_MEMORY_ENTITY_TOOL = {
 
 SEARCH_MEMORY_TOOL = {
     "name": "search_memory",
-    "description": "Search user's memory graph for relevant information. Use this to recall what you know about the user.",
+    "description": (
+        "Search user's memory graph for relevant information. Use this to recall what you know about the user. "
+        "Each result contains name, entity type, description, and the last updated date (updated_at). "
+        "Optionally restrict the search to recent memories by specifying time_window_days."
+    ),
     "input_schema": {
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Search query",
+                "description": "Search query keywords",
             },
             "top_k": {
                 "type": "integer",
                 "description": "Number of results to return (default: 5)",
                 "default": 5,
+            },
+            "time_window_days": {
+                "type": "integer",
+                "description": (
+                    "Optional time filter in days (e.g., 7 for past week, 30 for past month, 365 for past year). "
+                    "Only memories created or updated within this window will be returned."
+                ),
             },
         },
         "required": ["query"],

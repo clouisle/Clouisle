@@ -377,11 +377,11 @@ async def test_add_entity_embedding_upserts_payload_and_persists_model(monkeypat
     point = client.upsert.await_args.kwargs["points"][0]
     assert point.id == str(entity_id)
     assert point.vector == [0.1, 0.2]
-    assert point.payload == {
-        "user_id": str(user_id),
-        "entity_type": "skill",
-        "name": "Python",
-    }
+    assert point.payload["user_id"] == str(user_id)
+    assert point.payload["entity_type"] == "skill"
+    assert point.payload["name"] == "Python"
+    assert "updated_at_ts" in point.payload
+    assert isinstance(point.payload["updated_at_ts"], int)
     assert entity.embedding_id == str(entity_id)
     assert entity.embedding_model_id == "model"
     entity.save.assert_awaited_once()
@@ -598,7 +598,14 @@ async def test_handle_search_memory_formats_results_and_empty_state(monkeypatch)
 
     assert found == {
         "success": True,
-        "results": [{"name": "Python", "type": "skill", "description": "language"}],
+        "results": [
+            {
+                "name": "Python",
+                "type": "skill",
+                "description": "language",
+                "updated_at": None,
+            }
+        ],
         "count": 1,
         "message": "memory_search_results_found:1",
     }
@@ -790,3 +797,175 @@ async def test_vector_operations_require_qdrant_models(monkeypatch, operation):
                     description=None,
                 )
             )
+
+
+@pytest.mark.asyncio
+async def test_search_entities_preserves_similarity_order_and_reranks_by_recency(
+    monkeypatch,
+):
+    from datetime import UTC, datetime, timedelta
+
+    user_id = uuid4()
+    id1, id2 = uuid4(), uuid4()
+    now = datetime.now(UTC)
+
+    # Entity 1: slightly higher similarity (0.90), but updated 90 days ago
+    entity1 = SimpleNamespace(
+        id=id1,
+        name="Older High Sim",
+        updated_at=now - timedelta(days=90),
+        created_at=now - timedelta(days=90),
+        access_count=0,
+        last_accessed_at=None,
+        save=AsyncMock(),
+    )
+    # Entity 2: slightly lower similarity (0.85), but updated today (fresh)
+    entity2 = SimpleNamespace(
+        id=id2,
+        name="Newer Lower Sim",
+        updated_at=now,
+        created_at=now,
+        access_count=0,
+        last_accessed_at=None,
+        save=AsyncMock(),
+    )
+
+    client = SimpleNamespace(
+        query_points=AsyncMock(
+            return_value=SimpleNamespace(
+                points=[
+                    SimpleNamespace(id=id1, score=0.90, payload={}),
+                    SimpleNamespace(id=id2, score=0.85, payload={}),
+                ]
+            )
+        )
+    )
+    # ORM returns rows in reverse/arbitrary order
+    entity_query = _query(all=[entity2, entity1])
+    monkeypatch.setattr(
+        model_manager,
+        "get_embedding",
+        AsyncMock(return_value={"embedding": [0.1, 0.2], "model_id": "embed"}),
+    )
+    monkeypatch.setattr(
+        memory_module, "_ensure_memory_collection", AsyncMock(return_value="collection")
+    )
+    monkeypatch.setattr(
+        memory_module, "_get_qdrant_client", AsyncMock(return_value=client)
+    )
+    monkeypatch.setattr(
+        memory_module.MemoryEntity, "filter", MagicMock(return_value=entity_query)
+    )
+
+    # With recency_weight=0, exact similarity order is preserved (entity1 first)
+    res_sim_only = await MemoryService.search_entities(
+        user_id, "query", top_k=2, recency_weight=0.0
+    )
+    assert res_sim_only == [entity1, entity2]
+
+    # With recency_weight=0.20, entity2 gets boosted because it is brand new vs 90-day-old entity1
+    res_recency = await MemoryService.search_entities(
+        user_id, "query", top_k=2, recency_weight=0.20
+    )
+    assert res_recency == [entity2, entity1]
+
+
+@pytest.mark.asyncio
+async def test_search_entities_filters_by_time_window(monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    user_id = uuid4()
+    id_recent, id_old = uuid4(), uuid4()
+    now = datetime.now(UTC)
+
+    recent_entity = SimpleNamespace(
+        id=id_recent,
+        updated_at=now - timedelta(days=2),
+        created_at=now - timedelta(days=2),
+        access_count=0,
+        last_accessed_at=None,
+        save=AsyncMock(),
+    )
+    old_entity = SimpleNamespace(
+        id=id_old,
+        updated_at=now - timedelta(days=40),
+        created_at=now - timedelta(days=40),
+        access_count=0,
+        last_accessed_at=None,
+        save=AsyncMock(),
+    )
+
+    client = SimpleNamespace(
+        query_points=AsyncMock(
+            return_value=SimpleNamespace(
+                points=[
+                    SimpleNamespace(id=id_recent, score=0.9, payload={}),
+                    SimpleNamespace(id=id_old, score=0.85, payload={}),
+                ]
+            )
+        )
+    )
+    entity_query = _query(all=[recent_entity, old_entity])
+    monkeypatch.setattr(
+        model_manager,
+        "get_embedding",
+        AsyncMock(return_value={"embedding": [0.1, 0.2], "model_id": "embed"}),
+    )
+    monkeypatch.setattr(
+        memory_module, "_ensure_memory_collection", AsyncMock(return_value="collection")
+    )
+    monkeypatch.setattr(
+        memory_module, "_get_qdrant_client", AsyncMock(return_value=client)
+    )
+    monkeypatch.setattr(
+        memory_module.MemoryEntity, "filter", MagicMock(return_value=entity_query)
+    )
+
+    # Filter by past 7 days: old_entity (40 days old) must be excluded
+    results = await MemoryService.search_entities(
+        user_id, "query", top_k=5, time_window_days=7
+    )
+    assert results == [recent_entity]
+
+
+@pytest.mark.asyncio
+async def test_handle_search_memory_includes_formatted_date_and_time_window(
+    monkeypatch,
+):
+    from datetime import UTC, datetime
+
+    user_id = uuid4()
+    updated_dt = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
+    entity = SimpleNamespace(
+        name="FastAPI",
+        entity_type=EntityType.SKILL,
+        description="web framework",
+        updated_at=updated_dt,
+    )
+    search = AsyncMock(return_value=[entity])
+    monkeypatch.setattr(MemoryService, "search_entities", search)
+    monkeypatch.setattr(
+        memory_module, "t", lambda key, **kwargs: f"{key}:{kwargs.get('count', '')}"
+    )
+
+    result = await MemoryService.handle_search_memory(
+        user_id, "fastapi", top_k=3, time_window_days=14, entity_type="skill"
+    )
+
+    assert result["success"] is True
+    assert result["count"] == 1
+    assert result["results"] == [
+        {
+            "name": "FastAPI",
+            "type": "skill",
+            "description": "web framework",
+            "updated_at": "2026-09-08",
+        }
+    ]
+    search.assert_awaited_once_with(
+        user_id=user_id,
+        query="fastapi",
+        top_k=3,
+        entity_type=EntityType.SKILL,
+        time_window_days=14,
+    )

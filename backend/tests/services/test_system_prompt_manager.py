@@ -98,6 +98,38 @@ def test_chat_mode_injects_memory_when_enabled():
     assert "## Memory System" in prompt
 
 
+def test_chat_mode_injects_temporal_instruction_en_and_zh():
+    prompt_en = build_system_prompt(
+        _agent(),
+        user_message="hi",
+        user_locale="en",
+        invocation_mode=CHAT_MODE,
+    )
+    assert "## Current Time" in prompt_en
+    assert "Current system time:" in prompt_en
+
+    prompt_zh = build_system_prompt(
+        _agent(),
+        user_message="hi",
+        user_locale="zh",
+        invocation_mode=CHAT_MODE,
+    )
+    assert "## 当前时间" in prompt_zh
+    assert "当前系统时间：" in prompt_zh
+
+
+def test_memory_prompt_contains_temporal_grounding_rules():
+    prompt = build_system_prompt(
+        _agent(enable_memory=True),
+        user_message="hi",
+        user_locale="en",
+        invocation_mode=CHAT_MODE,
+    )
+    assert "### Temporal Grounding Rules" in prompt
+    assert "search_memory(query, time_window_days)" in prompt
+    assert "convert relative time expressions" in prompt
+
+
 def test_chat_mode_injects_ask_user_guidance_when_enabled():
     prompt = build_system_prompt(
         _agent(enable_user_input_request=True),
@@ -212,7 +244,8 @@ def test_section_order_is_markdown_then_sandbox_then_language():
         user_locale="en",
         invocation_mode=CHAT_MODE,
     )
-    assert prompt.index("## Markdown Output") < prompt.index(
+    assert prompt.index("## Markdown Output") < prompt.index("## Current Time")
+    assert prompt.index("## Current Time") < prompt.index(
         "## Sandbox Environment Guidance"
     )
     assert prompt.index("## Sandbox Environment Guidance") < prompt.index(
