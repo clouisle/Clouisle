@@ -64,7 +64,7 @@ describe('chain of thought AI element', () => {
     expect(headerMarkup).not.toContain('ml-auto')
     expect(headerMarkup).toContain('opacity-0')
     expect(headerMarkup).toContain('group-hover:opacity-100')
-    expect(headerMarkup).toContain('focus-visible:opacity-100')
+    expect(headerMarkup).toContain('group-focus-visible:opacity-100')
   })
 
   test('auto-closes once after streaming ends', () => {

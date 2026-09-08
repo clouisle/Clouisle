@@ -132,7 +132,7 @@ export const ChainOfThoughtHeader = memo(
         )}
         <ChevronDownIcon
           className={cn(
-            "size-4 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
+            "size-4 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100",
             isOpen ? "rotate-180" : "rotate-0"
           )}
         />

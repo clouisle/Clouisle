@@ -605,11 +605,13 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
         )
         const nonSourceParts = chatMessage.parts.filter((part) => !isSourcePart(part))
         const existingSources = chatMessage.parts.filter(isSourcePart)
+        const existingSourceIds = new Set(existingSources.map((s) => s.sourceId).filter(Boolean))
+        const deduplicatedSources = sources.filter((s) => !s.sourceId || !existingSourceIds.has(s.sourceId))
         chatMessage.parts = [
           ...(hasExistingRagTask ? [] : [ragTaskPart]),
           ...nonSourceParts,
           ...existingSources,
-          ...sources,
+          ...deduplicatedSources,
         ]
         pendingRagContext = null
         pendingRagQuery = undefined

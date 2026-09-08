@@ -219,7 +219,11 @@ async def perform_rag_retrieval(
             {
                 "kb_id": result["kb_id"],
                 "kb_name": result["kb_name"],
-                "document_id": str(result.get("document_id")),
+                "document_id": (
+                    str(result["document_id"])
+                    if result.get("document_id") is not None
+                    else None
+                ),
                 "document_name": result.get("document_name"),
                 "content": result.get("content"),
                 "score": result.get("score"),

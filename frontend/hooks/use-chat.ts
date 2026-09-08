@@ -1882,6 +1882,7 @@ function createAssistantStreamStateFromParts(parts: MessagePart[]): AssistantStr
         break
       }
       case 'source-document':
+      case 'source-url':
         state.ragSources.push(part)
         break
       case 'media-result':

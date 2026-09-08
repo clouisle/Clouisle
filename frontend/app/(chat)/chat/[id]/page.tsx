@@ -944,7 +944,7 @@ export default function PublicChatPage({
                               "absolute inset-0 flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                               runningConversationIds.has(conv.id)
                                 ? "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                                : "opacity-0 group-hover:opacity-100"
+                                : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                             )}
                           >
                             <span className="flex h-7 w-7 items-center justify-center">

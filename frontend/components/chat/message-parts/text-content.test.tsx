@@ -44,6 +44,7 @@ mock.module("@/components/ui/tooltip", () => ({
 const { TextContent, TextContentComponent } = await import("./text-content");
 const RenderTextContent = (TextContentComponent || (typeof TextContent === 'function' ? TextContent : (TextContent as unknown as { type: (props: unknown) => unknown }).type)) as unknown as typeof TextContent;
 
+type Tree = { type: unknown; props: Record<string, unknown> };
 
 function streamdownProps(
   part: React.ComponentProps<typeof TextContent>["part"],
