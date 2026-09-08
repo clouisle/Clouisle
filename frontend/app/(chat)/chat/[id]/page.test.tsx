@@ -552,6 +552,35 @@ describe('PublicChatPage', () => {
     expect(disconnect).toHaveBeenCalled()
     renderer = undefined
   })
+  test('does not append an assistant loading placeholder when switching to a conversation with completed reasoning or tool output', async () => {
+    getConversations.mockResolvedValueOnce({
+      items: [
+        { id: 'conv-1', title: 'Chat 1' },
+        { id: 'conv-2', title: 'Chat 2' },
+      ],
+      total: 2,
+    })
+    getStoredRunSnapshot.mockImplementation((agentId: string, conversationId: string) => (
+      agentId === 'agent-1' && conversationId === 'conv-2' ? { runId: 'run-completed', lastSequence: 0 } : null
+    ))
+    convertBackendMessages.mockImplementationOnce(() => [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'solve problem' }] },
+      { id: 'a1', role: 'assistant', parts: [{ type: 'reasoning', text: 'done thought', state: 'done' }] },
+    ])
+    getConversation.mockResolvedValueOnce({
+      messages: ['raw backend messages'],
+    })
+    render()
+    await flush()
+
+    const chat2 = renderer!.root.findAllByType('div').find((node) => nodeText(node).includes('Chat 2') && node.props.onClick)!
+    await act(async () => chat2.props.onClick())
+
+    expect(setMessages).toHaveBeenCalledWith([
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'solve problem' }] },
+      { id: 'a1', role: 'assistant', parts: [{ type: 'reasoning', text: 'done thought', state: 'done' }] },
+    ])
+  })
   test('does not carry generated image references into another conversation', async () => {
     getPublicAgent.mockResolvedValueOnce({ ...agent, enable_attachments: true })
     render()

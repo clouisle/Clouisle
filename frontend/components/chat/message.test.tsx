@@ -220,6 +220,19 @@ describe('message rendering', () => {
     expect(html).toContain('2/3')
     expect(html).toContain('chat.message.edit')
   })
+  test('preserves line breaks in user message text', () => {
+    const rawText = 'First line\nSecond line\nThird line\n**literal** [[cite:source-1]]'
+    const container = render(<Message
+      message={{
+        id: 'user-multiline',
+        role: 'user',
+        parts: [{ type: 'text', text: rawText }],
+      }}
+    />)
+
+    const text = container.querySelector('.whitespace-pre-wrap')
+    expect(text?.textContent).toBe(rawText)
+  })
   test('opens a document attachment through the chat preview callback', () => {
     const onOpenCodePreview = mock(() => {})
     const container = render(<Message

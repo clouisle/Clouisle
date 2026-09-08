@@ -386,32 +386,60 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   }, [renderSession])
 
   const ensureSession = useCallback((messageId: string | null, runIdForSession?: string) => {
+    const existingMessage = messageId ? messagesRef.current.find((message) => message.id === messageId) : undefined
+    const lastMessage = messagesRef.current[messagesRef.current.length - 1]
+    const adoptablePlaceholderId = !existingMessage
+      && runIdForSession
+      && lastMessage?.role === 'assistant'
+      && (lastMessage.id === `assistant-run-${runIdForSession}` || (lastMessage.metadata?.isLoading && lastMessage.parts.length === 0))
+      ? lastMessage.id
+      : null
+
+    const adoptedMessage = adoptablePlaceholderId ? lastMessage : existingMessage
+    const effectiveDisplayId = adoptablePlaceholderId ?? messageId
+    const sessionConversationId = activeRunConversationRef.current ?? conversationIdRef.current
+
     if (runIdForSession) {
       const existing = sessionsByRunRef.current.get(runIdForSession)
       if (existing) {
+        existing.reloadAfterTerminal = true
+        if (sessionConversationId) existing.conversationId = sessionConversationId
+        if (effectiveDisplayId && existing.displayMessageId !== effectiveDisplayId) {
+          existing.displayMessageId = effectiveDisplayId
+        }
+        if (messageId && existing.backendMessageId !== messageId) {
+          existing.backendMessageId = messageId
+        }
+        if (adoptedMessage && existing.state.segments.length === 0 && adoptedMessage.parts.length > 0) {
+          existing.state = createAssistantStreamStateFromParts(adoptedMessage.parts)
+        }
         activeSessionRef.current = existing
+        syncStreamingState(existing)
         return existing
       }
     }
 
-    if (!messageId) return null
-    const existingMessage = messagesRef.current.find((message) => message.id === messageId)
+    if (!effectiveDisplayId) return null
+
     const session: AssistantStreamSession = {
       mode: 'reconnect',
-      displayMessageId: messageId,
+      displayMessageId: effectiveDisplayId,
       backendMessageId: messageId,
-      state: existingMessage ? createAssistantStreamStateFromParts(existingMessage.parts) : createAssistantStreamState(),
-      versionNumber: existingMessage?.versionNumber ?? 1,
-      versionCount: existingMessage?.versionCount ?? 1,
+      keepDisplayIdOnStart: Boolean(adoptablePlaceholderId),
+      reloadAfterTerminal: true,
+      state: adoptedMessage ? createAssistantStreamStateFromParts(adoptedMessage.parts) : createAssistantStreamState(),
+      versionNumber: adoptedMessage?.versionNumber ?? 1,
+      versionCount: adoptedMessage?.versionCount ?? 1,
       receivedTerminalEvent: false,
       receivedMessageEnd: false,
       endNotified: false,
       runId: runIdForSession,
+      conversationId: sessionConversationId ?? undefined,
     }
     setMessages((previous) => {
-      if (!previous.some((message) => message.id === messageId)) {
+      if (!previous.some((message) => message.id === effectiveDisplayId)) {
         return [...previous, {
-          id: messageId,
+          id: effectiveDisplayId,
           role: 'assistant',
           parts: [],
           createdAt: new Date(),
@@ -419,7 +447,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         }]
       }
       return previous.map((message) => (
-        message.id === messageId
+        message.id === effectiveDisplayId
           ? { ...message, metadata: { ...message.metadata, isLoading: true, isManuallyStopped: false } }
           : message
       ))
@@ -719,6 +747,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       if (!session) return
       const nextConversationId = startData.conversation_id
       if (nextConversationId) {
+        session.conversationId = nextConversationId
         activeRunConversationRef.current = nextConversationId
         if (conversationIdRef.current !== nextConversationId) {
           setConversationId(nextConversationId)
@@ -794,6 +823,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       const terminalStatus = data.status as AgentRunStatus | undefined
       const terminalSession = session ?? (eventMessageId ? ensureSession(eventMessageId, envelope?.run_id) : null)
       if (terminalSession) {
+        const terminalConversationId = terminalSession.conversationId
         if (terminalStatus === 'stopped') {
           markAssistantStopped(terminalSession)
         } else if (terminalStatus === 'failed') {
@@ -805,11 +835,15 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         } else if (!terminalSession.receivedMessageEnd) {
           finishAssistantMessage(terminalSession)
         }
-        if (terminalSession.reloadAfterTerminal) {
-          void reloadConversationMessages().catch(() => undefined)
+        if (terminalSession.reloadAfterTerminal && terminalConversationId) {
+          void reloadConversationMessages(
+            terminalConversationId,
+            () => conversationIdRef.current === terminalConversationId,
+          ).catch(() => undefined)
         }
         notifyStreamEnd(terminalSession)
       }
+
       if (terminalStatus) setCurrentRunStatus(terminalStatus)
       const terminalRunId = envelope?.run_id ?? runIdRef.current
       if (terminalRunId) {
@@ -1153,6 +1187,15 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     start: () => { stream: Promise<Response>; abort: () => void } | Promise<{ stream: Promise<Response>; abort: () => void }>,
     options: { reloadAfterTerminal?: boolean; reloadOnError?: boolean } = {}
   ) => {
+    const reloadTerminalConversation = async () => {
+      const terminalConversationId = session.conversationId
+      if (!terminalConversationId) return
+      await reloadConversationMessages(
+        terminalConversationId,
+        () => conversationIdRef.current === terminalConversationId,
+      )
+    }
+
     const epoch = ++connectionEpochRef.current
     try {
       const { stream, abort } = await start()
@@ -1179,7 +1222,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         return
       }
       if (!session.receivedTerminalEvent) finishAssistantMessage(session)
-      if (options.reloadAfterTerminal) await reloadConversationMessages().catch(() => undefined)
+      if (options.reloadAfterTerminal) await reloadTerminalConversation().catch(() => undefined)
+
       setCurrentStatus('idle')
       notifyStreamEnd(session)
       resetStreamingState()
@@ -1193,7 +1237,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       const chatError: ChatError = { message: reason instanceof Error ? reason.message : '' }
       onError?.(chatError)
       markAssistantError(session, chatError)
-      if (options.reloadOnError) await reloadConversationMessages().catch(() => undefined)
+      if (options.reloadOnError) await reloadTerminalConversation().catch(() => undefined)
+
       setCurrentStatus('idle')
       notifyStreamEnd(session)
       resetStreamingState()
@@ -1259,6 +1304,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       receivedTerminalEvent: false,
       receivedMessageEnd: false,
       endNotified: false,
+      conversationId: conversationIdRef.current ?? undefined,
     }
     activeSessionRef.current = session
     syncStreamingState(session)
@@ -1279,6 +1325,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         await consumeStream(session, async () => {
           const started = await api.startRun!(agentId, request)
           session.runId = started.run_id
+          session.conversationId = started.conversation_id
+
           reconcileOptimisticUserMessage(session, started.user_message_id)
           trackRun(started.run_id, started.conversation_id)
           storeRunSnapshot(started.conversation_id)
@@ -1469,6 +1517,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       receivedMessageEnd: false,
       endNotified: false,
       reloadAfterTerminal: true,
+      conversationId: conversationIdRef.current ?? undefined,
     }
     activeSessionRef.current = session
     syncStreamingState(session)
@@ -1523,6 +1572,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       receivedMessageEnd: false,
       endNotified: false,
       keepDisplayIdOnStart: true,
+      conversationId: conversationIdRef.current ?? undefined,
     }
     activeSessionRef.current = session
     await consumeStream(session, () => api.regenerateStream(agentId, messageId, variables))
@@ -1651,6 +1701,7 @@ interface AssistantStreamSession {
   keepDisplayIdOnStart?: boolean
   reloadAfterTerminal?: boolean
   runId?: string
+  conversationId?: string
 }
 
 interface PendingRunInput {
@@ -2094,8 +2145,20 @@ function applyAssistantStreamEvent(
 
     case 'reasoning_delta': {
       const data = event.data as { delta: string }
-      const block = state.reasoningBlocks[state.currentReasoningIndex]
-      if (!block) return false
+      let block = state.reasoningBlocks[state.currentReasoningIndex]
+      if (!block) {
+        const startTime = Date.now()
+        const reasoningIndex = state.reasoningBlocks.push({ text: '', startTime, state: 'streaming' }) - 1
+        state.currentReasoningIndex = reasoningIndex
+        state.segments.push({
+          type: 'reasoning',
+          reasoningIndex,
+          reasoningText: '',
+          reasoningState: 'streaming',
+          reasoningStartTime: startTime,
+        })
+        block = state.reasoningBlocks[reasoningIndex]
+      }
       block.text += data.delta
       const reasoningSegment = state.segments.find(
         segment => segment.type === 'reasoning' && segment.reasoningIndex === state.currentReasoningIndex

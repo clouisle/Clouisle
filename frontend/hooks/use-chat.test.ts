@@ -37,13 +37,14 @@ const getMessageVersions = mock(() => Promise.resolve<Array<{ id: string }>>([])
 const switchMessageVersion = mock(() => Promise.resolve())
 const getRunStatus = mock(() => Promise.resolve())
 const getRunEvents = mock(() => Promise.resolve([]))
+const streamRun = mock(() => ({ stream: Promise.resolve(new Response()), abort: mock() }))
 const postRunInput = mock(() => Promise.resolve())
 const postRunAnswer = mock(() => Promise.resolve({ status: 'queued' }))
 const stopRun = mock(() => Promise.resolve())
 const agentsApi = {
   chatStream,
   startRun: undefined,
-  streamRun: undefined,
+  streamRun,
   editMessageStream,
   regenerateStream,
   getConversation,
@@ -177,10 +178,12 @@ beforeEach(() => {
     switchMessageVersion,
     getRunStatus,
     getRunEvents,
+    streamRun,
     postRunInput,
     postRunAnswer,
     stopRun,
   ]) apiMock.mockReset()
+
   getConversation.mockResolvedValue({ messages: [] })
   getMessageVersions.mockResolvedValue([])
   switchMessageVersion.mockResolvedValue()
@@ -432,6 +435,177 @@ describe('useChat', () => {
         state: 'pending',
       })
     } finally {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: originalWindow,
+      })
+    }
+  })
+  it('reuses an existing trailing loading placeholder message instead of appending a duplicate', async () => {
+    const storage = new Map<string, string>([
+      ['clouisle:agent-run:agent-1:conversation-1', JSON.stringify({ runId: 'run-1', lastSequence: 0 })],
+    ])
+    const originalWindow = globalThis.window
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        sessionStorage: {
+          getItem: (key: string) => storage.get(key) ?? null,
+          setItem: (key: string, value: string) => storage.set(key, value),
+          removeItem: (key: string) => storage.delete(key),
+        },
+      },
+    })
+    try {
+      getRunStatus.mockResolvedValue({
+        id: 'run-1',
+        agent_id: 'agent-1',
+        conversation_id: 'conversation-1',
+        mode: 'send',
+        status: 'running',
+        canonical_message_id: 'canonical-msg-1',
+      })
+      const initialMessages = [
+        { id: 'u1', role: 'user' as const, parts: [{ type: 'text' as const, text: 'hello' }] },
+        { id: 'assistant-run-run-1', role: 'assistant' as const, parts: [], metadata: { isLoading: true } },
+      ]
+      options = { agentId: 'agent-1', conversationId: 'conversation-1', initialMessages }
+      stateSlots = []
+      refSlots = []
+      renderHookHarness()
+      result.reconnect()
+      for (let i = 0; i < 5; i += 1) await flush()
+
+      renderHookHarness()
+      const assistantMessages = result.messages.filter((message) => message.role === 'assistant')
+      expect(assistantMessages).toHaveLength(1)
+      expect(assistantMessages[0].id).toBe('assistant-run-run-1')
+    } finally {
+      result.reset()
+
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: originalWindow,
+      })
+    }
+  })
+  it('continues streaming incoming events on reconnected session', async () => {
+    const storage = new Map<string, string>([
+      ['clouisle:agent-run:agent-1:conversation-1', JSON.stringify({ runId: 'run-1', lastSequence: 0 })],
+    ])
+    const originalWindow = globalThis.window
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        sessionStorage: {
+          getItem: (key: string) => storage.get(key) ?? null,
+          setItem: (key: string, value: string) => storage.set(key, value),
+          removeItem: (key: string) => storage.delete(key),
+        },
+      },
+    })
+    try {
+      getRunStatus.mockResolvedValue({
+        id: 'run-1',
+        agent_id: 'agent-1',
+        conversation_id: 'conversation-1',
+        mode: 'send',
+        status: 'running',
+        canonical_message_id: 'canonical-msg-1',
+      })
+      const initialMessages = [
+        { id: 'u1', role: 'user' as const, parts: [{ type: 'text' as const, text: 'hello' }] },
+        { id: 'canonical-msg-1', role: 'assistant' as const, parts: [{ type: 'text' as const, text: 'Initial ' }], metadata: { isLoading: true } },
+      ]
+      streamRun.mockImplementation(() => ({
+        stream: Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+        } as unknown as Response),
+        abort: mock(() => {}),
+      }))
+      options = { agentId: 'agent-1', conversationId: 'conversation-1', initialMessages }
+      stateSlots = []
+      refSlots = []
+      renderHookHarness()
+      result.reconnect()
+      for (let i = 0; i < 5; i += 1) await flush()
+
+      expect(streamRun).toHaveBeenCalledWith('agent-1', 'run-1', 0)
+    } finally {
+      result.reset()
+
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: originalWindow,
+      })
+    }
+  })
+  it('ignores a terminal history reload after switching conversations', async () => {
+    const storage = new Map<string, string>([
+      ['clouisle:agent-run:agent-1:conversation-1', JSON.stringify({ runId: 'run-1', lastSequence: 0 })],
+    ])
+    const originalWindow = globalThis.window
+    const reload = deferred<{ messages: ChatMessage[] }>()
+    const reloadStarted = deferred<void>()
+    const staleMessages = [{ id: 'stale-assistant', role: 'assistant' as const, parts: [{ type: 'text' as const, text: 'stale' }] }]
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        sessionStorage: {
+          getItem: (key: string) => storage.get(key) ?? null,
+          setItem: (key: string, value: string) => storage.set(key, value),
+          removeItem: (key: string) => storage.delete(key),
+        },
+      },
+    })
+    try {
+      getRunStatus.mockResolvedValue({
+        id: 'run-1',
+        agent_id: 'agent-1',
+        conversation_id: 'conversation-1',
+        mode: 'send',
+        status: 'running',
+        canonical_message_id: 'canonical-msg-1',
+      })
+      getConversation.mockImplementation((conversationId: string) => {
+        if (conversationId === 'conversation-1') {
+          reloadStarted.resolve()
+          return reload.promise
+        }
+        return Promise.resolve({ messages: [] })
+      })
+      streamRun.mockImplementation(() => ({
+        stream: Promise.resolve(new Response()),
+        abort: mock(() => {}),
+      }))
+      streamEvents = [{ event: 'run_end', data: { status: 'completed' } }]
+      options = {
+        agentId: 'agent-1',
+        conversationId: 'conversation-1',
+        initialMessages: [
+          { id: 'u-current', role: 'user' as const, parts: [{ type: 'text' as const, text: 'current' }] },
+          { id: 'canonical-msg-1', role: 'assistant' as const, parts: [], metadata: { isLoading: true } },
+        ],
+      }
+      stateSlots = []
+      refSlots = []
+      renderHookHarness()
+      result.reconnect()
+      await reloadStarted.promise
+
+      result.setConversationId('conversation-2')
+      await flush()
+      reload.resolve({ messages: staleMessages })
+      await flush()
+      renderHookHarness()
+
+      expect(result.conversationId).toBe('conversation-2')
+      expect(result.messages).not.toEqual(staleMessages)
+      expect(result.messages[0]?.id).toBe('u-current')
+    } finally {
+      result.reset()
       Object.defineProperty(globalThis, 'window', {
         configurable: true,
         value: originalWindow,
