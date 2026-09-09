@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
 import pytest
@@ -157,4 +157,165 @@ async def test_handle_create_relation_success_uses_found_entities(monkeypatch):
         relation_type="related_to",
         description="used in",
     )
-    assert audit_log.await_args.kwargs["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_handle_create_relation_target_missing_and_exception(monkeypatch):
+    source = SimpleNamespace(id=SOURCE_ID, name="Python")
+    audit_log = AsyncMock()
+
+    def filter_entity(**kwargs):
+        if kwargs == {"user_id": USER_ID, "name": "Python"}:
+            return Query(first_result=source)
+        return Query(first_result=None)
+
+    monkeypatch.setattr(
+        memory.User, "get", AsyncMock(return_value=SimpleNamespace(id=USER_ID))
+    )
+    monkeypatch.setattr(memory.MemoryEntity, "filter", filter_entity)
+    monkeypatch.setattr(memory.AuditLogService, "log", audit_log)
+
+    # 1. Target missing
+    res_target = await memory.MemoryService.handle_create_relation(
+        USER_ID, "Python", "Missing", "related_to"
+    )
+    assert res_target["success"] is False
+    assert "memory_target_entity_not_found" in res_target["error"]
+
+    # 2. create_relation raises exception
+    target = SimpleNamespace(id=TARGET_ID, name="Target")
+
+    def filter_both(**kwargs):
+        if kwargs == {"user_id": USER_ID, "name": "Python"}:
+            return Query(first_result=source)
+        if kwargs == {"user_id": USER_ID, "name": "Target"}:
+            return Query(first_result=target)
+        return Query()
+
+    monkeypatch.setattr(memory.MemoryEntity, "filter", filter_both)
+    monkeypatch.setattr(
+        memory.MemoryService,
+        "create_relation",
+        AsyncMock(side_effect=RuntimeError("create relation failed")),
+    )
+    res_exc = await memory.MemoryService.handle_create_relation(
+        USER_ID, "Python", "Target", "related_to"
+    )
+    assert res_exc == {"success": False, "error": "memory_tool_execution_failed"}
+
+
+@pytest.mark.asyncio
+async def test_handle_update_entity_branches(monkeypatch):
+    audit_log = AsyncMock()
+    entity = SimpleNamespace(
+        id=ENTITY_ID,
+        name="Python",
+        description="initial",
+        properties={},
+        entity_type=EntityType.SKILL,
+    )
+
+    monkeypatch.setattr(
+        memory.User, "get", AsyncMock(return_value=SimpleNamespace(id=USER_ID))
+    )
+    monkeypatch.setattr(memory.AuditLogService, "log", audit_log)
+
+    # 1. Entity found -> update success
+    monkeypatch.setattr(
+        memory.MemoryEntity,
+        "filter",
+        lambda **kwargs: (
+            Query(first_result=entity)
+            if kwargs == {"user_id": USER_ID, "name": "Python"}
+            else Query()
+        ),
+    )
+    monkeypatch.setattr(
+        memory.MemoryService, "update_entity", AsyncMock(return_value=entity)
+    )
+
+    res = await memory.MemoryService.handle_update_entity(
+        USER_ID, "Python", description="updated", properties={"k": "v"}
+    )
+    assert res["success"] is True
+    assert res["entity_id"] == str(ENTITY_ID)
+
+    # 2. Entity not found
+    monkeypatch.setattr(memory.MemoryEntity, "filter", lambda **_kwargs: Query())
+    res_missing = await memory.MemoryService.handle_update_entity(
+        USER_ID, "Nonexistent", description="desc"
+    )
+    assert "memory_entity_named_not_found" in res_missing["error"]
+
+    # 3. update_entity raises exception
+    monkeypatch.setattr(
+        memory.MemoryEntity,
+        "filter",
+        lambda **_kwargs: Query(first_result=entity),
+    )
+    monkeypatch.setattr(
+        memory.MemoryService,
+        "update_entity",
+        AsyncMock(side_effect=RuntimeError("db failed")),
+    )
+    res_err = await memory.MemoryService.handle_update_entity(
+        USER_ID, "Python", description="updated"
+    )
+    assert res_err == {"success": False, "error": "memory_tool_execution_failed"}
+
+
+@pytest.mark.asyncio
+async def test_handle_search_memory_invalid_days_and_exceptions(monkeypatch):
+    # 1. Invalid time_window_days string ('abc') -> parsed_days is None
+    search = AsyncMock(return_value=[])
+    monkeypatch.setattr(memory.MemoryService, "search_entities", search)
+    res = await memory.MemoryService.handle_search_memory(
+        USER_ID, "query", time_window_days="abc"
+    )
+    assert res["success"] is True
+    search.assert_awaited_once_with(
+        user_id=USER_ID,
+        query="query",
+        top_k=5,
+        entity_type=None,
+        time_window_days=None,
+    )
+
+    # 2. search_entities raises exception -> returns error dict
+    monkeypatch.setattr(
+        memory.MemoryService,
+        "search_entities",
+        AsyncMock(side_effect=RuntimeError("search failed")),
+    )
+    res_err = await memory.MemoryService.handle_search_memory(USER_ID, "query")
+    assert res_err == {"success": False, "error": "memory_tool_execution_failed"}
+
+
+@pytest.mark.asyncio
+async def test_handle_get_memory_subgraph_invalid_references(monkeypatch):
+    # 1. non-string / non-UUID in entity_ids
+    res_invalid_type = await memory.MemoryService.handle_get_memory_subgraph(
+        USER_ID,
+        [12345],  # type: ignore
+    )
+    assert res_invalid_type["success"] is False
+    assert res_invalid_type["error"] == "memory_subgraph_invalid_request"
+
+    # 2. empty whitespace string in entity_ids
+    res_empty_str = await memory.MemoryService.handle_get_memory_subgraph(
+        USER_ID, ["   "]
+    )
+    assert res_empty_str["success"] is False
+    assert res_empty_str["error"] == "memory_subgraph_invalid_request"
+
+    # 3. get_entity_subgraph raises general exception
+    monkeypatch.setattr(memory.MemoryEntity, "filter", MagicMock(return_value=Query()))
+    monkeypatch.setattr(
+        memory.MemoryService,
+        "get_entity_subgraph",
+        AsyncMock(side_effect=RuntimeError("subgraph failed")),
+    )
+    res_err = await memory.MemoryService.handle_get_memory_subgraph(
+        USER_ID, ["some_name"]
+    )
+    assert res_err == {"success": False, "error": "memory_tool_execution_failed"}

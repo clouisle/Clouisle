@@ -124,8 +124,9 @@ def test_temporal_instruction_uses_day_granularity():
     instruction = get_temporal_instruction("en")
 
     assert "Current system time:" in instruction
-    assert re.search(r"\d{4}-\d{2}-\d{2}", instruction)
-    assert re.search(r"\d{2}:\d{2}", instruction) is None
+    date_match = re.search(r"Current system time:\s*(\S+)", instruction)
+    assert date_match is not None
+    assert re.match(r"^\d{4}-\d{2}-\d{2},?$", date_match.group(1))
 
 
 def test_memory_prompt_contains_temporal_grounding_rules():

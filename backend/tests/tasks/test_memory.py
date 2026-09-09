@@ -10,6 +10,9 @@ from app.tasks.memory import (
     _extract_memories_for_conversation,
     _get_event_loop,
     _parse_extraction_json,
+    _release_memory_extraction_lock,
+    _renew_memory_extraction_lock,
+    _renew_memory_extraction_lock_until_stopped,
     _run_async,
     extract_conversation_memories_task,
     resolve_extraction_model,
@@ -60,6 +63,55 @@ def test_run_async_executes_coro():
         return 42
 
     assert _run_async(sample()) == 42
+
+
+@pytest.mark.asyncio
+async def test_renew_and_release_lock_helpers():
+    redis = SimpleNamespace(eval=AsyncMock(side_effect=[1, 0, 1]))
+
+    assert await _renew_memory_extraction_lock(redis, "key", "token") is True
+    assert await _renew_memory_extraction_lock(redis, "key", "token") is False
+    await _release_memory_extraction_lock(redis, "key", "token")
+    assert redis.eval.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_renew_lock_until_stopped_loop_branches(monkeypatch):
+    import asyncio
+
+    stop_event = asyncio.Event()
+    redis = SimpleNamespace(eval=AsyncMock(return_value=0))  # lock lost
+
+    # Patch timeout to tiny value so wait_for triggers TimeoutError
+    monkeypatch.setattr(
+        "app.tasks.memory._MEMORY_EXTRACTION_LOCK_RENEW_INTERVAL_SECONDS", 0.01
+    )
+    # 1. Lock renewal returns false -> logs and exits
+    await _renew_memory_extraction_lock_until_stopped(redis, "key", "token", stop_event)
+
+    # 2. Lock renewal raises unexpected exception -> logs and continues/exits on stop_event
+    redis_error = SimpleNamespace(
+        eval=AsyncMock(side_effect=[RuntimeError("redis down")])
+    )
+    stop_event2 = asyncio.Event()
+
+    async def trigger_stop():
+        await asyncio.sleep(0.02)
+        stop_event2.set()
+
+    asyncio.create_task(trigger_stop())
+    await _renew_memory_extraction_lock_until_stopped(
+        redis_error, "key", "token", stop_event2
+    )
+
+    # 3. CancelledError re-raises
+    redis_cancelled = SimpleNamespace(
+        eval=AsyncMock(side_effect=asyncio.CancelledError)
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await _renew_memory_extraction_lock_until_stopped(
+            redis_cancelled, "key", "token", asyncio.Event()
+        )
 
 
 def test_parse_extraction_json_variants():

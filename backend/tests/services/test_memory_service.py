@@ -888,6 +888,91 @@ async def test_ensure_memory_collection_backfills_legacy_timestamps(monkeypatch)
     )
 
 
+def test_coerce_timestamp_branches():
+    from datetime import UTC, datetime
+
+    assert memory_module._coerce_timestamp(None) is None
+    assert memory_module._coerce_timestamp(12345) == 12345
+    assert memory_module._coerce_timestamp(12345.67) == 12345
+    assert memory_module._coerce_timestamp("2026-09-08T12:00:00Z") is not None
+    assert memory_module._coerce_timestamp("invalid-date") is None
+    assert memory_module._coerce_timestamp(object()) is None
+    dt_naive = datetime(2026, 9, 8, 12, 0, 0)
+    assert memory_module._coerce_timestamp(dt_naive) == int(
+        dt_naive.replace(tzinfo=UTC).timestamp()
+    )
+    dt_aware = datetime(2026, 9, 8, 12, 0, 0, tzinfo=UTC)
+    assert memory_module._coerce_timestamp(dt_aware) == int(dt_aware.timestamp())
+
+
+@pytest.mark.asyncio
+async def test_backfill_memory_timestamps_skips_when_client_lacks_methods():
+    # client with no scroll / set_payload
+    await memory_module._backfill_memory_timestamps(object(), "test_col")
+
+
+@pytest.mark.asyncio
+async def test_backfill_memory_timestamps_handles_already_migrated_and_invalid_points(
+    monkeypatch,
+):
+    from datetime import UTC, datetime
+
+    valid_id = uuid4()
+    entity = SimpleNamespace(
+        id=valid_id,
+        updated_at=None,
+        created_at=datetime(2026, 9, 7, 10, 0, tzinfo=UTC),
+    )
+    point_migrated = SimpleNamespace(id=uuid4(), payload={"updated_at_ts": 12345})
+    point_invalid_id = SimpleNamespace(id="not-a-uuid", payload={})
+    point_valid = SimpleNamespace(id=valid_id, payload={})
+    point_unresolvable = SimpleNamespace(id=uuid4(), payload={})
+
+    client = SimpleNamespace(
+        scroll=AsyncMock(
+            side_effect=[
+                (
+                    [
+                        point_migrated,
+                        point_invalid_id,
+                        point_valid,
+                        point_unresolvable,
+                    ],
+                    "offset-1",
+                ),
+                ([], None),
+            ]
+        ),
+        set_payload=AsyncMock(),
+    )
+    monkeypatch.setattr(
+        memory_module.MemoryEntity,
+        "filter",
+        MagicMock(return_value=_query(all=[entity])),
+    )
+
+    await memory_module._backfill_memory_timestamps(client, "test_col")
+
+    client.set_payload.assert_awaited_once_with(
+        collection_name="test_col",
+        payload={"updated_at_ts": int(entity.created_at.timestamp())},
+        points=[valid_id],
+    )
+
+
+@pytest.mark.asyncio
+async def test_ensure_memory_timestamp_index_swallows_exception(monkeypatch):
+    client = SimpleNamespace(
+        create_payload_index=AsyncMock(side_effect=RuntimeError("already exists"))
+    )
+    models = SimpleNamespace(
+        PayloadSchemaType=SimpleNamespace(INTEGER="integer"),
+    )
+    monkeypatch.setattr(memory_module, "qmodels", models)
+    # should not raise
+    await memory_module._ensure_memory_timestamp_index(client, "test_col")
+
+
 @pytest.mark.asyncio
 async def test_delete_entity_embedding_uses_model_dimension(monkeypatch):
     client = SimpleNamespace(delete=AsyncMock())
