@@ -121,7 +121,7 @@ curl -X POST "https://your-domain.com/api/v1/agents/agent-123/chat" \
           "chunk_id": "chunk-012",
           "content": "Business hours: Monday-Friday, 9 AM to 5 PM EST",
           "score": 0.95,
-          "citation_id": "kb-789-chunk-012"
+          "citation_id": "rag_0123456789abcdef"
         }
       ],
       "created_at": "2026-02-11T16:00:00Z",

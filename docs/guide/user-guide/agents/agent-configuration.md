@@ -179,7 +179,7 @@ The following toggles control the chat experience:
 | **Enable memory** | off | Remember user information across conversations (memory config: max memories per retrieval, auto-extract, importance threshold) |
 
 
-Background extraction is also controlled by the administrator's **Site Settings > Memory** category. The global switch, extraction model, cooldown (`10-3600` seconds), and pending-turn trigger (`1-50` turns) apply to eligible completed conversations; Agent memory must be enabled as well.
+Background extraction is also controlled by the administrator's **Site Settings > Memory** category. For eligible pending user turns, the global switch, extraction model, cooldown (`10-3600` seconds), and pending-turn trigger (`1-50` turns) determine when extraction is queued; Agent memory must be enabled as well.
 ## Knowledge Base Configuration
 
 ### Attach Knowledge Bases

@@ -204,7 +204,7 @@ The **Auto Notifications** tab (GET/PUT `/api/v1/admin/site-settings/auto-notifi
 
 ## Background Memory Extraction Settings
 
-The **Memory** category (`/site-settings/memory`) controls optional background extraction from completed conversations. The Agent must also have memory enabled; disabling either the Agent memory feature or the global switch prevents extraction tasks.
+The **Memory** category (`/site-settings/memory`) schedules extraction for pending user turns after the configured cooldown, or immediately when the pending-turn threshold is reached. The Agent must also have memory enabled; disabling either the Agent memory feature or the global switch prevents extraction tasks.
 
 ```yaml
 memory_async_extraction_enabled: false

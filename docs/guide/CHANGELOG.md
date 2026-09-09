@@ -15,29 +15,26 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - Added a unified artifact list with file counts, expandable results, authenticated downloads, and shared previews for common document, media, and code formats.
 - Added DOCX thumbnails, page synchronization, responsive fit-to-width, and zoom controls; added read-only PDF and spreadsheet preview controls.
 
-### Changed
-
-#### Assets and Media
-- Persisted generated images and videos as scoped Assets and exposed conversation/workflow-scoped media references for model use.
-- Updated CSV handling for GBK/GB18030 content and removed duplicate spreadsheet viewer downloads.
-
-### Fixed
-
-#### Asset Access and Previews
-- Protected generated images, generated videos, and sandbox artifacts with scope-aware authorization and authenticated client downloads.
-- Preserved explicit too-large, unauthorized, permission-denied, unsupported, and parse-failure preview states without falling back to unprotected URLs.
-### Added
-
 #### Memory and RAG
 - Added optional background memory extraction controls in the admin `memory` site-settings category, including model selection, debounce cooldown, and pending-turn trigger limits.
 - Added the bounded `get_memory_subgraph` Agent tool for relationship-aware memory retrieval.
 
 ### Changed
 
+#### Assets and Media
+- Persisted generated images and videos as scoped Assets and exposed conversation/workflow-scoped media references for model use.
+- Updated CSV handling for GBK/GB18030 content and removed duplicate spreadsheet viewer downloads.
+
 #### Agent Retrieval and Chat Timeline
 - Agents with no knowledge-base associations now persist and run with `rag_mode: off`; the Agent editor hides the RAG selector until a knowledge base is selected.
 - Chat thought-process rendering preserves the emitted order of retrieval, compression, reasoning, tool, and generation steps.
 - RAG context remains `null` when retrieval did not run and `[]` when retrieval ran but returned no contexts.
+
+### Fixed
+
+#### Asset Access and Previews
+- Protected generated images, generated videos, and sandbox artifacts with scope-aware authorization and authenticated client downloads.
+- Preserved explicit too-large, unauthorized, permission-denied, unsupported, and parse-failure preview states without falling back to unprotected URLs.
 
 
 ## [0.2.9] - 2026-06-09

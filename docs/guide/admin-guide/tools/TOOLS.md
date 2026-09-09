@@ -33,6 +33,12 @@ Tools allow Agents to perform actions beyond text generation, such as:
 
 ## Tool Types
 
+- [Builtin Tools](#builtin-tools)
+- [Memory Tools](#memory-tools)
+- [HTTP Tools](#http-tools)
+- [Code Tools](#code-tools)
+- [MCP Tools](#mcp-tools)
+
 ### Builtin Tools
 
 System-provided tools that are ready to use without configuration.
