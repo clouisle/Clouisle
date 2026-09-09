@@ -222,6 +222,7 @@ async def test_extract_memories_success_creates_entities_and_advances_watermark(
         get=AsyncMock(return_value=None),
         set=AsyncMock(return_value=True),
         delete=AsyncMock(),
+        eval=AsyncMock(return_value=1),
     )
     monkeypatch.setattr("app.tasks.memory.get_redis", AsyncMock(return_value=redis))
     monkeypatch.setattr(SiteSetting, "get_value", AsyncMock(return_value=True))
@@ -409,6 +410,28 @@ async def test_resolve_extraction_model_by_model_id_and_fallback_chat(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_resolve_extraction_model_skips_invalid_uuid_lookup(monkeypatch):
+    from app.models.model import Model
+    from app.models.site_setting import SiteSetting
+
+    monkeypatch.setattr(
+        SiteSetting, "get_value", AsyncMock(return_value="provider-model")
+    )
+    configured = SimpleNamespace(id="configured-uuid")
+    model_id_query = MagicMock(first=AsyncMock(return_value=configured))
+
+    def mock_filter(**kwargs):
+        assert "id" not in kwargs
+        if kwargs.get("model_id") == "provider-model":
+            return model_id_query
+        raise AssertionError(f"unexpected model lookup: {kwargs}")
+
+    monkeypatch.setattr(Model, "filter", mock_filter)
+
+    assert await resolve_extraction_model() == "configured-uuid"
+
+
+@pytest.mark.asyncio
 async def test_extract_memories_edge_skips(monkeypatch):
     from app.models.agent import Agent, Conversation
     from app.models.site_setting import SiteSetting
@@ -418,6 +441,7 @@ async def test_extract_memories_edge_skips(monkeypatch):
         get=AsyncMock(return_value=None),
         set=AsyncMock(return_value=True),
         delete=AsyncMock(),
+        eval=AsyncMock(return_value=1),
     )
     monkeypatch.setattr("app.tasks.memory.get_redis", AsyncMock(return_value=redis))
     monkeypatch.setattr(SiteSetting, "get_value", AsyncMock(return_value=True))
@@ -499,6 +523,7 @@ async def test_extract_memories_swallows_creation_exceptions_and_runs_celery_tas
         get=AsyncMock(return_value="bad_ts"),  # invalid float triggers fallback
         set=AsyncMock(return_value=True),
         delete=AsyncMock(),
+        eval=AsyncMock(return_value=1),
     )
     monkeypatch.setattr("app.tasks.memory.get_redis", AsyncMock(return_value=redis))
     monkeypatch.setattr(SiteSetting, "get_value", AsyncMock(return_value=True))

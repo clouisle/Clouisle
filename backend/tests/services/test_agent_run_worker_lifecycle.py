@@ -1098,6 +1098,32 @@ async def test_run_agent_round_publishes_rag_progress_when_retrieval_was_attempt
 
 
 @pytest.mark.asyncio
+async def test_run_agent_round_uses_payload_rag_context_when_message_has_none(
+    monkeypatch,
+):
+    async def _transition(run, _expected, status, **_kwargs):
+        run.status = status
+        return run
+
+    run, stream, _ = _prepare_full_round(
+        monkeypatch,
+        result=_round_result(),
+        transition=_transition,
+        rag_mode=RAGMode.AUTO,
+        rag_context=None,
+    )
+    payload = _round_payload(run)
+    payload["rag_contexts"] = [{"document_id": "doc-payload", "content": "source"}]
+
+    await run_agent_round(payload)
+
+    rag_context_call = next(
+        call for call in stream.publish.await_args_list if call.args[0] == "rag_context"
+    )
+    assert rag_context_call.args[1]["contexts"] == payload["rag_contexts"]
+
+
+@pytest.mark.asyncio
 async def test_run_agent_round_waiting_publishes_pending_status(monkeypatch):
     async def _transition(run, _expected, status, **_kwargs):
         run.status = status

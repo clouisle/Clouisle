@@ -191,7 +191,7 @@ def get_temporal_instruction(user_locale: str | None = None) -> str:
 
     current = tz_now()
     weekday_en = current.strftime("%A")
-    date_str = current.strftime("%Y-%m-%d %H:%M")
+    date_str = current.strftime("%Y-%m-%d")
     tz_name = current.tzname() or "Local"
 
     lang = normalize_locale(user_locale)

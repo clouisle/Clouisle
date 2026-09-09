@@ -256,6 +256,7 @@
     "kbDocumentMaxUploadSize": "Maximum upload size",
     "kbDocumentMaxUploadSizeHint": "Applies to knowledge base document uploads. The backend rejects files larger than this limit.",
     "loadError": "Failed to load settings",
+    "retry": "Retry",
     "siteIconUrlPlaceholder": "Enter icon URL",
     "testEmailRequired": "Please enter a test email address",
     "testEmailSent": "Test email sent successfully",

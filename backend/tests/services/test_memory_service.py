@@ -32,6 +32,7 @@ def qdrant_models(monkeypatch):
             Filter=constructor,
             PointStruct=constructor,
             PointIdsList=constructor,
+            Range=constructor,
         ),
     )
 
@@ -822,7 +823,7 @@ async def test_ensure_memory_collection_creates_and_caches_missing_collection(
     models = SimpleNamespace(
         VectorParams=lambda **kwargs: SimpleNamespace(**kwargs),
         Distance=SimpleNamespace(COSINE="cosine"),
-        PayloadSchemaType=SimpleNamespace(KEYWORD="keyword"),
+        PayloadSchemaType=SimpleNamespace(KEYWORD="keyword", INTEGER="integer"),
     )
     monkeypatch.setattr(memory_module, "qmodels", models)
     monkeypatch.setattr(memory_module, "_memory_collections", set())
@@ -834,10 +835,56 @@ async def test_ensure_memory_collection_creates_and_caches_missing_collection(
     assert await memory_module._ensure_memory_collection(3) == "memory_entities_dim_3"
     client.get_collection.assert_awaited_once_with("memory_entities_dim_3")
     client.create_collection.assert_awaited_once()
-    client.create_payload_index.assert_awaited_once_with(
+    assert client.create_payload_index.await_count == 2
+    assert client.create_payload_index.await_args_list[0].kwargs == {
+        "collection_name": "memory_entities_dim_3",
+        "field_name": "user_id",
+        "field_schema": "keyword",
+    }
+    assert client.create_payload_index.await_args_list[1].kwargs == {
+        "collection_name": "memory_entities_dim_3",
+        "field_name": "updated_at_ts",
+        "field_schema": "integer",
+    }
+
+
+@pytest.mark.asyncio
+async def test_ensure_memory_collection_backfills_legacy_timestamps(monkeypatch):
+    from datetime import UTC, datetime
+
+    entity_id = uuid4()
+    entity = SimpleNamespace(
+        id=entity_id,
+        updated_at=datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
+        created_at=None,
+    )
+    point = SimpleNamespace(id=entity_id, payload={})
+    client = SimpleNamespace(
+        get_collection=AsyncMock(return_value=SimpleNamespace()),
+        create_payload_index=AsyncMock(),
+        scroll=AsyncMock(return_value=([point], None)),
+        set_payload=AsyncMock(),
+    )
+    models = SimpleNamespace(
+        PayloadSchemaType=SimpleNamespace(INTEGER="integer"),
+    )
+    monkeypatch.setattr(memory_module, "qmodels", models)
+    monkeypatch.setattr(memory_module, "_memory_collections", set())
+    monkeypatch.setattr(
+        memory_module, "_get_qdrant_client", AsyncMock(return_value=client)
+    )
+    monkeypatch.setattr(
+        memory_module.MemoryEntity,
+        "filter",
+        MagicMock(return_value=_query(all=[entity])),
+    )
+
+    await memory_module._ensure_memory_collection(3)
+
+    client.set_payload.assert_awaited_once_with(
         collection_name="memory_entities_dim_3",
-        field_name="user_id",
-        field_schema="keyword",
+        payload={"updated_at_ts": int(entity.updated_at.timestamp())},
+        points=[entity_id],
     )
 
 
@@ -1036,6 +1083,7 @@ async def test_search_entities_preserves_similarity_order_and_reranks_by_recency
 async def test_search_entities_filters_by_time_window(monkeypatch):
     from datetime import UTC, datetime, timedelta
 
+    user_id = uuid4()
     id_recent, id_old = uuid4(), uuid4()
     now = datetime.now(UTC)
 
@@ -1080,6 +1128,16 @@ async def test_search_entities_filters_by_time_window(monkeypatch):
     )
     monkeypatch.setattr(
         memory_module.MemoryEntity, "filter", MagicMock(return_value=entity_query)
+    )
+
+    result = await MemoryService.search_entities(
+        user_id, "query", top_k=2, time_window_days=7, recency_weight=0.0
+    )
+    assert result == [recent_entity]
+    query_filter = client.query_points.await_args.kwargs["query_filter"]
+    assert any(
+        condition.key == "updated_at_ts" and condition.range.gte > 0
+        for condition in query_filter.must
     )
 
 

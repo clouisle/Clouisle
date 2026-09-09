@@ -612,7 +612,9 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
                 round_id=run.active_round_id,
                 message_id=canonical.id,
             )
-        rag_contexts = user_msg.rag_context
+        rag_contexts = payload.get("rag_contexts")
+        if rag_contexts is None:
+            rag_contexts = user_msg.rag_context
         if agent.rag_mode == RAGMode.AUTO and rag_contexts is not None:
             await stream.publish("rag_start", {})
             await stream.publish(

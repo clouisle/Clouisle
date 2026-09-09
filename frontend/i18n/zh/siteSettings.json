@@ -256,6 +256,7 @@
     "kbDocumentMaxUploadSize": "最大上传大小",
     "kbDocumentMaxUploadSizeHint": "适用于知识库文档上传。后端会拒绝超过该限制的文件。",
     "loadError": "加载设置失败",
+    "retry": "重试",
     "siteIconUrlPlaceholder": "输入图标 URL",
     "testEmailRequired": "请输入测试邮箱地址",
     "testEmailSent": "测试邮件发送成功",

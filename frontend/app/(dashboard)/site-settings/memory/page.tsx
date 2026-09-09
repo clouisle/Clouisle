@@ -23,6 +23,9 @@ export default function SiteSettingsMemoryPage() {
   const canUpdateSettings = canPerform('admin:settings:update')
 
   const [loading, setLoading] = React.useState(true)
+  const [settingsReady, setSettingsReady] = React.useState(false)
+  const [modelsLoading, setModelsLoading] = React.useState(true)
+  const [settingsLoadFailed, setSettingsLoadFailed] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const [chatModels, setChatModels] = React.useState<Model[]>([])
   const [settings, setSettings] = React.useState<MemorySiteSettings>({
@@ -42,19 +45,32 @@ export default function SiteSettingsMemoryPage() {
 
 
   const loadData = React.useCallback(async () => {
-    try {
-      setLoading(true)
-      const [memoryData, modelsData] = await Promise.all([
-        siteSettingsApi.getMemory(),
-        modelsApi.getModels({ model_type: ['chat'], is_enabled: true, pageSize: 100 }),
-      ])
-      setSettings(memoryData)
-      setChatModels(modelsData.items || [])
-    } catch (error) {
-      console.error('Failed to load memory settings:', error)
-    } finally {
-      setLoading(false)
+    setLoading(true)
+    setSettingsReady(false)
+    setSettingsLoadFailed(false)
+    setModelsLoading(true)
+
+    const [memoryResult, modelsResult] = await Promise.allSettled([
+      siteSettingsApi.getMemory(),
+      modelsApi.getModels({ model_type: ['chat'], is_enabled: true, pageSize: 100 }),
+    ])
+
+    if (memoryResult.status === 'fulfilled') {
+      setSettings(memoryResult.value)
+      setSettingsReady(true)
+    } else {
+      setSettingsLoadFailed(true)
+      console.error('Failed to load memory settings:', memoryResult.reason)
     }
+
+    if (modelsResult.status === 'fulfilled') {
+      setChatModels(modelsResult.value.items || [])
+    } else {
+      console.error('Failed to load chat models:', modelsResult.reason)
+    }
+
+    setModelsLoading(false)
+    setLoading(false)
   }, [])
 
   React.useEffect(() => {
@@ -62,7 +78,7 @@ export default function SiteSettingsMemoryPage() {
   }, [loadData])
 
   const handleSave = async () => {
-    if (!canUpdateSettings) return
+    if (!canUpdateSettings || !settingsReady) return
     try {
       setSaving(true)
       await siteSettingsApi.updateMemory({
@@ -84,6 +100,15 @@ export default function SiteSettingsMemoryPage() {
     return (
       <div className="space-y-6">
         <Skeleton className="h-64 w-full" />
+      </div>
+    )
+  }
+
+  if (settingsLoadFailed || !settingsReady) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-destructive">{t('loadError')}</p>
+        <Button onClick={loadData}>{t('retry')}</Button>
       </div>
     )
   }
@@ -133,7 +158,7 @@ export default function SiteSettingsMemoryPage() {
                     !val || val === AUTO_MODEL_VALUE ? '' : val,
                 }))
               }
-              disabled={!canUpdateSettings || saving}
+              disabled={!canUpdateSettings || saving || modelsLoading}
             >
               <SelectTrigger id="extraction-model" className="w-full">
                 <SelectValue>{selectedModelLabel}</SelectValue>
@@ -198,7 +223,7 @@ export default function SiteSettingsMemoryPage() {
       {/* Action Buttons */}
       {canUpdateSettings && (
         <div className="flex justify-end">
-          <Button onClick={handleSave} disabled={saving}>
+          <Button onClick={handleSave} disabled={saving || !settingsReady}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {t('saveChanges')}
           </Button>

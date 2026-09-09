@@ -79,6 +79,99 @@ def _calculate_combined_score(
 _qdrant_client: Any = None
 _memory_collections: set[str] = set()
 
+_MEMORY_MIGRATION_SCROLL_LIMIT = 256
+
+
+def _coerce_timestamp(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return int(value.timestamp())
+
+
+async def _backfill_memory_timestamps(client: Any, collection: str) -> None:
+    scroll = getattr(client, "scroll", None)
+    set_payload = getattr(client, "set_payload", None)
+    if scroll is None or set_payload is None:
+        return
+
+    offset: Any = None
+    try:
+        while True:
+            points, next_offset = await scroll(
+                collection_name=collection,
+                limit=_MEMORY_MIGRATION_SCROLL_LIMIT,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            legacy_points = []
+            entity_ids: list[UUID] = []
+            for point in points or []:
+                payload = getattr(point, "payload", None) or {}
+                if payload.get("updated_at_ts") is not None:
+                    continue
+                try:
+                    entity_id = UUID(str(point.id))
+                except (TypeError, ValueError):
+                    continue
+                legacy_points.append((point, entity_id, payload))
+                entity_ids.append(entity_id)
+
+            if entity_ids:
+                entities = await MemoryEntity.filter(id__in=entity_ids).all()
+                entity_by_id = {entity.id: entity for entity in entities}
+                for point, entity_id, payload in legacy_points:
+                    timestamp = _coerce_timestamp(
+                        payload.get("updated_at") or payload.get("created_at")
+                    )
+                    if timestamp is None:
+                        entity = entity_by_id.get(entity_id)
+                        timestamp = _coerce_timestamp(
+                            getattr(entity, "updated_at", None)
+                            or getattr(entity, "created_at", None)
+                        )
+                    if timestamp is None:
+                        continue
+                    await set_payload(
+                        collection_name=collection,
+                        payload={"updated_at_ts": timestamp},
+                        points=[point.id],
+                    )
+
+            if next_offset is None or next_offset == offset:
+                break
+            offset = next_offset
+    except Exception:
+        logger.warning(
+            "Failed to backfill updated_at_ts for memory collection %s",
+            collection,
+            exc_info=True,
+        )
+
+
+async def _ensure_memory_timestamp_index(client: Any, collection: str) -> None:
+    try:
+        await client.create_payload_index(
+            collection_name=collection,
+            field_name="updated_at_ts",
+            field_schema=getattr(qmodels.PayloadSchemaType, "INTEGER", "integer"),
+        )
+    except Exception as exc:
+        logger.debug(
+            "Payload index updated_at_ts already exists or not supported: %s", exc
+        )
+
 
 def _memory_collection_name(dimension: int) -> str:
     """Get collection name for memory entities."""
@@ -100,7 +193,7 @@ async def _get_qdrant_client() -> Any:
 
 
 async def _ensure_memory_collection(dimension: int) -> str:
-    """Ensure memory collection exists in Qdrant."""
+    """Ensure memory collection exists and migrate legacy payloads."""
     if qmodels is None:
         raise RuntimeError("qdrant-client is not installed")
 
@@ -112,7 +205,6 @@ async def _ensure_memory_collection(dimension: int) -> str:
     try:
         await client.get_collection(collection)
     except Exception:
-        # Create collection
         await client.create_collection(
             collection_name=collection,
             vectors_config=qmodels.VectorParams(
@@ -120,24 +212,16 @@ async def _ensure_memory_collection(dimension: int) -> str:
                 distance=qmodels.Distance.COSINE,
             ),
         )
-        # Create payload index for user_id (critical for user isolation)
+        # Create payload index for user_id (critical for user isolation).
         await client.create_payload_index(
             collection_name=collection,
             field_name="user_id",
             field_schema=qmodels.PayloadSchemaType.KEYWORD,
         )
-        try:
-            await client.create_payload_index(
-                collection_name=collection,
-                field_name="updated_at_ts",
-                field_schema=qmodels.PayloadSchemaType.INTEGER,
-            )
-        except Exception as e:
-            logger.debug(
-                f"Payload index updated_at_ts already exists or not supported: {e}"
-            )
-        logger.info(f"Created memory collection: {collection}")
+        logger.info("Created memory collection: %s", collection)
 
+    await _ensure_memory_timestamp_index(client, collection)
+    await _backfill_memory_timestamps(client, collection)
     _memory_collections.add(collection)
     return collection
 
@@ -1229,7 +1313,9 @@ class MemoryService:
     ) -> dict[str, Any]:
         """Return a model-friendly, user-scoped memory subgraph."""
         try:
-            requested_entities = list(entity_ids[:5])
+            all_entity_ids = list(entity_ids)
+            requested_entities = all_entity_ids[:5]
+            input_truncated = len(all_entity_ids) > len(requested_entities)
             references: list[tuple[str, UUID | str]] = []
             requested_names: list[str] = []
             for raw_entity_id in requested_entities:
@@ -1312,7 +1398,7 @@ class MemoryService:
                 "success": True,
                 "entities": entities,
                 "relations": relations,
-                "truncated": bool(graph.get("truncated", False)),
+                "truncated": input_truncated or bool(graph.get("truncated", False)),
             }
         except (TypeError, ValueError):
             return {

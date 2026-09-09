@@ -124,6 +124,30 @@ test('loads memory settings and saves successfully', async () => {
   })
 })
 
+test('does not allow saving defaults when memory settings fail to load', async () => {
+  getMemory.mockImplementationOnce(() => Promise.reject(new Error('settings unavailable')))
+
+  renderer = await render()
+
+  expect(renderer!.root.findAllByType('button').some((button) => button.children.includes('saveChanges'))).toBe(false)
+  expect(updateMemory).not.toHaveBeenCalled()
+})
+
+test('keeps loaded settings safe to save when model loading fails', async () => {
+  getModels.mockImplementationOnce(() => Promise.reject(new Error('models unavailable')))
+
+  renderer = await render()
+
+  await act(async () => saveButton(renderer!).props.onClick())
+
+  expect(updateMemory).toHaveBeenCalledWith({
+    memory_async_extraction_enabled: true,
+    memory_extraction_model_id: 'model-1',
+    memory_extraction_cooldown_seconds: 180,
+    memory_extraction_max_pending_turns: 6,
+  })
+})
+
 test('disables and hides save when user lacks permission', async () => {
   canUpdate = false
   renderer = await render()

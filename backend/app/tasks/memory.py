@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import re
+import secrets
 import time
 from typing import Any
 from uuid import UUID
@@ -24,6 +25,91 @@ from app.services.message_branching import (
 )
 
 logger = logging.getLogger(__name__)
+
+_MEMORY_EXTRACTION_LOCK_TTL_SECONDS = 120
+_MEMORY_EXTRACTION_LOCK_RENEW_INTERVAL_SECONDS = 40
+_RENEW_MEMORY_LOCK_SCRIPT = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('expire', KEYS[1], ARGV[2])
+end
+return 0
+"""
+_RELEASE_MEMORY_LOCK_SCRIPT = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('del', KEYS[1])
+end
+return 0
+"""
+
+
+async def _renew_memory_extraction_lock(
+    redis: Any, lock_key: str, lock_token: str
+) -> bool:
+    result = await redis.eval(
+        _RENEW_MEMORY_LOCK_SCRIPT,
+        1,
+        lock_key,
+        lock_token,
+        str(_MEMORY_EXTRACTION_LOCK_TTL_SECONDS),
+    )
+    return bool(result)
+
+
+async def _release_memory_extraction_lock(
+    redis: Any, lock_key: str, lock_token: str
+) -> None:
+    await redis.eval(
+        _RELEASE_MEMORY_LOCK_SCRIPT,
+        1,
+        lock_key,
+        lock_token,
+    )
+
+
+async def _renew_memory_extraction_lock_until_stopped(
+    redis: Any,
+    lock_key: str,
+    lock_token: str,
+    stop_event: asyncio.Event,
+) -> None:
+    while True:
+        try:
+            await asyncio.wait_for(
+                stop_event.wait(),
+                timeout=_MEMORY_EXTRACTION_LOCK_RENEW_INTERVAL_SECONDS,
+            )
+            return
+        except TimeoutError:
+            pass
+
+        try:
+            if not await _renew_memory_extraction_lock(redis, lock_key, lock_token):
+                logger.warning(
+                    "Memory extraction lock %s was lost before renewal", lock_key
+                )
+                return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning(
+                "Failed to renew memory extraction lock %s",
+                lock_key,
+                exc_info=True,
+            )
+
+
+async def _find_enabled_model(model_key: UUID | str) -> Model | None:
+    key = str(model_key).strip()
+    try:
+        model_uuid = UUID(key)
+    except ValueError:
+        model_uuid = None
+
+    if model_uuid is not None:
+        model = await Model.filter(id=model_uuid, is_enabled=True).first()
+        if model:
+            return model
+    return await Model.filter(model_id=key, is_enabled=True).first()
 
 
 def _get_event_loop() -> asyncio.AbstractEventLoop:
@@ -58,9 +144,7 @@ async def resolve_extraction_model(agent_id: UUID | str | None = None) -> str | 
     configured_model = await SiteSetting.get_value("memory_extraction_model_id", "")
     if configured_model and str(configured_model).strip():
         model_key = str(configured_model).strip()
-        model = await Model.filter(id=model_key, is_enabled=True).first() or (
-            await Model.filter(model_id=model_key, is_enabled=True).first()
-        )
+        model = await _find_enabled_model(model_key)
         if model:
             return str(model.id)
         logger.warning(
@@ -73,11 +157,7 @@ async def resolve_extraction_model(agent_id: UUID | str | None = None) -> str | 
         try:
             agent = await Agent.get_or_none(id=UUID(str(agent_id)))
             if agent and agent.model_id:
-                agent_model = await Model.filter(
-                    id=agent.model_id, is_enabled=True
-                ).first() or (
-                    await Model.filter(model_id=agent.model_id, is_enabled=True).first()
-                )
+                agent_model = await _find_enabled_model(agent.model_id)
                 if agent_model:
                     return str(agent_model.id)
         except Exception as e:
@@ -159,11 +239,24 @@ async def _extract_memories_for_conversation(
     if not is_enabled:
         return {"status": "skipped", "reason": "disabled"}
 
-    # Acquire conversation extraction lock to prevent parallel extractions
+    # Acquire a renewable, tokenized conversation extraction lease.
     lock_key = f"memory:extraction:lock:{conversation_id_str}"
-    acquired = await redis.set(lock_key, "1", nx=True, ex=120)
+    lock_token = secrets.token_urlsafe(32)
+    acquired = await redis.set(
+        lock_key,
+        lock_token,
+        nx=True,
+        ex=_MEMORY_EXTRACTION_LOCK_TTL_SECONDS,
+    )
     if not acquired:
         return {"status": "locked"}
+
+    renew_stop = asyncio.Event()
+    renew_task = asyncio.create_task(
+        _renew_memory_extraction_lock_until_stopped(
+            redis, lock_key, lock_token, renew_stop
+        )
+    )
 
     try:
         conv_id = UUID(conversation_id_str)
@@ -312,7 +405,20 @@ async def _extract_memories_for_conversation(
             "watermark_id": str(new_watermark),
         }
     finally:
-        await redis.delete(lock_key)
+        renew_stop.set()
+        renew_task.cancel()
+        try:
+            await renew_task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await _release_memory_extraction_lock(redis, lock_key, lock_token)
+        except Exception:
+            logger.warning(
+                "Failed to release memory extraction lock %s",
+                lock_key,
+                exc_info=True,
+            )
 
 
 @shared_task(

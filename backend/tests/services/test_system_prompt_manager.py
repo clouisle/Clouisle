@@ -1,5 +1,6 @@
 """Tests for the unified system prompt injection manager (YUN-127)."""
 
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +12,7 @@ from app.services.system_prompt import (
     build_system_prompt,
     has_sandbox_tools,
     normalize_locale,
+    get_temporal_instruction,
 )
 
 
@@ -116,6 +118,14 @@ def test_chat_mode_injects_temporal_instruction_en_and_zh():
     )
     assert "## 当前时间" in prompt_zh
     assert "当前系统时间：" in prompt_zh
+
+
+def test_temporal_instruction_uses_day_granularity():
+    instruction = get_temporal_instruction("en")
+
+    assert "Current system time:" in instruction
+    assert re.search(r"\d{4}-\d{2}-\d{2}", instruction)
+    assert re.search(r"\d{2}:\d{2}", instruction) is None
 
 
 def test_memory_prompt_contains_temporal_grounding_rules():
