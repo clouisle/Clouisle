@@ -26,6 +26,19 @@ versioning follows [Semantic Versioning](https://semver.org/).
 #### Asset Access and Previews
 - Protected generated images, generated videos, and sandbox artifacts with scope-aware authorization and authenticated client downloads.
 - Preserved explicit too-large, unauthorized, permission-denied, unsupported, and parse-failure preview states without falling back to unprotected URLs.
+### Added
+
+#### Memory and RAG
+- Added optional background memory extraction controls in the admin `memory` site-settings category, including model selection, debounce cooldown, and pending-turn trigger limits.
+- Added the bounded `get_memory_subgraph` Agent tool for relationship-aware memory retrieval.
+
+### Changed
+
+#### Agent Retrieval and Chat Timeline
+- Agents with no knowledge-base associations now persist and run with `rag_mode: off`; the Agent editor hides the RAG selector until a knowledge base is selected.
+- Chat thought-process rendering preserves the emitted order of retrieval, compression, reasoning, tool, and generation steps.
+- RAG context remains `null` when retrieval did not run and `[]` when retrieval ran but returned no contexts.
+
 
 ## [0.2.9] - 2026-06-09
 

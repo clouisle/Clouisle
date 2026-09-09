@@ -300,8 +300,8 @@ POST /api/v1/agents
 | `image_generation_config` | object | No | Image generation configuration |
 | `enable_video_generation` | boolean | No | Enable video generation tool (default: false) |
 | `video_generation_config` | object | No | Video generation configuration |
-| `rag_mode` | string | No | RAG mode: `off`, `auto`, `agentic` (default: `agentic`) |
-| `knowledge_base_configs` | array | No | KB configs (`knowledge_base_id`, `retrieval_top_k`, `score_threshold`, `search_mode`) |
+| `rag_mode` | string | No | RAG mode: `off`, `auto`, `agentic` (default `agentic` when a knowledge base is attached; normalized to `off` when `knowledge_base_configs` is empty) |
+| `knowledge_base_configs` | array | No | KB configs (`knowledge_base_id`, `retrieval_top_k`, `score_threshold`, `search_mode`); an empty list forces `rag_mode` to `off` |
 | `variables` | array | No | Chat input variable definitions |
 | `opening_message` | string | No | Opening message shown in chat |
 | `suggested_questions` | array | No | Suggested questions |

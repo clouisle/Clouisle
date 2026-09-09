@@ -165,6 +165,8 @@ Generated images, generated videos, and sandbox artifacts are protected assets. 
 When knowledge base retrieval is active:
 - Sources are listed with document titles, chunk indexes, and similarity match percentages.
 - Click any source badge to inspect the exact retrieved text segment in a popover.
+The reasoning timeline preserves the order in which progress events were emitted. Retrieval, context compression, reasoning, tool calls, media results, and text generation can appear interleaved; the interface does not always place retrieval first.
+
 ### Response Quality
 
 **High-quality responses include:**
@@ -185,11 +187,11 @@ When knowledge base retrieval is active:
 
 Agents retrieve information from connected knowledge bases according to their RAG mode:
 
-- **off**: No retrieval, even if knowledge bases are configured
-- **auto**: Automatically retrieve on every message (traditional RAG)
-- **agentic**: The agent decides when to search (default)
+- **off**: No retrieval, even if knowledge bases are configured.
+- **auto**: Automatically retrieve on every message (traditional RAG).
+- **agentic**: The agent decides when to search.
 
-With retrieval enabled, the agent's responses can include the retrieved source chunks.
+When an Agent has no knowledge-base associations, the backend normalizes its persisted mode to `off`, and the editor hides the RAG selector until a knowledge base is attached. With retrieval enabled, the response can include retrieved source chunks and stable citation IDs.
 
 **Tips for better RAG results:**
 - Ask specific questions

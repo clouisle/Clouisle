@@ -127,6 +127,10 @@ data: <json_data>
 | `message_end` | Message ended with token usage statistics |
 | `error` | Error occurred |
 
+`rag_start` and `rag_context` are emitted only when retrieval actually runs. If retrieval is not executed, the persisted `rag_context` is `null`; if retrieval runs and returns no contexts, it is `[]`.
+
+Clients should preserve the received event order when rendering the thought-process timeline. Retrieval, compression, reasoning, tool, media, and text events may be interleaved.
+
 `media_result` examples:
 
 ```text
@@ -144,7 +148,8 @@ Inspect `success` before rendering. When it is `false`, handle the `error` field
 
 ### Stream Events
 
-**Event sequence:**
+**Event sequence:** The following is an example, not a fixed ordering. Preserve the order received from the stream; events may interleave as the Agent works.
+
 
 ```
 event: message_start
