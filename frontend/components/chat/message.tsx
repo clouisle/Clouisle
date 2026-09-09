@@ -1258,66 +1258,74 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const buildChainOfThoughtSteps = React.useCallback(() => {
       const steps: React.ReactNode[] = []
 
-      taskParts.filter(part => part.taskType === 'rag').forEach((taskPart, index) => {
-        const info = (taskPart.info && typeof taskPart.info === 'object') ? taskPart.info as Record<string, unknown> : null
-        const query = typeof info?.query === 'string' ? info.query : undefined
-        const contexts = Array.isArray(info?.contexts)
-          ? info.contexts
-          : allSources.filter(isSourceDocumentPart).map((src) => ({
-              document_id: src.documentId,
-              document_name: src.documentName,
-              content: src.content,
-              score: src.metadata?.score,
-              kb_id: src.metadata?.kb_id,
-              kb_name: src.metadata?.kb_name,
-            }))
-        const toolState = taskPart.state === 'error'
-          ? 'output-error'
-          : taskPart.state === 'completed'
-            ? 'output-available'
-            : taskPart.state === 'running'
-              ? 'input-available'
-              : 'input-streaming'
-
-        steps.push(
-          <ChainOfThoughtStep
-            key={`rag-${index}`}
-            icon={SearchIcon}
-            label={getTaskTitle(taskPart)}
-            status={getStepStatus(taskPart.state)}
-          >
-            <Tool defaultOpen={false} className="mt-2">
-              <ToolHeader
-                title={tTask('searchingKnowledge')}
-                type="tool-call"
-                state={toolState}
-              />
-              <AIToolContent>
-                {query && (
-                  <ToolInput input={{ query }} />
-                )}
-                {taskPart.state === 'completed' && (
-                  <ToolOutput
-                    output={{
-                      count: contexts.length,
-                      contexts: contexts.length > 0 ? contexts : [],
-                    }}
-                    errorText={undefined}
-                  />
-                )}
-              </AIToolContent>
-            </Tool>
-          </ChainOfThoughtStep>
-        )
-      })
 
       otherPartEntries.forEach(({ part, index }) => {
         if (isTaskPart(part)) {
-          if (part.taskType === 'compression') {
+          if (part.taskType === 'rag') {
+            const info = (part.info && typeof part.info === 'object') ? part.info as Record<string, unknown> : null
+            const query = typeof info?.query === 'string' ? info.query : undefined
+            const contexts = Array.isArray(info?.contexts)
+              ? info.contexts
+              : allSources.filter(isSourceDocumentPart).map((src) => ({
+                  document_id: src.documentId,
+                  document_name: src.documentName,
+                  content: src.content,
+                  score: src.metadata?.score,
+                  kb_id: src.metadata?.kb_id,
+                  kb_name: src.metadata?.kb_name,
+                }))
+            const toolState = part.state === 'error'
+              ? 'output-error'
+              : part.state === 'completed'
+                ? 'output-available'
+                : part.state === 'running'
+                  ? 'input-available'
+                  : 'input-streaming'
+
+            steps.push(
+              <ChainOfThoughtStep
+                key={`rag-${index}`}
+                icon={SearchIcon}
+                label={getTaskTitle(part)}
+                status={getStepStatus(part.state)}
+              >
+                <Tool defaultOpen={false} className="mt-2">
+                  <ToolHeader
+                    title={tTask('searchingKnowledge')}
+                    type="tool-call"
+                    state={toolState}
+                  />
+                  <AIToolContent>
+                    {query && (
+                      <ToolInput input={{ query }} />
+                    )}
+                    {part.state === 'completed' && (
+                      <ToolOutput
+                        output={{
+                          count: contexts.length,
+                          contexts: contexts.length > 0 ? contexts : [],
+                        }}
+                        errorText={undefined}
+                      />
+                    )}
+                  </AIToolContent>
+                </Tool>
+              </ChainOfThoughtStep>
+            )
+          } else if (part.taskType === 'compression') {
             steps.push(
               <ChainOfThoughtStep
                 key={`compression-${index}`}
                 icon={Timer}
+                label={getTaskTitle(part)}
+                status={getStepStatus(part.state)}
+              />
+            )
+          } else if (part.taskType === 'generating') {
+            steps.push(
+              <ChainOfThoughtStep
+                key={`generating-${index}`}
+                icon={SparklesIcon}
                 label={getTaskTitle(part)}
                 status={getStepStatus(part.state)}
               />
@@ -1387,16 +1395,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         }
       })
 
-      taskParts.filter(part => part.taskType === 'generating').forEach((taskPart, index) => {
-        steps.push(
-          <ChainOfThoughtStep
-            key={`generating-${index}`}
-            icon={SparklesIcon}
-            label={getTaskTitle(taskPart)}
-            status={getStepStatus(taskPart.state)}
-          />
-        )
-      })
 
       return steps
     }, [
@@ -1411,7 +1409,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       renderToolResultContent,
       tReasoning,
       tTask,
-      taskParts,
       toolResultsByCallIndex,
     ])
 

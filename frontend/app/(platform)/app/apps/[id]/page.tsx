@@ -126,7 +126,7 @@ export function AgentEditor({
         score_threshold: akb.score_threshold,
         search_mode: akb.search_mode || 'hybrid',
       })))
-      setRagMode(data.rag_mode || 'agentic')
+      setRagMode(data.knowledge_bases.length > 0 ? data.rag_mode || 'agentic' : 'off')
       setEnableAttachments(data.enable_attachments || false)
       setEnableUserInputRequest(data.enable_user_input_request || false)
       setEnableMemory(data.enable_memory || false)
@@ -170,7 +170,7 @@ export function AgentEditor({
         tools_config: toolsConfig,
         variables: variables,
         knowledge_base_configs: knowledgeBaseConfigs,
-        rag_mode: ragMode,
+        rag_mode: knowledgeBaseConfigs.length > 0 ? ragMode : 'off',
         enable_attachments: enableAttachments,
         enable_user_input_request: enableUserInputRequest,
         enable_memory: enableMemory,
@@ -258,10 +258,16 @@ export function AgentEditor({
       setVariables(data.variables || [])
     }
     if (data.knowledge_base_configs !== undefined) {
-      setKnowledgeBaseConfigs(data.knowledge_base_configs || [])
+      const nextKnowledgeBaseConfigs = data.knowledge_base_configs || []
+      setKnowledgeBaseConfigs(nextKnowledgeBaseConfigs)
+      if (nextKnowledgeBaseConfigs.length === 0) setRagMode('off')
     }
     if (data.rag_mode !== undefined) {
-      setRagMode(data.rag_mode)
+      setRagMode(
+        (data.knowledge_base_configs || knowledgeBaseConfigs).length > 0
+          ? data.rag_mode
+          : 'off'
+      )
     }
     if (data.enable_attachments !== undefined) {
       setEnableAttachments(data.enable_attachments)

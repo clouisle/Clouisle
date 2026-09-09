@@ -728,6 +728,30 @@ describe('message behavior', () => {
     expect(multiRoundExecuting).toContain('<h3>chat.reasoning.actionSearchingWeb</h3>')
     expect(multiRoundExecuting).not.toContain('<h3>chat.reasoning.thoughtFor')
   })
+  test('keeps knowledge retrieval in the received thought-process order', () => {
+    const container = render(<Message
+      chainOfThoughtOpen
+      message={{
+        id: 'ordered-rag',
+        role: 'assistant',
+        parts: [
+          { type: 'reasoning', text: 'Plan first', state: 'done', duration: 1000 },
+          { type: 'tool-call', toolCallId: 'web-1', toolName: 'web_search', toolDisplayName: 'Web search', input: { q: 'docs' }, state: 'done' },
+          { type: 'tool-result', toolCallId: 'web-1', toolName: 'web_search', output: { hits: 1 } },
+          { type: 'task', taskType: 'rag', state: 'completed', info: 1 },
+          { type: 'task', taskType: 'generating', state: 'completed' },
+        ],
+      }}
+    />)
+
+    const steps = [...container.querySelectorAll('[data-step-status]')].map((step) => step.textContent ?? '')
+    expect(steps).toHaveLength(4)
+    expect(steps[0]).toStartWith('chat.reasoning.thoughtFor seconds=1')
+    expect(steps[1]).toStartWith('chat.message.toolCompleted name=Web search')
+    expect(steps[2]).toStartWith('chat.task.foundSources count=1')
+    expect(steps[3]).toStartWith('chat.task.generating')
+  })
+
 
   test('renders naive rag in thought process as an expandable tool-like card with parameters and results', () => {
     const container = render(<Message

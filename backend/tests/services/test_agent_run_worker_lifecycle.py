@@ -13,7 +13,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.models.agent import MessageRoundStatus
+from app.models.agent import MessageRoundStatus, RAGMode
 from app.models.agent_run import AgentRunStatus
 from app.services import agent_run_store
 from app.services.agent_run_worker import (
@@ -968,7 +968,16 @@ async def test_run_agent_round_lock_busy_returns_unchanged_status(monkeypatch):
     assert result == {"status": AgentRunStatus.RUNNING.value}
 
 
-def _prepare_full_round(monkeypatch, *, result, transition, get_run=None, rebuild=None):
+def _prepare_full_round(
+    monkeypatch,
+    *,
+    result,
+    transition,
+    get_run=None,
+    rebuild=None,
+    rag_mode=None,
+    rag_context=None,
+):
     from app.services import agent_run_worker as worker
 
     run = _run(status=AgentRunStatus.RUNNING)
@@ -976,9 +985,15 @@ def _prepare_full_round(monkeypatch, *, result, transition, get_run=None, rebuil
     run.pending_tool_call_id = "call-1"
     run.pending_tool_name = "ask_user"
     run.pending_tool_input = {"questions": []}
-    agent = SimpleNamespace(id=run.agent_id, rag_mode=SimpleNamespace(value="off"))
+    agent = SimpleNamespace(
+        id=run.agent_id, rag_mode=rag_mode or SimpleNamespace(value="off")
+    )
     conversation = SimpleNamespace(id=run.conversation_id)
-    user_message = SimpleNamespace(id=uuid4(), rag_context=[])
+    user_message = SimpleNamespace(
+        id=uuid4(),
+        content="question",
+        rag_context=rag_context,
+    )
     context = SimpleNamespace(
         model_used="model",
         created_message_count=2,
@@ -1049,6 +1064,37 @@ def _round_result(**values):
     }
     defaults.update(values)
     return SimpleNamespace(**defaults)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("rag_context", "expect_rag_events"),
+    [
+        (None, False),
+        ([], True),
+        ([{"document_id": "doc-1", "content": "source"}], True),
+    ],
+)
+async def test_run_agent_round_publishes_rag_progress_when_retrieval_was_attempted(
+    monkeypatch, rag_context, expect_rag_events
+):
+    async def _transition(run, _expected, status, **_kwargs):
+        run.status = status
+        return run
+
+    run, stream, _ = _prepare_full_round(
+        monkeypatch,
+        result=_round_result(),
+        transition=_transition,
+        rag_mode=RAGMode.AUTO,
+        rag_context=rag_context,
+    )
+
+    await run_agent_round(_round_payload(run))
+
+    event_names = [call.args[0] for call in stream.publish.await_args_list]
+    assert ("rag_start" in event_names) is expect_rag_events
+    assert ("rag_context" in event_names) is expect_rag_events
 
 
 @pytest.mark.asyncio

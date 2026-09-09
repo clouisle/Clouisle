@@ -487,7 +487,9 @@ async def create_agent(
         video_generation_config=agent_in.video_generation_config.model_dump()
         if agent_in.video_generation_config
         else {},
-        rag_mode=agent_in.rag_mode,
+        rag_mode=(
+            agent_in.rag_mode if agent_in.knowledge_base_configs else RAGMode.OFF
+        ),
         variables=[v.model_dump() for v in agent_in.variables],
         opening_message=agent_in.opening_message,
         suggested_questions=agent_in.suggested_questions,
@@ -693,6 +695,14 @@ async def update_agent(
     if agent_in.rag_mode is not None:
         agent.rag_mode = RAGMode(agent_in.rag_mode)
         updated_fields.append("rag_mode")
+    if (
+        agent_in.knowledge_base_configs is not None
+        and not agent_in.knowledge_base_configs
+    ):
+        if agent.rag_mode != RAGMode.OFF:
+            agent.rag_mode = RAGMode.OFF
+            if "rag_mode" not in updated_fields:
+                updated_fields.append("rag_mode")
 
     # Update variables
     if agent_in.variables is not None:

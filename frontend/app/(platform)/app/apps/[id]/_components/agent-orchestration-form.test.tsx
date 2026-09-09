@@ -159,9 +159,10 @@ beforeEach(() => {
 describe('AgentOrchestrationForm', () => {
   test('publishes normalized defaults and skips team data loading without a team', () => {
     currentTeam = null
-    const { onUpdate } = render()
+    const { onUpdate, tree } = render()
 
     expect(getKnowledgeBases).not.toHaveBeenCalled()
+    expect(find(tree, Select)).toHaveLength(0)
     expect(onUpdate).toHaveBeenLastCalledWith(expect.objectContaining({
       system_prompt: null,
       knowledge_base_configs: [],
@@ -173,8 +174,30 @@ describe('AgentOrchestrationForm', () => {
       enable_user_input_request: false,
       image_generation_config: null,
       video_generation_config: null,
-      rag_mode: 'agentic',
+      rag_mode: 'off',
     }))
+  })
+
+  test('hides RAG mode and publishes off when knowledge bases are removed', () => {
+    const withKnowledgeBase = {
+      ...agent,
+      knowledge_bases: [{
+        knowledge_base: { id: 'kb-1' },
+        retrieval_top_k: 3,
+        score_threshold: 0.3,
+        search_mode: 'hybrid',
+      }],
+      rag_mode: 'auto',
+    } as never
+    const onUpdate = mock(() => undefined)
+    let tree = render(onUpdate, withKnowledgeBase).tree
+
+    expect(find(tree, Select).some((node) => node.props.value === 'auto')).toBe(true)
+    ;(find(tree, KnowledgeBaseSelector)[0].props.onChange as (configs: unknown[]) => void)([])
+    tree = render(onUpdate, withKnowledgeBase).tree
+
+    expect(find(tree, Select).some((node) => ['agentic', 'auto', 'off'].includes(String(node.props.value)))).toBe(false)
+    expect(onUpdate.mock.calls.at(-1)?.[0].rag_mode).toBe('off')
   })
 
   test('publishes the user-input toggle and changes it from the card switch', () => {
