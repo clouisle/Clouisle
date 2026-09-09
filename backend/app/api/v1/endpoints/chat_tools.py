@@ -265,6 +265,7 @@ async def execute_tool_call(
         "create_memory_relation",
         "update_memory_entity",
         "search_memory",
+        "get_memory_subgraph",
     }
     if tool_name in memory_tools:
         if not user:
@@ -296,10 +297,10 @@ async def execute_tool_call(
                     description=arguments.get("description"),
                     properties=arguments.get("properties"),
                 )
-            else:
+            elif tool_name == "search_memory":
                 top_k_raw = arguments.get("top_k", 5)
                 try:
-                    top_k_val = int(top_k_raw)
+                    top_k_val = max(1, min(int(top_k_raw), 10))
                 except (ValueError, TypeError):
                     top_k_val = 5
 
@@ -317,6 +318,24 @@ async def execute_tool_call(
                     top_k=top_k_val,
                     time_window_days=time_window_val,
                     entity_type=arguments.get("entity_type"),
+                )
+            else:
+                entity_ids = arguments.get("entity_ids", [])
+                if not isinstance(entity_ids, list):
+                    entity_ids = []
+                relation_types = arguments.get("relation_types")
+                if not isinstance(relation_types, list):
+                    relation_types = None
+                try:
+                    max_depth = max(1, min(int(arguments.get("max_depth", 1)), 3))
+                except (ValueError, TypeError):
+                    max_depth = 1
+                result = await MemoryService.handle_get_memory_subgraph(
+                    user_id=user_id,
+                    entity_ids=entity_ids,
+                    max_depth=max_depth,
+                    direction=arguments.get("direction", "both"),
+                    relation_types=relation_types,
                 )
             return json.dumps(result, ensure_ascii=False)
         except Exception as e:

@@ -126,7 +126,11 @@ def test_memory_prompt_contains_temporal_grounding_rules():
         invocation_mode=CHAT_MODE,
     )
     assert "### Temporal Grounding Rules" in prompt
-    assert "search_memory(query, time_window_days)" in prompt
+    assert "search_memory(query, time_window_days, entity_type)" in prompt
+    assert (
+        "get_memory_subgraph(entity_ids, max_depth, direction, relation_types)"
+        in prompt
+    )
     assert "convert relative time expressions" in prompt
 
 

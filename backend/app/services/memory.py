@@ -534,46 +534,142 @@ class MemoryService:
         user_id: UUID,
         entity_ids: list[UUID],
         max_depth: int = 1,
+        direction: str = "both",
+        relation_types: list[str] | None = None,
+        max_nodes: int = 30,
+        max_relations: int = 100,
     ) -> dict[str, Any]:
-        """
-        Get subgraph around given entities.
+        """Return a bounded, user-scoped subgraph around seed entities."""
+        if direction not in {"incoming", "outgoing", "both"}:
+            raise ValueError("invalid_graph_direction")
 
-        Args:
-            user_id: User ID (for data isolation)
-            entity_ids: Starting entity IDs
-            max_depth: Maximum traversal depth (1 = direct neighbors only)
+        max_depth = max(0, min(int(max_depth), 3))
+        max_nodes = max(1, min(int(max_nodes), 100))
+        max_relations = max(1, min(int(max_relations), 500))
+        seed_ids = list(dict.fromkeys(entity_ids))
+        if not seed_ids:
+            return {
+                "entities": [],
+                "relations": [],
+                "entity_depth": {},
+                "truncated": False,
+            }
 
-        Returns:
-            Dict with entities and relations
-        """
-        # Fetch starting entities
-        entities = await MemoryEntity.filter(
+        seed_entities = await MemoryEntity.filter(
             user_id=user_id,
-            id__in=entity_ids,
+            id__in=seed_ids,
         ).all()
+        entity_map = {entity.id: entity for entity in seed_entities}
+        entity_depth: dict[str, int] = {str(entity.id): 0 for entity in seed_entities}
+        frontier = list(entity_map)
+        relation_map: dict[Any, MemoryRelation] = {}
+        allowed_relation_types = {
+            str(getattr(value, "value", value)) for value in (relation_types or [])
+        }
+        truncated = len(entity_map) < len(seed_ids)
 
-        # Fetch outgoing relations (1-hop)
-        relations = (
-            await MemoryRelation.filter(
+        for depth in range(max_depth):
+            if not frontier or len(entity_map) >= max_nodes:
+                break
+
+            relation_queries = []
+            if direction in {"outgoing", "both"}:
+                relation_queries.append(
+                    MemoryRelation.filter(
+                        user_id=user_id,
+                        source_entity_id__in=frontier,
+                    )
+                )
+            if direction in {"incoming", "both"}:
+                relation_queries.append(
+                    MemoryRelation.filter(
+                        user_id=user_id,
+                        target_entity_id__in=frontier,
+                    )
+                )
+
+            candidate_relations: list[MemoryRelation] = []
+            seen_candidate_keys: set[Any] = set()
+            for query in relation_queries:
+                for relation in await query.all():
+                    relation_key = getattr(relation, "id", None) or (
+                        relation.source_entity_id,
+                        relation.target_entity_id,
+                        str(
+                            getattr(
+                                relation.relation_type, "value", relation.relation_type
+                            )
+                        ),
+                    )
+                    if relation_key in seen_candidate_keys:
+                        continue
+                    seen_candidate_keys.add(relation_key)
+                    relation_type = getattr(relation, "relation_type", None)
+                    relation_type_value = getattr(relation_type, "value", relation_type)
+                    if (
+                        allowed_relation_types
+                        and str(relation_type_value) not in allowed_relation_types
+                    ):
+                        continue
+                    candidate_relations.append(relation)
+
+            endpoint_ids = {
+                endpoint_id
+                for relation in candidate_relations
+                for endpoint_id in (
+                    relation.source_entity_id,
+                    relation.target_entity_id,
+                )
+            }
+            endpoint_entities = await MemoryEntity.filter(
                 user_id=user_id,
-                source_entity_id__in=entity_ids,
-            )
-            .prefetch_related("source_entity", "target_entity")
-            .all()
-        )
+                id__in=list(endpoint_ids),
+            ).all()
+            endpoint_map = {entity.id: entity for entity in endpoint_entities}
+            next_frontier: list[UUID] = []
 
-        # Collect neighbor entity IDs
-        neighbor_ids = [r.target_entity_id for r in relations]
+            for relation in candidate_relations:
+                source_id = relation.source_entity_id
+                target_id = relation.target_entity_id
+                if source_id not in endpoint_map or target_id not in endpoint_map:
+                    continue
 
-        # Fetch neighbor entities
-        neighbors = await MemoryEntity.filter(
-            user_id=user_id,
-            id__in=neighbor_ids,
-        ).all()
+                new_endpoint_ids = [
+                    endpoint_id
+                    for endpoint_id in (source_id, target_id)
+                    if endpoint_id not in entity_map
+                ]
+                if len(entity_map) + len(new_endpoint_ids) > max_nodes:
+                    truncated = True
+                    continue
+                if len(relation_map) >= max_relations:
+                    truncated = True
+                    break
+
+                for endpoint_id in new_endpoint_ids:
+                    entity_map[endpoint_id] = endpoint_map[endpoint_id]
+                    entity_depth[str(endpoint_id)] = depth + 1
+                    next_frontier.append(endpoint_id)
+
+                relation_key = getattr(relation, "id", None) or (
+                    source_id,
+                    target_id,
+                    str(
+                        getattr(relation.relation_type, "value", relation.relation_type)
+                    ),
+                )
+                relation_map[relation_key] = relation
+
+            frontier = list(dict.fromkeys(next_frontier))
+            if len(relation_map) >= max_relations:
+                truncated = True
+                break
 
         return {
-            "entities": entities + neighbors,
-            "relations": relations,
+            "entities": list(entity_map.values()),
+            "relations": list(relation_map.values()),
+            "entity_depth": entity_depth,
+            "truncated": truncated,
         }
 
     @staticmethod
@@ -1088,6 +1184,7 @@ class MemoryService:
 
             results = [
                 {
+                    "id": str(e.id),
                     "name": e.name,
                     "type": (
                         e.entity_type.value
@@ -1095,6 +1192,7 @@ class MemoryService:
                         else str(e.entity_type)
                     ),
                     "description": e.description,
+                    "properties": e.properties or {},
                     "updated_at": _format_entity_date(getattr(e, "updated_at", None)),
                 }
                 for e in entities
@@ -1116,6 +1214,113 @@ class MemoryService:
             }
         except Exception as e:
             logger.error(f"Failed to search memory: {e}")
+            return {
+                "success": False,
+                "error": _memory_tool_error(),
+            }
+
+    @staticmethod
+    async def handle_get_memory_subgraph(
+        user_id: UUID,
+        entity_ids: list[str] | list[UUID],
+        max_depth: int = 1,
+        direction: str = "both",
+        relation_types: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Return a model-friendly, user-scoped memory subgraph."""
+        try:
+            requested_entities = list(entity_ids[:5])
+            references: list[tuple[str, UUID | str]] = []
+            requested_names: list[str] = []
+            for raw_entity_id in requested_entities:
+                if isinstance(raw_entity_id, UUID):
+                    references.append(("id", raw_entity_id))
+                    continue
+                if not isinstance(raw_entity_id, str):
+                    raise ValueError("invalid_entity_reference")
+                value = raw_entity_id.strip()
+                if not value:
+                    raise ValueError("invalid_entity_reference")
+                try:
+                    references.append(("id", UUID(value)))
+                except ValueError:
+                    requested_names.append(value)
+                    references.append(("name", value))
+
+            entities_by_name: dict[str, MemoryEntity] = {}
+            if requested_names:
+                named_entities = await MemoryEntity.filter(
+                    user_id=user_id,
+                    name__in=list(dict.fromkeys(requested_names)),
+                ).all()
+                for entity in named_entities:
+                    entities_by_name.setdefault(entity.name, entity)
+
+            parsed_ids = [
+                value if reference_type == "id" else entities_by_name[value].id
+                for reference_type, value in references
+                if reference_type == "id" or value in entities_by_name
+            ]
+            graph = await MemoryService.get_entity_subgraph(
+                user_id=user_id,
+                entity_ids=parsed_ids,
+                max_depth=max_depth,
+                direction=direction,
+                relation_types=relation_types,
+                max_nodes=30,
+                max_relations=100,
+            )
+            entities_by_id = {str(entity.id): entity for entity in graph["entities"]}
+            depths = graph.get("entity_depth", {})
+            entities = [
+                {
+                    "id": str(entity.id),
+                    "name": entity.name,
+                    "type": (
+                        entity.entity_type.value
+                        if hasattr(entity.entity_type, "value")
+                        else str(entity.entity_type)
+                    ),
+                    "description": entity.description,
+                    "properties": entity.properties or {},
+                    "depth": depths.get(str(entity.id), 0),
+                }
+                for entity in graph["entities"]
+            ]
+            relations = []
+            for relation in graph["relations"]:
+                source = entities_by_id.get(str(relation.source_entity_id))
+                target = entities_by_id.get(str(relation.target_entity_id))
+                if source is None or target is None:
+                    continue
+                relation_type = getattr(
+                    relation.relation_type, "value", relation.relation_type
+                )
+                relations.append(
+                    {
+                        "id": str(relation.id),
+                        "source_entity_id": str(relation.source_entity_id),
+                        "source_name": source.name,
+                        "relation_type": str(relation_type),
+                        "target_entity_id": str(relation.target_entity_id),
+                        "target_name": target.name,
+                        "description": relation.description,
+                        "properties": relation.properties or {},
+                    }
+                )
+            return {
+                "success": True,
+                "entities": entities,
+                "relations": relations,
+                "truncated": bool(graph.get("truncated", False)),
+            }
+        except (TypeError, ValueError):
+            return {
+                "success": False,
+                "error": t("memory_subgraph_invalid_request"),
+            }
+        except Exception as e:
+            logger.error(f"Failed to get memory subgraph: {e}")
             return {
                 "success": False,
                 "error": _memory_tool_error(),

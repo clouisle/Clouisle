@@ -132,8 +132,65 @@ SEARCH_MEMORY_TOOL = {
                     "Only memories created or updated within this window will be returned."
                 ),
             },
+            "entity_type": {
+                "type": "string",
+                "enum": [
+                    "person",
+                    "preference",
+                    "skill",
+                    "project",
+                    "goal",
+                    "fact",
+                    "concept",
+                    "organization",
+                    "location",
+                    "custom",
+                ],
+                "description": "Optional memory entity type filter",
+            },
         },
         "required": ["query"],
+    },
+}
+
+
+GET_MEMORY_SUBGRAPH_TOOL = {
+    "name": "get_memory_subgraph",
+    "description": (
+        "Read entities and relationships connected to memory nodes returned by search_memory. "
+        "Use entity IDs from search_memory when available; exact entity names are also accepted. "
+        "Use this when the answer depends on how the user's projects, skills, preferences, "
+        "goals, or other memories are related. Do not infer relationships that are not returned."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "entity_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "maxItems": 5,
+                "description": "Entity IDs from search_memory (preferred), or exact entity names",
+            },
+            "max_depth": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3,
+                "default": 1,
+                "description": "Graph traversal depth",
+            },
+            "direction": {
+                "type": "string",
+                "enum": ["incoming", "outgoing", "both"],
+                "default": "both",
+                "description": "Which relationship directions to follow",
+            },
+            "relation_types": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional relationship type filters",
+            },
+        },
+        "required": ["entity_ids"],
     },
 }
 
@@ -145,4 +202,5 @@ def get_memory_tools() -> list[dict[str, Any]]:
         CREATE_MEMORY_RELATION_TOOL,
         UPDATE_MEMORY_ENTITY_TOOL,
         SEARCH_MEMORY_TOOL,
+        GET_MEMORY_SUBGRAPH_TOOL,
     ]

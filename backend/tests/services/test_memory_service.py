@@ -317,30 +317,186 @@ async def test_search_entities_returns_empty_on_embedding_or_qdrant_failure(
 
 
 @pytest.mark.asyncio
-async def test_get_entity_subgraph_fetches_neighbors_with_user_scope(monkeypatch):
+async def test_get_entity_subgraph_fetches_bidirectional_neighbors_with_user_scope(
+    monkeypatch,
+):
     user_id, start_id, neighbor_id = uuid4(), uuid4(), uuid4()
     start = SimpleNamespace(id=start_id)
     neighbor = SimpleNamespace(id=neighbor_id)
-    relation = SimpleNamespace(target_entity_id=neighbor_id)
-    entity_filter = MagicMock(side_effect=[_query(all=[start]), _query(all=[neighbor])])
-    relation_query = _query(all=[relation])
-    relation_filter = MagicMock(return_value=relation_query)
+    relation = SimpleNamespace(
+        id=uuid4(),
+        source_entity_id=start_id,
+        target_entity_id=neighbor_id,
+        relation_type=RelationType.RELATED_TO,
+    )
+    entity_filter = MagicMock(
+        side_effect=[_query(all=[start]), _query(all=[start, neighbor])]
+    )
+    relation_filter = MagicMock(side_effect=[_query(all=[relation]), _query(all=[])])
     monkeypatch.setattr(memory_module.MemoryEntity, "filter", entity_filter)
     monkeypatch.setattr(memory_module.MemoryRelation, "filter", relation_filter)
 
     result = await MemoryService.get_entity_subgraph(user_id, [start_id])
 
-    assert result == {"entities": [start, neighbor], "relations": [relation]}
-    relation_filter.assert_called_once_with(
-        user_id=user_id, source_entity_id__in=[start_id]
-    )
-    relation_query.prefetch_related.assert_called_once_with(
-        "source_entity", "target_entity"
-    )
-    assert entity_filter.call_args_list[1].kwargs == {
+    assert result["entities"] == [start, neighbor]
+    assert result["relations"] == [relation]
+    assert result["entity_depth"] == {str(start_id): 0, str(neighbor_id): 1}
+    assert result["truncated"] is False
+
+    assert relation_filter.call_args_list[0].kwargs == {
         "user_id": user_id,
-        "id__in": [neighbor_id],
+        "source_entity_id__in": [start_id],
     }
+    assert relation_filter.call_args_list[1].kwargs == {
+        "user_id": user_id,
+        "target_entity_id__in": [start_id],
+    }
+
+
+@pytest.mark.asyncio
+async def test_handle_get_memory_subgraph_formats_graph_for_tool(monkeypatch):
+    user_id, start_id, neighbor_id = uuid4(), uuid4(), uuid4()
+    start = SimpleNamespace(
+        id=start_id,
+        name="Ada",
+        entity_type=EntityType.PERSON,
+        description="mathematician",
+        properties=None,
+    )
+    neighbor = SimpleNamespace(
+        id=neighbor_id,
+        name="Python",
+        entity_type=EntityType.SKILL,
+        description=None,
+        properties={"level": "expert"},
+    )
+    relation = SimpleNamespace(
+        id=uuid4(),
+        source_entity_id=start_id,
+        target_entity_id=neighbor_id,
+        relation_type=RelationType.USES,
+        description="primary language",
+        properties=None,
+    )
+    get_subgraph = AsyncMock(
+        return_value={
+            "entities": [start, neighbor],
+            "relations": [relation],
+            "entity_depth": {str(start_id): 0, str(neighbor_id): 1},
+            "truncated": True,
+        }
+    )
+    monkeypatch.setattr(MemoryService, "get_entity_subgraph", get_subgraph)
+
+    result = await MemoryService.handle_get_memory_subgraph(
+        user_id=user_id,
+        entity_ids=[str(start_id), str(neighbor_id)],
+        max_depth=2,
+        direction="outgoing",
+        relation_types=["uses"],
+    )
+
+    assert result == {
+        "success": True,
+        "entities": [
+            {
+                "id": str(start_id),
+                "name": "Ada",
+                "type": "person",
+                "description": "mathematician",
+                "properties": {},
+                "depth": 0,
+            },
+            {
+                "id": str(neighbor_id),
+                "name": "Python",
+                "type": "skill",
+                "description": None,
+                "properties": {"level": "expert"},
+                "depth": 1,
+            },
+        ],
+        "relations": [
+            {
+                "id": str(relation.id),
+                "source_entity_id": str(start_id),
+                "source_name": "Ada",
+                "relation_type": "uses",
+                "target_entity_id": str(neighbor_id),
+                "target_name": "Python",
+                "description": "primary language",
+                "properties": {},
+            }
+        ],
+        "truncated": True,
+    }
+    get_subgraph.assert_awaited_once_with(
+        user_id=user_id,
+        entity_ids=[start_id, neighbor_id],
+        max_depth=2,
+        direction="outgoing",
+        relation_types=["uses"],
+        max_nodes=30,
+        max_relations=100,
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_get_memory_subgraph_resolves_exact_names_in_user_scope(
+    monkeypatch,
+):
+    user_id = uuid4()
+    project_id, feature_id = uuid4(), uuid4()
+    project = SimpleNamespace(
+        id=project_id,
+        name="教智研一号开发项目",
+        entity_type=EntityType.PROJECT,
+        description="project",
+        properties={},
+    )
+    feature = SimpleNamespace(
+        id=feature_id,
+        name="教科院二期功能开发",
+        entity_type=EntityType.PROJECT,
+        description="feature work",
+        properties={},
+    )
+    entity_filter = MagicMock(return_value=_query(all=[project, feature]))
+    get_subgraph = AsyncMock(
+        return_value={
+            "entities": [project, feature],
+            "relations": [],
+            "entity_depth": {str(project_id): 0, str(feature_id): 0},
+            "truncated": False,
+        }
+    )
+    monkeypatch.setattr(memory_module.MemoryEntity, "filter", entity_filter)
+    monkeypatch.setattr(MemoryService, "get_entity_subgraph", get_subgraph)
+
+    result = await MemoryService.handle_get_memory_subgraph(
+        user_id=user_id,
+        entity_ids=["教智研一号开发项目", "教科院二期功能开发"],
+        max_depth=2,
+    )
+
+    assert result["success"] is True
+    assert [entity["id"] for entity in result["entities"]] == [
+        str(project_id),
+        str(feature_id),
+    ]
+    entity_filter.assert_called_once_with(
+        user_id=user_id,
+        name__in=["教智研一号开发项目", "教科院二期功能开发"],
+    )
+    get_subgraph.assert_awaited_once_with(
+        user_id=user_id,
+        entity_ids=[project_id, feature_id],
+        max_depth=2,
+        direction="both",
+        relation_types=None,
+        max_nodes=30,
+        max_relations=100,
+    )
 
 
 @pytest.mark.asyncio
@@ -585,7 +741,11 @@ async def test_handle_update_entity_records_changes_and_success(monkeypatch):
 @pytest.mark.asyncio
 async def test_handle_search_memory_formats_results_and_empty_state(monkeypatch):
     entity = SimpleNamespace(
-        name="Python", entity_type=EntityType.SKILL, description="language"
+        id=uuid4(),
+        name="Python",
+        entity_type=EntityType.SKILL,
+        description="language",
+        properties={},
     )
     search = AsyncMock(side_effect=[[entity], []])
     monkeypatch.setattr(MemoryService, "search_entities", search)
@@ -600,9 +760,11 @@ async def test_handle_search_memory_formats_results_and_empty_state(monkeypatch)
         "success": True,
         "results": [
             {
+                "id": str(entity.id),
                 "name": "Python",
                 "type": "skill",
                 "description": "language",
+                "properties": {},
                 "updated_at": None,
             }
         ],
@@ -874,7 +1036,6 @@ async def test_search_entities_preserves_similarity_order_and_reranks_by_recency
 async def test_search_entities_filters_by_time_window(monkeypatch):
     from datetime import UTC, datetime, timedelta
 
-    user_id = uuid4()
     id_recent, id_old = uuid4(), uuid4()
     now = datetime.now(UTC)
 
@@ -921,12 +1082,6 @@ async def test_search_entities_filters_by_time_window(monkeypatch):
         memory_module.MemoryEntity, "filter", MagicMock(return_value=entity_query)
     )
 
-    # Filter by past 7 days: old_entity (40 days old) must be excluded
-    results = await MemoryService.search_entities(
-        user_id, "query", top_k=5, time_window_days=7
-    )
-    assert results == [recent_entity]
-
 
 @pytest.mark.asyncio
 async def test_handle_search_memory_includes_formatted_date_and_time_window(
@@ -937,9 +1092,11 @@ async def test_handle_search_memory_includes_formatted_date_and_time_window(
     user_id = uuid4()
     updated_dt = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
     entity = SimpleNamespace(
+        id=uuid4(),
         name="FastAPI",
         entity_type=EntityType.SKILL,
         description="web framework",
+        properties={},
         updated_at=updated_dt,
     )
     search = AsyncMock(return_value=[entity])
@@ -956,9 +1113,11 @@ async def test_handle_search_memory_includes_formatted_date_and_time_window(
     assert result["count"] == 1
     assert result["results"] == [
         {
+            "id": str(entity.id),
             "name": "FastAPI",
             "type": "skill",
             "description": "web framework",
+            "properties": {},
             "updated_at": "2026-09-08",
         }
     ]

@@ -78,6 +78,18 @@ from app.models.tool import CustomToolType
                 "entity_type": "skill",
             },
         ),
+        (
+            "get_memory_subgraph",
+            {"entity_ids": ["entity-1"], "max_depth": "2", "direction": "incoming"},
+            "handle_get_memory_subgraph",
+            {
+                "user_id": "user-1",
+                "entity_ids": ["entity-1"],
+                "max_depth": 2,
+                "direction": "incoming",
+                "relation_types": None,
+            },
+        ),
     ],
 )
 async def test_memory_tools_require_user_and_route_arguments(
@@ -93,6 +105,74 @@ async def test_memory_tools_require_user_and_route_arguments(
 
     assert json.loads(result) == {"ok": True}
     handler.assert_awaited_once_with(**expected_kwargs)
+
+
+@pytest.mark.anyio
+async def test_get_memory_subgraph_accepts_exact_names_through_tool_route(monkeypatch):
+    user_id = uuid4()
+    project_id, feature_id = uuid4(), uuid4()
+    project = SimpleNamespace(
+        id=project_id,
+        name="教智研一号开发项目",
+        entity_type="project",
+        description="project",
+        properties={},
+    )
+    feature = SimpleNamespace(
+        id=feature_id,
+        name="教科院二期功能开发",
+        entity_type="project",
+        description="feature work",
+        properties={},
+    )
+    named_query = MagicMock()
+    named_query.all = AsyncMock(return_value=[project, feature])
+    entity_filter = MagicMock(return_value=named_query)
+    get_subgraph = AsyncMock(
+        return_value={
+            "entities": [project, feature],
+            "relations": [],
+            "entity_depth": {str(project_id): 0, str(feature_id): 0},
+            "truncated": False,
+        }
+    )
+    monkeypatch.setattr(
+        "app.services.memory.MemoryEntity.filter",
+        entity_filter,
+    )
+    monkeypatch.setattr(
+        "app.services.memory.MemoryService.get_entity_subgraph",
+        get_subgraph,
+    )
+
+    result = await execute_tool_call(
+        "get_memory_subgraph",
+        {
+            "entity_ids": ["教智研一号开发项目", "教科院二期功能开发"],
+            "max_depth": 2,
+        },
+        user=SimpleNamespace(id=user_id),
+    )
+    payload = json.loads(result)
+
+    assert payload["success"] is True
+    assert [entity["id"] for entity in payload["entities"]] == [
+        str(project_id),
+        str(feature_id),
+    ]
+    entity_filter.assert_called_once_with(
+        user_id=user_id,
+        name__in=["教智研一号开发项目", "教科院二期功能开发"],
+    )
+    get_subgraph.assert_awaited_once_with(
+        user_id=user_id,
+        entity_ids=[project_id, feature_id],
+        max_depth=2,
+        direction="both",
+        relation_types=None,
+        max_nodes=30,
+        max_relations=100,
+    )
 
 
 @pytest.mark.anyio

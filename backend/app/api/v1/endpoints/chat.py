@@ -764,8 +764,11 @@ async def get_agent_tools(agent: Agent) -> list[dict]:
         auto_extract = memory_config.get("auto_extract", True)
 
         for tool in memory_tools:
-            # If auto_extract is disabled, only provide search_memory tool
-            if not auto_extract and tool["name"] != "search_memory":
+            # Memory reads remain available in agentic mode; auto_extract only gates writes.
+            if not auto_extract and tool["name"] not in {
+                "search_memory",
+                "get_memory_subgraph",
+            }:
                 continue
 
             # Convert Claude format (input_schema) to OpenAI format (parameters)
@@ -1097,6 +1100,9 @@ async def get_tool_display_names(
             "tool_update_memory_entity", lang=user_locale
         )
         display_names["search_memory"] = t("tool_search_memory", lang=user_locale)
+        display_names["get_memory_subgraph"] = t(
+            "tool_get_memory_subgraph", lang=user_locale
+        )
 
     if agent.enable_image_generation:
         metadata = BUILTIN_TOOLS_METADATA.get("generate_image", {})

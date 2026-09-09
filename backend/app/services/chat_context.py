@@ -588,44 +588,6 @@ async def _build_messages_with_file_content(
         user_message=user_message,
         user_locale=user_locale,
     )
-    if (
-        bool(getattr(agent, "enable_memory", False))
-        and user_message
-        and user_message.strip()
-    ):
-        resolved_user_id = getattr(user, "id", None) or getattr(
-            conversation, "user_id", None
-        )
-        if resolved_user_id:
-            try:
-                from app.services.memory import MemoryService
-
-                recalled = await MemoryService.search_entities(
-                    user_id=resolved_user_id,
-                    query=user_message,
-                    top_k=5,
-                )
-                if recalled:
-                    recalled_lines = [
-                        f"- [{getattr(e, 'entity_type', 'fact')}] {e.name}: {e.description or ''}"
-                        + (
-                            f" (updated: {e.updated_at.strftime('%Y-%m-%d')})"
-                            if getattr(e, "updated_at", None)
-                            else ""
-                        )
-                        for e in recalled
-                    ]
-                    header = (
-                        "## 用户记忆与背景信息"
-                        if (user_locale and str(user_locale).startswith("zh"))
-                        else "## Recalled User Memories"
-                    )
-                    system_prompt_content = (
-                        f"{system_prompt_content}\n\n{header}\n"
-                        + "\n".join(recalled_lines)
-                    )
-            except Exception as e:
-                logger.debug("Failed to auto-retrieve memories for prompt: %s", e)
 
     _append_message(
         messages,

@@ -1396,6 +1396,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Source entity '{entity_name}' not found",
         "zh": "未找到源实体“{entity_name}”",
     },
+    "memory_subgraph_invalid_request": {
+        "en": "Invalid memory graph request",
+        "zh": "无效的记忆图请求",
+    },
     "memory_target_entity_not_found": {
         "en": "Target entity '{entity_name}' not found",
         "zh": "未找到目标实体“{entity_name}”",
@@ -2691,6 +2695,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "tool_execute_success": {"en": "Tool executed successfully", "zh": "工具执行成功"},
     "tool_execution_failed": {"en": "Tool execution failed", "zh": "工具执行失败"},
+    "tool_get_memory_subgraph": {"en": "Get Memory Subgraph", "zh": "获取记忆关系图"},
     "tool_knowledge_search": {"en": "Knowledge Search", "zh": "知识库搜索"},
     "tool_name_exists": {
         "en": "Tool with this name already exists",

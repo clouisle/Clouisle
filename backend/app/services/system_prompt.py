@@ -51,61 +51,41 @@ MEMORY_SYSTEM_INSTRUCTION = """
 ## Memory System
 
 You have access to these memory tools:
-- `search_memory(query, time_window_days)`: Search what you know about the user. Results include an `updated_at` date, and you can optionally specify `time_window_days` to limit the search to recent memories.
+- `search_memory(query, time_window_days, entity_type)`: Search the user's long-term memory for relevant entities. Results include each entity's `id`, name, type, description, properties, and update date.
+- `get_memory_subgraph(entity_ids, max_depth, direction, relation_types)`: Read entities and relationships connected to IDs returned by `search_memory`; exact entity names are accepted when an ID is unavailable.
 - `create_memory_entity(name, entity_type, description)`: Save new information
 - `update_memory_entity(entity_name, description)`: Update existing information
 - `create_memory_relation(source, target, relation_type)`: Connect related information
 
-### Required Workflow
+### Retrieval Workflow
 
-1. Before **any** `create_memory_entity()` call, you **must** call `search_memory()` first.
-2. When the user shares information such as a name, preference, or skill:
-   - Step 1: Call `search_memory(query="keywords about the information")`
-   - Step 2: Read the search results carefully
-   - Step 3: Decide based on the results:
-     - Found a similar entity -> use `update_memory_entity(entity_name="existing name", ...)`
-     - Found nothing relevant -> use `create_memory_entity(name="new name", ...)`
-3. Never skip `search_memory()`, even if you think the information is new.
-4. Never say you do not have access to memory tools.
+1. Use the current conversation history first. Do not call memory tools when the needed information is already present in the conversation.
+2. When an answer depends on the user's past name, preference, skill, project, goal, or other persistent information, call `search_memory()` with focused keywords.
+3. When a question asks how memories are related, used, owned, dependent, or connected:
+   - First call `search_memory()` to find the relevant entity IDs and names.
+   - Then call `get_memory_subgraph()` with those IDs, or exact names if the IDs are unavailable.
+   - Use only relationships returned by the graph tool. Never invent a relationship that was not returned.
+4. For general questions unrelated to the user's long-term information, do not call memory tools.
+5. Before any `create_memory_entity()` call, call `search_memory()` first to avoid duplicate entities.
+6. If a similar entity exists, use `update_memory_entity()`; otherwise create a new entity.
+7. Never say you do not have access to memory tools.
 
 ### Temporal Grounding Rules
 
-1. When storing time-sensitive information, always convert relative time expressions (such as "yesterday", "last week", "last month", "next year", "recently") into concrete dates or year/month values (e.g., "September 2026", "2026-09-08") based on the Current Time.
-2. Never store ambiguous relative time expressions like "yesterday" or "recently" in entity descriptions or properties, because they lose their reference point over time.
-3. When search results contain multiple conflicting or evolving facts, inspect their `updated_at` timestamps to distinguish newer facts from older history.
+1. When storing time-sensitive information, convert relative time expressions such as "yesterday", "last week", "last month", "next year", or "recently" into concrete dates or year/month values based on the Current Time.
+2. Never store ambiguous relative time expressions in entity descriptions or properties.
+3. When search results contain conflicting or evolving facts, inspect their `updated_at` timestamps.
 
 ### Examples
 
-**Wrong**
-
-User: "I'm Alice"
-
-❌ Directly calling `create_memory_entity(name="Alice", ...)` is wrong because no search happened first.
-
-User: "I joined ByteDance yesterday"
-
-❌ Storing description="User joined ByteDance yesterday" is wrong because relative time "yesterday" becomes inaccurate in the future.
-
-**Correct**
-
-User: "I'm Alice"
-- Call `search_memory(query="user name")`
-- Check results -> No "Alice" found
-- Call `create_memory_entity(name="Alice", entity_type="person", description="User's name")`
-
-User: "Actually, I'm Alice Smith"
-- Call `search_memory(query="user name Alice")`
-- Check results -> Found entity "Alice"
-- Call `update_memory_entity(entity_name="Alice", description="Full name: Alice Smith")`
-
-User: "I joined ByteDance yesterday" (suppose Current Time is 2026-09-09)
-- Call `search_memory(query="ByteDance work company")`
-- Convert relative time "yesterday" to absolute date "2026-09-08"
-- Call `create_memory_entity(name="ByteDance", entity_type="organization", description="Joined company on 2026-09-08")`
-
 User: "What's my name?"
-- Call `search_memory(query="user name")`
-- Then answer using the result
+- Call `search_memory(query="user name")`.
+- Answer using the returned entity; do not claim a name that was not returned.
+
+User: "What technologies does my project use?"
+- Call `search_memory(query="my project")`.
+- Call `get_memory_subgraph(entity_ids=[project_id], max_depth=1)`.
+- Answer from the returned `uses` relationships.
 """
 
 ASK_USER_SYSTEM_INSTRUCTION = """
