@@ -178,6 +178,8 @@ The following toggles control the chat experience:
 | **Enable interactive questions** | off | Allow the agent to pause and ask one or more structured questions; users can pick options, type custom text, or skip |
 | **Enable memory** | off | Remember user information across conversations (memory config: max memories per retrieval, auto-extract, importance threshold) |
 
+
+Background extraction is also controlled by the administrator's **Site Settings > Memory** category. For eligible pending user turns, the global switch, extraction model, cooldown (`10-3600` seconds), and pending-turn trigger (`1-50` turns) determine when extraction is queued; Agent memory must be enabled as well.
 ## Knowledge Base Configuration
 
 ### Attach Knowledge Bases
@@ -213,13 +215,16 @@ There is no cross-KB priority ordering; each attached knowledge base is searched
 ### RAG Modes
 
 **off:**
-- No retrieval, even if knowledge bases are configured
+- No retrieval, even if knowledge bases are configured.
 
 **auto:**
-- Traditional RAG: automatically retrieve from the knowledge bases on every message
+- Traditional RAG: automatically retrieve from the knowledge bases on every message.
 
 **agentic:**
-- Agentic RAG: the agent decides when to search (default)
+- Agentic RAG: the agent decides when to search.
+
+When `knowledge_base_configs` is empty, the backend normalizes the persisted mode to `off`, regardless of the requested default. The Agent editor hides the RAG mode selector until at least one knowledge base is attached.
+
 
 ## Tool Configuration
 

@@ -120,7 +120,8 @@ curl -X POST "https://your-domain.com/api/v1/agents/agent-123/chat" \
           "document_name": "Business Hours Policy",
           "chunk_id": "chunk-012",
           "content": "Business hours: Monday-Friday, 9 AM to 5 PM EST",
-          "score": 0.95
+          "score": 0.95,
+          "citation_id": "rag_0123456789abcdef"
         }
       ],
       "created_at": "2026-02-11T16:00:00Z",
@@ -136,6 +137,8 @@ curl -X POST "https://your-domain.com/api/v1/agents/agent-123/chat" \
   "msg": "success"
 }
 ```
+`rag_context` is `null` when retrieval did not run (for example, RAG is off or the Agent has no knowledge-base associations). It is `[]` when retrieval ran but returned no contexts. Retrieved contexts may include a stable `citation_id`; assistant citations use the exact `[[cite:SOURCE_ID]]` marker for that ID.
+
 
 ### Response (Streaming)
 
@@ -168,6 +171,8 @@ data: {"contexts": [{"document_name": "FAQ", "content": "...", "score": 0.95}]}
 event: message_end
 data: {"usage": {"prompt_tokens": 150, "completion_tokens": 25, "total_tokens": 175}, "timing": {"first_token_ms": 320, "duration_ms": 2300, "tokens_per_second": 10.9}}
 ```
+The client should preserve the order in which SSE events arrive. Retrieval, compression, reasoning, tool, media, and text segments are rendered in that emitted order rather than as a fixed prelude. `rag_start` and `rag_context` are emitted only when retrieval actually runs.
+
 
 See [SSE Streaming](../sse-streaming.md) for details.
 

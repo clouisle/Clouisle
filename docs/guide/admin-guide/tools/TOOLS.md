@@ -33,6 +33,12 @@ Tools allow Agents to perform actions beyond text generation, such as:
 
 ## Tool Types
 
+- [Builtin Tools](#builtin-tools)
+- [Memory Tools](#memory-tools)
+- [HTTP Tools](#http-tools)
+- [Code Tools](#code-tools)
+- [MCP Tools](#mcp-tools)
+
 ### Builtin Tools
 
 System-provided tools that are ready to use without configuration.
@@ -45,6 +51,17 @@ System-provided tools that are ready to use without configuration.
 | `unit_convert` | Convert between units | Math |
 | `web_search` | Search the web (requires Tavily API key) | Search |
 | `fetch_webpage` | Fetch and extract webpage content | Web |
+
+### Memory Tools
+
+When an Agent has memory enabled, the model can use read and write tools for the user's memory graph. Read tools remain available when automatic extraction is disabled; write tools are gated by the Agent's memory configuration.
+
+| Tool | Purpose | Limits and behavior |
+|------|---------|---------------------|
+| `search_memory` | Find relevant user memory entities | Supports `top_k` (clamped to 1-10), an optional time window, and an entity-type filter |
+| `get_memory_subgraph` | Read relationships connected to search results | Accepts at most 5 seed IDs or exact names, traverses 1-3 levels, follows `incoming`, `outgoing`, or `both` directions (default `both`), and can filter relation types |
+
+Use `search_memory` first, then `get_memory_subgraph` only when the answer depends on relationships. Treat returned relationships as the source of truth; do not infer edges that were not returned.
 
 ### HTTP Tools
 

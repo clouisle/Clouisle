@@ -26,9 +26,11 @@ As an administrator, you can configure:
 - **Security** (`/site-settings/security`)
 - **Notifications** (`/site-settings/notifications`)
 - **Storage** (`/site-settings/storage`)
+- **Memory** (`/site-settings/memory`)
 - **SSO** (`/site-settings/sso`)
 
 > **Note:** Settings are stored as key-value site settings and exposed through `GET /api/v1/admin/site-settings` (single key: `GET/PUT /api/v1/admin/site-settings/{key}`, bulk update: `PUT /api/v1/admin/site-settings`). Viewing requires `admin:settings:read`; updating requires `admin:settings:update`.
+
 
 ## General Settings
 
@@ -200,6 +202,19 @@ The **Auto Notifications** tab (GET/PUT `/api/v1/admin/site-settings/auto-notifi
 
 > **Note:** Not implemented / Roadmap. There is no email template editor. Notification messages are generated from built-in i18n translations (`app/core/i18n.py`).
 
+## Background Memory Extraction Settings
+
+The **Memory** category (`/site-settings/memory`) schedules extraction for pending user turns after the configured cooldown, or immediately when the pending-turn threshold is reached. The Agent must also have memory enabled; disabling either the Agent memory feature or the global switch prevents extraction tasks.
+
+```yaml
+memory_async_extraction_enabled: false
+memory_extraction_model_id: ""
+memory_extraction_cooldown_seconds: 180      # 10-3600
+memory_extraction_max_pending_turns: 6      # 1-50
+```
+
+The extraction model falls back to the explicitly configured enabled model, the Agent's assigned model, the system default chat model, and then the first available chat model. The cooldown debounces extraction; reaching the pending-turn threshold queues it immediately.
+
 ## Storage Settings
 
 ### File Storage
@@ -294,4 +309,4 @@ SSO providers are managed in **Settings** → **SSO**. Providers are created gen
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-09
