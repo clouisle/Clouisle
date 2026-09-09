@@ -1323,6 +1323,10 @@ msgstr "No memories found. This might be the first conversation or the informati
 msgid "memory_search_results_found"
 msgstr "Found {count} relevant memories."
 
+msgid "memory_subgraph_invalid_request"
+msgstr "Invalid memory graph request"
+
+
 msgid "memory_similar_entities_notice"
 msgstr " (Note: Similar entities exist: {similar_entities}. Consider if you meant to update one of them instead.)"
 
@@ -2387,6 +2391,8 @@ msgstr "Tool not found"
 
 msgid "tool_search_memory"
 msgstr "Search Memory"
+msgid "tool_get_memory_subgraph"
+msgstr "Get Memory Subgraph"
 
 msgid "tool_share_not_found"
 msgstr "Tool share not found"

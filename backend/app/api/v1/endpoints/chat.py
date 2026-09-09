@@ -764,8 +764,11 @@ async def get_agent_tools(agent: Agent) -> list[dict]:
         auto_extract = memory_config.get("auto_extract", True)
 
         for tool in memory_tools:
-            # If auto_extract is disabled, only provide search_memory tool
-            if not auto_extract and tool["name"] != "search_memory":
+            # Memory reads remain available in agentic mode; auto_extract only gates writes.
+            if not auto_extract and tool["name"] not in {
+                "search_memory",
+                "get_memory_subgraph",
+            }:
                 continue
 
             # Convert Claude format (input_schema) to OpenAI format (parameters)
@@ -1097,6 +1100,9 @@ async def get_tool_display_names(
             "tool_update_memory_entity", lang=user_locale
         )
         display_names["search_memory"] = t("tool_search_memory", lang=user_locale)
+        display_names["get_memory_subgraph"] = t(
+            "tool_get_memory_subgraph", lang=user_locale
+        )
 
     if agent.enable_image_generation:
         metadata = BUILTIN_TOOLS_METADATA.get("generate_image", {})
@@ -1637,7 +1643,7 @@ async def edit_user_message_stream(
     branch_parent_id = message.branch_parent_id
     if branch_parent_id is None:
         branch_parent_id = original_prefix[-1].id if original_prefix else None
-    rag_contexts: list[dict[str, Any]] = []
+    rag_contexts: list[dict[str, Any]] | None = None
     if agent.rag_mode == RAGMode.AUTO and await AgentKnowledgeBase.exists(
         agent_id=agent.id
     ):
@@ -1673,7 +1679,7 @@ async def edit_user_message_stream(
             branch_parent_id=branch_parent_id,
             images=message.images,
             file_urls=message.file_urls,
-            rag_context=rag_contexts if rag_contexts else None,
+            rag_context=rag_contexts,
             round_id=round_id,
             round_index=0,
             round_role=MessageRoundRole.USER_INPUT,
@@ -1870,16 +1876,19 @@ async def _enqueue_durable_chat_run(
 
     from app.models.agent import RAGMode
 
-    rag_contexts: list[dict[str, Any]] = []
-    if agent.rag_mode == RAGMode.AUTO:
-        rag_contexts = await perform_rag_retrieval(
-            agent,
-            chat_in.message,
-            await get_visible_conversation_messages(
-                conversation.id, limit=AUTO_RAG_HISTORY_LIMIT
-            ),
+    rag_contexts: list[dict[str, Any]] | None = None
+    if agent.rag_mode == RAGMode.AUTO and await AgentKnowledgeBase.exists(
+        agent_id=agent.id
+    ):
+        rag_contexts = aggregate_rag_contexts(
+            await perform_rag_retrieval(
+                agent,
+                chat_in.message,
+                await get_visible_conversation_messages(
+                    conversation.id, limit=AUTO_RAG_HISTORY_LIMIT
+                ),
+            )
         )
-        rag_contexts = aggregate_rag_contexts(rag_contexts)
 
     message_assets = await _resolve_message_assets(
         attachments=[*chat_in.images, *chat_in.file_urls],
@@ -1901,7 +1910,7 @@ async def _enqueue_durable_chat_run(
             file_urls=[f.model_dump() for f in chat_in.file_urls]
             if chat_in.file_urls
             else None,
-            rag_context=rag_contexts if rag_contexts else None,
+            rag_context=rag_contexts,
             branch_parent_id=user_branch_parent_id,
             round_id=round_id,
             round_index=0,
@@ -1965,6 +1974,7 @@ async def _enqueue_durable_chat_run(
         variables=chat_in.variables,
         branch_parent_id=user_branch_parent_id,
         locale=effective_locale,
+        rag_contexts=rag_contexts,
     )
     run.worker_payload = payload
     await run.save(update_fields=["worker_payload"])
@@ -2491,7 +2501,7 @@ async def regenerate_message(
         version_number = new_version_number
         version_count = new_version_number
 
-    rag_contexts: list[dict[str, Any]] = []
+    rag_contexts: list[dict[str, Any]] | None = None
     if agent.rag_mode == RAGMode.AUTO and await AgentKnowledgeBase.exists(
         agent_id=agent.id
     ):

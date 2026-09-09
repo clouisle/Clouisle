@@ -1,5 +1,6 @@
 """Tests for the unified system prompt injection manager (YUN-127)."""
 
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +12,7 @@ from app.services.system_prompt import (
     build_system_prompt,
     has_sandbox_tools,
     normalize_locale,
+    get_temporal_instruction,
 )
 
 
@@ -96,6 +98,51 @@ def test_chat_mode_injects_memory_when_enabled():
         invocation_mode=CHAT_MODE,
     )
     assert "## Memory System" in prompt
+
+
+def test_chat_mode_injects_temporal_instruction_en_and_zh():
+    prompt_en = build_system_prompt(
+        _agent(),
+        user_message="hi",
+        user_locale="en",
+        invocation_mode=CHAT_MODE,
+    )
+    assert "## Current Time" in prompt_en
+    assert "Current system time:" in prompt_en
+
+    prompt_zh = build_system_prompt(
+        _agent(),
+        user_message="hi",
+        user_locale="zh",
+        invocation_mode=CHAT_MODE,
+    )
+    assert "## 当前时间" in prompt_zh
+    assert "当前系统时间：" in prompt_zh
+
+
+def test_temporal_instruction_uses_day_granularity():
+    instruction = get_temporal_instruction("en")
+
+    assert "Current system time:" in instruction
+    date_match = re.search(r"Current system time:\s*(\S+)", instruction)
+    assert date_match is not None
+    assert re.match(r"^\d{4}-\d{2}-\d{2},?$", date_match.group(1))
+
+
+def test_memory_prompt_contains_temporal_grounding_rules():
+    prompt = build_system_prompt(
+        _agent(enable_memory=True),
+        user_message="hi",
+        user_locale="en",
+        invocation_mode=CHAT_MODE,
+    )
+    assert "### Temporal Grounding Rules" in prompt
+    assert "search_memory(query, time_window_days, entity_type)" in prompt
+    assert (
+        "get_memory_subgraph(entity_ids, max_depth, direction, relation_types)"
+        in prompt
+    )
+    assert "convert relative time expressions" in prompt
 
 
 def test_chat_mode_injects_ask_user_guidance_when_enabled():
@@ -212,7 +259,8 @@ def test_section_order_is_markdown_then_sandbox_then_language():
         user_locale="en",
         invocation_mode=CHAT_MODE,
     )
-    assert prompt.index("## Markdown Output") < prompt.index(
+    assert prompt.index("## Markdown Output") < prompt.index("## Current Time")
+    assert prompt.index("## Current Time") < prompt.index(
         "## Sandbox Environment Guidance"
     )
     assert prompt.index("## Sandbox Environment Guidance") < prompt.index(

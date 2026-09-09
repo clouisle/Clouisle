@@ -582,17 +582,19 @@ async def _build_messages_with_file_content(
     protected_indexes: set[int] = set()
     meta: list[dict[str, Any]] = []
     valid_tool_call_ids: set[str] = set()
+    system_prompt_content = _build_system_prompt(
+        agent=agent,
+        conversation=conversation,
+        user_message=user_message,
+        user_locale=user_locale,
+    )
+
     _append_message(
         messages,
         protected_indexes,
         Message(
             role=MessageRole.SYSTEM,
-            content=_build_system_prompt(
-                agent=agent,
-                conversation=conversation,
-                user_message=user_message,
-                user_locale=user_locale,
-            ),
+            content=system_prompt_content,
         ),
         meta=meta,
     )

@@ -8,10 +8,12 @@ from .knowledge_base import (
     process_url_document_task,
 )
 from .sandbox import run_sandbox_job_task
+from .memory import extract_conversation_memories_task
 
 __all__ = [
     "process_document_task",
     "reprocess_document_task",
     "process_url_document_task",
     "run_sandbox_job_task",
+    "extract_conversation_memories_task",
 ]

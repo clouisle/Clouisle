@@ -299,7 +299,7 @@ async def _rebuild_context(
     # RAG is prepared at route level and stored on the user message or payload.
     rag_contexts = payload.get("rag_contexts")
     if rag_contexts is None:
-        rag_contexts = user_msg.rag_context or []
+        rag_contexts = user_msg.rag_context
     if agent.rag_mode == RAGMode.AUTO and rag_contexts:
         from app.api.v1.endpoints.chat_rag import build_rag_prompt
 
@@ -612,14 +612,15 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
                 round_id=run.active_round_id,
                 message_id=canonical.id,
             )
-        rag_contexts = user_msg.rag_context or []
-        if agent.rag_mode == RAGMode.AUTO:
+        rag_contexts = payload.get("rag_contexts")
+        if rag_contexts is None:
+            rag_contexts = user_msg.rag_context
+        if agent.rag_mode == RAGMode.AUTO and rag_contexts is not None:
             await stream.publish("rag_start", {})
-            if rag_contexts:
-                await stream.publish(
-                    "rag_context",
-                    {"contexts": rag_contexts, "query": user_msg.content},
-                )
+            await stream.publish(
+                "rag_context",
+                {"contexts": rag_contexts, "query": user_msg.content},
+            )
         await stream.publish(
             "message_start",
             {
@@ -847,6 +848,20 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
         await stream.publish(
             "run_end", {"status": "completed", "message_id": str(canonical.id)}
         )
+        try:
+            from app.tasks.memory import schedule_background_memory_extraction
+
+            await schedule_background_memory_extraction(
+                conversation_id=conversation.id,
+                agent_id=agent.id,
+                user_id=run.user_id,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to schedule background memory extraction for conversation %s",
+                conversation.id,
+                exc_info=True,
+            )
         return {
             "status": AgentRunStatus.COMPLETED.value,
             "message_id": str(canonical.id),

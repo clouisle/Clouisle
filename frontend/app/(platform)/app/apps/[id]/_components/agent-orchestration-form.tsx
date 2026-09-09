@@ -228,7 +228,7 @@ export function AgentOrchestrationForm({
       allowed_extensions: ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls', '.txt', '.md', '.csv', '.json', '.html'],
     }
   )
-  const [ragMode, setRagMode] = React.useState<RAGMode>(agent.rag_mode || 'agentic')
+  const [ragMode, setRagMode] = React.useState<RAGMode>(agent.knowledge_bases.length > 0 ? agent.rag_mode || 'agentic' : 'off')
 
   // Sync state with agent prop when it changes
   React.useEffect(() => {
@@ -270,7 +270,7 @@ export function AgentOrchestrationForm({
         allowed_extensions: ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls', '.txt', '.md', '.csv', '.json', '.html'],
       }
     )
-    setRagMode(agent.rag_mode || 'agentic')
+    setRagMode(agent.knowledge_bases.length > 0 ? agent.rag_mode || 'agentic' : 'off')
   }, [agent])
 
   // Collapsed states
@@ -325,6 +325,8 @@ export function AgentOrchestrationForm({
     loadData()
   }, [currentTeam])
 
+  const effectiveRagMode: RAGMode = knowledgeBaseConfigs.length > 0 ? ragMode : 'off'
+
   // Update parent when values change
   React.useEffect(() => {
     onUpdate({
@@ -341,9 +343,9 @@ export function AgentOrchestrationForm({
       enable_video_generation: enableVideoGeneration,
       video_generation_config: enableVideoGeneration ? videoGenerationConfig : null,
       attachment_config: enableAttachments ? attachmentConfig : null,
-      rag_mode: ragMode,
+      rag_mode: effectiveRagMode,
     })
-  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableAttachments, enableUserInputRequest, enableMemory, memoryConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig, attachmentConfig, ragMode, onUpdate])
+  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableAttachments, enableUserInputRequest, enableMemory, memoryConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig, attachmentConfig, effectiveRagMode, onUpdate])
 
   // Character count for prompt
   const promptLength = systemPrompt.length
@@ -377,7 +379,7 @@ export function AgentOrchestrationForm({
         config: knowledgeBaseConfigs.find((c) => c.knowledge_base_id === kb.id)!,
       })),
     variables,
-    rag_mode: ragMode,
+    rag_mode: effectiveRagMode,
     capabilities: {
       enable_attachments: enableAttachments,
       attachment_config: enableAttachments ? attachmentConfig : null,
@@ -388,7 +390,7 @@ export function AgentOrchestrationForm({
       enable_video_generation: enableVideoGeneration,
       video_generation_config: enableVideoGeneration ? videoGenerationConfig : null,
     },
-  }), [agent.name, agent.description, toolsConfig, availableTools, knowledgeBases, knowledgeBaseConfigs, variables, ragMode, enableAttachments, attachmentConfig, enableMemory, memoryConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig])
+  }), [agent.name, agent.description, toolsConfig, availableTools, knowledgeBases, knowledgeBaseConfigs, variables, effectiveRagMode, enableAttachments, attachmentConfig, enableMemory, memoryConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig])
 
   return (
     <div className="space-y-3">
@@ -556,7 +558,10 @@ export function AgentOrchestrationForm({
         <KnowledgeBaseSelector
           configs={knowledgeBaseConfigs}
           availableKnowledgeBases={knowledgeBases}
-          onChange={setKnowledgeBaseConfigs}
+          onChange={(configs) => {
+            setKnowledgeBaseConfigs(configs)
+            if (configs.length === 0) setRagMode('off')
+          }}
         />
       </ConfigCard>
 

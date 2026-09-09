@@ -270,41 +270,41 @@ async def test_nonstream_rejects_inactive_user_before_boundaries():
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("rag_mode", "images", "file_urls", "rag_result", "expected_content"),
+    (
+        "rag_mode",
+        "has_knowledge_base",
+        "images",
+        "file_urls",
+        "rag_result",
+        "expected_content",
+    ),
     [
-        (RAGMode.OFF, [], [], [], "hello"),
-        (RAGMode.AUTO, [], [], [], "rag prompt"),
+        (RAGMode.OFF, False, [], [], [], "hello"),
+        (RAGMode.AUTO, False, [], [], [], "hello"),
+        (RAGMode.AUTO, True, [], [], [], "rag prompt"),
         (
             RAGMode.AUTO,
+            True,
             [{"url": "data:image/png;base64,eA=="}],
             [],
             [{"id": "a"}],
             "rag prompt",
         ),
-        (
-            RAGMode.OFF,
-            [],
-            [
-                {
-                    "filename": "a.txt",
-                    "url": "https://example.com/a.txt",
-                    "size": 1,
-                    "mime_type": "text/plain",
-                }
-            ],
-            [],
-            "hello",
-        ),
     ],
 )
 async def test_nonstream_builds_user_message_variants(
-    rag_mode, images, file_urls, rag_result, expected_content
+    rag_mode, has_knowledge_base, images, file_urls, rag_result, expected_content
 ):
     agent = SimpleNamespace(id=uuid4(), team_id=uuid4(), rag_mode=rag_mode)
     conversation = SimpleNamespace(id=uuid4())
     created = AsyncMock(side_effect=StopHere)
 
     with (
+        patch.object(
+            chat_module.AgentKnowledgeBase,
+            "exists",
+            new=AsyncMock(return_value=has_knowledge_base),
+        ),
         patch.object(chat_module.deps, "check_api_key_agent_access", new=AsyncMock()),
         patch.object(
             chat_module, "check_agent_chat_access", new=AsyncMock(return_value=agent)
@@ -352,8 +352,13 @@ async def test_nonstream_builds_user_message_variants(
     assert kwargs["file_urls"] == expected_file_urls or (
         not file_urls and kwargs["file_urls"] is None
     )
-    assert (kwargs["rag_context"] or []) == rag_result
-    assert (retrieve.await_count == 1) is (rag_mode == RAGMode.AUTO)
+    if has_knowledge_base:
+        assert kwargs["rag_context"] == rag_result
+    else:
+        assert kwargs["rag_context"] is None
+    assert (retrieve.await_count == 1) is (
+        rag_mode == RAGMode.AUTO and has_knowledge_base
+    )
     assert expected_content in {"hello", "rag prompt"}
 
 

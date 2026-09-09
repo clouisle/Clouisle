@@ -111,6 +111,7 @@
       "sendTest": "Send Test"
     },
     "storage": "Storage",
+    "memory": "Memory",
     "dingtalk": {
       "basicSettings": "Basic Settings",
       "basicSettingsDesc": "Configure DingTalk notification service",
@@ -255,6 +256,7 @@
     "kbDocumentMaxUploadSize": "Maximum upload size",
     "kbDocumentMaxUploadSizeHint": "Applies to knowledge base document uploads. The backend rejects files larger than this limit.",
     "loadError": "Failed to load settings",
+    "retry": "Retry",
     "siteIconUrlPlaceholder": "Enter icon URL",
     "testEmailRequired": "Please enter a test email address",
     "testEmailSent": "Test email sent successfully",
@@ -446,6 +448,22 @@
     "testEmailPlaceholder": "Enter email to receive test",
     "sendTestEmail": "Send Test",
     "storageDescription": "Data archiving and storage management",
+    "memoryDescription": "Conversation memory and background extraction management",
+    "memorySettings": {
+      "title": "Background Memory Extraction",
+      "description": "Automatically extract and store user knowledge in the vector knowledge base after conversations.",
+      "enableExtraction": "Enable Background Extraction",
+      "enableExtractionDesc": "When enabled, background tasks will extract memory after conversation streams end.",
+      "extractionModel": "Extraction Model",
+      "extractionModelDesc": "Select a model for background entity and relation extraction. Fast and cost-effective models are recommended.",
+      "modelAuto": "Auto-resolve (Agent model / default model fallback)",
+      "cooldownSeconds": "Cooldown Window (Seconds)",
+      "cooldownSecondsHint": "Waiting duration after user stops chatting before extraction starts (60-600 seconds recommended).",
+      "maxPendingTurns": "Max Pending Turns",
+      "maxPendingTurnsHint": "Trigger immediately when pending turns reach this limit to prevent accumulation (1-50 turns).",
+      "saved": "Memory settings saved successfully",
+      "saveFailed": "Failed to save memory settings"
+    },
     "auditLogStorage": "Audit Log Storage",
     "auditLogStorageDescription": "Configure audit log retention and archiving",
     "auditLogRetentionDays": "Retention Days",

@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from starlette.requests import Request
 
 from app.api.v1.endpoints import agents
-from app.models.agent import AgentStatus, AgentVisibility
+from app.models.agent import AgentStatus, AgentVisibility, RAGMode
 from app.schemas.agent import AgentCreate, AgentKnowledgeBaseConfig, AgentUpdate
 from app.schemas.response import BusinessError
 
@@ -438,6 +438,27 @@ async def test_update_agent_updates_config_tools_and_kb(monkeypatch):
     assert item.enable_user_input_request is True
     assert any(call[0] == "delete" for call in kb_query.calls)
     item.save.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_update_agent_disables_rag_when_knowledge_bases_are_removed(monkeypatch):
+    item = agent()
+    kb_query = Query([])
+    monkeypatch.setattr(agents, "check_agent_access", AsyncMock(return_value=item))
+    monkeypatch.setattr(agents.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(agents.AgentKnowledgeBase, "filter", lambda **_kwargs: kb_query)
+    monkeypatch.setattr(agents.Agent, "get", lambda **_kwargs: Query(item))
+    monkeypatch.setattr(agents.AuditLogService, "log", AsyncMock())
+
+    await agents.update_agent(
+        request=request(),
+        agent_id=item.id,
+        agent_in=AgentUpdate(rag_mode="auto", knowledge_base_configs=[]),
+        current_user=user(),
+    )
+
+    assert item.rag_mode == RAGMode.OFF
+    assert any(call[0] == "delete" for call in kb_query.calls)
 
 
 @pytest.mark.anyio

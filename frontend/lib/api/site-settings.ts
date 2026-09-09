@@ -229,6 +229,13 @@ export interface AutoNotificationConfig {
   enabled_types: string[]  // Enabled notification types
 }
 
+export interface MemorySiteSettings {
+  memory_async_extraction_enabled: boolean
+  memory_extraction_model_id: string
+  memory_extraction_cooldown_seconds: number
+  memory_extraction_max_pending_turns: number
+}
+
 export const siteSettingsApi = {
   /**
    * Get public site settings (no auth required)

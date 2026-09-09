@@ -45,10 +45,11 @@ const WORKER_TASK_KEYS: Record<string, string> = {
   'tasks.cleanup_expired_sandbox_sessions': 'cleanupSandboxSessions',
   'app.tasks.sandbox.cleanup_expired_sandbox_sessions_task': 'cleanupSandboxSessions',
 
-  // Session Memory
+  // Memory
+  'extract_conversation_memories_task': 'extractSessionMemory',
+  'app.tasks.memory.extract_conversation_memories_task': 'extractSessionMemory',
   'extract_session_memory_task': 'extractSessionMemory',
   'app.tasks.session_memory.extract_session_memory_task': 'extractSessionMemory',
-
   // Notifications
   'send_notification_task': 'sendNotification',
   'app.tasks.notification.send_notification_task': 'sendNotification',

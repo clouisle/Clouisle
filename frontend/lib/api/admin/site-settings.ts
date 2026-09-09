@@ -12,6 +12,7 @@ import type {
   SlackSettings,
   StorageSettings,
   AutoNotificationConfig,
+  MemorySiteSettings,
   ThemeBrandingDisplay,
   ThemeMode,
 } from '../site-settings'
@@ -29,6 +30,7 @@ export type {
   SlackSettings,
   StorageSettings,
   AutoNotificationConfig,
+  MemorySiteSettings,
 }
 
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
@@ -329,5 +331,19 @@ export const siteSettingsApi = {
 
   async updateAutoNotifications(config: AutoNotificationConfig): Promise<AutoNotificationConfig> {
     return api.put<AutoNotificationConfig>('/admin/site-settings/auto-notifications', config)
+  },
+
+  async getMemory(): Promise<MemorySiteSettings> {
+    const settings = await this.getAll('memory')
+    return {
+      memory_async_extraction_enabled: (settings.memory_async_extraction_enabled as boolean) ?? false,
+      memory_extraction_model_id: (settings.memory_extraction_model_id as string) ?? '',
+      memory_extraction_cooldown_seconds: (settings.memory_extraction_cooldown_seconds as number) ?? 180,
+      memory_extraction_max_pending_turns: (settings.memory_extraction_max_pending_turns as number) ?? 6,
+    }
+  },
+
+  async updateMemory(data: Partial<MemorySiteSettings>): Promise<Record<string, unknown>> {
+    return this.bulkUpdate(data)
   },
 }

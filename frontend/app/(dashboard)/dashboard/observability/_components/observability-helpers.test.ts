@@ -54,6 +54,8 @@ describe('observability helpers', () => {
     expect(workerTaskLabel('resume_workflow_task', t)).toBe('translated:workers.tasks.resumeWorkflow')
     expect(workerTaskLabel('app.tasks.agent.run_agent_task', t)).toBe('translated:workers.tasks.runAgentTask')
     expect(workerTaskLabel('run_agent_task', t)).toBe('translated:workers.tasks.runAgentTask')
+    expect(workerTaskLabel('app.tasks.memory.extract_conversation_memories_task', t)).toBe('translated:workers.tasks.extractSessionMemory')
+    expect(workerTaskLabel('extract_conversation_memories_task', t)).toBe('translated:workers.tasks.extractSessionMemory')
     expect(workerTaskLabel('custom', t)).toBe('custom')
   })
 

@@ -43,6 +43,10 @@ THEME_COLOR_SETTING_KEYS = {
     for key in DEFAULT_SETTINGS
     if key.startswith("theme_") and key.endswith("_color")
 }
+MEMORY_EXTRACTION_MIN_COOLDOWN_SECONDS = 10
+MEMORY_EXTRACTION_MAX_COOLDOWN_SECONDS = 3600
+MEMORY_EXTRACTION_MIN_PENDING_TURNS = 1
+MEMORY_EXTRACTION_MAX_PENDING_TURNS = 50
 
 
 def _setting_stored_str(value: Any, value_type: str) -> Optional[str]:
@@ -195,6 +199,36 @@ async def _validate_setting_value(key: str, value: object) -> None:
                 code=ResponseCode.VALIDATION_ERROR,
                 msg_key="validation_error",
             )
+        return
+
+    if key == "memory_async_extraction_enabled":
+        if not isinstance(value, bool):
+            raise_validation_error()
+        return
+
+    if key == "memory_extraction_model_id":
+        if not isinstance(value, str):
+            raise_validation_error()
+        return
+
+    if key == "memory_extraction_cooldown_seconds":
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or value < MEMORY_EXTRACTION_MIN_COOLDOWN_SECONDS
+            or value > MEMORY_EXTRACTION_MAX_COOLDOWN_SECONDS
+        ):
+            raise_validation_error()
+        return
+
+    if key == "memory_extraction_max_pending_turns":
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or value < MEMORY_EXTRACTION_MIN_PENDING_TURNS
+            or value > MEMORY_EXTRACTION_MAX_PENDING_TURNS
+        ):
+            raise_validation_error()
         return
 
     if key != "kb_document_max_upload_size_mb":

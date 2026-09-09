@@ -32,6 +32,7 @@ def qdrant_models(monkeypatch):
             Filter=constructor,
             PointStruct=constructor,
             PointIdsList=constructor,
+            Range=constructor,
         ),
     )
 
@@ -317,30 +318,186 @@ async def test_search_entities_returns_empty_on_embedding_or_qdrant_failure(
 
 
 @pytest.mark.asyncio
-async def test_get_entity_subgraph_fetches_neighbors_with_user_scope(monkeypatch):
+async def test_get_entity_subgraph_fetches_bidirectional_neighbors_with_user_scope(
+    monkeypatch,
+):
     user_id, start_id, neighbor_id = uuid4(), uuid4(), uuid4()
     start = SimpleNamespace(id=start_id)
     neighbor = SimpleNamespace(id=neighbor_id)
-    relation = SimpleNamespace(target_entity_id=neighbor_id)
-    entity_filter = MagicMock(side_effect=[_query(all=[start]), _query(all=[neighbor])])
-    relation_query = _query(all=[relation])
-    relation_filter = MagicMock(return_value=relation_query)
+    relation = SimpleNamespace(
+        id=uuid4(),
+        source_entity_id=start_id,
+        target_entity_id=neighbor_id,
+        relation_type=RelationType.RELATED_TO,
+    )
+    entity_filter = MagicMock(
+        side_effect=[_query(all=[start]), _query(all=[start, neighbor])]
+    )
+    relation_filter = MagicMock(side_effect=[_query(all=[relation]), _query(all=[])])
     monkeypatch.setattr(memory_module.MemoryEntity, "filter", entity_filter)
     monkeypatch.setattr(memory_module.MemoryRelation, "filter", relation_filter)
 
     result = await MemoryService.get_entity_subgraph(user_id, [start_id])
 
-    assert result == {"entities": [start, neighbor], "relations": [relation]}
-    relation_filter.assert_called_once_with(
-        user_id=user_id, source_entity_id__in=[start_id]
-    )
-    relation_query.prefetch_related.assert_called_once_with(
-        "source_entity", "target_entity"
-    )
-    assert entity_filter.call_args_list[1].kwargs == {
+    assert result["entities"] == [start, neighbor]
+    assert result["relations"] == [relation]
+    assert result["entity_depth"] == {str(start_id): 0, str(neighbor_id): 1}
+    assert result["truncated"] is False
+
+    assert relation_filter.call_args_list[0].kwargs == {
         "user_id": user_id,
-        "id__in": [neighbor_id],
+        "source_entity_id__in": [start_id],
     }
+    assert relation_filter.call_args_list[1].kwargs == {
+        "user_id": user_id,
+        "target_entity_id__in": [start_id],
+    }
+
+
+@pytest.mark.asyncio
+async def test_handle_get_memory_subgraph_formats_graph_for_tool(monkeypatch):
+    user_id, start_id, neighbor_id = uuid4(), uuid4(), uuid4()
+    start = SimpleNamespace(
+        id=start_id,
+        name="Ada",
+        entity_type=EntityType.PERSON,
+        description="mathematician",
+        properties=None,
+    )
+    neighbor = SimpleNamespace(
+        id=neighbor_id,
+        name="Python",
+        entity_type=EntityType.SKILL,
+        description=None,
+        properties={"level": "expert"},
+    )
+    relation = SimpleNamespace(
+        id=uuid4(),
+        source_entity_id=start_id,
+        target_entity_id=neighbor_id,
+        relation_type=RelationType.USES,
+        description="primary language",
+        properties=None,
+    )
+    get_subgraph = AsyncMock(
+        return_value={
+            "entities": [start, neighbor],
+            "relations": [relation],
+            "entity_depth": {str(start_id): 0, str(neighbor_id): 1},
+            "truncated": True,
+        }
+    )
+    monkeypatch.setattr(MemoryService, "get_entity_subgraph", get_subgraph)
+
+    result = await MemoryService.handle_get_memory_subgraph(
+        user_id=user_id,
+        entity_ids=[str(start_id), str(neighbor_id)],
+        max_depth=2,
+        direction="outgoing",
+        relation_types=["uses"],
+    )
+
+    assert result == {
+        "success": True,
+        "entities": [
+            {
+                "id": str(start_id),
+                "name": "Ada",
+                "type": "person",
+                "description": "mathematician",
+                "properties": {},
+                "depth": 0,
+            },
+            {
+                "id": str(neighbor_id),
+                "name": "Python",
+                "type": "skill",
+                "description": None,
+                "properties": {"level": "expert"},
+                "depth": 1,
+            },
+        ],
+        "relations": [
+            {
+                "id": str(relation.id),
+                "source_entity_id": str(start_id),
+                "source_name": "Ada",
+                "relation_type": "uses",
+                "target_entity_id": str(neighbor_id),
+                "target_name": "Python",
+                "description": "primary language",
+                "properties": {},
+            }
+        ],
+        "truncated": True,
+    }
+    get_subgraph.assert_awaited_once_with(
+        user_id=user_id,
+        entity_ids=[start_id, neighbor_id],
+        max_depth=2,
+        direction="outgoing",
+        relation_types=["uses"],
+        max_nodes=30,
+        max_relations=100,
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_get_memory_subgraph_resolves_exact_names_in_user_scope(
+    monkeypatch,
+):
+    user_id = uuid4()
+    project_id, feature_id = uuid4(), uuid4()
+    project = SimpleNamespace(
+        id=project_id,
+        name="教智研一号开发项目",
+        entity_type=EntityType.PROJECT,
+        description="project",
+        properties={},
+    )
+    feature = SimpleNamespace(
+        id=feature_id,
+        name="教科院二期功能开发",
+        entity_type=EntityType.PROJECT,
+        description="feature work",
+        properties={},
+    )
+    entity_filter = MagicMock(return_value=_query(all=[project, feature]))
+    get_subgraph = AsyncMock(
+        return_value={
+            "entities": [project, feature],
+            "relations": [],
+            "entity_depth": {str(project_id): 0, str(feature_id): 0},
+            "truncated": False,
+        }
+    )
+    monkeypatch.setattr(memory_module.MemoryEntity, "filter", entity_filter)
+    monkeypatch.setattr(MemoryService, "get_entity_subgraph", get_subgraph)
+
+    result = await MemoryService.handle_get_memory_subgraph(
+        user_id=user_id,
+        entity_ids=["教智研一号开发项目", "教科院二期功能开发"],
+        max_depth=2,
+    )
+
+    assert result["success"] is True
+    assert [entity["id"] for entity in result["entities"]] == [
+        str(project_id),
+        str(feature_id),
+    ]
+    entity_filter.assert_called_once_with(
+        user_id=user_id,
+        name__in=["教智研一号开发项目", "教科院二期功能开发"],
+    )
+    get_subgraph.assert_awaited_once_with(
+        user_id=user_id,
+        entity_ids=[project_id, feature_id],
+        max_depth=2,
+        direction="both",
+        relation_types=None,
+        max_nodes=30,
+        max_relations=100,
+    )
 
 
 @pytest.mark.asyncio
@@ -377,11 +534,11 @@ async def test_add_entity_embedding_upserts_payload_and_persists_model(monkeypat
     point = client.upsert.await_args.kwargs["points"][0]
     assert point.id == str(entity_id)
     assert point.vector == [0.1, 0.2]
-    assert point.payload == {
-        "user_id": str(user_id),
-        "entity_type": "skill",
-        "name": "Python",
-    }
+    assert point.payload["user_id"] == str(user_id)
+    assert point.payload["entity_type"] == "skill"
+    assert point.payload["name"] == "Python"
+    assert "updated_at_ts" in point.payload
+    assert isinstance(point.payload["updated_at_ts"], int)
     assert entity.embedding_id == str(entity_id)
     assert entity.embedding_model_id == "model"
     entity.save.assert_awaited_once()
@@ -585,7 +742,11 @@ async def test_handle_update_entity_records_changes_and_success(monkeypatch):
 @pytest.mark.asyncio
 async def test_handle_search_memory_formats_results_and_empty_state(monkeypatch):
     entity = SimpleNamespace(
-        name="Python", entity_type=EntityType.SKILL, description="language"
+        id=uuid4(),
+        name="Python",
+        entity_type=EntityType.SKILL,
+        description="language",
+        properties={},
     )
     search = AsyncMock(side_effect=[[entity], []])
     monkeypatch.setattr(MemoryService, "search_entities", search)
@@ -598,7 +759,16 @@ async def test_handle_search_memory_formats_results_and_empty_state(monkeypatch)
 
     assert found == {
         "success": True,
-        "results": [{"name": "Python", "type": "skill", "description": "language"}],
+        "results": [
+            {
+                "id": str(entity.id),
+                "name": "Python",
+                "type": "skill",
+                "description": "language",
+                "properties": {},
+                "updated_at": None,
+            }
+        ],
         "count": 1,
         "message": "memory_search_results_found:1",
     }
@@ -653,7 +823,7 @@ async def test_ensure_memory_collection_creates_and_caches_missing_collection(
     models = SimpleNamespace(
         VectorParams=lambda **kwargs: SimpleNamespace(**kwargs),
         Distance=SimpleNamespace(COSINE="cosine"),
-        PayloadSchemaType=SimpleNamespace(KEYWORD="keyword"),
+        PayloadSchemaType=SimpleNamespace(KEYWORD="keyword", INTEGER="integer"),
     )
     monkeypatch.setattr(memory_module, "qmodels", models)
     monkeypatch.setattr(memory_module, "_memory_collections", set())
@@ -665,11 +835,142 @@ async def test_ensure_memory_collection_creates_and_caches_missing_collection(
     assert await memory_module._ensure_memory_collection(3) == "memory_entities_dim_3"
     client.get_collection.assert_awaited_once_with("memory_entities_dim_3")
     client.create_collection.assert_awaited_once()
-    client.create_payload_index.assert_awaited_once_with(
-        collection_name="memory_entities_dim_3",
-        field_name="user_id",
-        field_schema="keyword",
+    assert client.create_payload_index.await_count == 2
+    assert client.create_payload_index.await_args_list[0].kwargs == {
+        "collection_name": "memory_entities_dim_3",
+        "field_name": "user_id",
+        "field_schema": "keyword",
+    }
+    assert client.create_payload_index.await_args_list[1].kwargs == {
+        "collection_name": "memory_entities_dim_3",
+        "field_name": "updated_at_ts",
+        "field_schema": "integer",
+    }
+
+
+@pytest.mark.asyncio
+async def test_ensure_memory_collection_backfills_legacy_timestamps(monkeypatch):
+    from datetime import UTC, datetime
+
+    entity_id = uuid4()
+    entity = SimpleNamespace(
+        id=entity_id,
+        updated_at=datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
+        created_at=None,
     )
+    point = SimpleNamespace(id=entity_id, payload={})
+    client = SimpleNamespace(
+        get_collection=AsyncMock(return_value=SimpleNamespace()),
+        create_payload_index=AsyncMock(),
+        scroll=AsyncMock(return_value=([point], None)),
+        set_payload=AsyncMock(),
+    )
+    models = SimpleNamespace(
+        PayloadSchemaType=SimpleNamespace(INTEGER="integer"),
+    )
+    monkeypatch.setattr(memory_module, "qmodels", models)
+    monkeypatch.setattr(memory_module, "_memory_collections", set())
+    monkeypatch.setattr(
+        memory_module, "_get_qdrant_client", AsyncMock(return_value=client)
+    )
+    monkeypatch.setattr(
+        memory_module.MemoryEntity,
+        "filter",
+        MagicMock(return_value=_query(all=[entity])),
+    )
+
+    await memory_module._ensure_memory_collection(3)
+
+    client.set_payload.assert_awaited_once_with(
+        collection_name="memory_entities_dim_3",
+        payload={"updated_at_ts": int(entity.updated_at.timestamp())},
+        points=[entity_id],
+    )
+
+
+def test_coerce_timestamp_branches():
+    from datetime import UTC, datetime
+
+    assert memory_module._coerce_timestamp(None) is None
+    assert memory_module._coerce_timestamp(12345) == 12345
+    assert memory_module._coerce_timestamp(12345.67) == 12345
+    assert memory_module._coerce_timestamp("2026-09-08T12:00:00Z") is not None
+    assert memory_module._coerce_timestamp("invalid-date") is None
+    assert memory_module._coerce_timestamp(object()) is None
+    dt_naive = datetime(2026, 9, 8, 12, 0, 0)
+    assert memory_module._coerce_timestamp(dt_naive) == int(
+        dt_naive.replace(tzinfo=UTC).timestamp()
+    )
+    dt_aware = datetime(2026, 9, 8, 12, 0, 0, tzinfo=UTC)
+    assert memory_module._coerce_timestamp(dt_aware) == int(dt_aware.timestamp())
+
+
+@pytest.mark.asyncio
+async def test_backfill_memory_timestamps_skips_when_client_lacks_methods():
+    # client with no scroll / set_payload
+    await memory_module._backfill_memory_timestamps(object(), "test_col")
+
+
+@pytest.mark.asyncio
+async def test_backfill_memory_timestamps_handles_already_migrated_and_invalid_points(
+    monkeypatch,
+):
+    from datetime import UTC, datetime
+
+    valid_id = uuid4()
+    entity = SimpleNamespace(
+        id=valid_id,
+        updated_at=None,
+        created_at=datetime(2026, 9, 7, 10, 0, tzinfo=UTC),
+    )
+    point_migrated = SimpleNamespace(id=uuid4(), payload={"updated_at_ts": 12345})
+    point_invalid_id = SimpleNamespace(id="not-a-uuid", payload={})
+    point_valid = SimpleNamespace(id=valid_id, payload={})
+    point_unresolvable = SimpleNamespace(id=uuid4(), payload={})
+
+    client = SimpleNamespace(
+        scroll=AsyncMock(
+            side_effect=[
+                (
+                    [
+                        point_migrated,
+                        point_invalid_id,
+                        point_valid,
+                        point_unresolvable,
+                    ],
+                    "offset-1",
+                ),
+                ([], None),
+            ]
+        ),
+        set_payload=AsyncMock(),
+    )
+    monkeypatch.setattr(
+        memory_module.MemoryEntity,
+        "filter",
+        MagicMock(return_value=_query(all=[entity])),
+    )
+
+    await memory_module._backfill_memory_timestamps(client, "test_col")
+
+    client.set_payload.assert_awaited_once_with(
+        collection_name="test_col",
+        payload={"updated_at_ts": int(entity.created_at.timestamp())},
+        points=[valid_id],
+    )
+
+
+@pytest.mark.asyncio
+async def test_ensure_memory_timestamp_index_swallows_exception(monkeypatch):
+    client = SimpleNamespace(
+        create_payload_index=AsyncMock(side_effect=RuntimeError("already exists"))
+    )
+    models = SimpleNamespace(
+        PayloadSchemaType=SimpleNamespace(INTEGER="integer"),
+    )
+    monkeypatch.setattr(memory_module, "qmodels", models)
+    # should not raise
+    await memory_module._ensure_memory_timestamp_index(client, "test_col")
 
 
 @pytest.mark.asyncio
@@ -790,3 +1091,183 @@ async def test_vector_operations_require_qdrant_models(monkeypatch, operation):
                     description=None,
                 )
             )
+
+
+@pytest.mark.asyncio
+async def test_search_entities_preserves_similarity_order_and_reranks_by_recency(
+    monkeypatch,
+):
+    from datetime import UTC, datetime, timedelta
+
+    user_id = uuid4()
+    id1, id2 = uuid4(), uuid4()
+    now = datetime.now(UTC)
+
+    # Entity 1: slightly higher similarity (0.90), but updated 90 days ago
+    entity1 = SimpleNamespace(
+        id=id1,
+        name="Older High Sim",
+        updated_at=now - timedelta(days=90),
+        created_at=now - timedelta(days=90),
+        access_count=0,
+        last_accessed_at=None,
+        save=AsyncMock(),
+    )
+    # Entity 2: slightly lower similarity (0.85), but updated today (fresh)
+    entity2 = SimpleNamespace(
+        id=id2,
+        name="Newer Lower Sim",
+        updated_at=now,
+        created_at=now,
+        access_count=0,
+        last_accessed_at=None,
+        save=AsyncMock(),
+    )
+
+    client = SimpleNamespace(
+        query_points=AsyncMock(
+            return_value=SimpleNamespace(
+                points=[
+                    SimpleNamespace(id=id1, score=0.90, payload={}),
+                    SimpleNamespace(id=id2, score=0.85, payload={}),
+                ]
+            )
+        )
+    )
+    # ORM returns rows in reverse/arbitrary order
+    entity_query = _query(all=[entity2, entity1])
+    monkeypatch.setattr(
+        model_manager,
+        "get_embedding",
+        AsyncMock(return_value={"embedding": [0.1, 0.2], "model_id": "embed"}),
+    )
+    monkeypatch.setattr(
+        memory_module, "_ensure_memory_collection", AsyncMock(return_value="collection")
+    )
+    monkeypatch.setattr(
+        memory_module, "_get_qdrant_client", AsyncMock(return_value=client)
+    )
+    monkeypatch.setattr(
+        memory_module.MemoryEntity, "filter", MagicMock(return_value=entity_query)
+    )
+
+    # With recency_weight=0, exact similarity order is preserved (entity1 first)
+    res_sim_only = await MemoryService.search_entities(
+        user_id, "query", top_k=2, recency_weight=0.0
+    )
+    assert res_sim_only == [entity1, entity2]
+
+    # With recency_weight=0.20, entity2 gets boosted because it is brand new vs 90-day-old entity1
+    res_recency = await MemoryService.search_entities(
+        user_id, "query", top_k=2, recency_weight=0.20
+    )
+    assert res_recency == [entity2, entity1]
+
+
+@pytest.mark.asyncio
+async def test_search_entities_filters_by_time_window(monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    user_id = uuid4()
+    id_recent, id_old = uuid4(), uuid4()
+    now = datetime.now(UTC)
+
+    recent_entity = SimpleNamespace(
+        id=id_recent,
+        updated_at=now - timedelta(days=2),
+        created_at=now - timedelta(days=2),
+        access_count=0,
+        last_accessed_at=None,
+        save=AsyncMock(),
+    )
+    old_entity = SimpleNamespace(
+        id=id_old,
+        updated_at=now - timedelta(days=40),
+        created_at=now - timedelta(days=40),
+        access_count=0,
+        last_accessed_at=None,
+        save=AsyncMock(),
+    )
+
+    client = SimpleNamespace(
+        query_points=AsyncMock(
+            return_value=SimpleNamespace(
+                points=[
+                    SimpleNamespace(id=id_recent, score=0.9, payload={}),
+                    SimpleNamespace(id=id_old, score=0.85, payload={}),
+                ]
+            )
+        )
+    )
+    entity_query = _query(all=[recent_entity, old_entity])
+    monkeypatch.setattr(
+        model_manager,
+        "get_embedding",
+        AsyncMock(return_value={"embedding": [0.1, 0.2], "model_id": "embed"}),
+    )
+    monkeypatch.setattr(
+        memory_module, "_ensure_memory_collection", AsyncMock(return_value="collection")
+    )
+    monkeypatch.setattr(
+        memory_module, "_get_qdrant_client", AsyncMock(return_value=client)
+    )
+    monkeypatch.setattr(
+        memory_module.MemoryEntity, "filter", MagicMock(return_value=entity_query)
+    )
+
+    result = await MemoryService.search_entities(
+        user_id, "query", top_k=2, time_window_days=7, recency_weight=0.0
+    )
+    assert result == [recent_entity]
+    query_filter = client.query_points.await_args.kwargs["query_filter"]
+    assert any(
+        condition.key == "updated_at_ts" and condition.range.gte > 0
+        for condition in query_filter.must
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_search_memory_includes_formatted_date_and_time_window(
+    monkeypatch,
+):
+    from datetime import UTC, datetime
+
+    user_id = uuid4()
+    updated_dt = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
+    entity = SimpleNamespace(
+        id=uuid4(),
+        name="FastAPI",
+        entity_type=EntityType.SKILL,
+        description="web framework",
+        properties={},
+        updated_at=updated_dt,
+    )
+    search = AsyncMock(return_value=[entity])
+    monkeypatch.setattr(MemoryService, "search_entities", search)
+    monkeypatch.setattr(
+        memory_module, "t", lambda key, **kwargs: f"{key}:{kwargs.get('count', '')}"
+    )
+
+    result = await MemoryService.handle_search_memory(
+        user_id, "fastapi", top_k=3, time_window_days=14, entity_type="skill"
+    )
+
+    assert result["success"] is True
+    assert result["count"] == 1
+    assert result["results"] == [
+        {
+            "id": str(entity.id),
+            "name": "FastAPI",
+            "type": "skill",
+            "description": "web framework",
+            "properties": {},
+            "updated_at": "2026-09-08",
+        }
+    ]
+    search.assert_awaited_once_with(
+        user_id=user_id,
+        query="fastapi",
+        top_k=3,
+        entity_type=EntityType.SKILL,
+        time_window_days=14,
+    )

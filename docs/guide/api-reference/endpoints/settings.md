@@ -246,6 +246,20 @@ curl -X PUT "https://your-domain.com/api/v1/admin/site-settings" \
 
 **Note:** Updating storage settings (`upload_storage_backend`, `object_storage_*`) triggers backend validation to ensure the selected storage configuration is consistent. Updating `sso_allow_password_login` to `false` requires at least one superadmin with a bound SSO connection.
 
+## Background Memory Settings (admin)
+
+The `memory` category controls optional background extraction of persistent user knowledge from completed conversations. These settings are also available in the admin UI at `/site-settings/memory`.
+
+| Key | Type | Default | Constraints |
+|-----|------|---------|-------------|
+| `memory_async_extraction_enabled` | boolean | `false` | Enables background extraction when the agent's memory feature is enabled |
+| `memory_extraction_model_id` | string | `""` | Empty uses the configured fallback model chain; an unavailable or disabled ID also falls back |
+| `memory_extraction_cooldown_seconds` | integer | `180` | Inclusive range `10`-`3600` |
+| `memory_extraction_max_pending_turns` | integer | `6` | Inclusive range `1`-`50` |
+
+Use `GET /api/v1/admin/site-settings?category=memory` to read these values and the bulk update endpoint to change them. The update still requires the `admin:settings:update` scope. The worker uses the cooldown as a debounce window and triggers immediately when the pending user-turn limit is reached.
+
+
 ## Reset Settings (admin)
 
 Reset settings (optionally within one category) to their default values.

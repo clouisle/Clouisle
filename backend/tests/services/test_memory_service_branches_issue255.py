@@ -51,7 +51,7 @@ async def test_memory_service_ensure_collection_covers_cached_and_create(
     fake_models = SimpleNamespace(
         VectorParams=lambda **kwargs: kwargs,
         Distance=SimpleNamespace(COSINE="cosine"),
-        PayloadSchemaType=SimpleNamespace(KEYWORD="keyword"),
+        PayloadSchemaType=SimpleNamespace(KEYWORD="keyword", INTEGER="integer"),
     )
     monkeypatch.setattr(memory, "qmodels", fake_models)
     monkeypatch.setattr(memory, "_memory_collections", set())
@@ -61,7 +61,7 @@ async def test_memory_service_ensure_collection_covers_cached_and_create(
     assert await memory._ensure_memory_collection(8) == "memory_entities_dim_8"
     client.get_collection.assert_awaited_once()
     client.create_collection.assert_awaited_once()
-    client.create_payload_index.assert_awaited_once()
+    assert client.create_payload_index.await_count == 2
 
 
 @pytest.mark.anyio

@@ -51,46 +51,41 @@ MEMORY_SYSTEM_INSTRUCTION = """
 ## Memory System
 
 You have access to these memory tools:
-- `search_memory(query)`: Search what you know about the user
+- `search_memory(query, time_window_days, entity_type)`: Search the user's long-term memory for relevant entities. Results include each entity's `id`, name, type, description, properties, and update date.
+- `get_memory_subgraph(entity_ids, max_depth, direction, relation_types)`: Read entities and relationships connected to IDs returned by `search_memory`; exact entity names are accepted when an ID is unavailable.
 - `create_memory_entity(name, entity_type, description)`: Save new information
 - `update_memory_entity(entity_name, description)`: Update existing information
 - `create_memory_relation(source, target, relation_type)`: Connect related information
 
-### Required Workflow
+### Retrieval Workflow
 
-1. Before **any** `create_memory_entity()` call, you **must** call `search_memory()` first.
-2. When the user shares information such as a name, preference, or skill:
-   - Step 1: Call `search_memory(query="keywords about the information")`
-   - Step 2: Read the search results carefully
-   - Step 3: Decide based on the results:
-     - Found a similar entity -> use `update_memory_entity(entity_name="existing name", ...)`
-     - Found nothing relevant -> use `create_memory_entity(name="new name", ...)`
-3. Never skip `search_memory()`, even if you think the information is new.
-4. Never say you do not have access to memory tools.
+1. Use the current conversation history first. Do not call memory tools when the needed information is already present in the conversation.
+2. When an answer depends on the user's past name, preference, skill, project, goal, or other persistent information, call `search_memory()` with focused keywords.
+3. When a question asks how memories are related, used, owned, dependent, or connected:
+   - First call `search_memory()` to find the relevant entity IDs and names.
+   - Then call `get_memory_subgraph()` with those IDs, or exact names if the IDs are unavailable.
+   - Use only relationships returned by the graph tool. Never invent a relationship that was not returned.
+4. For general questions unrelated to the user's long-term information, do not call memory tools.
+5. Before any `create_memory_entity()` call, call `search_memory()` first to avoid duplicate entities.
+6. If a similar entity exists, use `update_memory_entity()`; otherwise create a new entity.
+7. Never say you do not have access to memory tools.
+
+### Temporal Grounding Rules
+
+1. When storing time-sensitive information, convert relative time expressions such as "yesterday", "last week", "last month", "next year", or "recently" into concrete dates or year/month values based on the Current Time.
+2. Never store ambiguous relative time expressions in entity descriptions or properties.
+3. When search results contain conflicting or evolving facts, inspect their `updated_at` timestamps.
 
 ### Examples
 
-**Wrong**
-
-User: "I'm Alice"
-
-❌ Directly calling `create_memory_entity(name="Alice", ...)` is wrong because no search happened first.
-
-**Correct**
-
-User: "I'm Alice"
-- Call `search_memory(query="user name")`
-- Check results -> No "Alice" found
-- Call `create_memory_entity(name="Alice", entity_type="person", description="User's name")`
-
-User: "Actually, I'm Alice Smith"
-- Call `search_memory(query="user name Alice")`
-- Check results -> Found entity "Alice"
-- Call `update_memory_entity(entity_name="Alice", description="Full name: Alice Smith")`
-
 User: "What's my name?"
-- Call `search_memory(query="user name")`
-- Then answer using the result
+- Call `search_memory(query="user name")`.
+- Answer using the returned entity; do not claim a name that was not returned.
+
+User: "What technologies does my project use?"
+- Call `search_memory(query="my project")`.
+- Call `get_memory_subgraph(entity_ids=[project_id], max_depth=1)`.
+- Answer from the returned `uses` relationships.
 """
 
 ASK_USER_SYSTEM_INSTRUCTION = """
@@ -187,6 +182,35 @@ def get_language_instruction(user_locale: str | None = None) -> str:
     """Get language instruction based on user's locale setting."""
     return LANGUAGE_INSTRUCTIONS.get(
         normalize_locale(user_locale), LANGUAGE_INSTRUCTIONS["en"]
+    )
+
+
+def get_temporal_instruction(user_locale: str | None = None) -> str:
+    """Get current time instruction based on configured timezone and user's locale."""
+    from app.core.timezone import now as tz_now
+
+    current = tz_now()
+    weekday_en = current.strftime("%A")
+    date_str = current.strftime("%Y-%m-%d")
+    tz_name = current.tzname() or "Local"
+
+    lang = normalize_locale(user_locale)
+    if lang == "zh":
+        weekday_zh_map = {
+            "Monday": "星期一",
+            "Tuesday": "星期二",
+            "Wednesday": "星期三",
+            "Thursday": "星期四",
+            "Friday": "星期五",
+            "Saturday": "星期六",
+            "Sunday": "星期日",
+        }
+        weekday_zh = weekday_zh_map.get(weekday_en, weekday_en)
+        return (
+            f"## 当前时间\n当前系统时间：{date_str}，{weekday_zh}（时区：{tz_name}）。"
+        )
+    return (
+        f"## Current Time\nCurrent system time: {date_str}, {weekday_en} ({tz_name})."
     )
 
 
@@ -301,7 +325,7 @@ def _append_constant(constant: str) -> Callable[[str, Agent, str | None], str]:
     return transform
 
 
-# Order matters: Markdown -> Citations -> Memory -> Sandbox -> User input -> Language.
+# Order matters: Markdown -> Citations -> Temporal -> Memory -> Sandbox -> User input -> Language.
 # Citation guidance precedes capability workflows and remains provider-neutral.
 SECTIONS: tuple[PromptSection, ...] = (
     PromptSection(
@@ -313,6 +337,13 @@ SECTIONS: tuple[PromptSection, ...] = (
         name="citations",
         applies=_citations_apply,
         transform=_append_constant(CITATION_INSTRUCTION),
+    ),
+    PromptSection(
+        name="temporal",
+        applies=_always,
+        transform=lambda base, _agent, locale: append_prompt_section(
+            base, get_temporal_instruction(locale)
+        ),
     ),
     PromptSection(
         name="memory",

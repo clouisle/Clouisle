@@ -348,6 +348,12 @@ class Conversation(models.Model):
         description="Last message id covered by context_summary_text",
     )
 
+    # Background memory extraction watermark
+    memory_extracted_watermark_id = fields.UUIDField(
+        null=True,
+        description="Last message id processed for background memory extraction",
+    )
+
     # Timestamps
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)

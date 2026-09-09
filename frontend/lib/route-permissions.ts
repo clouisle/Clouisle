@@ -40,6 +40,7 @@ export const ROUTE_PERMISSION_CONFIG: RoutePermissionConfig[] = [
       { path: '/site-settings/security', permission: 'admin:settings:read' },
       { path: '/site-settings/notifications', permission: 'admin:settings:read' },
       { path: '/site-settings/storage', permission: 'admin:settings:read' },
+      { path: '/site-settings/memory', permission: 'admin:settings:read' },
       { path: '/site-settings/sso', permission: 'admin:sso:read' },
     ],
   },
@@ -65,6 +66,11 @@ export const SITE_SETTINGS_NAV_ITEMS: SiteSettingsNavItem[] = [
     path: '/site-settings/storage',
     translationKey: 'storage',
     descriptionKey: 'storageDescription',
+  },
+  {
+    path: '/site-settings/memory',
+    translationKey: 'memory',
+    descriptionKey: 'memoryDescription',
   },
   {
     path: '/site-settings/sso',

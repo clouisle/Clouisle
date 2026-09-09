@@ -1323,6 +1323,8 @@ msgstr "未找到记忆。这可能是第一次对话，或者相关信息尚未
 
 msgid "memory_search_results_found"
 msgstr "找到 {count} 条相关记忆。"
+msgid "memory_subgraph_invalid_request"
+msgstr "无效的记忆图请求"
 
 msgid "memory_similar_entities_notice"
 msgstr "（注意：已存在相似实体：{similar_entities}。请确认您是否更想更新其中某个实体。）"
@@ -2388,6 +2390,8 @@ msgstr "工具未找到"
 
 msgid "tool_search_memory"
 msgstr "搜索记忆"
+msgid "tool_get_memory_subgraph"
+msgstr "获取记忆关系图"
 
 msgid "tool_share_not_found"
 msgstr "工具共享记录不存在"

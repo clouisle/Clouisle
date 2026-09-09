@@ -302,6 +302,32 @@ async def test_update_agent_applies_optional_fields_and_replaces_knowledge_bases
 
 
 @pytest.mark.anyio
+async def test_update_agent_disables_rag_when_knowledge_bases_are_removed(admin):
+    item = _agent()
+    refreshed = _agent(id=item.id, team_id=item.team_id, rag_mode=RAGMode.OFF)
+    update = AgentUpdate.model_construct(
+        rag_mode="auto",
+        knowledge_base_configs=[],
+    )
+
+    with (
+        patch.object(agents, "_get_agent", AsyncMock(return_value=item)),
+        patch.object(
+            agents.AgentKnowledgeBase, "filter", return_value=_Query([])
+        ) as kb_filter,
+        patch.object(agents.Agent, "get", return_value=_Query(refreshed)),
+        patch.object(
+            agents, "build_agent_out", AsyncMock(return_value={"id": item.id})
+        ),
+        patch.object(agents.AuditLogService, "log", AsyncMock()),
+    ):
+        await agents.update_agent(MagicMock(), item.id, update, current_user=admin)
+
+    assert item.rag_mode == RAGMode.OFF
+    assert kb_filter.call_count == 2
+
+
+@pytest.mark.anyio
 async def test_update_agent_records_kb_configuration_only_changes(admin):
     item = _agent()
     kb_id = uuid4()

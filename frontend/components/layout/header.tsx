@@ -98,6 +98,8 @@ const SEARCHABLE_DASHBOARD_ROUTES: SearchRouteItem[] = [
   { titleKey: 'siteSettings:storage', url: '/site-settings/storage', icon: Database, parentKey: 'nav:siteSettings' },
   { titleKey: 'siteSettings:auditLogStorage', url: '/site-settings/storage', icon: Database, parentKey: 'siteSettings:storage' },
   { titleKey: 'siteSettings:manualArchive', url: '/site-settings/storage', icon: Database, parentKey: 'siteSettings:storage' },
+  { titleKey: 'siteSettings:memory', url: '/site-settings/memory', icon: Brain, parentKey: 'nav:siteSettings' },
+  { titleKey: 'siteSettings:memorySettings.title', url: '/site-settings/memory', icon: Brain, parentKey: 'siteSettings:memory' },
   { titleKey: 'siteSettings:sso', url: '/site-settings/sso', icon: Shield, parentKey: 'nav:siteSettings' },
   { titleKey: 'sso:addProvider', url: '/site-settings/sso', icon: Shield, parentKey: 'siteSettings:sso' },
   { titleKey: 'sso:testConnection', url: '/site-settings/sso', icon: Shield, parentKey: 'siteSettings:sso' },
