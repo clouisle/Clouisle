@@ -111,6 +111,7 @@
       "sendTest": "发送测试"
     },
     "storage": "存储",
+    "memory": "记忆",
     "dingtalk": {
       "basicSettings": "基础设置",
       "basicSettingsDesc": "配置钉钉通知服务",
@@ -446,6 +447,22 @@
     "testEmailPlaceholder": "输入接收测试邮件的邮箱",
     "sendTestEmail": "发送测试",
     "storageDescription": "数据归档和存储管理",
+    "memoryDescription": "会话记忆沉淀与后台抽取管理",
+    "memorySettings": {
+      "title": "后台记忆抽取",
+      "description": "在对话结束后由后台任务自动提取用户知识并沉淀为记忆。",
+      "enableExtraction": "启用后台异步提取",
+      "enableExtractionDesc": "开启后，系统将在会话流式回复结束后后台运行抽取任务。",
+      "extractionModel": "专用抽取模型",
+      "extractionModelDesc": "选择用于后台实体和关系抽取的轻量模型。建议选择低成本、高响应速度的模型。",
+      "modelAuto": "自动解析（Agent 模型 / 默认模型降级）",
+      "cooldownSeconds": "静默冷却时间（秒）",
+      "cooldownSecondsHint": "用户停止打字后等待的时长（建议 60-600 秒）。",
+      "maxPendingTurns": "最大未抽取轮数上限",
+      "maxPendingTurnsHint": "连续对话中未抽取轮数达到该值时立刻触发，避免长会话过度堆积（1-50 轮）。",
+      "saved": "记忆设置已保存",
+      "saveFailed": "保存记忆设置失败"
+    },
     "auditLogStorage": "审计日志存储",
     "auditLogStorageDescription": "配置审计日志保留和归档",
     "auditLogRetentionDays": "保留天数",

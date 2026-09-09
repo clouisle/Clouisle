@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-07T05:56:54.045Z
+// GENERATED — 2026-09-08T21:27:58.799Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
@@ -113,6 +113,7 @@ export type SiteSettingsMessages = {
       sendTest: string
     }
     storage: string
+    memory: string
     dingtalk: {
       basicSettings: string
       basicSettingsDesc: string
@@ -448,6 +449,22 @@ export type SiteSettingsMessages = {
     testEmailPlaceholder: string
     sendTestEmail: string
     storageDescription: string
+    memoryDescription: string
+    memorySettings: {
+      title: string
+      description: string
+      enableExtraction: string
+      enableExtractionDesc: string
+      extractionModel: string
+      extractionModelDesc: string
+      modelAuto: string
+      cooldownSeconds: string
+      cooldownSecondsHint: string
+      maxPendingTurns: string
+      maxPendingTurnsHint: string
+      saved: string
+      saveFailed: string
+    }
     auditLogStorage: string
     auditLogStorageDescription: string
     auditLogRetentionDays: string
