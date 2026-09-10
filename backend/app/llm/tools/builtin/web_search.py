@@ -6,15 +6,15 @@
 """
 
 import asyncio
-from app.llm.tools.registry import ToolConcurrency
 import logging
+from typing import Any
 
 import httpx
 from markitdown import MarkItDown
-
+import trafilatura
 from app.core.i18n import t
 from app.services.citations import stable_citation_id, with_web_citation_ids
-from ..registry import tool_registry, ToolParameter
+from ..registry import tool_registry, ToolParameter, ToolConcurrency
 
 logger = logging.getLogger(__name__)
 
@@ -124,25 +124,103 @@ async def _tavily_search(
         }
 
 
-async def fetch_webpage(url: str, max_length: int = 5000) -> dict:
+def _extract_readable_content(html: str, url: str) -> tuple[str, str | None]:
+    """使用 trafilatura 提取网页正文与标题，并在失败时兜底。"""
+    extracted = trafilatura.extract(
+        html,
+        url=url,
+        output_format="markdown",
+        include_links=True,
+        include_images=False,
+        include_tables=True,
+        favor_precision=True,
+    )
+    metadata = trafilatura.extract_metadata(html, default_url=url)
+    title = metadata.title if metadata and metadata.title else None
+
+    if extracted and extracted.strip():
+        return extracted.strip(), title
+
+    # Trafilatura 无法提取正文（例如非文章页面或极简结构），使用 MarkItDown 兜底
+    fallback_result = MarkItDown().convert(url)
+    fallback_text = (fallback_result.text_content or "").strip()
+    fallback_title = (
+        title or (getattr(fallback_result, "title", None) or "").strip() or None
+    )
+    return fallback_text, fallback_title
+
+
+async def fetch_webpage(url: str, max_length: int = 5000) -> dict[str, Any]:
     """
-    获取网页内容
+    获取网页内容并提取正文 Markdown。
+
+    优先通过 HTTP 请求并结合 Trafilatura 提取纯正文和元数据；
+    若非普通 HTTP(S) URL（如 data: 协议或本地文档）、网络异常或正文提取为空，
+    则回退至 MarkItDown 引擎解析。
 
     Args:
         url: 网页 URL
-        max_length: 返回内容的最大长度
+        max_length: 返回内容的最大长度，默认 5000
 
     Returns:
-        网页内容
+        网页标题与正文内容
     """
+    # 如果是 data: 协议或非标准 HTTP URL，直接用 MarkItDown 处理
+    if not url.startswith(("http://", "https://")):
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(MarkItDown().convert, url), timeout=30
+            )
+            text = (result.text_content or "").strip()
+            title = (getattr(result, "title", None) or "").strip() or None
+            if len(text) > max_length:
+                text = text[:max_length] + "..."
+            return {
+                "url": url,
+                "title": title,
+                "content": text,
+                "citation_id": stable_citation_id("web", url),
+                "success": True,
+            }
+        except Exception as e:
+            status_code = getattr(getattr(e, "response", None), "status_code", None)
+            if status_code is not None:
+                return {
+                    "url": url,
+                    "error": t("fetch_webpage_http_error", status_code=status_code),
+                    "success": False,
+                }
+            return {"url": url, "error": t("tool_execution_failed"), "success": False}
+
     try:
-        result = await asyncio.wait_for(
-            asyncio.to_thread(MarkItDown().convert, url), timeout=30
-        )
-        text = (result.text_content or "").strip()
-        title = (getattr(result, "title", None) or "").strip() or None
+        async with httpx.AsyncClient(
+            timeout=25.0,
+            follow_redirects=True,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                ),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
+        ) as client:
+            response = await client.get(url)
+            if response.status_code >= 400:
+                return {
+                    "url": url,
+                    "error": t(
+                        "fetch_webpage_http_error", status_code=response.status_code
+                    ),
+                    "success": False,
+                }
+            html_text = response.text
+
+        # 在后台线程中执行正文提取
+        text, title = await asyncio.to_thread(_extract_readable_content, html_text, url)
+
         if len(text) > max_length:
             text = text[:max_length] + "..."
+
         return {
             "url": url,
             "title": title,
@@ -150,6 +228,15 @@ async def fetch_webpage(url: str, max_length: int = 5000) -> dict:
             "citation_id": stable_citation_id("web", url),
             "success": True,
         }
+    except httpx.HTTPStatusError as e:
+        status_code = e.response.status_code if e.response else 500
+        return {
+            "url": url,
+            "error": t("fetch_webpage_http_error", status_code=status_code),
+            "success": False,
+        }
+    except httpx.TimeoutException:
+        return {"url": url, "error": t("tool_execution_timeout"), "success": False}
     except Exception as e:
         status_code = getattr(getattr(e, "response", None), "status_code", None)
         if status_code is not None:
@@ -158,7 +245,37 @@ async def fetch_webpage(url: str, max_length: int = 5000) -> dict:
                 "error": t("fetch_webpage_http_error", status_code=status_code),
                 "success": False,
             }
-        return {"url": url, "error": t("tool_execution_failed"), "success": False}
+        logger.warning(
+            "fetch_webpage HTTP fetch failed for %s: %s, falling back to MarkItDown",
+            url,
+            e,
+        )
+        try:
+            fallback = await asyncio.wait_for(
+                asyncio.to_thread(MarkItDown().convert, url), timeout=15
+            )
+            text = (fallback.text_content or "").strip()
+            title = (getattr(fallback, "title", None) or "").strip() or None
+            if len(text) > max_length:
+                text = text[:max_length] + "..."
+            return {
+                "url": url,
+                "title": title,
+                "content": text,
+                "citation_id": stable_citation_id("web", url),
+                "success": True,
+            }
+        except Exception as fallback_e:
+            status_code = getattr(
+                getattr(fallback_e, "response", None), "status_code", None
+            )
+            if status_code is not None:
+                return {
+                    "url": url,
+                    "error": t("fetch_webpage_http_error", status_code=status_code),
+                    "success": False,
+                }
+            return {"url": url, "error": t("tool_execution_failed"), "success": False}
 
 
 def register_web_search_tools() -> None:

@@ -522,6 +522,12 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
         "icon": None,
         "requires_config": False,
     },
+    "rss_feed_reader": {
+        "display_name_key": "builtin_tool_rss_feed_reader",
+        "category": ToolCategory.WEB,
+        "icon": None,
+        "requires_config": False,
+    },
     "markitdown": {
         "display_name_key": "builtin_tool_markitdown",
         "category": ToolCategory.FILE,

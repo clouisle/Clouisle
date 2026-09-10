@@ -86,6 +86,7 @@
       "parse_file": "File Parser",
       "markitdown": "Markdown Converter",
       "fetch_webpage": "Fetch Webpage",
+      "rss_feed_reader": "RSS Feed Reader",
       "generate_image": "Generate Image",
       "generate_video": "Generate Video"
     },

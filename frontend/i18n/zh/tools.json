@@ -86,6 +86,7 @@
       "parse_file": "文件解析器",
       "markitdown": "Markdown转换器",
       "fetch_webpage": "获取网页",
+      "rss_feed_reader": "RSS 订阅解析",
       "generate_image": "生成图片",
       "generate_video": "生成视频"
     },

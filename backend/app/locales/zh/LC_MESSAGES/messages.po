@@ -841,6 +841,21 @@ msgstr "每个收集的产物允许的最大大小（MB）。默认为 10。"
 msgid "builtin_tool_artifact_param_max_total_size_mb_description"
 msgstr "所有收集的产物允许的最大总上传大小（MB）。默认为 10。"
 
+msgid "builtin_tool_rss_feed_reader"
+msgstr "RSS 订阅解析"
+
+msgid "builtin_tool_rss_feed_reader_description"
+msgstr "抓取并解析 RSS 或 Atom 订阅源，返回包含最新文章标题、作者、发布时间、摘要及原文链接的结构化列表。"
+
+msgid "builtin_tool_rss_feed_reader_param_url_description"
+msgstr "RSS 或 Atom 订阅源的完整 URL 地址（例如 https://example.com/feed.xml）"
+
+msgid "builtin_tool_rss_feed_reader_param_limit_description"
+msgstr "返回的文章最大条数，默认 10，最大 30"
+
+msgid "rss_feed_parse_error"
+msgstr "无法解析指定的 RSS 或 Atom 订阅源"
+
 msgid "can_only_regenerate_assistant"
 msgstr "只能重新生成助手消息"
 

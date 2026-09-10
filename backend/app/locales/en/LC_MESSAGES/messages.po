@@ -840,6 +840,21 @@ msgstr "Maximum allowed size in MB for each collected artifact. Defaults to 10."
 msgid "builtin_tool_artifact_param_max_total_size_mb_description"
 msgstr "Maximum total upload size in MB for all collected artifacts. Defaults to 10."
 
+
+msgid "builtin_tool_rss_feed_reader"
+msgstr "RSS Feed Reader"
+
+msgid "builtin_tool_rss_feed_reader_description"
+msgstr "Fetch and parse RSS or Atom feeds, returning structured articles with titles, authors, published dates, summaries, and links."
+
+msgid "builtin_tool_rss_feed_reader_param_url_description"
+msgstr "Full URL of the RSS or Atom feed (e.g. https://example.com/feed.xml)"
+
+msgid "builtin_tool_rss_feed_reader_param_limit_description"
+msgstr "Maximum number of articles to return. Default 10, max 30."
+
+msgid "rss_feed_parse_error"
+msgstr "Failed to parse the specified RSS or Atom feed"
 msgid "can_only_regenerate_assistant"
 msgstr "Can only regenerate assistant messages"
 
