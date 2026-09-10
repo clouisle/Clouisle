@@ -504,9 +504,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const runInputKind = message.metadata?.runInputKind === 'follow_up' ? 'follow_up' : 'steer'
     const runInputLabel = runInputState === 'queued'
       ? t(runInputKind === 'follow_up' ? 'queuedFollowUp' : 'queuedSteering')
-      : runInputState === 'committed'
-        ? t(runInputKind === 'follow_up' ? 'committedFollowUp' : 'committedSteering')
-        : null
+      : null
     
     // Image lightbox state
     const { isOpen: lightboxOpen, imageSrc, imageAlt, openLightbox, closeLightbox } = useLightbox()
