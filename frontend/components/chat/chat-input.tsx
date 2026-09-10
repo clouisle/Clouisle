@@ -175,6 +175,11 @@ export function ChatInput({
     // Ignore Enter during IME composition (e.g., Chinese input)
     if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
       e.preventDefault();
+      // 如果正在运行或流式输出且当前输入为空，按回车若有 onStop 则停止运行
+      if ((isLoading || isStreaming) && !value.trim() && files.length === 0) {
+        onStop?.();
+        return;
+      }
       handleSubmit();
     }
   };
@@ -522,7 +527,11 @@ export function ChatInput({
                     type="button"
                     aria-label={t('stop')}
                     className="flex h-9 w-9 items-center justify-center rounded-full bg-foreground text-background hover:bg-foreground/90 dark:bg-white dark:hover:bg-white/90 transition-colors"
-                    onClick={onStop}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onStop?.();
+                    }}
                   >
                     <StopCircle className="h-5 w-5" />
                   </button>
