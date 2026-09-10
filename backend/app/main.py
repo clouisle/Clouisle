@@ -112,6 +112,7 @@ async def lifespan(app: FastAPI):
         init_model_provider_display_name,
         revert_channel_id_to_model_id,
         init_kb_rerank_fields,
+        init_tool_database_config,
         init_skills_table,
         init_clouisle_import_sessions_table,
         init_postgres_lexical_search,
@@ -137,6 +138,10 @@ async def lifespan(app: FastAPI):
         await init_agent_powered_by_text()
     except Exception as e:
         logger.warning(f"Agent powered_by_text migration failed: {e}")
+    try:
+        await init_tool_database_config()
+    except Exception as e:
+        logger.warning(f"Tool database_config migration failed: {e}")
 
     try:
         await fix_cascade_delete_policies()

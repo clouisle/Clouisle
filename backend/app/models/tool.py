@@ -25,7 +25,8 @@ class CustomToolType(str, Enum):
     """Custom tool execution type"""
 
     HTTP = "http"  # HTTP API call
-    CODE = "code"  # Code execution (future)
+    CODE = "code"  # Code execution
+    DATABASE = "database"  # Database query execution
 
 
 class ToolCategory(str, Enum):
@@ -84,7 +85,10 @@ class Tool(models.Model):
 
     # Custom tool configuration (type=custom)
     custom_type = fields.CharEnumField(
-        CustomToolType, null=True, description="Custom tool execution type"
+        CustomToolType,
+        max_length=8,
+        null=True,
+        description="Custom tool execution type",
     )
 
     # HTTP tool config (custom_type=http)
@@ -106,6 +110,10 @@ class Tool(models.Model):
     # }
     code_config: dict = fields.JSONField(default=dict, description="Code configuration")  # type: ignore[assignment]
 
+    # Database tool config (custom_type=database)
+    database_config: dict = fields.JSONField(
+        default=dict, description="Database configuration"
+    )  # type: ignore[assignment]
     # MCP Server configuration (type=mcp)
     # {
     #   "transport": "stdio" | "sse",
