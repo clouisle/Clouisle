@@ -1667,7 +1667,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                     <RefreshCw className="h-4 w-4" />
                   </MessageAction>
                 )}
-                {usage && (
+                {usage && typeof usage.prompt_tokens === 'number' && (
                   <Popover>
                     <PopoverTrigger
                       render={
@@ -1751,7 +1751,7 @@ function TokenStatsContent({
   timing,
   t,
 }: {
-  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number; cache_read_tokens?: number; cache_creation_tokens?: number }
+  usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; cache_read_tokens?: number; cache_creation_tokens?: number }
   timing?: { first_token_ms: number | null; duration_ms: number; tokens_per_second: number | null }
   t: (key: string) => string
 }) {
@@ -1759,6 +1759,8 @@ function TokenStatsContent({
     if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`
     return `${ms}ms`
   }
+  const promptTokens = usage.prompt_tokens ?? 0
+  const completionTokens = usage.completion_tokens ?? 0
   const cacheReadTokens = usage.cache_read_tokens ?? 0
   const cacheCreationTokens = usage.cache_creation_tokens ?? 0
 
@@ -1766,11 +1768,11 @@ function TokenStatsContent({
     <div className="space-y-1.5">
       <div className="flex justify-between gap-8">
         <span className="text-muted-foreground">{t('inputTokens')}</span>
-        <span className="font-mono tabular-nums">{usage.prompt_tokens.toLocaleString()}</span>
+        <span className="font-mono tabular-nums">{promptTokens.toLocaleString()}</span>
       </div>
       <div className="flex justify-between gap-8">
         <span className="text-muted-foreground">{t('outputTokens')}</span>
-        <span className="font-mono tabular-nums">{usage.completion_tokens.toLocaleString()}</span>
+        <span className="font-mono tabular-nums">{completionTokens.toLocaleString()}</span>
       </div>
       {cacheReadTokens > 0 && (
         <div className="flex justify-between gap-8">
