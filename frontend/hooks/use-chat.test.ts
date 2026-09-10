@@ -1651,9 +1651,10 @@ describe('useChat', () => {
       content: 'steer this run',
     }))
 
-    expect(result.messages.find((message) => message.metadata?.runInputSequence === 1)?.metadata).toMatchObject({
-      runInputState: 'committed',
-      runInputKind: 'steer',
+    const assistant = result.messages.find((message) => message.role === 'assistant')
+    expect(assistant?.parts).toContainEqual({
+      type: 'user-instruction',
+      content: 'steer this run',
     })
   })
   it('creates a user message when a replayed input acceptance has no local pending row', async () => {
@@ -1678,12 +1679,11 @@ describe('useChat', () => {
 
     await result.sendMessage('question')
 
-    expect(result.messages).toContainEqual(expect.objectContaining({
-      id: 'run-input-run-1-1',
-      role: 'user',
-      parts: [{ type: 'text', text: 'replayed instruction' }],
-      metadata: expect.objectContaining({ runInputState: 'committed', runInputKind: 'steer', runInputSequence: 1 }),
-    }))
+    const assistant = result.messages.find((message) => message.id === 'assistant-1')
+    expect(assistant?.parts).toContainEqual({
+      type: 'user-instruction',
+      content: 'replayed instruction',
+    })
     expect(result.messages.find((message) => message.id === 'assistant-1')?.metadata).not.toHaveProperty('runInputState')
   })
 

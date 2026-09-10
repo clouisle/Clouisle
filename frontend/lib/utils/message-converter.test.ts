@@ -151,7 +151,6 @@ describe('message converter', () => {
         },
       ],
     }))
-
     expect(converted?.parts).toEqual([
       { type: 'reasoning', text: 'Need arithmetic', state: 'done' },
       { type: 'text', text: 'Using calculator', state: 'done' },
@@ -161,6 +160,34 @@ describe('message converter', () => {
     ])
   })
 
+  it('converts user_input step into user-instruction part in assistant message', () => {
+    const converted = convertBackendMessage(message({
+      content: 'Here is the Beijing weather report',
+      steps: [
+        {
+          id: 'step-1',
+          role: 'assistant',
+          content: 'Checking Shanghai weather',
+          tool_calls: [{ id: 'call-1', name: 'web_search', display_name: 'Search', arguments: { query: 'Shanghai' } }],
+          round_index: 1,
+          created_at: '2026-07-19T00:00:01.000Z',
+        },
+        {
+          id: 'step-2',
+          role: 'user',
+          round_role: 'user_input',
+          content: 'What about Beijing?',
+          round_index: 2,
+          created_at: '2026-07-19T00:00:02.000Z',
+        },
+      ],
+    }))
+
+    expect(converted?.parts).toContainEqual({
+      type: 'user-instruction',
+      content: 'What about Beijing?',
+    })
+  })
   it('restores citation sources from persisted Agentic tool results', () => {
     const converted = convertBackendMessage(message({
       content: 'Cited answer[[cite:web_result_1]]',

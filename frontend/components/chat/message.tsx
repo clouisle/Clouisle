@@ -3,7 +3,7 @@
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import { useLocale, useTranslations } from 'next-intl'
-import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye, Volume2, Pencil } from 'lucide-react'
+import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye, Volume2, Pencil, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   Block,
@@ -76,6 +76,7 @@ import {
   isTruncatedPart,
   isStoppedPart,
   isIterationCapReachedPart,
+  isUserInstructionPart,
 } from './types'
 import { getActiveToolActions } from './tool-action-utils'
 import { SourceContent } from './message-parts'
@@ -1017,8 +1018,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           </div>
         )
       }
-
-      if (isStoppedPart(part) || isTaskPart(part) || isReasoningPart(part)) {
+      if (isStoppedPart(part) || isTaskPart(part) || isReasoningPart(part) || isUserInstructionPart(part)) {
         return null
       }
 
@@ -1076,10 +1076,10 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         !isAskUserInteractionPart(part)
         && (
           isReasoningPart(part)
+          || isUserInstructionPart(part)
           || (isTaskPart(part) && part.taskType !== 'thinking' && part.taskType !== 'generating')
           || isToolCallPart(part)
           || isMcpToolCallPart(part)
-          || isToolResultPart(part)
           || isMcpToolResultPart(part)
         )
       ))
@@ -1247,12 +1247,11 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     }, [t])
 
     const renderOrdinaryPart = React.useCallback((part: MessagePart, index: number) => {
-      if (isReasoningPart(part) || isTaskPart(part)) {
+      if (isReasoningPart(part) || isTaskPart(part) || isUserInstructionPart(part)) {
         return null
       }
       return renderPart ? renderPart(part, index) : renderDefaultPart(part, index)
     }, [renderDefaultPart, renderPart])
-
     const buildChainOfThoughtSteps = React.useCallback(() => {
       const steps: React.ReactNode[] = []
 
@@ -1372,6 +1371,21 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           )
           return
         }
+        if (isUserInstructionPart(part)) {
+          steps.push(
+            <ChainOfThoughtStep
+              key={`instruction-${index}`}
+              icon={MessageSquare}
+              label={part.content}
+              status="complete"
+            >
+              <div className="text-xs text-foreground/85 bg-muted/50 rounded-md p-2 mt-1 border border-border/50">
+                {part.content}
+              </div>
+            </ChainOfThoughtStep>
+          )
+          return
+        }
 
         if (isReasoningPart(part)) {
           steps.push(
@@ -1392,7 +1406,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           )
         }
       })
-
 
       return steps
     }, [

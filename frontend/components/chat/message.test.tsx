@@ -50,8 +50,8 @@ mock.module('lucide-react', () => ({
   FileIcon: Icon,
   ImageIcon: Icon,
   Loader2: Icon,
+  MessageSquare: Icon,
   Pencil: Icon,
-  Plus: Icon,
   RefreshCw: Icon,
   SearchIcon: Icon,
   SparklesIcon: Icon,
@@ -750,6 +750,24 @@ describe('message behavior', () => {
     expect(steps[1]).toStartWith('chat.message.toolCompleted name=Web search')
     expect(steps[2]).toStartWith('chat.task.foundSources count=1')
     expect(steps[3]).toStartWith('chat.task.generating')
+  })
+
+  test('renders user-instruction step in thought process timeline', () => {
+    const container = render(<Message
+      chainOfThoughtOpen
+      message={{
+        id: 'assistant-instruction',
+        role: 'assistant',
+        parts: [
+          { type: 'reasoning', text: 'analyzing', state: 'done', duration: 1000 },
+          { type: 'user-instruction', content: 'Focus on 70B models' },
+        ],
+      }}
+    />)
+
+    const steps = [...container.querySelectorAll('[data-step-status]')].map((step) => step.textContent ?? '')
+    expect(steps).toHaveLength(2)
+    expect(steps[1]).toContain('Focus on 70B models')
   })
 
 

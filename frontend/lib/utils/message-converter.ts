@@ -324,6 +324,15 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
 
       for (let i = 0; i < sortedSteps.length; i++) {
         const step = sortedSteps[i]
+        if (step.role === 'user' || step.round_role === 'user_input') {
+          if (step.content?.trim()) {
+            parts.push({
+              type: 'user-instruction',
+              content: step.content.trim(),
+            })
+          }
+          continue
+        }
         if (step.role !== 'assistant') continue
         const stepParts = buildAssistantStepParts(
           step,

@@ -624,48 +624,40 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     }))
   }, [])
 
-  const markRunInputAccepted = useCallback((data: Record<string, unknown>, event: NormalizedStreamEvent) => {
+  const markRunInputAccepted = useCallback((data: Record<string, unknown>) => {
     const kind = data.kind === 'follow_up' ? 'follow_up' : 'steer'
     const content = typeof data.content === 'string' ? data.content : ''
-    const inputSequence = typeof data.sequence === 'number' ? data.sequence : undefined
     const pendingIndex = pendingRunInputsRef.current.findIndex((input) => (
       input.kind === kind && input.content === content
     ))
     const pending = pendingIndex >= 0 ? pendingRunInputsRef.current.splice(pendingIndex, 1)[0] : undefined
-    const runIdentity = event.envelope?.run_id ?? runIdRef.current ?? 'unknown'
-    const messageId = pending?.messageId ?? `run-input-${runIdentity}-${inputSequence ?? event.envelope?.sequence ?? Date.now()}`
-    setMessages((previous) => {
-      let committed = false
-      const next = previous.map((message) => {
-        const matchesInput = message.id === messageId || (
-          inputSequence !== undefined && message.metadata?.runInputSequence === inputSequence
-        )
-        if (!matchesInput) return message
-        committed = true
-        return {
-          ...message,
-          metadata: {
-            ...message.metadata,
-            runInputState: 'committed',
-            runInputKind: kind,
-            runInputSequence: inputSequence,
-          },
-        }
+    const targetSession = activeSessionRef.current
+    if (targetSession && content.trim()) {
+      targetSession.state.segments.push({
+        type: 'user-instruction',
+        instructionContent: content.trim(),
       })
-      if (committed || pending) return next
-      return [...next, {
-        id: messageId,
-        role: 'user',
-        parts: [{ type: 'text', text: content }],
-        createdAt: new Date(),
-        metadata: {
-          runInputState: 'committed',
-          runInputKind: kind,
-          runInputSequence: inputSequence,
-        },
-      }]
+      renderSession(targetSession, true)
+    }
+    // 同时直接更新 messages 状态，将 user-instruction 注入到 assistant 消息的 parts 中并清除 pending 气泡
+    setMessages((previous) => {
+      const filtered = pending ? previous.filter((msg) => msg.id !== pending.messageId) : [...previous]
+      if (content.trim()) {
+        const assistantIdx = filtered.findLastIndex((msg) => msg.role === 'assistant')
+        if (assistantIdx >= 0) {
+          const assistant = filtered[assistantIdx]
+          const exists = assistant.parts.some((p) => p.type === 'user-instruction' && 'content' in p && p.content === content.trim())
+          if (!exists) {
+            filtered[assistantIdx] = {
+              ...assistant,
+              parts: [...assistant.parts, { type: 'user-instruction', content: content.trim() }],
+            }
+          }
+        }
+      }
+      return filtered
     })
-  }, [])
+  }, [renderSession, setMessages])
 
   const applyIncomingEvent = useCallback((rawEvent: { event: string; data: unknown }, providedSession?: AssistantStreamSession) => {
     const event = normalizeStreamEvent(rawEvent)
@@ -737,7 +729,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     }
 
     if (event.event === 'input_accepted') {
-      markRunInputAccepted(data, event)
+      markRunInputAccepted(data)
       storeRunSnapshot()
       return
     }
@@ -753,14 +745,10 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         ...(eventMessageId ? { message_id: eventMessageId } : {}),
       } as SSEMessageStart & {
         edited_message_id?: string
-        edited_version_number?: number
-        edited_version_count?: number
       }
-      if (!session) return
       const nextConversationId = startData.conversation_id
       if (nextConversationId) {
         session.conversationId = nextConversationId
-        activeRunConversationRef.current = nextConversationId
         if (conversationIdRef.current !== nextConversationId) {
           setConversationId(nextConversationId)
           onConversationChange?.(nextConversationId)
@@ -1668,13 +1656,13 @@ type StreamToolResultPart = ToolResultPart | McpToolResultPart
  * fixed prelude to the rest of the thinking timeline.
  */
 interface ContentSegment {
-  type: 'text' | 'tool' | 'reasoning' | 'task' | 'media-result' | 'truncated' | 'iteration-cap-reached'
+  type: 'text' | 'tool' | 'reasoning' | 'task' | 'media-result' | 'truncated' | 'iteration-cap-reached' | 'user-instruction'
   // For text type
   text?: string
+  // For user-instruction type
+  instructionContent?: string
   // For tool type
   toolCall?: StreamToolCallPart
-  toolResult?: StreamToolResultPart
-  // For reasoning type
   reasoningIndex?: number
   reasoningText?: string
   reasoningState?: 'streaming' | 'done'
@@ -2417,6 +2405,8 @@ function buildMessageParts(
       parts.push({ type: 'truncated' })
     } else if (segment.type === 'iteration-cap-reached') {
       parts.push({ type: 'iteration-cap-reached' })
+    } else if (segment.type === 'user-instruction' && segment.instructionContent) {
+      parts.push({ type: 'user-instruction', content: segment.instructionContent })
     }
   }
 

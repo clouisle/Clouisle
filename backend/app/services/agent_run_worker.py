@@ -676,7 +676,8 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
                     }
                 )
 
-                # 将该排队指令正式作为一条独立的真实用户 Message 记录持久化到当前会话中
+                # 形态 B：作为当前轮次的内部 step 消息持久化（is_round_canonical=False）
+                # 随同当前 Assistant 消息保存在 steps 数组中，刷新时还原到 CoT 时间线
                 try:
                     await Message.create(
                         conversation=conversation,
@@ -685,17 +686,12 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
                         round_id=run.active_round_id or user_msg.round_id,
                         round_index=10_000 + item.sequence,
                         round_role=MessageRoundRole.USER_INPUT,
-                        is_round_canonical=True,
+                        is_round_canonical=False,
                         is_active=True,
-                    )
-                    # 同步更新会话消息总数
-                    await Conversation.filter(id=conversation.id).update(
-                        message_count=conversation.message_count + 1,
-                        updated_at=now_utc(),
                     )
                 except Exception as persist_err:
                     logger.warning(
-                        "Failed to persist consumed input message for run %s: %s",
+                        "Failed to persist consumed input step message for run %s: %s",
                         run.id,
                         persist_err,
                         exc_info=True,
