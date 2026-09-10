@@ -215,6 +215,14 @@ describe('ToolShareDialog callbacks', () => {
     expect(button(container, 'tools.share.shareButton').disabled).toBe(false)
     console.error = originalError
   })
+  it('shows empty state when no other teams are available to share with', async () => {
+    const container = render(
+      <ToolShareDialog tool={tool} open onOpenChange={() => {}} availableTeams={[{ id: 'owner', name: 'Owner' }]} />
+    )
+    await act(async () => { await Promise.resolve() })
+    expect(container.textContent).toContain('tools.share.noAvailableTeams')
+  })
+
 
   it('opens the confirmation and unshares the selected team', async () => {
     listToolShares.mockImplementation(async () => ({ shares: [existingShare] }))

@@ -27,6 +27,7 @@ class CustomToolType(str, Enum):
 
     HTTP = "http"  # HTTP API 调用
     CODE = "code"  # 代码执行
+    DATABASE = "database"  # 数据库工具
 
 
 class ToolCategory(str, Enum):
@@ -97,6 +98,23 @@ class HttpConfigSchema(BaseModel):
     response_path: str | None = Field(
         default=None, description="响应 JSON 路径，如 data.result"
     )
+
+
+class DatabaseConfigSchema(BaseModel):
+    """数据库工具配置"""
+
+    db_type: str = Field(..., description="数据库类型 (postgresql/mysql/redis/mongodb)")
+    host: str | None = Field(default=None, description="主机名或 IP")
+    port: int | None = Field(default=None, description="端口号")
+    database: str | None = Field(default=None, description="数据库名称")
+    username: str | None = Field(default=None, description="用户名")
+    password: str | None = Field(default=None, description="密码")
+    ssl: str | bool | None = Field(default=None, description="SSL 配置")
+    url: str | None = Field(default=None, description="Redis / MongoDB 连接 URL")
+    db: int | None = Field(default=None, description="Redis 逻辑库序号")
+    auth_source: str | None = Field(default=None, description="MongoDB 认证库")
+    timeout: int = Field(default=15, ge=1, le=120, description="查询超时时间（秒）")
+    max_limit: int = Field(default=100, ge=1, le=1000, description="最大返回记录数")
 
 
 class SandboxArtifactSchema(BaseModel):
@@ -216,6 +234,9 @@ class ToolOut(BaseModel):
     )
     http_config: HttpConfigSchema | None = Field(default=None, description="HTTP 配置")
     code_config: CodeConfigSchema | None = Field(default=None, description="代码配置")
+    database_config: DatabaseConfigSchema | None = Field(
+        default=None, description="数据库配置"
+    )
     mcp_config: McpConfigSchema | None = Field(
         default=None, description="MCP Server 配置"
     )
@@ -301,6 +322,9 @@ class ToolCreateInput(BaseModel):
     )
     http_config: HttpConfigSchema | None = Field(default=None, description="HTTP 配置")
     code_config: CodeConfigSchema | None = Field(default=None, description="代码配置")
+    database_config: DatabaseConfigSchema | None = Field(
+        default=None, description="数据库配置"
+    )
     mcp_config: McpConfigSchema | None = Field(
         default=None, description="MCP Server 配置"
     )
@@ -328,6 +352,7 @@ class ToolUpdateInput(BaseModel):
     parameters: list[ToolParameterSchema] | None = None
     http_config: HttpConfigSchema | None = None
     code_config: CodeConfigSchema | None = None
+    database_config: DatabaseConfigSchema | None = None
     mcp_config: McpConfigSchema | None = None
     credentials: dict[str, str] | None = None
     is_enabled: bool | None = None
@@ -513,11 +538,17 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
         "display_name_key": "builtin_tool_web_search",
         "category": ToolCategory.SEARCH,
         "icon": None,
-        "requires_config": True,
-        "config_fields": ["TAVILY_API_KEY"],
+        "requires_config": False,
+        "config_fields": ["TAVILY_API_KEY", "BOCHA_API_KEY"],
     },
     "fetch_webpage": {
         "display_name_key": "builtin_tool_fetch_webpage",
+        "category": ToolCategory.WEB,
+        "icon": None,
+        "requires_config": False,
+    },
+    "rss_feed_reader": {
+        "display_name_key": "builtin_tool_rss_feed_reader",
         "category": ToolCategory.WEB,
         "icon": None,
         "requires_config": False,

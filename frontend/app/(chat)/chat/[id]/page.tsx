@@ -247,6 +247,7 @@ export default function PublicChatPage({
     conversationId,
     runStatus,
     pendingAskUserToolCallId,
+    pendingRunInputs,
     sendMessage,
     submitAskUser,
     regenerate,
@@ -871,6 +872,18 @@ export default function PublicChatPage({
     </>
   )
 
+  const pendingInstructionsPanel = pendingRunInputs && pendingRunInputs.length > 0 ? (
+    <div className="w-full mx-auto max-w-3xl px-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
+      <div className="rounded-t-lg border border-b-0 bg-muted/40 backdrop-blur-xs px-3 py-1.5 flex items-center justify-between text-xs w-[75%] mx-auto">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="flex h-2 w-2 rounded-full bg-orange-500 animate-pulse shrink-0" />
+          <span className="font-medium text-muted-foreground shrink-0">{tChatMessage('userGuidancePending')}：</span>
+          <span className="truncate text-foreground/90">{pendingRunInputs[0].content}</span>
+        </div>
+      </div>
+    </div>
+  ) : null
+
   const composer = (
     <>
       <ChatInput
@@ -894,7 +907,7 @@ export default function PublicChatPage({
 
   const inputArea = (
     <>
-      {hasPendingAskUser ? pendingAskUserPanel : variablePanel}
+      {hasPendingAskUser ? pendingAskUserPanel : (pendingInstructionsPanel || variablePanel)}
       {composer}
     </>
   )

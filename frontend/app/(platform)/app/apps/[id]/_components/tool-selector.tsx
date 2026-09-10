@@ -16,10 +16,20 @@ import {
   Code2,
   Link,
   ChartColumn,
+  Database,
+  Settings2,
 } from 'lucide-react'
 import { isPresetToolCategory, type PresetToolCategory, type Skill, type Tool, type ToolConfig, type ToolParameter, type ToolType, toolsApi, skillsApi } from '@/lib/api'
 import { useTeam } from '@/contexts/team-context'
 import { cn } from '@/lib/utils'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
@@ -286,7 +296,7 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
                         >
                           {/* 图标 */}
                           <div className="shrink-0 w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-xl">
-                            {tool.icon || category.icon}
+                            {tool.icon || (tool.custom_type === 'database' ? <Database className="h-5 w-5" /> : category.icon)}
                           </div>
 
                           {/* 内容 */}
@@ -349,63 +359,172 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
 interface ToolDisplayItemProps {
   tool: Tool | null
   config: ToolConfig
+  onUpdateConfig?: (newConfig: Record<string, unknown>) => void
   onDelete: () => void
 }
 
-function ToolDisplayItem({ tool, config, onDelete }: ToolDisplayItemProps) {
+function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete }: ToolDisplayItemProps) {
   const t = useTranslations('agents.orchestration.tools')
   const [isDeleteHover, setIsDeleteHover] = React.useState(false)
+  const [configOpen, setConfigOpen] = React.useState(false)
   const isMissing = !tool
 
   // 获取显示名称
   const displayName = tool?.display_name || config.name || config.tool_id || config.server_id || t('unknownTool')
+  const isWebSearch = config.type === 'builtin' && config.name === 'web_search'
+  const searchEngine = typeof config.config?.engine === 'string' ? config.config.engine : 'auto'
+  const apiKey = typeof config.config?.api_key === 'string' ? config.config.api_key : ''
+
+  const [tempEngine, setTempEngine] = React.useState<string>(searchEngine)
+  const [tempApiKey, setTempApiKey] = React.useState<string>(apiKey)
+
+  const handleSaveConfig = () => {
+    if (onUpdateConfig) {
+      onUpdateConfig({
+        ...(config.config || {}),
+        engine: tempEngine,
+        api_key: tempApiKey.trim() ? tempApiKey.trim() : undefined,
+      })
+    }
+    setConfigOpen(false)
+  }
+
+  const engineLabels: Record<string, string> = {
+    auto: t('config.engineAuto'),
+    duckduckgo: t('config.engineDuckDuckGo'),
+    bocha: t('config.engineBocha'),
+    tavily: t('config.engineTavily'),
+  }
 
   return (
-    <div
-      className={cn(
-        'flex items-center gap-2 px-2.5 py-1.5 rounded-lg border transition-colors group',
-        isMissing
-          ? 'bg-destructive/10 border-destructive/50'
-          : isDeleteHover
-            ? 'bg-destructive/10 border-destructive/30'
-            : 'bg-background hover:bg-muted/30'
-      )}
-    >
-      {/* 图标 */}
-      {isMissing ? (
-        <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
-      ) : (
-        <Wrench className="h-4 w-4 text-orange-500 shrink-0" />
-      )}
-
-      {/* 名称 */}
-      <div className="flex-1 min-w-0">
-        <span className={cn('text-sm font-medium', isMissing && 'text-destructive')}>
-          {displayName}
-        </span>
-        {isMissing && (
-          <p className="text-xs text-destructive/80">{t('toolNotFound')}</p>
+    <>
+      <div
+        className={cn(
+          'flex items-center gap-2 px-2.5 py-1.5 rounded-lg border transition-colors group',
+          isMissing
+            ? 'bg-destructive/10 border-destructive/50'
+            : isDeleteHover
+              ? 'bg-destructive/10 border-destructive/30'
+              : 'bg-background hover:bg-muted/30'
         )}
+      >
+        {/* 图标 */}
+        {isMissing ? (
+          <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+        ) : (
+          <Wrench className="h-4 w-4 text-orange-500 shrink-0" />
+        )}
+
+        {/* 名称 */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className={cn('text-sm font-medium', isMissing && 'text-destructive')}>
+              {displayName}
+            </span>
+            {isWebSearch && (
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground">
+                {engineLabels[searchEngine] || searchEngine}
+              </Badge>
+            )}
+          </div>
+          {isMissing && (
+            <p className="text-xs text-destructive/80">{t('toolNotFound')}</p>
+          )}
+        </div>
+
+        {/* 操作 */}
+        <div className="flex items-center gap-1 shrink-0">
+          {isWebSearch && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 cursor-pointer text-muted-foreground hover:text-foreground"
+              title={t('config.settings')}
+              onClick={(e) => {
+                e.stopPropagation()
+                setTempEngine(typeof config.config?.engine === 'string' ? config.config.engine : 'auto')
+                setTempApiKey(typeof config.config?.api_key === 'string' ? config.config.api_key : '')
+                setConfigOpen(true)
+              }}
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete()
+            }}
+            onMouseEnter={() => setIsDeleteHover(true)}
+            onMouseLeave={() => setIsDeleteHover(false)}
+          >
+            <Trash2 className="h-3 w-3 text-muted-foreground" />
+          </Button>
+          <Switch checked={true} onCheckedChange={() => onDelete()} />
+        </div>
       </div>
 
-      {/* 操作 */}
-      <div className="flex items-center gap-1.5 shrink-0">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
-          onClick={(e) => {
-            e.stopPropagation()
-            onDelete()
-          }}
-          onMouseEnter={() => setIsDeleteHover(true)}
-          onMouseLeave={() => setIsDeleteHover(false)}
-        >
-          <Trash2 className="h-3 w-3 text-muted-foreground" />
-        </Button>
-        <Switch checked={true} onCheckedChange={() => onDelete()} />
-      </div>
-    </div>
+      {isWebSearch && (
+        <Dialog open={configOpen} onOpenChange={setConfigOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Settings2 className="h-4 w-4 text-orange-500" />
+                {t('config.title')}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">{t('config.engine')}</Label>
+                <Select value={tempEngine} onValueChange={(val) => setTempEngine(val || 'auto')}>
+                  <SelectTrigger className="w-full text-xs">
+                    <SelectValue>
+                      {engineLabels[tempEngine] || engineLabels.auto}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">{t('config.engineAuto')}</SelectItem>
+                    <SelectItem value="duckduckgo">{t('config.engineDuckDuckGo')}</SelectItem>
+                    <SelectItem value="bocha">{t('config.engineBocha')}</SelectItem>
+                    <SelectItem value="tavily">{t('config.engineTavily')}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">{t('config.engineHint')}</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">{t('config.apiKey')}</Label>
+                <Input
+                  type="password"
+                  value={tempApiKey}
+                  onChange={(e) => setTempApiKey(e.target.value)}
+                  placeholder={
+                    tempEngine === 'bocha'
+                      ? 'sk-xxxxxxxxxx'
+                      : tempEngine === 'tavily'
+                        ? 'tvly-xxxxxxxxxx'
+                        : 'API Key (Optional)'
+                  }
+                  className="text-xs"
+                />
+                <p className="text-[11px] text-muted-foreground">{t('config.apiKeyHint')}</p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setConfigOpen(false)}>
+                {t('config.cancel')}
+              </Button>
+              <Button size="sm" onClick={handleSaveConfig}>
+                {t('config.save')}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
   )
 }
 
@@ -455,6 +574,11 @@ export function ToolSelector({
       })
     )
   }
+  const handleUpdateToolConfig = (index: number, newConfig: Record<string, unknown>) => {
+    const next = [...toolsConfig]
+    next[index] = { ...next[index], config: newConfig }
+    onChange(next)
+  }
 
   if (selectedTools.length === 0) {
     return (
@@ -480,6 +604,7 @@ export function ToolSelector({
           key={getKey(config, index)}
           tool={tool}
           config={config}
+          onUpdateConfig={(cfg) => handleUpdateToolConfig(index, cfg)}
           onDelete={() => handleDeleteTool(config)}
         />
       ))}

@@ -1,6 +1,6 @@
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -168,7 +168,7 @@ class TestChatToolExecutor:
 
     @pytest.mark.anyio
     async def test_execute_builtin_tool_uses_stored_credentials(self):
-        async def handler(query, credentials=None):
+        async def handler(query, credentials=None, **_kwargs):
             return {"query": query, "credentials": credentials}
 
         tool_info = ToolInfo(
@@ -204,7 +204,10 @@ class TestChatToolExecutor:
             "query": "latest news",
             "credentials": {"TAVILY_API_KEY": "team-key"},
         }
-        mock_filter.assert_called_once_with(tool_name="web_search", team_id="team-1")
+        assert mock_filter.call_args_list == [
+            call(tool_name="web_search", team_id="team-1"),
+            call(tool_name="web_search", team_id=None),
+        ]
 
     @pytest.mark.anyio
     async def test_execute_bash_routes_to_sandbox_tool(self):

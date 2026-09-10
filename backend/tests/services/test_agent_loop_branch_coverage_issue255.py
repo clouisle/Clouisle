@@ -217,8 +217,12 @@ async def test_agent_loop_guards_heartbeat_inputs_and_plans():
     async def heartbeat(_last_event, _interval, _request):
         return True, 1.0
 
+    steer_inputs = [SimpleNamespace(content="steer")]
+
     async def consume_inputs():
-        return [SimpleNamespace(content="steer")]
+        if steer_inputs:
+            return [steer_inputs.pop(0)]
+        return []
 
     async def input_consumed(item):
         consumed.append(item.content)
@@ -666,8 +670,12 @@ async def test_agent_loop_stream_pause_truncation_and_suppressed_events():
         heartbeat_calls += 1
         return True, 1.0
 
+    steer_inputs = [SimpleNamespace(content="steer")]
+
     async def consume_inputs():
-        return [SimpleNamespace(content="steer")]
+        if steer_inputs:
+            return [steer_inputs.pop(0)]
+        return []
 
     async def stream(**_kwargs):
         nonlocal stream_calls

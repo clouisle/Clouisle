@@ -555,10 +555,37 @@ class AgentService:
                 "tool_name": tool_name,
                 "success": False,
             }
-
         credentials = {}
         team_id = agent.team_id
 
+        # 检查当前 Agent 是否针对此工具单独配置了 config (如 engine, api_key)
+        agent_tool_config: dict[str, Any] = {}
+        if getattr(agent, "tools_config", None):
+            for tc in agent.tools_config:
+                if (
+                    isinstance(tc, dict)
+                    and tc.get("type") == "builtin"
+                    and tc.get("name") == tool_name
+                ):
+                    agent_tool_config = tc.get("config") or {}
+                    break
+
+        # 1. 优先读取 Agent 级别的独立 Key 配置
+        if agent_tool_config:
+            if agent_tool_config.get("api_key"):
+                engine = agent_tool_config.get("engine", "tavily")
+                if engine == "tavily":
+                    credentials["TAVILY_API_KEY"] = agent_tool_config["api_key"]
+                elif engine == "bocha":
+                    credentials["BOCHA_API_KEY"] = agent_tool_config["api_key"]
+            if agent_tool_config.get("TAVILY_API_KEY"):
+                credentials["TAVILY_API_KEY"] = agent_tool_config["TAVILY_API_KEY"]
+            if agent_tool_config.get("BOCHA_API_KEY"):
+                credentials["BOCHA_API_KEY"] = agent_tool_config["BOCHA_API_KEY"]
+
+        # 2. 搜索引擎由 agent 编排配置严格决定，不交由模型决定
+        if tool_name == "web_search":
+            arguments["search_engine"] = agent_tool_config.get("engine") or "auto"
         logger.info(
             f"[TOOL EXEC] Executing tool '{tool_name}' for agent {agent.id}, team_id: {team_id}"
         )
@@ -566,48 +593,32 @@ class AgentService:
 
         # Try to get team-specific config first
         if team_id:
-            logger.info(
-                f"[TOOL EXEC] Looking for team config: tool_name={tool_name}, team_id={team_id}"
-            )
             tool_config = await ToolConfig.filter(
                 tool_name=tool_name, team_id=team_id
             ).first()
-            if tool_config:
-                credentials = tool_config.credentials or {}
-                logger.info(f"[TOOL EXEC] Found team config for {tool_name}")
-                logger.info(f"[TOOL EXEC] Credentials keys: {list(credentials.keys())}")
-                logger.info(
-                    f"[TOOL EXEC] Has TAVILY_API_KEY: {'TAVILY_API_KEY' in credentials}"
-                )
-            else:
-                logger.warning(f"[TOOL EXEC] No team config found for {tool_name}")
+            if tool_config and tool_config.credentials:
+                for k, v in tool_config.credentials.items():
+                    if k not in credentials and v:
+                        credentials[k] = v
 
         # If no team config, try global config
         if not credentials:
-            logger.info(f"[TOOL EXEC] Looking for global config: tool_name={tool_name}")
             global_config = await ToolConfig.filter(
                 tool_name=tool_name, team_id=None
             ).first()
-            if global_config:
-                credentials = global_config.credentials or {}
-                logger.info(
-                    f"[TOOL EXEC] Found global config for {tool_name}, has credentials: {bool(credentials)}"
-                )
-            else:
-                logger.warning(f"[TOOL EXEC] No global config found for {tool_name}")
-
-        logger.info(
-            f"[TOOL EXEC] Final credentials for {tool_name}: {list(credentials.keys())}"
-        )
-        logger.info(
-            f"[TOOL EXEC] Calling tool_registry.execute with credentials: {bool(credentials)}"
-        )
+            if global_config and global_config.credentials:
+                for k, v in global_config.credentials.items():
+                    if k not in credentials and v:
+                        credentials[k] = v
 
         scope_context: dict[str, Any] = {}
         if conversation_id is not None:
             scope_context["conversation_id"] = conversation_id
         if workflow_run_id is not None:
             scope_context["workflow_run_id"] = workflow_run_id
+        extra_kwargs: dict[str, Any] = {}
+        if agent_tool_config:
+            extra_kwargs["agent_tool_config"] = agent_tool_config
 
         # Execute the tool
         try:
@@ -617,6 +628,7 @@ class AgentService:
                 credentials=credentials,
                 agent=agent,
                 team_id=str(agent.team_id) if agent.team_id else None,
+                **extra_kwargs,
                 **scope_context,
             )
             return result

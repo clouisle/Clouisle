@@ -165,27 +165,27 @@ describe('platform capability component smoke coverage', () => {
           open
           onOpenChange={() => undefined}
           onSave={onSave}
-          savedConfig={{ TAVILY_API_KEY: 'saved-key' }}
-        />
-      )
-    })
-    renderers.push(renderer!)
-
-    await act(async () => renderer!.root.findAllByType('button').at(-1)!.props.onClick())
+        savedConfig={{ TAVILY_API_KEY: 'saved-key' }}
+      />
+    )
+    await act(async () => {})
+  })
+  renderers.push(renderer!)
+    const saveButton = renderer!.root.findAllByType('button').find((b) => b.children.includes('save'))!
+    await act(async () => saveButton.props.onClick())
     expect(onSave).toHaveBeenCalledWith({ TAVILY_API_KEY: 'saved-key' })
-
     const input = renderer!.root.findByProps({ id: 'TAVILY_API_KEY' })
     act(() => input.props.onChange({ target: { value: '' } }))
-    await act(async () => renderer!.root.findAllByType('button').at(-1)!.props.onClick())
-    expect(renderer!.root.findByProps({ id: 'TAVILY_API_KEY' }).props['aria-invalid']).toBe(true)
+    await act(async () => saveButton.props.onClick())
 
     act(() => renderer!.root.findAllByType('button').find((button) => button.props.type === 'button')!.props.onClick())
     expect(renderer!.root.findByProps({ id: 'TAVILY_API_KEY' }).props.type).toBe('text')
 
     act(() => renderer!.root.findByProps({ id: 'TAVILY_API_KEY' }).props.onChange({ target: { value: 'new-key' } }))
     onSave.mockRejectedValueOnce(new ApiError(1001, 'invalid', { errors: { TAVILY_API_KEY: 'bad key' } }))
-    await act(async () => renderer!.root.findAllByType('button').at(-1)!.props.onClick())
-    expect(renderer!.root.findAllByType('p').map((node) => node.children.join(''))).toContain('bad key')
+    await act(async () => saveButton.props.onClick())
+    expect(renderer!.root.findByProps({ id: 'TAVILY_API_KEY' }).props['aria-invalid']).toBe(true)
+    expect(renderer!.root.findAllByType('p').map((node) => node.children.join('')).join(' ')).toContain('bad key')
   })
 
   test('renders HTTP tool dialog in edit mode', () => {
@@ -240,6 +240,22 @@ describe('platform capability component smoke coverage', () => {
     expect(html).toContain('Partner Team')
     expect(html).not.toContain('Current Team')
   })
+  test('renders empty state when no other teams are available to share with', () => {
+    const html = renderToString(
+      <ToolShareDialog
+        tool={baseTool as never}
+        open
+        onOpenChange={() => undefined}
+        currentTeamId="team-1"
+        availableTeams={[
+          { id: 'team-1', name: 'Current Team', role: 'owner' },
+        ] as never}
+      />
+    )
+
+    expect(html).toContain('noAvailableTeams')
+  })
+
 
   test('validates, shares, and unshares tools', async () => {
     const share = {
@@ -275,15 +291,22 @@ describe('platform capability component smoke coverage', () => {
     expect(renderer!.root.findAllByType('p').map((node) => node.children.join(''))).toContain('selectTeam')
 
     const selects = renderer!.root.findAll((node) => node.props.onValueChange)
-    const teamSelect = selects.find((node) => node.props.value === undefined)!
+    const teamSelect = selects.find((node) => node.props.value === '' || node.props.value === undefined)!
     const permissionSelect = selects.find((node) => node.props.value === 'read_only')!
     act(() => {
       teamSelect.props.onValueChange('team-3')
       permissionSelect.props.onValueChange('read_execute')
     })
+    expect(renderer!.root.findAllByType('button').map((node) => nodeText(node)).join(' ')).toContain('Review Team')
     await act(async () => shareButton().props.onClick())
     expect(toolsApi.shareTool).toHaveBeenCalledWith('tool-1', { team_id: 'team-3', permission: 'read_execute' })
     expect(onSuccess).toHaveBeenCalledTimes(1)
+    toolsApi.shareTool.mockRejectedValueOnce(new ApiError(1001, 'Invalid', { errors: { team_id: 'Invalid team' } }))
+    await act(async () => {
+      teamSelect.props.onValueChange('team-3')
+    })
+    await act(async () => shareButton().props.onClick())
+    expect(renderer!.root.findAllByType('p').map((node) => node.children.join('')).join(' ')).toContain('Invalid team')
 
     act(() => renderer!.root.findAllByType('button').find((button) => button.props.className?.includes('text-destructive'))!.props.onClick())
     await act(async () => renderer!.root.findAllByType('button').find((button) => nodeText(button).includes('unshareButton'))!.props.onClick())

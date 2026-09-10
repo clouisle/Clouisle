@@ -139,8 +139,12 @@ describe('tool test panel', () => {
     act(() => booleanSelect(renderer).props.onChange({ target: { value: 'true' } }))
     change(renderer, 'tags', '["a","b"]')
     change(renderer, 'metadata', '{not-json}')
-    change(renderer, 'mode', 'safe')
-
+    act(() => {
+      const modeSelect = renderer.root.findAllByType('select').find((s) =>
+        s.findAllByType('option').some((opt) => opt.props.value === 'safe'),
+      )!
+      modeSelect.props.onChange({ target: { value: 'safe' } })
+    })
     let execution!: Promise<void>
     act(() => { execution = runButton(renderer).props.onClick() })
     expect(runButton(renderer).props.disabled).toBe(true)
@@ -227,7 +231,12 @@ describe('tool test panel', () => {
     change(renderer, 'limit', '3')
     change(renderer, 'filters', '{"kind":"doc"}')
     act(() => booleanSelect(renderer).props.onChange({ target: { value: 'false' } }))
-    change(renderer, 'region', 'eu')
+    act(() => {
+      const regionSelect = renderer.root.findAllByType('select').find((s) =>
+        s.findAllByType('option').some((opt) => opt.props.value === 'eu'),
+      )!
+      regionSelect.props.onChange({ target: { value: 'eu' } })
+    })
     await act(async () => runButton(renderer).props.onClick())
 
     expect(api.test).toHaveBeenCalledWith({
@@ -256,5 +265,29 @@ describe('tool test panel', () => {
     await act(async () => {})
     expect(runButton(failed).props.disabled).toBe(true)
     expect(failedApi.test).not.toHaveBeenCalled()
+  })
+  test('handles parameter input enum and boolean select changes and empty selection', async () => {
+    const tool = {
+      ...baseTool,
+      parameters: [
+        { name: 'env', type: 'string', required: false, enum: ['staging', 'prod'] },
+        { name: 'debug', type: 'boolean', required: false },
+      ],
+    }
+    const api = { listMcpTools: mock(async () => ({ tools: [] })), test: mock(async () => ({ success: true })) }
+    const panel = render(tool as never, api)
+    await act(async () => {})
+
+    const selects = panel.root.findAllByType('select')
+    act(() => {
+      selects[0].props.onChange({ target: { value: 'staging' } })
+      selects[1].props.onChange({ target: { value: 'true' } })
+    })
+    act(() => {
+      selects[0].props.onChange({ target: { value: '__EMPTY__' } })
+      selects[1].props.onChange({ target: { value: '__EMPTY__' } })
+    })
+    await act(async () => runButton(panel).props.onClick())
+    expect(api.test).toHaveBeenCalled()
   })
 })

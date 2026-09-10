@@ -148,7 +148,8 @@ export interface UseChatReturn {
   runStatus: AgentRunStatus | null
   /** Tool call id of the ask_user interaction the server is waiting on. */
   pendingAskUserToolCallId: string | null
-  /** Send a message with optional images (vision) and/or file URLs (file upload) */
+  /** Currently queued inputs (e.g. user instructions) waiting to be accepted by the run */
+  pendingRunInputs: Array<{ content: string; requestId: string }>
   sendMessage: (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[]) => Promise<void>
   /** Submit one structured answer result for the waiting ask_user interaction. */
   submitAskUser: (toolCallId: string, answer: Omit<AgentRunAnswerInput, 'tool_call_id'>) => Promise<void>
@@ -230,6 +231,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   const sessionsByRunRef = useRef(new Map<string, AssistantStreamSession>())
   const pendingRunInputsRef = useRef<PendingRunInput[]>([])
   const flushPendingInputsRef = useRef<(runId: string) => void>(() => undefined)
+  const [pendingInputsState, setPendingInputsState] = useState<Array<{ content: string; requestId: string }>>([])
   const terminalRunsRef = useRef(new Set<string>())
   const runStartWaiterRef = useRef<RunStartWaiter | null>(null)
 
@@ -624,48 +626,41 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     }))
   }, [])
 
-  const markRunInputAccepted = useCallback((data: Record<string, unknown>, event: NormalizedStreamEvent) => {
+  const markRunInputAccepted = useCallback((data: Record<string, unknown>) => {
     const kind = data.kind === 'follow_up' ? 'follow_up' : 'steer'
     const content = typeof data.content === 'string' ? data.content : ''
-    const inputSequence = typeof data.sequence === 'number' ? data.sequence : undefined
     const pendingIndex = pendingRunInputsRef.current.findIndex((input) => (
       input.kind === kind && input.content === content
     ))
     const pending = pendingIndex >= 0 ? pendingRunInputsRef.current.splice(pendingIndex, 1)[0] : undefined
-    const runIdentity = event.envelope?.run_id ?? runIdRef.current ?? 'unknown'
-    const messageId = pending?.messageId ?? `run-input-${runIdentity}-${inputSequence ?? event.envelope?.sequence ?? Date.now()}`
-    setMessages((previous) => {
-      let committed = false
-      const next = previous.map((message) => {
-        const matchesInput = message.id === messageId || (
-          inputSequence !== undefined && message.metadata?.runInputSequence === inputSequence
-        )
-        if (!matchesInput) return message
-        committed = true
-        return {
-          ...message,
-          metadata: {
-            ...message.metadata,
-            runInputState: 'committed',
-            runInputKind: kind,
-            runInputSequence: inputSequence,
-          },
-        }
+    setPendingInputsState(pendingRunInputsRef.current.map((i) => ({ content: i.content, requestId: i.requestId })))
+    const targetSession = activeSessionRef.current
+    if (targetSession && content.trim()) {
+      targetSession.state.segments.push({
+        type: 'user-instruction',
+        instructionContent: content.trim(),
       })
-      if (committed || pending) return next
-      return [...next, {
-        id: messageId,
-        role: 'user',
-        parts: [{ type: 'text', text: content }],
-        createdAt: new Date(),
-        metadata: {
-          runInputState: 'committed',
-          runInputKind: kind,
-          runInputSequence: inputSequence,
-        },
-      }]
+      renderSession(targetSession, true)
+    }
+    // 同时直接更新 messages 状态，将 user-instruction 注入到 assistant 消息的 parts 中并清除 pending 气泡
+    setMessages((previous) => {
+      const filtered = pending ? previous.filter((msg) => msg.id !== pending.messageId) : [...previous]
+      if (content.trim()) {
+        const assistantIdx = filtered.findLastIndex((msg) => msg.role === 'assistant')
+        if (assistantIdx >= 0) {
+          const assistant = filtered[assistantIdx]
+          const exists = assistant.parts.some((p) => p.type === 'user-instruction' && 'content' in p && p.content === content.trim())
+          if (!exists) {
+            filtered[assistantIdx] = {
+              ...assistant,
+              parts: [...assistant.parts, { type: 'user-instruction', content: content.trim() }],
+            }
+          }
+        }
+      }
+      return filtered
     })
-  }, [])
+  }, [renderSession, setMessages])
 
   const applyIncomingEvent = useCallback((rawEvent: { event: string; data: unknown }, providedSession?: AssistantStreamSession) => {
     const event = normalizeStreamEvent(rawEvent)
@@ -737,7 +732,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     }
 
     if (event.event === 'input_accepted') {
-      markRunInputAccepted(data, event)
+      markRunInputAccepted(data)
       storeRunSnapshot()
       return
     }
@@ -1148,14 +1143,10 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       }
     } catch (reason) {
       pendingRunInputsRef.current = pendingRunInputsRef.current.filter((input) => input !== pending)
+      setPendingInputsState(pendingRunInputsRef.current.map((i) => ({ content: i.content, requestId: i.requestId })))
       const chatError: ChatError = { message: reason instanceof Error ? reason.message : '' }
       setError(chatError)
       onError?.(chatError)
-      setMessages((previous) => previous.map((message) => (
-        message.id === pending.messageId
-          ? { ...message, metadata: { ...message.metadata, runInputState: 'failed' } }
-          : message
-      )))
     }
   }, [agentId, onError, runApi, setCurrentRunStatus])
 
@@ -1183,17 +1174,10 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       runId: runIdRef.current ?? undefined,
     }
     pendingRunInputsRef.current.push(pending)
-    setMessages((previous) => [...previous, {
-      id: pending.messageId,
-      role: 'user',
-      parts: [{ type: 'text', text: content }],
-      createdAt: new Date(),
-      metadata: { runInputState: 'queued', runInputKind: delivery },
-    }])
+    setPendingInputsState(pendingRunInputsRef.current.map((i) => ({ content: i.content, requestId: i.requestId })))
     const activeRunId = runIdRef.current
     if (activeRunId) await flushPendingRunInputs(activeRunId)
-  }, [flushPendingRunInputs, runApi, setMessages])
-
+  }, [flushPendingRunInputs, runApi])
   const consumeStream = useCallback(async (
     session: AssistantStreamSession,
     start: () => { stream: Promise<Response>; abort: () => void } | Promise<{ stream: Promise<Response>; abort: () => void }>,
@@ -1322,7 +1306,6 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     syncStreamingState(session)
     setMessages((previous) => [...previous, userMessage, assistantMessage])
     setCurrentStatus('loading')
-
     const request: ChatRequest = {
       message: content,
       images,
@@ -1408,9 +1391,6 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         if (!isCurrentStop()) return
         if (result?.status) setCurrentRunStatus(result.status)
         if (result?.status === 'stopped') {
-          // Invalidate both the durable subscription and the request stream
-          // before marking the local session terminal. Late events must not
-          // repaint a stopped assistant message.
           disconnectLocalSubscription()
           resolveRunEnd(activeRunId)
           if (session) {
@@ -1425,12 +1405,13 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             runIdRef.current = null
             setRunId(null)
           }
+          pendingRunInputsRef.current = []
+          setPendingInputsState([])
           resetStreamingState()
           return
         }
         if (!isCurrentStop()) return
       } catch (reason) {
-        if (!isCurrentStop()) return
         if (runStatusRef.current === 'stopping') setCurrentRunStatus(previousRunStatus)
         if (statusRef.current === 'loading' || statusRef.current === 'streaming') {
           setCurrentStatus(previousUiStatus)
@@ -1466,6 +1447,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     lastSequenceRef.current = 0
     appliedSequenceKeysRef.current.clear()
     pendingRunInputsRef.current = []
+    setPendingInputsState([])
     setRunId(null)
     setCurrentRunStatus(null)
     setPendingAskUserToolCallId(null)
@@ -1634,6 +1616,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     runId,
     runStatus,
     pendingAskUserToolCallId,
+    pendingRunInputs: pendingInputsState,
     sendMessage,
     submitAskUser,
     regenerate,
@@ -1669,13 +1652,14 @@ type StreamToolResultPart = ToolResultPart | McpToolResultPart
  * fixed prelude to the rest of the thinking timeline.
  */
 interface ContentSegment {
-  type: 'text' | 'tool' | 'reasoning' | 'task' | 'media-result' | 'truncated' | 'iteration-cap-reached'
+  type: 'text' | 'tool' | 'reasoning' | 'task' | 'media-result' | 'truncated' | 'iteration-cap-reached' | 'user-instruction'
   // For text type
   text?: string
+  // For user-instruction type
+  instructionContent?: string
   // For tool type
   toolCall?: StreamToolCallPart
   toolResult?: StreamToolResultPart
-  // For reasoning type
   reasoningIndex?: number
   reasoningText?: string
   reasoningState?: 'streaming' | 'done'
@@ -1916,6 +1900,12 @@ function createAssistantStreamStateFromParts(parts: MessagePart[]): AssistantStr
         })
         break
       }
+      case 'user-instruction':
+        state.segments.push({
+          type: 'user-instruction',
+          instructionContent: 'content' in part && typeof part.content === 'string' ? part.content : '',
+        })
+        break
       case 'task':
         state.segments.push({ type: 'task', task: { ...part } })
         if (part.taskType === 'rag') {
@@ -2418,6 +2408,8 @@ function buildMessageParts(
       parts.push({ type: 'truncated' })
     } else if (segment.type === 'iteration-cap-reached') {
       parts.push({ type: 'iteration-cap-reached' })
+    } else if (segment.type === 'user-instruction' && segment.instructionContent) {
+      parts.push({ type: 'user-instruction', content: segment.instructionContent })
     }
   }
 

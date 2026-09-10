@@ -1775,3 +1775,53 @@ async def test_init_conversation_memory_watermark_column(monkeypatch):
 
     execute_mock.assert_awaited_once()
     assert "memory_extracted_watermark_id" in execute_mock.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_tool_database_config_skips_missing_table(monkeypatch):
+    conn = SimpleNamespace(execute_query=AsyncMock(return_value=(0, [])))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _: conn)
+
+    await init_data.init_tool_database_config()
+
+    # Only the table-existence check should have been called
+    assert conn.execute_query.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_tool_database_config_widens_narrow_custom_type(monkeypatch):
+    responses = [
+        (1, ["tools"]),  # table exists
+        None,  # SET lock_timeout
+        (0, []),  # ADD COLUMN database_config
+        None,  # RESET lock_timeout
+        (1, [{"character_maximum_length": 4}]),  # column info query
+        None,  # SET lock_timeout
+        (0, []),  # ALTER COLUMN TYPE
+        None,  # RESET lock_timeout
+    ]
+    conn = SimpleNamespace(execute_query=AsyncMock(side_effect=responses))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _: conn)
+
+    await init_data.init_tool_database_config()
+
+    sqls = [c.args[0] for c in conn.execute_query.await_args_list]
+    assert any("ALTER COLUMN custom_type TYPE VARCHAR(8)" in s for s in sqls)
+
+
+@pytest.mark.asyncio
+async def test_tool_database_config_skips_widen_when_already_wide(monkeypatch):
+    responses = [
+        (1, ["tools"]),  # table exists
+        None,  # SET lock_timeout
+        (0, []),  # ADD COLUMN database_config
+        None,  # RESET lock_timeout
+        (1, [{"character_maximum_length": 8}]),  # column already wide
+    ]
+    conn = SimpleNamespace(execute_query=AsyncMock(side_effect=responses))
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _: conn)
+
+    await init_data.init_tool_database_config()
+
+    sqls = [c.args[0] for c in conn.execute_query.await_args_list]
+    assert not any("ALTER COLUMN custom_type" in s for s in sqls)

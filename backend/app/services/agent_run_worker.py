@@ -660,7 +660,50 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
                 "sequence": item.sequence,
             }
             event_queue.put_nowait(("input_accepted", payload))
-            if item.kind == AgentRunInputKind.STEER:
+            if item.kind in (AgentRunInputKind.STEER, AgentRunInputKind.FOLLOW_UP):
+                # 形态 B：作为当前轮次的内部 step 消息持久化（is_round_canonical=False）
+                # 随同当前 Assistant 消息保存在 steps 数组中，刷新时还原到 CoT 时间线
+                try:
+                    step_msg = await Message.create(
+                        conversation=conversation,
+                        role=MessageRole.USER,
+                        content=item.content or "",
+                        round_id=run.active_round_id or user_msg.round_id,
+                        round_index=10_000 + item.sequence,
+                        round_role=MessageRoundRole.USER_INPUT,
+                        is_round_canonical=False,
+                        is_active=True,
+                    )
+                    from app.models.user import User
+                    from app.services.audit_log import AuditLogService
+
+                    run_user = await User.get_or_none(id=conversation.user_id)
+                    after_snapshot = AuditLogService.snapshot(step_msg, "message")
+                    changes = AuditLogService.build_changes({}, after_snapshot)
+                    await AuditLogService.log(
+                        user=run_user,
+                        action="create_message",
+                        resource_type="message",
+                        resource_id=step_msg.id,
+                        resource_name=str(step_msg.id),
+                        operation="create",
+                        status="success",
+                        changes=changes,
+                        metadata={
+                            "run_id": str(run.id),
+                            "conversation_id": str(conversation.id),
+                            "sequence": item.sequence,
+                        },
+                    )
+                except Exception as persist_err:
+                    logger.error(
+                        "Failed to persist consumed input step message for run %s: %s",
+                        run.id,
+                        persist_err,
+                        exc_info=True,
+                    )
+                    raise
+
                 if loop_context.working_history_override is None:
                     loop_context.working_history_override = []
 
@@ -688,7 +731,7 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
         loop_context.consume_inputs = _consume_inputs
         loop_context.input_consumed = _input_consumed
         loop_context.stop_requested = _stop_requested
-
+        loop_context.is_disconnected = _stop_requested
         waiting_tool_call_id: str | None = None
 
         async def _pause_for_user(**interaction: Any) -> None:

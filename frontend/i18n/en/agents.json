@@ -258,7 +258,22 @@
           "web_search": "Web Search",
           "parse_file": "File Parser",
           "generate_image": "Generate Image",
-          "generate_video": "Generate Video"
+          "generate_video": "Generate Video",
+          "rss_feed_reader": "RSS Feed Reader"
+        },
+        "config": {
+          "title": "Configure Tool Settings",
+          "settings": "Settings",
+          "engine": "Search Engine",
+          "engineHint": "Specify a dedicated search engine for this Agent, or use auto routing",
+          "engineAuto": "Smart Selection (Auto)",
+          "engineDuckDuckGo": "DuckDuckGo (Zero-Config / Free)",
+          "engineBocha": "Bocha AI (Optimized for Chinese)",
+          "engineTavily": "Tavily Search (High Accuracy AI Search)",
+          "apiKey": "Dedicated API Key (Optional)",
+          "apiKeyHint": "Configure a dedicated Key for this Agent for isolated attribution and quota; leave empty to inherit team default or use free search",
+          "cancel": "Cancel",
+          "save": "Save"
         },
         "dialog": {
           "title": "Select Tools",

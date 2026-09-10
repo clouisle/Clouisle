@@ -105,7 +105,7 @@ mock.module('@/components/ui/dropdown-menu', () => ({
 }))
 mock.module('lucide-react', () => ({
   Wrench: element('svg'), Plus: element('svg'), RefreshCw: element('svg'), Loader2: element('svg'),
-  Globe: element('svg'), Code: element('svg'), Plug: element('svg'), ChevronDown: element('svg'),
+  Globe: element('svg'), Code: element('svg'), Plug: element('svg'), Database: element('svg'), ChevronDown: element('svg'),
   PackageOpen: element('svg'), Upload: element('svg'), Search: element('svg'),
 }))
 mock.module('./_components/tool-card', () => ({ ToolCard: ({ tool, ...props }: { tool: { display_name: string } } & Record<string, unknown>) => ({ type: 'article', props: { ...props, children: tool.display_name } }) }))
@@ -116,6 +116,7 @@ mock.module('./_components', () => ({ SkillsPanel: component('skills-panel'), To
 mock.module('./_components/tool-config-dialog', () => ({ ToolConfigDialog: component('config-dialog') }))
 mock.module('./_components/http-tool-dialog', () => ({ HttpToolDialog: component('http-dialog') }))
 mock.module('./_components/mcp-tool-dialog', () => ({ McpToolDialog: component('mcp-dialog') }))
+mock.module('./_components/database-tool-dialog', () => ({ DatabaseToolDialog: component('database-dialog') }))
 mock.module('./_components/tool-share-dialog', () => ({ ToolShareDialog: component('share-dialog') }))
 mock.module('@/components/packages/import-package-dialog', () => ({ ImportPackageDialog: component('import-dialog') }))
 
@@ -332,5 +333,36 @@ describe('CapabilitiesPage', () => {
     expect(push).toHaveBeenCalledWith('/app/capabilities/code?id=custom-1')
     await (find(render(), (node) => node.type === 'article' && node.props.children === 'Weather').props.onEdit as (tool: typeof custom) => Promise<void>)(custom)
     expect(toastError).toHaveBeenCalledWith('tools.error.unknownToolType')
+  })
+  test('creates and edits database tools in CapabilitiesPage', async () => {
+    const dbToolItem = { ...custom, id: 'db-1', custom_type: 'database', display_name: 'Database Tool' }
+    getById.mockResolvedValueOnce({ ...dbToolItem, database_config: { db_type: 'postgresql', host: 'localhost' } })
+    createTool.mockResolvedValue({})
+    updateTool.mockResolvedValue({})
+    render()
+    await settle()
+
+    let tree = render()
+    // click create database tool menu item (index 3 in create menu)
+    const menuItems = findAll(tree, (node) => node.type === 'menuitem')
+    const dbMenuItem = menuItems.find((item) => item.props.onClick && String(item.props.children).includes('database')) || menuItems[3]
+    if (dbMenuItem?.props?.onClick) {
+      ;(dbMenuItem.props.onClick as () => void)()
+      tree = render()
+      const dbDialog = find(tree, (node) => node.type === 'database-dialog')
+      if (dbDialog) {
+        await (dbDialog.props.onSave as (data: Record<string, unknown>) => Promise<void>)({ name: 'new_db', custom_type: 'database' })
+        expect(createTool).toHaveBeenCalledWith('team-1', { name: 'new_db', custom_type: 'database' })
+      }
+    }
+
+    // edit database tool
+    await (find(render(), (node) => node.type === 'article').props.onEdit as (tool: typeof dbToolItem) => Promise<void>)(dbToolItem)
+    tree = render()
+    const editDbDialog = find(tree, (node) => node.type === 'database-dialog')
+    if (editDbDialog) {
+      await (editDbDialog.props.onSave as (data: Record<string, unknown>) => Promise<void>)({ display_name: 'Updated DB' })
+      expect(updateTool).toHaveBeenCalledWith('db-1', { display_name: 'Updated DB' })
+    }
   })
 })

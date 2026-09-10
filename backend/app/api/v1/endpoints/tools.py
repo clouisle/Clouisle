@@ -58,6 +58,7 @@ from app.schemas.tool import (
     CodeExecuteResponse,
     HttpConfigSchema,
     CodeConfigSchema,
+    DatabaseConfigSchema,
     McpConfigSchema,
     McpToolInfoOut,
     McpToolsListRequest,
@@ -205,6 +206,9 @@ def db_tool_to_out(tool: Tool, creator_name: str | None = None) -> ToolOut:
         else None,
         http_config=HttpConfigSchema(**tool.http_config) if tool.http_config else None,
         code_config=CodeConfigSchema(**tool.code_config) if tool.code_config else None,
+        database_config=DatabaseConfigSchema(**getattr(tool, "database_config", None))
+        if getattr(tool, "database_config", None)
+        else None,
         mcp_config=McpConfigSchema(**tool.mcp_config) if tool.mcp_config else None,
         team_id=tool.team_id,
         created_by_id=tool.created_by_id,
@@ -231,6 +235,9 @@ def db_tool_to_detail(tool: Tool, creator_name: str | None = None) -> ToolDetail
         else None,
         http_config=HttpConfigSchema(**tool.http_config) if tool.http_config else None,
         code_config=CodeConfigSchema(**tool.code_config) if tool.code_config else None,
+        database_config=DatabaseConfigSchema(**getattr(tool, "database_config", None))
+        if getattr(tool, "database_config", None)
+        else None,
         mcp_config=McpConfigSchema(**tool.mcp_config) if tool.mcp_config else None,
         team_id=tool.team_id,
         created_at=tool.created_at.isoformat() if tool.created_at else None,
@@ -627,6 +634,24 @@ async def get_mcp_tools(
         )
 
 
+@router.post("/database/test-connection", response_model=Response[dict])
+async def test_db_connection(
+    request: DatabaseConfigSchema,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """测试数据库连通性"""
+    from app.llm.tools.builtin.db_executor import test_database_connection
+
+    result = await test_database_connection(request.model_dump())
+    if not result.get("success"):
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key=result.get("error", "database_connection_failed"),
+            status_code=400,
+        )
+    return success(data=result, msg_key="success")
+
+
 @router.post("", response_model=Response[ToolDetailOut])
 async def create_tool(
     team_id: UUID,
@@ -660,8 +685,13 @@ async def create_tool(
         parameters=[p.model_dump() for p in tool_in.parameters],
         http_config=tool_in.http_config.model_dump() if tool_in.http_config else {},
         code_config=tool_in.code_config.model_dump() if tool_in.code_config else {},
+        database_config=(
+            getattr(tool_in, "database_config", None).model_dump()
+            if getattr(tool_in, "database_config", None)
+            else {}
+        ),
         mcp_config=tool_in.mcp_config.model_dump() if tool_in.mcp_config else {},
-        credentials=tool_in.credentials,
+        credentials=getattr(tool_in, "credentials", None) or {},
         is_enabled=tool_in.is_enabled,
         created_by=current_user,
     )
@@ -794,6 +824,8 @@ async def update_tool(
         tool.http_config = tool_in.http_config.model_dump()
     if tool_in.code_config is not None:
         tool.code_config = tool_in.code_config.model_dump()
+    if getattr(tool_in, "database_config", None) is not None:
+        tool.database_config = tool_in.database_config.model_dump()
     if tool_in.mcp_config is not None:
         tool.mcp_config = tool_in.mcp_config.model_dump()
     if tool_in.credentials is not None:
@@ -1233,6 +1265,7 @@ async def duplicate_tool(
         parameters=tool.parameters,
         http_config=tool.http_config,
         code_config=tool.code_config,
+        database_config=getattr(tool, "database_config", None) or {},
         mcp_config=tool.mcp_config,
         credentials=tool.credentials,
         is_enabled=False,  # 副本默认禁用

@@ -62,9 +62,9 @@ async def test_web_search_dispatches_tavily_and_rejects_other_engines(monkeypatc
     monkeypatch.setattr(subject, "_tavily_search", tavily)
     monkeypatch.setattr(subject, "t", translate)
 
-    assert await subject.web_search("cloud", 3, credentials={"token": "x"}) == {
-        "success": True
-    }
+    assert await subject.web_search(
+        "cloud", 3, search_engine="tavily", credentials={"token": "x"}
+    ) == {"success": True, "search_engine": "tavily"}
     unsupported = await subject.web_search("cloud", search_engine="other")
 
     tavily.assert_awaited_once_with("cloud", 3, {"token": "x"})
@@ -72,6 +72,7 @@ async def test_web_search_dispatches_tavily_and_rejects_other_engines(monkeypatc
         "query": "cloud",
         "error": ("web_search_unsupported_engine", {"search_engine": "other"}),
         "success": False,
+        "results": [],
     }
 
 

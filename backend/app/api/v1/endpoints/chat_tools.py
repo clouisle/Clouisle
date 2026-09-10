@@ -493,9 +493,29 @@ async def execute_tool_call(
                     },
                     ensure_ascii=False,
                 )
+        # Database tool
+        if tool_type == CustomToolType.DATABASE:
+            try:
+                from app.llm.tools.builtin.db_executor import execute_database_tool
+
+                result = await execute_database_tool(
+                    tool=tool,
+                    arguments=arguments,
+                    timeout=tool_timeouts.get("database", 15.0),
+                )
+                return json.dumps(result, ensure_ascii=False)
+            except Exception as e:
+                logger.exception("Database tool execution failed: %s", e)
+                return json.dumps(
+                    {
+                        "error": exception_to_user_message(
+                            e, fallback_key="tool_execution_failed"
+                        )
+                    },
+                    ensure_ascii=False,
+                )
 
         return json.dumps({"error": t("unsupported_tool_type")}, ensure_ascii=False)
-
     # File download tool
     if tool_name == "file_download":
         try:
@@ -530,12 +550,31 @@ async def execute_tool_call(
     if (tool_info and tool_info.handler) or sandbox_tool_class:
         try:
             credentials = None
+            # 检查当前 Agent 是否针对此工具单独配置了 config (如 engine, api_key)
+            agent_tool_config: dict[str, Any] = {}
+            if agent and getattr(agent, "tools_config", None):
+                for tc in agent.tools_config:
+                    if (
+                        isinstance(tc, dict)
+                        and tc.get("type") == "builtin"
+                        and tc.get("name") == tool_name
+                    ):
+                        agent_tool_config = tc.get("config") or {}
+                        break
+
             if (
                 tool_info
                 and tool_info.handler
                 and _tool_accepts_credentials(tool_info.handler)
             ):
-                credentials = await _get_builtin_tool_credentials(tool_name, agent)
+                credentials = await _get_builtin_tool_credentials(
+                    tool_name, agent, agent_tool_config
+                )
+
+            # 搜索引擎由 agent 编排配置严格决定，不交由模型决定
+            if tool_name == "web_search":
+                arguments["search_engine"] = agent_tool_config.get("engine") or "auto"
+
             scope_context: dict[str, Any] = {}
             if workflow_run_id is not None:
                 scope_context["workflow_run_id"] = workflow_run_id
@@ -543,6 +582,7 @@ async def execute_tool_call(
                 tool_name,
                 arguments,
                 credentials=credentials,
+                agent_tool_config=agent_tool_config,
                 session_id=session_id,
                 agent=agent,
                 user=user,
@@ -574,28 +614,46 @@ def _tool_accepts_credentials(handler: Any) -> bool:
 
 
 async def _get_builtin_tool_credentials(
-    tool_name: str, agent: "Agent | None"
+    tool_name: str,
+    agent: "Agent | None",
+    agent_tool_config: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     from app.models.tool_config import ToolConfig
 
     credentials: dict[str, str] = {}
     team_id = getattr(agent, "team_id", None) if agent else None
 
+    # 1. 优先读取 Agent 级别的独立 Key 配置（实现精准计费与隔离）
+    if agent_tool_config:
+        if agent_tool_config.get("api_key"):
+            engine = agent_tool_config.get("engine", "tavily")
+            if engine == "tavily":
+                credentials["TAVILY_API_KEY"] = agent_tool_config["api_key"]
+            elif engine == "bocha":
+                credentials["BOCHA_API_KEY"] = agent_tool_config["api_key"]
+        if agent_tool_config.get("TAVILY_API_KEY"):
+            credentials["TAVILY_API_KEY"] = agent_tool_config["TAVILY_API_KEY"]
+        if agent_tool_config.get("BOCHA_API_KEY"):
+            credentials["BOCHA_API_KEY"] = agent_tool_config["BOCHA_API_KEY"]
+
+    # 2. 若 Agent 未配置对应 Key，读取团队级别默认配置
     if team_id:
         tool_config = await ToolConfig.filter(
             tool_name=tool_name, team_id=team_id
         ).first()
-        if tool_config:
-            credentials = tool_config.credentials or {}
+        if tool_config and tool_config.credentials:
+            for k, v in tool_config.credentials.items():
+                if k not in credentials and v:
+                    credentials[k] = v
 
-    if not credentials:
-        global_config = await ToolConfig.filter(
-            tool_name=tool_name, team_id=None
-        ).first()
-        if global_config:
-            credentials = global_config.credentials or {}
-
-    if not credentials and tool_name == "web_search":
+    # 3. 读取全局配置，合并缺失字段
+    global_config = await ToolConfig.filter(tool_name=tool_name, team_id=None).first()
+    if global_config and global_config.credentials:
+        for k, v in global_config.credentials.items():
+            if k not in credentials and v:
+                credentials[k] = v
+    # 4. 读取环境变量
+    if "TAVILY_API_KEY" not in credentials and tool_name == "web_search":
         from app.core.config import settings
 
         if settings.TAVILY_API_KEY:

@@ -31,7 +31,11 @@ def query(**methods):
         setattr(value, name, AsyncMock(return_value=result))
     value.filter.return_value = value
     value.exclude.return_value = value
-    value.order_by.return_value = methods.get("order_by", value)
+    order_by_val = methods.get("order_by", value)
+    if isinstance(order_by_val, list):
+        value.order_by = AsyncMock(return_value=order_by_val)
+    else:
+        value.order_by.return_value = order_by_val
     value.using_db.return_value = value
     value.only.return_value = value
     return value
@@ -690,3 +694,131 @@ async def test_activate_branch_excludes_user_message_round_steps():
     round_steps_call = message_filter.call_args_list[0]
     assert round_steps_call.kwargs["round_id__in"] == [new_round]
     assert user_round not in round_steps_call.kwargs["round_id__in"]
+
+
+@pytest.mark.anyio
+async def test_get_visible_conversation_messages_after_branches():
+    conv_id = uuid4()
+    msg1 = message(
+        conversation_id=conv_id, created_at=datetime.now(UTC) - timedelta(minutes=10)
+    )
+    msg2 = message(
+        conversation_id=conv_id, created_at=datetime.now(UTC) - timedelta(minutes=5)
+    )
+    msg3 = message(
+        conversation_id=conv_id, created_at=datetime.now(UTC) - timedelta(minutes=1)
+    )
+    message(
+        conversation_id=conv_id, created_at=datetime.now(UTC) + timedelta(minutes=10)
+    )
+    # 1. Anchor not found
+    with patch.object(branching.Message, "filter", return_value=query(first=None)):
+        assert (
+            await branching.get_visible_conversation_messages_after(
+                conv_id, after_message_id=msg1.id
+            )
+            is None
+        )
+
+    # 2. anchor.created_at >= before_created_at -> returns []
+    with patch.object(branching.Message, "filter", return_value=query(first=msg3)):
+        res = await branching.get_visible_conversation_messages_after(
+            conv_id,
+            after_message_id=msg3.id,
+            before_created_at=msg3.created_at - timedelta(minutes=1),
+        )
+        assert res == []
+
+    # 3. Happy path: anchor found, messages returned strictly after anchor and before cutoff
+    cutoff = datetime.now(UTC)
+    # query() is an in-memory mock where query.exclude/filter don't execute SQL;
+    # simulate ORM filtering msg3 (via exclude) and msg4 (via before_created_at) by returning [msg1, msg2]
+    q_all = query(first=msg1, order_by=[msg1, msg2])
+    with patch.object(branching.Message, "filter", return_value=q_all):
+        res = await branching.get_visible_conversation_messages_after(
+            conv_id,
+            after_message_id=msg1.id,
+            before_created_at=cutoff,
+            exclude_message_ids={msg3.id},
+        )
+        assert res == [msg2]
+        assert q_all.exclude.called
+        assert q_all.filter.called
+
+    # 4. Anchor id not in messages list
+    q_miss = query(first=msg1, order_by=[msg2, msg3])
+    with patch.object(branching.Message, "filter", return_value=q_miss):
+        res = await branching.get_visible_conversation_messages_after(
+            conv_id, after_message_id=msg1.id
+        )
+        assert res is None
+
+
+@pytest.mark.anyio
+async def test_get_prefix_path_before_branches():
+    conv_id = uuid4()
+    parent = message(
+        conversation_id=conv_id, is_active=True, round_role="assistant_final"
+    )
+    child = message(conversation_id=conv_id, branch_parent_id=parent.id)
+
+    # 1. Fast walk with branch_parent_id and limit
+    walk_q = query(first=parent)
+    with patch.object(branching.Message, "filter", return_value=walk_q):
+        prefix = await branching.get_prefix_path_before(child, limit=1)
+        assert prefix == [parent]
+
+    # 2. Fast walk when parent not found (breaks loop)
+    walk_none = query(first=None)
+    with (
+        patch.object(branching.Message, "filter", return_value=walk_none),
+        patch.object(
+            branching,
+            "get_visible_conversation_messages",
+            new=AsyncMock(return_value=[]),
+        ),
+    ):
+        prefix = await branching.get_prefix_path_before(child, limit=1)
+        assert prefix == []
+
+
+@pytest.mark.anyio
+async def test_canonical_path_newest_by_root_superseding_branches():
+    conv_id = uuid4()
+    root_id = uuid4()
+    round1 = uuid4()
+    round2 = uuid4()
+
+    m_v2 = message(
+        id=uuid4(),
+        conversation_id=conv_id,
+        parent_id=root_id,
+        version_number=2,
+        round_id=round2,
+        round_role="assistant_final",
+    )
+    m_v1 = message(
+        id=uuid4(),
+        conversation_id=conv_id,
+        parent_id=root_id,
+        version_number=1,
+        round_id=round1,
+        round_role="assistant_final",
+    )
+
+    steps_query = query(all=[])
+    active_query = query(all=[])
+    deact_query = query(update=None)
+    act_query = query(update=None)
+    conn = MagicMock()
+
+    with patch.object(
+        branching.Message,
+        "filter",
+        side_effect=[steps_query, active_query, deact_query, act_query],
+    ) as message_filter:
+        await branching.activate_conversation_branch(
+            conv_id, [m_v2, m_v1], using_db=conn
+        )
+    # Verify m_v2 was kept and m_v1 was dropped
+    assert message_filter.call_args_list[0].kwargs["round_id__in"] == [round2]

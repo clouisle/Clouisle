@@ -177,6 +177,10 @@ export interface IterationCapReachedPart {
   type: 'iteration-cap-reached'
 }
 
+export interface UserInstructionPart {
+  type: 'user-instruction'
+  content: string
+}
 /**
  * All possible message parts
  */
@@ -197,7 +201,7 @@ export type MessagePart =
   | TruncatedPart
   | StoppedPart
   | IterationCapReachedPart
-
+  | UserInstructionPart
 /**
  * Chat message
  */
@@ -335,6 +339,10 @@ export function isStoppedPart(part: MessagePart): part is StoppedPart {
 export function isIterationCapReachedPart(part: MessagePart): part is IterationCapReachedPart {
   return part.type === 'iteration-cap-reached'
 }
+export function isUserInstructionPart(part: MessagePart): part is UserInstructionPart {
+  return part.type === 'user-instruction'
+}
+
 
 export function isSourcePart(part: MessagePart): part is SourceUrlPart | SourceDocumentPart {
   return part.type === 'source-url' || part.type === 'source-document'

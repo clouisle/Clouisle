@@ -108,6 +108,8 @@ export function ToolShareDialog({
       team => team.id !== currentTeamId && !sharedTeamIds.has(team.id)
     )
   }, [availableTeams, currentTeamId, shares])
+  const selectedTeamName = availableTeamsToShare.find((team) => team.id === selectedTeamId)?.name || t('selectTeam')
+
 
   // 共享工具
   const handleShare = async () => {
@@ -193,22 +195,20 @@ export function ToolShareDialog({
             )}
 
             {/* 共享表单 */}
-            {availableTeamsToShare.length > 0 && (
+            {availableTeamsToShare.length > 0 ? (
               <div className="space-y-4 pb-4 border-b">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label>{t('selectTeam')}</Label>
                     <Select
-                      value={selectedTeamId || undefined}
+                      value={selectedTeamId || ''}
                       onValueChange={(v) => {
-                        if (v) {
-                          setSelectedTeamId(v)
-                          setFieldErrors((prev) => clearValidationError(prev, 'team_id'))
-                        }
+                        setSelectedTeamId(v ?? '')
+                        setFieldErrors((prev) => clearValidationError(prev, 'team_id'))
                       }}
                     >
                       <SelectTrigger className="w-full">
-                        <SelectValue />
+                        <SelectValue>{selectedTeamName}</SelectValue>
                       </SelectTrigger>
                       <SelectContent alignItemWithTrigger={false}>
                         {availableTeamsToShare.map((team) => (
@@ -260,6 +260,10 @@ export function ToolShareDialog({
                   <Share2 className="mr-2 h-4 w-4" />
                   {t('shareButton')}
                 </Button>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+                {t('noAvailableTeams')}
               </div>
             )}
 

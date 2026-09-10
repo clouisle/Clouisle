@@ -175,6 +175,11 @@ export function ChatInput({
     // Ignore Enter during IME composition (e.g., Chinese input)
     if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
       e.preventDefault();
+      // 如果正在运行或流式输出且当前输入为空，按回车若有 onStop 则停止运行
+      if ((isLoading || isStreaming) && !value.trim() && files.length === 0) {
+        onStop?.();
+        return;
+      }
       handleSubmit();
     }
   };
@@ -375,11 +380,11 @@ export function ChatInput({
     }
   }, [attachmentsDisabledDuringRun, allowAttachments, enableFileUpload, files, maxFiles, onFilesChange, t, validateFileSize]);
 
+  const isRunning = isLoading || isStreaming;
+  const showStop = isRunning && Boolean(onStop);
   const canSubmit = (value.trim().length > 0 || files.length > 0)
     && !disabled
-    && !isUploading
-  const showStop = (isLoading || isStreaming) && onStop
-  
+    && !isUploading;
   // Show attachment button if either vision or file upload is enabled
   const showAttachments = allowAttachments || enableFileUpload;
   
@@ -510,19 +515,22 @@ export function ChatInput({
             )}
           />
         </div>
-
         {/* Submit and Stop Controls — mutually exclusive: stop while a run
             is active, otherwise send */}
         <div className="flex items-center gap-1">
-          {showStop ? (
+          {showStop && (
             <Tooltip>
               <TooltipTrigger
                 render={
                   <button
                     type="button"
                     aria-label={t('stop')}
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-foreground text-background hover:bg-foreground/90 dark:bg-white dark:hover:bg-white/90 transition-colors"
-                    onClick={onStop}
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-foreground text-background hover:bg-foreground/90 dark:bg-white dark:hover:bg-white/90 transition-colors cursor-pointer shrink-0"
+                    onClick={(e) => {
+                      e?.preventDefault?.()
+                      e?.stopPropagation?.()
+                      onStop?.()
+                    }}
                   >
                     <StopCircle className="h-5 w-5" />
                   </button>
@@ -530,7 +538,8 @@ export function ChatInput({
               />
               <TooltipContent>{t('stop')}</TooltipContent>
             </Tooltip>
-          ) : (
+          )}
+          {(!showStop || canSubmit) && (
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -540,7 +549,7 @@ export function ChatInput({
                     className={cn(
                       'flex h-9 w-9 items-center justify-center rounded-full transition-colors',
                       canSubmit
-                        ? 'bg-foreground text-background hover:bg-foreground/90 dark:bg-white dark:hover:bg-white/90'
+                        ? 'bg-foreground text-background hover:bg-foreground/90 dark:bg-white dark:hover:bg-white/90 cursor-pointer'
                         : 'bg-muted text-muted-foreground cursor-not-allowed dark:bg-white/10'
                     )}
                     onClick={handleSubmit}
@@ -550,7 +559,7 @@ export function ChatInput({
                   </button>
                 }
               />
-              <TooltipContent>{t('send')}</TooltipContent>
+              <TooltipContent>{isRunning ? t('steeringQueued') : t('send')}</TooltipContent>
             </Tooltip>
           )}
         </div>

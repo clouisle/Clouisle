@@ -3,7 +3,7 @@
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import { useLocale, useTranslations } from 'next-intl'
-import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye, Volume2, Pencil } from 'lucide-react'
+import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye, Volume2, Pencil, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   Block,
@@ -76,6 +76,7 @@ import {
   isTruncatedPart,
   isStoppedPart,
   isIterationCapReachedPart,
+  isUserInstructionPart,
 } from './types'
 import { getActiveToolActions } from './tool-action-utils'
 import { SourceContent } from './message-parts'
@@ -504,9 +505,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const runInputKind = message.metadata?.runInputKind === 'follow_up' ? 'follow_up' : 'steer'
     const runInputLabel = runInputState === 'queued'
       ? t(runInputKind === 'follow_up' ? 'queuedFollowUp' : 'queuedSteering')
-      : runInputState === 'committed'
-        ? t(runInputKind === 'follow_up' ? 'committedFollowUp' : 'committedSteering')
-        : null
+      : null
     
     // Image lightbox state
     const { isOpen: lightboxOpen, imageSrc, imageAlt, openLightbox, closeLightbox } = useLightbox()
@@ -1019,8 +1018,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           </div>
         )
       }
-
-      if (isStoppedPart(part) || isTaskPart(part) || isReasoningPart(part)) {
+      if (isStoppedPart(part) || isTaskPart(part) || isReasoningPart(part) || isUserInstructionPart(part)) {
         return null
       }
 
@@ -1078,10 +1076,10 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         !isAskUserInteractionPart(part)
         && (
           isReasoningPart(part)
+          || isUserInstructionPart(part)
           || (isTaskPart(part) && part.taskType !== 'thinking' && part.taskType !== 'generating')
           || isToolCallPart(part)
           || isMcpToolCallPart(part)
-          || isToolResultPart(part)
           || isMcpToolResultPart(part)
         )
       ))
@@ -1094,7 +1092,8 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       && !isLoadingMessage
     )
     const hasTasks = taskParts.length > 0
-    const hasChainOfThought = (hasReasoning || hasTasks) && !hideReasoning
+    const hasUserInstructions = otherParts.some(isUserInstructionPart)
+    const hasChainOfThought = (hasReasoning || hasTasks || hasUserInstructions) && !hideReasoning
     const activeToolActions = React.useMemo(() => {
       return getActiveToolActions(message.parts || [])
     }, [message.parts])
@@ -1249,12 +1248,11 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     }, [t])
 
     const renderOrdinaryPart = React.useCallback((part: MessagePart, index: number) => {
-      if (isReasoningPart(part) || isTaskPart(part)) {
+      if (isReasoningPart(part) || isTaskPart(part) || isUserInstructionPart(part)) {
         return null
       }
       return renderPart ? renderPart(part, index) : renderDefaultPart(part, index)
     }, [renderDefaultPart, renderPart])
-
     const buildChainOfThoughtSteps = React.useCallback(() => {
       const steps: React.ReactNode[] = []
 
@@ -1334,6 +1332,22 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           return
         }
 
+        if (isUserInstructionPart(part)) {
+          steps.push(
+            <ChainOfThoughtStep
+              key={`instruction-${index}`}
+              icon={MessageSquare}
+              label={t('userGuidance')}
+              status="complete"
+            >
+              <div className="text-xs text-foreground/85 bg-muted/50 rounded-md p-2 mt-1 border border-border/50">
+                {part.content}
+              </div>
+            </ChainOfThoughtStep>
+          )
+          return
+        }
+
         if (!hasReasoning) return
 
         if (isToolCallPart(part) || isMcpToolCallPart(part)) {
@@ -1395,7 +1409,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         }
       })
 
-
       return steps
     }, [
       allSources,
@@ -1407,6 +1420,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       hideToolCalls,
       otherPartEntries,
       renderToolResultContent,
+      t,
       tReasoning,
       tTask,
       toolResultsByCallIndex,
@@ -1667,7 +1681,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                     <RefreshCw className="h-4 w-4" />
                   </MessageAction>
                 )}
-                {usage && (
+                {usage && typeof usage.prompt_tokens === 'number' && (
                   <Popover>
                     <PopoverTrigger
                       render={
@@ -1751,7 +1765,7 @@ function TokenStatsContent({
   timing,
   t,
 }: {
-  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number; cache_read_tokens?: number; cache_creation_tokens?: number }
+  usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; cache_read_tokens?: number; cache_creation_tokens?: number }
   timing?: { first_token_ms: number | null; duration_ms: number; tokens_per_second: number | null }
   t: (key: string) => string
 }) {
@@ -1759,6 +1773,8 @@ function TokenStatsContent({
     if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`
     return `${ms}ms`
   }
+  const promptTokens = usage.prompt_tokens ?? 0
+  const completionTokens = usage.completion_tokens ?? 0
   const cacheReadTokens = usage.cache_read_tokens ?? 0
   const cacheCreationTokens = usage.cache_creation_tokens ?? 0
 
@@ -1766,11 +1782,11 @@ function TokenStatsContent({
     <div className="space-y-1.5">
       <div className="flex justify-between gap-8">
         <span className="text-muted-foreground">{t('inputTokens')}</span>
-        <span className="font-mono tabular-nums">{usage.prompt_tokens.toLocaleString()}</span>
+        <span className="font-mono tabular-nums">{promptTokens.toLocaleString()}</span>
       </div>
       <div className="flex justify-between gap-8">
         <span className="text-muted-foreground">{t('outputTokens')}</span>
-        <span className="font-mono tabular-nums">{usage.completion_tokens.toLocaleString()}</span>
+        <span className="font-mono tabular-nums">{completionTokens.toLocaleString()}</span>
       </div>
       {cacheReadTokens > 0 && (
         <div className="flex justify-between gap-8">

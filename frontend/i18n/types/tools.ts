@@ -37,6 +37,7 @@ export type ToolsMessages = {
       shareButton: string
       sharedWith: string
       noShares: string
+      noAvailableTeams: string
       sharedBy: string
       shareSuccess: string
       unshareSuccess: string
@@ -88,6 +89,7 @@ export type ToolsMessages = {
       parse_file: string
       markitdown: string
       fetch_webpage: string
+      rss_feed_reader: string
       generate_image: string
       generate_video: string
     }
@@ -182,6 +184,29 @@ export type ToolsMessages = {
       headerNamePlaceholder: string
       httpUrlPlaceholder: string
     }
+    databaseDialog: {
+      createTitle: string
+      editTitle: string
+      description: string
+      dbType: string
+      connectionSettings: string
+      host: string
+      hostRequired: string
+      port: string
+      databaseName: string
+      maxLimit: string
+      username: string
+      url: string
+      paramsMode: string
+      urlMode: string
+      urlRequired: string
+      password: string
+      testConnection: string
+      timeout: string
+      connectionSuccess: string
+      connectionFailed: string
+      descriptionPlaceholder: string
+    }
     codeEditor: {
       newTitle: string
       subtitle: string
@@ -245,6 +270,8 @@ export type ToolsMessages = {
       httpDesc: string
       code: string
       codeDesc: string
+      database: string
+      databaseDesc: string
       mcp: string
       mcpDesc: string
     }

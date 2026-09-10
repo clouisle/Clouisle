@@ -365,6 +365,7 @@ async def test_builtin_credentials_fall_back_from_team_to_global_configuration()
         "calendar",
         {"query": "today"},
         credentials={"API_KEY": "global-key"},
+        agent_tool_config={},
         session_id=None,
         agent=SimpleNamespace(team_id="team-1"),
         user=None,

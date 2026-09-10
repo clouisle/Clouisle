@@ -1632,12 +1632,9 @@ describe('useChat', () => {
     const sending = result.sendMessage('initial')
     await flush()
     await result.sendMessage('steer this run')
-
-    expect(postRunInput).not.toHaveBeenCalled()
-    expect(result.messages.find((message) => message.metadata?.runInputState === 'queued')).toMatchObject({
-      role: 'user',
-      parts: [{ type: 'text', text: 'steer this run' }],
-    })
+    expect(result.pendingRunInputs).toEqual([
+      expect.objectContaining({ content: 'steer this run' }),
+    ])
 
     release.resolve(runEvent(3, 'input_accepted', {
       kind: 'steer',
@@ -1651,9 +1648,10 @@ describe('useChat', () => {
       content: 'steer this run',
     }))
 
-    expect(result.messages.find((message) => message.metadata?.runInputSequence === 1)?.metadata).toMatchObject({
-      runInputState: 'committed',
-      runInputKind: 'steer',
+    const assistant = result.messages.find((message) => message.role === 'assistant')
+    expect(assistant?.parts).toContainEqual({
+      type: 'user-instruction',
+      content: 'steer this run',
     })
   })
   it('creates a user message when a replayed input acceptance has no local pending row', async () => {
@@ -1678,12 +1676,11 @@ describe('useChat', () => {
 
     await result.sendMessage('question')
 
-    expect(result.messages).toContainEqual(expect.objectContaining({
-      id: 'run-input-run-1-1',
-      role: 'user',
-      parts: [{ type: 'text', text: 'replayed instruction' }],
-      metadata: expect.objectContaining({ runInputState: 'committed', runInputKind: 'steer', runInputSequence: 1 }),
-    }))
+    const assistant = result.messages.find((message) => message.id === 'assistant-1')
+    expect(assistant?.parts).toContainEqual({
+      type: 'user-instruction',
+      content: 'replayed instruction',
+    })
     expect(result.messages.find((message) => message.id === 'assistant-1')?.metadata).not.toHaveProperty('runInputState')
   })
 
@@ -1795,5 +1792,25 @@ describe('useChat', () => {
       type: 'text',
       text: 'late',
     })
+  })
+  it('clears pendingRunInputs when stop is called and preserves user-instruction on reconnect', async () => {
+    const startRun = mock(async () => ({
+      run_id: 'run-1',
+      conversation_id: 'conversation-1',
+      user_message_id: 'user-1',
+      status: 'queued' as const,
+      stream_url: '/agents/agent-1/chat/runs/run-1/stream',
+    }))
+    const durableApi = { ...agentsApi, startRun } as unknown as NonNullable<HookOptions['api']>
+    options = { agentId: 'agent-1', api: durableApi }
+    renderHookHarness()
+    stopRun.mockResolvedValue({ status: 'stopped' })
+
+    // Send message and simulate pendingRunInput
+    const sending = result.sendMessage('hello')
+    await flush()
+    await result.stop()
+    expect(result.pendingRunInputs).toEqual([])
+    await sending
   })
 })

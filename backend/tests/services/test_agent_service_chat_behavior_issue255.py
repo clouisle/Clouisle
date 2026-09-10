@@ -184,7 +184,7 @@ async def test_execute_tool_handles_invalid_unknown_and_configured_calls():
     filter_.assert_called_once_with(tool_name="web_search", team_id=agent.team_id)
     execute.assert_awaited_once_with(
         name="web_search",
-        arguments={"query": "test"},
+        arguments={"query": "test", "search_engine": "auto"},
         credentials={"token": "secret"},
         agent=agent,
         team_id=str(agent.team_id),
@@ -327,3 +327,98 @@ async def test_chat_executes_tool_then_returns_final_response_and_usage():
         ],
         "artifacts": [],
     }
+
+
+@pytest.mark.anyio
+async def test_execute_tool_with_agent_tool_config_bocha_and_context_branches():
+    service = AgentService()
+    agent = _agent()
+    agent.tools_config = [
+        {
+            "type": "builtin",
+            "name": "web_search",
+            "config": {
+                "api_key": "bocha_key",
+                "engine": "bocha",
+                "TAVILY_API_KEY": "t_key",
+            },
+        }
+    ]
+    conv_id = uuid4()
+    wf_id = uuid4()
+    configured = SimpleNamespace(
+        function=SimpleNamespace(name="web_search", arguments='{"query": "test"}'),
+        id="call-4",
+    )
+    with (
+        patch("app.llm.tools.tool_registry.get_tool", return_value=object()),
+        patch(
+            "app.models.tool_config.ToolConfig.filter",
+            return_value=SimpleNamespace(first=AsyncMock(return_value=None)),
+        ),
+        patch(
+            "app.llm.tools.tool_registry.execute",
+            new=AsyncMock(return_value={"ok": True}),
+        ) as execute,
+    ):
+        result = await service._execute_tool(
+            agent, configured, conversation_id=conv_id, workflow_run_id=wf_id
+        )
+    assert result == {"ok": True}
+    execute.assert_awaited_once_with(
+        name="web_search",
+        arguments={"query": "test", "search_engine": "bocha"},
+        credentials={"BOCHA_API_KEY": "bocha_key", "TAVILY_API_KEY": "t_key"},
+        agent=agent,
+        team_id=str(agent.team_id),
+        conversation_id=conv_id,
+        workflow_run_id=wf_id,
+        agent_tool_config=agent.tools_config[0]["config"],
+    )
+
+
+@pytest.mark.anyio
+async def test_execute_tool_with_agent_tool_config_tavily_and_global_fallback():
+    service = AgentService()
+    agent = _agent()
+    agent.team_id = None
+    agent.tools_config = [
+        {
+            "type": "builtin",
+            "name": "web_search",
+            "config": {
+                "engine": "tavily",
+            },
+        }
+    ]
+    configured = SimpleNamespace(
+        function=SimpleNamespace(name="web_search", arguments='{"query": "test"}'),
+        id="call-5",
+    )
+    with (
+        patch("app.llm.tools.tool_registry.get_tool", return_value=object()),
+        patch(
+            "app.models.tool_config.ToolConfig.filter",
+            return_value=SimpleNamespace(
+                first=AsyncMock(
+                    return_value=SimpleNamespace(
+                        credentials={"TAVILY_API_KEY": "global_tavily"}
+                    )
+                )
+            ),
+        ),
+        patch(
+            "app.llm.tools.tool_registry.execute",
+            new=AsyncMock(return_value={"ok": True}),
+        ) as execute,
+    ):
+        result = await service._execute_tool(agent, configured)
+    assert result == {"ok": True}
+    execute.assert_awaited_once_with(
+        name="web_search",
+        arguments={"query": "test", "search_engine": "tavily"},
+        credentials={"TAVILY_API_KEY": "global_tavily"},
+        agent=agent,
+        team_id=None,
+        agent_tool_config=agent.tools_config[0]["config"],
+    )

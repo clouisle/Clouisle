@@ -1287,7 +1287,6 @@ class AgentLoop:
                     full_content = ""
                     full_reasoning = ""
                     continue
-                # cap reached: terminate normally with the current content
             if ctx.stop_requested is not None and await ctx.stop_requested():
                 self.result.manually_stopped = True
                 self.result.full_content = full_content
@@ -1299,8 +1298,38 @@ class AgentLoop:
                     else None
                 )
                 return
-            break  # no tool calls: round done
+            if ctx.consume_inputs is not None:
+                consumed_end = await ctx.consume_inputs()
+                if consumed_end:
+                    for item in consumed_end:
+                        if ctx.input_consumed is not None:
+                            await ctx.input_consumed(item)
+                    if full_content:
+                        if ctx.working_history_override is None:
+                            ctx.working_history_override = []
+                        self._append_history(
+                            role="assistant",
+                            content=full_content,
+                            reasoning_content=full_reasoning or None,
+                            round_index=self._next_round_index(),
+                            iteration=iteration,
+                        )
+                    full_content = ""
+                    full_reasoning = ""
+                    continue
 
+            if ctx.stop_requested is not None and await ctx.stop_requested():
+                self.result.manually_stopped = True
+                self.result.full_content = full_content
+                self.result.full_reasoning = full_reasoning
+                self.result.duration_ms = int((time.time() - start_time) * 1000)
+                self.result.first_token_ms = (
+                    int((first_token_time - start_time) * 1000)
+                    if first_token_time is not None
+                    else None
+                )
+                return
+            break  # no tool calls and no queued inputs: round done
         self.result.full_content = full_content
         self.result.full_reasoning = full_reasoning
         self.result.max_iterations_reached = max_iterations_reached

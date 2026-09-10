@@ -73,10 +73,10 @@
         "tokens": "Tokens"
       },
       "charts": {
-      "conversations": "对话数",
-      "count": "数量"
-    },
-    "quickActions": "快速操作",
+        "conversations": "对话数",
+        "count": "数量"
+      },
+      "quickActions": "快速操作",
       "actions": {
         "createAgent": {
           "title": "创建智能体",
@@ -248,7 +248,9 @@
         "title": "配置 {name}",
         "description": "配置工具所需的 API 密钥和凭证",
         "tavilyApiKeyLabel": "Tavily API Key",
-        "tavilyApiKeyDescription": "前往 Tavily 获取 API Key"
+        "tavilyApiKeyDescription": "前往 Tavily 获取 API Key（可选，不填默认使用免配置搜索引擎）",
+        "bochaApiKeyLabel": "博查 (Bocha) API Key",
+        "bochaApiKeyDescription": "前往 Bocha.ai 获取 API Key（可选，针对中文长尾深度优化）"
       },
       "httpDialog": {
         "createTitle": "创建 HTTP 工具",
@@ -291,6 +293,29 @@
         "headerValuePlaceholder": "｛｛token｝｝",
         "queryValuePlaceholder": "｛｛query｝｝",
         "bodyTemplatePlaceholder": "｛\"key\": \"｛｛value｝｝\"｝"
+      },
+      "databaseDialog": {
+        "connectionFailed": "连接失败，请检查配置与网络",
+        "connectionSettings": "连接配置",
+        "connectionSuccess": "数据库连接成功",
+        "createTitle": "添加数据库工具",
+        "databaseName": "数据库名 (Database)",
+        "dbType": "数据库类型",
+        "description": "配置数据库连接与执行参数，连接信息绝密隔离，仅通过工具名称暴露给 Agent",
+        "descriptionPlaceholder": "描述这个数据库存储的内容与业务用途，帮助 Agent 准确选择调用",
+        "editTitle": "编辑数据库工具",
+        "host": "主机地址 (Host)",
+        "hostRequired": "请输入数据库主机地址",
+        "maxLimit": "最大返回行数",
+        "paramsMode": "参数配置",
+        "password": "密码",
+        "port": "端口",
+        "testConnection": "测试连通性",
+        "timeout": "查询超时时间 (秒)",
+        "url": "连接 URL",
+        "urlMode": "连接 URL",
+        "urlRequired": "请输入连接 URL",
+        "username": "用户名"
       },
       "mcpDialog": {
         "createTitle": "添加 MCP 服务",
@@ -344,10 +369,10 @@
         "parameters": "输入参数",
         "parametersHint": "定义工具的输入参数，Agent 将根据此信息调用工具",
         "paramName": "参数名",
-        "paramDescription": "参数描述",
+        "paramDescription": "描述",
         "required": "必填",
         "addParameter": "添加参数",
-        "generateTest": "生成测试",
+        "generateTest": "生成测试参数",
         "testInput": "测试输入",
         "inputParams": "输入参数 (JSON)",
         "inputHint": "JSON 格式的测试参数",
@@ -422,11 +447,13 @@
         "httpDesc": "调用外部 REST API",
         "code": "代码工具",
         "codeDesc": "使用 JavaScript/Python 编写",
+        "database": "数据库工具",
+        "databaseDesc": "连接外部数据库",
         "mcp": "MCP 服务",
         "mcpDesc": "连接 MCP 协议服务器"
       },
       "share": {
-        "title": "共享工具",
+        "title": "共享",
         "description": "将 \"{toolName}\" 共享给其他团队",
         "selectTeam": "选择团队",
         "selectTeamPlaceholder": "选择要共享的团队",
@@ -440,6 +467,7 @@
         "shareButton": "共享",
         "sharedWith": "已共享给",
         "noShares": "尚未共享给任何团队",
+        "noAvailableTeams": "暂无其他可共享的团队",
         "sharedBy": "由 {name} 共享",
         "shareSuccess": "工具共享成功",
         "shareFailed": "工具共享失败",

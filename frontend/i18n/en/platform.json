@@ -73,10 +73,10 @@
         "tokens": "Tokens"
       },
       "charts": {
-      "conversations": "Conversations",
-      "count": "Count"
-    },
-    "quickActions": "Quick Actions",
+        "conversations": "Conversations",
+        "count": "Count"
+      },
+      "quickActions": "Quick Actions",
       "actions": {
         "createAgent": {
           "title": "Create Agent",
@@ -248,7 +248,9 @@
         "title": "Configure {name}",
         "description": "Set up API keys and credentials for this tool",
         "tavilyApiKeyLabel": "Tavily API Key",
-        "tavilyApiKeyDescription": "Get your API key from Tavily"
+        "tavilyApiKeyDescription": "Get your API key from Tavily (optional, falls back to zero-config search if empty)",
+        "bochaApiKeyLabel": "Bocha API Key",
+        "bochaApiKeyDescription": "Get your API key from Bocha.ai (optional, optimized for Chinese content)"
       },
       "httpDialog": {
         "createTitle": "Create HTTP Tool",
@@ -291,6 +293,29 @@
         "headerValuePlaceholder": "｛｛token｝｝",
         "queryValuePlaceholder": "｛｛query｝｝",
         "bodyTemplatePlaceholder": "｛\"key\": \"｛｛value｝｝\"｝"
+      },
+      "databaseDialog": {
+        "connectionFailed": "Connection failed, please check configuration and network",
+        "connectionSettings": "Connection Settings",
+        "connectionSuccess": "Database connection successful",
+        "createTitle": "Add Database Tool",
+        "databaseName": "Database Name",
+        "dbType": "Database Type",
+        "description": "Configure database connection parameters. Credentials are encrypted and never exposed to the LLM.",
+        "descriptionPlaceholder": "Describe the business domain and contents stored in this database to guide Agent selection",
+        "editTitle": "Edit Database Tool",
+        "host": "Host",
+        "hostRequired": "Please enter database host",
+        "maxLimit": "Max Return Rows",
+        "paramsMode": "Parameters",
+        "password": "Password",
+        "port": "Port",
+        "testConnection": "Test Connection",
+        "timeout": "Query Timeout (s)",
+        "url": "Connection URL",
+        "urlMode": "Connection URL",
+        "urlRequired": "Please enter connection URL",
+        "username": "Username"
       },
       "mcpDialog": {
         "createTitle": "Add MCP Server",
@@ -422,11 +447,13 @@
         "httpDesc": "Call external REST APIs",
         "code": "Code Tool",
         "codeDesc": "Write JavaScript/Python code",
+        "database": "Database Tool",
+        "databaseDesc": "Connect to external databases",
         "mcp": "MCP Server",
         "mcpDesc": "Connect to MCP protocol servers"
       },
       "share": {
-        "title": "Share Tool",
+        "title": "Share",
         "description": "Share \"{toolName}\" with other teams",
         "selectTeam": "Select Team",
         "selectTeamPlaceholder": "Choose a team to share with",
@@ -440,6 +467,7 @@
         "shareButton": "Share",
         "sharedWith": "Shared With",
         "noShares": "Not shared with any teams yet",
+        "noAvailableTeams": "No other teams available to share with",
         "sharedBy": "Shared by {name}",
         "shareSuccess": "Tool shared successfully",
         "shareFailed": "Failed to share tool",

@@ -105,6 +105,15 @@ class AuditLogService:
             "token_usage",
             "updated_at",
         ),
+        "message": (
+            "role",
+            "content",
+            "round_id",
+            "round_index",
+            "round_role",
+            "is_round_canonical",
+            "is_active",
+        ),
         "document": (
             "name",
             "doc_type",

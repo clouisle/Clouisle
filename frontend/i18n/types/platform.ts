@@ -251,6 +251,8 @@ export type PlatformMessages = {
         description: string
         tavilyApiKeyLabel: string
         tavilyApiKeyDescription: string
+        bochaApiKeyLabel: string
+        bochaApiKeyDescription: string
       }
       httpDialog: {
         createTitle: string
@@ -293,6 +295,29 @@ export type PlatformMessages = {
         headerValuePlaceholder: string
         queryValuePlaceholder: string
         bodyTemplatePlaceholder: string
+      }
+      databaseDialog: {
+        createTitle: string
+        editTitle: string
+        description: string
+        dbType: string
+        connectionSettings: string
+        host: string
+        hostRequired: string
+        port: string
+        databaseName: string
+        maxLimit: string
+        username: string
+        url: string
+        paramsMode: string
+        urlMode: string
+        urlRequired: string
+        password: string
+        testConnection: string
+        timeout: string
+        connectionSuccess: string
+        connectionFailed: string
+        descriptionPlaceholder: string
       }
       mcpDialog: {
         createTitle: string
@@ -424,6 +449,8 @@ export type PlatformMessages = {
         httpDesc: string
         code: string
         codeDesc: string
+        database: string
+        databaseDesc: string
         mcp: string
         mcpDesc: string
       }
@@ -442,6 +469,7 @@ export type PlatformMessages = {
         shareButton: string
         sharedWith: string
         noShares: string
+        noAvailableTeams: string
         sharedBy: string
         shareSuccess: string
         shareFailed: string

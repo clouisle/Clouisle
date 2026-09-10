@@ -146,6 +146,8 @@ export {
   type HttpMethod,
   type ToolParameter,
   type HttpConfig,
+  type DatabaseConfig,
+  type DatabaseType,
   type SandboxArtifactConfig,
   type ToolListResponse,
   type ToolFilterOption,

@@ -42,6 +42,14 @@ mock.module('@/components/ui/tabs', () => ({
   TabsList: element('tabs-list'),
   TabsTrigger: element('tabs-trigger'),
 }))
+mock.module('@/components/ui/label', () => ({ Label: element('label') }))
+mock.module('@/components/ui/select', () => ({
+  Select: element('select'),
+  SelectContent: element('select-content'),
+  SelectItem: element('select-item'),
+  SelectTrigger: element('select-trigger'),
+  SelectValue: element('select-value'),
+}))
 mock.module('lucide-react', () => ({
   Plus: element('svg'),
   Wrench: element('svg'),
@@ -56,6 +64,8 @@ mock.module('lucide-react', () => ({
   Code2: element('svg'),
   Link: element('svg'),
   ChartColumn: element('svg'),
+  Database: element('svg'),
+  Settings2: element('svg'),
 }))
 
 const { AddToolButton, ToolSelector } = await import('./tool-selector')
@@ -174,5 +184,76 @@ describe('ToolSelector', () => {
     const switches = findAll(tree, (node) => node.type === 'switch')
     ;(switches[1].props.onCheckedChange as () => void)()
     expect(onChange).toHaveBeenCalledWith([missing])
+  })
+  test('opens web_search config modal and updates configuration', () => {
+    const onChange = mock()
+    const webSearchTool: Tool = {
+      name: 'web_search',
+      display_name: 'Web Search',
+      description: 'Search',
+      type: 'builtin',
+      category: 'search',
+      parameters: [],
+      is_enabled: true,
+      requires_config: false,
+      config_fields: [],
+    }
+    const dbTool: Tool = {
+      name: 'orders_db',
+      display_name: 'Orders DB',
+      description: 'Database',
+      type: 'custom',
+      custom_type: 'database',
+      category: 'data',
+      parameters: [],
+      is_enabled: true,
+      requires_config: false,
+      config_fields: [],
+    }
+    const webSearchConfig: ToolConfig = { type: 'builtin', name: 'web_search', config: { engine: 'auto' } }
+    stateIndex = 0
+    const tree = ToolSelector({
+      toolsConfig: [webSearchConfig],
+      availableTools: [webSearchTool, dbTool],
+      onChange,
+    })
+
+    // click settings button to open modal
+    const settingsBtn = find(tree, (node) => typeof node.props.onClick === 'function' && node.props.title === 'config.settings')
+    expect(settingsBtn).toBeDefined()
+    // change engine in dialog
+    const engineSelect = find(tree, (node) => node.type === 'select')
+    if (engineSelect) {
+      ;(engineSelect.props.onValueChange as (v: string) => void)('bocha')
+    }
+    const apiKeyInput = find(tree, (node) => node.type === 'input' && node.props.value !== undefined)
+    if (apiKeyInput) {
+      ;(apiKeyInput.props.onChange as (e: { target: { value: string } }) => void)({ target: { value: 'sk-test' } })
+    }
+
+    // click save button in dialog
+    const saveBtn = find(tree, (node) => typeof node.props.onClick === 'function' && text(node).includes('config.save'))
+    expect(saveBtn).toBeDefined()
+    ;(saveBtn.props.onClick as () => void)()
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({
+        type: 'builtin',
+        name: 'web_search',
+        config: expect.objectContaining({ engine: 'auto' }),
+      }),
+    ])
+
+    // hover delete button
+    const deleteBtn = find(tree, (node) => typeof node.props.onMouseEnter === 'function')
+    if (deleteBtn) {
+      ;(deleteBtn.props.onMouseEnter as () => void)()
+      ;(deleteBtn.props.onMouseLeave as () => void)()
+      ;(deleteBtn.props.onClick as (e: { stopPropagation: () => void }) => void)({ stopPropagation: () => {} })
+    }
+    // Also test database tool rendering in AddToolButton
+    stateIndex = 0
+    state = []
+    const addTree = renderAdd({ availableTools: [dbTool] })
+    expect(text(addTree)).toContain('Orders DB')
   })
 })

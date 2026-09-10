@@ -258,7 +258,22 @@
           "web_search": "网页搜索",
           "parse_file": "文件解析器",
           "generate_image": "生成图片",
-          "generate_video": "生成视频"
+          "generate_video": "生成视频",
+          "rss_feed_reader": "RSS 订阅解析"
+        },
+        "config": {
+          "title": "配置工具参数",
+          "settings": "设置",
+          "engine": "搜索引擎",
+          "engineHint": "为此 Agent 指定专用的搜索引擎，或使用自动路由",
+          "engineAuto": "智能选择 (Auto)",
+          "engineDuckDuckGo": "DuckDuckGo (免 Key / 零配置)",
+          "engineBocha": "博查 AI (Bocha - 中文优化)",
+          "engineTavily": "Tavily Search (高精度 AI 搜索)",
+          "apiKey": "专用 API Key (可选)",
+          "apiKeyHint": "为此 Agent 单独配置 Key，实现独立扣费与配额统计；留空则继承团队默认配置或使用免 Key 搜索",
+          "cancel": "取消",
+          "save": "保存"
         },
         "dialog": {
           "title": "选择工具",

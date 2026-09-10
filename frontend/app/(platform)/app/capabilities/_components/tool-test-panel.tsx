@@ -29,7 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Play, Loader2, CheckCircle, XCircle, Clock, Copy, Check, RefreshCw } from 'lucide-react'
+import { Play, Loader2, CheckCircle, XCircle, Clock, Copy, Check, RefreshCw, Database } from 'lucide-react'
 
 interface ToolTestApi {
   listMcpTools: typeof toolsApi.listMcpTools
@@ -219,9 +219,11 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
                   unoptimized
                 />
               </div>
-            ) : (
+            ) : tool.icon ? (
               <span className="text-xl">{tool.icon}</span>
-            )}
+            ) : tool.custom_type === 'database' ? (
+              <Database className="h-5 w-5 shrink-0 text-muted-foreground" />
+            ) : null}
             {tool.display_name}
           </SheetTitle>
           <SheetDescription>{tool.description}</SheetDescription>
@@ -438,19 +440,26 @@ function McpParameterInputs({
     // 枚举类型
     if (schema.enum) {
       return (
-        <select
-          id={name}
-          value={value}
-          onChange={(e) => handleChange(e.target.value)}
-          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring"
+        <Select
+          value={value || EMPTY_SELECT_VALUE}
+          onValueChange={(v) => handleChange(v === EMPTY_SELECT_VALUE ? '' : v ?? '')}
         >
-          <option value="">{t('selectOption')}</option>
-          {schema.enum.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger id={name} className="w-full">
+            <SelectValue>
+              {value || t('selectOption')}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {!required.includes(name) && (
+              <SelectItem value={EMPTY_SELECT_VALUE}>{t('selectOption')}</SelectItem>
+            )}
+            {schema.enum.map((opt) => (
+              <SelectItem key={opt} value={opt}>
+                {opt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       )
     }
 
@@ -573,19 +582,26 @@ function ParameterInput({
     // 枚举类型 - 下拉选择
     if (parameter.enum) {
       return (
-        <select
-          id={parameter.name}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring"
+        <Select
+          value={value || EMPTY_SELECT_VALUE}
+          onValueChange={(v) => onChange(v === EMPTY_SELECT_VALUE ? '' : v ?? '')}
         >
-          <option value="">{t('selectOption')}</option>
-          {parameter.enum.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger id={parameter.name} className="w-full">
+            <SelectValue>
+              {value || t('selectOption')}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {!parameter.required && (
+              <SelectItem value={EMPTY_SELECT_VALUE}>{t('selectOption')}</SelectItem>
+            )}
+            {parameter.enum.map((opt) => (
+              <SelectItem key={opt} value={opt}>
+                {opt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       )
     }
 
