@@ -678,6 +678,8 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
                     from app.services.audit_log import AuditLogService
 
                     run_user = await User.get_or_none(id=conversation.user_id)
+                    after_snapshot = AuditLogService.snapshot(step_msg, "message")
+                    changes = AuditLogService.build_changes({}, after_snapshot)
                     await AuditLogService.log(
                         user=run_user,
                         action="create_message",
@@ -686,9 +688,7 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
                         resource_name=str(step_msg.id),
                         operation="create",
                         status="success",
-                        changes={
-                            "after": AuditLogService.snapshot(step_msg, "message")
-                        },
+                        changes=changes,
                         metadata={
                             "run_id": str(run.id),
                             "conversation_id": str(conversation.id),
