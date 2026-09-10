@@ -1092,7 +1092,8 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       && !isLoadingMessage
     )
     const hasTasks = taskParts.length > 0
-    const hasChainOfThought = (hasReasoning || hasTasks) && !hideReasoning
+    const hasUserInstructions = otherParts.some(isUserInstructionPart)
+    const hasChainOfThought = (hasReasoning || hasTasks || hasUserInstructions) && !hideReasoning
     const activeToolActions = React.useMemo(() => {
       return getActiveToolActions(message.parts || [])
     }, [message.parts])
@@ -1331,6 +1332,22 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           return
         }
 
+        if (isUserInstructionPart(part)) {
+          steps.push(
+            <ChainOfThoughtStep
+              key={`instruction-${index}`}
+              icon={MessageSquare}
+              label={t('userGuidance')}
+              status="complete"
+            >
+              <div className="text-xs text-foreground/85 bg-muted/50 rounded-md p-2 mt-1 border border-border/50">
+                {part.content}
+              </div>
+            </ChainOfThoughtStep>
+          )
+          return
+        }
+
         if (!hasReasoning) return
 
         if (isToolCallPart(part) || isMcpToolCallPart(part)) {
@@ -1367,21 +1384,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
                   )}
                 </AIToolContent>
               </Tool>
-            </ChainOfThoughtStep>
-          )
-          return
-        }
-        if (isUserInstructionPart(part)) {
-          steps.push(
-            <ChainOfThoughtStep
-              key={`instruction-${index}`}
-              icon={MessageSquare}
-              label={t('userGuidance')}
-              status="complete"
-            >
-              <div className="text-xs text-foreground/85 bg-muted/50 rounded-md p-2 mt-1 border border-border/50">
-                {part.content}
-              </div>
             </ChainOfThoughtStep>
           )
           return

@@ -1383,6 +1383,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       if (!isCurrentStop()) return
       setCurrentRunStatus('stopping')
       pendingRunInputsRef.current = []
+      setPendingInputsState([])
       try {
         const result = await runApi.stopRun(agentId, activeRunId)
         if (!isCurrentStop()) return
@@ -1894,6 +1895,12 @@ function createAssistantStreamStateFromParts(parts: MessagePart[]): AssistantStr
         })
         break
       }
+      case 'user-instruction':
+        state.segments.push({
+          type: 'user-instruction',
+          instructionContent: 'content' in part && typeof part.content === 'string' ? part.content : '',
+        })
+        break
       case 'task':
         state.segments.push({ type: 'task', task: { ...part } })
         if (part.taskType === 'rag') {

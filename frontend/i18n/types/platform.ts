@@ -251,6 +251,8 @@ export type PlatformMessages = {
         description: string
         tavilyApiKeyLabel: string
         tavilyApiKeyDescription: string
+        bochaApiKeyLabel: string
+        bochaApiKeyDescription: string
       }
       httpDialog: {
         createTitle: string

@@ -31,7 +31,11 @@ def query(**methods):
         setattr(value, name, AsyncMock(return_value=result))
     value.filter.return_value = value
     value.exclude.return_value = value
-    value.order_by.return_value = methods.get("order_by", value)
+    order_by_val = methods.get("order_by", value)
+    if isinstance(order_by_val, list):
+        value.order_by = AsyncMock(return_value=order_by_val)
+    else:
+        value.order_by.return_value = order_by_val
     value.using_db.return_value = value
     value.only.return_value = value
     return value
@@ -701,8 +705,12 @@ async def test_get_visible_conversation_messages_after_branches():
     msg2 = message(
         conversation_id=conv_id, created_at=datetime.now(UTC) - timedelta(minutes=5)
     )
-    msg3 = message(conversation_id=conv_id, created_at=datetime.now(UTC))
-
+    msg3 = message(
+        conversation_id=conv_id, created_at=datetime.now(UTC) - timedelta(minutes=1)
+    )
+    message(
+        conversation_id=conv_id, created_at=datetime.now(UTC) + timedelta(minutes=10)
+    )
     # 1. Anchor not found
     with patch.object(branching.Message, "filter", return_value=query(first=None)):
         assert (
@@ -717,20 +725,25 @@ async def test_get_visible_conversation_messages_after_branches():
         res = await branching.get_visible_conversation_messages_after(
             conv_id,
             after_message_id=msg3.id,
-            before_created_at=datetime.now(UTC) - timedelta(minutes=1),
+            before_created_at=msg3.created_at - timedelta(minutes=1),
         )
         assert res == []
 
-    # 3. Happy path: anchor found, messages returned strictly after anchor
-    q_all = query(first=msg1, order_by=[msg1, msg2, msg3])
+    # 3. Happy path: anchor found, messages returned strictly after anchor and before cutoff
+    cutoff = datetime.now(UTC)
+    # query() is an in-memory mock where query.exclude/filter don't execute SQL;
+    # simulate ORM filtering msg3 (via exclude) and msg4 (via before_created_at) by returning [msg1, msg2]
+    q_all = query(first=msg1, order_by=[msg1, msg2])
     with patch.object(branching.Message, "filter", return_value=q_all):
         res = await branching.get_visible_conversation_messages_after(
             conv_id,
             after_message_id=msg1.id,
-            before_created_at=datetime.now(UTC) + timedelta(minutes=1),
-            exclude_message_ids={uuid4()},
+            before_created_at=cutoff,
+            exclude_message_ids={msg3.id},
         )
-        assert res == [msg2, msg3]
+        assert res == [msg2]
+        assert q_all.exclude.called
+        assert q_all.filter.called
 
     # 4. Anchor id not in messages list
     q_miss = query(first=msg1, order_by=[msg2, msg3])

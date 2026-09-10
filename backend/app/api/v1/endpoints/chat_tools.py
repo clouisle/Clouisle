@@ -646,16 +646,12 @@ async def _get_builtin_tool_credentials(
                 if k not in credentials and v:
                     credentials[k] = v
 
-    # 3. 读取全局配置
-    if not credentials:
-        global_config = await ToolConfig.filter(
-            tool_name=tool_name, team_id=None
-        ).first()
-        if global_config and global_config.credentials:
-            for k, v in global_config.credentials.items():
-                if k not in credentials and v:
-                    credentials[k] = v
-
+    # 3. 读取全局配置，合并缺失字段
+    global_config = await ToolConfig.filter(tool_name=tool_name, team_id=None).first()
+    if global_config and global_config.credentials:
+        for k, v in global_config.credentials.items():
+            if k not in credentials and v:
+                credentials[k] = v
     # 4. 读取环境变量
     if "TAVILY_API_KEY" not in credentials and tool_name == "web_search":
         from app.core.config import settings

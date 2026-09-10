@@ -213,6 +213,7 @@
       "committedSteering": "Steering added",
       "committedFollowUp": "Follow-up added",
       "userGuidance": "User guidance",
+      "userGuidancePending": "User guidance (pending)",
       "attachmentsDisabledDuringRun": "Attachments are disabled while the agent is running",
       "askUser": {
         "title": "Questions",

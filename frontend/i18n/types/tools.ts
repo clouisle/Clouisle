@@ -71,9 +71,6 @@ export type ToolsMessages = {
     httpConfig: string
     method: string
     url: string
-    paramsMode: string
-    urlMode: string
-    urlRequired: string
     timeout: string
     headers: string
     bodyTemplate: string

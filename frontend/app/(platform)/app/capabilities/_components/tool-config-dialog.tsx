@@ -78,17 +78,20 @@ export function ToolConfigDialog({
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({})
   const [isLoading, setIsLoading] = useState(false)
 
+  const savedConfigKey = useMemo(() => JSON.stringify(savedConfig), [savedConfig])
+
   useEffect(() => {
-    if (tool && open) {
-      const initial: Record<string, string> = {}
-      fields.forEach((f) => {
-        initial[f.key] = savedConfig[f.key] || ''
-      })
-      setConfig(initial)
-      setFieldErrors({})
-      setShowPasswords({})
-    }
-  }, [tool, open, savedConfig, fields])
+    if (!tool || !open) return
+    const parsed: Record<string, string> = JSON.parse(savedConfigKey)
+    const initial: Record<string, string> = {}
+    fields.forEach((f) => {
+      initial[f.key] = parsed[f.key] || ''
+    })
+    setConfig(initial)
+    setFieldErrors({})
+    setShowPasswords({})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool?.name, open, savedConfigKey, fields])
 
   const handleSave = async () => {
     setFieldErrors({})

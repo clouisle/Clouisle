@@ -184,6 +184,8 @@ describe('platform capability component smoke coverage', () => {
     act(() => renderer!.root.findByProps({ id: 'TAVILY_API_KEY' }).props.onChange({ target: { value: 'new-key' } }))
     onSave.mockRejectedValueOnce(new ApiError(1001, 'invalid', { errors: { TAVILY_API_KEY: 'bad key' } }))
     await act(async () => saveButton.props.onClick())
+    expect(renderer!.root.findByProps({ id: 'TAVILY_API_KEY' }).props['aria-invalid']).toBe(true)
+    expect(renderer!.root.findAllByType('p').map((node) => node.children.join('')).join(' ')).toContain('bad key')
   })
 
   test('renders HTTP tool dialog in edit mode', () => {

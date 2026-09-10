@@ -1287,6 +1287,17 @@ class AgentLoop:
                     full_content = ""
                     full_reasoning = ""
                     continue
+            if ctx.stop_requested is not None and await ctx.stop_requested():
+                self.result.manually_stopped = True
+                self.result.full_content = full_content
+                self.result.full_reasoning = full_reasoning
+                self.result.duration_ms = int((time.time() - start_time) * 1000)
+                self.result.first_token_ms = (
+                    int((first_token_time - start_time) * 1000)
+                    if first_token_time is not None
+                    else None
+                )
+                return
             if ctx.consume_inputs is not None:
                 consumed_end = await ctx.consume_inputs()
                 if consumed_end:

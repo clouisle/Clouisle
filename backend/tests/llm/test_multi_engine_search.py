@@ -144,7 +144,10 @@ async def test_duckduckgo_search_normalizes_results(monkeypatch):
             return None
 
         async def post(self, url, data=None):
-            assert "html.duckduckgo.com" in url
+            from urllib.parse import urlparse
+
+            parsed = urlparse(url)
+            assert parsed.hostname == "html.duckduckgo.com"
             assert data.get("q") == "privacy search"
             return FakeResponse()
 

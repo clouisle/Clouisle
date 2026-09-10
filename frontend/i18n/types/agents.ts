@@ -263,6 +263,20 @@ export type AgentsMessages = {
           generate_video: string
           rss_feed_reader: string
         }
+        config: {
+          title: string
+          settings: string
+          engine: string
+          engineHint: string
+          engineAuto: string
+          engineDuckDuckGo: string
+          engineBocha: string
+          engineTavily: string
+          apiKey: string
+          apiKeyHint: string
+          cancel: string
+          save: string
+        }
         dialog: {
           title: string
           searchPlaceholder: string

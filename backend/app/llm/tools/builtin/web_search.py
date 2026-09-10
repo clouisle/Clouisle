@@ -47,10 +47,11 @@ async def web_search(
         包含标准搜索结果与引用 ID 的结构化字典
     """
     engine = (search_engine or "auto").strip().lower()
+    is_auto = engine == "auto"
     creds = credentials or {}
     num_results = max(1, min(num_results, 10))
 
-    if engine == "auto":
+    if is_auto:
         # 根据可用凭证自动路由优先级：Tavily -> Bocha -> DuckDuckGo 零配置兜底
         if creds.get("TAVILY_API_KEY"):
             engine = "tavily"
@@ -62,7 +63,7 @@ async def web_search(
     if engine == "tavily":
         result = await _tavily_search(query, num_results, creds)
         # 若 Tavily 因为未配 Key 或网络异常失败，且是 auto 模式发起的，则尝试 DuckDuckGo 兜底
-        if not result.get("success") and search_engine == "auto":
+        if not result.get("success") and is_auto:
             logger.info(
                 "Tavily search failed or key missing, falling back to DuckDuckGo"
             )
@@ -73,7 +74,7 @@ async def web_search(
         return result
     elif engine == "bocha":
         result = await _bocha_search(query, num_results, creds)
-        if not result.get("success") and search_engine == "auto":
+        if not result.get("success") and is_auto:
             logger.info(
                 "Bocha search failed or key missing, falling back to DuckDuckGo"
             )

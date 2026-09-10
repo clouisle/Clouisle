@@ -170,27 +170,34 @@ async def execute_database_tool(
             if act == "scan":
                 pattern = arguments.get("pattern") or "*"
                 count = min(int(arguments.get("count") or 20), 100)
-                cursor = 0
-                matched_keys = []
-                while True:
-                    cursor, keys = await client.scan(
-                        cursor=cursor, match=pattern, count=count
-                    )
-                    matched_keys.extend(keys)
-                    if cursor == 0 or len(matched_keys) >= count:
-                        break
-                matched_keys = matched_keys[:count]
-                items = []
-                for k in matched_keys:
-                    k_type = await client.type(k)
-                    k_ttl = await client.ttl(k)
-                    items.append({"key": k, "type": k_type, "ttl_seconds": k_ttl})
-                return {
-                    "pattern": pattern,
-                    "total_found": len(items),
-                    "keys": items,
-                    "success": True,
-                }
+                max_iterations = 100
+
+                async def _do_scan():
+                    cursor = 0
+                    matched_keys = []
+                    iterations = 0
+                    while iterations < max_iterations:
+                        iterations += 1
+                        cursor, keys = await client.scan(
+                            cursor=cursor, match=pattern, count=count
+                        )
+                        matched_keys.extend(keys)
+                        if cursor == 0 or len(matched_keys) >= count:
+                            break
+                    matched_keys = matched_keys[:count]
+                    items = []
+                    for k in matched_keys:
+                        k_type = await client.type(k)
+                        k_ttl = await client.ttl(k)
+                        items.append({"key": k, "type": k_type, "ttl_seconds": k_ttl})
+                    return {
+                        "pattern": pattern,
+                        "total_found": len(items),
+                        "keys": items,
+                        "success": True,
+                    }
+
+                return await asyncio.wait_for(_do_scan(), timeout=query_timeout)
 
             elif act == "get":
                 key = arguments.get("key")
