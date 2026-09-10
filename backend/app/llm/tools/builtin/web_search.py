@@ -7,11 +7,14 @@
 
 import asyncio
 import logging
+import urllib.parse
 from typing import Any
 
+from bs4 import BeautifulSoup
 import httpx
 from markitdown import MarkItDown
 import trafilatura
+
 from app.core.i18n import t
 from app.services.citations import stable_citation_id, with_web_citation_ids
 from ..registry import tool_registry, ToolParameter, ToolConcurrency
@@ -226,36 +229,93 @@ async def _bocha_search(
         }
 
 
-def _sync_ddg_search(query: str, num_results: int) -> list[dict[str, Any]]:
-    """同步执行 DuckDuckGo 搜索。"""
-    from duckduckgo_search import DDGS
+def _clean_ddg_href(href: str | None) -> str:
+    """解析 DuckDuckGo 结果中的重定向链接。"""
+    if not href:
+        return ""
+    if href.startswith("//"):
+        href = f"https:{href}"
+    if "uddg=" in href:
+        try:
+            parsed = urllib.parse.urlparse(href)
+            params = urllib.parse.parse_qs(parsed.query)
+            if "uddg" in params and params["uddg"]:
+                return params["uddg"][0]
+        except Exception:
+            pass
+    return href
 
-    with DDGS() as ddgs:
-        return list(ddgs.text(query, max_results=num_results))
+
+def _parse_ddg_html(html_text: str, max_results: int) -> list[dict[str, Any]]:
+    """解析 DuckDuckGo HTML 搜索页面结果。"""
+    soup = BeautifulSoup(html_text, "html.parser")
+    results: list[dict[str, Any]] = []
+
+    for item in soup.find_all("div", class_="result"):
+        # 排除广告赞助卡片
+        classes = item.get("class", [])
+        if any("badge--ad" in c or "result--ad" in c for c in classes):
+            continue
+
+        title_node = item.find("a", class_="result__a")
+        if not title_node:
+            continue
+
+        raw_href = title_node.get("href")
+        url = _clean_ddg_href(raw_href)
+        if not url.startswith(("http://", "https://")):
+            continue
+
+        title = title_node.get_text(strip=True)
+        snippet_node = item.find("a", class_="result__snippet") or item.find(
+            "div", class_="result__snippet"
+        )
+        snippet = snippet_node.get_text(strip=True) if snippet_node else ""
+
+        results.append(
+            {
+                "title": title,
+                "url": url,
+                "content": snippet,
+            }
+        )
+        if len(results) >= max_results:
+            break
+
+    return results
 
 
 async def _duckduckgo_search(query: str, num_results: int) -> dict:
-    """使用 DuckDuckGo 免配置搜索。"""
+    """使用 DuckDuckGo 免配置搜索（纯 HTTP 实现，完全跨平台且安全）。"""
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
+
     try:
-        raw_results = await asyncio.wait_for(
-            asyncio.to_thread(_sync_ddg_search, query, num_results),
-            timeout=20,
-        )
-        results = []
-        for item in raw_results:
-            results.append(
-                {
-                    "title": item.get("title", ""),
-                    "url": item.get("href", "") or item.get("url", ""),
-                    "content": item.get("body", "") or item.get("snippet", ""),
-                }
+        async with httpx.AsyncClient(
+            timeout=15.0,
+            follow_redirects=True,
+            headers=headers,
+        ) as client:
+            response = await client.post(
+                "https://html.duckduckgo.com/html/",
+                data={"q": query},
             )
+            response.raise_for_status()
+            html_text = response.text
+
+        results = await asyncio.to_thread(_parse_ddg_html, html_text, num_results)
         return {
             "query": query,
             "results": with_web_citation_ids(results),
             "success": True,
         }
-    except asyncio.TimeoutException:
+    except httpx.TimeoutException:
         return {
             "query": query,
             "error": t("tool_execution_timeout"),

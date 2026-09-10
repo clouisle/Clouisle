@@ -122,15 +122,33 @@ async def test_bocha_search_posts_and_normalizes_results(monkeypatch):
 
 @pytest.mark.anyio
 async def test_duckduckgo_search_normalizes_results(monkeypatch):
-    ddg_raw = [
-        {
-            "title": "DDG Title",
-            "href": "https://duckduckgo.com/example",
-            "body": "DDG Body snippet",
-        }
-    ]
+    sample_html = """
+    <div class="result">
+      <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fduckduckgo.com%2Fexample&rut=x">DDG Title</a>
+      <div class="result__snippet">DDG Body snippet</div>
+    </div>
+    """
 
-    monkeypatch.setattr(subject, "_sync_ddg_search", lambda query, num_results: ddg_raw)
+    class FakeResponse:
+        status_code = 200
+        text = sample_html
+
+        def raise_for_status(self):
+            pass
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, data=None):
+            assert "html.duckduckgo.com" in url
+            assert data.get("q") == "privacy search"
+            return FakeResponse()
+
+    monkeypatch.setattr(subject.httpx, "AsyncClient", lambda **kwargs: FakeClient())
 
     result = await subject._duckduckgo_search("privacy search", 2)
     assert result["success"] is True

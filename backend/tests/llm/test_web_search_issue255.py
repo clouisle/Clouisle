@@ -64,7 +64,7 @@ async def test_web_search_dispatches_tavily_and_rejects_other_engines(monkeypatc
 
     assert await subject.web_search(
         "cloud", 3, search_engine="tavily", credentials={"token": "x"}
-    ) == {"success": True}
+    ) == {"success": True, "search_engine": "tavily"}
     unsupported = await subject.web_search("cloud", search_engine="other")
 
     tavily.assert_awaited_once_with("cloud", 3, {"token": "x"})
