@@ -1322,7 +1322,6 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     syncStreamingState(session)
     setMessages((previous) => [...previous, userMessage, assistantMessage])
     setCurrentStatus('loading')
-
     const request: ChatRequest = {
       message: content,
       images,
