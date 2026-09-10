@@ -493,9 +493,29 @@ async def execute_tool_call(
                     },
                     ensure_ascii=False,
                 )
+        # Database tool
+        if tool_type == CustomToolType.DATABASE:
+            try:
+                from app.llm.tools.builtin.db_executor import execute_database_tool
+
+                result = await execute_database_tool(
+                    tool=tool,
+                    arguments=arguments,
+                    timeout=tool_timeouts.get("database", 15.0),
+                )
+                return json.dumps(result, ensure_ascii=False)
+            except Exception as e:
+                logger.exception("Database tool execution failed: %s", e)
+                return json.dumps(
+                    {
+                        "error": exception_to_user_message(
+                            e, fallback_key="tool_execution_failed"
+                        )
+                    },
+                    ensure_ascii=False,
+                )
 
         return json.dumps({"error": t("unsupported_tool_type")}, ensure_ascii=False)
-
     # File download tool
     if tool_name == "file_download":
         try:

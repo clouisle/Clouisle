@@ -305,6 +305,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "[repeated {count} times]",
         "zh": "[重复 {count} 次]",
     },
+    "bocha_api_key_not_configured": {
+        "en": "Bocha API key is not configured",
+        "zh": "博查搜索 API Key 未配置",
+    },
     "builtin_tool_artifact": {"en": "Create Download Link", "zh": "生成下载链接"},
     "builtin_tool_artifact_description": {
         "en": "Collect existing files or directories from /workspace and return fresh Markdown download links plus preview metadata. Call this only after verifying final user-facing files. If write, edit, or bash changes a collected file, call artifact again because earlier URLs are stale snapshots. Include the newest returned Markdown links in the final response body. Relative paths are interpreted from /workspace.",
@@ -522,6 +526,19 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "builtin_tool_read_param_start_line_description": {
         "en": "First line to inspect, using 1-based file line numbers. Defaults to 1.",
         "zh": "要检查的第一行，使用从 1 开始的文件行号。默认为 1。",
+    },
+    "builtin_tool_rss_feed_reader": {"en": "RSS Feed Reader", "zh": "RSS 订阅解析"},
+    "builtin_tool_rss_feed_reader_description": {
+        "en": "Fetch and parse RSS or Atom feeds, returning structured articles with titles, authors, published dates, summaries, and links.",
+        "zh": "抓取并解析 RSS 或 Atom 订阅源，返回包含最新文章标题、作者、发布时间、摘要及原文链接的结构化列表。",
+    },
+    "builtin_tool_rss_feed_reader_param_limit_description": {
+        "en": "Maximum number of articles to return. Default 10, max 30.",
+        "zh": "返回的文章最大条数，默认 10，最大 30",
+    },
+    "builtin_tool_rss_feed_reader_param_url_description": {
+        "en": "Full URL of the RSS or Atom feed (e.g. https://example.com/feed.xml)",
+        "zh": "RSS 或 Atom 订阅源的完整 URL 地址（例如 https://example.com/feed.xml）",
     },
     "builtin_tool_unit_convert": {"en": "Unit Convert", "zh": "单位转换"},
     "builtin_tool_unit_convert_description": {
@@ -2089,6 +2106,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "role_with_name_exists": {
         "en": "Role with this name already exists",
         "zh": "该角色名已存在",
+    },
+    "rss_feed_parse_error": {
+        "en": "Failed to parse the specified RSS or Atom feed",
+        "zh": "无法解析指定的 RSS 或 Atom 订阅源",
     },
     "run_not_found": {"en": "Run not found", "zh": "运行记录未找到"},
     "run_not_waiting_for_answers": {
