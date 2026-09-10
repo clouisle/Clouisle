@@ -513,8 +513,8 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
         "display_name_key": "builtin_tool_web_search",
         "category": ToolCategory.SEARCH,
         "icon": None,
-        "requires_config": True,
-        "config_fields": ["TAVILY_API_KEY"],
+        "requires_config": False,
+        "config_fields": ["TAVILY_API_KEY", "BOCHA_API_KEY"],
     },
     "fetch_webpage": {
         "display_name_key": "builtin_tool_fetch_webpage",

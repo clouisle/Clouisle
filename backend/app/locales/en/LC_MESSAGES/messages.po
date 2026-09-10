@@ -2658,6 +2658,9 @@ msgstr "Unsupported search engine: {search_engine}"
 msgid "web_search_api_error"
 msgstr "Search API error: {status_code}"
 
+msgid "bocha_api_key_not_configured"
+msgstr "Bocha API key is not configured"
+
 msgid "fetch_webpage_http_error"
 msgstr "HTTP error: {status_code}"
 

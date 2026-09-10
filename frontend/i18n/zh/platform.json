@@ -248,7 +248,9 @@
         "title": "配置 {name}",
         "description": "配置工具所需的 API 密钥和凭证",
         "tavilyApiKeyLabel": "Tavily API Key",
-        "tavilyApiKeyDescription": "前往 Tavily 获取 API Key"
+        "tavilyApiKeyDescription": "前往 Tavily 获取 API Key（可选，不填默认使用免配置搜索引擎）",
+        "bochaApiKeyLabel": "博查 (Bocha) API Key",
+        "bochaApiKeyDescription": "前往 Bocha.ai 获取 API Key（可选，针对中文长尾深度优化）"
       },
       "httpDialog": {
         "createTitle": "创建 HTTP 工具",

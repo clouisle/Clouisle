@@ -63,6 +63,7 @@ dependencies = [
     "bleach>=6.4.0",
     "feedparser>=6.0.14",
     "trafilatura>=2.2.0",
+    "duckduckgo-search>=8.1.1",
 ]
 
 [tool.uv]

@@ -248,7 +248,9 @@
         "title": "Configure {name}",
         "description": "Set up API keys and credentials for this tool",
         "tavilyApiKeyLabel": "Tavily API Key",
-        "tavilyApiKeyDescription": "Get your API key from Tavily"
+        "tavilyApiKeyDescription": "Get your API key from Tavily (optional, falls back to zero-config search if empty)",
+        "bochaApiKeyLabel": "Bocha API Key",
+        "bochaApiKeyDescription": "Get your API key from Bocha.ai (optional, optimized for Chinese content)"
       },
       "httpDialog": {
         "createTitle": "Create HTTP Tool",

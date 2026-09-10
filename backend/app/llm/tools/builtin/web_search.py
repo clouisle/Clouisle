@@ -22,50 +22,75 @@ logger = logging.getLogger(__name__)
 async def web_search(
     query: str,
     num_results: int = 5,
-    search_engine: str = "tavily",
+    search_engine: str = "auto",
     credentials: dict[str, str] | None = None,
 ) -> dict:
     """
-    搜索网页
+    搜索网页。
+
+    支持多引擎架构：
+    - auto: 优先使用已配置 API Key 的商业搜索引擎（Tavily、Bocha 等），若未配置则自动使用免 Key 的 DuckDuckGo。
+    - tavily: 使用 Tavily 搜索（需要 TAVILY_API_KEY）。
+    - bocha: 使用国内博查 AI 搜索（需要 BOCHA_API_KEY）。
+    - duckduckgo / ddg: 免配置、零 Key 网页搜索。
 
     Args:
-        query: 搜索关键词
-        num_results: 返回结果数量，默认 5
-        search_engine: 搜索引擎，目前支持 "tavily"
-        credentials: 凭证信息（包含 TAVILY_API_KEY）
+        query: 搜索关键词或问题
+        num_results: 返回结果数量，默认 5，最大 10
+        search_engine: 搜索引擎，支持 'auto', 'tavily', 'bocha', 'duckduckgo'
+        credentials: 凭证信息（可包含 TAVILY_API_KEY, BOCHA_API_KEY 等）
 
     Returns:
-        搜索结果列表
+        包含标准搜索结果与引用 ID 的结构化字典
     """
-    if search_engine == "tavily":
-        return await _tavily_search(query, num_results, credentials)
+    engine = (search_engine or "auto").strip().lower()
+    creds = credentials or {}
+    num_results = max(1, min(num_results, 10))
+
+    if engine == "auto":
+        # 根据可用凭证自动路由优先级：Tavily -> Bocha -> DuckDuckGo 零配置兜底
+        if creds.get("TAVILY_API_KEY"):
+            engine = "tavily"
+        elif creds.get("BOCHA_API_KEY"):
+            engine = "bocha"
+        else:
+            engine = "duckduckgo"
+
+    if engine == "tavily":
+        result = await _tavily_search(query, num_results, creds)
+        # 若 Tavily 因为未配 Key 或网络异常失败，且是 auto 模式发起的，则尝试 DuckDuckGo 兜底
+        if not result.get("success") and search_engine == "auto":
+            logger.info(
+                "Tavily search failed or key missing, falling back to DuckDuckGo"
+            )
+            return await _duckduckgo_search(query, num_results)
+        return result
+    elif engine == "bocha":
+        result = await _bocha_search(query, num_results, creds)
+        if not result.get("success") and search_engine == "auto":
+            logger.info(
+                "Bocha search failed or key missing, falling back to DuckDuckGo"
+            )
+            return await _duckduckgo_search(query, num_results)
+        return result
+    elif engine in ("duckduckgo", "ddg"):
+        return await _duckduckgo_search(query, num_results)
     else:
         return {
             "query": query,
             "error": t("web_search_unsupported_engine", search_engine=search_engine),
             "success": False,
+            "results": [],
         }
 
 
 async def _tavily_search(
     query: str, num_results: int, credentials: dict[str, str] | None = None
 ) -> dict:
-    """
-    使用 Tavily API 搜索
-
-    Tavily 是一个专为 AI 优化的搜索 API
-    https://tavily.com/
-    """
-    # 只从 credentials 获取 API key
-    api_key = None
-    if credentials:
-        api_key = credentials.get("TAVILY_API_KEY")
-        logger.info("Tavily credentials received: %s", bool(api_key))
-    else:
-        logger.warning("No credentials provided to Tavily search")
-
+    """使用 Tavily API 搜索。"""
+    api_key = credentials.get("TAVILY_API_KEY") if credentials else None
     if not api_key:
-        logger.error("No Tavily API key found in credentials")
+        logger.warning("No Tavily API key found in credentials")
         return {
             "query": query,
             "error": t("tavily_api_key_not_configured"),
@@ -105,9 +130,8 @@ async def _tavily_search(
                 "results": with_web_citation_ids(results),
                 "success": True,
             }
-
     except httpx.HTTPStatusError as e:
-        logger.error(f"Tavily search HTTP error: {e}")
+        logger.error("Tavily search HTTP error: %s", e)
         return {
             "query": query,
             "error": t("web_search_api_error", status_code=e.response.status_code),
@@ -115,7 +139,123 @@ async def _tavily_search(
             "results": [],
         }
     except Exception as e:
-        logger.error(f"Tavily search error: {e}")
+        logger.error("Tavily search error: %s", e)
+        return {
+            "query": query,
+            "error": t("tool_execution_failed"),
+            "success": False,
+            "results": [],
+        }
+
+
+async def _bocha_search(
+    query: str, num_results: int, credentials: dict[str, str] | None = None
+) -> dict:
+    """
+    使用博查 AI (Bocha) OpenAPI 搜索。
+    针对国内信息与长尾中文内容有良好优化。
+    https://bocha.ai/
+    """
+    api_key = credentials.get("BOCHA_API_KEY") if credentials else None
+    if not api_key:
+        logger.warning("No Bocha API key found in credentials")
+        return {
+            "query": query,
+            "error": t("bocha_api_key_not_configured"),
+            "success": False,
+            "results": [],
+        }
+
+    try:
+        async with httpx.AsyncClient(timeout=25) as client:
+            response = await client.post(
+                "https://api.bochaai.com/v1/web-search",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "query": query,
+                    "count": num_results,
+                    "summary": True,
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            raw_results = (
+                data.get("data", {}).get("webPages", {}).get("value", [])
+                if isinstance(data.get("data"), dict)
+                else data.get("webPages", {}).get("value", [])
+            )
+            results = []
+            for item in raw_results:
+                results.append(
+                    {
+                        "title": item.get("name", "") or item.get("title", ""),
+                        "url": item.get("url", ""),
+                        "content": item.get("snippet", "") or item.get("summary", ""),
+                    }
+                )
+
+            return {
+                "query": query,
+                "results": with_web_citation_ids(results),
+                "success": True,
+            }
+    except httpx.HTTPStatusError as e:
+        logger.error("Bocha search HTTP error: %s", e)
+        return {
+            "query": query,
+            "error": t("web_search_api_error", status_code=e.response.status_code),
+            "success": False,
+            "results": [],
+        }
+    except Exception as e:
+        logger.error("Bocha search error: %s", e)
+        return {
+            "query": query,
+            "error": t("tool_execution_failed"),
+            "success": False,
+            "results": [],
+        }
+
+
+def _sync_ddg_search(query: str, num_results: int) -> list[dict[str, Any]]:
+    """同步执行 DuckDuckGo 搜索。"""
+    from duckduckgo_search import DDGS
+
+    with DDGS() as ddgs:
+        return list(ddgs.text(query, max_results=num_results))
+
+
+async def _duckduckgo_search(query: str, num_results: int) -> dict:
+    """使用 DuckDuckGo 免配置搜索。"""
+    try:
+        raw_results = await asyncio.wait_for(
+            asyncio.to_thread(_sync_ddg_search, query, num_results),
+            timeout=20,
+        )
+        results = []
+        for item in raw_results:
+            results.append(
+                {
+                    "title": item.get("title", ""),
+                    "url": item.get("href", "") or item.get("url", ""),
+                    "content": item.get("body", "") or item.get("snippet", ""),
+                }
+            )
+        return {
+            "query": query,
+            "results": with_web_citation_ids(results),
+            "success": True,
+        }
+    except asyncio.TimeoutException:
+        return {
+            "query": query,
+            "error": t("tool_execution_timeout"),
+            "success": False,
+            "results": [],
+        }
+    except Exception as e:
+        logger.error("DuckDuckGo search error: %s", e)
         return {
             "query": query,
             "error": t("tool_execution_failed"),
@@ -298,6 +438,14 @@ def register_web_search_tools() -> None:
                 description="返回结果数量，默认 5，最大 10",
                 required=False,
                 default=5,
+            ),
+            ToolParameter(
+                name="search_engine",
+                type="string",
+                description="搜索引擎类型，支持 'auto'（自动检测凭证并兜底 DuckDuckGo）, 'tavily', 'bocha'（博查搜索）, 'duckduckgo'（免 Key 搜索）。默认为 auto。",
+                required=False,
+                default="auto",
+                enum=["auto", "tavily", "bocha", "duckduckgo"],
             ),
         ],
     )(web_search)

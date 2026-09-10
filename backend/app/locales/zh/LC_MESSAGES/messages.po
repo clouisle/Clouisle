@@ -2657,6 +2657,9 @@ msgstr "不支持的搜索引擎：{search_engine}"
 msgid "web_search_api_error"
 msgstr "搜索 API 错误：{status_code}"
 
+msgid "bocha_api_key_not_configured"
+msgstr "博查搜索 API Key 未配置"
+
 msgid "fetch_webpage_http_error"
 msgstr "HTTP 错误：{status_code}"
 

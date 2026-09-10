@@ -50,6 +50,13 @@ const TOOL_CONFIG_INFO: Record<string, {
         description: 'configDialog.tavilyApiKeyDescription',
         link: 'https://tavily.com/',
       },
+      {
+        key: 'BOCHA_API_KEY',
+        label: 'configDialog.bochaApiKeyLabel',
+        placeholder: 'sk-xxxxxxxxxx',
+        description: 'configDialog.bochaApiKeyDescription',
+        link: 'https://bocha.ai/',
+      },
     ],
   },
 }
