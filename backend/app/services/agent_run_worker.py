@@ -680,6 +680,8 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
                     run_user = await User.get_or_none(id=conversation.user_id)
                     await AuditLogService.log(
                         user=run_user,
+                        action="create_message",
+                        resource_type="message",
                         resource_id=step_msg.id,
                         resource_name=str(step_msg.id),
                         operation="create",

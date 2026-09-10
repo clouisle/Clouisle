@@ -1386,8 +1386,6 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     )) {
       if (!isCurrentStop()) return
       setCurrentRunStatus('stopping')
-      pendingRunInputsRef.current = []
-      setPendingInputsState([])
       try {
         const result = await runApi.stopRun(agentId, activeRunId)
         if (!isCurrentStop()) return
@@ -1407,6 +1405,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             runIdRef.current = null
             setRunId(null)
           }
+          pendingRunInputsRef.current = []
+          setPendingInputsState([])
           resetStreamingState()
           return
         }
