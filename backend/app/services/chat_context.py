@@ -921,14 +921,34 @@ async def _build_messages_with_file_content(
         )
     if active_round_delta:
         for hist_msg in history_override or ():
-            role = _normalize_override_role(_get_override_value(hist_msg, "role"))
-            if role == "user":
+            round_role = _get_override_value(hist_msg, "round_role")
+            if role == "user" and round_role != "user_input":
                 continue
             protect = _matches_protected_round(
                 _get_override_value(hist_msg, "round_id"), protected_round_id
             )
             content = _get_override_value(hist_msg, "content") or ""
-            if role == "assistant":
+            if role == "user":
+                _append_message(
+                    messages,
+                    protected_indexes,
+                    Message(
+                        role=MessageRole.USER,
+                        content=content,
+                    ),
+                    protect=protect,
+                    meta=meta,
+                    **{
+                        "round_id": _get_override_value(hist_msg, "round_id"),
+                        "round_role": round_role or "user_input",
+                        "is_round_canonical": _get_override_value(
+                            hist_msg, "is_round_canonical"
+                        ),
+                        "source_role": "user",
+                        "source_message_id": None,
+                    },
+                )
+            elif role == "assistant":
                 tool_calls, new_tool_call_ids = _build_assistant_tool_calls(
                     _get_override_value(hist_msg, "tool_calls")
                 )
