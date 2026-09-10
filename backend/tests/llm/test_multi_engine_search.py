@@ -2,7 +2,7 @@
 Tests for multi-engine web search (auto, bocha, duckduckgo, tavily).
 """
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 import pytest
 
 from app.llm.tools.builtin import web_search as subject
@@ -141,3 +141,31 @@ async def test_duckduckgo_search_normalizes_results(monkeypatch):
     assert result["results"][0]["citation_id"] == stable_citation_id(
         "web", "https://duckduckgo.com/example", ""
     )
+
+
+@pytest.mark.anyio
+async def test_get_builtin_tool_credentials_prioritizes_agent_tool_config(monkeypatch):
+    from app.api.v1.endpoints.chat_tools import _get_builtin_tool_credentials
+
+    agent_mock = Mock()
+    agent_mock.team_id = "team-123"
+
+    fake_tool_config = Mock()
+    fake_tool_config.filter.return_value.first = AsyncMock(return_value=None)
+    monkeypatch.setattr("app.models.tool_config.ToolConfig", fake_tool_config)
+
+    # 1. Agent 工具配置了专用 bocha key
+    creds = await _get_builtin_tool_credentials(
+        "web_search",
+        agent_mock,
+        agent_tool_config={"engine": "bocha", "api_key": "sk-agent-bocha"},
+    )
+    assert creds.get("BOCHA_API_KEY") == "sk-agent-bocha"
+
+    # 2. Agent 工具配置了专用 tavily key
+    creds_tavily = await _get_builtin_tool_credentials(
+        "web_search",
+        agent_mock,
+        agent_tool_config={"engine": "tavily", "api_key": "tvly-agent-tavily"},
+    )
+    assert creds_tavily.get("TAVILY_API_KEY") == "tvly-agent-tavily"

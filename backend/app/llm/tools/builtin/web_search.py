@@ -63,7 +63,10 @@ async def web_search(
             logger.info(
                 "Tavily search failed or key missing, falling back to DuckDuckGo"
             )
-            return await _duckduckgo_search(query, num_results)
+            fallback_res = await _duckduckgo_search(query, num_results)
+            fallback_res["search_engine"] = "duckduckgo"
+            return fallback_res
+        result["search_engine"] = "tavily"
         return result
     elif engine == "bocha":
         result = await _bocha_search(query, num_results, creds)
@@ -71,10 +74,15 @@ async def web_search(
             logger.info(
                 "Bocha search failed or key missing, falling back to DuckDuckGo"
             )
-            return await _duckduckgo_search(query, num_results)
+            fallback_res = await _duckduckgo_search(query, num_results)
+            fallback_res["search_engine"] = "duckduckgo"
+            return fallback_res
+        result["search_engine"] = "bocha"
         return result
     elif engine in ("duckduckgo", "ddg"):
-        return await _duckduckgo_search(query, num_results)
+        res = await _duckduckgo_search(query, num_results)
+        res["search_engine"] = "duckduckgo"
+        return res
     else:
         return {
             "query": query,
