@@ -105,7 +105,7 @@ mock.module('@/components/ui/dropdown-menu', () => ({
 }))
 mock.module('lucide-react', () => ({
   Wrench: element('svg'), Plus: element('svg'), RefreshCw: element('svg'), Loader2: element('svg'),
-  Globe: element('svg'), Code: element('svg'), Plug: element('svg'), ChevronDown: element('svg'),
+  Globe: element('svg'), Code: element('svg'), Plug: element('svg'), Database: element('svg'), ChevronDown: element('svg'),
   PackageOpen: element('svg'), Upload: element('svg'), Search: element('svg'),
 }))
 mock.module('./_components/tool-card', () => ({ ToolCard: ({ tool, ...props }: { tool: { display_name: string } } & Record<string, unknown>) => ({ type: 'article', props: { ...props, children: tool.display_name } }) }))
@@ -116,6 +116,7 @@ mock.module('./_components', () => ({ SkillsPanel: component('skills-panel'), To
 mock.module('./_components/tool-config-dialog', () => ({ ToolConfigDialog: component('config-dialog') }))
 mock.module('./_components/http-tool-dialog', () => ({ HttpToolDialog: component('http-dialog') }))
 mock.module('./_components/mcp-tool-dialog', () => ({ McpToolDialog: component('mcp-dialog') }))
+mock.module('./_components/database-tool-dialog', () => ({ DatabaseToolDialog: component('database-dialog') }))
 mock.module('./_components/tool-share-dialog', () => ({ ToolShareDialog: component('share-dialog') }))
 mock.module('@/components/packages/import-package-dialog', () => ({ ImportPackageDialog: component('import-dialog') }))
 
