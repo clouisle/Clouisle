@@ -261,6 +261,7 @@ export type AgentsMessages = {
           parse_file: string
           generate_image: string
           generate_video: string
+          rss_feed_reader: string
         }
         dialog: {
           title: string

@@ -73,10 +73,10 @@
         "tokens": "Tokens"
       },
       "charts": {
-      "conversations": "Conversations",
-      "count": "Count"
-    },
-    "quickActions": "Quick Actions",
+        "conversations": "Conversations",
+        "count": "Count"
+      },
+      "quickActions": "Quick Actions",
       "actions": {
         "createAgent": {
           "title": "Create Agent",
@@ -294,6 +294,29 @@
         "queryValuePlaceholder": "｛｛query｝｝",
         "bodyTemplatePlaceholder": "｛\"key\": \"｛｛value｝｝\"｝"
       },
+      "databaseDialog": {
+        "connectionFailed": "Connection failed, please check configuration and network",
+        "connectionSettings": "Connection Settings",
+        "connectionSuccess": "Database connection successful",
+        "createTitle": "Add Database Tool",
+        "databaseName": "Database Name",
+        "dbType": "Database Type",
+        "description": "Configure database connection parameters. Credentials are encrypted and never exposed to the LLM.",
+        "descriptionPlaceholder": "Describe the business domain and contents stored in this database to guide Agent selection",
+        "editTitle": "Edit Database Tool",
+        "host": "Host",
+        "hostRequired": "Please enter database host",
+        "maxLimit": "Max Return Rows",
+        "paramsMode": "Parameters",
+        "password": "Password",
+        "port": "Port",
+        "testConnection": "Test Connection",
+        "timeout": "Query Timeout (s)",
+        "url": "Connection URL",
+        "urlMode": "Connection URL",
+        "urlRequired": "Please enter connection URL",
+        "username": "Username"
+      },
       "mcpDialog": {
         "createTitle": "Add MCP Server",
         "editTitle": "Edit MCP Server",
@@ -424,6 +447,8 @@
         "httpDesc": "Call external REST APIs",
         "code": "Code Tool",
         "codeDesc": "Write JavaScript/Python code",
+        "database": "Database Tool",
+        "databaseDesc": "Connect to external databases",
         "mcp": "MCP Server",
         "mcpDesc": "Connect to MCP protocol servers"
       },

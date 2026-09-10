@@ -181,6 +181,29 @@
       "headerNamePlaceholder": "Header-Name",
       "httpUrlPlaceholder": "http://localhost:3000/mcp"
     },
+    "databaseDialog": {
+      "connectionFailed": "Connection failed, please check configuration and network",
+      "connectionSettings": "Connection Settings",
+      "connectionSuccess": "Database connection successful",
+      "createTitle": "Add Database Tool",
+      "databaseName": "Database Name",
+      "dbType": "Database Type",
+      "description": "Configure database connection parameters. Credentials are encrypted and never exposed to the LLM.",
+      "descriptionPlaceholder": "Describe the business domain and contents stored in this database to guide Agent selection",
+      "editTitle": "Edit Database Tool",
+      "host": "Host",
+      "hostRequired": "Please enter database host",
+      "maxLimit": "Max Return Rows",
+      "paramsMode": "Parameters",
+      "password": "Password",
+      "port": "Port",
+      "testConnection": "Test Connection",
+      "timeout": "Query Timeout (s)",
+      "url": "Connection URL",
+      "urlMode": "Connection URL",
+      "urlRequired": "Please enter connection URL",
+      "username": "Username"
+    },
     "codeEditor": {
       "newTitle": "New Code Tool",
       "subtitle": "Extend AI capabilities with code",
@@ -241,11 +264,13 @@
     },
     "createMenu": {
       "http": "HTTP API",
-      "httpDesc": "Call external REST API",
+      "httpDesc": "Call external REST APIs",
       "code": "Code Tool",
-      "codeDesc": "Write with JavaScript/Python",
+      "codeDesc": "Write in JavaScript or Python",
+      "database": "Database Tool",
+      "databaseDesc": "Connect to external databases",
       "mcp": "MCP Server",
-      "mcpDesc": "Connect to MCP protocol server"
+      "mcpDesc": "Connect Model Context Protocol server"
     },
     "error": {
       "loadFailed": "Failed to load tool",
