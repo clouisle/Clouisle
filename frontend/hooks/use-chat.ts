@@ -148,7 +148,8 @@ export interface UseChatReturn {
   runStatus: AgentRunStatus | null
   /** Tool call id of the ask_user interaction the server is waiting on. */
   pendingAskUserToolCallId: string | null
-  /** Send a message with optional images (vision) and/or file URLs (file upload) */
+  /** Currently queued inputs (e.g. user instructions) waiting to be accepted by the run */
+  pendingRunInputs: Array<{ content: string; requestId: string }>
   sendMessage: (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[]) => Promise<void>
   /** Submit one structured answer result for the waiting ask_user interaction. */
   submitAskUser: (toolCallId: string, answer: Omit<AgentRunAnswerInput, 'tool_call_id'>) => Promise<void>
@@ -230,6 +231,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   const sessionsByRunRef = useRef(new Map<string, AssistantStreamSession>())
   const pendingRunInputsRef = useRef<PendingRunInput[]>([])
   const flushPendingInputsRef = useRef<(runId: string) => void>(() => undefined)
+  const [pendingInputsState, setPendingInputsState] = useState<Array<{ content: string; requestId: string }>>([])
   const terminalRunsRef = useRef(new Set<string>())
   const runStartWaiterRef = useRef<RunStartWaiter | null>(null)
 
@@ -631,6 +633,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       input.kind === kind && input.content === content
     ))
     const pending = pendingIndex >= 0 ? pendingRunInputsRef.current.splice(pendingIndex, 1)[0] : undefined
+    setPendingInputsState(pendingRunInputsRef.current.map((i) => ({ content: i.content, requestId: i.requestId })))
     const targetSession = activeSessionRef.current
     if (targetSession && content.trim()) {
       targetSession.state.segments.push({
@@ -1136,14 +1139,10 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       }
     } catch (reason) {
       pendingRunInputsRef.current = pendingRunInputsRef.current.filter((input) => input !== pending)
+      setPendingInputsState(pendingRunInputsRef.current.map((i) => ({ content: i.content, requestId: i.requestId })))
       const chatError: ChatError = { message: reason instanceof Error ? reason.message : '' }
       setError(chatError)
       onError?.(chatError)
-      setMessages((previous) => previous.map((message) => (
-        message.id === pending.messageId
-          ? { ...message, metadata: { ...message.metadata, runInputState: 'failed' } }
-          : message
-      )))
     }
   }, [agentId, onError, runApi, setCurrentRunStatus])
 
@@ -1171,17 +1170,10 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       runId: runIdRef.current ?? undefined,
     }
     pendingRunInputsRef.current.push(pending)
-    setMessages((previous) => [...previous, {
-      id: pending.messageId,
-      role: 'user',
-      parts: [{ type: 'text', text: content }],
-      createdAt: new Date(),
-      metadata: { runInputState: 'queued', runInputKind: delivery },
-    }])
+    setPendingInputsState(pendingRunInputsRef.current.map((i) => ({ content: i.content, requestId: i.requestId })))
     const activeRunId = runIdRef.current
     if (activeRunId) await flushPendingRunInputs(activeRunId)
-  }, [flushPendingRunInputs, runApi, setMessages])
-
+  }, [flushPendingRunInputs, runApi])
   const consumeStream = useCallback(async (
     session: AssistantStreamSession,
     start: () => { stream: Promise<Response>; abort: () => void } | Promise<{ stream: Promise<Response>; abort: () => void }>,
@@ -1396,9 +1388,6 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         if (!isCurrentStop()) return
         if (result?.status) setCurrentRunStatus(result.status)
         if (result?.status === 'stopped') {
-          // Invalidate both the durable subscription and the request stream
-          // before marking the local session terminal. Late events must not
-          // repaint a stopped assistant message.
           disconnectLocalSubscription()
           resolveRunEnd(activeRunId)
           if (session) {
@@ -1453,6 +1442,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     lastSequenceRef.current = 0
     appliedSequenceKeysRef.current.clear()
     pendingRunInputsRef.current = []
+    setPendingInputsState([])
     setRunId(null)
     setCurrentRunStatus(null)
     setPendingAskUserToolCallId(null)
@@ -1621,6 +1611,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     runId,
     runStatus,
     pendingAskUserToolCallId,
+    pendingRunInputs: pendingInputsState,
     sendMessage,
     submitAskUser,
     regenerate,

@@ -1632,12 +1632,9 @@ describe('useChat', () => {
     const sending = result.sendMessage('initial')
     await flush()
     await result.sendMessage('steer this run')
-
-    expect(postRunInput).not.toHaveBeenCalled()
-    expect(result.messages.find((message) => message.metadata?.runInputState === 'queued')).toMatchObject({
-      role: 'user',
-      parts: [{ type: 'text', text: 'steer this run' }],
-    })
+    expect(result.pendingRunInputs).toEqual([
+      expect.objectContaining({ content: 'steer this run' }),
+    ])
 
     release.resolve(runEvent(3, 'input_accepted', {
       kind: 'steer',
