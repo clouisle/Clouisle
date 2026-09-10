@@ -688,7 +688,7 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
         loop_context.consume_inputs = _consume_inputs
         loop_context.input_consumed = _input_consumed
         loop_context.stop_requested = _stop_requested
-
+        loop_context.is_disconnected = _stop_requested
         waiting_tool_call_id: str | None = None
 
         async def _pause_for_user(**interaction: Any) -> None:
