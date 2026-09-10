@@ -5,7 +5,7 @@ import type { PageData } from './users'
 
 export type ToolType = 'builtin' | 'custom' | 'mcp' | 'skill'
 
-export type CustomToolType = 'http' | 'code'
+export type CustomToolType = 'http' | 'code' | 'database'
 
 export const PRESET_TOOL_CATEGORIES = [
   'time',
@@ -92,6 +92,23 @@ export interface CodeConfig {
   limits?: SandboxLimitsConfig
 }
 
+export type DatabaseType = 'postgresql' | 'mysql' | 'redis' | 'mongodb'
+
+export interface DatabaseConfig {
+  db_type: DatabaseType
+  host?: string
+  port?: number
+  database?: string
+  username?: string
+  password?: string
+  ssl?: string | boolean
+  url?: string
+  db?: number
+  auth_source?: string
+  timeout?: number
+  max_limit?: number
+}
+
 export type McpTransportType = 'stdio' | 'sse' | 'http'
 
 export interface McpConfig {
@@ -120,6 +137,7 @@ export interface Tool {
   custom_type?: CustomToolType
   http_config?: HttpConfig
   code_config?: CodeConfig
+  database_config?: DatabaseConfig
   mcp_config?: McpConfig
   team_id?: string
   created_by_id?: string | null
@@ -179,6 +197,7 @@ export interface ToolCreateInput {
   http_config?: HttpConfig
   code_config?: CodeConfig
   mcp_config?: McpConfig
+  database_config?: DatabaseConfig
   credentials?: Record<string, string>
   is_enabled?: boolean
 }
@@ -195,6 +214,7 @@ export interface ToolUpdateInput {
   http_config?: HttpConfig
   code_config?: CodeConfig
   mcp_config?: McpConfig
+  database_config?: DatabaseConfig
   credentials?: Record<string, string>
   is_enabled?: boolean
 }
@@ -407,6 +427,12 @@ export const toolsApi = {
    */
   listMcpTools: async (mcpConfig: McpConfig): Promise<McpToolsListResponse> => {
     return api.post<McpToolsListResponse>('/tools/mcp/list-tools', { mcp_config: mcpConfig })
+  },
+  /**
+   * 测试数据库连接
+   */
+  testDatabaseConnection: async (config: DatabaseConfig): Promise<{ success: boolean; message?: string; ping?: unknown }> => {
+    return api.post<{ success: boolean; message?: string; ping?: unknown }>('/tools/database/test-connection', config)
   },
 
   // ============ Tool Configuration Management ============
