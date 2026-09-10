@@ -583,11 +583,9 @@ class AgentService:
             if agent_tool_config.get("BOCHA_API_KEY"):
                 credentials["BOCHA_API_KEY"] = agent_tool_config["BOCHA_API_KEY"]
 
-        # 2. 如果 agent 配置中覆盖了默认参数（例如指定 search_engine），注入 arguments 默认值
-        if tool_name == "web_search" and agent_tool_config.get("engine"):
-            if "search_engine" not in arguments or arguments["search_engine"] == "auto":
-                arguments["search_engine"] = agent_tool_config["engine"]
-
+        # 2. 搜索引擎由 agent 编排配置严格决定，不交由模型决定
+        if tool_name == "web_search":
+            arguments["search_engine"] = agent_tool_config.get("engine") or "auto"
         logger.info(
             f"[TOOL EXEC] Executing tool '{tool_name}' for agent {agent.id}, team_id: {team_id}"
         )
@@ -618,6 +616,9 @@ class AgentService:
             scope_context["conversation_id"] = conversation_id
         if workflow_run_id is not None:
             scope_context["workflow_run_id"] = workflow_run_id
+        extra_kwargs: dict[str, Any] = {}
+        if agent_tool_config:
+            extra_kwargs["agent_tool_config"] = agent_tool_config
 
         # Execute the tool
         try:
@@ -625,9 +626,9 @@ class AgentService:
                 name=tool_name,
                 arguments=arguments,
                 credentials=credentials,
-                agent_tool_config=agent_tool_config,
                 agent=agent,
                 team_id=str(agent.team_id) if agent.team_id else None,
+                **extra_kwargs,
                 **scope_context,
             )
             return result

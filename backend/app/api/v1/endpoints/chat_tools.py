@@ -551,13 +551,9 @@ async def execute_tool_call(
                     tool_name, agent, agent_tool_config
                 )
 
-            # 如果 agent 配置中覆盖了默认参数（例如指定 search_engine），注入 arguments 默认值
-            if tool_name == "web_search" and agent_tool_config.get("engine"):
-                if (
-                    "search_engine" not in arguments
-                    or arguments["search_engine"] == "auto"
-                ):
-                    arguments["search_engine"] = agent_tool_config["engine"]
+            # 搜索引擎由 agent 编排配置严格决定，不交由模型决定
+            if tool_name == "web_search":
+                arguments["search_engine"] = agent_tool_config.get("engine") or "auto"
 
             scope_context: dict[str, Any] = {}
             if workflow_run_id is not None:

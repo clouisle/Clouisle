@@ -507,14 +507,6 @@ def register_web_search_tools() -> None:
                 required=False,
                 default=5,
             ),
-            ToolParameter(
-                name="search_engine",
-                type="string",
-                description="搜索引擎类型，支持 'auto'（自动检测凭证并兜底 DuckDuckGo）, 'tavily', 'bocha'（博查搜索）, 'duckduckgo'（免 Key 搜索）。默认为 auto。",
-                required=False,
-                default="auto",
-                enum=["auto", "tavily", "bocha", "duckduckgo"],
-            ),
         ],
     )(web_search)
 

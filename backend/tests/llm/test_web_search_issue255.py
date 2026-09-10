@@ -272,7 +272,6 @@ def test_register_web_search_tools_defines_both_handlers(monkeypatch):
     assert [(item.name, item.required, item.default) for item in search_parameters] == [
         ("query", True, None),
         ("num_results", False, 5),
-        ("search_engine", False, "auto"),
     ]
     assert [(item.name, item.required, item.default) for item in fetch_parameters] == [
         ("url", True, None),
