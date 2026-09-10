@@ -93,11 +93,9 @@ async def read_rss_feed(url: str, limit: int = 10) -> dict[str, Any]:
         articles = []
         for entry in feed_data.entries[:limit]:
             entry_title = entry.get("title") or "Untitled"
-            entry_link = entry.get("link") or ""
-            # 获取发布时间
-            published = entry.get("published") or entry.get("updated") or ""
-            # 获取作者
-            author = entry.get("author") or ""
+            entry_link = entry.get("link")
+            published = entry.get("published") or entry.get("updated")
+            author = entry.get("author")
 
             # 获取摘要：优先 summary，其次 description，再从 content 中寻找
             raw_summary = entry.get("summary") or entry.get("description") or ""
@@ -105,27 +103,32 @@ async def read_rss_feed(url: str, limit: int = 10) -> dict[str, Any]:
                 raw_summary = entry.content[0].get("value", "")
             summary = _clean_html_text(raw_summary)
 
-            article_item: dict[str, Any] = {
-                "title": entry_title,
-                "link": entry_link,
-                "published": published,
-                "author": author,
-                "summary": summary,
-            }
+            article_item: dict[str, Any] = {"title": entry_title}
             if entry_link:
+                article_item["link"] = entry_link
                 article_item["citation_id"] = stable_citation_id("web", entry_link)
+            if published:
+                article_item["published"] = published
+            if author:
+                article_item["author"] = author
+            if summary:
+                article_item["summary"] = summary
+
             articles.append(article_item)
 
-        return {
+        result: dict[str, Any] = {
             "url": url,
             "feed_title": feed_title,
             "feed_link": feed_link,
-            "feed_description": feed_description,
             "articles": articles,
             "total_articles": len(articles),
             "citation_id": stable_citation_id("web", url),
             "success": True,
         }
+        if feed_description:
+            result["feed_description"] = feed_description
+
+        return result
     except httpx.TimeoutException:
         return {"url": url, "error": t("tool_execution_timeout"), "success": False}
     except Exception as e:

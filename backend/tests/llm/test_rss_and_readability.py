@@ -70,6 +70,14 @@ async def test_rss_feed_reader_success(monkeypatch):
         "web", "https://example.com/article-1"
     )
 
+    second = result["articles"][1]
+    assert second["title"] == "Article 2"
+    assert second["link"] == "https://example.com/article-2"
+    assert second["author"] == "Bob"
+    assert second["summary"] == "Simple summary without HTML"
+    # 验证没有 author 或 summary 的条目不会暴露空键
+    assert "non_existent_key" not in second
+
 
 @pytest.mark.anyio
 async def test_rss_feed_reader_http_error(monkeypatch):
