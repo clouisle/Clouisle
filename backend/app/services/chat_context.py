@@ -921,6 +921,7 @@ async def _build_messages_with_file_content(
         )
     if active_round_delta:
         for hist_msg in history_override or ():
+            role = _normalize_override_role(_get_override_value(hist_msg, "role"))
             round_role = _get_override_value(hist_msg, "round_role")
             if role == "user" and round_role != "user_input":
                 continue

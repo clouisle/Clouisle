@@ -118,16 +118,16 @@ describe('ChatInput', () => {
     expect(buttons(renderChatInput({ value: 'hello' })).at(-1)?.props.disabled).toBe(false)
   })
 
-  test('shows stop instead of send while streaming, with stop stopping the run', () => {
+  test('shows stop while streaming, allowing stop or sending steering', () => {
     const onStop = mock(() => undefined)
     const onSubmit = mock(() => undefined)
     const tree = renderChatInput({ value: 'hello', isStreaming: true, onStop, onSubmit })
     const stopButton = buttons(tree).find((button) => button.props['aria-label'] === 'stop')
     const sendButton = buttons(tree).find((button) => button.props['aria-label'] === 'send')
 
-    // Mutually exclusive: while a run is streaming only the stop button renders
+    // While a run is streaming, stop is present, and if text is typed, send (steering) is also available
     expect(stopButton).toBeDefined()
-    expect(sendButton).toBeUndefined()
+    expect(sendButton).toBeDefined()
 
     act(() => {
       stopButton?.props.onClick()
