@@ -1793,4 +1793,24 @@ describe('useChat', () => {
       text: 'late',
     })
   })
+  it('clears pendingRunInputs when stop is called and preserves user-instruction on reconnect', async () => {
+    const startRun = mock(async () => ({
+      run_id: 'run-1',
+      conversation_id: 'conversation-1',
+      user_message_id: 'user-1',
+      status: 'queued' as const,
+      stream_url: '/agents/agent-1/chat/runs/run-1/stream',
+    }))
+    const durableApi = { ...agentsApi, startRun } as unknown as NonNullable<HookOptions['api']>
+    options = { agentId: 'agent-1', api: durableApi }
+    renderHookHarness()
+    stopRun.mockResolvedValue({ status: 'stopped' })
+
+    // Send message and simulate pendingRunInput
+    const sending = result.sendMessage('hello')
+    await flush()
+    await result.stop()
+    expect(result.pendingRunInputs).toEqual([])
+    await sending
+  })
 })

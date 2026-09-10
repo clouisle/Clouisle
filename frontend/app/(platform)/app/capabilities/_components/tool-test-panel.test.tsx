@@ -266,4 +266,28 @@ describe('tool test panel', () => {
     expect(runButton(failed).props.disabled).toBe(true)
     expect(failedApi.test).not.toHaveBeenCalled()
   })
+  test('handles parameter input enum and boolean select changes and empty selection', async () => {
+    const tool = {
+      ...baseTool,
+      parameters: [
+        { name: 'env', type: 'string', required: false, enum: ['staging', 'prod'] },
+        { name: 'debug', type: 'boolean', required: false },
+      ],
+    }
+    const api = { listMcpTools: mock(async () => ({ tools: [] })), test: mock(async () => ({ success: true })) }
+    const panel = render(tool as never, api)
+    await act(async () => {})
+
+    const selects = panel.root.findAllByType('select')
+    act(() => {
+      selects[0].props.onChange({ target: { value: 'staging' } })
+      selects[1].props.onChange({ target: { value: 'true' } })
+    })
+    act(() => {
+      selects[0].props.onChange({ target: { value: '__EMPTY__' } })
+      selects[1].props.onChange({ target: { value: '__EMPTY__' } })
+    })
+    await act(async () => runButton(panel).props.onClick())
+    expect(api.test).toHaveBeenCalled()
+  })
 })

@@ -301,6 +301,12 @@ describe('platform capability component smoke coverage', () => {
     await act(async () => shareButton().props.onClick())
     expect(toolsApi.shareTool).toHaveBeenCalledWith('tool-1', { team_id: 'team-3', permission: 'read_execute' })
     expect(onSuccess).toHaveBeenCalledTimes(1)
+    toolsApi.shareTool.mockRejectedValueOnce(new ApiError(1001, 'Invalid', { errors: { team_id: 'Invalid team' } }))
+    await act(async () => {
+      teamSelect.props.onValueChange('team-3')
+    })
+    await act(async () => shareButton().props.onClick())
+    expect(renderer!.root.findAllByType('p').map((node) => node.children.join('')).join(' ')).toContain('Invalid team')
 
     act(() => renderer!.root.findAllByType('button').find((button) => button.props.className?.includes('text-destructive'))!.props.onClick())
     await act(async () => renderer!.root.findAllByType('button').find((button) => nodeText(button).includes('unshareButton'))!.props.onClick())

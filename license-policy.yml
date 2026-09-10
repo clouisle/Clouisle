@@ -44,4 +44,10 @@ denied_licenses:
   - BUSL-1.1
   - CC-BY-NC-4.0
 
-exceptions: []
+exceptions:
+  - ecosystem: python
+    package: tld
+    version: 0.13.2
+    license: MPL-1.1 OR GPL-2.0-only OR LGPL-2.1-or-later
+    justification: "Transitive dependency of trafilatura for top-level domain parsing under MPL-1.1 / LGPL-2.1-or-later"
+    owner: backend

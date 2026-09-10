@@ -748,10 +748,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         ...(eventMessageId ? { message_id: eventMessageId } : {}),
       } as SSEMessageStart & {
         edited_message_id?: string
+        edited_version_number?: number
+        edited_version_count?: number
       }
+      if (!session) return
       const nextConversationId = startData.conversation_id
       if (nextConversationId) {
         session.conversationId = nextConversationId
+        activeRunConversationRef.current = nextConversationId
         if (conversationIdRef.current !== nextConversationId) {
           setConversationId(nextConversationId)
           onConversationChange?.(nextConversationId)
@@ -1655,6 +1659,7 @@ interface ContentSegment {
   instructionContent?: string
   // For tool type
   toolCall?: StreamToolCallPart
+  toolResult?: StreamToolResultPart
   reasoningIndex?: number
   reasoningText?: string
   reasoningState?: 'streaming' | 'done'

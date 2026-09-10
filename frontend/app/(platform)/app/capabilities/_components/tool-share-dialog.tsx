@@ -108,12 +108,7 @@ export function ToolShareDialog({
       team => team.id !== currentTeamId && !sharedTeamIds.has(team.id)
     )
   }, [availableTeams, currentTeamId, shares])
-  const selectedTeamName = React.useMemo(
-    () =>
-      availableTeamsToShare.find((team) => team.id === selectedTeamId)?.name ||
-      t('selectTeam'),
-    [availableTeamsToShare, selectedTeamId, t]
-  )
+  const selectedTeamName = availableTeamsToShare.find((team) => team.id === selectedTeamId)?.name || t('selectTeam')
 
 
   // 共享工具

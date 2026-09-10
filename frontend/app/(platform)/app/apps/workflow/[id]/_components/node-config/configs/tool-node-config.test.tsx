@@ -33,7 +33,7 @@ mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key })
 mock.module('lucide-react', () => ({
   AlertCircle, Trash2: component, Search: component, ChevronDown: component, Wrench: component, Check: component,
   Loader2: component, Clock3: component, Calculator: component, Globe: component, FolderOpen: component,
-  Code2: component, Link: component, ChartColumn: component,
+  Code2: component, Link: component, ChartColumn: component, Database: component,
 }))
 for (const [path, names] of [
   ['@/components/ui/button', ['Button']], ['@/components/ui/input', ['Input']], ['@/components/ui/label', ['Label']],

@@ -334,4 +334,35 @@ describe('CapabilitiesPage', () => {
     await (find(render(), (node) => node.type === 'article' && node.props.children === 'Weather').props.onEdit as (tool: typeof custom) => Promise<void>)(custom)
     expect(toastError).toHaveBeenCalledWith('tools.error.unknownToolType')
   })
+  test('creates and edits database tools in CapabilitiesPage', async () => {
+    const dbToolItem = { ...custom, id: 'db-1', custom_type: 'database', display_name: 'Database Tool' }
+    getById.mockResolvedValueOnce({ ...dbToolItem, database_config: { db_type: 'postgresql', host: 'localhost' } })
+    createTool.mockResolvedValue({})
+    updateTool.mockResolvedValue({})
+    render()
+    await settle()
+
+    let tree = render()
+    // click create database tool menu item (index 3 in create menu)
+    const menuItems = findAll(tree, (node) => node.type === 'menuitem')
+    const dbMenuItem = menuItems.find((item) => item.props.onClick && String(item.props.children).includes('database')) || menuItems[3]
+    if (dbMenuItem?.props?.onClick) {
+      ;(dbMenuItem.props.onClick as () => void)()
+      tree = render()
+      const dbDialog = find(tree, (node) => node.type === 'database-dialog')
+      if (dbDialog) {
+        await (dbDialog.props.onSave as (data: Record<string, unknown>) => Promise<void>)({ name: 'new_db', custom_type: 'database' })
+        expect(createTool).toHaveBeenCalledWith('team-1', { name: 'new_db', custom_type: 'database' })
+      }
+    }
+
+    // edit database tool
+    await (find(render(), (node) => node.type === 'article').props.onEdit as (tool: typeof dbToolItem) => Promise<void>)(dbToolItem)
+    tree = render()
+    const editDbDialog = find(tree, (node) => node.type === 'database-dialog')
+    if (editDbDialog) {
+      await (editDbDialog.props.onSave as (data: Record<string, unknown>) => Promise<void>)({ display_name: 'Updated DB' })
+      expect(updateTool).toHaveBeenCalledWith('db-1', { display_name: 'Updated DB' })
+    }
+  })
 })

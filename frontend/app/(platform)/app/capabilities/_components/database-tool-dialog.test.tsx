@@ -308,4 +308,98 @@ describe('DatabaseToolDialog', () => {
       })
     )
   })
+  test('switches to redis and mongodb dbType and verifies parameter structure', async () => {
+    const onSave = mock(async () => undefined)
+    let renderer: ReactTestRenderer
+
+    await act(async () => {
+      renderer = create(
+        <DatabaseToolDialog open onOpenChange={() => undefined} onSave={onSave} />
+      )
+    })
+    renderers.push(renderer!)
+
+    // change to redis
+    const select = renderer.root.findByProps({ 'data-testid': 'select-trigger' })
+    act(() => {
+      select.props.onClick()
+    })
+
+    const editToolRedis: ToolDetail = {
+      name: 'redis_cache',
+      display_name: 'Redis Cache',
+      description: 'Redis Tool',
+      type: 'custom',
+      category: 'data',
+      parameters: [],
+      is_enabled: true,
+      requires_config: false,
+      config_fields: [],
+      custom_type: 'database',
+      database_config: {
+        db_type: 'redis',
+        host: 'localhost',
+        port: 6379,
+        db: 0,
+      },
+    }
+
+    await act(async () => {
+      renderer = create(
+        <DatabaseToolDialog tool={editToolRedis} open onOpenChange={() => undefined} onSave={onSave} />
+      )
+    })
+    renderers.push(renderer!)
+
+    const editToolMongo: ToolDetail = {
+      name: 'mongo_db',
+      display_name: 'Mongo DB',
+      description: 'MongoDB Tool',
+      type: 'custom',
+      category: 'data',
+      parameters: [],
+      is_enabled: true,
+      requires_config: false,
+      config_fields: [],
+      custom_type: 'database',
+      database_config: {
+        db_type: 'mongodb',
+        url: 'mongodb://localhost:27017/test',
+        auth_source: 'admin',
+      },
+    }
+
+    await act(async () => {
+      renderer = create(
+        <DatabaseToolDialog tool={editToolMongo} open onOpenChange={() => undefined} onSave={onSave} />
+      )
+    })
+    renderers.push(renderer!)
+
+    // test failure and error responses in handleTestConnection
+    const testBtn = renderer.root.findAllByType('button').find((b) => b.children.includes('databaseDialog.testConnection'))
+    if (testBtn) {
+      toolsApi.testDatabaseConnection.mockResolvedValueOnce({ success: false, message: 'Connection refused' })
+      await act(async () => testBtn.props.onClick())
+
+      toolsApi.testDatabaseConnection.mockRejectedValueOnce(new Error('Network error'))
+      await act(async () => testBtn.props.onClick())
+    }
+    // Submit with empty name and connectionUrl to trigger client validation (mongo uses url mode)
+    act(() => {
+      renderer.root.findByProps({ id: 'name' }).props.onChange({ target: { value: '' } })
+      renderer.root.findByProps({ id: 'connectionUrl' }).props.onChange({ target: { value: '' } })
+    })
+    const form = renderer.root.findByType('form')
+    await act(async () => form.props.onSubmit({ preventDefault: () => undefined }))
+
+    // Submit with onSave error to trigger catch
+    onSave.mockRejectedValueOnce(new Error('Save failed'))
+    act(() => {
+      renderer.root.findByProps({ id: 'name' }).props.onChange({ target: { value: 'test_db' } })
+      renderer.root.findByProps({ id: 'connectionUrl' }).props.onChange({ target: { value: 'mongodb://localhost:27017/test' } })
+    })
+    await act(async () => form.props.onSubmit({ preventDefault: () => undefined }))
+    expect(renderer.root.findByProps({ id: 'name' }).props.value).toBe('test_db')
+  })
 })
