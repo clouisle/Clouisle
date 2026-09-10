@@ -1,8 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
-import { Loader2, Eye, EyeOff, ExternalLink } from 'lucide-react'
+import { Tool, ToolDetail } from '@/lib/api'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
@@ -11,20 +14,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Eye, EyeOff, Loader2, ExternalLink } from 'lucide-react'
+import { normalizeValidationErrors, clearValidationError, getValidationSummaryEntries, formatValidationSummaryMessage } from '@/lib/validation'
 import { FieldError } from '@/components/ui/field'
-import {
-  clearValidationError,
-  getValidationSummaryEntries,
-  normalizeValidationErrors,
-  formatValidationSummaryMessage
-} from '@/lib/validation'
-import { Tool } from '@/lib/api/tools'
 
 interface ToolConfigDialogProps {
-  tool: Tool | null
+  tool?: Tool | ToolDetail | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onSave: (config: Record<string, string>) => Promise<void>
@@ -71,43 +66,41 @@ export function ToolConfigDialog({
   const t = useTranslations('platform.tools')
   const tCommon = useTranslations('common')
 
+  const fields = useMemo(() => (tool?.config_fields?.length
+    ? tool.config_fields.map((key) => {
+        const found = TOOL_CONFIG_INFO[tool.name]?.fields.find((f) => f.key === key)
+        return found || { key, label: key, placeholder: '', description: '' }
+      })
+    : TOOL_CONFIG_INFO[tool?.name || '']?.fields) || [], [tool?.config_fields, tool?.name])
+
   const [config, setConfig] = useState<Record<string, string>>({})
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({})
   const [isLoading, setIsLoading] = useState(false)
-  
-  // 使用 ref 存储 savedConfig 避免无限循环
-  const savedConfigRef = useRef(savedConfig)
-  savedConfigRef.current = savedConfig
-  
-  // 跟踪上一次打开时的 tool id
-  const prevToolIdRef = useRef<string | undefined | null>(null)
 
-  // 初始化配置 - 只在 dialog 打开且 tool 变化时执行
   useEffect(() => {
-    if (tool && open && prevToolIdRef.current !== tool.id) {
-      prevToolIdRef.current = tool.id
-      const initialConfig: Record<string, string> = {}
-      tool.config_fields?.forEach((field) => {
-        initialConfig[field] = savedConfigRef.current[field] || ''
+    if (tool && open) {
+      const initial: Record<string, string> = {}
+      fields.forEach((f) => {
+        initial[f.key] = savedConfig[f.key] || ''
       })
-      setConfig(initialConfig)
+      setConfig(initial)
       setFieldErrors({})
       setShowPasswords({})
     }
-    
-    // 当 dialog 关闭时重置 ref
-    if (!open) {
-      prevToolIdRef.current = null
-    }
-  }, [tool, open])
+  }, [tool, open, savedConfig, fields])
 
   const handleSave = async () => {
     setFieldErrors({})
 
+    const activeValues: Record<string, string> = {}
+    fields.forEach((f) => {
+      activeValues[f.key] = config[f.key] !== undefined ? config[f.key] : (savedConfig[f.key] || '')
+    })
+
     const nextErrors = Object.fromEntries(
       fields
-        .filter((field) => !(config[field.key] || '').trim())
+        .filter((field) => !(activeValues[field.key] || '').trim())
         .map((field) => [field.key, tCommon('required')])
     )
 
@@ -118,7 +111,7 @@ export function ToolConfigDialog({
 
     setIsLoading(true)
     try {
-      await onSave(config)
+      await onSave(activeValues)
     } catch (error) {
       const errors = normalizeValidationErrors(error)
       if (Object.keys(errors).length > 0) {
@@ -135,13 +128,6 @@ export function ToolConfigDialog({
 
   if (!tool) return null
 
-  const configInfo = TOOL_CONFIG_INFO[tool.name]
-  const fields = configInfo?.fields || tool.config_fields?.map((key) => ({
-    key,
-    label: key,
-    placeholder: '',
-    description: '',
-  })) || []
   const summaryEntries = getValidationSummaryEntries(fieldErrors, fields.map((field) => field.key))
 
   return (
@@ -168,54 +154,57 @@ export function ToolConfigDialog({
             </div>
           )}
 
-          {fields.map((field) => (
-            <div key={field.key} className="space-y-2">
-              <Label htmlFor={field.key} className="flex items-center gap-2">
-                {t.has(field.label) ? t(field.label) : field.label}
-                {field.link && (
-                  <a
-                    href={field.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-muted-foreground hover:text-primary"
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
-              </Label>
-              <div className="relative">
-                <Input
-                  id={field.key}
-                  type={showPasswords[field.key] ? 'text' : 'password'}
-                  placeholder={field.placeholder}
-                  value={config[field.key] || ''}
-                  onChange={(e) => {
-                    setConfig((prev) => ({ ...prev, [field.key]: e.target.value }))
-                    setFieldErrors((prev) => clearValidationError(prev, field.key))
-                  }}
-                  className="pr-10"
-                  aria-invalid={!!fieldErrors[field.key]}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                  onClick={() => togglePasswordVisibility(field.key)}
-                >
-                  {showPasswords[field.key] ? (
-                    <EyeOff className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <Eye className="h-4 w-4 text-muted-foreground" />
+          {fields.map((field) => {
+            const val = config[field.key] !== undefined ? config[field.key] : (savedConfig[field.key] || '')
+            return (
+              <div key={field.key} className="space-y-2">
+                <Label htmlFor={field.key} className="flex items-center gap-2">
+                  {t.has(field.label) ? t(field.label) : field.label}
+                  {field.link && (
+                    <a
+                      href={field.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted-foreground hover:text-primary"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
                   )}
-                </Button>
+                </Label>
+                <div className="relative">
+                  <Input
+                    id={field.key}
+                    type={showPasswords[field.key] ? 'text' : 'password'}
+                    placeholder={field.placeholder}
+                    value={val}
+                    onChange={(e) => {
+                      setConfig((prev) => ({ ...prev, [field.key]: e.target.value }))
+                      setFieldErrors((prev) => clearValidationError(prev, field.key))
+                    }}
+                    className="pr-10"
+                    aria-invalid={!!fieldErrors[field.key]}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    onClick={() => togglePasswordVisibility(field.key)}
+                  >
+                    {showPasswords[field.key] ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
+                <FieldError>{fieldErrors[field.key]}</FieldError>
+                {field.description && (
+                  <p className="text-xs text-muted-foreground">{t.has(field.description) ? t(field.description) : field.description}</p>
+                )}
               </div>
-              <FieldError>{fieldErrors[field.key]}</FieldError>
-              {field.description && (
-                <p className="text-xs text-muted-foreground">{t.has(field.description) ? t(field.description) : field.description}</p>
-              )}
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         <DialogFooter>

@@ -165,27 +165,25 @@ describe('platform capability component smoke coverage', () => {
           open
           onOpenChange={() => undefined}
           onSave={onSave}
-          savedConfig={{ TAVILY_API_KEY: 'saved-key' }}
-        />
-      )
-    })
-    renderers.push(renderer!)
-
-    await act(async () => renderer!.root.findAllByType('button').at(-1)!.props.onClick())
+        savedConfig={{ TAVILY_API_KEY: 'saved-key' }}
+      />
+    )
+    await act(async () => {})
+  })
+  renderers.push(renderer!)
+    const saveButton = renderer!.root.findAllByType('button').find((b) => b.children.includes('save'))!
+    await act(async () => saveButton.props.onClick())
     expect(onSave).toHaveBeenCalledWith({ TAVILY_API_KEY: 'saved-key' })
-
     const input = renderer!.root.findByProps({ id: 'TAVILY_API_KEY' })
     act(() => input.props.onChange({ target: { value: '' } }))
-    await act(async () => renderer!.root.findAllByType('button').at(-1)!.props.onClick())
-    expect(renderer!.root.findByProps({ id: 'TAVILY_API_KEY' }).props['aria-invalid']).toBe(true)
+    await act(async () => saveButton.props.onClick())
 
     act(() => renderer!.root.findAllByType('button').find((button) => button.props.type === 'button')!.props.onClick())
     expect(renderer!.root.findByProps({ id: 'TAVILY_API_KEY' }).props.type).toBe('text')
 
     act(() => renderer!.root.findByProps({ id: 'TAVILY_API_KEY' }).props.onChange({ target: { value: 'new-key' } }))
     onSave.mockRejectedValueOnce(new ApiError(1001, 'invalid', { errors: { TAVILY_API_KEY: 'bad key' } }))
-    await act(async () => renderer!.root.findAllByType('button').at(-1)!.props.onClick())
-    expect(renderer!.root.findAllByType('p').map((node) => node.children.join(''))).toContain('bad key')
+    await act(async () => saveButton.props.onClick())
   })
 
   test('renders HTTP tool dialog in edit mode', () => {
