@@ -32,6 +32,7 @@ import {
   Link,
   ChartColumn,
   Wrench,
+  Database,
 } from 'lucide-react'
 
 interface ToolCardProps {
@@ -135,7 +136,7 @@ export function ToolCard({
 
   // 判断图标是否为 URL
   const iconUrl = tool.icon?.startsWith('http') ? tool.icon : null
-  const displayIcon = tool.icon || category.icon
+  const displayIcon = tool.icon || (tool.custom_type === 'database' ? <Database className="h-4 w-4" /> : category.icon)
 
   return (
     <Card

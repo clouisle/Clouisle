@@ -16,6 +16,7 @@ import {
   Code2,
   Link,
   ChartColumn,
+  Database,
   Settings2,
 } from 'lucide-react'
 import { isPresetToolCategory, type PresetToolCategory, type Skill, type Tool, type ToolConfig, type ToolParameter, type ToolType, toolsApi, skillsApi } from '@/lib/api'
@@ -295,7 +296,7 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
                         >
                           {/* 图标 */}
                           <div className="shrink-0 w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-xl">
-                            {tool.icon || category.icon}
+                            {tool.icon || (tool.custom_type === 'database' ? <Database className="h-5 w-5" /> : category.icon)}
                           </div>
 
                           {/* 内容 */}
@@ -371,10 +372,11 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete }: ToolDisplay
   // 获取显示名称
   const displayName = tool?.display_name || config.name || config.tool_id || config.server_id || t('unknownTool')
   const isWebSearch = config.type === 'builtin' && config.name === 'web_search'
-  const searchEngine = config.config?.engine || 'auto'
+  const searchEngine = typeof config.config?.engine === 'string' ? config.config.engine : 'auto'
+  const apiKey = typeof config.config?.api_key === 'string' ? config.config.api_key : ''
 
-  const [tempEngine, setTempEngine] = React.useState(searchEngine)
-  const [tempApiKey, setTempApiKey] = React.useState(config.config?.api_key || '')
+  const [tempEngine, setTempEngine] = React.useState<string>(searchEngine)
+  const [tempApiKey, setTempApiKey] = React.useState<string>(apiKey)
 
   const handleSaveConfig = () => {
     if (onUpdateConfig) {
@@ -440,8 +442,8 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete }: ToolDisplay
               title={t('config.settings')}
               onClick={(e) => {
                 e.stopPropagation()
-                setTempEngine(config.config?.engine || 'auto')
-                setTempApiKey(config.config?.api_key || '')
+                setTempEngine(typeof config.config?.engine === 'string' ? config.config.engine : 'auto')
+                setTempApiKey(typeof config.config?.api_key === 'string' ? config.config.api_key : '')
                 setConfigOpen(true)
               }}
             >
@@ -479,7 +481,9 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete }: ToolDisplay
                 <Label className="text-xs font-medium">{t('config.engine')}</Label>
                 <Select value={tempEngine} onValueChange={(val) => setTempEngine(val || 'auto')}>
                   <SelectTrigger className="w-full text-xs">
-                    <SelectValue />
+                    <SelectValue>
+                      {engineLabels[tempEngine] || engineLabels.auto}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="auto">{t('config.engineAuto')}</SelectItem>
