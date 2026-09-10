@@ -249,6 +249,7 @@ export default function PublicChatPage({
     pendingAskUserToolCallId,
     pendingRunInputs,
     sendMessage,
+    submitAskUser,
     regenerate,
     editMessage,
     switchVersion,
