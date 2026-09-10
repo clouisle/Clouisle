@@ -1376,7 +1376,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             <ChainOfThoughtStep
               key={`instruction-${index}`}
               icon={MessageSquare}
-              label={part.content}
+              label={t('userGuidance')}
               status="complete"
             >
               <div className="text-xs text-foreground/85 bg-muted/50 rounded-md p-2 mt-1 border border-border/50">
@@ -1418,6 +1418,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       hideToolCalls,
       otherPartEntries,
       renderToolResultContent,
+      t,
       tReasoning,
       tTask,
       toolResultsByCallIndex,

@@ -767,6 +767,7 @@ describe('message behavior', () => {
 
     const steps = [...container.querySelectorAll('[data-step-status]')].map((step) => step.textContent ?? '')
     expect(steps).toHaveLength(2)
+    expect(steps[1]).toContain('chat.message.userGuidance')
     expect(steps[1]).toContain('Focus on 70B models')
   })
 

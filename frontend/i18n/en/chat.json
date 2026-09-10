@@ -212,6 +212,7 @@
       "queuedFollowUp": "Queued follow-up",
       "committedSteering": "Steering added",
       "committedFollowUp": "Follow-up added",
+      "userGuidance": "User guidance",
       "attachmentsDisabledDuringRun": "Attachments are disabled while the agent is running",
       "askUser": {
         "title": "Questions",

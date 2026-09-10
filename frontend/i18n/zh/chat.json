@@ -212,6 +212,7 @@
       "queuedFollowUp": "已排队的追问",
       "committedSteering": "已加入指令",
       "committedFollowUp": "已加入追问",
+      "userGuidance": "用户引导",
       "attachmentsDisabledDuringRun": "Agent 运行期间无法上传附件",
       "askUser": {
         "title": "待回答问题",
