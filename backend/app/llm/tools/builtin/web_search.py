@@ -374,8 +374,14 @@ async def fetch_webpage(url: str, max_length: int = 5000) -> dict[str, Any]:
     Returns:
         网页标题与正文内容
     """
-    # 如果是 data: 协议或非标准 HTTP URL，直接用 MarkItDown 处理
+    # 限制非 HTTP URL：只允许安全的 data: 协议，严禁本地文件路径或 file:// 协议
     if not url.startswith(("http://", "https://")):
+        if not url.startswith("data:"):
+            return {
+                "url": url,
+                "error": t("fetch_webpage_unsupported_scheme"),
+                "success": False,
+            }
         try:
             result = await asyncio.wait_for(
                 asyncio.to_thread(MarkItDown().convert, url), timeout=30

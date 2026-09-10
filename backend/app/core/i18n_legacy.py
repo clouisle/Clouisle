@@ -1062,6 +1062,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "HTTP error: {status_code}",
         "zh": "HTTP 错误：{status_code}",
     },
+    "fetch_webpage_unsupported_scheme": {
+        "en": "Unsupported URL scheme, only HTTP/HTTPS links are supported",
+        "zh": "不支持的 URL 协议，仅支持 HTTP/HTTPS 链接",
+    },
     "file_deleted": {"en": "File deleted successfully", "zh": "文件删除成功"},
     "file_header": {"en": "## File: {filename}", "zh": "## 文件: {filename}"},
     "file_header_indexed": {

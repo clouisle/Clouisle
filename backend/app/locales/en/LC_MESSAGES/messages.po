@@ -2663,6 +2663,8 @@ msgstr "Bocha API key is not configured"
 
 msgid "fetch_webpage_http_error"
 msgstr "HTTP error: {status_code}"
+msgid "fetch_webpage_unsupported_scheme"
+msgstr "Unsupported URL scheme, only HTTP/HTTPS links are supported"
 
 msgid "unit_convert_unsupported_units"
 msgstr "Cannot convert between {from_unit} and {to_unit}"
