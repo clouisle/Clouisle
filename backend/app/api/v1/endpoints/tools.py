@@ -206,8 +206,8 @@ def db_tool_to_out(tool: Tool, creator_name: str | None = None) -> ToolOut:
         else None,
         http_config=HttpConfigSchema(**tool.http_config) if tool.http_config else None,
         code_config=CodeConfigSchema(**tool.code_config) if tool.code_config else None,
-        database_config=DatabaseConfigSchema(**tool.database_config)
-        if tool.database_config
+        database_config=DatabaseConfigSchema(**getattr(tool, "database_config", None))
+        if getattr(tool, "database_config", None)
         else None,
         mcp_config=McpConfigSchema(**tool.mcp_config) if tool.mcp_config else None,
         team_id=tool.team_id,
@@ -235,8 +235,8 @@ def db_tool_to_detail(tool: Tool, creator_name: str | None = None) -> ToolDetail
         else None,
         http_config=HttpConfigSchema(**tool.http_config) if tool.http_config else None,
         code_config=CodeConfigSchema(**tool.code_config) if tool.code_config else None,
-        database_config=DatabaseConfigSchema(**tool.database_config)
-        if tool.database_config
+        database_config=DatabaseConfigSchema(**getattr(tool, "database_config", None))
+        if getattr(tool, "database_config", None)
         else None,
         mcp_config=McpConfigSchema(**tool.mcp_config) if tool.mcp_config else None,
         team_id=tool.team_id,
@@ -1265,7 +1265,7 @@ async def duplicate_tool(
         parameters=tool.parameters,
         http_config=tool.http_config,
         code_config=tool.code_config,
-        database_config=tool.database_config,
+        database_config=getattr(tool, "database_config", None) or {},
         mcp_config=tool.mcp_config,
         credentials=tool.credentials,
         is_enabled=False,  # 副本默认禁用
