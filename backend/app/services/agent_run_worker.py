@@ -660,7 +660,7 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
                 "sequence": item.sequence,
             }
             event_queue.put_nowait(("input_accepted", payload))
-            if item.kind == AgentRunInputKind.STEER:
+            if item.kind in (AgentRunInputKind.STEER, AgentRunInputKind.FOLLOW_UP):
                 if loop_context.working_history_override is None:
                     loop_context.working_history_override = []
 
