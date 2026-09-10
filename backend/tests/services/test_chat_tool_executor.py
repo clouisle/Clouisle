@@ -168,7 +168,7 @@ class TestChatToolExecutor:
 
     @pytest.mark.anyio
     async def test_execute_builtin_tool_uses_stored_credentials(self):
-        async def handler(query, credentials=None):
+        async def handler(query, credentials=None, **_kwargs):
             return {"query": query, "credentials": credentials}
 
         tool_info = ToolInfo(
