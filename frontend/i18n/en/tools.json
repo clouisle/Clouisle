@@ -35,6 +35,7 @@
       "shareButton": "Share Tool",
       "sharedWith": "Shared With",
       "noShares": "This tool has not been shared with any team yet",
+      "noAvailableTeams": "No other teams available to share with",
       "sharedBy": "Shared by {name}",
       "shareSuccess": "Tool shared successfully",
       "unshareSuccess": "Sharing removed",

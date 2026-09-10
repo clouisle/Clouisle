@@ -238,6 +238,22 @@ describe('platform capability component smoke coverage', () => {
     expect(html).toContain('Partner Team')
     expect(html).not.toContain('Current Team')
   })
+  test('renders empty state when no other teams are available to share with', () => {
+    const html = renderToString(
+      <ToolShareDialog
+        tool={baseTool as never}
+        open
+        onOpenChange={() => undefined}
+        currentTeamId="team-1"
+        availableTeams={[
+          { id: 'team-1', name: 'Current Team', role: 'owner' },
+        ] as never}
+      />
+    )
+
+    expect(html).toContain('noAvailableTeams')
+  })
+
 
   test('validates, shares, and unshares tools', async () => {
     const share = {
@@ -273,12 +289,13 @@ describe('platform capability component smoke coverage', () => {
     expect(renderer!.root.findAllByType('p').map((node) => node.children.join(''))).toContain('selectTeam')
 
     const selects = renderer!.root.findAll((node) => node.props.onValueChange)
-    const teamSelect = selects.find((node) => node.props.value === undefined)!
+    const teamSelect = selects.find((node) => node.props.value === '' || node.props.value === undefined)!
     const permissionSelect = selects.find((node) => node.props.value === 'read_only')!
     act(() => {
       teamSelect.props.onValueChange('team-3')
       permissionSelect.props.onValueChange('read_execute')
     })
+    expect(renderer!.root.findAllByType('button').map((node) => nodeText(node)).join(' ')).toContain('Review Team')
     await act(async () => shareButton().props.onClick())
     expect(toolsApi.shareTool).toHaveBeenCalledWith('tool-1', { team_id: 'team-3', permission: 'read_execute' })
     expect(onSuccess).toHaveBeenCalledTimes(1)

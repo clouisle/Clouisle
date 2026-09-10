@@ -35,6 +35,7 @@
       "shareButton": "共享工具",
       "sharedWith": "已共享给",
       "noShares": "该工具尚未共享给任何团队",
+      "noAvailableTeams": "暂无其他可共享的团队",
       "sharedBy": "共享者：{name}",
       "shareSuccess": "工具共享成功",
       "unshareSuccess": "已取消共享",

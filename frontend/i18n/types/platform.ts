@@ -467,6 +467,7 @@ export type PlatformMessages = {
         shareButton: string
         sharedWith: string
         noShares: string
+        noAvailableTeams: string
         sharedBy: string
         shareSuccess: string
         shareFailed: string

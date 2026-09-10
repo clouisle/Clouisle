@@ -453,7 +453,7 @@
         "mcpDesc": "Connect to MCP protocol servers"
       },
       "share": {
-        "title": "Share Tool",
+        "title": "Share",
         "description": "Share \"{toolName}\" with other teams",
         "selectTeam": "Select Team",
         "selectTeamPlaceholder": "Choose a team to share with",
@@ -467,6 +467,7 @@
         "shareButton": "Share",
         "sharedWith": "Shared With",
         "noShares": "Not shared with any teams yet",
+        "noAvailableTeams": "No other teams available to share with",
         "sharedBy": "Shared by {name}",
         "shareSuccess": "Tool shared successfully",
         "shareFailed": "Failed to share tool",

@@ -453,7 +453,7 @@
         "mcpDesc": "连接 MCP 协议服务器"
       },
       "share": {
-        "title": "共享工具",
+        "title": "共享",
         "description": "将 \"{toolName}\" 共享给其他团队",
         "selectTeam": "选择团队",
         "selectTeamPlaceholder": "选择要共享的团队",
@@ -467,6 +467,7 @@
         "shareButton": "共享",
         "sharedWith": "已共享给",
         "noShares": "尚未共享给任何团队",
+        "noAvailableTeams": "暂无其他可共享的团队",
         "sharedBy": "由 {name} 共享",
         "shareSuccess": "工具共享成功",
         "shareFailed": "工具共享失败",

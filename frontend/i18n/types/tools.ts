@@ -37,6 +37,7 @@ export type ToolsMessages = {
       shareButton: string
       sharedWith: string
       noShares: string
+      noAvailableTeams: string
       sharedBy: string
       shareSuccess: string
       unshareSuccess: string

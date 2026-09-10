@@ -203,7 +203,7 @@ export function ToolShareDialog({
             )}
 
             {/* 共享表单 */}
-            {availableTeamsToShare.length > 0 && (
+            {availableTeamsToShare.length > 0 ? (
               <div className="space-y-4 pb-4 border-b">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
@@ -268,6 +268,10 @@ export function ToolShareDialog({
                   <Share2 className="mr-2 h-4 w-4" />
                   {t('shareButton')}
                 </Button>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+                {t('noAvailableTeams')}
               </div>
             )}
 
