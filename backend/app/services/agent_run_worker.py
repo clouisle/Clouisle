@@ -241,6 +241,7 @@ class MicroBatchingCollector:
         self.batch_deadline: float | None = None
 
     async def flush(self) -> None:
+        """Flush currently buffered delta tokens to the event stream."""
         if not self.batch_type or not self.batch_deltas:
             self.batch_type = None
             self.batch_deltas = []
@@ -262,6 +263,7 @@ class MicroBatchingCollector:
         )
 
     async def run_loop(self) -> None:
+        """Continuously process queued events and flush batches within the time window."""
         loop = asyncio.get_running_loop()
         while True:
             timeout: float | None = None
