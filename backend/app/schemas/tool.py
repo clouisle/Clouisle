@@ -345,7 +345,7 @@ class ToolUpdateInput(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
     display_name: str | None = Field(default=None, min_length=1, max_length=100)
-    description: str | None = Field(default=None, min_length=1)
+    description: str | None = Field(default=None)
     icon: str | None = None
     category: str | None = Field(default=None, max_length=100)
     custom_type: CustomToolType | None = None

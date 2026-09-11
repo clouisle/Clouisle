@@ -419,6 +419,11 @@ export type SiteSettingsMessages = {
     modelEndpointAllowlistOrigins: string
     modelEndpointAllowlistPlaceholder: string
     modelEndpointAllowlistHint: string
+    ssrfAllowedTargets: string
+    ssrfAllowedTargetsDescription: string
+    ssrfAllowedTargetsEntries: string
+    ssrfAllowedTargetsPlaceholder: string
+    ssrfAllowedTargetsHint: string
     loginSecurity: string
     loginSecurityDescription: string
     maxLoginAttempts: string

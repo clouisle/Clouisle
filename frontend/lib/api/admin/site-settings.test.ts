@@ -91,8 +91,8 @@ describe('siteSettingsApi requests', () => {
   it('loads security branches and category defaults from exact routes', async () => {
     const get = spyOn(api, 'get').mockResolvedValue(response({
       model_endpoint_allowlist: [],
+      ssrf_allowed_targets: ['10.0.0.0/16'],
     }))
-
     try {
       const security = await siteSettingsApi.getSecurity()
       expect(security).toMatchObject({
@@ -110,7 +110,8 @@ describe('siteSettingsApi requests', () => {
       expect(await siteSettingsApi.getFeishu()).toMatchObject({ feishu_enabled: false, feishu_notification_type: 'webhook' })
       expect(await siteSettingsApi.getWebhook()).toMatchObject({ webhook_enabled: false, webhook_method: 'POST', webhook_headers: {} })
       expect(await siteSettingsApi.getSlack()).toEqual({ slack_enabled: false, slack_webhook_url: '' })
-
+      expect(security).toHaveProperty('model_endpoint_allowlist', [])
+      expect(security).toHaveProperty('ssrf_allowed_targets', ['10.0.0.0/16'])
       expect(get.mock.calls.map(([route]) => route)).toEqual([
         '/admin/site-settings?category=security',
         '/admin/site-settings?category=sso',

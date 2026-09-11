@@ -70,6 +70,7 @@ export default function SiteSettingsSecurityPage() {
     force_password_change_first_login: false,
     require_totp: false,
     model_endpoint_allowlist: [],
+    ssrf_allowed_targets: [],
   })
 
   const errorPathMap = React.useMemo(
@@ -96,6 +97,7 @@ export default function SiteSettingsSecurityPage() {
       'max_login_attempts',
       'lockout_duration_minutes',
       'model_endpoint_allowlist',
+      'ssrf_allowed_targets',
     ]),
     [fieldErrors]
   )
@@ -142,6 +144,7 @@ export default function SiteSettingsSecurityPage() {
         force_password_change_first_login: data.force_password_change_first_login ?? false,
         require_totp: data.require_totp ?? false,
         model_endpoint_allowlist: data.model_endpoint_allowlist,
+        ssrf_allowed_targets: data.ssrf_allowed_targets ?? [],
       })
       setSettingsLoaded(true)
     } catch (error) {
@@ -199,18 +202,28 @@ export default function SiteSettingsSecurityPage() {
       const modelEndpointAllowlist = Array.from(new Set(
         settings.model_endpoint_allowlist.map((entry) => entry.trim()).filter(Boolean)
       ))
+      const ssrfAllowedTargets = Array.from(new Set(
+        settings.ssrf_allowed_targets.map((entry) => entry.trim()).filter(Boolean)
+      ))
       const updatedSettings = await siteSettingsApi.updateSecurity({
         ...settings,
         model_endpoint_allowlist: modelEndpointAllowlist,
+        ssrf_allowed_targets: ssrfAllowedTargets,
       })
       const persistedAllowlist = Array.isArray(updatedSettings.model_endpoint_allowlist)
         ? updatedSettings.model_endpoint_allowlist.filter(
             (entry): entry is string => typeof entry === 'string'
           )
         : modelEndpointAllowlist
+      const persistedSsrfTargets = Array.isArray(updatedSettings.ssrf_allowed_targets)
+        ? updatedSettings.ssrf_allowed_targets.filter(
+            (entry): entry is string => typeof entry === 'string'
+          )
+        : ssrfAllowedTargets
       setSettings((current) => ({
         ...current,
         model_endpoint_allowlist: persistedAllowlist,
+        ssrf_allowed_targets: persistedSsrfTargets,
       }))
       toast.success(t('saveSuccess'))
     } catch (error) {
@@ -615,6 +628,32 @@ export default function SiteSettingsSecurityPage() {
           <FieldError>{fieldErrors.model_endpoint_allowlist}</FieldError>
         </CardContent>
       </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('ssrfAllowedTargets')}</CardTitle>
+          <CardDescription>{t('ssrfAllowedTargetsDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Label htmlFor="ssrfAllowedTargets">{t('ssrfAllowedTargetsEntries')}</Label>
+          <Textarea
+            id="ssrfAllowedTargets"
+            value={settings.ssrf_allowed_targets.join('\n')}
+            onChange={(event) => updateSetting(
+              'ssrf_allowed_targets',
+              event.target.value.split('\n')
+            )}
+            placeholder={t('ssrfAllowedTargetsPlaceholder')}
+            rows={6}
+            disabled={!canUpdate}
+            aria-invalid={!!fieldErrors.ssrf_allowed_targets}
+          />
+          <p className="text-sm text-muted-foreground">
+            {t('ssrfAllowedTargetsHint')}
+          </p>
+          <FieldError>{fieldErrors.ssrf_allowed_targets}</FieldError>
+        </CardContent>
+      </Card>
+
 
       <Card>
         <CardHeader>

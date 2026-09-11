@@ -5,8 +5,10 @@
 import asyncio
 import logging
 from typing import Any
-
-from app.core.network_security import validate_database_config
+from app.core.network_security import (
+    get_ssrf_allowed_targets,
+    validate_database_config,
+)
 from app.schemas.response import BusinessError
 from .db_common import sanitize_value, validate_readonly_sql
 from .postgresql import _parse_pg_config, _pg_schema, _pg_query
@@ -27,8 +29,12 @@ async def test_database_connection(
 ) -> dict[str, Any]:
     """测试数据库连通性"""
     try:
+        allowlist = await get_ssrf_allowed_targets()
         await asyncio.to_thread(
-            validate_database_config, db_config, getaddrinfo=getaddrinfo
+            validate_database_config,
+            db_config,
+            getaddrinfo=getaddrinfo,
+            allowlist=allowlist,
         )
     except BusinessError as exc:
         logger.warning(

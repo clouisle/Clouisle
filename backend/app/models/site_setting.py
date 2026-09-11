@@ -531,6 +531,13 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "public": False,
         "desc": "model_endpoint_allowlist_description",
     },
+    "ssrf_allowed_targets": {
+        "value": [],
+        "type": "json",
+        "category": "security",
+        "public": False,
+        "desc": "ssrf_allowed_targets_description",
+    },
     "min_password_length": {
         "value": 8,
         "type": "int",

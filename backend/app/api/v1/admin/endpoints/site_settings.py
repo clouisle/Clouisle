@@ -33,6 +33,10 @@ from app.core.model_endpoint_policy import (
     ModelEndpointPolicyError,
     normalize_model_endpoint_allowlist,
 )
+from app.core.network_security import (
+    SSRF_ALLOWED_TARGETS_SETTING,
+    normalize_ssrf_allowlist,
+)
 from app.services.audit_log import AuditLogService
 from app.tasks.audit_log import archive_old_audit_logs
 
@@ -140,6 +144,16 @@ async def _validate_setting_value(key: str, value: object) -> None:
         try:
             normalized_allowlist = normalize_model_endpoint_allowlist(value)
         except ModelEndpointPolicyError as exc:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key=exc.msg_key,
+            ) from exc
+        cast(list, value)[:] = normalized_allowlist
+        return
+    if key == SSRF_ALLOWED_TARGETS_SETTING:
+        try:
+            normalized_allowlist = normalize_ssrf_allowlist(value)
+        except BusinessError as exc:
             raise BusinessError(
                 code=ResponseCode.VALIDATION_ERROR,
                 msg_key=exc.msg_key,

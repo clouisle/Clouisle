@@ -565,12 +565,17 @@ class DocumentProcessor:
             Tuple of (extracted_text, metadata)
         """
         import asyncio
-        from app.core.network_security import validate_external_http_url
+        from app.core.network_security import (
+            get_ssrf_allowed_targets,
+            validate_external_http_url,
+        )
 
+        allowlist = await get_ssrf_allowed_targets()
         # Validate destination URL against SSRF (private IPs, loopback, metadata services)
-        validated_url = await asyncio.to_thread(validate_external_http_url, url)
+        validated_url = await asyncio.to_thread(
+            validate_external_http_url, url, allowlist=allowlist
+        )
         metadata: dict[str, Any] = {"source_url": str(validated_url)}
-
         try:
             # Use MarkItDown for URL fetching (supports YouTube, HTML, etc.)
             import requests
@@ -578,7 +583,7 @@ class DocumentProcessor:
 
             class _SSRFProtectedSession(requests.Session):
                 def send(self, request, **kwargs):
-                    validate_external_http_url(request.url)
+                    validate_external_http_url(request.url, allowlist=allowlist)
                     return super().send(request, **kwargs)
 
             session = _SSRFProtectedSession()
@@ -600,7 +605,11 @@ class DocumentProcessor:
             import httpx
 
             async def _validate_httpx_request(request: httpx.Request) -> None:
-                await asyncio.to_thread(validate_external_http_url, str(request.url))
+                await asyncio.to_thread(
+                    validate_external_http_url,
+                    str(request.url),
+                    allowlist=allowlist,
+                )
 
             async with httpx.AsyncClient(
                 follow_redirects=True,

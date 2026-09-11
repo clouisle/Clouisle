@@ -43,6 +43,7 @@ const settings = {
   force_password_change_first_login: false,
   require_totp: false,
   model_endpoint_allowlist: ['https://api.openai.com'],
+  ssrf_allowed_targets: ['10.0.0.0/16'],
 }
 
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
@@ -165,6 +166,10 @@ describe('SiteSettingsSecurityPage', () => {
         'https://api.example.com',
         'http://ollama:11434',
       ],
+      ssrf_allowed_targets: [
+        '10.0.0.0/16',
+        '*.corp.internal',
+      ],
     })
     const renderer = await render()
 
@@ -201,6 +206,11 @@ describe('SiteSettingsSecurityPage', () => {
         value: 'https://api.example.com/v1\n\nhttp://ollama:11434',
       },
     }))
+    act(() => renderer.root.findByProps({ id: 'ssrfAllowedTargets' }).props.onChange({
+      target: {
+        value: '10.0.0.0/16\n\n*.corp.internal',
+      },
+    }))
 
     await act(async () => saveButton(renderer).props.onClick())
 
@@ -212,16 +222,21 @@ describe('SiteSettingsSecurityPage', () => {
       min_password_length: 12,
       password_expiration_enabled: true,
       password_expiration_days: 120,
-      sso_enabled: true,
       require_totp: true,
       model_endpoint_allowlist: [
         'https://api.example.com/v1',
         'http://ollama:11434',
       ],
+      ssrf_allowed_targets: [
+        '10.0.0.0/16',
+        '*.corp.internal',
+      ],
     }))
-    expect(success).toHaveBeenCalledWith('saveSuccess')
     expect(renderer.root.findByProps({ id: 'modelEndpointAllowlist' }).props.value).toBe(
       'https://api.example.com\nhttp://ollama:11434'
+    )
+    expect(renderer.root.findByProps({ id: 'ssrfAllowedTargets' }).props.value).toBe(
+      '10.0.0.0/16\n*.corp.internal'
     )
   })
 

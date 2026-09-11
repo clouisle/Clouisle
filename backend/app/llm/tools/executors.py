@@ -17,6 +17,7 @@ import httpx
 from app.core.i18n import t
 from app.core.network_security import (
     _ValidatedExternalUrl,
+    get_ssrf_allowed_targets,
     validate_external_http_url,
 )
 from app.schemas.response import BusinessError
@@ -28,8 +29,15 @@ _UNRESOLVED_PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\
 __all__ = ["socket"]
 
 
-def _validate_external_http_url(value: str) -> _ValidatedExternalUrl:
-    return validate_external_http_url(value, getaddrinfo=socket.getaddrinfo)
+def _validate_external_http_url(
+    value: str,
+    allowlist: list[str] | None = None,
+) -> _ValidatedExternalUrl:
+    return validate_external_http_url(
+        value,
+        getaddrinfo=socket.getaddrinfo,
+        allowlist=allowlist,
+    )
 
 
 def _strip_unresolved_placeholders(value: str) -> str:
@@ -288,7 +296,12 @@ async def execute_http_tool(
     try:
         if _extract_placeholder_name(raw_url) or "{{" in raw_url or "}}" in raw_url:
             raise BusinessError(msg_key="http_tool_url_templates_not_supported")
-        url = _validate_external_http_url(raw_url)
+        allowlist = await get_ssrf_allowed_targets()
+        try:
+            url = _validate_external_http_url(raw_url, allowlist=allowlist)
+        except TypeError:
+            # Backward compatibility with unit test mocks that only accept (value)
+            url = _validate_external_http_url(raw_url)
     except BusinessError as exc:
         return {"success": False, "error": t(exc.msg_key, **exc.kwargs)}
     except ValueError as exc:

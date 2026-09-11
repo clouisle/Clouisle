@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
+import { toast } from 'sonner'
 import { Loader2, Plus, Trash2, ChevronDown } from 'lucide-react'
 import {
   Dialog,
@@ -247,7 +248,9 @@ function getHttpParamTypeLabel(t: (key: string) => string, type: string): string
 const TOOL_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
 
 const HTTP_TOOL_ERROR_PATH_MAP = {
+  name: 'name',
   display_name: 'displayName',
+  description: 'description',
   'http_config.url': 'url',
   'http_config.body_template': 'bodyTemplate',
   parameters: 'parameters',
@@ -407,12 +410,14 @@ export function HttpToolDialog({
       }
 
       await onSave(data)
-    } catch (error) {
-      const errors = mapValidationErrors(normalizeValidationErrors(error), HTTP_TOOL_ERROR_PATH_MAP)
+    } catch (error: unknown) {
+      const normalized = normalizeValidationErrors(error)
+      const errors = mapValidationErrors(normalized, HTTP_TOOL_ERROR_PATH_MAP)
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)
       } else {
-        throw error
+        const message = error instanceof Error ? error.message : tCommon('error')
+        toast.error(message)
       }
     } finally {
       setIsLoading(false)
@@ -465,8 +470,7 @@ export function HttpToolDialog({
     setPairs(newPairs)
     setFieldErrors((prev) => clearValidationError(prev, errorKey))
   }
-
-  const summaryEntries = getValidationSummaryEntries(fieldErrors, ['name', 'displayName', 'url', 'bodyTemplate', 'parameters', 'formFields', 'headers', 'queryParams', 'timeout', 'contentType'])
+  const summaryEntries = getValidationSummaryEntries(fieldErrors, ['name', 'displayName', 'description', 'url', 'bodyTemplate', 'parameters', 'formFields', 'headers', 'queryParams', 'timeout', 'contentType'])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -564,8 +568,13 @@ export function HttpToolDialog({
                 id="description"
                 placeholder={t('form.descriptionPlaceholder')}
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => {
+                  setDescription(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'description'))
+                }}
+                aria-invalid={!!fieldErrors.description}
               />
+              <FieldError>{fieldErrors.description}</FieldError>
             </div>
             <div className="space-y-2">
               <Label htmlFor="category">{t('form.category')}</Label>
