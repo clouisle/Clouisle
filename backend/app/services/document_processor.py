@@ -819,6 +819,11 @@ def _is_markdown_text(text: str) -> bool:
     return has_table or has_fence or has_heading
 
 
+_TABLE_DIVIDER_RE = re.compile(
+    r"^[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)+\|?[ \t]*$"
+)
+
+
 def _extract_markdown_blocks(text: str) -> list[dict[str, Any]]:
     """
     Parse Markdown text into structured blocks with section hierarchy.
@@ -902,7 +907,7 @@ def _extract_markdown_blocks(text: str) -> list[dict[str, Any]]:
         if (
             "|" in stripped
             and i + 1 < n
-            and re.match(r"^\s*\|?\s*:?-+:?\s*(\|?\s*:?-+:?\s*)+\|?\s*$", lines[i + 1])
+            and bool(_TABLE_DIVIDER_RE.match(lines[i + 1]))
         ):
             header_line = line
             divider_line = lines[i + 1]
@@ -974,9 +979,7 @@ def _extract_markdown_blocks(text: str) -> list[dict[str, Any]]:
                 or (
                     "|" in cur_stripped
                     and i + 1 < n
-                    and re.match(
-                        r"^\s*\|?\s*:?-+:?\s*(\|?\s*:?-+:?\s*)+\|?\s*$", lines[i + 1]
-                    )
+                    and bool(_TABLE_DIVIDER_RE.match(lines[i + 1]))
                 )
                 or re.match(r"^(\s*(\*|-|\+|\d+\.)\s+)", cur)
             ):
@@ -1093,6 +1096,7 @@ def chunk_markdown_ast(
             # Large table: split row by row, duplicating headers for every sub-chunk
             sub_rows: list[str] = []
             sub_len = header_len
+            table_part_index = 0
             for r in rows:
                 r_len = len(r) + 1
                 if sub_rows and (sub_len + r_len > chunk_size):
@@ -1107,15 +1111,16 @@ def chunk_markdown_ast(
                             "metadata": {
                                 "section": b_section,
                                 "chunk_type": "table",
-                                "is_table_continuation": len(chunks) > 0,
+                                "is_table_continuation": table_part_index > 0,
                             }
                             if b_section
                             else {
                                 "chunk_type": "table",
-                                "is_table_continuation": len(chunks) > 0,
+                                "is_table_continuation": table_part_index > 0,
                             },
                         }
                     )
+                    table_part_index += 1
                     sub_rows = []
                     sub_len = header_len
                 sub_rows.append(r)
@@ -1133,12 +1138,16 @@ def chunk_markdown_ast(
                         "metadata": {
                             "section": b_section,
                             "chunk_type": "table",
-                            "is_table_continuation": True,
+                            "is_table_continuation": table_part_index > 0,
                         }
                         if b_section
-                        else {"chunk_type": "table", "is_table_continuation": True},
+                        else {
+                            "chunk_type": "table",
+                            "is_table_continuation": table_part_index > 0,
+                        },
                     }
                 )
+                table_part_index += 1
             continue
 
         # Code block handling

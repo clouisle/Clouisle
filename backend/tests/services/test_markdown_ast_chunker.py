@@ -209,3 +209,24 @@ def test_chunk_text_dispatches_markdown():
     chunks = chunk_text(markdown, chunk_size=500)
     assert len(chunks) == 1
     assert chunks[0].get("metadata") is not None
+
+
+def test_table_continuation_flag_with_preceding_text():
+    markdown = """# Introduction
+This is some introductory text before the table.
+
+| Col 1 | Col 2 |
+|---|---|
+| Row 1 A | Row 1 B |
+| Row 2 A | Row 2 B |
+| Row 3 A | Row 3 B |
+| Row 4 A | Row 4 B |
+"""
+    chunks = chunk_markdown_ast(markdown, chunk_size=70, chunk_overlap=0)
+    table_chunks = [c for c in chunks if c["metadata"].get("chunk_type") == "table"]
+    assert len(table_chunks) >= 2
+    # First table chunk must NOT be marked as continuation even though preceding text exists
+    assert table_chunks[0]["metadata"]["is_table_continuation"] is False
+    # Subsequent table chunks MUST be marked as continuation
+    for tc in table_chunks[1:]:
+        assert tc["metadata"]["is_table_continuation"] is True
