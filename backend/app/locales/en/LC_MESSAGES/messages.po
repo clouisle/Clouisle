@@ -2661,6 +2661,18 @@ msgstr "HTTP URL host is not allowed"
 msgid "http_tool_url_host_cannot_be_resolved"
 msgstr "HTTP URL host cannot be resolved"
 
+msgid "database_connection_failed"
+msgstr "Database connection failed"
+
+msgid "database_host_cannot_be_resolved"
+msgstr "Database host cannot be resolved"
+
+msgid "database_host_invalid"
+msgstr "Invalid database host or URL"
+
+msgid "database_host_not_allowed"
+msgstr "Database host is not allowed"
+
 msgid "code_tool_execution_failed"
 msgstr "Code tool execution failed"
 

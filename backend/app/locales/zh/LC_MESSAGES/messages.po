@@ -2660,6 +2660,18 @@ msgstr "不允许访问该 HTTP URL 主机"
 msgid "http_tool_url_host_cannot_be_resolved"
 msgstr "无法解析 HTTP URL 主机"
 
+msgid "database_connection_failed"
+msgstr "数据库连接失败"
+
+msgid "database_host_cannot_be_resolved"
+msgstr "无法解析数据库主机"
+
+msgid "database_host_invalid"
+msgstr "数据库主机或 URL 无效"
+
+msgid "database_host_not_allowed"
+msgstr "不允许访问该数据库主机"
+
 msgid "code_tool_execution_failed"
 msgstr "代码工具执行失败"
 

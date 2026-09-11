@@ -610,25 +610,39 @@ async def test_database_connection_mongodb_and_unsupported():
     client = MagicMock()
     client.__getitem__.return_value = db
 
-    with patch(
-        "app.llm.tools.builtin.db_executor._get_mongo_client_and_db",
-        return_value=(client, db),
+    with (
+        patch(
+            "app.llm.tools.builtin.db_executor._get_mongo_client_and_db",
+            return_value=(client, db),
+        ),
+        patch(
+            "app.llm.tools.builtin.db_executor.validate_database_config",
+            return_value=None,
+        ),
     ):
         res = await run_test_connection(
             {"db_type": "mongodb", "url": "mongodb://localhost:27017"}
         )
         assert res["success"] is True
         assert res["message"] == "MongoDB connection successful"
-
-    unsupported = await run_test_connection({"db_type": "couchdb"})
-    assert unsupported["success"] is False
-    assert "unsupported_db_type" in unsupported["error"]
-
     with patch(
-        "app.llm.tools.builtin.db_executor._get_mongo_client_and_db",
-        side_effect=Exception("connection refused"),
+        "app.llm.tools.builtin.db_executor.validate_database_config", return_value=None
     ):
-        err = await run_test_connection({"db_type": "mongodb"})
+        unsupported = await run_test_connection({"db_type": "couchdb"})
+        assert unsupported["success"] is False
+        assert "unsupported_db_type" in unsupported["error"]
+
+    with (
+        patch(
+            "app.llm.tools.builtin.db_executor._get_mongo_client_and_db",
+            side_effect=Exception("connection refused"),
+        ),
+        patch(
+            "app.llm.tools.builtin.db_executor.validate_database_config",
+            return_value=None,
+        ),
+    ):
+        err = await run_test_connection({"db_type": "mongodb", "host": "1.1.1.1"})
         assert err["success"] is False
         assert "connection refused" in err["error"]
 

@@ -6,6 +6,8 @@ import asyncio
 import logging
 from typing import Any
 
+from app.core.network_security import validate_database_config
+from app.schemas.response import BusinessError
 from .db_common import sanitize_value, validate_readonly_sql
 from .postgresql import _parse_pg_config, _pg_schema, _pg_query
 from .mysql_db import _parse_mysql_config, _mysql_schema, _mysql_query
@@ -19,8 +21,21 @@ from .mongo_db import (
 logger = logging.getLogger(__name__)
 
 
-async def test_database_connection(db_config: dict[str, Any]) -> dict[str, Any]:
+async def test_database_connection(
+    db_config: dict[str, Any],
+    getaddrinfo=None,
+) -> dict[str, Any]:
     """测试数据库连通性"""
+    try:
+        await asyncio.to_thread(
+            validate_database_config, db_config, getaddrinfo=getaddrinfo
+        )
+    except BusinessError as exc:
+        logger.warning(
+            "Database connection test blocked by SSRF check: %s", exc.msg_key
+        )
+        return {"success": False, "error": exc.msg_key}
+
     db_type = str(db_config.get("db_type") or "").strip().lower()
     timeout = float(db_config.get("timeout") or 5.0)
 

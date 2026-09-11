@@ -18,7 +18,13 @@ async def test_database_connection_pg_mocked():
     mock_conn.close = AsyncMock()
     mock_conn.fetchrow = AsyncMock(return_value={"ok": 1})
 
-    with patch("asyncpg.connect", new_callable=AsyncMock, return_value=mock_conn):
+    with (
+        patch("asyncpg.connect", new_callable=AsyncMock, return_value=mock_conn),
+        patch(
+            "app.llm.tools.builtin.db_executor.validate_database_config",
+            return_value=None,
+        ),
+    ):
         res = await check_db_conn(
             {
                 "db_type": "postgresql",
@@ -42,7 +48,13 @@ async def test_database_connection_mysql_mocked():
     mock_cursor.fetchone.return_value = [1]
     mock_conn.cursor.return_value = mock_cursor
 
-    with patch("asyncmy.connect", new_callable=AsyncMock, return_value=mock_conn):
+    with (
+        patch("asyncmy.connect", new_callable=AsyncMock, return_value=mock_conn),
+        patch(
+            "app.llm.tools.builtin.db_executor.validate_database_config",
+            return_value=None,
+        ),
+    ):
         res = await check_db_conn(
             {
                 "db_type": "mysql",
@@ -65,6 +77,10 @@ async def test_database_connection_redis_mocked():
     with (
         patch("redis.asyncio.Redis", return_value=mock_client),
         patch("redis.asyncio.from_url", return_value=mock_client),
+        patch(
+            "app.llm.tools.builtin.db_executor.validate_database_config",
+            return_value=None,
+        ),
     ):
         res = await check_db_conn(
             {
@@ -84,7 +100,13 @@ async def test_database_connection_mongo_mocked():
     mock_db.command = AsyncMock(return_value={"ok": 1.0})
     mock_client.__getitem__.return_value = mock_db
 
-    with patch("motor.motor_asyncio.AsyncIOMotorClient", return_value=mock_client):
+    with (
+        patch("motor.motor_asyncio.AsyncIOMotorClient", return_value=mock_client),
+        patch(
+            "app.llm.tools.builtin.db_executor.validate_database_config",
+            return_value=None,
+        ),
+    ):
         res = await check_db_conn(
             {
                 "db_type": "mongodb",
@@ -138,3 +160,44 @@ async def test_execute_database_tool_pg_mocked():
                 tool=tool,
                 arguments={"action": "query", "sql": "DROP TABLE users"},
             )
+
+
+@pytest.mark.asyncio
+async def test_database_connection_ssrf_rejection_without_mock():
+    # Verifies real SSRF validation is enforced when not bypassed
+    res = await check_db_conn(
+        {
+            "db_type": "postgresql",
+            "host": "localhost",
+            "port": 5432,
+        }
+    )
+    assert res["success"] is False
+    assert res["error"] == "database_host_not_allowed"
+
+    res_ip = await check_db_conn(
+        {
+            "db_type": "mysql",
+            "host": "127.0.0.1",
+            "port": 3306,
+        }
+    )
+    assert res_ip["success"] is False
+    assert res_ip["error"] == "database_host_not_allowed"
+
+    res_url = await check_db_conn(
+        {
+            "db_type": "redis",
+            "url": "redis://:secret@10.0.0.1:6379/0",
+        }
+    )
+    assert res_url["success"] is False
+    assert res_url["error"] == "database_host_not_allowed"
+
+    res_empty = await check_db_conn(
+        {
+            "db_type": "mongodb",
+        }
+    )
+    assert res_empty["success"] is False
+    assert res_empty["error"] == "database_host_invalid"

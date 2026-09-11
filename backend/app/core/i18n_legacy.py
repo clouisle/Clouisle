@@ -1109,6 +1109,22 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "HTTP request failed with status {status_code}",
         "zh": "HTTP 请求失败，状态码：{status_code}",
     },
+    "database_connection_failed": {
+        "en": "Database connection failed",
+        "zh": "数据库连接失败",
+    },
+    "database_host_cannot_be_resolved": {
+        "en": "Database host cannot be resolved",
+        "zh": "无法解析数据库主机",
+    },
+    "database_host_invalid": {
+        "en": "Invalid database host or URL",
+        "zh": "数据库主机或 URL 无效",
+    },
+    "database_host_not_allowed": {
+        "en": "Database host is not allowed",
+        "zh": "不允许访问该数据库主机",
+    },
     "http_tool_url_host_cannot_be_resolved": {
         "en": "HTTP URL host cannot be resolved",
         "zh": "无法解析 HTTP URL 主机",

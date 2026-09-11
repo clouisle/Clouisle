@@ -322,3 +322,38 @@ async def test_runtime_helpers_handle_missing_metadata_and_schema_passthrough():
 
     assert tools._runtime_duration_ms(SimpleNamespace()) is None
     assert tools._serialize_runtime_artifacts([artifact])[0] is artifact
+
+
+@pytest.mark.anyio
+async def test_database_test_connection_endpoint(monkeypatch, user):
+    from app.schemas.tool import DatabaseConfigSchema
+
+    # Successful connection
+    req = DatabaseConfigSchema(db_type="postgresql", host="db.example.com", port=5432)
+    mock_test = AsyncMock(return_value={"success": True, "ping": 1})
+    monkeypatch.setattr(
+        "app.llm.tools.builtin.db_executor.test_database_connection", mock_test
+    )
+
+    resp = await tools.test_db_connection(req, current_user=user)
+    assert data(resp)["success"] is True
+
+    # Failed connection with custom error
+    mock_fail = AsyncMock(
+        return_value={"success": False, "error": "database_host_not_allowed"}
+    )
+    monkeypatch.setattr(
+        "app.llm.tools.builtin.db_executor.test_database_connection", mock_fail
+    )
+    with pytest.raises(BusinessError) as exc_info:
+        await tools.test_db_connection(req, current_user=user)
+    assert exc_info.value.msg_key == "database_host_not_allowed"
+
+    # Failed connection fallback to default msg_key
+    mock_fallback = AsyncMock(return_value={"success": False})
+    monkeypatch.setattr(
+        "app.llm.tools.builtin.db_executor.test_database_connection", mock_fallback
+    )
+    with pytest.raises(BusinessError) as exc_info2:
+        await tools.test_db_connection(req, current_user=user)
+    assert exc_info2.value.msg_key == "database_connection_failed"
