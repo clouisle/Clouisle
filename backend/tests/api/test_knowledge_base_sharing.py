@@ -635,3 +635,47 @@ async def test_list_knowledge_bases_with_shared_and_get_kb():
             current_user=user,
         )
     assert len(res_no_team_shared["data"]["items"]) == 2
+
+    # 6. kb_with_model_info error fallback branch
+    with (
+        patch.object(
+            kb_endpoints, "check_kb_access", new=AsyncMock(return_value=shared_kb)
+        ),
+        patch.object(
+            kb_endpoints, "get_embedding_model_info", new=AsyncMock(return_value=None)
+        ),
+        patch.object(
+            kb_endpoints, "get_rerank_model_info", new=AsyncMock(return_value=None)
+        ),
+        patch.object(
+            kb_endpoints.KnowledgeBaseShare,
+            "filter",
+            side_effect=RuntimeError("db error"),
+        ),
+    ):
+        err_res = await kb_endpoints.get_knowledge_base(
+            kb_id=shared_kb.id,
+            team_id=caller_team_id,
+            current_user=user,
+        )
+    assert err_res["data"]["shared_with_count"] == 0
+    assert err_res["data"]["share_permission"] == KnowledgeBaseSharePermission.READ_ONLY
+
+    # 7. unshare non-existent share error branch
+    with (
+        patch.object(
+            kb_endpoints.KnowledgeBase, "filter", return_value=Query(owned_kb)
+        ),
+        patch.object(kb_endpoints, "check_team_access", new=AsyncMock()),
+        patch.object(
+            kb_endpoints.KnowledgeBaseShare, "filter", return_value=Query(None)
+        ),
+        pytest.raises(BusinessError) as unshare_exc,
+    ):
+        await kb_endpoints.unshare_knowledge_base(
+            kb_id=owned_kb.id,
+            team_id=uuid4(),
+            request=SimpleNamespace(),
+            current_user=user,
+        )
+    assert unshare_exc.value.code == ResponseCode.NOT_FOUND
