@@ -120,6 +120,7 @@ class KnowledgeBase(models.Model):
 
     # Relations
     documents: fields.ReverseRelation["Document"]
+    shares: fields.ReverseRelation["KnowledgeBaseShare"]
 
     class Meta:
         table = "knowledge_bases"
@@ -262,3 +263,66 @@ class DocumentChunk(models.Model):
 
     def __str__(self):
         return f"Chunk {self.chunk_index} of {self.document_id}"
+
+
+class KnowledgeBaseSharePermission(str, Enum):
+    """Knowledge base sharing permission level"""
+
+    READ_ONLY = "read_only"  # Can view and search the knowledge base
+
+
+class KnowledgeBaseShare(models.Model):
+    """
+    Knowledge Base sharing relationship between teams.
+
+    Allows a knowledge base owned by one team to be shared with other teams.
+    """
+
+    id = fields.UUIDField(primary_key=True)
+
+    # The knowledge base being shared
+    knowledge_base: fields.ForeignKeyRelation["KnowledgeBase"] = fields.ForeignKeyField(
+        "models.KnowledgeBase",
+        related_name="shares",
+        on_delete=fields.CASCADE,
+        description="Knowledge base being shared",
+    )
+    knowledge_base_id: UUID  # type: ignore[assignment]
+
+    # The team receiving access
+    shared_with_team: fields.ForeignKeyRelation["Team"] = fields.ForeignKeyField(
+        "models.Team",
+        related_name="shared_knowledge_bases",
+        on_delete=fields.CASCADE,
+        description="Team receiving access",
+    )
+    shared_with_team_id: UUID  # type: ignore[assignment]
+
+    # Permission level
+    permission = fields.CharEnumField(
+        KnowledgeBaseSharePermission,
+        default=KnowledgeBaseSharePermission.READ_ONLY,
+        description="Permission level",
+    )
+
+    # Audit
+    shared_by: fields.ForeignKeyRelation["User"] | None = fields.ForeignKeyField(
+        "models.User",
+        related_name="kb_shares_created",
+        on_delete=fields.SET_NULL,
+        null=True,
+        description="User who shared the knowledge base",
+    )
+    shared_by_id: UUID | None  # type: ignore[assignment]
+
+    shared_at = fields.DatetimeField(
+        auto_now_add=True, description="When the knowledge base was shared"
+    )
+
+    class Meta:
+        table = "knowledge_base_shares"
+        unique_together = [("knowledge_base", "shared_with_team")]
+        ordering = ["-shared_at"]
+
+    def __str__(self):
+        return f"KB share: {self.knowledge_base_id} -> Team {self.shared_with_team_id}"

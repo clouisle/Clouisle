@@ -2418,6 +2418,18 @@ msgstr "Tool shared successfully"
 msgid "tool_unshared_successfully"
 msgstr "Tool sharing revoked successfully"
 
+msgid "kb_share_not_found"
+msgstr "Knowledge base share not found"
+
+msgid "kb_already_shared"
+msgstr "Knowledge base already shared with this team"
+
+msgid "kb_shared_successfully"
+msgstr "Knowledge base shared successfully"
+
+msgid "kb_unshared_successfully"
+msgstr "Knowledge base sharing revoked successfully"
+
 msgid "tool_update_memory_entity"
 msgstr "Update Memory Entity"
 

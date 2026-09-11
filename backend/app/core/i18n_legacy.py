@@ -2742,6 +2742,22 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Tool sharing revoked successfully",
         "zh": "工具共享已取消",
     },
+    "kb_share_not_found": {
+        "en": "Knowledge base share not found",
+        "zh": "知识库共享记录不存在",
+    },
+    "kb_already_shared": {
+        "en": "Knowledge base already shared with this team",
+        "zh": "该知识库已共享给该团队",
+    },
+    "kb_shared_successfully": {
+        "en": "Knowledge base shared successfully",
+        "zh": "知识库共享成功",
+    },
+    "kb_unshared_successfully": {
+        "en": "Knowledge base sharing revoked successfully",
+        "zh": "知识库共享已取消",
+    },
     "tool_update_memory_entity": {"en": "Update Memory Entity", "zh": "更新记忆实体"},
     "tool_updated": {"en": "Tool updated successfully", "zh": "工具更新成功"},
     "totp_already_enabled": {
