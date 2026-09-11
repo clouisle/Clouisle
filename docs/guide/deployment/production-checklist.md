@@ -74,7 +74,8 @@ Use this checklist to verify:
 - [ ] Worker processes configured based on CPU cores
 - [ ] Database connection pool sized correctly
 - [ ] Redis max memory and eviction policy set
-- [ ] File upload size limits configured
+- [ ] Redis `maxclients` and system `nofile` limits sized for peak SSE streaming connections
+- [ ] Ingress/proxy read timeouts (`proxy_read_timeout` $\ge 300\text{s}$, `proxy_buffering off`) configured for SSE streaming
 - [ ] Request timeout values set
 - [ ] Queue worker concurrency optimized
 

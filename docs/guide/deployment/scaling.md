@@ -496,6 +496,30 @@ async def delete_user(user_id: str):
     await redis_client.delete(f"user:{user_id}")
 ```
 
+### High-Concurrency Streaming & Redis Connection Pool Protection
+
+Agent conversation streaming leverages Redis for buffering and Pub/Sub delivery (`agent:run:{run_id}:buffer` and `agent:run:{run_id}:events`). In high-concurrency environments (thousands of concurrent SSE streams), consider the following deployment and operational invariants to prevent Redis connection exhaustion:
+
+1. **Redis `maxclients` Sizing**:
+   * Each active SSE subscriber subscribes to a Redis channel via Pub/Sub, which allocates an active connection on the Redis server.
+   * In environments with high concurrent streaming users, set `maxclients` in `redis.conf` according to peak concurrent connections plus worker and general pool overhead (recommended: $\ge 20,000$):
+     ```conf
+     maxclients 20000
+     ```
+2. **Operating System File Descriptor Limits (`nofile`)**:
+   * Ensure the host and container `ulimit -n` accommodates the `maxclients` limit:
+     ```bash
+     # /etc/security/limits.conf
+     redis soft nofile 65536
+     redis hard nofile 65536
+     ```
+3. **Proxy Timeouts & SSE Keep-Alive**:
+   * FastAPI SSE streams emit periodic comment pings (`: ping\n\n`) every 15 seconds when idle.
+   * Configure intermediate ingress/reverse proxies (Nginx, Cloudflare, ALB) with appropriate keep-alive and read timeouts (e.g. `proxy_read_timeout 300s;` and `proxy_buffering off;`).
+4. **Redis Memory Lifecycle & TTL**:
+   * Micro-batching reduces write QPS by grouping high-frequency token deltas within 20ms or 6-token windows.
+   * Completed run event buffers automatically converge to a 10-minute TTL (`BUFFER_COMPLETED_TTL_SECONDS = 600`) upon terminal events (`run_end`), freeing Redis RAM while preserving a reconnection and replay window.
+
 ### Application-Level Caching
 
 **LRU Cache:**

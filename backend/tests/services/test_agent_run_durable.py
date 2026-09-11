@@ -19,9 +19,9 @@ Contracts under test:
 import asyncio
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock
-from uuid import uuid4
-
+from uuid import UUID, uuid4
 import pytest
 
 from app.models.agent_run import (
@@ -38,6 +38,7 @@ class FakeRedis:
         self.data: dict[str, object] = {}
         self.channels: dict[str, list[str]] = {}
         self.subscribed: list[str] = []
+        self.expires: dict[str, int] = {}
 
     async def set(self, key, value, nx=False, ex=None):
         if nx and key in self.data:
@@ -49,6 +50,7 @@ class FakeRedis:
         return self.data.get(key)
 
     async def expire(self, key, seconds):
+        self.expires[key] = seconds
         return key in self.data
 
     async def delete(self, key):
@@ -205,6 +207,148 @@ async def test_stream_events_all_and_clear(monkeypatch, fake_redis):
     assert events[0]["type"] == "message_start"
     await stream.clear()
     assert await stream.get_all_events() == []
+
+
+@pytest.mark.asyncio
+async def test_stream_ttl_convergence_on_run_end(monkeypatch, fake_redis):
+    stream = agent_run_stream.AgentRunStream(uuid4())
+    await stream.publish("message_start", {"message_id": str(uuid4())})
+    assert fake_redis.expires[stream._buffer_key] == agent_run_stream.BUFFER_TTL_SECONDS
+    assert fake_redis.expires[stream._buffer_key] == 86400
+
+    await stream.publish("run_end", {"status": "completed"})
+    assert (
+        fake_redis.expires[stream._buffer_key]
+        == agent_run_stream.BUFFER_COMPLETED_TTL_SECONDS
+    )
+    assert fake_redis.expires[stream._buffer_key] == 600
+
+
+@pytest.mark.asyncio
+async def test_sse_events_emits_heartbeat_ping_on_idle(monkeypatch, fake_redis):
+    run_id = uuid4()
+    stream = agent_run_stream.AgentRunStream(run_id)
+    await stream.publish("run_start", {"status": "running"})
+
+    lines: list[str] = []
+    async for line in agent_run_stream.sse_events(run_id, heartbeat_interval=0.05):
+        lines.append(line)
+        if line == ": ping\n\n":
+            break
+
+    assert any(line.startswith("event: run_start") for line in lines)
+    assert lines[-1] == ": ping\n\n"
+
+
+@pytest.mark.asyncio
+async def test_worker_micro_batching_collector():
+
+    published_events: list[tuple[str, dict[str, Any]]] = []
+
+    class RecordingStream:
+        def __init__(self, run_id: UUID) -> None:
+            self.run_id = run_id
+
+        async def publish(
+            self, event_type: str, payload: dict[str, Any] | None = None, **kwargs: Any
+        ) -> Any:
+            published_events.append((event_type, payload or {}))
+            return None
+
+    event_queue: asyncio.Queue[tuple[str, dict[str, Any]] | None] = asyncio.Queue()
+    stream = RecordingStream(uuid4())
+
+    BATCH_DELTA_TYPES = {"content_delta", "reasoning_delta"}
+    BATCH_WINDOW_SECONDS = 0.02
+    BATCH_MAX_DELTA_COUNT = 6
+
+    batch_type: str | None = None
+    batch_deltas: list[str] = []
+
+    async def flush_batch() -> None:
+        nonlocal batch_type, batch_deltas
+        if not batch_type or not batch_deltas:
+            batch_type = None
+            batch_deltas = []
+            return
+        merged = "".join(batch_deltas)
+        current_type = batch_type
+        batch_type = None
+        batch_deltas = []
+        await stream.publish(current_type, {"delta": merged})
+
+    async def publish_queued_events() -> None:
+        nonlocal batch_type, batch_deltas
+        while True:
+            timeout = BATCH_WINDOW_SECONDS if batch_type is not None else None
+            try:
+                if timeout is not None:
+                    item = await asyncio.wait_for(event_queue.get(), timeout=timeout)
+                else:
+                    item = await event_queue.get()
+            except TimeoutError:
+                await flush_batch()
+                continue
+
+            try:
+                if item is None:
+                    await flush_batch()
+                    return
+                event_type, event_payload = item
+                if (
+                    event_type in BATCH_DELTA_TYPES
+                    and isinstance(event_payload, dict)
+                    and "delta" in event_payload
+                ):
+                    delta_val = str(event_payload.get("delta") or "")
+                    if batch_type is not None and batch_type != event_type:
+                        await flush_batch()
+                    batch_type = event_type
+                    batch_deltas.append(delta_val)
+                    if len(batch_deltas) >= BATCH_MAX_DELTA_COUNT:
+                        await flush_batch()
+                else:
+                    await flush_batch()
+                    await stream.publish(event_type, event_payload)
+            finally:
+                event_queue.task_done()
+
+    publisher_task = asyncio.create_task(publish_queued_events())
+
+    # 1. Six content deltas should flush upon reaching count limit
+    for i in range(6):
+        event_queue.put_nowait(("content_delta", {"delta": f"token{i}_"}))
+
+    await event_queue.join()
+    assert len(published_events) == 1
+    assert published_events[0] == (
+        "content_delta",
+        {"delta": "token0_token1_token2_token3_token4_token5_"},
+    )
+
+    # 2. Delta followed by a non-delta (tool_call) should flush delta immediately
+    event_queue.put_nowait(("content_delta", {"delta": "before_tool"}))
+    event_queue.put_nowait(("tool_call", {"name": "calculator"}))
+    await event_queue.join()
+
+    assert len(published_events) == 3
+    assert published_events[1] == ("content_delta", {"delta": "before_tool"})
+    assert published_events[2] == ("tool_call", {"name": "calculator"})
+
+    # 3. Switching delta types (reasoning_delta then content_delta) flushes previous type
+    event_queue.put_nowait(("reasoning_delta", {"delta": "thinking..."}))
+    event_queue.put_nowait(("content_delta", {"delta": "answer"}))
+    await event_queue.join()
+    # Wait for the time window to flush the remaining content_delta
+    await asyncio.sleep(0.05)
+
+    assert len(published_events) == 5
+    assert published_events[3] == ("reasoning_delta", {"delta": "thinking..."})
+    assert published_events[4] == ("content_delta", {"delta": "answer"})
+
+    # 4. Clean shutdown
+    await event_queue.put(None)
+    await publisher_task
 
 
 @pytest.mark.asyncio

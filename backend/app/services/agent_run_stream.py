@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 CHANNEL_PREFIX = "agent:run:{run_id}:events"
 BUFFER_PREFIX = "agent:run:{run_id}:buffer"
 BUFFER_TTL_SECONDS = 3600 * 24
+BUFFER_COMPLETED_TTL_SECONDS = 600
+SSE_HEARTBEAT_INTERVAL_SECONDS = 15.0
 TERMINAL_EVENT_TYPES = {"run_end"}
 
 
@@ -78,7 +80,12 @@ class AgentRunStream(EventSink):
             }
             event_json = json.dumps(envelope_payload, ensure_ascii=False, default=str)
             await redis.rpush(self._buffer_key, event_json)
-            await redis.expire(self._buffer_key, BUFFER_TTL_SECONDS)
+            ttl = (
+                BUFFER_COMPLETED_TTL_SECONDS
+                if event_type in TERMINAL_EVENT_TYPES
+                else BUFFER_TTL_SECONDS
+            )
+            await redis.expire(self._buffer_key, ttl)
             await redis.publish(self._channel, event_json)
         return event
 
@@ -155,9 +162,42 @@ class AgentRunStream(EventSink):
 async def sse_events(
     run_id: UUID,
     from_sequence: int = 0,
+    heartbeat_interval: float = SSE_HEARTBEAT_INTERVAL_SECONDS,
 ) -> AsyncIterator[str]:
-    """Stream run events as SSE strings (replay then live, then terminal)."""
+    """Stream run events as SSE strings (replay then live, then terminal).
+
+    Emits standard SSE comment frames (': ping\\n\\n') when idle for
+    ``heartbeat_interval`` seconds to prevent intermediate proxies (Nginx,
+    Cloudflare, ALB) from terminating idle connections.
+    """
     stream = AgentRunStream(run_id)
-    async for event in stream.subscribe(from_sequence):
-        data = json.dumps(event, ensure_ascii=False, default=str)
-        yield f"event: {event.get('type', 'message')}\ndata: {data}\n\n"
+    event_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+    async def _consumer() -> None:
+        try:
+            async for event in stream.subscribe(from_sequence):
+                await event_queue.put(event)
+        finally:
+            await event_queue.put(None)
+
+    consumer_task = asyncio.create_task(_consumer())
+    try:
+        while True:
+            try:
+                event = await asyncio.wait_for(
+                    event_queue.get(), timeout=heartbeat_interval
+                )
+            except TimeoutError:
+                yield ": ping\n\n"
+                continue
+
+            if event is None:
+                break
+            data = json.dumps(event, ensure_ascii=False, default=str)
+            yield f"event: {event.get('type', 'message')}\ndata: {data}\n\n"
+    finally:
+        consumer_task.cancel()
+        try:
+            await consumer_task
+        except (asyncio.CancelledError, Exception):
+            pass
