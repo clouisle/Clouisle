@@ -17,7 +17,7 @@ from app.models.knowledge_base import (
     DocumentChunk,
     DocumentStatus,
 )
-from app.models.notification import AutoNotificationType
+from app.models.notification import AutoNotificationType, NotificationLevel
 from app.services.auto_notification import AutoNotificationService
 from app.services.document_processor import document_processor
 from app.services.upload_gateway import UploadGatewayError
@@ -356,6 +356,198 @@ async def _send_doc_indexed_notification(
         logger.error(f"Failed to send doc indexed notification: {e}")
 
 
+async def _send_batch_completion_notification(
+    *,
+    batch_id: str,
+    document: Document,
+    kb_name: str,
+    team_id: UUID,
+    user_locale: str | None,
+) -> None:
+    """Send single aggregated notification when the entire batch finishes."""
+    from app.core.redis import get_redis
+
+    r = await get_redis()
+    total_raw = await r.get(f"kb_batch:{batch_id}:total")
+    total_count = int(total_raw) if total_raw else 1
+    success_count = await r.scard(f"kb_batch:{batch_id}:success")
+    failed_count = await r.scard(f"kb_batch:{batch_id}:failed")
+
+    # Resolve title and content based on success/failure breakdown
+    is_all_success = failed_count == 0
+    is_all_failed = success_count == 0
+
+    # Align with Site Settings (auto_notification_config.enabled_types):
+    # - If purely successful: governed by KB_DOC_INDEXED
+    # - If purely failed: governed by KB_DOC_FAILED
+    # - If partial success & partial failure:
+    #     Prioritize KB_DOC_FAILED (warning) if enabled;
+    #     Fallback to KB_DOC_INDEXED if KB_DOC_FAILED is disabled;
+    #     If both disabled, silence notification completely.
+    is_indexed_enabled = await AutoNotificationService.is_enabled(
+        AutoNotificationType.KB_DOC_INDEXED
+    )
+    is_failed_enabled = await AutoNotificationService.is_enabled(
+        AutoNotificationType.KB_DOC_FAILED
+    )
+
+    resolved_notification_type: AutoNotificationType | None = None
+    notification_level = NotificationLevel.MEDIUM
+
+    if is_all_success:
+        if is_indexed_enabled:
+            resolved_notification_type = AutoNotificationType.KB_DOC_INDEXED
+            notification_level = NotificationLevel.INFO
+    elif is_all_failed:
+        if is_failed_enabled:
+            resolved_notification_type = AutoNotificationType.KB_DOC_FAILED
+            notification_level = NotificationLevel.HIGH
+    else:
+        # Partial: union gate prioritizing failure awareness
+        if is_failed_enabled:
+            resolved_notification_type = AutoNotificationType.KB_DOC_FAILED
+            notification_level = NotificationLevel.HIGH
+        elif is_indexed_enabled:
+            resolved_notification_type = AutoNotificationType.KB_DOC_INDEXED
+            notification_level = NotificationLevel.MEDIUM
+
+    def format_content(lang: str) -> tuple[str, str]:
+        if is_all_success:
+            title = t("notify_kb_doc_indexed_title", lang=lang)
+            content = t(
+                "notify_kb_batch_indexed_content",
+                lang=lang,
+                kb_name=kb_name,
+                count=total_count,
+            )
+        elif is_all_failed:
+            title = t("notify_kb_doc_failed_title", lang=lang)
+            content = t(
+                "notify_kb_batch_failed_content",
+                lang=lang,
+                kb_name=kb_name,
+                count=total_count,
+            )
+        else:
+            title = (
+                t("notify_kb_doc_failed_title", lang=lang)
+                if resolved_notification_type == AutoNotificationType.KB_DOC_FAILED
+                else t("notify_kb_doc_indexed_title", lang=lang)
+            )
+            content = t(
+                "notify_kb_batch_partial_content",
+                lang=lang,
+                kb_name=kb_name,
+                total=total_count,
+                success=success_count,
+                failed=failed_count,
+            )
+        return title, content
+
+    data_payload = {
+        "batch_id": batch_id,
+        "kb_name": kb_name,
+        "total": total_count,
+        "success": success_count,
+        "failed": failed_count,
+    }
+    link_url = f"/kb/{document.knowledge_base_id}"
+
+    if resolved_notification_type:
+        if document.uploaded_by_id:
+            title, content = format_content(user_locale or "en")
+            await AutoNotificationService.send_to_user(
+                notification_type=resolved_notification_type,
+                user_id=document.uploaded_by_id,
+                title=title,
+                content=content,
+                data=data_payload,
+                link_url=link_url,
+                level=notification_level,
+            )
+        else:
+            default_lang = await get_default_language()
+            title, content = format_content(default_lang)
+            await AutoNotificationService.send_to_team(
+                notification_type=resolved_notification_type,
+                team_id=team_id,
+                title=title,
+                content=content,
+                data=data_payload,
+                link_url=link_url,
+                level=notification_level,
+            )
+    # Clean up all keys associated with this batch
+    await r.delete(
+        f"kb_batch:{batch_id}:remain",
+        f"kb_batch:{batch_id}:total",
+        f"kb_batch:{batch_id}:success",
+        f"kb_batch:{batch_id}:failed",
+    )
+
+
+async def _handle_doc_completion_in_batch(
+    *,
+    batch_id: str | None,
+    document: Document,
+    kb_name: str,
+    team_id: UUID,
+    is_success: bool,
+    user_locale: str | None = None,
+    chunk_count: int = 0,
+    token_count: int = 0,
+    error: str | None = None,
+) -> None:
+    """
+    Handles document completion:
+    - If part of batch: records success/failure in Redis and sends aggregated notification on the final item.
+    - If standalone: sends direct single document notification.
+    """
+    if batch_id:
+        try:
+            from app.core.redis import get_redis
+
+            r = await get_redis()
+            batch_remain_key = f"kb_batch:{batch_id}:remain"
+            status_key = (
+                f"kb_batch:{batch_id}:success"
+                if is_success
+                else f"kb_batch:{batch_id}:failed"
+            )
+            await r.sadd(status_key, str(document.id))
+            remaining = await r.decr(batch_remain_key)
+            if remaining == 0:
+                await _send_batch_completion_notification(
+                    batch_id=batch_id,
+                    document=document,
+                    kb_name=kb_name,
+                    team_id=team_id,
+                    user_locale=user_locale,
+                )
+            return
+        except Exception as e:
+            logger.warning(f"Error handling batch tracking in Redis: {e}")
+
+    # Standalone document notifications
+    if is_success:
+        await _send_doc_indexed_notification(
+            document=document,
+            kb_name=kb_name,
+            team_id=team_id,
+            chunk_count=chunk_count,
+            token_count=token_count,
+            user_locale=user_locale,
+        )
+    else:
+        await _send_doc_failed_notification(
+            document=document,
+            kb_name=kb_name,
+            team_id=team_id,
+            error=error or document.error_message or "unknown_error",
+            user_locale=user_locale,
+        )
+
+
 async def _send_doc_failed_notification(
     document: Document,
     kb_name: str,
@@ -363,9 +555,8 @@ async def _send_doc_failed_notification(
     error: str,
     user_locale: str | None = None,
 ) -> None:
-    """Send notification when document indexing fails."""
+    """Send notification when document processing fails."""
     try:
-        # Send to uploader if available, otherwise to team
         if document.uploaded_by_id:
             user = getattr(document, "uploaded_by", None)
             effective_locale = await resolve_language(
@@ -380,13 +571,13 @@ async def _send_doc_failed_notification(
                     lang=effective_locale,
                     doc_name=document.name,
                     kb_name=kb_name,
-                    error=error[:200],  # Truncate error message
+                    error=error,
                 ),
                 data={
                     "document_id": str(document.id),
                     "document_name": document.name,
                     "kb_name": kb_name,
-                    "error": error[:500],
+                    "error": error,
                 },
                 link_url=f"/kb/{document.knowledge_base_id}",
             )
@@ -401,13 +592,13 @@ async def _send_doc_failed_notification(
                     lang=default_lang,
                     doc_name=document.name,
                     kb_name=kb_name,
-                    error=error[:200],  # Truncate error message
+                    error=error,
                 ),
                 data={
                     "document_id": str(document.id),
                     "document_name": document.name,
                     "kb_name": kb_name,
-                    "error": error[:500],
+                    "error": error,
                 },
                 link_url=f"/kb/{document.knowledge_base_id}",
             )
@@ -491,13 +682,17 @@ async def _process_document(document_id: str, task_id: str | None) -> dict[str, 
         # Chunk text
         from app.services.document_processor import chunk_text
 
+        is_md_format = (
+            document.doc_type == "md"
+            or (document.metadata and document.metadata.get("format") == "markdown")
+        )
         chunks = chunk_text(
             text,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             separators=[separator] if separator else None,
+            is_markdown=True if is_md_format else None,
         )
-
         if not chunks:
             raise ValueError(t("document_no_chunks_generated", lang=user_locale))
 
@@ -917,13 +1112,17 @@ def rechunk_document_task(self, document_id: str) -> dict:
             # Chunk text
             from app.services.document_processor import chunk_text
 
+            is_md_format = (
+                document.doc_type == "md"
+                or (document.metadata and document.metadata.get("format") == "markdown")
+            )
             chunks = chunk_text(
                 text,
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
                 separators=[separator] if separator else None,
+                is_markdown=True if is_md_format else None,
             )
-
             if not chunks:
                 raise ValueError(t("document_no_chunks_generated", lang=user_locale))
 
@@ -1075,7 +1274,7 @@ def rechunk_document_task(self, document_id: str) -> dict:
 
 
 async def _embed_existing_document_chunks(
-    document_id: str, task_id: str | None
+    document_id: str, task_id: str | None, batch_id: str | None = None
 ) -> dict:
     doc_uuid = UUID(document_id)
 
@@ -1253,10 +1452,12 @@ async def _embed_existing_document_chunks(
                 f"{embedded_count}/{len(chunks)} chunks embedded, {failed_count} failed"
             )
 
-            await _send_doc_failed_notification(
+            await _handle_doc_completion_in_batch(
+                batch_id=batch_id,
                 document=document,
                 kb_name=kb.name,
                 team_id=kb_team_id,
+                is_success=False,
                 error=document.error_message,
                 user_locale=user_locale,
             )
@@ -1284,14 +1485,14 @@ async def _embed_existing_document_chunks(
         await _refresh_kb_stats()
 
         logger.info(
-            f"Document {document_id} embedding completed: "
-            f"{embedded_count}/{len(chunks)} chunks embedded"
+            f"Document {document_id} embedding completed: {embedded_count}/{len(chunks)} chunks embedded"
         )
-
-        await _send_doc_indexed_notification(
+        await _handle_doc_completion_in_batch(
+            batch_id=batch_id,
             document=document,
             kb_name=kb.name,
             team_id=kb_team_id,
+            is_success=True,
             chunk_count=document.chunk_count,
             token_count=document.token_count,
             user_locale=user_locale,
@@ -1312,10 +1513,12 @@ async def _embed_existing_document_chunks(
             :500
         ]
         await document.save()
-        await _send_doc_failed_notification(
+        await _handle_doc_completion_in_batch(
+            batch_id=batch_id,
             document=document,
             kb_name=kb.name,
             team_id=kb_team_id,
+            is_success=False,
             error=document.error_message,
             user_locale=user_locale,
         )
@@ -1335,10 +1538,12 @@ async def _embed_existing_document_chunks(
         ]
         await document.save()
 
-        await _send_doc_failed_notification(
+        await _handle_doc_completion_in_batch(
+            batch_id=batch_id,
             document=document,
             kb_name=kb.name,
             team_id=kb_team_id,
+            is_success=False,
             error=document.error_message,
             user_locale=user_locale,
         )
@@ -1351,7 +1556,7 @@ async def _embed_existing_document_chunks(
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def embed_document_chunks_task(self, document_id: str) -> dict:
+def embed_document_chunks_task(self, document_id: str, batch_id: str | None = None) -> dict:
     """
     Celery task to generate vector embeddings for existing document chunks.
 
@@ -1366,8 +1571,7 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
     """
 
     task_id = getattr(self.request, "id", None)
-    return _run_async(_embed_existing_document_chunks(document_id, task_id))
-
+    return _run_async(_embed_existing_document_chunks(document_id, task_id, batch_id=batch_id))
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def retry_failed_chunks_task(self, document_id: str) -> dict:
