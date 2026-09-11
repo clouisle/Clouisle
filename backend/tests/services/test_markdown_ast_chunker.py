@@ -273,5 +273,26 @@ def test_markdown_ast_unreached_branches():
 
     para_list = "Para 1\n- Item 1"
     b4 = _extract_markdown_blocks(para_list)
+    # 7. chunk_markdown_ast whitespace-only text (line 1017)
+    assert chunk_markdown_ast("   \n\t   ") == []
+
+    # 8. chunk_markdown_ast when _extract_markdown_blocks returns empty (line 1021)
+    from unittest.mock import patch
+
+    with patch(
+        "app.services.document_processor._extract_markdown_blocks", return_value=[]
+    ):
+        fb_chunks = chunk_markdown_ast(
+            "some text that has no blocks", chunk_size=100, chunk_overlap=0
+        )
+        assert len(fb_chunks) >= 1
+
+    # 9. Table following table (line 1080->1082 where current_chunk_type is already "table")
+    two_small_tables = (
+        "| A | B |\n|---|---|\n| 1 | 2 |\n\n| C | D |\n|---|---|\n| 3 | 4 |"
+    )
+    tbl_chunks = chunk_markdown_ast(two_small_tables, chunk_size=500, chunk_overlap=0)
+    assert len(tbl_chunks) == 1
+    assert tbl_chunks[0]["metadata"]["chunk_type"] == "table"
     assert len(b4) == 2
     assert all(c["metadata"]["chunk_type"] == "table" for c in chunks)
