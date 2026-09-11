@@ -1638,6 +1638,15 @@ msgstr "文档索引失败"
 msgid "notify_kb_doc_indexed_content"
 msgstr "知识库 **{kb_name}** 中的文档 **{doc_name}** 已成功索引。分块数：{chunk_count}，Token 数：{token_count}。"
 
+msgid "notify_kb_batch_indexed_content"
+msgstr "知识库 **{kb_name}** 中的批量文档已成功索引，共处理完成 {count} 个文档。"
+
+msgid "notify_kb_batch_failed_content"
+msgstr "知识库 **{kb_name}** 中的批量文档处理均失败，共 {count} 个文档未能完成索引。"
+
+msgid "notify_kb_batch_partial_content"
+msgstr "知识库 **{kb_name}** 批量处理完成：共 {total} 个文档，其中 {success} 个成功，{failed} 个失败。"
+
 msgid "notify_kb_doc_indexed_title"
 msgstr "文档索引成功"
 

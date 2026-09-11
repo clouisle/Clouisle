@@ -682,9 +682,8 @@ async def _process_document(document_id: str, task_id: str | None) -> dict[str, 
         # Chunk text
         from app.services.document_processor import chunk_text
 
-        is_md_format = (
-            document.doc_type == "md"
-            or (document.metadata and document.metadata.get("format") == "markdown")
+        is_md_format = document.doc_type == "md" or (
+            document.metadata and document.metadata.get("format") == "markdown"
         )
         chunks = chunk_text(
             text,
@@ -1112,9 +1111,8 @@ def rechunk_document_task(self, document_id: str) -> dict:
             # Chunk text
             from app.services.document_processor import chunk_text
 
-            is_md_format = (
-                document.doc_type == "md"
-                or (document.metadata and document.metadata.get("format") == "markdown")
+            is_md_format = document.doc_type == "md" or (
+                document.metadata and document.metadata.get("format") == "markdown"
             )
             chunks = chunk_text(
                 text,
@@ -1556,7 +1554,9 @@ async def _embed_existing_document_chunks(
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def embed_document_chunks_task(self, document_id: str, batch_id: str | None = None) -> dict:
+def embed_document_chunks_task(
+    self, document_id: str, batch_id: str | None = None
+) -> dict:
     """
     Celery task to generate vector embeddings for existing document chunks.
 
@@ -1571,7 +1571,10 @@ def embed_document_chunks_task(self, document_id: str, batch_id: str | None = No
     """
 
     task_id = getattr(self.request, "id", None)
-    return _run_async(_embed_existing_document_chunks(document_id, task_id, batch_id=batch_id))
+    return _run_async(
+        _embed_existing_document_chunks(document_id, task_id, batch_id=batch_id)
+    )
+
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def retry_failed_chunks_task(self, document_id: str) -> dict:

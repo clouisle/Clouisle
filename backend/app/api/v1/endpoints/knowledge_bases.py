@@ -104,6 +104,7 @@ async def _dispatch_document_task(
     *args: str,
     status: str,
     metadata_updates: dict[str, Any] | None = None,
+    task_kwargs: dict[str, Any] | None = None,
 ) -> str:
     task_id = str(uuid4())
     previous_status = doc.status
@@ -124,6 +125,7 @@ async def _dispatch_document_task(
                 "task_id": task_id,
                 "task_name": task_func.name,
                 "task_args": list(args),
+                "task_kwargs": task_kwargs or {},
             }
         )
         locked_doc.metadata = metadata
@@ -137,7 +139,7 @@ async def _dispatch_document_task(
     doc.status = status
     doc.error_message = None
     try:
-        task_func.apply_async(args=args, task_id=task_id)
+        task_func.apply_async(args=args, kwargs=task_kwargs or {}, task_id=task_id)
     except Exception:
         async with in_transaction() as connection:
             owned_doc = (
@@ -1516,16 +1518,41 @@ async def process_document_with_chunks(
 
         # Note: KB statistics will be updated by Celery task after successful embedding
 
+        # Initialize batch tracking in Redis if batch_id and batch_total provided
+        if process_request.batch_id and process_request.batch_total:
+            try:
+                from app.core.redis import get_redis
+
+                r = await get_redis()
+                batch_key = f"kb_batch:{process_request.batch_id}:remain"
+                # Only set if not already set (NX)
+                await r.set(batch_key, process_request.batch_total, ex=7200, nx=True)
+                # Store total and kb info
+                await r.set(
+                    f"kb_batch:{process_request.batch_id}:total",
+                    process_request.batch_total,
+                    ex=7200,
+                    nx=True,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to initialize batch tracking in Redis: {e}")
+
         # Trigger async vector embedding task
         try:
             from app.tasks.knowledge_base import embed_document_chunks_task
 
             logger.info(f"Dispatching embed_document_chunks_task for document {doc.id}")
+            task_kwargs = (
+                {"batch_id": process_request.batch_id}
+                if process_request.batch_id
+                else {}
+            )
             task_id = await _dispatch_document_task(
                 doc,
                 embed_document_chunks_task,
                 str(doc.id),
                 status=DocumentStatus.PROCESSING.value,
+                task_kwargs=task_kwargs if task_kwargs else None,
             )
             logger.info(f"Task dispatched successfully, task_id: {task_id}")
         except Exception as e:

@@ -474,11 +474,16 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
   processDocumentWithChunks: async (
     kbId: string, 
     docId: string, 
-    chunks: Array<{ content: string; chunk_index: number }>
+    chunks: Array<{ content: string; chunk_index: number }>,
+    batch?: { batch_id: string; batch_total: number }
   ): Promise<Document> => {
     return api.post<Document>(
       `${prefix}/${kbId}/documents/${docId}/process-with-chunks`,
-      { chunks }
+      {
+        chunks,
+        batch_id: batch?.batch_id,
+        batch_total: batch?.batch_total,
+      }
     )
   },
 
