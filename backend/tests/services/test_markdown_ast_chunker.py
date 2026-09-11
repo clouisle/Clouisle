@@ -251,4 +251,27 @@ def test_markdown_ast_unreached_branches():
     # 4. Table without section
     bare_table = "| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |"
     chunks = chunk_markdown_ast(bare_table, chunk_size=20, chunk_overlap=0)
+    # 5. List followed by non-list line (hits line 957 break)
+    list_followed_by_text = "- Item 1\nRegular text immediately after"
+    blocks = _extract_markdown_blocks(list_followed_by_text)
+    assert len(blocks) == 2
+    assert blocks[0]["type"] == "list"
+    assert blocks[1]["type"] == "paragraph"
+
+    # 6. Paragraph followed by heading, code, table, and list (hits lines 977, 978, 980, 984)
+    para_heading = "Para 1\n# Heading 1"
+    b1 = _extract_markdown_blocks(para_heading)
+    assert len(b1) == 2
+
+    para_code = "Para 1\n```python\nx = 1\n```"
+    b2 = _extract_markdown_blocks(para_code)
+    assert len(b2) == 2
+
+    para_table = "Para 1\n| A | B |\n|---|---|\n| 1 | 2 |"
+    b3 = _extract_markdown_blocks(para_table)
+    assert len(b3) == 2
+
+    para_list = "Para 1\n- Item 1"
+    b4 = _extract_markdown_blocks(para_list)
+    assert len(b4) == 2
     assert all(c["metadata"]["chunk_type"] == "table" for c in chunks)
