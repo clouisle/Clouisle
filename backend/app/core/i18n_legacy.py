@@ -1253,6 +1253,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Invalid webhook token",
         "zh": "无效的 Webhook 令牌",
     },
+    "kb_already_shared": {
+        "en": "Knowledge base already shared with this team",
+        "zh": "该知识库已共享给该团队",
+    },
+    "kb_cannot_share_to_own_team": {
+        "en": "Cannot share knowledge base to your own team",
+        "zh": "不能将知识库共享给自己的团队",
+    },
     "kb_created": {"en": "Knowledge base created successfully", "zh": "知识库创建成功"},
     "kb_deleted": {"en": "Knowledge base deleted successfully", "zh": "知识库删除成功"},
     "kb_embedding_dimension_mismatch": {
@@ -1268,6 +1276,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "知识库中未找到相关信息。",
     },
     "kb_not_found": {"en": "Knowledge base not found", "zh": "知识库未找到"},
+    "kb_share_not_found": {
+        "en": "Knowledge base share not found",
+        "zh": "知识库共享记录不存在",
+    },
+    "kb_shared_successfully": {
+        "en": "Knowledge base shared successfully",
+        "zh": "知识库共享成功",
+    },
+    "kb_unshared_successfully": {
+        "en": "Knowledge base sharing revoked successfully",
+        "zh": "知识库共享已取消",
+    },
     "kb_updated": {"en": "Knowledge base updated successfully", "zh": "知识库更新成功"},
     "kling_api_error": {"en": "Kling API error", "zh": "Kling API 错误"},
     "kling_endpoint_not_found": {
@@ -1763,6 +1783,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "notify_apikey_expiring_title": {
         "en": "API Key expiring soon",
         "zh": "API 密钥即将过期",
+    },
+    "notify_kb_batch_failed_content": {
+        "en": "Batch document processing in knowledge base **{kb_name}** failed for all {count} document(s).",
+        "zh": "知识库 **{kb_name}** 中的批量文档处理均失败，共 {count} 个文档未能完成索引。",
+    },
+    "notify_kb_batch_indexed_content": {
+        "en": "Batch documents in knowledge base **{kb_name}** have been indexed successfully, with a total of {count} document(s) processed.",
+        "zh": "知识库 **{kb_name}** 中的批量文档已成功索引，共处理完成 {count} 个文档。",
+    },
+    "notify_kb_batch_partial_content": {
+        "en": "Batch processing in knowledge base **{kb_name}** finished: {total} document(s) in total ({success} succeeded, {failed} failed).",
+        "zh": "知识库 **{kb_name}** 批量处理完成：共 {total} 个文档，其中 {success} 个成功，{failed} 个失败。",
     },
     "notify_kb_doc_failed_content": {
         "en": "Document **{doc_name}** in knowledge base **{kb_name}** failed to index. Error: {error}",
@@ -2741,26 +2773,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "tool_unshared_successfully": {
         "en": "Tool sharing revoked successfully",
         "zh": "工具共享已取消",
-    },
-    "kb_share_not_found": {
-        "en": "Knowledge base share not found",
-        "zh": "知识库共享记录不存在",
-    },
-    "kb_cannot_share_to_own_team": {
-        "en": "Cannot share knowledge base to your own team",
-        "zh": "不能将知识库共享给自己的团队",
-    },
-    "kb_already_shared": {
-        "en": "Knowledge base already shared with this team",
-        "zh": "该知识库已共享给该团队",
-    },
-    "kb_shared_successfully": {
-        "en": "Knowledge base shared successfully",
-        "zh": "知识库共享成功",
-    },
-    "kb_unshared_successfully": {
-        "en": "Knowledge base sharing revoked successfully",
-        "zh": "知识库共享已取消",
     },
     "tool_update_memory_entity": {"en": "Update Memory Entity", "zh": "更新记忆实体"},
     "tool_updated": {"en": "Tool updated successfully", "zh": "工具更新成功"},

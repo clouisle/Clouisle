@@ -25,6 +25,7 @@ const useState = <T,>(initial: T): [T, Setter<T>] => {
 const push = mock(() => undefined)
 const getKnowledgeBase = mock(async () => knowledgeBase)
 const getStats = mock(async () => stats)
+const getDocuments = mock(async () => ({ items: [{ id: 'doc-1' }], total: 1 }))
 
 let currentTeam: Record<string, unknown> | null
 let user: Record<string, unknown> | null
@@ -63,7 +64,7 @@ mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key })
 mock.module('next/navigation', () => ({ useRouter: () => ({ push }) }))
 mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam }) }))
 mock.module('@/hooks/use-permissions', () => ({ usePermissions: () => ({ user }) }))
-mock.module('@/lib/api', () => ({ knowledgeBasesApi: { getKnowledgeBase, getStats } }))
+mock.module('@/lib/api', () => ({ knowledgeBasesApi: { getKnowledgeBase, getStats, getDocuments } }))
 mock.module('@/components/ui/button', () => ({ Button }))
 mock.module('@/components/ui/card', () => ({ Card, CardContent, CardDescription, CardHeader, CardTitle }))
 mock.module('@/components/ui/badge', () => ({ Badge }))
@@ -238,4 +239,19 @@ test('allows shared knowledge base from another team and marks documents read-on
 
   // Shared KB hides update/upload actions
   expect(nodes.filter((node) => node.type === Button)).toHaveLength(2)
+})
+test('renders pending batch banner and navigates with aggregated documents', async () => {
+  stats = { ...stats, documents_by_status: { pending: 3 } }
+  getDocuments
+    .mockResolvedValueOnce({ items: [{ id: 'doc-1' }, { id: 'doc-2' }], total: 3 })
+    .mockResolvedValueOnce({ items: [{ id: 'doc-3' }], total: 3 })
+
+  const tree = await load()
+  const nodes = descendants(tree)
+  const continueBtn = nodes.find((node) => node.type === Button && node.props.children && String(node.props.children).includes('pendingBatchContinueAction'))
+  expect(continueBtn).toBeDefined()
+
+  await (continueBtn?.props.onClick as () => Promise<void>)()
+  expect(getDocuments).toHaveBeenCalledTimes(2)
+  expect(push).toHaveBeenCalledWith('/app/kb/kb-1/documents/preview')
 })

@@ -23,7 +23,10 @@ mock.module('next/link', () => ({
     <a href={href} {...props}>{children}</a>
   ),
 }))
-mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
+mock.module('next-intl', () => ({
+  useTranslations: () => (key: string, values?: Record<string, unknown>) =>
+    values ? `${key}:${Object.values(values).join(',')}` : key,
+}))
 mock.module('next/navigation', () => ({
   useRouter: () => ({ replace }),
   useSearchParams: () => ({
@@ -37,7 +40,11 @@ mock.module('@/hooks/use-require-team', () => ({ useRequireTeam }))
 mock.module('@/hooks/use-permissions', () => ({ usePermissions: () => ({ user }) }))
 mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform }) }))
 mock.module('@/lib/api', () => ({
-  knowledgeBasesApi: { getKnowledgeBases, deleteKnowledgeBase },
+  knowledgeBasesApi: {
+    getKnowledgeBases,
+    deleteKnowledgeBase,
+    listKnowledgeBaseShares: mock(() => Promise.resolve({ shares: [] })),
+  },
   teamsApi: { getMyTeams: mock(() => Promise.resolve([])) },
 }))
 mock.module('@/lib/api/packages', () => ({ packagesApi: { export: exportPackage }, downloadBlob }))
@@ -65,6 +72,11 @@ const Box = ({ children, ...props }: React.PropsWithChildren<Record<string, unkn
 mock.module('@/components/ui/card', () => ({ Card: Box, CardContent: Box }))
 mock.module('@/components/ui/skeleton', () => ({ Skeleton: Box }))
 mock.module('@/components/ui/input', () => ({ Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} /> }))
+mock.module('./_components/kb-share-dialog', () => ({
+  KnowledgeBaseShareDialog: ({ open }: { open: boolean }) => (
+    <div data-testid="share-dialog" data-open={open} />
+  ),
+}))
 mock.module('@/components/ui/button', () => ({
   Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,
 }))
@@ -268,6 +280,34 @@ describe('platform knowledge base page', () => {
     expect(success).toHaveBeenCalledWith('kbDeleted')
     expect(getKnowledgeBases).toHaveBeenCalledTimes(2)
 
+    act(() => renderer.unmount())
+  })
+  test('renders shared badge, shared count, and opens share dialog', async () => {
+    const sharedKb = kb({
+      id: 'kb-shared',
+      name: 'Shared KB',
+      is_owned: false,
+      owner_team_name: 'Partner Team',
+    })
+    const ownedWithShares = kb({
+      id: 'kb-owned-shared',
+      name: 'Owned With Shares',
+      is_owned: true,
+      shared_with_count: 2,
+    })
+    getKnowledgeBases.mockResolvedValue({ items: [sharedKb, ownedWithShares] })
+    const renderer = await renderPage()
+
+    const renderedText = JSON.stringify(renderer.toJSON())
+    expect(renderedText).toContain('Partner Team')
+    expect(renderedText).toContain('kb.sharedCount:2')
+
+    const menuItems = renderer.root.findAllByProps({ role: 'menuitem' })
+    const shareItem = menuItems.find((item) => item.children?.includes('kb.shareAction'))
+    expect(shareItem).toBeDefined()
+    await act(async () => shareItem?.props.onClick({ preventDefault() {} }))
+
+    expect(renderer.root.findByProps({ 'data-testid': 'share-dialog' }).props['data-open']).toBe(true)
     act(() => renderer.unmount())
   })
 

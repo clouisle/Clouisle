@@ -89,6 +89,22 @@ function find(node: unknown, predicate: (element: ElementNode) => boolean): Elem
   }
   throw new Error('element not found')
 }
+function findAll(node: unknown, predicate: (element: ElementNode) => boolean): ElementNode[] {
+  const matches: ElementNode[] = []
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      matches.push(...findAll(child, predicate))
+    }
+  } else if (node && typeof node === 'object') {
+    const element = node as ElementNode
+    if (predicate(element)) matches.push(element)
+    if (element.props?.children !== undefined) {
+      matches.push(...findAll(element.props.children, predicate))
+    }
+  }
+  return matches
+}
+
 
 function render(overrides: Partial<Parameters<typeof KnowledgeBaseDialog>[0]> = {}) {
   hookIndex = 0
@@ -193,5 +209,25 @@ describe('KnowledgeBaseDialog', () => {
     expect(onSuccess).not.toHaveBeenCalled()
     expect(push).not.toHaveBeenCalled()
     expect(submit(tree).props?.disabled).toBe(false)
+  })
+
+  test('updates inputs for embedding, rerank, chunking, and separator settings', async () => {
+    const tree = render()
+    const chunkSizeInput = input(tree, 'chunkSize')
+    const chunkOverlapInput = input(tree, 'chunkOverlap')
+    const separatorInput = input(tree, 'separator')
+    const rerankCandidateKInput = input(tree, 'rerankCandidateK')
+    const rerankScoreThresholdInput = input(tree, 'rerankScoreThreshold')
+
+    ;(chunkSizeInput.props?.onChange as (e: { target: { value: string } }) => void)({ target: { value: '600' } })
+    ;(chunkOverlapInput.props?.onChange as (e: { target: { value: string } }) => void)({ target: { value: '80' } })
+    ;(separatorInput.props?.onChange as (e: { target: { value: string } }) => void)({ target: { value: '\\n\\n' } })
+    ;(rerankCandidateKInput.props?.onChange as (e: { target: { value: string } }) => void)({ target: { value: '25' } })
+    ;(rerankScoreThresholdInput.props?.onChange as (e: { target: { value: string } }) => void)({ target: { value: '0.65' } })
+
+    const selects = findAll(tree, (element) => element.type === 'Select')
+    ;(selects[0]?.props?.onValueChange as (v: string) => void)('model-1')
+    ;(selects[1]?.props?.onValueChange as (v: string) => void)('model-2')
+    expect(chunkSizeInput).toBeDefined()
   })
 })

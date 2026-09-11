@@ -2,6 +2,7 @@ import React from 'react'
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { renderToString } from 'react-dom/server'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
+import { ApiError } from '@/lib/api'
 
 const knowledgeBasesApi = {
   listKnowledgeBaseShares: mock(async () => ({ shares: [], total: 0 })),
@@ -214,5 +215,47 @@ describe('KnowledgeBaseShareDialog', () => {
     await click(confirmButton)
 
     expect(knowledgeBasesApi.unshareKnowledgeBase).toHaveBeenCalledWith('kb-1', 'team-2')
+  })
+  test('handles share error with validation mapping and unshare API failure', async () => {
+    knowledgeBasesApi.listKnowledgeBaseShares.mockResolvedValue({ shares: [], total: 0 })
+    knowledgeBasesApi.shareKnowledgeBase.mockRejectedValue(
+      new ApiError(1001, 'Invalid', {
+        errors: { team_id: 'Invalid team' },
+      })
+    )
+    knowledgeBasesApi.unshareKnowledgeBase.mockRejectedValue(new Error('unshare failed'))
+    let renderer: ReactTestRenderer
+    await act(async () => {
+      renderer = create(
+        <KnowledgeBaseShareDialog
+          knowledgeBase={baseKb as never}
+          open
+          onOpenChange={() => undefined}
+          currentTeamId="team-1"
+          availableTeams={[
+            { id: 'team-1', name: 'Core Team', role: 'owner' },
+            { id: 'team-3', name: 'Support', role: 'member' },
+          ] as never}
+        />
+      )
+    })
+    renderers.push(renderer!)
+    await act(async () => Promise.resolve())
+
+    const teamSelect = renderer!.root.findAll((node) => node.props.onValueChange)[0]
+    await act(async () => teamSelect.props.onValueChange('team-3'))
+
+    const shareButton = renderer!.root.findAllByType('button').find((button) => nodeText(button).includes('shareButton'))!
+    await click(shareButton)
+    expect(renderer!.root.findAllByType('p').map((node) => node.children.join(''))).toContain('Invalid team')
+    const deleteButton = renderer!.root.findAllByType('button').find((button) =>
+      button.props.className?.includes('text-destructive')
+    )
+    if (deleteButton) {
+      await click(deleteButton)
+      const confirmButton = renderer!.root.findAllByType('button').find((button) => nodeText(button).includes('unshareButton'))!
+      await click(confirmButton)
+      expect(knowledgeBasesApi.unshareKnowledgeBase).toHaveBeenCalled()
+    }
   })
 })
