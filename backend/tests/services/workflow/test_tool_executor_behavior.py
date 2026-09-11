@@ -1,6 +1,7 @@
 """Behavioral tests for agent and HTTP workflow executors."""
 
 import json
+import socket
 import sys
 from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, patch
@@ -579,10 +580,14 @@ class TestHTTPRequestNodeExecutorBehavior:
                 }
             }
         }
-
-        with patch("httpx.AsyncClient", return_value=client_context) as client_class:
+        with (
+            patch(
+                "app.services.workflow.executors.tool.validate_external_http_url",
+                side_effect=lambda value: value,
+            ),
+            patch("httpx.AsyncClient", return_value=client_context) as client_class,
+        ):
             result = await HTTPRequestNodeExecutor().execute(node, context, run)
-
         client_class.assert_called_once_with(timeout=5)
         client.request.assert_awaited_once_with(
             method="POST",
@@ -610,8 +615,13 @@ class TestHTTPRequestNodeExecutorBehavior:
         client.request.return_value = response
         client_context = AsyncMock()
         client_context.__aenter__.return_value = client
-
-        with patch("httpx.AsyncClient", return_value=client_context):
+        with (
+            patch(
+                "app.services.workflow.executors.tool.validate_external_http_url",
+                side_effect=lambda value: value,
+            ),
+            patch("httpx.AsyncClient", return_value=client_context),
+        ):
             result = await HTTPRequestNodeExecutor().execute(
                 {
                     "data": {
@@ -642,6 +652,10 @@ class TestHTTPRequestNodeExecutorBehavior:
         client_context.__aenter__.return_value = client
 
         with (
+            patch(
+                "app.services.workflow.executors.tool.validate_external_http_url",
+                side_effect=lambda value: value,
+            ),
             patch("httpx.AsyncClient", return_value=client_context),
             patch(
                 "app.services.workflow.executors.tool.resolve_user_visible_error",
@@ -663,6 +677,77 @@ class TestHTTPRequestNodeExecutorBehavior:
         assert missing_url.error == "tool_execution_failed"
         assert timeout.error == "public: Request timed out after 2s"
         assert request_error.error == "public: bad request"
+
+    @pytest.mark.anyio
+    async def test_execute_blocks_ssrf_destinations(self, context, run):
+        executor = HTTPRequestNodeExecutor()
+
+        # AWS IMDSv1
+        result_aws = await executor.execute(
+            {"data": {"config": {"url": "http://169.254.169.254/latest/meta-data/"}}},
+            context,
+            run,
+        )
+        assert result_aws.error == "HTTP URL host is not allowed"
+
+        # Loopback
+        result_loopback = await executor.execute(
+            {"data": {"config": {"url": "http://127.0.0.1:8000/internal"}}},
+            context,
+            run,
+        )
+        assert result_loopback.error == "HTTP URL host is not allowed"
+
+        # Localhost name
+        result_localhost = await executor.execute(
+            {"data": {"config": {"url": "http://localhost/admin"}}},
+            context,
+            run,
+        )
+        assert result_localhost.error == "HTTP URL host is not allowed"
+
+        # GCP metadata hostname
+        result_gcp = await executor.execute(
+            {
+                "data": {
+                    "config": {
+                        "url": "http://metadata.google.internal/computeMetadata/v1/"
+                    }
+                }
+            },
+            context,
+            run,
+        )
+        assert result_gcp.error == "HTTP URL host is not allowed"
+
+        # Invalid scheme
+        result_ftp = await executor.execute(
+            {"data": {"config": {"url": "ftp://example.com/file"}}},
+            context,
+            run,
+        )
+        assert result_ftp.error == "Invalid HTTP URL"
+
+        # Unresolvable host
+        with patch("socket.getaddrinfo", side_effect=socket.gaierror):
+            result_unresolved = await executor.execute(
+                {"data": {"config": {"url": "https://nonexistent.domain.invalid"}}},
+                context,
+                run,
+            )
+            assert result_unresolved.error == "HTTP URL host cannot be resolved"
+
+        # DNS rebinding to private IP
+        private_sockaddr = [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))
+        ]
+        with patch("socket.getaddrinfo", return_value=private_sockaddr):
+            result_rebind = await executor.execute(
+                {"data": {"config": {"url": "https://public-looking-domain.com"}}},
+                context,
+                run,
+            )
+            assert result_rebind.error == "HTTP URL host is not allowed"
 
     def test_output_metadata(self):
         executor = HTTPRequestNodeExecutor()

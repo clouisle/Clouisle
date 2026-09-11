@@ -4,69 +4,32 @@
 提供 HTTP 工具和代码工具的执行功能，供 API 端点复用。
 """
 
-import ipaddress
 import json
 import logging
 import mimetypes
 import re
-import socket
 from base64 import b64decode
 from typing import Any
-from urllib.parse import urlparse
+import socket
 
 import httpx
 
 from app.core.i18n import t
+from app.core.network_security import (
+    _ValidatedExternalUrl,
+    validate_external_http_url,
+)
 from app.schemas.response import BusinessError
 
 logger = logging.getLogger(__name__)
 
-_BLOCKED_HOSTS = {"localhost", "local", "metadata.google.internal"}
 _UNRESOLVED_PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\}\}")
 
-
-class _ValidatedExternalUrl(str):
-    pass
-
-
-def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    return any(
-        (
-            ip.is_private,
-            ip.is_loopback,
-            ip.is_link_local,
-            ip.is_reserved,
-            ip.is_multicast,
-            ip.is_unspecified,
-        )
-    )
+__all__ = ["socket"]
 
 
 def _validate_external_http_url(value: str) -> _ValidatedExternalUrl:
-    parsed = urlparse(value)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        raise BusinessError(msg_key="http_tool_url_invalid")
-    host = parsed.hostname.lower().rstrip(".")
-    if host in _BLOCKED_HOSTS:
-        raise BusinessError(msg_key="http_tool_url_host_not_allowed")
-    try:
-        port = parsed.port
-    except ValueError:
-        raise BusinessError(msg_key="http_tool_url_invalid")
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        ip = None
-    if ip and _is_blocked_ip(ip):
-        raise BusinessError(msg_key="http_tool_url_host_not_allowed")
-    try:
-        resolved = socket.getaddrinfo(host, port or None, type=socket.SOCK_STREAM)
-    except socket.gaierror as exc:
-        raise BusinessError(msg_key="http_tool_url_host_cannot_be_resolved") from exc
-    for *_, sockaddr in resolved:
-        if _is_blocked_ip(ipaddress.ip_address(sockaddr[0])):
-            raise BusinessError(msg_key="http_tool_url_host_not_allowed")
-    return _ValidatedExternalUrl(value)
+    return validate_external_http_url(value, getaddrinfo=socket.getaddrinfo)
 
 
 def _strip_unresolved_placeholders(value: str) -> str:

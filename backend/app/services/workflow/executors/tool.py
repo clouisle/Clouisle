@@ -4,10 +4,13 @@ Tool and agent node executors.
 Handles external tool calls and agent invocations.
 """
 
-from typing import TYPE_CHECKING, Any
-import logging
+import asyncio
 import json
+import logging
+from typing import TYPE_CHECKING, Any
 
+from app.core.network_security import validate_external_http_url
+from app.schemas.response import BusinessError
 from app.services.error_messages import resolve_user_visible_error
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
@@ -446,6 +449,12 @@ class HTTPRequestNodeExecutor(NodeExecutor):
 
         # Resolve templates
         url = await self._resolve_template(url_template, context)
+        try:
+            validated_url = await asyncio.to_thread(validate_external_http_url, url)
+        except BusinessError as exc:
+            return ExecutionResult(error=resolve_user_visible_error(str(exc)))
+        except ValueError as exc:
+            return ExecutionResult(error=resolve_user_visible_error(str(exc)))
         headers: dict[str, str] = {}
         for key, value in headers_template.items():
             headers[key] = await self._resolve_template(str(value), context)
@@ -462,7 +471,7 @@ class HTTPRequestNodeExecutor(NodeExecutor):
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.request(
                     method=method,
-                    url=url,
+                    url=validated_url,
                     headers=headers,
                     json=body if isinstance(body, dict) else None,
                     content=body if isinstance(body, str) else None,
