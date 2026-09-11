@@ -2430,6 +2430,9 @@ msgstr "Tool sharing revoked successfully"
 msgid "kb_share_not_found"
 msgstr "Knowledge base share not found"
 
+msgid "kb_cannot_share_to_own_team"
+msgstr "Cannot share knowledge base to your own team"
+
 msgid "kb_already_shared"
 msgstr "Knowledge base already shared with this team"
 

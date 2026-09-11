@@ -409,14 +409,19 @@ async def kb_with_model_info(
             if is_shared
             else None
         )
-        count = await KnowledgeBaseShare.filter(knowledge_base_id=kb_id).count()
-    except Exception:
-        pass
+        count = (
+            await KnowledgeBaseShare.filter(knowledge_base_id=kb_id).count()
+            if not is_shared
+            else 0
+        )
+    except Exception as e:
+        logger.warning(f"Failed to load knowledge base share metadata: {e}")
+        count = 0
 
     kb_data["is_owned"] = not is_shared
     kb_data["owner_team_id"] = kb_team_id
     kb_data["owner_team_name"] = owner_name
-    kb_data["shared_with_count"] = count
+    kb_data["shared_with_count"] = count if not is_shared else 0
     kb_data["share_permission"] = (
         KnowledgeBaseSharePermission(share.permission)
         if share and hasattr(share, "permission")
@@ -636,7 +641,9 @@ async def list_knowledge_bases(
             kb_data["owner_team_name"] = owner_name
             kb_data["share_permission"] = None
 
-        kb_data["shared_with_count"] = share_counts.get(kb_id, 0) if kb_id else 0
+        kb_data["shared_with_count"] = (
+            share_counts.get(kb_id, 0) if kb_id and kb_data["is_owned"] else 0
+        )
         kb_list.append(kb_data)
     return success(
         data={
@@ -1465,6 +1472,8 @@ async def process_document_with_chunks(
         except Exception:
             pass
 
+    audit_before = AuditLogService.snapshot(doc, "document")
+
     # Delete existing external index records before replacing authoritative chunks.
     if doc.status == DocumentStatus.COMPLETED.value:
         await delete_lexical_document(doc.id, kb.team_id)
@@ -1575,6 +1584,9 @@ async def process_document_with_chunks(
             operation="update",
             status="success",
             request=request,
+            changes=AuditLogService.build_changes(
+                audit_before, AuditLogService.snapshot(doc, "document")
+            ),
             metadata={
                 "knowledge_base_id": str(kb_id),
                 "chunks_count": len(chunks_created),
@@ -2713,7 +2725,7 @@ async def share_knowledge_base(
     kb_id: UUID,
     share_data: KnowledgeBaseShareInput,
     request: Request,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
     共享知识库给其他团队
@@ -2748,7 +2760,7 @@ async def share_knowledge_base(
     if kb_team_id == share_data.team_id:
         raise BusinessError(
             code=ResponseCode.BAD_REQUEST,
-            msg_key="cannot_share_to_own_team",
+            msg_key="kb_cannot_share_to_own_team",
             status_code=400,
         )
 
@@ -2866,7 +2878,7 @@ async def unshare_knowledge_base(
     kb_id: UUID,
     team_id: UUID,
     request: Request,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(require_kb_delete),
 ) -> Any:
     """
     取消知识库共享

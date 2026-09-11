@@ -718,7 +718,8 @@ async def update_agent(
     ):
         if agent.rag_mode != RAGMode.OFF:
             agent.rag_mode = RAGMode.OFF
-            updated_fields.append("rag_mode")
+            if "rag_mode" not in updated_fields:
+                updated_fields.append("rag_mode")
 
     # Update variables
     if agent_in.variables is not None:

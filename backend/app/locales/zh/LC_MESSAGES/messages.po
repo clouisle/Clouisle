@@ -2429,6 +2429,9 @@ msgstr "工具共享已取消"
 msgid "kb_share_not_found"
 msgstr "知识库共享记录不存在"
 
+msgid "kb_cannot_share_to_own_team"
+msgstr "不能将知识库共享给自己的团队"
+
 msgid "kb_already_shared"
 msgstr "该知识库已共享给该团队"
 

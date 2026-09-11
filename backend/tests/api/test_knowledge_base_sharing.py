@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -211,7 +211,7 @@ async def test_share_knowledge_base_validation_errors():
             user,
         )
     assert exc_info.value.code == ResponseCode.BAD_REQUEST
-    assert exc_info.value.msg_key == "cannot_share_to_own_team"
+    assert exc_info.value.msg_key == "kb_cannot_share_to_own_team"
 
     # 4. Already shared
     with (
@@ -583,9 +583,11 @@ async def test_list_knowledge_bases_with_shared_and_get_kb():
     assert get_res["data"]["share_permission"] == KnowledgeBaseSharePermission.READ_ONLY
 
     # 3. list without shared KBs when include_shared=False
+    share_filter_mock = MagicMock(return_value=Query([]))
     with (
         patch.object(kb_endpoints, "check_team_access", new=AsyncMock()),
         patch.object(kb_endpoints.KnowledgeBase, "all", return_value=Query([owned_kb])),
+        patch.object(kb_endpoints.KnowledgeBaseShare, "filter", share_filter_mock),
         patch.object(kb_endpoints.Model, "filter", return_value=Query([])),
     ):
         res_no_shared = await kb_endpoints.list_knowledge_bases(
@@ -594,7 +596,11 @@ async def test_list_knowledge_bases_with_shared_and_get_kb():
             current_user=user,
         )
     assert len(res_no_shared["data"]["items"]) == 1
-
+    # KnowledgeBaseShare.filter(shared_with_team_id=...) must not be called when include_shared=False
+    assert not any(
+        c.kwargs.get("shared_with_team_id") == caller_team_id
+        for c in share_filter_mock.call_args_list
+    )
     # 4. list without team_id and include_shared=False
     with (
         patch.object(

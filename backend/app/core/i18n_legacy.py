@@ -2746,6 +2746,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Knowledge base share not found",
         "zh": "知识库共享记录不存在",
     },
+    "kb_cannot_share_to_own_team": {
+        "en": "Cannot share knowledge base to your own team",
+        "zh": "不能将知识库共享给自己的团队",
+    },
     "kb_already_shared": {
         "en": "Knowledge base already shared with this team",
         "zh": "该知识库已共享给该团队",
