@@ -8,10 +8,13 @@ _BLOCKED_HOSTS = {"localhost", "local", "metadata.google.internal"}
 
 
 class _ValidatedExternalUrl(str):
+    """Marker string type representing a validated external URL."""
+
     pass
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Check whether the provided IP address is in a reserved, private, or local range."""
     return any(
         (
             ip.is_private,
@@ -25,6 +28,7 @@ def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
 
 
 def validate_external_http_url(value: str, getaddrinfo=None) -> _ValidatedExternalUrl:
+    """Validate an external HTTP/HTTPS URL against blocked hosts, private IPs, and metadata targets."""
     if getaddrinfo is None:
         getaddrinfo = socket.getaddrinfo
     parsed = urlparse(value)
