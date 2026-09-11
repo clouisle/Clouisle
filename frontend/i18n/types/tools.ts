@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-08T21:27:58.800Z
+// GENERATED — 2026-09-11T17:53:25.758Z
 // Source: i18n/en/tools.json
 export type ToolsMessages = {
   tools: {
@@ -185,27 +185,27 @@ export type ToolsMessages = {
       httpUrlPlaceholder: string
     }
     databaseDialog: {
-      createTitle: string
-      editTitle: string
-      description: string
-      dbType: string
+      connectionFailed: string
       connectionSettings: string
+      connectionSuccess: string
+      createTitle: string
+      databaseName: string
+      dbType: string
+      description: string
+      descriptionPlaceholder: string
+      editTitle: string
       host: string
       hostRequired: string
-      port: string
-      databaseName: string
       maxLimit: string
-      username: string
-      url: string
       paramsMode: string
-      urlMode: string
-      urlRequired: string
       password: string
+      port: string
       testConnection: string
       timeout: string
-      connectionSuccess: string
-      connectionFailed: string
-      descriptionPlaceholder: string
+      url: string
+      urlMode: string
+      urlRequired: string
+      username: string
     }
     codeEditor: {
       newTitle: string

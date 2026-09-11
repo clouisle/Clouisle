@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-08T21:27:58.797Z
+// GENERATED — 2026-09-11T17:53:25.756Z
 // Source: i18n/en/platform.json
 export type PlatformMessages = {
   platform: {
@@ -328,27 +328,27 @@ export type PlatformMessages = {
         bodyTemplatePlaceholder: string
       }
       databaseDialog: {
-        createTitle: string
-        editTitle: string
-        description: string
-        dbType: string
+        connectionFailed: string
         connectionSettings: string
+        connectionSuccess: string
+        createTitle: string
+        databaseName: string
+        dbType: string
+        description: string
+        descriptionPlaceholder: string
+        editTitle: string
         host: string
         hostRequired: string
-        port: string
-        databaseName: string
         maxLimit: string
-        username: string
-        url: string
         paramsMode: string
-        urlMode: string
-        urlRequired: string
         password: string
+        port: string
         testConnection: string
         timeout: string
-        connectionSuccess: string
-        connectionFailed: string
-        descriptionPlaceholder: string
+        url: string
+        urlMode: string
+        urlRequired: string
+        username: string
       }
       mcpDialog: {
         createTitle: string

@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-08T21:27:58.799Z
+// GENERATED — 2026-09-11T17:53:25.757Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
@@ -258,6 +258,7 @@ export type SiteSettingsMessages = {
     kbDocumentMaxUploadSize: string
     kbDocumentMaxUploadSizeHint: string
     loadError: string
+    retry: string
     siteIconUrlPlaceholder: string
     testEmailRequired: string
     testEmailSent: string

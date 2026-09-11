@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-08T21:27:58.788Z
+// GENERATED — 2026-09-11T17:53:25.751Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {
@@ -59,6 +59,7 @@ export type AgentsMessages = {
       maxMemoriesPerRetrievalDesc: string
       autoExtract: string
       autoExtractDesc: string
+      saveFailed: string
     }
     agentCreated: string
     agentUpdated: string
@@ -486,6 +487,7 @@ export type AgentsMessages = {
       }
       runLifecycleTitle: string
       runLifecycleDescription: string
+      answerTitle: string
       answerDescription: string
       answerEndpoint: string
       answerBody: string

@@ -220,6 +220,8 @@
     "previewFailed": "预览失败",
     "error": "错误",
     "batchPreviewTitle": "批量文档预览",
+    "operationFailed": "操作失败",
+    "sessionStorageFailed": "保存文件到会话存储失败",
     "documentsCount": "个文档",
     "backToKnowledgeBase": "返回知识库",
     "retryPreview": "重试预览",

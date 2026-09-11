@@ -220,6 +220,8 @@
     "previewFailed": "Preview failed",
     "error": "Error",
     "batchPreviewTitle": "Batch Document Preview",
+    "operationFailed": "Operation failed",
+    "sessionStorageFailed": "Failed to save file to session storage",
     "documentsCount": "documents",
     "backToKnowledgeBase": "Back to Knowledge Base",
     "retryPreview": "Retry Preview",
