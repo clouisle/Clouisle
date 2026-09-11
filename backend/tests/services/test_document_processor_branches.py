@@ -218,9 +218,12 @@ async def test_fetch_url_content_with_markitdown(processor, monkeypatch):
     monkeypatch.setitem(
         sys.modules, "markitdown", SimpleNamespace(MarkItDown=FakeMarkItDown)
     )
+    monkeypatch.setattr(
+        "app.core.network_security.validate_external_http_url",
+        lambda value, **kwargs: value,
+    )
 
     text, metadata = await processor.fetch_url_content("https://example.test")
-
     assert text == "fetched"
     assert metadata == {
         "source_url": "https://example.test",
@@ -239,9 +242,12 @@ async def test_fetch_url_content_markitdown_without_title(processor, monkeypatch
     monkeypatch.setitem(
         sys.modules, "markitdown", SimpleNamespace(MarkItDown=FakeMarkItDown)
     )
+    monkeypatch.setattr(
+        "app.core.network_security.validate_external_http_url",
+        lambda value, **kwargs: value,
+    )
 
     text, metadata = await processor.fetch_url_content("https://example.test")
-
     assert text == "body"
     assert metadata == {
         "source_url": "https://example.test",
@@ -278,9 +284,12 @@ async def test_fetch_url_content_http_fallback(
 
     with monkeypatch.context() as scoped:
         scoped.setitem(sys.modules, "markitdown", None)
+        scoped.setattr(
+            "app.core.network_security.validate_external_http_url",
+            lambda value, **kwargs: value,
+        )
         scoped.setattr("httpx.AsyncClient", lambda **kwargs: ClientContext())
         text, metadata = await processor.fetch_url_content("https://example.test")
-
     assert text == expected
     assert metadata["content_type"] == content_type
     assert metadata["char_count"] == len(expected)
