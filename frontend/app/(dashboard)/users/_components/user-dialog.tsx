@@ -223,6 +223,7 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
         }
         setFieldErrors(errors)
       }
+    } finally {
       setIsSubmitting(false)
     }
   }

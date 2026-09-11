@@ -120,6 +120,7 @@ export function ToolConfigDialog({
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)
       }
+    } finally {
       setIsLoading(false)
     }
   }

@@ -84,18 +84,35 @@ function extractScopes(content) {
     const namespace = match[2]
     const declIndex = match.index
 
-    let openBrace = content.lastIndexOf('{', declIndex)
+    // Find enclosing function/component body by matching braces backwards skipping literals
     let blockEnd = content.length
-    if (openBrace !== -1) {
-      let depth = 1
-      for (let i = openBrace + 1; i < content.length; i++) {
-        if (content[i] === '{') depth++
-        else if (content[i] === '}') {
+    let depth = 0
+    let inString = false
+    let stringChar = ''
+
+    // Scan forward from declaration to find matching end of the current function block
+    for (let i = declIndex; i < content.length; i++) {
+      const ch = content[i]
+      if (inString) {
+        if (ch === stringChar && content[i - 1] !== '\\') {
+          inString = false
+        }
+        continue
+      }
+      if (ch === "'" || ch === '"' || ch === '`') {
+        inString = true
+        stringChar = ch
+        continue
+      }
+      if (ch === '{') {
+        depth++
+      } else if (ch === '}') {
+        if (depth > 0) {
           depth--
-          if (depth === 0) {
-            blockEnd = i
-            break
-          }
+        } else {
+          // Closed the enclosing block where declaration lives
+          blockEnd = i
+          break
         }
       }
     }

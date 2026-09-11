@@ -120,6 +120,7 @@ export function EntityDialog({ entity, open, onOpenChange, onSuccess }: EntityDi
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)
       }
+    } finally {
       setIsLoading(false)
     }
   }

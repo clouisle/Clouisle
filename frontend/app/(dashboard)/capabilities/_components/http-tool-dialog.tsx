@@ -301,6 +301,7 @@ export function HttpToolDialog({
               <Input
                 id="description"
                 placeholder={t('descriptionPlaceholder')}
+                value={description}
                 onChange={(e) => {
                   setDescription(e.target.value)
                   setFieldErrors((prev) => clearValidationError(prev, 'description'))

@@ -1028,6 +1028,7 @@ export function ModelDialog({
       if (Object.keys(validationErrors).length > 0) {
         setErrors(validationErrors)
       }
+    } finally {
       setIsLoading(false)
     }
   }

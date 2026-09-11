@@ -214,29 +214,24 @@ def validate_external_http_url(
                 reason="cloud metadata address",
             )
 
-    # Transparent proxy Fake-IP pool (198.18.0.0/15) is automatically allowed
-    if any(_is_fake_ip(ip) for ip in resolved_ips):
-        return _ValidatedExternalUrl(value)
-
-    # Check allowlist exemption
-    if allowlist and is_target_allowlisted(host, resolved_ips, allowlist):
-        return _ValidatedExternalUrl(value)
-
+    # Check each resolved IP: must either be public, fake-IP, or explicitly allowlisted
     for ip in resolved_ips:
-        if ip.is_loopback:
-            raise BusinessError(
-                msg_key="http_tool_url_host_not_allowed",
-                host=host,
-                ip=str(ip),
-                reason="loopback address",
-            )
-        if _is_blocked_ip(ip):
-            raise BusinessError(
-                msg_key="http_tool_url_host_not_allowed",
-                host=host,
-                ip=str(ip),
-                reason=f"private address {ip}",
-            )
+        if _is_fake_ip(ip):
+            continue
+        is_ip_blocked = ip.is_loopback or _is_blocked_ip(ip)
+        if is_ip_blocked:
+            ip_exempt = bool(allowlist and is_target_allowlisted(host, [ip], allowlist))
+            if not ip_exempt:
+                reason = (
+                    "loopback address" if ip.is_loopback else f"private address {ip}"
+                )
+                raise BusinessError(
+                    msg_key="http_tool_url_host_not_allowed",
+                    host=host,
+                    ip=str(ip),
+                    reason=reason,
+                )
+
     return _ValidatedExternalUrl(value)
 
 

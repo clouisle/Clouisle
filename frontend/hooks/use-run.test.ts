@@ -106,7 +106,7 @@ describe('useRun', () => {
     expect(hook.executionState?.progress).toEqual({ current: 3, total: 3 })
     expect(Array.from(hook.executionState?.nodes.values() || [])).toEqual([
       expect.objectContaining({ type: 'rag', label: 'chat.task.searchingKnowledge', status: 'running', metadata: { info: 2 } }),
-      expect.objectContaining({ type: 'reasoning', label: 'agents.chat.messages.reasoning', status: 'completed', output: 'think', duration: 5 }),
+      expect.objectContaining({ type: 'reasoning', label: 'chat.reasoning.thought', status: 'completed', output: 'think', duration: 5 }),
       expect.objectContaining({ id: 'tool-1', label: 'Search', status: 'error', input: { q: 'x' }, output: 'boom', error: 'boom' }),
     ])
 

@@ -81,6 +81,7 @@ export function PermissionDialog({ open, onOpenChange, permission, onSuccess }: 
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)
       }
+    } finally {
       setIsLoading(false)
     }
   }

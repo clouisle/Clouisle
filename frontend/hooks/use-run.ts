@@ -57,8 +57,6 @@ export function useRun(options: UseRunOptions): UseRunReturn {
   const { id, type, conversationId, variables, isDebug, onConversationChange, onError, onStreamStart, onStreamEnd } = options
   const tReasoning = useTranslations('chat.reasoning')
   const tTask = useTranslations('chat.task')
-  const tAgents = useTranslations('agents.chat.messages')
-
   // Agent chat hook
   const agentChat = useChat({
     agentId: type === 'agent' ? id : '',
@@ -95,7 +93,7 @@ export function useRun(options: UseRunOptions): UseRunReturn {
           nodes.set(nodeId, {
             id: nodeId,
             type: 'reasoning',
-            label: tAgents('reasoning'),
+            label: tReasoning('thought'),
             status: part.state === 'streaming' ? 'running' : 'completed',
             duration: part.duration,
             output: part.text,
@@ -142,7 +140,7 @@ export function useRun(options: UseRunOptions): UseRunReturn {
       nodes,
       progress: { current: nodes.size, total: nodes.size },
     }
-  }, [type, agentChat.messages, tAgents, tReasoning, tTask])
+  }, [type, agentChat.messages, tReasoning, tTask])
 
   if (type === 'agent') {
     return {

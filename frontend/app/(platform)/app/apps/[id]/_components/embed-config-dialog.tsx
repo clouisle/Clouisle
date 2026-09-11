@@ -166,6 +166,7 @@ export function EmbedConfigDialog({
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)
       }
+    } finally {
       setSaving(false)
     }
   }

@@ -179,6 +179,7 @@ export function RoleDialog({ open, onOpenChange, role, onSuccess }: RoleDialogPr
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)
       }
+    } finally {
       setIsLoading(false)
     }
   }

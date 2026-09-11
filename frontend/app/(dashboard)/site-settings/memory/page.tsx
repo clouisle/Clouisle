@@ -108,9 +108,10 @@ export default function SiteSettingsMemoryPage() {
       })
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)
+      } else {
+        toast.error(error instanceof Error ? error.message : t('saveError'))
       }
       console.error('Failed to save memory settings:', error)
-    } finally {
       setSaving(false)
     }
   }
