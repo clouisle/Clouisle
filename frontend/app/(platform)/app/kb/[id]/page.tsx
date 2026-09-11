@@ -192,14 +192,26 @@ export default function KnowledgeBaseDetailPage({
               onClick={async () => {
                 setIsNavigatingPending(true)
                 try {
-                  const pendingRes = await knowledgeBasesApi.getDocuments(knowledgeBaseId, {
-                    status: ['pending'],
-                    pageSize: 500,
-                  })
-                  const docs = pendingRes.items || []
-                  if (docs.length > 0) {
+                  const allDocs: Array<unknown> = []
+                  let currentPage = 1
+                  let hasMore = true
+                  while (hasMore) {
+                    const pendingRes = await knowledgeBasesApi.getDocuments(knowledgeBaseId, {
+                      status: ['pending'],
+                      page: currentPage,
+                      pageSize: 100,
+                    })
+                    const items = pendingRes.items || []
+                    allDocs.push(...items)
+                    if (allDocs.length >= pendingRes.total || items.length === 0) {
+                      hasMore = false
+                    } else {
+                      currentPage += 1
+                    }
+                  }
+                  if (allDocs.length > 0) {
                     try {
-                      sessionStorage.setItem(`kb_preview_docs_${knowledgeBaseId}`, JSON.stringify(docs))
+                      sessionStorage.setItem(`kb_preview_docs_${knowledgeBaseId}`, JSON.stringify(allDocs))
                     } catch {
                       // ignore
                     }

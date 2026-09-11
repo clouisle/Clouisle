@@ -41,6 +41,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ChunkMarkdown } from '@/components/ui/chunk-markdown'
+import { cn } from '@/lib/utils'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
@@ -709,10 +710,12 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                     </p>
                   )}
                 </div>
-                <Button variant="outline" size="sm" onClick={handleRetryFailedChunks}>
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  {t('retryFailedChunks')}
-                </Button>
+                {canUpdateDoc && (
+                  <Button variant="outline" size="sm" onClick={handleRetryFailedChunks}>
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    {t('retryFailedChunks')}
+                  </Button>
+                )}
               </div>
             </div>
           )}
@@ -727,7 +730,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                 <div className="flex flex-col items-center justify-center h-full text-center p-8">
                   <FileText className="h-12 w-12 text-muted-foreground mb-4" />
                   <h3 className="text-lg font-medium mb-2">{t('noChunks')}</h3>
-                  {isCompleted && (
+                  {isCompleted && canUpdateDoc && (
                     <Button variant="outline" onClick={() => addNewChunk(-1)} disabled={isSaving}>
                       <Plus className="h-4 w-4 mr-2" />
                       {t('addFirstChunk')}
@@ -888,11 +891,11 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                             />
                           ) : (
                             <div
-                              role="button"
-                              tabIndex={0}
-                              className="cursor-pointer hover:bg-muted/50 rounded p-2 -m-2 transition-colors"
-                              onClick={() => isCompleted && startEditing(chunk.id)}
-                              onKeyDown={(e) => { if (isCompleted && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); startEditing(chunk.id) } }}
+                              role={canUpdateDoc && isCompleted ? "button" : undefined}
+                              tabIndex={canUpdateDoc && isCompleted ? 0 : undefined}
+                              className={cn("rounded p-2 -m-2 transition-colors", canUpdateDoc && isCompleted && "cursor-pointer hover:bg-muted/50")}
+                              onClick={() => isCompleted && canUpdateDoc && startEditing(chunk.id)}
+                              onKeyDown={(e) => { if (isCompleted && canUpdateDoc && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); startEditing(chunk.id) } }}
                             >
                               <ChunkMarkdown source={chunk.content} />
                             </div>

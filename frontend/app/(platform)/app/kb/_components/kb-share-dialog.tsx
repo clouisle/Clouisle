@@ -83,23 +83,32 @@ export function KnowledgeBaseShareDialog({
     [fieldErrors]
   )
 
-  // 加载共享列表
+  // 加载共享列表，使用 activeKbId 守卫防止异步响应竞态
+  const activeKbIdRef = React.useRef<string | null>(null)
+
   const loadShares = React.useCallback(async () => {
-    if (!knowledgeBase?.id) return
+    const targetKbId = knowledgeBase?.id
+    if (!targetKbId) return
+    activeKbIdRef.current = targetKbId
 
     setIsLoading(true)
     try {
-      const response = await knowledgeBasesApi.listKnowledgeBaseShares(knowledgeBase.id)
-      setShares(response.shares)
+      const response = await knowledgeBasesApi.listKnowledgeBaseShares(targetKbId)
+      if (activeKbIdRef.current === targetKbId) {
+        setShares(response.shares)
+      }
     } catch (error) {
       console.error('Failed to load shares:', error)
     } finally {
-      setIsLoading(false)
+      if (activeKbIdRef.current === targetKbId) {
+        setIsLoading(false)
+      }
     }
   }, [knowledgeBase?.id])
 
   React.useEffect(() => {
     if (open && knowledgeBase?.id) {
+      setShares([])
       loadShares()
       setFieldErrors({})
       setSelectedTeamId('')

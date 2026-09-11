@@ -253,8 +253,12 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
       return newState
     })
 
-    // 并行预览所有文档
-    await Promise.all(pendingDocs.map(docId => handlePreviewDocument(docId)))
+    // 并行预览所有文档，限制并发池为 5~10
+    const poolSize = 5
+    for (let i = 0; i < pendingDocs.length; i += poolSize) {
+      const slice = pendingDocs.slice(i, i + poolSize)
+      await Promise.all(slice.map(docId => handlePreviewDocument(docId)))
+    }
     toast.success(t('batchPreviewGenerated'))
   }
 
@@ -381,7 +385,12 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
     if (successCount === total) {
       toast.success(t('processStarted', { count: total }), { id: toastId })
     } else {
-      toast.success(`${t('processStarted', { count: successCount })} (${t('processFailed', { count: total - successCount })})`, { id: toastId })
+      const message = `${t('processStarted', { count: successCount })} (${t('processFailed', { count: total - successCount })})`
+      if (successCount === 0) {
+        toast.error(message, { id: toastId })
+      } else {
+        toast.warning(message, { id: toastId })
+      }
     }
 
     try {

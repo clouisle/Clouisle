@@ -178,12 +178,12 @@
         "unshareButton": "Revoke",
         "sharedBadge": "Shared",
         "sharedFrom": "From {teamName}",
-        "sharedWithCount": "Shared with {count} teams"
+        "sharedWithCount": "Shared with {count, plural, one {# team} other {# teams}}"
       },
       "shareAction": "Share",
       "shared": "Shared",
       "sharedFrom": "From {teamName}",
-      "sharedCount": "Shared with {count} teams"
+      "sharedCount": "Shared with {count, plural, one {# team} other {# teams}}"
     },
     "tools": {
       "title": "Capabilities",
@@ -510,7 +510,7 @@
         "unshareButton": "Revoke",
         "sharedBadge": "Shared",
         "sharedFrom": "From {teamName}",
-        "sharedWithCount": "Shared with {count} teams"
+        "sharedWithCount": "Shared with {count, plural, one {# team} other {# teams}}"
       }
     },
     "skills": {
