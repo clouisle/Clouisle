@@ -80,24 +80,36 @@ class FakeRedis:
 class FakePubSub:
     def __init__(self, redis: FakeRedis):
         self.redis = redis
+        self.subscribed: list[str] = []
+        self._closed = False
 
     async def subscribe(self, channel):
+        self.subscribed.append(channel)
         self.redis.subscribed.append(channel)
 
     async def unsubscribe(self, channel):
+        if channel in self.subscribed:
+            self.subscribed.remove(channel)
         if channel in self.redis.subscribed:
             self.redis.subscribed.remove(channel)
 
     async def close(self):
-        pass
+        self._closed = True
 
     async def listen(self):
         yield {"type": "subscribe"}
-        for message in self.redis.channels.get("agent:run:stream", []):
-            yield {"type": "message", "data": message}
-        # End live listen.
-        while True:
-            await asyncio.sleep(0.05)
+        seen_idx: dict[str, int] = {}
+        while not self._closed:
+            found = False
+            for channel in list(self.subscribed):
+                msgs = self.redis.channels.get(channel, [])
+                idx = seen_idx.get(channel, 0)
+                if idx < len(msgs):
+                    seen_idx[channel] = idx + 1
+                    found = True
+                    yield {"type": "message", "data": msgs[idx]}
+            if not found:
+                await asyncio.sleep(0.01)
 
 
 def _get_redis_fixture(redis: FakeRedis):
@@ -225,23 +237,26 @@ async def test_stream_ttl_convergence_on_run_end(monkeypatch, fake_redis):
 
 
 @pytest.mark.asyncio
-async def test_sse_events_emits_heartbeat_ping_on_idle(monkeypatch, fake_redis):
+async def test_sse_events_emits_heartbeat_ping_and_completes(monkeypatch, fake_redis):
     run_id = uuid4()
     stream = agent_run_stream.AgentRunStream(run_id)
     await stream.publish("run_start", {"status": "running"})
 
     lines: list[str] = []
-    async for line in agent_run_stream.sse_events(run_id, heartbeat_interval=0.05):
+    async for line in agent_run_stream.sse_events(run_id, heartbeat_interval=0.03):
         lines.append(line)
         if line == ": ping\n\n":
-            break
+            # Publish run_end to terminate the stream and cover the normal break
+            await stream.publish("run_end", {"status": "completed"})
 
     assert any(line.startswith("event: run_start") for line in lines)
-    assert lines[-1] == ": ping\n\n"
+    assert ": ping\n\n" in lines
+    assert any(line.startswith("event: run_end") for line in lines)
 
 
 @pytest.mark.asyncio
 async def test_worker_micro_batching_collector():
+    from app.services.agent_run_worker import MicroBatchingCollector
 
     published_events: list[tuple[str, dict[str, Any]]] = []
 
@@ -258,62 +273,8 @@ async def test_worker_micro_batching_collector():
     event_queue: asyncio.Queue[tuple[str, dict[str, Any]] | None] = asyncio.Queue()
     stream = RecordingStream(uuid4())
 
-    BATCH_DELTA_TYPES = {"content_delta", "reasoning_delta"}
-    BATCH_WINDOW_SECONDS = 0.02
-    BATCH_MAX_DELTA_COUNT = 6
-
-    batch_type: str | None = None
-    batch_deltas: list[str] = []
-
-    async def flush_batch() -> None:
-        nonlocal batch_type, batch_deltas
-        if not batch_type or not batch_deltas:
-            batch_type = None
-            batch_deltas = []
-            return
-        merged = "".join(batch_deltas)
-        current_type = batch_type
-        batch_type = None
-        batch_deltas = []
-        await stream.publish(current_type, {"delta": merged})
-
-    async def publish_queued_events() -> None:
-        nonlocal batch_type, batch_deltas
-        while True:
-            timeout = BATCH_WINDOW_SECONDS if batch_type is not None else None
-            try:
-                if timeout is not None:
-                    item = await asyncio.wait_for(event_queue.get(), timeout=timeout)
-                else:
-                    item = await event_queue.get()
-            except TimeoutError:
-                await flush_batch()
-                continue
-
-            try:
-                if item is None:
-                    await flush_batch()
-                    return
-                event_type, event_payload = item
-                if (
-                    event_type in BATCH_DELTA_TYPES
-                    and isinstance(event_payload, dict)
-                    and "delta" in event_payload
-                ):
-                    delta_val = str(event_payload.get("delta") or "")
-                    if batch_type is not None and batch_type != event_type:
-                        await flush_batch()
-                    batch_type = event_type
-                    batch_deltas.append(delta_val)
-                    if len(batch_deltas) >= BATCH_MAX_DELTA_COUNT:
-                        await flush_batch()
-                else:
-                    await flush_batch()
-                    await stream.publish(event_type, event_payload)
-            finally:
-                event_queue.task_done()
-
-    publisher_task = asyncio.create_task(publish_queued_events())
+    collector = MicroBatchingCollector(event_queue=event_queue, stream=stream)
+    publisher_task = asyncio.create_task(collector.run_loop())
 
     # 1. Six content deltas should flush upon reaching count limit
     for i in range(6):
@@ -325,7 +286,6 @@ async def test_worker_micro_batching_collector():
         "content_delta",
         {"delta": "token0_token1_token2_token3_token4_token5_"},
     )
-
     # 2. Delta followed by a non-delta (tool_call) should flush delta immediately
     event_queue.put_nowait(("content_delta", {"delta": "before_tool"}))
     event_queue.put_nowait(("tool_call", {"name": "calculator"}))
@@ -349,6 +309,23 @@ async def test_worker_micro_batching_collector():
     # 4. Clean shutdown
     await event_queue.put(None)
     await publisher_task
+
+
+@pytest.mark.asyncio
+async def test_sse_events_propagates_consumer_error(monkeypatch):
+    run_id = uuid4()
+
+    class FailingStream:
+        def __init__(self, _run_id):
+            pass
+
+        async def subscribe(self, _from_sequence=0):
+            raise ConnectionError("Redis connection lost")
+            yield {}  # noqa
+
+    with pytest.raises(ConnectionError, match="Redis connection lost"):
+        async for _ in agent_run_stream.sse_events(run_id, heartbeat_interval=0.1):
+            pass
 
 
 @pytest.mark.asyncio

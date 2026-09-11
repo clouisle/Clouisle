@@ -1212,6 +1212,60 @@ async def test_run_agent_round_completion_claim_publishes_end(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_agent_round_emits_batched_deltas_in_loop(monkeypatch):
+    async def _transition(run, expected, status, **_kwargs):
+        if run.status != expected:
+            return None
+        run.status = status
+        return run
+
+    result = _round_result()
+
+    class DeltaLoop:
+        def __init__(self):
+            self.result = result
+
+        async def run(self):
+            # Put events into event_queue passed to _rebuild
+            self.event_queue.put_nowait(("content_delta", {"delta": "part1"}))
+            self.event_queue.put_nowait(("content_delta", {"delta": "part2"}))
+            self.event_queue.put_nowait(("tool_call", {"name": "test"}))
+            self.event_queue.put_nowait(("reasoning_delta", {"delta": "think"}))
+            if False:
+                yield None
+
+    loop_instance = DeltaLoop()
+
+    async def _rebuild(_payload, agent, conversation, event_queue):
+        loop_instance.event_queue = event_queue
+        context = SimpleNamespace(
+            created_message_count=2,
+            working_history_override=None,
+            model_used="test-model",
+        )
+        user_message = SimpleNamespace(
+            id=uuid4(),
+            rag_context=None,
+            round_id=uuid4(),
+        )
+        return context, user_message, loop_instance
+
+    run, stream, canonical = _prepare_full_round(
+        monkeypatch, result=result, transition=_transition
+    )
+    monkeypatch.setattr("app.services.agent_run_worker._rebuild_context", _rebuild)
+
+    output = await run_agent_round(_round_payload(run))
+    assert output["status"] == AgentRunStatus.COMPLETED.value
+    published_types = [
+        call.args[0] for call in stream.publish.await_args_list if len(call.args) >= 1
+    ]
+    assert "content_delta" in published_types
+    assert "tool_call" in published_types
+    assert "reasoning_delta" in published_types
+
+
+@pytest.mark.asyncio
 async def test_run_agent_round_completion_race_stops_winner(monkeypatch):
     stopping = _run(status=AgentRunStatus.STOPPING)
     stopped = _run(status=AgentRunStatus.STOPPED)

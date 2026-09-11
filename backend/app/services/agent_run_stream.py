@@ -171,14 +171,17 @@ async def sse_events(
     Cloudflare, ALB) from terminating idle connections.
     """
     stream = AgentRunStream(run_id)
-    event_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+    event_queue: asyncio.Queue[dict[str, Any] | Exception | None] = asyncio.Queue(
+        maxsize=64
+    )
 
     async def _consumer() -> None:
         try:
             async for event in stream.subscribe(from_sequence):
                 await event_queue.put(event)
-        finally:
             await event_queue.put(None)
+        except Exception as exc:
+            await event_queue.put(exc)
 
     consumer_task = asyncio.create_task(_consumer())
     try:
@@ -191,6 +194,8 @@ async def sse_events(
                 yield ": ping\n\n"
                 continue
 
+            if isinstance(event, Exception):
+                raise event
             if event is None:
                 break
             data = json.dumps(event, ensure_ascii=False, default=str)

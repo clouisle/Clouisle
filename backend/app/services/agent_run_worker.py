@@ -212,6 +212,118 @@ def _format_sse(event_name: str, payload: dict[str, Any]) -> str:
     return f"event: {event_name}\ndata: {data}\n\n"
 
 
+class MicroBatchingCollector:
+    """Batches consecutive streaming deltas within a time window or size limit.
+
+    Measures deadline from the first received delta to guarantee latency bounds.
+    Flushes immediately upon receiving non-delta events, delta type changes,
+    or termination sentinels.
+    """
+
+    BATCH_DELTA_TYPES = {"content_delta", "reasoning_delta"}
+    BATCH_WINDOW_SECONDS = 0.02
+    BATCH_MAX_DELTA_COUNT = 6
+
+    def __init__(
+        self,
+        *,
+        event_queue: asyncio.Queue[tuple[str, dict[str, Any]] | None],
+        stream: Any,
+        run: Any = None,
+        canonical_message_id: UUID | None = None,
+    ) -> None:
+        self.event_queue = event_queue
+        self.stream = stream
+        self.run_obj = run
+        self.canonical_message_id = canonical_message_id
+        self.batch_type: str | None = None
+        self.batch_deltas: list[str] = []
+        self.batch_deadline: float | None = None
+
+    async def flush(self) -> None:
+        if not self.batch_type or not self.batch_deltas:
+            self.batch_type = None
+            self.batch_deltas = []
+            self.batch_deadline = None
+            return
+        merged = "".join(self.batch_deltas)
+        current_type = self.batch_type
+        self.batch_type = None
+        self.batch_deltas = []
+        self.batch_deadline = None
+        round_id = (
+            getattr(self.run_obj, "active_round_id", None) if self.run_obj else None
+        )
+        await self.stream.publish(
+            current_type,
+            {"delta": merged},
+            round_id=round_id,
+            message_id=self.canonical_message_id,
+        )
+
+    async def run_loop(self) -> None:
+        loop = asyncio.get_running_loop()
+        while True:
+            timeout: float | None = None
+            if self.batch_deadline is not None:
+                timeout = max(0.0, self.batch_deadline - loop.time())
+
+            try:
+                if timeout is not None:
+                    item = await asyncio.wait_for(
+                        self.event_queue.get(), timeout=timeout
+                    )
+                else:
+                    item = await self.event_queue.get()
+            except TimeoutError:
+                await self.flush()
+                continue
+
+            try:
+                if item is None:
+                    await self.flush()
+                    return
+                event_type, event_payload = item
+                if (
+                    event_type in self.BATCH_DELTA_TYPES
+                    and isinstance(event_payload, dict)
+                    and "delta" in event_payload
+                ):
+                    delta_val = str(event_payload.get("delta") or "")
+                    if self.batch_type is not None and self.batch_type != event_type:
+                        await self.flush()
+                    if self.batch_type is None:
+                        self.batch_type = event_type
+                        self.batch_deadline = loop.time() + self.BATCH_WINDOW_SECONDS
+                    self.batch_deltas.append(delta_val)
+                    if len(self.batch_deltas) >= self.BATCH_MAX_DELTA_COUNT:
+                        await self.flush()
+                else:
+                    await self.flush()
+                    round_id = (
+                        getattr(self.run_obj, "active_round_id", None)
+                        if self.run_obj
+                        else None
+                    )
+                    await self.stream.publish(
+                        event_type,
+                        event_payload,
+                        round_id=round_id,
+                        message_id=self.canonical_message_id,
+                    )
+            except Exception:
+                run_id = (
+                    getattr(self.run_obj, "id", "unknown")
+                    if self.run_obj
+                    else "unknown"
+                )
+                logger.warning(
+                    "Failed to publish AgentRun %s event", run_id, exc_info=True
+                )
+            finally:
+                self.event_queue.task_done()
+
+
 async def _rebuild_context(
     payload: dict[str, Any],
     *,
@@ -564,79 +676,20 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
     publisher_task: asyncio.Task[None] | None = None
     canonical_message_id: UUID | None = None
 
-    BATCH_DELTA_TYPES = {"content_delta", "reasoning_delta"}
-    BATCH_WINDOW_SECONDS = 0.02
-    BATCH_MAX_DELTA_COUNT = 6
-
-    batch_type: str | None = None
-    batch_deltas: list[str] = []
-
-    async def flush_batch() -> None:
-        nonlocal batch_type, batch_deltas
-        if not batch_type or not batch_deltas:
-            batch_type = None
-            batch_deltas = []
-            return
-        merged = "".join(batch_deltas)
-        current_type = batch_type
-        batch_type = None
-        batch_deltas = []
-        await stream.publish(
-            current_type,
-            {"delta": merged},
-            round_id=run.active_round_id,
-            message_id=canonical_message_id,
-        )
+    collector = MicroBatchingCollector(
+        event_queue=event_queue,
+        stream=stream,
+        run=run,
+        canonical_message_id=canonical_message_id,
+    )
 
     async def publish_queued_events() -> None:
-        nonlocal batch_type, batch_deltas
-        while True:
-            timeout = BATCH_WINDOW_SECONDS if batch_type is not None else None
-            try:
-                if timeout is not None:
-                    item = await asyncio.wait_for(event_queue.get(), timeout=timeout)
-                else:
-                    item = await event_queue.get()
-            except TimeoutError:
-                await flush_batch()
-                continue
-
-            try:
-                if item is None:
-                    await flush_batch()
-                    return
-                event_type, event_payload = item
-                if (
-                    event_type in BATCH_DELTA_TYPES
-                    and isinstance(event_payload, dict)
-                    and "delta" in event_payload
-                ):
-                    delta_val = str(event_payload.get("delta") or "")
-                    if batch_type is not None and batch_type != event_type:
-                        await flush_batch()
-                    batch_type = event_type
-                    batch_deltas.append(delta_val)
-                    if len(batch_deltas) >= BATCH_MAX_DELTA_COUNT:
-                        await flush_batch()
-                else:
-                    await flush_batch()
-                    await stream.publish(
-                        event_type,
-                        event_payload,
-                        round_id=run.active_round_id,
-                        message_id=canonical_message_id,
-                    )
-            except Exception:
-                logger.warning(
-                    "Failed to publish AgentRun %s event", run.id, exc_info=True
-                )
-            finally:
-                event_queue.task_done()
+        await collector.run_loop()
 
     async def flush_queued_events() -> None:
         if publisher_task is not None:
             await event_queue.join()
-            await flush_batch()
+            await collector.flush()
 
     try:
         loop_context, user_msg, loop = await _rebuild_context(

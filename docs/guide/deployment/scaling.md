@@ -506,18 +506,25 @@ Agent conversation streaming leverages Redis for buffering and Pub/Sub delivery 
      ```conf
      maxclients 20000
      ```
-2. **Operating System File Descriptor Limits (`nofile`)**:
-   * Ensure the host and container `ulimit -n` accommodates the `maxclients` limit:
-     ```bash
-     # /etc/security/limits.conf
+2. **Operating System & Container File Descriptor Limits (`nofile`)**:
+   * Host limits in `/etc/security/limits.conf`:
+     ```conf
      redis soft nofile 65536
      redis hard nofile 65536
      ```
+   * Container limits: set `--ulimit nofile=65536:65536` on the Redis container or configure `"default-ulimits": {"nofile": {"Name": "nofile", "Hard": 65536, "Soft": 65536}}` in `/etc/docker/daemon.json`.
+   * Verify the effective limit inside the running container:
+     ```bash
+     docker compose exec redis sh -c 'cat /proc/1/limits | grep "Max open files"'
+     ```
 3. **Proxy Timeouts & SSE Keep-Alive**:
    * FastAPI SSE streams emit periodic comment pings (`: ping\n\n`) every 15 seconds when idle.
-   * Configure intermediate ingress/reverse proxies (Nginx, Cloudflare, ALB) with appropriate keep-alive and read timeouts (e.g. `proxy_read_timeout 300s;` and `proxy_buffering off;`).
+   * Configure provider-specific reverse proxies and load balancers:
+     * **Nginx**: `proxy_read_timeout 300s;` and `proxy_buffering off;` (or send `X-Accel-Buffering: no;`).
+     * **Cloudflare**: Cloudflare Enterprise allows raising the HTTP proxy read timeout up to 6000 seconds via Cache Rules / Origin Rules; on Free/Pro/Business plans (fixed 100s timeout), the 15-second SSE heartbeat guarantees the connection remains active.
+     * **AWS Application Load Balancer (ALB)**: set `idle_timeout.timeout_seconds` to `300` or higher to prevent premature TCP termination.
 4. **Redis Memory Lifecycle & TTL**:
-   * Micro-batching reduces write QPS by grouping high-frequency token deltas within 20ms or 6-token windows.
+   * Micro-batching reduces write QPS by grouping consecutive streaming `content_delta` and `reasoning_delta` events within a 20ms window or a 6-delta count limit.
    * Completed run event buffers automatically converge to a 10-minute TTL (`BUFFER_COMPLETED_TTL_SECONDS = 600`) upon terminal events (`run_end`), freeing Redis RAM while preserving a reconnection and replay window.
 
 ### Application-Level Caching
