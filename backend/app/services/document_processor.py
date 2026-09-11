@@ -564,14 +564,30 @@ class DocumentProcessor:
         Returns:
             Tuple of (extracted_text, metadata)
         """
-        metadata: dict[str, Any] = {"source_url": url}
+        import asyncio
+        from app.core.network_security import validate_external_http_url
+
+        # Validate destination URL against SSRF (private IPs, loopback, metadata services)
+        validated_url = await asyncio.to_thread(validate_external_http_url, url)
+        metadata: dict[str, Any] = {"source_url": str(validated_url)}
 
         try:
             # Use MarkItDown for URL fetching (supports YouTube, HTML, etc.)
+            import requests
             from markitdown import MarkItDown
 
-            md = MarkItDown()
-            result = md.convert(url)
+            class _SSRFProtectedSession(requests.Session):
+                def send(self, request, **kwargs):
+                    validate_external_http_url(request.url)
+                    return super().send(request, **kwargs)
+
+            session = _SSRFProtectedSession()
+            try:
+                md = MarkItDown(requests_session=session)
+            except TypeError:
+                md = MarkItDown()
+
+            result = await asyncio.to_thread(md.convert, str(validated_url))
 
             text = result.text_content
             metadata["format"] = "markdown"
@@ -583,8 +599,15 @@ class DocumentProcessor:
             # Fallback to httpx
             import httpx
 
-            async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-                response = await client.get(url)
+            async def _validate_httpx_request(request: httpx.Request) -> None:
+                await asyncio.to_thread(validate_external_http_url, str(request.url))
+
+            async with httpx.AsyncClient(
+                follow_redirects=True,
+                timeout=30.0,
+                event_hooks={"request": [_validate_httpx_request]},
+            ) as client:
+                response = await client.get(str(validated_url))
                 response.raise_for_status()
 
                 content_type = response.headers.get("content-type", "")

@@ -1097,12 +1097,19 @@ async def add_url_document(
             msg_key="source_url_required",
         )
 
+    # Validate destination URL against SSRF (private IPs, loopback, metadata services)
+    import asyncio
+    from app.core.network_security import validate_external_http_url
+
+    validated_url = await asyncio.to_thread(
+        validate_external_http_url, doc_in.source_url
+    )
     # Create document record
     doc = await Document.create(
         knowledge_base=kb,
         name=doc_in.name,
         doc_type=DocumentType.URL.value,
-        source_url=doc_in.source_url,
+        source_url=str(validated_url),
         status=DocumentStatus.PENDING.value,
         uploaded_by=current_user,
     )
@@ -1131,7 +1138,7 @@ async def add_url_document(
         metadata={
             "kb_id": str(kb_id),
             "kb_name": kb.name,
-            "source_url": doc_in.source_url,
+            "source_url": str(validated_url),
         },
         changes={"after": AuditLogService.snapshot(doc, "document")},
     )
@@ -1774,6 +1781,8 @@ async def preview_document_chunks(
             msg_key="chunk_preview_generated",
         )
 
+    except BusinessError:
+        raise
     except Exception as e:
         logger.exception(f"Error previewing chunks for document {doc_id}: {e}")
         raise BusinessError(

@@ -174,7 +174,10 @@ async def test_create_document_from_upload_or_url(monkeypatch, url_document):
         "serialize_document",
         AsyncMock(return_value={"id": str(doc_id)}),
     )
-
+    monkeypatch.setattr(
+        "app.core.network_security.validate_external_http_url",
+        lambda value, **kwargs: value,
+    )
     if url_document:
         response = await knowledge_bases.add_url_document(
             kb_id,
