@@ -8,7 +8,7 @@ permissions:
   pull-requests: read
 engine:
   id: claude
-  model: deepseek-v4-pro
+  model: deepseek-flash
   env:
     ANTHROPIC_BASE_URL: https://api.deepseek.com/anthropic
   api-target: api.deepseek.com
