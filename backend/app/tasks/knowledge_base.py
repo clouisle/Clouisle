@@ -570,14 +570,13 @@ async def _send_doc_failed_notification(
                     "notify_kb_doc_failed_content",
                     lang=effective_locale,
                     doc_name=document.name,
-                    kb_name=kb_name,
-                    error=error,
+                    error=error[:200],
                 ),
                 data={
                     "document_id": str(document.id),
                     "document_name": document.name,
                     "kb_name": kb_name,
-                    "error": error,
+                    "error": error[:500],
                 },
                 link_url=f"/kb/{document.knowledge_base_id}",
             )
@@ -592,13 +591,13 @@ async def _send_doc_failed_notification(
                     lang=default_lang,
                     doc_name=document.name,
                     kb_name=kb_name,
-                    error=error,
+                    error=error[:200],
                 ),
                 data={
                     "document_id": str(document.id),
                     "document_name": document.name,
                     "kb_name": kb_name,
-                    "error": error,
+                    "error": error[:500],
                 },
                 link_url=f"/kb/{document.knowledge_base_id}",
             )
@@ -685,13 +684,14 @@ async def _process_document(document_id: str, task_id: str | None) -> dict[str, 
         is_md_format = document.doc_type == "md" or (
             document.metadata and document.metadata.get("format") == "markdown"
         )
-        chunks = chunk_text(
-            text,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            separators=[separator] if separator else None,
-            is_markdown=True if is_md_format else None,
-        )
+        chunk_kwargs: dict[str, Any] = {
+            "chunk_size": chunk_size,
+            "chunk_overlap": chunk_overlap,
+            "separators": [separator] if separator else None,
+        }
+        if is_md_format:
+            chunk_kwargs["is_markdown"] = True
+        chunks = chunk_text(text, **chunk_kwargs)
         if not chunks:
             raise ValueError(t("document_no_chunks_generated", lang=user_locale))
 
@@ -1114,13 +1114,14 @@ def rechunk_document_task(self, document_id: str) -> dict:
             is_md_format = document.doc_type == "md" or (
                 document.metadata and document.metadata.get("format") == "markdown"
             )
-            chunks = chunk_text(
-                text,
-                chunk_size=chunk_size,
-                chunk_overlap=chunk_overlap,
-                separators=[separator] if separator else None,
-                is_markdown=True if is_md_format else None,
-            )
+            chunk_kwargs: dict[str, Any] = {
+                "chunk_size": chunk_size,
+                "chunk_overlap": chunk_overlap,
+                "separators": [separator] if separator else None,
+            }
+            if is_md_format:
+                chunk_kwargs["is_markdown"] = True
+            chunks = chunk_text(text, **chunk_kwargs)
             if not chunks:
                 raise ValueError(t("document_no_chunks_generated", lang=user_locale))
 
@@ -1571,9 +1572,11 @@ def embed_document_chunks_task(
     """
 
     task_id = getattr(self.request, "id", None)
-    return _run_async(
-        _embed_existing_document_chunks(document_id, task_id, batch_id=batch_id)
-    )
+    if batch_id is not None:
+        return _run_async(
+            _embed_existing_document_chunks(document_id, task_id, batch_id=batch_id)
+        )
+    return _run_async(_embed_existing_document_chunks(document_id, task_id))
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)

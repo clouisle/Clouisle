@@ -120,14 +120,14 @@ async def _dispatch_document_task(
         metadata = dict(locked_doc.metadata or {})
         if metadata_updates:
             metadata.update(metadata_updates)
-        metadata.update(
-            {
-                "task_id": task_id,
-                "task_name": task_func.name,
-                "task_args": list(args),
-                "task_kwargs": task_kwargs or {},
-            }
-        )
+        task_meta: dict[str, Any] = {
+            "task_id": task_id,
+            "task_name": task_func.name,
+            "task_args": list(args),
+        }
+        if task_kwargs:
+            task_meta["task_kwargs"] = task_kwargs
+        metadata.update(task_meta)
         locked_doc.metadata = metadata
         locked_doc.status = status
         locked_doc.error_message = None
@@ -139,7 +139,10 @@ async def _dispatch_document_task(
     doc.status = status
     doc.error_message = None
     try:
-        task_func.apply_async(args=args, kwargs=task_kwargs or {}, task_id=task_id)
+        if task_kwargs:
+            task_func.apply_async(args=args, kwargs=task_kwargs, task_id=task_id)
+        else:
+            task_func.apply_async(args=args, task_id=task_id)
     except Exception:
         async with in_transaction() as connection:
             owned_doc = (
@@ -1527,22 +1530,22 @@ async def process_document_with_chunks(
 
         # Note: KB statistics will be updated by Celery task after successful embedding
 
-        batch_id_str = (
-            str(process_request.batch_id) if process_request.batch_id else None
-        )
+        req_batch_id = getattr(process_request, "batch_id", None)
+        req_batch_total = getattr(process_request, "batch_total", None)
+        batch_id_str = str(req_batch_id) if req_batch_id else None
         # Initialize batch tracking in Redis if batch_id and batch_total provided
-        if batch_id_str and process_request.batch_total:
+        if batch_id_str and req_batch_total:
             try:
                 from app.core.redis import get_redis
 
                 r = await get_redis()
                 batch_key = f"kb_batch:{batch_id_str}:remain"
                 # Only set if not already set (NX)
-                await r.set(batch_key, process_request.batch_total, ex=7200, nx=True)
+                await r.set(batch_key, req_batch_total, ex=7200, nx=True)
                 # Store total and kb info
                 await r.set(
                     f"kb_batch:{batch_id_str}:total",
-                    process_request.batch_total,
+                    req_batch_total,
                     ex=7200,
                     nx=True,
                 )
