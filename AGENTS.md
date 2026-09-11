@@ -47,19 +47,32 @@ docker-compose -f deploy/docker-compose.dev.yml up -d
 - Record field-level before/after diffs in audit logs via `AuditLogService.snapshot`/`build_changes` (see `docs/dev/backend/audit-logging.md`).
 - Keep detailed implementation guidance in `docs/dev/`.
 - Update docs when architecture or conventions change.
+- Strict test coverage gates: Backend line & branch coverage >= 95.00% (`backend/scripts/check_coverage.py`), and Frontend function & line coverage gates.
+- License compliance: strictly avoid copyleft licenses (GPL/AGPL). Any indirect exception must be approved in `license-policy.yml`.
 
-## High-Volume & Batch Processing Conventions
+## Core Architectural & Engineering Invariants
 
-When designing or implementing batch operations (e.g., uploading, chunking, embedding, or re-indexing 500+ documents/entities):
-1. **Never pass bulk ID arrays in URL queries**: Request line/header limits (8KB–16KB) trigger HTTP 431 errors. Use client storage (`sessionStorage`) or an explicit backend transaction/batch ID. Always maintain recovery banners on parent pages if users drop off or close tabs.
-2. **Transaction-level isolation via UUID batch keys**: Never bind transient status counters or locks to static dimensions (`user_id`, `kb_id`). Use unique `batch_id = uuid4()` to prevent multi-user, multi-tab, or concurrent upload collisions.
-3. **Atomic state convergence without database hammering**: Use Redis atomic counters (`DECR`/`INCR`) for async completion detection. Avoid repeated database `SELECT count(*) WHERE status in (...)` inside async workers.
-4. **Guaranteed lifecycle exit for all error branches**: Any mechanism relying on counter decrement or chord convergence must decrement on both success and failure/exception branches to prevent counter deadlocks and lost completion signals. Ensure TTLs on all temporary Redis keys.
-5. **Frontend request pooling & notification de-duplication**: Throttle large client requests in small concurrency batches (5–10 items) rather than unbounded `Promise.all`. For batch notifications and toasts, aggregate progress into a single updating indicator (`toast.loading`) rather than emitting one toast per completed item.
-6. **Union-gate notification resolution**: For partial-success / partial-failure batches, align with site-setting notification switches by prioritizing error awareness (`high` warning priority) and ensuring notifications fire if either success or failure events are enabled.
+1. **Permissions & Multi-Tenant Boundary**:
+   - Double-check frontend `<PermissionGuard>` alongside backend route dependencies (`require_kb_update`, `check_team_access`).
+   - Shared/non-owned resources must downgrade to read-only mode for consumers; strictly guard against IDOR.
+2. **High-Volume & Batch Processing**:
+   - Never pass bulk ID arrays in URL queries (HTTP 431). Use `sessionStorage` or backend batch IDs.
+   - Transaction-level isolation via UUID keys: use `batch_id = uuid4()` to prevent multi-user/multi-tab counter overwrites.
+   - Atomic convergence: use Redis `DECR`/`INCR` instead of database `SELECT count(*)` polling in Celery workers.
+   - Failure exit safety: decrement batch counters on all failure/exception exits to prevent deadlocks.
+   - Request pooling & toast hygiene: throttle large client requests in batches of 5–10; aggregate toast messages into a single progress indicator.
+   - Union-gate notification resolution: prioritize failure awareness for partial batches and respect site-setting notification toggles.
+3. **External Dependencies & Licensing**:
+   - Prefer concise standard library / native implementations (<= 30 lines) over adding new npm/pip packages.
+   - Assume external network services (LLMs, OCR, SMTP, S3) will fail or time out: enforce explicit timeouts, circuit breakers, and rate limit protections.
+4. **Responsive & Adaptive UX**:
+   - Avoid `100vh` on mobile viewports; use `h-svh`/flex containers with `min-h-0` to avoid address-bar clipping and nested scroll deadlocks.
+   - Adapt complex two-column layouts into stack/drawer views on small screens; ensure touch targets are at least 44x44px.
+5. **Full-Chain i18n**:
+   - Extract all user-facing strings into `zh` and `en` dictionaries. Match translations namespaces strictly to prevent runtime `MISSING_MESSAGE` errors.
+
 ## Detailed docs
 
-- `docs/dev/README.md`
 - `docs/dev/api/BACKEND_API.md`
 - `docs/dev/backend/api-conventions.md`
 - `docs/dev/backend/migrations-and-init-data.md`
