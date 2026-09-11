@@ -155,6 +155,37 @@ export type PlatformMessages = {
       noKbs: string
       createKbHint: string
       createFirstKb: string
+      share: {
+        title: string
+        description: string
+        selectTeam: string
+        selectTeamPlaceholder: string
+        permission: string
+        permissions: {
+          readOnly: string
+          readOnlyDesc: string
+        }
+        shareButton: string
+        sharedWith: string
+        noShares: string
+        noAvailableTeams: string
+        sharedBy: string
+        shareSuccess: string
+        shareFailed: string
+        unshareSuccess: string
+        unshareFailed: string
+        loadFailed: string
+        confirmUnshare: string
+        confirmUnshareDesc: string
+        unshareButton: string
+        sharedBadge: string
+        sharedFrom: string
+        sharedWithCount: string
+      }
+      shareAction: string
+      shared: string
+      sharedFrom: string
+      sharedCount: string
     }
     tools: {
       title: string

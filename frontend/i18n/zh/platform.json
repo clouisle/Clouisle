@@ -152,7 +152,38 @@
       "createKb": "创建知识库",
       "noKbs": "暂无知识库",
       "createKbHint": "创建知识库以存储和检索信息",
-      "createFirstKb": "创建第一个知识库"
+      "createFirstKb": "创建第一个知识库",
+      "share": {
+        "title": "共享",
+        "description": "将 \"{kbName}\" 共享给其他团队",
+        "selectTeam": "选择团队",
+        "selectTeamPlaceholder": "选择要共享的团队",
+        "permission": "权限级别",
+        "permissions": {
+          "readOnly": "只读",
+          "readOnlyDesc": "可以查看、检索和在智能体中关联该知识库"
+        },
+        "shareButton": "共享",
+        "sharedWith": "已共享给",
+        "noShares": "尚未共享给任何团队",
+        "noAvailableTeams": "暂无其他可共享的团队",
+        "sharedBy": "由 {name} 共享",
+        "shareSuccess": "知识库共享成功",
+        "shareFailed": "知识库共享失败",
+        "unshareSuccess": "已取消共享",
+        "unshareFailed": "取消共享失败",
+        "loadFailed": "加载共享列表失败",
+        "confirmUnshare": "取消共享",
+        "confirmUnshareDesc": "确定要取消与 \"{teamName}\" 的共享吗？",
+        "unshareButton": "取消共享",
+        "sharedBadge": "已共享",
+        "sharedFrom": "来自 {teamName}",
+        "sharedWithCount": "已共享给 {count} 个团队"
+      },
+      "shareAction": "共享",
+      "shared": "共享",
+      "sharedFrom": "来自 {teamName}",
+      "sharedCount": "已共享 {count} 个团队"
     },
     "tools": {
       "title": "能力",

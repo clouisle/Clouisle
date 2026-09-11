@@ -18,6 +18,8 @@ from .site_setting import (
 from .model import Model, ModelProvider, ModelType, PROVIDER_DEFAULTS, TeamModel
 from .knowledge_base import (
     KnowledgeBase,
+    KnowledgeBaseShare,
+    KnowledgeBaseSharePermission,
     Document,
     DocumentChunk,
     KnowledgeBaseStatus,
@@ -119,6 +121,8 @@ __all__ = [
     "PROVIDER_DEFAULTS",
     "TeamModel",
     "KnowledgeBase",
+    "KnowledgeBaseShare",
+    "KnowledgeBaseSharePermission",
     "Document",
     "DocumentChunk",
     "KnowledgeBaseStatus",

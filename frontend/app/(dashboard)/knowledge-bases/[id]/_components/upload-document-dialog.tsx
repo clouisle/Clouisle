@@ -168,9 +168,18 @@ export function UploadDocumentDialog({
       onOpenChange(false)
       onSuccess()
       
-      // 跳转到批量预览页面配置分段
-      const docIds = uploadedDocs.map(doc => doc.id).join(',')
-      router.push(`/knowledge-bases/${knowledgeBaseId}/documents/preview?docs=${docIds}`)
+      // 将已上传成功的文档暂存到 sessionStorage，避免 431 URL 超长并省去并发 getDocument 请求
+      try {
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem(
+            `kb_preview_docs_${knowledgeBaseId}`,
+            JSON.stringify(uploadedDocs)
+          )
+        }
+        router.push(`/knowledge-bases/${knowledgeBaseId}/documents/preview`)
+      } catch {
+        toast.error(t('sessionStorageFailed') || 'Failed to save documents to session storage for preview')
+      }
     }
   }
   

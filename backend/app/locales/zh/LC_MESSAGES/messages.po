@@ -1638,6 +1638,15 @@ msgstr "文档索引失败"
 msgid "notify_kb_doc_indexed_content"
 msgstr "知识库 **{kb_name}** 中的文档 **{doc_name}** 已成功索引。分块数：{chunk_count}，Token 数：{token_count}。"
 
+msgid "notify_kb_batch_indexed_content"
+msgstr "知识库 **{kb_name}** 中的批量文档已成功索引，共处理完成 {count} 个文档。"
+
+msgid "notify_kb_batch_failed_content"
+msgstr "知识库 **{kb_name}** 中的批量文档处理均失败，共 {count} 个文档未能完成索引。"
+
+msgid "notify_kb_batch_partial_content"
+msgstr "知识库 **{kb_name}** 批量处理完成：共 {total} 个文档，其中 {success} 个成功，{failed} 个失败。"
+
 msgid "notify_kb_doc_indexed_title"
 msgstr "文档索引成功"
 
@@ -2416,6 +2425,21 @@ msgstr "工具共享成功"
 
 msgid "tool_unshared_successfully"
 msgstr "工具共享已取消"
+
+msgid "kb_share_not_found"
+msgstr "知识库共享记录不存在"
+
+msgid "kb_cannot_share_to_own_team"
+msgstr "不能将知识库共享给自己的团队"
+
+msgid "kb_already_shared"
+msgstr "该知识库已共享给该团队"
+
+msgid "kb_shared_successfully"
+msgstr "知识库共享成功"
+
+msgid "kb_unshared_successfully"
+msgstr "知识库共享已取消"
 
 msgid "tool_update_memory_entity"
 msgstr "更新记忆实体"

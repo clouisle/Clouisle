@@ -186,6 +186,11 @@ class AuditLogService:
         "skill": ("name", "display_name", "is_enabled", "version"),
         "team_member": ("team_id", "user_id", "role"),
         "tool_share": ("tool_id", "shared_with_team_id", "permission"),
+        "knowledge_base_share": (
+            "knowledge_base_id",
+            "shared_with_team_id",
+            "permission",
+        ),
         "workflow_run": ("status", "trigger_type", "is_debug"),
         "workflow_version": (
             "version",

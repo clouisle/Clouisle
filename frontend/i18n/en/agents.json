@@ -214,6 +214,7 @@
         "title": "Knowledge Base",
         "tooltip": "Connect knowledge bases for RAG retrieval",
         "linkedCount": "{count} linked",
+        "shared": "Shared",
         "add": "Add",
         "empty": "No knowledge bases linked. Once linked, the agent can retrieve content from knowledge bases to answer questions.",
         "noAvailable": "No knowledge bases available to add",

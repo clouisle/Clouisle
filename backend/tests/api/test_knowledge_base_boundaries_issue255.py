@@ -22,6 +22,7 @@ from app.services.vector_store import DimensionMismatchError
 
 def _query_with_first(value):
     query = MagicMock()
+    query.prefetch_related = MagicMock(return_value=query)
     query.first = AsyncMock(return_value=value)
     return query
 
@@ -614,3 +615,133 @@ def test_upload_size_and_error_serialization_boundaries(monkeypatch):
         == "translated:unknown_error"
     )
     assert knowledge_bases.serialize_knowledge_base_error("   ") is None
+
+
+@pytest.mark.anyio
+async def test_kb_sharing_endpoints_permissions_and_edge_branches(monkeypatch):
+    kb_id = uuid4()
+    team_id = uuid4()
+    other_team_id = uuid4()
+    admin_user = SimpleNamespace(id=uuid4(), is_superuser=True)
+    regular_user = SimpleNamespace(id=uuid4(), is_superuser=False)
+
+    kb = SimpleNamespace(
+        id=kb_id,
+        name="KB",
+        team_id=team_id,
+        team=SimpleNamespace(id=team_id, name="Team"),
+        created_by=SimpleNamespace(id=admin_user.id),
+    )
+    target_team = SimpleNamespace(id=other_team_id, name="Other Team")
+
+    # 1. share_knowledge_base kb_not_found
+    monkeypatch.setattr(
+        knowledge_bases.KnowledgeBase,
+        "filter",
+        lambda **_kwargs: _query_with_first(None),
+    )
+    with pytest.raises(BusinessError) as exc_info:
+        await knowledge_bases.share_knowledge_base(
+            kb_id,
+            knowledge_bases.KnowledgeBaseShareInput(team_id=other_team_id),
+            SimpleNamespace(),
+            admin_user,
+        )
+    assert exc_info.value.code == ResponseCode.KB_NOT_FOUND
+
+    # 2. share_knowledge_base team_not_found
+    monkeypatch.setattr(
+        knowledge_bases.KnowledgeBase, "filter", lambda **_kwargs: _query_with_first(kb)
+    )
+    monkeypatch.setattr(knowledge_bases, "check_team_access", AsyncMock())
+    monkeypatch.setattr(
+        knowledge_bases.Team, "filter", lambda **_kwargs: _query_with_first(None)
+    )
+    with pytest.raises(BusinessError) as exc_info:
+        await knowledge_bases.share_knowledge_base(
+            kb_id,
+            knowledge_bases.KnowledgeBaseShareInput(team_id=other_team_id),
+            SimpleNamespace(),
+            admin_user,
+        )
+    assert exc_info.value.code == ResponseCode.TEAM_NOT_FOUND
+
+    # 3. share_knowledge_base already shared
+    monkeypatch.setattr(
+        knowledge_bases.Team, "filter", lambda **_kwargs: _query_with_first(target_team)
+    )
+    monkeypatch.setattr(
+        knowledge_bases.KnowledgeBaseShare,
+        "filter",
+        lambda **_kwargs: _query_with_first(SimpleNamespace(id=uuid4())),
+    )
+    with pytest.raises(BusinessError) as exc_info:
+        await knowledge_bases.share_knowledge_base(
+            kb_id,
+            knowledge_bases.KnowledgeBaseShareInput(team_id=other_team_id),
+            SimpleNamespace(),
+            admin_user,
+        )
+    assert exc_info.value.code == ResponseCode.DUPLICATE_NAME
+
+    # 4. unshare_knowledge_base kb_not_found
+    monkeypatch.setattr(
+        knowledge_bases.KnowledgeBase,
+        "filter",
+        lambda **_kwargs: _query_with_first(None),
+    )
+    with pytest.raises(BusinessError) as exc_info:
+        await knowledge_bases.unshare_knowledge_base(
+            kb_id, other_team_id, SimpleNamespace(), admin_user
+        )
+    assert exc_info.value.code == ResponseCode.KB_NOT_FOUND
+
+    # 5. unshare_knowledge_base share_not_found
+    monkeypatch.setattr(
+        knowledge_bases.KnowledgeBase, "filter", lambda **_kwargs: _query_with_first(kb)
+    )
+    monkeypatch.setattr(
+        knowledge_bases.KnowledgeBaseShare,
+        "filter",
+        lambda **_kwargs: _query_with_first(None),
+    )
+    with pytest.raises(BusinessError) as exc_info:
+        await knowledge_bases.unshare_knowledge_base(
+            kb_id, other_team_id, SimpleNamespace(), admin_user
+        )
+    assert exc_info.value.code == ResponseCode.NOT_FOUND
+
+    # 6. check_kb_access permission branches
+    monkeypatch.setattr(
+        knowledge_bases,
+        "check_team_access",
+        AsyncMock(
+            side_effect=BusinessError(
+                code=ResponseCode.NOT_TEAM_MEMBER, msg_key="not_team_member"
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        knowledge_bases.TeamMember,
+        "filter",
+        lambda **_kwargs: MagicMock(
+            values_list=AsyncMock(return_value=[other_team_id])
+        ),
+    )
+    share_filter_mock = MagicMock(
+        return_value=MagicMock(exists=AsyncMock(return_value=True))
+    )
+    monkeypatch.setattr(
+        knowledge_bases.KnowledgeBaseShare,
+        "filter",
+        share_filter_mock,
+    )
+    # non-member but has_share -> accessible for read
+    accessible_kb = await knowledge_bases.check_kb_access(
+        kb, regular_user, require_write=False
+    )
+    assert accessible_kb == kb
+    share_filter_mock.assert_called_once_with(
+        knowledge_base_id=kb.id,
+        shared_with_team_id__in=[other_team_id],
+    )

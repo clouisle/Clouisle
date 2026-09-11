@@ -679,6 +679,7 @@ def chunk_text(
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
     separators: list[str] | None = None,
+    is_markdown: bool | None = None,
 ) -> list[dict[str, Any]]:
     """
     Split text into chunks using LangChain's RecursiveCharacterTextSplitter,
@@ -710,6 +711,13 @@ def chunk_text(
     """
     if not text.strip():
         return []
+
+    # Detect whether Markdown AST chunking should be used
+    should_use_markdown = (
+        is_markdown if is_markdown is not None else _is_markdown_text(text)
+    )
+    if should_use_markdown:
+        return chunk_markdown_ast(text, chunk_size, chunk_overlap, separators)
 
     from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -780,6 +788,477 @@ def _split_on_custom_separator(text: str, separator: str) -> list[str]:
     if not separator or separator not in text:
         return [text]
     return text.split(separator)
+
+
+def _is_markdown_text(text: str) -> bool:
+    """Heuristic check to determine whether plain text contains Markdown structures."""
+    lines = text.splitlines()
+    has_table = False
+    has_heading = False
+    has_list = False
+    has_fence = False
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if re.match(r"^#{1,6}\s+\S+", stripped):
+            has_heading = True
+        elif stripped.startswith("```"):
+            has_fence = True
+        elif (
+            re.match(r"^\|?.+\|.+\|?$", stripped)
+            and "-" in stripped
+            and "|" in stripped
+        ):
+            has_table = True
+        elif re.match(r"^(\*|-|\+|\d+\.)\s+", stripped):
+            has_list = True
+        if (has_table or has_fence) or (has_heading and has_list):
+            return True
+    return has_table or has_fence or has_heading
+
+
+_TABLE_DIVIDER_RE = re.compile(
+    r"^[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)+\|?[ \t]*$"
+)
+
+
+def _extract_markdown_blocks(text: str) -> list[dict[str, Any]]:
+    """
+    Parse Markdown text into structured blocks with section hierarchy.
+
+    Blocks returned have:
+        type: "heading" | "table" | "code" | "list" | "paragraph"
+        content: str
+        section: str | None (Breadcrumb e.g. "Chapter 1 > Section 2")
+        header_lines: list[str] (only for table)
+        rows: list[str] (only for table)
+        language: str | None (only for code)
+    """
+    lines = text.split("\n")
+    blocks: list[dict[str, Any]] = []
+    heading_stack: dict[int, str] = {}
+
+    def get_current_section() -> str | None:
+        sections = [
+            heading_stack[k] for k in sorted(heading_stack.keys()) if heading_stack[k]
+        ]
+        return " > ".join(sections) if sections else None
+
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i]
+        stripped = line.strip()
+
+        if not stripped:
+            i += 1
+            continue
+
+        # 1. Heading
+        heading_match = re.match(r"^(#{1,6})\s+(.+)$", stripped)
+        if heading_match:
+            level = len(heading_match.group(1))
+            title = heading_match.group(2).strip()
+            # Clear deeper levels
+            for k in list(heading_stack.keys()):
+                if k >= level:
+                    heading_stack.pop(k, None)
+            heading_stack[level] = title
+            current_section = get_current_section()
+            blocks.append(
+                {
+                    "type": "heading",
+                    "content": line,
+                    "section": current_section,
+                    "level": level,
+                    "title": title,
+                }
+            )
+            i += 1
+            continue
+
+        # 2. Code Block (Fenced)
+        if stripped.startswith("```"):
+            fence = stripped[:3]
+            lang = stripped[3:].strip() or None
+            code_lines = [line]
+            i += 1
+            while i < n:
+                cur_line = lines[i]
+                code_lines.append(cur_line)
+                if cur_line.strip().startswith(fence):
+                    i += 1
+                    break
+                i += 1
+            blocks.append(
+                {
+                    "type": "code",
+                    "content": "\n".join(code_lines),
+                    "section": get_current_section(),
+                    "language": lang,
+                }
+            )
+            continue
+
+        # 3. Table Block
+        # A table starts with a line containing pipe '|' and next line is separator '|---|'
+        if (
+            "|" in stripped
+            and i + 1 < n
+            and bool(_TABLE_DIVIDER_RE.match(lines[i + 1]))
+        ):
+            header_line = line
+            divider_line = lines[i + 1]
+            table_rows: list[str] = []
+            i += 2
+            while i < n and "|" in lines[i].strip():
+                table_rows.append(lines[i])
+                i += 1
+            blocks.append(
+                {
+                    "type": "table",
+                    "content": "\n".join([header_line, divider_line] + table_rows),
+                    "section": get_current_section(),
+                    "header_lines": [header_line, divider_line],
+                    "rows": table_rows,
+                }
+            )
+            continue
+
+        # 4. List Block
+        list_match = re.match(r"^(\s*(\*|-|\+|\d+\.)\s+)", line)
+        if list_match:
+            list_lines = [line]
+            i += 1
+            while i < n:
+                cur = lines[i]
+                cur_stripped = cur.strip()
+                if not cur_stripped:
+                    # Peak ahead: if blank line followed by indented line or list item, keep in list
+                    if i + 1 < n and (
+                        lines[i + 1].startswith(" ")
+                        or lines[i + 1].startswith("\t")
+                        or re.match(r"^(\s*(\*|-|\+|\d+\.)\s+)", lines[i + 1])
+                    ):
+                        list_lines.append(cur)
+                        i += 1
+                        continue
+                    break
+                if (
+                    re.match(r"^(\s*(\*|-|\+|\d+\.)\s+)", cur)
+                    or cur.startswith(" ")
+                    or cur.startswith("\t")
+                ):
+                    list_lines.append(cur)
+                    i += 1
+                else:
+                    break
+            blocks.append(
+                {
+                    "type": "list",
+                    "content": "\n".join(list_lines),
+                    "section": get_current_section(),
+                }
+            )
+            continue
+
+        # 5. Normal Paragraph
+        para_lines = [line]
+        i += 1
+        while i < n:
+            cur = lines[i]
+            cur_stripped = cur.strip()
+            if not cur_stripped:
+                break
+            # Check if next line is heading, code fence, table, or list
+            if (
+                re.match(r"^(#{1,6})\s+", cur_stripped)
+                or cur_stripped.startswith("```")
+                or (
+                    "|" in cur_stripped
+                    and i + 1 < n
+                    and bool(_TABLE_DIVIDER_RE.match(lines[i + 1]))
+                )
+                or re.match(r"^(\s*(\*|-|\+|\d+\.)\s+)", cur)
+            ):
+                break
+            para_lines.append(cur)
+            i += 1
+
+        blocks.append(
+            {
+                "type": "paragraph",
+                "content": "\n".join(para_lines),
+                "section": get_current_section(),
+            }
+        )
+
+    return blocks
+
+
+def chunk_markdown_ast(
+    text: str,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+    separators: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    AST-aware Markdown chunking.
+
+    - Atomic tables: small tables stay intact; large tables split row-by-row with header repeated.
+    - Atomic lists: list items kept together.
+    - Closed code blocks: fences automatically preserved and closed.
+    - Section hierarchy: breadcrumb path injected into metadata['section'].
+    - Clean overlap: structural units (tables/code) avoid character-slicing overlap contamination.
+    """
+    if not text.strip():
+        return []
+
+    blocks = _extract_markdown_blocks(text)
+    if not blocks:
+        return chunk_text(
+            text, chunk_size, chunk_overlap, separators, is_markdown=False
+        )
+
+    chunks: list[dict[str, Any]] = []
+    current_parts: list[str] = []
+    current_len = 0
+    current_section: str | None = None
+    current_chunk_type = "text"
+
+    def flush_chunk():
+        nonlocal current_parts, current_len, current_section, current_chunk_type
+        if not current_parts:
+            return
+        content = "\n\n".join(current_parts).strip()
+        if content:
+            metadata: dict[str, Any] = {}
+            if current_section:
+                metadata["section"] = current_section
+            if current_chunk_type != "text":
+                metadata["chunk_type"] = current_chunk_type
+            chunks.append(
+                {
+                    "content": content,
+                    "chunk_index": len(chunks),
+                    "token_count": len(content) // CHARS_PER_TOKEN,
+                    "char_count": len(content),
+                    "overlap_length": 0,
+                    "metadata": metadata if metadata else None,
+                }
+            )
+        current_parts = []
+        current_len = 0
+        current_chunk_type = "text"
+
+    for block in blocks:
+        b_type = block["type"]
+        b_content = block["content"]
+        b_section = block.get("section")
+        b_len = len(b_content)
+
+        # High-level heading triggers a chunk boundary if current chunk already has content
+        if b_type == "heading" and block.get("level", 6) <= 2 and current_len > 0:
+            flush_chunk()
+
+        if b_section and not current_section:
+            current_section = b_section
+
+        # Table handling
+        if b_type == "table":
+            header_lines = block.get("header_lines", [])
+            rows = block.get("rows", [])
+            header_prefix = "\n".join(header_lines)
+            header_len = len(header_prefix) + 1
+
+            # Small table fits in remaining buffer
+            if current_len + b_len + 2 <= chunk_size:
+                current_parts.append(b_content)
+                current_len += b_len + 2
+                if current_chunk_type == "text":
+                    current_chunk_type = "table"
+                continue
+
+            # Flush pending content before starting table
+            flush_chunk()
+            current_section = b_section
+
+            # Table fits in a single clean chunk
+            if b_len <= chunk_size:
+                current_parts.append(b_content)
+                current_len = b_len
+                current_chunk_type = "table"
+                flush_chunk()
+                continue
+
+            # Large table: split row by row, duplicating headers for every sub-chunk
+            sub_rows: list[str] = []
+            sub_len = header_len
+            table_part_index = 0
+            for r in rows:
+                r_len = len(r) + 1
+                if sub_rows and (sub_len + r_len > chunk_size):
+                    table_chunk_content = header_prefix + "\n" + "\n".join(sub_rows)
+                    chunks.append(
+                        {
+                            "content": table_chunk_content,
+                            "chunk_index": len(chunks),
+                            "token_count": len(table_chunk_content) // CHARS_PER_TOKEN,
+                            "char_count": len(table_chunk_content),
+                            "overlap_length": 0,
+                            "metadata": {
+                                "section": b_section,
+                                "chunk_type": "table",
+                                "is_table_continuation": table_part_index > 0,
+                            }
+                            if b_section
+                            else {
+                                "chunk_type": "table",
+                                "is_table_continuation": table_part_index > 0,
+                            },
+                        }
+                    )
+                    table_part_index += 1
+                    sub_rows = []
+                    sub_len = header_len
+                sub_rows.append(r)
+                sub_len += r_len
+
+            if sub_rows:
+                table_chunk_content = header_prefix + "\n" + "\n".join(sub_rows)
+                chunks.append(
+                    {
+                        "content": table_chunk_content,
+                        "chunk_index": len(chunks),
+                        "token_count": len(table_chunk_content) // CHARS_PER_TOKEN,
+                        "char_count": len(table_chunk_content),
+                        "overlap_length": 0,
+                        "metadata": {
+                            "section": b_section,
+                            "chunk_type": "table",
+                            "is_table_continuation": table_part_index > 0,
+                        }
+                        if b_section
+                        else {
+                            "chunk_type": "table",
+                            "is_table_continuation": table_part_index > 0,
+                        },
+                    }
+                )
+                table_part_index += 1
+            continue
+
+        # Code block handling
+        if b_type == "code":
+            if current_len + b_len + 2 <= chunk_size:
+                current_parts.append(b_content)
+                current_len += b_len + 2
+                if current_chunk_type == "text":
+                    current_chunk_type = "code"
+                continue
+
+            flush_chunk()
+            current_section = b_section
+
+            if b_len <= chunk_size:
+                current_parts.append(b_content)
+                current_len = b_len
+                current_chunk_type = "code"
+                flush_chunk()
+                continue
+
+            # Oversized code block: fall back to recursive split with code fence preservation
+            code_chunks = chunk_text(
+                b_content, chunk_size, chunk_overlap=0, is_markdown=False
+            )
+            for c in code_chunks:
+                code_text = c["content"]
+                lang = block.get("language") or ""
+                if not code_text.startswith("```"):
+                    code_text = f"```{lang}\n{code_text}"
+                if not code_text.strip().endswith("```"):
+                    code_text = f"{code_text}\n```"
+                chunks.append(
+                    {
+                        "content": code_text,
+                        "chunk_index": len(chunks),
+                        "token_count": len(code_text) // CHARS_PER_TOKEN,
+                        "char_count": len(code_text),
+                        "overlap_length": 0,
+                        "metadata": {
+                            "section": b_section,
+                            "chunk_type": "code",
+                        }
+                        if b_section
+                        else {"chunk_type": "code"},
+                    }
+                )
+            continue
+
+        # List or Paragraph handling
+        if current_len + b_len + 2 <= chunk_size:
+            current_parts.append(b_content)
+            current_len += b_len + 2
+            if b_section:
+                current_section = b_section
+        else:
+            flush_chunk()
+            current_section = b_section
+            if b_len <= chunk_size:
+                current_parts.append(b_content)
+                current_len = b_len
+            else:
+                # Oversized single paragraph or list: fallback to chunk_text
+                sub_chunks = chunk_text(
+                    b_content, chunk_size, chunk_overlap, separators, is_markdown=False
+                )
+                for sc in sub_chunks:
+                    sc_content = sc["content"]
+                    chunks.append(
+                        {
+                            "content": sc_content,
+                            "chunk_index": len(chunks),
+                            "token_count": len(sc_content) // CHARS_PER_TOKEN,
+                            "char_count": len(sc_content),
+                            "overlap_length": sc.get("overlap_length", 0),
+                            "metadata": {"section": b_section} if b_section else None,
+                        }
+                    )
+
+    flush_chunk()
+
+    # Apply clean character overlap across adjacent textual chunks if requested
+    if chunk_overlap > 0 and len(chunks) > 1:
+        for i in range(1, len(chunks)):
+            prev_chunk = chunks[i - 1]
+            curr_chunk = chunks[i]
+            prev_meta = prev_chunk.get("metadata") or {}
+            curr_meta = curr_chunk.get("metadata") or {}
+
+            # Only apply text overlap when neither adjacent chunk is a table or code block
+            if prev_meta.get("chunk_type") in ("table", "code") or curr_meta.get(
+                "chunk_type"
+            ) in ("table", "code"):
+                continue
+
+            prev_text = prev_chunk["content"]
+            overlap_text = (
+                prev_text[-chunk_overlap:]
+                if len(prev_text) > chunk_overlap
+                else prev_text
+            )
+            curr_chunk["content"] = overlap_text + "\n" + curr_chunk["content"]
+            curr_chunk["overlap_length"] = len(overlap_text)
+            curr_chunk["char_count"] = len(curr_chunk["content"])
+            curr_chunk["token_count"] = len(curr_chunk["content"]) // CHARS_PER_TOKEN
+
+    # Re-index chunks
+    for idx, c in enumerate(chunks):
+        c["chunk_index"] = idx
+
+    return chunks
 
 
 # Global instance

@@ -25,6 +25,7 @@ const useState = <T,>(initial: T): [T, Setter<T>] => {
 const push = mock(() => undefined)
 const getKnowledgeBase = mock(async () => knowledgeBase)
 const getStats = mock(async () => stats)
+const getDocuments = mock(async () => ({ items: [{ id: 'doc-1' }], total: 1 }))
 
 let currentTeam: Record<string, unknown> | null
 let user: Record<string, unknown> | null
@@ -48,7 +49,9 @@ const DocumentsTable = component('DocumentsTable')
 const UploadDocumentDialog = component('UploadDocumentDialog')
 const ImportUrlDialog = component('ImportUrlDialog')
 const KnowledgeBaseDialog = component('KnowledgeBaseDialog')
-
+const Alert = component('Alert')
+const AlertTitle = component('AlertTitle')
+const AlertDescription = component('AlertDescription')
 mock.module('react', () => ({
   use: () => ({ id: 'kb-1' }),
   useCallback: <T,>(callback: T) => callback,
@@ -61,10 +64,11 @@ mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key })
 mock.module('next/navigation', () => ({ useRouter: () => ({ push }) }))
 mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam }) }))
 mock.module('@/hooks/use-permissions', () => ({ usePermissions: () => ({ user }) }))
-mock.module('@/lib/api', () => ({ knowledgeBasesApi: { getKnowledgeBase, getStats } }))
+mock.module('@/lib/api', () => ({ knowledgeBasesApi: { getKnowledgeBase, getStats, getDocuments } }))
 mock.module('@/components/ui/button', () => ({ Button }))
 mock.module('@/components/ui/card', () => ({ Card, CardContent, CardDescription, CardHeader, CardTitle }))
 mock.module('@/components/ui/badge', () => ({ Badge }))
+mock.module('@/components/ui/alert', () => ({ Alert, AlertTitle, AlertDescription }))
 mock.module('./_components', () => ({ DocumentsTable, UploadDocumentDialog, ImportUrlDialog }))
 mock.module('../_components/kb-dialog', () => ({ KnowledgeBaseDialog }))
 mock.module('lucide-react', () => ({
@@ -82,8 +86,8 @@ mock.module('lucide-react', () => ({
   Search: component('Search'),
   Cpu: component('Cpu'),
   ArrowUpDown: component('ArrowUpDown'),
+  AlertCircle: component('AlertCircle'),
 }))
-
 const { default: KnowledgeBaseDetailPage } = await import('./page')
 
 function render() {
@@ -156,7 +160,7 @@ test('loads details, statistics, model metadata, and owner actions', async () =>
   expect(text(tree)).toContain('5,678')
   expect(text(tree)).toContain('embed-v3')
   expect(text(tree)).toContain('rerank-v2')
-  expect(getKnowledgeBase).toHaveBeenCalledWith('kb-1')
+  expect(getKnowledgeBase).toHaveBeenCalledWith('kb-1', 'team-1')
   expect(getStats).toHaveBeenCalledWith('kb-1')
   expect(nodes.some((node) => node.props['data-testid'] === 'kb-detail-page')).toBe(true)
   expect(nodes.some((node) => node.props['data-testid'] === 'kb-search-test-button')).toBe(true)
@@ -164,7 +168,8 @@ test('loads details, statistics, model metadata, and owner actions', async () =>
   expect(nodes.some((node) => node.props['data-testid'] === 'kb-upload-button')).toBe(true)
 
   const buttons = nodes.filter((node) => node.type === Button)
-  expect(buttons).toHaveLength(5)
+  // 5 primary action buttons + 2 pending alert banner buttons (continue + dismiss)
+  expect(buttons).toHaveLength(7)
   ;(buttons[0].props.onClick as () => void)()
   ;(buttons[1].props.onClick as () => void)()
   ;(buttons[2].props.onClick as () => void)()
@@ -213,4 +218,40 @@ test('redirects when the knowledge base belongs to another team or loading fails
   getKnowledgeBase.mockRejectedValueOnce(new Error('not found'))
   await load()
   expect(push).toHaveBeenCalledWith('/app/kb')
+})
+
+test('allows shared knowledge base from another team and marks documents read-only', async () => {
+  knowledgeBase = {
+    ...knowledgeBase,
+    team: { id: 'team-2', name: 'Partner Team' },
+    is_owned: false,
+    owner_team_name: 'Partner Team',
+  }
+  const tree = await load()
+  const nodes = descendants(tree)
+
+  expect(push).not.toHaveBeenCalled()
+  expect(text(tree)).toContain('Engineering')
+  expect(text(tree)).toContain('sharedFrom')
+
+  const table = nodes.find((node) => node.type === DocumentsTable)!
+  expect(table.props.readOnly).toBe(true)
+
+  // Shared KB hides update/upload actions
+  expect(nodes.filter((node) => node.type === Button)).toHaveLength(2)
+})
+test('renders pending batch banner and navigates with aggregated documents', async () => {
+  stats = { ...stats, documents_by_status: { pending: 3 } }
+  getDocuments
+    .mockResolvedValueOnce({ items: [{ id: 'doc-1' }, { id: 'doc-2' }], total: 3 })
+    .mockResolvedValueOnce({ items: [{ id: 'doc-3' }], total: 3 })
+
+  const tree = await load()
+  const nodes = descendants(tree)
+  const continueBtn = nodes.find((node) => node.type === Button && node.props.children && String(node.props.children).includes('pendingBatchContinueAction'))
+  expect(continueBtn).toBeDefined()
+
+  await (continueBtn?.props.onClick as () => Promise<void>)()
+  expect(getDocuments).toHaveBeenCalledTimes(2)
+  expect(push).toHaveBeenCalledWith('/app/kb/kb-1/documents/preview')
 })

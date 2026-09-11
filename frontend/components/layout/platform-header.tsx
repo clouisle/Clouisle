@@ -249,7 +249,7 @@ export function PlatformHeader() {
     exact ? pathname === href : pathname.startsWith(href)
 
   return (
-    <header className="sticky flex justify-center top-0 z-50 w-full border-b bg-navbar text-navbar-foreground backdrop-blur supports-[backdrop-filter]:bg-navbar/80">
+    <header className="sticky top-0 z-50 w-full border-b bg-navbar text-navbar-foreground backdrop-blur supports-[backdrop-filter]:bg-navbar/80">
       <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Left Side - Logo and Team Switcher */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 sm:flex-initial">
@@ -296,8 +296,8 @@ export function PlatformHeader() {
         {/* Desktop Navigation - 根据布局变体调整位置，没有团队时隐藏 */}
         {!hideNav && (
           <nav data-testid="platform-header-nav" className={cn(
-            'hidden md:flex items-center gap-1',
-            effectiveHeaderVariant === 'centered' && 'absolute left-1/2 -translate-x-1/2',
+            'hidden lg:flex items-center gap-1',
+            effectiveHeaderVariant === 'centered' && 'xl:absolute xl:left-1/2 xl:-translate-x-1/2 ml-4 xl:ml-0',
             effectiveHeaderVariant === 'default' && 'ml-6'
           )}>
             {visibleNavItems.map((item) => {
@@ -326,7 +326,7 @@ export function PlatformHeader() {
         )}
 
         {/* Spacer for default layout */}
-        {effectiveHeaderVariant === 'default' && <div className="flex-1 hidden md:block" />}
+        {effectiveHeaderVariant === 'default' && <div className="flex-1 hidden lg:block" />}
 
         {/* Right Side Actions */}
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
@@ -335,7 +335,7 @@ export function PlatformHeader() {
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 cursor-pointer md:hidden"
+              className="h-8 w-8 cursor-pointer lg:hidden"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             >
               {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
@@ -543,9 +543,10 @@ export function PlatformHeader() {
       </div>
 
       {/* Mobile Navigation Menu */}
+      {/* Mobile Navigation Menu - Floating Dropdown */}
       {!hideNav && mobileMenuOpen && (
-        <div className="md:hidden border-t bg-navbar text-navbar-foreground">
-          <nav className="container max-w-screen-2xl px-4 py-2 space-y-1">
+        <div className="lg:hidden absolute inset-x-0 top-full border-b bg-navbar text-navbar-foreground shadow-lg backdrop-blur supports-[backdrop-filter]:bg-navbar/95">
+          <nav className="px-4 py-3 space-y-1">
             {visibleNavItems.map((item) => {
               const Icon = item.icon
               return (
@@ -554,7 +555,7 @@ export function PlatformHeader() {
                     variant="ghost"
                     size="sm"
                     className={cn(
-                      "w-full justify-start gap-2 cursor-pointer relative text-navbar-foreground hover:bg-navbar-hover hover:text-navbar-hover-foreground",
+                      "w-full justify-start gap-2.5 cursor-pointer relative text-navbar-foreground hover:bg-navbar-hover hover:text-navbar-hover-foreground",
                       isActive(item.href, 'exact' in item ? item.exact : false) &&
                         "bg-navbar-hover text-navbar-hover-foreground"
                     )}

@@ -1667,6 +1667,55 @@ async def init_tool_shares_table():
     logger.info("tool_shares table initialization complete")
 
 
+async def init_knowledge_base_shares_table():
+    """
+    Initialize knowledge_base_shares table for cross-team knowledge base sharing feature.
+    This handles the migration for the new knowledge base sharing functionality.
+    """
+    logger.info("Initializing knowledge_base_shares table...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if knowledge_base_shares table exists
+    _, rows = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'knowledge_base_shares'
+    """)
+
+    if rows:
+        logger.info("knowledge_base_shares table already exists, skipping creation")
+        return
+
+    logger.info("Creating knowledge_base_shares table...")
+
+    # Create knowledge_base_shares table
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS knowledge_base_shares (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            knowledge_base_id UUID NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+            shared_with_team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+            permission VARCHAR(20) NOT NULL DEFAULT 'read_only',
+            shared_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            shared_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(knowledge_base_id, shared_with_team_id)
+        )
+    """)
+    logger.info("Created knowledge_base_shares table")
+
+    # Create indexes for better query performance
+    await _execute_ddl(
+        conn,
+        """
+        CREATE INDEX IF NOT EXISTS idx_kb_shares_kb_id ON knowledge_base_shares(knowledge_base_id);
+        CREATE INDEX IF NOT EXISTS idx_kb_shares_team_id ON knowledge_base_shares(shared_with_team_id);
+        CREATE INDEX IF NOT EXISTS idx_kb_shares_shared_by ON knowledge_base_shares(shared_by_id);
+    """,
+    )
+    logger.info("Created knowledge_base_shares indexes")
+
+    logger.info("knowledge_base_shares table initialization complete")
+
+
 async def init_notification_tables():
     """
     Initialize notification tables if they don't exist.
@@ -3329,6 +3378,8 @@ async def init_db():
     # 7. Initialize tool_shares table
     await init_tool_shares_table()
 
+    # 7.05. Initialize knowledge_base_shares table
+    await init_knowledge_base_shares_table()
     # 7.1. Initialize skills table
     await init_skills_table()
 

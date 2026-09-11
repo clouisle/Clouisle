@@ -235,6 +235,7 @@ describe('AgentOrchestrationForm', () => {
     ])
     expect(find(tree, AddKnowledgeBaseButton)[0].props.knowledgeBases).toEqual([
       expect.objectContaining({ id: 'kb-1' }),
+      expect.objectContaining({ id: 'kb-2' }),
     ])
 
     effects = []

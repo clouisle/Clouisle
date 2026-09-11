@@ -309,13 +309,11 @@ export function AgentOrchestrationForm({
 
       try {
         const [kbs, imageTeamModels, videoTeamModels] = await Promise.all([
-          knowledgeBasesApi.getKnowledgeBases(),
+          knowledgeBasesApi.getKnowledgeBases({ teamId: currentTeam.id, includeShared: true }),
           teamModelsApi.getTeamModels(currentTeam.id, 'text_to_image'),
           teamModelsApi.getTeamModels(currentTeam.id, 'text_to_video'),
         ])
-        setKnowledgeBases(
-          kbs.items.filter((kb) => kb.team.id === currentTeam.id)
-        )
+        setKnowledgeBases(kbs.items)
         setImageModels(imageTeamModels)
         setVideoModels(videoTeamModels)
       } catch {

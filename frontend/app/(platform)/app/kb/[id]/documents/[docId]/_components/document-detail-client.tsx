@@ -35,10 +35,13 @@ import {
 } from '@/lib/api'
 import { FilePreviewPanel, getDocumentMimeType } from '@/components/file-preview'
 import { Button } from '@/components/ui/button'
+import { useTeam } from '@/contexts/team-context'
+import { usePermissions } from '@/hooks/use-permissions'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ChunkMarkdown } from '@/components/ui/chunk-markdown'
+import { cn } from '@/lib/utils'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
@@ -73,6 +76,8 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
   const locale = useLocale()
   const commonT = useTranslations('common')
   const router = useRouter()
+  const { currentTeam } = useTeam()
+  const { user } = usePermissions()
 
   // 数据状态
   const [knowledgeBase, setKnowledgeBase] = React.useState<KnowledgeBase | null>(null)
@@ -142,6 +147,15 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
       setIsLoading(false)
     }
   }, [knowledgeBaseId, documentId, router])
+
+  const isOwned = Boolean(
+    knowledgeBase &&
+    knowledgeBase.is_owned !== false &&
+    (!currentTeam || !knowledgeBase.team?.id || knowledgeBase.team.id === currentTeam.id)
+  )
+  const isTeamAdmin = Boolean(user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin')
+  const isKbOwner = Boolean(user?.id && knowledgeBase?.created_by?.id === user.id)
+  const canUpdateDoc = Boolean(isOwned && (isTeamAdmin || isKbOwner))
   const loadOriginalFile = React.useCallback(() => {
     return knowledgeBasesApi.getDocumentFile(knowledgeBaseId, documentId)
   }, [knowledgeBaseId, documentId])
@@ -564,20 +578,22 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
               {t('previewOriginal')}
             </Button>
           )}
-          {(isCompleted || isFailed) && (
+          {canUpdateDoc && (isCompleted || isFailed) && (
             <Button variant="outline" size="sm" onClick={handleReprocess}>
               <RefreshCw className="h-4 w-4 mr-2" />
               {t('reprocess')}
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-destructive hover:text-destructive"
-            onClick={() => setDeleteDialogOpen(true)}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          {canUpdateDoc && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setDeleteDialogOpen(true)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </div>
 
@@ -694,10 +710,12 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                     </p>
                   )}
                 </div>
-                <Button variant="outline" size="sm" onClick={handleRetryFailedChunks}>
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  {t('retryFailedChunks')}
-                </Button>
+                {canUpdateDoc && (
+                  <Button variant="outline" size="sm" onClick={handleRetryFailedChunks}>
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    {t('retryFailedChunks')}
+                  </Button>
+                )}
               </div>
             </div>
           )}
@@ -712,7 +730,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                 <div className="flex flex-col items-center justify-center h-full text-center p-8">
                   <FileText className="h-12 w-12 text-muted-foreground mb-4" />
                   <h3 className="text-lg font-medium mb-2">{t('noChunks')}</h3>
-                  {isCompleted && (
+                  {isCompleted && canUpdateDoc && (
                     <Button variant="outline" onClick={() => addNewChunk(-1)} disabled={isSaving}>
                       <Plus className="h-4 w-4 mr-2" />
                       {t('addFirstChunk')}
@@ -752,7 +770,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                             data-chunk-editor={chunk.id}
                             className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
                           >
-                            {chunk.status === 'failed' && !chunk.isEditing && (
+                            {canUpdateDoc && chunk.status === 'failed' && !chunk.isEditing && (
                               <Tooltip>
                                 <TooltipTrigger
                                   render={
@@ -809,7 +827,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                                   <TooltipContent>{commonT('cancel')}</TooltipContent>
                                 </Tooltip>
                               </>
-                            ) : (
+                            ) : canUpdateDoc ? (
                               <>
                                 {isCompleted && (
                                   <Tooltip>
@@ -848,7 +866,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                                   </Tooltip>
                                 )}
                               </>
-                            )}
+                            ) : null}
                           </div>
                         </div>
 
@@ -873,11 +891,11 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                             />
                           ) : (
                             <div
-                              role="button"
-                              tabIndex={0}
-                              className="cursor-pointer hover:bg-muted/50 rounded p-2 -m-2 transition-colors"
-                              onClick={() => isCompleted && startEditing(chunk.id)}
-                              onKeyDown={(e) => { if (isCompleted && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); startEditing(chunk.id) } }}
+                              role={canUpdateDoc && isCompleted ? "button" : undefined}
+                              tabIndex={canUpdateDoc && isCompleted ? 0 : undefined}
+                              className={cn("rounded p-2 -m-2 transition-colors", canUpdateDoc && isCompleted && "cursor-pointer hover:bg-muted/50")}
+                              onClick={() => isCompleted && canUpdateDoc && startEditing(chunk.id)}
+                              onKeyDown={(e) => { if (isCompleted && canUpdateDoc && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); startEditing(chunk.id) } }}
                             >
                               <ChunkMarkdown source={chunk.content} />
                             </div>
@@ -982,7 +1000,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                     ...prev,
                     chunk_size: parseInt(e.target.value) || 1000
                   }))}
-                  disabled={!isPending}
+                  disabled={!isPending || !canUpdateDoc}
                 />
                 <p className="text-xs text-muted-foreground">
                   {t('chunkSizeHint')}
@@ -1001,7 +1019,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                     ...prev,
                     chunk_overlap: parseInt(e.target.value) || 100
                   }))}
-                  disabled={!isPending}
+                  disabled={!isPending || !canUpdateDoc}
                 />
                 <p className="text-xs text-muted-foreground">
                   {t('chunkOverlapHint')}
@@ -1019,7 +1037,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                     ...prev,
                     separator: e.target.value
                   }))}
-                  disabled={!isPending}
+                  disabled={!isPending || !canUpdateDoc}
                 />
                 <p className="text-xs text-muted-foreground">
                   {t('separatorHint')}
@@ -1040,12 +1058,12 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                     ...prev,
                     clean_text: checked
                   }))}
-                  disabled={!isPending}
+                  disabled={!isPending || !canUpdateDoc}
                 />
               </div>
             </div>
 
-            {isPending && (
+            {isPending && canUpdateDoc && (
               <>
                 {/* 提示信息 */}
                 <div className="rounded-lg p-3 bg-blue-500/10 border border-blue-500/20">
@@ -1120,6 +1138,12 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                   {t('settingsReadOnly')}
                 </p>
               </>
+            )}
+
+            {!isOwned && (
+              <div className="rounded-lg p-3 bg-muted border text-xs text-muted-foreground">
+                {t('settingsReadOnly')}
+              </div>
             )}
           </div>
         </ScrollArea>

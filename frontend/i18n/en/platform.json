@@ -152,7 +152,38 @@
       "createKb": "Create Knowledge Base",
       "noKbs": "No knowledge bases yet",
       "createKbHint": "Create a knowledge base to store and retrieve information",
-      "createFirstKb": "Create First Knowledge Base"
+      "createFirstKb": "Create First Knowledge Base",
+      "share": {
+        "title": "Share",
+        "description": "Share \"{kbName}\" with other teams",
+        "selectTeam": "Select Team",
+        "selectTeamPlaceholder": "Choose a team to share with",
+        "permission": "Permission Level",
+        "permissions": {
+          "readOnly": "Read Only",
+          "readOnlyDesc": "Can view, retrieve, and associate this knowledge base with agents"
+        },
+        "shareButton": "Share",
+        "sharedWith": "Shared With",
+        "noShares": "Not shared with any teams yet",
+        "noAvailableTeams": "No other teams available to share with",
+        "sharedBy": "Shared by {name}",
+        "shareSuccess": "Knowledge base shared successfully",
+        "shareFailed": "Failed to share knowledge base",
+        "unshareSuccess": "Sharing revoked successfully",
+        "unshareFailed": "Failed to revoke sharing",
+        "loadFailed": "Failed to load shares",
+        "confirmUnshare": "Revoke Sharing",
+        "confirmUnshareDesc": "Are you sure you want to revoke sharing with \"{teamName}\"?",
+        "unshareButton": "Revoke",
+        "sharedBadge": "Shared",
+        "sharedFrom": "From {teamName}",
+        "sharedWithCount": "Shared with {count, plural, one {# team} other {# teams}}"
+      },
+      "shareAction": "Share",
+      "shared": "Shared",
+      "sharedFrom": "From {teamName}",
+      "sharedCount": "Shared with {count, plural, one {# team} other {# teams}}"
     },
     "tools": {
       "title": "Capabilities",
@@ -479,7 +510,7 @@
         "unshareButton": "Revoke",
         "sharedBadge": "Shared",
         "sharedFrom": "From {teamName}",
-        "sharedWithCount": "Shared with {count} teams"
+        "sharedWithCount": "Shared with {count, plural, one {# team} other {# teams}}"
       }
     },
     "skills": {

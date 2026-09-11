@@ -380,6 +380,7 @@ async def test_init_db_initializes_roles_settings_and_tables(
         "init_observability_indexes",
         "init_notification_tables",
         "init_tool_shares_table",
+        "init_knowledge_base_shares_table",
         "init_skills_table",
         "fix_cascade_delete_policies",
         "init_sso_tables",

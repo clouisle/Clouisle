@@ -216,6 +216,7 @@ export type AgentsMessages = {
         title: string
         tooltip: string
         linkedCount: string
+        shared: string
         add: string
         empty: string
         noAvailable: string

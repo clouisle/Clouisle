@@ -2,6 +2,7 @@ import { describe, expect, test, mock } from 'bun:test'
 import * as React from 'react'
 import { renderToStaticMarkup, renderToString } from 'react-dom/server'
 
+import type { KnowledgeBase } from '@/lib/api'
 mock.module('next-intl', () => ({
   useLocale: () => 'en',
   useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${JSON.stringify(values)}` : key,
@@ -71,10 +72,11 @@ describe('KB LCOV source coverage', () => {
   })
 
   test('imports and renders remaining platform KB page and clients', async () => {
-    const [platformPage, platformDocument, platformPreview] = await Promise.all([
+    const [platformPage, platformDocument, platformPreview, platformShare] = await Promise.all([
       import('./(platform)/app/kb/[id]/page'),
       import('./(platform)/app/kb/[id]/documents/[docId]/_components/document-detail-client'),
       import('./(platform)/app/kb/[id]/documents/preview/_components/documents-preview-client'),
+      import('./(platform)/app/kb/_components/kb-share-dialog'),
     ])
     const params = Promise.resolve({ id: 'kb-1' }) as Promise<{ id: string }> & { status: string; value: { id: string } }
     params.status = 'fulfilled'
@@ -83,5 +85,6 @@ describe('KB LCOV source coverage', () => {
     expect(renderToString(<platformPage.default params={params} />)).toContain('animate-spin')
     expect(renderToStaticMarkup(<platformDocument.DocumentDetailClient knowledgeBaseId="kb-1" documentId="doc-1" />)).toContain('animate-spin')
     expect(renderToStaticMarkup(<platformPreview.DocumentsPreviewClient knowledgeBaseId="kb-1" documentIds={['doc-1']} />)).toContain('animate-spin')
+    expect(renderToStaticMarkup(<platformShare.KnowledgeBaseShareDialog open={true} onOpenChange={() => {}} knowledgeBase={{ id: 'kb-1', name: 'KB', is_owned: true } as unknown as KnowledgeBase} availableTeams={[]} currentTeamId="team-1" />)).toBeDefined()
   })
 })

@@ -1639,6 +1639,15 @@ msgstr "Document indexing failed"
 msgid "notify_kb_doc_indexed_content"
 msgstr "Document **{doc_name}** in knowledge base **{kb_name}** has been indexed successfully. Chunks: {chunk_count}, Tokens: {token_count}."
 
+msgid "notify_kb_batch_indexed_content"
+msgstr "Batch documents in knowledge base **{kb_name}** have been indexed successfully, with a total of {count} document(s) processed."
+
+msgid "notify_kb_batch_failed_content"
+msgstr "Batch document processing in knowledge base **{kb_name}** failed for all {count} document(s)."
+
+msgid "notify_kb_batch_partial_content"
+msgstr "Batch processing in knowledge base **{kb_name}** finished: {total} document(s) in total ({success} succeeded, {failed} failed)."
+
 msgid "notify_kb_doc_indexed_title"
 msgstr "Document indexed successfully"
 
@@ -2417,6 +2426,21 @@ msgstr "Tool shared successfully"
 
 msgid "tool_unshared_successfully"
 msgstr "Tool sharing revoked successfully"
+
+msgid "kb_share_not_found"
+msgstr "Knowledge base share not found"
+
+msgid "kb_cannot_share_to_own_team"
+msgstr "Cannot share knowledge base to your own team"
+
+msgid "kb_already_shared"
+msgstr "Knowledge base already shared with this team"
+
+msgid "kb_shared_successfully"
+msgstr "Knowledge base shared successfully"
+
+msgid "kb_unshared_successfully"
+msgstr "Knowledge base sharing revoked successfully"
 
 msgid "tool_update_memory_entity"
 msgstr "Update Memory Entity"

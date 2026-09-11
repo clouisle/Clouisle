@@ -47,6 +47,12 @@ class DocumentType:
     URL = "url"
 
 
+class KnowledgeBaseSharePermission(str, Enum):
+    """Knowledge base sharing permission level"""
+
+    READ_ONLY = "read_only"  # Can view and search the knowledge base
+
+
 # ============ Knowledge Base Schemas ============
 
 
@@ -188,6 +194,22 @@ class KnowledgeBase(KnowledgeBaseBase):
     total_tokens: int
     created_at: datetime
     updated_at: datetime
+    is_owned: bool = Field(
+        default=True,
+        description="Whether the knowledge base is owned by the current team",
+    )
+    owner_team_id: Optional[UUID] = Field(
+        default=None, description="Owner team ID if shared"
+    )
+    owner_team_name: Optional[str] = Field(
+        default=None, description="Owner team name if shared"
+    )
+    share_permission: Optional[KnowledgeBaseSharePermission] = Field(
+        default=None, description="Share permission level if shared"
+    )
+    shared_with_count: int = Field(
+        default=0, description="Number of teams this knowledge base is shared with"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -213,6 +235,22 @@ class KnowledgeBaseList(BaseModel):
     total_chunks: int
     total_tokens: int
     created_at: datetime
+    is_owned: bool = Field(
+        default=True,
+        description="Whether the knowledge base is owned by the current team",
+    )
+    owner_team_id: Optional[UUID] = Field(
+        default=None, description="Owner team ID if shared"
+    )
+    owner_team_name: Optional[str] = Field(
+        default=None, description="Owner team name if shared"
+    )
+    share_permission: Optional[KnowledgeBaseSharePermission] = Field(
+        default=None, description="Share permission level if shared"
+    )
+    shared_with_count: int = Field(
+        default=0, description="Number of teams this knowledge base is shared with"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -344,6 +382,13 @@ class ProcessWithChunksRequest(BaseModel):
 
     chunks: List[ChunkInput] = Field(
         ..., min_length=1, description="Pre-chunked content"
+    )
+    batch_id: Optional[UUID] = Field(
+        default=None,
+        description="Optional UUID batch ID for aggregating notifications across multiple documents",
+    )
+    batch_total: Optional[int] = Field(
+        default=None, description="Total number of documents in this batch"
     )
 
 
@@ -555,3 +600,40 @@ class KnowledgeBaseStats(BaseModel):
     )
     # Embedding statistics
     embedding_stats: Optional[dict] = None
+
+
+# ============ Knowledge Base Sharing Schemas ============
+
+
+class KnowledgeBaseShareInput(BaseModel):
+    """Knowledge base share input"""
+
+    team_id: UUID = Field(..., description="Target team ID to share with")
+    permission: KnowledgeBaseSharePermission = Field(
+        default=KnowledgeBaseSharePermission.READ_ONLY, description="Permission level"
+    )
+
+
+class KnowledgeBaseShareOut(BaseModel):
+    """Knowledge base share output"""
+
+    id: UUID = Field(..., description="Share record ID")
+    knowledge_base_id: UUID = Field(..., description="Knowledge base ID")
+    knowledge_base_name: str = Field(..., description="Knowledge base name")
+    shared_with_team_id: UUID = Field(..., description="Target team ID")
+    shared_with_team_name: str = Field(..., description="Target team name")
+    permission: KnowledgeBaseSharePermission = Field(
+        ..., description="Permission level"
+    )
+    shared_by_id: Optional[UUID] = Field(None, description="Sharer user ID")
+    shared_by_name: str = Field(..., description="Sharer name")
+    shared_at: datetime = Field(..., description="Share timestamp")
+
+
+class KnowledgeBaseShareListOut(BaseModel):
+    """Knowledge base share list output"""
+
+    shares: List[KnowledgeBaseShareOut] = Field(
+        default_factory=list, description="Shares list"
+    )
+    total: int = Field(default=0, description="Total shares count")

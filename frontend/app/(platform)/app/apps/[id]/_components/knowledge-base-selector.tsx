@@ -70,7 +70,14 @@ export function AddKnowledgeBaseButton({ knowledgeBases, selectedIds, onAdd }: A
             >
               <Database className="h-4 w-4 text-emerald-500 shrink-0" />
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium truncate">{kb.name}</div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-medium truncate">{kb.name}</span>
+                  {kb.is_owned === false && (
+                    <Badge variant="outline" className="text-[10px] px-1 py-0 border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300 shrink-0">
+                      {kb.owner_team_name || t('shared')}
+                    </Badge>
+                  )}
+                </div>
                 <div className="text-xs text-muted-foreground">
                   {t('documents', { count: kb.document_count })} · {t('chunks', { count: kb.total_chunks })}
                 </div>
@@ -208,8 +215,13 @@ function KnowledgeBaseDisplayItem({ item, onConfigure, onDelete }: KnowledgeBase
       isDeleteHover ? 'bg-destructive/10 border-destructive/30' : 'bg-background hover:bg-muted/30'
     }`}>
       <Database className="h-4 w-4 text-emerald-500 shrink-0" />
-      <div className="flex-1 min-w-0">
-        <span className="text-sm font-medium">{item.knowledgeBase.name}</span>
+      <div className="flex-1 min-w-0 flex items-center gap-1.5">
+        <span className="text-sm font-medium truncate">{item.knowledgeBase.name}</span>
+        {item.knowledgeBase.is_owned === false && (
+          <Badge variant="outline" className="text-[10px] px-1 py-0 border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300 shrink-0">
+            {item.knowledgeBase.owner_team_name || t('shared')}
+          </Badge>
+        )}
       </div>
       <div className="flex items-center gap-1.5">
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

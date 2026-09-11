@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { ReactNode } from 'react'
 
 const push = mock()
-const toast = { success: mock(), error: mock() }
+const toast = { success: mock(), error: mock(), loading: mock(() => 'toast-1') }
 const api = {
   getKnowledgeBase: mock(),
   getDocument: mock(),
@@ -287,9 +287,9 @@ describe('DocumentsPreviewClient', () => {
     expect(api.processDocumentWithChunks).toHaveBeenCalledWith('kb-1', 'doc-1', [
       { content: 'Alpha beta', chunk_index: 0 },
       { content: 'Beta gamma', chunk_index: 1 },
-    ])
-    expect(toast.success).toHaveBeenCalledWith('documentProcessingStarted')
-    expect(toast.success).toHaveBeenCalledWith('processStarted:{"count":1}')
+    ], undefined)
+    expect(toast.loading).toHaveBeenCalledWith('processing')
+    expect(toast.success).toHaveBeenCalledWith('processStarted:{"count":1}', { id: 'toast-1' })
     expect(push).toHaveBeenCalledWith('/knowledge-bases/kb-1')
   })
 

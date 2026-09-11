@@ -21,7 +21,7 @@ from app.models.agent import (
     AgentVisibility,
     RAGMode,
 )
-from app.models.knowledge_base import KnowledgeBase
+from app.models.knowledge_base import KnowledgeBase, KnowledgeBaseShare
 from app.models.model import TeamModel
 from app.models.notification import AutoNotificationType
 from app.models.user import Team, User
@@ -187,11 +187,28 @@ async def create_agent(
             )
 
     for kb_config in agent_in.knowledge_base_configs:
-        kb = await KnowledgeBase.filter(
-            id=kb_config.knowledge_base_id,
-            team_id=agent_in.team_id,
-        ).first()
-        if not kb:
+        kb = await KnowledgeBase.filter(id=kb_config.knowledge_base_id).first()
+        is_accessible = False
+        if kb:
+            kb_id = getattr(kb, "id", None)
+            kb_team_id = getattr(kb, "team_id", None) or (
+                kb.team.id
+                if hasattr(kb, "team") and kb.team and hasattr(kb.team, "id")
+                else None
+            )
+            if kb_team_id is None or kb_team_id == agent_in.team_id:
+                is_accessible = True
+            else:
+                try:
+                    is_accessible = bool(
+                        await KnowledgeBaseShare.filter(
+                            knowledge_base_id=kb_id,
+                            shared_with_team_id=agent_in.team_id,
+                        ).exists()
+                    )
+                except Exception:
+                    is_accessible = False
+        if not kb or not is_accessible:
             raise BusinessError(
                 code=ResponseCode.KB_NOT_FOUND,
                 msg_key="kb_not_found",
@@ -440,11 +457,28 @@ async def update_agent(
     kb_after: list[dict] | None = None
     if agent_in.knowledge_base_configs is not None:
         for kb_config in agent_in.knowledge_base_configs:
-            kb = await KnowledgeBase.filter(
-                id=kb_config.knowledge_base_id,
-                team_id=agent.team_id,
-            ).first()
-            if not kb:
+            is_accessible = False
+            kb = await KnowledgeBase.filter(id=kb_config.knowledge_base_id).first()
+            if kb:
+                kb_id = getattr(kb, "id", None)
+                kb_team_id = getattr(kb, "team_id", None) or (
+                    kb.team.id
+                    if hasattr(kb, "team") and kb.team and hasattr(kb.team, "id")
+                    else None
+                )
+                if kb_team_id is None or kb_team_id == agent.team_id:
+                    is_accessible = True
+                else:
+                    try:
+                        is_accessible = bool(
+                            await KnowledgeBaseShare.filter(
+                                knowledge_base_id=kb_id,
+                                shared_with_team_id=agent.team_id,
+                            ).exists()
+                        )
+                    except Exception:
+                        is_accessible = False
+            if not kb or not is_accessible:
                 raise BusinessError(
                     code=ResponseCode.KB_NOT_FOUND,
                     msg_key="kb_not_found",

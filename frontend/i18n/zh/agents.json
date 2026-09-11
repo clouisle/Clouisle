@@ -214,6 +214,7 @@
         "title": "知识库",
         "tooltip": "关联知识库以实现 RAG 检索增强",
         "linkedCount": "{count} 已关联",
+        "shared": "共享",
         "add": "添加",
         "empty": "暂未关联知识库。关联后，Agent 可以检索知识库中的内容来回答问题。",
         "noAvailable": "暂无可添加的知识库",

@@ -70,8 +70,12 @@ export interface KnowledgeBase {
   total_tokens: number
   created_at: string
   updated_at: string
+  is_owned?: boolean
+  owner_team_id?: string | null
+  owner_team_name?: string | null
+  share_permission?: KnowledgeBaseSharePermission | null
+  shared_with_count?: number
 }
-
 export interface KnowledgeBaseStats {
   id: string
   name: string
@@ -109,8 +113,33 @@ export interface KnowledgeBaseQueryParams {
   status?: string[]
   teamId?: string
   ownOnly?: boolean
+  includeShared?: boolean
 }
 
+
+export type KnowledgeBaseSharePermission = 'read_only'
+
+export interface KnowledgeBaseShare {
+  id: string
+  knowledge_base_id: string
+  knowledge_base_name: string
+  shared_with_team_id: string
+  shared_with_team_name: string
+  permission: KnowledgeBaseSharePermission
+  shared_by_id?: string | null
+  shared_by_name: string
+  shared_at: string
+}
+
+export interface KnowledgeBaseShareInput {
+  team_id: string
+  permission?: KnowledgeBaseSharePermission
+}
+
+export interface KnowledgeBaseShareListResponse {
+  shares: KnowledgeBaseShare[]
+  total: number
+}
 // ============ Document Types ============
 
 export type DocumentStatus = 'pending' | 'processing' | 'completed' | 'error'
@@ -302,7 +331,7 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
      * 获取知识库列表
      */
   getKnowledgeBases: async (params: KnowledgeBaseQueryParams = {}): Promise<PageData<KnowledgeBase>> => {
-    const { page = 1, pageSize = 20, search, status, teamId, ownOnly } = params
+    const { page = 1, pageSize = 20, search, status, teamId, ownOnly, includeShared } = params
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
@@ -310,14 +339,16 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
     status?.forEach((value) => queryParams.append('status', value))
     if (teamId) queryParams.append('team_id', teamId)
     if (ownOnly) queryParams.append('own_only', 'true')
+    if (includeShared !== undefined) queryParams.append('include_shared', String(includeShared))
     return api.get<PageData<KnowledgeBase>>(`${prefix}?${queryParams.toString()}`)
   },
 
   /**
    * 获取单个知识库
    */
-  getKnowledgeBase: async (id: string): Promise<KnowledgeBase> => {
-    return api.get<KnowledgeBase>(`${prefix}/${id}`)
+  getKnowledgeBase: async (id: string, teamId?: string): Promise<KnowledgeBase> => {
+    const url = teamId ? `${prefix}/${id}?team_id=${encodeURIComponent(teamId)}` : `${prefix}/${id}`
+    return api.get<KnowledgeBase>(url)
   },
 
   /**
@@ -443,11 +474,16 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
   processDocumentWithChunks: async (
     kbId: string, 
     docId: string, 
-    chunks: Array<{ content: string; chunk_index: number }>
+    chunks: Array<{ content: string; chunk_index: number }>,
+    batch?: { batch_id: string; batch_total: number }
   ): Promise<Document> => {
     return api.post<Document>(
       `${prefix}/${kbId}/documents/${docId}/process-with-chunks`,
-      { chunks }
+      {
+        chunks,
+        batch_id: batch?.batch_id,
+        batch_total: batch?.batch_total,
+      }
     )
   },
 
@@ -579,7 +615,36 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
     link.click()
     document.body.removeChild(link)
     window.URL.revokeObjectURL(downloadUrl)
-  }
+  },
+
+  /**
+   * 共享知识库给指定团队
+   */
+  shareKnowledgeBase: async (
+    kbId: string,
+    data: KnowledgeBaseShareInput
+  ): Promise<KnowledgeBaseShare> => {
+    return api.post<KnowledgeBaseShare>(`${prefix}/${kbId}/share`, data)
+  },
+
+  /**
+   * 获取知识库的共享列表
+   */
+  listKnowledgeBaseShares: async (
+    kbId: string
+  ): Promise<KnowledgeBaseShareListResponse> => {
+    return api.get<KnowledgeBaseShareListResponse>(`${prefix}/${kbId}/shares`)
+  },
+
+  /**
+   * 取消知识库共享
+   */
+  unshareKnowledgeBase: async (
+    kbId: string,
+    teamId: string
+  ): Promise<void> => {
+    return api.delete<void>(`${prefix}/${kbId}/share/${teamId}`)
+  },
 }
 }
 

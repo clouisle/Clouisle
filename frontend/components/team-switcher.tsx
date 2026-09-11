@@ -53,7 +53,7 @@ export function TeamSwitcher() {
                 {getInitials(currentTeam.name)}
               </AvatarFallback>
             </Avatar>
-            <span className="max-w-30 truncate font-medium hidden sm:inline">
+            <span className="max-w-24 sm:max-w-28 md:max-w-32 lg:max-w-40 xl:max-w-56 truncate font-medium hidden sm:inline">
               {currentTeam.name}
             </span>
             <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
