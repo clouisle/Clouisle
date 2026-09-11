@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, UploadFile, File, Body, Request
 from starlette.responses import Response as StarletteResponse
-from tortoise.expressions import F
+from tortoise.expressions import F, Q
 from tortoise.transactions import in_transaction
 
 from app.api import deps
@@ -26,6 +26,8 @@ from app.models import (
 )
 from app.models.knowledge_base import (
     KnowledgeBase,
+    KnowledgeBaseShare,
+    KnowledgeBaseSharePermission,
     Document,
     DocumentChunk,
     KnowledgeBaseStatus,
@@ -38,6 +40,9 @@ from app.schemas.knowledge_base import (
     KnowledgeBaseCreate,
     KnowledgeBaseUpdate,
     KnowledgeBaseStats,
+    KnowledgeBaseShareInput,
+    KnowledgeBaseShareOut,
+    KnowledgeBaseShareListOut,
     EmbeddingModelInfo,
     RerankModelInfo,
     Document as DocumentSchema,
@@ -369,13 +374,53 @@ def _build_model_info(model: Model | None) -> dict | None:
     }
 
 
-async def kb_with_model_info(kb: KnowledgeBase) -> dict:
-    """构建包含嵌入模型和重排序模型信息的知识库响应"""
-    embedding_model = await get_embedding_model_info(kb.embedding_model_id)
-    rerank_model = await get_rerank_model_info(kb.rerank_model_id)
+async def kb_with_model_info(
+    kb: KnowledgeBase, current_team_id: UUID | None = None
+) -> dict:
+    embedding_model = await get_embedding_model_info(
+        getattr(kb, "embedding_model_id", None)
+    )
+    rerank_model = await get_rerank_model_info(getattr(kb, "rerank_model_id", None))
     kb_data = KnowledgeBaseSchema.model_validate(kb).model_dump()
     kb_data["embedding_model"] = embedding_model
     kb_data["rerank_model"] = rerank_model
+
+    kb_id = getattr(kb, "id", None)
+    kb_team_id = getattr(kb, "team_id", None) or (
+        kb.team.id
+        if hasattr(kb, "team") and kb.team and hasattr(kb.team, "id")
+        else None
+    )
+    owner_name = (
+        kb.team.name
+        if hasattr(kb, "team") and kb.team and hasattr(kb.team, "name")
+        else None
+    )
+    share = None
+    count = 0
+    is_shared = bool(current_team_id and kb_team_id and kb_team_id != current_team_id)
+    try:
+        share = (
+            await KnowledgeBaseShare.filter(
+                knowledge_base_id=kb_id, shared_with_team_id=current_team_id
+            ).first()
+            if is_shared
+            else None
+        )
+        count = await KnowledgeBaseShare.filter(knowledge_base_id=kb_id).count()
+    except Exception:
+        pass
+
+    kb_data["is_owned"] = not is_shared
+    kb_data["owner_team_id"] = kb_team_id
+    kb_data["owner_team_name"] = owner_name
+    kb_data["shared_with_count"] = count
+    kb_data["share_permission"] = (
+        KnowledgeBaseSharePermission(share.permission)
+        if share and hasattr(share, "permission")
+        else (KnowledgeBaseSharePermission.READ_ONLY if is_shared else None)
+    )
+
     return kb_data
 
 
@@ -442,9 +487,26 @@ async def check_kb_access(
         return kb
 
     is_owner = kb.created_by and kb.created_by.id == user.id
-    await check_team_access(kb.team.id, user)
+    kb_team_id = getattr(kb, "team_id", None) or (
+        kb.team.id if hasattr(kb, "team") and kb.team else None
+    )
+    try:
+        await check_team_access(kb_team_id, user)
+    except BusinessError:
+        if not require_write:
+            user_team_ids = await TeamMember.filter(user=user).values_list(
+                "team_id", flat=True
+            )
+            has_share = await KnowledgeBaseShare.filter(
+                knowledge_base_id=kb.id,
+                shared_with_team_id__in=user_team_ids,
+            ).exists()
+            if has_share:
+                return kb
+        raise
+
     if require_write and (not allow_owner_write or not is_owner):
-        await check_team_access(kb.team.id, user, require_admin=True)
+        await check_team_access(kb_team_id, user, require_admin=True)
     return kb
 
 
@@ -457,6 +519,7 @@ async def list_knowledge_bases(
     search: str | None = None,
     status: list[str] | None = None,
     own_only: bool = False,
+    include_shared: bool = True,
     page: int = 1,
     page_size: int = 20,
     current_user: User = Depends(require_kb_read),
@@ -471,13 +534,25 @@ async def list_knowledge_bases(
     if team_id:
         # Check team access
         await check_team_access(team_id, current_user)
-        query = query.filter(team_id=team_id)
+        if not include_shared or own_only:
+            query = query.filter(team_id=team_id)
+        else:
+            shared_kb_ids = await KnowledgeBaseShare.filter(
+                shared_with_team_id=team_id
+            ).values_list("knowledge_base_id", flat=True)
+            query = query.filter(Q(team_id=team_id) | Q(id__in=shared_kb_ids))
     elif not current_user.is_superuser and _kb_access_mode.get() != "admin":
         # Get all teams user belongs to
         memberships = await TeamMember.filter(user=current_user).values_list(
             "team_id", flat=True
         )
-        query = query.filter(team_id__in=memberships)
+        if not include_shared or own_only:
+            query = query.filter(team_id__in=memberships)
+        else:
+            shared_kb_ids = await KnowledgeBaseShare.filter(
+                shared_with_team_id__in=memberships
+            ).values_list("knowledge_base_id", flat=True)
+            query = query.filter(Q(team_id__in=memberships) | Q(id__in=shared_kb_ids))
 
     if own_only and not current_user.is_superuser:
         query = query.filter(created_by=current_user)
@@ -504,17 +579,63 @@ async def list_knowledge_bases(
     models = await Model.filter(id__in=model_ids).all()
     model_map = {model.id: model for model in models}
 
+    # Batch query shares for listed KBs
+    kb_ids = [getattr(kb, "id", None) for kb in kbs if getattr(kb, "id", None)]
+    share_counts: dict[UUID, int] = {}
+    team_shares_map: dict[UUID, Any] = {}
+    try:
+        all_shares = await KnowledgeBaseShare.filter(knowledge_base_id__in=kb_ids).all()
+        for s in all_shares:
+            s_kbid = getattr(s, "knowledge_base_id", None)
+            share_counts[s_kbid] = share_counts.get(s_kbid, 0) + 1
+            if getattr(s, "shared_with_team_id", None) == team_id:
+                team_shares_map[s_kbid] = s
+    except Exception:
+        pass
+
     kb_list = []
     for kb in kbs:
         kb_data = KnowledgeBaseList.model_validate(kb).model_dump()
         kb_data["embedding_model"] = _build_model_info(
-            model_map.get(kb.embedding_model_id) if kb.embedding_model_id else None
+            model_map.get(getattr(kb, "embedding_model_id", None))
+            if getattr(kb, "embedding_model_id", None)
+            else None
         )
         kb_data["rerank_model"] = _build_model_info(
-            model_map.get(kb.rerank_model_id) if kb.rerank_model_id else None
+            model_map.get(getattr(kb, "rerank_model_id", None))
+            if getattr(kb, "rerank_model_id", None)
+            else None
         )
-        kb_list.append(kb_data)
 
+        kb_id = getattr(kb, "id", None)
+        kb_team_id = getattr(kb, "team_id", None) or (
+            kb.team.id
+            if hasattr(kb, "team") and kb.team and hasattr(kb.team, "id")
+            else None
+        )
+        owner_name = (
+            kb.team.name
+            if hasattr(kb, "team") and kb.team and hasattr(kb.team, "name")
+            else None
+        )
+        if team_id and kb_team_id and kb_team_id != team_id:
+            kb_data["is_owned"] = False
+            kb_data["owner_team_id"] = kb_team_id
+            kb_data["owner_team_name"] = owner_name
+            share = team_shares_map.get(kb_id) if kb_id else None
+            kb_data["share_permission"] = (
+                KnowledgeBaseSharePermission(share.permission)
+                if share and hasattr(share, "permission")
+                else KnowledgeBaseSharePermission.READ_ONLY
+            )
+        else:
+            kb_data["is_owned"] = True
+            kb_data["owner_team_id"] = kb_team_id
+            kb_data["owner_team_name"] = owner_name
+            kb_data["share_permission"] = None
+
+        kb_data["shared_with_count"] = share_counts.get(kb_id, 0) if kb_id else 0
+        kb_list.append(kb_data)
     return success(
         data={
             "items": kb_list,
@@ -589,13 +710,14 @@ async def create_knowledge_base(
 @router.get("/{kb_id}", response_model=Response[KnowledgeBaseSchema])
 async def get_knowledge_base(
     kb_id: UUID,
+    team_id: UUID | None = None,
     current_user: User = Depends(require_kb_read),
 ) -> Any:
     """
     Get knowledge base by ID.
     """
     kb = await check_kb_access(kb_id, current_user)
-    kb_data = await kb_with_model_info(kb)
+    kb_data = await kb_with_model_info(kb, current_team_id=team_id)
     return success(data=kb_data)
 
 
@@ -2553,4 +2675,221 @@ async def search_knowledge_base(
             "timings": timings,
         },
         msg_key="search_completed",
+    )
+
+
+# ============ Knowledge Base Sharing APIs ============
+
+
+@router.post("/{kb_id}/share", response_model=Response[KnowledgeBaseShareOut])
+async def share_knowledge_base(
+    kb_id: UUID,
+    share_data: KnowledgeBaseShareInput,
+    request: Request,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    共享知识库给其他团队
+
+    只有知识库所有者团队的管理员可以共享知识库
+    """
+    kb = (
+        await KnowledgeBase.filter(id=kb_id)
+        .prefetch_related("team", "created_by")
+        .first()
+    )
+    if not kb:
+        raise BusinessError(
+            code=ResponseCode.KB_NOT_FOUND,
+            msg_key="kb_not_found",
+            status_code=404,
+        )
+
+    kb_team_id = getattr(kb, "team_id", None) or (
+        kb.team.id if hasattr(kb, "team") and kb.team else None
+    )
+    await check_team_access(kb_team_id, current_user, require_admin=True)
+
+    target_team = await Team.filter(id=share_data.team_id).first()
+    if not target_team:
+        raise BusinessError(
+            code=ResponseCode.TEAM_NOT_FOUND,
+            msg_key="team_not_found",
+            status_code=404,
+        )
+
+    if kb_team_id == share_data.team_id:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="cannot_share_to_own_team",
+            status_code=400,
+        )
+
+    existing_share = await KnowledgeBaseShare.filter(
+        knowledge_base_id=kb_id, shared_with_team_id=share_data.team_id
+    ).first()
+
+    if existing_share:
+        raise BusinessError(
+            code=ResponseCode.DUPLICATE_NAME,
+            msg_key="kb_already_shared",
+            status_code=400,
+        )
+
+    share = await KnowledgeBaseShare.create(
+        knowledge_base_id=kb_id,
+        shared_with_team_id=share_data.team_id,
+        permission=share_data.permission,
+        shared_by_id=current_user.id,
+    )
+
+    await share.fetch_related("knowledge_base", "shared_with_team", "shared_by")
+
+    await AuditLogService.log(
+        user=current_user,
+        action="share_knowledge_base",
+        resource_type="knowledge_base",
+        resource_id=kb_id,
+        resource_name=kb.name,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={
+            "team_id": str(kb_team_id),
+            "shared_with_team_id": str(share_data.team_id),
+            "permission": (
+                share_data.permission.value
+                if hasattr(share_data.permission, "value")
+                else str(share_data.permission)
+            ),
+        },
+        changes={"after": AuditLogService.snapshot(share, "knowledge_base_share")},
+    )
+
+    return success(
+        data=KnowledgeBaseShareOut(
+            id=share.id,
+            knowledge_base_id=share.knowledge_base_id,
+            knowledge_base_name=share.knowledge_base.name,
+            shared_with_team_id=share.shared_with_team_id,
+            shared_with_team_name=share.shared_with_team.name,
+            permission=KnowledgeBaseSharePermission(share.permission),
+            shared_by_id=share.shared_by_id,
+            shared_by_name=share.shared_by.username if share.shared_by else "",
+            shared_at=share.shared_at,
+        ).model_dump(),
+        msg_key="kb_shared_successfully",
+    )
+
+
+@router.get("/{kb_id}/shares", response_model=Response[KnowledgeBaseShareListOut])
+async def list_knowledge_base_shares(
+    kb_id: UUID,
+    current_user: User = Depends(require_kb_read),
+) -> Any:
+    """
+    获取知识库的共享列表
+
+    只有知识库所有者团队的成员可以查看
+    """
+    kb = await KnowledgeBase.filter(id=kb_id).prefetch_related("team").first()
+    if not kb:
+        raise BusinessError(
+            code=ResponseCode.KB_NOT_FOUND,
+            msg_key="kb_not_found",
+            status_code=404,
+        )
+
+    kb_team_id = getattr(kb, "team_id", None) or (
+        kb.team.id if hasattr(kb, "team") and kb.team else None
+    )
+    await check_team_access(kb_team_id, current_user)
+
+    shares = (
+        await KnowledgeBaseShare.filter(knowledge_base_id=kb_id)
+        .prefetch_related("knowledge_base", "shared_with_team", "shared_by")
+        .order_by("-shared_at")
+    )
+
+    share_list = [
+        KnowledgeBaseShareOut(
+            id=share.id,
+            knowledge_base_id=share.knowledge_base_id,
+            knowledge_base_name=share.knowledge_base.name,
+            shared_with_team_id=share.shared_with_team_id,
+            shared_with_team_name=share.shared_with_team.name,
+            permission=KnowledgeBaseSharePermission(share.permission),
+            shared_by_id=share.shared_by_id,
+            shared_by_name=share.shared_by.username if share.shared_by else "",
+            shared_at=share.shared_at,
+        )
+        for share in shares
+    ]
+
+    return success(
+        data=KnowledgeBaseShareListOut(
+            shares=share_list,
+            total=len(share_list),
+        ).model_dump()
+    )
+
+
+@router.delete("/{kb_id}/share/{team_id}", response_model=Response[None])
+async def unshare_knowledge_base(
+    kb_id: UUID,
+    team_id: UUID,
+    request: Request,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    取消知识库共享
+
+    只有知识库所有者团队的管理员可以取消共享
+    """
+    kb = await KnowledgeBase.filter(id=kb_id).first()
+    if not kb:
+        raise BusinessError(
+            code=ResponseCode.KB_NOT_FOUND,
+            msg_key="kb_not_found",
+            status_code=404,
+        )
+
+    kb_team_id = getattr(kb, "team_id", None) or (
+        kb.team.id if hasattr(kb, "team") and kb.team else None
+    )
+    await check_team_access(kb_team_id, current_user, require_admin=True)
+
+    share = await KnowledgeBaseShare.filter(
+        knowledge_base_id=kb_id, shared_with_team_id=team_id
+    ).first()
+
+    if not share:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="kb_share_not_found",
+            status_code=404,
+        )
+
+    audit_before = AuditLogService.snapshot(share, "knowledge_base_share")
+    await share.delete()
+
+    await AuditLogService.log(
+        user=current_user,
+        action="unshare_knowledge_base",
+        resource_type="knowledge_base",
+        resource_id=kb_id,
+        resource_name=kb.name,
+        operation="delete",
+        status="success",
+        request=request,
+        changes={"before": audit_before},
+        metadata={
+            "team_id": str(kb_team_id),
+            "unshared_from_team_id": str(team_id),
+        },
+    )
+
+    return success(
+        data=None,
+        msg_key="kb_unshared_successfully",
     )
