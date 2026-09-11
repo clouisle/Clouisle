@@ -19,9 +19,9 @@ Contracts under test:
 import asyncio
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock
-from uuid import uuid4
-
+from uuid import UUID, uuid4
 import pytest
 
 from app.models.agent_run import (
@@ -38,6 +38,7 @@ class FakeRedis:
         self.data: dict[str, object] = {}
         self.channels: dict[str, list[str]] = {}
         self.subscribed: list[str] = []
+        self.expires: dict[str, int] = {}
 
     async def set(self, key, value, nx=False, ex=None):
         if nx and key in self.data:
@@ -49,6 +50,7 @@ class FakeRedis:
         return self.data.get(key)
 
     async def expire(self, key, seconds):
+        self.expires[key] = seconds
         return key in self.data
 
     async def delete(self, key):
@@ -78,24 +80,36 @@ class FakeRedis:
 class FakePubSub:
     def __init__(self, redis: FakeRedis):
         self.redis = redis
+        self.subscribed: list[str] = []
+        self._closed = False
 
     async def subscribe(self, channel):
+        self.subscribed.append(channel)
         self.redis.subscribed.append(channel)
 
     async def unsubscribe(self, channel):
+        if channel in self.subscribed:
+            self.subscribed.remove(channel)
         if channel in self.redis.subscribed:
             self.redis.subscribed.remove(channel)
 
     async def close(self):
-        pass
+        self._closed = True
 
     async def listen(self):
         yield {"type": "subscribe"}
-        for message in self.redis.channels.get("agent:run:stream", []):
-            yield {"type": "message", "data": message}
-        # End live listen.
-        while True:
-            await asyncio.sleep(0.05)
+        seen_idx: dict[str, int] = {}
+        while not self._closed:
+            found = False
+            for channel in list(self.subscribed):
+                msgs = self.redis.channels.get(channel, [])
+                idx = seen_idx.get(channel, 0)
+                if idx < len(msgs):
+                    seen_idx[channel] = idx + 1
+                    found = True
+                    yield {"type": "message", "data": msgs[idx]}
+            if not found:
+                await asyncio.sleep(0.01)
 
 
 def _get_redis_fixture(redis: FakeRedis):
@@ -205,6 +219,115 @@ async def test_stream_events_all_and_clear(monkeypatch, fake_redis):
     assert events[0]["type"] == "message_start"
     await stream.clear()
     assert await stream.get_all_events() == []
+
+
+@pytest.mark.asyncio
+async def test_stream_ttl_convergence_on_run_end(monkeypatch, fake_redis):
+    stream = agent_run_stream.AgentRunStream(uuid4())
+    await stream.publish("message_start", {"message_id": str(uuid4())})
+    assert fake_redis.expires[stream._buffer_key] == agent_run_stream.BUFFER_TTL_SECONDS
+    assert fake_redis.expires[stream._buffer_key] == 86400
+
+    await stream.publish("run_end", {"status": "completed"})
+    assert (
+        fake_redis.expires[stream._buffer_key]
+        == agent_run_stream.BUFFER_COMPLETED_TTL_SECONDS
+    )
+    assert fake_redis.expires[stream._buffer_key] == 600
+
+
+@pytest.mark.asyncio
+async def test_sse_events_emits_heartbeat_ping_and_completes(monkeypatch, fake_redis):
+    run_id = uuid4()
+    stream = agent_run_stream.AgentRunStream(run_id)
+    await stream.publish("run_start", {"status": "running"})
+
+    lines: list[str] = []
+    async for line in agent_run_stream.sse_events(run_id, heartbeat_interval=0.03):
+        lines.append(line)
+        if line == ": ping\n\n":
+            # Publish run_end to terminate the stream and cover the normal break
+            await stream.publish("run_end", {"status": "completed"})
+
+    assert any(line.startswith("event: run_start") for line in lines)
+    assert ": ping\n\n" in lines
+    assert any(line.startswith("event: run_end") for line in lines)
+
+
+@pytest.mark.asyncio
+async def test_worker_micro_batching_collector():
+    from app.services.agent_run_worker import MicroBatchingCollector
+
+    published_events: list[tuple[str, dict[str, Any]]] = []
+
+    class RecordingStream:
+        def __init__(self, run_id: UUID) -> None:
+            self.run_id = run_id
+
+        async def publish(
+            self, event_type: str, payload: dict[str, Any] | None = None, **kwargs: Any
+        ) -> Any:
+            published_events.append((event_type, payload or {}))
+            return None
+
+    event_queue: asyncio.Queue[tuple[str, dict[str, Any]] | None] = asyncio.Queue()
+    stream = RecordingStream(uuid4())
+
+    collector = MicroBatchingCollector(event_queue=event_queue, stream=stream)
+    publisher_task = asyncio.create_task(collector.run_loop())
+
+    # 1. Six content deltas should flush upon reaching count limit
+    for i in range(6):
+        event_queue.put_nowait(("content_delta", {"delta": f"token{i}_"}))
+
+    await event_queue.join()
+    assert len(published_events) == 1
+    assert published_events[0] == (
+        "content_delta",
+        {"delta": "token0_token1_token2_token3_token4_token5_"},
+    )
+    # 2. Delta followed by a non-delta (tool_call) should flush delta immediately
+    event_queue.put_nowait(("content_delta", {"delta": "before_tool"}))
+    event_queue.put_nowait(("tool_call", {"name": "calculator"}))
+    await event_queue.join()
+
+    assert len(published_events) == 3
+    assert published_events[1] == ("content_delta", {"delta": "before_tool"})
+    assert published_events[2] == ("tool_call", {"name": "calculator"})
+
+    # 3. Switching delta types (reasoning_delta then content_delta) flushes previous type
+    event_queue.put_nowait(("reasoning_delta", {"delta": "thinking..."}))
+    event_queue.put_nowait(("content_delta", {"delta": "answer"}))
+    await event_queue.join()
+    # Wait for the time window to flush the remaining content_delta
+    await asyncio.sleep(0.05)
+
+    assert len(published_events) == 5
+    assert published_events[3] == ("reasoning_delta", {"delta": "thinking..."})
+    assert published_events[4] == ("content_delta", {"delta": "answer"})
+
+    # 4. Clean shutdown
+    await event_queue.put(None)
+    await publisher_task
+
+
+@pytest.mark.asyncio
+async def test_sse_events_propagates_consumer_error(monkeypatch, fake_redis):
+    run_id = uuid4()
+
+    class FailingStream:
+        def __init__(self, _run_id):
+            pass
+
+        async def subscribe(self, _from_sequence=0):
+            raise ConnectionError("Simulated stream connection lost")
+            yield {}  # noqa
+
+    monkeypatch.setattr(agent_run_stream, "AgentRunStream", FailingStream)
+
+    with pytest.raises(ConnectionError, match="Simulated stream connection lost"):
+        async for _ in agent_run_stream.sse_events(run_id, heartbeat_interval=0.1):
+            pass
 
 
 @pytest.mark.asyncio

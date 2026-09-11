@@ -496,6 +496,37 @@ async def delete_user(user_id: str):
     await redis_client.delete(f"user:{user_id}")
 ```
 
+### High-Concurrency Streaming & Redis Connection Pool Protection
+
+Agent conversation streaming leverages Redis for buffering and Pub/Sub delivery (`agent:run:{run_id}:buffer` and `agent:run:{run_id}:events`). In high-concurrency environments (thousands of concurrent SSE streams), consider the following deployment and operational invariants to prevent Redis connection exhaustion:
+
+1. **Redis `maxclients` Sizing**:
+   * Each active SSE subscriber subscribes to a Redis channel via Pub/Sub, which allocates an active connection on the Redis server.
+   * In environments with high concurrent streaming users, set `maxclients` in `redis.conf` according to peak concurrent connections plus worker and general pool overhead (recommended: $\ge 20,000$):
+     ```conf
+     maxclients 20000
+     ```
+2. **Operating System & Container File Descriptor Limits (`nofile`)**:
+   * Host limits in `/etc/security/limits.conf`:
+     ```conf
+     redis soft nofile 65536
+     redis hard nofile 65536
+     ```
+   * Container limits: set `--ulimit nofile=65536:65536` on the Redis container or configure `"default-ulimits": {"nofile": {"Name": "nofile", "Hard": 65536, "Soft": 65536}}` in `/etc/docker/daemon.json`.
+   * Verify the effective limit inside the running container:
+     ```bash
+     docker compose exec redis sh -c 'cat /proc/1/limits | grep "Max open files"'
+     ```
+3. **Proxy Timeouts & SSE Keep-Alive**:
+   * FastAPI SSE streams emit periodic comment pings (`: ping\n\n`) every 15 seconds when idle.
+   * Configure provider-specific reverse proxies and load balancers:
+     * **Nginx**: `proxy_read_timeout 300s;` and `proxy_buffering off;` (or send `X-Accel-Buffering: no;`).
+     * **Cloudflare**: Cloudflare Enterprise allows raising the HTTP proxy read timeout up to 6000 seconds via Cache Rules / Origin Rules; on Free/Pro/Business plans (fixed 100s timeout), the 15-second SSE heartbeat guarantees the connection remains active.
+     * **AWS Application Load Balancer (ALB)**: set `idle_timeout.timeout_seconds` to `300` or higher to prevent premature TCP termination.
+4. **Redis Memory Lifecycle & TTL**:
+   * Micro-batching reduces write QPS by grouping consecutive streaming `content_delta` and `reasoning_delta` events within a 20ms window or a 6-delta count limit.
+   * Completed run event buffers automatically converge to a 10-minute TTL (`BUFFER_COMPLETED_TTL_SECONDS = 600`) upon terminal events (`run_end`), freeing Redis RAM while preserving a reconnection and replay window.
+
 ### Application-Level Caching
 
 **LRU Cache:**
