@@ -71,6 +71,8 @@ def validate_external_host(
     clean_host = (host or "").strip().lower().rstrip(".")
     if not clean_host:
         raise BusinessError(msg_key=invalid_key)
+    if port is not None and not (1 <= port <= 65535):
+        raise BusinessError(msg_key=invalid_key)
     if clean_host in _BLOCKED_HOSTS:
         raise BusinessError(msg_key=error_key)
     try:
@@ -99,24 +101,31 @@ def validate_database_config(db_config: dict, getaddrinfo=None) -> None:
         if raw_port is not None:
             try:
                 port = int(raw_port)
-            except (ValueError, TypeError):
-                port = None
+            except (ValueError, TypeError) as exc:
+                raise BusinessError(msg_key="database_host_invalid") from exc
+            if not (1 <= port <= 65535):
+                raise BusinessError(msg_key="database_host_invalid")
         targets.append((str(raw_host).strip(), port))
 
     raw_url = db_config.get("url") or db_config.get("uri")
     if raw_url:
-        parsed = urlparse(str(raw_url).strip())
-        netloc = parsed.netloc
-        if "@" in netloc:
-            netloc = netloc.split("@", 1)[1]
-        for host_spec in netloc.split(","):
-            host_spec = host_spec.strip()
-            if not host_spec:
-                continue
-            p = urlparse("//" + host_spec)
-            if p.hostname:
-                targets.append((p.hostname, p.port))
-
+        try:
+            parsed = urlparse(str(raw_url).strip())
+            netloc = parsed.netloc
+            if "@" in netloc:
+                netloc = netloc.split("@", 1)[1]
+            for host_spec in netloc.split(","):
+                host_spec = host_spec.strip()
+                if not host_spec:
+                    continue
+                p = urlparse("//" + host_spec)
+                port_val = p.port
+                if port_val is not None and not (1 <= port_val <= 65535):
+                    raise BusinessError(msg_key="database_host_invalid")
+                if p.hostname:
+                    targets.append((p.hostname, port_val))
+        except (ValueError, TypeError) as exc:
+            raise BusinessError(msg_key="database_host_invalid") from exc
     if not targets:
         # If neither host nor url is provided, check if default host would be used or raise invalid
         raise BusinessError(msg_key="database_host_invalid")

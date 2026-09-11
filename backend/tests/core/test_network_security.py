@@ -76,6 +76,9 @@ def test_validate_external_http_url_dns_resolution():
     [
         ("", None, "database_host_invalid"),
         ("   ", 5432, "database_host_invalid"),
+        ("db.example.com", 0, "database_host_invalid"),
+        ("db.example.com", 65536, "database_host_invalid"),
+        ("db.example.com", -1, "database_host_invalid"),
         ("localhost", 5432, "database_host_not_allowed"),
         ("localhost.", 5432, "database_host_not_allowed"),
         ("local", 3306, "database_host_not_allowed"),
@@ -126,12 +129,18 @@ def test_validate_database_config_host_and_port():
         validate_database_config({"host": "127.0.0.1", "port": 5432})
     assert exc_info.value.msg_key == "database_host_not_allowed"
 
-    # Invalid port handled gracefully
+    # Invalid port handled with database_host_invalid
     with pytest.raises(BusinessError) as exc_info:
-        validate_database_config({"host": "127.0.0.1", "port": "invalid_port"})
-    assert exc_info.value.msg_key == "database_host_not_allowed"
+        validate_database_config({"host": "db.public.com", "port": "invalid_port"})
+    assert exc_info.value.msg_key == "database_host_invalid"
 
-    # Public host allowed
+    with pytest.raises(BusinessError) as exc_info:
+        validate_database_config({"host": "db.public.com", "port": 70000})
+    assert exc_info.value.msg_key == "database_host_invalid"
+
+    with pytest.raises(BusinessError) as exc_info:
+        validate_database_config({"host": "db.public.com", "port": 0})
+    assert exc_info.value.msg_key == "database_host_invalid"
     public_sock = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 5432))]
     with patch("socket.getaddrinfo", return_value=public_sock):
         validate_database_config({"host": "db.public.com", "port": 5432})
@@ -157,6 +166,17 @@ def test_validate_database_config_urls():
     with patch("socket.getaddrinfo", return_value=public_sock):
         validate_database_config({"url": "mongodb+srv://cluster0.example.com/test"})
 
+    # URL with out-of-range port
+    with pytest.raises(BusinessError) as exc_info:
+        validate_database_config({"url": "redis://:secret@db.public.com:65536/0"})
+    assert exc_info.value.msg_key == "database_host_invalid"
+
+    # URL with non-integer port
+    with pytest.raises(BusinessError) as exc_info:
+        validate_database_config(
+            {"url": "mongodb://user:pass@db.public.com:notaport/db"}
+        )
+    assert exc_info.value.msg_key == "database_host_invalid"
     # Empty URL targets
     with pytest.raises(BusinessError) as exc_info:
         validate_database_config({"url": "mongodb://"})
