@@ -64,6 +64,10 @@ export {
   type ChunkPreviewInput,
   type ChunkPreviewItem,
   type ChunkPreviewResponse,
+  type KnowledgeBaseShare,
+  type KnowledgeBaseSharePermission,
+  type KnowledgeBaseShareInput,
+  type KnowledgeBaseShareListResponse,
 } from './knowledge-bases'
 
 export {

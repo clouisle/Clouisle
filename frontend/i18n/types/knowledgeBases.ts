@@ -48,6 +48,8 @@ export type KnowledgeBasesMessages = {
     active: string
     inactive: string
     archived: string
+    shared: string
+    sharedFrom: string
     activate: string
     deactivate: string
     enableKb: string
