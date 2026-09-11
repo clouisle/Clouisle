@@ -312,7 +312,7 @@ async def test_worker_micro_batching_collector():
 
 
 @pytest.mark.asyncio
-async def test_sse_events_propagates_consumer_error(monkeypatch):
+async def test_sse_events_propagates_consumer_error(monkeypatch, fake_redis):
     run_id = uuid4()
 
     class FailingStream:
@@ -320,10 +320,12 @@ async def test_sse_events_propagates_consumer_error(monkeypatch):
             pass
 
         async def subscribe(self, _from_sequence=0):
-            raise ConnectionError("Redis connection lost")
+            raise ConnectionError("Simulated stream connection lost")
             yield {}  # noqa
 
-    with pytest.raises(ConnectionError, match="Redis connection lost"):
+    monkeypatch.setattr(agent_run_stream, "AgentRunStream", FailingStream)
+
+    with pytest.raises(ConnectionError, match="Simulated stream connection lost"):
         async for _ in agent_run_stream.sse_events(run_id, heartbeat_interval=0.1):
             pass
 
