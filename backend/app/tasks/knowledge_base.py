@@ -516,7 +516,7 @@ async def _handle_doc_completion_in_batch(
             )
             await r.sadd(status_key, str(document.id))
             remaining = await r.decr(batch_remain_key)
-            if remaining == 0:
+            if remaining <= 0:
                 await _send_batch_completion_notification(
                     batch_id=batch_id,
                     document=document,

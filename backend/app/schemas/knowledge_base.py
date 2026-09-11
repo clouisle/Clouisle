@@ -383,9 +383,9 @@ class ProcessWithChunksRequest(BaseModel):
     chunks: List[ChunkInput] = Field(
         ..., min_length=1, description="Pre-chunked content"
     )
-    batch_id: Optional[str] = Field(
+    batch_id: Optional[UUID] = Field(
         default=None,
-        description="Optional batch ID for aggregating notifications across multiple documents",
+        description="Optional UUID batch ID for aggregating notifications across multiple documents",
     )
     batch_total: Optional[int] = Field(
         default=None, description="Total number of documents in this batch"

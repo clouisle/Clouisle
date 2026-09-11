@@ -1527,18 +1527,21 @@ async def process_document_with_chunks(
 
         # Note: KB statistics will be updated by Celery task after successful embedding
 
+        batch_id_str = (
+            str(process_request.batch_id) if process_request.batch_id else None
+        )
         # Initialize batch tracking in Redis if batch_id and batch_total provided
-        if process_request.batch_id and process_request.batch_total:
+        if batch_id_str and process_request.batch_total:
             try:
                 from app.core.redis import get_redis
 
                 r = await get_redis()
-                batch_key = f"kb_batch:{process_request.batch_id}:remain"
+                batch_key = f"kb_batch:{batch_id_str}:remain"
                 # Only set if not already set (NX)
                 await r.set(batch_key, process_request.batch_total, ex=7200, nx=True)
                 # Store total and kb info
                 await r.set(
-                    f"kb_batch:{process_request.batch_id}:total",
+                    f"kb_batch:{batch_id_str}:total",
                     process_request.batch_total,
                     ex=7200,
                     nx=True,
@@ -1551,11 +1554,7 @@ async def process_document_with_chunks(
             from app.tasks.knowledge_base import embed_document_chunks_task
 
             logger.info(f"Dispatching embed_document_chunks_task for document {doc.id}")
-            task_kwargs = (
-                {"batch_id": process_request.batch_id}
-                if process_request.batch_id
-                else {}
-            )
+            task_kwargs = {"batch_id": batch_id_str} if batch_id_str else {}
             task_id = await _dispatch_document_task(
                 doc,
                 embed_document_chunks_task,
@@ -1566,6 +1565,32 @@ async def process_document_with_chunks(
             logger.info(f"Task dispatched successfully, task_id: {task_id}")
         except Exception as e:
             logger.error(f"Vector embedding task not dispatched: {e}", exc_info=True)
+            # Decrement batch remain counter if dispatch failed so batch completes
+            if batch_id_str:
+                try:
+                    from app.core.redis import get_redis
+
+                    r = await get_redis()
+                    batch_key = f"kb_batch:{batch_id_str}:remain"
+                    failed_key = f"kb_batch:{batch_id_str}:failed"
+                    await r.sadd(failed_key, str(doc.id))
+                    rem = await r.decr(batch_key)
+                    if rem <= 0:
+                        from app.tasks.knowledge_base import (
+                            _send_batch_completion_notification,
+                        )
+
+                        await _send_batch_completion_notification(
+                            batch_id=batch_id_str,
+                            document=doc,
+                            kb_name=kb.name,
+                            team_id=getattr(kb, "team_id", None),
+                            user_locale=getattr(current_user, "locale", "en"),
+                        )
+                except Exception as redis_err:
+                    logger.warning(
+                        f"Failed to decrement batch counter on dispatch failure: {redis_err}"
+                    )
             # If task dispatch fails, mark as error and raise exception
             doc.status = DocumentStatus.ERROR.value
             doc.error_message = "task_dispatch_failed"
