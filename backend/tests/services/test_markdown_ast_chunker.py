@@ -230,3 +230,25 @@ This is some introductory text before the table.
     # Subsequent table chunks MUST be marked as continuation
     for tc in table_chunks[1:]:
         assert tc["metadata"]["is_table_continuation"] is True
+
+
+def test_markdown_ast_unreached_branches():
+    # 1. Unclosed code block (hits line 888 loop end without fence)
+    unclosed_code = "```python\ndef foo():\n    return 42"
+    blocks = _extract_markdown_blocks(unclosed_code)
+    assert blocks[0]["type"] == "code"
+
+    # 2. List with indented line continuation and blank line follow up
+    list_text = "- Item 1\n  details of item 1\n\n  more indented details\n- Item 2"
+    blocks = _extract_markdown_blocks(list_text)
+    assert blocks[0]["type"] == "list"
+
+    # 3. Code block with prior chunk_type already "table" (current_chunk_type != "text")
+    mixed_content = "| A | B |\n|---|---|\n| 1 | 2 |\n\n```python\nx = 1\n```"
+    chunks = chunk_markdown_ast(mixed_content, chunk_size=500, chunk_overlap=0)
+    assert len(chunks) >= 1
+
+    # 4. Table without section
+    bare_table = "| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |"
+    chunks = chunk_markdown_ast(bare_table, chunk_size=20, chunk_overlap=0)
+    assert all(c["metadata"]["chunk_type"] == "table" for c in chunks)
