@@ -101,7 +101,31 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
 
   // 加载知识库和文档信息
   const loadData = React.useCallback(async () => {
-    if (documentIds.length === 0) {
+    // 1. 尝试从 sessionStorage 读取暂存的文档列表（避免 URL 431 并在 500+ 文档时免去并发 getDocument 网络请求）
+    let cachedDocs: Document[] | null = null
+    let targetDocIds: string[] = documentIds
+
+    if (targetDocIds.length === 0 && typeof window !== 'undefined') {
+      try {
+        const raw = sessionStorage.getItem(`kb_preview_docs_${knowledgeBaseId}`)
+        if (raw) {
+          const parsed = JSON.parse(raw)
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // 可能是 Document 对象数组，也可能是 ID 字符串数组
+            if (typeof parsed[0] === 'object' && parsed[0]?.id) {
+              cachedDocs = parsed as Document[]
+              targetDocIds = cachedDocs.map(d => d.id)
+            } else if (typeof parsed[0] === 'string') {
+              targetDocIds = parsed as string[]
+            }
+          }
+        }
+      } catch {
+        // ignore parse error
+      }
+    }
+
+    if (targetDocIds.length === 0) {
       router.push(`/app/kb/${knowledgeBaseId}`)
       return
     }
@@ -121,17 +145,28 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
         clean_text: true,
       })
 
-      // 并行加载所有文档
-      const docsPromises = documentIds.map(id => 
-        knowledgeBasesApi.getDocument(knowledgeBaseId, id).catch(() => null)
-      )
-      const docs = await Promise.all(docsPromises)
+      // 如果缓存中已有完整的 Document 实体，直接秒开；否则并发获取
+      let docs: (Document | null)[] = []
+      if (cachedDocs && cachedDocs.length === targetDocIds.length) {
+        docs = cachedDocs
+      } else {
+        // 分批限制并发，避免几百个文档同时触发 HTTP 请求风暴
+        const batchSize = 10
+        docs = []
+        for (let i = 0; i < targetDocIds.length; i += batchSize) {
+          const slice = targetDocIds.slice(i, i + batchSize)
+          const batchRes = await Promise.all(
+            slice.map(id => knowledgeBasesApi.getDocument(knowledgeBaseId, id).catch(() => null))
+          )
+          docs.push(...batchRes)
+        }
+      }
 
       // 初始化每个文档的状态
       const initialState: Record<string, DocumentPreviewState> = {}
       docs.forEach((doc, idx) => {
         if (doc) {
-          initialState[documentIds[idx]] = {
+          initialState[targetDocIds[idx]] = {
             document: doc,
             previewChunks: [],
             previewStats: null,
@@ -144,7 +179,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
       setDocumentsState(initialState)
 
       // 设置默认选中第一个有效文档
-      const firstValidId = documentIds.find(id => initialState[id])
+      const firstValidId = targetDocIds.find(id => initialState[id])
       if (firstValidId) {
         setActiveDocId(firstValidId)
       }
@@ -224,13 +259,17 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
   }
 
   // 处理单个文档 - 使用前端已编辑的分块
-  const handleProcessDocument = async (docId: string) => {
+  const handleProcessDocument = async (
+    docId: string,
+    silent = false,
+    batch?: { batch_id: string; batch_total: number }
+  ) => {
     const docState = documentsState[docId]
     
     // 如果没有预览分块，先生成预览
     if (!docState?.previewChunks || docState.previewChunks.length === 0) {
-      toast.error(t('noPreviewChunks'))
-      return
+      if (!silent) toast.error(t('noPreviewChunks'))
+      return false
     }
 
     setDocumentsState(prev => ({
@@ -248,9 +287,9 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
       const result = await knowledgeBasesApi.processDocumentWithChunks(
         knowledgeBaseId,
         docId,
-        chunks
+        chunks,
+        batch
       )
-
       // 更新文档状态 - API 返回的状态可能是 processing（因为 Celery 任务是异步的）
       setDocumentsState(prev => ({
         ...prev,
@@ -264,9 +303,10 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
       // 检查返回的文档状态
       if (result.status === 'error') {
         toast.error(result.error_message || t('documentProcessFailed'))
+        return false
       } else {
-        // processing 或其他状态都表示任务已提交
-        toast.success(t('documentProcessingStarted'))
+        if (!silent) toast.success(t('documentProcessingStarted'))
+        return true
       }
     } catch {
       // 获取最新文档状态以显示错误信息
@@ -284,6 +324,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
         }))
         toast.error(t('documentProcessFailed'))
       }
+      return false
     }
   }
 
@@ -313,14 +354,45 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
       return newState
     })
 
-    // 并行处理所有文档
-    await Promise.all(docsToProcess.map(docId => handleProcessDocument(docId)))
-    toast.success(t('processStarted', { count: docsToProcess.length }))
+    const total = docsToProcess.length
+    const toastId = toast.loading(
+      total > 1 ? `${t('processing')} (0/${total})` : t('processing')
+    )
+
+    let completed = 0
+    let successCount = 0
+
+    // 控制并发度为 5 批次，并透传 batchId 聚合后台完成通知
+    const batchId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`
+    const batchInfo = total > 1 ? { batch_id: batchId, batch_total: total } : undefined
+    const batchSize = 5
+    for (let i = 0; i < docsToProcess.length; i += batchSize) {
+      const slice = docsToProcess.slice(i, i + batchSize)
+      const results = await Promise.all(
+        slice.map(docId => handleProcessDocument(docId, true, batchInfo))
+      )
+      completed += slice.length
+      successCount += results.filter(Boolean).length
+      if (total > 1 && completed < total) {
+        toast.loading(`${t('processing')} (${completed}/${total})`, { id: toastId })
+      }
+    }
+
+    if (successCount === total) {
+      toast.success(t('processStarted', { count: total }), { id: toastId })
+    } else {
+      toast.success(`${t('processStarted', { count: successCount })} (${t('processFailed', { count: total - successCount })})`, { id: toastId })
+    }
+
+    try {
+      sessionStorage.removeItem(`kb_preview_docs_${knowledgeBaseId}`)
+    } catch {
+      // ignore storage error
+    }
 
     // 跳转到知识库页面（中台路径）
     router.push(`/app/kb/${knowledgeBaseId}`)
   }
-
   // 移除文档
   const handleRemoveDocument = (docId: string) => {
     setOriginalPreviewDocId(null)

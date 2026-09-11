@@ -171,9 +171,16 @@ export function UploadDocumentDialog({
       onOpenChange(false)
       onSuccess()
       
-      // 跳转到批量预览页面配置分段（中台路径）
-      const docIds = uploadedDocs.map(doc => doc.id).join(',')
-      router.push(`/app/kb/${knowledgeBaseId}/documents/preview?docs=${docIds}`)
+      // 将已上传成功的文档暂存到 sessionStorage，避免 431 URL 超长并省去并发 getDocument 请求
+      try {
+        sessionStorage.setItem(
+          `kb_preview_docs_${knowledgeBaseId}`,
+          JSON.stringify(uploadedDocs)
+        )
+      } catch {
+        // 忽略 sessionStorage 异常
+      }
+      router.push(`/app/kb/${knowledgeBaseId}/documents/preview`)
     }
   }
   

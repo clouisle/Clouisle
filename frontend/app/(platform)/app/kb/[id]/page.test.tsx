@@ -48,7 +48,9 @@ const DocumentsTable = component('DocumentsTable')
 const UploadDocumentDialog = component('UploadDocumentDialog')
 const ImportUrlDialog = component('ImportUrlDialog')
 const KnowledgeBaseDialog = component('KnowledgeBaseDialog')
-
+const Alert = component('Alert')
+const AlertTitle = component('AlertTitle')
+const AlertDescription = component('AlertDescription')
 mock.module('react', () => ({
   use: () => ({ id: 'kb-1' }),
   useCallback: <T,>(callback: T) => callback,
@@ -65,6 +67,7 @@ mock.module('@/lib/api', () => ({ knowledgeBasesApi: { getKnowledgeBase, getStat
 mock.module('@/components/ui/button', () => ({ Button }))
 mock.module('@/components/ui/card', () => ({ Card, CardContent, CardDescription, CardHeader, CardTitle }))
 mock.module('@/components/ui/badge', () => ({ Badge }))
+mock.module('@/components/ui/alert', () => ({ Alert, AlertTitle, AlertDescription }))
 mock.module('./_components', () => ({ DocumentsTable, UploadDocumentDialog, ImportUrlDialog }))
 mock.module('../_components/kb-dialog', () => ({ KnowledgeBaseDialog }))
 mock.module('lucide-react', () => ({
@@ -82,8 +85,8 @@ mock.module('lucide-react', () => ({
   Search: component('Search'),
   Cpu: component('Cpu'),
   ArrowUpDown: component('ArrowUpDown'),
+  AlertCircle: component('AlertCircle'),
 }))
-
 const { default: KnowledgeBaseDetailPage } = await import('./page')
 
 function render() {
@@ -164,7 +167,8 @@ test('loads details, statistics, model metadata, and owner actions', async () =>
   expect(nodes.some((node) => node.props['data-testid'] === 'kb-upload-button')).toBe(true)
 
   const buttons = nodes.filter((node) => node.type === Button)
-  expect(buttons).toHaveLength(5)
+  // 5 primary action buttons + 2 pending alert banner buttons (continue + dismiss)
+  expect(buttons).toHaveLength(7)
   ;(buttons[0].props.onClick as () => void)()
   ;(buttons[1].props.onClick as () => void)()
   ;(buttons[2].props.onClick as () => void)()

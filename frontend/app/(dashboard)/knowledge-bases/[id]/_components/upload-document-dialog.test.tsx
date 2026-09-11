@@ -141,7 +141,7 @@ describe('UploadDocumentDialog', () => {
     expect(toastSuccess).toHaveBeenCalledWith('uploadSuccess:2')
     expect(onOpenChange).toHaveBeenCalledWith(false)
     expect(onSuccess).toHaveBeenCalledTimes(1)
-    expect(push).toHaveBeenCalledWith('/knowledge-bases/kb-1/documents/preview?docs=doc-1,doc-2')
+    expect(push).toHaveBeenCalledWith('/knowledge-bases/kb-1/documents/preview')
   })
 
   test('rejects unsupported and oversized files at the input boundary', async () => {

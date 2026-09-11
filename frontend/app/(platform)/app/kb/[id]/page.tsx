@@ -19,6 +19,7 @@ import {
   Search,
   Cpu,
   ArrowUpDown,
+  AlertCircle,
 } from 'lucide-react'
 import { useTeam } from '@/contexts/team-context'
 import { usePermissions } from '@/hooks/use-permissions'
@@ -26,9 +27,9 @@ import { knowledgeBasesApi, type KnowledgeBase, type KnowledgeBaseStats } from '
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { DocumentsTable, UploadDocumentDialog, ImportUrlDialog } from './_components'
 import { KnowledgeBaseDialog } from '../_components/kb-dialog'
-
 export default function KnowledgeBaseDetailPage({
   params,
 }: {
@@ -49,10 +50,11 @@ export default function KnowledgeBaseDetailPage({
   const [uploadDialogOpen, setUploadDialogOpen] = React.useState(false)
   const [importUrlDialogOpen, setImportUrlDialogOpen] = React.useState(false)
   const [settingsDialogOpen, setSettingsDialogOpen] = React.useState(false)
+  const [dismissPendingAlert, setDismissPendingAlert] = React.useState(false)
+  const [isNavigatingPending, setIsNavigatingPending] = React.useState(false)
   
   // 文档刷新触发器
   const [refreshTrigger, setRefreshTrigger] = React.useState(0)
-  
   // 加载知识库详情
   const loadKnowledgeBase = React.useCallback(async (showLoading = true) => {
     if (showLoading) {
@@ -168,6 +170,63 @@ export default function KnowledgeBaseDetailPage({
           )}
         </div>
       </div>
+      {/* 待处理文档批量恢复横幅 */}
+      {!dismissPendingAlert && (stats?.documents_by_status?.pending ?? 0) > 0 && canUpdateKb && (
+        <Alert variant="warning" className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-5 w-5 mt-0.5 text-amber-600 dark:text-amber-500 shrink-0" />
+            <div>
+              <AlertTitle className="text-amber-800 dark:text-amber-400 font-medium">
+                {t('pendingBatchAlertTitle', { count: stats?.documents_by_status?.pending ?? 0 })}
+              </AlertTitle>
+              <AlertDescription className="text-amber-700/90 dark:text-amber-400/80 text-xs mt-0.5">
+                {t('pendingBatchAlertDescription')}
+              </AlertDescription>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+            <Button
+              size="sm"
+              className="bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-600 dark:hover:bg-amber-700 h-8"
+              disabled={isNavigatingPending}
+              onClick={async () => {
+                setIsNavigatingPending(true)
+                try {
+                  const pendingRes = await knowledgeBasesApi.getDocuments(knowledgeBaseId, {
+                    status: ['pending'],
+                    pageSize: 500,
+                  })
+                  const docs = pendingRes.items || []
+                  if (docs.length > 0) {
+                    try {
+                      sessionStorage.setItem(`kb_preview_docs_${knowledgeBaseId}`, JSON.stringify(docs))
+                    } catch {
+                      // ignore
+                    }
+                    router.push(`/app/kb/${knowledgeBaseId}/documents/preview`)
+                  }
+                } catch {
+                  router.push(`/app/kb/${knowledgeBaseId}/documents/preview`)
+                } finally {
+                  setIsNavigatingPending(false)
+                }
+              }}
+            >
+              {isNavigatingPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+              {t('pendingBatchContinueAction')}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-950/40"
+              onClick={() => setDismissPendingAlert(true)}
+            >
+              {t('pendingBatchDismissAction')}
+            </Button>
+          </div>
+        </Alert>
+      )}
+      
       
       {/* 统计卡片 */}
       {stats && (
