@@ -570,3 +570,121 @@ def test_process_url_and_embed_wrappers_forward_arguments():
             "status": "success"
         }
     embed.assert_awaited_once_with(document_id, None)
+
+
+@pytest.mark.asyncio
+async def test_batch_notification_all_success_all_failed_and_partial():
+    document_with_user = make_document(uploaded=True)
+    document_team_only = make_document(uploaded=False)
+    team_id = uuid4()
+    batch_id = "test-batch-1"
+
+    class FakeRedis:
+        def __init__(self, total, success, failed, remain=0):
+            self._total = total
+            self._success = success
+            self._failed = failed
+            self._remain = remain
+            self.deleted = []
+
+        async def get(self, key):
+            return str(self._total)
+
+        async def scard(self, key):
+            if "success" in key:
+                return self._success
+            if "failed" in key:
+                return self._failed
+            return 0
+
+        async def sadd(self, key, member):
+            return 1
+
+        async def decr(self, key):
+            self._remain -= 1
+            return self._remain
+
+        async def delete(self, *keys):
+            self.deleted.extend(keys)
+
+    # 1. All success, user target
+    r1 = FakeRedis(total=3, success=3, failed=0, remain=1)
+    with (
+        patch("app.core.redis.get_redis", new=AsyncMock(return_value=r1)),
+        patch.object(
+            kb_tasks.AutoNotificationService,
+            "is_enabled",
+            new=AsyncMock(return_value=True),
+        ),
+        patch.object(
+            kb_tasks.AutoNotificationService, "send_to_user", new=AsyncMock()
+        ) as send_user,
+        patch.object(kb_tasks, "t", side_effect=lambda key, **kwargs: key),
+    ):
+        await kb_tasks._handle_doc_completion_in_batch(
+            batch_id=batch_id,
+            document=document_with_user,
+            kb_name="KB",
+            team_id=team_id,
+            is_success=True,
+            user_locale="zh",
+        )
+        send_user.assert_awaited_once()
+        assert len(r1.deleted) == 4
+
+    # 2. All failed, team target
+    r2 = FakeRedis(total=2, success=0, failed=2, remain=1)
+    with (
+        patch("app.core.redis.get_redis", new=AsyncMock(return_value=r2)),
+        patch.object(
+            kb_tasks.AutoNotificationService,
+            "is_enabled",
+            new=AsyncMock(return_value=True),
+        ),
+        patch.object(
+            kb_tasks.AutoNotificationService, "send_to_team", new=AsyncMock()
+        ) as send_team,
+        patch.object(
+            kb_tasks, "get_default_language", new=AsyncMock(return_value="en")
+        ),
+        patch.object(kb_tasks, "t", side_effect=lambda key, **kwargs: key),
+    ):
+        await kb_tasks._handle_doc_completion_in_batch(
+            batch_id=batch_id,
+            document=document_team_only,
+            kb_name="KB",
+            team_id=team_id,
+            is_success=False,
+            user_locale=None,
+        )
+        send_team.assert_awaited_once()
+
+    # 3. Partial, failed disabled but indexed enabled (fallback branch)
+    r3 = FakeRedis(total=5, success=3, failed=2, remain=1)
+
+    async def is_enabled_side_effect(notif_type):
+        from app.models.notification import AutoNotificationType
+
+        return notif_type == AutoNotificationType.KB_DOC_INDEXED
+
+    with (
+        patch("app.core.redis.get_redis", new=AsyncMock(return_value=r3)),
+        patch.object(
+            kb_tasks.AutoNotificationService,
+            "is_enabled",
+            side_effect=is_enabled_side_effect,
+        ),
+        patch.object(
+            kb_tasks.AutoNotificationService, "send_to_user", new=AsyncMock()
+        ) as send_user_partial,
+        patch.object(kb_tasks, "t", side_effect=lambda key, **kwargs: key),
+    ):
+        await kb_tasks._handle_doc_completion_in_batch(
+            batch_id=batch_id,
+            document=document_with_user,
+            kb_name="KB",
+            team_id=team_id,
+            is_success=True,
+            user_locale="en",
+        )
+        send_user_partial.assert_awaited_once()

@@ -397,7 +397,7 @@ async def _send_batch_completion_notification(
     if is_all_success:
         if is_indexed_enabled:
             resolved_notification_type = AutoNotificationType.KB_DOC_INDEXED
-            notification_level = NotificationLevel.INFO
+            notification_level = NotificationLevel.LOW
     elif is_all_failed:
         if is_failed_enabled:
             resolved_notification_type = AutoNotificationType.KB_DOC_FAILED
