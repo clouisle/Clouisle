@@ -156,7 +156,7 @@ test('loads details, statistics, model metadata, and owner actions', async () =>
   expect(text(tree)).toContain('5,678')
   expect(text(tree)).toContain('embed-v3')
   expect(text(tree)).toContain('rerank-v2')
-  expect(getKnowledgeBase).toHaveBeenCalledWith('kb-1')
+  expect(getKnowledgeBase).toHaveBeenCalledWith('kb-1', 'team-1')
   expect(getStats).toHaveBeenCalledWith('kb-1')
   expect(nodes.some((node) => node.props['data-testid'] === 'kb-detail-page')).toBe(true)
   expect(nodes.some((node) => node.props['data-testid'] === 'kb-search-test-button')).toBe(true)
@@ -213,4 +213,25 @@ test('redirects when the knowledge base belongs to another team or loading fails
   getKnowledgeBase.mockRejectedValueOnce(new Error('not found'))
   await load()
   expect(push).toHaveBeenCalledWith('/app/kb')
+})
+
+test('allows shared knowledge base from another team and marks documents read-only', async () => {
+  knowledgeBase = {
+    ...knowledgeBase,
+    team: { id: 'team-2', name: 'Partner Team' },
+    is_owned: false,
+    owner_team_name: 'Partner Team',
+  }
+  const tree = await load()
+  const nodes = descendants(tree)
+
+  expect(push).not.toHaveBeenCalled()
+  expect(text(tree)).toContain('Engineering')
+  expect(text(tree)).toContain('sharedFrom')
+
+  const table = nodes.find((node) => node.type === DocumentsTable)!
+  expect(table.props.readOnly).toBe(true)
+
+  // Shared KB hides update/upload actions
+  expect(nodes.filter((node) => node.type === Button)).toHaveLength(2)
 })

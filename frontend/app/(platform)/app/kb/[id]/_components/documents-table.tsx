@@ -78,6 +78,7 @@ interface DocumentsTableProps {
   knowledgeBaseId: string
   refreshTrigger: number
   onRefresh: () => void
+  readOnly?: boolean
 }
 
 // 文档类型图标映射
@@ -103,14 +104,14 @@ async function runBulkActions<T>(items: T[], action: (item: T) => Promise<unknow
   }
 }
 
-export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: DocumentsTableProps) {
+export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, readOnly = false }: DocumentsTableProps) {
   const t = useTranslations('knowledgeBases')
   const commonT = useTranslations('common')
   const locale = useLocale()
   const router = useRouter()
   const { canPerform } = useCanPerform()
-  const canUpdateKb = canPerform('kb:update')
-  const canDeleteKb = canPerform('kb:delete')
+  const canUpdateKb = !readOnly && canPerform('kb:update')
+  const canDeleteKb = !readOnly && canPerform('kb:delete')
   
   // 数据状态
   const [documents, setDocuments] = React.useState<Document[]>([])
@@ -466,12 +467,14 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50 hover:bg-muted/50">
-              <TableHead className="w-10">
-                <Checkbox
-                  checked={selectedDocs.size === documents.length && documents.length > 0}
-                  onCheckedChange={toggleSelectAll}
-                />
-              </TableHead>
+              {!readOnly && (
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={selectedDocs.size === documents.length && documents.length > 0}
+                    onCheckedChange={toggleSelectAll}
+                  />
+                </TableHead>
+              )}
               <TableHead>{t('documentName')}</TableHead>
               <TableHead>{t('type')}</TableHead>
               <TableHead>{t('size')}</TableHead>
@@ -484,15 +487,14 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center">
+                <TableCell colSpan={readOnly ? 7 : 8} className="h-24 text-center">
                   {commonT('loading')}
                 </TableCell>
               </TableRow>
             ) : documents.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={readOnly ? 7 : 8} className="h-24 text-center text-muted-foreground">
                   <div className="flex flex-col items-center gap-2">
-                    <FileText className="h-8 w-8 text-muted-foreground/50" />
                     <p>{t('noDocuments')}</p>
                     <p className="text-sm">{t('uploadDocumentHint')}</p>
                   </div>
@@ -501,12 +503,14 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
             ) : (
               documents.map((doc) => (
                 <TableRow key={doc.id} data-state={selectedDocs.has(doc.id) ? 'selected' : undefined}>
-                  <TableCell>
-                    <Checkbox
-                      checked={selectedDocs.has(doc.id)}
-                      onCheckedChange={() => toggleSelectDoc(doc.id)}
-                    />
-                  </TableCell>
+                  {!readOnly && (
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedDocs.has(doc.id)}
+                        onCheckedChange={() => toggleSelectDoc(doc.id)}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell>
                     <div className="flex items-center gap-2">
                       {docTypeIcons[doc.doc_type] || <FileText className="h-4 w-4" />}

@@ -60,12 +60,14 @@ export default function KnowledgeBaseDetailPage({
     }
     try {
       const [kbData, statsData] = await Promise.all([
-        knowledgeBasesApi.getKnowledgeBase(knowledgeBaseId),
+        knowledgeBasesApi.getKnowledgeBase(knowledgeBaseId, currentTeam?.id),
         knowledgeBasesApi.getStats(knowledgeBaseId),
       ])
       
-      // 验证知识库属于当前团队
-      if (currentTeam && kbData.team.id !== currentTeam.id) {
+      // 验证知识库属于当前团队或已共享给当前团队
+      const isOwned = !currentTeam || kbData.team.id === currentTeam.id
+      const isShared = kbData.is_owned === false || Boolean(kbData.owner_team_id && kbData.owner_team_id === kbData.team.id)
+      if (!isOwned && !isShared) {
         router.push('/app/kb')
         return
       }
@@ -93,9 +95,10 @@ export default function KnowledgeBaseDetailPage({
     loadKnowledgeBase(false)
   }
   
+  const isOwned = Boolean(knowledgeBase && knowledgeBase.is_owned !== false && (!currentTeam || knowledgeBase.team.id === currentTeam.id))
   const isTeamAdmin = Boolean(user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin')
   const isKbOwner = Boolean(user?.id && knowledgeBase?.created_by?.id === user.id)
-  const canUpdateKb = Boolean(knowledgeBase && (isTeamAdmin || isKbOwner))
+  const canUpdateKb = Boolean(isOwned && (isTeamAdmin || isKbOwner))
 
   if (isLoading || !knowledgeBase) {
     return (
@@ -117,6 +120,16 @@ export default function KnowledgeBaseDetailPage({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">{knowledgeBase.name}</h1>
+              {!isOwned && (
+                <Badge
+                  variant="outline"
+                  className="border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300"
+                >
+                  {knowledgeBase.owner_team_name
+                    ? t('sharedFrom', { teamName: knowledgeBase.owner_team_name })
+                    : t('shared')}
+                </Badge>
+              )}
               {knowledgeBase.status === 'active' ? (
                 <Badge variant="default" className="bg-emerald-500/10 text-emerald-500">
                   {t('active')}
@@ -255,6 +268,7 @@ export default function KnowledgeBaseDetailPage({
             knowledgeBaseId={knowledgeBaseId} 
             refreshTrigger={refreshTrigger}
             onRefresh={refreshDocuments}
+            readOnly={!isOwned}
           />
         </CardContent>
       </Card>

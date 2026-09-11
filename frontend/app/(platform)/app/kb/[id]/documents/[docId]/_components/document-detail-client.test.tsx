@@ -26,6 +26,8 @@ Object.defineProperty(globalThis, 'window', {
 mock.module('next-intl', () => ({ useTranslations: () => translate, useLocale: () => 'en' }))
 mock.module('next/navigation', () => ({ useRouter: () => router }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
+mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam: { id: 'team-1', role: 'admin' } }) }))
+mock.module('@/hooks/use-permissions', () => ({ usePermissions: () => ({ user: { id: 'user-1' } }) }))
 mock.module('@/lib/api', () => ({ knowledgeBasesApi: api }))
 mock.module('@/components/ui/chunk-markdown', () => ({ ChunkMarkdown: 'chunk-markdown' }))
 
