@@ -236,6 +236,121 @@ async def test_process_with_chunks_cancels_old_task_and_batches_nonempty_chunks(
 
 
 @pytest.mark.asyncio
+async def test_process_with_chunks_handles_batch_tracking_and_dispatch_failure(
+    monkeypatch,
+):
+    kb_id, doc_id = uuid4(), uuid4()
+    doc = SimpleNamespace(
+        id=doc_id,
+        name="doc",
+        status=DocumentStatus.PENDING.value,
+        metadata={},
+        chunk_count=0,
+        token_count=0,
+        save=AsyncMock(),
+    )
+    kb = SimpleNamespace(
+        id=kb_id,
+        name="KB",
+        team_id=uuid4(),
+        model="gpt",
+        embedding_model="embed",
+        embedding_dimension=1536,
+    )
+    monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock(return_value=kb))
+    monkeypatch.setattr(
+        knowledge_bases.Document,
+        "filter",
+        lambda **_kwargs: Query(first=doc),
+    )
+    monkeypatch.setattr(
+        knowledge_bases.Document,
+        "get",
+        lambda **_kwargs: Query(first=doc),
+    )
+    monkeypatch.setattr(
+        knowledge_bases.DocumentChunk,
+        "filter",
+        lambda **_kwargs: Query(),
+    )
+    monkeypatch.setattr(
+        knowledge_bases.DocumentChunk,
+        "create",
+        AsyncMock(return_value=SimpleNamespace(id=uuid4())),
+    )
+    monkeypatch.setattr(knowledge_bases.AuditLogService, "log", AsyncMock())
+    monkeypatch.setattr(
+        knowledge_bases, "serialize_document", AsyncMock(return_value={"id": doc_id})
+    )
+
+    class FakeRedis:
+        def __init__(self):
+            self.store = {}
+            self.deleted = []
+            self.rem = 1
+
+        async def set(self, key, val, **kwargs):
+            self.store[key] = val
+
+        async def sadd(self, key, val):
+            return 1
+
+        async def decr(self, key):
+            self.rem -= 1
+            return self.rem
+
+    fake_redis = FakeRedis()
+    monkeypatch.setattr(
+        "app.core.redis.get_redis",
+        AsyncMock(return_value=fake_redis),
+    )
+
+    # 1. Success dispatch with batch_id and batch_total
+    request = SimpleNamespace(
+        chunks=[SimpleNamespace(content="first chunk", chunk_index=0)],
+        batch_id="batch-123",
+        batch_total=5,
+    )
+    dispatch = AsyncMock(return_value="task-success")
+    monkeypatch.setattr(knowledge_bases, "_dispatch_document_task", dispatch)
+
+    res = await knowledge_bases.process_document_with_chunks(
+        kb_id=kb_id,
+        doc_id=doc_id,
+        request=SimpleNamespace(),
+        process_request=request,
+        current_user=SimpleNamespace(locale="zh"),
+    )
+    assert res["data"]["id"] == doc_id
+    assert fake_redis.store.get("kb_batch:batch-123:remain") == 5
+    assert fake_redis.store.get("kb_batch:batch-123:total") == 5
+    assert dispatch.await_args.kwargs["task_kwargs"] == {"batch_id": "batch-123"}
+
+    # 2. Dispatch failure triggering batch decr and completion notification
+    doc.status = DocumentStatus.PENDING.value
+    dispatch_fail = AsyncMock(side_effect=RuntimeError("celery down"))
+    monkeypatch.setattr(knowledge_bases, "_dispatch_document_task", dispatch_fail)
+    notify_batch = AsyncMock()
+    monkeypatch.setattr(
+        "app.tasks.knowledge_base._send_batch_completion_notification",
+        notify_batch,
+    )
+
+    with pytest.raises(BusinessError):
+        await knowledge_bases.process_document_with_chunks(
+            kb_id=kb_id,
+            doc_id=doc_id,
+            request=SimpleNamespace(),
+            process_request=request,
+            current_user=SimpleNamespace(locale="zh"),
+        )
+
+    assert doc.status == DocumentStatus.ERROR.value
+    notify_batch.assert_awaited_once()
+    assert notify_batch.await_args.kwargs["batch_id"] == "batch-123"
+
+
+@pytest.mark.asyncio
 async def test_retry_failed_chunks_dispatches_batch_and_single_failure_resets_status(
     monkeypatch,
 ):
