@@ -713,19 +713,35 @@ async def test_kb_sharing_endpoints_permissions_and_edge_branches(monkeypatch):
 
     # 6. check_kb_access permission branches
     monkeypatch.setattr(
+        knowledge_bases,
+        "check_team_access",
+        AsyncMock(
+            side_effect=BusinessError(
+                code=ResponseCode.NOT_TEAM_MEMBER, msg_key="not_team_member"
+            )
+        ),
+    )
+    monkeypatch.setattr(
         knowledge_bases.TeamMember,
         "filter",
         lambda **_kwargs: MagicMock(
             values_list=AsyncMock(return_value=[other_team_id])
         ),
     )
+    share_filter_mock = MagicMock(
+        return_value=MagicMock(exists=AsyncMock(return_value=True))
+    )
     monkeypatch.setattr(
         knowledge_bases.KnowledgeBaseShare,
         "filter",
-        lambda **_kwargs: MagicMock(exists=AsyncMock(return_value=True)),
+        share_filter_mock,
     )
     # non-member but has_share -> accessible for read
     accessible_kb = await knowledge_bases.check_kb_access(
         kb, regular_user, require_write=False
     )
     assert accessible_kb == kb
+    share_filter_mock.assert_called_once_with(
+        knowledge_base_id=kb.id,
+        shared_with_team_id__in=[other_team_id],
+    )

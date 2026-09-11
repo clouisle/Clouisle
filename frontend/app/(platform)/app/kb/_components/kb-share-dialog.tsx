@@ -84,12 +84,17 @@ export function KnowledgeBaseShareDialog({
   )
 
   // 加载共享列表，使用 activeKbId 守卫防止异步响应竞态
-  const activeKbIdRef = React.useRef<string | null>(null)
+  const activeKbIdRef = React.useRef<string | null>(knowledgeBase?.id ?? null)
 
-  const loadShares = React.useCallback(async () => {
-    const targetKbId = knowledgeBase?.id
+  React.useEffect(() => {
+    activeKbIdRef.current = knowledgeBase?.id ?? null
+  }, [knowledgeBase?.id])
+
+  const loadShares = React.useCallback(async (explicitTargetKbId?: string) => {
+    const targetKbId = explicitTargetKbId || knowledgeBase?.id
     if (!targetKbId) return
-    activeKbIdRef.current = targetKbId
+    // If the displayed knowledge base does not match the target, do not proceed
+    if (knowledgeBase?.id && targetKbId !== knowledgeBase.id) return
 
     setIsLoading(true)
     try {
@@ -142,7 +147,7 @@ export function KnowledgeBaseShareDialog({
         permission: selectedPermission,
       })
       toast.success(t('shareSuccess'))
-      await loadShares()
+      await loadShares(knowledgeBase.id)
       setSelectedTeamId('')
       onSuccess?.()
     } catch (error) {
@@ -172,7 +177,7 @@ export function KnowledgeBaseShareDialog({
     try {
       await knowledgeBasesApi.unshareKnowledgeBase(knowledgeBase.id, deletingShare.shared_with_team_id)
       toast.success(t('unshareSuccess'))
-      await loadShares()
+      await loadShares(knowledgeBase.id)
       onSuccess?.()
     } catch (error) {
       console.error('Failed to unshare knowledge base:', error)

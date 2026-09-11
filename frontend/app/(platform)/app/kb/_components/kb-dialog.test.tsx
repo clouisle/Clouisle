@@ -212,7 +212,8 @@ describe('KnowledgeBaseDialog', () => {
   })
 
   test('updates inputs for embedding, rerank, chunking, and separator settings', async () => {
-    const tree = render()
+    let tree = render()
+    input(tree, 'name').props!.onChange!({ target: { value: 'Advanced KB' } })
     const chunkSizeInput = input(tree, 'chunkSize')
     const chunkOverlapInput = input(tree, 'chunkOverlap')
     const separatorInput = input(tree, 'separator')
@@ -228,6 +229,23 @@ describe('KnowledgeBaseDialog', () => {
     const selects = findAll(tree, (element) => element.type === 'Select')
     ;(selects[0]?.props?.onValueChange as (v: string) => void)('model-1')
     ;(selects[1]?.props?.onValueChange as (v: string) => void)('model-2')
-    expect(chunkSizeInput).toBeDefined()
+
+    tree = render()
+    await form(tree).props!.onSubmit!({ preventDefault() {} })
+
+    expect(createKnowledgeBase).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Advanced KB',
+        embedding_model_id: 'model-1',
+        rerank_model_id: 'model-2',
+        settings: expect.objectContaining({
+          chunk_size: 600,
+          chunk_overlap: 80,
+          separator: '\\n\\n',
+          rerank_candidate_k: 25,
+          rerank_score_threshold: 0.65,
+        }),
+      })
+    )
   })
 })

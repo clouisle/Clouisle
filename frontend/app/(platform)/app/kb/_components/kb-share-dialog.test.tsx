@@ -59,8 +59,8 @@ mock.module('@/components/ui/scroll-area', () => ({
   ScrollArea: passthrough(),
 }))
 
+import type { KnowledgeBaseShareListResponse } from '@/lib/api/knowledge-bases'
 import { KnowledgeBaseShareDialog } from './kb-share-dialog'
-
 const baseKb = {
   id: 'kb-1',
   name: 'Product Manual',
@@ -217,7 +217,15 @@ describe('KnowledgeBaseShareDialog', () => {
     expect(knowledgeBasesApi.unshareKnowledgeBase).toHaveBeenCalledWith('kb-1', 'team-2')
   })
   test('handles share error with validation mapping and unshare API failure', async () => {
-    knowledgeBasesApi.listKnowledgeBaseShares.mockResolvedValue({ shares: [], total: 0 })
+    const existingShare = {
+      id: 'share-1',
+      knowledge_base_id: 'kb-1',
+      shared_with_team_id: 'team-3',
+      shared_with_team_name: 'Support',
+      permission: 'read_only',
+      created_at: '2026-03-01T00:00:00Z',
+    }
+    knowledgeBasesApi.listKnowledgeBaseShares.mockResolvedValue({ shares: [existingShare], total: 1 })
     knowledgeBasesApi.shareKnowledgeBase.mockRejectedValue(
       new ApiError(1001, 'Invalid', {
         errors: { team_id: 'Invalid team' },
@@ -234,7 +242,7 @@ describe('KnowledgeBaseShareDialog', () => {
           currentTeamId="team-1"
           availableTeams={[
             { id: 'team-1', name: 'Core Team', role: 'owner' },
-            { id: 'team-3', name: 'Support', role: 'member' },
+            { id: 'team-4', name: 'Sales', role: 'member' },
           ] as never}
         />
       )
@@ -243,19 +251,90 @@ describe('KnowledgeBaseShareDialog', () => {
     await act(async () => Promise.resolve())
 
     const teamSelect = renderer!.root.findAll((node) => node.props.onValueChange)[0]
-    await act(async () => teamSelect.props.onValueChange('team-3'))
+    await act(async () => teamSelect.props.onValueChange('team-4'))
 
     const shareButton = renderer!.root.findAllByType('button').find((button) => nodeText(button).includes('shareButton'))!
     await click(shareButton)
     expect(renderer!.root.findAllByType('p').map((node) => node.children.join(''))).toContain('Invalid team')
+
     const deleteButton = renderer!.root.findAllByType('button').find((button) =>
       button.props.className?.includes('text-destructive')
     )
-    if (deleteButton) {
-      await click(deleteButton)
-      const confirmButton = renderer!.root.findAllByType('button').find((button) => nodeText(button).includes('unshareButton'))!
-      await click(confirmButton)
-      expect(knowledgeBasesApi.unshareKnowledgeBase).toHaveBeenCalled()
-    }
+    expect(deleteButton).toBeDefined()
+    await click(deleteButton!)
+    const confirmButton = renderer!.root.findAllByType('button').find((button) => nodeText(button).includes('unshareButton'))!
+    await click(confirmButton)
+    expect(knowledgeBasesApi.unshareKnowledgeBase).toHaveBeenCalledWith('kb-1', 'team-3')
+  })
+
+  test('rejects stale share loads when knowledgeBase prop switches', async () => {
+    const { promise: kb1Promise, resolve: resolveKb1 } =
+      Promise.withResolvers<KnowledgeBaseShareListResponse>()
+
+    knowledgeBasesApi.listKnowledgeBaseShares.mockImplementation((id: string) => {
+      if (id === 'kb-1') return kb1Promise
+      return Promise.resolve({
+        shares: [
+          {
+            id: 'share-b',
+            knowledge_base_id: 'kb-2',
+            shared_with_team_id: 'team-b',
+            shared_with_team_name: 'Team B',
+            permission: 'read_only',
+            created_at: '2026-03-01T00:00:00Z',
+          },
+        ],
+        total: 1,
+      })
+    })
+
+    let renderer: ReactTestRenderer
+    await act(async () => {
+      renderer = create(
+        <KnowledgeBaseShareDialog
+          knowledgeBase={baseKb as never}
+          open
+          onOpenChange={() => undefined}
+          currentTeamId="team-1"
+          availableTeams={[]}
+        />
+      )
+    })
+    renderers.push(renderer!)
+
+    // Switch to kb-2 while kb-1 request is still pending
+    await act(async () => {
+      renderer!.update(
+        <KnowledgeBaseShareDialog
+          knowledgeBase={{ id: 'kb-2', name: 'KB 2' } as never}
+          open
+          onOpenChange={() => undefined}
+          currentTeamId="team-1"
+          availableTeams={[]}
+        />
+      )
+    })
+    // Resolve stale kb-1
+    await act(async () => {
+      resolveKb1({
+        shares: [
+          {
+            id: 'share-a',
+            knowledge_base_id: 'kb-1',
+            shared_with_team_id: 'team-a',
+            shared_with_team_name: 'Team A',
+            permission: 'read_only',
+            created_at: '2026-03-01T00:00:00Z',
+          },
+        ],
+        total: 1,
+      })
+    })
+    await act(async () => Promise.resolve())
+
+    // Verify Team A is NOT displayed, only Team B is displayed
+    const text = renderer!.root.findAllByType('div').map((n) => nodeText(n)).join(' ')
+    expect(text).toContain('Team B')
+    expect(text).not.toContain('Team A')
   })
 })

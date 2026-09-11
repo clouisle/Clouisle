@@ -373,6 +373,82 @@ def test_process_document_success_updates_document_and_kb():
     lexical_index.assert_awaited_once_with(document.id)
 
 
+def test_process_document_source_url_branch_and_markdown_flag():
+    document = make_document(
+        metadata={"clean_text": True, "format": "markdown"},
+    )
+    document.file_path = None
+    document.source_url = "https://example.com/test.md"
+    chunks = [make_chunk(tokens=4)]
+    for chunk in chunks:
+        chunk.status = "embedded"
+    vector_store = MagicMock()
+    vector_store.store_chunks_with_progress = AsyncMock(return_value=chunks)
+
+    with (
+        patch.object(kb_tasks.Document, "filter", return_value=Query(first=document)),
+        patch.object(kb_tasks.DocumentChunk, "filter", return_value=Query(count=0)),
+        patch.object(
+            kb_tasks.document_processor,
+            "fetch_url_content",
+            new=AsyncMock(return_value=("# Title\ncontent", {"fetched": True})),
+        ) as fetch_url,
+        patch(
+            "app.services.document_processor.chunk_text", return_value=["a"]
+        ) as chunk_text_mock,
+        patch.object(kb_tasks, "VectorStore", return_value=vector_store),
+        patch.object(kb_tasks, "_index_document_lexically", new=AsyncMock()),
+        patch.object(kb_tasks, "_send_doc_indexed_notification", new=AsyncMock()),
+    ):
+        result = kb_tasks.process_document_task.run(str(document.id))
+
+    assert result["status"] == "success"
+    fetch_url.assert_awaited_once()
+    assert chunk_text_mock.call_args.kwargs.get("is_markdown") is True
+
+
+def test_process_document_missing_source_and_no_chunks_branches():
+    doc_no_source = make_document()
+    doc_no_source.file_path = None
+
+    with (
+        patch.object(
+            kb_tasks.Document, "filter", return_value=Query(first=doc_no_source)
+        ),
+        patch.object(kb_tasks.DocumentChunk, "filter", return_value=Query(count=0)),
+        patch.object(
+            kb_tasks, "_send_doc_failed_notification", new=AsyncMock()
+        ) as send_failed,
+    ):
+        result = kb_tasks.process_document_task.run(str(doc_no_source.id))
+    assert result["status"] == "error"
+    send_failed.assert_awaited_once()
+
+    doc_empty_chunks = make_document()
+    doc_empty_chunks.file_path = "test.txt"
+    with (
+        patch.object(
+            kb_tasks.Document, "filter", return_value=Query(first=doc_empty_chunks)
+        ),
+        patch.object(kb_tasks.DocumentChunk, "filter", return_value=Query(count=0)),
+        patch.object(
+            kb_tasks.document_processor, "delete_media_assets", new=AsyncMock()
+        ),
+        patch.object(
+            kb_tasks.document_processor,
+            "extract_text",
+            new=AsyncMock(return_value=("", {})),
+        ),
+        patch("app.services.document_processor.chunk_text", return_value=[]),
+        patch.object(
+            kb_tasks, "_send_doc_failed_notification", new=AsyncMock()
+        ) as send_failed_empty,
+    ):
+        result = kb_tasks.process_document_task.run(str(doc_empty_chunks.id))
+    assert result["status"] == "error"
+    send_failed_empty.assert_awaited_once()
+
+
 def test_process_document_generic_error_notifies_and_cleans_metadata():
     document = make_document(metadata={"task_name": "queued", "embed_progress": {}})
 
@@ -630,6 +706,11 @@ async def test_batch_notification_all_success_all_failed_and_partial():
             user_locale="zh",
         )
         send_user.assert_awaited_once()
+        assert (
+            send_user.await_args.kwargs["notification_type"]
+            == kb_tasks.AutoNotificationType.KB_DOC_INDEXED
+        )
+        assert send_user.await_args.kwargs["level"] == kb_tasks.NotificationLevel.LOW
         assert len(r1.deleted) == 4
 
     # 2. All failed, team target
@@ -658,7 +739,11 @@ async def test_batch_notification_all_success_all_failed_and_partial():
             user_locale=None,
         )
         send_team.assert_awaited_once()
-
+        assert (
+            send_team.await_args.kwargs["notification_type"]
+            == kb_tasks.AutoNotificationType.KB_DOC_FAILED
+        )
+        assert send_team.await_args.kwargs["level"] == kb_tasks.NotificationLevel.HIGH
     # 3. Partial, failed enabled (priority branch)
     r3 = FakeRedis(total=5, success=3, failed=2, remain=1)
     with (
@@ -681,6 +766,16 @@ async def test_batch_notification_all_success_all_failed_and_partial():
             is_success=True,
             user_locale="en",
         )
+        send_user_partial.assert_awaited_once()
+        assert (
+            send_user_partial.await_args.kwargs["notification_type"]
+            == kb_tasks.AutoNotificationType.KB_DOC_FAILED
+        )
+        assert (
+            send_user_partial.await_args.kwargs["level"]
+            == kb_tasks.NotificationLevel.HIGH
+        )
+
     # 4. Partial failure, but only KB_DOC_INDEXED enabled (fallback)
     r4 = FakeRedis(total=4, success=2, failed=2, remain=1)
 
@@ -708,7 +803,14 @@ async def test_batch_notification_all_success_all_failed_and_partial():
             user_locale="en",
         )
         send_user_indexed.assert_awaited_once()
-
+        assert (
+            send_user_indexed.await_args.kwargs["notification_type"]
+            == kb_tasks.AutoNotificationType.KB_DOC_INDEXED
+        )
+        assert (
+            send_user_indexed.await_args.kwargs["level"]
+            == kb_tasks.NotificationLevel.MEDIUM
+        )
     # 5. Both disabled -> silenced notification
     r5 = FakeRedis(total=4, success=2, failed=2, remain=1)
     with (
@@ -752,6 +854,24 @@ async def test_batch_notification_all_success_all_failed_and_partial():
         )
         send_completion.assert_not_called()
 
+    # 6b. Batch decr remaining < 0 (missing/expired batch tracking cleanup)
+    r6b = FakeRedis(total=4, success=1, failed=0, remain=0)
+    with (
+        patch("app.core.redis.get_redis", new=AsyncMock(return_value=r6b)),
+        patch.object(
+            kb_tasks, "_send_batch_completion_notification", new=AsyncMock()
+        ) as send_completion_neg,
+    ):
+        await kb_tasks._handle_doc_completion_in_batch(
+            batch_id=batch_id,
+            document=document_with_user,
+            kb_name="KB",
+            team_id=team_id,
+            is_success=True,
+            user_locale="en",
+        )
+        send_completion_neg.assert_not_called()
+        assert len(r6b.deleted) == 4
     # 7. Redis exception in batch tracking gracefully logs warning
     with (
         patch(

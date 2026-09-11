@@ -516,13 +516,24 @@ async def _handle_doc_completion_in_batch(
             )
             await r.sadd(status_key, str(document.id))
             remaining = await r.decr(batch_remain_key)
-            if remaining <= 0:
+            if remaining == 0:
                 await _send_batch_completion_notification(
                     batch_id=batch_id,
                     document=document,
                     kb_name=kb_name,
                     team_id=team_id,
                     user_locale=user_locale,
+                )
+            elif remaining < 0:
+                logger.warning(
+                    f"Batch tracking key {batch_remain_key} is missing or expired (remaining={remaining}). "
+                    f"Cleaning up batch keys without firing completion notification."
+                )
+                await r.delete(
+                    f"kb_batch:{batch_id}:remain",
+                    f"kb_batch:{batch_id}:total",
+                    f"kb_batch:{batch_id}:success",
+                    f"kb_batch:{batch_id}:failed",
                 )
             return
         except Exception as e:

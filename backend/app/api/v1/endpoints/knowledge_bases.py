@@ -380,7 +380,9 @@ def _build_model_info(model: Model | None) -> dict | None:
 
 
 async def kb_with_model_info(
-    kb: KnowledgeBase, current_team_id: UUID | None = None
+    kb: KnowledgeBase,
+    current_team_id: UUID | None = None,
+    current_user: User | None = None,
 ) -> dict:
     embedding_model = await get_embedding_model_info(
         getattr(kb, "embedding_model_id", None)
@@ -403,20 +405,34 @@ async def kb_with_model_info(
     )
     share = None
     count = 0
-    is_shared = bool(current_team_id and kb_team_id and kb_team_id != current_team_id)
+    user_team_ids: list[UUID] = []
+    if not current_team_id and current_user and not current_user.is_superuser:
+        try:
+            user_team_ids = await TeamMember.filter(user=current_user).values_list(
+                "team_id", flat=True
+            )
+        except Exception as e:
+            logger.warning(f"Failed to load user team memberships for KB info: {e}")
+
+    is_shared = False
+    if current_team_id and kb_team_id and kb_team_id != current_team_id:
+        is_shared = True
+    elif not current_team_id and user_team_ids and kb_team_id:
+        if kb_team_id not in user_team_ids:
+            is_shared = True
+
     try:
-        share = (
-            await KnowledgeBaseShare.filter(
-                knowledge_base_id=kb_id, shared_with_team_id=current_team_id
-            ).first()
-            if is_shared
-            else None
-        )
-        count = (
-            await KnowledgeBaseShare.filter(knowledge_base_id=kb_id).count()
-            if not is_shared
-            else 0
-        )
+        if is_shared:
+            if current_team_id:
+                share = await KnowledgeBaseShare.filter(
+                    knowledge_base_id=kb_id, shared_with_team_id=current_team_id
+                ).first()
+            elif user_team_ids:
+                share = await KnowledgeBaseShare.filter(
+                    knowledge_base_id=kb_id, shared_with_team_id__in=user_team_ids
+                ).first()
+        else:
+            count = await KnowledgeBaseShare.filter(knowledge_base_id=kb_id).count()
     except Exception as e:
         logger.warning(f"Failed to load knowledge base share metadata: {e}")
         count = 0
@@ -593,16 +609,35 @@ async def list_knowledge_bases(
     kb_ids = [getattr(kb, "id", None) for kb in kbs if getattr(kb, "id", None)]
     share_counts: dict[UUID, int] = {}
     team_shares_map: dict[UUID, Any] = {}
+    user_shares_map: dict[UUID, Any] = {}
+    caller_memberships: list[UUID] = []
+    if (
+        not team_id
+        and not current_user.is_superuser
+        and _kb_access_mode.get() != "admin"
+    ):
+        try:
+            caller_memberships = await TeamMember.filter(user=current_user).values_list(
+                "team_id", flat=True
+            )
+        except Exception:
+            caller_memberships = []
+
     try:
         all_shares = await KnowledgeBaseShare.filter(knowledge_base_id__in=kb_ids).all()
         for s in all_shares:
             s_kbid = getattr(s, "knowledge_base_id", None)
             share_counts[s_kbid] = share_counts.get(s_kbid, 0) + 1
-            if getattr(s, "shared_with_team_id", None) == team_id:
+            shared_team = getattr(s, "shared_with_team_id", None)
+            if team_id and shared_team == team_id:
                 team_shares_map[s_kbid] = s
+            elif (
+                not team_id and caller_memberships and shared_team in caller_memberships
+            ):
+                if s_kbid not in user_shares_map:
+                    user_shares_map[s_kbid] = s
     except Exception:
         pass
-
     kb_list = []
     for kb in kbs:
         kb_data = KnowledgeBaseList.model_validate(kb).model_dump()
@@ -628,11 +663,24 @@ async def list_knowledge_bases(
             if hasattr(kb, "team") and kb.team and hasattr(kb.team, "name")
             else None
         )
+        is_shared_item = False
+        share = None
         if team_id and kb_team_id and kb_team_id != team_id:
+            is_shared_item = True
+            share = team_shares_map.get(kb_id) if kb_id else None
+        elif (
+            not team_id
+            and caller_memberships
+            and kb_team_id
+            and kb_team_id not in caller_memberships
+        ):
+            is_shared_item = True
+            share = user_shares_map.get(kb_id) if kb_id else None
+
+        if is_shared_item:
             kb_data["is_owned"] = False
             kb_data["owner_team_id"] = kb_team_id
             kb_data["owner_team_name"] = owner_name
-            share = team_shares_map.get(kb_id) if kb_id else None
             kb_data["share_permission"] = (
                 KnowledgeBaseSharePermission(share.permission)
                 if share and hasattr(share, "permission")
@@ -643,7 +691,6 @@ async def list_knowledge_bases(
             kb_data["owner_team_id"] = kb_team_id
             kb_data["owner_team_name"] = owner_name
             kb_data["share_permission"] = None
-
         kb_data["shared_with_count"] = (
             share_counts.get(kb_id, 0) if kb_id and kb_data["is_owned"] else 0
         )
@@ -729,7 +776,9 @@ async def get_knowledge_base(
     Get knowledge base by ID.
     """
     kb = await check_kb_access(kb_id, current_user)
-    kb_data = await kb_with_model_info(kb, current_team_id=team_id)
+    kb_data = await kb_with_model_info(
+        kb, current_team_id=team_id, current_user=current_user
+    )
     return success(data=kb_data)
 
 

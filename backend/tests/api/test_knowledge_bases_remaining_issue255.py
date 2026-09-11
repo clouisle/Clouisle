@@ -287,17 +287,18 @@ async def test_process_with_chunks_handles_batch_tracking_and_dispatch_failure(
         def __init__(self):
             self.store = {}
             self.deleted = []
-            self.rem = 1
 
         async def set(self, key, val, **kwargs):
-            self.store[key] = val
+            self.store[key] = int(val)
 
         async def sadd(self, key, val):
             return 1
 
         async def decr(self, key):
-            self.rem -= 1
-            return self.rem
+            curr = self.store.get(key, 0)
+            val = curr - 1
+            self.store[key] = val
+            return val
 
     fake_redis = FakeRedis()
     monkeypatch.setattr(
@@ -309,11 +310,10 @@ async def test_process_with_chunks_handles_batch_tracking_and_dispatch_failure(
     request = SimpleNamespace(
         chunks=[SimpleNamespace(content="first chunk", chunk_index=0)],
         batch_id="batch-123",
-        batch_total=5,
+        batch_total=1,
     )
     dispatch = AsyncMock(return_value="task-success")
     monkeypatch.setattr(knowledge_bases, "_dispatch_document_task", dispatch)
-
     res = await knowledge_bases.process_document_with_chunks(
         kb_id=kb_id,
         doc_id=doc_id,
@@ -322,10 +322,9 @@ async def test_process_with_chunks_handles_batch_tracking_and_dispatch_failure(
         current_user=SimpleNamespace(locale="zh"),
     )
     assert res["data"]["id"] == doc_id
-    assert fake_redis.store.get("kb_batch:batch-123:remain") == 5
-    assert fake_redis.store.get("kb_batch:batch-123:total") == 5
+    assert fake_redis.store.get("kb_batch:batch-123:remain") == 1
+    assert fake_redis.store.get("kb_batch:batch-123:total") == 1
     assert dispatch.await_args.kwargs["task_kwargs"] == {"batch_id": "batch-123"}
-
     # 2. Dispatch failure triggering batch decr and completion notification
     doc.status = DocumentStatus.PENDING.value
     dispatch_fail = AsyncMock(side_effect=RuntimeError("celery down"))

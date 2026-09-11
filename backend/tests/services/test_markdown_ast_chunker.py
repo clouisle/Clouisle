@@ -246,34 +246,55 @@ def test_markdown_ast_unreached_branches():
     # 3. Code block with prior chunk_type already "table" (current_chunk_type != "text")
     mixed_content = "| A | B |\n|---|---|\n| 1 | 2 |\n\n```python\nx = 1\n```"
     chunks = chunk_markdown_ast(mixed_content, chunk_size=500, chunk_overlap=0)
-    assert len(chunks) >= 1
+    assert len(chunks) == 1
+    assert chunks[0]["metadata"]["chunk_type"] == "table"
+    assert "| A | B |" in chunks[0]["content"]
+    assert "```python" in chunks[0]["content"]
+    assert "x = 1" in chunks[0]["content"]
 
     # 4. Table without section
     bare_table = "| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |"
     chunks = chunk_markdown_ast(bare_table, chunk_size=20, chunk_overlap=0)
+    assert len(chunks) >= 2
+    assert all(c["metadata"]["chunk_type"] == "table" for c in chunks)
+
     # 5. List followed by non-list line (hits line 957 break)
     list_followed_by_text = "- Item 1\nRegular text immediately after"
     blocks = _extract_markdown_blocks(list_followed_by_text)
     assert len(blocks) == 2
     assert blocks[0]["type"] == "list"
+    assert blocks[0]["content"] == "- Item 1"
     assert blocks[1]["type"] == "paragraph"
+    assert blocks[1]["content"] == "Regular text immediately after"
 
     # 6. Paragraph followed by heading, code, table, and list (hits lines 977, 978, 980, 984)
     para_heading = "Para 1\n# Heading 1"
     b1 = _extract_markdown_blocks(para_heading)
     assert len(b1) == 2
+    assert [b["type"] for b in b1] == ["paragraph", "heading"]
+    assert b1[0]["content"] == "Para 1"
+    assert b1[1]["content"] == "# Heading 1"
 
     para_code = "Para 1\n```python\nx = 1\n```"
     b2 = _extract_markdown_blocks(para_code)
     assert len(b2) == 2
+    assert [b["type"] for b in b2] == ["paragraph", "code"]
+    assert b2[0]["content"] == "Para 1"
+    assert "```python" in b2[1]["content"]
 
     para_table = "Para 1\n| A | B |\n|---|---|\n| 1 | 2 |"
     b3 = _extract_markdown_blocks(para_table)
     assert len(b3) == 2
+    assert [b["type"] for b in b3] == ["paragraph", "table"]
+    assert b3[0]["content"] == "Para 1"
+    assert "| A | B |" in b3[1]["content"]
 
     para_list = "Para 1\n- Item 1"
     b4 = _extract_markdown_blocks(para_list)
-    # 7. chunk_markdown_ast whitespace-only text (line 1017)
+    assert len(b4) == 2
+    assert [b["type"] for b in b4] == ["paragraph", "list"]
+    assert b4[0]["content"] == "Para 1"
+    assert b4[1]["content"] == "- Item 1"
     assert chunk_markdown_ast("   \n\t   ") == []
 
     # 8. chunk_markdown_ast when _extract_markdown_blocks returns empty (line 1021)

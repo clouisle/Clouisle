@@ -635,8 +635,70 @@ async def test_list_knowledge_bases_with_shared_and_get_kb():
             current_user=user,
         )
     assert len(res_no_team_shared["data"]["items"]) == 2
+    items_by_id = {item["id"]: item for item in res_no_team_shared["data"]["items"]}
+    assert items_by_id[owned_kb.id]["is_owned"] is True
+    assert items_by_id[shared_kb.id]["is_owned"] is False
+    assert (
+        items_by_id[shared_kb.id]["share_permission"]
+        == KnowledgeBaseSharePermission.READ_ONLY
+    )
+    assert items_by_id[shared_kb.id]["shared_with_count"] == 0
 
-    # 6. kb_with_model_info error fallback branch
+    # 5b. get without team_id for shared KB
+    with (
+        patch.object(
+            kb_endpoints, "check_kb_access", new=AsyncMock(return_value=shared_kb)
+        ),
+        patch.object(
+            kb_endpoints.TeamMember, "filter", return_value=Query([caller_team_id])
+        ),
+        patch.object(
+            kb_endpoints.KnowledgeBaseShare,
+            "filter",
+            return_value=Query([share_record]),
+        ),
+        patch.object(
+            kb_endpoints, "get_embedding_model_info", new=AsyncMock(return_value=None)
+        ),
+        patch.object(
+            kb_endpoints, "get_rerank_model_info", new=AsyncMock(return_value=None)
+        ),
+    ):
+        get_no_team_res = await kb_endpoints.get_knowledge_base(
+            kb_id=shared_kb.id,
+            team_id=None,
+            current_user=user,
+        )
+    assert get_no_team_res["data"]["is_owned"] is False
+    assert (
+        get_no_team_res["data"]["share_permission"]
+        == KnowledgeBaseSharePermission.READ_ONLY
+    )
+    assert get_no_team_res["data"]["shared_with_count"] == 0
+
+    # 5c. kb_with_model_info TeamMember exception fallback
+    with (
+        patch.object(
+            kb_endpoints.TeamMember,
+            "filter",
+            side_effect=RuntimeError("team lookup error"),
+        ),
+        patch.object(
+            kb_endpoints.KnowledgeBaseShare,
+            "filter",
+            return_value=Query([share_record]),
+        ),
+        patch.object(
+            kb_endpoints, "get_embedding_model_info", new=AsyncMock(return_value=None)
+        ),
+        patch.object(
+            kb_endpoints, "get_rerank_model_info", new=AsyncMock(return_value=None)
+        ),
+    ):
+        res_tm_err = await kb_endpoints.kb_with_model_info(
+            shared_kb, current_team_id=None, current_user=user
+        )
+    assert res_tm_err["is_owned"] is True
     with (
         patch.object(
             kb_endpoints, "check_kb_access", new=AsyncMock(return_value=shared_kb)
