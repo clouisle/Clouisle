@@ -16,13 +16,15 @@ import {
   Search,
   Upload,
   Download,
+  Share2,
 } from 'lucide-react'
 import { useTeam } from '@/contexts/team-context'
 import { useRequireTeam } from '@/hooks/use-require-team'
 import { usePermissions } from '@/hooks/use-permissions'
-import { knowledgeBasesApi, type KnowledgeBase } from '@/lib/api'
+import { knowledgeBasesApi, teamsApi, type KnowledgeBase, type UserTeamInfo } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import {
@@ -43,6 +45,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { KnowledgeBaseDialog } from './_components/kb-dialog'
+import { KnowledgeBaseShareDialog } from './_components/kb-share-dialog'
 import { useCanPerform } from '@/components/permission-guard'
 import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
 import { downloadBlob, packagesApi } from '@/lib/api/packages'
@@ -81,15 +84,22 @@ export default function KnowledgeBasePage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [deletingKb, setDeletingKb] = React.useState<KnowledgeBase | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
+  const [shareDialogOpen, setShareDialogOpen] = React.useState(false)
+  const [sharingKb, setSharingKb] = React.useState<KnowledgeBase | null>(null)
+  const [availableTeams, setAvailableTeams] = React.useState<UserTeamInfo[]>([])
 
   const fetchKnowledgeBases = React.useCallback(async () => {
     if (!currentTeam) return
     
     try {
       setIsLoading(true)
-      const data = await knowledgeBasesApi.getKnowledgeBases()
-      // 过滤当前团队的知识库
-      const teamKbs = data.items.filter(kb => kb.team.id === currentTeam.id)
+      const data = await knowledgeBasesApi.getKnowledgeBases({
+        teamId: currentTeam.id,
+        includeShared: true,
+      })
+      const teamKbs = data.items.filter(
+        (kb) => kb.team.id === currentTeam.id || kb.is_owned === false
+      )
       setKnowledgeBases(teamKbs)
     } catch (error) {
       console.error('Failed to fetch knowledge bases:', error)
@@ -101,6 +111,18 @@ export default function KnowledgeBasePage() {
   React.useEffect(() => {
     fetchKnowledgeBases()
   }, [fetchKnowledgeBases])
+
+  React.useEffect(() => {
+    const loadTeams = async () => {
+      try {
+        const teams = await teamsApi.getMyTeams()
+        setAvailableTeams(teams)
+      } catch (error) {
+        console.error('Failed to load teams:', error)
+      }
+    }
+    loadTeams()
+  }, [])
 
   // Auto-open create dialog when navigated with ?action=create
   React.useEffect(() => {
@@ -128,6 +150,11 @@ export default function KnowledgeBasePage() {
   const handleDeleteClick = (kb: KnowledgeBase) => {
     setDeletingKb(kb)
     setDeleteDialogOpen(true)
+  }
+
+  const handleShareClick = (kb: KnowledgeBase) => {
+    setSharingKb(kb)
+    setShareDialogOpen(true)
   }
 
   const handleExport = async (kb: KnowledgeBase) => {
@@ -162,9 +189,10 @@ export default function KnowledgeBasePage() {
 
   const isTeamAdmin = Boolean(user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin')
   const isKbOwner = (kb: KnowledgeBase) => Boolean(user?.id && kb.created_by?.id === user.id)
-  const canEditKb = (kb: KnowledgeBase) => isTeamAdmin || isKbOwner(kb)
+  const canEditKb = (kb: KnowledgeBase) => kb.is_owned !== false && (isTeamAdmin || isKbOwner(kb))
   const canExportKb = (kb: KnowledgeBase) => isTeamAdmin || isKbOwner(kb)
-  const canDeleteKb = () => isTeamAdmin
+  const canDeleteKb = (kb?: KnowledgeBase) => (kb ? kb.is_owned !== false && isTeamAdmin : isTeamAdmin)
+  const canShareKb = (kb: KnowledgeBase) => kb.is_owned !== false && isTeamAdmin
 
   // 过滤知识库
   const filteredKnowledgeBases = React.useMemo(() => {
@@ -254,7 +282,24 @@ export default function KnowledgeBasePage() {
                   <Database className="h-4 w-4" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">{kb.name}</div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-sm font-medium truncate">{kb.name}</span>
+                    {kb.is_owned === false && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] px-1.5 py-0 border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300 shrink-0"
+                      >
+                        {kb.owner_team_name
+                          ? t('kb.sharedFrom', { teamName: kb.owner_team_name })
+                          : t('kb.shared')}
+                      </Badge>
+                    )}
+                    {kb.is_owned !== false && (kb.shared_with_count ?? 0) > 0 && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">
+                        {t('kb.sharedCount', { count: kb.shared_with_count || 0 })}
+                      </Badge>
+                    )}
+                  </div>
                   {kb.created_by && (
                     <p className="text-xs text-muted-foreground">
                       {kbT('createdBy')}：{kb.created_by.username}
@@ -311,7 +356,13 @@ export default function KnowledgeBasePage() {
                       {packageT('export')}
                     </DropdownMenuItem>
                   )}
-                  {canDeleteKb() && (
+                  {canShareKb(kb) && (
+                    <DropdownMenuItem onClick={(e) => { e.preventDefault(); handleShareClick(kb) }}>
+                      <Share2 className="mr-2 h-4 w-4" />
+                      {t('kb.shareAction')}
+                    </DropdownMenuItem>
+                  )}
+                  {canDeleteKb(kb) && (
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
@@ -366,6 +417,15 @@ export default function KnowledgeBasePage() {
         />
       )}
 
+
+      <KnowledgeBaseShareDialog
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        knowledgeBase={sharingKb}
+        currentTeamId={currentTeam?.id || ''}
+        availableTeams={availableTeams}
+        onSuccess={fetchKnowledgeBases}
+      />
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>

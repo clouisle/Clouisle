@@ -36,7 +36,10 @@ mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam })
 mock.module('@/hooks/use-require-team', () => ({ useRequireTeam }))
 mock.module('@/hooks/use-permissions', () => ({ usePermissions: () => ({ user }) }))
 mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform }) }))
-mock.module('@/lib/api', () => ({ knowledgeBasesApi: { getKnowledgeBases, deleteKnowledgeBase } }))
+mock.module('@/lib/api', () => ({
+  knowledgeBasesApi: { getKnowledgeBases, deleteKnowledgeBase },
+  teamsApi: { getMyTeams: mock(() => Promise.resolve([])) },
+}))
 mock.module('@/lib/api/packages', () => ({ packagesApi: { export: exportPackage }, downloadBlob }))
 mock.module('lucide-react', () => ({
   Database: () => null,
@@ -49,6 +52,13 @@ mock.module('lucide-react', () => ({
   Search: () => null,
   Upload: () => null,
   Download: () => null,
+  Share2: () => null,
+  XIcon: () => null,
+  ChevronDownIcon: () => null,
+  CheckIcon: () => null,
+  ChevronUpIcon: () => null,
+  Loader2: () => null,
+  Users: () => null,
 }))
 
 const Box = ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => <div {...props}>{children}</div>
@@ -251,7 +261,8 @@ describe('platform knowledge base page', () => {
     expect(exportPackage).toHaveBeenCalledWith('knowledge_base', 'kb-1')
     expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), 'kb.zip')
 
-    await act(async () => menuItems[3].props.onClick({ preventDefault() {} }))
+    const deleteMenuItem = menuItems.find((item) => item.children?.includes('delete')) || menuItems[menuItems.length - 1]
+    await act(async () => deleteMenuItem.props.onClick({ preventDefault() {} }))
     await act(async () => buttons(renderer).find((button) => button.children.join('').includes('delete'))!.props.onClick())
     expect(deleteKnowledgeBase).toHaveBeenCalledWith('kb-1')
     expect(success).toHaveBeenCalledWith('kbDeleted')
