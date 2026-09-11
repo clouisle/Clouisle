@@ -659,20 +659,14 @@ async def test_batch_notification_all_success_all_failed_and_partial():
         )
         send_team.assert_awaited_once()
 
-    # 3. Partial, failed disabled but indexed enabled (fallback branch)
+    # 3. Partial, failed enabled (priority branch)
     r3 = FakeRedis(total=5, success=3, failed=2, remain=1)
-
-    async def is_enabled_side_effect(notif_type):
-        from app.models.notification import AutoNotificationType
-
-        return notif_type == AutoNotificationType.KB_DOC_INDEXED
-
     with (
         patch("app.core.redis.get_redis", new=AsyncMock(return_value=r3)),
         patch.object(
             kb_tasks.AutoNotificationService,
             "is_enabled",
-            side_effect=is_enabled_side_effect,
+            new=AsyncMock(return_value=True),
         ),
         patch.object(
             kb_tasks.AutoNotificationService, "send_to_user", new=AsyncMock()
@@ -687,4 +681,170 @@ async def test_batch_notification_all_success_all_failed_and_partial():
             is_success=True,
             user_locale="en",
         )
+    # 4. Partial failure, but only KB_DOC_INDEXED enabled (fallback)
+    r4 = FakeRedis(total=4, success=2, failed=2, remain=1)
+
+    async def is_enabled_mock_indexed_only(n_type):
+        return n_type == kb_tasks.AutoNotificationType.KB_DOC_INDEXED
+
+    with (
+        patch("app.core.redis.get_redis", new=AsyncMock(return_value=r4)),
+        patch.object(
+            kb_tasks.AutoNotificationService,
+            "is_enabled",
+            new=AsyncMock(side_effect=is_enabled_mock_indexed_only),
+        ),
+        patch.object(
+            kb_tasks.AutoNotificationService, "send_to_user", new=AsyncMock()
+        ) as send_user_indexed,
+        patch.object(kb_tasks, "t", side_effect=lambda key, **kwargs: key),
+    ):
+        await kb_tasks._handle_doc_completion_in_batch(
+            batch_id=batch_id,
+            document=document_with_user,
+            kb_name="KB",
+            team_id=team_id,
+            is_success=True,
+            user_locale="en",
+        )
+        send_user_indexed.assert_awaited_once()
+
+    # 5. Both disabled -> silenced notification
+    r5 = FakeRedis(total=4, success=2, failed=2, remain=1)
+    with (
+        patch("app.core.redis.get_redis", new=AsyncMock(return_value=r5)),
+        patch.object(
+            kb_tasks.AutoNotificationService,
+            "is_enabled",
+            new=AsyncMock(return_value=False),
+        ),
+        patch.object(
+            kb_tasks.AutoNotificationService, "send_to_user", new=AsyncMock()
+        ) as send_user_none,
+        patch.object(kb_tasks, "t", side_effect=lambda key, **kwargs: key),
+    ):
+        await kb_tasks._handle_doc_completion_in_batch(
+            batch_id=batch_id,
+            document=document_with_user,
+            kb_name="KB",
+            team_id=team_id,
+            is_success=True,
+            user_locale="en",
+        )
+        send_user_none.assert_not_called()
+        assert len(r5.deleted) == 4
+
+    # 6. Batch decr remaining > 0 (does not trigger completion notification)
+    r6 = FakeRedis(total=4, success=1, failed=0, remain=3)
+    with (
+        patch("app.core.redis.get_redis", new=AsyncMock(return_value=r6)),
+        patch.object(
+            kb_tasks, "_send_batch_completion_notification", new=AsyncMock()
+        ) as send_completion,
+    ):
+        await kb_tasks._handle_doc_completion_in_batch(
+            batch_id=batch_id,
+            document=document_with_user,
+            kb_name="KB",
+            team_id=team_id,
+            is_success=True,
+            user_locale="en",
+        )
+        send_completion.assert_not_called()
+
+    # 7. Redis exception in batch tracking gracefully logs warning
+    with (
+        patch(
+            "app.core.redis.get_redis",
+            new=AsyncMock(side_effect=RuntimeError("redis down")),
+        ),
+        patch.object(
+            kb_tasks, "_send_doc_indexed_notification", new=AsyncMock()
+        ) as send_fallback,
+    ):
+        await kb_tasks._handle_doc_completion_in_batch(
+            batch_id=batch_id,
+            document=document_with_user,
+            kb_name="KB",
+            team_id=team_id,
+            is_success=True,
+            user_locale="en",
+        )
+    # 8. All success but KB_DOC_INDEXED disabled -> silenced
+    r8 = FakeRedis(total=3, success=3, failed=0, remain=1)
+    with (
+        patch("app.core.redis.get_redis", new=AsyncMock(return_value=r8)),
+        patch.object(
+            kb_tasks.AutoNotificationService,
+            "is_enabled",
+            new=AsyncMock(return_value=False),
+        ),
+        patch.object(
+            kb_tasks.AutoNotificationService, "send_to_user", new=AsyncMock()
+        ) as send_user_disabled,
+        patch.object(kb_tasks, "t", side_effect=lambda key, **kwargs: key),
+    ):
+        await kb_tasks._handle_doc_completion_in_batch(
+            batch_id=batch_id,
+            document=document_with_user,
+            kb_name="KB",
+            team_id=team_id,
+            is_success=True,
+            user_locale="en",
+        )
+        send_user_disabled.assert_not_called()
+
+    # 9. All failed but KB_DOC_FAILED disabled -> silenced
+    r9 = FakeRedis(total=3, success=0, failed=3, remain=1)
+    with (
+        patch("app.core.redis.get_redis", new=AsyncMock(return_value=r9)),
+        patch.object(
+            kb_tasks.AutoNotificationService,
+            "is_enabled",
+            new=AsyncMock(return_value=False),
+        ),
+        patch.object(
+            kb_tasks.AutoNotificationService, "send_to_user", new=AsyncMock()
+        ) as send_user_failed_disabled,
+        patch.object(kb_tasks, "t", side_effect=lambda key, **kwargs: key),
+    ):
+        await kb_tasks._handle_doc_completion_in_batch(
+            batch_id=batch_id,
+            document=document_with_user,
+            kb_name="KB",
+            team_id=team_id,
+            is_success=False,
+            user_locale="en",
+        )
+        send_user_failed_disabled.assert_not_called()
+
+    # 10. Standalone doc (batch_id is None)
+    with (
+        patch.object(
+            kb_tasks, "_send_doc_indexed_notification", new=AsyncMock()
+        ) as send_standalone_success,
+        patch.object(
+            kb_tasks, "_send_doc_failed_notification", new=AsyncMock()
+        ) as send_standalone_failed,
+    ):
+        await kb_tasks._handle_doc_completion_in_batch(
+            batch_id=None,
+            document=document_with_user,
+            kb_name="KB",
+            team_id=team_id,
+            is_success=True,
+            user_locale="en",
+        )
+        send_standalone_success.assert_awaited_once()
+
+        await kb_tasks._handle_doc_completion_in_batch(
+            batch_id=None,
+            document=document_with_user,
+            kb_name="KB",
+            team_id=team_id,
+            is_success=False,
+            user_locale="en",
+        )
+        send_standalone_failed.assert_awaited_once()
+        send_fallback.assert_awaited_once()
         send_user_partial.assert_awaited_once()
