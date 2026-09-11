@@ -98,12 +98,11 @@ export function ImportUrlDialog({
 
       // 跳转到预览页面配置分段
       router.push(`/knowledge-bases/${knowledgeBaseId}/documents/preview?docs=${doc.id}`)
-    } catch (error) {
+    } catch (error: unknown) {
       const validationErrors = normalizeValidationErrors(error)
       if (Object.keys(validationErrors).length > 0) {
         setFieldErrors(validationErrors)
       }
-      // 其他错误已由 API 客户端处理
     } finally {
       setIsLoading(false)
     }

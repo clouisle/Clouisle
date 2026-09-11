@@ -45,7 +45,6 @@ const PROVIDER_ERROR_PATH_MAP = {
   icon_url: 'icon_url',
   button_text: 'button_text',
 } as const
-
 export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps) {
   const t = useTranslations('sso')
   const { canPerform } = useCanPerform()
@@ -214,7 +213,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
       }
 
       onClose(true)
-    } catch (error) {
+    } catch (error: unknown) {
       const errors = mapValidationErrors(normalizeValidationErrors(error), PROVIDER_ERROR_PATH_MAP)
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)

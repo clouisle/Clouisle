@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
-import { toast } from 'sonner'
 import { Loader2, Plus, Trash2, ChevronDown } from 'lucide-react'
 import {
   Dialog,
@@ -416,8 +415,7 @@ export function HttpToolDialog({
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)
       } else {
-        const message = error instanceof Error ? error.message : tCommon('error')
-        toast.error(message)
+        throw error
       }
     } finally {
       setIsLoading(false)

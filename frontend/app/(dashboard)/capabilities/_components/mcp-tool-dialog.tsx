@@ -58,7 +58,9 @@ interface Header {
 }
 
 const MCP_TOOL_ERROR_PATH_MAP = {
+  name: 'name',
   display_name: 'displayName',
+  description: 'description',
   'mcp_config.command': 'command',
   'mcp_config.url': 'url',
   'mcp_config.headers': 'headers',

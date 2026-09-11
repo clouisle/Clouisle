@@ -1,4 +1,5 @@
 import { beforeEach, expect, mock, test } from 'bun:test'
+import * as actualReact from 'react'
 import type { Agent } from '@/lib/api'
 
 type Props = Record<string, unknown>
@@ -52,19 +53,26 @@ const getKnowledgeBases = mock(async () => ({
 
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
-mock.module('react', () => ({
-  useEffect: (effect: () => void) => effects.push(effect),
-  useMemo: <T,>(factory: () => T) => factory(),
-  useState: <T,>(initial: T): [T, Setter<T>] => {
-    const index = stateIndex++
-    if (states[index] === undefined) states[index] = initial
-    return [states[index] as T, (value) => {
-      states[index] = typeof value === 'function'
-        ? (value as (current: T) => T)(states[index] as T)
-        : value
-    }]
-  },
-}))
+mock.module('react', () => {
+  const reactMock = {
+    ...actualReact,
+    useEffect: (effect: () => void) => effects.push(effect),
+    useMemo: <T,>(factory: () => T) => factory(),
+    useState: <T,>(initial: T): [T, Setter<T>] => {
+      const index = stateIndex++
+      if (states[index] === undefined) states[index] = initial
+      return [states[index] as T, (value) => {
+        states[index] = typeof value === 'function'
+          ? (value as (current: T) => T)(states[index] as T)
+          : value
+      }]
+    },
+  }
+  return {
+    ...reactMock,
+    default: reactMock,
+  }
+})
 mock.module('next-intl', () => ({
   useTranslations: () => (key: string, values?: Record<string, unknown>) =>
     values ? `${key}:${values.count}` : key,
@@ -161,7 +169,7 @@ test('skips loading without a team and tolerates API failures', async () => {
   await runEffect()
 
   expect(getTeamModels).toHaveBeenCalledWith('team-1', 'chat')
-  expect(states[14]).toBe(false)
+expect(states[15]).toBe(false)
 })
 
 test('loads only enabled team data and renders model and knowledge-base branches', async () => {

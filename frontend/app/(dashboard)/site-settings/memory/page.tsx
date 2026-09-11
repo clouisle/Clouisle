@@ -14,7 +14,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { siteSettingsApi, type MemorySiteSettings } from '@/lib/api/admin/site-settings'
 import { modelsApi, type Model } from '@/lib/api/admin/models'
 import { useCanPerform } from '@/components/permission-guard'
-
+import { FieldError } from '@/components/ui/field'
+import {
+  clearValidationError,
+  mapValidationErrors,
+  normalizeValidationErrors,
+} from '@/lib/validation'
 const AUTO_MODEL_VALUE = '__auto__'
 
 export default function SiteSettingsMemoryPage() {
@@ -27,6 +32,7 @@ export default function SiteSettingsMemoryPage() {
   const [modelsLoading, setModelsLoading] = React.useState(true)
   const [settingsLoadFailed, setSettingsLoadFailed] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [chatModels, setChatModels] = React.useState<Model[]>([])
   const [settings, setSettings] = React.useState<MemorySiteSettings>({
     memory_async_extraction_enabled: false,
@@ -79,6 +85,7 @@ export default function SiteSettingsMemoryPage() {
 
   const handleSave = async () => {
     if (!canUpdateSettings || !settingsReady) return
+    setFieldErrors({})
     try {
       setSaving(true)
       await siteSettingsApi.updateMemory({
@@ -88,9 +95,21 @@ export default function SiteSettingsMemoryPage() {
         memory_extraction_max_pending_turns: settings.memory_extraction_max_pending_turns || 6,
       })
       toast.success(t('saveSuccess'))
-    } catch (error) {
+    } catch (error: unknown) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), {
+        memory_async_extraction_enabled: 'memory_async_extraction_enabled',
+        memory_extraction_model_id: 'memory_extraction_model_id',
+        memory_extraction_cooldown_seconds: 'memory_extraction_cooldown_seconds',
+        memory_extraction_max_pending_turns: 'memory_extraction_max_pending_turns',
+        'settings.memory_async_extraction_enabled': 'memory_async_extraction_enabled',
+        'settings.memory_extraction_model_id': 'memory_extraction_model_id',
+        'settings.memory_extraction_cooldown_seconds': 'memory_extraction_cooldown_seconds',
+        'settings.memory_extraction_max_pending_turns': 'memory_extraction_max_pending_turns',
+      })
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
       console.error('Failed to save memory settings:', error)
-      toast.error(t('saveError'))
     } finally {
       setSaving(false)
     }
@@ -182,16 +201,19 @@ export default function SiteSettingsMemoryPage() {
             <NumberInput
               id="cooldown-seconds"
               value={settings.memory_extraction_cooldown_seconds}
-              onChange={(val) =>
+              onChange={(val) => {
                 setSettings((prev) => ({
                   ...prev,
                   memory_extraction_cooldown_seconds: val === '' ? 180 : val,
                 }))
-              }
+                setFieldErrors((prev) => clearValidationError(prev, 'memory_extraction_cooldown_seconds'))
+              }}
               min={10}
               max={3600}
               disabled={!canUpdateSettings || saving}
+              aria-invalid={!!fieldErrors.memory_extraction_cooldown_seconds}
             />
+            <FieldError>{fieldErrors.memory_extraction_cooldown_seconds}</FieldError>
             <p className="text-xs text-muted-foreground">
               {t('memorySettings.cooldownSecondsHint')}
             </p>
@@ -203,16 +225,19 @@ export default function SiteSettingsMemoryPage() {
             <NumberInput
               id="max-turns"
               value={settings.memory_extraction_max_pending_turns}
-              onChange={(val) =>
+              onChange={(val) => {
                 setSettings((prev) => ({
                   ...prev,
                   memory_extraction_max_pending_turns: val === '' ? 6 : val,
                 }))
-              }
+                setFieldErrors((prev) => clearValidationError(prev, 'memory_extraction_max_pending_turns'))
+              }}
               min={1}
               max={50}
               disabled={!canUpdateSettings || saving}
+              aria-invalid={!!fieldErrors.memory_extraction_max_pending_turns}
             />
+            <FieldError>{fieldErrors.memory_extraction_max_pending_turns}</FieldError>
             <p className="text-xs text-muted-foreground">
               {t('memorySettings.maxPendingTurnsHint')}
             </p>

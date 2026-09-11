@@ -226,7 +226,7 @@ export default function SiteSettingsSecurityPage() {
         ssrf_allowed_targets: persistedSsrfTargets,
       }))
       toast.success(t('saveSuccess'))
-    } catch (error) {
+    } catch (error: unknown) {
       const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)

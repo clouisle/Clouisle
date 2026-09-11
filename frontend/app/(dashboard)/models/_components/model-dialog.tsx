@@ -1023,12 +1023,11 @@ export function ModelDialog({
       
       onOpenChange(false)
       onSuccess()
-    } catch (error) {
+    } catch (error: unknown) {
       const validationErrors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
       if (Object.keys(validationErrors).length > 0) {
         setErrors(validationErrors)
       }
-    } finally {
       setIsLoading(false)
     }
   }

@@ -227,12 +227,11 @@ export function KnowledgeBaseDialog({
           }))
         }
       }
-    } catch (error) {
+    } catch (error: unknown) {
       const errors = mapValidationErrors(normalizeValidationErrors(error), KB_ERROR_PATH_MAP)
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)
       }
-      // 其他错误已由 API 客户端处理
     } finally {
       setIsLoading(false)
     }

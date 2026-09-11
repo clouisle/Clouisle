@@ -321,7 +321,6 @@ export function DatabaseToolDialog({
         success: false,
         message: msg,
       })
-      toast.error(msg)
     } finally {
       setTestingConnection(false)
     }
@@ -463,13 +462,17 @@ export function DatabaseToolDialog({
               <Textarea
                 id="description"
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => {
+                  setDescription(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'description'))
+                }}
                 placeholder={t('databaseDialog.descriptionPlaceholder')}
                 rows={2}
+                aria-invalid={!!fieldErrors.description}
               />
+              <FieldError>{fieldErrors.description}</FieldError>
             </div>
           </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="category">{t('form.category')}</Label>

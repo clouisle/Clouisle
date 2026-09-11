@@ -161,12 +161,11 @@ export function EmbedConfigDialog({
       onUpdate(updated)
       toast.success(t('save'))
       onOpenChange(false)
-    } catch (error) {
+    } catch (error: unknown) {
       const errors = normalizeValidationErrors(error)
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)
       }
-    } finally {
       setSaving(false)
     }
   }
