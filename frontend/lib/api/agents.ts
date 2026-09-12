@@ -1096,6 +1096,34 @@ export interface AgentStatsTokens {
 
 export interface AgentStatsPerformance {
   avg_response_time_ms: number
+  /** Time-to-first-token distribution; `samples` is 0 when unmeasured. */
+  first_token_ms: AgentLatencyPercentiles
+}
+
+export interface AgentLatencyPercentiles {
+  p50: number
+  p95: number
+  avg: number
+  samples: number
+}
+
+export interface AgentRunHealth {
+  completed: number
+  failed: number
+  stopped: number
+  /** Runs still queued/running/stopping; excluded from `total` and the rate. */
+  in_flight: number
+  /** Terminal runs only (completed + failed + stopped). */
+  total: number
+  /** completed / total, or 0 when there are no terminal runs. */
+  success_rate: number
+}
+
+export interface AgentInterventions {
+  steer: number
+  stop: number
+  follow_up: number
+  total: number
 }
 
 export interface AgentStatsTools {
@@ -1108,6 +1136,9 @@ export interface AgentStats {
   tokens: AgentStatsTokens
   performance: AgentStatsPerformance
   tools: AgentStatsTools
+  /** Execution outcomes from `agent_runs`, not per-answer round status. */
+  health: AgentRunHealth
+  interventions: AgentInterventions
 }
 
 export interface AgentTrendDataPoint {
@@ -1117,6 +1148,10 @@ export interface AgentTrendDataPoint {
   messages: number
   tokens: number
   avg_response_time_ms: number
+  /** Null when the bucket has no measured first-token samples. */
+  first_token_p50_ms: number | null
+  /** Null when the bucket has no measured first-token samples. */
+  first_token_p95_ms: number | null
 }
 
 export interface AgentTrends {
@@ -1126,7 +1161,10 @@ export interface AgentTrends {
 }
 
 export interface ToolUsageItem {
+  /** Internal tool identifier, e.g. "web_search". */
   name: string
+  /** Localized label from the agent's tool configuration; equals `name` when unresolved. */
+  display_name: string
   count: number
 }
 

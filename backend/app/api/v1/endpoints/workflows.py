@@ -16,10 +16,14 @@ from tortoise.transactions import in_transaction
 
 from app.api import deps
 from app.api.team_access import check_team_access
-from app.api.workflow_access import check_workflow_access
+from app.api.workflow_access import (
+    check_workflow_access,
+    workflow_read_visibility_filter,
+)
+from app.core.config import settings
 from app.core.i18n import t
-from app.core.timezone import now, to_local, to_utc
-from app.models.user import User, TeamMember
+from app.core.timezone import now, to_utc
+from app.models.user import User
 from app.models.workflow import (
     Workflow,
     WorkflowRun,
@@ -54,6 +58,7 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
+from app.services import stats_sql
 from app.services.audit_log import AuditLogService
 from app.services.error_messages import is_safe_user_visible_error
 from app.services.workflow.errors import (
@@ -220,19 +225,18 @@ async def list_all_workflow_runs(
     - is_debug: Filter debug runs
     - search: Search workflow names
     """
-    # Get workflows user has access to
+    # Get workflows user has access to, honouring per-workflow visibility so
+    # private workflows of other team members stay hidden (YUN-153).
     workflow_query = Workflow.all()
 
     if team_id:
         for current_team_id in team_id:
             await check_team_access(current_team_id, current_user)
         workflow_query = workflow_query.filter(team_id__in=team_id)
-    elif not current_user.is_superuser:
-        # Get teams user belongs to
-        memberships = await TeamMember.filter(user=current_user).values_list(
-            "team_id", flat=True
-        )
-        workflow_query = workflow_query.filter(team_id__in=memberships)
+
+    visibility_filter = await workflow_read_visibility_filter(current_user)
+    if visibility_filter is not None:
+        workflow_query = workflow_query.filter(visibility_filter)
 
     # Apply search filter on workflows (only for non-UUID queries)
     # Note: run-level search below matches run IDs or workflow names; a
@@ -310,18 +314,17 @@ async def get_workflow_run_stats(
     - runs_by_workflow: Top 10 workflows by run count
     - avg_duration_ms: Average execution duration
     """
-    # Get workflows user has access to
+    # Get workflows user has access to, honouring per-workflow visibility so
+    # private workflows of other team members stay hidden (YUN-153).
     workflow_query = Workflow.all()
 
     if team_id:
         await check_team_access(team_id, current_user)
         workflow_query = workflow_query.filter(team_id=team_id)
-    elif not current_user.is_superuser:
-        # Get teams user belongs to
-        memberships = await TeamMember.filter(user=current_user).values_list(
-            "team_id", flat=True
-        )
-        workflow_query = workflow_query.filter(team_id__in=memberships)
+
+    visibility_filter = await workflow_read_visibility_filter(current_user)
+    if visibility_filter is not None:
+        workflow_query = workflow_query.filter(visibility_filter)
 
     accessible_workflows = await workflow_query.all()
     workflow_ids = [w.id for w in accessible_workflows]
@@ -337,67 +340,31 @@ async def get_workflow_run_stats(
             msg_key="workflow_run_stats_fetched",
         )
 
-    # Get all runs for accessible workflows
-    runs = await WorkflowRun.filter(workflow_id__in=workflow_ids).all()
+    # Aggregate in the database, scoped strictly to the visibility-filtered
+    # ids resolved above. Previously every run of every accessible workflow
+    # was loaded into Python.
+    stats = await stats_sql.workflow_global_run_stats(workflow_ids)
 
-    # Calculate statistics
-    total_runs = len(runs)
-
-    # Runs by status
-    runs_by_status: dict[str, int] = {}
-    for run in runs:
-        status_key = run.status.value
-        runs_by_status[status_key] = runs_by_status.get(status_key, 0) + 1
-
-    # Runs by workflow (top 10)
-    workflow_counts: dict[UUID, int] = {}
-    for run in runs:
-        if run.workflow_id is None:
-            continue
-        workflow_counts[run.workflow_id] = workflow_counts.get(run.workflow_id, 0) + 1
-
-    # Sort and get top 10
-    top_workflows = sorted(workflow_counts.items(), key=lambda x: x[1], reverse=True)[
-        :10
-    ]
-
-    # Build workflow info
     workflow_map = {w.id: w for w in accessible_workflows}
     runs_by_workflow = []
-    for workflow_id, count in top_workflows:
-        workflow = workflow_map.get(workflow_id)
+    for top_workflow_id, count in stats["top_workflows"]:
+        workflow = workflow_map.get(top_workflow_id)
         if workflow:
             runs_by_workflow.append(
                 {
-                    "workflow_id": str(workflow_id),
+                    "workflow_id": str(top_workflow_id),
                     "workflow_name": workflow.name,
                     "workflow_icon": workflow.icon,
                     "count": count,
                 }
             )
 
-    # Calculate average duration (only for completed runs)
-    completed_runs = [
-        r
-        for r in runs
-        if r.status == RunStatus.SUCCESS and r.started_at and r.finished_at
-    ]
-    if completed_runs:
-        total_duration_ms = sum(
-            int((r.finished_at - r.started_at).total_seconds() * 1000)
-            for r in completed_runs
-            if r.started_at is not None and r.finished_at is not None
-        )
-        avg_duration_ms = total_duration_ms // len(completed_runs)
-    else:
-        avg_duration_ms = 0
-
     return success(
         data={
-            "total_runs": total_runs,
-            "runs_by_status": runs_by_status,
+            "total_runs": stats["total_runs"],
+            "runs_by_status": stats["runs_by_status"],
             "runs_by_workflow": runs_by_workflow,
-            "avg_duration_ms": avg_duration_ms,
+            "avg_duration_ms": stats["avg_duration_ms"],
         },
         msg_key="workflow_run_stats_fetched",
     )
@@ -428,39 +395,10 @@ async def list_workflows(
     if team_id:
         await check_team_access(team_id, current_user)
         query = query.filter(team_id=team_id)
-        # Apply visibility filtering for non-superusers
-        if not current_user.is_superuser:
-            query = query.filter(
-                Q(
-                    visibility__in=[
-                        WorkflowVisibility.TEAM,
-                        WorkflowVisibility.PUBLIC,
-                    ],
-                )
-                | Q(
-                    created_by=current_user,
-                    visibility=WorkflowVisibility.PRIVATE,
-                )
-            )
-    elif not current_user.is_superuser:
-        # Get teams user belongs to
-        memberships = await TeamMember.filter(user=current_user).values_list(
-            "team_id", flat=True
-        )
-        # Show team/public workflows + own private workflows
-        query = query.filter(
-            Q(
-                team_id__in=memberships,
-                visibility__in=[
-                    WorkflowVisibility.TEAM,
-                    WorkflowVisibility.PUBLIC,
-                ],
-            )
-            | Q(
-                created_by=current_user,
-                visibility=WorkflowVisibility.PRIVATE,
-            )
-        )
+
+    visibility_filter = await workflow_read_visibility_filter(current_user)
+    if visibility_filter is not None:
+        query = query.filter(visibility_filter)
 
     if own_only and not current_user.is_superuser:
         query = query.filter(created_by=current_user)
@@ -618,50 +556,19 @@ async def get_workflow_stats(
     """
     await check_workflow_access(workflow_id, current_user)
 
-    # Get all runs for this workflow
-    runs = await WorkflowRun.filter(workflow_id=workflow_id).all()
-
-    total_runs = len(runs)
-
-    if total_runs == 0:
-        return success(
-            data={
-                "total_runs": 0,
-                "success_count": 0,
-                "failed_count": 0,
-                "timeout_count": 0,
-                "avg_duration_ms": 0,
-                "last_run_at": None,
-            }
-        )
-
-    # Calculate statistics
-    success_count = sum(1 for r in runs if r.status == RunStatus.SUCCESS)
-    failed_count = sum(1 for r in runs if r.status == RunStatus.FAILED)
-    timeout_count = sum(1 for r in runs if r.status == RunStatus.TIMEOUT)
-
-    # Calculate average duration (only for completed runs)
-    completed_durations = [
-        r.total_duration_ms for r in runs if r.total_duration_ms is not None
-    ]
-    avg_duration_ms = (
-        sum(completed_durations) / len(completed_durations)
-        if completed_durations
-        else 0
-    )
-
-    # Get last run timestamp
-    last_run = max(runs, key=lambda r: r.created_at)
-    last_run_at = last_run.created_at.isoformat() if last_run else None
+    # Aggregate in the database: this endpoint has no time bound, so loading
+    # every historical run scaled with the workflow's whole lifetime.
+    stats = await stats_sql.workflow_run_overview(workflow_id)
+    last_run_at = stats["last_run_at"]
 
     return success(
         data={
-            "total_runs": total_runs,
-            "success_count": success_count,
-            "failed_count": failed_count,
-            "timeout_count": timeout_count,
-            "avg_duration_ms": round(avg_duration_ms, 2),
-            "last_run_at": last_run_at,
+            "total_runs": stats["total_runs"],
+            "success_count": stats["success_count"],
+            "failed_count": stats["failed_count"],
+            "timeout_count": stats["timeout_count"],
+            "avg_duration_ms": round(stats["avg_duration_ms"], 2),
+            "last_run_at": last_run_at.isoformat() if last_run_at else None,
         }
     )
 
@@ -695,50 +602,24 @@ async def get_workflow_trends(
 
     start_time_utc = to_utc(start_time)
 
-    # Get all runs in the period
-    runs = await WorkflowRun.filter(
-        workflow_id=workflow_id, created_at__gte=start_time_utc
-    ).all()
+    # Bucket in the database on local-day boundaries; the previous loop
+    # rescanned every loaded run once per point.
+    buckets = await stats_sql.workflow_trend_buckets(
+        workflow_id, start_time_utc, settings.TIMEZONE
+    )
 
-    # Build time series data grouped by day
     data_points = []
     for i in range(num_points):
         point_date = (now_local - timedelta(days=num_points - i - 1)).date()
-        point_start = datetime.combine(point_date, datetime.min.time()).replace(
-            tzinfo=now_local.tzinfo
-        )
-        point_end = point_start + timedelta(days=1)
-
-        # Filter runs for this day
-        runs_in_day = [
-            r for r in runs if point_start <= to_local(r.created_at) < point_end
-        ]
-
-        # Count by status
-        total_runs = len(runs_in_day)
-        success_count = sum(1 for r in runs_in_day if r.status == RunStatus.SUCCESS)
-        failed_count = sum(1 for r in runs_in_day if r.status == RunStatus.FAILED)
-
-        # Calculate average duration for completed runs
-        completed_durations = [
-            r.total_duration_ms for r in runs_in_day if r.total_duration_ms is not None
-        ]
-        avg_duration = (
-            sum(completed_durations) / len(completed_durations)
-            if completed_durations
-            else 0
-        )
-
-        # Format label
-        label = point_date.strftime("%m/%d")
+        bucket = buckets.get(datetime.combine(point_date, datetime.min.time()), {})
 
         data_points.append(
             {
-                "date": label,
-                "runs": total_runs,
-                "success": success_count,
-                "failed": failed_count,
-                "avgDuration": round(avg_duration, 2),
+                "date": point_date.strftime("%m/%d"),
+                "runs": bucket.get("runs", 0),
+                "success": bucket.get("success", 0),
+                "failed": bucket.get("failed", 0),
+                "avgDuration": round(bucket.get("avg_duration", 0), 2),
             }
         )
 

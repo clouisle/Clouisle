@@ -113,31 +113,31 @@ async def test_workflow_stats_cover_empty_and_completed_runs(monkeypatch):
     workflow_id = uuid4()
     monkeypatch.setattr(workflows, "check_workflow_access", AsyncMock())
 
-    empty_query = QueryStub()
-    monkeypatch.setattr(workflows.WorkflowRun, "filter", empty_query.filter)
+    overview = AsyncMock(
+        side_effect=[
+            {
+                "total_runs": 0,
+                "success_count": 0,
+                "failed_count": 0,
+                "timeout_count": 0,
+                "avg_duration_ms": 0,
+                "last_run_at": None,
+            },
+            {
+                "total_runs": 3,
+                "success_count": 1,
+                "failed_count": 1,
+                "timeout_count": 1,
+                "avg_duration_ms": 15.0,
+                "last_run_at": datetime(2026, 1, 2, tzinfo=timezone.utc),
+            },
+        ]
+    )
+    monkeypatch.setattr(workflows.stats_sql, "workflow_run_overview", overview)
+
     empty = await workflows.get_workflow_stats(workflow_id, SimpleNamespace())
     assert empty["data"]["last_run_at"] is None
 
-    created = datetime(2026, 1, 2, tzinfo=timezone.utc)
-    rows = [
-        SimpleNamespace(
-            status=RunStatus.SUCCESS,
-            total_duration_ms=10,
-            created_at=created,
-        ),
-        SimpleNamespace(
-            status=RunStatus.FAILED,
-            total_duration_ms=None,
-            created_at=created - timedelta(days=1),
-        ),
-        SimpleNamespace(
-            status=RunStatus.TIMEOUT,
-            total_duration_ms=20,
-            created_at=created - timedelta(days=2),
-        ),
-    ]
-    populated_query = QueryStub(rows=rows)
-    monkeypatch.setattr(workflows.WorkflowRun, "filter", populated_query.filter)
     result = await workflows.get_workflow_stats(workflow_id, SimpleNamespace())
 
     assert result["data"] == {
@@ -146,7 +146,7 @@ async def test_workflow_stats_cover_empty_and_completed_runs(monkeypatch):
         "failed_count": 1,
         "timeout_count": 1,
         "avg_duration_ms": 15.0,
-        "last_run_at": created.isoformat(),
+        "last_run_at": datetime(2026, 1, 2, tzinfo=timezone.utc).isoformat(),
     }
 
 

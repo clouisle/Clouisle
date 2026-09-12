@@ -2,20 +2,44 @@
 Agent statistics and monitoring API endpoints.
 """
 
+import asyncio
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from tortoise.functions import Avg
 
 from app.api import deps
-from app.models.agent import Agent, Conversation, Message, MessageRole
+from app.api.v1.endpoints.agents import check_agent_access
+from app.api.v1.endpoints.chat import get_tool_display_names
+from app.core.config import settings
+from app.core.i18n import resolve_language
+from app.models.agent import Conversation
 from app.models.user import User
-from app.schemas.response import success, ResponseCode, BusinessError
-from app.core.timezone import now, to_local, to_utc
+from app.schemas.response import success
+from app.services import stats_sql
+from app.core.timezone import now, to_utc
 
 router = APIRouter()
+
+
+def _resolve_tool_display_name(name: str, display_names: dict[str, str]) -> str:
+    """Resolve one observed tool name to a human-readable label.
+
+    Exact keys cover builtin, memory, asset, custom and skill tools. MCP tools
+    are only known by their server prefix when enumeration is disabled, so a
+    prefix match renders "<server>/<tool>" without contacting the server.
+    Unknown names — for example a tool the agent no longer has configured —
+    fall back to the raw identifier rather than disappearing.
+    """
+    if name in display_names:
+        return display_names[name]
+    for key, label in sorted(
+        display_names.items(), key=lambda item: len(item[0]), reverse=True
+    ):
+        if key.endswith("_") and name.startswith(key):
+            return f"{label}{name[len(key) :]}"
+    return name
 
 
 @router.get("/{agent_id}/stats")
@@ -27,13 +51,7 @@ async def get_agent_stats(
     """
     Get agent statistics overview.
     """
-    agent = await Agent.filter(id=agent_id).first()
-    if not agent:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="agent_not_found",
-            status_code=404,
-        )
+    await check_agent_access(agent_id, current_user)
 
     # Calculate time range
     now_local = now()
@@ -46,67 +64,34 @@ async def get_agent_stats(
     else:
         start_time = None
 
-    # Build base query
-    conv_query = Conversation.filter(agent_id=agent_id)
-    msg_query = Message.filter(conversation__agent_id=agent_id)
+    # Both helpers aggregate in the database; the previous implementation ran
+    # six counts and pulled every token_usage / tool_calls JSON payload plus
+    # every user_id into Python. The five aggregations are independent, so they
+    # run concurrently rather than as five sequential round trips.
+    (
+        conversations,
+        messages,
+        health,
+        latency,
+        interventions,
+    ) = await asyncio.gather(
+        stats_sql.agent_conversation_overview(agent_id, start_time),
+        stats_sql.agent_message_overview(agent_id, start_time),
+        stats_sql.agent_run_health(agent_id, start_time),
+        stats_sql.agent_latency_percentiles(agent_id, start_time),
+        stats_sql.agent_intervention_counts(agent_id, start_time),
+    )
 
-    if start_time:
-        conv_query = conv_query.filter(created_at__gte=start_time)
-        msg_query = msg_query.filter(created_at__gte=start_time)
-
-    # Get conversation count
-    total_conversations = await conv_query.count()
-
-    # Get message counts by role
-    user_messages = await msg_query.filter(role=MessageRole.USER).count()
-    assistant_messages = await msg_query.filter(role=MessageRole.ASSISTANT).count()
-    tool_messages = await msg_query.filter(role=MessageRole.TOOL).count()
+    total_conversations = conversations["total_conversations"]
+    active_users = conversations["active_users"]
+    user_messages = messages["user_messages"]
+    assistant_messages = messages["assistant_messages"]
+    tool_messages = messages["tool_messages"]
     total_messages = user_messages + assistant_messages + tool_messages
-
-    # Get token usage - calculate manually from JSON field
-    prompt_tokens = 0
-    completion_tokens = 0
-    messages_with_tokens = await msg_query.filter(
-        role=MessageRole.ASSISTANT, token_usage__isnull=False
-    ).values("token_usage")
-
-    for msg in messages_with_tokens:
-        if msg["token_usage"]:
-            prompt_tokens += msg["token_usage"].get("prompt", 0) or 0
-            completion_tokens += msg["token_usage"].get("completion", 0) or 0
-
-    # Get average response time
-    avg_duration = (
-        await msg_query.filter(role=MessageRole.ASSISTANT, duration_ms__isnull=False)
-        .annotate(avg_duration=Avg("duration_ms"))
-        .values("avg_duration")
-    )
-
-    avg_response_time = (
-        avg_duration[0]["avg_duration"]
-        if avg_duration and avg_duration[0]["avg_duration"]
-        else 0
-    )
-
-    # Get unique users - use a fresh query to avoid ORDER BY conflict with DISTINCT
-    user_query = Conversation.filter(agent_id=agent_id)
-    if start_time:
-        user_query = user_query.filter(created_at__gte=start_time)
-    unique_users = await user_query.values_list("user_id", flat=True)
-    active_users = len(set(unique_users))
-
-    # Get actual tool call count (not just message count)
-    messages_with_tools = await msg_query.filter(
-        role=MessageRole.ASSISTANT, tool_calls__isnull=False
-    ).values("tool_calls")
-
-    tool_call_count = 0
-    for msg in messages_with_tools:
-        if msg["tool_calls"] and isinstance(msg["tool_calls"], list):
-            tool_call_count += len(msg["tool_calls"])
-
-    # Get error count (messages with error in content or tool errors)
-    # This is a simplified approach - in production you might want a separate error table
+    prompt_tokens = messages["prompt_tokens"]
+    completion_tokens = messages["completion_tokens"]
+    avg_response_time = messages["avg_duration"]
+    tool_call_count = messages["tool_call_count"]
 
     return success(
         data={
@@ -128,10 +113,18 @@ async def get_agent_stats(
                 "avg_response_time_ms": round(avg_response_time, 2)
                 if avg_response_time
                 else 0,
+                "first_token_ms": {
+                    "p50": round(latency["p50"], 2),
+                    "p95": round(latency["p95"], 2),
+                    "avg": round(latency["avg"], 2),
+                    "samples": latency["samples"],
+                },
             },
             "tools": {
                 "tool_call_count": tool_call_count,
             },
+            "health": health,
+            "interventions": interventions,
         }
     )
 
@@ -145,13 +138,7 @@ async def get_agent_trends(
     """
     Get agent statistics trends for charting.
     """
-    agent = await Agent.filter(id=agent_id).first()
-    if not agent:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="agent_not_found",
-            status_code=404,
-        )
+    await check_agent_access(agent_id, current_user)
 
     now_local = now()
 
@@ -171,101 +158,41 @@ async def get_agent_trends(
 
     start_time_utc = to_utc(start_time)
 
-    # Get all conversations and messages in the period
-    conversations = await Conversation.filter(
-        agent_id=agent_id, created_at__gte=start_time_utc
-    ).values("id", "created_at")
+    # Bucket in the database on local-time boundaries. The previous loop
+    # rescanned every loaded row once per point (O(points x rows)).
+    buckets = await stats_sql.agent_trend_buckets(
+        agent_id, start_time_utc, granularity, settings.TIMEZONE
+    )
 
-    messages = await Message.filter(
-        conversation__agent_id=agent_id,
-        created_at__gte=start_time_utc,
-        role=MessageRole.ASSISTANT,
-    ).values("created_at", "token_usage", "duration_ms")
-
-    # Build time series data
-    if granularity == "hour":
-        # Group by hour
-        data_points = []
-        for i in range(num_points):
-            point_start = now_local - timedelta(hours=num_points - i)
-            point_end = now_local - timedelta(hours=num_points - i - 1)
-
-            conv_count = sum(
-                1
-                for c in conversations
-                if point_start <= to_local(c["created_at"]) < point_end
-            )
-
-            msgs_in_period = [
-                m
-                for m in messages
-                if point_start <= to_local(m["created_at"]) < point_end
-            ]
-            msg_count = len(msgs_in_period)
-
-            tokens = sum(
-                (m["token_usage"].get("prompt", 0) or 0)
-                + (m["token_usage"].get("completion", 0) or 0)
-                for m in msgs_in_period
-                if m["token_usage"]
-            )
-
-            durations = [m["duration_ms"] for m in msgs_in_period if m["duration_ms"]]
-            avg_duration = sum(durations) / len(durations) if durations else 0
-
-            data_points.append(
-                {
-                    "timestamp": point_start.isoformat(),
-                    "label": point_start.strftime("%H:00"),
-                    "conversations": conv_count,
-                    "messages": msg_count,
-                    "tokens": tokens,
-                    "avg_response_time_ms": round(avg_duration, 2),
-                }
-            )
-    else:
-        # Group by day
-        data_points = []
-        for i in range(num_points):
+    data_points = []
+    for i in range(num_points):
+        if granularity == "hour":
+            point_start = now_local.replace(
+                minute=0, second=0, microsecond=0
+            ) - timedelta(hours=num_points - 1 - i)
+            label = point_start.strftime("%H:00")
+        else:
             point_date = (now_local - timedelta(days=num_points - i - 1)).date()
             point_start = datetime.combine(point_date, datetime.min.time()).replace(
                 tzinfo=now_local.tzinfo
             )
-            point_end = point_start + timedelta(days=1)
+            label = point_date.strftime("%m/%d")
 
-            conv_count = sum(
-                1
-                for c in conversations
-                if point_start <= to_local(c["created_at"]) < point_end
-            )
-
-            msgs_in_period = [
-                m
-                for m in messages
-                if point_start <= to_local(m["created_at"]) < point_end
-            ]
-            msg_count = len(msgs_in_period)
-
-            tokens = sum(
-                (m["token_usage"].get("prompt", 0) or 0)
-                + (m["token_usage"].get("completion", 0) or 0)
-                for m in msgs_in_period
-                if m["token_usage"]
-            )
-
-            durations = [m["duration_ms"] for m in msgs_in_period if m["duration_ms"]]
-            avg_duration = sum(durations) / len(durations) if durations else 0
-
-            data_points.append(
-                {
-                    "timestamp": point_start.isoformat(),
-                    "label": point_date.strftime("%m/%d"),
-                    "conversations": conv_count,
-                    "messages": msg_count,
-                    "tokens": tokens,
-                    "avg_response_time_ms": round(avg_duration, 2),
-                }
-            )
+        bucket = buckets.get(point_start.replace(tzinfo=None), {})
+        data_points.append(
+            {
+                "timestamp": point_start.isoformat(),
+                "label": label,
+                "conversations": bucket.get("conversations", 0),
+                "messages": bucket.get("messages", 0),
+                "tokens": bucket.get("tokens", 0),
+                "avg_response_time_ms": round(bucket.get("avg_duration", 0), 2),
+                # None on an unmeasured bucket so the latency line breaks
+                # rather than dipping to zero.
+                "first_token_p50_ms": bucket.get("ttft_p50"),
+                "first_token_p95_ms": bucket.get("ttft_p95"),
+            }
+        )
 
     return success(
         data={
@@ -285,13 +212,7 @@ async def get_agent_tool_usage(
     """
     Get tool usage statistics for the agent.
     """
-    agent = await Agent.filter(id=agent_id).first()
-    if not agent:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="agent_not_found",
-            status_code=404,
-        )
+    agent = await check_agent_access(agent_id, current_user)
 
     now_local = now()
     if period == "24h":
@@ -303,52 +224,33 @@ async def get_agent_tool_usage(
     else:
         start_time = None
 
-    # Query messages with tool calls
-    query = Message.filter(
-        conversation__agent_id=agent_id,
-        role=MessageRole.ASSISTANT,
-        tool_calls__isnull=False,
+    # Aggregate tool names in the database, preserving the two accepted
+    # payload shapes and the count-descending ordering.
+    rows = await stats_sql.agent_tool_usage(agent_id, start_time)
+
+    # Raw tool names are internal identifiers ("web_search"); the chat UI
+    # renders localized labels, so resolve the same mapping here to stay
+    # consistent. MCP enumeration is disabled because it performs an untimed
+    # network call that must not run on a statistics request.
+    locale = await resolve_language(getattr(current_user, "locale", None))
+    display_names = await get_tool_display_names(
+        agent, locale, enumerate_mcp_tools=False
     )
-    if start_time:
-        query = query.filter(created_at__gte=start_time)
 
-    messages = await query.values("tool_calls")
-
-    # Aggregate tool usage
-    tool_stats: dict[str, int] = {}
-    for msg in messages:
-        if msg["tool_calls"]:
-            for tool_call in msg["tool_calls"]:
-                # Handle different possible structures
-                tool_name = None
-                if isinstance(tool_call, dict):
-                    # Standard format: { function: { name: "xxx" } }
-                    if "function" in tool_call and isinstance(
-                        tool_call["function"], dict
-                    ):
-                        tool_name = tool_call["function"].get("name")
-                    # Alternative format: { name: "xxx" }
-                    elif "name" in tool_call:
-                        tool_name = tool_call.get("name")
-
-                if tool_name:
-                    tool_stats[tool_name] = tool_stats.get(tool_name, 0) + 1
-
-    # Sort by count descending
-    tool_items: list[dict[str, int | str]] = [
-        {"name": k, "count": v} for k, v in tool_stats.items()
+    sorted_tools: list[dict[str, int | str]] = [
+        {
+            "name": row["name"],
+            "display_name": _resolve_tool_display_name(row["name"], display_names),
+            "count": int(row["count"]),
+        }
+        for row in rows
     ]
-    sorted_tools = sorted(
-        tool_items,
-        key=lambda x: int(x["count"]),
-        reverse=True,
-    )
 
     return success(
         data={
             "period": period,
             "tools": sorted_tools,
-            "total_calls": sum(t["count"] for t in sorted_tools),
+            "total_calls": sum(int(t["count"]) for t in sorted_tools),
         }
     )
 
@@ -362,13 +264,7 @@ async def get_recent_conversations(
     """
     Get recent conversations for the agent.
     """
-    agent = await Agent.filter(id=agent_id).first()
-    if not agent:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="agent_not_found",
-            status_code=404,
-        )
+    await check_agent_access(agent_id, current_user)
 
     conversations = (
         await Conversation.filter(agent_id=agent_id)

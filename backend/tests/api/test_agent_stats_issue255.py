@@ -1,11 +1,12 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 
 from app.api.v1.endpoints import agent_stats
-from app.schemas.response import BusinessError
+from app.schemas.response import BusinessError, ResponseCode
 
 
 class Query:
@@ -29,9 +30,6 @@ class Query:
 
     def annotate(self, **kwargs):
         return self
-
-    async def first(self):
-        return self.result
 
     async def count(self):
         return next(self.counts)
@@ -62,31 +60,76 @@ class Query:
     ],
 )
 async def test_agent_stats_endpoints_reject_missing_agent(monkeypatch, function):
-    monkeypatch.setattr(agent_stats.Agent, "filter", lambda **kwargs: Query())
+    agent_id = uuid4()
+    current_user = SimpleNamespace()
+    denied = AsyncMock(
+        side_effect=BusinessError(
+            code=ResponseCode.AGENT_NOT_FOUND,
+            msg_key="agent_not_found",
+            status_code=404,
+        )
+    )
+    monkeypatch.setattr(agent_stats, "check_agent_access", denied)
 
     with pytest.raises(BusinessError) as exc:
-        await function(uuid4(), current_user=SimpleNamespace())
+        await function(agent_id, current_user=current_user)
 
-    assert exc.value.status_code == 404
+    denied.assert_awaited_once_with(agent_id, current_user)
+    assert (exc.value.code, exc.value.status_code) == (
+        ResponseCode.AGENT_NOT_FOUND,
+        404,
+    )
 
 
 @pytest.mark.anyio
-async def test_agent_stats_aggregates_messages_tokens_users_and_tools(monkeypatch):
-    monkeypatch.setattr(agent_stats.Agent, "filter", lambda **kwargs: Query(object()))
+async def test_agent_stats_assembles_overview_tokens_and_tools(monkeypatch):
+    monkeypatch.setattr(agent_stats, "check_agent_access", AsyncMock())
     monkeypatch.setattr(
-        agent_stats.Conversation,
-        "filter",
-        lambda **kwargs: Query(counts=[2], values=[uuid4(), uuid4(), uuid4()]),
+        agent_stats.stats_sql,
+        "agent_conversation_overview",
+        AsyncMock(return_value={"total_conversations": 2, "active_users": 3}),
     )
-    message_query = Query(
-        counts=[3, 4, 1],
-        value_batches=[
-            [{"token_usage": {"prompt": 8, "completion": 5}}, {"token_usage": None}],
-            [{"avg_duration": 12.345}],
-            [{"tool_calls": [{"function": {"name": "search"}}, {"name": "fetch"}]}],
-        ],
+    monkeypatch.setattr(
+        agent_stats.stats_sql,
+        "agent_message_overview",
+        AsyncMock(
+            return_value={
+                "user_messages": 3,
+                "assistant_messages": 4,
+                "tool_messages": 1,
+                "prompt_tokens": 8,
+                "completion_tokens": 5,
+                "tool_call_count": 2,
+                "avg_duration": 12.345,
+            }
+        ),
     )
-    monkeypatch.setattr(agent_stats.Message, "filter", lambda **kwargs: message_query)
+    monkeypatch.setattr(
+        agent_stats.stats_sql,
+        "agent_run_health",
+        AsyncMock(
+            return_value={
+                "completed": 9,
+                "failed": 1,
+                "stopped": 0,
+                "in_flight": 0,
+                "total": 10,
+                "success_rate": 0.9,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        agent_stats.stats_sql,
+        "agent_latency_percentiles",
+        AsyncMock(
+            return_value={"p50": 1200.0, "p95": 9000.0, "avg": 2500.0, "samples": 7}
+        ),
+    )
+    monkeypatch.setattr(
+        agent_stats.stats_sql,
+        "agent_intervention_counts",
+        AsyncMock(return_value={"steer": 4, "stop": 1, "follow_up": 0, "total": 5}),
+    )
 
     result = await agent_stats.get_agent_stats(
         uuid4(), period="all", current_user=SimpleNamespace()
@@ -100,59 +143,90 @@ async def test_agent_stats_aggregates_messages_tokens_users_and_tools(monkeypatc
         "tool_messages": 1,
         "active_users": 3,
     }
-    assert result["data"]["tokens"]["total_tokens"] == 13
-    assert result["data"]["performance"]["avg_response_time_ms"] == 12.35
-    assert result["data"]["tools"]["tool_call_count"] == 2
-
-
-@pytest.mark.anyio
-async def test_agent_trends_groups_hourly_and_daily_data(monkeypatch):
-    fixed_now = datetime(2026, 7, 21, 12, tzinfo=UTC)
-    conversation = {"id": uuid4(), "created_at": fixed_now - timedelta(minutes=30)}
-    message = {
-        "created_at": fixed_now - timedelta(minutes=20),
-        "token_usage": {"prompt": 2, "completion": 3},
-        "duration_ms": 10,
+    assert result["data"]["tokens"] == {
+        "prompt_tokens": 8,
+        "completion_tokens": 5,
+        "total_tokens": 13,
     }
-    monkeypatch.setattr(agent_stats, "now", lambda: fixed_now)
-    monkeypatch.setattr(agent_stats.Agent, "filter", lambda **kwargs: Query(object()))
-    monkeypatch.setattr(
-        agent_stats.Conversation,
-        "filter",
-        lambda **kwargs: Query(values=[conversation]),
-    )
-    monkeypatch.setattr(
-        agent_stats.Message, "filter", lambda **kwargs: Query(values=[message])
-    )
-
-    hourly = await agent_stats.get_agent_trends(
-        uuid4(), period="24h", current_user=SimpleNamespace()
-    )
-    daily = await agent_stats.get_agent_trends(
-        uuid4(), period="7d", current_user=SimpleNamespace()
-    )
-
-    assert hourly["data"]["granularity"] == "hour"
-    assert len(hourly["data"]["data"]) == 24
-    assert hourly["data"]["data"][-1]["tokens"] == 5
-    assert daily["data"]["granularity"] == "day"
-    assert len(daily["data"]["data"]) == 7
-    assert daily["data"]["data"][-1]["messages"] == 1
+    assert result["data"]["performance"] == {
+        "avg_response_time_ms": 12.35,
+        "first_token_ms": {"p50": 1200.0, "p95": 9000.0, "avg": 2500.0, "samples": 7},
+    }
+    assert result["data"]["tools"]["tool_call_count"] == 2
+    assert result["data"]["health"]["success_rate"] == 0.9
+    assert result["data"]["interventions"] == {
+        "steer": 4,
+        "stop": 1,
+        "follow_up": 0,
+        "total": 5,
+    }
 
 
 @pytest.mark.anyio
-async def test_tool_usage_normalizes_formats_and_sorts(monkeypatch):
-    monkeypatch.setattr(agent_stats.Agent, "filter", lambda **kwargs: Query(object()))
+@pytest.mark.parametrize(
+    ("period", "granularity", "points"),
+    [("24h", "hour", 24), ("7d", "day", 7), ("30d", "day", 30)],
+)
+async def test_agent_trends_emit_one_point_per_bucket(
+    monkeypatch, period, granularity, points
+):
+    fixed_now = datetime(2026, 7, 21, 12, tzinfo=UTC)
+    monkeypatch.setattr(agent_stats, "now", lambda: fixed_now)
+    monkeypatch.setattr(agent_stats, "check_agent_access", AsyncMock())
+
+    # The most recent bucket carries data; every other point must be zero-filled
+    # rather than dropped, so the chart keeps a fixed-width x-axis.
+    if granularity == "hour":
+        latest = fixed_now.replace(minute=0, second=0, microsecond=0, tzinfo=None)
+    else:
+        latest = datetime(2026, 7, 21)
+    buckets = AsyncMock(
+        return_value={
+            latest: {
+                "conversations": 1,
+                "messages": 1,
+                "tokens": 5,
+                "avg_duration": 10.0,
+            }
+        }
+    )
+    monkeypatch.setattr(agent_stats.stats_sql, "agent_trend_buckets", buckets)
+
+    result = await agent_stats.get_agent_trends(
+        uuid4(), period=period, current_user=SimpleNamespace()
+    )
+
+    data = result["data"]["data"]
+    assert result["data"]["granularity"] == granularity
+    assert len(data) == points
+    assert data[-1]["tokens"] == 5
+    assert data[-1]["messages"] == 1
+    assert data[-1]["avg_response_time_ms"] == 10.0
+    assert data[0]["tokens"] == 0
+    assert data[0]["conversations"] == 0
+    # The requested granularity is what decides the SQL bucket width.
+    assert buckets.await_args.args[2] == granularity
+
+
+@pytest.mark.anyio
+async def test_tool_usage_preserves_database_ordering(monkeypatch):
     monkeypatch.setattr(
-        agent_stats.Message,
-        "filter",
-        lambda **kwargs: Query(
-            values=[
-                {"tool_calls": [{"function": {"name": "search"}}, {"name": "fetch"}]},
-                {"tool_calls": [{"name": "search"}, "invalid", {}]},
-                {"tool_calls": None},
+        agent_stats, "check_agent_access", AsyncMock(return_value=SimpleNamespace())
+    )
+    monkeypatch.setattr(
+        agent_stats.stats_sql,
+        "agent_tool_usage",
+        AsyncMock(
+            return_value=[
+                {"name": "search", "count": 2},
+                {"name": "fetch", "count": 1},
             ]
         ),
+    )
+    monkeypatch.setattr(
+        agent_stats,
+        "get_tool_display_names",
+        AsyncMock(return_value={"search": "Search", "fetch": "Fetch"}),
     )
 
     result = await agent_stats.get_agent_tool_usage(
@@ -160,8 +234,8 @@ async def test_tool_usage_normalizes_formats_and_sorts(monkeypatch):
     )
 
     assert result["data"]["tools"] == [
-        {"name": "search", "count": 2},
-        {"name": "fetch", "count": 1},
+        {"name": "search", "display_name": "Search", "count": 2},
+        {"name": "fetch", "display_name": "Fetch", "count": 1},
     ]
     assert result["data"]["total_calls"] == 3
 
@@ -189,7 +263,7 @@ async def test_recent_conversations_serializes_optional_user(monkeypatch):
             updated_at=timestamp,
         ),
     ]
-    monkeypatch.setattr(agent_stats.Agent, "filter", lambda **kwargs: Query(object()))
+    monkeypatch.setattr(agent_stats, "check_agent_access", AsyncMock())
     monkeypatch.setattr(
         agent_stats.Conversation, "filter", lambda **kwargs: Query(conversations)
     )

@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.api import workflow_access
 from app.api.v1.endpoints import workflows
 from app.models.workflow import TriggerType, WorkflowStatus, WorkflowVisibility
 from app.schemas.response import BusinessError
@@ -95,6 +96,9 @@ async def test_list_workflows_applies_team_and_optional_filters():
     with (
         patch.object(workflows.Workflow, "all", return_value=query),
         patch.object(workflows, "check_team_access", access),
+        patch.object(
+            workflow_access.TeamMember, "filter", return_value=_Query([uuid4()])
+        ),
     ):
         response = await workflows.list_workflows(
             team_id=team_id,
@@ -123,7 +127,9 @@ async def test_list_workflows_limits_non_superuser_to_memberships():
 
     with (
         patch.object(workflows.Workflow, "all", return_value=workflow_query),
-        patch.object(workflows.TeamMember, "filter", return_value=membership_query),
+        patch.object(
+            workflow_access.TeamMember, "filter", return_value=membership_query
+        ),
     ):
         response = await workflows.list_workflows(current_user=user)
 
