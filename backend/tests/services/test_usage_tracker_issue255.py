@@ -10,7 +10,12 @@ from app.services.usage_tracker import QuotaExceededError, UsageTracker
 
 
 usage_module = import_module("app.services.usage_tracker")
-NOW = datetime.now(timezone.utc)
+NOW = datetime(2026, 7, 19, 12, tzinfo=timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def freeze_usage_time(monkeypatch):
+    monkeypatch.setattr(usage_module, "now", lambda: NOW)
 
 
 def team_model(**overrides):
