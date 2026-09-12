@@ -14,7 +14,6 @@ from app.api.v1.endpoints.agents import check_agent_access
 from app.api.v1.endpoints.chat import get_tool_display_names
 from app.core.config import settings
 from app.core.i18n import resolve_language
-from app.models.agent import Conversation
 from app.models.user import User
 from app.schemas.response import success
 from app.services import stats_sql
@@ -274,43 +273,3 @@ async def get_agent_tool_usage(
             "total_calls": sum(int(t["count"]) for t in sorted_tools),
         }
     )
-
-
-@router.get("/{agent_id}/stats/recent-conversations")
-async def get_recent_conversations(
-    agent_id: UUID,
-    limit: int = Query(10, ge=1, le=50),
-    current_user: User = Depends(deps.get_current_active_user),
-) -> Any:
-    """
-    Get recent conversations for the agent.
-    """
-    await check_agent_access(agent_id, current_user)
-
-    conversations = (
-        await Conversation.filter(agent_id=agent_id)
-        .order_by("-updated_at")
-        .limit(limit)
-        .prefetch_related("user")
-    )
-
-    result = []
-    for conv in conversations:
-        result.append(
-            {
-                "id": str(conv.id),
-                "title": conv.title,
-                "user": {
-                    "id": str(conv.user.id),
-                    "username": conv.user.username,
-                }
-                if conv.user
-                else None,
-                "message_count": conv.message_count,
-                "token_usage": conv.token_usage,
-                "created_at": conv.created_at.isoformat(),
-                "updated_at": conv.updated_at.isoformat(),
-            }
-        )
-
-    return success(data=result)

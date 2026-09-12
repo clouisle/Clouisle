@@ -129,7 +129,6 @@ export {
   type AgentTrends,
   type AgentToolUsage,
   type ToolUsageItem,
-  type RecentConversationItem,
   type PublicAgent,
   type AgentRunStatus,
   type AgentRunMode,

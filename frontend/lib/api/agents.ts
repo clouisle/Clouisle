@@ -1111,9 +1111,19 @@ export interface AgentRunHealth {
   completed: number
   failed: number
   stopped: number
-  /** Runs still queued/running/stopping; excluded from `total` and the rate. */
+  /** Worker-loss crashes; terminal, so they count toward `total`. */
+  interrupted: number
+  /**
+   * Runs whose status this build does not recognise (a value written by
+   * another release). Counted separately rather than folded into a bucket.
+   */
+  unrecognised: number
+  /**
+   * Non-terminal runs only (queued, running, stopping, completing, waiting);
+   * excluded from `total` and the rate.
+   */
   in_flight: number
-  /** Terminal runs only (completed + failed + stopped). */
+  /** Terminal runs only (completed + failed + stopped + interrupted). */
   total: number
   /** completed / total, or 0 when there are no terminal runs. */
   success_rate: number
@@ -1174,16 +1184,6 @@ export interface AgentToolUsage {
   total_calls: number
 }
 
-export interface RecentConversationItem {
-  id: string
-  title?: string | null
-  user?: { id: string; username: string } | null
-  message_count: number
-  token_usage: number
-  created_at: string
-  updated_at: string
-}
-
 // ============ Agent Stats API ============
 
 export const agentStatsApi = {
@@ -1206,13 +1206,6 @@ export const agentStatsApi = {
    */
   getToolUsage: async (agentId: string, period: string = '7d'): Promise<AgentToolUsage> => {
     return api.get<AgentToolUsage>(`/agents/${agentId}/stats/tool-usage?period=${period}`)
-  },
-
-  /**
-   * 获取最近对话
-   */
-  getRecentConversations: async (agentId: string, limit: number = 10): Promise<RecentConversationItem[]> => {
-    return api.get<RecentConversationItem[]>(`/agents/${agentId}/stats/recent-conversations?limit=${limit}`)
   },
 }
 

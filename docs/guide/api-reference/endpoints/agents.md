@@ -778,17 +778,37 @@ curl -X GET "https://your-domain.com/api/v1/agents/550e8400-e29b-41d4-a716-44665
       "total_tokens": 456789
     },
     "performance": {
-      "avg_response_time_ms": 2300
+      "avg_response_time_ms": 2300,
+      "first_token_ms": {
+        "p50": 1200,
+        "p95": 9000,
+        "avg": 2500,
+        "samples": 480
+      }
     },
     "tools": {
       "tool_call_count": 512
+    },
+    "health": {
+      "completed": 90,
+      "failed": 6,
+      "stopped": 4,
+      "in_flight": 2,
+      "total": 100,
+      "success_rate": 0.9
+    },
+    "interventions": {
+      "steer": 12,
+      "stop": 3,
+      "follow_up": 5,
+      "total": 20
     }
   },
   "msg": "success"
 }
 ```
 
-Additional stats endpoints exist at `GET /agents/{agent_id}/stats/trends` (period `24h`/`7d`/`30d`), `GET /agents/{agent_id}/stats/tool-usage` (period `24h`/`7d`/`30d`/`all`), and `GET /agents/{agent_id}/stats/recent-conversations` (limit, default 10).
+Additional stats endpoints exist at `GET /agents/{agent_id}/stats/trends` (period `24h`/`7d`/`30d`) and `GET /agents/{agent_id}/stats/tool-usage` (period `24h`/`7d`/`30d`/`all`).
 
 ## Error Codes
 

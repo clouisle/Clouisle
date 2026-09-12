@@ -122,14 +122,12 @@ describe('agent stats API requests', () => {
     await agentStatsApi.getStats('agent-1')
     await agentStatsApi.getTrends('agent-1', '30d')
     await agentStatsApi.getToolUsage('agent-1')
-    await agentStatsApi.getRecentConversations('agent-1')
-    await agentStatsApi.getRecentConversations('agent-1', 25)
+    await agentStatsApi.getToolUsage('agent-1', '30d')
 
     expect(get).toHaveBeenNthCalledWith(1, '/agents/agent-1/stats?period=7d')
     expect(get).toHaveBeenNthCalledWith(2, '/agents/agent-1/stats/trends?period=30d')
     expect(get).toHaveBeenNthCalledWith(3, '/agents/agent-1/stats/tool-usage?period=7d')
-    expect(get).toHaveBeenNthCalledWith(4, '/agents/agent-1/stats/recent-conversations?limit=10')
-    expect(get).toHaveBeenNthCalledWith(5, '/agents/agent-1/stats/recent-conversations?limit=25')
+    expect(get).toHaveBeenNthCalledWith(4, '/agents/agent-1/stats/tool-usage?period=30d')
   })
 })
 
