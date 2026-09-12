@@ -568,7 +568,7 @@ export function ChatContainer({
     <div className={cn('relative h-full', className)}>
       <div
         ref={scrollerRef}
-        className={cn('absolute inset-x-0 bottom-0 overflow-y-auto overflow-x-hidden [overflow-anchor:none] [scrollbar-gutter:stable]', headerInset && 'top-[60px]')}
+        className={cn('absolute inset-x-0 bottom-0 overflow-y-auto overflow-x-hidden [overflow-anchor:none] [scrollbar-gutter:stable]', headerInset ? 'top-[60px]' : 'top-0')}
         onScroll={handleScroll}
       >
         <div ref={contentRef}>

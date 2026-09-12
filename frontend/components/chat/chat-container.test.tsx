@@ -85,6 +85,7 @@ describe('ChatContainer', () => {
     const messages = [textMessage('u1', 'user', 'hello')]
     const html = renderContainer(<ChatContainer messages={messages} />)
     expect(html).toContain('absolute inset-x-0 bottom-0 overflow-y-auto')
+    expect(html).toContain('top-0')
     expect(html).not.toContain('top-[60px]')
   })
 
