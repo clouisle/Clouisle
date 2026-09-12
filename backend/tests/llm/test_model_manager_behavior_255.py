@@ -466,9 +466,7 @@ async def test_model_factories_and_get_embedding_return_selected_configuration(
 
     assert await manager.get_chat_model("chat") is chat_model
     assert await manager.get_embedding_model("embedding") is embedding_model
-    assert await manager.get_embedding(
-        "text", user_id=uuid4(), model_id="embedding"
-    ) == {
+    assert await manager.get_embedding("text", user_id=None, model_id="embedding") == {
         "embedding": [0.2],
         "model_id": "embedding-model",
     }
@@ -654,3 +652,242 @@ async def test_video_status_tries_enabled_models_and_handles_boundaries(
     monkeypatch.setattr(manager_module.Model, "filter", Mock(return_value=empty_query))
     with pytest.raises(ModelNotFoundError):
         await ModelManager().get_video_status("task")
+
+
+@pytest.mark.anyio
+async def test_team_embed_prioritizes_upstream_usage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = SimpleNamespace(
+        id=uuid4(), provider="openai", model_id="text-embedding-3-small"
+    )
+    team_model = SimpleNamespace(is_enabled=True)
+    manager = ModelManager()
+    monkeypatch.setattr(
+        manager, "_get_team_model", AsyncMock(return_value=(model, team_model))
+    )
+    quota = AsyncMock()
+    monkeypatch.setattr(manager_module.usage_tracker, "check_quota_with_model", quota)
+    record = AsyncMock()
+    monkeypatch.setattr(manager, "_check_and_record_usage", record)
+
+    fake_response = SimpleNamespace(
+        embeddings=[[0.1, 0.2]],
+        usage=SimpleNamespace(total_tokens=42),
+    )
+    fake_adapter = SimpleNamespace(embed=AsyncMock(return_value=fake_response))
+    monkeypatch.setattr(
+        manager_module, "create_embedding_adapter", lambda _cfg: fake_adapter
+    )
+
+    result = await manager.team_embed("team-1", ["hello world"])
+    assert result == [[0.1, 0.2]]
+    record.assert_awaited_once_with(
+        team_id="team-1",
+        model_id=str(model.id),
+        tokens_used=42,
+    )
+
+
+@pytest.mark.anyio
+async def test_team_embed_falls_back_to_tiktoken_when_usage_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = SimpleNamespace(
+        id=uuid4(), provider="openai", model_id="text-embedding-3-small"
+    )
+    team_model = SimpleNamespace(is_enabled=True)
+    manager = ModelManager()
+    monkeypatch.setattr(
+        manager, "_get_team_model", AsyncMock(return_value=(model, team_model))
+    )
+    monkeypatch.setattr(
+        manager_module.usage_tracker, "check_quota_with_model", AsyncMock()
+    )
+    record = AsyncMock()
+    monkeypatch.setattr(manager, "_check_and_record_usage", record)
+
+    fake_response = SimpleNamespace(
+        embeddings=[[0.3, 0.4]],
+        usage=None,
+    )
+    fake_adapter = SimpleNamespace(embed=AsyncMock(return_value=fake_response))
+    monkeypatch.setattr(
+        manager_module, "create_embedding_adapter", lambda _cfg: fake_adapter
+    )
+    monkeypatch.setattr("app.llm.token_counter.count_tokens", Mock(return_value=15))
+
+    result = await manager.team_embed("team-1", ["fallback text"])
+    assert result == [[0.3, 0.4]]
+    record.assert_awaited_once_with(
+        team_id="team-1",
+        model_id=str(model.id),
+        tokens_used=15,
+    )
+
+
+@pytest.mark.anyio
+async def test_get_embedding_propagates_team_quota_exceeded_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id = uuid4()
+    team_id = uuid4()
+    membership = SimpleNamespace(team_id=team_id)
+    manager = ModelManager()
+
+    monkeypatch.setattr(
+        "app.models.user.TeamMember.filter",
+        lambda user_id: SimpleNamespace(first=AsyncMock(return_value=membership)),
+    )
+    monkeypatch.setattr(
+        manager,
+        "team_embed",
+        AsyncMock(
+            side_effect=LLMQuotaExceededError(
+                message="quota exceeded", quota_type="daily_token", team_id=str(team_id)
+            )
+        ),
+    )
+
+    with pytest.raises(LLMQuotaExceededError) as exc_info:
+        await manager.get_embedding("test text", user_id=user_id)
+    assert exc_info.value.team_id == str(team_id)
+
+
+@pytest.mark.anyio
+async def test_get_embedding_propagates_model_not_found_and_disabled_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.llm.errors import ModelDisabledError, ModelNotFoundError
+
+    user_id = uuid4()
+    team_id = uuid4()
+    membership = SimpleNamespace(team_id=team_id)
+    manager = ModelManager()
+
+    monkeypatch.setattr(
+        "app.models.user.TeamMember.filter",
+        lambda user_id: SimpleNamespace(first=AsyncMock(return_value=membership)),
+    )
+    monkeypatch.setattr(
+        manager,
+        "team_embed",
+        AsyncMock(side_effect=ModelNotFoundError("Team model not found")),
+    )
+
+    with pytest.raises(ModelNotFoundError):
+        await manager.get_embedding("test text", user_id=user_id, model_id=str(uuid4()))
+
+    monkeypatch.setattr(
+        manager,
+        "team_embed",
+        AsyncMock(side_effect=ModelDisabledError("Team model disabled")),
+    )
+
+    with pytest.raises(ModelDisabledError):
+        await manager.get_embedding("test text", user_id=user_id, model_id=str(uuid4()))
+
+
+@pytest.mark.anyio
+async def test_get_embedding_with_user_id_but_no_team_falls_back_to_global_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id = uuid4()
+    manager = ModelManager()
+
+    monkeypatch.setattr(
+        "app.models.user.TeamMember.filter",
+        lambda user_id: SimpleNamespace(first=AsyncMock(return_value=None)),
+    )
+    monkeypatch.setattr(
+        manager,
+        "get_embedding_model",
+        AsyncMock(
+            return_value=SimpleNamespace(aembed_query=AsyncMock(return_value=[0.5]))
+        ),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_get_model_config",
+        AsyncMock(return_value=SimpleNamespace(model_id="global-default-embed")),
+    )
+
+    result = await manager.get_embedding("text without team", user_id=user_id)
+    assert result == {
+        "embedding": [0.5],
+        "model_id": "global-default-embed",
+    }
+
+
+@pytest.mark.anyio
+async def test_get_embedding_with_team_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id = uuid4()
+    team_id = uuid4()
+    membership = SimpleNamespace(team_id=team_id)
+    manager = ModelManager()
+
+    monkeypatch.setattr(
+        "app.models.user.TeamMember.filter",
+        lambda user_id: SimpleNamespace(first=AsyncMock(return_value=membership)),
+    )
+    monkeypatch.setattr(
+        manager,
+        "team_embed",
+        AsyncMock(return_value=[[0.7]]),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_get_team_model",
+        AsyncMock(
+            return_value=(
+                SimpleNamespace(model_id="team-embed-model"),
+                SimpleNamespace(),
+            )
+        ),
+    )
+
+    result = await manager.get_embedding("text with team", user_id=user_id)
+    assert result == {
+        "embedding": [0.7],
+        "model_id": "team-embed-model",
+    }
+
+
+@pytest.mark.anyio
+async def test_get_embedding_falls_back_when_team_embed_fails_unexpectedly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id = uuid4()
+    team_id = uuid4()
+    membership = SimpleNamespace(team_id=team_id)
+    manager = ModelManager()
+
+    monkeypatch.setattr(
+        "app.models.user.TeamMember.filter",
+        lambda user_id: SimpleNamespace(first=AsyncMock(return_value=membership)),
+    )
+    monkeypatch.setattr(
+        manager,
+        "team_embed",
+        AsyncMock(side_effect=RuntimeError("transient team embed failure")),
+    )
+    monkeypatch.setattr(
+        manager,
+        "get_embedding_model",
+        AsyncMock(
+            return_value=SimpleNamespace(aembed_query=AsyncMock(return_value=[0.88]))
+        ),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_get_model_config",
+        AsyncMock(return_value=SimpleNamespace(model_id="fallback-model")),
+    )
+
+    result = await manager.get_embedding("text", user_id=user_id)
+    assert result == {
+        "embedding": [0.88],
+        "model_id": "fallback-model",
+    }

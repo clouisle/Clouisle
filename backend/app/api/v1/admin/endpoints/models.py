@@ -73,6 +73,51 @@ async def _ensure_model_endpoint_allowed(
     return effective_base_url
 
 
+# Provider compatibility mappings for model types
+EMBEDDING_SUPPORTED_PROVIDERS: set[ModelProvider] = {
+    ModelProvider.OPENAI,
+    ModelProvider.AZURE_OPENAI,
+    ModelProvider.GOOGLE,
+    ModelProvider.OPENAI_RESPONSES,
+    ModelProvider.DEEPSEEK,
+    ModelProvider.MOONSHOT,
+    ModelProvider.ZHIPU,
+    ModelProvider.QWEN,
+    ModelProvider.BAICHUAN,
+    ModelProvider.MINIMAX,
+    ModelProvider.VOLCENGINE,
+    ModelProvider.SILICONFLOW,
+    ModelProvider.XAI,
+    ModelProvider.OLLAMA,
+    ModelProvider.CUSTOM,
+}
+
+
+def _validate_provider_model_type(
+    provider: ModelProvider | str, model_type: ModelType | str
+) -> None:
+    try:
+        provider_enum = (
+            ModelProvider(provider) if isinstance(provider, str) else provider
+        )
+    except ValueError:
+        provider_enum = None
+
+    try:
+        model_type_enum = (
+            ModelType(model_type) if isinstance(model_type, str) else model_type
+        )
+    except ValueError:
+        model_type_enum = None
+
+    if model_type_enum == ModelType.EMBEDDING:
+        if provider_enum not in EMBEDDING_SUPPORTED_PROVIDERS:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="model_type_not_supported",
+            )
+
+
 @router.get("", response_model=Response[PageData[ModelResponse]])
 async def list_models(
     page: int = Query(1, ge=1),
@@ -116,6 +161,7 @@ async def create_model(
     model_in: ModelCreate,
     current_user: User = Depends(deps.PermissionChecker("admin:model:create")),
 ) -> Any:
+    _validate_provider_model_type(model_in.provider, model_in.model_type)
     await _ensure_model_endpoint_allowed(
         model_in.provider, model_in.base_url, model_in.model_type
     )
@@ -124,7 +170,6 @@ async def create_model(
         await Model.filter(
             model_type=model_in.model_type.value, is_default=True
         ).update(is_default=False)
-
     model_data = model_in.model_dump()
     model_data["provider"] = model_in.provider.value
     model_data["model_type"] = model_in.model_type.value

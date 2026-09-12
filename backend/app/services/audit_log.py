@@ -161,7 +161,13 @@ class AuditLogService:
             "require_approval",
             "default_role_id",
         ),
-        "memory_entity": ("name", "entity_type", "description", "properties"),
+        "memory_entity": (
+            "name",
+            "entity_type",
+            "description",
+            "properties",
+            "embedding_dimension",
+        ),
         "memory_relation": ("relation_type", "description", "properties"),
         "tool": (
             "name",

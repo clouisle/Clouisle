@@ -355,7 +355,9 @@ class MemoryService:
         # Delete embedding from Qdrant
         if entity.embedding_id:
             await MemoryService._delete_entity_embedding(
-                entity.embedding_id, entity.embedding_model_id
+                entity.embedding_id,
+                getattr(entity, "embedding_model_id", None),
+                getattr(entity, "embedding_dimension", None),
             )
 
         # Delete entity (relations will be cascade deleted)
@@ -833,8 +835,11 @@ class MemoryService:
         # Update entity with embedding info
         entity.embedding_id = point_id
         entity.embedding_model_id = model_id
+        entity.embedding_dimension = dimension
         await entity.save()
-        logger.info(f"Updated entity {entity.id} with embedding_id={point_id}")
+        logger.info(
+            f"Updated entity {entity.id} with embedding_id={point_id}, dimension={dimension}"
+        )
 
     @staticmethod
     async def _update_entity_embedding(entity: MemoryEntity) -> None:
@@ -842,36 +847,45 @@ class MemoryService:
         if entity.embedding_id:
             # Delete old embedding
             await MemoryService._delete_entity_embedding(
-                entity.embedding_id, entity.embedding_model_id
+                entity.embedding_id,
+                getattr(entity, "embedding_model_id", None),
+                getattr(entity, "embedding_dimension", None),
             )
-
         # Add new embedding
         await MemoryService._add_entity_embedding(entity)
 
     @staticmethod
-    async def _delete_entity_embedding(embedding_id: str, model_id: str | None) -> None:
+    async def _delete_entity_embedding(
+        embedding_id: str,
+        model_id: str | None = None,
+        dimension: int | None = None,
+    ) -> None:
         """Delete entity embedding from Qdrant."""
-        if not model_id:
+        if not embedding_id:
             return
 
+        # Resolve dimension: prefer stored dimension, fall back to default 1536
+        target_dimension = dimension or 1536
+        collection = _memory_collection_name(target_dimension)
         try:
-            # Get model dimension
-            from app.llm import model_manager
-            from app.models.model import ModelType
-
-            model_config = await model_manager._get_model_config(
-                model_id, ModelType.EMBEDDING
-            )
-            dimension = getattr(model_config, "dimensions", None) or 1536
-            collection = _memory_collection_name(dimension)
-
+            if qmodels is None:
+                return
             client = await _get_qdrant_client()
             await client.delete(
                 collection_name=collection,
                 points_selector=qmodels.PointIdsList(points=[embedding_id]),
             )
+            logger.info(f"Deleted embedding {embedding_id} from {collection}")
         except Exception as e:
-            logger.warning(f"Failed to delete embedding {embedding_id}: {e}")
+            err_str = str(e)
+            if "doesn't exist" in err_str or "404" in err_str or "Not found" in err_str:
+                logger.debug(
+                    f"Collection {collection} does not exist, skipping point deletion: {e}"
+                )
+            else:
+                logger.warning(
+                    f"Failed to delete embedding {embedding_id} from {collection}: {e}"
+                )
 
     @staticmethod
     async def handle_create_entity(
@@ -1162,6 +1176,7 @@ class MemoryService:
             # Store old values for audit
             old_description = entity.description
             old_properties = entity.properties
+            old_dimension = getattr(entity, "embedding_dimension", None)
 
             entity = await MemoryService.update_entity(
                 user_id=user_id,
@@ -1182,7 +1197,11 @@ class MemoryService:
                     "before": str(old_properties),
                     "after": str(properties),
                 }
-
+            if getattr(entity, "embedding_dimension", None) != old_dimension:
+                changes["embedding_dimension"] = {
+                    "before": old_dimension,
+                    "after": getattr(entity, "embedding_dimension", None),
+                }
             await AuditLogService.log(
                 user=user,
                 action="agent_update_memory_entity",
@@ -1197,7 +1216,6 @@ class MemoryService:
                     "source": "agent_tool",
                 },
             )
-
             return {
                 "success": True,
                 "entity_id": str(entity.id),

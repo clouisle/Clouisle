@@ -98,9 +98,10 @@ async def lifespan(app: FastAPI):
         init_agent_hide_tool_calls_field,
         init_agent_hide_message_actions_reasoning_fields,
         init_agent_memory_fields,
+        init_memory_tables,
         init_agent_media_generation_fields,
-        init_permission_is_system_field,
         init_password_expiration,
+        init_permission_is_system_field,
         init_user_approval_status_field,
         init_totp_fields,
         init_agent_kb_search_mode,
@@ -226,10 +227,14 @@ async def lifespan(app: FastAPI):
         )
 
     try:
+        await init_memory_tables()
+    except Exception as e:
+        logger.warning(f"Memory tables migration failed: {e}")
+
+    try:
         await init_agent_memory_fields()
     except Exception as e:
         logger.warning(f"Agent memory fields migration failed: {e}")
-
     try:
         await init_agent_media_generation_fields()
     except Exception as e:

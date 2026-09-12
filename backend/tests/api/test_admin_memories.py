@@ -390,18 +390,23 @@ async def test_update_entity_persistence_failure_skips_audit():
 async def test_delete_entity_deletes_then_audits_owner_context():
     entity = _entity()
     audit = AsyncMock()
+    delete_service = AsyncMock()
 
     with (
         patch.object(
             memories.MemoryEntity, "filter", return_value=_Query(first=entity)
         ),
+        patch.object(memories.MemoryService, "delete_entity", delete_service),
         patch.object(memories.AuditLogService, "log", audit),
     ):
         await memories.delete_entity(
             entity.id, SimpleNamespace(), current_user=SimpleNamespace(id=uuid4())
         )
 
-    entity.delete.assert_awaited_once()
+    delete_service.assert_awaited_once_with(
+        user_id=entity.user_id,
+        entity_id=entity.id,
+    )
     assert audit.await_args.kwargs["resource_name"] == "Project Atlas"
     assert audit.await_args.kwargs["metadata"]["owner_user_id"] == str(entity.user_id)
 

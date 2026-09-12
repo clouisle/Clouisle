@@ -31,15 +31,16 @@ from app.core.model_endpoint_policy import (
 from app.services.usage_tracker import usage_tracker, QuotaExceededError
 
 from .adapters import (
+    create_audio_generation_adapter,
     create_chat_model,
     create_embedding_model,
     create_image_adapter,
     create_rerank_adapter,
-    create_tts_adapter,
-    create_audio_generation_adapter,
     create_stt_adapter,
+    create_tts_adapter,
     create_video_adapter,
 )
+from app.llm.adapters.embedding import create_embedding_adapter
 from .adapters.chat import (
     BaseChatAdapter,
     OpenAIAdapter,
@@ -512,28 +513,61 @@ class ModelManager:
         """
         Generate embedding vector for text.
 
+        If ``user_id`` is provided and the user belongs to a team, attempts
+        team-level embedding with quota checking and token usage tracking.
+        Falls back to global default embedding if no team is found or user_id is None.
+
         Args:
             text: Text to embed
-            user_id: User ID (for team model lookup)
+            user_id: User ID (for team model resolution and usage tracking)
             model_id: Optional model ID override
 
         Returns:
-            Dict with 'embedding' (list of floats) and 'model_id' (UUID)
+            Dict with 'embedding' (list of floats) and 'model_id' (str identifier)
         """
-        # Get embedding model
+        if user_id:
+            try:
+                from app.models.user import TeamMember
+
+                membership = await TeamMember.filter(user_id=user_id).first()
+                if membership:
+                    team_id = str(membership.team_id)
+                    vectors = await self.team_embed(
+                        team_id=team_id,
+                        texts=[text],
+                        model_id=model_id,
+                    )
+                    model_config, _ = await self._get_team_model(
+                        team_id, model_id, ModelType.EMBEDDING
+                    )
+                    return {
+                        "embedding": vectors[0],
+                        "model_id": model_config.model_id
+                        if hasattr(model_config, "model_id")
+                        else str(model_config.id),
+                    }
+            except (
+                LLMQuotaExceededError,
+                ModelNotFoundError,
+                ModelDisabledError,
+            ):
+                raise
+            except Exception as exc:
+                logger.debug(
+                    "Team embedding resolution failed for user %s, falling back to default: %s",
+                    user_id,
+                    exc,
+                )
+        # Fallback to global model without team quota
         embedding_model = await self.get_embedding_model(model_id)
-
-        # Generate embedding
         embedding_vector = await embedding_model.aembed_query(text)
-
-        # Get model config to return model_id
         model_config = await self._get_model_config(model_id, ModelType.EMBEDDING)
 
         return {
             "embedding": embedding_vector,
             "model_id": model_config.model_id
             if hasattr(model_config, "model_id")
-            else None,
+            else str(model_config.id),
         }
 
     # ==================== Rerank 方法 ====================
@@ -1027,20 +1061,27 @@ class ModelManager:
                 team_id=team_id,
                 model=str(model_config.id),
             )
-
-        embedding_model = create_embedding_model(model_config)
+        adapter = create_embedding_adapter(model_config)
 
         try:
-            result = await embedding_model.aembed_documents(texts)
-
-            # 使用 tiktoken 进行准确的 token 计数
-            from app.llm.token_counter import count_tokens
-
-            total_tokens = sum(
-                count_tokens(t, model_config.model_id, model_config.provider)
-                for t in texts
+            response = await adapter.embed(texts)
+            reported_tokens = (
+                response.usage.total_tokens
+                if response.usage and response.usage.total_tokens
+                else None
             )
-            total_tokens = max(total_tokens, 1)
+
+            if reported_tokens:
+                total_tokens = reported_tokens
+            else:
+                # 使用 tiktoken 进行准确的 token 计数兜底
+                from app.llm.token_counter import count_tokens
+
+                total_tokens = sum(
+                    count_tokens(t, model_config.model_id, model_config.provider)
+                    for t in texts
+                )
+                total_tokens = max(total_tokens, 1)
 
             # 记录用量
             await self._check_and_record_usage(
@@ -1049,7 +1090,9 @@ class ModelManager:
                 tokens_used=total_tokens,
             )
 
-            return result
+            return response.embeddings
+        except LLMQuotaExceededError:
+            raise
         except Exception as e:
             logger.exception(f"Team embedding error: {e}")
             raise self._handle_error(e, model_config.provider, model_config.model_id)

@@ -2230,8 +2230,17 @@ async def init_memory_tables():
         except Exception as e:
             logger.error(f"Failed to migrate embedding_model_id: {e}")
 
-        return
+        # Add embedding_dimension if missing
+        try:
+            await conn.execute_query("""
+                ALTER TABLE memory_entities
+                ADD COLUMN IF NOT EXISTS embedding_dimension INT
+            """)
+            logger.info("Checked/added embedding_dimension to memory_entities")
+        except Exception as e:
+            logger.error(f"Failed to add embedding_dimension to memory_entities: {e}")
 
+        return
     logger.info("Creating memory tables...")
 
     # Create memory_entities table
@@ -2247,6 +2256,7 @@ async def init_memory_tables():
             source_message_id UUID,
             embedding_id VARCHAR(100),
             embedding_model_id VARCHAR(255),
+            embedding_dimension INT,
             access_count INT NOT NULL DEFAULT 0,
             last_accessed_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
