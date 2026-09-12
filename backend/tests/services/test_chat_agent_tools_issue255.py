@@ -264,18 +264,31 @@ async def test_get_tool_display_names_skips_mcp_enumeration_when_disabled():
 
     ``McpClient.list_tools`` has no timeout, so a statistics request must not
     call it; the prefix lets the caller finish the label from the observed name.
+
+    The client METHOD is patched rather than the ``list_mcp_tools`` wrapper, so
+    this stays a real guarantee: a refactor that inlined
+    ``McpClient(config).list_tools()`` would still trip the tripwire.
     """
     agent = _agent([{"type": "mcp", "server_id": "server-id"}])
     mcp_tool = SimpleNamespace(
         name="github", display_name="GitHub", mcp_config={"url": "https://mcp.example"}
     )
-    list_mcp_tools = AsyncMock(side_effect=AssertionError("must not contact MCP"))
+    network = AsyncMock(
+        side_effect=AssertionError("must not contact MCP"),
+    )
 
     with (
         patch("app.models.tool.Tool.filter", return_value=_query_result(mcp_tool)),
-        patch("app.llm.tools.mcp_client.list_mcp_tools", new=list_mcp_tools),
+        patch(
+            "app.llm.tools.mcp_client.McpClient.list_tools",
+            new=network,
+        ),
+        patch(
+            "app.llm.tools.mcp_client.list_mcp_tools",
+            new=AsyncMock(side_effect=AssertionError("must not enumerate MCP")),
+        ),
     ):
         names = await get_tool_display_names(agent, "en", enumerate_mcp_tools=False)
 
     assert names == {"mcp_github_": "GitHub/"}
-    list_mcp_tools.assert_not_called()
+    network.assert_not_called()
