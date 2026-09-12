@@ -548,13 +548,37 @@
         "avgResponseTime": "Avg Response Time",
         "calls": "Calls"
       },
-      "recentConversations": "Recent Conversations",
-      "recentConversationsDesc": "Latest conversations with this Agent",
-      "untitledConversation": "Untitled Conversation",
-      "anonymous": "Anonymous",
-      "messagesCount": "messages",
-      "noConversations": "No conversations yet",
-      "noToolUsage": "No tool usage data"
+      "noToolUsage": "No tool usage data",
+      "health": {
+        "title": "Execution Health",
+        "description": "Outcome of this Agent's runs",
+        "completed": "Completed",
+        "failed": "Failed",
+        "stopped": "Stopped",
+        "successRate": "Success Rate",
+        "empty": "No runs yet",
+        "inFlight": "{count} in progress, excluded",
+        "rateHint": "Completed ÷ terminal runs"
+      },
+      "firstToken": {
+        "title": "First Token Latency",
+        "description": "Time to first token isolates model latency from tool time",
+        "p50": "Median (P50)",
+        "p95": "P95",
+        "average": "Average",
+        "empty": "No latency samples yet",
+        "sampleCount": "{count} samples"
+      },
+      "interventions": {
+        "title": "User Interventions",
+        "description": "How often users corrected this Agent mid-run",
+        "steer": "Steering",
+        "stop": "Stopped",
+        "followUp": "Follow-ups",
+        "empty": "No interventions recorded",
+        "rate": "Interventions per run",
+        "rateHint": "Across {runs} terminal runs"
+      }
     }
   }
 }

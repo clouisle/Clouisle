@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-11T17:53:25.751Z
+// GENERATED — 2026-09-12T10:00:34.357Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {
@@ -550,13 +550,37 @@ export type AgentsMessages = {
         avgResponseTime: string
         calls: string
       }
-      recentConversations: string
-      recentConversationsDesc: string
-      untitledConversation: string
-      anonymous: string
-      messagesCount: string
-      noConversations: string
       noToolUsage: string
+      health: {
+        title: string
+        description: string
+        completed: string
+        failed: string
+        stopped: string
+        successRate: string
+        empty: string
+        inFlight: string
+        rateHint: string
+      }
+      firstToken: {
+        title: string
+        description: string
+        p50: string
+        p95: string
+        average: string
+        empty: string
+        sampleCount: string
+      }
+      interventions: {
+        title: string
+        description: string
+        steer: string
+        stop: string
+        followUp: string
+        empty: string
+        rate: string
+        rateHint: string
+      }
     }
   }
 }

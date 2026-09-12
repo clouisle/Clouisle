@@ -548,13 +548,37 @@
         "avgResponseTime": "平均响应时间",
         "calls": "调用次数"
       },
-      "recentConversations": "最近对话",
-      "recentConversationsDesc": "与此 Agent 的最新对话",
-      "untitledConversation": "未命名对话",
-      "anonymous": "匿名用户",
-      "messagesCount": "条消息",
-      "noConversations": "暂无对话",
-      "noToolUsage": "暂无工具使用数据"
+      "noToolUsage": "暂无工具使用数据",
+      "health": {
+        "title": "执行健康度",
+        "description": "该 Agent 的运行结果分布",
+        "completed": "成功",
+        "failed": "失败",
+        "stopped": "停止",
+        "successRate": "成功率",
+        "empty": "暂无运行记录",
+        "inFlight": "另有 {count} 个进行中，未计入",
+        "rateHint": "成功 ÷ 已结束运行"
+      },
+      "firstToken": {
+        "title": "首 Token 延迟",
+        "description": "首 Token 耗时用于分离模型延迟与工具耗时",
+        "p50": "中位数（P50）",
+        "p95": "P95",
+        "average": "平均",
+        "empty": "暂无延迟样本",
+        "sampleCount": "{count} 个样本"
+      },
+      "interventions": {
+        "title": "用户干预",
+        "description": "用户在运行中纠正该 Agent 的频率",
+        "steer": "中途引导",
+        "stop": "主动停止",
+        "followUp": "追问",
+        "empty": "暂无干预记录",
+        "rate": "每次运行干预次数",
+        "rateHint": "基于 {runs} 次已结束运行"
+      }
     }
   }
 }
