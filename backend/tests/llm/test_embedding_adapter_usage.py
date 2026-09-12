@@ -10,6 +10,7 @@ import pytest
 from app.llm.adapters.embedding import (
     OpenAICompatibleEmbeddingAdapter,
     create_embedding_adapter,
+    create_embedding_model,
 )
 from app.llm.types import EmbeddingResponse
 from app.models.model import ModelProvider
@@ -115,3 +116,91 @@ async def test_fallback_embedding_adapter_for_other_providers(monkeypatch):
 
     assert result.embeddings == [[0.7, 0.8]]
     assert result.usage.total_tokens == 0
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_embedding_adapter_empty_input():
+    config = SimpleNamespace(
+        provider=ModelProvider.OPENAI,
+        model_id="text-embedding-3-small",
+        api_key="sk-test",
+        base_url=None,
+        config={},
+    )
+    adapter = create_embedding_adapter(config)
+    result = await adapter.embed([])
+    assert result.embeddings == []
+    assert result.usage.total_tokens == 0
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_embedding_adapter_provider_default_base_url():
+    config = SimpleNamespace(
+        provider=ModelProvider.DEEPSEEK,
+        model_id="deepseek-embed",
+        api_key="sk-ds",
+        base_url="",
+        config={},
+    )
+    adapter = OpenAICompatibleEmbeddingAdapter(config)
+    assert adapter._get_base_url() == "https://api.deepseek.com/v1"
+
+    config_invalid = SimpleNamespace(
+        provider="invalid_provider_name",
+        model_id="custom-embed",
+        api_key=None,
+        base_url=None,
+        config={},
+    )
+    adapter_invalid = OpenAICompatibleEmbeddingAdapter(config_invalid)
+    assert adapter_invalid._get_base_url() == "https://api.openai.com/v1"
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_embedding_adapter_handles_non_200_response():
+    config = SimpleNamespace(
+        provider=ModelProvider.OPENAI,
+        model_id="text-embedding-3-small",
+        api_key="sk-test",
+        base_url="https://api.openai.com/v1",
+        config={},
+    )
+    adapter = create_embedding_adapter(config)
+
+    client_instance = AsyncMock()
+    client_instance.post = AsyncMock(
+        return_value=SimpleNamespace(status_code=500, json=lambda: {})
+    )
+    client_instance.__aenter__.return_value = client_instance
+    client_instance.__aexit__.return_value = None
+
+    fake_lc_model = SimpleNamespace(
+        aembed_documents=AsyncMock(return_value=[[0.9, 0.9]])
+    )
+
+    with (
+        patch(
+            "app.llm.adapters.embedding.adapter.httpx.AsyncClient",
+            return_value=client_instance,
+        ),
+        patch(
+            "app.llm.adapters.embedding.adapter.create_embedding_model",
+            return_value=fake_lc_model,
+        ),
+    ):
+        result = await adapter.embed(["test non 200"])
+
+    assert result.embeddings == [[0.9, 0.9]]
+    assert result.usage.total_tokens == 0
+
+
+def test_create_embedding_model_with_string_provider():
+    config = SimpleNamespace(
+        provider="google",
+        model_id="text-embedding-004",
+        api_key=None,
+        base_url=None,
+        config={},
+    )
+    with pytest.raises(ValueError, match="Google requires api_key"):
+        create_embedding_model(config)
