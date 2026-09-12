@@ -159,6 +159,34 @@ Before saving or testing a model with a new API endpoint:
 
 Matching is exact. URL paths are ignored, but the scheme, hostname, and port must all match. Removing an Origin blocks subsequent model discovery, connection tests, and runtime requests without restarting the service.
 
+### Outbound Network Allowlist (SSRF Exemption)
+
+Clouisle protects against Server-Side Request Forgery (SSRF) across custom HTTP tools, workflow HTTP request nodes, knowledge base URL imports, and database tool connection tests. By default, requests to loopback addresses (`127.0.0.1`, `localhost`), link-local/cloud metadata services (`169.254.169.254`), and private networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) are blocked.
+
+If your deployment requires calling internal APIs, microservices, or intranet databases:
+
+1. Navigate to **Settings** → **Security**.
+2. Locate the **Outbound Network Allowlist (SSRF Exemption)** card.
+3. Add approved internal targets, one per line:
+   - **Single IP**: `192.168.1.50`, `10.20.1.10`
+   - **CIDR subnet**: `10.10.0.0/16`, `172.20.0.0/24`, `192.168.0.0/16`
+   - **Exact domain**: `oa.company.local`, `api.internal.service`
+   - **Wildcard domain**: `*.corp.internal`, `*.internal.net`
+4. Click **Save Changes**.
+
+#### Hard Invariants (Permanently Blocked Targets)
+
+For platform and cloud host integrity, the following targets **cannot be allowlisted** and will be rejected both during configuration save and at runtime:
+
+- **Cloud metadata services**: `169.254.169.254`, `169.254.0.0/16`, `fe80::/10`, `metadata.google.internal` (prevents exfiltration of host IAM/cloud instance credentials).
+- **Unspecified & multicast addresses**: `0.0.0.0`, `::`, `224.0.0.0/4` (prevents bypassing loopback checks).
+- **Universal wildcards**: `*`, `0.0.0.0/0`, `::/0` (prevents globally disabling security boundaries).
+- **Loopback address**: `127.0.0.1` / `localhost` is rejected from the allowlist to prevent local privilege escalation. When connecting to services on the same host (e.g. in containerized setups), use the host LAN IP or `host.docker.internal` instead.
+
+#### Transparent Proxy / TUN Mode Support
+
+Requests resolving to the transparent proxy benchmark pool `198.18.0.0/15` (commonly used by Clash/Surge/Mihomo Fake-IP TUN mode) are automatically permitted so developer tools and local development environments do not trigger false-positive SSRF blocks on public domains.
+
 ## Notification Settings
 
 ### SMTP (Email)

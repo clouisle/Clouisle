@@ -147,6 +147,11 @@ export const siteSettingsApi = {
     ) {
       throw new Error('Invalid model endpoint allowlist response')
     }
+    const ssrfAllowedTargets = settings.ssrf_allowed_targets
+    const safeSsrfAllowedTargets = Array.isArray(ssrfAllowedTargets)
+      && ssrfAllowedTargets.every((entry) => typeof entry === 'string')
+      ? ssrfAllowedTargets
+      : []
     return {
       allow_registration: (settings.allow_registration as boolean) ?? true,
       require_approval: (settings.require_approval as boolean) ?? false,
@@ -179,6 +184,7 @@ export const siteSettingsApi = {
       // TOTP
       require_totp: (settings.require_totp as boolean) ?? false,
       model_endpoint_allowlist: modelEndpointAllowlist,
+      ssrf_allowed_targets: safeSsrfAllowedTargets,
     }
   },
 

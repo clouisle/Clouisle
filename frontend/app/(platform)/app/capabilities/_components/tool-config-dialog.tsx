@@ -115,7 +115,7 @@ export function ToolConfigDialog({
     setIsLoading(true)
     try {
       await onSave(activeValues)
-    } catch (error) {
+    } catch (error: unknown) {
       const errors = normalizeValidationErrors(error)
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)

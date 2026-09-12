@@ -36,6 +36,11 @@ class Query:
             ["https://API.example.com/v1"],
             ["ftp://api.example.com"],
         ),
+        (
+            "ssrf_allowed_targets",
+            ["10.0.0.0/16", "*.corp.internal"],
+            ["not_a_valid_entry"],
+        ),
     ],
 )
 async def test_validate_setting_value_residual_admin_branches(
@@ -51,11 +56,12 @@ async def test_validate_setting_value_residual_admin_branches(
     with pytest.raises(BusinessError) as exc_info:
         await site_settings._validate_setting_value(key, invalid_value)
     assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
-    expected_msg_key = (
-        "model_endpoint_allowlist_invalid"
-        if key == "model_endpoint_allowlist"
-        else "validation_error"
-    )
+    if key == "model_endpoint_allowlist":
+        expected_msg_key = "model_endpoint_allowlist_invalid"
+    elif key == "ssrf_allowed_targets":
+        expected_msg_key = "ssrf_allowlist_entry_invalid"
+    else:
+        expected_msg_key = "validation_error"
     assert exc_info.value.msg_key == expected_msg_key
 
 

@@ -1099,10 +1099,14 @@ async def add_url_document(
 
     # Validate destination URL against SSRF (private IPs, loopback, metadata services)
     import asyncio
-    from app.core.network_security import validate_external_http_url
+    from app.core.network_security import (
+        get_ssrf_allowed_targets,
+        validate_external_http_url,
+    )
 
+    allowlist = await get_ssrf_allowed_targets()
     validated_url = await asyncio.to_thread(
-        validate_external_http_url, doc_in.source_url
+        validate_external_http_url, doc_in.source_url, allowlist=allowlist
     )
     # Create document record
     doc = await Document.create(

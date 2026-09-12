@@ -1374,6 +1374,18 @@ msgstr "允许使用的模型端点 Origin"
 msgid "model_endpoint_allowlist_invalid"
 msgstr "请输入有效的 HTTP 或 HTTPS 模型端点 Origin 列表"
 
+msgid "ssrf_allowed_targets_description"
+msgstr "出站网络访问白名单（SSRF 豁免目标）"
+
+msgid "ssrf_allowlist_invalid"
+msgstr "请输入有效的出站网络白名单列表（支持 IP、CIDR 网段或域名）"
+
+msgid "ssrf_allowlist_entry_invalid"
+msgstr "白名单条目格式无效，必须为有效 IP、CIDR 网段或合法域名（支持 *.domain 前缀通配）"
+
+msgid "ssrf_allowlist_entry_forbidden"
+msgstr "禁止将云元数据服务、多播/未指定地址或全量通配符加入白名单"
+
 msgid "model_endpoint_base_url_invalid"
 msgstr "请输入有效的 HTTP 或 HTTPS 模型 Base URL"
 
@@ -2653,10 +2665,8 @@ msgstr "HTTP 请求失败，状态码：{status_code}"
 
 msgid "http_tool_url_invalid"
 msgstr "HTTP URL 无效"
-
 msgid "http_tool_url_host_not_allowed"
 msgstr "不允许访问该 HTTP URL 主机"
-
 msgid "http_tool_url_host_cannot_be_resolved"
 msgstr "无法解析 HTTP URL 主机"
 

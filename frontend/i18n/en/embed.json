@@ -41,6 +41,7 @@
       "copy": "Copy Code",
       "preview": "Preview",
       "save": "Save",
+      "saveFailed": "Failed to save settings",
       "embedButton": "Embed",
       "requiresPublish": "Agent must be published before embedding"
     },

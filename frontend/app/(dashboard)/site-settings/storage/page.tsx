@@ -165,7 +165,7 @@ export default function SiteSettingsStoragePage() {
         object_storage_secure: settings.object_storage_secure,
       })
       toast.success(t('saveSuccess'))
-    } catch (error) {
+    } catch (error: unknown) {
       const errors = mapValidationErrors(normalizeValidationErrors(error), {
         audit_log_retention_days: 'audit_log_retention_days',
         audit_log_archive_path: 'audit_log_archive_path',
@@ -231,10 +231,11 @@ export default function SiteSettingsStoragePage() {
           toast.error(t('archiveTimeout'))
       }
       }, 300000)
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to start archive:', error)
       setArchiving(false)
       setArchiveProgress('')
+      toast.error(error instanceof Error ? error.message : t('archiveFailed'))
     }
   }
 

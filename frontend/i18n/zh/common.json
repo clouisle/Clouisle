@@ -54,7 +54,11 @@
     "showDetails": "显示详情",
     "hideDetails": "隐藏详情",
     "progress": "进度",
-    "invalidJSON": "无效的 JSON 格式",
-    "done": "完成"
+    "invalidJSON": "无效的 JSON格式",
+    "done": "完成",
+    "success": "成功",
+    "error": "操作失败",
+    "operationFailed": "操作失败",
+    "saveFailed": "保存失败"
   }
 }

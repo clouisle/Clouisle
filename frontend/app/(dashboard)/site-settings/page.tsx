@@ -479,7 +479,7 @@ export default function SiteSettingsGeneralPage() {
       await siteSettingsApi.updateGeneral(settings)
       await refreshSiteSettings()
       toast.success(t('saveSuccess'))
-    } catch (error) {
+    } catch (error: unknown) {
       const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)

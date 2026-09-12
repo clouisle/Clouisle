@@ -56,7 +56,8 @@
       "maxMemoriesPerRetrieval": "Max Memories Per Retrieval",
       "maxMemoriesPerRetrievalDesc": "Maximum number of memories to retrieve and inject into each conversation (1-50)",
       "autoExtract": "Auto Extract Memories",
-      "autoExtractDesc": "Automatically extract and save important information from conversations"
+      "autoExtractDesc": "Automatically extract and save important information from conversations",
+      "saveFailed": "Failed to save settings"
     },
     "agentCreated": "Agent created successfully",
     "agentUpdated": "Agent updated successfully",
@@ -484,6 +485,7 @@
       },
       "runLifecycleTitle": "Run Lifecycle Events",
       "runLifecycleDescription": "Agent chat runs are durable. These run-scoped events carry an envelope with run_id, sequence, timestamp, round_id, message_id and type so reconnects resume via after_sequence without duplicates:",
+      "answerTitle": "Submit Answers",
       "answerDescription": "When a run is waiting for user answers, submit structured answers to resume it:",
       "answerEndpoint": "POST /api/v1/agents/{agent_id}/chat/runs/{run_id}/answers",
       "answerBody": "Request body:",

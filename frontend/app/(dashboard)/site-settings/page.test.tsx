@@ -58,11 +58,12 @@ const getGeneral = mock(() => Promise.resolve(settings))
 const updateGeneral = mock(() => Promise.resolve())
 const refresh = mock(() => Promise.resolve())
 const toastSuccess = mock(() => {})
+const toastError = mock(() => {})
 let canUpdate = true
 
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
 mock.module('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'light' }) }))
-mock.module('sonner', () => ({ toast: { success: toastSuccess } }))
+mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
 mock.module('lucide-react', () => ({ Loader2: () => null }))
 mock.module('@/components/ui/card', () => ({
   Card: ({ children }: React.PropsWithChildren) => <section>{children}</section>,

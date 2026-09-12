@@ -1375,6 +1375,17 @@ msgstr "Allowed model endpoint Origins"
 msgid "model_endpoint_allowlist_invalid"
 msgstr "Enter a valid list of HTTP or HTTPS model endpoint Origins"
 
+msgid "ssrf_allowed_targets_description"
+msgstr "Outbound network allowlist (SSRF exemption targets)"
+
+msgid "ssrf_allowlist_invalid"
+msgstr "Enter a valid list of outbound network allowlist targets (IP, CIDR, or domain)"
+
+msgid "ssrf_allowlist_entry_invalid"
+msgstr "Invalid allowlist entry, must be a valid IP, CIDR network, or domain (prefix *.domain supported)"
+
+msgid "ssrf_allowlist_entry_forbidden"
+msgstr "Cloud metadata services, multicast/unspecified addresses, and universal wildcards cannot be allowlisted"
 msgid "model_endpoint_base_url_invalid"
 msgstr "Enter a valid HTTP or HTTPS model Base URL"
 
@@ -2654,10 +2665,8 @@ msgstr "HTTP request failed with status {status_code}"
 
 msgid "http_tool_url_invalid"
 msgstr "Invalid HTTP URL"
-
 msgid "http_tool_url_host_not_allowed"
 msgstr "HTTP URL host is not allowed"
-
 msgid "http_tool_url_host_cannot_be_resolved"
 msgstr "HTTP URL host cannot be resolved"
 

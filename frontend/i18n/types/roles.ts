@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-08T21:27:58.798Z
+// GENERATED — 2026-09-11T17:53:25.756Z
 // Source: i18n/en/roles.json
 export type RolesMessages = {
   roles: {

@@ -10,6 +10,8 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { FieldError } from '@/components/ui/field'
+import { normalizeValidationErrors, clearValidationError } from '@/lib/validation'
 import {
   Select,
   SelectContent,
@@ -47,8 +49,7 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
   const [importanceThreshold] = React.useState<'low' | 'medium' | 'high'>(
     agent.memory_config?.importance_threshold || 'medium'
   )
-
-  // Data loading
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [teamChatModels, setTeamChatModels] = React.useState<TeamModel[]>([])
   const [knowledgeBases, setKnowledgeBases] = React.useState<KnowledgeBase[]>([])
   const [isLoadingModels, setIsLoadingModels] = React.useState(false)
@@ -87,25 +88,33 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
   // Handle form submit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    await onSubmit({
-      name,
-      description: description || null,
-      icon: icon || null,
-      model_id: modelId,
-      system_prompt: systemPrompt || null,
-      opening_message: openingMessage || null,
-      suggested_questions: suggestedQuestions.filter(q => q.trim()),
-      visibility,
-      enable_memory: enableMemory,
-      memory_config: enableMemory ? {
-        max_memories_per_retrieval: maxMemoriesPerRetrieval,
-        auto_extract: autoExtract,
-        importance_threshold: importanceThreshold,
-      } : null,
-    })
+    setFieldErrors({})
+    try {
+      await onSubmit({
+        name,
+        description: description || null,
+        icon: icon || null,
+        model_id: modelId,
+        system_prompt: systemPrompt || null,
+        opening_message: openingMessage || null,
+        suggested_questions: suggestedQuestions.filter(q => q.trim()),
+        visibility,
+        enable_memory: enableMemory,
+        memory_config: enableMemory ? {
+          max_memories_per_retrieval: maxMemoriesPerRetrieval,
+          auto_extract: autoExtract,
+          importance_threshold: importanceThreshold,
+        } : null,
+      })
+    } catch (error: unknown) {
+      const errors = normalizeValidationErrors(error)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
+    } finally {
+      // done
+    }
   }
-  
   // Handle suggested questions
   const handleSuggestedQuestionsChange = (value: string) => {
     setSuggestedQuestions(value.split('\n').filter(q => q.trim()))
@@ -136,18 +145,28 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
                   <Input
                     id="name"
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) => {
+                      setName(e.target.value)
+                      setFieldErrors((prev) => clearValidationError(prev, 'name'))
+                    }}
                     placeholder={t('namePlaceholder')}
+                    aria-invalid={!!fieldErrors.name}
                   />
+                  <FieldError>{fieldErrors.name}</FieldError>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="icon">{t('settings.icon')}</Label>
                   <Input
                     id="icon"
                     value={icon}
-                    onChange={(e) => setIcon(e.target.value)}
+                    onChange={(e) => {
+                      setIcon(e.target.value)
+                      setFieldErrors((prev) => clearValidationError(prev, 'icon'))
+                    }}
                     placeholder={t('settings.iconPlaceholder')}
+                    aria-invalid={!!fieldErrors.icon}
                   />
+                  <FieldError>{fieldErrors.icon}</FieldError>
                 </div>
               </div>
               
@@ -156,10 +175,15 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
                 <Textarea
                   id="description"
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => {
+                    setDescription(e.target.value)
+                    setFieldErrors((prev) => clearValidationError(prev, 'description'))
+                  }}
                   placeholder={t('descriptionPlaceholder')}
                   rows={3}
+                  aria-invalid={!!fieldErrors.description}
                 />
+                <FieldError>{fieldErrors.description}</FieldError>
               </div>
               
               <div className="space-y-2">
@@ -180,12 +204,16 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
                 <Textarea
                   id="openingMessage"
                   value={openingMessage}
-                  onChange={(e) => setOpeningMessage(e.target.value)}
+                  onChange={(e) => {
+                    setOpeningMessage(e.target.value)
+                    setFieldErrors((prev) => clearValidationError(prev, 'opening_message'))
+                  }}
                   placeholder={t('openingMessagePlaceholder')}
                   rows={2}
+                  aria-invalid={!!fieldErrors.opening_message}
                 />
+                <FieldError>{fieldErrors.opening_message}</FieldError>
               </div>
-              
               <div className="space-y-2">
                 <Label htmlFor="suggestedQuestions">{t('suggestedQuestions')}</Label>
                 <Textarea

@@ -1,3 +1,4 @@
+import type { FieldValues, Path, UseFormSetError } from 'react-hook-form'
 import { ApiError } from '@/lib/api/client'
 
 export type FieldErrors = Record<string, string>
@@ -58,6 +59,25 @@ export function mapValidationErrors(errors: FieldErrors, pathMap?: ValidationPat
   )
 }
 
+export function applyServerErrors<T extends FieldValues>(
+  setError: UseFormSetError<T>,
+  error: unknown,
+  pathMap?: ValidationPathMap
+): boolean {
+  const rawErrors = normalizeValidationErrors(error)
+  const mapped = mapValidationErrors(rawErrors, pathMap)
+  const entries = Object.entries(mapped)
+  if (entries.length === 0) {
+    return false
+  }
+  for (const [field, message] of entries) {
+    setError(field as Path<T>, {
+      type: 'server',
+      message: String(message),
+    })
+  }
+  return true
+}
 export function getFieldErrorObjects(errors: FieldErrors, key: string): Array<{ message: string }> | undefined {
   const message = errors[key]
   if (!message) {

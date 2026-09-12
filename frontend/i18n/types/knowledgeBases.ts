@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-08T21:27:58.793Z
+// GENERATED — 2026-09-11T17:53:25.754Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -105,6 +105,10 @@ export type KnowledgeBasesMessages = {
     uploadFailed: string
     unsupportedFileType: string
     fileTooLarge: string
+    pendingBatchAlertTitle: string
+    pendingBatchAlertDescription: string
+    pendingBatchContinueAction: string
+    pendingBatchDismissAction: string
     filterDocuments: string
     type: string
     size: string
@@ -218,6 +222,8 @@ export type KnowledgeBasesMessages = {
     previewFailed: string
     error: string
     batchPreviewTitle: string
+    operationFailed: string
+    sessionStorageFailed: string
     documentsCount: string
     backToKnowledgeBase: string
     retryPreview: string

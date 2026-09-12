@@ -212,7 +212,7 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
       
       onSuccess?.(result)
       onOpenChange(false)
-    } catch (error) {
+    } catch (error: unknown) {
       const errors = normalizeValidationErrors(error)
       if (Object.keys(errors).length > 0) {
         const rawErrors = normalizeValidationErrorsRaw(error)

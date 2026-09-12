@@ -51,7 +51,9 @@ interface HttpToolDialogProps {
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
 
 const HTTP_TOOL_ERROR_PATH_MAP = {
+  name: 'name',
   display_name: 'displayName',
+  description: 'description',
   'http_config.url': 'url',
   'http_config.body_template': 'bodyTemplate',
   'http_config.headers': 'headers',
@@ -184,7 +186,7 @@ export function HttpToolDialog({
 
       await onSave(data)
       onOpenChange(false)
-    } catch (error) {
+    } catch (error: unknown) {
       const errors = mapValidationErrors(normalizeValidationErrors(error), HTTP_TOOL_ERROR_PATH_MAP)
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)
@@ -284,25 +286,29 @@ export function HttpToolDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-[auto_1fr_auto] gap-4">
+          <div className="flex items-start gap-4">
             <div className="space-y-2">
               <Label htmlFor="icon">{t('icon')}</Label>
               <Input
                 id="icon"
-                className="w-16 text-center text-xl"
                 value={icon}
                 onChange={(e) => setIcon(e.target.value)}
-                maxLength={2}
+                className="w-20"
               />
             </div>
-            <div className="space-y-2">
+            <div className="flex-1 space-y-2">
               <Label htmlFor="description">{t('descriptionLabel')}</Label>
               <Input
                 id="description"
                 placeholder={t('descriptionPlaceholder')}
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => {
+                  setDescription(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'description'))
+                }}
+                aria-invalid={!!fieldErrors.description}
               />
+              <FieldError>{fieldErrors.description}</FieldError>
             </div>
             <div className="space-y-2">
               <Label htmlFor="category">{t('category')}</Label>

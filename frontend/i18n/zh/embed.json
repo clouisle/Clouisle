@@ -41,6 +41,7 @@
       "copy": "复制代码",
       "preview": "预览",
       "save": "保存",
+      "saveFailed": "保存设置失败",
       "embedButton": "嵌入",
       "requiresPublish": "Agent 需要先发布才能嵌入"
     },

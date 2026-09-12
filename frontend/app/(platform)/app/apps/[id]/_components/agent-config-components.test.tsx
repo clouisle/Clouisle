@@ -18,8 +18,16 @@ mock.module('next/link', () => ({
 mock.module('sonner', () => ({ toast: { success: mock(), error: mock() } }))
 mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam }) }))
 mock.module('@/lib/utils', () => ({ cn: (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(' ') }))
-mock.module('@/lib/validation', () => ({ formatValidationSummaryMessage: (entries: unknown[]) => `summary:${entries.length}` }))
-
+mock.module('@/lib/validation', () => ({
+  formatValidationSummaryMessage: (entries: unknown[]) => `summary:${entries.length}`,
+  normalizeValidationErrors: () => ({}),
+  clearValidationError: (errors: Record<string, string>, key: string) => {
+    const next = { ...errors }
+    delete next[key]
+    return next
+  },
+  getValidationSummaryEntries: (errors: Record<string, string>) => Object.entries(errors),
+}))
 mock.module('@/lib/api', () => {
   class ApiError extends Error { code?: number; data?: unknown }
   return {

@@ -115,7 +115,7 @@ export function EntityDialog({ entity, open, onOpenChange, onSuccess }: EntityDi
 
       toast.success(t('editEntity'))
       onSuccess()
-    } catch (error) {
+    } catch (error: unknown) {
       const errors = normalizeValidationErrors(error)
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)

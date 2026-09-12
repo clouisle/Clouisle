@@ -56,7 +56,8 @@
       "maxMemoriesPerRetrieval": "每次检索的最大记忆数",
       "maxMemoriesPerRetrievalDesc": "每次对话中检索并注入的最大记忆数量（1-50）",
       "autoExtract": "自动提取记忆",
-      "autoExtractDesc": "自动从对话中提取并保存重要信息"
+      "autoExtractDesc": "自动从对话中提取并保存重要信息",
+      "saveFailed": "保存设置失败"
     },
     "agentCreated": "Agent 创建成功",
     "agentUpdated": "Agent 更新成功",

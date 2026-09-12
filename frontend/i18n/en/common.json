@@ -55,6 +55,10 @@
     "hideDetails": "Hide details",
     "progress": "Progress",
     "invalidJSON": "Invalid JSON format",
-    "done": "Done"
+    "done": "Done",
+    "success": "Success",
+    "error": "Operation failed",
+    "operationFailed": "Operation failed",
+    "saveFailed": "Failed to save"
   }
 }
