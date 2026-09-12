@@ -1,4 +1,4 @@
-from datetime import datetime, UTC
+from datetime import datetime, timedelta, UTC
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -6,42 +6,20 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import agent_stats
-from app.models.agent import MessageRole
-
-
-class StatsQuery:
-    def __init__(self, *, values=None):
-        self.values_result = values or {}
-        self.filters = []
-
-    def filter(self, **kwargs):
-        self.filters.append(kwargs)
-        return self
-
-    def annotate(self, **_kwargs):
-        return self
-
-    async def count(self):
-        role = next(
-            (item["role"] for item in reversed(self.filters) if "role" in item), None
-        )
-        return {
-            None: 2,
-            MessageRole.USER: 1,
-            MessageRole.ASSISTANT: 2,
-            MessageRole.TOOL: 1,
-        }[role]
-
-    async def values(self, *fields):
-        return self.values_result.get(fields, [])
-
-    async def values_list(self, *_fields, **_kwargs):
-        return [uuid4(), uuid4(), uuid4()]
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("period", ["24h", "7d", "30d", "all"])
-async def test_agent_stats_bounds_every_period_except_all(monkeypatch, period):
+@pytest.mark.parametrize(
+    ("period", "delta"),
+    [
+        ("24h", timedelta(hours=24)),
+        ("7d", timedelta(days=7)),
+        ("30d", timedelta(days=30)),
+        ("all", None),
+    ],
+)
+async def test_agent_stats_bounds_every_period_except_all(monkeypatch, period, delta):
+    fixed_now = datetime(2026, 7, 22, 12, tzinfo=UTC)
     conversations = AsyncMock(
         return_value={"total_conversations": 1, "active_users": 1}
     )
@@ -57,6 +35,7 @@ async def test_agent_stats_bounds_every_period_except_all(monkeypatch, period):
         }
     )
     monkeypatch.setattr(agent_stats, "check_agent_access", AsyncMock())
+    monkeypatch.setattr(agent_stats, "now", lambda: fixed_now)
     monkeypatch.setattr(
         agent_stats.stats_sql, "agent_conversation_overview", conversations
     )
@@ -90,12 +69,12 @@ async def test_agent_stats_bounds_every_period_except_all(monkeypatch, period):
 
     assert result["data"]["tokens"]["total_tokens"] == 5
     assert result["data"]["tools"]["tool_call_count"] == 3
-    # "all" must scan without a lower bound; every other period must pass one,
-    # and both aggregates must agree on the window or the numbers disagree.
-    expected_bound = None if period == "all" else "bounded"
+    # "all" must scan without a lower bound; every other period must pass the
+    # exact window it advertises, and both aggregates must agree on it or the
+    # numbers disagree.
+    expected = None if delta is None else fixed_now - delta
     for call in (conversations, messages):
-        start_time = call.await_args.args[1]
-        assert (None if start_time is None else "bounded") == expected_bound
+        assert call.await_args.args[1] == expected
     assert conversations.await_args.args[1] == messages.await_args.args[1]
 
 
@@ -123,7 +102,9 @@ async def test_agent_trends_day_ranges_fill_every_point(
 
 @pytest.mark.anyio
 async def test_tool_usage_bounds_seven_day_window(monkeypatch):
+    fixed_now = datetime(2026, 7, 22, 12, tzinfo=UTC)
     usage = AsyncMock(return_value=[{"name": "search", "count": 2}])
+    monkeypatch.setattr(agent_stats, "now", lambda: fixed_now)
     monkeypatch.setattr(
         agent_stats, "check_agent_access", AsyncMock(return_value=SimpleNamespace())
     )
@@ -141,4 +122,5 @@ async def test_tool_usage_bounds_seven_day_window(monkeypatch):
     assert result["data"]["tools"] == [
         {"name": "search", "display_name": "Search", "count": 2}
     ]
-    assert usage.await_args.args[1] is not None
+    # "7d" must mean exactly seven days, not merely "some bound".
+    assert usage.await_args.args[1] == fixed_now - timedelta(days=7)

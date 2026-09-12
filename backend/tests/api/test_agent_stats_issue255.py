@@ -3,50 +3,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import asyncio
 import pytest
 
 from app.api.v1.endpoints import agent_stats
 from app.schemas.response import BusinessError, ResponseCode
-
-
-class Query:
-    def __init__(self, result=None, *, counts=None, values=None, value_batches=None):
-        self.result = result
-        self.counts = iter(counts or [0])
-        self.value = values if values is not None else []
-        self.value_batches = iter(value_batches) if value_batches is not None else None
-
-    def filter(self, **kwargs):
-        return self
-
-    def order_by(self, *args):
-        return self
-
-    def limit(self, value):
-        return self
-
-    def prefetch_related(self, *args):
-        return self
-
-    def annotate(self, **kwargs):
-        return self
-
-    async def count(self):
-        return next(self.counts)
-
-    async def values(self, *args):
-        return (
-            next(self.value_batches) if self.value_batches is not None else self.value
-        )
-
-    async def values_list(self, *args, **kwargs):
-        return self.value
-
-    def __await__(self):
-        async def resolve():
-            return self.result
-
-        return resolve().__await__()
 
 
 @pytest.mark.anyio
@@ -56,7 +17,6 @@ class Query:
         agent_stats.get_agent_stats,
         agent_stats.get_agent_trends,
         agent_stats.get_agent_tool_usage,
-        agent_stats.get_recent_conversations,
     ],
 )
 async def test_agent_stats_endpoints_reject_missing_agent(monkeypatch, function):
@@ -209,6 +169,116 @@ async def test_agent_trends_emit_one_point_per_bucket(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("period", "first_point"),
+    [
+        # 12:37 must not be used as the window start: the first hourly point is
+        # 13:00 the previous day, so the window must start there or the leading
+        # partial bucket is fetched and then discarded.
+        ("24h", datetime(2026, 7, 20, 13, 0, tzinfo=UTC)),
+        ("7d", datetime(2026, 7, 15, 0, 0, tzinfo=UTC)),
+        ("30d", datetime(2026, 6, 22, 0, 0, tzinfo=UTC)),
+    ],
+)
+async def test_agent_trends_window_starts_at_the_first_rendered_bucket(
+    monkeypatch, period, first_point
+):
+    fixed_now = datetime(2026, 7, 21, 12, 37, tzinfo=UTC)
+    monkeypatch.setattr(agent_stats, "now", lambda: fixed_now)
+    monkeypatch.setattr(agent_stats, "check_agent_access", AsyncMock())
+    buckets = AsyncMock(return_value={})
+    monkeypatch.setattr(agent_stats.stats_sql, "agent_trend_buckets", buckets)
+
+    result = await agent_stats.get_agent_trends(
+        uuid4(), period=period, current_user=SimpleNamespace()
+    )
+
+    # args[1] is the window start handed to the SQL; it must equal the first
+    # point's timestamp, or rows bucket to a key the chart never renders.
+    window_start = buckets.await_args.args[1]
+    assert window_start == first_point
+    assert result["data"]["data"][0]["timestamp"] == first_point.isoformat()
+
+
+@pytest.mark.anyio
+async def test_agent_stats_fan_out_is_bounded_by_the_aggregate_budget(monkeypatch):
+    """One request must not hold the whole connection pool open.
+
+    The five aggregates used to be issued as five simultaneous pool checkouts
+    against a pool of five. They are now gated so at most
+    ``DB_AGGREGATE_CONCURRENCY`` are in flight at once.
+    """
+    monkeypatch.setattr(agent_stats, "check_agent_access", AsyncMock())
+    monkeypatch.setattr(agent_stats.settings, "DB_AGGREGATE_CONCURRENCY", 2)
+    monkeypatch.setattr(agent_stats, "_AGGREGATE_SEMAPHORE", asyncio.Semaphore(2))
+
+    in_flight = 0
+    peak = 0
+
+    def _stub(result):
+        async def _run(*_args, **_kwargs):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0)
+            in_flight -= 1
+            return result
+
+        return _run
+
+    monkeypatch.setattr(
+        agent_stats.stats_sql,
+        "agent_conversation_overview",
+        _stub({"total_conversations": 0, "active_users": 0}),
+    )
+    monkeypatch.setattr(
+        agent_stats.stats_sql,
+        "agent_message_overview",
+        _stub(
+            {
+                "user_messages": 0,
+                "assistant_messages": 0,
+                "tool_messages": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "tool_call_count": 0,
+                "avg_duration": 0,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        agent_stats.stats_sql,
+        "agent_run_health",
+        _stub(
+            {
+                "completed": 0,
+                "failed": 0,
+                "stopped": 0,
+                "interrupted": 0,
+                "unrecognised": 0,
+                "in_flight": 0,
+                "total": 0,
+                "success_rate": 0.0,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        agent_stats.stats_sql,
+        "agent_latency_percentiles",
+        _stub({"p50": 0.0, "p95": 0.0, "avg": 0.0, "samples": 0}),
+    )
+    monkeypatch.setattr(
+        agent_stats.stats_sql,
+        "agent_intervention_counts",
+        _stub({"steer": 0, "stop": 0, "follow_up": 0, "total": 0}),
+    )
+
+    await agent_stats.get_agent_stats(uuid4(), period="all", current_user=None)
+
+    assert peak == 2, "fan-out must respect DB_AGGREGATE_CONCURRENCY"
+
+
+@pytest.mark.anyio
 async def test_tool_usage_preserves_database_ordering(monkeypatch):
     monkeypatch.setattr(
         agent_stats, "check_agent_access", AsyncMock(return_value=SimpleNamespace())
@@ -238,39 +308,3 @@ async def test_tool_usage_preserves_database_ordering(monkeypatch):
         {"name": "fetch", "display_name": "Fetch", "count": 1},
     ]
     assert result["data"]["total_calls"] == 3
-
-
-@pytest.mark.anyio
-async def test_recent_conversations_serializes_optional_user(monkeypatch):
-    timestamp = datetime(2026, 7, 21, tzinfo=UTC)
-    conversations = [
-        SimpleNamespace(
-            id=uuid4(),
-            title="With user",
-            user=SimpleNamespace(id=uuid4(), username="alice"),
-            message_count=2,
-            token_usage=3,
-            created_at=timestamp,
-            updated_at=timestamp,
-        ),
-        SimpleNamespace(
-            id=uuid4(),
-            title="Anonymous",
-            user=None,
-            message_count=0,
-            token_usage=0,
-            created_at=timestamp,
-            updated_at=timestamp,
-        ),
-    ]
-    monkeypatch.setattr(agent_stats, "check_agent_access", AsyncMock())
-    monkeypatch.setattr(
-        agent_stats.Conversation, "filter", lambda **kwargs: Query(conversations)
-    )
-
-    result = await agent_stats.get_recent_conversations(
-        uuid4(), limit=2, current_user=SimpleNamespace()
-    )
-
-    assert result["data"][0]["user"]["username"] == "alice"
-    assert result["data"][1]["user"] is None

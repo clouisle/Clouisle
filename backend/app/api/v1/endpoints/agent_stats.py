@@ -22,6 +22,17 @@ from app.core.timezone import now, to_utc
 
 router = APIRouter()
 
+# One semaphore per process, shared by every statistics request. Bounding the
+# fan-out keeps a single request from occupying the whole connection pool while
+# its own queries queue behind it; separate requests still interleave.
+_AGGREGATE_SEMAPHORE = asyncio.Semaphore(settings.DB_AGGREGATE_CONCURRENCY)
+
+
+async def _run_aggregate(coro: Any) -> Any:
+    """Run one aggregation without holding more than the configured budget."""
+    async with _AGGREGATE_SEMAPHORE:
+        return await coro
+
 
 def _resolve_tool_display_name(name: str, display_names: dict[str, str]) -> str:
     """Resolve one observed tool name to a human-readable label.
@@ -67,7 +78,8 @@ async def get_agent_stats(
     # Both helpers aggregate in the database; the previous implementation ran
     # six counts and pulled every token_usage / tool_calls JSON payload plus
     # every user_id into Python. The five aggregations are independent, so they
-    # run concurrently rather than as five sequential round trips.
+    # run concurrently rather than as five sequential round trips — bounded by
+    # the shared semaphore so one request cannot monopolise the pool.
     (
         conversations,
         messages,
@@ -75,11 +87,11 @@ async def get_agent_stats(
         latency,
         interventions,
     ) = await asyncio.gather(
-        stats_sql.agent_conversation_overview(agent_id, start_time),
-        stats_sql.agent_message_overview(agent_id, start_time),
-        stats_sql.agent_run_health(agent_id, start_time),
-        stats_sql.agent_latency_percentiles(agent_id, start_time),
-        stats_sql.agent_intervention_counts(agent_id, start_time),
+        _run_aggregate(stats_sql.agent_conversation_overview(agent_id, start_time)),
+        _run_aggregate(stats_sql.agent_message_overview(agent_id, start_time)),
+        _run_aggregate(stats_sql.agent_run_health(agent_id, start_time)),
+        _run_aggregate(stats_sql.agent_latency_percentiles(agent_id, start_time)),
+        _run_aggregate(stats_sql.agent_intervention_counts(agent_id, start_time)),
     )
 
     total_conversations = conversations["total_conversations"]
@@ -142,42 +154,51 @@ async def get_agent_trends(
 
     now_local = now()
 
-    # Determine granularity and range based on period
+    # Determine granularity and count based on period
     if period == "24h":
-        start_time = now_local - timedelta(hours=24)
         granularity = "hour"
         num_points = 24
     elif period == "7d":
-        start_time = now_local - timedelta(days=7)
         granularity = "day"
         num_points = 7
     else:  # 30d
-        start_time = now_local - timedelta(days=30)
         granularity = "day"
         num_points = 30
 
-    start_time_utc = to_utc(start_time)
+    # Build the clock-aligned point grid FIRST, then derive the query window
+    # from its earliest point. Deriving the window independently (e.g. now-24h
+    # at 12:37 while the first hourly point is 13:00) made the window start
+    # mid-bucket: rows in that leading partial bucket were fetched, bucketed to
+    # a key that is never rendered, and silently discarded by the lookup below.
+    if granularity == "hour":
+        first_point = now_local.replace(minute=0, second=0, microsecond=0) - timedelta(
+            hours=num_points - 1
+        )
+        point_starts = [
+            first_point + timedelta(hours=index) for index in range(num_points)
+        ]
+    else:
+        first_date = (now_local - timedelta(days=num_points - 1)).date()
+        point_starts = [
+            datetime.combine(
+                first_date + timedelta(days=index), datetime.min.time()
+            ).replace(tzinfo=now_local.tzinfo)
+            for index in range(num_points)
+        ]
 
     # Bucket in the database on local-time boundaries. The previous loop
     # rescanned every loaded row once per point (O(points x rows)).
     buckets = await stats_sql.agent_trend_buckets(
-        agent_id, start_time_utc, granularity, settings.TIMEZONE
+        agent_id, to_utc(point_starts[0]), granularity, settings.TIMEZONE
     )
 
     data_points = []
-    for i in range(num_points):
-        if granularity == "hour":
-            point_start = now_local.replace(
-                minute=0, second=0, microsecond=0
-            ) - timedelta(hours=num_points - 1 - i)
-            label = point_start.strftime("%H:00")
-        else:
-            point_date = (now_local - timedelta(days=num_points - i - 1)).date()
-            point_start = datetime.combine(point_date, datetime.min.time()).replace(
-                tzinfo=now_local.tzinfo
-            )
-            label = point_date.strftime("%m/%d")
-
+    for point_start in point_starts:
+        label = (
+            point_start.strftime("%H:00")
+            if granularity == "hour"
+            else point_start.strftime("%m/%d")
+        )
         bucket = buckets.get(point_start.replace(tzinfo=None), {})
         data_points.append(
             {

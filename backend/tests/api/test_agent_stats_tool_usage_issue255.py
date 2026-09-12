@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, UTC
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -10,19 +11,6 @@ from fastapi.testclient import TestClient
 from app.api import deps
 from app.api.v1.endpoints import agent_stats
 from app.schemas.response import BusinessError, ResponseCode, error
-
-
-class Query:
-    def __init__(self, *, values=None):
-        self.values_result = values or []
-        self.filters = []
-
-    def filter(self, **kwargs):
-        self.filters.append(kwargs)
-        return self
-
-    async def values(self, *fields):
-        return self.values_result
 
 
 @pytest.fixture
@@ -89,12 +77,14 @@ def test_tool_usage_returns_not_found_for_missing_agent(client, monkeypatch):
 
 def test_tool_usage_aggregates_supported_shapes_for_24_hours(client, monkeypatch):
     agent_id = uuid4()
+    fixed_now = datetime(2026, 7, 22, 12, tzinfo=UTC)
     usage = AsyncMock(
         return_value=[
             {"name": "search", "count": 2},
             {"name": "fetch", "count": 1},
         ]
     )
+    monkeypatch.setattr(agent_stats, "now", lambda: fixed_now)
     monkeypatch.setattr(
         agent_stats, "check_agent_access", AsyncMock(return_value=SimpleNamespace())
     )
@@ -118,7 +108,7 @@ def test_tool_usage_aggregates_supported_shapes_for_24_hours(client, monkeypatch
         ],
         "total_calls": 3,
     }
-    assert usage.await_args.args[1] is not None
+    assert usage.await_args.args[1] == fixed_now - timedelta(hours=24)
     # MCP enumeration must stay off: it is an untimed network call.
     assert agent_stats.get_tool_display_names.await_args.kwargs == {
         "enumerate_mcp_tools": False

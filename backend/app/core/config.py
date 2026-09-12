@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "clouisle"
     POSTGRES_PORT: int = 5432
     DATABASE_URL: str = ""
+    # Upper bound on aggregation queries one request may hold open at once.
+    # Endpoints that fan several independent aggregates out with asyncio.gather
+    # must not be able to occupy every slot of the shared Tortoise pool (default
+    # maxsize 5) in a single request, which would queue that request's
+    # remaining queries behind its own fan-out. Raising the pool size instead is
+    # not an option: PostgreSQL max_connections is 100 and the default
+    # deployment runs ~17 processes x pool, so the ceiling is approached.
+    DB_AGGREGATE_CONCURRENCY: int = 4
 
     # Redis
     REDIS_HOST: str = "localhost"
