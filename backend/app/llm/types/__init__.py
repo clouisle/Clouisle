@@ -68,6 +68,11 @@ from .rerank import (
     RerankResponse,
 )
 
+# Embedding types
+from .embedding import (
+    EmbeddingResponse,
+)
+
 __all__ = [
     # Base
     "MediaContent",
@@ -117,4 +122,6 @@ __all__ = [
     # Rerank
     "RerankResult",
     "RerankResponse",
+    # Embedding
+    "EmbeddingResponse",
 ]

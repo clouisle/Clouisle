@@ -31,15 +31,16 @@ from app.core.model_endpoint_policy import (
 from app.services.usage_tracker import usage_tracker, QuotaExceededError
 
 from .adapters import (
+    create_audio_generation_adapter,
     create_chat_model,
     create_embedding_model,
     create_image_adapter,
     create_rerank_adapter,
-    create_tts_adapter,
-    create_audio_generation_adapter,
     create_stt_adapter,
+    create_tts_adapter,
     create_video_adapter,
 )
+from app.llm.adapters.embedding import create_embedding_adapter
 from .adapters.chat import (
     BaseChatAdapter,
     OpenAIAdapter,
@@ -1055,20 +1056,27 @@ class ModelManager:
                 team_id=team_id,
                 model=str(model_config.id),
             )
-
-        embedding_model = create_embedding_model(model_config)
+        adapter = create_embedding_adapter(model_config)
 
         try:
-            result = await embedding_model.aembed_documents(texts)
-
-            # 使用 tiktoken 进行准确的 token 计数
-            from app.llm.token_counter import count_tokens
-
-            total_tokens = sum(
-                count_tokens(t, model_config.model_id, model_config.provider)
-                for t in texts
+            response = await adapter.embed(texts)
+            reported_tokens = (
+                response.usage.total_tokens
+                if response.usage and response.usage.total_tokens
+                else None
             )
-            total_tokens = max(total_tokens, 1)
+
+            if reported_tokens:
+                total_tokens = reported_tokens
+            else:
+                # 使用 tiktoken 进行准确的 token 计数兜底
+                from app.llm.token_counter import count_tokens
+
+                total_tokens = sum(
+                    count_tokens(t, model_config.model_id, model_config.provider)
+                    for t in texts
+                )
+                total_tokens = max(total_tokens, 1)
 
             # 记录用量
             await self._check_and_record_usage(
@@ -1077,7 +1085,7 @@ class ModelManager:
                 tokens_used=total_tokens,
             )
 
-            return result
+            return response.embeddings
         except Exception as e:
             logger.exception(f"Team embedding error: {e}")
             raise self._handle_error(e, model_config.provider, model_config.model_id)

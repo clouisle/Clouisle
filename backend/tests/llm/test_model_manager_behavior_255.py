@@ -652,3 +652,75 @@ async def test_video_status_tries_enabled_models_and_handles_boundaries(
     monkeypatch.setattr(manager_module.Model, "filter", Mock(return_value=empty_query))
     with pytest.raises(ModelNotFoundError):
         await ModelManager().get_video_status("task")
+
+
+@pytest.mark.anyio
+async def test_team_embed_prioritizes_upstream_usage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = SimpleNamespace(
+        id=uuid4(), provider="openai", model_id="text-embedding-3-small"
+    )
+    team_model = SimpleNamespace(is_enabled=True)
+    manager = ModelManager()
+    monkeypatch.setattr(
+        manager, "_get_team_model", AsyncMock(return_value=(model, team_model))
+    )
+    quota = AsyncMock()
+    monkeypatch.setattr(manager_module.usage_tracker, "check_quota_with_model", quota)
+    record = AsyncMock()
+    monkeypatch.setattr(manager, "_check_and_record_usage", record)
+
+    fake_response = SimpleNamespace(
+        embeddings=[[0.1, 0.2]],
+        usage=SimpleNamespace(total_tokens=42),
+    )
+    fake_adapter = SimpleNamespace(embed=AsyncMock(return_value=fake_response))
+    monkeypatch.setattr(
+        manager_module, "create_embedding_adapter", lambda _cfg: fake_adapter
+    )
+
+    result = await manager.team_embed("team-1", ["hello world"])
+    assert result == [[0.1, 0.2]]
+    record.assert_awaited_once_with(
+        team_id="team-1",
+        model_id=str(model.id),
+        tokens_used=42,
+    )
+
+
+@pytest.mark.anyio
+async def test_team_embed_falls_back_to_tiktoken_when_usage_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = SimpleNamespace(
+        id=uuid4(), provider="openai", model_id="text-embedding-3-small"
+    )
+    team_model = SimpleNamespace(is_enabled=True)
+    manager = ModelManager()
+    monkeypatch.setattr(
+        manager, "_get_team_model", AsyncMock(return_value=(model, team_model))
+    )
+    monkeypatch.setattr(
+        manager_module.usage_tracker, "check_quota_with_model", AsyncMock()
+    )
+    record = AsyncMock()
+    monkeypatch.setattr(manager, "_check_and_record_usage", record)
+
+    fake_response = SimpleNamespace(
+        embeddings=[[0.3, 0.4]],
+        usage=None,
+    )
+    fake_adapter = SimpleNamespace(embed=AsyncMock(return_value=fake_response))
+    monkeypatch.setattr(
+        manager_module, "create_embedding_adapter", lambda _cfg: fake_adapter
+    )
+    monkeypatch.setattr("app.llm.token_counter.count_tokens", Mock(return_value=15))
+
+    result = await manager.team_embed("team-1", ["fallback text"])
+    assert result == [[0.3, 0.4]]
+    record.assert_awaited_once_with(
+        team_id="team-1",
+        model_id=str(model.id),
+        tokens_used=15,
+    )
