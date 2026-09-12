@@ -185,6 +185,7 @@ export default function MonitorPage({ params }: MonitorPageProps) {
     completed: { label: t('health.completed'), color: CHART_COLOR_ORDER[0] },
     failed: { label: t('health.failed'), color: CHART_COLOR_ORDER[4] },
     stopped: { label: t('health.stopped'), color: CHART_COLOR_ORDER[3] },
+    interrupted: { label: t('health.interrupted'), color: CHART_COLOR_ORDER[2] },
   }), [t])
 
   const latencyChartConfig: ChartConfig = React.useMemo(() => ({
@@ -206,6 +207,7 @@ export default function MonitorPage({ params }: MonitorPageProps) {
       { key: 'completed', label: t('health.completed'), value: health.completed, fill: CHART_SURFACE_COLORS[0] },
       { key: 'failed', label: t('health.failed'), value: health.failed, fill: CHART_SURFACE_COLORS[4] },
       { key: 'stopped', label: t('health.stopped'), value: health.stopped, fill: CHART_SURFACE_COLORS[3] },
+      { key: 'interrupted', label: t('health.interrupted'), value: health.interrupted, fill: CHART_SURFACE_COLORS[2] },
     ].filter((slice) => slice.value > 0)
   }, [stats, t])
 
@@ -213,6 +215,8 @@ export default function MonitorPage({ params }: MonitorPageProps) {
     completed: 0,
     failed: 0,
     stopped: 0,
+    interrupted: 0,
+    unrecognised: 0,
     in_flight: 0,
     total: 0,
     success_rate: 0,
@@ -245,12 +249,23 @@ export default function MonitorPage({ params }: MonitorPageProps) {
   const interventionRate =
     health.total > 0 ? interventions.total / health.total : 0
 
-  // The API already returns tools ordered by count descending; cap the slices
-  // so the donut and its legend stay readable.
-  const topTools = React.useMemo(
-    () => (toolUsage?.tools ?? []).slice(0, 8),
-    [toolUsage]
-  )
+  // The API already returns tools ordered by count descending. The donut's
+  // arcs are normalized over the data it receives, so a truncated top-N would
+  // overstate each slice's share; the remainder is folded into an "Other"
+  // slice so the ring still sums to `total_calls`.
+  const TOOL_SLICE_LIMIT = 8
+  const otherLabel = t('charts.otherTools')
+  const topTools = React.useMemo(() => {
+    const tools = toolUsage?.tools ?? []
+    if (tools.length <= TOOL_SLICE_LIMIT) return tools
+    const head = tools.slice(0, TOOL_SLICE_LIMIT)
+    const remainder = tools
+      .slice(TOOL_SLICE_LIMIT)
+      .reduce((sum, tool) => sum + tool.count, 0)
+    return remainder > 0
+      ? [...head, { name: '__other__', display_name: otherLabel, count: remainder }]
+      : head
+  }, [toolUsage, otherLabel])
 
   // Unwrap params
   const [resolvedParams, setResolvedParams] = React.useState<{ id: string } | null>(null)
@@ -889,22 +904,27 @@ export default function MonitorPage({ params }: MonitorPageProps) {
                         </ChartContainer>
                         {/* Raw counts grow with traffic, so the rate is what
                             makes two periods comparable. It shares the health
-                            card's denominator, so both cards agree. */}
-                        <div className="border-t pt-3">
-                          <div className="flex items-baseline justify-between">
-                            <span className="text-xs text-muted-foreground">
-                              {t('interventions.rate')}
-                            </span>
-                            <span className="text-lg font-semibold tabular-nums">
-                              {interventionRate.toFixed(2)}
-                            </span>
+                            card's denominator, so both cards agree — and when
+                            that denominator is zero the ratio is meaningless,
+                            so the whole block is omitted rather than printing
+                            "0.00 across 0 terminal runs" next to nonzero bars. */}
+                        {health.total > 0 && (
+                          <div className="border-t pt-3">
+                            <div className="flex items-baseline justify-between">
+                              <span className="text-xs text-muted-foreground">
+                                {t('interventions.rate')}
+                              </span>
+                              <span className="text-lg font-semibold tabular-nums">
+                                {interventionRate.toFixed(2)}
+                              </span>
+                            </div>
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">
+                              {t('interventions.rateHint', {
+                                runs: formatNumber(health.total),
+                              })}
+                            </p>
                           </div>
-                          <p className="mt-0.5 text-[11px] text-muted-foreground">
-                            {t('interventions.rateHint', {
-                              runs: formatNumber(health.total),
-                            })}
-                          </p>
-                        </div>
+                        )}
                       </div>
                     ) : (
                       <div className="h-[220px] flex items-center justify-center text-muted-foreground">

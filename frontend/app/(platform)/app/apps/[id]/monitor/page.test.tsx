@@ -17,6 +17,8 @@ const statsFixture = () => ({
     completed: 67,
     failed: 2,
     stopped: 7,
+    interrupted: 0,
+    unrecognised: 0,
     in_flight: 2,
     total: 76,
     success_rate: 67 / 76,
@@ -189,13 +191,14 @@ test("reports execution health with a success rate over terminal runs", async ()
   expect(output).toContain('health.inFlight({"count":2})');
 });
 
-test("shows all three terminal health counts even when one is zero", async () => {
+test("drops a zero-count outcome from the donut while still counting it", async () => {
   getStats.mockImplementation(() => Promise.resolve({
     ...statsFixture(),
     health: {
       completed: 5,
       failed: 0,
       stopped: 2,
+      interrupted: 0,
       in_flight: 0,
       total: 7,
       success_rate: 5 / 7,
@@ -206,8 +209,120 @@ test("shows all three terminal health counts even when one is zero", async () =>
   const output = textOf(view.root);
 
   expect(output).toContain("71.4%");
-  // A zero-value slice drops out of the donut but stays in the legend totals.
   expect(output).toContain("health.stopped");
+  // `failed` is zero: it has no slice and therefore no legend row, even though
+  // it is still part of the terminal-run denominator above.
+  expect(output).not.toContain("health.failed");
+});
+
+test("reports interrupted runs as a terminal outcome, not as in-flight", async () => {
+  // Worker loss is terminal: it must appear in the donut and dilute the rate
+  // rather than be disguised as a run still in progress.
+  getStats.mockImplementation(() => Promise.resolve({
+    ...statsFixture(),
+    health: {
+      completed: 9,
+      failed: 1,
+      stopped: 0,
+      interrupted: 4,
+      in_flight: 1,
+      total: 14,
+      success_rate: 9 / 14,
+    },
+  }));
+
+  const view = await render();
+  const output = textOf(view.root);
+
+  expect(output).toContain("health.interrupted");
+  expect(output).toContain("64.3%");
+  expect(output).toContain('health.inFlight({"count":1})');
+  // `nameKey="label"` is unique to the health donut; the intervention bars
+  // share `dataKey="value"`.
+  const slices = view.root.findByProps({ nameKey: "label" }).props.data as Array<{
+    key: string;
+    value: number;
+  }>;
+  expect(slices.map((slice) => slice.key)).toEqual([
+    "completed",
+    "failed",
+    "interrupted",
+  ]);
+  expect(slices.map((slice) => slice.value)).toEqual([9, 1, 4]);
+});
+
+test("folds tools beyond the top eight into an Other slice", async () => {
+  // The donut normalizes over the data it is handed, so a truncated top-N would
+  // overstate every slice's share; the remainder must be represented.
+  getToolUsage.mockImplementation(() => Promise.resolve({
+    tools: Array.from({ length: 11 }, (_, index) => ({
+      name: `tool_${index}`,
+      display_name: `Tool ${index}`,
+      count: 20 - index,
+    })),
+  }));
+
+  const view = await render();
+  const slices = view.root.findByProps({ nameKey: "display_name" }).props.data as Array<{
+    name: string;
+    count: number;
+  }>;
+
+  // Eight named tools plus one aggregate slice.
+  expect(slices).toHaveLength(9);
+  expect(slices[slices.length - 1].name).toBe("__other__");
+  // The three dropped tools (counts 12, 11, 10) are summed, not discarded.
+  expect(slices[slices.length - 1].count).toBe(33);
+  expect(textOf(view.root)).toContain("charts.otherTools");
+});
+
+test("keeps every tool as its own slice when there are eight or fewer", async () => {
+  getToolUsage.mockImplementation(() => Promise.resolve({
+    tools: Array.from({ length: 8 }, (_, index) => ({
+      name: `tool_${index}`,
+      display_name: `Tool ${index}`,
+      count: 8 - index,
+    })),
+  }));
+
+  const view = await render();
+  const slices = view.root.findByProps({ nameKey: "display_name" }).props.data as Array<{
+    name: string;
+  }>;
+
+  expect(slices).toHaveLength(8);
+  expect(slices.some((slice) => slice.name === "__other__")).toBe(false);
+});
+
+test("omits the intervention rate when there are no terminal runs", async () => {
+  // Inputs are counted by their own timestamp and runs by `updated_at`, so a
+  // period can record interventions while no run has finished. Printing
+  // "0.00 across 0 terminal runs" beside nonzero bars would be a lie.
+  getStats.mockImplementation(() => Promise.resolve({
+    ...statsFixture(),
+    health: {
+      completed: 0,
+      failed: 0,
+      stopped: 0,
+      interrupted: 0,
+      in_flight: 1,
+      total: 0,
+      success_rate: 0,
+    },
+    interventions: { steer: 2, stop: 1, follow_up: 0, total: 3 },
+  }));
+
+  const view = await render();
+  const rows = view.root.findByProps({ layout: "vertical" }).props.data as Array<{
+    key: string;
+  }>;
+
+  // The bars still render...
+  expect(rows.map((row) => row.key)).toEqual(["steer", "stop"]);
+  // ...but the meaningless ratio does not.
+  const output = textOf(view.root);
+  expect(output).not.toContain("interventions.rate");
+  expect(output).not.toContain("interventions.rateHint");
 });
 
 test("shows first-token percentiles plus the series behind them", async () => {
