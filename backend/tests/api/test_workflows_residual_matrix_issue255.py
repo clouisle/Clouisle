@@ -1,10 +1,11 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
 
+from app.api import workflow_access
 from app.api.v1.endpoints import workflows
 from app.models.workflow import RunStatus, TriggerType
 from app.schemas.response import BusinessError, ResponseCode
@@ -76,7 +77,7 @@ async def test_global_run_list_applies_access_filters_and_serializes_relations(
     monkeypatch,
 ):
     team_id, workflow_id, user_id = uuid4(), uuid4(), uuid4()
-    user = SimpleNamespace(is_superuser=False)
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
     workflow = SimpleNamespace(id=workflow_id)
     run_with_relations = SimpleNamespace(
         workflow=SimpleNamespace(name="Flow", icon="spark"),
@@ -90,6 +91,9 @@ async def test_global_run_list_applies_access_filters_and_serializes_relations(
     monkeypatch.setattr(workflows.Workflow, "all", Mock(return_value=workflow_query))
     monkeypatch.setattr(workflows.WorkflowRun, "filter", Mock(return_value=run_query))
     monkeypatch.setattr(workflows, "check_team_access", access)
+    monkeypatch.setattr(
+        workflow_access.TeamMember, "filter", Mock(return_value=Query([uuid4()]))
+    )
     patch_dump(
         monkeypatch,
         workflows.WorkflowRunListItem,
@@ -129,9 +133,11 @@ async def test_global_run_list_applies_access_filters_and_serializes_relations(
 async def test_global_run_list_and_stats_return_empty_for_no_accessible_workflows(
     monkeypatch,
 ):
-    user = SimpleNamespace(is_superuser=False)
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
     memberships = Query([uuid4()])
-    monkeypatch.setattr(workflows.TeamMember, "filter", Mock(return_value=memberships))
+    monkeypatch.setattr(
+        workflow_access.TeamMember, "filter", Mock(return_value=memberships)
+    )
     monkeypatch.setattr(workflows.Workflow, "all", Mock(return_value=Query([])))
     run_filter = Mock()
     monkeypatch.setattr(workflows.WorkflowRun, "filter", run_filter)
@@ -166,46 +172,26 @@ async def test_global_run_stats_aggregates_status_workflow_and_duration(monkeypa
     first_id, second_id, unknown_id = uuid4(), uuid4(), uuid4()
     first = SimpleNamespace(id=first_id, name="Primary", icon="one")
     second = SimpleNamespace(id=second_id, name="Secondary", icon=None)
-    started = datetime(2026, 1, 1, tzinfo=UTC)
-    runs = [
-        SimpleNamespace(
-            status=RunStatus.SUCCESS,
-            workflow_id=first_id,
-            started_at=started,
-            finished_at=started + timedelta(milliseconds=100),
-        ),
-        SimpleNamespace(
-            status=RunStatus.SUCCESS,
-            workflow_id=first_id,
-            started_at=started,
-            finished_at=started + timedelta(milliseconds=300),
-        ),
-        SimpleNamespace(
-            status=RunStatus.FAILED,
-            workflow_id=second_id,
-            started_at=None,
-            finished_at=None,
-        ),
-        SimpleNamespace(
-            status=RunStatus.FAILED,
-            workflow_id=unknown_id,
-            started_at=None,
-            finished_at=None,
-        ),
-        SimpleNamespace(
-            status=RunStatus.PENDING,
-            workflow_id=None,
-            started_at=None,
-            finished_at=None,
-        ),
-    ]
     monkeypatch.setattr(
         workflows.Workflow, "all", Mock(return_value=Query([first, second]))
     )
-    monkeypatch.setattr(workflows.WorkflowRun, "filter", Mock(return_value=Query(runs)))
+    monkeypatch.setattr(
+        workflows.stats_sql,
+        "workflow_global_run_stats",
+        AsyncMock(
+            return_value={
+                "runs_by_status": {"success": 2, "failed": 2, "pending": 1},
+                "total_runs": 5,
+                # ``unknown_id`` is absent from the accessible map and must be
+                # dropped from the response rather than rendered nameless.
+                "top_workflows": [(first_id, 2), (second_id, 1), (unknown_id, 1)],
+                "avg_duration_ms": 200,
+            }
+        ),
+    )
 
     response = await workflows.get_workflow_run_stats(
-        team_id=None, current_user=SimpleNamespace(is_superuser=True)
+        team_id=None, current_user=SimpleNamespace(id=uuid4(), is_superuser=True)
     )
 
     assert response["data"]["total_runs"] == 5
@@ -235,27 +221,43 @@ async def test_global_run_stats_aggregates_status_workflow_and_duration(monkeypa
 async def test_workflow_stats_and_trends_cover_empty_and_timed_runs(monkeypatch):
     workflow_id = uuid4()
     fixed_now = datetime(2026, 2, 7, 12, tzinfo=UTC)
-    runs = [
-        SimpleNamespace(
-            status=RunStatus.SUCCESS,
-            created_at=fixed_now - timedelta(hours=2),
-            total_duration_ms=100,
-        ),
-        SimpleNamespace(
-            status=RunStatus.FAILED,
-            created_at=fixed_now - timedelta(hours=1),
-            total_duration_ms=300,
-        ),
-        SimpleNamespace(
-            status=RunStatus.TIMEOUT,
-            created_at=fixed_now,
-            total_duration_ms=None,
-        ),
-    ]
     access = AsyncMock()
-    run_filter = Mock(side_effect=[Query([]), Query(runs), Query(runs)])
+    overview = AsyncMock(
+        side_effect=[
+            {
+                "total_runs": 0,
+                "success_count": 0,
+                "failed_count": 0,
+                "timeout_count": 0,
+                "avg_duration_ms": 0,
+                "last_run_at": None,
+            },
+            {
+                "total_runs": 3,
+                "success_count": 1,
+                "failed_count": 1,
+                "timeout_count": 1,
+                "avg_duration_ms": 200.0,
+                "last_run_at": fixed_now,
+            },
+        ]
+    )
     monkeypatch.setattr(workflows, "check_workflow_access", access)
-    monkeypatch.setattr(workflows.WorkflowRun, "filter", run_filter)
+    monkeypatch.setattr(workflows.stats_sql, "workflow_run_overview", overview)
+    monkeypatch.setattr(
+        workflows.stats_sql,
+        "workflow_trend_buckets",
+        AsyncMock(
+            return_value={
+                datetime(2026, 2, 7): {
+                    "runs": 3,
+                    "success": 1,
+                    "failed": 1,
+                    "avg_duration": 200.0,
+                }
+            }
+        ),
+    )
     monkeypatch.setattr(workflows, "now", Mock(return_value=fixed_now))
 
     empty = await workflows.get_workflow_stats(workflow_id, SimpleNamespace())

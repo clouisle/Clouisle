@@ -2,10 +2,43 @@
 
 from uuid import UUID
 
+from tortoise.expressions import Q
+
 from app.api.team_access import check_team_access
-from app.models.user import User
+from app.models.user import TeamMember, User
 from app.models.workflow import Workflow, WorkflowVisibility
 from app.schemas.response import BusinessError, ResponseCode
+
+
+async def workflow_read_visibility_filter(user: User) -> Q | None:
+    """Build the queryset filter matching ``check_workflow_access`` read rules.
+
+    Returns ``None`` for superusers, who bypass every visibility check. The Q
+    mirrors the per-workflow guard exactly so list/stats endpoints cannot leak
+    workflows a direct ``GET /workflows/{id}`` would reject:
+
+    - team/public workflows owned by a team the user belongs to,
+    - private workflows the user created (ownership survives team removal),
+    - creator-less legacy private workflows inside the user's teams.
+    """
+    if user.is_superuser:
+        return None
+
+    membership_ids = await TeamMember.filter(user=user).values_list(
+        "team_id", flat=True
+    )
+    return (
+        Q(
+            team_id__in=membership_ids,
+            visibility__in=[WorkflowVisibility.TEAM, WorkflowVisibility.PUBLIC],
+        )
+        | Q(created_by_id=user.id, visibility=WorkflowVisibility.PRIVATE)
+        | Q(
+            team_id__in=membership_ids,
+            created_by_id__isnull=True,
+            visibility=WorkflowVisibility.PRIVATE,
+        )
+    )
 
 
 async def check_workflow_access(

@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -8,21 +9,17 @@ from fastapi.testclient import TestClient
 
 from app.api import deps
 from app.api.v1.endpoints import agent_stats
-from app.schemas.response import BusinessError, error
+from app.schemas.response import BusinessError, ResponseCode, error
 
 
 class Query:
-    def __init__(self, *, first=None, values=None):
-        self.first_result = first
+    def __init__(self, *, values=None):
         self.values_result = values or []
         self.filters = []
 
     def filter(self, **kwargs):
         self.filters.append(kwargs)
         return self
-
-    async def first(self):
-        return self.first_result
 
     async def values(self, *fields):
         return self.values_result
@@ -72,29 +69,41 @@ def test_tool_usage_requires_authentication(app):
 
 
 def test_tool_usage_returns_not_found_for_missing_agent(client, monkeypatch):
-    monkeypatch.setattr(agent_stats.Agent, "filter", lambda **kwargs: Query())
+    monkeypatch.setattr(
+        agent_stats,
+        "check_agent_access",
+        AsyncMock(
+            side_effect=BusinessError(
+                code=ResponseCode.AGENT_NOT_FOUND,
+                msg_key="agent_not_found",
+                status_code=404,
+            )
+        ),
+    )
 
     response = client.get(f"/api/v1/agents/{uuid4()}/stats/tool-usage")
 
     assert response.status_code == 404
-    assert response.json()["code"] == 4000
+    assert response.json()["code"] == ResponseCode.AGENT_NOT_FOUND
 
 
 def test_tool_usage_aggregates_supported_shapes_for_24_hours(client, monkeypatch):
     agent_id = uuid4()
-    query = Query(
-        values=[
-            {"tool_calls": [{"function": {"name": "search"}}, {"name": "fetch"}]},
-            {"tool_calls": [{"name": "search"}, "invalid", {}]},
-            {"tool_calls": None},
+    usage = AsyncMock(
+        return_value=[
+            {"name": "search", "count": 2},
+            {"name": "fetch", "count": 1},
         ]
     )
     monkeypatch.setattr(
-        agent_stats.Agent,
-        "filter",
-        lambda **kwargs: Query(first=SimpleNamespace(id=agent_id)),
+        agent_stats, "check_agent_access", AsyncMock(return_value=SimpleNamespace())
     )
-    monkeypatch.setattr(agent_stats.Message, "filter", lambda **kwargs: query)
+    monkeypatch.setattr(agent_stats.stats_sql, "agent_tool_usage", usage)
+    monkeypatch.setattr(
+        agent_stats,
+        "get_tool_display_names",
+        AsyncMock(return_value={"search": "Search", "fetch": "Fetch"}),
+    )
 
     response = client.get(
         f"/api/v1/agents/{agent_id}/stats/tool-usage", params={"period": "24h"}
@@ -103,22 +112,29 @@ def test_tool_usage_aggregates_supported_shapes_for_24_hours(client, monkeypatch
     assert response.status_code == 200
     assert response.json()["data"] == {
         "period": "24h",
-        "tools": [{"name": "search", "count": 2}, {"name": "fetch", "count": 1}],
+        "tools": [
+            {"name": "search", "display_name": "Search", "count": 2},
+            {"name": "fetch", "display_name": "Fetch", "count": 1},
+        ],
         "total_calls": 3,
     }
-    assert len(query.filters) == 1
-    assert "created_at__gte" in query.filters[0]
+    assert usage.await_args.args[1] is not None
+    # MCP enumeration must stay off: it is an untimed network call.
+    assert agent_stats.get_tool_display_names.await_args.kwargs == {
+        "enumerate_mcp_tools": False
+    }
 
 
 def test_tool_usage_all_period_keeps_empty_result_unfiltered(client, monkeypatch):
     agent_id = uuid4()
-    query = Query()
+    usage = AsyncMock(return_value=[])
     monkeypatch.setattr(
-        agent_stats.Agent,
-        "filter",
-        lambda **kwargs: Query(first=SimpleNamespace(id=agent_id)),
+        agent_stats, "check_agent_access", AsyncMock(return_value=SimpleNamespace())
     )
-    monkeypatch.setattr(agent_stats.Message, "filter", lambda **kwargs: query)
+    monkeypatch.setattr(agent_stats.stats_sql, "agent_tool_usage", usage)
+    monkeypatch.setattr(
+        agent_stats, "get_tool_display_names", AsyncMock(return_value={})
+    )
 
     response = client.get(
         f"/api/v1/agents/{agent_id}/stats/tool-usage", params={"period": "all"}
@@ -126,4 +142,60 @@ def test_tool_usage_all_period_keeps_empty_result_unfiltered(client, monkeypatch
 
     assert response.status_code == 200
     assert response.json()["data"] == {"period": "all", "tools": [], "total_calls": 0}
-    assert query.filters == []
+    assert usage.await_args.args[1] is None
+
+
+def test_tool_usage_falls_back_to_raw_names_for_unknown_tools(client, monkeypatch):
+    """A tool the agent no longer has configured must still be listed."""
+    agent_id = uuid4()
+    monkeypatch.setattr(
+        agent_stats, "check_agent_access", AsyncMock(return_value=SimpleNamespace())
+    )
+    monkeypatch.setattr(
+        agent_stats.stats_sql,
+        "agent_tool_usage",
+        AsyncMock(return_value=[{"name": "retired_tool", "count": 1}]),
+    )
+    monkeypatch.setattr(
+        agent_stats,
+        "get_tool_display_names",
+        AsyncMock(return_value={"web_search": "Web Search"}),
+    )
+
+    response = client.get(
+        f"/api/v1/agents/{agent_id}/stats/tool-usage", params={"period": "7d"}
+    )
+
+    assert response.json()["data"]["tools"] == [
+        {"name": "retired_tool", "display_name": "retired_tool", "count": 1}
+    ]
+
+
+def test_tool_usage_resolves_mcp_prefix_without_listing_server(client, monkeypatch):
+    agent_id = uuid4()
+    monkeypatch.setattr(
+        agent_stats, "check_agent_access", AsyncMock(return_value=SimpleNamespace())
+    )
+    monkeypatch.setattr(
+        agent_stats.stats_sql,
+        "agent_tool_usage",
+        AsyncMock(return_value=[{"name": "mcp_github_create_issue", "count": 3}]),
+    )
+    # Non-enumerating mode yields a prefix entry rather than full tool names.
+    monkeypatch.setattr(
+        agent_stats,
+        "get_tool_display_names",
+        AsyncMock(return_value={"mcp_github_": "GitHub/"}),
+    )
+
+    response = client.get(
+        f"/api/v1/agents/{agent_id}/stats/tool-usage", params={"period": "7d"}
+    )
+
+    assert response.json()["data"]["tools"] == [
+        {
+            "name": "mcp_github_create_issue",
+            "display_name": "GitHub/create_issue",
+            "count": 3,
+        }
+    ]

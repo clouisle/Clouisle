@@ -1,10 +1,11 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
 
+from app.api import workflow_access
 from app.api.v1.endpoints import workflows
 from app.models.workflow import RunStatus, TriggerType, WorkflowStatus
 from app.schemas.response import BusinessError
@@ -66,14 +67,14 @@ class _MembershipQuery:
 async def test_list_all_workflow_runs_applies_every_residual_filter(monkeypatch):
     workflow_query = _Query([SimpleNamespace(id=uuid4())])
     run_query = _Query()
-    user = SimpleNamespace(is_superuser=False)
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
     workflow_id = uuid4()
     user_id = uuid4()
 
     monkeypatch.setattr(workflows.Workflow, "all", lambda: workflow_query)
     monkeypatch.setattr(workflows.WorkflowRun, "filter", lambda **kwargs: run_query)
     monkeypatch.setattr(
-        workflows.TeamMember, "filter", lambda **kwargs: _MembershipQuery()
+        workflow_access.TeamMember, "filter", lambda **kwargs: _MembershipQuery()
     )
 
     response = await workflows.list_all_workflow_runs(
@@ -105,25 +106,35 @@ async def test_workflow_run_stats_team_filter_calculates_completed_average(monke
     workflow_id = uuid4()
     workflow = SimpleNamespace(id=workflow_id, name="Flow", icon=None)
     workflow_query = _Query([workflow])
-    started_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    run = SimpleNamespace(
-        workflow_id=workflow_id,
-        status=RunStatus.SUCCESS,
-        started_at=started_at,
-        finished_at=started_at + timedelta(milliseconds=1500),
-    )
     access = AsyncMock()
 
     monkeypatch.setattr(workflows, "check_team_access", access)
     monkeypatch.setattr(workflows.Workflow, "all", lambda: workflow_query)
-    monkeypatch.setattr(workflows.WorkflowRun, "filter", lambda **kwargs: _Query([run]))
+    monkeypatch.setattr(
+        workflows.stats_sql,
+        "workflow_global_run_stats",
+        AsyncMock(
+            return_value={
+                "runs_by_status": {"success": 1},
+                "total_runs": 1,
+                "top_workflows": [(workflow_id, 1)],
+                "avg_duration_ms": 1500,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        workflow_access.TeamMember, "filter", lambda **kwargs: _MembershipQuery()
+    )
 
     response = await workflows.get_workflow_run_stats(
-        team_id=uuid4(), current_user=SimpleNamespace(is_superuser=False)
+        team_id=uuid4(), current_user=SimpleNamespace(id=uuid4(), is_superuser=False)
     )
 
     access.assert_awaited_once()
-    assert workflow_query.filters[-1][1] == {"team_id": access.call_args.args[0]}
+    assert workflow_query.filters[0][1] == {"team_id": access.call_args.args[0]}
+    # The visibility scope is applied after the team filter so private
+    # workflows of other members stay out of the aggregate (YUN-153).
+    assert workflow_query.filters[1][0] != ()
     assert response["data"]["avg_duration_ms"] == 1500
 
 
@@ -135,12 +146,12 @@ async def test_list_workflows_applies_non_superuser_visibility_scope(
     monkeypatch, team_id
 ):
     query = _Query()
-    user = SimpleNamespace(is_superuser=False)
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
 
     monkeypatch.setattr(workflows.Workflow, "all", lambda: query)
     monkeypatch.setattr(workflows, "check_team_access", AsyncMock())
     monkeypatch.setattr(
-        workflows.TeamMember, "filter", lambda **kwargs: _MembershipQuery()
+        workflow_access.TeamMember, "filter", lambda **kwargs: _MembershipQuery()
     )
 
     response = await workflows.list_workflows(
@@ -165,7 +176,9 @@ async def test_workflow_trends_uses_thirty_day_period(monkeypatch):
 
     monkeypatch.setattr(workflows, "check_workflow_access", AsyncMock())
     monkeypatch.setattr(workflows, "now", lambda: fixed_now)
-    monkeypatch.setattr(workflows.WorkflowRun, "filter", lambda **kwargs: _Query())
+    monkeypatch.setattr(
+        workflows.stats_sql, "workflow_trend_buckets", AsyncMock(return_value={})
+    )
 
     response = await workflows.get_workflow_trends(
         workflow_id=uuid4(), period="30d", current_user=SimpleNamespace()

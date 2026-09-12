@@ -1041,7 +1041,10 @@ Examples of when to search:
 
 
 async def get_tool_display_names(
-    agent: Agent, user_locale: str | None = None
+    agent: Agent,
+    user_locale: str | None = None,
+    *,
+    enumerate_mcp_tools: bool = True,
 ) -> dict[str, str]:
     """
     Get a mapping from tool internal names to display names.
@@ -1049,6 +1052,13 @@ async def get_tool_display_names(
     Args:
         agent: The agent
         user_locale: User's locale from database for i18n display names
+        enumerate_mcp_tools: When True (default) MCP servers are contacted to
+            learn their tool names. Callers that must not block — such as the
+            statistics endpoints — pass False, because
+            ``McpClient.list_tools`` has no timeout and an unreachable server
+            would stall the request. In that mode each MCP entry is a
+            ``mcp_<server>_`` prefix mapping to ``"<server display name>/"``,
+            which callers resolve by prefix.
 
     Returns a dict like:
     {
@@ -1165,10 +1175,18 @@ async def get_tool_display_names(
         elif tool_type == "mcp":
             tool_id = config.get("server_id") or config.get("tool_id")
             if tool_id:
-                from app.llm.tools.mcp_client import list_mcp_tools
-
                 mcp_tool = await Tool.filter(id=tool_id, is_enabled=True).first()
                 if mcp_tool and mcp_tool.mcp_config:
+                    if not enumerate_mcp_tools:
+                        # Prefix entry: the caller appends the tool suffix it
+                        # observed, so no server round trip is needed.
+                        display_names[f"mcp_{mcp_tool.name}_"] = (
+                            f"{mcp_tool.display_name}/"
+                        )
+                        continue
+
+                    from app.llm.tools.mcp_client import list_mcp_tools
+
                     try:
                         mcp_tools = await list_mcp_tools(mcp_tool.mcp_config)
                         for mt in mcp_tools:

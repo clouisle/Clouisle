@@ -256,3 +256,26 @@ async def test_get_tool_display_names_ignores_unavailable_skill_and_mcp():
         names = await get_tool_display_names(agent, "en")
 
     assert names == {}
+
+
+@pytest.mark.anyio
+async def test_get_tool_display_names_skips_mcp_enumeration_when_disabled():
+    """Non-enumerating callers get a server prefix and never touch the network.
+
+    ``McpClient.list_tools`` has no timeout, so a statistics request must not
+    call it; the prefix lets the caller finish the label from the observed name.
+    """
+    agent = _agent([{"type": "mcp", "server_id": "server-id"}])
+    mcp_tool = SimpleNamespace(
+        name="github", display_name="GitHub", mcp_config={"url": "https://mcp.example"}
+    )
+    list_mcp_tools = AsyncMock(side_effect=AssertionError("must not contact MCP"))
+
+    with (
+        patch("app.models.tool.Tool.filter", return_value=_query_result(mcp_tool)),
+        patch("app.llm.tools.mcp_client.list_mcp_tools", new=list_mcp_tools),
+    ):
+        names = await get_tool_display_names(agent, "en", enumerate_mcp_tools=False)
+
+    assert names == {"mcp_github_": "GitHub/"}
+    list_mcp_tools.assert_not_called()

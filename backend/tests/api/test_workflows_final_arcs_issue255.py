@@ -100,6 +100,18 @@ async def test_global_run_queries_cover_superuser_defaults_and_no_completed_runs
         "model_validate",
         Mock(return_value=Dump({"error_message": None})),
     )
+    monkeypatch.setattr(
+        workflows.stats_sql,
+        "workflow_global_run_stats",
+        AsyncMock(
+            return_value={
+                "runs_by_status": {"failed": 1},
+                "total_runs": 1,
+                "top_workflows": [(workflow_id, 1)],
+                "avg_duration_ms": 0,
+            }
+        ),
+    )
 
     user = SimpleNamespace(is_superuser=True)
     listed = await workflows.list_all_workflow_runs(
@@ -142,7 +154,9 @@ async def test_trends_default_period_has_empty_daily_durations(monkeypatch):
     fixed_now = datetime(2026, 1, 8, 12, tzinfo=UTC)
     monkeypatch.setattr(workflows, "check_workflow_access", AsyncMock())
     monkeypatch.setattr(workflows, "now", Mock(return_value=fixed_now))
-    monkeypatch.setattr(workflows.WorkflowRun, "filter", Mock(return_value=Query()))
+    monkeypatch.setattr(
+        workflows.stats_sql, "workflow_trend_buckets", AsyncMock(return_value={})
+    )
 
     response = await workflows.get_workflow_trends(
         uuid4(), period="7d", current_user=SimpleNamespace()
