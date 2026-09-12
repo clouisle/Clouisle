@@ -4,11 +4,22 @@ from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
+from tortoise.expressions import Q
 
 from app.api import workflow_access
 from app.api.v1.endpoints import workflows
-from app.models.workflow import RunStatus, TriggerType
+from app.models.workflow import RunStatus, TriggerType, WorkflowVisibility
 from app.schemas.response import BusinessError, ResponseCode
+
+
+def _flatten(node) -> list[dict]:
+    """Collect the leaf filter kwargs of a (possibly nested) Q tree."""
+    if not node.children:
+        return [dict(node.filters)]
+    leaves: list[dict] = []
+    for child in node.children:
+        leaves.extend(_flatten(child))
+    return leaves
 
 
 class Query:
@@ -22,7 +33,7 @@ class Query:
         return self
 
     def filter(self, *args, **kwargs):
-        self.filters.append(kwargs)
+        self.filters.append((args, kwargs))
         return self
 
     def select_related(self, *_args):
@@ -117,16 +128,87 @@ async def test_global_run_list_applies_access_filters_and_serializes_relations(
     )
 
     access.assert_awaited_once_with(team_id, user)
-    assert {"team_id__in": [team_id]} in workflow_query.filters
-    assert {"workflow_id__in": [workflow_id]} in run_query.filters
-    assert {"status__in": [RunStatus.FAILED]} in run_query.filters
-    assert {"trigger_type__in": [TriggerType.WEBHOOK]} in run_query.filters
-    assert {"triggered_by_id__in": [user_id]} in run_query.filters
-    assert {"is_debug": False} in run_query.filters
+    assert ((), {"team_id__in": [team_id]}) in workflow_query.filters
+    assert ((), {"workflow_id__in": [workflow_id]}) in run_query.filters
+    assert ((), {"status__in": [RunStatus.FAILED]}) in run_query.filters
+    assert ((), {"trigger_type__in": [TriggerType.WEBHOOK]}) in run_query.filters
+    assert ((), {"triggered_by_id__in": [user_id]}) in run_query.filters
+    assert ((), {"is_debug": False}) in run_query.filters
     assert response["data"]["items"][0]["workflow_name"] == "Flow"
     assert response["data"]["items"][0]["triggered_by_name"] == "runner"
     assert response["data"]["items"][1]["workflow_name"] is None
     assert response["data"]["page"] == 2
+
+
+@pytest.mark.anyio
+async def test_global_run_list_applies_visibility_scope_to_workflow_queryset(
+    monkeypatch,
+):
+    """Removing the scope filter must fail here: /workflows/runs is the leak.
+
+    The endpoint passes the scope positionally, so a stub that recorded only
+    kwargs could not see it. This asserts the visibility ``Q`` actually reaches
+    the workflow queryset for a non-superuser.
+    """
+    user_id, team_id = uuid4(), uuid4()
+    user = SimpleNamespace(id=user_id, is_superuser=False)
+    workflow_query = Query([SimpleNamespace(id=uuid4())])
+    monkeypatch.setattr(workflows.Workflow, "all", Mock(return_value=workflow_query))
+    monkeypatch.setattr(
+        workflows.WorkflowRun, "filter", Mock(return_value=Query([], total=0))
+    )
+    monkeypatch.setattr(
+        workflow_access.TeamMember, "filter", Mock(return_value=Query([team_id]))
+    )
+
+    await workflows.list_all_workflow_runs(
+        team_id=None,
+        workflow_id=None,
+        status=None,
+        trigger_type=None,
+        user_id=None,
+        is_debug=None,
+        search=None,
+        page=1,
+        page_size=20,
+        current_user=user,
+    )
+
+    scopes = [args[0] for args, _kwargs in workflow_query.filters if args]
+    assert len(scopes) == 1, "the workflow queryset must be visibility-scoped once"
+    assert isinstance(scopes[0], Q)
+    leaves = _flatten(scopes[0])
+    # Team/public workflows only inside the caller's teams; own private
+    # workflows remain readable. A foreign member's private row matches none.
+    assert {
+        "team_id__in": [team_id],
+        "visibility__in": [WorkflowVisibility.TEAM, WorkflowVisibility.PUBLIC],
+    } in leaves
+    assert {
+        "created_by_id": user_id,
+        "visibility": WorkflowVisibility.PRIVATE,
+    } in leaves
+
+
+@pytest.mark.anyio
+async def test_global_run_stats_applies_visibility_scope_to_workflow_queryset(
+    monkeypatch,
+):
+    """``/workflows/runs/stats`` must scope its workflow set the same way."""
+    user_id, team_id = uuid4(), uuid4()
+    workflow_query = Query([])
+    monkeypatch.setattr(workflows.Workflow, "all", Mock(return_value=workflow_query))
+    monkeypatch.setattr(
+        workflow_access.TeamMember, "filter", Mock(return_value=Query([team_id]))
+    )
+
+    await workflows.get_workflow_run_stats(
+        team_id=None, current_user=SimpleNamespace(id=user_id, is_superuser=False)
+    )
+
+    scopes = [args[0] for args, _kwargs in workflow_query.filters if args]
+    assert len(scopes) == 1
+    assert isinstance(scopes[0], Q)
 
 
 @pytest.mark.anyio

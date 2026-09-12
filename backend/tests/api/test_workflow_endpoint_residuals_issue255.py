@@ -4,11 +4,27 @@ from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
+from tortoise.expressions import Q
 
 from app.api import workflow_access
 from app.api.v1.endpoints import workflows
-from app.models.workflow import RunStatus, TriggerType, WorkflowStatus
+from app.models.workflow import (
+    RunStatus,
+    TriggerType,
+    WorkflowStatus,
+    WorkflowVisibility,
+)
 from app.schemas.response import BusinessError
+
+
+def _flatten(node) -> list[dict]:
+    """Collect the leaf filter kwargs of a (possibly nested) Q tree."""
+    if not node.children:
+        return [dict(node.filters)]
+    leaves: list[dict] = []
+    for child in node.children:
+        leaves.extend(_flatten(child))
+    return leaves
 
 
 class _Query:
@@ -59,8 +75,11 @@ class _Query:
 
 
 class _MembershipQuery:
+    def __init__(self, team_ids=None):
+        self.team_ids = list(team_ids) if team_ids is not None else [uuid4()]
+
     async def values_list(self, *args, **kwargs):
-        return [uuid4()]
+        return self.team_ids
 
 
 @pytest.mark.anyio
@@ -107,6 +126,7 @@ async def test_workflow_run_stats_team_filter_calculates_completed_average(monke
     workflow = SimpleNamespace(id=workflow_id, name="Flow", icon=None)
     workflow_query = _Query([workflow])
     access = AsyncMock()
+    membership_team_id = uuid4()
 
     monkeypatch.setattr(workflows, "check_team_access", access)
     monkeypatch.setattr(workflows.Workflow, "all", lambda: workflow_query)
@@ -123,7 +143,9 @@ async def test_workflow_run_stats_team_filter_calculates_completed_average(monke
         ),
     )
     monkeypatch.setattr(
-        workflow_access.TeamMember, "filter", lambda **kwargs: _MembershipQuery()
+        workflow_access.TeamMember,
+        "filter",
+        lambda **kwargs: _MembershipQuery([membership_team_id]),
     )
 
     response = await workflows.get_workflow_run_stats(
@@ -133,8 +155,21 @@ async def test_workflow_run_stats_team_filter_calculates_completed_average(monke
     access.assert_awaited_once()
     assert workflow_query.filters[0][1] == {"team_id": access.call_args.args[0]}
     # The visibility scope is applied after the team filter so private
-    # workflows of other members stay out of the aggregate (YUN-153).
-    assert workflow_query.filters[1][0] != ()
+    # workflows of other members stay out of the aggregate (YUN-153). Assert
+    # the scope's actual branches: any Q would satisfy a non-empty check.
+    scope_args, scope_kwargs = workflow_query.filters[1]
+    assert scope_kwargs == {}
+    scope = scope_args[0]
+    assert isinstance(scope, Q)
+    leaves = _flatten(scope)
+    assert {
+        "team_id__in": [membership_team_id],
+        "visibility__in": [WorkflowVisibility.TEAM, WorkflowVisibility.PUBLIC],
+    } in leaves
+    assert any(
+        leaf.get("visibility") == WorkflowVisibility.PRIVATE and "created_by_id" in leaf
+        for leaf in leaves
+    ), "the caller's own private workflows must stay readable"
     assert response["data"]["avg_duration_ms"] == 1500
 
 
