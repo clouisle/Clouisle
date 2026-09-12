@@ -194,6 +194,45 @@ async def test_openai_compatible_embedding_adapter_handles_non_200_response():
     assert result.usage.total_tokens == 0
 
 
+@pytest.mark.asyncio
+async def test_openai_compatible_embedding_adapter_falls_back_on_cardinality_mismatch(
+    monkeypatch,
+):
+    config = SimpleNamespace(
+        provider=ModelProvider.OPENAI,
+        model_id="text-embedding-3-small",
+        api_key="test-key",
+        base_url="https://api.openai.com/v1",
+        config={},
+    )
+    adapter = OpenAICompatibleEmbeddingAdapter(config)
+
+    class MockResponse:
+        status_code = 200
+
+        def json(self):
+            # Returns 1 item for 2 inputs
+            return {
+                "data": [{"embedding": [0.1], "index": 0}],
+                "usage": {"prompt_tokens": 5, "total_tokens": 5},
+            }
+
+    monkeypatch.setattr(
+        "httpx.AsyncClient.post",
+        AsyncMock(return_value=MockResponse()),
+    )
+    fallback_model = SimpleNamespace(
+        aembed_documents=AsyncMock(return_value=[[0.1], [0.2]])
+    )
+    monkeypatch.setattr(
+        "app.llm.adapters.embedding.adapter.create_embedding_model",
+        lambda _: fallback_model,
+    )
+
+    result = await adapter.embed(["text1", "text2"])
+    assert result.embeddings == [[0.1], [0.2]]
+
+
 def test_create_embedding_model_with_string_provider():
     config = SimpleNamespace(
         provider="google",

@@ -62,3 +62,21 @@ async def test_delete_entity_embedding_swallows_client_failure(monkeypatch, capl
     await memory.MemoryService._delete_entity_embedding("embedding-1")
 
     assert "Failed to delete embedding embedding-1" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_delete_entity_embedding_ignores_collection_not_found(
+    monkeypatch, caplog
+):
+    client = SimpleNamespace(
+        delete=AsyncMock(
+            side_effect=RuntimeError(
+                "Unexpected Response: 404 (Not Found): Collection memory_entities_dim_1536 doesn't exist!"
+            )
+        )
+    )
+    monkeypatch.setattr(memory, "_get_qdrant_client", AsyncMock(return_value=client))
+
+    await memory.MemoryService._delete_entity_embedding("embedding-1")
+
+    assert "Failed to delete embedding" not in caplog.text
