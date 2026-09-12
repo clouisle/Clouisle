@@ -27,18 +27,31 @@ if [ -n "$PY_FILES" ]; then
 fi
 
 # ── Frontend (TypeScript/JS/JSX/TSX) ─────────────────────────────
-JS_FILES=$(echo "$STAGED_FILES" | grep -E '^frontend/.*\.(ts|tsx|js|jsx)$' || true)
+JS_FILES=$(echo "$STAGED_FILES" | grep -E '^frontend/.*\.(ts|tsx|js|jsx|json)$' || true)
 
 if [ -n "$JS_FILES" ]; then
   echo "  → Frontend: eslint"
   cd frontend
-  JS_REL=$(echo "$JS_FILES" | sed 's|^frontend/||')
-  JS_REL_ARGS=()
-  while IFS= read -r file; do
-    JS_REL_ARGS+=("$file")
-  done <<< "$JS_REL"
-  bun run lint --quiet --max-warnings=0 "${JS_REL_ARGS[@]}" || {
-    echo "❌ Frontend lint issues found. Run: bun run lint"
+  JS_CODE_FILES=$(echo "$JS_FILES" | grep -E '\.(ts|tsx|js|jsx)$' || true)
+  if [ -n "$JS_CODE_FILES" ]; then
+    JS_REL=$(echo "$JS_CODE_FILES" | sed 's|^frontend/||')
+    JS_REL_ARGS=()
+    while IFS= read -r file; do
+      JS_REL_ARGS+=("$file")
+    done <<< "$JS_REL"
+    bun run lint --quiet --max-warnings=0 "${JS_REL_ARGS[@]}" || {
+      echo "❌ Frontend lint issues found. Run: bun run lint"
+      exit 1
+    }
+  fi
+
+  echo "  → Frontend: i18n lint & key usage check"
+  bun run i18n:lint || {
+    echo "❌ Frontend i18n lint failed. Run: bun run i18n:lint"
+    exit 1
+  }
+  bun run i18n:check || {
+    echo "❌ Frontend translation key missing in i18n/en/*.json. Run: bun run i18n:check"
     exit 1
   }
   cd ..
