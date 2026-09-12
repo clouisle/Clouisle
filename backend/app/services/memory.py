@@ -1171,6 +1171,7 @@ class MemoryService:
             # Store old values for audit
             old_description = entity.description
             old_properties = entity.properties
+            old_dimension = getattr(entity, "embedding_dimension", None)
 
             entity = await MemoryService.update_entity(
                 user_id=user_id,
@@ -1191,7 +1192,11 @@ class MemoryService:
                     "before": str(old_properties),
                     "after": str(properties),
                 }
-
+            if getattr(entity, "embedding_dimension", None) != old_dimension:
+                changes["embedding_dimension"] = {
+                    "before": old_dimension,
+                    "after": getattr(entity, "embedding_dimension", None),
+                }
             await AuditLogService.log(
                 user=user,
                 action="agent_update_memory_entity",
@@ -1206,7 +1211,6 @@ class MemoryService:
                     "source": "agent_tool",
                 },
             )
-
             return {
                 "success": True,
                 "entity_id": str(entity.id),

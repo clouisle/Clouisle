@@ -546,13 +546,14 @@ class ModelManager:
                         if hasattr(model_config, "model_id")
                         else str(model_config.id),
                     }
+            except LLMQuotaExceededError:
+                raise
             except Exception as exc:
                 logger.debug(
                     "Team embedding resolution failed for user %s, falling back to default: %s",
                     user_id,
                     exc,
                 )
-
         # Fallback to global model without team quota
         embedding_model = await self.get_embedding_model(model_id)
         embedding_vector = await embedding_model.aembed_query(text)

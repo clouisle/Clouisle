@@ -724,3 +724,31 @@ async def test_team_embed_falls_back_to_tiktoken_when_usage_missing(
         model_id=str(model.id),
         tokens_used=15,
     )
+
+
+@pytest.mark.anyio
+async def test_get_embedding_propagates_team_quota_exceeded_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id = uuid4()
+    team_id = uuid4()
+    membership = SimpleNamespace(team_id=team_id)
+    manager = ModelManager()
+
+    monkeypatch.setattr(
+        "app.models.user.TeamMember.filter",
+        lambda user_id: SimpleNamespace(first=AsyncMock(return_value=membership)),
+    )
+    monkeypatch.setattr(
+        manager,
+        "team_embed",
+        AsyncMock(
+            side_effect=LLMQuotaExceededError(
+                message="quota exceeded", quota_type="daily_token", team_id=str(team_id)
+            )
+        ),
+    )
+
+    with pytest.raises(LLMQuotaExceededError) as exc_info:
+        await manager.get_embedding("test text", user_id=user_id)
+    assert exc_info.value.team_id == str(team_id)
