@@ -17,6 +17,7 @@ from app.schemas.response import (
     success,
 )
 from app.services.audit_log import AuditLogService
+from app.services.memory import MemoryService
 
 router = APIRouter()
 
@@ -306,10 +307,11 @@ async def delete_entity(
     entity_type = entity.entity_type
     owner_user_id = str(entity.user_id)
     audit_before = AuditLogService.snapshot(entity, "memory_entity")
-
-    # Delete entity (cascades to relations)
-    await entity.delete()
-
+    # Delete entity and Qdrant embedding (cascades to relations)
+    await MemoryService.delete_entity(
+        user_id=entity.user_id,
+        entity_id=entity_id,
+    )
     # Audit log
     await AuditLogService.log(
         user=current_user,

@@ -136,6 +136,7 @@ async def test_delete_entity_persists_and_conditionally_removes_embedding(
         name="Python",
         embedding_id=embedding_id,
         embedding_model_id="model-id",
+        embedding_dimension=1536,
         delete=AsyncMock(),
     )
     delete_embedding = AsyncMock()
@@ -145,14 +146,10 @@ async def test_delete_entity_persists_and_conditionally_removes_embedding(
         MagicMock(return_value=_query(first=entity)),
     )
     monkeypatch.setattr(MemoryService, "_delete_entity_embedding", delete_embedding)
-
     await MemoryService.delete_entity(uuid4(), uuid4())
-
     entity.delete.assert_awaited_once()
     if embedding_id:
-        delete_embedding.assert_awaited_once_with("point-id", "model-id")
-    else:
-        delete_embedding.assert_not_awaited()
+        delete_embedding.assert_awaited_once_with("point-id", "model-id", 1536)
 
 
 @pytest.mark.asyncio
@@ -563,15 +560,17 @@ async def test_add_entity_embedding_wraps_provider_failure(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_update_entity_embedding_replaces_existing_point(monkeypatch):
-    entity = SimpleNamespace(embedding_id="old", embedding_model_id="model")
+    entity = SimpleNamespace(
+        embedding_id="old",
+        embedding_model_id="model",
+        embedding_dimension=1536,
+    )
     delete = AsyncMock()
     add = AsyncMock()
     monkeypatch.setattr(MemoryService, "_delete_entity_embedding", delete)
     monkeypatch.setattr(MemoryService, "_add_entity_embedding", add)
-
     await MemoryService._update_entity_embedding(entity)
-
-    delete.assert_awaited_once_with("old", "model")
+    delete.assert_awaited_once_with("old", "model", 1536)
     add.assert_awaited_once_with(entity)
 
 
@@ -977,15 +976,10 @@ async def test_ensure_memory_timestamp_index_swallows_exception(monkeypatch):
 async def test_delete_entity_embedding_uses_model_dimension(monkeypatch):
     client = SimpleNamespace(delete=AsyncMock())
     monkeypatch.setattr(
-        model_manager,
-        "_get_model_config",
-        AsyncMock(return_value=SimpleNamespace(dimensions=768)),
-    )
-    monkeypatch.setattr(
         memory_module, "_get_qdrant_client", AsyncMock(return_value=client)
     )
 
-    await MemoryService._delete_entity_embedding("point-id", "model-id")
+    await MemoryService._delete_entity_embedding("point-id", "model-id", dimension=768)
 
     client.delete.assert_awaited_once()
     assert (
@@ -1053,17 +1047,19 @@ async def test_update_entity_embedding_adds_when_no_old_point(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_delete_entity_embedding_skips_missing_model_and_swallows_failure(
+async def test_delete_entity_embedding_skips_missing_id_and_swallows_failure(
     monkeypatch,
 ):
-    get_config = AsyncMock(side_effect=RuntimeError("model unavailable"))
-    monkeypatch.setattr(model_manager, "_get_model_config", get_config)
+    client = SimpleNamespace(delete=AsyncMock(side_effect=RuntimeError("qdrant down")))
+    monkeypatch.setattr(
+        memory_module, "_get_qdrant_client", AsyncMock(return_value=client)
+    )
 
-    await MemoryService._delete_entity_embedding("point-id", None)
-    get_config.assert_not_awaited()
+    await MemoryService._delete_entity_embedding("")
+    client.delete.assert_not_awaited()
 
     await MemoryService._delete_entity_embedding("point-id", "model-id")
-    get_config.assert_awaited_once()
+    client.delete.assert_awaited_once()
 
 
 @pytest.mark.asyncio

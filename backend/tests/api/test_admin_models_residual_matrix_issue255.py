@@ -438,3 +438,77 @@ async def test_chat_empty_response_uses_mocked_adapter_boundary():
         await models._test_chat_model(
             ModelProvider.OPENAI, "chat", "sk-key", None, {}, {}
         )
+
+
+@pytest.mark.asyncio
+async def test_create_model_rejects_unsupported_embedding_provider() -> None:
+    model_in = ModelCreate(
+        name="Pika Embed",
+        provider=ModelProvider.PIKA,
+        model_id="pika-1",
+        model_type=ModelType.EMBEDDING,
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await models.create_model(
+            model_in=model_in,
+            current_user=SimpleNamespace(id=uuid4()),
+        )
+
+    assert exc_info.value.msg_key == "model_type_not_supported"
+
+
+@pytest.mark.asyncio
+async def test_create_model_accepts_supported_embedding_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_in = ModelCreate(
+        name="OpenAI Embed",
+        provider=ModelProvider.OPENAI,
+        model_id="text-embedding-3-small",
+        model_type=ModelType.EMBEDDING,
+    )
+    created_model = SimpleNamespace(
+        id=uuid4(),
+        name="OpenAI Embed",
+        provider="openai",
+        provider_display_name=None,
+        model_id="text-embedding-3-small",
+        model_type="embedding",
+        base_url=None,
+        has_api_key=False,
+        context_length=None,
+        max_output_tokens=None,
+        input_price=None,
+        output_price=None,
+        default_params=None,
+        capabilities=None,
+        config=None,
+        is_enabled=True,
+        is_default=False,
+        sort_order=0,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    monkeypatch.setattr(models.Model, "create", AsyncMock(return_value=created_model))
+
+    resp = await models.create_model(
+        model_in=model_in,
+        current_user=SimpleNamespace(id=uuid4()),
+    )
+    assert resp["code"] == 0
+    assert resp["data"].model_id == "text-embedding-3-small"
+
+
+def test_create_embedding_model_rejects_unsupported_provider() -> None:
+    from app.llm.adapters.embedding.factory import create_embedding_model
+
+    config = SimpleNamespace(
+        provider=ModelProvider.PIKA,
+        model_id="pika-embed",
+        api_key=None,
+        base_url="https://api.pika.art",
+        config=None,
+    )
+    with pytest.raises(ValueError, match="Unsupported provider"):
+        create_embedding_model(config)

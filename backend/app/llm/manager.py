@@ -512,28 +512,56 @@ class ModelManager:
         """
         Generate embedding vector for text.
 
+        If ``user_id`` is provided and the user belongs to a team, attempts
+        team-level embedding with quota checking and token usage tracking.
+        Falls back to global default embedding if no team is found or user_id is None.
+
         Args:
             text: Text to embed
-            user_id: User ID (for team model lookup)
+            user_id: User ID (for team model resolution and usage tracking)
             model_id: Optional model ID override
 
         Returns:
-            Dict with 'embedding' (list of floats) and 'model_id' (UUID)
+            Dict with 'embedding' (list of floats) and 'model_id' (str identifier)
         """
-        # Get embedding model
+        if user_id:
+            try:
+                from app.models.user import TeamMember
+
+                membership = await TeamMember.filter(user_id=user_id).first()
+                if membership:
+                    team_id = str(membership.team_id)
+                    vectors = await self.team_embed(
+                        team_id=team_id,
+                        texts=[text],
+                        model_id=model_id,
+                    )
+                    model_config, _ = await self._get_team_model(
+                        team_id, model_id, ModelType.EMBEDDING
+                    )
+                    return {
+                        "embedding": vectors[0],
+                        "model_id": model_config.model_id
+                        if hasattr(model_config, "model_id")
+                        else str(model_config.id),
+                    }
+            except Exception as exc:
+                logger.debug(
+                    "Team embedding resolution failed for user %s, falling back to default: %s",
+                    user_id,
+                    exc,
+                )
+
+        # Fallback to global model without team quota
         embedding_model = await self.get_embedding_model(model_id)
-
-        # Generate embedding
         embedding_vector = await embedding_model.aembed_query(text)
-
-        # Get model config to return model_id
         model_config = await self._get_model_config(model_id, ModelType.EMBEDDING)
 
         return {
             "embedding": embedding_vector,
             "model_id": model_config.model_id
             if hasattr(model_config, "model_id")
-            else None,
+            else str(model_config.id),
         }
 
     # ==================== Rerank 方法 ====================

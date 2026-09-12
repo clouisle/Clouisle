@@ -84,7 +84,10 @@ class MemoryEntity(models.Model):
         null=True,
         description="Embedding model identifier (e.g., 'bce-embedding-base_v1')",
     )
-
+    embedding_dimension = fields.IntField(
+        null=True,
+        description="Embedding vector dimension for Qdrant collection routing",
+    )
     # Usage tracking
     access_count = fields.IntField(default=0)
     last_accessed_at = fields.DatetimeField(null=True)

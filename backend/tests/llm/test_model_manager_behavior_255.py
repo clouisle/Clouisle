@@ -466,9 +466,7 @@ async def test_model_factories_and_get_embedding_return_selected_configuration(
 
     assert await manager.get_chat_model("chat") is chat_model
     assert await manager.get_embedding_model("embedding") is embedding_model
-    assert await manager.get_embedding(
-        "text", user_id=uuid4(), model_id="embedding"
-    ) == {
+    assert await manager.get_embedding("text", user_id=None, model_id="embedding") == {
         "embedding": [0.2],
         "model_id": "embedding-model",
     }
