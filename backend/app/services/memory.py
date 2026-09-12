@@ -867,7 +867,6 @@ class MemoryService:
         # Resolve dimension: prefer stored dimension, fall back to default 1536
         target_dimension = dimension or 1536
         collection = _memory_collection_name(target_dimension)
-
         try:
             if qmodels is None:
                 return
@@ -878,9 +877,15 @@ class MemoryService:
             )
             logger.info(f"Deleted embedding {embedding_id} from {collection}")
         except Exception as e:
-            logger.warning(
-                f"Failed to delete embedding {embedding_id} from {collection}: {e}"
-            )
+            err_str = str(e)
+            if "doesn't exist" in err_str or "404" in err_str or "Not found" in err_str:
+                logger.debug(
+                    f"Collection {collection} does not exist, skipping point deletion: {e}"
+                )
+            else:
+                logger.warning(
+                    f"Failed to delete embedding {embedding_id} from {collection}: {e}"
+                )
 
     @staticmethod
     async def handle_create_entity(
