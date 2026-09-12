@@ -197,7 +197,13 @@ async def agent_tool_usage(
                    ) AS tool_name
             FROM messages m
             JOIN conversations c ON c.id = m.conversation_id
-            CROSS JOIN LATERAL jsonb_array_elements(m.tool_calls) AS call
+            CROSS JOIN LATERAL jsonb_array_elements(
+                CASE
+                    WHEN jsonb_typeof(m.tool_calls) = 'array'
+                    THEN m.tool_calls
+                    ELSE '[]'::jsonb
+                END
+            ) AS call
             WHERE c.agent_id = $1::uuid
               AND m.role = 'assistant'
               AND jsonb_typeof(m.tool_calls) = 'array'{window}

@@ -764,10 +764,15 @@ export default function MonitorPage({ params }: MonitorPageProps) {
                               cursor={CHART_HOVER_CURSOR}
                               content={
                                 <ChartTooltipContent
-                                  formatter={(value) => (
-                                    <span className="font-mono font-medium tabular-nums text-chart-tooltip-text">
-                                      {formatDuration(Number(value))}
-                                    </span>
+                                  formatter={(value, name) => (
+                                    <>
+                                      <span className="text-chart-tooltip-text/80">
+                                        {latencyChartConfig[name as string]?.label ?? name}
+                                      </span>
+                                      <span className="font-mono font-medium tabular-nums text-chart-tooltip-text">
+                                        {formatDuration(Number(value))}
+                                      </span>
+                                    </>
                                   )}
                                 />
                               }

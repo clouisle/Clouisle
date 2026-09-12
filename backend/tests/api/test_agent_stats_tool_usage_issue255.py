@@ -181,11 +181,16 @@ def test_tool_usage_resolves_mcp_prefix_without_listing_server(client, monkeypat
         "agent_tool_usage",
         AsyncMock(return_value=[{"name": "mcp_github_create_issue", "count": 3}]),
     )
-    # Non-enumerating mode yields a prefix entry rather than full tool names.
+    # Non-enumerating mode yields prefix entries. Verify the longest prefix wins.
     monkeypatch.setattr(
         agent_stats,
         "get_tool_display_names",
-        AsyncMock(return_value={"mcp_github_": "GitHub/"}),
+        AsyncMock(
+            return_value={
+                "mcp_github_": "GitHub/",
+                "mcp_github_create_": "GitHub Issue/",
+            }
+        ),
     )
 
     response = client.get(
@@ -195,7 +200,7 @@ def test_tool_usage_resolves_mcp_prefix_without_listing_server(client, monkeypat
     assert response.json()["data"]["tools"] == [
         {
             "name": "mcp_github_create_issue",
-            "display_name": "GitHub/create_issue",
+            "display_name": "GitHub Issue/issue",
             "count": 3,
         }
     ]

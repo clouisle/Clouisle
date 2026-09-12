@@ -106,7 +106,7 @@ afterEach(() => {
   getStats.mockImplementation(() => Promise.resolve(statsFixture()));
   getTrends.mockReset();
   getTrends.mockImplementation(() => Promise.resolve(trendsFixture()));
-  getToolUsage.mockImplementation(() => Promise.resolve({ tools: [] }));
+  tooltip = { active: false, payload: [] };
 });
 
 async function render() {

@@ -34,7 +34,9 @@ def _resolve_tool_display_name(name: str, display_names: dict[str, str]) -> str:
     """
     if name in display_names:
         return display_names[name]
-    for key, label in display_names.items():
+    for key, label in sorted(
+        display_names.items(), key=lambda item: len(item[0]), reverse=True
+    ):
         if key.endswith("_") and name.startswith(key):
             return f"{label}{name[len(key) :]}"
     return name
