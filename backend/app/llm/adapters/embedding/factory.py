@@ -116,7 +116,9 @@ def create_embedding_model(model_config: Model | ModelConfig) -> Embeddings:
             api_key=api_key,
         )
 
-    elif provider_enum in OPENAI_COMPATIBLE_EMBEDDING_PROVIDERS:
+    elif provider_enum in OPENAI_COMPATIBLE_EMBEDDING_PROVIDERS or (
+        provider_enum is None and base_url is not None
+    ):
         from langchain_openai import OpenAIEmbeddings
 
         final_base_url = base_url or (

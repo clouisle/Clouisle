@@ -1344,15 +1344,16 @@ async def test_memory_tables_existing_schema_migration_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for column_info, expected_calls in [
-        ([], 2),
-        ([{"data_type": "character varying"}], 2),
-        ([{"data_type": "uuid"}], 3),
+        ([], 3),
+        ([{"data_type": "character varying"}], 3),
+        ([{"data_type": "uuid"}], 4),
     ]:
         conn = SimpleNamespace(
             execute_query=AsyncMock(
                 side_effect=[
                     (1, ["memory_entities"]),
                     (len(column_info), column_info),
+                    (0, []),
                     (0, []),
                 ]
             )
@@ -1362,12 +1363,11 @@ async def test_memory_tables_existing_schema_migration_paths(
         await init_data.init_memory_tables()
 
         assert conn.execute_query.await_count == expected_calls
-        if expected_calls == 3:
+        if expected_calls == 4:
             assert (
                 "ALTER COLUMN embedding_model_id TYPE VARCHAR"
-                in conn.execute_query.await_args.args[0]
+                in conn.execute_query.await_args_list[2].args[0]
             )
-
     conn = SimpleNamespace(
         execute_query=AsyncMock(
             side_effect=[(1, ["memory_entities"]), RuntimeError("cannot inspect")]
