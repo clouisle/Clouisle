@@ -185,7 +185,7 @@ The statistics endpoints (`GET /api/v1/agents/{agent_id}/stats`) expose per-agen
 - Active users
 - Token usage (prompt, completion, and total tokens)
 - Average response time and first-token latency (P50/P95)
-- Execution health (completed/failed/stopped outcomes and success rate)
+- Execution health — terminal run outcomes (completed, failed, stopped, and interrupted for worker loss), plus a success rate over terminal runs and a count of any runs whose status this build does not recognise
 - User interventions (steering, stopping, follow-ups)
 - Tool call count and tool usage (`GET /api/v1/agents/{agent_id}/stats/tool-usage`)
 - Usage trends (`GET /api/v1/agents/{agent_id}/stats/trends`)

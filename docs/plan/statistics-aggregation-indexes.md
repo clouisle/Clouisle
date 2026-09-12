@@ -34,9 +34,10 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_conversations_agent_user_updated_at
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_messages_conversation_role_created_at
     ON messages (conversation_id, role, created_at);
 
--- ONE index serves both per-workflow helpers. `created_at` must be a key
--- column, not just an INCLUDE payload: workflow_run_overview reads
--- MAX(created_at), and an INCLUDE-only column cannot satisfy it (see below).
+-- ONE index serves both per-workflow helpers. `created_at` is a KEY, not an
+-- INCLUDE payload: workflow_trend_buckets filters on it, and a non-key column
+-- cannot be used as an index scan search qualification. (Its MAX(created_at)
+-- use by workflow_run_overview would work from INCLUDE alone — see below.)
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_workflow_runs_workflow_created_covering
     ON workflow_runs (workflow_id, created_at)
     INCLUDE (status, total_duration_ms);
@@ -50,55 +51,71 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_agent_runs_agent_updated_at
 | `conversations (agent_id, created_at) INCLUDE (user_id)` | overview counts, distinct active users, trend buckets |
 | `conversations (agent_id, user_id, updated_at DESC)` | `GET /agents/{agent_id}/conversations`, which filters on both `agent_id` and `user_id` and orders by `updated_at` |
 | `messages (conversation_id, role, created_at)` | per-role counts, token sums, tool-call aggregation, first-token percentiles |
-| `workflow_runs (workflow_id, created_at) INCLUDE (status, total_duration_ms)` | BOTH `workflow_run_overview` (needs `created_at` for `MAX`) and `workflow_trend_buckets` |
+| `workflow_runs (workflow_id, created_at) INCLUDE (status, total_duration_ms)` | BOTH `workflow_run_overview` and `workflow_trend_buckets`; `created_at` is a key so the trend range predicate prunes |
 | `agent_runs (agent_id, updated_at)` | execution health and user-intervention counts |
 
 `agent_run_inputs` already carries a `run_id` index, which covers the
 intervention join; it needs no additional index.
 
-## Why `created_at` must be a key column
+## Why `created_at` is a key column, not an `INCLUDE` column
 
-`workflow_run_overview` (`stats_sql.py`) selects `MAX(created_at)` alongside
-`status` and `total_duration_ms`. A covering index that holds `created_at` only
-in the `INCLUDE` payload **cannot** produce an Index Only Scan, because
-`MAX()` needs the key ordering. An earlier revision of this runbook specified
-`(workflow_id) INCLUDE (status, total_duration_ms)`, which cannot serve that
-query.
+Two helpers share this index, and they need `created_at` for different reasons:
 
-Measured on PostgreSQL 17 with 200k synthetic rows, 4000 belonging to the
-probed workflow (matching the query the endpoint actually issues — `COUNT(*)
-FILTER (…)` per status, `AVG(total_duration_ms)`, and `MAX(created_at)`):
+- `workflow_run_overview` reads it for `MAX(created_at)`, an ordinary
+  aggregate over the scanned rows.
+- `workflow_trend_buckets` filters on it: `created_at >= $2`.
 
-| Index | Plan | Planner cost | Buffers | Heap fetches |
+A column in the `INCLUDE` payload is available to an Index Only Scan even
+though it is not a key (that is the point of `INCLUDE`), so an INCLUDE-only
+index *does* cover the overview query. What it cannot do is act as a **search
+qualification** — PostgreSQL documents that "a non-key column cannot be used in
+an index scan search qualification". So with `(workflow_id) INCLUDE
+(created_at, …)` the trend query must walk every index entry for the workflow
+and filter, while the same column as a key prunes the scan to the window.
+
+Measured on PostgreSQL 17, 200k rows with 9600 belonging to the probed workflow
+spread over 400 days (167 rows inside the 7-day window), `VACUUM (ANALYZE)`
+between runs:
+
+| Index | Query | Plan | Planner cost | Buffers |
 |---|---|---|---|---|
-| `(workflow_id) INCLUDE (status, total_duration_ms)` | Bitmap Heap Scan + Bitmap Index Scan | 2312.68 | 69 (42 hit, 27 read) | 42 heap blocks |
-| `(workflow_id, created_at) INCLUDE (status, total_duration_ms)` | **Index Only Scan** | **236.15** | **33** | **0** |
+| `(workflow_id) INCLUDE (created_at, status, total_duration_ms)` | overview | Index Only Scan | 539.35 | 73 |
+| `(workflow_id, created_at) INCLUDE (status, total_duration_ms)` | overview | Index Only Scan | 537.89 | 73 |
+| `(workflow_id) INCLUDE (created_at, status, total_duration_ms)` | trend | Index Only Scan, `Index Cond` on `workflow_id` only | 522.94 | 73 |
+| `(workflow_id, created_at) INCLUDE (status, total_duration_ms)` | trend | Index Only Scan, `Index Cond` on `workflow_id` **and** `created_at` | **33.61** | **5** |
 
-The merged index is read from the index alone; the `INCLUDE`-only variant is
-forced to fetch 42 heap blocks for the same 4000 rows. Wall-clock time on a
-fully cached table is close (0.43 ms vs 0.73 ms), but the buffer accounting and
-the planner's ~10x cost gap are the durable signal: the gap widens with the
-working set, and the heap fetch is the thing this index exists to remove.
-
-Merging also means one index serves both helpers — the separate
-`(workflow_id, created_at)` index would itself fail the overview query for want
-of `status` and `total_duration_ms`.
+Both cover the overview query equally — `MAX()` does *not* require a key, and
+the earlier claim in this runbook that it does was wrong. The difference is the
+range predicate: as a key it becomes an `Index Cond` and reads 5 buffers
+instead of 73 (14x fewer), which is why one index serves both helpers well.
+Making `created_at` a key also means the two per-workflow helpers do not need
+separate indexes.
 
 ### The `INCLUDE` payload is a hard contract
 
-A plain `(workflow_id, status)` composite index was measured **slower than the
-sequential scan** it replaced: the aggregate also reads `total_duration_ms`, so
-every one of the 4000 matches required a heap fetch and the bitmap machinery was
-pure overhead. Same effect on the agent side, counting conversations and
-distinct users for one agent over 30 days across 200k rows:
+Coverage depends on every referenced column being present, as either a key or
+an `INCLUDE` entry. An index that is missing one is not covering, and the
+planner falls back to fetching the heap:
+
+| Index | Query | Plan | Planner cost | Heap fetches |
+|---|---|---|---|---|
+| `(workflow_id) INCLUDE (status, total_duration_ms)` — `created_at` absent entirely | overview | Bitmap Heap Scan + Bitmap Index Scan | 2312.68 | 42 blocks |
+| `(workflow_id, created_at) INCLUDE (status, total_duration_ms)` | overview | Index Only Scan | 236.15 | 0 |
+
+Note the first row is *not* a counterexample to `INCLUDE` coverage: that index
+omits `created_at` from the index altogether, so it is simply not covering.
+A plain `(workflow_id, status)` composite behaves the same way — the aggregate
+also reads `total_duration_ms`, so every match needed a heap fetch and the
+bitmap machinery was pure overhead. Same effect on the agent side, counting
+conversations and distinct users for one agent over 30 days across 200k rows:
 
 | Plan | Buffers | Execution |
 |---|---|---|
 | Parallel Seq Scan | 2329 | 6.02 ms |
 | `(agent_id, created_at) INCLUDE (user_id)` | 503 | 0.64 ms |
 
-Any future change to the aggregation column list invalidates the `INCLUDE`
-payload — re-measure rather than assuming the index still covers the query.
+Any future change to the aggregation column list invalidates the index —
+re-measure rather than assuming it still covers the query.
 
 ## Operating notes
 
