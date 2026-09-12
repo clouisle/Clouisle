@@ -833,6 +833,22 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "DashScope task polling timed out",
         "zh": "DashScope 任务轮询超时",
     },
+    "database_connection_failed": {
+        "en": "Database connection failed",
+        "zh": "数据库连接失败",
+    },
+    "database_host_cannot_be_resolved": {
+        "en": "Database host cannot be resolved",
+        "zh": "无法解析数据库主机",
+    },
+    "database_host_invalid": {
+        "en": "Invalid database host or URL",
+        "zh": "数据库主机或 URL 无效",
+    },
+    "database_host_not_allowed": {
+        "en": "Database host is not allowed",
+        "zh": "不允许访问该数据库主机",
+    },
     "dingtalk_not_configured": {
         "en": "DingTalk service is not configured",
         "zh": "钉钉服务未配置",
@@ -1108,22 +1124,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "http_tool_request_failed_status": {
         "en": "HTTP request failed with status {status_code}",
         "zh": "HTTP 请求失败，状态码：{status_code}",
-    },
-    "database_connection_failed": {
-        "en": "Database connection failed",
-        "zh": "数据库连接失败",
-    },
-    "database_host_cannot_be_resolved": {
-        "en": "Database host cannot be resolved",
-        "zh": "无法解析数据库主机",
-    },
-    "database_host_invalid": {
-        "en": "Invalid database host or URL",
-        "zh": "数据库主机或 URL 无效",
-    },
-    "database_host_not_allowed": {
-        "en": "Database host is not allowed",
-        "zh": "不允许访问该数据库主机",
     },
     "http_tool_url_host_cannot_be_resolved": {
         "en": "HTTP URL host cannot be resolved",
@@ -2577,6 +2577,22 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "SAML 认证失败",
     },
     "sso_session_expired": {"en": "SSO session expired", "zh": "SSO 会话已过期"},
+    "ssrf_allowed_targets_description": {
+        "en": "Outbound network allowlist (SSRF exemption targets)",
+        "zh": "出站网络访问白名单（SSRF 豁免目标）",
+    },
+    "ssrf_allowlist_entry_forbidden": {
+        "en": "Cloud metadata services, broadcast/unspecified addresses, and universal wildcards cannot be allowlisted",
+        "zh": "禁止将云元数据服务、多播/未指定地址或全量通配符加入白名单",
+    },
+    "ssrf_allowlist_entry_invalid": {
+        "en": "Invalid allowlist entry, must be a valid IP, CIDR network, or domain (prefix *.domain supported)",
+        "zh": "白名单条目格式无效，必须为有效 IP、CIDR 网段或合法域名（支持 *.domain 前缀通配）",
+    },
+    "ssrf_allowlist_invalid": {
+        "en": "Enter a valid list of outbound network allowlist targets (IP, CIDR, or domain)",
+        "zh": "请输入有效的出站网络白名单列表（支持 IP、CIDR 网段或域名）",
+    },
     "stability_content_blocked_by_moderation": {
         "en": "Content blocked by Stability moderation",
         "zh": "内容被 Stability 审核拦截",
