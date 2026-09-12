@@ -1,0 +1,31 @@
+# CodeRabbit configuration.
+#
+# Only the docstring pre-merge check is configured; every other setting uses
+# CodeRabbit's defaults.
+reviews:
+  pre_merge_checks:
+    docstrings:
+      # Disabled deliberately, not because docstrings are unwelcome but because
+      # this threshold measures something the project does not track.
+      #
+      # The default 80% bar is far above what this codebase achieves, and the
+      # check is scoped to functions the diff touches (so any PR adding test
+      # helpers is penalised hardest):
+      #
+      #   backend/app    docstring coverage: 51.4% (1499/2916 functions)
+      #   backend/tests  docstring coverage:  2.5%  (216/8668 functions)
+      #
+      # ruff is configured without the `D` docstring rules
+      # (pyproject.toml: select = ["E4", "E7", "E9", "F"]), so the linter does
+      # not ask for docstrings either. The check therefore reports a gap that
+      # nothing else in the toolchain recognises, and one PR cannot close it.
+      #
+      # Measurements and the discussion that led here:
+      # https://github.com/clouisle/Clouisle/pull/440#issuecomment-5646176154
+      #
+      # Re-enable with mode "warning" (or "error") if the project decides to
+      # adopt a docstring standard repo-wide; raise `threshold` alongside it to
+      # a value the codebase actually meets.
+      #
+      # Quoted: bare `off` is YAML 1.1 boolean false, not the enum string.
+      mode: "off"
