@@ -2582,7 +2582,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "出站网络访问白名单（SSRF 豁免目标）",
     },
     "ssrf_allowlist_entry_forbidden": {
-        "en": "Cloud metadata services, broadcast/unspecified addresses, and universal wildcards cannot be allowlisted",
+        "en": "Cloud metadata services, multicast/unspecified addresses, and universal wildcards cannot be allowlisted",
         "zh": "禁止将云元数据服务、多播/未指定地址或全量通配符加入白名单",
     },
     "ssrf_allowlist_entry_invalid": {

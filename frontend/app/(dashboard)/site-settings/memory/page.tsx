@@ -112,6 +112,7 @@ export default function SiteSettingsMemoryPage() {
         toast.error(error instanceof Error ? error.message : t('saveError'))
       }
       console.error('Failed to save memory settings:', error)
+    } finally {
       setSaving(false)
     }
   }
@@ -171,13 +172,14 @@ export default function SiteSettingsMemoryPage() {
             </p>
             <Select
               value={selectedModel?.id ?? AUTO_MODEL_VALUE}
-              onValueChange={(val) =>
+              onValueChange={(val) => {
                 setSettings((prev) => ({
                   ...prev,
                   memory_extraction_model_id:
                     !val || val === AUTO_MODEL_VALUE ? '' : val,
                 }))
-              }
+                setFieldErrors((prev) => clearValidationError(prev, 'memory_extraction_model_id'))
+              }}
               disabled={!canUpdateSettings || saving || modelsLoading}
             >
               <SelectTrigger id="extraction-model" className="w-full">
@@ -194,6 +196,7 @@ export default function SiteSettingsMemoryPage() {
                 ))}
               </SelectContent>
             </Select>
+            <FieldError>{fieldErrors.memory_extraction_model_id}</FieldError>
           </div>
 
           {/* Cooldown Seconds */}

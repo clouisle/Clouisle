@@ -89,16 +89,45 @@ function extractScopes(content) {
     let depth = 0
     let inString = false
     let stringChar = ''
+    let inLineComment = false
+    let inBlockComment = false
 
     // Scan forward from declaration to find matching end of the current function block
     for (let i = declIndex; i < content.length; i++) {
       const ch = content[i]
+      const nextCh = content[i + 1]
+
+      if (inLineComment) {
+        if (ch === '\n') {
+          inLineComment = false
+        }
+        continue
+      }
+      if (inBlockComment) {
+        if (ch === '*' && nextCh === '/') {
+          inBlockComment = false
+          i++
+        }
+        continue
+      }
       if (inString) {
         if (ch === stringChar && content[i - 1] !== '\\') {
           inString = false
         }
         continue
       }
+
+      if (ch === '/' && nextCh === '/') {
+        inLineComment = true
+        i++
+        continue
+      }
+      if (ch === '/' && nextCh === '*') {
+        inBlockComment = true
+        i++
+        continue
+      }
+
       if (ch === "'" || ch === '"' || ch === '`') {
         inString = true
         stringChar = ch
@@ -110,13 +139,11 @@ function extractScopes(content) {
         if (depth > 0) {
           depth--
         } else {
-          // Closed the enclosing block where declaration lives
           blockEnd = i
           break
         }
       }
     }
-
     scopes.push({
       start: declIndex,
       end: blockEnd,

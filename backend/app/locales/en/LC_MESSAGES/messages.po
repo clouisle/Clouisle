@@ -1385,8 +1385,7 @@ msgid "ssrf_allowlist_entry_invalid"
 msgstr "Invalid allowlist entry, must be a valid IP, CIDR network, or domain (prefix *.domain supported)"
 
 msgid "ssrf_allowlist_entry_forbidden"
-msgstr "Cloud metadata services, broadcast/unspecified addresses, and universal wildcards cannot be allowlisted"
-
+msgstr "Cloud metadata services, multicast/unspecified addresses, and universal wildcards cannot be allowlisted"
 msgid "model_endpoint_base_url_invalid"
 msgstr "Enter a valid HTTP or HTTPS model Base URL"
 
