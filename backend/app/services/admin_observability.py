@@ -15,7 +15,7 @@ from uuid import UUID
 from tortoise import Tortoise
 
 from app.core.celery import celery_app
-from app.core.config import settings
+from app.core.db_limits import run_bounded
 from app.core.redis import get_redis
 from app.core.timezone import now, to_utc
 from app.models.workflow import RunStatus
@@ -29,11 +29,6 @@ logger = logging.getLogger(__name__)
 
 CACHE_TTL_SECONDS = 30
 CACHE_PREFIX = "admin:observability:v1"
-
-# One semaphore per process, shared with the other statistics fan-outs. Capping
-# concurrent aggregates keeps a single request from occupying every slot of the
-# shared Tortoise pool while its own queries queue behind it.
-_AGGREGATE_SEMAPHORE = asyncio.Semaphore(settings.DB_AGGREGATE_CONCURRENCY)
 HEALTH_SNAPSHOT_KEY = f"{CACHE_PREFIX}:system:health:snapshots"
 VALID_TIME_RANGES = {"7d", "30d", "90d", "all"}
 VALID_GRANULARITIES = {"hour", "day"}
@@ -361,14 +356,13 @@ async def _tracked_model_token_rows(time_range: str) -> list[dict[str, Any]]:
 
 async def get_tokens(time_range: str) -> dict[str, Any]:
     start_time, end_time = normalize_time_range(time_range)
-    # Bounded fan-out: three concurrent aggregates must not occupy the whole
-    # shared pool, which is sized for the default deployment's connections.
-    async with _AGGREGATE_SEMAPHORE:
-        agent_rows, workflow_tokens, tracked_rows = await asyncio.gather(
-            _agent_model_token_rows(start_time, end_time),
-            _workflow_token_total(start_time, end_time),
-            _tracked_model_token_rows(time_range),
-        )
+    # Per-query permits: one permit around the whole gather would let three
+    # queries run under a single slot and exceed the configured bound.
+    agent_rows, workflow_tokens, tracked_rows = await asyncio.gather(
+        run_bounded(_agent_model_token_rows(start_time, end_time)),
+        run_bounded(_workflow_token_total(start_time, end_time)),
+        run_bounded(_tracked_model_token_rows(time_range)),
+    )
 
     by_model: dict[str, int] = {}
     for row in agent_rows:

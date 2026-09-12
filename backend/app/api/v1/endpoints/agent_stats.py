@@ -13,6 +13,7 @@ from app.api import deps
 from app.api.v1.endpoints.agents import check_agent_access
 from app.api.v1.endpoints.chat import get_tool_display_names
 from app.core.config import settings
+from app.core.db_limits import run_bounded
 from app.core.i18n import resolve_language
 from app.models.user import User
 from app.schemas.response import success
@@ -20,17 +21,6 @@ from app.services import stats_sql
 from app.core.timezone import now, to_utc
 
 router = APIRouter()
-
-# One semaphore per process, shared by every statistics request. Bounding the
-# fan-out keeps a single request from occupying the whole connection pool while
-# its own queries queue behind it; separate requests still interleave.
-_AGGREGATE_SEMAPHORE = asyncio.Semaphore(settings.DB_AGGREGATE_CONCURRENCY)
-
-
-async def _run_aggregate(coro: Any) -> Any:
-    """Run one aggregation without holding more than the configured budget."""
-    async with _AGGREGATE_SEMAPHORE:
-        return await coro
 
 
 def _resolve_tool_display_name(name: str, display_names: dict[str, str]) -> str:
@@ -86,11 +76,11 @@ async def get_agent_stats(
         latency,
         interventions,
     ) = await asyncio.gather(
-        _run_aggregate(stats_sql.agent_conversation_overview(agent_id, start_time)),
-        _run_aggregate(stats_sql.agent_message_overview(agent_id, start_time)),
-        _run_aggregate(stats_sql.agent_run_health(agent_id, start_time)),
-        _run_aggregate(stats_sql.agent_latency_percentiles(agent_id, start_time)),
-        _run_aggregate(stats_sql.agent_intervention_counts(agent_id, start_time)),
+        run_bounded(stats_sql.agent_conversation_overview(agent_id, start_time)),
+        run_bounded(stats_sql.agent_message_overview(agent_id, start_time)),
+        run_bounded(stats_sql.agent_run_health(agent_id, start_time)),
+        run_bounded(stats_sql.agent_latency_percentiles(agent_id, start_time)),
+        run_bounded(stats_sql.agent_intervention_counts(agent_id, start_time)),
     )
 
     total_conversations = conversations["total_conversations"]

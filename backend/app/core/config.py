@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pydantic import ValidationInfo, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -39,7 +39,10 @@ class Settings(BaseSettings):
     # remaining queries behind its own fan-out. Raising the pool size instead is
     # not an option: PostgreSQL max_connections is 100 and the default
     # deployment runs ~17 processes x pool, so the ceiling is approached.
-    DB_AGGREGATE_CONCURRENCY: int = 4
+    #
+    # gt=0 is load-bearing: a semaphore built with 0 permits deadlocks every
+    # aggregate request, and a negative one raises ValueError at import time.
+    DB_AGGREGATE_CONCURRENCY: int = Field(default=4, gt=0)
 
     # Redis
     REDIS_HOST: str = "localhost"

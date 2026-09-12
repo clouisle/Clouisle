@@ -208,9 +208,11 @@ async def test_agent_stats_fan_out_is_bounded_by_the_aggregate_budget(monkeypatc
     against a pool of five. They are now gated so at most
     ``DB_AGGREGATE_CONCURRENCY`` are in flight at once.
     """
+    from app.core import db_limits
+
     monkeypatch.setattr(agent_stats, "check_agent_access", AsyncMock())
-    monkeypatch.setattr(agent_stats.settings, "DB_AGGREGATE_CONCURRENCY", 2)
-    monkeypatch.setattr(agent_stats, "_AGGREGATE_SEMAPHORE", asyncio.Semaphore(2))
+    # The limiter is shared process-wide, so patch it where it is defined.
+    monkeypatch.setattr(db_limits, "_AGGREGATE_SEMAPHORE", asyncio.Semaphore(2))
 
     in_flight = 0
     peak = 0
