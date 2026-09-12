@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-12T10:00:34.357Z
+// GENERATED — 2026-09-12T12:17:43.839Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {
@@ -549,6 +549,7 @@ export type AgentsMessages = {
         tokens: string
         avgResponseTime: string
         calls: string
+        otherTools: string
       }
       noToolUsage: string
       health: {
@@ -557,6 +558,7 @@ export type AgentsMessages = {
         completed: string
         failed: string
         stopped: string
+        interrupted: string
         successRate: string
         empty: string
         inFlight: string

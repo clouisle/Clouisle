@@ -546,7 +546,8 @@
         "messages": "消息数",
         "tokens": "Token",
         "avgResponseTime": "平均响应时间",
-        "calls": "调用次数"
+        "calls": "调用次数",
+        "otherTools": "其他工具"
       },
       "noToolUsage": "暂无工具使用数据",
       "health": {
@@ -555,6 +556,7 @@
         "completed": "成功",
         "failed": "失败",
         "stopped": "停止",
+        "interrupted": "中断",
         "successRate": "成功率",
         "empty": "暂无运行记录",
         "inFlight": "另有 {count} 个进行中，未计入",

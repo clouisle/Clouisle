@@ -79,6 +79,7 @@ celery_app.conf.task_routes = {
     "app.tasks.agent.*": {"queue": "default"},
     "app.tasks.memory.*": {"queue": "default"},
     "tasks.cleanup_expired_sandbox_sessions": {"queue": "sandbox"},
+    "tasks.sweep_lost_agent_runs": {"queue": "default"},
     "tasks.archive_old_audit_logs": {"queue": "default"},
     "tasks.check_api_key_expiration": {"queue": "default"},
     "tasks.check_password_expiration": {"queue": "default"},
@@ -118,6 +119,14 @@ celery_app.conf.beat_schedule = {
         "task": "tasks.cleanup_expired_sandbox_sessions",
         "schedule": crontab(minute="*/15"),
         "options": {"queue": "sandbox"},
+    },
+    # Detect AgentRuns whose worker died and mark them INTERRUPTED. The run
+    # lease is 60s, so sweeping every 2 minutes bounds how long a crash stays
+    # reported as in-flight. This is the only producer of INTERRUPTED.
+    "sweep-lost-agent-runs": {
+        "task": "tasks.sweep_lost_agent_runs",
+        "schedule": crontab(minute="*/2"),
+        "options": {"queue": "default"},
     },
 }
 

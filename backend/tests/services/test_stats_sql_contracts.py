@@ -316,6 +316,9 @@ async def test_run_health_counts_only_terminal_states_in_the_rate(monkeypatch):
             {"status": "completed", "count": 9},
             {"status": "failed", "count": 1},
             {"status": "stopped", "count": 2},
+            # Worker loss is terminal: it must dilute the rate and be reported,
+            # not passed off as an in-flight run.
+            {"status": "interrupted", "count": 2},
             {"status": "running", "count": 4},
             {"status": "queued", "count": 3},
         ]
@@ -327,10 +330,36 @@ async def test_run_health_counts_only_terminal_states_in_the_rate(monkeypatch):
     assert result["completed"] == 9
     assert result["failed"] == 1
     assert result["stopped"] == 2
+    assert result["interrupted"] == 2
     assert result["in_flight"] == 7
-    # In-flight runs must not dilute the rate either way.
-    assert result["total"] == 12
-    assert result["success_rate"] == pytest.approx(9 / 12)
+    # In-flight runs must not dilute the rate; interrupted runs must.
+    assert result["total"] == 14
+    assert result["success_rate"] == pytest.approx(9 / 14)
+
+
+@pytest.mark.anyio
+async def test_run_health_reports_interrupted_runs_as_terminal_not_in_flight(
+    monkeypatch,
+):
+    """A crashed run must not masquerade as still running.
+
+    ``mark_expired_runs_interrupted`` is the only writer of this status, and
+    the persistence layer stamps ``finished_at`` for it.
+    """
+    conn = _Conn(
+        [
+            {"status": "interrupted", "count": 3},
+            {"status": "running", "count": 1},
+        ]
+    )
+    monkeypatch.setattr(stats_sql, "_connection", lambda: conn)
+
+    result = await stats_sql.agent_run_health(uuid4(), None)
+
+    assert result["interrupted"] == 3
+    assert result["in_flight"] == 1
+    assert result["total"] == 3
+    assert result["success_rate"] == 0.0
 
 
 @pytest.mark.anyio
@@ -345,13 +374,30 @@ async def test_run_health_without_terminal_runs_reports_zero_rate(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_run_health_rejects_unknown_status_instead_of_counting_it(monkeypatch):
-    """An unmapped status must not be silently folded into a category."""
-    conn = _Conn([{"status": "teleported", "count": 1}])
+async def test_run_health_surfaces_unknown_status_without_failing(monkeypatch):
+    """An unmapped status must be visible, not folded in — and not a 500.
+
+    A status written by another release is real data; raising here would turn a
+    read-only statistics request into a server error, while counting it as a
+    known outcome would misattribute it. It gets its own total instead.
+    """
+    conn = _Conn(
+        [
+            {"status": "completed", "count": 4},
+            {"status": "teleported", "count": 3},
+            {"status": "running", "count": 1},
+        ]
+    )
     monkeypatch.setattr(stats_sql, "_connection", lambda: conn)
 
-    with pytest.raises(ValueError, match="teleported"):
-        await stats_sql.agent_run_health(uuid4(), None)
+    result = await stats_sql.agent_run_health(uuid4(), None)
+
+    assert result["unrecognised"] == 3
+    # It must not inflate any known bucket...
+    assert result["completed"] == 4
+    assert result["in_flight"] == 1
+    assert result["total"] == 4
+    assert result["success_rate"] == pytest.approx(1.0)
 
 
 # --- First-token latency ----------------------------------------------------
@@ -416,10 +462,13 @@ async def test_intervention_counts_reject_unknown_kind(monkeypatch):
 
 def test_terminal_statuses_exclude_every_in_flight_state():
     """Guards the rate denominator if the enum gains a state."""
+    # Must stay in lockstep with agent_run_store's notion of "finished":
+    # _build_transition_updates stamps finished_at for exactly these four.
     assert stats_sql.TERMINAL_AGENT_RUN_STATUSES == {
         "completed",
         "failed",
         "stopped",
+        "interrupted",
     }
     assert stats_sql.TERMINAL_AGENT_RUN_STATUSES.isdisjoint(
         stats_sql.IN_FLIGHT_AGENT_RUN_STATUSES

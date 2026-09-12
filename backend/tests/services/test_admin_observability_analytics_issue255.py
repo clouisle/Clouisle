@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -188,6 +189,42 @@ async def test_throughput_merges_metrics_and_current_counters(monkeypatch, perio
     assert result["granularity"] == "hour"
     assert result["current"] == {"qps": 0.5, "tps": 0.5, "running_workflows": 4}
     assert result["buckets"][0]["total_requests"] == 5
+
+
+@pytest.mark.asyncio
+async def test_token_analytics_bounds_each_query_not_each_batch(monkeypatch, period):
+    """One permit per query, not one per batch.
+
+    A single permit around the gather would let three queries run under one
+    slot, so N concurrent callers could reach 3N queries and defeat the bound.
+    """
+    from app.core import db_limits
+
+    monkeypatch.setattr(db_limits, "_AGGREGATE_SEMAPHORE", asyncio.Semaphore(2))
+
+    in_flight = 0
+    peak = 0
+
+    def _stub(result):
+        async def _run(*_args, **_kwargs):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0)
+            in_flight -= 1
+            return result
+
+        return _run
+
+    monkeypatch.setattr(service, "_agent_model_token_rows", _stub([]))
+    monkeypatch.setattr(service, "_workflow_token_total", _stub(0))
+    monkeypatch.setattr(service, "_tracked_model_token_rows", _stub([]))
+
+    # Two concurrent callers: three queries each, so an unbounded or
+    # batch-scoped limiter would observe all six at once.
+    await asyncio.gather(service.get_tokens("30d"), service.get_tokens("30d"))
+
+    assert peak <= 2, f"aggregate concurrency exceeded the budget: {peak}"
 
 
 @pytest.mark.asyncio

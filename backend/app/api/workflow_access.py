@@ -64,11 +64,16 @@ async def check_workflow_access(
     if workflow.visibility == WorkflowVisibility.PRIVATE:
         if is_owner:
             return workflow
-        if require_write:
-            await check_team_access(workflow.team.id, user, require_admin=True)
-            return workflow
+        # PRIVATE means "only the creator can access", so a non-owner is
+        # rejected for writes too. A team admin is not a creator: allowing the
+        # write here would let an admin modify a workflow that the list and
+        # stats scope (workflow_read_visibility_filter) deliberately hides from
+        # them, i.e. an IDOR reachable only by guessing the id. This mirrors
+        # check_agent_access, which refuses a non-owner's write outright.
         if not workflow.created_by:
-            await check_team_access(workflow.team.id, user)
+            # Creator-less legacy row: no owner exists to protect, so fall back
+            # to team scope and require admin for writes.
+            await check_team_access(workflow.team.id, user, require_admin=require_write)
             return workflow
         raise BusinessError(
             code=ResponseCode.FORBIDDEN,

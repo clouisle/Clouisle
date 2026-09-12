@@ -546,7 +546,8 @@
         "messages": "Messages",
         "tokens": "Tokens",
         "avgResponseTime": "Avg Response Time",
-        "calls": "Calls"
+        "calls": "Calls",
+        "otherTools": "Other tools"
       },
       "noToolUsage": "No tool usage data",
       "health": {
@@ -555,6 +556,7 @@
         "completed": "Completed",
         "failed": "Failed",
         "stopped": "Stopped",
+        "interrupted": "Interrupted",
         "successRate": "Success Rate",
         "empty": "No runs yet",
         "inFlight": "{count} in progress, excluded",

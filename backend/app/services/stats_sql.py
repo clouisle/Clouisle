@@ -40,11 +40,22 @@ _GRANULARITIES = frozenset({"hour", "day"})
 # Derived from the model enums so a newly added status cannot be silently
 # classified as success or dropped from the denominator.
 AGENT_RUN_STATUS_VALUES = frozenset(status.value for status in AgentRunStatus)
+# A terminal run never transitions again. This set must match the persistence
+# layer's own notion of "finished": ``agent_run_store._build_transition_updates``
+# stamps ``finished_at`` for exactly these four, and ``enqueue_input`` rejects
+# them as already-finished. ``INTERRUPTED`` is the worker-loss outcome written by
+# ``mark_expired_runs_interrupted``; treating it as in-flight would report a
+# crashed run as still running and hide it from the success rate.
 TERMINAL_AGENT_RUN_STATUSES = frozenset(
     status.value
     for status in AgentRunStatus
     if status
-    in {AgentRunStatus.COMPLETED, AgentRunStatus.FAILED, AgentRunStatus.STOPPED}
+    in {
+        AgentRunStatus.COMPLETED,
+        AgentRunStatus.FAILED,
+        AgentRunStatus.STOPPED,
+        AgentRunStatus.INTERRUPTED,
+    }
 )
 IN_FLIGHT_AGENT_RUN_STATUSES = AGENT_RUN_STATUS_VALUES - TERMINAL_AGENT_RUN_STATUSES
 AGENT_RUN_INPUT_KIND_VALUES = frozenset(kind.value for kind in AgentRunInputKind)
@@ -422,6 +433,11 @@ async def agent_run_health(
       finalised (NULL), so counting round status would silently omit every
       crash from the denominator.
 
+    A crashed run is not silently omitted either: worker loss writes
+    ``INTERRUPTED``, which is terminal (see ``TERMINAL_AGENT_RUN_STATUSES``)
+    and is reported as its own ``interrupted`` count so the outcome is visible
+    rather than disguised as an in-flight run.
+
     Terminal states are compared against the ``AgentRunStatus`` enum so a new
     status cannot be silently classified as success.
 
@@ -449,12 +465,17 @@ async def agent_run_health(
     )
 
     counts: dict[str, int] = {}
+    unknown: list[str] = []
     for row in rows:
         status = row["status"]
         if status not in AGENT_RUN_STATUS_VALUES:
-            # An unrecognised status is surfaced instead of being folded into
-            # a bucket, so enum drift cannot masquerade as a clean run.
-            raise ValueError(f"Unknown agent run status in database: {status!r}")
+            # Enum drift (a status written by an older or newer release) must
+            # not be folded into a bucket and must not turn a read-only
+            # statistics endpoint into a 500. It is counted separately so it is
+            # visible instead of misattributed: the run is real, its outcome is
+            # simply not recognised by this build.
+            unknown.append(str(status))
+            continue
         counts[status] = int(row["count"])
 
     terminal = sum(counts.get(status, 0) for status in TERMINAL_AGENT_RUN_STATUSES)
@@ -463,6 +484,10 @@ async def agent_run_health(
         "completed": completed,
         "failed": counts.get("failed", 0),
         "stopped": counts.get("stopped", 0),
+        "interrupted": counts.get("interrupted", 0),
+        "unrecognised": sum(
+            int(row["count"]) for row in rows if str(row["status"]) in unknown
+        ),
         "in_flight": sum(
             counts.get(status, 0) for status in IN_FLIGHT_AGENT_RUN_STATUSES
         ),

@@ -266,17 +266,48 @@ async def test_unowned_private_workflow_requires_team_membership(monkeypatch):
     monkeypatch.setattr("app.api.workflow_access.check_team_access", check_team)
 
     assert await check_workflow_access(workflow.id, user) is workflow
-    check_team.assert_awaited_once_with(team.id, user)
+    check_team.assert_awaited_once_with(team.id, user, require_admin=False)
 
 
 @pytest.mark.anyio
-async def test_private_workflow_write_requires_team_admin(monkeypatch):
+async def test_private_workflow_write_rejects_non_owner_team_admin(monkeypatch):
+    """PRIVATE means creator-only, and that must hold for writes too.
+
+    A team admin used to be allowed to write another member's private workflow
+    via its id, even though the list and stats scope hides those rows from
+    them — an id-guessing IDOR. The model's own contract is "Only creator can
+    access", matching check_agent_access.
+    """
     user = SimpleNamespace(id=uuid4(), is_superuser=False)
     team = SimpleNamespace(id=uuid4())
     workflow = SimpleNamespace(
         id=uuid4(),
         visibility=WorkflowVisibility.PRIVATE,
         created_by=SimpleNamespace(id=uuid4()),
+        team=team,
+    )
+    _WorkflowModel.workflow = workflow
+    check_team = AsyncMock()
+    monkeypatch.setattr("app.api.workflow_access.Workflow", _WorkflowModel)
+    monkeypatch.setattr("app.api.workflow_access.check_team_access", check_team)
+
+    with pytest.raises(BusinessError) as error:
+        await check_workflow_access(workflow.id, user, require_write=True)
+
+    assert error.value.msg_key == "workflow_access_denied"
+    # The team check must not even be reached: admin is not creator.
+    check_team.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_unowned_private_workflow_write_requires_team_admin(monkeypatch):
+    """A creator-less legacy row has no owner to protect, so team scope governs."""
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
+    team = SimpleNamespace(id=uuid4())
+    workflow = SimpleNamespace(
+        id=uuid4(),
+        visibility=WorkflowVisibility.PRIVATE,
+        created_by=None,
         team=team,
     )
     _WorkflowModel.workflow = workflow

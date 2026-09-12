@@ -778,17 +778,50 @@ curl -X GET "https://your-domain.com/api/v1/agents/550e8400-e29b-41d4-a716-44665
       "total_tokens": 456789
     },
     "performance": {
-      "avg_response_time_ms": 2300
+      "avg_response_time_ms": 2300,
+      "first_token_ms": {
+        "p50": 1200,
+        "p95": 9000,
+        "avg": 2500,
+        "samples": 480
+      }
     },
     "tools": {
       "tool_call_count": 512
+    },
+    "health": {
+      "completed": 90,
+      "failed": 6,
+      "stopped": 4,
+      "interrupted": 3,
+      "unrecognised": 0,
+      "in_flight": 2,
+      "total": 103,
+      "success_rate": 0.8738
+    },
+    "interventions": {
+      "steer": 12,
+      "stop": 3,
+      "follow_up": 5,
+      "total": 20
     }
   },
   "msg": "success"
 }
 ```
 
-Additional stats endpoints exist at `GET /agents/{agent_id}/stats/trends` (period `24h`/`7d`/`30d`), `GET /agents/{agent_id}/stats/tool-usage` (period `24h`/`7d`/`30d`/`all`), and `GET /agents/{agent_id}/stats/recent-conversations` (limit, default 10).
+`health` counts this agent's runs by outcome:
+
+| Field | Meaning |
+|-------|---------|
+| `completed` / `failed` / `stopped` | Run reached that terminal state. |
+| `interrupted` | **Terminal.** The worker executing the run was lost (crash, restart, eviction), so the run never reached completion. Counts toward `total` and lowers `success_rate`. |
+| `unrecognised` | Terminal from the caller's perspective only in the sense that it is not counted anywhere else: the stored status is not one this build knows (typically a value written by a different release). Reported separately so enum drift is visible instead of being folded into a bucket or failing the request. |
+| `in_flight` | Non-terminal runs (`queued`, `running`, `stopping`, `completing`, `waiting`). Excluded from `total` and from `success_rate`. |
+| `total` | `completed + failed + stopped + interrupted`. |
+| `success_rate` | `completed / total`, or `0` when there are no terminal runs. |
+
+Additional stats endpoints exist at `GET /api/v1/agents/{agent_id}/stats/trends` (period `24h`/`7d`/`30d`) and `GET /api/v1/agents/{agent_id}/stats/tool-usage` (period `24h`/`7d`/`30d`/`all`).
 
 ## Error Codes
 

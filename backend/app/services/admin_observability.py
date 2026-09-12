@@ -15,6 +15,7 @@ from uuid import UUID
 from tortoise import Tortoise
 
 from app.core.celery import celery_app
+from app.core.db_limits import run_bounded
 from app.core.redis import get_redis
 from app.core.timezone import now, to_utc
 from app.models.workflow import RunStatus
@@ -355,10 +356,12 @@ async def _tracked_model_token_rows(time_range: str) -> list[dict[str, Any]]:
 
 async def get_tokens(time_range: str) -> dict[str, Any]:
     start_time, end_time = normalize_time_range(time_range)
+    # Per-query permits: one permit around the whole gather would let three
+    # queries run under a single slot and exceed the configured bound.
     agent_rows, workflow_tokens, tracked_rows = await asyncio.gather(
-        _agent_model_token_rows(start_time, end_time),
-        _workflow_token_total(start_time, end_time),
-        _tracked_model_token_rows(time_range),
+        run_bounded(_agent_model_token_rows(start_time, end_time)),
+        run_bounded(_workflow_token_total(start_time, end_time)),
+        run_bounded(_tracked_model_token_rows(time_range)),
     )
 
     by_model: dict[str, int] = {}
