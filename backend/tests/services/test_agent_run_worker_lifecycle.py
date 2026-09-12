@@ -292,6 +292,34 @@ def test_agent_task_crash_does_not_overwrite_stopped_run(monkeypatch):
     transition.assert_not_awaited()
 
 
+def test_sweep_lost_agent_runs_task_reports_marked_count(monkeypatch):
+    """The scheduled sweep is the only producer of INTERRUPTED."""
+    from app.services import agent_run_store
+    from app.tasks import agent as agent_task
+
+    sweep = AsyncMock(return_value=3)
+    monkeypatch.setattr(agent_run_store, "mark_expired_runs_interrupted", sweep)
+
+    result = agent_task.sweep_lost_agent_runs_task.run(max_age_seconds=90)
+
+    assert result == {"marked": 3}
+    sweep.assert_awaited_once_with(max_age_seconds=90)
+
+
+def test_sweep_lost_agent_runs_task_reraises_so_beat_retries(monkeypatch):
+    from app.services import agent_run_store
+    from app.tasks import agent as agent_task
+
+    monkeypatch.setattr(
+        agent_run_store,
+        "mark_expired_runs_interrupted",
+        AsyncMock(side_effect=RuntimeError("redis unavailable")),
+    )
+
+    with pytest.raises(RuntimeError, match="redis unavailable"):
+        agent_task.sweep_lost_agent_runs_task.run()
+
+
 @pytest.mark.asyncio
 async def test_run_agent_round_missing_agent_or_conversation_marks_failed(
     monkeypatch, patched_store

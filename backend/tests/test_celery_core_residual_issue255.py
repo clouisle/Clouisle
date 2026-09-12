@@ -80,6 +80,12 @@ def test_configures_celery_with_and_without_redis_password(monkeypatch):
     assert app.conf.beat_schedule["cleanup-expired-sandbox-sessions"]["options"] == {
         "queue": "sandbox"
     }
+    # The worker-loss sweep is the only producer of INTERRUPTED; it must be
+    # scheduled and routed, or a crashed run stays reported as in-flight.
+    sweep = app.conf.beat_schedule["sweep-lost-agent-runs"]
+    assert sweep["task"] == "tasks.sweep_lost_agent_runs"
+    assert sweep["options"] == {"queue": "default"}
+    assert app.conf.task_routes["tasks.sweep_lost_agent_runs"] == {"queue": "default"}
 
     with_password, _ = _load_celery_module(monkeypatch, password="password")
     assert with_password.REDIS_URL == "redis://:password@redis.test:6380"

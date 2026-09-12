@@ -89,3 +89,34 @@ def run_agent_task(self, payload: dict) -> dict:
             return {"status": AgentRunStatus.FAILED.value, "error": error_text}
 
         return _run_async(_mark_failed())
+
+
+@shared_task(name="tasks.sweep_lost_agent_runs", ignore_result=False)
+def sweep_lost_agent_runs_task(max_age_seconds: int = 120) -> dict:
+    """Mark runs whose worker died as INTERRUPTED.
+
+    A run whose process is killed mid-flight never reaches a terminal state:
+    its row stays ``running``/``stopping`` and its Redis lease expires. This
+    sweep is what actually writes ``AgentRunStatus.INTERRUPTED`` — without it
+    that status exists in the enum but is never produced, and a crashed run
+    stays reported as in-flight forever.
+
+    Safe to run on a schedule: ``mark_expired_runs_interrupted`` re-checks the
+    lease per run and never replays side-effecting work.
+    """
+
+    async def _sweep() -> dict:
+        from app.services.agent_run_store import mark_expired_runs_interrupted
+
+        try:
+            marked = await mark_expired_runs_interrupted(
+                max_age_seconds=max_age_seconds
+            )
+        except Exception:
+            logger.exception("Agent run worker-loss sweep failed")
+            raise
+        if marked:
+            logger.warning("Marked %s lost AgentRun(s) as interrupted", marked)
+        return {"marked": marked}
+
+    return _run_async(_sweep())
