@@ -718,7 +718,12 @@ async def test_handle_update_entity_records_changes_and_success(monkeypatch):
         "filter",
         MagicMock(return_value=_query(first=entity)),
     )
-    monkeypatch.setattr(MemoryService, "update_entity", AsyncMock(return_value=entity))
+
+    async def fake_update_entity(*args, **kwargs):
+        entity.embedding_dimension = 768
+        return entity
+
+    monkeypatch.setattr(MemoryService, "update_entity", fake_update_entity)
     audit = AsyncMock()
     monkeypatch.setattr(memory_module.AuditLogService, "log", audit)
     monkeypatch.setattr(memory_module, "t", lambda key, **kwargs: key)
@@ -735,6 +740,7 @@ async def test_handle_update_entity_records_changes_and_success(monkeypatch):
     assert audit.await_args.kwargs["changes"] == {
         "description": {"before": "old", "after": "new"},
         "properties": {"before": "{'level': 1}", "after": "{'level': 2}"},
+        "embedding_dimension": {"before": None, "after": 768},
     }
 
 
