@@ -126,9 +126,9 @@ def test_unsupported_provider_raises_error():
         create_embedding_model(model)
 
 
-def test_unknown_provider_with_base_url_supported():
+def test_custom_provider_with_base_url_supported():
     model = SimpleNamespace(
-        provider="internal_gateway",
+        provider="custom",
         model_id="custom-embed",
         api_key=None,
         base_url="https://gateway.internal/v1",

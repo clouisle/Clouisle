@@ -84,10 +84,15 @@ class OpenAICompatibleEmbeddingAdapter(BaseEmbeddingAdapter):
                 if response.status_code == 200:
                     data = response.json()
                     raw_items = data.get("data", [])
-                    # 确保按 index 排序
                     sorted_items = sorted(
                         raw_items, key=lambda item: item.get("index", 0)
                     )
+                    expected_indexes = list(range(len(texts)))
+                    actual_indexes = [item.get("index") for item in sorted_items]
+                    if actual_indexes != expected_indexes:
+                        raise ValueError(
+                            "Embedding response does not match the input cardinality"
+                        )
                     embeddings = [item["embedding"] for item in sorted_items]
 
                     raw_usage = data.get("usage") or {}

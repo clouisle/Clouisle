@@ -546,7 +546,11 @@ class ModelManager:
                         if hasattr(model_config, "model_id")
                         else str(model_config.id),
                     }
-            except LLMQuotaExceededError:
+            except (
+                LLMQuotaExceededError,
+                ModelNotFoundError,
+                ModelDisabledError,
+            ):
                 raise
             except Exception as exc:
                 logger.debug(
@@ -1087,6 +1091,8 @@ class ModelManager:
             )
 
             return response.embeddings
+        except LLMQuotaExceededError:
+            raise
         except Exception as e:
             logger.exception(f"Team embedding error: {e}")
             raise self._handle_error(e, model_config.provider, model_config.model_id)

@@ -755,6 +755,40 @@ async def test_get_embedding_propagates_team_quota_exceeded_error(
 
 
 @pytest.mark.anyio
+async def test_get_embedding_propagates_model_not_found_and_disabled_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.llm.errors import ModelDisabledError, ModelNotFoundError
+
+    user_id = uuid4()
+    team_id = uuid4()
+    membership = SimpleNamespace(team_id=team_id)
+    manager = ModelManager()
+
+    monkeypatch.setattr(
+        "app.models.user.TeamMember.filter",
+        lambda user_id: SimpleNamespace(first=AsyncMock(return_value=membership)),
+    )
+    monkeypatch.setattr(
+        manager,
+        "team_embed",
+        AsyncMock(side_effect=ModelNotFoundError("Team model not found")),
+    )
+
+    with pytest.raises(ModelNotFoundError):
+        await manager.get_embedding("test text", user_id=user_id, model_id=str(uuid4()))
+
+    monkeypatch.setattr(
+        manager,
+        "team_embed",
+        AsyncMock(side_effect=ModelDisabledError("Team model disabled")),
+    )
+
+    with pytest.raises(ModelDisabledError):
+        await manager.get_embedding("test text", user_id=user_id, model_id=str(uuid4()))
+
+
+@pytest.mark.anyio
 async def test_get_embedding_with_user_id_but_no_team_falls_back_to_global_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
