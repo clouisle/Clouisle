@@ -512,3 +512,11 @@ def test_create_embedding_model_rejects_unsupported_provider() -> None:
     )
     with pytest.raises(ValueError, match="Unsupported provider"):
         create_embedding_model(config)
+
+
+def test_validate_provider_model_type_handles_invalid_string_values() -> None:
+    models._validate_provider_model_type("invalid_provider", "invalid_type")
+
+    with pytest.raises(BusinessError) as exc_info:
+        models._validate_provider_model_type("invalid_provider", "embedding")
+    assert exc_info.value.msg_key == "model_type_not_supported"
