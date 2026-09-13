@@ -884,6 +884,8 @@ curl -X GET "https://your-domain.com/api/v1/knowledge-bases/550e8400-e29b-41d4-a
 
 Share a knowledge base with other teams in the organization with read-only access.
 
+> **Authorization Note**: Creating or modifying a share requires `owner` or `admin` role within the knowledge base's owner team (returns `403` with `TEAM_ADMIN_REQUIRED` otherwise). Superusers and admin-scoped calls bypass this team-role requirement.
+
 ### Share Knowledge Base
 
 ```http
@@ -892,7 +894,7 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "shared_with_team_id": "target-team-uuid",
+  "team_id": "target-team-uuid",
   "permission": "read"
 }
 ```

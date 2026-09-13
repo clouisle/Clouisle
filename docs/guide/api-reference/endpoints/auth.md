@@ -40,10 +40,7 @@ GET /api/v1/captcha HTTP/1.1
   "code": 0,
   "data": {
     "captcha_id": "captcha-uuid-1234",
-    "challenge": {
-      "target_text": "Please click the red circle",
-      "image": "data:image/png;base64,..."
-    }
+    "challenge": "{\"target_text\": \"Please click the red circle\", \"image\": \"data:image/png;base64,...\"}"
   },
   "msg": "success"
 }
@@ -57,13 +54,12 @@ Content-Type: application/json
 
 {
   "captcha_id": "captcha-uuid-1234",
-  "challenge": "challenge-token",
-  "clicked_option": 2,
+  "challenge": "{\"target_text\": \"Please click the red circle\", \"image\": \"data:image/png;base64,...\"}",
+  "clicked_option": "option_red_circle",
   "elapsed_ms": 1420,
   "pointer": [{"x": 120, "y": 85, "t": 1400}]
 }
 ```
-
 #### Response (`200 OK`)
 
 ```json

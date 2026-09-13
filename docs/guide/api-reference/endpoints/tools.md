@@ -704,8 +704,8 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "shared_with_team_id": "target-team-uuid",
-  "permission": "read"
+  "team_id": "target-team-uuid",
+  "permission": "read_only"
 }
 ```
 

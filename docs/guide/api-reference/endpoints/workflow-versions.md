@@ -63,7 +63,7 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "target_version_id": "v1-uuid",
+  "version_id": "v1-uuid",
   "create_backup": true
 }
 ```

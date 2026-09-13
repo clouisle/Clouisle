@@ -7,11 +7,17 @@ The Embed API provides dedicated endpoints for integrating Clouisle agents and w
 ---
 
 ## Authentication
-
 Embed endpoints authenticate via API Key only (prefixed with `clou_`). Authentication can be supplied via:
 - **Authorization Header**: `Authorization: Bearer clou_...`
 - **Query Parameter**: `?token=clou_...`
 
+### Allowed Domains Restriction
+
+When an agent or workflow specifies `allowed_domains` in its `embed_config`:
+- Endpoints for agent info/chat/runs and workflow info/runs check the incoming `Origin` or `Referer` header against the allowlist.
+- If the request domain does not match any configured allowed domain, the server returns `403 Forbidden` (`embed_domain_not_allowed`).
+- Requests without origin information (e.g. testing) or with an empty allowlist are permitted.
+- Streaming workflow execution progress (`GET /workflows/runs/{run_id}/stream`) is exempt from this check.
 ---
 
 ## Agent Embed Endpoints
