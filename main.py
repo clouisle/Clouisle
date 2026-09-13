@@ -120,7 +120,7 @@ def start_server(
 
 def start_worker(
     concurrency: int = 4,
-    queues: str = "default,knowledge,workflow",
+    queues: str = "default,agent,knowledge,workflow",
     *,
     pool: str | None = None,
 ):
@@ -401,8 +401,8 @@ Examples:
     worker_parser.add_argument(
         "-Q",
         "--queues",
-        default="default,knowledge,workflow",
-        help="Queues to consume (default: default,knowledge,workflow)",
+        default="default,agent,knowledge,workflow",
+        help="Queues to consume (default: default,agent,knowledge,workflow)",
     )
 
     # Sandbox worker command

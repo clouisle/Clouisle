@@ -32,6 +32,7 @@ Welcome to the user and operator documentation for Clouisle. For the extended Ch
 - [Workflow history](user-guide/workflows/workflow-history.md)
 - [API key management](user-guide/api-keys/managing-api-keys.md)
 - [API key scopes](user-guide/api-keys/api-key-scopes.md)
+- [Skills and memories](user-guide/settings/skills-and-memories.md)
 
 ### Admin guide
 - [User management](admin-guide/users/user-management.md)
@@ -45,6 +46,7 @@ Welcome to the user and operator documentation for Clouisle. For the extended Ch
 - [System settings](admin-guide/settings/system-settings.md)
 - [SSO settings](admin-guide/settings/SSO.md)
 - [Automatic notifications](admin-guide/settings/AUTO_NOTIFICATIONS.md)
+- [Roles, security, and observability](admin-guide/settings/roles-security-observability.md)
 - [Audit logs](admin-guide/audit-logs/audit-log-management.md)
 
 ### API reference
@@ -58,8 +60,14 @@ Welcome to the user and operator documentation for Clouisle. For the extended Ch
 - [File uploads](api-reference/file-uploads.md)
 - [SSE streaming](api-reference/sse-streaming.md)
 - [Webhooks](api-reference/webhooks.md)
+- [Batch operations](api-reference/batch-operations.md)
+- [Sorting](api-reference/sorting.md)
 - [SDK examples](api-reference/sdk-examples.md)
 - [Endpoint reference directory](api-reference/endpoints/)
+- [Auth API](api-reference/endpoints/auth.md)
+- [Embed API](api-reference/endpoints/embed.md)
+- [Prompts API](api-reference/endpoints/prompts.md)
+- [Workflow Versions API](api-reference/endpoints/workflow-versions.md)
 
 ### Concepts
 - [Architecture](concepts/architecture.md)

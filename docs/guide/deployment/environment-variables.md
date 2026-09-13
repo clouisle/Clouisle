@@ -634,6 +634,48 @@ Runtime environment variables for the frontend container:
 | `BACKEND_INTERNAL_URL` | `http://localhost:8000` | Backend URL the Next.js server uses for SSR and its `/api/*` rewrites (Compose sets `http://api:8000`) |
 | `DEV_ALLOWED_ORIGINS` | *(empty)* | Comma-separated extra origins allowed for dev-server LAN access (`allowedDevOrigins`); production builds ignore it |
 
+## Advanced & Resilience Settings
+
+The following settings configure concurrency limits, streaming timeouts, and sandbox execution parameters:
+
+### DB_AGGREGATE_CONCURRENCY
+
+- **Description**: Maximum concurrency semaphore for fan-out database aggregate queries (e.g. dashboard statistics). Prevents single dashboard requests from exhausting the Tortoise connection pool.
+- **Default**: `4` (must be `> 0`)
+
+### CELERY_VISIBILITY_TIMEOUT_SECONDS
+
+- **Description**: Redis broker visibility timeout for Celery async worker tasks.
+- **Default**: `3600` (1 hour)
+
+### KB_PROCESSING_RECOVERY_AFTER_SECONDS
+
+- **Description**: Automatic recovery window for stuck knowledge base document indexing tasks.
+- **Default**: `600` (10 minutes)
+
+### RETRIEVAL & RAG RESILIENCE FLAGS
+
+- `RETRIEVAL_HYBRID_KILL_SWITCH`: Emergency fallback from hybrid lexical+vector retrieval to dense vector only (default: `False`).
+- `RETRIEVAL_SHADOW_ENABLED`: Run shadow lexical search comparisons for telemetry without altering result ranking (default: `False`).
+- `RAG_QUERY_CONTEXTUALIZATION_ENABLED`: Contextualize conversational queries before KB retrieval (default: `False`).
+- `RAG_QUERY_CONTEXTUALIZATION_TIMEOUT_SECONDS`: Maximum seconds allowed for query contextualization LLM call (default: `2.0`).
+
+### STREAM & TOOL TIMEOUTS
+
+- `STREAM_HTTP_REASONING_READ_TIMEOUT`: Dedicated read timeout for reasoning/Chain-of-Thought thinking models in seconds (default: `300`).
+- `STREAM_GLOBAL_TIMEOUT_WITH_TOOLS`: Maximum lifecycle timeout for complex multi-tool agent sessions in seconds (default: `5400` / 90 min).
+- `STREAM_TOOL_TIMEOUT_HTTP`: HTTP request tool execution timeout (default: `30`s).
+- `STREAM_TOOL_TIMEOUT_CODE`: Sandbox code execution tool timeout (default: `60`s).
+- `STREAM_TOOL_TIMEOUT_MCP`: External Model Context Protocol (MCP) tool execution timeout (default: `60`s).
+- `STREAM_TOOL_TIMEOUT_DOWNLOAD`: File download tool execution timeout (default: `60`s).
+
+### SANDBOX RUNTIME SETTINGS
+
+- `SANDBOX_MAX_DISK_MB`: Maximum disk workspace allocation per code sandbox job in MB (default: `8192`).
+- `SANDBOX_SESSION_TTL_HOURS`: Retained lifetime for interactive sandbox sessions (default: `24`).
+- `SANDBOX_RESULT_TTL_SECONDS`: Caching expiration for deterministic code sandbox results (default: `86400` / 24 hours).
+- `INTERNAL_API_TOKEN_FILE`: Path to a mounted secret file containing the internal communication API token (alternative to setting `INTERNAL_API_TOKEN` directly in environment).
+
 ## Best Practices
 
 ### Security

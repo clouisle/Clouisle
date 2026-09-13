@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Clouisle Frontend
 
-## Getting Started
+Clouisle frontend is built with **Next.js 16 (App Router)**, **React 19**, **TypeScript**, **Tailwind CSS**, and **shadcn/ui**.
 
-First, run the development server:
+---
+
+## 🛠️ Tech Stack & Architecture
+
+- **Framework**: Next.js 16 (App Router, Standalone output)
+- **Runtime & Package Manager**: Bun
+- **UI Components & Styling**: Tailwind CSS, Radix UI primitives, Lucide Icons, Lucide React
+- **Flow & Canvas Editor**: React Flow / `@xyflow/react` (Workflow Graph Builder)
+- **Internationalization**: `next-intl` with lexical-scope linting (`bun run i18n:lint`, `bun run i18n:check`)
+- **State & Data Fetching**: Axios with unified response/toast error interceptor, SWR / React Hooks
+- **Testing**: Bun test with isolated DOM mocking and strict LCOV code coverage gate
+
+---
+
+## 🚀 Getting Started
+
+### 1. Install Dependencies
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
+bun install
+```
+
+### 2. Configure Environment
+
+Copy `.env.example` or create `.env.local`:
+
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+```
+
+### 3. Start Development Server
+
+```bash
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The application will be available at [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 📦 Directory Structure
 
-## Learn More
+```
+frontend/
+├── app/                  # Next.js App Router route groups
+│   ├── (auth)/           # Authentication: login, register, reset-password, totp-setup, sso-callback
+│   ├── (chat)/           # Real-time streaming chat & run execution views
+│   ├── (dashboard)/      # Admin dashboard: users, roles, permissions, audit-logs, site-settings, observability
+│   ├── (platform)/       # Workspace member views: apps, knowledge bases, capabilities, memories
+│   └── (embed)/          # Iframe embed widgets for Agent and Workflow chat
+├── components/           # Reusable UI primitives and domain widgets
+├── contexts/             # Global React contexts (Auth, Team, Theme)
+├── hooks/                # Custom React hooks
+├── i18n/                 # Bilingual dictionary catalogs (en, zh)
+├── lib/                  # Utilities, API client interceptors, and workflow helpers
+└── scripts/              # i18n check and linting automation scripts
+```
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 🧪 Quality & Verification Gates
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+# Type check
+bun x tsc --noEmit
 
-## Deploy on Vercel
+# Lint & Format
+bun run lint
+bun run format:check
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+# Internationalization validation
+bun run i18n:lint
+bun run i18n:check
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+# Run unit tests and verify coverage
+bun run test:coverage
+bun run coverage:check
+```

@@ -1,8 +1,8 @@
 # Workflow Engine Implementation Progress
 
-## Phase 1, 2, 3, 4 & 5 Complete ✅
+## All Phases (1, 2, 3, 4, 5 & 6) Complete ✅
 
-## Phase 6 — Typed Variables (in progress) ✨
+All core engine capabilities, typed variable systems, executors, and distributed Celery tasks are fully implemented and integrated.
 
 Native object/array passthrough between nodes plus a structural TypeSpec
 system that auto-infers from debug runs. See
@@ -91,7 +91,7 @@ backend/app/services/workflow/
 - `POST /api/v1/workflow-templates/{id}/rate` - Rate template
 - `DELETE /api/v1/workflow-templates/{id}` - Delete template
 
-### All Node Types Implemented (17/17) ✅
+### All Node Types Implemented (24/24) ✅
 
 | Node Type | File | Description |
 |-----------|------|-------------|
@@ -107,7 +107,9 @@ backend/app/services/workflow/
 | variable_aggregator | variable.py | Combine variables |
 | parameter_extractor | variable.py | LLM-based extraction |
 | iteration | iteration.py | Array iteration |
+| iteration_start | iteration.py | Loop start handle for array iteration |
 | loop | iteration.py | While loop |
+| loop_start | iteration.py | Loop start handle for while loop |
 | tool | tool.py | Tool execution |
 | agent | tool.py | Agent invocation |
 | http_request | tool.py | HTTP API calls |
@@ -115,6 +117,8 @@ backend/app/services/workflow/
 | file_to_url | subworkflow.py | File URL conversion |
 | knowledge_retrieval | knowledge.py | Knowledge base search |
 | document_extractor | knowledge.py | Document content extraction |
+| media_generation | media_generation.py | Text-to-image/video media generation |
+| pause | pause.py | Human-in-the-loop pause and approval |
 
 ## Next Steps (Phase 6+)
 

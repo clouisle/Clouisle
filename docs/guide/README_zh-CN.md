@@ -79,6 +79,7 @@
 - [工作流历史](user-guide/workflows/workflow-history.md)
 - [API 密钥管理](user-guide/api-keys/managing-api-keys.md)
 - [API 密钥作用域](user-guide/api-keys/api-key-scopes.md)
+- [技能中心与记忆图谱](user-guide/settings/skills-and-memories.md)
 
 ### 管理指南
 - [用户管理](admin-guide/users/user-management.md)
@@ -92,6 +93,7 @@
 - [系统设置](admin-guide/settings/system-settings.md)
 - [SSO 设置](admin-guide/settings/SSO_zh-CN.md)
 - [自动通知](admin-guide/settings/AUTO_NOTIFICATIONS_zh-CN.md)
+- [角色权限、安全与系统可观测性](admin-guide/settings/roles-security-observability.md)
 - [审计日志](admin-guide/audit-logs/audit-log-management.md)
 
 ### API 参考
@@ -101,6 +103,12 @@
 - [错误码](api-reference/error-codes.md)
 - [分页](api-reference/pagination.md)
 - [筛选](api-reference/filtering.md)
+- [批量操作](api-reference/batch-operations.md)
+- [排序规则](api-reference/sorting.md)
+- [认证与登录 API](api-reference/endpoints/auth.md)
+- [外部免登嵌入 API](api-reference/endpoints/embed.md)
+- [智能 Prompt 生成 API](api-reference/endpoints/prompts.md)
+- [工作流版本与模板 API](api-reference/endpoints/workflow-versions.md)
 - [速率限制](api-reference/rate-limiting.md)
 - [文件上传](api-reference/file-uploads.md)
 - [SSE 流式传输](api-reference/sse-streaming.md)
