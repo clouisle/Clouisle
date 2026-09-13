@@ -692,6 +692,74 @@ const result = await testTool(
 console.log('Search results:', result.results);
 ```
 
+## Cross-Team Tool Sharing
+
+Share custom tools with other teams across the workspace.
+
+### Share Tool
+
+```http
+POST /api/v1/tools/{tool_id}/share HTTP/1.1
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "shared_with_team_id": "target-team-uuid",
+  "permission": "read"
+}
+```
+
+### List Shares for Tool
+
+```http
+GET /api/v1/tools/{tool_id}/shares HTTP/1.1
+Authorization: Bearer <token>
+```
+
+### List Tools Shared With Me
+
+```http
+GET /api/v1/tools/shared-with-me?team_id=my-team-uuid HTTP/1.1
+Authorization: Bearer <token>
+```
+
+---
+
+## MCP & Database Tool Diagnostics
+
+### Discover MCP Server Tools
+
+Query and dynamically discover tool definitions from a configured MCP server.
+
+```http
+POST /api/v1/tools/mcp/list-tools HTTP/1.1
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "server_type": "sse",
+  "url": "https://mcp.internal.example.com/sse",
+  "headers": {}
+}
+```
+
+### Test Database Tool Connection
+
+```http
+POST /api/v1/tools/database/test-connection HTTP/1.1
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "db_type": "postgresql",
+  "host": "db.example.com",
+  "port": 5432,
+  "database": "analytics",
+  "username": "readonly",
+  "password": "secret_password"
+}
+```
+
 ## Related Documentation
 
 - [Agent Configuration](../../user-guide/agents/agent-configuration.md) - Using tools with agents

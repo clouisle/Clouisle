@@ -880,6 +880,37 @@ curl -X GET "https://your-domain.com/api/v1/knowledge-bases/550e8400-e29b-41d4-a
 }
 ```
 
+## Cross-Team Sharing
+
+Share a knowledge base with other teams in the organization with read-only access.
+
+### Share Knowledge Base
+
+```http
+POST /api/v1/knowledge-bases/{kb_id}/share HTTP/1.1
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "shared_with_team_id": "target-team-uuid",
+  "permission": "read"
+}
+```
+
+### List Knowledge Base Shares
+
+```http
+GET /api/v1/knowledge-bases/{kb_id}/shares HTTP/1.1
+Authorization: Bearer <token>
+```
+
+### Remove Knowledge Base Share
+
+```http
+DELETE /api/v1/knowledge-bases/{kb_id}/share/{team_id} HTTP/1.1
+Authorization: Bearer <token>
+```
+
 ## Error Codes
 
 | Code | Message | Description |
