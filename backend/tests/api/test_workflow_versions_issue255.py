@@ -7,15 +7,11 @@ import pytest
 
 from app.api.v1 import workflow_versions
 from app.api.v1.workflow_versions import (
-    CreateTemplateRequest,
     CreateVersionRequest,
     ForkRequest,
-    InstantiateTemplateRequest,
-    RateTemplateRequest,
     RollbackRequest,
 )
 from app.schemas.response import BusinessError
-from app.services.workflow.templates import TemplateCategory, TemplateVisibility
 from app.services.workflow.versioning import VersionStatus
 
 
@@ -266,67 +262,3 @@ async def test_missing_diff_and_get_version_raise_not_found(user):
             str(uuid4()), user, from_version="a", to_version="b"
         )
     assert diff_error.value.status_code == 404
-
-
-@pytest.mark.anyio
-async def test_template_creation_defaults_and_validation_errors(user):
-    template = SimpleNamespace(to_dict=lambda: {"id": "template-1"})
-    manager = SimpleNamespace(
-        create_template=AsyncMock(return_value=template),
-        instantiate=AsyncMock(side_effect=ValueError("missing variable")),
-        rate_template=AsyncMock(return_value=False),
-    )
-    request = CreateTemplateRequest(
-        name="Demo",
-        description="A demo",
-        category=TemplateCategory.CUSTOM,
-        visibility=TemplateVisibility.PRIVATE,
-        nodes=[],
-        edges=[],
-        variables=[{"name": "topic"}],
-    )
-
-    with patch.object(workflow_versions, "get_template_manager", return_value=manager):
-        assert await workflow_versions.create_template(request, user) == {
-            "id": "template-1"
-        }
-        with pytest.raises(BusinessError):
-            await workflow_versions.instantiate_template(
-                "template-1",
-                InstantiateTemplateRequest(
-                    template_id="template-1", variables={"topic": "tests"}
-                ),
-                user,
-            )
-        with pytest.raises(BusinessError):
-            await workflow_versions.rate_template(
-                "template-1", RateTemplateRequest(rating=4), user
-            )
-
-    variable = manager.create_template.await_args.kwargs["variables"][0]
-    assert variable.label == "topic"
-    assert variable.required is True
-
-
-@pytest.mark.anyio
-async def test_delete_template_enforces_ownership_and_delete_result(user):
-    foreign = SimpleNamespace(author_id=str(uuid4()))
-    owned = SimpleNamespace(author_id=str(user.id))
-    manager = SimpleNamespace(
-        get_template=AsyncMock(return_value=foreign),
-        delete_template=AsyncMock(return_value=False),
-    )
-
-    with patch.object(workflow_versions, "get_template_manager", return_value=manager):
-        with pytest.raises(BusinessError) as forbidden:
-            await workflow_versions.delete_template("template-1", user)
-        assert forbidden.value.status_code == 403
-
-        manager.get_template.return_value = owned
-        with pytest.raises(BusinessError):
-            await workflow_versions.delete_template("template-1", user)
-
-        manager.delete_template.return_value = True
-        assert await workflow_versions.delete_template("template-1", user) == {
-            "success": True
-        }
