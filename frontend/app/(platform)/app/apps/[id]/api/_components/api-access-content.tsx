@@ -15,6 +15,7 @@ import {
   TabsTrigger,
 } from '@/components/ui/tabs'
 import type { Agent } from '@/lib/api'
+import { PermissionGuard } from '@/components/permission-guard'
 
 interface ApiAccessContentProps {
   agent: Agent
@@ -228,16 +229,18 @@ while (true) {
             <h1 className="text-base font-medium leading-tight">{t('title')}</h1>
             <p className="text-xs text-muted-foreground truncate">{t('description')}</p>
           </div>
-          <a
-            href="/app/api-keys"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-7 px-2.5 shrink-0 ml-4"
-          >
-            <Key className="h-3 w-3" />
-            {t('manageApiKeys')}
-            <ExternalLink className="h-2.5 w-2.5" />
-          </a>
+          <PermissionGuard permission="apikey:read">
+            <a
+              href="/app/api-keys"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-7 px-2.5 shrink-0 ml-4"
+            >
+              <Key className="h-3 w-3" />
+              {t('manageApiKeys')}
+              <ExternalLink className="h-2.5 w-2.5" />
+            </a>
+          </PermissionGuard>
         </div>
       </div>
 

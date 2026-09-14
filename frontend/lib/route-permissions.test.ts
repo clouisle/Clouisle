@@ -25,4 +25,12 @@ describe('route permissions', () => {
     expect(canAccessRoute('/dashboard', hasPermission)).toBe(true)
     expect(canAccessRoute('/roles', hasPermission)).toBe(false)
   })
+
+  test('protects the user API key route with API key read permission', () => {
+    expect(getRequiredPermissionForPath('/app/api-keys')).toBe('apikey:read')
+
+    const hasPermission = (permission: string) => permission === 'apikey:read'
+    expect(canAccessRoute('/app/api-keys', hasPermission)).toBe(true)
+    expect(canAccessRoute('/app/api-keys', () => false)).toBe(false)
+  })
 })

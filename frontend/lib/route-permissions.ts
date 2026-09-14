@@ -28,6 +28,7 @@ export const ROUTE_PERMISSION_CONFIG: RoutePermissionConfig[] = [
   { path: '/apps', permission: 'admin:app:read', matchMode: 'prefix' },
   { path: '/capabilities', permission: 'admin:capability:read', matchMode: 'prefix' },
   { path: '/api-keys', permission: 'apikey:read' },
+  { path: '/app/api-keys', permission: 'apikey:read' },
   { path: '/memories', permission: 'admin:memory:read' },
   { path: '/notifications', permission: 'admin:dashboard:access' },
   { path: '/audit-logs', permission: 'audit:read' },

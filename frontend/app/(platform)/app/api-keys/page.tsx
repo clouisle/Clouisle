@@ -15,6 +15,8 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { apiKeysApi, type APIKey } from '@/lib/api'
+import { RoutePermissionGuard } from '@/components/auth/permission-guard'
+import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -28,13 +30,13 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { APIKeyDialog } from './_components/api-key-dialog'
-import { DeleteAPIKeyDialog } from './_components/delete-api-key-dialog'
 import { ShowKeyDialog } from './_components/show-key-dialog'
-
-export default function APIKeysPage() {
+import { DeleteAPIKeyDialog } from './_components/delete-api-key-dialog'
+function APIKeysContent() {
   const t = useTranslations('apiKeys')
   const commonT = useTranslations('common')
   const locale = useLocale()
+  const { canPerform } = useCanPerform()
 
   // 数据状态
   const [apiKeys, setApiKeys] = React.useState<APIKey[]>([])
@@ -116,8 +118,6 @@ export default function APIKeysPage() {
   // Dialog 成功回调
   const handleDialogSuccess = (key?: string) => {
     loadAPIKeys()
-
-    // 如果是新创建的 key，显示密钥
     if (key) {
       setNewAPIKey(key)
       setShowKeyDialogOpen(true)
@@ -137,6 +137,7 @@ export default function APIKeysPage() {
     }
     return <Badge variant="outline" className="text-muted-foreground">{t('inactive')}</Badge>
   }
+
 
   // Loading state
   if (isLoading) {
@@ -167,13 +168,14 @@ export default function APIKeysPage() {
           <h1 className="text-3xl font-bold tracking-tight">{t('title')}</h1>
           <p className="text-muted-foreground mt-1">{t('description')}</p>
         </div>
-        <Button onClick={handleCreate} data-testid="api-keys-create-button">
-          <Plus className="mr-2 h-4 w-4" />
-          {t('createKey')}
-        </Button>
+        <PermissionGuard permission="apikey:create">
+          <Button onClick={handleCreate} data-testid="api-keys-create-button">
+            <Plus className="mr-2 h-4 w-4" />
+            {t('createKey')}
+          </Button>
+        </PermissionGuard>
       </div>
 
-      {/* 搜索栏 */}
       <div className="relative mb-6 max-w-md">
         <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -184,16 +186,17 @@ export default function APIKeysPage() {
         />
       </div>
 
-      {/* API Keys 列表 */}
       {apiKeys.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <Key className="h-12 w-12 mx-auto mb-4 opacity-50" />
           <p>{t('noKeys')}</p>
           <p className="text-sm mt-1">{t('createKeyHint')}</p>
-          <Button onClick={handleCreate} className="mt-4">
-            <Plus className="mr-2 h-4 w-4" />
-            {t('createKey')}
-          </Button>
+          <PermissionGuard permission="apikey:create">
+            <Button onClick={handleCreate} className="mt-4">
+              <Plus className="mr-2 h-4 w-4" />
+              {t('createKey')}
+            </Button>
+          </PermissionGuard>
         </div>
       ) : filteredKeys.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
@@ -268,41 +271,43 @@ export default function APIKeysPage() {
 
                 {/* Actions Menu */}
                 <div className="shrink-0">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger className="opacity-0 group-hover:opacity-100 transition-opacity ring-offset-background focus-visible:ring-ring data-[state=open]:opacity-100 inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
-                      <MoreHorizontal className="h-4 w-4" />
-                      <span className="sr-only">{commonT('openMenu')}</span>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleEdit(apiKey)}>
-                        <Pencil className="mr-2 h-4 w-4" />
-                        {commonT('edit')}
-                      </DropdownMenuItem>
-
-                      <DropdownMenuItem onClick={() => handleToggleStatus(apiKey)}>
-                        {apiKey.is_active ? (
+                  {(canPerform('apikey:update') || canPerform('apikey:delete')) && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="opacity-0 group-hover:opacity-100 transition-opacity ring-offset-background focus-visible:ring-ring data-[state=open]:opacity-100 inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
+                        <MoreHorizontal className="h-4 w-4" />
+                        <span className="sr-only">{commonT('openMenu')}</span>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {canPerform('apikey:update') && (
                           <>
-                            <KeyRound className="mr-2 h-4 w-4" />
-                            {t('deactivate')}
-                          </>
-                        ) : (
-                          <>
-                            <Key className="mr-2 h-4 w-4" />
-                            {t('activate')}
+                            <DropdownMenuItem onClick={() => handleEdit(apiKey)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              {commonT('edit')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleToggleStatus(apiKey)}>
+                              {apiKey.is_active ? (
+                                <><KeyRound className="mr-2 h-4 w-4" />{t('deactivate')}</>
+                              ) : (
+                                <><Key className="mr-2 h-4 w-4" />{t('activate')}</>
+                              )}
+                            </DropdownMenuItem>
                           </>
                         )}
-                      </DropdownMenuItem>
-
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={() => handleDelete(apiKey)}
-                        className="text-destructive focus:text-destructive"
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        {commonT('delete')}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                        {canPerform('apikey:delete') && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleDelete(apiKey)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              {commonT('delete')}
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </div>
               </div>
             )
@@ -333,5 +338,13 @@ export default function APIKeysPage() {
         apiKey={newAPIKey}
       />
     </div>
+  )
+}
+
+export default function APIKeysPage() {
+  return (
+    <RoutePermissionGuard>
+      <APIKeysContent />
+    </RoutePermissionGuard>
   )
 }
