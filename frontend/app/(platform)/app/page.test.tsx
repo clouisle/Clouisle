@@ -193,7 +193,7 @@ test('loads member stats, trends, recent items, and quick action links', async (
   expect(getKnowledgeBases).toHaveBeenCalledWith({ pageSize: 1, teamId: 'team-1', ownOnly: true })
   expect(getAgents).toHaveBeenCalledWith({ pageSize: 5, teamId: 'team-1', ownOnly: true })
   expect(getTrends).toHaveBeenCalledWith('team-1', '7d', true)
-  expect(getWorkflowRunStats).toHaveBeenCalledWith('team-1', '7d')
+  expect(getWorkflowRunStats).toHaveBeenCalledWith('team-1', '7d', true)
   expect(renderer.root.findAllByProps({ 'data-testid': 'platform-home-scope-tabs' })).toHaveLength(0)
   expect(renderer.root.findByType('h1').children.join('')).toContain('greeting')
   expect(renderer.root.findAllByType('a').map((node) => node.props.href)).toEqual(expect.arrayContaining([

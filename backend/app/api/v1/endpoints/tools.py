@@ -866,7 +866,13 @@ async def update_tool(
     if tool_in.category is not None:
         tool.category = tool_in.category
     if tool_in.visibility is not None:
-        tool.visibility = DBToolVisibility(tool_in.visibility.value)
+        new_visibility = DBToolVisibility(tool_in.visibility.value)
+        if (
+            new_visibility == DBToolVisibility.PRIVATE
+            and tool.visibility != DBToolVisibility.PRIVATE
+        ):
+            await ToolShare.filter(tool_id=tool.id).delete()
+        tool.visibility = new_visibility
     if tool_in.custom_type is not None:
         tool.custom_type = DBCustomToolType(tool_in.custom_type.value)
     if tool_in.parameters is not None:

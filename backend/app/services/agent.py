@@ -462,10 +462,20 @@ class AgentService:
                     continue
                 try:
                     from app.llm.tools.mcp_client import list_mcp_tools
+                    from app.models.tool import ToolShare
 
                     mcp_server = await Tool.filter(id=tool_id, is_enabled=True).first()
                     if not mcp_server or not mcp_server.mcp_config:
                         continue
+                    # Enforce team boundary: must belong to agent's team or be shared with it
+                    server_team_id = getattr(mcp_server, "team_id", None)
+                    if agent.team_id and server_team_id != agent.team_id:
+                        has_share = await ToolShare.filter(
+                            tool_id=mcp_server.id,
+                            shared_with_team_id=agent.team_id,
+                        ).exists()
+                        if not has_share:
+                            continue
                     for mcp_tool in await list_mcp_tools(mcp_server.mcp_config):
                         tools.append(
                             ToolDefinition(
@@ -568,6 +578,17 @@ class AgentService:
                 mcp_server = await Tool.filter(id=tool_id, is_enabled=True).first()
                 if not mcp_server or not mcp_server.mcp_config:
                     continue
+                # Enforce team boundary: must belong to agent's team or be shared with it
+                server_team_id = getattr(mcp_server, "team_id", None)
+                if agent.team_id and server_team_id != agent.team_id:
+                    from app.models.tool import ToolShare
+
+                    has_share = await ToolShare.filter(
+                        tool_id=mcp_server.id,
+                        shared_with_team_id=agent.team_id,
+                    ).exists()
+                    if not has_share:
+                        continue
                 prefix = f"mcp_{mcp_server.name}_"
                 if not tool_name.startswith(prefix):
                     continue

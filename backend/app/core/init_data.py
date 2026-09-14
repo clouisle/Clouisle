@@ -2974,9 +2974,15 @@ async def init_kb_visibility_fields():
         )
         return
 
+    # Existing knowledge bases were team-visible before visibility existed.  Add
+    # the column with that legacy value, then make new rows private by default.
     await conn.execute_query("""
         ALTER TABLE knowledge_bases
-        ADD COLUMN IF NOT EXISTS visibility VARCHAR(20) NOT NULL DEFAULT 'private'
+        ADD COLUMN IF NOT EXISTS visibility VARCHAR(20) NOT NULL DEFAULT 'team'
+    """)
+    await conn.execute_query("""
+        ALTER TABLE knowledge_bases
+        ALTER COLUMN visibility SET DEFAULT 'private'
     """)
 
     logger.info("Knowledge base visibility fields migration complete")

@@ -111,15 +111,16 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
         if not kb:
             return ExecutionResult(error="not_found")
 
-        # If knowledge base is private, verify user access if run has user_id
+        # If knowledge base is private, verify user access using triggered_by_id
         if getattr(kb, "visibility", None) == "private":
-            run_user_id = getattr(run, "user_id", None)
+            run_user_id = getattr(run, "triggered_by_id", None) or getattr(
+                run, "user_id", None
+            )
             kb_creator_id = getattr(kb, "created_by_id", None) or (
                 kb.created_by.id if getattr(kb, "created_by", None) else None
             )
             if kb_creator_id and run_user_id and str(run_user_id) != str(kb_creator_id):
                 return ExecutionResult(error="not_found")
-
         try:
             response = await retrieve(
                 RetrievalRequest(

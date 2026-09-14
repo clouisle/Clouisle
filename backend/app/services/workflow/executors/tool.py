@@ -107,11 +107,32 @@ class ToolNodeExecutor(NodeExecutor):
                     workflow_run_id=run.id,
                 )
             else:
-                # Load tool
+                # Load tool with team boundary verification
+                from app.models.tool import ToolShare, ToolVisibility
+
                 tool = await Tool.filter(id=tool_id).first()
                 if not tool:
                     return ExecutionResult(error="tool_not_found")
 
+                if (
+                    workflow_team_id
+                    and tool.team_id
+                    and tool.team_id != workflow_team_id
+                ):
+                    has_share = await ToolShare.filter(
+                        tool_id=tool.id,
+                        shared_with_team_id=workflow_team_id,
+                    ).exists()
+                    if not has_share or tool.visibility == ToolVisibility.PRIVATE:
+                        return ExecutionResult(error="tool_not_found")
+
+                if (
+                    tool.visibility == ToolVisibility.PRIVATE
+                    and run.triggered_by_id
+                    and tool.created_by_id
+                    and str(run.triggered_by_id) != str(tool.created_by_id)
+                ):
+                    return ExecutionResult(error="tool_not_found")
                 result = await tool_executor.execute(
                     tool=tool,
                     arguments=inputs,

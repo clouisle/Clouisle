@@ -93,6 +93,25 @@ async def test_team_admin_can_use_team_admin_action(monkeypatch):
     assert await check_team_access(team.id, user, require_admin=True) is team
 
 
+@pytest.mark.anyio
+async def test_viewer_cannot_write_despite_global_permission(monkeypatch):
+    team = SimpleNamespace(id=uuid4())
+    user = SimpleNamespace(
+        id=uuid4(),
+        is_superuser=False,
+        roles=[_Role("agent:create")],
+    )
+    _TeamModel.team = team
+    _TeamMemberModel.membership = SimpleNamespace(role="viewer")
+    monkeypatch.setattr("app.api.team_access.Team", _TeamModel)
+    monkeypatch.setattr("app.api.team_access.TeamMember", _TeamMemberModel)
+
+    with pytest.raises(BusinessError) as error:
+        await check_team_permission(team.id, user, "agent:create")
+
+    assert error.value.msg_key == "operation_not_permitted"
+
+
 class _WorkflowModel:
     workflow = None
 

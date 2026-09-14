@@ -580,7 +580,9 @@ class ClouislePackageService:
                 user=user,
                 install_in=install_in,
                 package_dir=package_dir,
-                check_update_permission=check_permission,
+                # The service performed the source-aware check above. Adapters
+                # retain their own scoped check for direct callers.
+                check_update_permission=False,
             )
         except BusinessError:
             session.status = ClouisleImportSessionStatus.FAILED

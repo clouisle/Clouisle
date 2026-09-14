@@ -445,7 +445,7 @@ class ToolPackageAdapter(ResourcePackageAdapter):
         async with in_transaction():
             if install_in.action == ClouisleConflictAction.UPDATE:
                 if check_update_permission:
-                    self.ensure_update_permission(user)
+                    await self.ensure_update_permission(user, team_id=team.id)
                 existing = await Tool.filter(
                     team_id=team.id, name=resource_payload.get("name")
                 ).first()
@@ -625,7 +625,7 @@ class AgentPackageAdapter(ResourcePackageAdapter):
         async with in_transaction():
             if install_in.action == ClouisleConflictAction.UPDATE:
                 if check_update_permission:
-                    self.ensure_update_permission(user)
+                    await self.ensure_update_permission(user, team_id=team.id)
                 existing = await Agent.filter(
                     team_id=team.id, name=resource_payload.get("name")
                 ).first()
@@ -738,7 +738,7 @@ class WorkflowPackageAdapter(ResourcePackageAdapter):
         async with in_transaction():
             if install_in.action == ClouisleConflictAction.UPDATE:
                 if check_update_permission:
-                    self.ensure_update_permission(user)
+                    await self.ensure_update_permission(user, team_id=team.id)
                 existing = await Workflow.filter(
                     team_id=team.id, name=resource_payload.get("name")
                 ).first()
@@ -916,7 +916,7 @@ class KnowledgeBasePackageAdapter(ResourcePackageAdapter):
         async with in_transaction():
             if install_in.action == ClouisleConflictAction.UPDATE:
                 if check_update_permission:
-                    self.ensure_update_permission(user)
+                    await self.ensure_update_permission(user, team_id=team.id)
                 existing = await KnowledgeBase.filter(
                     team_id=team.id, name=resource_payload.get("name")
                 ).first()

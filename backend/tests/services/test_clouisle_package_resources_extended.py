@@ -335,15 +335,25 @@ async def test_workflow_install_updates_version_and_checks_permission(monkeypatc
     assert existing.version == 3
     assert existing.trigger_type.value == "manual"
 
+    denied = AsyncMock(
+        side_effect=BusinessError(code=4000, msg_key="operation_not_permitted")
+    )
+    monkeypatch.setattr(resources, "_check_permission", denied)
+    unauthorized_user = SimpleNamespace(is_superuser=False, roles=[])
     with pytest.raises(BusinessError) as exc_info:
         await WorkflowPackageAdapter().install(
             manifest=None,
             resource_payload={"name": existing.name},
             team=SimpleNamespace(id=existing.team_id),
-            user=SimpleNamespace(is_superuser=False, roles=[]),
+            user=unauthorized_user,
             install_in=request,
         )
     assert exc_info.value.msg_key == "operation_not_permitted"
+    denied.assert_awaited_once_with(
+        unauthorized_user,
+        "workflow:update",
+        existing.team_id,
+    )
 
 
 @pytest.mark.asyncio
@@ -446,13 +456,14 @@ def test_document_restore_rejects_missing_and_outside_sources(tmp_path):
     )
 
 
-def test_adapter_registry_and_explicit_target_name():
+@pytest.mark.asyncio
+async def test_adapter_registry_and_explicit_target_name():
     assert (
         resources.get_adapter(resources.ClouisleResourceType.AGENT).resource_type.value
         == "agent"
     )
     assert (
-        ToolPackageAdapter().ensure_import_permission(
+        await ToolPackageAdapter().ensure_import_permission(
             SimpleNamespace(is_superuser=True)
         )
         is None

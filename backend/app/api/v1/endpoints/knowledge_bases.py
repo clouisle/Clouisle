@@ -546,6 +546,8 @@ async def check_kb_access(
     kb_visibility = getattr(kb, "visibility", KnowledgeBaseVisibility.TEAM.value)
     if kb_visibility == KnowledgeBaseVisibility.PRIVATE.value:
         if is_owner:
+            if require_write and not allow_owner_write:
+                await check_team_access(kb_team_id, user, require_admin=True)
             return kb
         if not kb.created_by:
             await check_team_access(kb_team_id, user)
@@ -604,10 +606,7 @@ async def list_knowledge_bases(
         await check_team_access(team_id, current_user)
         vis_filter = await kb_read_visibility_filter(current_user, team_id=team_id)
         if not include_shared or own_only:
-            try:
-                query = query.filter(vis_filter)
-            except TypeError:
-                query = query.filter(team_id=team_id)
+            query = query.filter(vis_filter)
         else:
             shared_kb_ids = await KnowledgeBaseShare.filter(
                 shared_with_team_id=team_id,
@@ -616,20 +615,14 @@ async def list_knowledge_bases(
                     KnowledgeBaseVisibility.PUBLIC.value,
                 ],
             ).values_list("knowledge_base_id", flat=True)
-            try:
-                query = query.filter(vis_filter | Q(id__in=shared_kb_ids))
-            except TypeError:
-                query = query.filter(Q(team_id=team_id) | Q(id__in=shared_kb_ids))
+            query = query.filter(vis_filter | Q(id__in=shared_kb_ids))
     elif not current_user.is_superuser and _kb_access_mode.get() != "admin":
         memberships = await TeamMember.filter(user=current_user).values_list(
             "team_id", flat=True
         )
         vis_filter = await kb_read_visibility_filter(current_user)
         if not include_shared or own_only:
-            try:
-                query = query.filter(vis_filter)
-            except (TypeError, Exception):
-                query = query.filter(team_id__in=memberships)
+            query = query.filter(vis_filter)
         else:
             shared_kb_ids = await KnowledgeBaseShare.filter(
                 shared_with_team_id__in=memberships,
@@ -638,12 +631,7 @@ async def list_knowledge_bases(
                     KnowledgeBaseVisibility.PUBLIC.value,
                 ],
             ).values_list("knowledge_base_id", flat=True)
-            try:
-                query = query.filter(vis_filter | Q(id__in=shared_kb_ids))
-            except (TypeError, Exception):
-                query = query.filter(
-                    Q(team_id__in=memberships) | Q(id__in=shared_kb_ids)
-                )
+            query = query.filter(vis_filter | Q(id__in=shared_kb_ids))
     if own_only and not current_user.is_superuser:
         query = query.filter(created_by=current_user)
     if search:

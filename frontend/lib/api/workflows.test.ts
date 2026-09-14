@@ -121,7 +121,7 @@ describe('workflowsApi request construction', () => {
 
     await workflowsApi.getAllWorkflowRuns()
     await workflowsApi.getWorkflowRunStats()
-    await workflowsApi.getWorkflowRunStats('team-1')
+    await workflowsApi.getWorkflowRunStats('team-1', undefined, true)
     await workflowsApi.getWorkflowRuns('workflow-1')
     await workflowsApi.getWorkflowRuns('workflow-1', {
       page: 2,
@@ -135,7 +135,7 @@ describe('workflowsApi request construction', () => {
 
     expect(getSpy).toHaveBeenNthCalledWith(1, '/workflows/runs?page=1&page_size=20')
     expect(getSpy).toHaveBeenNthCalledWith(2, '/workflows/runs/stats?')
-    expect(getSpy).toHaveBeenNthCalledWith(3, '/workflows/runs/stats?team_id=team-1')
+    expect(getSpy).toHaveBeenNthCalledWith(3, '/workflows/runs/stats?team_id=team-1&own_only=true')
     expect(getSpy).toHaveBeenNthCalledWith(4, '/workflows/workflow-1/runs?page=1&page_size=20')
     expect(getSpy).toHaveBeenNthCalledWith(
       5,

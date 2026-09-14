@@ -146,6 +146,8 @@ async def test_get_agent_tools_discovers_configured_mcp_server_tools():
     service = AgentService()
     agent = _agent(tools_config=[{"type": "mcp", "server_id": "server-1"}])
     server = SimpleNamespace(
+        id="server-1",
+        team_id=agent.team_id,
         name="browser_server",
         mcp_config={"transport": "stdio", "command": "npx", "args": ["-y"]},
     )
@@ -177,10 +179,35 @@ async def test_get_agent_tools_discovers_configured_mcp_server_tools():
 
 
 @pytest.mark.anyio
+async def test_get_agent_tools_hides_unshared_cross_team_mcp_server():
+    service = AgentService()
+    agent = _agent(tools_config=[{"type": "mcp", "server_id": "server-1"}])
+    server = SimpleNamespace(
+        id="server-1",
+        team_id=uuid4(),
+        name="browser_server",
+        mcp_config={"transport": "stdio", "command": "npx"},
+    )
+    server_query = SimpleNamespace(first=AsyncMock(return_value=server))
+    share_query = SimpleNamespace(exists=AsyncMock(return_value=False))
+
+    with (
+        patch("app.services.agent.Tool.filter", return_value=server_query),
+        patch("app.models.tool.ToolShare.filter", return_value=share_query),
+        patch("app.llm.tools.mcp_client.list_mcp_tools", new=AsyncMock()) as list_tools,
+    ):
+        assert await service._get_agent_tools(agent) == []
+
+    list_tools.assert_not_awaited()
+
+
+@pytest.mark.anyio
 async def test_execute_tool_dispatches_configured_mcp_tool_with_arguments():
     service = AgentService()
     agent = _agent(tools_config=[{"type": "mcp", "server_id": "server-1"}])
     server = SimpleNamespace(
+        id="server-1",
+        team_id=agent.team_id,
         name="browser_server",
         mcp_config={"transport": "stdio", "command": "npx"},
     )

@@ -133,6 +133,29 @@ async def test_startup_migration_resets_lock_timeout_after_failure() -> None:
 
 
 @pytest.mark.asyncio
+async def test_kb_visibility_migration_preserves_legacy_team_access(
+    monkeypatch,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(
+            side_effect=[
+                (1, [{"table_name": "knowledge_bases"}]),
+                (0, []),
+                None,
+                None,
+            ]
+        )
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.init_kb_visibility_fields()
+
+    queries = [call.args[0] for call in conn.execute_query.await_args_list]
+    assert "DEFAULT 'team'" in queries[2]
+    assert "SET DEFAULT 'private'" in queries[3]
+
+
+@pytest.mark.asyncio
 async def test_pause_request_migration_uses_mapped_node_execution_table(monkeypatch):
     conn = SimpleNamespace(
         capabilities=SimpleNamespace(dialect="postgres"),

@@ -304,6 +304,7 @@ async def list_all_workflow_runs(
 async def get_workflow_run_stats(
     team_id: UUID | None = Query(None),
     period: str | None = Query(None, description="Time period: 7d, 30d"),
+    own_only: bool = Query(False),
     current_user: User = Depends(deps.PermissionChecker("workflow:read")),
 ) -> Any:
     """
@@ -322,6 +323,9 @@ async def get_workflow_run_stats(
     if team_id:
         await check_team_access(team_id, current_user)
         workflow_query = workflow_query.filter(team_id=team_id)
+
+    if own_only:
+        workflow_query = workflow_query.filter(created_by=current_user)
 
     visibility_filter = await workflow_read_visibility_filter(current_user)
     if visibility_filter is not None:

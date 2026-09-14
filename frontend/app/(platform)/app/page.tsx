@@ -375,7 +375,7 @@ export default function PlatformHomePage() {
         agentsApi.getAgents({ pageSize: 5, teamId: currentTeam.id, ownOnly }),
         workflowsApi.getWorkflows({ pageSize: 5, teamId: currentTeam.id, ownOnly }),
         conversationsApi.getTrends(currentTeam.id, '7d', ownOnly),
-        workflowsApi.getWorkflowRunStats(currentTeam.id, '7d').catch(() => null),
+        workflowsApi.getWorkflowRunStats(currentTeam.id, '7d', ownOnly).catch(() => null),
       ])
 
       // 近7天对话数、消息数、Token消耗：从7天趋势数据中累加，避免全表扫描性能瓶颈
