@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Image from 'next/image'
 import { Handle, Position } from '@xyflow/react'
 import { Wrench, AlertCircle, Clock3, Calculator, Search, Globe, FolderOpen, Code2, Link, ChartColumn } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -138,11 +139,21 @@ export function ToolNode({ selected, data }: ToolNodeProps) {
         <div className="flex items-center gap-2 px-2.5 py-2">
           {/* Icon */}
           <div className={cn(
-            'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white',
+            'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white overflow-hidden relative',
             config.toolType === 'mcp' ? 'bg-violet-500' : 'bg-emerald-500'
           )}>
             {hasTool && config.toolIcon ? (
-              <span className="text-sm">{config.toolIcon}</span>
+              config.toolIcon.startsWith('http') || config.toolIcon.startsWith('/') || config.toolIcon.startsWith('data:') ? (
+                <Image
+                  src={config.toolIcon}
+                  alt={data.label || 'Tool'}
+                  fill
+                  className="object-cover"
+                  unoptimized
+                />
+              ) : (
+                <span className="text-sm">{config.toolIcon}</span>
+              )
             ) : hasTool && config.toolCategory && isPresetToolCategory(config.toolCategory) ? (
               <span className="text-sm">{categoryIcons[config.toolCategory]}</span>
             ) : (

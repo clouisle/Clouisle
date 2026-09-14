@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Image from 'next/image'
 import { useTranslations } from 'next-intl'
 import {
   Plus,
@@ -295,8 +296,24 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
                           onClick={() => handleSelectTool(tool)}
                         >
                           {/* 图标 */}
-                          <div className="shrink-0 w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-xl">
-                            {tool.icon || (tool.custom_type === 'database' ? <Database className="h-5 w-5" /> : category.icon)}
+                          <div className="shrink-0 w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-xl overflow-hidden relative">
+                            {tool.icon ? (
+                              tool.icon.startsWith('http') || tool.icon.startsWith('/') || tool.icon.startsWith('data:') ? (
+                                <Image
+                                  src={tool.icon}
+                                  alt={tool.display_name}
+                                  fill
+                                  className="object-cover"
+                                  unoptimized
+                                />
+                              ) : (
+                                <span>{tool.icon}</span>
+                              )
+                            ) : tool.custom_type === 'database' ? (
+                              <Database className="h-5 w-5" />
+                            ) : (
+                              category.icon
+                            )}
                           </div>
 
                           {/* 内容 */}
@@ -411,10 +428,25 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete }: ToolDisplay
         {/* 图标 */}
         {isMissing ? (
           <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+        ) : tool?.icon ? (
+          tool.icon.startsWith('http') || tool.icon.startsWith('/') || tool.icon.startsWith('data:') ? (
+            <div className="relative h-4 w-4 shrink-0 rounded overflow-hidden">
+              <Image
+                src={tool.icon}
+                alt={displayName}
+                fill
+                className="object-cover"
+                unoptimized
+              />
+            </div>
+          ) : (
+            <span className="text-sm shrink-0 leading-none">{tool.icon}</span>
+          )
+        ) : tool?.custom_type === 'database' ? (
+          <Database className="h-4 w-4 text-teal-600 dark:text-teal-400 shrink-0" />
         ) : (
           <Wrench className="h-4 w-4 text-orange-500 shrink-0" />
         )}
-
         {/* 名称 */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">

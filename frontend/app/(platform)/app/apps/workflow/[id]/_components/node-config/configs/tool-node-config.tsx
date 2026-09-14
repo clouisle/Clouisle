@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Image from 'next/image'
 import { useTranslations } from 'next-intl'
 import { Trash2, Search, ChevronDown, Wrench, Check, AlertCircle, Loader2, Clock3, Calculator, Globe, FolderOpen, Code2, Link, ChartColumn, Database } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -477,8 +478,24 @@ export function ToolNodeConfig({
         {selectedTool ? (
           // 已选择工具
           <div className="flex items-center gap-2 p-2.5 rounded-lg border bg-muted/30">
-            <div className="shrink-0 w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-lg">
-              {selectedTool.icon || (selectedTool.custom_type === 'database' ? <Database className="h-4 w-4" /> : getCategoryConfig(selectedTool.category).icon) || '⚙️'}
+            <div className="shrink-0 w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-lg overflow-hidden relative">
+              {selectedTool.icon ? (
+                selectedTool.icon.startsWith('http') || selectedTool.icon.startsWith('/') || selectedTool.icon.startsWith('data:') ? (
+                  <Image
+                    src={selectedTool.icon}
+                    alt={selectedTool.display_name}
+                    fill
+                    className="object-cover"
+                    unoptimized
+                  />
+                ) : (
+                  <span>{selectedTool.icon}</span>
+                )
+              ) : selectedTool.custom_type === 'database' ? (
+                <Database className="h-4 w-4" />
+              ) : (
+                getCategoryConfig(selectedTool.category).icon || '⚙️'
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
@@ -570,8 +587,24 @@ export function ToolNodeConfig({
                                 )}
                                 onClick={() => handleSelectTool(tool)}
                               >
-                                <div className="shrink-0 w-7 h-7 rounded-md bg-muted flex items-center justify-center text-sm">
-                                  {tool.icon || (tool.custom_type === 'database' ? <Database className="h-4 w-4" /> : getCategoryConfig(tool.category).icon)}
+                                <div className="shrink-0 w-7 h-7 rounded-md bg-muted flex items-center justify-center text-sm overflow-hidden relative">
+                                  {tool.icon ? (
+                                    tool.icon.startsWith('http') || tool.icon.startsWith('/') || tool.icon.startsWith('data:') ? (
+                                      <Image
+                                        src={tool.icon}
+                                        alt={tool.display_name}
+                                        fill
+                                        className="object-cover"
+                                        unoptimized
+                                      />
+                                    ) : (
+                                      <span>{tool.icon}</span>
+                                    )
+                                  ) : tool.custom_type === 'database' ? (
+                                    <Database className="h-4 w-4" />
+                                  ) : (
+                                    getCategoryConfig(tool.category).icon
+                                  )}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-1">
