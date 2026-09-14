@@ -109,6 +109,24 @@ export function getRequiredPermissionForPath(pathname: string): string | null {
   return getRoutePermissionConfig(pathname)?.permission ?? null
 }
 
+const ADMIN_ROUTE_PREFIXES = [
+  '/dashboard',
+  '/teams',
+  '/knowledge-bases',
+  '/activities',
+  '/users',
+  '/roles',
+  '/permissions',
+  '/models',
+  '/apps',
+  '/capabilities',
+  '/api-keys',
+  '/memories',
+  '/notifications',
+  '/audit-logs',
+  '/site-settings',
+]
+
 export function canAccessRoute(
   pathname: string,
   hasPermission: (permission: string) => boolean,
@@ -116,6 +134,13 @@ export function canAccessRoute(
 ): boolean {
   const config = getRoutePermissionConfig(pathname)
   if (!config) {
+    // Fail-closed for any unmapped admin-prefixed path
+    const isAdminPath = ADMIN_ROUTE_PREFIXES.some(
+      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+    )
+    if (isAdminPath) {
+      return isSuperuser
+    }
     return true
   }
   if (config.requiresSuperuser && !isSuperuser) {
