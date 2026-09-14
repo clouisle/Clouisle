@@ -14,19 +14,11 @@ from tortoise.expressions import Q
 from tortoise.functions import Count
 
 from app.api import deps
-from app.api.conversation_access import (
-    has_conversation_team_admin_access,
-    has_global_conversation_access as _has_global_dashboard_access,
-)
-
-__all__ = [
-    "_has_global_dashboard_access",
-    "has_conversation_team_admin_access",
-    "router",
-]
+from app.api.conversation_access import has_conversation_team_admin_access
+from app.api.team_access import check_team_access
 from app.core.i18n import t
 from app.core.timezone import now, to_utc
-from app.models.user import User, Team, TeamMember
+from app.models.user import User, TeamMember
 from app.models.agent import Agent, Conversation, Message
 from app.schemas.agent import (
     ConversationListOut,
@@ -59,30 +51,6 @@ class UserUsage(TypedDict):
 
 def _token_count(value: object) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
-
-
-async def check_team_access(team_id: UUID, user: User) -> Team:
-    """Check if user has access to the team."""
-    team = await Team.filter(id=team_id).first()
-    if not team:
-        raise BusinessError(
-            code=ResponseCode.TEAM_NOT_FOUND,
-            msg_key="team_not_found",
-            status_code=404,
-        )
-
-    if user.is_superuser:
-        return team
-
-    membership = await TeamMember.filter(team=team, user=user).first()
-    if not membership:
-        raise BusinessError(
-            code=ResponseCode.NOT_TEAM_MEMBER,
-            msg_key="not_team_member",
-            status_code=403,
-        )
-
-    return team
 
 
 async def get_user_team_agent_ids(

@@ -305,33 +305,19 @@ async def check_team_access(
     Check if user has access to the team.
     Returns the team if access is granted.
     """
-    team = await Team.filter(id=team_id).first()
-    if not team:
-        raise BusinessError(
-            code=ResponseCode.TEAM_NOT_FOUND,
-            msg_key="team_not_found",
-            status_code=404,
-        )
-
-    if user.is_superuser or _kb_access_mode.get() == "admin":
+    if _kb_access_mode.get() == "admin":
+        team = await Team.filter(id=team_id).first()
+        if not team:
+            raise BusinessError(
+                code=ResponseCode.TEAM_NOT_FOUND,
+                msg_key="team_not_found",
+                status_code=404,
+            )
         return team
 
-    membership = await TeamMember.filter(team=team, user=user).first()
-    if not membership:
-        raise BusinessError(
-            code=ResponseCode.NOT_TEAM_MEMBER,
-            msg_key="not_team_member",
-            status_code=403,
-        )
+    from app.api.team_access import check_team_access as shared_check_team_access
 
-    if require_admin and membership.role not in ["owner", "admin"]:
-        raise BusinessError(
-            code=ResponseCode.TEAM_ADMIN_REQUIRED,
-            msg_key="team_admin_required",
-            status_code=403,
-        )
-
-    return team
+    return await shared_check_team_access(team_id, user, require_admin=require_admin)
 
 
 async def get_embedding_model_info(model_id: UUID | None) -> EmbeddingModelInfo | None:
