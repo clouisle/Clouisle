@@ -41,9 +41,10 @@ class TeamMemberBase(BaseModel):
 
 
 class TeamMemberAdd(TeamMemberBase):
-    """添加团队成员"""
+    """添加团队成员（支持直接提供 user_id 或 精确匹配 username/email）"""
 
-    user_id: UUID
+    user_id: Optional[UUID] = None
+    identifier: Optional[str] = None
 
 
 class TeamMemberUpdate(BaseModel):

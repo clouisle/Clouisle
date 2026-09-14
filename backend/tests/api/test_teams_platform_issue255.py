@@ -95,7 +95,7 @@ async def test_get_team_rejects_non_member_after_team_lookup():
     existing_team = team()
 
     with (
-        patch.object(teams.deps, "check_scoped_permission", AsyncMock()),
+        patch.object(teams, "check_team_permission", AsyncMock()),
         patch.object(teams.Team, "filter", return_value=Query(first=existing_team)),
         patch.object(teams.TeamMember, "filter", return_value=Query(first=None)),
         pytest.raises(teams.BusinessError) as error,
@@ -118,7 +118,7 @@ async def test_update_team_rejects_duplicate_name_before_save():
         return Query(first=existing_team)
 
     with (
-        patch.object(teams.deps, "check_scoped_permission", AsyncMock()),
+        patch.object(teams, "check_team_permission", AsyncMock()),
         patch.object(teams.Team, "filter", side_effect=team_filter),
         pytest.raises(teams.BusinessError) as error,
     ):
@@ -140,7 +140,7 @@ async def test_remove_team_member_self_removal_skips_manage_permission_and_notif
     current_membership = membership(current_user)
 
     with (
-        patch.object(teams.deps, "check_scoped_permission", AsyncMock()) as scoped,
+        patch.object(teams, "check_team_permission", AsyncMock()) as scoped,
         patch.object(teams.Team, "filter", return_value=Query(first=existing_team)),
         patch.object(teams.User, "filter", return_value=Query(first=current_user)),
         patch.object(
@@ -173,7 +173,7 @@ async def test_leave_team_rejects_owner_and_deletes_member():
     member_membership = membership(current_user, TeamMemberRole.MEMBER)
 
     with (
-        patch.object(teams.deps, "check_scoped_permission", AsyncMock()),
+        patch.object(teams, "check_team_permission", AsyncMock()),
         patch.object(teams.Team, "filter", return_value=Query(first=existing_team)),
         patch.object(
             teams.TeamMember, "filter", return_value=Query(first=owner_membership)
@@ -185,7 +185,7 @@ async def test_leave_team_rejects_owner_and_deletes_member():
     assert error.value.msg_key == "owner_cannot_leave"
 
     with (
-        patch.object(teams.deps, "check_scoped_permission", AsyncMock()),
+        patch.object(teams, "check_team_permission", AsyncMock()),
         patch.object(teams.Team, "filter", return_value=Query(first=existing_team)),
         patch.object(
             teams.TeamMember, "filter", return_value=Query(first=member_membership)

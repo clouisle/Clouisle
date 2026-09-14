@@ -241,6 +241,36 @@ async def test_admin_list_includes_safe_delivery_errors_and_pagination():
 
 
 @pytest.mark.asyncio
+async def test_admin_dashboard_role_lists_notifications_without_team_scope():
+    notification = notification_row(uuid4())
+    query = FakeQuery(rows=[notification], total=1)
+    dashboard_role = SimpleNamespace(
+        permissions=[SimpleNamespace(code="admin:dashboard:access")]
+    )
+
+    deliveries = FakeQuery(rows=[])
+
+    with (
+        patch.object(Notification, "all", return_value=query),
+        patch.object(NotificationDelivery, "filter", return_value=deliveries),
+    ):
+        response = await admin_list_notifications(
+            scope=None,
+            team_id=None,
+            user_id=None,
+            type=None,
+            level=None,
+            search=None,
+            include_expired=False,
+            page=1,
+            page_size=20,
+            current_user=SimpleNamespace(is_superuser=False, roles=[dashboard_role]),
+        )
+    assert response["data"]["total"] == 1
+    assert query.pagination == [0, 20]
+
+
+@pytest.mark.asyncio
 async def test_team_admin_permission_handles_missing_team_and_non_admin():
     missing_team = MagicMock()
     missing_team.first = AsyncMock(return_value=None)

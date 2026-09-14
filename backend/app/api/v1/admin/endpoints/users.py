@@ -17,7 +17,7 @@ from app.core.email import (
     check_recipient_email_rate,
     increment_recipient_email_count,
 )
-from app.models.user import User, Role
+from app.models.user import User, Role, TeamMember
 from app.models.site_setting import SiteSetting
 from app.models.notification import AutoNotificationType, NotificationLevel
 from app.schemas.user import User as UserSchema, UserCreate, UserUpdate
@@ -500,9 +500,31 @@ async def update_user(
         roles_before = sorted(r.name for r in await user.roles.all())
         roles = []
         for role_name in role_names:
-            role = await Role.filter(name=role_name).first()
+            role = (
+                await Role.filter(name=role_name)
+                .prefetch_related("permissions")
+                .first()
+            )
             if role:
                 roles.append(role)
+
+        has_team_manage_permission = any(
+            permission.code in {"team:manage", "*"}
+            for role in roles
+            for permission in role.permissions
+        )
+        is_team_administrator = await TeamMember.filter(
+            user=user,
+            role__in=["owner", "admin"],
+        ).exists()
+        if is_team_administrator and not has_team_manage_permission:
+            raise BusinessError(
+                code=ResponseCode.PERMISSION_DENIED,
+                msg_key="operation_not_permitted",
+                status_code=403,
+                permission="team:manage",
+            )
+
         await user.roles.clear()
         await user.roles.add(*roles)
         roles_after = sorted({r.name for r in roles})

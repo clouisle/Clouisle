@@ -14,7 +14,7 @@ from tortoise.functions import Count
 from tortoise.transactions import in_transaction
 
 from app.api import deps
-from app.api.team_access import check_team_access
+from app.api.team_access import check_team_access, check_team_permission
 from app.models.user import User, TeamMember
 from app.models.model import TeamModel, Model
 from app.models.knowledge_base import KnowledgeBase, KnowledgeBaseShare
@@ -402,11 +402,11 @@ async def create_agent(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Create a new agent."""
-    # Check team access
-    await deps.check_scoped_permission(
-        current_user, "agent:create", "team", agent_in.team_id
+    team = await check_team_permission(
+        agent_in.team_id,
+        current_user,
+        "agent:create",
     )
-    team = await check_team_access(agent_in.team_id, current_user)
 
     # Check for duplicate name within the same team
     existing = await Agent.filter(
@@ -573,9 +573,7 @@ async def update_agent(
     """Update an agent."""
     agent = await check_agent_access(agent_id, current_user, require_write=True)
     audit_before = AuditLogService.snapshot(agent, "agent")
-    await deps.check_scoped_permission(
-        current_user, "agent:update", "team", agent.team.id
-    )
+    await check_team_permission(agent.team.id, current_user, "agent:update")
 
     # Check for duplicate name within the same team (exclude self)
     if agent_in.name is not None and agent_in.name != agent.name:
@@ -932,9 +930,7 @@ async def duplicate_agent(
 ) -> Any:
     """Duplicate an agent."""
     agent = await check_agent_access(agent_id, current_user)
-    await deps.check_scoped_permission(
-        current_user, "agent:create", "team", agent.team.id
-    )
+    await check_team_permission(agent.team.id, current_user, "agent:create")
 
     # Create a copy
     new_agent = await Agent.create(

@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from app.api import deps
 from app.api.workflow_access import check_workflow_access
+from app.api.team_access import check_team_permission
 from app.models.user import User
 from app.schemas.response import BusinessError, ResponseCode
 from app.services.workflow.errors import translate_public_workflow_error
@@ -37,8 +38,10 @@ async def check_version_workflow_access(
         require_write=require_write or required_permission is not None,
     )
     if required_permission:
-        await deps.check_scoped_permission(
-            current_user, required_permission, "team", workflow.team.id
+        await check_team_permission(
+            workflow.team.id,
+            current_user,
+            required_permission,
         )
     version = await get_version_manager().get_version(version_id)
     if not version:

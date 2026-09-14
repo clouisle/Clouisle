@@ -60,9 +60,9 @@ async def _check_permission(
     if user.is_superuser:
         return
     if team_id is not None:
-        from app.api.deps import check_scoped_permission
+        from app.api.team_access import check_team_permission
 
-        await check_scoped_permission(user, permission, "team", team_id)
+        await check_team_permission(team_id, user, permission)
         return
     _require_permission(user, permission)
 

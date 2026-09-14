@@ -15,7 +15,7 @@ from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 
 from app.api import deps
-from app.api.team_access import check_team_access
+from app.api.team_access import check_team_access, check_team_permission
 from app.api.workflow_access import (
     check_workflow_access,
     workflow_read_visibility_filter,
@@ -458,11 +458,11 @@ async def create_workflow(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Create a new workflow."""
-    # Check team access
-    await deps.check_scoped_permission(
-        current_user, "workflow:create", "team", workflow_in.team_id
+    team = await check_team_permission(
+        workflow_in.team_id,
+        current_user,
+        "workflow:create",
     )
-    team = await check_team_access(workflow_in.team_id, current_user)
 
     # Check for duplicate name within the same team
     existing = await Workflow.filter(
@@ -650,9 +650,7 @@ async def update_workflow(
         workflow_id, current_user, require_write=True
     )
     audit_before = AuditLogService.snapshot(workflow, "workflow")
-    await deps.check_scoped_permission(
-        current_user, "workflow:update", "team", workflow.team_id
-    )
+    await check_team_permission(workflow.team_id, current_user, "workflow:update")
 
     # Check for duplicate name within the same team (exclude self)
     if workflow_in.name is not None and workflow_in.name != workflow.name:
@@ -859,9 +857,7 @@ async def duplicate_workflow(
     workflow = await check_workflow_access(
         workflow_id, current_user, require_write=True
     )
-    await deps.check_scoped_permission(
-        current_user, "workflow:create", "team", workflow.team_id
-    )
+    await check_team_permission(workflow.team_id, current_user, "workflow:create")
 
     # Create a copy
     new_workflow = await Workflow.create(
@@ -916,9 +912,7 @@ async def regenerate_webhook_token(
         workflow_id, current_user, require_write=True
     )
     audit_before = AuditLogService.snapshot(workflow, "workflow")
-    await deps.check_scoped_permission(
-        current_user, "workflow:update", "team", workflow.team_id
-    )
+    await check_team_permission(workflow.team_id, current_user, "workflow:update")
 
     workflow.webhook_token = secrets.token_urlsafe(32)
     await workflow.save()
@@ -2133,9 +2127,7 @@ async def create_workflow_version(
     workflow = await check_workflow_access(
         workflow_id, current_user, require_write=True
     )
-    await deps.check_scoped_permission(
-        current_user, "workflow:update", "team", workflow.team_id
-    )
+    await check_team_permission(workflow.team_id, current_user, "workflow:update")
 
     # Create version snapshot
     workflow_version = await WorkflowVersion.create(
@@ -2185,9 +2177,7 @@ async def restore_workflow_version(
         workflow_id, current_user, require_write=True
     )
     audit_before = AuditLogService.snapshot(workflow, "workflow")
-    await deps.check_scoped_permission(
-        current_user, "workflow:update", "team", workflow.team_id
-    )
+    await check_team_permission(workflow.team_id, current_user, "workflow:update")
 
     # Get the version to restore
     workflow_version = await WorkflowVersion.filter(

@@ -499,75 +499,29 @@ async def init_observability_indexes():
             logger.info("Created observability index %s", index_name)
 
 
-async def init_scoped_role_assignments_table():
-    """Create and backfill team-scoped role assignments."""
-    logger.info("Initializing scoped role assignments table...")
-    conn = Tortoise.get_connection("default")
-
-    await execute_startup_migration_query(
-        conn,
-        """
-        CREATE TABLE IF NOT EXISTS scoped_role_assignments (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-            scope_type VARCHAR(20) NOT NULL,
-            scope_id UUID NOT NULL,
-            source VARCHAR(20) NOT NULL DEFAULT 'manual',
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            CONSTRAINT scoped_role_assignments_unique UNIQUE (user_id, role_id, scope_type, scope_id)
-        )
-        """,
+async def migrate_team_admin_roles(member_role: Role, team_admin_role: Role) -> None:
+    """Make legacy team administrators explicit Team Admin users."""
+    memberships = await TeamMember.filter(role__in=["owner", "admin"]).prefetch_related(
+        "user"
     )
-    await execute_startup_migration_query(
-        conn,
-        """
-        CREATE INDEX IF NOT EXISTS idx_scoped_role_assignments_user_scope
-        ON scoped_role_assignments(user_id, scope_type, scope_id)
-        """,
-    )
-    await execute_startup_migration_query(
-        conn,
-        """
-        CREATE INDEX IF NOT EXISTS idx_scoped_role_assignments_role_scope
-        ON scoped_role_assignments(role_id, scope_type, scope_id)
-        """,
-    )
-
-    role_by_team_role = {
-        "owner": await Role.filter(name="Admin").first(),
-        "admin": await Role.filter(name="Admin").first(),
-        "member": await Role.filter(name="Member").first(),
-        "viewer": await Role.filter(name="Viewer").first(),
-    }
-    created = 0
-    skipped = 0
-    memberships = await TeamMember.all().prefetch_related("team", "user")
+    migrated_user_ids = set()
     for membership in memberships:
-        role = role_by_team_role.get(membership.role)
-        if not role:
-            skipped += 1
+        if membership.user.id in migrated_user_ids:
             continue
-        await execute_startup_migration_query(
-            conn,
-            f"""
-            INSERT INTO scoped_role_assignments (
-                id, user_id, role_id, scope_type, scope_id, source, created_at, updated_at
-            )
-            VALUES (
-                gen_random_uuid(), '{membership.user.id}', '{role.id}',
-                'team', '{membership.team.id}', 'migration', NOW(), NOW()
-            )
-            ON CONFLICT (user_id, role_id, scope_type, scope_id) DO NOTHING
-            """,
-        )
-        created += 1
-
+        await membership.user.roles.add(team_admin_role)
+        migrated_user_ids.add(membership.user.id)
+    conn = Tortoise.get_connection("default")
+    await execute_startup_migration_query(
+        conn,
+        """
+        DELETE FROM scoped_role_assignments
+        WHERE scope_type = 'team'
+          AND source IN ('system', 'migration')
+        """,
+    )
     logger.info(
-        "Scoped role assignments initialized: %s attempted, %s skipped",
-        created,
-        skipped,
+        "Migrated %s users with team administrator memberships to visible roles",
+        len(migrated_user_ids),
     )
 
 
@@ -3390,6 +3344,26 @@ async def init_db():
 
     await sync_role_permissions(member_role, member_permissions, "Member")
 
+    # Team Admin - contains all Member permissions plus team management capabilities
+    team_admin_permissions = sorted(
+        set(member_permissions) | {"team:update", "team:manage"}
+    )
+    team_admin_role, created = await Role.get_or_create(
+        name="Team Admin",
+        defaults={
+            "description": "Team administrator role with all Member permissions plus team settings and member management",
+            "is_system_role": True,
+        },
+    )
+    if created:
+        logger.info("Created system role: Team Admin")
+
+    await sync_role_permissions(
+        team_admin_role,
+        team_admin_permissions,
+        "Team Admin",
+    )
+
     viewer_permissions = [
         "team:read",
         "agent:read",
@@ -3419,9 +3393,9 @@ async def init_db():
     await sync_role_permissions(viewer_role, viewer_permissions, "Viewer")
 
     try:
-        await init_scoped_role_assignments_table()
+        await migrate_team_admin_roles(member_role, team_admin_role)
     except Exception:
-        logger.exception("Scoped role assignment migration failed")
+        logger.exception("Team Admin role migration failed")
         raise
 
     # 3. Initialize Site Settings

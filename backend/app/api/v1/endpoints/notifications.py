@@ -47,6 +47,17 @@ def serialize_delivery_error(
     return t("unknown_error")
 
 
+def has_global_admin_access(user: User) -> bool:
+    """Only global role assignments grant system dashboard access."""
+    if user.is_superuser:
+        return True
+    return any(
+        permission.code in ("admin:dashboard:access", "*")
+        for role in (getattr(user, "roles", None) or [])
+        for permission in (getattr(role, "permissions", None) or [])
+    )
+
+
 async def check_team_admin_permission(team_id: UUID, user: User) -> Team:
     team = await Team.filter(id=team_id).first()
     if not team:
@@ -267,7 +278,9 @@ async def admin_list_notifications(
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
-    if not current_user.is_superuser:
+    # Team administrators must name an authorized team; they never receive
+    # system-wide notification visibility through their team membership.
+    if not has_global_admin_access(current_user):
         if scope and NotificationScope.GLOBAL in scope:
             raise BusinessError(
                 code=ResponseCode.INSUFFICIENT_PRIVILEGES,

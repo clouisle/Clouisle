@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.core.redis import is_token_blacklisted
 from app.core.timezone import now_utc
 from app.core.i18n import set_language, resolve_language
-from app.models.user import User, ScopedRoleAssignment
+from app.models.user import User
 from app.models.api_key import APIKey
 from app.schemas.token import TokenPayload
 from app.schemas.response import ResponseCode, BusinessError
@@ -266,44 +266,6 @@ def user_has_global_permission(user: User, required_permission: str) -> bool:
             if permission.code == required_permission or permission.code == "*":
                 return True
     return False
-
-
-async def user_has_scoped_permission(
-    user: User, required_permission: str, scope_type: str, scope_id: UUID
-) -> bool:
-    assignments = await ScopedRoleAssignment.filter(
-        user=user,
-        scope_type=scope_type,
-        scope_id=scope_id,
-    ).prefetch_related("role__permissions")
-    for assignment in assignments:
-        for permission in assignment.role.permissions:
-            if permission.code == required_permission or permission.code == "*":
-                return True
-    return False
-
-
-async def check_scoped_permission(
-    user: User, required_permission: str, scope_type: str, scope_id: UUID
-) -> None:
-    if user.is_superuser:
-        return
-    if required_permission.startswith("admin:") and user_has_global_permission(
-        user, required_permission
-    ):
-        return
-    if not required_permission.startswith(
-        "admin:"
-    ) and await user_has_scoped_permission(
-        user, required_permission, scope_type, scope_id
-    ):
-        return
-    raise BusinessError(
-        code=ResponseCode.PERMISSION_DENIED,
-        msg_key="operation_not_permitted",
-        status_code=status.HTTP_403_FORBIDDEN,
-        permission=required_permission,
-    )
 
 
 class PermissionChecker:

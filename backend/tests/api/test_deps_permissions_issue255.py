@@ -69,57 +69,6 @@ def test_global_permission_accepts_exact_and_wildcard_codes():
 
 
 @pytest.mark.anyio
-async def test_scoped_permission_queries_assignments_and_accepts_wildcard(monkeypatch):
-    scope_id = uuid4()
-
-    class Query:
-        def prefetch_related(self, relation):
-            assert relation == "role__permissions"
-            return self
-
-        def __await__(self):
-            async def resolve():
-                return [SimpleNamespace(role=role("*"))]
-
-            return resolve().__await__()
-
-    filtered = Mock(return_value=Query())
-    monkeypatch.setattr(deps.ScopedRoleAssignment, "filter", filtered)
-    current = user()
-
-    assert await deps.user_has_scoped_permission(
-        current, "workflow:update", "workflow", scope_id
-    )
-    filtered.assert_called_once_with(
-        user=current, scope_type="workflow", scope_id=scope_id
-    )
-
-
-@pytest.mark.anyio
-async def test_check_scoped_permission_covers_all_authorization_paths(monkeypatch):
-    scope_id = uuid4()
-    scoped = AsyncMock(return_value=True)
-    monkeypatch.setattr(deps, "user_has_scoped_permission", scoped)
-
-    await deps.check_scoped_permission(
-        user(is_superuser=True), "workflow:update", "workflow", scope_id
-    )
-    await deps.check_scoped_permission(
-        user(roles=[role("admin:users")]), "admin:users", "team", scope_id
-    )
-    await deps.check_scoped_permission(user(), "workflow:update", "workflow", scope_id)
-    scoped.assert_awaited_once()
-
-    scoped.return_value = False
-    with pytest.raises(BusinessError) as exc:
-        await deps.check_scoped_permission(
-            user(), "workflow:update", "workflow", scope_id
-        )
-    assert exc.value.code == ResponseCode.PERMISSION_DENIED
-    assert exc.value.kwargs["permission"] == "workflow:update"
-
-
-@pytest.mark.anyio
 async def test_permission_checker_allows_superuser_and_matching_role():
     checker = deps.PermissionChecker("admin:users")
     superuser = user(is_superuser=True)

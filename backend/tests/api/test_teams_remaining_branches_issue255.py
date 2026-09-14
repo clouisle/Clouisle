@@ -80,7 +80,7 @@ async def test_get_team_superuser_skips_membership_lookup(monkeypatch):
     member_filter = MagicMock(return_value=Query([listed_member]))
     monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(item)))
     monkeypatch.setattr(teams.TeamMember, "filter", member_filter)
-    monkeypatch.setattr(teams.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock())
 
     response = await teams.get_team(item.id, current_user)
 
@@ -96,7 +96,7 @@ async def test_update_team_accepts_no_changed_fields(monkeypatch):
     reloaded.id = item.id
     monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(item)))
     monkeypatch.setattr(teams.Team, "get", MagicMock(return_value=Query(reloaded)))
-    monkeypatch.setattr(teams.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock())
     audit = AsyncMock()
     monkeypatch.setattr(teams.AuditLogService, "log", audit)
 
@@ -116,7 +116,7 @@ async def test_update_team_accepts_no_changed_fields(monkeypatch):
 async def test_update_member_missing_team(monkeypatch):
     current_user = user(is_superuser=True)
     monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(None)))
-    monkeypatch.setattr(teams.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock())
 
     with pytest.raises(BusinessError) as exc_info:
         await teams.update_team_member(
@@ -144,7 +144,7 @@ async def test_owner_update_rejects_missing_membership(monkeypatch):
         "filter",
         MagicMock(side_effect=[Query(owner_membership), Query(None)]),
     )
-    monkeypatch.setattr(teams.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock())
 
     with pytest.raises(BusinessError) as exc_info:
         await teams.update_team_member(
@@ -197,7 +197,7 @@ async def test_remove_member_lookup_and_owner_guards(
         "filter",
         MagicMock(return_value=Query(target_membership if found_membership else None)),
     )
-    monkeypatch.setattr(teams.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock())
 
     with pytest.raises(BusinessError) as exc_info:
         await teams.remove_team_member(object(), item.id, target_user.id, current_user)
@@ -210,7 +210,7 @@ async def test_remove_member_lookup_and_owner_guards(
 async def test_transfer_ownership_missing_team(monkeypatch):
     current_user = user(is_superuser=True)
     monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(None)))
-    monkeypatch.setattr(teams.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock())
 
     with pytest.raises(BusinessError) as exc_info:
         await teams.transfer_ownership(
@@ -226,7 +226,7 @@ async def test_transfer_ownership_requires_current_owner(monkeypatch):
     item = team()
     monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(item)))
     monkeypatch.setattr(teams.TeamMember, "filter", MagicMock(return_value=Query(None)))
-    monkeypatch.setattr(teams.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock())
 
     with pytest.raises(BusinessError) as exc_info:
         await teams.transfer_ownership(
@@ -243,7 +243,7 @@ async def test_transfer_ownership_rejects_missing_new_member(monkeypatch):
     monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(item)))
     monkeypatch.setattr(teams.TeamMember, "filter", MagicMock(return_value=Query(None)))
     monkeypatch.setattr(teams.User, "filter", MagicMock(return_value=Query(None)))
-    monkeypatch.setattr(teams.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock())
 
     with pytest.raises(BusinessError) as exc_info:
         await teams.transfer_ownership(

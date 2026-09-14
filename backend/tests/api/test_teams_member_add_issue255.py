@@ -32,7 +32,7 @@ def user(*, role=None, superuser=False):
 @pytest.fixture
 def permission(monkeypatch):
     check = AsyncMock()
-    monkeypatch.setattr(teams.deps, "check_scoped_permission", check)
+    monkeypatch.setattr(teams, "check_team_permission", check)
     return check
 
 

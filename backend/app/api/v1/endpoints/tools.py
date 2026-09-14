@@ -15,7 +15,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.api import deps
-from app.api.team_access import check_team_access
+from app.api.team_access import check_team_access, check_team_permission
 from app.core.i18n import has_translation, t
 from app.models.user import User, Team, TeamMember
 from app.models.tool import (
@@ -705,8 +705,7 @@ async def create_tool(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """创建自定义工具"""
-    await check_team_access(team_id, current_user)
-    await deps.check_scoped_permission(current_user, "tool:create", "team", team_id)
+    await check_team_permission(team_id, current_user, "tool:create")
     existing = await Tool.filter(team_id=team_id, name=tool_in.name).first()
     if existing:
         raise BusinessError(
@@ -844,9 +843,7 @@ async def update_tool(
     audit_before = AuditLogService.snapshot(tool, "tool")
 
     await check_tool_write_access(tool, current_user)
-    await deps.check_scoped_permission(
-        current_user, "tool:update", "team", tool.team_id
-    )
+    await check_team_permission(tool.team_id, current_user, "tool:update")
 
     # 如果修改名称，检查是否冲突
     if tool_in.name and tool_in.name != tool.name:
@@ -926,9 +923,11 @@ async def delete_tool(
             status_code=404,
         )
 
-    await check_team_access(tool.team_id, current_user, require_admin=True)
-    await deps.check_scoped_permission(
-        current_user, "tool:delete", "team", tool.team_id
+    await check_team_permission(
+        tool.team_id,
+        current_user,
+        "tool:delete",
+        require_team_admin=True,
     )
     tool_name = tool.name
     tool_team_id = tool.team_id
@@ -1309,9 +1308,7 @@ async def toggle_tool(
         )
 
     await check_tool_write_access(tool, current_user)
-    await deps.check_scoped_permission(
-        current_user, "tool:update", "team", tool.team_id
-    )
+    await check_team_permission(tool.team_id, current_user, "tool:update")
     audit_before = AuditLogService.snapshot(tool, "tool")
 
     tool.is_enabled = not tool.is_enabled
