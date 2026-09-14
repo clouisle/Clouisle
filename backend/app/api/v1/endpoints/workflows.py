@@ -560,7 +560,7 @@ async def get_workflow_stats(
     - avg_duration_ms: Average execution duration
     - last_run_at: Last run timestamp
     """
-    await check_workflow_access(workflow_id, current_user)
+    await check_workflow_access(workflow_id, current_user, require_write=True)
 
     # Aggregate in the database: this endpoint has no time bound, so loading
     # every historical run scaled with the workflow's whole lifetime.
@@ -594,7 +594,7 @@ async def get_workflow_trends(
     - failed: Number of failed runs per day
     - avgDuration: Average execution duration per day
     """
-    await check_workflow_access(workflow_id, current_user)
+    await check_workflow_access(workflow_id, current_user, require_write=True)
 
     now_local = now()
 

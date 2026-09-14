@@ -5,6 +5,8 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { useTranslations } from 'next-intl'
+import { useTeam } from '@/contexts/team-context'
+import { usePermissions } from '@/hooks/use-permissions'
 import {
   LayoutGrid,
   Code2,
@@ -15,7 +17,6 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Agent } from '@/lib/api'
-
 interface AgentSidebarProps {
   agent: Agent
   collapsed?: boolean
@@ -31,10 +32,17 @@ export function AgentSidebar({
 }: AgentSidebarProps) {
   const t = useTranslations('agents.orchestration.sidebar')
   const pathname = usePathname()
+  const { currentTeam } = useTeam()
+  const { user } = usePermissions()
 
   // Check if icon is a URL or emoji
   const isIconUrl = agent.icon && (agent.icon.startsWith('http') || agent.icon.startsWith('/'))
 
+  const isTeamAdmin = Boolean(
+    user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin'
+  )
+  const isOwner = Boolean(user?.id && agent.created_by?.id === user.id)
+  const canViewMonitor = isTeamAdmin || isOwner
   const navItems = [
     {
       title: t('orchestration'),
@@ -54,12 +62,16 @@ export function AgentSidebar({
       icon: FileText,
       testId: 'agent-nav-logs',
     },
-    {
-      title: t('monitor'),
-      href: `${baseUrl}/monitor`,
-      icon: Activity,
-      testId: 'agent-nav-monitor',
-    },
+    ...(canViewMonitor
+      ? [
+          {
+            title: t('monitor'),
+            href: `${baseUrl}/monitor`,
+            icon: Activity,
+            testId: 'agent-nav-monitor',
+          },
+        ]
+      : []),
   ]
 
   if (collapsed) {

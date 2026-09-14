@@ -51,7 +51,7 @@ async def get_agent_stats(
     """
     Get agent statistics overview.
     """
-    await check_agent_access(agent_id, current_user)
+    await check_agent_access(agent_id, current_user, require_write=True)
 
     # Calculate time range
     now_local = now()
@@ -139,7 +139,7 @@ async def get_agent_trends(
     """
     Get agent statistics trends for charting.
     """
-    await check_agent_access(agent_id, current_user)
+    await check_agent_access(agent_id, current_user, require_write=True)
 
     now_local = now()
 
@@ -222,7 +222,7 @@ async def get_agent_tool_usage(
     """
     Get tool usage statistics for the agent.
     """
-    agent = await check_agent_access(agent_id, current_user)
+    agent = await check_agent_access(agent_id, current_user, require_write=True)
 
     now_local = now()
     if period == "24h":

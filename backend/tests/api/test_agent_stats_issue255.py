@@ -34,7 +34,7 @@ async def test_agent_stats_endpoints_reject_missing_agent(monkeypatch, function)
     with pytest.raises(BusinessError) as exc:
         await function(agent_id, current_user=current_user)
 
-    denied.assert_awaited_once_with(agent_id, current_user)
+    denied.assert_awaited_once_with(agent_id, current_user, require_write=True)
     assert (exc.value.code, exc.value.status_code) == (
         ResponseCode.AGENT_NOT_FOUND,
         404,

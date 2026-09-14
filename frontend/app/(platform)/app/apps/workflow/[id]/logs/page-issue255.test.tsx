@@ -18,6 +18,14 @@ mock.module('react', () => ({
   useCallback: (callback: unknown) => callback,
   useEffect: (effect: () => void | Promise<void>) => effects.push(effect),
 }))
+const currentTeam: { id: string; role: string } | null = { id: 'team-1', role: 'admin' }
+const currentUser: { id: string; is_superuser?: boolean } | null = { id: 'user-1' }
+mock.module('@/contexts/team-context', () => ({
+  useTeam: () => ({ currentTeam }),
+}))
+mock.module('@/hooks/use-permissions', () => ({
+  usePermissions: () => ({ user: currentUser }),
+}))
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('next/navigation', () => ({ useParams: () => ({ id: 'workflow-1' }), useRouter: () => ({ push }) }))
@@ -43,7 +51,7 @@ mock.module('@/hooks/use-debounce', () => ({ useDebounce: (value: unknown) => va
 mock.module('@/lib/api/workflows', () => ({ workflowsApi: { getWorkflow, getWorkflowRuns } }))
 mock.module('@/app/(dashboard)/activities/_components/workflow-run-drawer', () => ({ WorkflowRunDrawer: component('WorkflowRunDrawer') }))
 
-const workflow = { id: 'workflow-1', name: 'Coverage Flow', icon: null }
+const workflow = { id: 'workflow-1', name: 'Coverage Flow', icon: null, team_id: 'team-1', created_by_id: 'user-1' }
 const runs = [
   { id: 'success-run-123', status: 'success', trigger_type: 'manual', created_at: '2026-01-02T03:04:05Z', started_at: '2026-01-02T03:04:05Z', finished_at: '2026-01-02T03:04:07Z' },
   { id: 'failed-run-1234', status: 'failed', trigger_type: 'api', created_at: '2026-01-02T03:04:05Z' },

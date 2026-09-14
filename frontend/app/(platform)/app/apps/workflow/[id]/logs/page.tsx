@@ -3,6 +3,8 @@
 import * as React from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useTranslations, useLocale } from 'next-intl'
+import { useTeam } from '@/contexts/team-context'
+import { usePermissions } from '@/hooks/use-permissions'
 import {
   Calendar,
   Activity,
@@ -35,6 +37,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   Table,
   TableBody,
   TableCell,
@@ -42,12 +50,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { useDebounce } from '@/hooks/use-debounce'
@@ -138,6 +140,16 @@ export default function WorkflowLogsPage() {
   const [totalRuns, setTotalRuns] = React.useState(0)
   const [currentPage, setCurrentPage] = React.useState(1)
   const [isLoadingRuns, setIsLoadingRuns] = React.useState(false)
+  const { currentTeam } = useTeam()
+  const { user } = usePermissions()
+
+  const isWorkflowOwner = Boolean(user?.id && workflow?.created_by_id === user.id)
+  const isWorkflowTeamAdmin = Boolean(
+    workflow && currentTeam?.id === workflow.team_id && (currentTeam.role === 'owner' || currentTeam.role === 'admin')
+  )
+  const canViewMonitor = Boolean(
+    workflow && (user?.is_superuser || isWorkflowTeamAdmin || isWorkflowOwner)
+  )
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = React.useState('')
@@ -263,13 +275,15 @@ export default function WorkflowLogsPage() {
               <FileText className="h-4 w-4" />
               <span>{t('logs')}</span>
             </DropdownMenuItem>
-            <DropdownMenuItem
-              className="gap-2"
-              onClick={() => router.push(`/app/apps/workflow/${workflowId}/monitor`)}
-            >
-              <Activity className="h-4 w-4" />
-              <span>{t('monitor')}</span>
-            </DropdownMenuItem>
+            {canViewMonitor && (
+              <DropdownMenuItem
+                className="gap-2"
+                onClick={() => router.push(`/app/apps/workflow/${workflowId}/monitor`)}
+              >
+                <Activity className="h-4 w-4" />
+                <span>{t('monitor')}</span>
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

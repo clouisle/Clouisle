@@ -14,6 +14,14 @@ mock.module("next/navigation", () => ({
   useParams: () => ({ id: "workflow-1" }),
   useRouter: () => router,
 }));
+const currentTeam: { id: string; role: string } | null = { id: "team-1", role: "admin" };
+const currentUser: { id: string; is_superuser?: boolean } | null = { id: "user-1" };
+mock.module("@/contexts/team-context", () => ({
+  useTeam: () => ({ currentTeam }),
+}));
+mock.module("@/hooks/use-permissions", () => ({
+  usePermissions: () => ({ user: currentUser }),
+}));
 mock.module("next-intl", () => ({
   useTranslations: () => (key: string) => key,
 }));

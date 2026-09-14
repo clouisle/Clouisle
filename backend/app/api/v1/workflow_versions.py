@@ -373,6 +373,6 @@ async def get_version_stats(
     """Get version statistics for a workflow."""
     manager = get_version_manager()
 
-    await check_workflow_access(UUID(workflow_id), current_user)
+    await check_workflow_access(UUID(workflow_id), current_user, require_write=True)
     stats = await manager.get_stats(UUID(workflow_id))
     return stats

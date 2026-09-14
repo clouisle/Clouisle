@@ -4,7 +4,7 @@ import { act, create, type ReactTestRenderer } from "@/test-utils/rtl-renderer";
 
 const push = mock(() => {});
 const router = { push };
-const workflow = { id: "workflow-1", name: "Incident triage", icon: "🔀" };
+const workflow = { id: "workflow-1", name: "Incident triage", icon: "🔀", team_id: "team-1", created_by_id: "user-1" };
 const stats = {
   total_runs: 10,
   success_count: 7,
@@ -23,6 +23,14 @@ const getWorkflowRuns = mock(() => Promise.resolve({
 mock.module("next/navigation", () => ({
   useParams: () => ({ id: "workflow-1" }),
   useRouter: () => router,
+}));
+let currentTeam: { id: string; role: string } | null = { id: "team-1", role: "admin" };
+let currentUser: { id: string; is_superuser?: boolean } | null = { id: "user-1" };
+mock.module("@/contexts/team-context", () => ({
+  useTeam: () => ({ currentTeam }),
+}));
+mock.module("@/hooks/use-permissions", () => ({
+  usePermissions: () => ({ user: currentUser }),
 }));
 mock.module("next-intl", () => ({
   useLocale: () => 'en',
@@ -157,4 +165,20 @@ test("keeps the loading recovery state when monitor data fails", async () => {
   } finally {
     console.error = originalConsoleError;
   }
+});
+
+test("redirects non-admin non-creator to /app/apps", async () => {
+  currentTeam = { id: "team-1", role: "member" };
+  currentUser = { id: "viewer-1", is_superuser: false };
+  getWorkflow.mockImplementation(() =>
+    Promise.resolve({ ...workflow, created_by_id: "creator-1" })
+  );
+  push.mockClear();
+  await act(async () => {
+    renderer = create(<WorkflowMonitorPage />);
+  });
+  expect(push).toHaveBeenCalledWith("/app/apps");
+  currentTeam = { id: "team-1", role: "admin" };
+  currentUser = { id: "user-1" };
+  getWorkflow.mockImplementation(() => Promise.resolve(workflow));
 });
