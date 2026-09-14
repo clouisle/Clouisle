@@ -41,6 +41,7 @@ export function TeamSwitcher() {
   if (!currentTeam) {
     return null
   }
+  const canManageTeams = teams.some((team) => team.role === 'owner' || team.role === 'admin')
 
   return (
     <DropdownMenu>
@@ -82,13 +83,15 @@ export function TeamSwitcher() {
             )}
           </DropdownMenuItem>
         ))}
-        <DropdownMenuSeparator />
-        <a href="/teams">
-          <DropdownMenuItem className="gap-2 cursor-pointer">
-            <Users className="h-4 w-4" />
-            {t('manageTeams')}
-          </DropdownMenuItem>
-        </a>
+        {canManageTeams && <DropdownMenuSeparator />}
+        {canManageTeams && (
+          <a href="/teams">
+            <DropdownMenuItem className="gap-2 cursor-pointer">
+              <Users className="h-4 w-4" />
+              {t('manageTeams')}
+            </DropdownMenuItem>
+          </a>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )

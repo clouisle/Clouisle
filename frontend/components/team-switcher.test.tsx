@@ -54,8 +54,8 @@ test('renders loading and no-current-team states', () => {
 
 test('renders teams, initials, selection, and team-switch behavior', () => {
   const setCurrentTeam = mock(() => {})
-  const alpha = { id: 'alpha', name: 'Alpha Team', avatar_url: '' }
-  const beta = { id: 'beta', name: 'Beta', avatar_url: '/beta.png' }
+  const alpha = { id: 'alpha', name: 'Alpha Team', avatar_url: '', role: 'admin' }
+  const beta = { id: 'beta', name: 'Beta', avatar_url: '/beta.png', role: 'member' }
   teamState = {
     isLoading: false,
     teams: [alpha, beta],
@@ -69,8 +69,10 @@ test('renders teams, initials, selection, and team-switch behavior', () => {
   ) as {
     props: Record<string, unknown>
   }
-  const [, items, separator, manage] = content.props.children as Array<unknown>
-  const [alphaItem, betaItem] = items as Array<{ props: Record<string, unknown> }>
+  const children = content.props.children as Array<unknown>
+  const items = children[1] as Array<{ props: Record<string, unknown> }>
+  const [separator, manage] = children.slice(2) as Array<unknown>
+  const [alphaItem, betaItem] = items
 
   expect((tree.type as { name?: string }).name).toBe('DropdownMenu')
   expect(triggerButton.props.className).toContain('cursor-pointer')
@@ -87,4 +89,20 @@ test('renders teams, initials, selection, and team-switch behavior', () => {
   expect((separator as { type: { name?: string } }).type.name).toBe('DropdownMenuSeparator')
   expect((manage as { type: string }).type).toBe('a')
   expect((manage as { props: Record<string, unknown> }).props.href).toBe('/teams')
+})
+
+test('hides team management link when user only has member teams', () => {
+  const team = { id: 'member-team', name: 'Member Team', avatar_url: '', role: 'member' }
+  teamState = {
+    isLoading: false,
+    teams: [team],
+    currentTeam: team,
+    setCurrentTeam: mock(() => {}),
+  }
+
+  const tree = TeamSwitcher() as { props: Record<string, unknown> }
+  const [, content] = tree.props.children as Array<{ props: Record<string, unknown> }>
+  const children = content.props.children as Array<unknown>
+
+  expect(children).toHaveLength(4)
 })
