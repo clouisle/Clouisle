@@ -784,7 +784,7 @@ async def admin_create_notification(
 @admin_router.delete("/{notification_id}", response_model=Response[dict])
 async def admin_delete_notification(
     notification_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("admin:notification:delete")),
 ) -> Any:
     notification = await Notification.filter(id=notification_id).first()
     if not notification:
@@ -794,14 +794,7 @@ async def admin_delete_notification(
             status_code=404,
         )
 
-    if notification.scope == NotificationScope.GLOBAL:
-        if not current_user.is_superuser:
-            raise BusinessError(
-                code=ResponseCode.INSUFFICIENT_PRIVILEGES,
-                msg_key="insufficient_privileges",
-                status_code=403,
-            )
-    elif notification.scope == NotificationScope.TEAM:
+    if notification.scope == NotificationScope.TEAM:
         if not notification.team_id:
             raise BusinessError(
                 code=ResponseCode.BAD_REQUEST,
@@ -809,14 +802,6 @@ async def admin_delete_notification(
                 status_code=400,
             )
         await check_team_admin_permission(notification.team_id, current_user)
-    else:
-        if not current_user.is_superuser:
-            raise BusinessError(
-                code=ResponseCode.INSUFFICIENT_PRIVILEGES,
-                msg_key="insufficient_privileges",
-                status_code=403,
-            )
-
     await create_notification_audit(
         notification_id=notification.id,
         action=NotificationAuditAction.DELETE,

@@ -637,7 +637,7 @@ async def get_mcp_tools(
 @router.post("/database/test-connection", response_model=Response[dict])
 async def test_db_connection(
     request: DatabaseConfigSchema,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:create")),
 ) -> Any:
     """测试数据库连通性"""
     from app.llm.tools.builtin.db_executor import test_database_connection
@@ -873,7 +873,9 @@ async def delete_tool(
         )
 
     await check_team_access(tool.team_id, current_user, require_admin=True)
-
+    await deps.check_scoped_permission(
+        current_user, "tool:delete", "team", tool.team_id
+    )
     tool_name = tool.name
     tool_team_id = tool.team_id
     audit_before = AuditLogService.snapshot(tool, "tool")
