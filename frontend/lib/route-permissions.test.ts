@@ -7,9 +7,27 @@ import {
 
 describe('route permissions', () => {
   test('matches exact routes and configured prefixes', () => {
-    expect(getRoutePermissionConfig('/teams')?.permission).toBe('team:read')
+    expect(getRoutePermissionConfig('/teams')?.permission).toBe('admin:team:read')
     expect(getRoutePermissionConfig('/teams/member')).toBeNull()
     expect(getRoutePermissionConfig('/apps/agent-1')?.permission).toBe('admin:app:read')
+  })
+
+  test('fails closed for denied team routes and unmapped admin descendants', () => {
+    expect(canAccessRoute('/teams', () => false)).toBe(false)
+    expect(canAccessRoute('/teams/member', () => false)).toBe(false)
+  })
+
+  test('requires every backend permission used by the activities page', () => {
+    expect(getRoutePermissionConfig('/activities')?.permission).toEqual([
+      'admin:conversation:read',
+      'workflow:read',
+    ])
+    expect(
+      canAccessRoute('/activities', (permission) =>
+        permission === 'admin:conversation:read' || permission === 'workflow:read'
+      )
+    ).toBe(true)
+    expect(canAccessRoute('/activities', (permission) => permission === 'workflow:read')).toBe(false)
   })
 
   test('uses the most specific configured route', () => {

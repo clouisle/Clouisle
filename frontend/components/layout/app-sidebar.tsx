@@ -30,7 +30,7 @@ import {
 import { authApi, type User as UserType } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
 import { usePermissions } from '@/hooks/use-permissions'
-import { ROUTE_PERMISSION_MAP } from '@/lib/route-permissions'
+import { ROUTE_PERMISSION_MAP, canAccessRoute } from '@/lib/route-permissions'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { DefaultSiteIcon } from '@/components/default-site-icon'
 import { getBrandingVisibility } from '@/lib/theme-config'
@@ -74,7 +74,7 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
   const [user, setUser] = React.useState<UserType | null>(null)
   const [profileOpen, setProfileOpen] = React.useState(false)
   const { settings: siteSettings } = useSiteSettings()
-  const { hasPermission, canAccessDashboard } = usePermissions()
+  const { hasPermission, canAccessDashboard, isSuperuser } = usePermissions()
 
   React.useEffect(() => {
     const fetchUser = async () => {
@@ -230,22 +230,15 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
     },
   ]
 
-  // Filter menu items based on permissions
-  const filteredGeneralItems = generalItems.filter(
-    (item) => !item.permission || hasPermission(item.permission)
-  )
-  const filteredSystemItems = systemItems.filter(
-    (item) => !item.permission || hasPermission(item.permission)
-  )
-  const filteredResourceItems = resourceItems.filter(
-    (item) => !item.permission || hasPermission(item.permission)
-  )
-  const filteredMonitoringItems = monitoringItems.filter(
-    (item) => !item.permission || hasPermission(item.permission)
-  )
-  const filteredSettingsItems = settingsItems.filter(
-    (item) => !item.permission || hasPermission(item.permission)
-  )
+  // Filter menu items based on the same route contract as RoutePermissionGuard.
+  const filterAccessible = (item: { url: string; permission?: string | string[] | null }) =>
+    !item.permission || canAccessRoute(item.url, hasPermission, isSuperuser)
+
+  const filteredGeneralItems = generalItems.filter(filterAccessible)
+  const filteredSystemItems = systemItems.filter(filterAccessible)
+  const filteredResourceItems = resourceItems.filter(filterAccessible)
+  const filteredMonitoringItems = monitoringItems.filter(filterAccessible)
+  const filteredSettingsItems = settingsItems.filter(filterAccessible)
 
   const isActive = (url: string) => (url === '/dashboard' ? pathname === url : pathname.startsWith(url))
   const { showIcon: showBrandIcon, showName: showBrandName } = getBrandingVisibility(

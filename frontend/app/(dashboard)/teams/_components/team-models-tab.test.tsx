@@ -94,6 +94,12 @@ mock.module('@/components/permission-guard', () => ({
     jsx('permission-guard', { permission, children: permissions.has(permission) ? children : null }),
   useCanPerform: () => ({ canPerform: (permission: string) => permissions.has(permission) }),
 }))
+mock.module('@/hooks/use-permissions', () => ({
+  usePermissions: () => ({
+    hasPermission: (permission: string) => permissions.has(permission),
+    isSuperuser: false,
+  }),
+}))
 mock.module('@/components/ui/button', () => ({ Button: element('button') }))
 mock.module('@/components/ui/badge', () => ({ Badge: element('span') }))
 mock.module('@/components/ui/input', () => ({ Input: element('input') }))
@@ -184,7 +190,7 @@ function clickByText(tree: Tree, text: string) {
 
 beforeEach(() => {
   states = []
-  permissions = new Set()
+  permissions = new Set(['team:manage', 'admin:model:read', 'admin:model:update'])
   getTeamModels.mockReset()
   getModels.mockReset()
   updateTeamModel.mockReset()
@@ -228,7 +234,8 @@ describe('TeamModelsTab', () => {
     expect(textContent(failed)).toContain('addModelHint')
   })
 
-  test('hides model actions without team manage permission', async () => {
+  test('hides model actions without model manage permission', async () => {
+    permissions = new Set(['team:manage'])
     getTeamModels.mockResolvedValue([teamModel()])
     getModels.mockResolvedValue({ items: [model('model-2', 'Available model')] })
 
@@ -241,7 +248,7 @@ describe('TeamModelsTab', () => {
   })
 
   test('toggles enablement and saves edited limits for permitted users', async () => {
-    permissions = new Set(['team:manage'])
+    permissions = new Set(['admin:model:update', 'admin:model:read'])
     getTeamModels.mockResolvedValue([teamModel()])
     const tree = await load()
 
@@ -265,7 +272,7 @@ describe('TeamModelsTab', () => {
   })
 
   test('shows add-model empty states and batch-authorizes enabled available models', async () => {
-    permissions = new Set(['team:manage'])
+    permissions = new Set(['admin:model:update', 'admin:model:read'])
     getModels.mockResolvedValue({ items: [model('model-2', 'Available model'), model('model-3', 'Disabled model', false)] })
     await load()
     states[3] = true
@@ -283,7 +290,7 @@ describe('TeamModelsTab', () => {
     expect(toastSuccess).toHaveBeenCalledWith('modelsAuthorized:{"count":1}')
 
     states = []
-    permissions = new Set(['team:manage'])
+    permissions = new Set(['admin:model:update', 'admin:model:read'])
     getTeamModels.mockResolvedValue([teamModel()])
     getModels.mockResolvedValue({ items: [model('model-1', 'GPT Team')] })
     expect(textContent(await load())).toContain('allModelsAuthorized')

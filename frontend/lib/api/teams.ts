@@ -54,7 +54,8 @@ export interface TeamUpdateInput {
 }
 
 export interface TeamMemberAddInput {
-  user_id: string
+  user_id?: string
+  identifier?: string
   role?: 'admin' | 'member' | 'viewer'
 }
 

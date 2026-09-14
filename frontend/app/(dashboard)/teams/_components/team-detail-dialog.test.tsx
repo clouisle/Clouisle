@@ -14,7 +14,7 @@ const adminTeamsApi = { deleteTeam: mock() }
 const usersApi = { getUsers: mock() }
 const toast = { success: mock() }
 let permissions = new Set<string>()
-
+const currentUser: { id: string; is_superuser?: boolean } | null = { id: 'owner-1', is_superuser: false }
 mock.module('next-intl', () => ({
   useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${JSON.stringify(values)}` : key,
 }))
@@ -27,6 +27,13 @@ mock.module('./team-models-tab', () => ({ TeamModelsTab: ({ teamId }: { teamId: 
 mock.module('@/components/permission-guard', () => ({
   PermissionGuard: ({ permission, children }: React.PropsWithChildren<{ permission: string }>) => permissions.has(permission) ? <>{children}</> : null,
   useCanPerform: () => ({ canPerform: (permission: string) => permissions.has(permission) }),
+}))
+mock.module('@/hooks/use-permissions', () => ({
+  usePermissions: () => ({
+    user: currentUser,
+    hasPermission: (permission: string) => permissions.has(permission),
+    loading: false,
+  }),
 }))
 mock.module('lucide-react', () => Object.fromEntries([
   'Crown', 'Shield', 'User', 'Eye', 'MoreHorizontal', 'Pencil', 'Trash2', 'UserPlus', 'LogOut', 'ArrowRightLeft', 'Search', 'Check', 'Users', 'Cpu',

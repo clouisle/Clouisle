@@ -12,7 +12,7 @@
     "teamDescription": "团队描述",
     "teamDescriptionPlaceholder": "输入团队描述（可选）",
     "avatar": "团队头像",
-    "avatarHint": "推荐：200x200 像素，支持 JPG、PNG 格式",
+    "avatarHint": "推荐：200x200 像素。支持 JPEG、PNG、GIF、WebP、SVG、ICO 格式，大小不超过 10MB",
     "noDescription": "暂无描述",
     "defaultTeam": "默认团队",
     "members": "成员",
@@ -88,6 +88,19 @@
     "priorityHint": "数值越大优先级越高，同类型模型按优先级排序",
     "revokeModelAuth": "撤销授权",
     "revokeModelAuthConfirm": "确定要撤销 \"{name}\" 的授权吗？该团队将无法再使用此模型。",
-    "revoke": "撤销"
+    "revoke": "撤销",
+    "settings": "团队设置",
+    "basicSettings": "基本信息",
+    "basicSettingsDesc": "查看并修改团队的公开基础信息",
+    "avatarUrl": "团队头像链接",
+    "modelAuthDescription": "管理团队可用模型及其调用配额",
+    "dangerZone": "危险区域",
+    "dangerZoneDesc": "涉及退出或解散团队的高风险操作",
+    "leaveTeamDesc": "退出后将失去该团队内所有资源访问权",
+    "ownerCannotLeaveWarning": "作为团队所有者，你无法直接退出团队。如需离开或转交团队，请先在成员列表中转移所有权。",
+    "addMemberPrompt": "从系统中选择用户加入团队",
+    "addMemberExactHint": "输入目标用户的完整用户名或邮箱直接添加",
+    "userIdentifier": "用户名或邮箱",
+    "userIdentifierPlaceholder": "输入准确的用户名或邮箱，如：john 或 john@example.com"
   }
 }

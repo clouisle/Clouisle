@@ -31,7 +31,9 @@
     "aboutChangelog": "Changelog",
     "aboutGitHub": "GitHub",
     "teams": "Teams",
-    "manageTeams": "Manage Teams",
+    "manageTeams": "Manage All Teams (Admin)",
+    "teamSettings": "Team Settings",
+    "manageCurrentTeam": "Manage Current Team",
     "noTeams": "No teams",
     "noTeam": {
       "title": "You Haven't Joined Any Team Yet",

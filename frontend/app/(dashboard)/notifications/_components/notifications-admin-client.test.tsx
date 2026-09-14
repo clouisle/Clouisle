@@ -27,6 +27,11 @@ const fakeReact = {
       hookStates[index] = typeof next === 'function' ? (next as (prev: T) => T)(hookStates[index] as T) : next
     }]
   },
+  useRef<T>(initial: T): { current: T } {
+    const index = hookIndex++
+    if (hookStates[index] === undefined) hookStates[index] = { current: initial }
+    return hookStates[index] as { current: T }
+  },
   useEffect(effect: () => void | Promise<void>, deps?: unknown[]) {
     const index = hookIndex++
     if (depsChanged(hookDeps[index], deps)) {

@@ -2,9 +2,10 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { Check, ChevronsUpDown, Users } from 'lucide-react'
+import Link from 'next/link'
+import { Check, ChevronsUpDown, Users, Settings } from 'lucide-react'
 import { useTeam } from '@/contexts/team-context'
-
+import { usePermissions } from '@/hooks/use-permissions'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
@@ -18,6 +19,7 @@ import {
 export function TeamSwitcher() {
   const t = useTranslations('platform')
   const { teams, currentTeam, isLoading, setCurrentTeam } = useTeam()
+  const { hasPermission, isSuperuser } = usePermissions()
 
   // 获取团队名称首字母
   const getInitials = (name: string) => {
@@ -41,8 +43,9 @@ export function TeamSwitcher() {
   if (!currentTeam) {
     return null
   }
-  const canManageTeams = teams.some((team) => team.role === 'owner' || team.role === 'admin')
-
+  const isTeamAdmin = currentTeam.role === 'owner' || currentTeam.role === 'admin'
+  const canManageCurrentTeam = isSuperuser || (isTeamAdmin && hasPermission('team:manage'))
+  const canAccessAdminTeams = isSuperuser || hasPermission('admin:team:read')
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -83,14 +86,26 @@ export function TeamSwitcher() {
             )}
           </DropdownMenuItem>
         ))}
-        {canManageTeams && <DropdownMenuSeparator />}
-        {canManageTeams && (
-          <a href="/teams">
-            <DropdownMenuItem className="gap-2 cursor-pointer">
-              <Users className="h-4 w-4" />
-              {t('manageTeams')}
-            </DropdownMenuItem>
-          </a>
+        {canManageCurrentTeam && <DropdownMenuSeparator />}
+        {canManageCurrentTeam && (
+          <DropdownMenuItem
+            render={(props) => (
+              <Link {...props} href="/app/team">
+                <Settings className="h-4 w-4" />
+                {t('manageCurrentTeam')}
+              </Link>
+            )}
+          />
+        )}
+        {canAccessAdminTeams && (
+          <DropdownMenuItem
+            render={(props) => (
+              <Link {...props} href="/teams">
+                <Users className="h-4 w-4" />
+                {t('manageTeams')}
+              </Link>
+            )}
+          />
         )}
       </DropdownMenuContent>
     </DropdownMenu>

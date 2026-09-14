@@ -31,7 +31,9 @@
     "aboutChangelog": "更新日志",
     "aboutGitHub": "GitHub 仓库",
     "teams": "团队",
-    "manageTeams": "管理团队",
+    "manageTeams": "管理全部团队 (系统后台)",
+    "teamSettings": "团队设置",
+    "manageCurrentTeam": "管理当前团队",
     "noTeams": "暂无团队",
     "noTeam": {
       "title": "您还没有加入任何团队",

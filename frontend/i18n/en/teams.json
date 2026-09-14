@@ -12,7 +12,7 @@
     "teamDescription": "Description",
     "teamDescriptionPlaceholder": "Enter team description (optional)",
     "avatar": "Team Avatar",
-    "avatarHint": "Recommended: 200x200 pixels, JPG/PNG format",
+    "avatarHint": "Recommended: 200x200 pixels. Supported formats: JPEG, PNG, GIF, WebP, SVG, ICO. Maximum size: 10 MB",
     "noDescription": "No description",
     "defaultTeam": "Default Team",
     "members": "Members",
@@ -88,6 +88,19 @@
     "priorityHint": "Higher value means higher priority. Models of the same type are sorted by priority.",
     "revokeModelAuth": "Revoke Authorization",
     "revokeModelAuthConfirm": "Are you sure you want to revoke authorization for \"{name}\"? The team will no longer be able to use this model.",
-    "revoke": "Revoke"
+    "revoke": "Revoke",
+    "settings": "Team Settings",
+    "basicSettings": "Basic Info",
+    "basicSettingsDesc": "View and update team profile information",
+    "avatarUrl": "Avatar URL",
+    "modelAuthDescription": "Manage authorized models and quota limits for the team",
+    "dangerZone": "Danger Zone",
+    "dangerZoneDesc": "High-risk actions including leaving the team",
+    "leaveTeamDesc": "You will lose access to all resources in this team upon leaving",
+    "ownerCannotLeaveWarning": "As the team owner, you cannot directly leave the team. Please transfer ownership first.",
+    "addMemberPrompt": "Select a user from the system to join the team",
+    "addMemberExactHint": "Enter the exact username or email address of the user to add them directly",
+    "userIdentifier": "Username or Email",
+    "userIdentifierPlaceholder": "Enter exact username or email, e.g. john or john@example.com"
   }
 }
