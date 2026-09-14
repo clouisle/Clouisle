@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-11T17:53:25.754Z
+// GENERATED — 2026-09-14T07:19:09.072Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -51,6 +51,10 @@ export type KnowledgeBasesMessages = {
     shared: string
     sharedFrom: string
     activate: string
+    visibility: string
+    visibilityPrivate: string
+    visibilityTeam: string
+    visibilityHint: string
     deactivate: string
     enableKb: string
     enableKbHint: string

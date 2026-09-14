@@ -51,9 +51,11 @@ export interface RerankModelInfo {
   provider_display_name?: string | null
   model_id: string
 }
+export type KnowledgeBaseVisibility = 'private' | 'team' | 'public'
 
 export interface KnowledgeBase {
   id: string
+  visibility?: KnowledgeBaseVisibility
   team: TeamInfo
   created_by?: CreatorInfo | null
   name: string
@@ -94,6 +96,7 @@ export interface KnowledgeBaseCreateInput {
   embedding_model_id?: string | null
   rerank_model_id?: string | null
   settings?: KnowledgeBaseSettings | null
+  visibility?: KnowledgeBaseVisibility
 }
 
 export interface KnowledgeBaseUpdateInput {
@@ -104,6 +107,7 @@ export interface KnowledgeBaseUpdateInput {
   rerank_model_id?: string | null
   settings?: KnowledgeBaseSettings | null
   status?: string
+  visibility?: KnowledgeBaseVisibility
 }
 
 export interface KnowledgeBaseQueryParams {

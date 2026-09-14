@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ToolCreateInput, ToolUpdateInput, ToolDetail, HttpConfig, ToolCategory, ToolParameter, FormField } from '@/lib/api/tools'
+import { ToolCreateInput, ToolUpdateInput, ToolDetail, HttpConfig, ToolCategory, ToolParameter, FormField, ToolVisibility } from '@/lib/api/tools'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { FieldError } from '@/components/ui/field'
 import {
@@ -285,6 +285,7 @@ export function HttpToolDialog({
   const [description, setDescription] = useState('')
   const [icon, setIcon] = useState('')
   const [category, setCategory] = useState<ToolCategory>('api')
+  const [visibility, setVisibility] = useState<ToolVisibility>('private')
   const [isEnabled, setIsEnabled] = useState(true)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
@@ -317,6 +318,7 @@ export function HttpToolDialog({
         setDescription(tool.description)
         setIcon(tool.icon || '')
         setCategory(tool.category || 'api')
+        setVisibility(tool.visibility || 'private')
         setIsEnabled(tool.is_enabled)
         setFieldErrors({})
         setParameters(tool.parameters || [])
@@ -346,8 +348,8 @@ export function HttpToolDialog({
         setDescription('')
         setIcon('')
         setCategory('api')
+        setVisibility('private')
         setIsEnabled(true)
-        setFieldErrors({})
         setMethod('GET')
         setUrl('')
         setHeaders([{ key: '', value: '' }])
@@ -401,6 +403,7 @@ export function HttpToolDialog({
         description,
         icon,
         category,
+        visibility,
         is_enabled: isEnabled,
         type: 'custom',
         custom_type: 'http',
@@ -542,6 +545,21 @@ export function HttpToolDialog({
               />
               <FieldError>{fieldErrors.displayName}</FieldError>
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="visibility">{t('visibility')}</Label>
+            <Select value={visibility} onValueChange={(val) => setVisibility(val as ToolVisibility)}>
+              <SelectTrigger id="visibility">
+                <SelectValue>
+                  {visibility === 'private' ? t('visibilityPrivate') : t('visibilityTeam')}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent side="bottom" alignItemWithTrigger={false}>
+                <SelectItem value="private">{t('visibilityPrivate')}</SelectItem>
+                <SelectItem value="team">{t('visibilityTeam')}</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{t('visibilityHint')}</p>
           </div>
 
           {/* 图标上传 */}

@@ -106,6 +106,26 @@ function selects(renderer: ReactTestRenderer) {
 async function save(renderer: ReactTestRenderer) {
   await act(async () => button(renderer, 'create').props.onClick())
 }
+function text(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) return value.map(text).join('')
+  if (value && typeof value === 'object' && 'children' in value) {
+    return text(value.children)
+  }
+  return ''
+}
+
+
+test('uses translated visibility label in trigger and options', () => {
+  const renderer = render()
+  const visibilitySelect = selects(renderer).find((node) => node.props.value === 'private')!
+
+  expect(text(visibilitySelect.children[0])).toBe('visibilityPrivate')
+  expect(visibilitySelect.findAllByType('option').map((node) => node.children.join(''))).toEqual([
+    'visibilityPrivate',
+    'visibilityTeam',
+  ])
+})
 
 describe('HTTP tool dialog', () => {
   test('validates required create fields and the tool-name boundary', async () => {

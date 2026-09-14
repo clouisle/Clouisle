@@ -248,4 +248,51 @@ describe('KnowledgeBaseDialog', () => {
       })
     )
   })
+
+  test('handles private visibility selection on creation and update', async () => {
+    const onOpenChange = mock(() => undefined)
+    const onSuccess = mock(() => undefined)
+
+    let tree = render({ open: true, onOpenChange, onSuccess, knowledgeBase: null })
+    const nameInput = input(tree, 'name')
+    ;(nameInput.props?.onChange as (e: { target: { value: string } }) => void)({ target: { value: 'Secret Docs' } })
+
+    const selects = findAll(tree, (element) => element.type === 'Select')
+    // Select 2 is visibility
+    ;(selects[2]?.props?.onValueChange as (v: string) => void)('private')
+
+    tree = render({ open: true, onOpenChange, onSuccess, knowledgeBase: null })
+    await form(tree).props!.onSubmit!({ preventDefault() {} })
+
+    expect(createKnowledgeBase).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Secret Docs',
+        visibility: 'private',
+      })
+    )
+
+    hookIndex = 0
+    effectIndex = 0
+    states = []
+    render({
+      open: true,
+      onOpenChange,
+      onSuccess,
+      knowledgeBase: { id: 'kb-priv', name: 'Priv', status: 'active', visibility: 'private' } as never,
+    })
+    tree = render({
+      open: true,
+      onOpenChange,
+      onSuccess,
+      knowledgeBase: { id: 'kb-priv', name: 'Priv', status: 'active', visibility: 'private' } as never,
+    })
+    await form(tree).props!.onSubmit!({ preventDefault() {} })
+
+    expect(updateKnowledgeBase).toHaveBeenCalledWith(
+      'kb-priv',
+      expect.objectContaining({
+        visibility: 'private',
+      })
+    )
+  })
 })

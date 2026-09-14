@@ -245,6 +245,10 @@
       "configSaved": "Configuration saved successfully",
       "configSaveFailed": "Failed to save configuration",
       "selectTeam": "Select Team",
+      "visibility": "Visibility",
+      "visibilityHint": "Controls whether other members of this team can see and use this tool.",
+      "visibilityPrivate": "Private",
+      "visibilityTeam": "Team",
       "confirmDelete": "Delete Tool",
       "deleteToolConfirm": "Are you sure you want to delete \"{name}\"? This action cannot be undone.",
       "filters": {

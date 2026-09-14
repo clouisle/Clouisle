@@ -10,6 +10,7 @@ import {
   teamModelsApi,
   type KnowledgeBase,
   type KnowledgeBaseCreateInput,
+  type KnowledgeBaseVisibility,
   type TeamModel,
 } from '@/lib/api'
 import { clearValidationError, getValidationSummaryEntries, mapValidationErrors, normalizeValidationErrors,
@@ -81,6 +82,7 @@ export function KnowledgeBaseDialog({
   const [rerankCandidateK, setRerankCandidateK] = React.useState(10)
   const [rerankScoreThreshold, setRerankScoreThreshold] = React.useState('')
   const [isActive, setIsActive] = React.useState(true)
+  const [visibility, setVisibility] = React.useState<KnowledgeBaseVisibility>('private')
   const [isLoading, setIsLoading] = React.useState(false)
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   
@@ -93,14 +95,13 @@ export function KnowledgeBaseDialog({
   React.useEffect(() => {
     const loadModels = async () => {
       if (!currentTeam) return
-      setIsLoadingModels(true)
       try {
         const [embeddingModels, rerankModels] = await Promise.all([
           teamModelsApi.getTeamModels(currentTeam.id, 'embedding'),
           teamModelsApi.getTeamModels(currentTeam.id, 'rerank'),
         ])
-        setTeamEmbeddingModels(embeddingModels.filter(m => m.is_enabled))
-        setTeamRerankModels(rerankModels.filter(m => m.is_enabled))
+        setTeamEmbeddingModels(embeddingModels)
+        setTeamRerankModels(rerankModels)
       } catch {
         // 忽略错误
       } finally {
@@ -151,6 +152,7 @@ export function KnowledgeBaseDialog({
           knowledgeBase.settings?.rerank_score_threshold?.toString() || ''
         )
         setIsActive(knowledgeBase.status === 'active')
+        setVisibility(knowledgeBase.visibility || 'private')
       } else {
         setName('')
         setDescription('')
@@ -163,8 +165,8 @@ export function KnowledgeBaseDialog({
         setRerankCandidateK(10)
         setRerankScoreThreshold('')
         setIsActive(true)
+        setVisibility('private')
       }
-      setFieldErrors({})
     }
   }, [open, knowledgeBase])
   
@@ -202,8 +204,8 @@ export function KnowledgeBaseDialog({
             ? parseFloat(rerankScoreThreshold)
             : null,
         },
+        visibility,
       }
-      
       if (isEditing) {
         await knowledgeBasesApi.updateKnowledgeBase(knowledgeBase!.id, {
           ...data,
@@ -311,6 +313,7 @@ export function KnowledgeBaseDialog({
               />
               <FieldError>{fieldErrors.description}</FieldError>
             </div>
+
 
             {/* Embedding 模型 */}
             <div className="space-y-2" data-testid="kb-dialog-embedding">
@@ -502,6 +505,26 @@ export function KnowledgeBaseDialog({
                 />
               </div>
             )}
+
+            {/* 可见性选择 */}
+            <div className="space-y-2" data-testid="kb-dialog-visibility">
+              <Label htmlFor="visibility">{t('visibility')}</Label>
+              <Select
+                value={visibility}
+                onValueChange={(val) => setVisibility(val as KnowledgeBaseVisibility)}
+              >
+                <SelectTrigger id="visibility" className="w-full">
+                  <SelectValue>
+                    {visibility === 'private' ? t('visibilityPrivate') : t('visibilityTeam')}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent side="bottom" alignItemWithTrigger={false}>
+                  <SelectItem value="team">{t('visibilityTeam')}</SelectItem>
+                  <SelectItem value="private">{t('visibilityPrivate')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{t('visibilityHint')}</p>
+            </div>
           </div>
           
           <DialogFooter className="border-t px-6 py-4">

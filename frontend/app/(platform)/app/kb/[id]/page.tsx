@@ -132,6 +132,15 @@ export default function KnowledgeBaseDetailPage({
                     : t('shared')}
                 </Badge>
               )}
+              {knowledgeBase.visibility === 'private' ? (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300 shrink-0">
+                  {t('visibilityPrivate')}
+                </Badge>
+              ) : knowledgeBase.visibility === 'team' ? (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">
+                  {t('visibilityTeam')}
+                </Badge>
+              ) : null}
               {knowledgeBase.status === 'active' ? (
                 <Badge variant="default" className="bg-emerald-500/10 text-emerald-500">
                   {t('active')}

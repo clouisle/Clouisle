@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-11T17:53:25.756Z
+// GENERATED — 2026-09-14T07:19:09.075Z
 // Source: i18n/en/platform.json
 export type PlatformMessages = {
   platform: {
@@ -57,6 +57,27 @@ export type PlatformMessages = {
       title: string
       welcome: string
       welcomeDefault: string
+      greetingEarlyMorning: string
+      greetingEarlyMorningDefault: string
+      greetingEarlyMorningDesc: string
+      greetingMorning: string
+      greetingMorningDefault: string
+      greetingMorningDesc: string
+      greetingNoon: string
+      greetingNoonDefault: string
+      greetingNoonDesc: string
+      greetingAfternoon: string
+      greetingAfternoonDefault: string
+      greetingAfternoonDesc: string
+      greetingEvening: string
+      greetingEveningDefault: string
+      greetingEveningDesc: string
+      greetingNight: string
+      greetingNightDefault: string
+      greetingNightDesc: string
+      greetingFriday: string
+      greetingFridayDefault: string
+      greetingFridayDesc: string
       description: string
       viewAll: string
       createNew: string
@@ -71,8 +92,14 @@ export type PlatformMessages = {
         totalMessages: string
         totalTokens: string
         successRate: string
+        last7Days: string
         conversations: string
         tokens: string
+        scope: string
+        scopePersonal: string
+        scopeTeam: string
+        scopePersonalDesc: string
+        scopeTeamDesc: string
       }
       charts: {
         conversations: string
@@ -220,6 +247,10 @@ export type PlatformMessages = {
       configSaved: string
       configSaveFailed: string
       selectTeam: string
+      visibility: string
+      visibilityHint: string
+      visibilityPrivate: string
+      visibilityTeam: string
       confirmDelete: string
       deleteToolConfirm: string
       filters: {

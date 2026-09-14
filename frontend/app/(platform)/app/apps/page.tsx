@@ -68,7 +68,7 @@ interface AppItem {
   icon?: string | null
   status: 'draft' | 'published'
   type: 'agent' | 'workflow'
-  // Agent-specific
+  visibility?: 'private' | 'team' | 'public'
   conversation_count?: number
   message_count?: number
   // Workflow-specific
@@ -152,8 +152,8 @@ export default function AppsPage() {
         description: agent.description,
         icon: agent.icon,
         status: agent.status,
+        visibility: agent.visibility,
         type: 'agent' as const,
-        conversation_count: agent.conversation_count,
         message_count: agent.message_count,
         created_at: agent.created_at,
         updated_at: agent.updated_at,
@@ -168,8 +168,8 @@ export default function AppsPage() {
         description: workflow.description,
         icon: workflow.icon,
         status: workflow.status,
+        visibility: workflow.visibility,
         type: 'workflow' as const,
-        run_count: workflow.run_count,
         success_count: workflow.success_count,
         fail_count: workflow.fail_count,
         created_at: workflow.created_at,
@@ -403,7 +403,15 @@ export default function AppsPage() {
                           {tCommon('createdBy')}：{app.created_by_name}
                         </p>
                       )}
-                      <div className="flex items-center gap-1.5 mt-0.5">
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        {app.visibility === 'private' && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0 border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+                          >
+                            {t('visibility.private')}
+                          </Badge>
+                        )}
                         <Badge
                           variant={app.status === 'published' ? 'default' : 'secondary'}
                           className="text-[10px] px-1.5 py-0"

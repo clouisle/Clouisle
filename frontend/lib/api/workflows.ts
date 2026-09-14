@@ -261,6 +261,7 @@ export interface WorkflowCreateInput {
   name: string
   description?: string | null
   icon?: string | null
+  visibility?: WorkflowVisibility
 }
 
 export interface WorkflowUpdateInput {

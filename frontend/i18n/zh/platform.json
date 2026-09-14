@@ -245,6 +245,10 @@
       "configSaved": "配置保存成功",
       "configSaveFailed": "配置保存失败",
       "selectTeam": "选择团队",
+      "visibility": "可见性",
+      "visibilityHint": "控制当前团队内其他成员是否可以查看和使用该工具。",
+      "visibilityPrivate": "私有",
+      "visibilityTeam": "团队",
       "confirmDelete": "删除工具",
       "deleteToolConfirm": "确定要删除 \"{name}\" 吗？此操作无法撤销。",
       "filters": {

@@ -173,7 +173,7 @@ describe('MCP tool dialog', () => {
     expect(onSave).toHaveBeenCalledWith({
       name: 'weather_server', display_name: 'Weather server',
       description: '- forecast: Gets forecast\n- alerts: No description',
-      icon: 'https://images.test/icon.png', category: 'data', is_enabled: false, type: 'mcp',
+      icon: 'https://images.test/icon.png', category: 'data', visibility: 'private', is_enabled: false, type: 'mcp',
       mcp_config: { transport: 'stdio', command: 'bunx', args: ['--yes'], env: { TOKEN: 'fake-secret' } },
     })
   })

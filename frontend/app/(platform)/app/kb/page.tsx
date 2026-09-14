@@ -284,6 +284,14 @@ export default function KnowledgeBasePage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-sm font-medium truncate">{kb.name}</span>
+                    {kb.visibility === 'private' && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] px-1.5 py-0 border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300 shrink-0"
+                      >
+                        {kbT('visibilityPrivate')}
+                      </Badge>
+                    )}
                     {kb.is_owned === false && (
                       <Badge
                         variant="outline"

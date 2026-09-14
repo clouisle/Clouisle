@@ -33,6 +33,7 @@ import {
   ChartColumn,
   Wrench,
   Database,
+  Lock,
 } from 'lucide-react'
 
 interface ToolCardProps {
@@ -179,6 +180,12 @@ export function ToolCard({
                   </TooltipTrigger>
                   <TooltipContent>{t('requiresConfig')}</TooltipContent>
                 </Tooltip>
+              )}
+              {tool.type !== 'builtin' && tool.visibility === 'private' && (
+                <Badge variant="outline" className="text-xs px-1.5 py-0 shrink-0 text-amber-600 dark:text-amber-400 border-amber-500/30 bg-amber-500/10">
+                  <Lock className="h-3 w-3 mr-1" />
+                  {t('visibilityPrivate')}
+                </Badge>
               )}
               {/* 共享状态标识 */}
               {isShared && (
