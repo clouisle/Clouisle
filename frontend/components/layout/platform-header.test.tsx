@@ -18,6 +18,7 @@ const resetAllTours = mock(() => {})
 
 let canAccessDashboard = false
 let canAccessCapabilities = false
+let canAccessApiKeys = false
 let currentTeam: { id: string } | null = { id: 'team-1' }
 let headerVariant: 'default' | 'centered' | 'minimal' = 'centered'
 let onboarding: { isTourCompleted: (tourId: string) => boolean; startTour: (tourId: string) => void; resetAllTours: () => void } | null = null
@@ -61,6 +62,7 @@ mock.module('@/hooks/use-permissions', () => ({
   usePermissions: () => ({
     canAccessDashboard,
     hasAnyPermission: () => canAccessCapabilities,
+    hasPermission: (permission: string) => permission === 'apikey:read' && canAccessApiKeys,
   }),
 }))
 mock.module('@/contexts/team-context', () => ({
@@ -144,10 +146,10 @@ async function renderHeader() {
   renderers.push(renderer!)
   return renderer!
 }
-
 beforeEach(() => {
   canAccessDashboard = false
   canAccessCapabilities = false
+  canAccessApiKeys = false
   currentTeam = { id: 'team-1' }
   headerVariant = 'centered'
   push.mockClear()
@@ -236,7 +238,19 @@ describe('PlatformHeader', () => {
     expect(renderer.root.findByProps({ 'data-profile-open': false })).toBeTruthy()
   })
 
+  test('hides API key navigation without read permission', async () => {
+    const renderer = await renderHeader()
+
+    expect(renderer.root.findAllByProps({ 'data-testid': 'user-menu-api-keys' })).toHaveLength(0)
+
+    canAccessApiKeys = true
+    await act(async () => renderer.update(<PlatformHeader />))
+
+    expect(renderer.root.findByProps({ 'data-testid': 'user-menu-api-keys' })).toBeTruthy()
+  })
+
   test('runs user navigation callbacks', async () => {
+    canAccessApiKeys = true
     const renderer = await renderHeader()
 
     await act(async () => renderer.root.findByProps({ 'data-testid': 'user-menu-api-keys' }).props.onClick())

@@ -115,7 +115,7 @@ export function PlatformHeader() {
   const [userMenuOpen, setUserMenuOpen] = React.useState(false)
   const { settings: siteSettings } = useSiteSettings()
   const { platformHeaderVariant, mounted } = useSettings()
-  const { canAccessDashboard, hasAnyPermission } = usePermissions()
+  const { canAccessDashboard, hasAnyPermission, hasPermission } = usePermissions()
   const { currentTeam, isLoading: isTeamLoading } = useTeam()
   const onboarding = useOptionalOnboarding()
 
@@ -487,10 +487,12 @@ export function PlatformHeader() {
               </DropdownMenuItem>
 
               {/* API Keys */}
-              <DropdownMenuItem onClick={() => router.push('/app/api-keys')} data-testid="user-menu-api-keys">
-                <Key className="mr-2 h-4 w-4" />
-                {t('apiKeys')}
-              </DropdownMenuItem>
+              {hasPermission('apikey:read') && (
+                <DropdownMenuItem onClick={() => router.push('/app/api-keys')} data-testid="user-menu-api-keys">
+                  <Key className="mr-2 h-4 w-4" />
+                  {t('apiKeys')}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
 
               {/* Features */}
