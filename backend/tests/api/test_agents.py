@@ -98,7 +98,12 @@ def request() -> Request:
 
 
 def user(*, superuser=False):
-    return SimpleNamespace(id=uuid4(), is_superuser=superuser, username="tester")
+    return SimpleNamespace(
+        id=uuid4(),
+        is_superuser=superuser,
+        username="tester",
+        roles=[],
+    )
 
 
 def agent(**overrides):
@@ -322,10 +327,12 @@ async def test_create_agent_rejects_invalid_bindings(
         model_id=uuid4(),
         knowledge_base_configs=[{"knowledge_base_id": uuid4()}],
     )
-    monkeypatch.setattr(agents.deps, "check_scoped_permission", AsyncMock())
     monkeypatch.setattr(
-        agents, "check_team_access", AsyncMock(return_value=SimpleNamespace(id=team_id))
+        agents,
+        "check_team_permission",
+        AsyncMock(return_value=SimpleNamespace(id=team_id)),
     )
+
     monkeypatch.setattr(agents.Agent, "filter", lambda **_kwargs: Query(existing))
     monkeypatch.setattr(agents.TeamModel, "filter", lambda **_kwargs: Query(model))
     monkeypatch.setattr(agents.KnowledgeBase, "filter", lambda **_kwargs: Query(kb))
@@ -362,8 +369,8 @@ async def test_create_agent_persists_config_and_knowledge_binding(monkeypatch):
         enable_video_generation=True,
         video_generation_config={"default_model_ref": "dummy/model"},
     )
-    monkeypatch.setattr(agents.deps, "check_scoped_permission", AsyncMock())
-    monkeypatch.setattr(agents, "check_team_access", AsyncMock(return_value=team))
+    monkeypatch.setattr(agents, "check_team_permission", AsyncMock(return_value=team))
+
     monkeypatch.setattr(agents.Agent, "filter", lambda **_kwargs: Query(None))
     monkeypatch.setattr(
         agents.KnowledgeBase, "filter", lambda **_kwargs: Query(object())
@@ -414,7 +421,9 @@ async def test_update_agent_updates_config_tools_and_kb(monkeypatch):
         knowledge_base_configs=[{"knowledge_base_id": uuid4()}],
     )
     monkeypatch.setattr(agents, "check_agent_access", AsyncMock(return_value=item))
-    monkeypatch.setattr(agents.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(
+        agents, "check_team_permission", AsyncMock(return_value=item.team)
+    )
     monkeypatch.setattr(agents.Agent, "filter", lambda **_kwargs: Query(None))
     kb_query = Query([])
     monkeypatch.setattr(agents.AgentKnowledgeBase, "filter", lambda **_kwargs: kb_query)
@@ -445,7 +454,9 @@ async def test_update_agent_disables_rag_when_knowledge_bases_are_removed(monkey
     item = agent()
     kb_query = Query([])
     monkeypatch.setattr(agents, "check_agent_access", AsyncMock(return_value=item))
-    monkeypatch.setattr(agents.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(
+        agents, "check_team_permission", AsyncMock(return_value=item.team)
+    )
     monkeypatch.setattr(agents.AgentKnowledgeBase, "filter", lambda **_kwargs: kb_query)
     monkeypatch.setattr(agents.Agent, "get", lambda **_kwargs: Query(item))
     monkeypatch.setattr(agents.AuditLogService, "log", AsyncMock())
@@ -467,7 +478,9 @@ async def test_update_agent_stops_after_persistence_error(monkeypatch):
     item.save.side_effect = RuntimeError("database unavailable")
     audit = AsyncMock()
     monkeypatch.setattr(agents, "check_agent_access", AsyncMock(return_value=item))
-    monkeypatch.setattr(agents.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(
+        agents, "check_team_permission", AsyncMock(return_value=item.team)
+    )
     monkeypatch.setattr(agents.AuditLogService, "log", audit)
 
     with pytest.raises(RuntimeError, match="database unavailable"):
@@ -519,7 +532,10 @@ async def test_duplicate_copies_bindings_and_strips_internal_media_config(monkey
         search_mode="hybrid",
     )
     monkeypatch.setattr(agents, "check_agent_access", AsyncMock(return_value=source))
-    monkeypatch.setattr(agents.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(
+        agents, "check_team_permission", AsyncMock(return_value=source.team)
+    )
+
     create = AsyncMock(return_value=duplicate)
     monkeypatch.setattr(agents.Agent, "create", create)
     monkeypatch.setattr(agents.Agent, "get", lambda **_kwargs: Query(duplicate))
@@ -794,7 +810,9 @@ async def test_agent_list_fallback_model_and_team_scopes(monkeypatch):
 async def test_update_agent_rejects_duplicate_model_and_kb(monkeypatch):
     item = agent()
     monkeypatch.setattr(agents, "check_agent_access", AsyncMock(return_value=item))
-    monkeypatch.setattr(agents.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(
+        agents, "check_team_permission", AsyncMock(return_value=item.team)
+    )
 
     monkeypatch.setattr(agents.Agent, "filter", lambda **_kwargs: Query(object()))
     with pytest.raises(BusinessError) as error:
@@ -856,7 +874,9 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
         video_generation_config={"default_model_ref": "dummy/model"},
     )
     monkeypatch.setattr(agents, "check_agent_access", AsyncMock(return_value=item))
-    monkeypatch.setattr(agents.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(
+        agents, "check_team_permission", AsyncMock(return_value=item.team)
+    )
     monkeypatch.setattr(agents.Agent, "filter", lambda **_kwargs: Query(None))
     team_model = SimpleNamespace(
         id=model_id,

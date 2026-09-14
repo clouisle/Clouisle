@@ -689,6 +689,7 @@ function skillToTool(skill: Skill): Tool {
     description: skill.description,
     type: 'skill',
     category: skill.category,
+    visibility: 'team',
     icon: skill.icon || undefined,
     parameters: parametersFromInputSchema(skill.input_schema),
     is_enabled: skill.is_enabled,

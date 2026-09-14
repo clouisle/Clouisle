@@ -1275,6 +1275,9 @@ msgstr "知识库中未找到相关信息。"
 
 msgid "kb_not_found"
 msgstr "知识库未找到"
+msgid "kb_access_denied"
+msgstr "您无权访问此知识库"
+
 
 msgid "kb_updated"
 msgstr "知识库更新成功"

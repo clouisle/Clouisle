@@ -1274,6 +1274,9 @@ msgstr "No relevant information found in the knowledge base."
 
 msgid "kb_not_found"
 msgstr "Knowledge base not found"
+msgid "kb_access_denied"
+msgstr "You don't have access to this knowledge base"
+
 
 msgid "kb_updated"
 msgstr "Knowledge base updated successfully"

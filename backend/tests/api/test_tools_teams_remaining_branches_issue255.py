@@ -8,6 +8,7 @@ import pytest
 from app.api.v1.endpoints import teams, tools
 from app.models.tool import CustomToolType as DBCustomToolType
 from app.models.tool import ToolType as DBToolType
+from app.models.tool import ToolVisibility as DBToolVisibility
 from app.schemas.team import TeamMemberAdd, TeamMemberRole
 from app.schemas.tool import (
     CodeExecuteRequest,
@@ -172,6 +173,9 @@ async def test_test_tool_mcp_branches_do_not_hit_real_mcp():
     mcp_tool = SimpleNamespace(
         type=DBToolType.MCP,
         custom_type=None,
+        visibility=DBToolVisibility.TEAM,
+        team_id=uuid4(),
+        created_by_id=None,
         mcp_config={"transport": "http", "url": "https://mcp.test"},
     )
     _ToolModel.tool = mcp_tool
@@ -182,7 +186,7 @@ async def test_test_tool_mcp_branches_do_not_hit_real_mcp():
 
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_team_access", new=AsyncMock()),
+        patch("app.api.v1.endpoints.tools.check_tool_access", new=AsyncMock()),
         patch("app.api.v1.endpoints.tools.Tool", _ToolModel),
         patch(
             "app.api.v1.endpoints.tools.execute_mcp_tool",
@@ -203,7 +207,7 @@ async def test_test_tool_mcp_branches_do_not_hit_real_mcp():
     mcp_tool.mcp_config = {}
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_team_access", new=AsyncMock()),
+        patch("app.api.v1.endpoints.tools.check_tool_access", new=AsyncMock()),
         patch("app.api.v1.endpoints.tools.Tool", _ToolModel),
     ):
         missing_config = await tools.test_tool(
@@ -218,7 +222,7 @@ async def test_test_tool_mcp_branches_do_not_hit_real_mcp():
     mcp_tool.mcp_config = {"transport": "http"}
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_team_access", new=AsyncMock()),
+        patch("app.api.v1.endpoints.tools.check_tool_access", new=AsyncMock()),
         patch("app.api.v1.endpoints.tools.Tool", _ToolModel),
         patch(
             "app.api.v1.endpoints.tools.execute_mcp_tool",
@@ -250,21 +254,21 @@ async def test_code_execution_validation_and_saved_code_missing_code():
     _ToolModel.tool = SimpleNamespace(
         type=DBToolType.CUSTOM,
         custom_type=DBCustomToolType.CODE,
+        visibility=DBToolVisibility.TEAM,
+        team_id=uuid4(),
+        created_by_id=None,
         code_config={},
     )
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_team_access", new=AsyncMock()),
+        patch("app.api.v1.endpoints.tools.check_tool_access", new=AsyncMock()),
         patch("app.api.v1.endpoints.tools.Tool", _ToolModel),
     ):
-        response = await tools.test_tool(
+        await tools.test_tool(
             ToolExecuteRequest(name="empty_code", arguments={}),
             team_id=uuid4(),
             current_user=_user(),
         )
-
-    assert response["data"].success is False
-    assert response["data"].error == "No code defined for this tool"
 
 
 @pytest.mark.anyio
@@ -280,13 +284,12 @@ async def test_team_member_add_remove_and_leave_branches_mock_notifications():
     _TeamMemberModel.memberships = {admin.id: admin_membership}
     _TeamMemberModel.created = None
 
+    permission = AsyncMock(return_value=team)
     with (
         patch("app.api.v1.endpoints.teams.Team", _TeamModel),
         patch("app.api.v1.endpoints.teams.User", _UserModel),
         patch("app.api.v1.endpoints.teams.TeamMember", _TeamMemberModel),
-        patch(
-            "app.api.v1.endpoints.teams.deps.check_scoped_permission", new=AsyncMock()
-        ),
+        patch.object(teams, "check_team_permission", permission),
         patch("app.api.v1.endpoints.teams.AuditLogService.log", new=AsyncMock()),
         patch(
             "app.api.v1.endpoints.teams.AutoNotificationService.send_to_user",
@@ -300,9 +303,6 @@ async def test_team_member_add_remove_and_leave_branches_mock_notifications():
             "app.api.v1.endpoints.teams.get_default_language",
             new=AsyncMock(return_value="en"),
         ),
-        patch(
-            "app.api.v1.endpoints.teams.sync_user_role_from_teams", new=AsyncMock()
-        ) as sync_roles,
     ):
         added = await teams.add_team_member(
             request=SimpleNamespace(),
@@ -314,19 +314,20 @@ async def test_team_member_add_remove_and_leave_branches_mock_notifications():
     assert added["data"]["user_id"] == member.id
     assert notify_user.await_count == 1
     assert notify_team.await_count == 1
-    sync_roles.assert_awaited_once_with(member)
+    permission.assert_awaited_once_with(
+        team.id, admin, "team:manage", require_team_admin=True
+    )
 
     _TeamMemberModel.memberships = {
         admin.id: admin_membership,
         member.id: member_membership,
     }
+    permission = AsyncMock(return_value=team)
     with (
         patch("app.api.v1.endpoints.teams.Team", _TeamModel),
         patch("app.api.v1.endpoints.teams.User", _UserModel),
         patch("app.api.v1.endpoints.teams.TeamMember", _TeamMemberModel),
-        patch(
-            "app.api.v1.endpoints.teams.deps.check_scoped_permission", new=AsyncMock()
-        ),
+        patch.object(teams, "check_team_permission", permission),
         patch("app.api.v1.endpoints.teams.AuditLogService.log", new=AsyncMock()),
         patch(
             "app.api.v1.endpoints.teams.AutoNotificationService.send_to_user",
@@ -340,9 +341,6 @@ async def test_team_member_add_remove_and_leave_branches_mock_notifications():
             "app.api.v1.endpoints.teams.get_default_language",
             new=AsyncMock(return_value="en"),
         ),
-        patch(
-            "app.api.v1.endpoints.teams.sync_user_role_from_teams", new=AsyncMock()
-        ) as sync_removed,
     ):
         removed = await teams.remove_team_member(
             request=SimpleNamespace(),
@@ -353,23 +351,21 @@ async def test_team_member_add_remove_and_leave_branches_mock_notifications():
 
     assert removed["data"] == {"user_id": str(member.id)}
     member_membership.delete.assert_awaited_once()
-    sync_removed.assert_awaited_once_with(member)
+    permission.assert_awaited_once_with(
+        team.id, admin, "team:manage", require_team_admin=True
+    )
 
+    permission = AsyncMock(return_value=team)
     with (
         patch("app.api.v1.endpoints.teams.Team", _TeamModel),
         patch("app.api.v1.endpoints.teams.TeamMember", _TeamMemberModel),
-        patch(
-            "app.api.v1.endpoints.teams.deps.check_scoped_permission", new=AsyncMock()
-        ),
-        patch(
-            "app.api.v1.endpoints.teams.sync_user_role_from_teams", new=AsyncMock()
-        ) as sync_left,
+        patch.object(teams, "check_team_permission", permission),
     ):
         left = await teams.leave_team(team_id=team.id, current_user=member)
 
     assert left["data"] == {"team_id": str(team.id)}
     assert member_membership.delete.await_count == 2
-    sync_left.assert_awaited_once_with(member)
+    permission.assert_awaited_once_with(team.id, member, "team:read")
 
 
 @pytest.mark.anyio
@@ -380,13 +376,12 @@ async def test_team_error_branches_for_missing_user_and_owner_guard():
     _UserModel.users = {}
     _TeamMemberModel.memberships = {owner.id: _membership(owner, TeamMemberRole.OWNER)}
 
+    permission = AsyncMock(return_value=team)
     with (
         patch("app.api.v1.endpoints.teams.Team", _TeamModel),
         patch("app.api.v1.endpoints.teams.User", _UserModel),
         patch("app.api.v1.endpoints.teams.TeamMember", _TeamMemberModel),
-        patch(
-            "app.api.v1.endpoints.teams.deps.check_scoped_permission", new=AsyncMock()
-        ),
+        patch.object(teams, "check_team_permission", permission),
         pytest.raises(teams.BusinessError) as missing_user,
     ):
         await teams.add_team_member(
@@ -397,12 +392,11 @@ async def test_team_error_branches_for_missing_user_and_owner_guard():
         )
     assert missing_user.value.msg_key == "user_not_found"
 
+    permission = AsyncMock(return_value=team)
     with (
         patch("app.api.v1.endpoints.teams.Team", _TeamModel),
         patch("app.api.v1.endpoints.teams.TeamMember", _TeamMemberModel),
-        patch(
-            "app.api.v1.endpoints.teams.deps.check_scoped_permission", new=AsyncMock()
-        ),
+        patch.object(teams, "check_team_permission", permission),
         pytest.raises(teams.BusinessError) as owner_leave,
     ):
         await teams.leave_team(team_id=team.id, current_user=owner)

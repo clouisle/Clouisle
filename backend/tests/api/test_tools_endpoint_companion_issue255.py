@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import tools
+from app.models.tool import ToolVisibility as DBToolVisibility
 from app.schemas.response import BusinessError
 from app.schemas.tool import (
     CodeExecuteRequest,
@@ -84,27 +85,39 @@ def tool_info(name="calc"):
     )
 
 
-def db_tool(name, team_id, *, type_=None, custom_type=None, enabled=True, config=None):
-    return SimpleNamespace(
-        id=uuid4(),
-        name=name,
-        display_name=name.title(),
-        description=f"{name} desc",
-        type=type_ or tools.DBToolType.CUSTOM,
-        category="other",
-        icon=None,
-        parameters=[],
-        is_enabled=enabled,
-        credentials={},
-        custom_type=custom_type,
-        http_config=config if custom_type == tools.DBCustomToolType.HTTP else {},
-        code_config=config if custom_type == tools.DBCustomToolType.CODE else {},
-        mcp_config=config if type_ == tools.DBToolType.MCP else {},
-        team_id=team_id,
-        created_by_id=uuid4(),
-        created_by=SimpleNamespace(username="maker"),
-        team=SimpleNamespace(id=team_id, name="Owner"),
-    )
+def db_tool(
+    name,
+    team_id,
+    *,
+    type_=None,
+    custom_type=None,
+    enabled=True,
+    config=None,
+    **overrides,
+):
+    values = {
+        "id": uuid4(),
+        "name": name,
+        "display_name": name.title(),
+        "description": f"{name} desc",
+        "type": type_ or tools.DBToolType.CUSTOM,
+        "visibility": DBToolVisibility.TEAM,
+        "category": "other",
+        "icon": None,
+        "parameters": [],
+        "is_enabled": enabled,
+        "credentials": {},
+        "custom_type": custom_type,
+        "http_config": config if custom_type == tools.DBCustomToolType.HTTP else {},
+        "code_config": config if custom_type == tools.DBCustomToolType.CODE else {},
+        "mcp_config": config if type_ == tools.DBToolType.MCP else {},
+        "team_id": team_id,
+        "created_by_id": uuid4(),
+        "created_by": SimpleNamespace(username="maker"),
+        "team": SimpleNamespace(id=team_id, name="Owner"),
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
 
 
 def data(response):
@@ -161,7 +174,13 @@ async def test_list_tools_filters_builtins_custom_mcp_and_rejects_unowned_team(
 async def test_get_by_name_uses_sandbox_fallback_custom_lookup_and_not_found(
     monkeypatch, user, team
 ):
-    custom = db_tool("saved", team.id, custom_type=tools.DBCustomToolType.HTTP)
+    custom = db_tool(
+        "saved",
+        team.id,
+        custom_type=tools.DBCustomToolType.HTTP,
+        created_by_id=user.id,
+        visibility=DBToolVisibility.TEAM,
+    )
     access = AsyncMock()
 
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda name: None)
@@ -170,7 +189,7 @@ async def test_get_by_name_uses_sandbox_fallback_custom_lookup_and_not_found(
         "get_sandbox_tool_infos",
         lambda names: [tool_info(names[0])],
     )
-    monkeypatch.setattr(tools, "check_team_access", access)
+    monkeypatch.setattr(tools, "check_tool_access", access)
     monkeypatch.setattr(tools.Tool, "filter", ToolFilter(by_name={"saved": custom}))
 
     sandbox_response = await tools.get_tool_by_name("bash", current_user=user)
@@ -180,7 +199,7 @@ async def test_get_by_name_uses_sandbox_fallback_custom_lookup_and_not_found(
         "saved", team_id=team.id, current_user=user
     )
     assert data(custom_response).id == custom.id
-    access.assert_awaited_once_with(team.id, user)
+    access.assert_awaited_once_with(custom, user)
 
     with pytest.raises(BusinessError) as exc:
         await tools.get_tool_by_name("missing", current_user=user)
@@ -203,7 +222,7 @@ async def test_execute_mcp_handles_name_override_empty_config_and_exception(
     )
 
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: None)
-    monkeypatch.setattr(tools, "check_team_access", AsyncMock())
+    monkeypatch.setattr(tools, "check_tool_access", AsyncMock())
     monkeypatch.setattr(
         tools.Tool,
         "filter",
@@ -263,7 +282,7 @@ async def test_execute_saved_code_returns_logs_artifacts_duration_and_direct_lan
     submit = AsyncMock(return_value=runtime)
 
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: None)
-    monkeypatch.setattr(tools, "check_team_access", AsyncMock())
+    monkeypatch.setattr(tools, "check_tool_access", AsyncMock())
     monkeypatch.setattr(tools.Tool, "filter", ToolFilter(by_name={"codey": code_tool}))
     monkeypatch.setattr(tools.sandbox_gateway, "submit_and_wait", submit)
 

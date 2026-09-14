@@ -97,6 +97,15 @@ def _runtime_duration_ms(runtime_result: Any) -> int | None:
     return getattr(metadata, "duration_ms", None)
 
 
+def _tool_visibility(tool: Any) -> DBToolVisibility:
+    value = getattr(tool, "visibility", DBToolVisibility.PRIVATE)
+    return (
+        value
+        if isinstance(value, DBToolVisibility)
+        else DBToolVisibility(getattr(value, "value", value))
+    )
+
+
 # ============ Helper Functions ============
 
 
@@ -104,11 +113,11 @@ async def check_tool_access(
     tool: Tool, user: User, require_write: bool = False
 ) -> Tool:
     """Check if the user has access to the tool based on ownership and visibility."""
-    if user.is_superuser:
+    if getattr(user, "is_superuser", False):
         return tool
 
-    is_owner = tool.created_by_id == user.id
-    if tool.visibility == DBToolVisibility.PRIVATE:
+    is_owner = getattr(tool, "created_by_id", None) == getattr(user, "id", None)
+    if _tool_visibility(tool) == DBToolVisibility.PRIVATE:
         if is_owner:
             return tool
         raise BusinessError(
@@ -216,7 +225,7 @@ def db_tool_to_out(tool: Tool, creator_name: str | None = None) -> ToolOut:
         display_name=tool.display_name,
         description=tool.description,
         type=ToolType(tool.type.value),
-        visibility=ToolVisibility(tool.visibility.value),
+        visibility=ToolVisibility(_tool_visibility(tool).value),
         category=_category_value(tool.category),
         icon=tool.icon,
         parameters=[ToolParameterSchema(**p) for p in tool.parameters],
@@ -233,7 +242,7 @@ def db_tool_to_out(tool: Tool, creator_name: str | None = None) -> ToolOut:
         else None,
         mcp_config=McpConfigSchema(**tool.mcp_config) if tool.mcp_config else None,
         team_id=tool.team_id,
-        created_by_id=tool.created_by_id,
+        created_by_id=getattr(tool, "created_by_id", None),
         created_by_name=creator_name,
     )
 
@@ -246,7 +255,7 @@ def db_tool_to_detail(tool: Tool, creator_name: str | None = None) -> ToolDetail
         display_name=tool.display_name,
         description=tool.description,
         type=ToolType(tool.type.value),
-        visibility=ToolVisibility(tool.visibility.value),
+        visibility=ToolVisibility(_tool_visibility(tool).value),
         category=_category_value(tool.category),
         icon=tool.icon,
         parameters=[ToolParameterSchema(**p) for p in tool.parameters],
@@ -286,7 +295,7 @@ def _matches_filter(value: str | None, selected: set[str]) -> bool:
 
 
 async def _get_accessible_teams(user: User) -> list[Team]:
-    if user.is_superuser:
+    if getattr(user, "is_superuser", False):
         return await Team.all().order_by("name")
 
     memberships = await TeamMember.filter(user=user).prefetch_related("team")
@@ -310,9 +319,9 @@ async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[Too
         )
         for db_tool in custom_db_tools:
             if (
-                db_tool.visibility == DBToolVisibility.PRIVATE
-                and db_tool.created_by_id != user.id
-                and not user.is_superuser
+                _tool_visibility(db_tool) == DBToolVisibility.PRIVATE
+                and getattr(db_tool, "created_by_id", None) != getattr(user, "id", None)
+                and not getattr(user, "is_superuser", False)
             ):
                 continue
             creator_name = db_tool.created_by.username if db_tool.created_by else None
@@ -332,9 +341,9 @@ async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[Too
         )
         for db_tool in mcp_db_tools:
             if (
-                db_tool.visibility == DBToolVisibility.PRIVATE
-                and db_tool.created_by_id != user.id
-                and not user.is_superuser
+                _tool_visibility(db_tool) == DBToolVisibility.PRIVATE
+                and getattr(db_tool, "created_by_id", None) != getattr(user, "id", None)
+                and not getattr(user, "is_superuser", False)
             ):
                 continue
             creator_name = db_tool.created_by.username if db_tool.created_by else None
@@ -512,9 +521,10 @@ async def list_tools_legacy(
     custom_tools = []
     for tool in custom_db_tools:
         if (
-            tool.visibility == DBToolVisibility.PRIVATE
-            and tool.created_by_id != current_user.id
-            and not current_user.is_superuser
+            _tool_visibility(tool) == DBToolVisibility.PRIVATE
+            and getattr(tool, "created_by_id", None)
+            != getattr(current_user, "id", None)
+            and not getattr(current_user, "is_superuser", False)
         ):
             continue
         creator_name = tool.created_by.username if tool.created_by else None
@@ -536,9 +546,10 @@ async def list_tools_legacy(
     mcp_tools = []
     for tool in mcp_db_tools:
         if (
-            tool.visibility == DBToolVisibility.PRIVATE
-            and tool.created_by_id != current_user.id
-            and not current_user.is_superuser
+            _tool_visibility(tool) == DBToolVisibility.PRIVATE
+            and getattr(tool, "created_by_id", None)
+            != getattr(current_user, "id", None)
+            and not getattr(current_user, "is_superuser", False)
         ):
             continue
         creator_name = tool.created_by.username if tool.created_by else None
@@ -869,7 +880,7 @@ async def update_tool(
         new_visibility = DBToolVisibility(tool_in.visibility.value)
         if (
             new_visibility == DBToolVisibility.PRIVATE
-            and tool.visibility != DBToolVisibility.PRIVATE
+            and _tool_visibility(tool) != DBToolVisibility.PRIVATE
         ):
             await ToolShare.filter(tool_id=tool.id).delete()
         tool.visibility = new_visibility
@@ -1693,7 +1704,7 @@ async def share_tool(
     # 检查用户是否是工具所有者团队的管理员
     await check_team_access(tool.team_id, current_user, require_admin=True)
 
-    if tool.visibility == DBToolVisibility.PRIVATE:
+    if _tool_visibility(tool) == DBToolVisibility.PRIVATE:
         raise BusinessError(
             code=ResponseCode.BAD_REQUEST,
             msg_key="private_tool_cannot_be_shared",

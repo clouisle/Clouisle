@@ -12,6 +12,18 @@ from app.api.v1.endpoints import knowledge_bases
 from app.schemas.response import BusinessError, error
 
 
+from tortoise.expressions import Q
+
+
+def _q_leaves(node):
+    if not node.children:
+        return [dict(node.filters)]
+    leaves = []
+    for child in node.children:
+        leaves.extend(_q_leaves(child))
+    return leaves
+
+
 class Query:
     def __init__(self, items=(), *, first=None, total=None):
         self.items = list(items)
@@ -22,8 +34,8 @@ class Query:
         self.limit_value = None
         self.prefetches = []
 
-    def filter(self, **kwargs):
-        self.filters.append(kwargs)
+    def filter(self, *args, **kwargs):
+        self.filters.append(kwargs if not args else (args, kwargs))
         return self
 
     def prefetch_related(self, *args):
@@ -93,7 +105,11 @@ def team(id=None):
 
 def user(id=None):
     return SimpleNamespace(
-        id=id or uuid4(), username="owner", email="owner@example.com"
+        id=id or uuid4(),
+        username="owner",
+        email="owner@example.com",
+        is_superuser=False,
+        roles=[],
     )
 
 
@@ -192,6 +208,9 @@ def test_list_knowledge_bases_filters_memberships_search_status_and_models(
         lambda **_kwargs: Query([SimpleNamespace(team_id=team_id)]),
     )
     monkeypatch.setattr(knowledge_bases.Model, "filter", lambda **_kwargs: model_query)
+    monkeypatch.setattr(
+        knowledge_bases.KnowledgeBaseShare, "filter", lambda **_kwargs: Query()
+    )
 
     response = api.get(
         "/api/v1/knowledge-bases?search=hand&own_only=true&page=2&page_size=3"
@@ -203,8 +222,18 @@ def test_list_knowledge_bases_filters_memberships_search_status_and_models(
     assert data["total"] == 7
     assert item["embedding_model"]["name"] == "Embed"
     assert item["rerank_model"]["name"] == "Rerank"
-    assert kb_query.filters == [
-        {"team_id__in": [team_id]},
+    visibility_args, visibility_kwargs = kb_query.filters[0]
+    assert visibility_kwargs == {}
+    visibility = visibility_args[0]
+    assert isinstance(visibility, Q)
+    assert {
+        "team_id__in": [team_id],
+        "visibility__in": [
+            knowledge_bases.KnowledgeBaseVisibility.TEAM.value,
+            knowledge_bases.KnowledgeBaseVisibility.PUBLIC.value,
+        ],
+    } in _q_leaves(visibility)
+    assert kb_query.filters[1:] == [
         {"created_by": current_user},
         {"name__icontains": "hand"},
     ]

@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.api import conversation_access, team_access
 from app.api.v1.endpoints import conversations
 from app.schemas.response import BusinessError
 
@@ -78,22 +79,26 @@ def conversation(*, owner_id=None, agent_id=None, title="Conversation"):
 
 @pytest.mark.anyio
 async def test_access_helpers_cover_team_and_agent_scopes():
-    member = user()
+    member = user(permissions=("team:read",))
     team_id = uuid4()
     team = SimpleNamespace(id=team_id)
     membership = SimpleNamespace(role="admin")
     team_query = QueryMock(first=team)
     membership_query = QueryMock(first=membership)
-
     with (
-        patch.object(conversations.Team, "filter", return_value=team_query),
-        patch.object(conversations.TeamMember, "filter", return_value=membership_query),
+        patch.object(team_access.Team, "filter", return_value=team_query),
+        patch.object(team_access.TeamMember, "filter", return_value=membership_query),
+        patch.object(
+            conversation_access.TeamMember,
+            "filter",
+            return_value=membership_query,
+        ),
     ):
         assert await conversations.check_team_access(team_id, member) is team
         assert await conversations.has_conversation_team_admin_access(member, team_id)
 
     with (
-        patch.object(conversations.Team, "filter", return_value=QueryMock(first=None)),
+        patch.object(team_access.Team, "filter", return_value=QueryMock(first=None)),
         pytest.raises(BusinessError) as exc_info,
     ):
         await conversations.check_team_access(team_id, member)

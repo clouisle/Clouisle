@@ -7,6 +7,7 @@ import pytest
 
 from app.api.v1.endpoints import tools
 from app.models.tool import CustomToolType, ToolType
+from app.models.tool import ToolVisibility as DBToolVisibility
 from app.schemas.response import BusinessError
 from app.schemas.tool import ToolExecuteRequest
 
@@ -41,8 +42,8 @@ def tool_record(**kwargs):
         "icon": None,
         "category": "other",
         "type": ToolType.CUSTOM,
+        "visibility": DBToolVisibility.TEAM,
         "custom_type": CustomToolType.HTTP,
-        "parameters": [],
         "http_config": {},
         "code_config": {},
         "mcp_config": {},
@@ -63,22 +64,37 @@ def tool_record(**kwargs):
 async def test_write_access_shortcuts_and_requires_admin_for_non_creator():
     team_id = uuid4()
     with patch.object(tools, "check_team_access", new=AsyncMock()) as access:
+        team_tool = SimpleNamespace(
+            team_id=team_id,
+            created_by_id=uuid4(),
+            visibility=DBToolVisibility.TEAM,
+        )
         await tools.check_tool_write_access(
-            SimpleNamespace(team_id=team_id, created_by_id=uuid4()),
+            team_tool,
             User(is_superuser=True),
         )
         access.assert_not_awaited()
 
         creator = User()
         await tools.check_tool_write_access(
-            SimpleNamespace(team_id=team_id, created_by_id=creator.id), creator
+            SimpleNamespace(
+                team_id=team_id,
+                created_by_id=creator.id,
+                visibility=DBToolVisibility.TEAM,
+            ),
+            creator,
         )
         access.assert_awaited_once_with(team_id, creator)
 
         access.reset_mock()
         other = User()
         await tools.check_tool_write_access(
-            SimpleNamespace(team_id=team_id, created_by_id=uuid4()), other
+            SimpleNamespace(
+                team_id=team_id,
+                created_by_id=uuid4(),
+                visibility=DBToolVisibility.TEAM,
+            ),
+            other,
         )
         assert access.await_args_list[1].kwargs == {"require_admin": True}
 
@@ -95,6 +111,7 @@ async def test_create_tool_rejects_duplicate_and_creates_with_audit():
         icon=None,
         category="other",
         type=SimpleNamespace(value="custom"),
+        visibility=SimpleNamespace(value="team"),
         custom_type=SimpleNamespace(value="http"),
         parameters=[],
         http_config=None,
@@ -105,8 +122,7 @@ async def test_create_tool_rejects_duplicate_and_creates_with_audit():
     )
 
     with (
-        patch.object(tools, "check_team_access", new=AsyncMock()),
-        patch.object(tools.deps, "check_scoped_permission", new=AsyncMock()),
+        patch.object(tools, "check_team_permission", new=AsyncMock()),
         patch.object(tools.Tool, "filter", return_value=QueryResult(object())),
     ):
         with pytest.raises(BusinessError):
@@ -114,8 +130,7 @@ async def test_create_tool_rejects_duplicate_and_creates_with_audit():
 
     created = tool_record(team_id=team_id, created_by_id=user.id)
     with (
-        patch.object(tools, "check_team_access", new=AsyncMock()),
-        patch.object(tools.deps, "check_scoped_permission", new=AsyncMock()),
+        patch.object(tools, "check_team_permission", new=AsyncMock()),
         patch.object(tools.Tool, "filter", return_value=QueryResult(None)),
         patch.object(
             tools.Tool, "create", new=AsyncMock(return_value=created)
@@ -172,6 +187,7 @@ async def test_update_delete_toggle_and_duplicate_success_paths():
         description="Updated",
         icon="icon",
         category="api",
+        visibility=None,
         custom_type=SimpleNamespace(value="http"),
         parameters=[],
         http_config=SimpleNamespace(model_dump=lambda: {"url": "https://example.com"}),
@@ -183,7 +199,7 @@ async def test_update_delete_toggle_and_duplicate_success_paths():
     filters = [QueryResult(existing), QueryResult(None)]
     common = (
         patch.object(tools, "check_tool_write_access", new=AsyncMock()),
-        patch.object(tools.deps, "check_scoped_permission", new=AsyncMock()),
+        patch.object(tools, "check_team_permission", new=AsyncMock()),
         patch.object(tools.AuditLogService, "log", new=AsyncMock()),
         patch.object(tools, "db_tool_to_detail", return_value="detail"),
     )
@@ -198,11 +214,16 @@ async def test_update_delete_toggle_and_duplicate_success_paths():
 
     with (
         patch.object(tools.Tool, "filter", return_value=QueryResult(existing)),
-        patch.object(tools, "check_team_access", new=AsyncMock()) as access,
+        patch.object(tools, "check_team_permission", new=AsyncMock()) as permission,
         patch.object(tools.AuditLogService, "log", new=AsyncMock()),
     ):
         await tools.delete_tool(existing.id, request, user)
-    access.assert_awaited_once_with(existing.team_id, user, require_admin=True)
+    permission.assert_awaited_once_with(
+        existing.team_id,
+        user,
+        "tool:delete",
+        require_team_admin=True,
+    )
     existing.delete.assert_awaited_once()
 
     existing.delete.reset_mock()
@@ -210,7 +231,7 @@ async def test_update_delete_toggle_and_duplicate_success_paths():
     with (
         patch.object(tools.Tool, "filter", return_value=QueryResult(existing)),
         patch.object(tools, "check_tool_write_access", new=AsyncMock()),
-        patch.object(tools.deps, "check_scoped_permission", new=AsyncMock()),
+        patch.object(tools, "check_team_permission", new=AsyncMock()),
         patch.object(tools.AuditLogService, "log", new=AsyncMock()),
         patch.object(tools, "db_tool_to_detail", return_value="toggled"),
     ):
@@ -257,7 +278,7 @@ async def test_get_tool_name_covers_sandbox_custom_and_not_found():
     custom = tool_record(team_id=team_id)
     with (
         patch.object(tools.tool_registry, "get_tool", return_value=None),
-        patch.object(tools, "check_team_access", new=AsyncMock()),
+        patch.object(tools, "check_tool_access", new=AsyncMock()),
         patch.object(tools.Tool, "filter", return_value=QueryResult(custom)),
         patch.object(tools, "db_tool_to_out", return_value="custom"),
     ):
@@ -321,7 +342,7 @@ async def test_tool_execute_custom_non_sandbox_branches(record, executor, expect
     request = ToolExecuteRequest(name=record.name, arguments={})
     patches = [
         patch.object(tools.tool_registry, "get_tool", return_value=None),
-        patch.object(tools, "check_team_access", new=AsyncMock()),
+        patch.object(tools, "check_tool_access", new=AsyncMock()),
         patch.object(tools.Tool, "filter", return_value=QueryResult(record)),
     ]
     if executor == "http":

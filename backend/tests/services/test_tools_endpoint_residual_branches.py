@@ -6,6 +6,7 @@ import pytest
 from app.api.v1.endpoints import tools
 from app.models.tool import CustomToolType as DBCustomToolType
 from app.models.tool import ToolType as DBToolType
+from app.models.tool import ToolVisibility as DBToolVisibility
 from app.schemas.response import BusinessError
 from app.schemas.tool import CodeExecuteRequest, McpToolsListRequest, ToolExecuteRequest
 from app.services.sandbox.models import SandboxExecutionMetadata, SandboxJobSource
@@ -32,9 +33,21 @@ class QueryStub:
 
 
 class DummyTool:
-    def __init__(self, *, type=DBToolType.CUSTOM, custom_type=None, **config):
+    def __init__(
+        self,
+        *,
+        type=DBToolType.CUSTOM,
+        custom_type=None,
+        team_id="team-1",
+        created_by_id=None,
+        visibility=DBToolVisibility.TEAM,
+        **config,
+    ):
         self.type = type
         self.custom_type = custom_type
+        self.team_id = team_id
+        self.created_by_id = created_by_id
+        self.visibility = visibility
         self.mcp_config = config.get("mcp_config", {})
         self.http_config = config.get("http_config", {})
         self.code_config = config.get("code_config", {})
@@ -65,7 +78,7 @@ async def test_test_tool_mcp_requires_saved_config():
 
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_team_access", new=AsyncMock()),
+        patch("app.api.v1.endpoints.tools.check_tool_access", new=AsyncMock()),
         patch("app.api.v1.endpoints.tools.Tool.filter", return_value=QueryStub(tool)),
     ):
         response = await tools.test_tool(
@@ -88,7 +101,7 @@ async def test_test_tool_mcp_uses_tool_name_override_without_leaking_argument():
 
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_team_access", new=AsyncMock()),
+        patch("app.api.v1.endpoints.tools.check_tool_access", new=AsyncMock()),
         patch("app.api.v1.endpoints.tools.Tool.filter", return_value=QueryStub(tool)),
         patch(
             "app.api.v1.endpoints.tools.execute_mcp_tool",
@@ -118,7 +131,7 @@ async def test_test_tool_code_without_code_returns_validation_error():
 
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_team_access", new=AsyncMock()),
+        patch("app.api.v1.endpoints.tools.check_tool_access", new=AsyncMock()),
         patch("app.api.v1.endpoints.tools.Tool.filter", return_value=QueryStub(tool)),
     ):
         response = await tools.test_tool(
@@ -152,7 +165,7 @@ async def test_test_tool_code_submits_sandbox_job_and_serializes_logs():
 
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_team_access", new=AsyncMock()),
+        patch("app.api.v1.endpoints.tools.check_tool_access", new=AsyncMock()),
         patch("app.api.v1.endpoints.tools.Tool.filter", return_value=QueryStub(tool)),
         patch(
             "app.api.v1.endpoints.tools.compile_code_config_job", return_value=job

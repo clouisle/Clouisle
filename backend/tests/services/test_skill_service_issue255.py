@@ -30,8 +30,8 @@ async def test_check_team_access_rejects_invalid_access(
     member_query = MagicMock(first=AsyncMock(return_value=membership))
 
     with (
-        patch("app.services.skill.Team.filter", return_value=team_query),
-        patch("app.services.skill.TeamMember.filter", return_value=member_query),
+        patch("app.api.team_access.Team.filter", return_value=team_query),
+        patch("app.api.team_access.TeamMember.filter", return_value=member_query),
         pytest.raises(BusinessError) as exc,
     ):
         await SkillService.check_team_access(uuid4(), user, require_admin=require_admin)
@@ -46,8 +46,8 @@ async def test_check_team_access_allows_superuser_without_membership_lookup():
     team_query = MagicMock(first=AsyncMock(return_value=team))
 
     with (
-        patch("app.services.skill.Team.filter", return_value=team_query),
-        patch("app.services.skill.TeamMember.filter") as member_filter,
+        patch("app.api.team_access.Team.filter", return_value=team_query),
+        patch("app.api.team_access.TeamMember.filter") as member_filter,
     ):
         assert await SkillService.check_team_access(uuid4(), user) is team
 

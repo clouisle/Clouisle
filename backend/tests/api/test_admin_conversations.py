@@ -7,6 +7,7 @@ import pytest
 
 from tortoise.expressions import Q
 
+from app.api import team_access
 from app.api.v1.admin.endpoints import conversations
 from app.schemas.response import BusinessError, ResponseCode
 
@@ -114,16 +115,14 @@ async def test_check_team_access_handles_missing_membership_and_superuser():
     team = SimpleNamespace(id=uuid4())
     member = user()
 
-    with patch.object(conversations.Team, "filter", return_value=Query(first=None)):
+    with patch.object(team_access.Team, "filter", return_value=Query(first=None)):
         with pytest.raises(BusinessError) as exc:
             await conversations.check_team_access(team.id, member)
     assert (exc.value.code, exc.value.status_code) == (ResponseCode.TEAM_NOT_FOUND, 404)
 
     with (
-        patch.object(conversations.Team, "filter", return_value=Query(first=team)),
-        patch.object(
-            conversations.TeamMember, "filter", return_value=Query(first=None)
-        ),
+        patch.object(team_access.Team, "filter", return_value=Query(first=team)),
+        patch.object(team_access.TeamMember, "filter", return_value=Query(first=None)),
         pytest.raises(BusinessError) as exc,
     ):
         await conversations.check_team_access(team.id, member)
@@ -132,7 +131,7 @@ async def test_check_team_access_handles_missing_membership_and_superuser():
         403,
     )
 
-    with patch.object(conversations.Team, "filter", return_value=Query(first=team)):
+    with patch.object(team_access.Team, "filter", return_value=Query(first=team)):
         assert (
             await conversations.check_team_access(team.id, user(superuser=True)) is team
         )
@@ -536,15 +535,18 @@ def test_router_declares_pagination_and_uuid_validation():
 @pytest.mark.anyio
 async def test_team_access_and_agent_ids_cover_authorized_paths():
     current_user = user()
+    current_user.roles = [
+        SimpleNamespace(permissions=[SimpleNamespace(code="team:read")])
+    ]
     team = SimpleNamespace(id=uuid4())
     agent_ids = [uuid4(), uuid4()]
 
     with (
-        patch.object(conversations.Team, "filter", return_value=Query(first=team)),
+        patch.object(team_access.Team, "filter", return_value=Query(first=team)),
         patch.object(
-            conversations.TeamMember,
+            team_access.TeamMember,
             "filter",
-            return_value=Query(first=SimpleNamespace()),
+            return_value=Query(first=SimpleNamespace(role="member")),
         ),
     ):
         assert await conversations.check_team_access(team.id, current_user) is team

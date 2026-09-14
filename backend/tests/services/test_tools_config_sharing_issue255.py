@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
-
 from app.api.v1.endpoints.tools import get_tool_config, list_tool_shares, share_tool
+from app.models.tool import ToolVisibility as DBToolVisibility
 from app.schemas.response import BusinessError, ResponseCode
 from app.schemas.tool import ToolShareInput, ToolSharePermission
 
@@ -115,7 +115,11 @@ async def test_get_tool_config_rejects_missing_or_unauthorized(team_id, is_super
 async def test_share_tool_creates_audits_and_serializes_share():
     tool_id, owner_team_id, target_team_id, user_id = (uuid4() for _ in range(4))
     tool = SimpleNamespace(
-        id=tool_id, team_id=owner_team_id, name="custom", display_name="Custom"
+        id=tool_id,
+        team_id=owner_team_id,
+        name="custom",
+        display_name="Custom",
+        visibility=DBToolVisibility.TEAM,
     )
     user = SimpleNamespace(id=user_id)
     share = SimpleNamespace(
@@ -173,7 +177,11 @@ async def test_share_tool_creates_audits_and_serializes_share():
 async def test_list_tool_shares_serializes_missing_sharer():
     tool_id, owner_team_id, target_team_id = (uuid4() for _ in range(3))
     tool = SimpleNamespace(
-        id=tool_id, team_id=owner_team_id, name="custom", display_name="Custom"
+        id=tool_id,
+        team_id=owner_team_id,
+        name="custom",
+        display_name="Custom",
+        visibility=DBToolVisibility.TEAM,
     )
     share = SimpleNamespace(
         id=uuid4(),

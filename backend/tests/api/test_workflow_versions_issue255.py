@@ -45,7 +45,7 @@ async def test_version_access_checks_permission_and_workflow_binding(user):
             new=AsyncMock(return_value=workflow),
         ) as check_access,
         patch.object(
-            workflow_versions.deps, "check_scoped_permission", new=AsyncMock()
+            workflow_versions, "check_team_permission", new=AsyncMock()
         ) as check_permission,
         patch.object(workflow_versions, "get_version_manager", return_value=manager),
     ):
@@ -57,7 +57,7 @@ async def test_version_access_checks_permission_and_workflow_binding(user):
         )
 
     check_access.assert_awaited_once_with(workflow_id, user, require_write=True)
-    check_permission.assert_awaited_once_with(user, "workflow:publish", "team", team_id)
+    check_permission.assert_awaited_once_with(team_id, user, "workflow:publish")
 
     manager.get_version.return_value = version(uuid4())
     with (

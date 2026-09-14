@@ -267,7 +267,9 @@ async def test_restore_version_success_defaults_trigger_config_and_description(
     monkeypatch.setattr(
         workflows, "check_workflow_access", AsyncMock(return_value=workflow)
     )
-    monkeypatch.setattr(workflows.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(
+        workflows, "check_team_permission", AsyncMock(return_value=workflow)
+    )
     monkeypatch.setattr(
         workflows.WorkflowVersion, "filter", Mock(return_value=Query(first=version))
     )

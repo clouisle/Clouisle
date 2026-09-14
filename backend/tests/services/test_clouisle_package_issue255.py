@@ -136,7 +136,7 @@ async def test_preview_classifies_dependencies_and_conflicts(monkeypatch, has_co
         ),
     ]
     adapter = SimpleNamespace(
-        ensure_import_permission=Mock(),
+        ensure_import_permission=AsyncMock(),
         resolve_dependencies=AsyncMock(return_value=dependencies),
         detect_conflict=AsyncMock(
             return_value=ClouislePackageConflict(
@@ -179,7 +179,7 @@ async def test_preview_classifies_dependencies_and_conflicts(monkeypatch, has_co
     )
     assert created.preview["valid"] is False
     assert created.saved_fields == ["preview", "updated_at"]
-    adapter.ensure_import_permission.assert_called_once_with(user)
+    adapter.ensure_import_permission.assert_awaited_once_with(user, team_id=team.id)
 
 
 @pytest.mark.asyncio
@@ -255,7 +255,7 @@ async def test_install_skip_checks_permission_and_finishes(monkeypatch):
     session = _session()
     team = SimpleNamespace(id=session.team_id)
     adapter = SimpleNamespace(
-        ensure_import_permission=Mock(), ensure_update_permission=Mock()
+        ensure_import_permission=AsyncMock(), ensure_update_permission=AsyncMock()
     )
     cleanup = Mock()
     _patch_session_query(monkeypatch, session)
@@ -304,8 +304,8 @@ async def test_install_merges_dependency_mapping_and_records_outcome(
     error = BusinessError(msg_key="install_failed")
     install_result = ClouisleImportInstallOut(installed=uuid4())
     adapter = SimpleNamespace(
-        ensure_import_permission=Mock(),
-        ensure_update_permission=Mock(),
+        ensure_import_permission=AsyncMock(),
+        ensure_update_permission=AsyncMock(),
         materialize_files=AsyncMock(return_value={"name": "materialized"}),
         install=AsyncMock(
             side_effect=error if failure else None, return_value=install_result
@@ -347,7 +347,7 @@ async def test_install_merges_dependency_mapping_and_records_outcome(
 @pytest.mark.parametrize("status", ["missing", "forbidden"])
 async def test_install_rejects_unresolved_required_dependency(monkeypatch, status):
     session = _session(preview={"dependencies": [{"required": True, "status": status}]})
-    adapter = SimpleNamespace(ensure_import_permission=Mock())
+    adapter = SimpleNamespace(ensure_import_permission=AsyncMock())
     _patch_session_query(monkeypatch, session)
     monkeypatch.setattr(
         ClouislePackageService,

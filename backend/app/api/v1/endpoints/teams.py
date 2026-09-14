@@ -470,12 +470,12 @@ async def leave_team(
     team = await check_team_permission(team_id, current_user, "team:read")
 
     membership = await TeamMember.filter(team=team, user=current_user).first()
-    if membership.role == TeamMemberRole.OWNER:
+    if not membership:
         raise BusinessError(
-            code=ResponseCode.OWNER_CANNOT_LEAVE,
-            msg_key="owner_cannot_leave",
+            code=ResponseCode.NOT_TEAM_MEMBER,
+            msg_key="not_team_member",
+            status_code=404,
         )
-
     if membership.role == TeamMemberRole.OWNER:
         raise BusinessError(
             code=ResponseCode.OWNER_CANNOT_LEAVE,

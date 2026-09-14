@@ -80,7 +80,7 @@ async def test_get_team_superuser_skips_membership_lookup(monkeypatch):
     member_filter = MagicMock(return_value=Query([listed_member]))
     monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(item)))
     monkeypatch.setattr(teams.TeamMember, "filter", member_filter)
-    monkeypatch.setattr(teams, "check_team_permission", AsyncMock())
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock(return_value=item))
 
     response = await teams.get_team(item.id, current_user)
 
@@ -96,7 +96,7 @@ async def test_update_team_accepts_no_changed_fields(monkeypatch):
     reloaded.id = item.id
     monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(item)))
     monkeypatch.setattr(teams.Team, "get", MagicMock(return_value=Query(reloaded)))
-    monkeypatch.setattr(teams, "check_team_permission", AsyncMock())
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock(return_value=item))
     audit = AsyncMock()
     monkeypatch.setattr(teams.AuditLogService, "log", audit)
 
@@ -116,7 +116,17 @@ async def test_update_team_accepts_no_changed_fields(monkeypatch):
 async def test_update_member_missing_team(monkeypatch):
     current_user = user(is_superuser=True)
     monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(None)))
-    monkeypatch.setattr(teams, "check_team_permission", AsyncMock())
+    monkeypatch.setattr(
+        teams,
+        "check_team_permission",
+        AsyncMock(
+            side_effect=BusinessError(
+                code=ResponseCode.TEAM_NOT_FOUND,
+                msg_key="team_not_found",
+                status_code=404,
+            )
+        ),
+    )
 
     with pytest.raises(BusinessError) as exc_info:
         await teams.update_team_member(
@@ -144,7 +154,7 @@ async def test_owner_update_rejects_missing_membership(monkeypatch):
         "filter",
         MagicMock(side_effect=[Query(owner_membership), Query(None)]),
     )
-    monkeypatch.setattr(teams, "check_team_permission", AsyncMock())
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock(return_value=item))
 
     with pytest.raises(BusinessError) as exc_info:
         await teams.update_team_member(
@@ -197,7 +207,19 @@ async def test_remove_member_lookup_and_owner_guards(
         "filter",
         MagicMock(return_value=Query(target_membership if found_membership else None)),
     )
-    monkeypatch.setattr(teams, "check_team_permission", AsyncMock())
+    permission = AsyncMock(
+        side_effect=(
+            BusinessError(
+                code=ResponseCode.TEAM_NOT_FOUND,
+                msg_key="team_not_found",
+                status_code=404,
+            )
+            if not found_team
+            else None
+        ),
+        return_value=item,
+    )
+    monkeypatch.setattr(teams, "check_team_permission", permission)
 
     with pytest.raises(BusinessError) as exc_info:
         await teams.remove_team_member(object(), item.id, target_user.id, current_user)
@@ -210,7 +232,17 @@ async def test_remove_member_lookup_and_owner_guards(
 async def test_transfer_ownership_missing_team(monkeypatch):
     current_user = user(is_superuser=True)
     monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(None)))
-    monkeypatch.setattr(teams, "check_team_permission", AsyncMock())
+    monkeypatch.setattr(
+        teams,
+        "check_team_permission",
+        AsyncMock(
+            side_effect=BusinessError(
+                code=ResponseCode.TEAM_NOT_FOUND,
+                msg_key="team_not_found",
+                status_code=404,
+            )
+        ),
+    )
 
     with pytest.raises(BusinessError) as exc_info:
         await teams.transfer_ownership(
@@ -225,8 +257,12 @@ async def test_transfer_ownership_requires_current_owner(monkeypatch):
     current_user = user()
     item = team()
     monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(item)))
-    monkeypatch.setattr(teams.TeamMember, "filter", MagicMock(return_value=Query(None)))
-    monkeypatch.setattr(teams, "check_team_permission", AsyncMock())
+    monkeypatch.setattr(
+        teams.TeamMember,
+        "filter",
+        MagicMock(return_value=Query(membership(current_user, TeamMemberRole.MEMBER))),
+    )
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock(return_value=item))
 
     with pytest.raises(BusinessError) as exc_info:
         await teams.transfer_ownership(
@@ -243,7 +279,7 @@ async def test_transfer_ownership_rejects_missing_new_member(monkeypatch):
     monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(item)))
     monkeypatch.setattr(teams.TeamMember, "filter", MagicMock(return_value=Query(None)))
     monkeypatch.setattr(teams.User, "filter", MagicMock(return_value=Query(None)))
-    monkeypatch.setattr(teams, "check_team_permission", AsyncMock())
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock(return_value=item))
 
     with pytest.raises(BusinessError) as exc_info:
         await teams.transfer_ownership(
@@ -251,3 +287,203 @@ async def test_transfer_ownership_rejects_missing_new_member(monkeypatch):
         )
 
     assert_error(exc_info, ResponseCode.TEAM_MEMBER_NOT_FOUND, 404)
+
+
+@pytest.mark.anyio
+async def test_update_team_writes_all_optional_fields(monkeypatch):
+    current_user = user(is_superuser=True)
+    item = team()
+    reloaded = team()
+    reloaded.id = item.id
+    monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(None)))
+    monkeypatch.setattr(teams.Team, "get", MagicMock(return_value=Query(reloaded)))
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock(return_value=item))
+    audit = AsyncMock()
+    monkeypatch.setattr(teams.AuditLogService, "log", audit)
+
+    response = await teams.update_team(
+        request=object(),
+        team_id=item.id,
+        team_in=TeamUpdate(name="Renamed", description="Details", avatar_url="avatar"),
+        current_user=current_user,
+    )
+
+    assert response["data"] is reloaded
+    assert (item.name, item.description, item.avatar_url) == (
+        "Renamed",
+        "Details",
+        "avatar",
+    )
+    assert audit.await_args.kwargs["metadata"] == {
+        "fields_updated": ["name", "description", "avatar_url"]
+    }
+
+
+@pytest.mark.anyio
+async def test_update_member_requires_owner_for_non_owner_operator(monkeypatch):
+    current_user = user()
+    item = team()
+    monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(item)))
+    monkeypatch.setattr(
+        teams.TeamMember,
+        "filter",
+        MagicMock(return_value=Query(membership(current_user, TeamMemberRole.MEMBER))),
+    )
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock(return_value=item))
+
+    with pytest.raises(BusinessError) as exc_info:
+        await teams.update_team_member(
+            team_id=item.id,
+            user_id=uuid4(),
+            member_in=TeamMemberUpdate(role=TeamMemberRole.MEMBER),
+            current_user=current_user,
+        )
+
+    assert_error(exc_info, ResponseCode.TEAM_OWNER_REQUIRED, 403)
+
+
+@pytest.mark.anyio
+async def test_update_member_superuser_changes_role(monkeypatch):
+    current_user = user(is_superuser=True)
+    item = team()
+    target = user()
+    target_membership = membership(target, TeamMemberRole.MEMBER)
+    monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(item)))
+    monkeypatch.setattr(teams.User, "filter", MagicMock(return_value=Query(target)))
+    monkeypatch.setattr(
+        teams.TeamMember,
+        "filter",
+        MagicMock(return_value=Query(target_membership)),
+    )
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock(return_value=item))
+    monkeypatch.setattr(teams, "resolve_language", AsyncMock(return_value="en"))
+    monkeypatch.setattr(teams, "t", lambda key, **_kwargs: key)
+    notify = AsyncMock()
+    monkeypatch.setattr(teams.AutoNotificationService, "send_to_user", notify)
+
+    response = await teams.update_team_member(
+        team_id=item.id,
+        user_id=target.id,
+        member_in=TeamMemberUpdate(role=TeamMemberRole.VIEWER),
+        current_user=current_user,
+    )
+
+    assert response["data"]["role"] == TeamMemberRole.VIEWER
+    target_membership.save.assert_awaited_once()
+    notify.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_update_member_rejects_missing_target_and_admin_promotion(monkeypatch):
+    current_user = user(is_superuser=True)
+    item = team()
+    permission = AsyncMock(return_value=item)
+    monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(item)))
+    monkeypatch.setattr(teams, "check_team_permission", permission)
+    monkeypatch.setattr(teams.User, "filter", MagicMock(return_value=Query(None)))
+
+    with pytest.raises(BusinessError) as missing:
+        await teams.update_team_member(
+            team_id=item.id,
+            user_id=uuid4(),
+            member_in=TeamMemberUpdate(role=TeamMemberRole.MEMBER),
+            current_user=current_user,
+        )
+    assert_error(missing, ResponseCode.USER_NOT_FOUND, 404)
+
+    target = user()
+    target_membership = membership(target, TeamMemberRole.MEMBER)
+    monkeypatch.setattr(teams.User, "filter", MagicMock(return_value=Query(target)))
+    monkeypatch.setattr(
+        teams.TeamMember,
+        "filter",
+        MagicMock(return_value=Query(target_membership)),
+    )
+    monkeypatch.setattr(teams.deps, "user_has_global_permission", lambda *_args: False)
+
+    with pytest.raises(BusinessError) as denied:
+        await teams.update_team_member(
+            team_id=item.id,
+            user_id=target.id,
+            member_in=TeamMemberUpdate(role=TeamMemberRole.ADMIN),
+            current_user=current_user,
+        )
+    assert_error(denied, ResponseCode.PERMISSION_DENIED, 403)
+
+
+@pytest.mark.anyio
+async def test_transfer_ownership_rejects_unprivileged_new_owner(monkeypatch):
+    current_user = user(is_superuser=True)
+    item = team()
+    new_owner = user()
+    new_membership = membership(new_owner, TeamMemberRole.MEMBER)
+    monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(item)))
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock(return_value=item))
+    monkeypatch.setattr(
+        teams.TeamMember,
+        "filter",
+        MagicMock(side_effect=[Query(None), Query(None), Query(new_membership)]),
+    )
+    monkeypatch.setattr(teams.User, "filter", MagicMock(return_value=Query(new_owner)))
+    monkeypatch.setattr(teams.deps, "user_has_global_permission", lambda *_args: False)
+
+    with pytest.raises(BusinessError) as exc_info:
+        await teams.transfer_ownership(
+            team_id=item.id,
+            new_owner_id=new_owner.id,
+            current_user=current_user,
+        )
+
+    assert_error(exc_info, ResponseCode.PERMISSION_DENIED, 403)
+
+
+@pytest.mark.anyio
+async def test_update_member_rejects_existing_owner_role(monkeypatch):
+    current_user = user(is_superuser=True)
+    item = team()
+    target = user()
+    target_membership = membership(target, TeamMemberRole.OWNER)
+    monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(item)))
+    monkeypatch.setattr(teams.User, "filter", MagicMock(return_value=Query(target)))
+    monkeypatch.setattr(
+        teams.TeamMember,
+        "filter",
+        MagicMock(return_value=Query(target_membership)),
+    )
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock(return_value=item))
+
+    with pytest.raises(BusinessError) as exc_info:
+        await teams.update_team_member(
+            team_id=item.id,
+            user_id=target.id,
+            member_in=TeamMemberUpdate(role=TeamMemberRole.MEMBER),
+            current_user=current_user,
+        )
+
+    assert_error(exc_info, ResponseCode.CANNOT_CHANGE_OWNER_ROLE)
+
+
+@pytest.mark.anyio
+async def test_update_member_rejects_owner_promotion(monkeypatch):
+    current_user = user(is_superuser=True)
+    item = team()
+    target = user()
+    target_membership = membership(target)
+    monkeypatch.setattr(teams.Team, "filter", MagicMock(return_value=Query(item)))
+    monkeypatch.setattr(teams.User, "filter", MagicMock(return_value=Query(target)))
+    monkeypatch.setattr(
+        teams.TeamMember,
+        "filter",
+        MagicMock(return_value=Query(target_membership)),
+    )
+    monkeypatch.setattr(teams, "check_team_permission", AsyncMock(return_value=item))
+
+    with pytest.raises(BusinessError) as exc_info:
+        await teams.update_team_member(
+            team_id=item.id,
+            user_id=target.id,
+            member_in=TeamMemberUpdate(role=TeamMemberRole.OWNER),
+            current_user=current_user,
+        )
+
+    assert_error(exc_info, ResponseCode.CANNOT_PROMOTE_TO_OWNER)

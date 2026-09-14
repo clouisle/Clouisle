@@ -537,6 +537,7 @@ export function PromptVariableEditor({
   return (
     <div className={cn('relative', className)} ref={containerRef}>
       <div
+        ref={editorRef}
         contentEditable={!readOnly}
         suppressContentEditableWarning
         onInput={readOnly ? undefined : handleInput}

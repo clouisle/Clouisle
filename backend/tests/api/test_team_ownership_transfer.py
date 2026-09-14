@@ -48,6 +48,9 @@ class _UserQuery:
     def __init__(self, user):
         self._user = user
 
+    def prefetch_related(self, *_args):
+        return self
+
     async def first(self):
         return self._user
 
@@ -118,10 +121,8 @@ async def test_superuser_can_transfer_team_ownership():
             "app.api.v1.endpoints.teams.AutoNotificationService.send_to_user",
             new=AsyncMock(),
         ),
-        patch(
-            "app.api.v1.endpoints.teams.sync_user_role_from_teams",
-            new=AsyncMock(),
-        ) as sync_roles,
+        patch.object(teams, "check_team_permission", AsyncMock(return_value=_TEAM)),
+        patch.object(teams.deps, "user_has_global_permission", return_value=True),
     ):
         response = await teams.transfer_ownership(
             team_id=_TEAM.id,
@@ -133,8 +134,6 @@ async def test_superuser_can_transfer_team_ownership():
     assert _OWNER_MEMBERSHIP.role == TeamMemberRole.ADMIN
     assert new_owner_membership.role == TeamMemberRole.OWNER
     assert _TEAM.owner is new_owner
-    sync_roles.assert_any_await(old_owner)
-    sync_roles.assert_any_await(new_owner)
 
 
 @pytest.mark.anyio
@@ -160,6 +159,8 @@ async def test_transfer_ownership_rejects_existing_owner():
         patch("app.api.v1.endpoints.teams.Team", _TeamModel),
         patch("app.api.v1.endpoints.teams.TeamMember", _TeamMemberModel),
         patch("app.api.v1.endpoints.teams.User", _UserModel),
+        patch.object(teams, "check_team_permission", AsyncMock(return_value=_TEAM)),
+        patch.object(teams.deps, "user_has_global_permission", return_value=True),
         pytest.raises(teams.BusinessError) as error,
     ):
         await teams.transfer_ownership(
@@ -200,10 +201,8 @@ async def test_superuser_transfer_handles_missing_previous_owner():
             "app.api.v1.endpoints.teams.AutoNotificationService.send_to_user",
             new=AsyncMock(),
         ) as notify_user,
-        patch(
-            "app.api.v1.endpoints.teams.sync_user_role_from_teams",
-            new=AsyncMock(),
-        ) as sync_roles,
+        patch.object(teams, "check_team_permission", AsyncMock(return_value=_TEAM)),
+        patch.object(teams.deps, "user_has_global_permission", return_value=True),
     ):
         response = await teams.transfer_ownership(
             team_id=_TEAM.id,
@@ -215,4 +214,3 @@ async def test_superuser_transfer_handles_missing_previous_owner():
     assert new_owner_membership.role == TeamMemberRole.OWNER
     assert _TEAM.owner is new_owner
     assert notify_user.await_count == 1
-    sync_roles.assert_awaited_once_with(new_owner)

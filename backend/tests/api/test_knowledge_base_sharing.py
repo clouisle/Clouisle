@@ -97,7 +97,8 @@ async def test_share_knowledge_base_creates_audits_and_serializes():
         name="Docs",
         created_by=SimpleNamespace(id=user_id),
     )
-    user = SimpleNamespace(id=user_id, username="alice", is_superuser=False)
+    user = SimpleNamespace(id=user_id, username="alice", is_superuser=False, roles=[])
+
     share = SimpleNamespace(
         id=uuid4(),
         knowledge_base_id=kb_id,
@@ -163,7 +164,7 @@ async def test_share_knowledge_base_validation_errors():
         team=SimpleNamespace(id=owner_team_id, name="Owner Team"),
         name="Docs",
     )
-    user = SimpleNamespace(id=user_id)
+    user = SimpleNamespace(id=user_id, is_superuser=False, roles=[])
 
     # 1. KB not found
     with (
@@ -248,7 +249,8 @@ async def test_list_knowledge_base_shares_and_unshare():
         team=SimpleNamespace(id=owner_team_id, name="Owner Team"),
         name="Docs",
     )
-    user = SimpleNamespace(id=user_id)
+    user = SimpleNamespace(id=user_id, is_superuser=False, roles=[])
+
     share = SimpleNamespace(
         id=uuid4(),
         knowledge_base_id=kb_id,
@@ -320,7 +322,7 @@ async def test_check_kb_access_allows_shared_team_read_only():
         name="Docs",
         created_by=SimpleNamespace(id=uuid4()),
     )
-    user = SimpleNamespace(id=user_id, is_superuser=False)
+    user = SimpleNamespace(id=user_id, is_superuser=False, roles=[])
 
     async def fail_team_access(team_id, user, require_admin=False):
         if team_id == owner_team_id:
@@ -398,7 +400,8 @@ async def test_agent_linking_shared_knowledge_base():
         team=SimpleNamespace(id=owner_team_id, name="Owner Team"),
         name="Shared Manual",
     )
-    user = SimpleNamespace(id=user_id, username="alice", is_superuser=False)
+    user = SimpleNamespace(id=user_id, username="alice", is_superuser=False, roles=[])
+
     agent = SimpleNamespace(
         id=uuid4(),
         team_id=agent_team_id,
@@ -450,14 +453,13 @@ async def test_agent_linking_shared_knowledge_base():
 
     # 1. Succeeded when KB is shared with agent_team_id
     with (
-        patch.object(user_agents, "check_team_access", new=AsyncMock()),
+        patch.object(user_agents, "check_team_permission", new=AsyncMock()),
         patch.object(user_agents.KnowledgeBase, "filter", return_value=Query(kb)),
         patch.object(
             user_agents.KnowledgeBaseShare, "filter", return_value=Query(True)
         ),
         patch.object(user_agents.Agent, "filter", return_value=Query(None)),
         patch.object(user_agents.Agent, "create", new=AsyncMock(return_value=agent)),
-        patch.object(user_agents.deps, "check_scoped_permission", new=AsyncMock()),
         patch.object(user_agents.Agent, "get", lambda **kwargs: SingleQuery(agent)),
         patch.object(user_agents.AgentKnowledgeBase, "filter", return_value=Query([])),
         patch.object(
@@ -473,8 +475,7 @@ async def test_agent_linking_shared_knowledge_base():
 
     # 2. Failed when KB is not owned and not shared
     with (
-        patch.object(user_agents.deps, "check_scoped_permission", new=AsyncMock()),
-        patch.object(user_agents, "check_team_access", new=AsyncMock()),
+        patch.object(user_agents, "check_team_permission", new=AsyncMock()),
         patch.object(user_agents.Agent, "filter", return_value=Query(None)),
         patch.object(user_agents.KnowledgeBase, "filter", return_value=Query(kb)),
         patch.object(
@@ -532,7 +533,7 @@ async def test_list_knowledge_bases_with_shared_and_get_kb():
         shared_with_team_id=caller_team_id,
         permission="read_only",
     )
-    user = SimpleNamespace(id=user_id, is_superuser=False)
+    user = SimpleNamespace(id=user_id, is_superuser=False, roles=[])
 
     # 1. list_knowledge_bases with include_shared=True
     with (

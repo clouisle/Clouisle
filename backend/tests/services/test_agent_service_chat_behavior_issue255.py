@@ -202,6 +202,60 @@ async def test_get_agent_tools_hides_unshared_cross_team_mcp_server():
 
 
 @pytest.mark.anyio
+async def test_get_agent_tools_skips_missing_servers_and_allows_shared_mcp_server():
+    service = AgentService()
+    agent = _agent(
+        tools_config=[
+            {"type": "mcp", "server_id": "missing"},
+            {"type": "mcp", "server_id": "no-config"},
+            {"type": "mcp", "server_id": "shared"},
+        ]
+    )
+    shared_server = SimpleNamespace(
+        id="shared",
+        team_id=uuid4(),
+        name="shared_server",
+        mcp_config={"transport": "stdio", "command": "node"},
+    )
+    queries = iter(
+        [
+            SimpleNamespace(first=AsyncMock(return_value=None)),
+            SimpleNamespace(
+                first=AsyncMock(return_value=SimpleNamespace(mcp_config=None))
+            ),
+            SimpleNamespace(first=AsyncMock(return_value=shared_server)),
+        ]
+    )
+    share_query = SimpleNamespace(exists=AsyncMock(return_value=True))
+
+    with (
+        patch(
+            "app.services.agent.Tool.filter",
+            side_effect=lambda **_kwargs: next(queries),
+        ),
+        patch("app.models.tool.ToolShare.filter", return_value=share_query),
+        patch(
+            "app.llm.tools.mcp_client.list_mcp_tools",
+            new=AsyncMock(
+                return_value=[
+                    SimpleNamespace(name="lookup", description=None, parameters=None)
+                ]
+            ),
+        ) as list_tools,
+    ):
+        result = await service._get_agent_tools(agent)
+
+    assert [tool.function.name for tool in result] == ["mcp_shared_server_lookup"]
+    assert result[0].function.description == "MCP tool: lookup"
+    assert result[0].function.parameters == {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    }
+    list_tools.assert_awaited_once_with(shared_server.mcp_config)
+
+
+@pytest.mark.anyio
 async def test_execute_tool_dispatches_configured_mcp_tool_with_arguments():
     service = AgentService()
     agent = _agent(tools_config=[{"type": "mcp", "server_id": "server-1"}])
@@ -285,6 +339,49 @@ async def test_execute_tool_handles_invalid_unknown_and_configured_calls():
         credentials={"token": "secret"},
         agent=agent,
         team_id=str(agent.team_id),
+    )
+
+
+@pytest.mark.anyio
+async def test_execute_tool_allows_shared_cross_team_mcp_server():
+    service = AgentService()
+    agent = _agent(tools_config=[{"type": "mcp", "server_id": "shared"}])
+    server = SimpleNamespace(
+        id="shared",
+        team_id=uuid4(),
+        name="shared_server",
+        mcp_config={"transport": "http", "url": "https://mcp.example"},
+    )
+    tool_call = ToolCall(
+        id="call-shared",
+        function={
+            "name": "mcp_shared_server_lookup",
+            "arguments": '{"q":"docs"}',
+        },
+    )
+    with (
+        patch(
+            "app.services.agent.Tool.filter",
+            return_value=SimpleNamespace(first=AsyncMock(return_value=server)),
+        ),
+        patch(
+            "app.models.tool.ToolShare.filter",
+            return_value=SimpleNamespace(exists=AsyncMock(return_value=True)),
+        ),
+        patch(
+            "app.llm.tools.mcp_client.execute_mcp_tool",
+            new=AsyncMock(
+                return_value=SimpleNamespace(success=True, result="ok", error=None)
+            ),
+        ) as execute,
+    ):
+        result = await service._execute_tool(agent, tool_call)
+
+    assert result == {"success": True, "result": "ok", "error": None}
+    execute.assert_awaited_once_with(
+        mcp_config=server.mcp_config,
+        tool_name="lookup",
+        arguments={"q": "docs"},
     )
 
 
@@ -424,6 +521,47 @@ async def test_chat_executes_tool_then_returns_final_response_and_usage():
         ],
         "artifacts": [],
     }
+
+
+@pytest.mark.anyio
+async def test_chat_forwards_conversation_and_workflow_scope_to_tools():
+    service = AgentService()
+    agent = _agent(team_id=None, model_id=None)
+    tool_call = ToolCall(
+        id="call-scoped",
+        function={"name": "demo", "arguments": "{}"},
+    )
+    responses = [
+        SimpleNamespace(content="", tool_calls=[tool_call], usage=None),
+        SimpleNamespace(content="Done", tool_calls=[], usage=None),
+    ]
+    execute = AsyncMock(return_value={"ok": True})
+    conversation_id = uuid4()
+    workflow_run_id = uuid4()
+
+    with (
+        patch.object(service, "_build_messages", AsyncMock(return_value=[])),
+        patch.object(service, "_get_agent_tools", AsyncMock(return_value=[])),
+        patch.object(service, "_execute_tool", execute),
+        patch(
+            "app.services.agent.model_manager.chat",
+            new=AsyncMock(side_effect=responses),
+        ),
+    ):
+        result = await service.chat(
+            agent,
+            "question",
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
+        )
+
+    assert result["response"] == "Done"
+    execute.assert_awaited_once_with(
+        agent=agent,
+        tool_call=tool_call,
+        conversation_id=conversation_id,
+        workflow_run_id=workflow_run_id,
+    )
 
 
 @pytest.mark.anyio

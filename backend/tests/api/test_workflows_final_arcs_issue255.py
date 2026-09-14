@@ -187,7 +187,9 @@ async def test_update_workflow_skips_description_and_updates_icon(monkeypatch):
     monkeypatch.setattr(
         workflows, "check_workflow_access", AsyncMock(return_value=workflow)
     )
-    monkeypatch.setattr(workflows.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(
+        workflows, "check_team_permission", AsyncMock(return_value=workflow)
+    )
     monkeypatch.setattr(workflows.AuditLogService, "log", AsyncMock())
     monkeypatch.setattr(
         workflows.Workflow,
@@ -218,7 +220,9 @@ async def test_regenerate_webhook_token_mocks_access_and_audit(monkeypatch):
     monkeypatch.setattr(
         workflows, "check_workflow_access", AsyncMock(return_value=workflow)
     )
-    monkeypatch.setattr(workflows.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(
+        workflows, "check_team_permission", AsyncMock(return_value=workflow)
+    )
     monkeypatch.setattr(workflows.secrets, "token_urlsafe", Mock(return_value="token"))
     monkeypatch.setattr(workflows.AuditLogService, "log", AsyncMock())
 

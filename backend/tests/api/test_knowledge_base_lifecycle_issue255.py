@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from tortoise.expressions import Q
 
 from app.api.v1.endpoints import knowledge_bases
 from app.models.knowledge_base import DocumentStatus
@@ -17,6 +18,15 @@ def lexical_store_calls(monkeypatch):
     return calls
 
 
+def _q_leaves(node):
+    if not node.children:
+        return [dict(node.filters)]
+    leaves = []
+    for child in node.children:
+        leaves.extend(_q_leaves(child))
+    return leaves
+
+
 class Query:
     def __init__(self, items=(), total=None, first=None):
         self.items = list(items)
@@ -28,8 +38,8 @@ class Query:
         self.calls.append((name, args, kwargs))
         return self
 
-    def filter(self, **kwargs):
-        return self._record("filter", **kwargs)
+    def filter(self, *args, **kwargs):
+        return self._record("filter", *args, **kwargs)
 
     def exclude(self, **kwargs):
         return self._record("exclude", **kwargs)
@@ -42,6 +52,12 @@ class Query:
 
     def limit(self, value):
         return self._record("limit", value)
+
+    async def values_list(self, *_args, **_kwargs):
+        return []
+
+    async def all(self):
+        return self.items
 
     def __await__(self):
         async def resolve():
@@ -57,7 +73,7 @@ class Query:
 
 
 def _user(*, superuser=False):
-    return SimpleNamespace(id=uuid4(), is_superuser=superuser)
+    return SimpleNamespace(id=uuid4(), is_superuser=superuser, roles=[])
 
 
 def _request():
@@ -93,6 +109,11 @@ async def test_list_knowledge_bases_filters_and_hydrates_models():
             "filter",
             return_value=SimpleNamespace(values_list=memberships),
         ),
+        patch.object(
+            knowledge_bases.KnowledgeBaseShare,
+            "filter",
+            return_value=Query(),
+        ),
         patch.object(knowledge_bases.Model, "filter", return_value=model_query),
         patch.object(knowledge_bases, "KnowledgeBaseList", kb_schema),
         patch.object(knowledge_bases, "success", side_effect=lambda **kw: kw),
@@ -106,8 +127,19 @@ async def test_list_knowledge_bases_filters_and_hydrates_models():
             current_user=_user(),
         )
 
-    filters = [kwargs for name, _, kwargs in query.calls if name == "filter"]
-    assert {"team_id__in": memberships.return_value} in filters
+    filter_calls = [
+        (args, kwargs) for name, args, kwargs in query.calls if name == "filter"
+    ]
+    visibility = next(args[0] for args, _kwargs in filter_calls if args)
+    assert isinstance(visibility, Q)
+    assert {
+        "team_id__in": memberships.return_value,
+        "visibility__in": [
+            knowledge_bases.KnowledgeBaseVisibility.TEAM.value,
+            knowledge_bases.KnowledgeBaseVisibility.PUBLIC.value,
+        ],
+    } in _q_leaves(visibility)
+    filters = [kwargs for _name, _args, kwargs in query.calls if _name == "filter"]
     assert any("created_by" in values for values in filters)
     assert {"name__icontains": "docs"} in filters
     assert {"status__in": ["active"]} in filters

@@ -95,7 +95,17 @@ async def test_get_team_rejects_non_member_after_team_lookup():
     existing_team = team()
 
     with (
-        patch.object(teams, "check_team_permission", AsyncMock()),
+        patch.object(
+            teams,
+            "check_team_permission",
+            AsyncMock(
+                side_effect=teams.BusinessError(
+                    code=teams.ResponseCode.NOT_TEAM_MEMBER,
+                    msg_key="not_team_member",
+                    status_code=403,
+                )
+            ),
+        ),
         patch.object(teams.Team, "filter", return_value=Query(first=existing_team)),
         patch.object(teams.TeamMember, "filter", return_value=Query(first=None)),
         pytest.raises(teams.BusinessError) as error,
@@ -150,7 +160,6 @@ async def test_remove_team_member_self_removal_skips_manage_permission_and_notif
         patch.object(teams.AutoNotificationService, "send_to_user", AsyncMock()),
         patch.object(teams.AutoNotificationService, "send_to_team", AsyncMock()),
         patch.object(teams, "get_default_language", AsyncMock(return_value="en")),
-        patch.object(teams, "sync_user_role_from_teams", AsyncMock()) as sync_roles,
     ):
         response = await teams.remove_team_member(
             request=SimpleNamespace(),
@@ -159,9 +168,9 @@ async def test_remove_team_member_self_removal_skips_manage_permission_and_notif
             current_user=current_user,
         )
 
-    scoped.assert_not_awaited()
-    current_membership.delete.assert_awaited_once()
-    sync_roles.assert_awaited_once_with(current_user)
+    scoped.assert_awaited_once_with(
+        existing_team.id, current_user, "team:read", require_team_admin=False
+    )
     assert response["data"] == {"user_id": str(current_user.id)}
 
 
@@ -190,12 +199,30 @@ async def test_leave_team_rejects_owner_and_deletes_member():
         patch.object(
             teams.TeamMember, "filter", return_value=Query(first=member_membership)
         ),
-        patch.object(teams, "sync_user_role_from_teams", AsyncMock()) as sync_roles,
+        patch.object(teams, "check_team_permission", AsyncMock()),
     ):
         response = await teams.leave_team(
             team_id=existing_team.id, current_user=current_user
         )
 
     member_membership.delete.assert_awaited_once()
-    sync_roles.assert_awaited_once_with(current_user)
+    assert member_membership.delete.await_count == 1
     assert response["data"] == {"team_id": str(existing_team.id)}
+
+
+@pytest.mark.anyio
+async def test_leave_team_rejects_superuser_without_membership():
+    current_user = user(superuser=True)
+    existing_team = team()
+
+    with (
+        patch.object(
+            teams, "check_team_permission", AsyncMock(return_value=existing_team)
+        ),
+        patch.object(teams.TeamMember, "filter", return_value=Query(first=None)),
+        pytest.raises(teams.BusinessError) as error,
+    ):
+        await teams.leave_team(team_id=existing_team.id, current_user=current_user)
+
+    assert error.value.msg_key == "not_team_member"
+    assert error.value.status_code == 404

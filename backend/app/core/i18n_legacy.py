@@ -1292,6 +1292,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "知识库中未找到相关信息。",
     },
     "kb_not_found": {"en": "Knowledge base not found", "zh": "知识库未找到"},
+    "kb_access_denied": {
+        "en": "You don't have access to this knowledge base",
+        "zh": "您无权访问此知识库",
+    },
     "kb_share_not_found": {
         "en": "Knowledge base share not found",
         "zh": "知识库共享记录不存在",

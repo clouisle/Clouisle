@@ -291,9 +291,120 @@ describe('PlatformTeamPage', () => {
     expect(toast.success).toHaveBeenCalled()
   })
 
-  test('adds member via exact identifier', async () => {
+  test('adds a member with the selected role', async () => {
     const renderer = await render()
     const addBtn = renderer.root.findAll((node) => node.type === 'button' && String(node.props.children).includes('addMember'))[0]
     expect(addBtn).toBeDefined()
+
+    act(() => addBtn.props.onClick())
+    const identifier = renderer.root.findByProps({ id: 'member-identifier' })
+    act(() => identifier.props.onChange({ target: { value: '  new@example.com  ' } }))
+    const roleSelect = renderer.root.findAllByType('select').at(-1)!
+    act(() => roleSelect.props.onChange({ target: { value: 'admin' } }))
+
+    const addForm = renderer.root.findAllByType('form').at(-1)!
+    await act(async () => addForm.props.onSubmit({ preventDefault: () => {} }))
+
+    expect(platformTeamsApi.addMember).toHaveBeenCalledWith('team-1', {
+      identifier: 'new@example.com',
+      role: 'admin',
+    })
+    expect(toast.success).toHaveBeenCalledWith('memberAdded')
+  })
+
+  test('changes and removes a member, then transfers ownership', async () => {
+    const renderer = await render()
+    const memberRow = renderer.root.findAll((node) => node.props.className === 'flex items-center justify-between p-4 hover:bg-muted/40 transition-colors')[1]
+    const menuActions = memberRow.findAllByType('button')
+
+    act(() => menuActions.find((button) => String(button.props.children).includes('changeRole'))!.props.onClick())
+    const roleSelect = renderer.root.findAllByType('select').at(-1)!
+    act(() => roleSelect.props.onChange({ target: { value: 'viewer' } }))
+    await act(async () => renderer.root.findAllByType('button').filter((button) => String(button.props.children).includes('save')).at(-1)!.props.onClick())
+    expect(platformTeamsApi.updateMember).toHaveBeenCalledWith('team-1', 'u-member', { role: 'viewer' })
+
+    const refreshedRow = renderer.root.findAll((node) => node.props.className === 'flex items-center justify-between p-4 hover:bg-muted/40 transition-colors')[1]
+    const refreshedActions = refreshedRow.findAllByType('button')
+    act(() => refreshedActions.find((button) => String(button.props.children).includes('removeMember'))!.props.onClick())
+    await act(async () => renderer.root.findAllByType('button').filter((button) => String(button.props.children).includes('removeMember')).at(-1)!.props.onClick())
+    expect(platformTeamsApi.removeMember).toHaveBeenCalledWith('team-1', 'u-member')
+
+    const transferRow = renderer.root.findAll((node) => node.props.className === 'flex items-center justify-between p-4 hover:bg-muted/40 transition-colors')[1]
+    act(() => transferRow.findAllByType('button').find((button) => String(button.props.children).includes('transferOwnership'))!.props.onClick())
+    await act(async () => renderer.root.findAllByType('button').filter((button) => String(button.props.children).includes('confirm')).at(-1)!.props.onClick())
+    expect(platformTeamsApi.transferOwnership).toHaveBeenCalledWith('team-1', 'u-member')
+  })
+
+  test('renders model loading and empty states', async () => {
+    let resolveModels: ((models: never[]) => void) | undefined
+    teamModelsApi.getTeamModels.mockImplementationOnce(() => new Promise((resolve) => { resolveModels = resolve }))
+    searchParams = new URLSearchParams('tab=models')
+    const renderer = await render()
+
+    expect(renderer.root.findAllByProps({ 'data-skeleton': 'true' })).toHaveLength(9)
+    resolveModels!([])
+    await act(async () => {})
+    expect(JSON.stringify(renderer.toJSON())).toContain('noModelsAuthorized')
+  })
+  test('filters members and models and edits settings fields', async () => {
+    teamModelsApi.getTeamModels.mockResolvedValueOnce([
+      {
+        id: 'tm-1',
+        model: { name: 'Claude 3.5 Sonnet', model_type: 'chat', provider: 'Anthropic', model_id: 'claude-3-5' },
+        is_enabled: true,
+        daily_token_limit: 100000,
+        daily_tokens_used: 25000,
+      },
+      {
+        id: 'tm-2',
+        model: { name: 'GPT-5', model_type: 'chat', provider: 'OpenAI', model_id: 'gpt-5' },
+        is_enabled: false,
+        daily_token_limit: null,
+        daily_tokens_used: 0,
+      },
+    ])
+    const renderer = await render()
+
+    act(() => renderer.root.findByProps({ placeholder: 'searchUsers' }).props.onChange({ target: { value: 'member@test.com' } }))
+    expect(JSON.stringify(renderer.toJSON())).toContain('NormalMember')
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('OwnerUser')
+
+    await act(async () => lastTabChange?.('models'))
+    expect(JSON.stringify(renderer.toJSON())).toContain('GPT-5')
+    act(() => renderer.root.findByProps({ placeholder: 'searchModels' }).props.onChange({ target: { value: 'anthropic' } }))
+    expect(JSON.stringify(renderer.toJSON())).toContain('Claude 3.5 Sonnet')
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('GPT-5')
+
+    await act(async () => lastTabChange?.('settings'))
+    act(() => renderer.root.findByProps({ id: 'team-name' }).props.onChange({ target: { value: 'Renamed Team' } }))
+    act(() => renderer.root.findByProps({ id: 'team-desc' }).props.onChange({ target: { value: 'Updated description' } }))
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault: () => {} }))
+    expect(platformTeamsApi.updateTeam).toHaveBeenCalledWith('team-1', {
+      name: 'Renamed Team',
+      description: 'Updated description',
+      avatar_url: undefined,
+    })
+  })
+
+  test('allows a non-owner to leave a team', async () => {
+    currentUser = { id: 'u-member', is_superuser: false }
+    searchParams = new URLSearchParams('tab=settings')
+    const renderer = await render()
+    const leaveButton = renderer.root.findAllByType('button').find((button) => String(button.props.children).includes('leaveTeam'))!
+
+    act(() => leaveButton.props.onClick())
+    await act(async () => renderer.root.findAllByType('button').filter((button) => String(button.props.children).includes('leaveTeam')).at(-1)!.props.onClick())
+
+    expect(platformTeamsApi.leaveTeam).toHaveBeenCalledWith('team-1')
+    expect(router.push).toHaveBeenCalledWith('/app')
+  })
+
+  test('returns to the app when no team is selected', async () => {
+    teamContextState = { ...teamContextState, currentTeam: null }
+    const renderer = await render()
+    const backButton = renderer.root.findAllByType('button').find((button) => String(button.props.children).includes('back'))!
+
+    act(() => backButton.props.onClick())
+    expect(router.push).toHaveBeenCalledWith('/app')
   })
 })

@@ -71,7 +71,7 @@ def test_agent_create_defaults_and_nested_mapping_validation():
     assert agent.hide_message_actions is False
     assert agent.hide_reasoning is False
     assert agent.rag_mode == "agentic"
-    assert agent.visibility == "team"
+    assert agent.visibility == "private"
     assert agent.tools_config == [ToolConfig(type="builtin", name="search")]
     assert agent.attachment_config.max_files == 5
     assert agent.enable_user_input_request is True

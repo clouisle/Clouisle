@@ -11,6 +11,7 @@ const toastSuccess = mock((message: string) => { void message })
 
 mock.module('@/lib/api', () => ({
   adminKnowledgeBasesApi: { deleteKnowledgeBase },
+  authApi: { getCurrentUser: mock(async () => null) },
 }))
 
 mock.module('sonner', () => ({
@@ -47,6 +48,9 @@ mock.module('@/components/ui/alert-dialog', () => ({
 
 mock.module('@/components/layout/header', () => ({
   Header: () => <header data-testid="dashboard-header" />,
+}))
+mock.module('@/components/auth/permission-guard', () => ({
+  RoutePermissionGuard: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }))
 
 mock.module('./_components', () => ({

@@ -146,6 +146,7 @@ export {
   type Tool,
   type ToolDetail,
   type ToolType,
+  type ToolCategory,
   type ToolVisibility,
   type CustomToolType,
   PRESET_TOOL_CATEGORIES,

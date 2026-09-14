@@ -4,8 +4,10 @@ from uuid import uuid4
 
 import pytest
 
+from app.api import team_access as shared_team_access
 from app.api.v1.endpoints import knowledge_bases
 from app.schemas.knowledge_base import ProcessWithChunksRequest, SearchRequest
+
 from app.schemas.response import BusinessError
 from app.services.retrieval import RetrievalError
 from app.services.vector_store import DimensionMismatchError
@@ -14,6 +16,9 @@ from app.services.vector_store import DimensionMismatchError
 class Query:
     def __init__(self, value=None):
         self.value = value
+
+    def filter(self, *args, **kwargs):
+        return self
 
     def prefetch_related(self, *_args):
         return self
@@ -152,11 +157,17 @@ def test_error_serialization_only_exposes_safe_messages(monkeypatch):
 @pytest.mark.anyio
 async def test_team_and_kb_access_enforce_membership_and_admin(monkeypatch):
     team = SimpleNamespace(id=uuid4())
-    user = SimpleNamespace(id=uuid4(), is_superuser=False)
+    user = SimpleNamespace(
+        id=uuid4(),
+        is_superuser=False,
+        roles=[SimpleNamespace(permissions=[SimpleNamespace(code="team:read")])],
+    )
     member = SimpleNamespace(role="member")
-    monkeypatch.setattr(knowledge_bases.Team, "filter", lambda **_kwargs: Query(team))
     monkeypatch.setattr(
-        knowledge_bases.TeamMember, "filter", lambda **_kwargs: Query(member)
+        shared_team_access.Team, "filter", lambda **_kwargs: Query(team)
+    )
+    monkeypatch.setattr(
+        shared_team_access.TeamMember, "filter", lambda **_kwargs: Query(member)
     )
 
     assert await knowledge_bases.check_team_access(team.id, user) is team

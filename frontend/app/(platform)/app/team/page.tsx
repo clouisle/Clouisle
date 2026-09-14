@@ -78,6 +78,7 @@ import {
 
 type TeamRole = 'owner' | 'admin' | 'member' | 'viewer'
 type TeamTab = 'members' | 'models' | 'settings'
+type AddableRole = 'admin' | 'member' | 'viewer'
 
 const isTeamTab = (value: string | null): value is TeamTab =>
   value === 'members' || value === 'models' || value === 'settings'
@@ -150,7 +151,10 @@ export default function PlatformTeamPage() {
   const canUpdateTeam = !isPermissionsLoading && (currentUser?.is_superuser || (isTeamAdmin && hasPermission('team:update')))
 
   const loadTeamDetail = React.useCallback(async () => {
-    if (!currentTeam?.id) return
+    if (!currentTeam?.id) {
+      setIsLoadingDetail(false)
+      return
+    }
     try {
       setIsLoadingDetail(true)
       const data = await platformTeamsApi.getTeam(currentTeam.id)
@@ -170,7 +174,10 @@ export default function PlatformTeamPage() {
   }, [loadTeamDetail])
 
   const loadTeamModels = React.useCallback(async () => {
-    if (!currentTeam?.id) return
+    if (!currentTeam?.id) {
+      setIsLoadingModels(false)
+      return
+    }
     try {
       setIsLoadingModels(true)
       const models = await teamModelsApi.getTeamModels(currentTeam.id)

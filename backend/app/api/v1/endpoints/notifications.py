@@ -807,7 +807,14 @@ async def admin_delete_notification(
             status_code=404,
         )
 
-    if notification.scope == NotificationScope.TEAM:
+    if notification.scope in {NotificationScope.GLOBAL, NotificationScope.USER}:
+        if not has_global_admin_access(current_user):
+            raise BusinessError(
+                code=ResponseCode.INSUFFICIENT_PRIVILEGES,
+                msg_key="insufficient_privileges",
+                status_code=403,
+            )
+    elif notification.scope == NotificationScope.TEAM:
         if not notification.team_id:
             raise BusinessError(
                 code=ResponseCode.BAD_REQUEST,

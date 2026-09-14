@@ -35,6 +35,8 @@ mock.module('@/lib/route-permissions', () => ({
   ],
   getRoutePermissionConfig: (path: string) =>
     path === '/site-settings/sso' ? { permission: 'settings:write' } : undefined,
+  canAccessRoute: (path: string, hasPermission: (permission: string) => boolean, isSuperuser: boolean) =>
+    path === '/site-settings/security' || (isSuperuser && path === '/site-settings/root') || hasPermission('settings:write'),
 }))
 mock.module('@/lib/utils', () => ({
   cn: (...values: string[]) => values.filter(Boolean).join(' '),

@@ -117,7 +117,17 @@ mock.module('@/components/ui/chart', () => ({
   ChartTooltip: div,
   ChartTooltipContent: div,
 }))
+let usageTooltipProps: { active?: boolean; payload?: Array<{ name: string; value: number | string; color: string }>; label?: string } = {
+  active: false,
+  payload: [],
+  label: undefined,
+}
 const chart = ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => <div {...props}>{children}</div>
+const tooltip = ({ content, ...props }: { content?: React.ReactElement } & Record<string, unknown>) => (
+  <div {...props}>
+    {content && React.isValidElement(content) ? React.cloneElement(content, usageTooltipProps) : content}
+  </div>
+)
 mock.module('recharts', () => ({
   BarChart: chart,
   Bar: chart,
@@ -131,7 +141,7 @@ mock.module('recharts', () => ({
   Line: chart,
   Cell: chart,
   ResponsiveContainer: chart,
-  Tooltip: chart,
+  Tooltip: tooltip,
   Legend: ({ onClick, ...props }: Record<string, unknown>) => <button data-testid="legend" onClick={() => (onClick as (entry: { dataKey: string }) => void)?.({ dataKey: 'user_1:conversations' })} {...props} />,
 }))
 mock.module('./_components/no-team-state', () => ({ NoTeamState: () => <div data-testid="no-team" /> }))
@@ -167,7 +177,7 @@ afterEach(() => {
   isTeamLoading = false
   user = { is_superuser: false }
   permissionsLoading = false
-  getKnowledgeBases.mockImplementation(() => Promise.resolve({ total: 2 }))
+  usageTooltipProps = { active: false, payload: [], label: undefined }
 })
 
 test('waits for team loading and shows the no-team state without API calls', async () => {
@@ -203,6 +213,33 @@ test('loads member stats, trends, recent items, and quick action links', async (
     '/app/apps/agent-new',
     '/app/apps/workflow/workflow-1',
   ]))
+  act(() => renderer.unmount())
+})
+test('formats numeric and textual usage tooltip values', async () => {
+  usageTooltipProps = {
+    active: true,
+    label: '2024-01-01',
+    payload: [
+      { name: 'Conversations', value: 1500000, color: '#1' },
+      { name: 'Tokens', value: 2500, color: '#2' },
+      { name: 'Status', value: 'n/a', color: '#3' },
+    ],
+  }
+  const renderer = await renderPage()
+  const output = JSON.stringify(renderer.toJSON())
+
+  expect(output).toContain('2024-01-01')
+  expect(output).toContain('1.5M')
+  expect(output).toContain('2.5K')
+  expect(output).toContain('n/a')
+  act(() => renderer.unmount())
+})
+test('falls back to workflow totals when period stats are unavailable', async () => {
+  getWorkflowRunStats.mockResolvedValueOnce({ total_runs: 0, runs_by_status: {} })
+  const renderer = await renderPage()
+  const output = JSON.stringify(renderer.toJSON())
+
+  expect(output).toContain('"75"')
   act(() => renderer.unmount())
 })
 test('defaults admin to personal scope and switches to team overview', async () => {

@@ -52,17 +52,20 @@ def skill(**overrides):
 
 @pytest.mark.anyio
 async def test_team_access_covers_all_rejections_and_successes():
-    user = SimpleNamespace(is_superuser=False)
+    user = SimpleNamespace(
+        is_superuser=False,
+        roles=[SimpleNamespace(permissions=[SimpleNamespace(code="team:read")])],
+    )
     team = SimpleNamespace()
 
     with (
-        patch("app.services.skill.Team.filter", return_value=query_with_first(None)),
+        patch("app.api.team_access.Team.filter", return_value=query_with_first(None)),
         pytest.raises(BusinessError) as error,
     ):
         await SkillService.check_team_access(uuid4(), user)
     assert error.value.code == ResponseCode.TEAM_NOT_FOUND
 
-    with patch("app.services.skill.Team.filter", return_value=query_with_first(team)):
+    with patch("app.api.team_access.Team.filter", return_value=query_with_first(team)):
         assert (
             await SkillService.check_team_access(
                 uuid4(), SimpleNamespace(is_superuser=True)
@@ -76,10 +79,10 @@ async def test_team_access_covers_all_rejections_and_successes():
     ]:
         with (
             patch(
-                "app.services.skill.Team.filter", return_value=query_with_first(team)
+                "app.api.team_access.Team.filter", return_value=query_with_first(team)
             ),
             patch(
-                "app.services.skill.TeamMember.filter",
+                "app.api.team_access.TeamMember.filter",
                 return_value=query_with_first(membership),
             ),
             pytest.raises(BusinessError) as error,
@@ -88,9 +91,9 @@ async def test_team_access_covers_all_rejections_and_successes():
         assert error.value.code == expected
 
     with (
-        patch("app.services.skill.Team.filter", return_value=query_with_first(team)),
+        patch("app.api.team_access.Team.filter", return_value=query_with_first(team)),
         patch(
-            "app.services.skill.TeamMember.filter",
+            "app.api.team_access.TeamMember.filter",
             return_value=query_with_first(SimpleNamespace(role="admin")),
         ),
     ):

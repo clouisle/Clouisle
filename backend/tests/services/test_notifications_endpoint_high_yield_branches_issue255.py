@@ -260,3 +260,28 @@ async def test_admin_delete_user_notification_allows_superuser():
     audit.assert_awaited_once()
     delete_query.delete.assert_awaited_once()
     assert result["data"] == {"id": str(item.id)}
+
+
+@pytest.mark.asyncio
+async def test_admin_delete_team_notification_checks_team_admin(monkeypatch):
+    current_user = user()
+    item = notification(scope=NotificationScope.TEAM, team_id=uuid4())
+    first_query = QueryStub(first=item)
+    delete_query = QueryStub()
+    delete_query.delete = AsyncMock(return_value=1)
+    team_permission = AsyncMock()
+    audit = AsyncMock()
+    monkeypatch.setattr(endpoint, "check_team_admin_permission", team_permission)
+    monkeypatch.setattr(endpoint, "create_notification_audit", audit)
+    monkeypatch.setattr(
+        endpoint.Notification,
+        "filter",
+        Mock(side_effect=[first_query, delete_query]),
+    )
+
+    result = await endpoint.admin_delete_notification(item.id, current_user)
+
+    team_permission.assert_awaited_once_with(item.team_id, current_user)
+    audit.assert_awaited_once()
+    delete_query.delete.assert_awaited_once()
+    assert result["data"] == {"id": str(item.id)}
