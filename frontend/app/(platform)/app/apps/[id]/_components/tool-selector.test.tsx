@@ -283,4 +283,19 @@ describe('ToolSelector', () => {
     expect(images.length).toBeGreaterThan(0)
     expect(images[0].props.src).toBe('https://example.com/icon.png')
   })
+
+  test('hides delete switch and settings button when readOnly is true', () => {
+    const config: ToolConfig = { type: 'builtin', name: 'clock' }
+    stateIndex = 0
+    const tree = ToolSelector({
+      toolsConfig: [config],
+      availableTools: [builtin],
+      onChange: mock(),
+      readOnly: true,
+    })
+    const switches = findAll(tree, (node) => node.type === 'switch')
+    expect(switches).toHaveLength(0)
+    const deleteButtons = findAll(tree, (node) => node.type === 'button')
+    expect(deleteButtons).toHaveLength(0)
+  })
 })

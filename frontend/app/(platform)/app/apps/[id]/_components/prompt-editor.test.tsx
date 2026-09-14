@@ -73,3 +73,17 @@ test('creates a text variable and only replaces an unfinished token', () => {
   expect(boundary.onAddVariable).toHaveBeenCalledWith('topic', 'text')
   expect(boundary.onChange).toHaveBeenCalledWith('Hello {{draft value')
 })
+
+test('supports readOnly mode', () => {
+  const tree = PromptEditor({
+    value: 'Hello',
+    onChange: mock(() => {}),
+    onAddVariable: mock(() => {}),
+    variables: [],
+    readOnly: true,
+  }) as unknown as EditorNode
+
+  expect(tree.props.readOnly).toBe(true)
+  expect(tree.props.allowCreateVariable).toBe(false)
+  expect(tree.props.showUndefinedWarnings).toBe(false)
+})

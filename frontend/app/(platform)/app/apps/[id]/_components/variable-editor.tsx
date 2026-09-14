@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { type VariableDefinition, type VariableType } from '@/lib/api'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -344,9 +345,10 @@ interface VariableItemProps {
   variable: VariableDefinition
   onEdit: () => void
   onDelete: () => void
+  readOnly?: boolean
 }
 
-function VariableItem({ variable, onEdit, onDelete }: VariableItemProps) {
+function VariableItem({ variable, onEdit, onDelete, readOnly = false }: VariableItemProps) {
   const t = useTranslations('agents.orchestration.variables')
   const [isDeleteHover, setIsDeleteHover] = React.useState(false)
   const typeConfig = variableTypes.find((t) => t.value === variable.type)
@@ -370,33 +372,35 @@ function VariableItem({ variable, onEdit, onDelete }: VariableItemProps) {
         )}
       </div>
       <div className="ml-auto flex items-center gap-1.5">
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 cursor-pointer hover:bg-primary/10 hover:text-primary"
-            onClick={(e) => {
-              e.stopPropagation()
-              onEdit()
-            }}
-          >
-            <Pencil className="h-3 w-3 text-muted-foreground hover:text-primary" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={`h-6 w-6 cursor-pointer hover:bg-destructive/10 hover:text-destructive`}
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete()
-            }}
-            onMouseEnter={() => setIsDeleteHover(true)}
-            onMouseLeave={() => setIsDeleteHover(false)}
-          >
-            <Trash2 className="h-3 w-3 text-muted-foreground" />
-          </Button>
-        </div>
-        <div className="flex items-center gap-1.5 group-hover:hidden">
+        {!readOnly && (
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 cursor-pointer hover:bg-primary/10 hover:text-primary"
+              onClick={(e) => {
+                e.stopPropagation()
+                onEdit()
+              }}
+            >
+              <Pencil className="h-3 w-3 text-muted-foreground hover:text-primary" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 cursor-pointer hover:bg-destructive/10 hover:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete()
+              }}
+              onMouseEnter={() => setIsDeleteHover(true)}
+              onMouseLeave={() => setIsDeleteHover(false)}
+            >
+              <Trash2 className="h-3 w-3 text-muted-foreground" />
+            </Button>
+          </div>
+        )}
+        <div className={cn('flex items-center gap-1.5', !readOnly && 'group-hover:hidden')}>
           {variable.required && (
             <Badge variant="outline" className="text-[10px] h-4 px-1.5 font-normal">
               {t('dialog.required')}
@@ -416,9 +420,10 @@ interface VariableEditorProps {
   editingIndex?: number | null
   onEditingIndexChange?: (index: number | null) => void
   isNewVariable?: boolean
+  readOnly?: boolean
 }
 
-export function VariableEditor({ variables, onChange, editingIndex: externalEditingIndex, onEditingIndexChange, isNewVariable }: VariableEditorProps) {
+export function VariableEditor({ variables, onChange, editingIndex: externalEditingIndex, onEditingIndexChange, isNewVariable, readOnly = false }: VariableEditorProps) {
   const t = useTranslations('agents.orchestration.variables')
   const [internalEditingIndex, setInternalEditingIndex] = React.useState<number | null>(null)
   const editingIndex = externalEditingIndex !== undefined ? externalEditingIndex : internalEditingIndex
@@ -480,6 +485,7 @@ export function VariableEditor({ variables, onChange, editingIndex: externalEdit
             variable={variable}
             onEdit={() => setEditingIndex(index)}
             onDelete={() => deleteVariable(index)}
+            readOnly={readOnly}
           />
         ))}
       </div>

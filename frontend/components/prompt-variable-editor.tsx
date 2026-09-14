@@ -37,6 +37,7 @@ interface PromptVariableEditorProps {
   variableNotFoundText?: (query: string) => string
   createVariableText?: (name: string) => string
   undefinedVariablesHintText?: string
+  readOnly?: boolean
 }
 
 const VARIABLE_TOKEN_REGEX = /(\{\{[\w.-]+\}\})/g
@@ -315,6 +316,7 @@ export function PromptVariableEditor({
   variableNotFoundText,
   createVariableText,
   undefinedVariablesHintText,
+  readOnly = false,
 }: PromptVariableEditorProps) {
   const containerRef = React.useRef<HTMLDivElement>(null)
   const editorRef = React.useRef<HTMLDivElement>(null)
@@ -535,12 +537,11 @@ export function PromptVariableEditor({
   return (
     <div className={cn('relative', className)} ref={containerRef}>
       <div
-        ref={editorRef}
-        contentEditable
+        contentEditable={!readOnly}
         suppressContentEditableWarning
-        onInput={handleInput}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
+        onInput={readOnly ? undefined : handleInput}
+        onKeyDown={readOnly ? undefined : handleKeyDown}
+        onPaste={readOnly ? (e) => e.preventDefault() : handlePaste}
         onCompositionStart={() => { isComposingRef.current = true }}
         onCompositionEnd={() => {
           isComposingRef.current = false

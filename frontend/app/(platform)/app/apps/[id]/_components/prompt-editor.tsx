@@ -14,6 +14,7 @@ interface PromptEditorProps {
   placeholder?: string
   className?: string
   enableFileUpload?: boolean
+  readOnly?: boolean
 }
 
 interface SystemVariable {
@@ -30,6 +31,7 @@ export function PromptEditor({
   onAddVariable,
   placeholder,
   className,
+  readOnly = false,
 }: PromptEditorProps) {
   const t = useTranslations('agents.orchestration.prompt')
 
@@ -81,14 +83,15 @@ export function PromptEditor({
       groupMode="system-user"
       systemGroupLabel={t('systemVariables')}
       userGroupLabel={t('userVariables')}
-      allowCreateVariable
-      onCreateVariable={handleCreateVariable}
-      showUndefinedWarnings
-      onUndefinedVariableClick={(name) => onAddVariable(name, 'text')}
+      allowCreateVariable={!readOnly}
+      onCreateVariable={readOnly ? undefined : handleCreateVariable}
+      showUndefinedWarnings={!readOnly}
+      onUndefinedVariableClick={readOnly ? undefined : (name) => onAddVariable(name, 'text')}
       noVariablesText={t('noVariables')}
       variableNotFoundText={(query) => t('variableNotFound', { query })}
       createVariableText={(name) => t('createVariable', { name })}
       undefinedVariablesHintText={t('undefinedVariablesHint')}
+      readOnly={readOnly}
     />
   )
 }

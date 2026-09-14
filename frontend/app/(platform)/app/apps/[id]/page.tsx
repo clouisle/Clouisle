@@ -350,6 +350,7 @@ export function AgentEditor({
               <AgentOrchestrationForm
                 agent={agent}
                 onUpdate={handleOrchestrationUpdate}
+                canUpdate={canUpdateAgent}
               />
             </div>
           </ScrollArea>
@@ -389,6 +390,7 @@ export function AgentEditor({
         hideReasoning={hideReasoning}
         onHideReasoningChange={setHideReasoning}
         hasToolsEnabled={hasToolsEnabled}
+        readOnly={!canUpdateAgent}
       />
 
       {/* Embed Config Dialog */}

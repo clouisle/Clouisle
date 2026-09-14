@@ -9,6 +9,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { type KnowledgeBase, type AgentKnowledgeBaseConfig } from '@/lib/api'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
@@ -201,12 +202,13 @@ function KnowledgeBaseConfigDialog({ item, open, onOpenChange, onSave }: Knowled
 }
 
 interface KnowledgeBaseDisplayItemProps {
-  item: { config: AgentKnowledgeBaseConfig; knowledgeBase: KnowledgeBase }
+  item: DisplayKnowledgeBase
   onConfigure: () => void
   onDelete: () => void
+  readOnly?: boolean
 }
 
-function KnowledgeBaseDisplayItem({ item, onConfigure, onDelete }: KnowledgeBaseDisplayItemProps) {
+function KnowledgeBaseDisplayItem({ item, onConfigure, onDelete, readOnly = false }: KnowledgeBaseDisplayItemProps) {
   const t = useTranslations('agents.orchestration.knowledgeBase')
   const [isDeleteHover, setIsDeleteHover] = React.useState(false)
 
@@ -224,33 +226,35 @@ function KnowledgeBaseDisplayItem({ item, onConfigure, onDelete }: KnowledgeBase
         )}
       </div>
       <div className="flex items-center gap-1.5">
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 cursor-pointer hover:bg-primary/10 hover:text-primary"
-            onClick={(e) => {
-              e.stopPropagation()
-              onConfigure()
-            }}
-          >
-            <Settings2 className="h-3 w-3 text-muted-foreground hover:text-primary" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 cursor-pointer hover:bg-destructive/10 hover:text-destructive"
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete()
-            }}
-            onMouseEnter={() => setIsDeleteHover(true)}
-            onMouseLeave={() => setIsDeleteHover(false)}
-          >
-            <Trash2 className="h-3 w-3 text-muted-foreground" />
-          </Button>
-        </div>
-        <div className="flex items-center gap-1.5 group-hover:hidden">
+        {!readOnly && (
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 cursor-pointer hover:bg-primary/10 hover:text-primary"
+              onClick={(e) => {
+                e.stopPropagation()
+                onConfigure()
+              }}
+            >
+              <Settings2 className="h-3 w-3 text-muted-foreground hover:text-primary" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 cursor-pointer hover:bg-destructive/10 hover:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete()
+              }}
+              onMouseEnter={() => setIsDeleteHover(true)}
+              onMouseLeave={() => setIsDeleteHover(false)}
+            >
+              <Trash2 className="h-3 w-3 text-muted-foreground" />
+            </Button>
+          </div>
+        )}
+        <div className={cn('flex items-center gap-1.5', !readOnly && 'group-hover:hidden')}>
           <span className="text-[10px] text-muted-foreground">{t('dialog.topKCompact', { count: item.config.retrieval_top_k })}</span>
           <Badge variant="outline" className="text-[10px] h-4 px-1.5 font-normal">
             {t('documents', { count: item.knowledgeBase.document_count })}
@@ -265,6 +269,7 @@ interface KnowledgeBaseSelectorProps {
   configs: AgentKnowledgeBaseConfig[]
   availableKnowledgeBases: KnowledgeBase[]
   onChange: (configs: AgentKnowledgeBaseConfig[]) => void
+  readOnly?: boolean
 }
 
 // 内部用于显示的数据结构
@@ -276,7 +281,8 @@ interface DisplayKnowledgeBase {
 export function KnowledgeBaseSelector({ 
   configs, 
   availableKnowledgeBases, 
-  onChange 
+  onChange,
+  readOnly = false,
 }: KnowledgeBaseSelectorProps) {
   const t = useTranslations('agents.orchestration.knowledgeBase')
   const [configuringId, setConfiguringId] = React.useState<string | null>(null)
@@ -327,6 +333,7 @@ export function KnowledgeBaseSelector({
             item={item}
             onConfigure={() => setConfiguringId(item.knowledgeBase.id)}
             onDelete={() => handleDelete(item.knowledgeBase.id)}
+            readOnly={readOnly}
           />
         ))}
       </div>
