@@ -1,4 +1,5 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from app.api import deps
 
 from app.api.v1.admin.endpoints import (
     dashboard,
@@ -23,9 +24,9 @@ from app.api.v1.admin.endpoints import (
 )
 
 from app.api.v1.endpoints import knowledge_bases as platform_knowledge_bases
+from app.api.v1 import workflow_metrics
 
 admin_router = APIRouter()
-
 admin_router.include_router(
     dashboard.router, prefix="/dashboard", tags=["admin-dashboard"]
 )
@@ -61,6 +62,7 @@ admin_router.include_router(skills.router, prefix="/skills", tags=["admin-skills
 admin_router.include_router(
     workflows.router, prefix="/workflows", tags=["admin-workflows"]
 )
+admin_router.include_router(workflow_metrics.router, tags=["admin-workflow-metrics"])
 admin_router.include_router(totp.router, prefix="/totp", tags=["admin-totp"])
 admin_router.include_router(
     packages.router, prefix="/packages", tags=["admin-packages"]
@@ -69,4 +71,5 @@ admin_router.include_router(
     platform_knowledge_bases.router,
     prefix="/knowledge-bases",
     tags=["admin-knowledge-bases"],
+    dependencies=[Depends(deps.PermissionChecker("admin:knowledge-base:read"))],
 )

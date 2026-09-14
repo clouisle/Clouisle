@@ -25,7 +25,6 @@ from app.api.v1.endpoints import (
     totp,
     embed,
 )
-from app.api.v1 import workflow_metrics
 from app.api.v1 import workflow_versions
 from app.api.v1.admin.api import admin_router
 
@@ -56,11 +55,7 @@ api_router.include_router(
     prompt_generator.router, prefix="/prompts", tags=["prompt-generator"]
 )
 api_router.include_router(workflows.router, prefix="/workflows", tags=["workflows"])
-api_router.include_router(workflow_metrics.router, tags=["workflow-metrics"])
 api_router.include_router(workflow_versions.router, tags=["workflow-versions"])
-api_router.include_router(
-    workflow_versions.template_router, tags=["workflow-templates"]
-)
 api_router.include_router(
     notifications.router, prefix="/notifications", tags=["notifications"]
 )
