@@ -1097,6 +1097,63 @@ async def test_tool(
                     ),
                     msg_key="success",
                 )
+            elif custom_tool.custom_type == DBCustomToolType.DATABASE:
+                db_config = custom_tool.database_config or {}
+                if not db_config:
+                    return success(
+                        data=ToolExecuteResponse(
+                            name=request.name,
+                            success=False,
+                            error=t("tool_execution_failed"),
+                            duration_ms=int((time.time() - start_time) * 1000),
+                        ),
+                        msg_key="success",
+                    )
+                from app.llm.tools.builtin.db_executor import execute_database_tool
+
+                timeout = float(db_config.get("timeout") or 15.0)
+                try:
+                    db_result = await execute_database_tool(
+                        tool=custom_tool,
+                        arguments=request.arguments,
+                        timeout=timeout,
+                    )
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    is_success = (
+                        db_result.get("success", True)
+                        if isinstance(db_result, dict)
+                        else True
+                    )
+                    err_msg = (
+                        db_result.get("error")
+                        if isinstance(db_result, dict) and not is_success
+                        else None
+                    )
+                    return success(
+                        data=ToolExecuteResponse(
+                            name=request.name,
+                            success=is_success,
+                            result=db_result,
+                            error=err_msg,
+                            duration_ms=duration_ms,
+                        ),
+                        msg_key="success",
+                    )
+                except Exception as e:
+                    logger.exception("Database tool execution error: %s", e)
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    return success(
+                        data=ToolExecuteResponse(
+                            name=request.name,
+                            success=False,
+                            error=resolve_user_visible_error(
+                                str(e),
+                                fallback_key="tool_execution_failed",
+                            ),
+                            duration_ms=duration_ms,
+                        ),
+                        msg_key="success",
+                    )
             else:
                 return success(
                     data=ToolExecuteResponse(

@@ -619,6 +619,22 @@ async def test_http_code_and_unsupported_custom_execution(monkeypatch, user):
     )
     assert unsupported.success is False
 
+    current.custom_type = DBCustomToolType.DATABASE
+    current.database_config = {"db_type": "postgresql", "host": "127.0.0.1"}
+    monkeypatch.setattr(
+        "app.llm.tools.builtin.db_executor.execute_database_tool",
+        AsyncMock(return_value={"success": True, "ping": 1}),
+    )
+    db_test_resp = response_data(
+        await tools.test_tool(
+            ToolExecuteRequest(name=current.name, arguments={"action": "query"}),
+            None,
+            user,
+        )
+    )
+    assert db_test_resp.success is True
+    assert db_test_resp.result == {"success": True, "ping": 1}
+
 
 @pytest.mark.asyncio
 async def test_direct_code_rejects_language_and_uses_sandbox(monkeypatch, user):

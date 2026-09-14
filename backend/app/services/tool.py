@@ -131,7 +131,7 @@ class ToolExecutor:
         tool: Tool,
         arguments: dict[str, Any],
     ) -> Any:
-        """Execute a custom tool (HTTP or Code)."""
+        """Execute a custom tool (HTTP, Code, or Database)."""
         if tool.custom_type == CustomToolType.HTTP:
             if not tool.http_config:
                 raise ValueError(t("tool_execution_failed"))
@@ -165,6 +165,17 @@ class ToolExecutor:
                 "stderr": result.stderr,
                 "artifacts": [artifact.model_dump() for artifact in result.artifacts],
             }
+        elif tool.custom_type == CustomToolType.DATABASE:
+            if not getattr(tool, "database_config", None):
+                raise ValueError(t("tool_execution_failed"))
+            from app.llm.tools.builtin.db_executor import execute_database_tool
+
+            timeout = float(tool.database_config.get("timeout") or 15.0)
+            return await execute_database_tool(
+                tool=tool,
+                arguments=arguments,
+                timeout=timeout,
+            )
         else:
             raise ValueError(
                 t("unsupported_custom_tool_type", tool_type=tool.custom_type)

@@ -242,6 +242,11 @@ async def create_tool(
         parameters=[parameter.model_dump() for parameter in tool_in.parameters],
         http_config=tool_in.http_config.model_dump() if tool_in.http_config else {},
         code_config=tool_in.code_config.model_dump() if tool_in.code_config else {},
+        database_config=(
+            getattr(tool_in, "database_config", None).model_dump()
+            if getattr(tool_in, "database_config", None)
+            else {}
+        ),
         mcp_config=tool_in.mcp_config.model_dump() if tool_in.mcp_config else {},
         credentials=tool_in.credentials,
         is_enabled=tool_in.is_enabled,
@@ -299,6 +304,8 @@ async def update_tool(
         tool.http_config = tool_in.http_config.model_dump()
     if tool_in.code_config is not None:
         tool.code_config = tool_in.code_config.model_dump()
+    if getattr(tool_in, "database_config", None) is not None:
+        tool.database_config = tool_in.database_config.model_dump()
     if tool_in.mcp_config is not None:
         tool.mcp_config = tool_in.mcp_config.model_dump()
     if tool_in.credentials is not None:
@@ -358,6 +365,7 @@ async def duplicate_tool(
         parameters=tool.parameters,
         http_config=tool.http_config,
         code_config=tool.code_config,
+        database_config=getattr(tool, "database_config", None) or {},
         mcp_config=tool.mcp_config,
         credentials=tool.credentials,
         is_enabled=False,
@@ -509,6 +517,59 @@ async def test_tool(
                 duration_ms=_runtime_duration_ms(exec_result),
             )
         )
+
+    if custom_tool.custom_type == DBCustomToolType.DATABASE:
+        db_config = custom_tool.database_config or {}
+        if not db_config:
+            return success(
+                data=ToolExecuteResponse(
+                    name=request.name,
+                    success=False,
+                    error=t("tool_execution_failed"),
+                    duration_ms=int((time.time() - start_time) * 1000),
+                )
+            )
+        from app.llm.tools.builtin.db_executor import execute_database_tool
+
+        timeout = float(db_config.get("timeout") or 15.0)
+        try:
+            db_result = await execute_database_tool(
+                tool=custom_tool,
+                arguments=request.arguments,
+                timeout=timeout,
+            )
+            duration_ms = int((time.time() - start_time) * 1000)
+            is_success = (
+                db_result.get("success", True) if isinstance(db_result, dict) else True
+            )
+            err_msg = (
+                db_result.get("error")
+                if isinstance(db_result, dict) and not is_success
+                else None
+            )
+            return success(
+                data=ToolExecuteResponse(
+                    name=request.name,
+                    success=is_success,
+                    result=db_result,
+                    error=err_msg,
+                    duration_ms=duration_ms,
+                )
+            )
+        except Exception as e:
+            logger.exception("Database tool execution error: %s", e)
+            duration_ms = int((time.time() - start_time) * 1000)
+            return success(
+                data=ToolExecuteResponse(
+                    name=request.name,
+                    success=False,
+                    error=resolve_user_visible_error(
+                        str(e),
+                        fallback_key="tool_execution_failed",
+                    ),
+                    duration_ms=duration_ms,
+                )
+            )
 
     return success(
         data=ToolExecuteResponse(

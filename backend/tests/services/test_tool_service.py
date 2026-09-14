@@ -208,6 +208,36 @@ class TestToolExecutor:
             await executor._execute_custom_tool(tool, {})
 
     @pytest.mark.anyio
+    async def test_custom_database_tool_executes_and_validates(self):
+        executor = ToolExecutor()
+        tool = MagicMock()
+        tool.custom_type = CustomToolType.DATABASE
+        tool.database_config = None
+        with pytest.raises(ValueError):
+            await executor._execute_custom_tool(tool, {})
+
+        tool.database_config = {
+            "db_type": "postgresql",
+            "host": "127.0.0.1",
+            "timeout": 10.0,
+        }
+        with patch(
+            "app.llm.tools.builtin.db_executor.execute_database_tool",
+            new=AsyncMock(return_value={"success": True, "result": [{"id": 1}]}),
+        ) as mock_db_exec:
+            result = await executor._execute_custom_tool(
+                tool, {"action": "query", "sql": "SELECT 1"}
+            )
+
+        assert result["success"] is True
+        assert result["result"] == [{"id": 1}]
+        mock_db_exec.assert_awaited_once_with(
+            tool=tool,
+            arguments={"action": "query", "sql": "SELECT 1"},
+            timeout=10.0,
+        )
+
+    @pytest.mark.anyio
     async def test_mcp_tool_requires_configuration_and_executes(self):
         executor = ToolExecutor()
         tool = MagicMock()

@@ -399,6 +399,9 @@ class ToolPackageAdapter(ResourcePackageAdapter):
             "parameters": _copy_json(tool.parameters) or [],
             "http_config": _sanitize_dict(tool.http_config or {}),
             "code_config": _sanitize_dict(tool.code_config or {}),
+            "database_config": _sanitize_dict(
+                getattr(tool, "database_config", None) or {}
+            ),
             "mcp_config": _sanitize_dict(tool.mcp_config or {}),
             "is_enabled": tool.is_enabled,
         }
@@ -985,6 +988,7 @@ def _tool_fields(payload: dict[str, Any]) -> dict[str, Any]:
         "parameters": payload.get("parameters") or [],
         "http_config": payload.get("http_config") or {},
         "code_config": payload.get("code_config") or {},
+        "database_config": payload.get("database_config") or {},
         "mcp_config": payload.get("mcp_config") or {},
     }
 
