@@ -370,7 +370,10 @@ class ClouislePackageService:
 
         adapter = get_adapter(manifest.resource_type)
         if check_permission:
-            adapter.ensure_import_permission(user)
+            effective_team_id = (
+                team.id if source == ClouisleImportSource.PLATFORM else None
+            )
+            await adapter.ensure_import_permission(user, team_id=effective_team_id)
         temp_storage_path = ClouislePackageService._stage_package_files(
             content, manifest
         )
@@ -530,11 +533,13 @@ class ClouislePackageService:
         resource_type = ClouisleResourceType(session.resource_type)
         adapter = get_adapter(resource_type)
         if check_permission:
+            effective_team_id = (
+                team.id if source == ClouisleImportSource.PLATFORM else None
+            )
             if install_in.action == ClouisleConflictAction.UPDATE:
-                adapter.ensure_update_permission(user)
+                await adapter.ensure_update_permission(user, team_id=effective_team_id)
             elif install_in.action != ClouisleConflictAction.SKIP:
-                adapter.ensure_import_permission(user)
-
+                await adapter.ensure_import_permission(user, team_id=effective_team_id)
         if install_in.action == ClouisleConflictAction.SKIP:
             session.status = ClouisleImportSessionStatus.INSTALLED
             await session.save(update_fields=["status", "updated_at"])
