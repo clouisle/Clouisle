@@ -113,6 +113,8 @@ async def lifespan(app: FastAPI):
         init_model_provider_display_name,
         revert_channel_id_to_model_id,
         init_kb_rerank_fields,
+        init_kb_visibility_fields,
+        init_tool_visibility_fields,
         init_tool_database_config,
         init_skills_table,
         init_clouisle_import_sessions_table,
@@ -296,11 +298,19 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Model provider uniqueness migration failed: {e}")
 
     await init_model_provider_display_name()
-
     try:
         await init_kb_rerank_fields()
     except Exception as e:
         logger.warning(f"Knowledge base rerank migration failed: {e}")
+
+    try:
+        await init_kb_visibility_fields()
+    except Exception as e:
+        logger.warning(f"Knowledge base visibility migration failed: {e}")
+    try:
+        await init_tool_visibility_fields()
+    except Exception as e:
+        logger.warning(f"Tool visibility migration failed: {e}")
 
     try:
         await init_skills_table()

@@ -22,6 +22,14 @@ class KnowledgeBaseStatus:
     ARCHIVED = "archived"
 
 
+class KnowledgeBaseVisibility(str, Enum):
+    """Knowledge base visibility constants"""
+
+    PRIVATE = "private"
+    TEAM = "team"
+    PUBLIC = "public"
+
+
 class DocumentStatus:
     """Document status constants"""
 
@@ -115,6 +123,10 @@ class KnowledgeBaseCreate(KnowledgeBaseBase):
     embedding_model_id: Optional[UUID] = Field(None, description="Embedding model ID")
     rerank_model_id: Optional[UUID] = Field(None, description="Rerank model ID")
     settings: Optional[KnowledgeBaseSettings] = Field(None, description="KB settings")
+    visibility: Optional[KnowledgeBaseVisibility] = Field(
+        default=KnowledgeBaseVisibility.PRIVATE,
+        description="Visibility (private or team; public is reserved for compatibility)",
+    )
 
 
 class KnowledgeBaseUpdate(BaseModel):
@@ -127,6 +139,10 @@ class KnowledgeBaseUpdate(BaseModel):
     rerank_model_id: Optional[UUID] = None
     settings: Optional[KnowledgeBaseSettings] = None
     status: Optional[str] = Field(None, description="Status (active, archived)")
+    visibility: Optional[KnowledgeBaseVisibility] = Field(
+        None,
+        description="Visibility (private or team; public is reserved for compatibility)",
+    )
 
 
 class CreatorInfo(BaseModel):
@@ -180,6 +196,7 @@ class KnowledgeBase(KnowledgeBaseBase):
     team: TeamInfo
     created_by: Optional[CreatorInfo] = None
     status: str
+    visibility: str = KnowledgeBaseVisibility.PRIVATE.value
     embedding_model_id: Optional[UUID] = None
     embedding_model: Optional[EmbeddingModelInfo] = None
     rerank_model_id: Optional[UUID] = None
@@ -224,6 +241,7 @@ class KnowledgeBaseList(BaseModel):
     team: TeamInfo
     created_by: Optional[CreatorInfo] = None
     status: str
+    visibility: str = KnowledgeBaseVisibility.PRIVATE.value
     embedding_model_id: Optional[UUID] = None
     embedding_model: Optional[EmbeddingModelInfo] = None
     rerank_model_id: Optional[UUID] = None

@@ -299,6 +299,7 @@ async def test_contextualize_retrieval_query_rejects_malformed_output(
 @pytest.mark.asyncio
 async def test_perform_rag_retrieval_supports_lexical_only_and_isolates_failures():
     agent = SimpleNamespace(id=uuid4())
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
     lexical_kb = SimpleNamespace(
         id=uuid4(),
         name="Lexical",
@@ -370,10 +371,10 @@ async def test_perform_rag_retrieval_supports_lexical_only_and_isolates_failures
         ) as filter_mock,
         patch("app.api.v1.endpoints.chat_rag.retrieve", retrieve),
     ):
-        results = await perform_rag_retrieval(agent, "question")
+        results = await perform_rag_retrieval(agent, user, "question")
 
     filter_mock.assert_called_once_with(agent_id=agent.id)
-    query.prefetch_related.assert_awaited_once_with("knowledge_base")
+    query.prefetch_related.assert_awaited_once_with("knowledge_base__created_by")
     request = retrieve.await_args.args[0]
     assert request.query == "question"
     assert request.top_k == 5
@@ -408,6 +409,7 @@ async def test_perform_rag_retrieval_supports_lexical_only_and_isolates_failures
 )
 async def test_perform_rag_retrieval_fails_open(failure):
     agent = SimpleNamespace(id=uuid4())
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
     kb = SimpleNamespace(
         id=uuid4(),
         name="Handbook",
@@ -435,7 +437,7 @@ async def test_perform_rag_retrieval_fails_open(failure):
             AsyncMock(side_effect=failure),
         ),
     ):
-        assert await perform_rag_retrieval(agent, "question") == []
+        assert await perform_rag_retrieval(agent, user, "question") == []
 
 
 def test_aggregate_rag_contexts_merges_documents_and_keeps_best_numeric_score():
@@ -533,6 +535,7 @@ def test_build_rag_prompt_uses_stable_aggregated_source_ids():
 @pytest.mark.asyncio
 async def test_perform_rag_retrieval_is_bounded_skips_inactive_and_truncates_globally():
     agent = SimpleNamespace(id=uuid4())
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
     active_kbs = [
         SimpleNamespace(
             id=uuid4(),
@@ -592,7 +595,7 @@ async def test_perform_rag_retrieval_is_bounded_skips_inactive_and_truncates_glo
         patch("app.models.agent.AgentKnowledgeBase.filter", return_value=query),
         patch("app.api.v1.endpoints.chat_rag.retrieve", retrieve),
     ):
-        results = await perform_rag_retrieval(agent, "question")
+        results = await perform_rag_retrieval(agent, user, "question")
 
     request = retrieve.await_args.args[0]
     assert len(request.targets) == 11

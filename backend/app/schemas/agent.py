@@ -404,7 +404,7 @@ class AgentCreate(AgentBase):
     powered_by_text: str | None = Field(
         default=None, max_length=200, description="Chat page footer attribution"
     )
-    visibility: str = Field(default=AgentVisibility.TEAM)
+    visibility: str = Field(default=AgentVisibility.PRIVATE)
 
 
 class AgentUpdate(BaseModel):

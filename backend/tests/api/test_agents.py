@@ -994,6 +994,9 @@ async def test_delete_message_without_usage_updates_count(monkeypatch):
 
 
 def test_agent_request_validation_boundaries():
+    assert (
+        AgentCreate(name="Agent", team_id=uuid4()).visibility == AgentVisibility.PRIVATE
+    )
     with pytest.raises(ValidationError):
         AgentCreate(name="", team_id=uuid4())
     with pytest.raises(ValidationError):

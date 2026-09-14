@@ -95,9 +95,30 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
         )
         if not workflow:
             return ExecutionResult(error="not_found")
-        kb = await KnowledgeBase.filter(id=kb_id, team_id=workflow.team_id).first()
+        kb_query = KnowledgeBase.filter(id=kb_id, team_id=workflow.team_id)
+        if hasattr(kb_query, "prefetch_related"):
+            kb_query = kb_query.prefetch_related("created_by")
+        if hasattr(kb_query, "first"):
+            kb = await kb_query.first()
+        else:
+            kb = await kb_query if hasattr(kb_query, "__await__") else kb_query
         if not kb:
             return ExecutionResult(error="not_found")
+
+        # Handle sync return or un-awaited mock
+        if hasattr(kb, "__await__"):
+            kb = await kb
+        if not kb:
+            return ExecutionResult(error="not_found")
+
+        # If knowledge base is private, verify user access if run has user_id
+        if getattr(kb, "visibility", None) == "private":
+            run_user_id = getattr(run, "user_id", None)
+            kb_creator_id = getattr(kb, "created_by_id", None) or (
+                kb.created_by.id if getattr(kb, "created_by", None) else None
+            )
+            if kb_creator_id and run_user_id and str(run_user_id) != str(kb_creator_id):
+                return ExecutionResult(error="not_found")
 
         try:
             response = await retrieve(

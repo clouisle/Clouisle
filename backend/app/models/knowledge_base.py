@@ -24,6 +24,14 @@ class KnowledgeBaseStatus(str, Enum):
     ARCHIVED = "archived"
 
 
+class KnowledgeBaseVisibility(str, Enum):
+    """Knowledge base visibility"""
+
+    PRIVATE = "private"  # Only creator can access
+    TEAM = "team"  # Team members can access
+    PUBLIC = "public"  # Publicly visible (reserved)
+
+
 class DocumentStatus(str, Enum):
     """Document processing status"""
 
@@ -89,6 +97,13 @@ class KnowledgeBase(models.Model):
         max_length=20,
         default=KnowledgeBaseStatus.ACTIVE.value,
         description="Knowledge base status",
+    )
+
+    # Visibility
+    visibility = fields.CharEnumField(
+        KnowledgeBaseVisibility,
+        default=KnowledgeBaseVisibility.PRIVATE,
+        description="Visibility",
     )
 
     # Embedding configuration

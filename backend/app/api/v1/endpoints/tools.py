@@ -23,6 +23,7 @@ from app.models.tool import (
     ToolShare,
     ToolType as DBToolType,
     CustomToolType as DBCustomToolType,
+    ToolVisibility as DBToolVisibility,
 )
 from app.llm.tools import tool_registry, NON_SELECTABLE_BUILTIN_TOOLS
 from app.llm.tools.mcp_client import execute_mcp_tool, list_mcp_tools
@@ -42,6 +43,7 @@ from app.schemas.tool import (
     ToolType,
     CustomToolType,
     ToolCategory,
+    ToolVisibility,
     ToolSharePermission,
     ToolParameterSchema,
     ToolOut,
@@ -98,14 +100,33 @@ def _runtime_duration_ms(runtime_result: Any) -> int | None:
 # ============ Helper Functions ============
 
 
-async def check_tool_write_access(tool: Tool, user: User) -> None:
-    """Allow creators to edit their tools; team owner/admin can edit all team tools."""
+async def check_tool_access(
+    tool: Tool, user: User, require_write: bool = False
+) -> Tool:
+    """Check if the user has access to the tool based on ownership and visibility."""
     if user.is_superuser:
-        return
+        return tool
+
+    is_owner = tool.created_by_id == user.id
+    if tool.visibility == DBToolVisibility.PRIVATE:
+        if is_owner:
+            return tool
+        raise BusinessError(
+            code=ResponseCode.PERMISSION_DENIED,
+            msg_key="tool_access_denied",
+            status_code=403,
+        )
 
     await check_team_access(tool.team_id, user)
-    if tool.created_by_id != user.id:
+    if require_write and not is_owner:
         await check_team_access(tool.team_id, user, require_admin=True)
+
+    return tool
+
+
+async def check_tool_write_access(tool: Tool, user: User) -> None:
+    """Allow creators to edit their tools; team owner/admin can edit non-private tools."""
+    await check_tool_access(tool, user, require_write=True)
 
 
 def _get_builtin_tool_description(
@@ -195,6 +216,7 @@ def db_tool_to_out(tool: Tool, creator_name: str | None = None) -> ToolOut:
         display_name=tool.display_name,
         description=tool.description,
         type=ToolType(tool.type.value),
+        visibility=ToolVisibility(tool.visibility.value),
         category=_category_value(tool.category),
         icon=tool.icon,
         parameters=[ToolParameterSchema(**p) for p in tool.parameters],
@@ -224,6 +246,7 @@ def db_tool_to_detail(tool: Tool, creator_name: str | None = None) -> ToolDetail
         display_name=tool.display_name,
         description=tool.description,
         type=ToolType(tool.type.value),
+        visibility=ToolVisibility(tool.visibility.value),
         category=_category_value(tool.category),
         icon=tool.icon,
         parameters=[ToolParameterSchema(**p) for p in tool.parameters],
@@ -279,7 +302,6 @@ async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[Too
     builtin_tools = get_builtin_tools(user.locale)
     for builtin_tool in builtin_tools:
         deduped_tools[f"builtin:{builtin_tool.name}"] = builtin_tool
-
     for team in accessible_teams:
         custom_db_tools = (
             await Tool.filter(team_id=team.id, type=DBToolType.CUSTOM)
@@ -287,6 +309,12 @@ async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[Too
             .order_by("-updated_at")
         )
         for db_tool in custom_db_tools:
+            if (
+                db_tool.visibility == DBToolVisibility.PRIVATE
+                and db_tool.created_by_id != user.id
+                and not user.is_superuser
+            ):
+                continue
             creator_name = db_tool.created_by.username if db_tool.created_by else None
             tool_out = db_tool_to_out(db_tool, creator_name)
             tool_out.is_owned = True
@@ -303,6 +331,12 @@ async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[Too
             .order_by("-updated_at")
         )
         for db_tool in mcp_db_tools:
+            if (
+                db_tool.visibility == DBToolVisibility.PRIVATE
+                and db_tool.created_by_id != user.id
+                and not user.is_superuser
+            ):
+                continue
             creator_name = db_tool.created_by.username if db_tool.created_by else None
             tool_out = db_tool_to_out(db_tool, creator_name)
             tool_out.is_owned = True
@@ -312,7 +346,6 @@ async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[Too
                 tool_id=db_tool.id
             ).count()
             deduped_tools[f"mcp:{db_tool.id}"] = tool_out
-
         shares = await ToolShare.filter(shared_with_team_id=team.id).prefetch_related(
             "tool", "tool__team", "tool__created_by"
         )
@@ -478,6 +511,12 @@ async def list_tools_legacy(
 
     custom_tools = []
     for tool in custom_db_tools:
+        if (
+            tool.visibility == DBToolVisibility.PRIVATE
+            and tool.created_by_id != current_user.id
+            and not current_user.is_superuser
+        ):
+            continue
         creator_name = tool.created_by.username if tool.created_by else None
         tool_out = db_tool_to_out(tool, creator_name)
         tool_out.is_owned = True
@@ -496,6 +535,12 @@ async def list_tools_legacy(
 
     mcp_tools = []
     for tool in mcp_db_tools:
+        if (
+            tool.visibility == DBToolVisibility.PRIVATE
+            and tool.created_by_id != current_user.id
+            and not current_user.is_superuser
+        ):
+            continue
         creator_name = tool.created_by.username if tool.created_by else None
         tool_out = db_tool_to_out(tool, creator_name)
         tool_out.is_owned = True
@@ -678,6 +723,7 @@ async def create_tool(
         description=tool_in.description,
         icon=tool_in.icon,
         category=tool_in.category,
+        visibility=DBToolVisibility(tool_in.visibility.value),
         type=DBToolType(tool_in.type.value),
         custom_type=(
             DBCustomToolType(tool_in.custom_type.value) if tool_in.custom_type else None
@@ -720,7 +766,6 @@ async def get_tool_by_id(
     tool_id: UUID,
     current_user: User = Depends(deps.PermissionChecker("tool:read")),
 ) -> Any:
-    """根据 ID 获取工具详情"""
     tool = await Tool.filter(id=tool_id).prefetch_related("created_by").first()
     if not tool:
         raise BusinessError(
@@ -729,7 +774,7 @@ async def get_tool_by_id(
             status_code=404,
         )
 
-    await check_team_access(tool.team_id, current_user)
+    await check_tool_access(tool, current_user)
 
     creator_name = tool.created_by.username if tool.created_by else None
     return success(
@@ -745,11 +790,18 @@ async def get_tool_by_name(
     current_user: User = Depends(deps.PermissionChecker("tool:read")),
 ) -> Any:
     """根据名称获取工具（内置或自定义）"""
-    # 先检查内置工具
     tool_info = tool_registry.get_tool(tool_name)
     if tool_info is None and tool_name in SANDBOX_BUILTIN_TOOLS:
         sandbox_tool_infos = tool_registry.get_sandbox_tool_infos([tool_name])
         tool_info = sandbox_tool_infos[0] if sandbox_tool_infos else None
+    if team_id:
+        tool = await Tool.filter(team_id=team_id, name=tool_name).first()
+        if tool:
+            await check_tool_access(tool, current_user)
+            return success(
+                data=db_tool_to_out(tool),
+                msg_key="success",
+            )
     if tool_info:
         return success(
             data=_tool_info_to_out(tool_info, current_user.locale),
@@ -816,6 +868,8 @@ async def update_tool(
         tool.icon = tool_in.icon
     if tool_in.category is not None:
         tool.category = tool_in.category
+    if tool_in.visibility is not None:
+        tool.visibility = DBToolVisibility(tool_in.visibility.value)
     if tool_in.custom_type is not None:
         tool.custom_type = DBCustomToolType(tool_in.custom_type.value)
     if tool_in.parameters is not None:
@@ -975,10 +1029,9 @@ async def test_tool(
 
     # 尝试自定义工具
     if team_id:
-        await check_team_access(team_id, current_user)
         custom_tool = await Tool.filter(team_id=team_id, name=request.name).first()
-
         if custom_tool:
+            await check_tool_access(custom_tool, current_user)
             # MCP 工具
             if custom_tool.type == DBToolType.MCP:
                 mcp_config = custom_tool.mcp_config or {}
@@ -1319,10 +1372,9 @@ async def duplicate_tool(
         description=tool.description,
         icon=tool.icon,
         category=tool.category,
+        visibility=DBToolVisibility.PRIVATE,
         type=tool.type,
         custom_type=tool.custom_type,
-        parameters=tool.parameters,
-        http_config=tool.http_config,
         code_config=tool.code_config,
         database_config=getattr(tool, "database_config", None) or {},
         mcp_config=tool.mcp_config,
@@ -1635,9 +1687,15 @@ async def share_tool(
             msg_key="tool_not_found",
             status_code=404,
         )
-
     # 检查用户是否是工具所有者团队的管理员
     await check_team_access(tool.team_id, current_user, require_admin=True)
+
+    if tool.visibility == DBToolVisibility.PRIVATE:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="private_tool_cannot_be_shared",
+            status_code=400,
+        )
 
     # 检查目标团队是否存在
     target_team = await Team.filter(id=share_data.team_id).first()

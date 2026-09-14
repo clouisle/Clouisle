@@ -25,7 +25,12 @@ from app.llm.tools import tool_registry
 from app.llm.tools.executors import execute_http_tool
 from app.llm.tools.mcp_client import execute_mcp_tool, list_mcp_tools
 from app.models.tool import CustomToolType as DBCustomToolType
-from app.models.tool import Tool, ToolShare, ToolType as DBToolType
+from app.models.tool import (
+    Tool,
+    ToolShare,
+    ToolType as DBToolType,
+    ToolVisibility as DBToolVisibility,
+)
 from app.models.user import Team, User
 from app.schemas.response import BusinessError, Response, ResponseCode, success
 from app.schemas.tool import (
@@ -227,7 +232,6 @@ async def create_tool(
             msg_key="tool_name_exists",
             status_code=400,
         )
-
     tool = await Tool.create(
         team_id=team_id,
         name=tool_in.name,
@@ -235,6 +239,7 @@ async def create_tool(
         description=tool_in.description,
         icon=tool_in.icon,
         category=tool_in.category,
+        visibility=DBToolVisibility(tool_in.visibility.value),
         type=DBToolType(tool_in.type.value),
         custom_type=DBCustomToolType(tool_in.custom_type.value)
         if tool_in.custom_type
@@ -296,6 +301,8 @@ async def update_tool(
         tool.icon = tool_in.icon
     if tool_in.category is not None:
         tool.category = tool_in.category
+    if tool_in.visibility is not None:
+        tool.visibility = DBToolVisibility(tool_in.visibility.value)
     if tool_in.custom_type is not None:
         tool.custom_type = DBCustomToolType(tool_in.custom_type.value)
     if tool_in.parameters is not None:
@@ -360,6 +367,7 @@ async def duplicate_tool(
         description=tool.description,
         icon=tool.icon,
         category=tool.category,
+        visibility=DBToolVisibility.PRIVATE,
         type=tool.type,
         custom_type=tool.custom_type,
         parameters=tool.parameters,
@@ -754,13 +762,19 @@ async def share_tool(
     current_user: User = Depends(deps.PermissionChecker("admin:capability:update")),
 ) -> Any:
     tool = await _get_db_tool(tool_id, detail=True)
-    target_team = await _get_team(share_data.team_id)
     if tool.team_id == share_data.team_id:
         raise BusinessError(
             code=ResponseCode.BAD_REQUEST,
             msg_key="cannot_share_to_own_team",
             status_code=400,
         )
+    if tool.visibility == DBToolVisibility.PRIVATE:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="private_tool_cannot_be_shared",
+            status_code=400,
+        )
+    target_team = await _get_team(share_data.team_id)
     existing_share = await ToolShare.filter(
         tool_id=tool_id, shared_with_team_id=share_data.team_id
     ).first()

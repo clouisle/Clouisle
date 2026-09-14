@@ -2988,6 +2988,78 @@ async def init_kb_rerank_fields():
     logger.info("Knowledge base rerank fields migration complete")
 
 
+async def init_kb_visibility_fields():
+    """Add visibility field to knowledge_bases table."""
+    logger.info("Initializing knowledge base visibility fields...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'knowledge_bases' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "knowledge_bases table does not exist yet, skipping visibility migration"
+        )
+        return
+
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'knowledge_bases' AND column_name = 'visibility'
+    """)
+
+    if rows:
+        await conn.execute_query("""
+            ALTER TABLE knowledge_bases
+            ALTER COLUMN visibility SET DEFAULT 'private'
+        """)
+        logger.info(
+            "knowledge_bases.visibility field already exists; default set to private"
+        )
+        return
+
+    await conn.execute_query("""
+        ALTER TABLE knowledge_bases
+        ADD COLUMN IF NOT EXISTS visibility VARCHAR(20) NOT NULL DEFAULT 'private'
+    """)
+
+    logger.info("Knowledge base visibility fields migration complete")
+
+
+async def init_tool_visibility_fields():
+    """Add tool visibility while preserving legacy team-wide access."""
+    logger.info("Initializing tool visibility fields...")
+
+    conn = Tortoise.get_connection("default")
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'tools' AND table_schema = 'public'
+    """)
+    if not tables:
+        logger.info("tools table does not exist yet, skipping visibility migration")
+        return
+
+    _, columns = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'tools'
+          AND column_name = 'visibility'
+          AND table_schema = 'public'
+    """)
+    if not columns:
+        await conn.execute_query("""
+            ALTER TABLE tools
+            ADD COLUMN visibility VARCHAR(20) NOT NULL DEFAULT 'team'
+        """)
+
+    await conn.execute_query("""
+        ALTER TABLE tools
+        ALTER COLUMN visibility SET DEFAULT 'private'
+    """)
+    logger.info("Tool visibility fields migration complete")
+
+
 async def init_clouisle_import_sessions_table():
     """Create short-lived Clouisle package import sessions table."""
     logger.info("Initializing Clouisle import sessions table...")
@@ -3127,6 +3199,10 @@ async def init_db():
         await init_kb_rerank_fields()
     except Exception as e:
         logger.warning(f"KB rerank migration failed (may be first run): {e}")
+    try:
+        await init_kb_visibility_fields()
+    except Exception as e:
+        logger.warning(f"KB visibility migration failed (may be first run): {e}")
 
     try:
         await init_clouisle_import_sessions_table()

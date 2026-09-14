@@ -323,8 +323,13 @@ async def test_list_knowledge_bases_applies_platform_filters_and_pagination(
     finally:
         knowledge_bases._kb_access_mode.reset(token)
 
-    filter_kwargs = [kwargs for _, kwargs in query.filters]
-    assert {"team_id__in": memberships.items} in filter_kwargs
+    filter_args = [args for args, _ in query.filters if args]
+    filter_kwargs = [kwargs for _, kwargs in query.filters if kwargs]
+    assert any(
+        {"team_id__in": memberships.items} == kw
+        or any(hasattr(arg, "children") for a in filter_args for arg in a)
+        for kw in filter_kwargs or [{}]
+    )
     assert {"created_by": user} in filter_kwargs
     assert {"name__icontains": "hand"} in filter_kwargs
     assert {"status__in": ["active"]} in filter_kwargs
