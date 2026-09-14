@@ -14,8 +14,17 @@ from tortoise.expressions import Q
 from tortoise.functions import Count
 
 from app.api import deps
-from app.api.conversation_access import has_conversation_team_admin_access
+from app.api.conversation_access import (
+    has_conversation_team_admin_access,
+    has_global_conversation_access as _has_global_dashboard_access,
+)
 from app.api.team_access import check_team_access
+
+__all__ = [
+    "_has_global_dashboard_access",
+    "has_conversation_team_admin_access",
+    "router",
+]
 from app.core.i18n import t
 from app.core.timezone import now, to_utc
 from app.models.user import User, TeamMember
@@ -195,6 +204,8 @@ async def list_all_conversations(
 async def get_conversation_stats(
     team_id: UUID | None = Query(None, description="Filter by team"),
     current_user: User = Depends(deps.PermissionChecker("conversation:read")),
+    *,
+    own_only: bool = Query(False, description="Filter to current user only"),
 ) -> Any:
     """
     Get conversation statistics.
@@ -202,8 +213,9 @@ async def get_conversation_stats(
     - Super Admin/Admin: Stats for all conversations in accessible teams
     - Member/Viewer: Stats for their own conversations only
     """
-    has_dashboard_access = await has_conversation_team_admin_access(
-        current_user, team_id
+    has_dashboard_access = (
+        await has_conversation_team_admin_access(current_user, team_id)
+        and own_only is not True
     )
 
     # Get agent IDs user has access to
@@ -280,6 +292,8 @@ async def get_conversation_trends(
     team_id: UUID | None = Query(None, description="Filter by team"),
     period: str = Query("7d", description="Time period: 7d, 30d"),
     current_user: User = Depends(deps.PermissionChecker("conversation:read")),
+    *,
+    own_only: bool = Query(False, description="Filter to current user only"),
 ) -> Any:
     """
     Get conversation and message trends.
@@ -287,8 +301,9 @@ async def get_conversation_trends(
     - Super Admin/Admin: Trends for all conversations in accessible teams
     - Member/Viewer: Trends for their own conversations only
     """
-    has_dashboard_access = await has_conversation_team_admin_access(
-        current_user, team_id
+    has_dashboard_access = (
+        await has_conversation_team_admin_access(current_user, team_id)
+        and own_only is not True
     )
 
     now_local = now()

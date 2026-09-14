@@ -470,9 +470,10 @@ export const workflowsApi = {
   /**
    * 获取工作流运行统计信息
    */
-  getWorkflowRunStats: async (teamId?: string): Promise<WorkflowRunStats> => {
+  getWorkflowRunStats: async (teamId?: string, period?: string): Promise<WorkflowRunStats> => {
     const queryParams = new URLSearchParams()
     if (teamId) queryParams.append('team_id', teamId)
+    if (period) queryParams.append('period', period)
     return api.get<WorkflowRunStats>(`/workflows/runs/stats?${queryParams.toString()}`)
   },
 

@@ -18,6 +18,8 @@ import {
   MessageSquare,
   CheckCircle2,
   Coins,
+  User as UserIcon,
+  Users,
 } from 'lucide-react'
 import { useTeam } from '@/contexts/team-context'
 import { usePermissions } from '@/hooks/use-permissions'
@@ -28,6 +30,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { NoTeamState } from './_components/no-team-state'
 import {
   ChartContainer,
@@ -114,6 +117,24 @@ function formatNumber(num: number): string {
     return (num / 1000).toFixed(1) + 'K'
   }
   return num.toString()
+}
+
+type GreetingPeriod = 'EarlyMorning' | 'Morning' | 'Noon' | 'Afternoon' | 'Evening' | 'Night' | 'Friday'
+
+function getGreetingPeriod(): GreetingPeriod {
+  const now = new Date()
+  const hour = now.getHours()
+  const day = now.getDay() // 0 is Sunday, 5 is Friday
+
+  // Friday evening celebration (from 17:00 onwards on Friday)
+  if (day === 5 && hour >= 17) return 'Friday'
+
+  if (hour >= 5 && hour < 9) return 'EarlyMorning'
+  if (hour >= 9 && hour < 12) return 'Morning'
+  if (hour >= 12 && hour < 14) return 'Noon'
+  if (hour >= 14 && hour < 18) return 'Afternoon'
+  if (hour >= 18 && hour < 23) return 'Evening'
+  return 'Night'
 }
 
 function useCountUp(value: number, isLoading: boolean) {
@@ -293,6 +314,8 @@ export default function PlatformHomePage() {
   const { currentTeam, isLoading: isTeamLoading } = useTeam()
   const { user, loading: permissionsLoading } = usePermissions()
   const isTeamAdmin = Boolean(user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin')
+  const [scope, setScope] = React.useState<'personal' | 'team'>('personal')
+  const activeScope = isTeamAdmin ? scope : 'personal'
   const [stats, setStats] = React.useState<StatsData>({
     knowledgeBases: 0,
     models: 0,
@@ -337,28 +360,39 @@ export default function PlatformHomePage() {
     try {
       setIsLoading(true)
 
-      const ownOnly = !isTeamAdmin
+      const ownOnly = activeScope === 'personal'
       // 并行请求
-      const [kbResponse, modelsResponse, agentsResponse, workflowsResponse, trendsResponse] = await Promise.all([
+      const [
+        kbResponse,
+        modelsResponse,
+        agentsResponse,
+        workflowsResponse,
+        trendsResponse,
+        workflowStatsResponse,
+      ] = await Promise.all([
         knowledgeBasesApi.getKnowledgeBases({ pageSize: 1, teamId: currentTeam.id, ownOnly }),
         teamModelsApi.getTeamModels(currentTeam.id),
-        agentsApi.getAgents({ pageSize: 8, teamId: currentTeam.id, ownOnly }),
-        workflowsApi.getWorkflows({ pageSize: 8, teamId: currentTeam.id, ownOnly }),
-        conversationsApi.getTrends(currentTeam.id, '7d'),
+        agentsApi.getAgents({ pageSize: 5, teamId: currentTeam.id, ownOnly }),
+        workflowsApi.getWorkflows({ pageSize: 5, teamId: currentTeam.id, ownOnly }),
+        conversationsApi.getTrends(currentTeam.id, '7d', ownOnly),
+        workflowsApi.getWorkflowRunStats(currentTeam.id, '7d').catch(() => null),
       ])
 
-      // 计算总的对话数和消息数
-      const totalConversations = agentsResponse.items.reduce((sum, agent) => sum + (agent.conversation_count || 0), 0)
-      const totalMessages = agentsResponse.items.reduce((sum, agent) => sum + (agent.message_count || 0), 0)
-
-      // 计算总的 token 消耗（从趋势数据中累加）
+      // 近7天对话数、消息数、Token消耗：从7天趋势数据中累加，避免全表扫描性能瓶颈
+      const totalConversations = trendsResponse.data.reduce((sum, item) => sum + (item.conversations || 0), 0)
+      const totalMessages = trendsResponse.data.reduce((sum, item) => sum + (item.messages || 0), 0)
       const totalTokens = trendsResponse.data.reduce((sum, item) => sum + (item.tokens || 0), 0)
 
-      // 计算工作流成功率
-      const totalRuns = workflowsResponse.items.reduce((sum, wf) => sum + (wf.run_count || 0), 0)
-      const successRuns = workflowsResponse.items.reduce((sum, wf) => sum + (wf.success_count || 0), 0)
-      const successRate = totalRuns > 0 ? Math.round((successRuns / totalRuns) * 100) : 0
-
+      // 近7天工作流成功率：优先使用7天运行统计，回退使用工作流自身累计数
+      let successRate = 0
+      if (workflowStatsResponse && workflowStatsResponse.total_runs > 0) {
+        const completedRuns = (workflowStatsResponse.runs_by_status?.completed || 0) + (workflowStatsResponse.runs_by_status?.succeeded || 0)
+        successRate = Math.round((completedRuns / workflowStatsResponse.total_runs) * 100)
+      } else {
+        const totalRuns = workflowsResponse.items.reduce((sum, wf) => sum + (wf.run_count || 0), 0)
+        const successRuns = workflowsResponse.items.reduce((sum, wf) => sum + (wf.success_count || 0), 0)
+        successRate = totalRuns > 0 ? Math.round((successRuns / totalRuns) * 100) : 0
+      }
       setStats({
         knowledgeBases: kbResponse.total,
         models: modelsResponse.filter((m: TeamModel) => m.is_enabled).length,
@@ -370,7 +404,7 @@ export default function PlatformHomePage() {
         successRate,
       })
 
-      if (isTeamAdmin) {
+      if (activeScope === 'team') {
         const userNames: Record<string, string> = {}
         const userKeys = new Set<string>()
         const trendData = trendsResponse.data.map((item) => {
@@ -416,15 +450,15 @@ export default function PlatformHomePage() {
         })),
       ]
 
-      // 按更新时间排序，取前8个
+      // 按更新时间排序，取前5个
       recent.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-      setRecentItems(recent.slice(0, 8))
+      setRecentItems(recent.slice(0, 5))
     } catch (error) {
       console.error('Failed to fetch data:', error)
     } finally {
       setIsLoading(false)
     }
-  }, [currentTeam, isTeamAdmin, permissionsLoading])
+  }, [currentTeam, activeScope, permissionsLoading])
 
   React.useEffect(() => {
     if (currentTeam) {
@@ -449,13 +483,45 @@ export default function PlatformHomePage() {
   return (
     <div className="py-6 px-8 space-y-6">
       {/* Header */}
-      <div data-testid="platform-home-header" className="flex items-start justify-between">
+      <div data-testid="platform-home-header" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">{t('title')}</h1>
-          <p className="text-muted-foreground mt-1">{t('description')}</p>
+          <h1 className="text-3xl font-bold tracking-tight">
+            {(() => {
+              const period = getGreetingPeriod()
+              return user?.username
+                ? t(`greeting${period}`, { name: user.username })
+                : t(`greeting${period}Default`)
+            })()}
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            {t(`greeting${getGreetingPeriod()}Desc`)}
+          </p>
         </div>
+        {isTeamAdmin && (
+          <Tabs
+            value={scope}
+            onValueChange={(val) => setScope(val as 'personal' | 'team')}
+            data-testid="platform-home-scope-tabs"
+          >
+            <TabsList className="grid grid-cols-2 w-[220px]">
+              <TabsTrigger value="personal" className="gap-1.5 text-xs">
+                <UserIcon className="h-3.5 w-3.5" />
+                {t('stats.scopePersonal')}
+              </TabsTrigger>
+              <TabsTrigger value="team" className="gap-1.5 text-xs">
+                <Users className="h-3.5 w-3.5" />
+                {t('stats.scopeTeam')}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )}
       </div>
 
+      {/* Stats period indicator */}
+      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground" data-testid="platform-home-stats-period">
+        <Clock className="h-3.5 w-3.5" />
+        <span>{t('stats.last7Days')}</span>
+      </div>
       {/* Stats Grid */}
       <div data-testid="platform-home-stat-cards" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
@@ -473,7 +539,7 @@ export default function PlatformHomePage() {
           change={23}
         />
         <StatCard
-          title={t('stats.totalTokens')}
+          title={activeScope === 'team' ? `${t('stats.scopeTeam')} · ${t('stats.totalTokens')}` : t('stats.totalTokens')}
           value={stats.totalTokens}
           icon={Coins}
           isLoading={isLoading}
@@ -531,7 +597,7 @@ export default function PlatformHomePage() {
                         wrapperStyle={{ color: 'var(--chart-label)', cursor: 'pointer' }}
                         onClick={(entry) => toggleUsageSeries(entry.dataKey)}
                       />
-                      {isTeamAdmin ? (
+                      {activeScope === 'team' ? (
                         usageUserKeys.flatMap((userId, index) => [
                           <Area
                             key={`${userId}:conversations`}
@@ -599,44 +665,56 @@ export default function PlatformHomePage() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <div className="h-[250px] flex items-center justify-center">
+                <div className="h-[220px] flex items-center justify-center">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 </div>
-              ) : (
-                <ChartContainer config={resourceChartConfig} className="h-[250px] w-full aspect-auto">
-                  <BarChart
-                    accessibilityLayer
-                    data={[
-                      { category: t('stats.agents'), value: stats.agents },
-                      { category: t('stats.workflows'), value: stats.workflows },
-                      { category: t('stats.knowledgeBases'), value: stats.knowledgeBases },
-                      { category: t('stats.models'), value: stats.models },
-                    ]}
-                    margin={{
-                      left: 12,
-                      right: 12,
-                    }}
-                  >
-                    <CartesianGrid vertical={false} />
-                    <XAxis
-                      dataKey="category"
-                      tickLine={false}
-                      axisLine={false}
-                      tickMargin={8}
-                    />
-                    <ChartTooltip
-                      cursor={CHART_HOVER_CURSOR}
-                      content={<ChartTooltipContent />}
-                    />
-                    <Bar dataKey="value" radius={8}>
-                      <Cell fill="var(--chart-1)" />
-                      <Cell fill="var(--chart-2)" />
-                      <Cell fill="var(--chart-3)" />
-                      <Cell fill="var(--chart-4)" />
-                    </Bar>
-                  </BarChart>
-                </ChartContainer>
-              )}
+              ) : (() => {
+                const resourceData = [
+                  { category: t('stats.agents'), value: stats.agents, fill: 'var(--chart-1)' },
+                  { category: t('stats.workflows'), value: stats.workflows, fill: 'var(--chart-2)' },
+                  { category: t('stats.knowledgeBases'), value: stats.knowledgeBases, fill: 'var(--chart-3)' },
+                  { category: t('stats.models'), value: stats.models, fill: 'var(--chart-4)' },
+                ]
+                return (
+                  <ChartContainer config={resourceChartConfig} className="h-[200px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        layout="vertical"
+                        data={resourceData}
+                        margin={{ top: 10, right: 24, left: 12, bottom: 5 }}
+                      >
+                        <CartesianGrid horizontal={false} stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
+                        <XAxis
+                          type="number"
+                          tickLine={false}
+                          axisLine={false}
+                          className="text-xs"
+                          tick={{ fill: CHART_AXIS_COLOR }}
+                          allowDecimals={false}
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="category"
+                          tickLine={false}
+                          axisLine={false}
+                          className="text-xs"
+                          tick={{ fill: CHART_AXIS_COLOR }}
+                          width={80}
+                        />
+                        <ChartTooltip
+                          cursor={CHART_HOVER_CURSOR}
+                          content={<ChartTooltipContent />}
+                        />
+                        <Bar dataKey="value" radius={[0, 6, 6, 0]} barSize={20}>
+                          {resourceData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.fill} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </ChartContainer>
+                )
+              })()}
             </CardContent>
           </Card>
         </div>

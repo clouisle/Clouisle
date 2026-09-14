@@ -303,6 +303,7 @@ async def list_all_workflow_runs(
 @router.get("/runs/stats", response_model=Response[dict])
 async def get_workflow_run_stats(
     team_id: UUID | None = Query(None),
+    period: str | None = Query(None, description="Time period: 7d, 30d"),
     current_user: User = Depends(deps.PermissionChecker("workflow:read")),
 ) -> Any:
     """
@@ -340,11 +341,16 @@ async def get_workflow_run_stats(
             msg_key="workflow_run_stats_fetched",
         )
 
-    # Aggregate in the database, scoped strictly to the visibility-filtered
-    # ids resolved above. Previously every run of every accessible workflow
-    # was loaded into Python.
-    stats = await stats_sql.workflow_global_run_stats(workflow_ids)
+    start_time_utc = None
+    if period in ("7d", "30d"):
+        days = 30 if period == "30d" else 7
+        start_time_utc = to_utc(now() - timedelta(days=days))
 
+    # Aggregate in the database, scoped strictly to the visibility-filtered
+    # ids resolved above.
+    stats = await stats_sql.workflow_global_run_stats(
+        workflow_ids, start_time=start_time_utc
+    )
     workflow_map = {w.id: w for w in accessible_workflows}
     runs_by_workflow = []
     for top_workflow_id, count in stats["top_workflows"]:

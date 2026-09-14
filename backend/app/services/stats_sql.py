@@ -362,7 +362,9 @@ async def workflow_trend_buckets(
 
 
 async def workflow_global_run_stats(
-    workflow_ids: list[UUID], top_limit: int = 10
+    workflow_ids: list[UUID],
+    top_limit: int = 10,
+    start_time: datetime | None = None,
 ) -> dict[str, Any]:
     """Aggregate run stats across the caller's already-authorised workflows.
 
@@ -371,45 +373,44 @@ async def workflow_global_run_stats(
     """
     conn = _connection()
     ids = [str(workflow_id) for workflow_id in workflow_ids]
-
+    time_clause = " AND created_at >= $2" if start_time is not None else ""
+    base_params: list[Any] = [ids]
+    if start_time is not None:
+        base_params.append(start_time)
     status_rows = await conn.execute_query_dict(
-        """
+        f"""
         SELECT status, COUNT(*) AS count
         FROM workflow_runs
-        WHERE workflow_id = ANY($1::uuid[])
+        WHERE workflow_id = ANY($1::uuid[]){time_clause}
         GROUP BY status
         """,
-        [ids],
+        base_params,
     )
-
     top_rows = await conn.execute_query_dict(
-        """
+        f"""
         SELECT workflow_id, COUNT(*) AS count
         FROM workflow_runs
-        WHERE workflow_id = ANY($1::uuid[]) AND workflow_id IS NOT NULL
+        WHERE workflow_id = ANY($1::uuid[]) AND workflow_id IS NOT NULL{time_clause}
         GROUP BY workflow_id
         ORDER BY count DESC
-        LIMIT $2
+        LIMIT ${len(base_params) + 1}
         """,
-        [ids, top_limit],
+        [*base_params, top_limit],
     )
-
-    # Distinct from the per-workflow endpoint: this average is measured from
     # the started/finished wall clock and only over SUCCESS runs. The integer
     # truncation matches the previous ``//`` division.
     duration_rows = await conn.execute_query_dict(
-        """
+        f"""
         SELECT AVG(EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000)
                    AS avg_duration_ms
         FROM workflow_runs
         WHERE workflow_id = ANY($1::uuid[])
           AND status = 'success'
           AND started_at IS NOT NULL
-          AND finished_at IS NOT NULL
+          AND finished_at IS NOT NULL{time_clause}
         """,
-        [ids],
+        base_params,
     )
-
     avg_raw = duration_rows[0]["avg_duration_ms"] if duration_rows else None
     return {
         "runs_by_status": {row["status"]: int(row["count"]) for row in status_rows},
