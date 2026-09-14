@@ -23,6 +23,7 @@ from app.llm.types import (
     FunctionDefinition,
 )
 from app.models.agent import Agent, AgentKnowledgeBase, RAGMode
+from app.models.tool import Tool
 from app.schemas.response import BusinessError
 from app.services.system_prompt import WORKFLOW_MODE, build_system_prompt
 
@@ -456,8 +457,36 @@ class AgentService:
                     except Exception as e:
                         logger.warning("Failed to get skill tool %s: %s", skill_id, e)
             elif tool_type == "mcp":
-                # MCP server tools - would need MCP integration
-                pass
+                tool_id = tool_cfg.get("server_id") or tool_cfg.get("tool_id")
+                if not tool_id:
+                    continue
+                try:
+                    from app.llm.tools.mcp_client import list_mcp_tools
+
+                    mcp_server = await Tool.filter(id=tool_id, is_enabled=True).first()
+                    if not mcp_server or not mcp_server.mcp_config:
+                        continue
+                    for mcp_tool in await list_mcp_tools(mcp_server.mcp_config):
+                        tools.append(
+                            ToolDefinition(
+                                type="function",
+                                function=FunctionDefinition(
+                                    name=f"mcp_{mcp_server.name}_{mcp_tool.name}",
+                                    description=mcp_tool.description
+                                    or f"MCP tool: {mcp_tool.name}",
+                                    parameters=mcp_tool.parameters
+                                    or {
+                                        "type": "object",
+                                        "properties": {},
+                                        "required": [],
+                                    },
+                                ),
+                            )
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "Failed to get MCP tools for agent from %s: %s", tool_id, e
+                    )
 
         if agent.enable_image_generation:
             media_tool = self._get_builtin_tool("generate_image")
@@ -527,6 +556,37 @@ class AgentService:
                 f"Failed to parse tool arguments: {tool_call.function.arguments}"
             )
             return {"error": t("invalid_tool_arguments")}
+        if tool_name.startswith("mcp_"):
+            from app.llm.tools.mcp_client import execute_mcp_tool
+
+            for tool_cfg in agent.tools_config or []:
+                if not isinstance(tool_cfg, dict) or tool_cfg.get("type") != "mcp":
+                    continue
+                tool_id = tool_cfg.get("server_id") or tool_cfg.get("tool_id")
+                if not tool_id:
+                    continue
+                mcp_server = await Tool.filter(id=tool_id, is_enabled=True).first()
+                if not mcp_server or not mcp_server.mcp_config:
+                    continue
+                prefix = f"mcp_{mcp_server.name}_"
+                if not tool_name.startswith(prefix):
+                    continue
+                result = await execute_mcp_tool(
+                    mcp_config=mcp_server.mcp_config,
+                    tool_name=tool_name[len(prefix) :],
+                    arguments=arguments,
+                )
+                return {
+                    "success": result.success,
+                    "result": result.result,
+                    "error": result.error,
+                }
+
+            return {
+                "error": t("tool_not_found"),
+                "tool_name": tool_name,
+                "success": False,
+            }
 
         if tool_name.startswith("skill_"):
             from app.services.skill import SkillService

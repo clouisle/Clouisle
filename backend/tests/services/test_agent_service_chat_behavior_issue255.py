@@ -142,6 +142,76 @@ async def test_get_agent_tools_combines_configured_media_and_agentic_tools():
 
 
 @pytest.mark.anyio
+async def test_get_agent_tools_discovers_configured_mcp_server_tools():
+    service = AgentService()
+    agent = _agent(tools_config=[{"type": "mcp", "server_id": "server-1"}])
+    server = SimpleNamespace(
+        name="browser_server",
+        mcp_config={"transport": "stdio", "command": "npx", "args": ["-y"]},
+    )
+    query = SimpleNamespace(first=AsyncMock(return_value=server))
+    mcp_tools = [
+        SimpleNamespace(
+            name="click",
+            description="Click an element",
+            parameters={
+                "type": "object",
+                "properties": {"ref": {"type": "string"}},
+                "required": ["ref"],
+            },
+        )
+    ]
+
+    with (
+        patch("app.services.agent.Tool.filter", return_value=query),
+        patch(
+            "app.llm.tools.mcp_client.list_mcp_tools",
+            new=AsyncMock(return_value=mcp_tools),
+        ) as list_tools,
+    ):
+        tools = await service._get_agent_tools(agent)
+
+    assert [tool.function.name for tool in tools] == ["mcp_browser_server_click"]
+    assert tools[0].function.parameters["required"] == ["ref"]
+    list_tools.assert_awaited_once_with(server.mcp_config)
+
+
+@pytest.mark.anyio
+async def test_execute_tool_dispatches_configured_mcp_tool_with_arguments():
+    service = AgentService()
+    agent = _agent(tools_config=[{"type": "mcp", "server_id": "server-1"}])
+    server = SimpleNamespace(
+        name="browser_server",
+        mcp_config={"transport": "stdio", "command": "npx"},
+    )
+    query = SimpleNamespace(first=AsyncMock(return_value=server))
+    tool_call = ToolCall(
+        id="call-mcp",
+        function={
+            "name": "mcp_browser_server_click",
+            "arguments": '{"ref":"button-1"}',
+        },
+    )
+    mcp_result = SimpleNamespace(success=True, result="clicked", error=None)
+
+    with (
+        patch("app.services.agent.Tool.filter", return_value=query),
+        patch(
+            "app.llm.tools.mcp_client.execute_mcp_tool",
+            new=AsyncMock(return_value=mcp_result),
+        ) as execute,
+    ):
+        result = await service._execute_tool(agent, tool_call)
+
+    assert result == {"success": True, "result": "clicked", "error": None}
+    execute.assert_awaited_once_with(
+        mcp_config=server.mcp_config,
+        tool_name="click",
+        arguments={"ref": "button-1"},
+    )
+
+
+@pytest.mark.anyio
 async def test_execute_tool_handles_invalid_unknown_and_configured_calls():
     service = AgentService()
     agent = _agent()
