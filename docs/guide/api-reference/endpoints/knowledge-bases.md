@@ -679,6 +679,17 @@ POST /api/v1/knowledge-bases/{kb_id}/documents/{document_id}/rechunk
 
 Chunk list responses use `items`, `total`, `page`, and `page_size`. Create/update requests use `{"content": "..."}`; `rechunk` accepts `chunk_size`, `chunk_overlap`, and optional `separator`. Chunk endpoints require JWT KB read/update/delete permission according to the operation.
 
+## Document Media & Extracted Assets
+
+Retrieve image or media assets extracted from a document during parsing (such as embedded images in docx or markdown).
+
+```http
+GET /api/v1/knowledge-bases/{kb_id}/documents/{doc_id}/media/{filename} HTTP/1.1
+Authorization: Bearer <token>
+```
+
+Returns the binary file content with the appropriate `Content-Type` header (e.g. `image/png`, `image/jpeg`).
+
 ## Delete Document
 
 Delete a document from knowledge base.

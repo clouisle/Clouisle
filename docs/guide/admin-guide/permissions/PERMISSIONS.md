@@ -62,53 +62,52 @@ These permissions are for managing business resources. All users may have them, 
 |------|-------------|-----------------|
 | **Super Admin** | Super administrator | `*` (all permissions) |
 | **Admin** | Dashboard administrator | `admin:dashboard:access` + system read visibility + team-scoped resource management |
+| **Team Admin** | Team administrator | All Member permissions + `team:update` and `team:manage` |
 | **Member** | Collaborative member | Daily resource creation and editing without dashboard access |
 | **Viewer** | Default read/use-only user | Read/chat/run/execute permissions without dashboard access |
-
 ### 2.2 Role Permission Comparison
 
-| Permission | Super Admin | Admin | Member | Viewer |
-|------------|:-----------:|:-----:|:------:|:------:|
-| `*` | ✓ | | | |
-| `admin:dashboard:access` | ✓ | ✓ | | |
-| `admin:user:*` | ✓ | ✓ | | |
-| `admin:role:read` | ✓ | ✓ | | |
-| `admin:role:create/update/delete` | ✓ | | | |
-| `admin:permission:read` | ✓ | ✓ | | |
-| `admin:permission:create/update/delete` | ✓ | | | |
-| `admin:model:*` | ✓ | ✓ | | |
-| `admin:memory:read` | ✓ | ✓ | | |
-| `admin:conversation:read/delete` | ✓ | ✓ | | |
-| `admin:notification:create/delete` | ✓ | ✓ | | |
-| `admin:settings:read` | ✓ | ✓ | | |
-| `admin:settings:update` | ✓ | | | |
-| `admin:sso:read` | ✓ | ✓ | | |
-| `admin:sso:update` | ✓ | | | |
-| `audit:read` | ✓ | ✓ | | |
-| `audit:export` | ✓ | ✓ | | |
-| `team:read` | ✓ | ✓ | ✓ | ✓ |
-| `team:create/update/manage` | ✓ | ✓ | | |
-| `team:delete` | ✓ | ✓ | | |
-| `agent:read/chat` | ✓ | ✓ | ✓ | ✓ |
-| `agent:create/update` | ✓ | ✓ | ✓ | |
-| `agent:delete/publish` | ✓ | ✓ | | |
-| `workflow:read/run` | ✓ | ✓ | ✓ | ✓ |
-| `workflow:create/update` | ✓ | ✓ | ✓ | |
-| `workflow:delete/publish` | ✓ | ✓ | | |
-| `workflow:execute` | ✓ | ✓ | | |
-| `kb:read` | ✓ | ✓ | ✓ | ✓ |
-| `kb:test` | ✓ | ✓ | ✓ | ✓ |
-| `kb:create/update` | ✓ | ✓ | ✓ | |
-| `kb:delete` | ✓ | ✓ | ✓ | |
-| `tool:read/execute` | ✓ | ✓ | ✓ | ✓ |
-| `tool:create/update/delete` | ✓ | ✓ | ✓ | |
-| `skill:read/execute` | ✓ | ✓ | ✓ | ✓ |
-| `skill:create/update/delete` | ✓ | ✓ | ✓ | |
-| `apikey:read` | ✓ | ✓ | ✓ | |
-| `apikey:create/update/delete` | ✓ | ✓ | ✓ | |
-| `conversation:read` | ✓ | ✓ | ✓ | ✓ |
-| `conversation:delete` | ✓ | ✓ | ✓ | |
-
+| Permission | Super Admin | Admin | Team Admin | Member | Viewer |
+|------------|:-----------:|:-----:|:----------:|:------:|:------:|
+| `*` | ✓ | | | | |
+| `admin:dashboard:access` | ✓ | ✓ | | | |
+| `admin:user:*` | ✓ | ✓ | | | |
+| `admin:role:read` | ✓ | ✓ | | | |
+| `admin:role:create/update/delete` | ✓ | | | | |
+| `admin:permission:read` | ✓ | ✓ | | | |
+| `admin:permission:create/update/delete` | ✓ | | | | |
+| `admin:model:*` | ✓ | ✓ | | | |
+| `admin:memory:read` | ✓ | ✓ | | | |
+| `admin:conversation:read/delete` | ✓ | ✓ | | | |
+| `admin:notification:create/delete` | ✓ | ✓ | | | |
+| `admin:settings:read` | ✓ | ✓ | | | |
+| `admin:settings:update` | ✓ | | | | |
+| `admin:sso:read` | ✓ | ✓ | | | |
+| `admin:sso:update` | ✓ | | | | |
+| `audit:read` | ✓ | ✓ | | | |
+| `audit:export` | ✓ | ✓ | | | |
+| `team:read` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `team:create/update/manage` | ✓ | ✓ | ✓ (`update`/`manage`) | | |
+| `team:delete` | ✓ | ✓ | | | |
+| `agent:read/chat` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `agent:create/update` | ✓ | ✓ | ✓ | ✓ | |
+| `agent:delete/publish` | ✓ | ✓ | | | |
+| `workflow:read/run` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `workflow:create/update` | ✓ | ✓ | ✓ | ✓ | |
+| `workflow:delete/publish` | ✓ | ✓ | | | |
+| `workflow:execute` | ✓ | ✓ | | | |
+| `kb:read` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `kb:test` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `kb:create/update` | ✓ | ✓ | ✓ | ✓ | |
+| `kb:delete` | ✓ | ✓ | ✓ | ✓ | |
+| `tool:read/execute` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `tool:create/update/delete` | ✓ | ✓ | ✓ | ✓ | |
+| `skill:read/execute` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `skill:create/update/delete` | ✓ | ✓ | ✓ | ✓ | |
+| `apikey:read` | ✓ | ✓ | ✓ | ✓ | |
+| `apikey:create/update/delete` | ✓ | ✓ | ✓ | ✓ | |
+| `conversation:read` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `conversation:delete` | ✓ | ✓ | ✓ | ✓ | |
 ### 2.3 Default Assignment
 
 New users receive the configured default global role. During system initialization, `default_role_id` is set to the global **Viewer** role when no default exists.

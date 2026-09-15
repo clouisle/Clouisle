@@ -9,10 +9,11 @@ Clouisle provides fine-grained Role-Based Access Control (RBAC) allowing workspa
 Navigate to **System Settings > Roles** (`/roles`):
 
 1. **System Built-in Roles**:
-   - `Superuser`: Unrestricted platform-wide administrative control.
-   - `Admin`: Workspace-level administration (models, teams, audit logs, system settings).
-   - `Member`: Standard collaborative user who can create and use agents, workflows, and knowledge bases.
-   - `Viewer`: Read-only access to published resources.
+   - `Super Admin`: Full system control with wildcard (`*`) bypass permissions.
+   - `Admin`: Workspace-level administration (`admin:dashboard:access`, system read access, and team-scoped resource management).
+   - `Team Admin`: Team administrator role with all Member permissions plus `team:update` and `team:manage` capabilities.
+   - `Member`: Standard collaborative user who can create, edit, and execute team resources without dashboard access.
+   - `Viewer`: Default read-only role with execute permissions (`agent:chat`, `workflow:run`, `tool:execute`, `skill:execute`, `conversation:read`).
 2. **Creating Custom Roles**:
    - Click **Create Role**, provide a unique code and display name.
    - Select individual permissions across scopes (`agent:*`, `workflow:*`, `kb:*`, `tool:*`, `model:*`, `audit:*`).

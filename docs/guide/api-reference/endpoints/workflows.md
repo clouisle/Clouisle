@@ -432,6 +432,69 @@ Execution is always asynchronous: the run is submitted to Celery and the endpoin
 }
 ```
 
+
+## Duplicate Workflow
+
+Duplicate an existing workflow within its team, creating a draft copy of its nodes, edges, configs, and variables.
+
+### Endpoint
+
+```
+POST /api/v1/workflows/{workflow_id}/duplicate
+```
+
+### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `workflow_id` | string | Yes | Workflow UUID to duplicate |
+
+### Response
+
+Returns the duplicated `WorkflowOut` object (`200 OK`) in `draft` status.
+
+## Workflow Run Statistics & Trends
+
+### Overall Runs Statistics
+
+Retrieve aggregated run statistics across accessible workflows:
+
+```http
+GET /api/v1/workflows/runs/stats?team_id={team_id}&period=7d HTTP/1.1
+Authorization: Bearer <token>
+```
+
+### Single Workflow Overview & Trends
+
+```http
+GET /api/v1/workflows/{workflow_id}/stats HTTP/1.1
+GET /api/v1/workflows/{workflow_id}/stats/trends?period=7d HTTP/1.1
+Authorization: Bearer <token>
+```
+
+## Human-in-the-Loop Pause Requests
+
+When a workflow hits a human approval or user input pause node during execution:
+
+### Get Pending Pause Request
+
+```http
+GET /api/v1/workflows/{workflow_id}/runs/{run_id}/pause-request HTTP/1.1
+Authorization: Bearer <token>
+```
+
+### Submit Pause Request Response
+
+```http
+POST /api/v1/workflows/{workflow_id}/runs/{run_id}/pause-requests/{pause_request_id}/submit HTTP/1.1
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "action": "approve",
+  "inputs": {"comments": "Looks good"}
+}
+```
 Progress is available via `GET /api/v1/workflows/runs/{run_id}/stream` (SSE, optional `from_sequence` query parameter) and `GET /api/v1/workflows/runs/{run_id}`. The SSE stream requires an authenticated user with access to the workflow; a webhook token or stream URL is not a public authorization mechanism.
 
 ## Get Execution Status
