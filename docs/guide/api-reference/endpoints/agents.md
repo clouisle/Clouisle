@@ -582,6 +582,83 @@ The unpublish endpoint returns the full `AgentOut` object (`200 OK`). The abbrev
 }
 ```
 
+## Duplicate Agent
+
+Duplicate an existing agent within its team, copying configurations with a modified name. The following are duplicated:
+
+- **Prompts**: System prompt, opening message, suggested questions, powered-by text
+- **Configurations**: Tools, attachments, memory, context compression, RAG mode, variables, iteration limits
+- **Media generation**: Image and video generation settings, **except** `allow_model_override` is removed from both configs for security
+- **Knowledge bases**: All knowledge base associations with retrieval settings
+
+The duplicated agent is always created as **PRIVATE** visibility and **DRAFT** status.
+
+### Endpoint
+
+```
+POST /api/v1/agents/{agent_id}/duplicate
+```
+
+### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent_id` | string | Yes | Agent UUID to duplicate |
+
+### Request Example
+
+```bash
+curl -X POST "https://your-domain.com/api/v1/agents/550e8400-e29b-41d4-a716-446655440000/duplicate" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Response
+
+Returns the newly created `AgentOut` object (`200 OK`) with status `draft`.
+
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "new-agent-uuid",
+    "name": "Customer Support Agent (Copy)",
+    "status": "draft",
+    "visibility": "private"
+  },
+  "msg": "Agent duplicated successfully"
+}
+```
+
+## Get Agent Video Generation Status
+
+Check the polling status and generated media results of an asynchronous video generation task started by an agent.
+
+### Endpoint
+
+```
+GET /api/v1/agents/{agent_id}/media/video-status?task_id={task_id}
+```
+
+### Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `task_id` | string | Yes | Video generation task ID |
+
+### Response
+
+```json
+{
+  "code": 0,
+  "data": {
+    "task_id": "video-task-uuid",
+    "status": "succeeded",
+    "video_url": "https://example.com/videos/output.mp4"
+  },
+  "msg": "success"
+}
+```
+
 ## Chat with Agent
 
 Send a message to an agent and receive a response.

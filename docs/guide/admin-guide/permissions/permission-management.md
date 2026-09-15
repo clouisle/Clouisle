@@ -137,6 +137,22 @@ Permissions:
   - conversation:read/delete
 ```
 
+**Team Admin:**
+```yaml
+Name: Team Admin
+Type: System
+Description: Team administrator role with all Member permissions plus team settings and member management
+Permissions:
+  - team:read/update/manage
+  - agent:read/create/update/chat
+  - workflow:read/create/update/run
+  - kb:read/test/create/update/delete
+  - tool:read/create/update/delete/execute
+  - skill:read/create/update/delete/execute
+  - apikey:read/create/update/delete
+  - conversation:read/delete
+```
+
 **Viewer:**
 ```yaml
 Name: Viewer

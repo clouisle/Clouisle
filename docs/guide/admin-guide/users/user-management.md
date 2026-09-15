@@ -391,9 +391,9 @@ There is no "reset password to a temporary password" flow. Administrators manage
 |------|-------------|
 | **Super Admin** | All permissions (`*`) |
 | **Admin** | Dashboard access, system read visibility, team-scoped resource management |
+| **Team Admin** | Team administrator role with all Member permissions plus `team:update` and `team:manage` |
 | **Member** | Daily resource creation and editing without dashboard access |
 | **Viewer** | Default read-only role with chat/run/execute permissions |
-
 **Changing user role:**
 
 1. Open user details

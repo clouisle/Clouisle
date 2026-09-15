@@ -60,53 +60,52 @@
 |------|------|---------|
 | **Super Admin** | 超级管理员 | `*`（所有权限） |
 | **Admin** | 管理员 | `admin:dashboard:access` + 系统读权限 + 团队作用域资源管理 |
+| **Team Admin** | 团队管理员 | 包含所有 Member 权限 + `team:update` 和 `team:manage` |
 | **Member** | 成员 | 日常资源创建与编辑（无后台访问） |
 | **Viewer** | 查看者 | 默认只读用户，具备 chat/run/execute 权限 |
-
 ### 2.2 角色权限对比
 
-| 权限 | Super Admin | Admin | Member | Viewer |
-|------|:-----------:|:-----:|:------:|:------:|
-| `*` | ✓ | | | |
-| `admin:dashboard:access` | ✓ | ✓ | | |
-| `admin:user:*` | ✓ | ✓ | | |
-| `admin:role:read` | ✓ | ✓ | | |
-| `admin:role:create/update/delete` | ✓ | | | |
-| `admin:permission:read` | ✓ | ✓ | | |
-| `admin:permission:create/update/delete` | ✓ | | | |
-| `admin:model:*` | ✓ | ✓ | | |
-| `admin:memory:read` | ✓ | ✓ | | |
-| `admin:conversation:read/delete` | ✓ | ✓ | | |
-| `admin:notification:create/delete` | ✓ | ✓ | | |
-| `admin:settings:read` | ✓ | ✓ | | |
-| `admin:settings:update` | ✓ | | | |
-| `admin:sso:read` | ✓ | ✓ | | |
-| `admin:sso:update` | ✓ | | | |
-| `audit:read` | ✓ | ✓ | | |
-| `audit:export` | ✓ | ✓ | | |
-| `team:read` | ✓ | ✓ | ✓ | ✓ |
-| `team:create/update/manage` | ✓ | ✓ | | |
-| `team:delete` | ✓ | ✓ | | |
-| `agent:read/chat` | ✓ | ✓ | ✓ | ✓ |
-| `agent:create/update` | ✓ | ✓ | ✓ | |
-| `agent:delete/publish` | ✓ | ✓ | | |
-| `workflow:read/run` | ✓ | ✓ | ✓ | ✓ |
-| `workflow:create/update` | ✓ | ✓ | ✓ | |
-| `workflow:delete/publish` | ✓ | ✓ | | |
-| `workflow:execute` | ✓ | ✓ | | |
-| `kb:read` | ✓ | ✓ | ✓ | ✓ |
-| `kb:test` | ✓ | ✓ | ✓ | ✓ |
-| `kb:create/update` | ✓ | ✓ | ✓ | |
-| `kb:delete` | ✓ | ✓ | ✓ | |
-| `tool:read/execute` | ✓ | ✓ | ✓ | ✓ |
-| `tool:create/update/delete` | ✓ | ✓ | ✓ | |
-| `skill:read/execute` | ✓ | ✓ | ✓ | ✓ |
-| `skill:create/update/delete` | ✓ | ✓ | ✓ | |
-| `apikey:read` | ✓ | ✓ | ✓ | |
-| `apikey:create/update/delete` | ✓ | ✓ | ✓ | |
-| `conversation:read` | ✓ | ✓ | ✓ | ✓ |
-| `conversation:delete` | ✓ | ✓ | ✓ | |
-
+| 权限 | Super Admin | Admin | Team Admin | Member | Viewer |
+|------|:-----------:|:-----:|:----------:|:------:|:------:|
+| `*` | ✓ | | | | |
+| `admin:dashboard:access` | ✓ | ✓ | | | |
+| `admin:user:*` | ✓ | ✓ | | | |
+| `admin:role:read` | ✓ | ✓ | | | |
+| `admin:role:create/update/delete` | ✓ | | | | |
+| `admin:permission:read` | ✓ | ✓ | | | |
+| `admin:permission:create/update/delete` | ✓ | | | | |
+| `admin:model:*` | ✓ | ✓ | | | |
+| `admin:memory:read` | ✓ | ✓ | | | |
+| `admin:conversation:read/delete` | ✓ | ✓ | | | |
+| `admin:notification:create/delete` | ✓ | ✓ | | | |
+| `admin:settings:read` | ✓ | ✓ | | | |
+| `admin:settings:update` | ✓ | | | | |
+| `admin:sso:read` | ✓ | ✓ | | | |
+| `admin:sso:update` | ✓ | | | | |
+| `audit:read` | ✓ | ✓ | | | |
+| `audit:export` | ✓ | ✓ | | | |
+| `team:read` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `team:create/update/manage` | ✓ | ✓ | ✓ (`update`/`manage`) | | |
+| `team:delete` | ✓ | ✓ | | | |
+| `agent:read/chat` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `agent:create/update` | ✓ | ✓ | ✓ | ✓ | |
+| `agent:delete/publish` | ✓ | ✓ | | | |
+| `workflow:read/run` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `workflow:create/update` | ✓ | ✓ | ✓ | ✓ | |
+| `workflow:delete/publish` | ✓ | ✓ | | | |
+| `workflow:execute` | ✓ | ✓ | | | |
+| `kb:read` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `kb:test` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `kb:create/update` | ✓ | ✓ | ✓ | ✓ | |
+| `kb:delete` | ✓ | ✓ | ✓ | ✓ | |
+| `tool:read/execute` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `tool:create/update/delete` | ✓ | ✓ | ✓ | ✓ | |
+| `skill:read/execute` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `skill:create/update/delete` | ✓ | ✓ | ✓ | ✓ | |
+| `apikey:read` | ✓ | ✓ | ✓ | ✓ | |
+| `apikey:create/update/delete` | ✓ | ✓ | ✓ | ✓ | |
+| `conversation:read` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `conversation:delete` | ✓ | ✓ | ✓ | ✓ | |
 ---
 
 ## 三、数据可见性与隔离
