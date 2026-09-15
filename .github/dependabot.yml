@@ -20,6 +20,10 @@ updates:
         patterns:
           - "react*"
           - "@types/react*"
+      next:
+        patterns:
+          - "next"
+          - "eslint-config-next"
   # Maintain GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
