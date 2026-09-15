@@ -7,8 +7,10 @@ from typing import Any, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
+from tortoise.expressions import Q
 
 from app.api import deps
+from app.api.team_access import check_team_permission
 from app.core.i18n import t, get_default_language, resolve_language
 from app.models.user import Team, TeamMember, User
 from app.models.notification import AutoNotificationType
@@ -30,7 +32,7 @@ from app.schemas.response import (
 )
 from app.services.audit_log import AuditLogService
 from app.services.auto_notification import AutoNotificationService
-from app.services.team_role_sync import sync_user_role_from_teams
+
 
 router = APIRouter()
 
@@ -64,23 +66,8 @@ async def get_team(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Get team by ID with members list."""
-    await deps.check_scoped_permission(current_user, "team:read", "team", team_id)
-    team = await Team.filter(id=team_id).prefetch_related("owner").first()
-    if not team:
-        raise BusinessError(
-            code=ResponseCode.TEAM_NOT_FOUND,
-            msg_key="team_not_found",
-            status_code=404,
-        )
-
-    if not current_user.is_superuser:
-        membership = await TeamMember.filter(team=team, user=current_user).first()
-        if not membership:
-            raise BusinessError(
-                code=ResponseCode.NOT_TEAM_MEMBER,
-                msg_key="not_team_member",
-                status_code=403,
-            )
+    team = await check_team_permission(team_id, current_user, "team:read")
+    team = await Team.filter(id=team.id).prefetch_related("owner").first()
 
     memberships = await TeamMember.filter(team=team).prefetch_related("user")
     members = []
@@ -121,28 +108,13 @@ async def update_team(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Update team info. Only owner or admin can update."""
-    await deps.check_scoped_permission(current_user, "team:update", "team", team_id)
-    team = await Team.filter(id=team_id).first()
-    if not team:
-        raise BusinessError(
-            code=ResponseCode.TEAM_NOT_FOUND,
-            msg_key="team_not_found",
-            status_code=404,
-        )
-
+    team = await check_team_permission(
+        team_id,
+        current_user,
+        "team:update",
+        require_team_admin=True,
+    )
     audit_before = AuditLogService.snapshot(team, "team")
-
-    if not current_user.is_superuser:
-        membership = await TeamMember.filter(team=team, user=current_user).first()
-        if not membership or membership.role not in [
-            TeamMemberRole.OWNER,
-            TeamMemberRole.ADMIN,
-        ]:
-            raise BusinessError(
-                code=ResponseCode.TEAM_ADMIN_REQUIRED,
-                msg_key="team_admin_required",
-                status_code=403,
-            )
 
     updated_fields = []
     if team_in.name is not None:
@@ -193,28 +165,26 @@ async def add_team_member(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Add a member to the team. Only owner or admin can add members."""
-    await deps.check_scoped_permission(current_user, "team:manage", "team", team_id)
-    team = await Team.filter(id=team_id).first()
-    if not team:
+    team = await check_team_permission(
+        team_id,
+        current_user,
+        "team:manage",
+        require_team_admin=True,
+    )
+
+    if member_in.user_id:
+        user_query = User.filter(id=member_in.user_id)
+    elif member_in.identifier and member_in.identifier.strip():
+        ident = member_in.identifier.strip()
+        user_query = User.filter(Q(username=ident) | Q(email__iexact=ident))
+    else:
         raise BusinessError(
-            code=ResponseCode.TEAM_NOT_FOUND,
-            msg_key="team_not_found",
-            status_code=404,
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="invalid_input",
+            status_code=400,
         )
 
-    if not current_user.is_superuser:
-        membership = await TeamMember.filter(team=team, user=current_user).first()
-        if not membership or membership.role not in [
-            TeamMemberRole.OWNER,
-            TeamMemberRole.ADMIN,
-        ]:
-            raise BusinessError(
-                code=ResponseCode.TEAM_ADMIN_REQUIRED,
-                msg_key="team_admin_required",
-                status_code=403,
-            )
-
-    user_to_add = await User.filter(id=member_in.user_id).first()
+    user_to_add = await user_query.prefetch_related("roles__permissions").first()
     if not user_to_add:
         raise BusinessError(
             code=ResponseCode.USER_NOT_FOUND,
@@ -227,6 +197,16 @@ async def add_team_member(
         raise BusinessError(
             code=ResponseCode.ALREADY_TEAM_MEMBER,
             msg_key="already_team_member",
+        )
+
+    if member_in.role == TeamMemberRole.ADMIN and not deps.user_has_global_permission(
+        user_to_add, "team:manage"
+    ):
+        raise BusinessError(
+            code=ResponseCode.PERMISSION_DENIED,
+            msg_key="operation_not_permitted",
+            status_code=403,
+            permission="team:manage",
         )
 
     if member_in.role == TeamMemberRole.OWNER:
@@ -285,8 +265,6 @@ async def add_team_member(
         ),
     )
 
-    await sync_user_role_from_teams(user_to_add)
-
     return success(
         data={
             "id": new_member.id,
@@ -310,27 +288,26 @@ async def update_team_member(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Update member role. Only owner can change roles."""
-    await deps.check_scoped_permission(current_user, "team:manage", "team", team_id)
-    team = await Team.filter(id=team_id).first()
-    if not team:
-        raise BusinessError(
-            code=ResponseCode.TEAM_NOT_FOUND,
-            msg_key="team_not_found",
-            status_code=404,
-        )
-
+    team = await check_team_permission(
+        team_id,
+        current_user,
+        "team:manage",
+        require_team_admin=True,
+    )
     if not current_user.is_superuser:
         current_membership = await TeamMember.filter(
             team=team, user=current_user
         ).first()
-        if not current_membership or current_membership.role != TeamMemberRole.OWNER:
+        if current_membership.role != TeamMemberRole.OWNER:
             raise BusinessError(
                 code=ResponseCode.TEAM_OWNER_REQUIRED,
                 msg_key="team_owner_required",
                 status_code=403,
             )
 
-    target_user = await User.filter(id=user_id).first()
+    target_user = (
+        await User.filter(id=user_id).prefetch_related("roles__permissions").first()
+    )
     if not target_user:
         raise BusinessError(
             code=ResponseCode.USER_NOT_FOUND,
@@ -352,6 +329,15 @@ async def update_team_member(
             msg_key="cannot_change_owner_role",
         )
 
+    if member_in.role == TeamMemberRole.ADMIN and not deps.user_has_global_permission(
+        target_user, "team:manage"
+    ):
+        raise BusinessError(
+            code=ResponseCode.PERMISSION_DENIED,
+            msg_key="operation_not_permitted",
+            status_code=403,
+            permission="team:manage",
+        )
     if member_in.role == TeamMemberRole.OWNER:
         raise BusinessError(
             code=ResponseCode.CANNOT_PROMOTE_TO_OWNER,
@@ -376,8 +362,6 @@ async def update_team_member(
         ),
     )
 
-    await sync_user_role_from_teams(target_user)
-
     return success(
         data={
             "id": membership.id,
@@ -401,15 +385,12 @@ async def remove_team_member(
 ) -> Any:
     """Remove a member from the team."""
     is_self = str(user_id) == str(current_user.id)
-    if not is_self:
-        await deps.check_scoped_permission(current_user, "team:manage", "team", team_id)
-    team = await Team.filter(id=team_id).first()
-    if not team:
-        raise BusinessError(
-            code=ResponseCode.TEAM_NOT_FOUND,
-            msg_key="team_not_found",
-            status_code=404,
-        )
+    team = await check_team_permission(
+        team_id,
+        current_user,
+        "team:read" if is_self else "team:manage",
+        require_team_admin=not is_self,
+    )
 
     target_user = await User.filter(id=user_id).first()
     if not target_user:
@@ -432,20 +413,6 @@ async def remove_team_member(
             code=ResponseCode.CANNOT_REMOVE_OWNER,
             msg_key="cannot_remove_owner",
         )
-
-    if not is_self and not current_user.is_superuser:
-        current_membership = await TeamMember.filter(
-            team=team, user=current_user
-        ).first()
-        if not current_membership or current_membership.role not in [
-            TeamMemberRole.OWNER,
-            TeamMemberRole.ADMIN,
-        ]:
-            raise BusinessError(
-                code=ResponseCode.TEAM_ADMIN_REQUIRED,
-                msg_key="team_admin_required",
-                status_code=403,
-            )
 
     audit_before = AuditLogService.snapshot(membership, "team_member")
     await AuditLogService.log(
@@ -490,7 +457,6 @@ async def remove_team_member(
     )
 
     await membership.delete()
-    await sync_user_role_from_teams(target_user)
 
     return success(data={"user_id": str(user_id)}, msg_key="team_member_removed")
 
@@ -501,14 +467,7 @@ async def leave_team(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Leave a team. Owner cannot leave without transferring ownership first."""
-    await deps.check_scoped_permission(current_user, "team:read", "team", team_id)
-    team = await Team.filter(id=team_id).first()
-    if not team:
-        raise BusinessError(
-            code=ResponseCode.TEAM_NOT_FOUND,
-            msg_key="team_not_found",
-            status_code=404,
-        )
+    team = await check_team_permission(team_id, current_user, "team:read")
 
     membership = await TeamMember.filter(team=team, user=current_user).first()
     if not membership:
@@ -517,7 +476,6 @@ async def leave_team(
             msg_key="not_team_member",
             status_code=404,
         )
-
     if membership.role == TeamMemberRole.OWNER:
         raise BusinessError(
             code=ResponseCode.OWNER_CANNOT_LEAVE,
@@ -525,7 +483,6 @@ async def leave_team(
         )
 
     await membership.delete()
-    await sync_user_role_from_teams(current_user)
 
     return success(data={"team_id": str(team_id)}, msg_key="team_left")
 
@@ -542,18 +499,17 @@ async def transfer_ownership(
 
     Only current owner or superuser can do this.
     """
-    await deps.check_scoped_permission(current_user, "team:manage", "team", team_id)
-    team = await Team.filter(id=team_id).first()
-    if not team:
-        raise BusinessError(
-            code=ResponseCode.TEAM_NOT_FOUND,
-            msg_key="team_not_found",
-            status_code=404,
-        )
+    team = await check_team_permission(
+        team_id,
+        current_user,
+        "team:manage",
+        require_team_admin=True,
+    )
 
     current_membership = await TeamMember.filter(team=team, user=current_user).first()
-    if not current_user.is_superuser and (
-        not current_membership or current_membership.role != TeamMemberRole.OWNER
+    if (
+        not current_user.is_superuser
+        and current_membership.role != TeamMemberRole.OWNER
     ):
         raise BusinessError(
             code=ResponseCode.TEAM_OWNER_REQUIRED,
@@ -567,7 +523,11 @@ async def transfer_ownership(
         .first()
     )
 
-    new_owner = await User.filter(id=new_owner_id).first()
+    new_owner = (
+        await User.filter(id=new_owner_id)
+        .prefetch_related("roles__permissions")
+        .first()
+    )
     new_owner_membership = (
         await TeamMember.filter(team=team, user=new_owner).first()
         if new_owner
@@ -580,6 +540,13 @@ async def transfer_ownership(
             status_code=404,
         )
 
+    if not deps.user_has_global_permission(new_owner, "team:manage"):
+        raise BusinessError(
+            code=ResponseCode.PERMISSION_DENIED,
+            msg_key="operation_not_permitted",
+            status_code=403,
+            permission="team:manage",
+        )
     old_owner = previous_owner_membership.user if previous_owner_membership else None
     if old_owner and new_owner.id == old_owner.id:
         raise BusinessError(
@@ -629,8 +596,5 @@ async def transfer_ownership(
                 new_owner=new_owner.username,
             ),
         )
-        await sync_user_role_from_teams(old_owner)
-
-    await sync_user_role_from_teams(new_owner)
 
     return success(data=team, msg_key="ownership_transferred")

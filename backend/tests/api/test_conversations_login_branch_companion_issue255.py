@@ -5,6 +5,7 @@ from uuid import uuid4
 import jwt
 import pytest
 
+from app.api import conversation_access, team_access
 from app.api.v1.endpoints import conversations, login
 from app.schemas.response import BusinessError, ResponseCode
 
@@ -30,15 +31,14 @@ class Query:
 async def test_conversation_scope_helpers_cover_denied_and_role_paths():
     user = SimpleNamespace(id=uuid4(), is_superuser=False, roles=[])
     team = SimpleNamespace(id=uuid4())
-
-    with patch.object(conversations.Team, "filter", return_value=Query()):
+    with patch.object(team_access.Team, "filter", return_value=Query()):
         with pytest.raises(BusinessError) as exc_info:
             await conversations.check_team_access(team.id, user)
     assert exc_info.value.code == ResponseCode.TEAM_NOT_FOUND
 
     with (
-        patch.object(conversations.Team, "filter", return_value=Query(team)),
-        patch.object(conversations.TeamMember, "filter", return_value=Query()),
+        patch.object(team_access.Team, "filter", return_value=Query(team)),
+        patch.object(team_access.TeamMember, "filter", return_value=Query()),
     ):
         with pytest.raises(BusinessError) as exc_info:
             await conversations.check_team_access(team.id, user)
@@ -46,7 +46,7 @@ async def test_conversation_scope_helpers_cover_denied_and_role_paths():
 
     membership = SimpleNamespace(role="admin")
     with patch.object(
-        conversations.TeamMember, "filter", return_value=Query(membership)
+        conversation_access.TeamMember, "filter", return_value=Query(membership)
     ):
         assert await conversations.has_conversation_team_admin_access(user, team.id)
 

@@ -23,6 +23,11 @@
     "descriptionLabel": "Description",
     "descriptionPlaceholder": "Describe what this app does",
     "optional": "optional",
+    "visibilityLabel": "Visibility",
+    "visibility": {
+      "private": "Private",
+      "team": "Team"
+    },
     "comingSoon": "Coming Soon",
     "workflowComingSoon": "Workflow feature coming soon",
     "noApps": "No apps yet",

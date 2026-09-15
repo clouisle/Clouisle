@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-11T17:53:25.751Z
+// GENERATED — 2026-09-14T07:19:09.069Z
 // Source: i18n/en/apps.json
 export type AppsMessages = {
   apps: {
@@ -25,6 +25,11 @@ export type AppsMessages = {
     descriptionLabel: string
     descriptionPlaceholder: string
     optional: string
+    visibilityLabel: string
+    visibility: {
+      private: string
+      team: string
+    }
     comingSoon: string
     workflowComingSoon: string
     noApps: string

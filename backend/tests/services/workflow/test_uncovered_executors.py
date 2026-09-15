@@ -33,6 +33,9 @@ class TestKnowledgeExecutors:
                 return_value=SimpleNamespace(team_id="team")
             )
             filter_mock.return_value.first = AsyncMock(return_value=None)
+            filter_mock.return_value.prefetch_related.return_value = (
+                filter_mock.return_value
+            )
             result = await executor.execute(
                 {
                     "data": {
@@ -76,6 +79,9 @@ class TestKnowledgeExecutors:
                 return_value=SimpleNamespace(team_id="team")
             )
             filter_mock.return_value.first = AsyncMock(return_value=kb)
+            filter_mock.return_value.prefetch_related.return_value = (
+                filter_mock.return_value
+            )
             result = await executor.execute(
                 {
                     "data": {

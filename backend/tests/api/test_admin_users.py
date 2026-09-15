@@ -53,6 +53,9 @@ class _Query:
     async def all(self):
         return self.result
 
+    async def exists(self):
+        return bool(self.result)
+
     def __await__(self):
         async def resolve():
             return self.result
@@ -455,7 +458,7 @@ async def test_update_user_validates_password_before_persistence(fake_request, a
 @pytest.mark.anyio
 async def test_update_user_password_roles_audit_and_notification(fake_request, admin):
     target = _user()
-    role = SimpleNamespace(name="editor")
+    role = SimpleNamespace(name="editor", permissions=[])
     audit = AsyncMock()
     notify = AsyncMock()
 
@@ -463,6 +466,7 @@ async def test_update_user_password_roles_audit_and_notification(fake_request, a
         patch.object(users.User, "filter", return_value=_Query(target)),
         patch.object(users.Role, "filter", side_effect=[_Query(role), _Query(None)]),
         patch.object(users.User, "get", return_value=_Query(target)),
+        patch.object(users.TeamMember, "filter", return_value=_Query()),
         patch.object(users, "validate_password", AsyncMock(return_value=(True, []))),
         patch.object(users.security, "get_password_hash", return_value="hashed-value"),
         patch.object(users.AuditLogService, "log", audit),

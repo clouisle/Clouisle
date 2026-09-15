@@ -12,11 +12,15 @@ mock.module('react/jsx-dev-runtime', () => ({
 }))
 mock.module('@/components/layout/header', () => ({ Header }))
 mock.module('./_components', () => ({ APIKeysClient }))
+mock.module('@/components/auth/permission-guard', () => ({
+  RoutePermissionGuard: ({ children }: { children: unknown }) => children,
+}))
 
 const { default: APIKeysPage } = await import('./page')
 
 test('renders the API keys client inside the dashboard layout', () => {
-  const tree = APIKeysPage() as { props: Record<string, unknown> }
+  const guarded = APIKeysPage() as { props: Record<string, unknown> }
+  const tree = guarded.props.children as { props: Record<string, unknown> }
   const [header, content] = tree.props.children as Array<{ props: Record<string, unknown> }>
 
   expect(tree.props.className).toBe('flex h-full flex-col')

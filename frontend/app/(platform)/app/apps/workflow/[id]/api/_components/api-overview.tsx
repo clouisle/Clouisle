@@ -17,6 +17,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { type Workflow, type VariableDefinition } from '@/lib/api/workflows'
+import { PermissionGuard } from '@/components/permission-guard'
 
 interface ApiOverviewProps {
   workflow: Workflow
@@ -98,12 +99,14 @@ export function ApiOverview({ workflow, webhookUrl }: ApiOverviewProps) {
             <AlertCircle className="h-4 w-4" />
             <AlertDescription className="flex items-center justify-between gap-2">
               <span className="text-sm flex-1">{t('apiKeyHint')}</span>
-              <Link href="/api-keys" className="shrink-0">
-                <Button variant="outline" size="sm">
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  {t('manageApiKeys')}
-                </Button>
-              </Link>
+              <PermissionGuard permission="apikey:read">
+                <Link href="/app/api-keys" className="shrink-0">
+                  <Button variant="outline" size="sm">
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    {t('manageApiKeys')}
+                  </Button>
+                </Link>
+              </PermissionGuard>
             </AlertDescription>
           </Alert>
         </CardContent>

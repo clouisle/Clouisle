@@ -100,7 +100,7 @@ class TestToolNodeExecutorCompatibility:
         run.triggered_by_id = "user-1"
         run.workflow_id = "workflow-1"
 
-        tool = MagicMock()
+        tool = MagicMock(team_id="team-1")
         workflow = MagicMock()
         workflow.team_id = "team-1"
 
@@ -129,6 +129,37 @@ class TestToolNodeExecutorCompatibility:
             user_id="user-1",
             team_id="team-1",
         )
+
+    @pytest.mark.anyio
+    async def test_execute_hides_unshared_cross_team_tool(self):
+        node = {
+            "id": "tool_1",
+            "data": {"toolConfig": {"toolId": "tool-123"}},
+        }
+        context = MagicMock()
+        context.resolve_variable_ref = AsyncMock()
+        run = MagicMock(triggered_by_id="user-1", workflow_id="workflow-1")
+        workflow = MagicMock(team_id="team-1")
+        tool = MagicMock(id="tool-123", team_id="other-team")
+        tool.visibility = "team"
+        share_query = MagicMock()
+        share_query.exists = AsyncMock(return_value=False)
+
+        with (
+            patch("app.models.workflow.Workflow.filter") as workflow_filter,
+            patch("app.models.tool.Tool.filter") as tool_filter,
+            patch("app.models.tool.ToolShare.filter", return_value=share_query),
+            patch("app.services.tool.ToolExecutor.execute", new=AsyncMock()) as execute,
+        ):
+            workflow_filter.return_value.only.return_value.first = AsyncMock(
+                return_value=workflow
+            )
+            tool_filter.return_value.first = AsyncMock(return_value=tool)
+
+            result = await ToolNodeExecutor().execute(node, context, run)
+
+        assert result.error == "tool_not_found"
+        execute.assert_not_awaited()
 
     @pytest.mark.anyio
     async def test_execute_reads_legacy_tool_config(self):

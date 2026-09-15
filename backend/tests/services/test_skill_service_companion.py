@@ -17,27 +17,30 @@ def query(value):
 @pytest.mark.anyio
 async def test_team_access_covers_missing_membership_role_and_superuser():
     team = SimpleNamespace()
-    regular = SimpleNamespace(is_superuser=False)
+    regular = SimpleNamespace(
+        is_superuser=False,
+        roles=[SimpleNamespace(permissions=[SimpleNamespace(code="team:read")])],
+    )
 
     with (
-        patch("app.services.skill.Team.filter", return_value=query(None)),
+        patch("app.api.team_access.Team.filter", return_value=query(None)),
         pytest.raises(BusinessError) as error,
     ):
         await SkillService.check_team_access(uuid4(), regular)
     assert error.value.code == ResponseCode.TEAM_NOT_FOUND
 
     with (
-        patch("app.services.skill.Team.filter", return_value=query(team)),
-        patch("app.services.skill.TeamMember.filter", return_value=query(None)),
+        patch("app.api.team_access.Team.filter", return_value=query(team)),
+        patch("app.api.team_access.TeamMember.filter", return_value=query(None)),
         pytest.raises(BusinessError) as error,
     ):
         await SkillService.check_team_access(uuid4(), regular)
     assert error.value.code == ResponseCode.NOT_TEAM_MEMBER
 
     with (
-        patch("app.services.skill.Team.filter", return_value=query(team)),
+        patch("app.api.team_access.Team.filter", return_value=query(team)),
         patch(
-            "app.services.skill.TeamMember.filter",
+            "app.api.team_access.TeamMember.filter",
             return_value=query(SimpleNamespace(role="member")),
         ),
         pytest.raises(BusinessError) as error,
@@ -45,7 +48,7 @@ async def test_team_access_covers_missing_membership_role_and_superuser():
         await SkillService.check_team_access(uuid4(), regular, require_admin=True)
     assert error.value.code == ResponseCode.TEAM_ADMIN_REQUIRED
 
-    with patch("app.services.skill.Team.filter", return_value=query(team)):
+    with patch("app.api.team_access.Team.filter", return_value=query(team)):
         assert (
             await SkillService.check_team_access(
                 uuid4(), SimpleNamespace(is_superuser=True)

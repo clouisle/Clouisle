@@ -7,6 +7,7 @@ import pytest
 from app.api.v1.endpoints import tools
 from app.models.tool import CustomToolType as DBCustomToolType
 from app.models.tool import ToolType as DBToolType
+from app.models.tool import ToolVisibility as DBToolVisibility
 from app.schemas.response import BusinessError
 
 
@@ -53,6 +54,7 @@ def db_tool(**overrides):
         "icon": None,
         "category": "other",
         "type": DBToolType.CUSTOM,
+        "visibility": DBToolVisibility.TEAM,
         "custom_type": DBCustomToolType.HTTP,
         "parameters": [],
         "http_config": {"url": "https://example.test", "method": "GET"},
@@ -108,6 +110,54 @@ async def test_legacy_list_groups_owned_and_shared_tools(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_build_accessible_tools_hides_unowned_private_custom_and_mcp_tools(
+    monkeypatch,
+):
+    current = user()
+    team = SimpleNamespace(id=uuid4(), name="Owners")
+    owned_custom = db_tool(
+        team_id=team.id,
+        name="owned-custom",
+        created_by_id=current.id,
+        visibility=DBToolVisibility.PRIVATE,
+    )
+    hidden_custom = db_tool(
+        team_id=team.id,
+        name="hidden-custom",
+        visibility=DBToolVisibility.PRIVATE,
+    )
+    owned_mcp = db_tool(
+        team_id=team.id,
+        name="owned-mcp",
+        type=DBToolType.MCP,
+        custom_type=None,
+        created_by_id=current.id,
+        visibility=DBToolVisibility.PRIVATE,
+    )
+    hidden_mcp = db_tool(
+        team_id=team.id,
+        name="hidden-mcp",
+        type=DBToolType.MCP,
+        custom_type=None,
+        visibility=DBToolVisibility.PRIVATE,
+    )
+    queries = iter(
+        [
+            Query(items=[owned_custom, hidden_custom]),
+            Query(items=[owned_mcp, hidden_mcp]),
+        ]
+    )
+
+    monkeypatch.setattr(tools, "get_builtin_tools", lambda _locale: [])
+    monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: next(queries))
+    monkeypatch.setattr(tools.ToolShare, "filter", lambda **_kwargs: Query(count=0))
+
+    result = await tools._build_accessible_tools(current, [team])
+
+    assert {item.name for item in result} == {"owned-custom", "owned-mcp"}
+
+
+@pytest.mark.anyio
 async def test_file_parsers_include_builtin_and_http_parameters(monkeypatch):
     current, team_id = user(), uuid4()
     builtin = SimpleNamespace(name="parser", description="Parse", parameters=[])
@@ -155,19 +205,23 @@ async def test_get_tool_by_name_uses_sandbox_then_team_and_not_found(monkeypatch
 
     assert data(await tools.get_tool_by_name("bash", None, current)).name == "bash"
 
-    existing = db_tool(team_id=team_id)
+    existing = db_tool(
+        team_id=team_id,
+        created_by_id=current.id,
+        visibility=DBToolVisibility.TEAM,
+    )
     access = AsyncMock()
     monkeypatch.setattr(
         tools.tool_registry, "get_sandbox_tool_infos", lambda _names: []
     )
-    monkeypatch.setattr(tools, "check_team_access", access)
+    monkeypatch.setattr(tools, "check_tool_access", access)
+    monkeypatch.setattr(tools, "check_team_access", AsyncMock())
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(first=existing))
     assert (
         data(await tools.get_tool_by_name("weather", team_id, current)).id
         == existing.id
     )
-    access.assert_awaited_once_with(team_id, current)
-
+    access.assert_awaited_once_with(existing, current)
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query())
     with pytest.raises(BusinessError) as exc_info:
         await tools.get_tool_by_name("missing", team_id, current)
@@ -198,3 +252,28 @@ async def test_shared_with_me_projects_custom_and_mcp_ownership(monkeypatch):
     assert result["custom"][0]["created_by_name"] == "creator"
     assert result["mcp"][0]["share_permission"] == "read_execute"
     assert result["mcp"][0]["created_by_name"] is None
+
+
+@pytest.mark.anyio
+async def test_get_tool_by_name_falls_back_to_custom_tool_after_initial_miss(
+    monkeypatch,
+):
+    current, team_id = user(), uuid4()
+    existing = db_tool(team_id=team_id, name="custom-tool")
+    queries = iter([Query(), Query(first=existing)])
+    team_access = AsyncMock()
+    monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: None)
+    monkeypatch.setattr(
+        tools.tool_registry, "get_sandbox_tool_infos", lambda _names: []
+    )
+    monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: next(queries))
+    monkeypatch.setattr(tools, "check_team_access", team_access)
+
+    result = data(
+        await tools.get_tool_by_name(
+            existing.name, team_id=team_id, current_user=current
+        )
+    )
+
+    assert result.id == existing.id
+    team_access.assert_awaited_once_with(team_id, current)

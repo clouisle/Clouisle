@@ -173,7 +173,9 @@ async def test_partial_update_skips_duplicate_lookup_and_definition_version_bump
         patch.object(
             workflows, "check_workflow_access", new=AsyncMock(return_value=item)
         ),
-        patch.object(workflows.deps, "check_scoped_permission", new=AsyncMock()),
+        patch.object(
+            workflows, "check_team_permission", new=AsyncMock(return_value=item)
+        ),
         patch.object(workflows.Workflow, "filter", workflow_filter),
         patch.object(workflows.Workflow, "get", return_value=_Query(reloaded)),
         patch.object(workflows.AuditLogService, "log", new=AsyncMock()) as audit,
@@ -229,7 +231,7 @@ async def test_duplicate_creates_private_draft_and_checks_scope():
             workflows, "check_workflow_access", new=AsyncMock(return_value=source)
         ),
         patch.object(
-            workflows.deps, "check_scoped_permission", new=AsyncMock()
+            workflows, "check_team_permission", new=AsyncMock(return_value=source)
         ) as scoped,
         patch.object(workflows.Workflow, "create", new=create),
         patch.object(workflows.Workflow, "get", return_value=_Query(duplicate)),
@@ -238,7 +240,7 @@ async def test_duplicate_creates_private_draft_and_checks_scope():
     ):
         response = await workflows.duplicate_workflow(source.id, MagicMock(), user)
 
-    scoped.assert_awaited_once_with(user, "workflow:create", "team", source.team_id)
+    scoped.assert_awaited_once_with(source.team_id, user, "workflow:create")
     assert create.await_args.kwargs["status"] == WorkflowStatus.DRAFT
     assert create.await_args.kwargs["visibility"] == WorkflowVisibility.PRIVATE
     assert response["data"]["id"] == duplicate.id

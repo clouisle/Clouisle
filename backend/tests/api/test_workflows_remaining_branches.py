@@ -72,8 +72,7 @@ def patch_dump_schema(monkeypatch, schema, value):
 @pytest.mark.asyncio
 async def test_create_workflow_rejects_duplicate_name(monkeypatch):
     workflow_create = AsyncMock()
-    monkeypatch.setattr(workflows.deps, "check_scoped_permission", AsyncMock())
-    monkeypatch.setattr(workflows, "check_team_access", AsyncMock())
+    monkeypatch.setattr(workflows, "check_team_permission", AsyncMock())
     monkeypatch.setattr(
         workflows.Workflow, "filter", Mock(return_value=Query(first=object()))
     )
@@ -101,8 +100,9 @@ async def test_create_workflow_builds_default_definition_and_audits(monkeypatch)
     create = AsyncMock(return_value=created)
     audit = AsyncMock()
 
-    monkeypatch.setattr(workflows.deps, "check_scoped_permission", AsyncMock())
-    monkeypatch.setattr(workflows, "check_team_access", AsyncMock(return_value=team))
+    monkeypatch.setattr(
+        workflows, "check_team_permission", AsyncMock(return_value=team)
+    )
     monkeypatch.setattr(workflows.Workflow, "filter", Mock(return_value=Query()))
     monkeypatch.setattr(workflows.Workflow, "create", create)
     monkeypatch.setattr(
@@ -129,11 +129,11 @@ async def test_create_workflow_builds_default_definition_and_audits(monkeypatch)
 async def test_update_workflow_rejects_duplicate_renamed_workflow(monkeypatch):
     workflow_id = uuid4()
     workflow = SimpleNamespace(id=workflow_id, team_id=uuid4(), name="Old")
+    duplicate_query = Query(first=SimpleNamespace(id=uuid4()))
     monkeypatch.setattr(
         workflows, "check_workflow_access", AsyncMock(return_value=workflow)
     )
-    monkeypatch.setattr(workflows.deps, "check_scoped_permission", AsyncMock())
-    duplicate_query = Query(first=object())
+    monkeypatch.setattr(workflows, "check_team_permission", AsyncMock())
     monkeypatch.setattr(
         workflows.Workflow, "filter", Mock(return_value=duplicate_query)
     )
@@ -166,7 +166,7 @@ async def test_update_workflow_applies_fields_increments_version_and_audits(
     monkeypatch.setattr(
         workflows, "check_workflow_access", AsyncMock(return_value=workflow)
     )
-    monkeypatch.setattr(workflows.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(workflows, "check_team_permission", AsyncMock())
     monkeypatch.setattr(
         workflows.Workflow, "get", Mock(return_value=Query(first=workflow))
     )

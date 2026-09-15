@@ -15,7 +15,7 @@ from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 
 from app.api import deps
-from app.api.team_access import check_team_access
+from app.api.team_access import check_team_access, check_team_permission
 from app.api.workflow_access import (
     check_workflow_access,
     workflow_read_visibility_filter,
@@ -303,6 +303,8 @@ async def list_all_workflow_runs(
 @router.get("/runs/stats", response_model=Response[dict])
 async def get_workflow_run_stats(
     team_id: UUID | None = Query(None),
+    period: str | None = Query(None, description="Time period: 7d, 30d"),
+    own_only: bool = Query(False),
     current_user: User = Depends(deps.PermissionChecker("workflow:read")),
 ) -> Any:
     """
@@ -322,6 +324,9 @@ async def get_workflow_run_stats(
         await check_team_access(team_id, current_user)
         workflow_query = workflow_query.filter(team_id=team_id)
 
+    if own_only:
+        workflow_query = workflow_query.filter(created_by=current_user)
+
     visibility_filter = await workflow_read_visibility_filter(current_user)
     if visibility_filter is not None:
         workflow_query = workflow_query.filter(visibility_filter)
@@ -340,11 +345,16 @@ async def get_workflow_run_stats(
             msg_key="workflow_run_stats_fetched",
         )
 
-    # Aggregate in the database, scoped strictly to the visibility-filtered
-    # ids resolved above. Previously every run of every accessible workflow
-    # was loaded into Python.
-    stats = await stats_sql.workflow_global_run_stats(workflow_ids)
+    start_time_utc = None
+    if period in ("7d", "30d"):
+        days = 30 if period == "30d" else 7
+        start_time_utc = to_utc(now() - timedelta(days=days))
 
+    # Aggregate in the database, scoped strictly to the visibility-filtered
+    # ids resolved above.
+    stats = await stats_sql.workflow_global_run_stats(
+        workflow_ids, start_time=start_time_utc
+    )
     workflow_map = {w.id: w for w in accessible_workflows}
     runs_by_workflow = []
     for top_workflow_id, count in stats["top_workflows"]:
@@ -452,11 +462,11 @@ async def create_workflow(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Create a new workflow."""
-    # Check team access
-    await deps.check_scoped_permission(
-        current_user, "workflow:create", "team", workflow_in.team_id
+    team = await check_team_permission(
+        workflow_in.team_id,
+        current_user,
+        "workflow:create",
     )
-    team = await check_team_access(workflow_in.team_id, current_user)
 
     # Check for duplicate name within the same team
     existing = await Workflow.filter(
@@ -554,7 +564,7 @@ async def get_workflow_stats(
     - avg_duration_ms: Average execution duration
     - last_run_at: Last run timestamp
     """
-    await check_workflow_access(workflow_id, current_user)
+    await check_workflow_access(workflow_id, current_user, require_write=True)
 
     # Aggregate in the database: this endpoint has no time bound, so loading
     # every historical run scaled with the workflow's whole lifetime.
@@ -588,7 +598,7 @@ async def get_workflow_trends(
     - failed: Number of failed runs per day
     - avgDuration: Average execution duration per day
     """
-    await check_workflow_access(workflow_id, current_user)
+    await check_workflow_access(workflow_id, current_user, require_write=True)
 
     now_local = now()
 
@@ -644,9 +654,7 @@ async def update_workflow(
         workflow_id, current_user, require_write=True
     )
     audit_before = AuditLogService.snapshot(workflow, "workflow")
-    await deps.check_scoped_permission(
-        current_user, "workflow:update", "team", workflow.team_id
-    )
+    await check_team_permission(workflow.team_id, current_user, "workflow:update")
 
     # Check for duplicate name within the same team (exclude self)
     if workflow_in.name is not None and workflow_in.name != workflow.name:
@@ -853,9 +861,7 @@ async def duplicate_workflow(
     workflow = await check_workflow_access(
         workflow_id, current_user, require_write=True
     )
-    await deps.check_scoped_permission(
-        current_user, "workflow:create", "team", workflow.team_id
-    )
+    await check_team_permission(workflow.team_id, current_user, "workflow:create")
 
     # Create a copy
     new_workflow = await Workflow.create(
@@ -910,9 +916,7 @@ async def regenerate_webhook_token(
         workflow_id, current_user, require_write=True
     )
     audit_before = AuditLogService.snapshot(workflow, "workflow")
-    await deps.check_scoped_permission(
-        current_user, "workflow:update", "team", workflow.team_id
-    )
+    await check_team_permission(workflow.team_id, current_user, "workflow:update")
 
     workflow.webhook_token = secrets.token_urlsafe(32)
     await workflow.save()
@@ -2127,9 +2131,7 @@ async def create_workflow_version(
     workflow = await check_workflow_access(
         workflow_id, current_user, require_write=True
     )
-    await deps.check_scoped_permission(
-        current_user, "workflow:update", "team", workflow.team_id
-    )
+    await check_team_permission(workflow.team_id, current_user, "workflow:update")
 
     # Create version snapshot
     workflow_version = await WorkflowVersion.create(
@@ -2179,9 +2181,7 @@ async def restore_workflow_version(
         workflow_id, current_user, require_write=True
     )
     audit_before = AuditLogService.snapshot(workflow, "workflow")
-    await deps.check_scoped_permission(
-        current_user, "workflow:update", "team", workflow.team_id
-    )
+    await check_team_permission(workflow.team_id, current_user, "workflow:update")
 
     # Get the version to restore
     workflow_version = await WorkflowVersion.filter(

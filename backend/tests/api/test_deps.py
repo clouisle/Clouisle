@@ -217,27 +217,7 @@ async def test_active_user_and_permission_checks(monkeypatch):
     )
     assert not deps.user_has_global_permission(user(roles=[role([])]), "missing")
 
-    assignment = SimpleNamespace(role=role([permission]))
-    monkeypatch.setattr(
-        deps.ScopedRoleAssignment, "filter", Mock(return_value=Query([assignment]))
-    )
-    scope_id = uuid4()
-    assert await deps.user_has_scoped_permission(active, "admin:read", "team", scope_id)
-    assert not await deps.user_has_scoped_permission(
-        active, "missing", "team", scope_id
-    )
-
-    await deps.check_scoped_permission(admin, "anything", "team", scope_id)
     global_user = user(roles=[role([permission])])
-    await deps.check_scoped_permission(global_user, "admin:read", "team", scope_id)
-    monkeypatch.setattr(
-        deps, "user_has_scoped_permission", AsyncMock(return_value=True)
-    )
-    await deps.check_scoped_permission(active, "team:read", "team", scope_id)
-    with pytest.raises(BusinessError) as exc:
-        await deps.check_scoped_permission(active, "admin:write", "team", scope_id)
-    assert exc.value.kwargs["permission"] == "admin:write"
-
     checker = deps.PermissionChecker("admin:read")
     assert await checker(admin) is admin
     assert await checker(global_user) is global_user

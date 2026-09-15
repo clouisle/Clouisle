@@ -11,6 +11,7 @@ import {
   ToolCategory,
   ToolParameter,
   toolsApi,
+  ToolVisibility,
 } from '@/lib/api/tools'
 import { Team } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -196,6 +197,7 @@ export function DatabaseToolDialog({
   const [description, setDescription] = useState('')
   const [icon, setIcon] = useState('')
   const [category, setCategory] = useState<ToolCategory>('data')
+  const [visibility, setVisibility] = useState<ToolVisibility>('private')
   const [isEnabled, setIsEnabled] = useState(true)
 
   // 数据库配置
@@ -225,6 +227,7 @@ export function DatabaseToolDialog({
       setDescription(tool.description || '')
       setIcon(tool.icon || '')
       setCategory((tool.category as ToolCategory) || 'data')
+      setVisibility((tool.visibility as ToolVisibility) || 'private')
       setIsEnabled(tool.is_enabled ?? true)
 
       const cfg = (tool.database_config || {}) as Partial<DatabaseConfig>
@@ -246,6 +249,7 @@ export function DatabaseToolDialog({
       setDescription('')
       setIcon('')
       setCategory('data')
+      setVisibility('private')
       setIsEnabled(true)
       setDbType('postgresql')
       setConnectionMode('params')
@@ -355,6 +359,7 @@ export function DatabaseToolDialog({
         description: description.trim(),
         icon: icon.trim() || undefined,
         category,
+        visibility,
         type: 'custom',
         custom_type: 'database',
         is_enabled: isEnabled,
@@ -435,6 +440,21 @@ export function DatabaseToolDialog({
               />
               <FieldError>{fieldErrors.displayName}</FieldError>
             </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="db-visibility">{t('visibility')}</Label>
+            <Select value={visibility} onValueChange={(val) => setVisibility(val as ToolVisibility)}>
+              <SelectTrigger id="db-visibility">
+                <SelectValue>
+                  {visibility === 'private' ? t('visibilityPrivate') : t('visibilityTeam')}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectItem value="private">{t('visibilityPrivate')}</SelectItem>
+                <SelectItem value="team">{t('visibilityTeam')}</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{t('visibilityHint')}</p>
           </div>
 
           {/* 图标上传与描述 */}

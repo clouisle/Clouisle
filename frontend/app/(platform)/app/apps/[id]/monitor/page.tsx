@@ -3,8 +3,11 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { 
-  MessageSquare, 
+import { useTeam } from '@/contexts/team-context'
+import { usePermissions } from '@/hooks/use-permissions'
+import {
+  Calendar,
+  MessageSquare,
   MessagesSquare, 
   Coins, 
   Timer, 
@@ -137,7 +140,8 @@ function StatCard({ title, value, icon, description, trend, className, color = '
 export default function MonitorPage({ params }: MonitorPageProps) {
   const t = useTranslations('agents.monitor')
   const router = useRouter()
-
+  const { currentTeam, isLoading: isTeamLoading } = useTeam()
+  const { user, loading: isUserLoading } = usePermissions()
   const [agent, setAgent] = React.useState<Agent | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
   const [period, setPeriod] = React.useState('7d')
@@ -277,17 +281,26 @@ export default function MonitorPage({ params }: MonitorPageProps) {
   // Fetch agent data
   const fetchAgent = React.useCallback(async () => {
     if (!resolvedParams) return
+    if (isUserLoading || isTeamLoading) return
 
     try {
       setIsLoading(true)
       const data = await agentsApi.getAgent(resolvedParams.id)
+      const isTeamAdmin = Boolean(
+        user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin'
+      )
+      const isOwner = Boolean(user?.id && data.created_by?.id === user.id)
+      if (!isTeamAdmin && !isOwner) {
+        router.push('/app/apps')
+        return
+      }
       setAgent(data)
     } catch {
       router.push('/app/apps')
     } finally {
       setIsLoading(false)
     }
-  }, [resolvedParams, router])
+  }, [resolvedParams, user, currentTeam, isUserLoading, isTeamLoading, router])
 
   // Fetch stats data
   const fetchStats = React.useCallback(async () => {
@@ -348,12 +361,13 @@ export default function MonitorPage({ params }: MonitorPageProps) {
       <AgentSidebar agent={agent} />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="border-b px-6 py-4 shrink-0 flex items-center justify-between">
           <p className="text-sm text-muted-foreground">{t('description')}</p>
           <Select value={period} onValueChange={(v) => v && setPeriod(v)}>
-            <SelectTrigger className="w-36">
+            <SelectTrigger size="sm" className="w-32 h-8 text-xs">
+              <Calendar className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
               <SelectValue>
                 {period === '24h' && t('period.24h')}
                 {period === '7d' && t('period.7d')}
@@ -367,7 +381,6 @@ export default function MonitorPage({ params }: MonitorPageProps) {
             </SelectContent>
           </Select>
         </div>
-
         {/* Content */}
         <div className="flex-1 overflow-auto p-6">
           {isLoadingStats ? (
@@ -420,211 +433,6 @@ export default function MonitorPage({ params }: MonitorPageProps) {
                   icon={<Wrench className="h-4 w-4" />}
                   color="slate"
                 />
-              </div>
-
-              {/* Charts Row 1 */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Conversation & Message Trend */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">{t('charts.conversationTrend')}</CardTitle>
-                    <CardDescription>{t('charts.conversationTrendDesc')}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ChartContainer config={conversationChartConfig} className="h-[250px] w-full">
-                      <AreaChart data={trends?.data || []} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="fillConversations" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="var(--color-conversations)" stopOpacity={0.8}/>
-                            <stop offset="95%" stopColor="var(--color-conversations)" stopOpacity={0.1}/>
-                          </linearGradient>
-                          <linearGradient id="fillMessages" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="var(--color-messages)" stopOpacity={0.8}/>
-                            <stop offset="95%" stopColor="var(--color-messages)" stopOpacity={0.1}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
-                        <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} />
-                        <YAxis tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} />
-                        <ChartTooltip cursor={CHART_HOVER_CURSOR} content={<ChartTooltipContent />} />
-                        <Area
-                          type="monotone"
-                          dataKey="conversations"
-                          stroke="var(--color-conversations)"
-                          fill="url(#fillConversations)"
-                          strokeWidth={2}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="messages"
-                          stroke="var(--color-messages)"
-                          fill="url(#fillMessages)"
-                          strokeWidth={2}
-                        />
-                      </AreaChart>
-                    </ChartContainer>
-                  </CardContent>
-                </Card>
-
-                {/* Token Usage Trend */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">{t('charts.tokenUsage')}</CardTitle>
-                    <CardDescription>{t('charts.tokenUsageDesc')}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ChartContainer config={tokenChartConfig} className="h-[250px] w-full">
-                      <AreaChart data={trends?.data || []} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="fillTokens" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="var(--color-tokens)" stopOpacity={0.8}/>
-                            <stop offset="95%" stopColor="var(--color-tokens)" stopOpacity={0.1}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
-                        <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} />
-                        <YAxis tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} tickFormatter={(v) => formatNumber(v)} />
-                        <ChartTooltip cursor={CHART_HOVER_CURSOR} content={<ChartTooltipContent />} />
-                        <Area
-                          type="monotone"
-                          dataKey="tokens"
-                          stroke="var(--color-tokens)"
-                          fill="url(#fillTokens)"
-                          strokeWidth={2}
-                        />
-                      </AreaChart>
-                    </ChartContainer>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Charts Row 2 */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Response Time Trend */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">{t('charts.responseTime')}</CardTitle>
-                    <CardDescription>{t('charts.responseTimeDesc')}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ChartContainer config={responseTimeChartConfig} className="h-[250px] w-full">
-                      <AreaChart data={trends?.data || []} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="fillResponseTime" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="var(--color-avg_response_time_ms)" stopOpacity={0.8}/>
-                            <stop offset="95%" stopColor="var(--color-avg_response_time_ms)" stopOpacity={0.1}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
-                        <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} />
-                        <YAxis tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} tickFormatter={(v) => `${(v / 1000).toFixed(1)}s`} />
-                        <ChartTooltip
-                          cursor={CHART_HOVER_CURSOR}
-                          content={
-                            <ChartTooltipContent
-                              formatter={(value) => (
-                                <>
-                                  <span className="text-chart-tooltip-text/80">
-                                    {t('charts.avgResponseTime')}
-                                  </span>
-                                  <span className="font-mono font-medium tabular-nums text-chart-tooltip-text">
-                                    {`${(Number(value) / 1000).toFixed(2)}s`}
-                                  </span>
-                                </>
-                              )}
-                            />
-                          }
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="avg_response_time_ms"
-                          stroke="var(--color-avg_response_time_ms)"
-                          fill="url(#fillResponseTime)"
-                          strokeWidth={2}
-                        />
-                      </AreaChart>
-                    </ChartContainer>
-                  </CardContent>
-                </Card>
-
-                {/* Tool Usage */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">{t('charts.toolUsage')}</CardTitle>
-                    <CardDescription>{t('charts.toolUsageDesc')}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {toolUsage && toolUsage.tools.length > 0 ? (
-                      <>
-                        <ChartContainer config={toolUsageChartConfig} className="h-[200px] w-full">
-                          <PieChart>
-                            <ChartTooltip
-                              content={({ active, payload }) => {
-                                if (!active || !payload?.length) return null
-                                const tool = payload[0].payload as ToolUsageItem
-                                return (
-                                  <div className="rounded-lg border border-chart-tooltip-border bg-chart-tooltip-bg p-3 text-chart-tooltip-text shadow-md">
-                                    <div className="font-semibold mb-1">
-                                      {tool.display_name || tool.name}
-                                    </div>
-                                    <div className="text-sm">
-                                      {t('charts.calls')}: {formatNumber(tool.count)}
-                                    </div>
-                                  </div>
-                                )
-                              }}
-                            />
-                            <Pie
-                              data={topTools}
-                              dataKey="count"
-                              nameKey="display_name"
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={55}
-                              outerRadius={85}
-                              paddingAngle={2}
-                            >
-                              {topTools.map((tool, index) => (
-                                <Cell
-                                  key={tool.name}
-                                  fill={CHART_SURFACE_COLORS[index % CHART_SURFACE_COLORS.length]}
-                                />
-                              ))}
-                            </Pie>
-                          </PieChart>
-                        </ChartContainer>
-                        {/* Tool names are too long for slice labels, so the
-                            legend carries them next to each count. */}
-                        <ul className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-2">
-                          {topTools.map((tool, index) => (
-                            <li key={tool.name} className="flex min-w-0 items-center gap-2">
-                              <span
-                                className="h-2.5 w-2.5 shrink-0 rounded-sm"
-                                style={{
-                                  backgroundColor:
-                                    CHART_SURFACE_COLORS[index % CHART_SURFACE_COLORS.length],
-                                }}
-                              />
-                              <span className="truncate" title={tool.display_name || tool.name}>
-                                {tool.display_name || tool.name}
-                              </span>
-                              <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
-                                {formatNumber(tool.count)}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : (
-                      <div className="h-[250px] flex items-center justify-center text-muted-foreground">
-                        <div className="text-center">
-                          <Wrench className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                          <p className="text-sm">{t('noToolUsage')}</p>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
               </div>
 
               {/* Run health, latency quality and user friction. The previous
@@ -937,6 +745,211 @@ export default function MonitorPage({ params }: MonitorPageProps) {
                   </CardContent>
                 </Card>
               </div>
+              {/* Charts Row 1 */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Conversation & Message Trend */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">{t('charts.conversationTrend')}</CardTitle>
+                    <CardDescription>{t('charts.conversationTrendDesc')}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={conversationChartConfig} className="h-[250px] w-full">
+                      <AreaChart data={trends?.data || []} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="fillConversations" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="var(--color-conversations)" stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor="var(--color-conversations)" stopOpacity={0.1}/>
+                          </linearGradient>
+                          <linearGradient id="fillMessages" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="var(--color-messages)" stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor="var(--color-messages)" stopOpacity={0.1}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
+                        <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} />
+                        <YAxis tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} />
+                        <ChartTooltip cursor={CHART_HOVER_CURSOR} content={<ChartTooltipContent />} />
+                        <Area
+                          type="monotone"
+                          dataKey="conversations"
+                          stroke="var(--color-conversations)"
+                          fill="url(#fillConversations)"
+                          strokeWidth={2}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="messages"
+                          stroke="var(--color-messages)"
+                          fill="url(#fillMessages)"
+                          strokeWidth={2}
+                        />
+                      </AreaChart>
+                    </ChartContainer>
+                  </CardContent>
+                </Card>
+
+                {/* Token Usage Trend */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">{t('charts.tokenUsage')}</CardTitle>
+                    <CardDescription>{t('charts.tokenUsageDesc')}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={tokenChartConfig} className="h-[250px] w-full">
+                      <AreaChart data={trends?.data || []} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="fillTokens" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="var(--color-tokens)" stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor="var(--color-tokens)" stopOpacity={0.1}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
+                        <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} />
+                        <YAxis tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} tickFormatter={(v) => formatNumber(v)} />
+                        <ChartTooltip cursor={CHART_HOVER_CURSOR} content={<ChartTooltipContent />} />
+                        <Area
+                          type="monotone"
+                          dataKey="tokens"
+                          stroke="var(--color-tokens)"
+                          fill="url(#fillTokens)"
+                          strokeWidth={2}
+                        />
+                      </AreaChart>
+                    </ChartContainer>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Charts Row 2 */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Response Time Trend */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">{t('charts.responseTime')}</CardTitle>
+                    <CardDescription>{t('charts.responseTimeDesc')}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={responseTimeChartConfig} className="h-[250px] w-full">
+                      <AreaChart data={trends?.data || []} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="fillResponseTime" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="var(--color-avg_response_time_ms)" stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor="var(--color-avg_response_time_ms)" stopOpacity={0.1}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
+                        <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} />
+                        <YAxis tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} tickFormatter={(v) => `${(v / 1000).toFixed(1)}s`} />
+                        <ChartTooltip
+                          cursor={CHART_HOVER_CURSOR}
+                          content={
+                            <ChartTooltipContent
+                              formatter={(value) => (
+                                <>
+                                  <span className="text-chart-tooltip-text/80">
+                                    {t('charts.avgResponseTime')}
+                                  </span>
+                                  <span className="font-mono font-medium tabular-nums text-chart-tooltip-text">
+                                    {`${(Number(value) / 1000).toFixed(2)}s`}
+                                  </span>
+                                </>
+                              )}
+                            />
+                          }
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="avg_response_time_ms"
+                          stroke="var(--color-avg_response_time_ms)"
+                          fill="url(#fillResponseTime)"
+                          strokeWidth={2}
+                        />
+                      </AreaChart>
+                    </ChartContainer>
+                  </CardContent>
+                </Card>
+
+                {/* Tool Usage */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">{t('charts.toolUsage')}</CardTitle>
+                    <CardDescription>{t('charts.toolUsageDesc')}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {toolUsage && toolUsage.tools.length > 0 ? (
+                      <>
+                        <ChartContainer config={toolUsageChartConfig} className="h-[200px] w-full">
+                          <PieChart>
+                            <ChartTooltip
+                              content={({ active, payload }) => {
+                                if (!active || !payload?.length) return null
+                                const tool = payload[0].payload as ToolUsageItem
+                                return (
+                                  <div className="rounded-lg border border-chart-tooltip-border bg-chart-tooltip-bg p-3 text-chart-tooltip-text shadow-md">
+                                    <div className="font-semibold mb-1">
+                                      {tool.display_name || tool.name}
+                                    </div>
+                                    <div className="text-sm">
+                                      {t('charts.calls')}: {formatNumber(tool.count)}
+                                    </div>
+                                  </div>
+                                )
+                              }}
+                            />
+                            <Pie
+                              data={topTools}
+                              dataKey="count"
+                              nameKey="display_name"
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={55}
+                              outerRadius={85}
+                              paddingAngle={2}
+                            >
+                              {topTools.map((tool, index) => (
+                                <Cell
+                                  key={tool.name}
+                                  fill={CHART_SURFACE_COLORS[index % CHART_SURFACE_COLORS.length]}
+                                />
+                              ))}
+                            </Pie>
+                          </PieChart>
+                        </ChartContainer>
+                        {/* Tool names are too long for slice labels, so the
+                            legend carries them next to each count. */}
+                        <ul className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-2">
+                          {topTools.map((tool, index) => (
+                            <li key={tool.name} className="flex min-w-0 items-center gap-2">
+                              <span
+                                className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                                style={{
+                                  backgroundColor:
+                                    CHART_SURFACE_COLORS[index % CHART_SURFACE_COLORS.length],
+                                }}
+                              />
+                              <span className="truncate" title={tool.display_name || tool.name}>
+                                {tool.display_name || tool.name}
+                              </span>
+                              <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
+                                {formatNumber(tool.count)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : (
+                      <div className="h-[250px] flex items-center justify-center text-muted-foreground">
+                        <div className="text-center">
+                          <Wrench className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                          <p className="text-sm">{t('noToolUsage')}</p>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
             </div>
           )}
         </div>

@@ -23,6 +23,7 @@ from app.services.citations import CITATION_MARKER_TEMPLATE, with_rag_citation_i
 
 if TYPE_CHECKING:
     from app.models.agent import Agent
+    from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -152,14 +153,14 @@ async def contextualize_retrieval_query(
 
 
 async def perform_rag_retrieval(
-    agent: "Agent", query: str, history: list[Any] | None = None
+    agent: "Agent", user: "User", query: str, history: list[Any] | None = None
 ) -> list[dict[str, Any]]:
     """Perform RAG retrieval from knowledge bases.
 
     Args:
         agent: The agent with knowledge base associations
+        user: The current user requesting retrieval
         query: Search query string
-
     Returns:
         List of retrieval results with kb_id, kb_name, document_id, document_name, content, score
     """
@@ -167,7 +168,7 @@ async def perform_rag_retrieval(
 
     kb_associations = await AgentKnowledgeBase.filter(
         agent_id=agent.id
-    ).prefetch_related("knowledge_base")
+    ).prefetch_related("knowledge_base__created_by")
     targets = tuple(
         RetrievalTarget(
             kb_id=association.knowledge_base.id,
@@ -182,6 +183,12 @@ async def perform_rag_retrieval(
             score_threshold=association.score_threshold,
         )
         for association in kb_associations
+        if (
+            user.is_superuser
+            or getattr(association.knowledge_base, "visibility", "team") != "private"
+            or not association.knowledge_base.created_by
+            or association.knowledge_base.created_by.id == user.id
+        )
     )
     if not targets:
         return []

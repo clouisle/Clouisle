@@ -5,7 +5,6 @@ Provides REST API for:
 - Version history management
 - Version comparison and diff
 - Rollback operations
-- Template management
 """
 
 from typing import Annotated
@@ -15,20 +14,14 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from app.api import deps
-from app.api.deps import get_current_user
 from app.api.workflow_access import check_workflow_access
+from app.api.team_access import check_team_permission
 from app.models.user import User
 from app.schemas.response import BusinessError, ResponseCode
 from app.services.workflow.errors import translate_public_workflow_error
 from app.services.workflow.versioning import (
     get_version_manager,
     VersionStatus,
-)
-from app.services.workflow.templates import (
-    get_template_manager,
-    TemplateCategory,
-    TemplateVisibility,
-    TemplateVariable,
 )
 
 
@@ -45,8 +38,10 @@ async def check_version_workflow_access(
         require_write=require_write or required_permission is not None,
     )
     if required_permission:
-        await deps.check_scoped_permission(
-            current_user, required_permission, "team", workflow.team.id
+        await check_team_permission(
+            workflow.team.id,
+            current_user,
+            required_permission,
         )
     version = await get_version_manager().get_version(version_id)
     if not version:
@@ -381,259 +376,6 @@ async def get_version_stats(
     """Get version statistics for a workflow."""
     manager = get_version_manager()
 
-    await check_workflow_access(UUID(workflow_id), current_user)
+    await check_workflow_access(UUID(workflow_id), current_user, require_write=True)
     stats = await manager.get_stats(UUID(workflow_id))
-    return stats
-
-
-# Template API Router
-
-template_router = APIRouter(prefix="/workflow-templates", tags=["workflow-templates"])
-
-
-class CreateTemplateRequest(BaseModel):
-    """Request to create a template."""
-
-    name: str
-    description: str
-    category: TemplateCategory
-    visibility: TemplateVisibility = TemplateVisibility.PRIVATE
-    nodes: list[dict]
-    edges: list[dict]
-    config: dict = Field(default_factory=dict)
-    variables: list[dict] = Field(default_factory=list)
-    tags: list[str] = Field(default_factory=list)
-    icon: str | None = None
-
-
-class InstantiateTemplateRequest(BaseModel):
-    """Request to instantiate a template."""
-
-    template_id: str
-    variables: dict
-    workflow_name: str | None = None
-
-
-class RateTemplateRequest(BaseModel):
-    """Request to rate a template."""
-
-    rating: float = Field(..., ge=1, le=5)
-
-
-@template_router.get("")
-async def list_templates(
-    current_user: Annotated[User, Depends(get_current_user)],
-    category: TemplateCategory | None = None,
-    visibility: TemplateVisibility | None = None,
-    tags: list[str] | None = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
-):
-    """List available templates."""
-    manager = get_template_manager()
-
-    templates = await manager.list_templates(
-        category=category,
-        visibility=visibility,
-        tags=tags,
-        limit=limit,
-        offset=offset,
-    )
-
-    return {
-        "templates": [t.to_summary() for t in templates],
-        "total": len(templates),
-    }
-
-
-@template_router.get("/featured")
-async def get_featured_templates(
-    current_user: Annotated[User, Depends(get_current_user)],
-    limit: int = Query(default=10, ge=1, le=50),
-):
-    """Get featured templates."""
-    manager = get_template_manager()
-
-    templates = await manager.get_featured(limit=limit)
-    return {"templates": [t.to_summary() for t in templates]}
-
-
-@template_router.get("/search")
-async def search_templates(
-    current_user: Annotated[User, Depends(get_current_user)],
-    query: str = Query(..., min_length=1),
-    category: TemplateCategory | None = None,
-    limit: int = Query(default=20, ge=1, le=50),
-):
-    """Search templates."""
-    manager = get_template_manager()
-
-    templates = await manager.search(
-        query=query,
-        category=category,
-        limit=limit,
-    )
-
-    return {"templates": [t.to_summary() for t in templates]}
-
-
-@template_router.get("/categories")
-async def get_template_categories(
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    """Get available template categories."""
-    return {
-        "categories": [{"value": c.value, "name": c.name} for c in TemplateCategory]
-    }
-
-
-@template_router.get("/{template_id}")
-async def get_template(
-    template_id: str,
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    """Get a template by ID."""
-    manager = get_template_manager()
-
-    template = await manager.get_template(template_id)
-    if not template:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="workflow_template_not_found",
-            status_code=404,
-        )
-
-    return template.to_dict()
-
-
-@template_router.post("")
-async def create_template(
-    request: CreateTemplateRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    """Create a new template."""
-    manager = get_template_manager()
-
-    # Convert variable dicts to TemplateVariable objects
-    variables = [
-        TemplateVariable(
-            name=v["name"],
-            label=v.get("label", v["name"]),
-            description=v.get("description", ""),
-            variable_type=v.get("type", "string"),
-            default_value=v.get("default"),
-            required=v.get("required", True),
-            options=v.get("options", []),
-            validation=v.get("validation", {}),
-        )
-        for v in request.variables
-    ]
-
-    template = await manager.create_template(
-        name=request.name,
-        description=request.description,
-        category=request.category,
-        visibility=request.visibility,
-        author_id=str(current_user.id),
-        author_name=current_user.username,
-        nodes=request.nodes,
-        edges=request.edges,
-        variables=variables,
-        config=request.config,
-        tags=request.tags,
-        icon=request.icon,
-    )
-
-    return template.to_dict()
-
-
-@template_router.post("/{template_id}/instantiate")
-async def instantiate_template(
-    template_id: str,
-    request: InstantiateTemplateRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    """Instantiate a template to create a workflow definition."""
-    manager = get_template_manager()
-
-    try:
-        workflow_def = await manager.instantiate(
-            template_id=request.template_id,
-            variables=request.variables,
-            workflow_name=request.workflow_name,
-        )
-        return workflow_def
-    except ValueError:
-        raise BusinessError(
-            code=ResponseCode.VALIDATION_ERROR,
-            msg_key="workflow_template_instantiate_failed",
-        )
-
-
-@template_router.post("/{template_id}/rate")
-async def rate_template(
-    template_id: str,
-    request: RateTemplateRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    """Rate a template."""
-    manager = get_template_manager()
-
-    success = await manager.rate_template(
-        template_id=template_id,
-        user_id=str(current_user.id),
-        rating=request.rating,
-    )
-
-    if not success:
-        raise BusinessError(
-            code=ResponseCode.VALIDATION_ERROR,
-            msg_key="workflow_template_rating_failed",
-        )
-
-    return {"success": True}
-
-
-@template_router.delete("/{template_id}")
-async def delete_template(
-    template_id: str,
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    """Delete a template."""
-    manager = get_template_manager()
-
-    # Check ownership (in production)
-    template = await manager.get_template(template_id)
-    if not template:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="workflow_template_not_found",
-            status_code=404,
-        )
-
-    if template.author_id != str(current_user.id):
-        raise BusinessError(
-            code=ResponseCode.FORBIDDEN,
-            msg_key="workflow_template_access_denied",
-            status_code=403,
-        )
-
-    success = await manager.delete_template(template_id)
-    if not success:
-        raise BusinessError(
-            code=ResponseCode.VALIDATION_ERROR,
-            msg_key="workflow_template_delete_failed",
-        )
-
-    return {"success": True}
-
-
-@template_router.get("/stats/summary")
-async def get_template_stats(
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    """Get template statistics."""
-    manager = get_template_manager()
-
-    stats = await manager.get_stats()
     return stats

@@ -7,6 +7,7 @@ import pytest
 
 from app.api.v1.endpoints import tools
 from app.models.tool import CustomToolType, ToolType
+from app.models.tool import ToolVisibility as DBToolVisibility
 from app.schemas.response import BusinessError
 from app.schemas.tool import ToolExecuteRequest, ToolUpdateInput
 
@@ -54,6 +55,7 @@ def db_tool(**overrides):
         "icon": None,
         "category": "other",
         "type": ToolType.CUSTOM,
+        "visibility": DBToolVisibility.TEAM,
         "custom_type": CustomToolType.HTTP,
         "parameters": [],
         "http_config": {"url": "https://example.test", "method": "GET"},
@@ -88,6 +90,15 @@ async def test_legacy_list_classifies_owned_and_shared_custom_and_mcp(monkeypatc
         http_config={},
         mcp_config={"transport": "sse", "url": "https://mcp.test"},
     )
+    hidden_custom = db_tool(name="hidden_custom", visibility=DBToolVisibility.PRIVATE)
+    hidden_mcp = db_tool(
+        name="hidden_mcp",
+        type=ToolType.MCP,
+        custom_type=None,
+        http_config={},
+        mcp_config={"transport": "sse", "url": "https://mcp.test"},
+        visibility=DBToolVisibility.PRIVATE,
+    )
     shared_custom = db_tool(name="shared_custom", created_by=None)
     shared_mcp = db_tool(
         name="shared_mcp",
@@ -100,7 +111,12 @@ async def test_legacy_list_classifies_owned_and_shared_custom_and_mcp(monkeypatc
         SimpleNamespace(tool=shared_custom, permission="read_only"),
         SimpleNamespace(tool=shared_mcp, permission="read_execute"),
     ]
-    tool_queries = iter([Query(items=[owned_custom]), Query(items=[owned_mcp])])
+    tool_queries = iter(
+        [
+            Query(items=[owned_custom, hidden_custom]),
+            Query(items=[owned_mcp, hidden_mcp]),
+        ]
+    )
 
     monkeypatch.setattr(tools, "check_team_access", AsyncMock())
     monkeypatch.setattr(tools, "get_builtin_tools", lambda _locale: [])
@@ -130,14 +146,21 @@ async def test_update_covers_remaining_fields_and_not_found(monkeypatch):
     queries = iter([Query(first=existing), Query()])
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: next(queries))
     monkeypatch.setattr(tools, "check_tool_write_access", AsyncMock())
-    monkeypatch.setattr(tools.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(tools, "check_team_permission", AsyncMock())
     monkeypatch.setattr(tools.AuditLogService, "log", AsyncMock())
-
+    share_delete = AsyncMock()
+    monkeypatch.setattr(
+        tools.ToolShare,
+        "filter",
+        lambda **_kwargs: SimpleNamespace(delete=share_delete),
+    )
     result = data(
         await tools.update_tool(
             existing.id,
             ToolUpdateInput(
                 icon="cloud",
+                visibility="private",
+                database_config={"db_type": "postgresql", "host": "db"},
                 http_config={"url": "https://updated.test", "method": "POST"},
                 mcp_config={"transport": "sse", "url": "https://mcp.test"},
             ),
@@ -149,7 +172,20 @@ async def test_update_covers_remaining_fields_and_not_found(monkeypatch):
     assert result.icon == "cloud"
     assert result.http_config.url == "https://updated.test"
     assert result.mcp_config.url == "https://mcp.test"
+    assert existing.visibility == DBToolVisibility.PRIVATE
+    assert existing.database_config["db_type"] == "postgresql"
+    share_delete.assert_awaited_once()
     existing.save.assert_awaited_once()
+
+    monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(first=existing))
+    await tools.update_tool(
+        existing.id,
+        ToolUpdateInput(visibility="private"),
+        request,
+        current,
+    )
+    assert share_delete.await_count == 1
+    assert existing.save.await_count == 2
 
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query())
     with pytest.raises(BusinessError) as exc_info:
@@ -176,13 +212,14 @@ async def test_name_lookup_uses_sandbox_then_database_and_reports_missing(monkey
     sandbox = data(await tools.get_tool_by_name("read", None, current))
     assert sandbox.name == "read"
 
-    existing = db_tool(team_id=team_id)
+    existing = db_tool(team_id=team_id, visibility=DBToolVisibility.TEAM)
     access = AsyncMock()
-    monkeypatch.setattr(tools, "check_team_access", access)
+    monkeypatch.setattr(tools, "check_tool_access", access)
+    monkeypatch.setattr(tools, "check_team_access", AsyncMock())
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(first=existing))
     custom = data(await tools.get_tool_by_name(existing.name, team_id, current))
     assert custom.id == existing.id
-    access.assert_awaited_once_with(team_id, current)
+    access.assert_awaited_once_with(existing, current)
 
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query())
     with pytest.raises(BusinessError) as exc_info:
@@ -203,9 +240,10 @@ async def test_custom_mcp_execution_covers_configuration_success_and_failure(
         custom_type=None,
         http_config={},
         mcp_config={},
+        visibility=DBToolVisibility.TEAM,
     )
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: None)
-    monkeypatch.setattr(tools, "check_team_access", AsyncMock())
+    monkeypatch.setattr(tools, "check_tool_access", AsyncMock())
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(first=mcp_tool))
 
     missing = data(
@@ -256,9 +294,10 @@ async def test_custom_code_missing_and_unsupported_types_do_not_execute(monkeypa
         custom_type=CustomToolType.CODE,
         http_config={},
         code_config={},
+        visibility=DBToolVisibility.TEAM,
     )
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: None)
-    monkeypatch.setattr(tools, "check_team_access", AsyncMock())
+    monkeypatch.setattr(tools, "check_tool_access", AsyncMock())
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(first=custom))
     submit = AsyncMock()
     monkeypatch.setattr(tools.sandbox_gateway, "submit_and_wait", submit)
@@ -275,4 +314,12 @@ async def test_custom_code_missing_and_unsupported_types_do_not_execute(monkeypa
     )
     assert unsupported.success is False
     assert unsupported.error
+    submit.assert_not_awaited()
+
+    custom.custom_type = CustomToolType.DATABASE
+    custom.database_config = {}
+    missing_database = data(
+        await tools.test_tool(ToolExecuteRequest(name=custom.name), team_id, current)
+    )
+    assert missing_database.success is False
     submit.assert_not_awaited()

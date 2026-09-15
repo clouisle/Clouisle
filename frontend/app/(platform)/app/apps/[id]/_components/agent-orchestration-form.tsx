@@ -165,11 +165,13 @@ function getMediaModelSelectLabel(
 interface AgentOrchestrationFormProps {
   agent: Agent
   onUpdate: (data: Partial<Agent> & { knowledge_base_configs?: AgentKnowledgeBaseConfig[]; rag_mode?: RAGMode }) => void
+  canUpdate?: boolean
 }
 
 export function AgentOrchestrationForm({
   agent,
   onUpdate,
+  canUpdate = true,
 }: AgentOrchestrationFormProps) {
   const t = useTranslations('agents.orchestration')
   const locale = useLocale()
@@ -418,16 +420,18 @@ export function AgentOrchestrationForm({
               </TooltipContent>
             </Tooltip>
           </div>
-          <Button
-            data-testid="agent-prompt-ai-generate"
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs gap-1.5 cursor-pointer bg-violet-500/10 text-violet-600 hover:bg-violet-500/20 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
-            onClick={() => setShowPromptGenerator(true)}
-          >
-            <Sparkles className="h-3 w-3" />
-            {t('prompt.aiGenerate')}
-          </Button>
+          {canUpdate && (
+            <Button
+              data-testid="agent-prompt-ai-generate"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs gap-1.5 cursor-pointer bg-violet-500/10 text-violet-600 hover:bg-violet-500/20 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
+              onClick={() => setShowPromptGenerator(true)}
+            >
+              <Sparkles className="h-3 w-3" />
+              {t('prompt.aiGenerate')}
+            </Button>
+          )}
         </div>
         <div className="px-4 pb-4">
           <PromptEditor
@@ -445,6 +449,7 @@ export function AgentOrchestrationForm({
             }}
             placeholder={t('prompt.placeholder')}
             enableFileUpload={enableAttachments}
+            readOnly={!canUpdate}
           />
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-primary/10">
             <span className="text-xs text-muted-foreground">
@@ -472,19 +477,21 @@ export function AgentOrchestrationForm({
           )
         }
         action={
-          <AddVariableButton
-            onAdd={(type) => {
-              const newVar = createNewVariable(type, variables, [
-                t('variables.defaultOptions.option1'),
-                t('variables.defaultOptions.option2'),
-              ])
-              const newVariables = [...variables, newVar]
-              setVariables(newVariables)
-              setVariableEditingIndex(newVariables.length - 1)
-              setIsNewVariable(true)
-              setVariablesCollapsed(false)
-            }}
-          />
+          canUpdate ? (
+            <AddVariableButton
+              onAdd={(type) => {
+                const newVar = createNewVariable(type, variables, [
+                  t('variables.defaultOptions.option1'),
+                  t('variables.defaultOptions.option2'),
+                ])
+                const newVariables = [...variables, newVar]
+                setVariables(newVariables)
+                setVariableEditingIndex(newVariables.length - 1)
+                setIsNewVariable(true)
+                setVariablesCollapsed(false)
+              }}
+            />
+          ) : null
         }
         collapsed={variablesCollapsed}
         onToggle={() => setVariablesCollapsed(!variablesCollapsed)}
@@ -498,6 +505,7 @@ export function AgentOrchestrationForm({
             if (index === null) setIsNewVariable(false)
           }}
           isNewVariable={isNewVariable}
+          readOnly={!canUpdate}
         />
       </ConfigCard>
 
@@ -516,39 +524,41 @@ export function AgentOrchestrationForm({
           )
         }
         action={
-          <div className="flex items-center gap-2">
-            {/* RAG Mode Selection */}
-            {knowledgeBaseConfigs.length > 0 && (
-              <Select value={ragMode} onValueChange={(value) => setRagMode(value as RAGMode)}>
-                <SelectTrigger size="xs" className="text-xs w-[120px] gap-1 px-2 bg-background">
-                  <SelectValue>
-                    {ragMode === 'agentic' && t('knowledgeBase.ragMode.agenticShort')}
-                    {ragMode === 'auto' && t('knowledgeBase.ragMode.autoShort')}
-                    {ragMode === 'off' && t('knowledgeBase.ragMode.offShort')}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="agentic">{t('knowledgeBase.ragMode.agentic')}</SelectItem>
-                  <SelectItem value="auto">{t('knowledgeBase.ragMode.auto')}</SelectItem>
-                  <SelectItem value="off">{t('knowledgeBase.ragMode.off')}</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-            <AddKnowledgeBaseButton
-              knowledgeBases={knowledgeBases}
-              selectedIds={knowledgeBaseConfigs.map(c => c.knowledge_base_id)}
-              onAdd={(kb) => {
-                const newConfig: AgentKnowledgeBaseConfig = {
-                  knowledge_base_id: kb.id,
-                  retrieval_top_k: 3,
-                  score_threshold: 0.3,
-                  search_mode: 'hybrid',
-                }
-                setKnowledgeBaseConfigs([...knowledgeBaseConfigs, newConfig])
-                setKbCollapsed(false)
-              }}
-            />
-          </div>
+          canUpdate ? (
+            <div className="flex items-center gap-2">
+              {/* RAG Mode Selection */}
+              {knowledgeBaseConfigs.length > 0 && (
+                <Select value={ragMode} onValueChange={(value) => setRagMode(value as RAGMode)}>
+                  <SelectTrigger size="xs" className="text-xs w-[120px] gap-1 px-2 bg-background">
+                    <SelectValue>
+                      {ragMode === 'agentic' && t('knowledgeBase.ragMode.agenticShort')}
+                      {ragMode === 'auto' && t('knowledgeBase.ragMode.autoShort')}
+                      {ragMode === 'off' && t('knowledgeBase.ragMode.offShort')}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="agentic">{t('knowledgeBase.ragMode.agentic')}</SelectItem>
+                    <SelectItem value="auto">{t('knowledgeBase.ragMode.auto')}</SelectItem>
+                    <SelectItem value="off">{t('knowledgeBase.ragMode.off')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+              <AddKnowledgeBaseButton
+                knowledgeBases={knowledgeBases}
+                selectedIds={knowledgeBaseConfigs.map(c => c.knowledge_base_id)}
+                onAdd={(kb) => {
+                  const newConfig: AgentKnowledgeBaseConfig = {
+                    knowledge_base_id: kb.id,
+                    retrieval_top_k: 3,
+                    score_threshold: 0.3,
+                    search_mode: 'hybrid',
+                  }
+                  setKnowledgeBaseConfigs([...knowledgeBaseConfigs, newConfig])
+                  setKbCollapsed(false)
+                }}
+              />
+            </div>
+          ) : null
         }
         collapsed={kbCollapsed}
         onToggle={() => setKbCollapsed(!kbCollapsed)}
@@ -560,6 +570,7 @@ export function AgentOrchestrationForm({
             setKnowledgeBaseConfigs(configs)
             if (configs.length === 0) setRagMode('off')
           }}
+          readOnly={!canUpdate}
         />
       </ConfigCard>
 
@@ -578,58 +589,60 @@ export function AgentOrchestrationForm({
           )
         }
         action={
-          <AddToolButton
-            availableTools={availableTools}
-            selectedToolNames={toolsConfig
-              .filter(c => c.type === 'builtin')
-              .map(c => c.name || '')
-              .filter(Boolean)}
-            selectedToolIds={toolsConfig
-              .filter(c => c.type === 'custom')
-              .map(c => c.tool_id)
-              .filter(Boolean) as string[]}
-            selectedMcpServerIds={toolsConfig
-              .filter(c => c.type === 'mcp')
-              .map(c => c.server_id)
-              .filter(Boolean) as string[]}
-            selectedSkillIds={toolsConfig
-              .filter(c => c.type === 'skill')
-              .map(c => c.skill_id)
-              .filter(Boolean) as string[]}
-            onAdd={(tool) => {
-              let newConfig: ToolConfig
-              if (tool.type === 'builtin') {
-                newConfig = { type: 'builtin', name: tool.name }
-              } else if (tool.type === 'mcp') {
-                newConfig = { type: 'mcp', server_id: tool.id }
-              } else if (tool.type === 'skill') {
-                newConfig = { type: 'skill', skill_id: tool.id, name: tool.name }
-              } else {
-                newConfig = { type: 'custom', tool_id: tool.id, name: tool.name }
-              }
-              setToolsConfig([...toolsConfig, newConfig])
-              setToolsCollapsed(false)
-            }}
-            onRemove={(tool) => {
-              setToolsConfig(
-                toolsConfig.filter((c) => {
-                  if (c.type === 'builtin' && tool.type === 'builtin') {
-                    return c.name !== tool.name
-                  }
-                  if (c.type === 'mcp' && tool.type === 'mcp') {
-                    return c.server_id !== tool.id
-                  }
-                  if (c.type === 'custom' && tool.type === 'custom') {
-                    return c.tool_id !== tool.id
-                  }
-                  if (c.type === 'skill' && tool.type === 'skill') {
-                    return c.skill_id !== tool.id
-                  }
-                  return true
-                })
-              )
-            }}
-          />
+          canUpdate ? (
+            <AddToolButton
+              availableTools={availableTools}
+              selectedToolNames={toolsConfig
+                .filter(c => c.type === 'builtin')
+                .map(c => c.name || '')
+                .filter(Boolean)}
+              selectedToolIds={toolsConfig
+                .filter(c => c.type === 'custom')
+                .map(c => c.tool_id)
+                .filter(Boolean) as string[]}
+              selectedMcpServerIds={toolsConfig
+                .filter(c => c.type === 'mcp')
+                .map(c => c.server_id)
+                .filter(Boolean) as string[]}
+              selectedSkillIds={toolsConfig
+                .filter(c => c.type === 'skill')
+                .map(c => c.skill_id)
+                .filter(Boolean) as string[]}
+              onAdd={(tool) => {
+                let newConfig: ToolConfig
+                if (tool.type === 'builtin') {
+                  newConfig = { type: 'builtin', name: tool.name }
+                } else if (tool.type === 'mcp') {
+                  newConfig = { type: 'mcp', server_id: tool.id }
+                } else if (tool.type === 'skill') {
+                  newConfig = { type: 'skill', skill_id: tool.id, name: tool.name }
+                } else {
+                  newConfig = { type: 'custom', tool_id: tool.id, name: tool.name }
+                }
+                setToolsConfig([...toolsConfig, newConfig])
+                setToolsCollapsed(false)
+              }}
+              onRemove={(tool) => {
+                setToolsConfig(
+                  toolsConfig.filter((c) => {
+                    if (c.type === 'builtin' && tool.type === 'builtin') {
+                      return c.name !== tool.name
+                    }
+                    if (c.type === 'mcp' && tool.type === 'mcp') {
+                      return c.server_id !== tool.id
+                    }
+                    if (c.type === 'custom' && tool.type === 'custom') {
+                      return c.tool_id !== tool.id
+                    }
+                    if (c.type === 'skill' && tool.type === 'skill') {
+                      return c.skill_id !== tool.id
+                    }
+                    return true
+                  })
+                )
+              }}
+            />
+          ) : null
         }
         collapsed={toolsCollapsed}
         onToggle={() => setToolsCollapsed(!toolsCollapsed)}
@@ -638,6 +651,7 @@ export function AgentOrchestrationForm({
           toolsConfig={toolsConfig}
           availableTools={availableTools}
           onChange={setToolsConfig}
+          readOnly={!canUpdate}
         />
       </ConfigCard>
 
@@ -649,10 +663,12 @@ export function AgentOrchestrationForm({
         title={t('attachments.title')}
         tooltip={t('attachments.tooltip')}
         action={
-          <Switch
-            checked={enableAttachments}
-            onCheckedChange={setEnableAttachments}
-          />
+          canUpdate ? (
+            <Switch
+              checked={enableAttachments}
+              onCheckedChange={setEnableAttachments}
+            />
+          ) : null
         }
         collapsed={attachmentsCollapsed}
         onToggle={() => setAttachmentsCollapsed(!attachmentsCollapsed)}
@@ -681,6 +697,7 @@ export function AgentOrchestrationForm({
                     min={1000}
                     max={500000}
                     step={10000}
+                    disabled={!canUpdate}
                   />
                   <span className="text-xs text-muted-foreground">{t('attachments.characters')}</span>
                 </div>
@@ -707,10 +724,12 @@ export function AgentOrchestrationForm({
         title={t('userInput.title')}
         tooltip={t('userInput.tooltip')}
         action={
-          <Switch
-            checked={enableUserInputRequest}
-            onCheckedChange={setEnableUserInputRequest}
-          />
+          canUpdate ? (
+            <Switch
+              checked={enableUserInputRequest}
+              onCheckedChange={setEnableUserInputRequest}
+            />
+          ) : null
         }
         collapsed={userInputCollapsed}
         onToggle={() => setUserInputCollapsed(!userInputCollapsed)}
@@ -731,10 +750,12 @@ export function AgentOrchestrationForm({
         title={t('memory.title')}
         tooltip={t('memory.tooltip')}
         action={
-          <Switch
-            checked={enableMemory}
-            onCheckedChange={setEnableMemory}
-          />
+          canUpdate ? (
+            <Switch
+              checked={enableMemory}
+              onCheckedChange={setEnableMemory}
+            />
+          ) : null
         }
         collapsed={memoryCollapsed}
         onToggle={() => setMemoryCollapsed(!memoryCollapsed)}
@@ -764,6 +785,7 @@ export function AgentOrchestrationForm({
                     min={1}
                     max={50}
                     step={1}
+                    disabled={!canUpdate}
                   />
                   <span className="text-xs text-muted-foreground">{t('memory.memories')}</span>
                 </div>
@@ -788,6 +810,7 @@ export function AgentOrchestrationForm({
                       auto_extract: checked,
                     })
                   }}
+                  disabled={!canUpdate}
                 />
               </div>
             </div>
@@ -803,10 +826,12 @@ export function AgentOrchestrationForm({
         title={t('imageGeneration.title')}
         tooltip={t('imageGeneration.tooltip')}
         action={
-          <Switch
-            checked={enableImageGeneration}
-            onCheckedChange={setEnableImageGeneration}
-          />
+          canUpdate ? (
+            <Switch
+              checked={enableImageGeneration}
+              onCheckedChange={setEnableImageGeneration}
+            />
+          ) : null
         }
         collapsed={imageGenerationCollapsed}
         onToggle={() => setImageGenerationCollapsed(!imageGenerationCollapsed)}
@@ -822,6 +847,7 @@ export function AgentOrchestrationForm({
                 <Label className="text-xs">{t('imageGeneration.defaultModel')}</Label>
                 <Select
                   value={imageGenerationConfig.default_model_ref || DEFAULT_MEDIA_MODEL_VALUE}
+                  disabled={!canUpdate}
                   onValueChange={(value) => {
                     setImageGenerationConfig({
                       ...imageGenerationConfig,
@@ -867,6 +893,7 @@ export function AgentOrchestrationForm({
                     className="h-8 text-sm bg-background"
                     min={256}
                     max={4096}
+                    disabled={!canUpdate}
                   />
                 </div>
                 <div className="space-y-2">
@@ -884,6 +911,7 @@ export function AgentOrchestrationForm({
                     className="h-8 text-sm bg-background"
                     min={256}
                     max={4096}
+                    disabled={!canUpdate}
                   />
                 </div>
               </div>
@@ -903,6 +931,7 @@ export function AgentOrchestrationForm({
                   className="h-8 w-28 text-sm bg-background"
                   min={1}
                   max={10}
+                  disabled={!canUpdate}
                 />
               </div>
 
@@ -921,6 +950,7 @@ export function AgentOrchestrationForm({
                       allow_reference_images: checked,
                     })
                   }}
+                  disabled={!canUpdate}
                 />
               </div>
             </div>
@@ -936,10 +966,12 @@ export function AgentOrchestrationForm({
         title={t('videoGeneration.title')}
         tooltip={t('videoGeneration.tooltip')}
         action={
-          <Switch
-            checked={enableVideoGeneration}
-            onCheckedChange={setEnableVideoGeneration}
-          />
+          canUpdate ? (
+            <Switch
+              checked={enableVideoGeneration}
+              onCheckedChange={setEnableVideoGeneration}
+            />
+          ) : null
         }
         collapsed={videoGenerationCollapsed}
         onToggle={() => setVideoGenerationCollapsed(!videoGenerationCollapsed)}
@@ -955,6 +987,7 @@ export function AgentOrchestrationForm({
                 <Label className="text-xs">{t('videoGeneration.defaultModel')}</Label>
                 <Select
                   value={videoGenerationConfig.default_model_ref || DEFAULT_MEDIA_MODEL_VALUE}
+                  disabled={!canUpdate}
                   onValueChange={(value) => {
                     setVideoGenerationConfig({
                       ...videoGenerationConfig,
@@ -1001,6 +1034,7 @@ export function AgentOrchestrationForm({
                     min={1}
                     max={30}
                     step={0.5}
+                    disabled={!canUpdate}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1019,6 +1053,7 @@ export function AgentOrchestrationForm({
                     min={1}
                     max={30}
                     step={0.5}
+                    disabled={!canUpdate}
                   />
                 </div>
               </div>
@@ -1027,6 +1062,7 @@ export function AgentOrchestrationForm({
                 <Label className="text-xs">{t('videoGeneration.aspectRatio')}</Label>
                 <Select
                   value={videoGenerationConfig.default_aspect_ratio}
+                  disabled={!canUpdate}
                   onValueChange={(value) => {
                     setVideoGenerationConfig({
                       ...videoGenerationConfig,
@@ -1064,6 +1100,7 @@ export function AgentOrchestrationForm({
                     min={500}
                     max={30000}
                     step={500}
+                    disabled={!canUpdate}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1082,6 +1119,7 @@ export function AgentOrchestrationForm({
                     min={5}
                     max={600}
                     step={5}
+                    disabled={!canUpdate}
                   />
                 </div>
               </div>

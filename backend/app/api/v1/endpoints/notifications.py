@@ -47,6 +47,17 @@ def serialize_delivery_error(
     return t("unknown_error")
 
 
+def has_global_admin_access(user: User) -> bool:
+    """Only global role assignments grant system dashboard access."""
+    if user.is_superuser:
+        return True
+    return any(
+        permission.code in ("admin:dashboard:access", "*")
+        for role in (getattr(user, "roles", None) or [])
+        for permission in (getattr(role, "permissions", None) or [])
+    )
+
+
 async def check_team_admin_permission(team_id: UUID, user: User) -> Team:
     team = await Team.filter(id=team_id).first()
     if not team:
@@ -267,7 +278,9 @@ async def admin_list_notifications(
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
-    if not current_user.is_superuser:
+    # Team administrators must name an authorized team; they never receive
+    # system-wide notification visibility through their team membership.
+    if not has_global_admin_access(current_user):
         if scope and NotificationScope.GLOBAL in scope:
             raise BusinessError(
                 code=ResponseCode.INSUFFICIENT_PRIVILEGES,
@@ -784,7 +797,7 @@ async def admin_create_notification(
 @admin_router.delete("/{notification_id}", response_model=Response[dict])
 async def admin_delete_notification(
     notification_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("admin:notification:delete")),
 ) -> Any:
     notification = await Notification.filter(id=notification_id).first()
     if not notification:
@@ -794,8 +807,8 @@ async def admin_delete_notification(
             status_code=404,
         )
 
-    if notification.scope == NotificationScope.GLOBAL:
-        if not current_user.is_superuser:
+    if notification.scope in {NotificationScope.GLOBAL, NotificationScope.USER}:
+        if not has_global_admin_access(current_user):
             raise BusinessError(
                 code=ResponseCode.INSUFFICIENT_PRIVILEGES,
                 msg_key="insufficient_privileges",
@@ -809,14 +822,6 @@ async def admin_delete_notification(
                 status_code=400,
             )
         await check_team_admin_permission(notification.team_id, current_user)
-    else:
-        if not current_user.is_superuser:
-            raise BusinessError(
-                code=ResponseCode.INSUFFICIENT_PRIVILEGES,
-                msg_key="insufficient_privileges",
-                status_code=403,
-            )
-
     await create_notification_audit(
         notification_id=notification.id,
         action=NotificationAuditAction.DELETE,

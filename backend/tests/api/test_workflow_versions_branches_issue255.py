@@ -7,14 +7,11 @@ import pytest
 
 from app.api.v1 import workflow_versions
 from app.api.v1.workflow_versions import (
-    CreateTemplateRequest,
     CreateVersionRequest,
     ForkRequest,
-    RateTemplateRequest,
     RollbackRequest,
 )
 from app.schemas.response import BusinessError
-from app.services.workflow.templates import TemplateCategory, TemplateVisibility
 from app.services.workflow.versioning import VersionStatus
 
 
@@ -302,92 +299,3 @@ async def test_rollback_and_fork_success_and_value_errors(user):
             ForkRequest(version_id="version-1", new_workflow_id=str(new_workflow_id)),
             user,
         )
-
-
-@pytest.mark.anyio
-async def test_template_list_create_get_and_rating_branches(user):
-    template = SimpleNamespace(
-        author_id=str(user.id),
-        to_summary=lambda: {"id": "template-1"},
-        to_dict=lambda: {"id": "template-1", "name": "Demo"},
-    )
-    manager = SimpleNamespace(
-        list_templates=AsyncMock(return_value=[template]),
-        create_template=AsyncMock(return_value=template),
-        get_template=AsyncMock(return_value=template),
-        rate_template=AsyncMock(return_value=True),
-    )
-    request = CreateTemplateRequest(
-        name="Demo",
-        description="A demo",
-        category=TemplateCategory.CUSTOM,
-        visibility=TemplateVisibility.PRIVATE,
-        nodes=[],
-        edges=[],
-        variables=[{"name": "topic"}],
-    )
-
-    with patch.object(workflow_versions, "get_template_manager", return_value=manager):
-        listed = await workflow_versions.list_templates(
-            user,
-            TemplateCategory.CUSTOM,
-            TemplateVisibility.PRIVATE,
-            ["demo"],
-            5,
-            1,
-        )
-        created = await workflow_versions.create_template(request, user)
-        fetched = await workflow_versions.get_template("template-1", user)
-        rated = await workflow_versions.rate_template(
-            "template-1", RateTemplateRequest(rating=4), user
-        )
-    assert listed == {"templates": [{"id": "template-1"}], "total": 1}
-    assert created == fetched == {"id": "template-1", "name": "Demo"}
-    assert rated == {"success": True}
-    variable = manager.create_template.await_args.kwargs["variables"][0]
-    assert variable.label == "topic"
-    assert variable.required is True
-
-    manager.get_template.return_value = None
-    with (
-        patch.object(workflow_versions, "get_template_manager", return_value=manager),
-        pytest.raises(BusinessError) as missing,
-    ):
-        await workflow_versions.get_template("missing", user)
-    assert missing.value.status_code == 404
-
-    manager.rate_template.return_value = False
-    with (
-        patch.object(workflow_versions, "get_template_manager", return_value=manager),
-        pytest.raises(BusinessError),
-    ):
-        await workflow_versions.rate_template(
-            "template-1", RateTemplateRequest(rating=4), user
-        )
-
-
-@pytest.mark.anyio
-async def test_template_delete_access_and_result_branches(user):
-    manager = SimpleNamespace(
-        get_template=AsyncMock(return_value=None),
-        delete_template=AsyncMock(return_value=False),
-    )
-
-    with patch.object(workflow_versions, "get_template_manager", return_value=manager):
-        with pytest.raises(BusinessError) as missing:
-            await workflow_versions.delete_template("template-1", user)
-        assert missing.value.status_code == 404
-
-        manager.get_template.return_value = SimpleNamespace(author_id=str(uuid4()))
-        with pytest.raises(BusinessError) as forbidden:
-            await workflow_versions.delete_template("template-1", user)
-        assert forbidden.value.status_code == 403
-
-        manager.get_template.return_value = SimpleNamespace(author_id=str(user.id))
-        with pytest.raises(BusinessError):
-            await workflow_versions.delete_template("template-1", user)
-
-        manager.delete_template.return_value = True
-        assert await workflow_versions.delete_template("template-1", user) == {
-            "success": True
-        }

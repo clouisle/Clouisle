@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl'
 import { RoutePermissionGuard } from '@/components/auth/permission-guard'
 import { Header } from '@/components/layout/header'
 import { usePermissions } from '@/hooks/use-permissions'
-import { SITE_SETTINGS_NAV_ITEMS, getRoutePermissionConfig } from '@/lib/route-permissions'
+import { SITE_SETTINGS_NAV_ITEMS, canAccessRoute, getRoutePermissionConfig } from '@/lib/route-permissions'
 import { cn } from '@/lib/utils'
 
 export default function SiteSettingsLayout({
@@ -32,7 +32,7 @@ export default function SiteSettingsLayout({
     })
     .filter(
       (item) =>
-        (!item.permission || hasPermission(item.permission)) &&
+        canAccessRoute(item.href, hasPermission, isSuperuser) &&
         (!item.requiresSuperuser || isSuperuser)
     )
 

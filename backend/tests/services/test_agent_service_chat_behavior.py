@@ -210,7 +210,15 @@ async def test_chat_stream_yields_content_tool_calls_usage_and_final_response():
     service._execute_tool = AsyncMock(return_value={"results": ["match"]})
 
     with patch("app.services.agent.model_manager.chat_stream", new=chat_stream):
-        events = [event async for event in service.chat_stream(agent, "Find it")]
+        events = [
+            event
+            async for event in service.chat_stream(
+                agent,
+                "Find it",
+                conversation_id="conversation-1",
+                workflow_run_id="workflow-1",
+            )
+        ]
 
     assert events == [
         "Searching",
@@ -250,7 +258,12 @@ async def test_chat_stream_yields_content_tool_calls_usage_and_final_response():
             "artifacts": [],
         },
     ]
-    service._execute_tool.assert_awaited_once_with(agent=agent, tool_call=tool_call)
+    service._execute_tool.assert_awaited_once_with(
+        agent=agent,
+        tool_call=tool_call,
+        conversation_id="conversation-1",
+        workflow_run_id="workflow-1",
+    )
 
 
 @pytest.mark.anyio

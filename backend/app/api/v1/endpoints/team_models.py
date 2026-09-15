@@ -29,36 +29,10 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
-from app.schemas.team import TeamMemberRole
 from app.services.auto_notification import AutoNotificationService
 from app.services.audit_log import AuditLogService
 
 router = APIRouter()
-
-
-async def check_team_admin_permission(team_id: UUID, user: User) -> Team:
-    """检查用户是否有团队管理权限（owner/admin 或超级管理员）"""
-    team = await Team.filter(id=team_id).first()
-    if not team:
-        raise BusinessError(
-            code=ResponseCode.TEAM_NOT_FOUND,
-            msg_key="team_not_found",
-            status_code=404,
-        )
-
-    if not user.is_superuser:
-        membership = await TeamMember.filter(team=team, user=user).first()
-        if not membership or membership.role not in [
-            TeamMemberRole.OWNER,
-            TeamMemberRole.ADMIN,
-        ]:
-            raise BusinessError(
-                code=ResponseCode.TEAM_ADMIN_REQUIRED,
-                msg_key="team_admin_required",
-                status_code=403,
-            )
-
-    return team
 
 
 # ============ 团队模型授权管理 ============

@@ -23,6 +23,7 @@ import {
 } from '@/lib/validation'
 import { type VariableDefinition } from '@/lib/api/workflows'
 import { formatTime } from '@/lib/utils'
+import { PermissionGuard } from '@/components/permission-guard'
 
 interface ApiPlaygroundProps {
   webhookUrl: string
@@ -525,12 +526,14 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="api-key">{t('apiKey')}</Label>
-                <Link href="/api-keys">
-                  <Button variant="ghost" size="sm" className="h-auto p-0 text-xs">
-                    <ExternalLink className="mr-1 h-3 w-3" />
-                    {t('manageApiKeys')}
-                  </Button>
-                </Link>
+                <PermissionGuard permission="apikey:read">
+                  <Link href="/app/api-keys">
+                    <Button variant="ghost" size="sm" className="h-auto p-0 text-xs">
+                      <ExternalLink className="mr-1 h-3 w-3" />
+                      {t('manageApiKeys')}
+                    </Button>
+                  </Link>
+                </PermissionGuard>
               </div>
               <Input
                 id="api-key"

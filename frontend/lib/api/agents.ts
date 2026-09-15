@@ -1284,9 +1284,10 @@ export const conversationsApi = {
   /**
    * 获取对话统计数据
    */
-  getStats: async (teamId?: string): Promise<ConversationStats> => {
+  getStats: async (teamId?: string, ownOnly?: boolean): Promise<ConversationStats> => {
     const queryParams = new URLSearchParams()
     if (teamId) queryParams.append('team_id', teamId)
+    if (ownOnly !== undefined) queryParams.append('own_only', String(ownOnly))
     const query = queryParams.toString()
     return api.get<ConversationStats>(`/conversations/stats${query ? `?${query}` : ''}`)
   },
@@ -1294,12 +1295,14 @@ export const conversationsApi = {
   /**
    * 获取对话趋势数据
    */
-  getTrends: async (teamId?: string, period: '7d' | '30d' = '7d'): Promise<ConversationTrends> => {
+  getTrends: async (teamId?: string, period: '7d' | '30d' = '7d', ownOnly?: boolean): Promise<ConversationTrends> => {
     const queryParams = new URLSearchParams()
     if (teamId) queryParams.append('team_id', teamId)
     queryParams.append('period', period)
+    if (ownOnly !== undefined) queryParams.append('own_only', String(ownOnly))
     return api.get<ConversationTrends>(`/conversations/stats/trends?${queryParams.toString()}`)
   },
+
 
   /**
    * 获取对话详情（管理员）

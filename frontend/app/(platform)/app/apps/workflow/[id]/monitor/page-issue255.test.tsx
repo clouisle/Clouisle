@@ -5,7 +5,10 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from '@/t
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const push = mock(() => {})
-const getWorkflow = mock(() => Promise.resolve({ id: 'workflow-1', name: 'Daily report', icon: null }))
+const router = { push }
+const currentTeam = { id: 'team-1', role: 'admin' }
+const currentUser = { id: 'user-1', is_superuser: false }
+const getWorkflow = mock(() => Promise.resolve({ id: 'workflow-1', name: 'Daily report', icon: null, team_id: 'team-1', created_by_id: 'user-1' }))
 const getWorkflowStats = mock(() => Promise.resolve({
   total_runs: 10, success_count: 7, failed_count: 2, timeout_count: 1,
   avg_duration_ms: 1500, last_run_at: null,
@@ -20,7 +23,13 @@ const Icon = (props: ComponentProps<'i'>) => <i {...props} />
 
 mock.module('next/navigation', () => ({
   useParams: () => ({ id: 'workflow-1' }),
-  useRouter: () => ({ push }),
+  useRouter: () => router,
+}))
+mock.module('@/contexts/team-context', () => ({
+  useTeam: () => ({ currentTeam, isLoading: false }),
+}))
+mock.module('@/hooks/use-permissions', () => ({
+  usePermissions: () => ({ user: currentUser, loading: false }),
 }))
 mock.module('next-intl', () => ({
   useLocale: () => 'en',

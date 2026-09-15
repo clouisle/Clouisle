@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -111,7 +112,7 @@ class McpClient:
         )
 
         async with (
-            stdio_client(server_params) as (
+            stdio_client(server_params, errlog=sys.__stderr__) as (
                 read_stream,
                 write_stream,
             ),
@@ -170,14 +171,20 @@ class McpClient:
         """
         async with self.connect() as session:
             result = await session.list_tools()
-            return [
-                McpToolInfo(
-                    name=tool.name,
-                    description=tool.description,
-                    parameters=tool.inputSchema if hasattr(tool, "inputSchema") else {},
+            tools = []
+            for tool in result.tools:
+                input_schema = getattr(tool, "input_schema", None)
+                if input_schema is None:
+                    # Older MCP SDK releases exposed the camelCase field.
+                    input_schema = getattr(tool, "inputSchema", {})
+                tools.append(
+                    McpToolInfo(
+                        name=tool.name,
+                        description=tool.description,
+                        parameters=input_schema,
+                    )
                 )
-                for tool in result.tools
-            ]
+            return tools
 
     async def execute_tool(
         self,
@@ -201,8 +208,11 @@ class McpClient:
                 async with self.connect() as session:
                     result = await session.call_tool(tool_name, arguments)
 
-                    # Check if there are any errors in the content
-                    if result.isError:
+                    result_is_error = getattr(result, "is_error", None)
+                    if result_is_error is None:
+                        # Older MCP SDK releases exposed the camelCase field.
+                        result_is_error = getattr(result, "isError", False)
+                    if result_is_error:
                         error_text = ""
                         for content in result.content:
                             if hasattr(content, "text"):

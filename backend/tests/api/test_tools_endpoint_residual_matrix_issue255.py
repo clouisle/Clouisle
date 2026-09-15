@@ -6,6 +6,7 @@ import pytest
 
 from app.api.v1.endpoints import tools
 from app.models.tool import ToolType as DBToolType
+from app.models.tool import ToolVisibility as DBToolVisibility
 from app.schemas.response import BusinessError, ResponseCode
 from app.schemas.tool import (
     McpConfigSchema,
@@ -53,7 +54,9 @@ async def test_write_access_respects_superuser_creator_and_admin_boundaries(
     monkeypatch,
 ):
     team_id, creator_id = uuid4(), uuid4()
-    tool = SimpleNamespace(team_id=team_id, created_by_id=creator_id)
+    tool = SimpleNamespace(
+        team_id=team_id, created_by_id=creator_id, visibility=DBToolVisibility.TEAM
+    )
     check_access = AsyncMock()
     monkeypatch.setattr(tools, "check_team_access", check_access)
 
@@ -115,7 +118,9 @@ async def test_update_tool_missing_duplicate_and_full_lifecycle(monkeypatch):
         id=tool_id,
         team_id=team_id,
         name="old",
+        created_by_id=uuid4(),
         created_by=SimpleNamespace(username="ada"),
+        visibility=DBToolVisibility.TEAM,
         save=AsyncMock(),
     )
     monkeypatch.setattr(
@@ -132,9 +137,9 @@ async def test_update_tool_missing_duplicate_and_full_lifecycle(monkeypatch):
         ),
     )
     monkeypatch.setattr(tools, "check_tool_write_access", AsyncMock())
-    scoped = AsyncMock()
+    permission = AsyncMock()
+    monkeypatch.setattr(tools, "check_team_permission", permission)
     audit = AsyncMock()
-    monkeypatch.setattr(tools.deps, "check_scoped_permission", scoped)
     monkeypatch.setattr(tools.AuditLogService, "log", audit)
     monkeypatch.setattr(tools, "db_tool_to_detail", MagicMock(return_value="detail"))
     user, request = SimpleNamespace(), object()
@@ -165,7 +170,8 @@ async def test_update_tool_missing_duplicate_and_full_lifecycle(monkeypatch):
     assert (tool.name, tool.display_name, tool.is_enabled) == ("new_name", "New", False)
     assert tool.http_config["url"] == "https://example.test"
     tool.save.assert_awaited_once()
-    scoped.assert_awaited_with(user, "tool:update", "team", team_id)
+    permission.assert_awaited_with(tool.team_id, user, "tool:update")
+    assert permission.await_count == 2
     audit.assert_awaited_once()
 
 
@@ -217,7 +223,12 @@ async def test_duplicate_tool_advances_name_and_creates_disabled_copy(monkeypatc
 @pytest.mark.anyio
 async def test_share_tool_validates_target_ownership_and_duplicate(monkeypatch):
     tool_id, owner_id, target_id = uuid4(), uuid4(), uuid4()
-    tool = SimpleNamespace(id=tool_id, team_id=owner_id, name="runner")
+    tool = SimpleNamespace(
+        id=tool_id,
+        team_id=owner_id,
+        name="runner",
+        visibility=DBToolVisibility.TEAM,
+    )
     user = SimpleNamespace(id=uuid4())
     access = AsyncMock()
     monkeypatch.setattr(tools, "check_team_access", access)

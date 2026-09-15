@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Image from 'next/image'
 import { useTranslations } from 'next-intl'
 import {
   Plus,
@@ -295,8 +296,24 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
                           onClick={() => handleSelectTool(tool)}
                         >
                           {/* 图标 */}
-                          <div className="shrink-0 w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-xl">
-                            {tool.icon || (tool.custom_type === 'database' ? <Database className="h-5 w-5" /> : category.icon)}
+                          <div className="shrink-0 w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-xl overflow-hidden relative">
+                            {tool.icon ? (
+                              tool.icon.startsWith('http') || tool.icon.startsWith('/') || tool.icon.startsWith('data:') ? (
+                                <Image
+                                  src={tool.icon}
+                                  alt={tool.display_name}
+                                  fill
+                                  className="object-cover"
+                                  unoptimized
+                                />
+                              ) : (
+                                <span>{tool.icon}</span>
+                              )
+                            ) : tool.custom_type === 'database' ? (
+                              <Database className="h-5 w-5" />
+                            ) : (
+                              category.icon
+                            )}
                           </div>
 
                           {/* 内容 */}
@@ -361,9 +378,10 @@ interface ToolDisplayItemProps {
   config: ToolConfig
   onUpdateConfig?: (newConfig: Record<string, unknown>) => void
   onDelete: () => void
+  readOnly?: boolean
 }
 
-function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete }: ToolDisplayItemProps) {
+function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = false }: ToolDisplayItemProps) {
   const t = useTranslations('agents.orchestration.tools')
   const [isDeleteHover, setIsDeleteHover] = React.useState(false)
   const [configOpen, setConfigOpen] = React.useState(false)
@@ -411,10 +429,25 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete }: ToolDisplay
         {/* 图标 */}
         {isMissing ? (
           <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+        ) : tool?.icon ? (
+          tool.icon.startsWith('http') || tool.icon.startsWith('/') || tool.icon.startsWith('data:') ? (
+            <div className="relative h-4 w-4 shrink-0 rounded overflow-hidden">
+              <Image
+                src={tool.icon}
+                alt={displayName}
+                fill
+                className="object-cover"
+                unoptimized
+              />
+            </div>
+          ) : (
+            <span className="text-sm shrink-0 leading-none">{tool.icon}</span>
+          )
+        ) : tool?.custom_type === 'database' ? (
+          <Database className="h-4 w-4 text-teal-600 dark:text-teal-400 shrink-0" />
         ) : (
           <Wrench className="h-4 w-4 text-orange-500 shrink-0" />
         )}
-
         {/* 名称 */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
@@ -434,7 +467,7 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete }: ToolDisplay
 
         {/* 操作 */}
         <div className="flex items-center gap-1 shrink-0">
-          {isWebSearch && (
+          {isWebSearch && !readOnly && (
             <Button
               variant="ghost"
               size="icon"
@@ -450,20 +483,24 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete }: ToolDisplay
               <Settings2 className="h-3.5 w-3.5" />
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete()
-            }}
-            onMouseEnter={() => setIsDeleteHover(true)}
-            onMouseLeave={() => setIsDeleteHover(false)}
-          >
-            <Trash2 className="h-3 w-3 text-muted-foreground" />
-          </Button>
-          <Switch checked={true} onCheckedChange={() => onDelete()} />
+          {!readOnly && (
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete()
+                }}
+                onMouseEnter={() => setIsDeleteHover(true)}
+                onMouseLeave={() => setIsDeleteHover(false)}
+              >
+                <Trash2 className="h-3 w-3 text-muted-foreground" />
+              </Button>
+              <Switch checked={true} onCheckedChange={() => onDelete()} />
+            </>
+          )}
         </div>
       </div>
 
@@ -532,15 +569,16 @@ interface ToolSelectorProps {
   toolsConfig: ToolConfig[]
   availableTools: Tool[]
   onChange: (toolsConfig: ToolConfig[]) => void
+  readOnly?: boolean
 }
 
 export function ToolSelector({
   toolsConfig,
   availableTools,
   onChange,
+  readOnly = false,
 }: ToolSelectorProps) {
   const t = useTranslations('agents.orchestration.tools')
-
   // 获取已选择的工具完整信息（包括找不到的工具）
   const selectedTools = React.useMemo(() => {
     return toolsConfig.map((config) => {
@@ -606,6 +644,7 @@ export function ToolSelector({
           config={config}
           onUpdateConfig={(cfg) => handleUpdateToolConfig(index, cfg)}
           onDelete={() => handleDeleteTool(config)}
+          readOnly={readOnly}
         />
       ))}
     </div>
@@ -650,6 +689,7 @@ function skillToTool(skill: Skill): Tool {
     description: skill.description,
     type: 'skill',
     category: skill.category,
+    visibility: 'team',
     icon: skill.icon || undefined,
     parameters: parametersFromInputSchema(skill.input_schema),
     is_enabled: skill.is_enabled,

@@ -4,6 +4,14 @@ import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const push = mock(() => undefined)
 const router = { push }
+const currentTeam: { id: string; role: string } | null = { id: 'team-1', role: 'admin' }
+const currentUser: { id: string; is_superuser?: boolean } | null = { id: 'user-1' }
+mock.module('@/contexts/team-context', () => ({
+  useTeam: () => ({ currentTeam }),
+}))
+mock.module('@/hooks/use-permissions', () => ({
+  usePermissions: () => ({ user: currentUser }),
+}))
 const getWorkflow = mock(async () => workflow)
 const getWorkflowRuns = mock(async () => pageOne)
 

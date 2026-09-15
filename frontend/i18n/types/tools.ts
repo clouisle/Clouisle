@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-11T17:53:25.758Z
+// GENERATED — 2026-09-14T07:19:09.077Z
 // Source: i18n/en/tools.json
 export type ToolsMessages = {
   tools: {
@@ -62,6 +62,12 @@ export type ToolsMessages = {
     displayName: string
     descriptionLabel: string
     icon: string
+    visibility: string
+    visibilityHint: string
+    visibilityPrivate: string
+    visibilityTeam: string
+    visibilityPrivateDesc: string
+    visibilityTeamDesc: string
     enabled: string
     disabled: string
     enable: string

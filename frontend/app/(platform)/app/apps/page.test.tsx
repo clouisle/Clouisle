@@ -119,7 +119,7 @@ describe('AppsPage', () => {
   it('assigns first onboarding selectors to the first Agent in a mixed list', () => {
     stateValues = ['all', '', [
       { id: 'workflow-1', name: 'Billing flow', description: 'B', icon: null, status: 'draft', type: 'workflow', run_count: 4, success_count: 3, fail_count: 1, created_at: '2025-01-01', updated_at: '2025-01-03', created_by_id: 'user-2', created_by_name: 'other' },
-      { id: 'agent-1', name: 'Sales agent', description: 'A', icon: null, status: 'published', type: 'agent', conversation_count: 2, message_count: 3, created_at: '2025-01-01', updated_at: '2025-01-02', created_by_id: 'user-1', created_by_name: 'me' },
+      { id: 'agent-1', name: 'Sales agent', description: 'A', icon: null, status: 'published', type: 'agent', visibility: 'private', conversation_count: 2, message_count: 3, created_at: '2025-01-01', updated_at: '2025-01-02', created_by_id: 'user-1', created_by_name: 'me' },
     ], false]
 
     const html = renderPage()
@@ -137,6 +137,7 @@ describe('AppsPage', () => {
     expect(workflowCard).not.toContain('data-testid="app-actions-button-first"')
     expect(workflowCard).not.toContain('data-testid="app-chat-button-first"')
 
+    expect(agentCard).toContain('visibility.private')
     expect(agentCard).toContain('data-testid="app-card-first"')
     expect(agentCard).toContain('data-testid="app-actions-button-first"')
     expect(agentCard).toContain('data-testid="app-chat-button-first"')

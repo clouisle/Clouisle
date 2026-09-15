@@ -54,6 +54,9 @@ async def test_knowledge_retrieval_returns_not_found_for_unknown_knowledge_base(
         workflow_filter.return_value.only.return_value.first = AsyncMock(
             return_value=SimpleNamespace(team_id=team_id)
         )
+        kb_filter.return_value.prefetch_related.return_value.first = AsyncMock(
+            return_value=None
+        )
         kb_filter.return_value.first = AsyncMock(return_value=None)
         result = await KnowledgeRetrievalNodeExecutor().execute(
             {
@@ -112,6 +115,9 @@ async def test_knowledge_retrieval_searches_and_formats_results():
     ):
         workflow_filter.return_value.only.return_value.first = AsyncMock(
             return_value=SimpleNamespace(team_id=kb.team_id)
+        )
+        kb_filter.return_value.prefetch_related.return_value.first = AsyncMock(
+            return_value=kb
         )
         kb_filter.return_value.first = AsyncMock(return_value=kb)
         result = await KnowledgeRetrievalNodeExecutor().execute(
@@ -187,6 +193,9 @@ async def test_knowledge_retrieval_translates_search_errors_and_uses_defaults():
     ):
         workflow_filter.return_value.only.return_value.first = AsyncMock(
             return_value=SimpleNamespace(team_id=team_id)
+        )
+        kb_filter.return_value.prefetch_related.return_value.first = AsyncMock(
+            return_value=kb
         )
         kb_filter.return_value.first = AsyncMock(return_value=kb)
         result = await KnowledgeRetrievalNodeExecutor().execute(

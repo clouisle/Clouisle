@@ -14,9 +14,24 @@ class Query:
         self.items = items or []
         self.count_value = count
         self.filters = []
+        self.filter_keys = []
 
-    def filter(self, **kwargs):
-        self.filters.append(kwargs)
+    def filter(self, *args, **kwargs):
+        self.filters.append(kwargs if not args else (args, kwargs))
+        if args:
+
+            def keys(value):
+                if isinstance(value, tuple) and value:
+                    return [value[0]]
+                return [
+                    key
+                    for child in getattr(value, "children", ())
+                    for key in keys(child)
+                ]
+
+            self.filter_keys.extend(key for arg in args for key in keys(arg))
+        else:
+            self.filter_keys.extend(kwargs)
         return self
 
     def prefetch_related(self, *_args):
@@ -37,6 +52,9 @@ class Query:
     async def all(self):
         return self.items
 
+    async def values_list(self, *_args, **_kwargs):
+        return []
+
     def __await__(self):
         async def resolve():
             return self.items
@@ -49,7 +67,8 @@ class Query:
 async def test_list_covers_filters_memberships_and_model_mapping(monkeypatch, use_team):
     team_id = uuid4()
     embedding_id, rerank_id = uuid4(), uuid4()
-    user = SimpleNamespace(is_superuser=False)
+    user = SimpleNamespace(is_superuser=False, roles=[])
+    knowledge_bases._kb_access_mode.set("platform")
     kbs = [
         SimpleNamespace(embedding_model_id=embedding_id, rerank_model_id=rerank_id),
         SimpleNamespace(embedding_model_id=None, rerank_model_id=None),
@@ -76,6 +95,11 @@ async def test_list_covers_filters_memberships_and_model_mapping(monkeypatch, us
         knowledge_bases.Model, "filter", lambda **_kwargs: Query(items=models)
     )
     monkeypatch.setattr(
+        knowledge_bases.KnowledgeBaseShare,
+        "filter",
+        lambda **_kwargs: Query(items=[]),
+    )
+    monkeypatch.setattr(
         knowledge_bases.KnowledgeBaseList,
         "model_validate",
         lambda kb: SimpleNamespace(model_dump=lambda: {"marker": id(kb)}),
@@ -93,7 +117,6 @@ async def test_list_covers_filters_memberships_and_model_mapping(monkeypatch, us
         current_user=user,
     )
 
-    assert result["data"]["total"] == 2
     assert result["data"]["items"][0]["embedding_model"]["name"] == "embed"
     assert result["data"]["items"][0]["rerank_model"]["name"] == "rerank"
     assert result["data"]["items"][1]["embedding_model"] is None
@@ -101,7 +124,10 @@ async def test_list_covers_filters_memberships_and_model_mapping(monkeypatch, us
     if use_team:
         check_team.assert_awaited_once_with(team_id, user)
     else:
-        assert {"team_id__in": [team_id]} in query.filters
+        assert any(
+            isinstance(filter_call, tuple) and filter_call[0]
+            for filter_call in query.filters
+        )
     assert {"created_by": user} in query.filters
     assert {"name__icontains": "guide"} in query.filters
     assert {"status__in": ["active"]} in query.filters

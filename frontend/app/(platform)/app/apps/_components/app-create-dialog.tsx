@@ -83,6 +83,7 @@ export function AppCreateDialog({
   const [appType, setAppType] = React.useState<AppType>('agent')
   const [name, setName] = React.useState('')
   const [description, setDescription] = React.useState('')
+  const [visibility, setVisibility] = React.useState<'private' | 'team'>('private')
   const [selectedTeamId, setSelectedTeamId] = React.useState(teamId || teams[0]?.id || '')
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
@@ -94,6 +95,7 @@ export function AppCreateDialog({
       setSelectedTeamId(teamId || teams[0]?.id || '')
       setName('')
       setDescription('')
+      setVisibility('private')
       setFieldErrors({})
     }
   }, [open, initialType, teamId, teams])
@@ -122,6 +124,7 @@ export function AppCreateDialog({
           team_id: targetTeamId,
           name: name.trim(),
           description: description.trim() || undefined,
+          visibility,
         })
         onOpenChange(false)
         toast.success(t('appCreated'))
@@ -142,6 +145,7 @@ export function AppCreateDialog({
           team_id: targetTeamId,
           name: name.trim(),
           description: description.trim() || undefined,
+          visibility,
         })
         onOpenChange(false)
         toast.success(t('appCreated'))
@@ -309,6 +313,25 @@ export function AppCreateDialog({
                 aria-invalid={!!fieldErrors.description}
               />
               <FieldError>{fieldErrors.description}</FieldError>
+            </div>
+
+            {/* Visibility */}
+            <div className="space-y-2">
+              <Label htmlFor="app-visibility">{t('visibilityLabel')}</Label>
+              <Select
+                value={visibility}
+                onValueChange={(value) => setVisibility(value as 'private' | 'team')}
+              >
+                <SelectTrigger id="app-visibility" className="w-full">
+                  <SelectValue>
+                    {visibility === 'private' ? t('visibility.private') : t('visibility.team')}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="private">{t('visibility.private')}</SelectItem>
+                  <SelectItem value="team">{t('visibility.team')}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

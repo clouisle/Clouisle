@@ -23,6 +23,7 @@ from .knowledge_base import (
     Document,
     DocumentChunk,
     KnowledgeBaseStatus,
+    KnowledgeBaseVisibility,
     DocumentStatus,
     DocumentType,
 )
@@ -57,6 +58,7 @@ from .tool import (
     CustomToolType,
     ToolCategory,
     ToolSharePermission,
+    ToolVisibility,
 )
 from .tool_config import ToolConfig
 from .skill import (
@@ -126,6 +128,7 @@ __all__ = [
     "Document",
     "DocumentChunk",
     "KnowledgeBaseStatus",
+    "KnowledgeBaseVisibility",
     "DocumentStatus",
     "DocumentType",
     "Agent",
@@ -154,6 +157,7 @@ __all__ = [
     "CustomToolType",
     "ToolCategory",
     "ToolSharePermission",
+    "ToolVisibility",
     "ToolConfig",
     "Skill",
     "SkillCategory",

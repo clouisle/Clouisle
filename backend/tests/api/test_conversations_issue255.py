@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.api import conversation_access, team_access
 from app.api.v1.endpoints import conversations
 from app.schemas.response import BusinessError
 
@@ -116,25 +117,25 @@ async def test_team_access_and_admin_access_boundaries():
     team = SimpleNamespace(id=uuid4())
     membership = SimpleNamespace(role="admin")
 
-    with patch.object(conversations.Team, "filter", return_value=Query(False)):
+    with patch.object(team_access.Team, "filter", return_value=Query(False)):
         with pytest.raises(BusinessError) as exc:
             await conversations.check_team_access(team.id, member)
     assert exc.value.status_code == 404
 
     with (
-        patch.object(conversations.Team, "filter", return_value=Query(team)),
-        patch.object(conversations.TeamMember, "filter", return_value=Query(False)),
+        patch.object(team_access.Team, "filter", return_value=Query(team)),
+        patch.object(team_access.TeamMember, "filter", return_value=Query(False)),
         pytest.raises(BusinessError) as exc,
     ):
         await conversations.check_team_access(team.id, member)
     assert exc.value.status_code == 403
 
     with patch.object(
-        conversations.TeamMember, "filter", return_value=Query(membership)
+        conversation_access.TeamMember, "filter", return_value=Query(membership)
     ):
         assert await conversations.has_conversation_team_admin_access(member, team.id)
     assert not await conversations.has_conversation_team_admin_access(member, None)
-    with patch.object(conversations.Team, "filter", return_value=Query(team)):
+    with patch.object(team_access.Team, "filter", return_value=Query(team)):
         assert (
             await conversations.check_team_access(team.id, user(superuser=True)) is team
         )

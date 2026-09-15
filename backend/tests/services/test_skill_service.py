@@ -23,8 +23,8 @@ async def test_check_team_access_rejects_non_member():
     user = SimpleNamespace(is_superuser=False)
 
     with (
-        patch("app.services.skill.Team.filter", return_value=first_result(team)),
-        patch("app.services.skill.TeamMember.filter", return_value=first_result(None)),
+        patch("app.api.team_access.Team.filter", return_value=first_result(team)),
+        patch("app.api.team_access.TeamMember.filter", return_value=first_result(None)),
         pytest.raises(BusinessError) as error,
     ):
         await SkillService.check_team_access(uuid4(), user)

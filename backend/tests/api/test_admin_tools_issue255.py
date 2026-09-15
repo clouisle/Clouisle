@@ -10,8 +10,9 @@ from fastapi.testclient import TestClient
 
 from app.api import deps
 from app.api.v1.admin.endpoints import tools
-from app.models.tool import CustomToolType as DBCustomToolType
 from app.models.tool import ToolType as DBToolType
+from app.models.tool import CustomToolType as DBCustomToolType
+from app.models.tool import ToolVisibility as DBToolVisibility
 from app.models.tool_config import ToolConfig
 from app.schemas.response import BusinessError, error
 from app.schemas.tool import (
@@ -127,6 +128,7 @@ def db_tool(**overrides):
         "description": "Forecasts",
         "icon": None,
         "category": "other",
+        "visibility": DBToolVisibility.PRIVATE,
         "type": DBToolType.CUSTOM,
         "custom_type": DBCustomToolType.HTTP,
         "parameters": [],
@@ -415,10 +417,12 @@ async def test_update_tool_persists_all_fields_and_rejects_duplicate(monkeypatch
         description="Changed",
         icon="icon",
         category="api",
+        visibility="team",
         custom_type="code",
         parameters=[{"name": "x", "type": "integer"}],
         http_config={"url": "https://new.test"},
         code_config={"language": "python", "code": "return 2"},
+        database_config={"db_type": "postgresql", "host": "db"},
         mcp_config={"transport": "http", "url": "https://mcp.test"},
         credentials={"key": "value"},
         is_enabled=False,
@@ -619,6 +623,28 @@ async def test_http_code_and_unsupported_custom_execution(monkeypatch, user):
     )
     assert unsupported.success is False
 
+    current.custom_type = DBCustomToolType.DATABASE
+    current.database_config = {"db_type": "postgresql", "host": "127.0.0.1"}
+    monkeypatch.setattr(
+        "app.llm.tools.builtin.db_executor.execute_database_tool",
+        AsyncMock(return_value={"success": True, "ping": 1}),
+    )
+    db_test_resp = response_data(
+        await tools.test_tool(
+            ToolExecuteRequest(name=current.name, arguments={"action": "query"}),
+            None,
+            user,
+        )
+    )
+    assert db_test_resp.success is True
+    assert db_test_resp.result == {"success": True, "ping": 1}
+
+    current.database_config = {}
+    missing_database = response_data(
+        await tools.test_tool(ToolExecuteRequest(name=current.name), None, user)
+    )
+    assert missing_database.success is False
+
 
 @pytest.mark.asyncio
 async def test_direct_code_rejects_language_and_uses_sandbox(monkeypatch, user):
@@ -723,7 +749,7 @@ async def test_tool_config_create_update_delete_and_failures(monkeypatch, user):
 
 @pytest.mark.asyncio
 async def test_share_list_and_unshare_success(monkeypatch, user):
-    existing = db_tool()
+    existing = db_tool(visibility=DBToolVisibility.TEAM)
     target = SimpleNamespace(id=uuid4(), name="Consumers")
     record = share(existing, shared_with_team_id=target.id, shared_with_team=target)
     monkeypatch.setattr(tools, "_get_db_tool", AsyncMock(return_value=existing))
@@ -756,7 +782,7 @@ async def test_share_list_and_unshare_success(monkeypatch, user):
 
 @pytest.mark.asyncio
 async def test_share_validation_failures_do_not_persist(monkeypatch, user):
-    existing = db_tool()
+    existing = db_tool(visibility=DBToolVisibility.TEAM)
     monkeypatch.setattr(tools, "_get_db_tool", AsyncMock(return_value=existing))
     monkeypatch.setattr(
         tools,
@@ -791,3 +817,9 @@ async def test_share_validation_failures_do_not_persist(monkeypatch, user):
     with pytest.raises(BusinessError) as exc_info:
         await tools.unshare_tool(existing.id, other_team, user)
     assert exc_info.value.msg_key == "tool_share_not_found"
+
+    existing.visibility = DBToolVisibility.PRIVATE
+    with pytest.raises(BusinessError) as exc_info:
+        await tools.share_tool(existing.id, ToolShareInput(team_id=other_team), user)
+    assert exc_info.value.msg_key == "private_tool_cannot_be_shared"
+    create.assert_not_awaited()

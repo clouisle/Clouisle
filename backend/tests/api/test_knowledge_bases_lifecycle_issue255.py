@@ -131,6 +131,7 @@ async def test_update_knowledge_base_updates_mutable_fields(monkeypatch):
         rerank_model_id=rerank_id,
         settings=SimpleNamespace(model_dump=lambda: {"top_k": 8}),
         status="archived",
+        visibility=SimpleNamespace(value="team"),
         model_fields_set={"embedding_model_id", "rerank_model_id"},
     )
 
@@ -152,6 +153,7 @@ async def test_update_knowledge_base_updates_mutable_fields(monkeypatch):
     assert kb.rerank_model_id == rerank_id
     authorize.assert_awaited_once_with(team_id, rerank_id, "rerank")
     kb.save.assert_awaited_once()
+    assert kb.visibility == "team"
 
 
 @pytest.mark.anyio

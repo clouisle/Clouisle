@@ -25,11 +25,13 @@ test('provides localized activity metadata', async () => {
   })
 })
 
-test('renders the activities client inside the dashboard layout', () => {
-  const tree = ActivitiesPage() as { props: Record<string, unknown> }
-  const [header, content] = tree.props.children as Array<{ props: Record<string, unknown> }>
+test('renders the activities client inside the guarded dashboard layout', () => {
+  const tree = ActivitiesPage() as { type: { name?: string }; props: Record<string, unknown> }
+  const layout = tree.props.children as { props: Record<string, unknown> }
+  const [header, content] = layout.props.children as Array<{ props: Record<string, unknown> }>
 
-  expect(tree.props.className).toBe('flex h-full flex-col')
+  expect(tree.type.name).toBe('RoutePermissionGuard')
+  expect(layout.props.className).toBe('flex h-full flex-col')
   expect((header.type as { name?: string }).name).toBe('Header')
   expect(content.props.className).toBe('flex flex-1 flex-col gap-4 overflow-auto p-4')
   expect(((content.props.children as { type: { name?: string } }).type as { name?: string }).name).toBe(

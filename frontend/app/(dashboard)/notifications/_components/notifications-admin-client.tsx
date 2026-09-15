@@ -111,25 +111,36 @@ export function NotificationsAdminClient() {
   const debouncedSearchQuery = useDebounce(searchQuery.trim(), 300)
   const [scopeFilter, setScopeFilter] = React.useState<Set<string>>(new Set())
   const [levelFilter, setLevelFilter] = React.useState<Set<string>>(new Set())
+  const inFlightListRequests = React.useRef(new Map<string, Promise<void>>())
 
-  const fetchList = React.useCallback(async () => {
-    try {
-      setIsLoading(true)
-      const result = await notificationsApi.adminList({
-        page,
-        page_size: pageSize,
-        scope: scopeFilter.size > 0 ? Array.from(scopeFilter) as NotificationScope[] : undefined,
-        level: levelFilter.size > 0 ? Array.from(levelFilter) as NotificationLevel[] : undefined,
-        search: debouncedSearchQuery || undefined,
-      })
-      setItems(result.items)
-      setTotal(result.total)
-      setSelectedIds(new Set())
-    } catch (error) {
-      console.error('Failed to fetch notifications:', error)
-    } finally {
-      setIsLoading(false)
+  const fetchList = React.useCallback(() => {
+    const params = {
+      page,
+      page_size: pageSize,
+      scope: scopeFilter.size > 0 ? Array.from(scopeFilter) as NotificationScope[] : undefined,
+      level: levelFilter.size > 0 ? Array.from(levelFilter) as NotificationLevel[] : undefined,
+      search: debouncedSearchQuery || undefined,
     }
+    const requestKey = JSON.stringify(params)
+    const existingRequest = inFlightListRequests.current.get(requestKey)
+    if (existingRequest) return existingRequest
+
+    const request = (async () => {
+      try {
+        setIsLoading(true)
+        const result = await notificationsApi.adminList(params)
+        setItems(result.items)
+        setTotal(result.total)
+        setSelectedIds(new Set())
+      } catch (error) {
+        console.error('Failed to fetch notifications:', error)
+      } finally {
+        inFlightListRequests.current.delete(requestKey)
+        setIsLoading(false)
+      }
+    })()
+    inFlightListRequests.current.set(requestKey, request)
+    return request
   }, [page, pageSize, scopeFilter, levelFilter, debouncedSearchQuery])
 
   React.useEffect(() => {

@@ -26,6 +26,13 @@ mock.module("sonner", () => ({ toast: { success } }));
 mock.module("@/lib/api", () => ({
   apiKeysApi: { getAPIKeys, deactivateAPIKey, activateAPIKey },
 }));
+mock.module("@/components/auth/permission-guard", () => ({
+  RoutePermissionGuard: ({ children }: React.PropsWithChildren) => <>{children}</>,
+}));
+mock.module("@/components/permission-guard", () => ({
+  PermissionGuard: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  useCanPerform: () => ({ canPerform: () => true }),
+}));
 const element = ({
   children,
   ...props

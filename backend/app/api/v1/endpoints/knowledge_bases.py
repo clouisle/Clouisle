@@ -31,6 +31,7 @@ from app.models.knowledge_base import (
     Document,
     DocumentChunk,
     KnowledgeBaseStatus,
+    KnowledgeBaseVisibility,
     DocumentStatus,
     DocumentType,
 )
@@ -305,33 +306,19 @@ async def check_team_access(
     Check if user has access to the team.
     Returns the team if access is granted.
     """
-    team = await Team.filter(id=team_id).first()
-    if not team:
-        raise BusinessError(
-            code=ResponseCode.TEAM_NOT_FOUND,
-            msg_key="team_not_found",
-            status_code=404,
-        )
-
-    if user.is_superuser or _kb_access_mode.get() == "admin":
+    if _kb_access_mode.get() == "admin":
+        team = await Team.filter(id=team_id).first()
+        if not team:
+            raise BusinessError(
+                code=ResponseCode.TEAM_NOT_FOUND,
+                msg_key="team_not_found",
+                status_code=404,
+            )
         return team
 
-    membership = await TeamMember.filter(team=team, user=user).first()
-    if not membership:
-        raise BusinessError(
-            code=ResponseCode.NOT_TEAM_MEMBER,
-            msg_key="not_team_member",
-            status_code=403,
-        )
+    from app.api.team_access import check_team_access as shared_check_team_access
 
-    if require_admin and membership.role not in ["owner", "admin"]:
-        raise BusinessError(
-            code=ResponseCode.TEAM_ADMIN_REQUIRED,
-            msg_key="team_admin_required",
-            status_code=403,
-        )
-
-    return team
+    return await shared_check_team_access(team_id, user, require_admin=require_admin)
 
 
 async def get_embedding_model_info(model_id: UUID | None) -> EmbeddingModelInfo | None:
@@ -487,6 +474,45 @@ async def ensure_team_authorized_model(
     return model
 
 
+async def kb_read_visibility_filter(user: User, team_id: UUID | None = None) -> Q:
+    """Build the queryset filter matching check_kb_access read rules."""
+    if user.is_superuser or _kb_access_mode.get() == "admin":
+        if team_id:
+            return Q(team_id=team_id)
+        return Q()
+
+    if team_id:
+        memberships = [team_id]
+    else:
+        memberships = await TeamMember.filter(user=user).values_list(
+            "team_id", flat=True
+        )
+
+    user_id = getattr(user, "id", None)
+    team_or_public = Q(
+        team_id__in=memberships,
+        visibility__in=[
+            KnowledgeBaseVisibility.TEAM.value,
+            KnowledgeBaseVisibility.PUBLIC.value,
+        ],
+    )
+    private_owner = (
+        Q(
+            team_id__in=memberships if team_id else memberships,
+            created_by_id=user_id,
+            visibility=KnowledgeBaseVisibility.PRIVATE.value,
+        )
+        if user_id
+        else Q(pk__in=[])
+    )
+    legacy_no_creator_private = Q(
+        team_id__in=memberships,
+        created_by_id__isnull=True,
+        visibility=KnowledgeBaseVisibility.PRIVATE.value,
+    )
+    return team_or_public | private_owner | legacy_no_creator_private
+
+
 async def check_kb_access(
     kb_id: UUID,
     user: User,
@@ -516,6 +542,24 @@ async def check_kb_access(
     kb_team_id = getattr(kb, "team_id", None) or (
         kb.team.id if hasattr(kb, "team") and kb.team else None
     )
+    # Handle PRIVATE visibility
+    kb_visibility = getattr(kb, "visibility", KnowledgeBaseVisibility.TEAM.value)
+    if kb_visibility == KnowledgeBaseVisibility.PRIVATE.value:
+        if is_owner:
+            if require_write and not allow_owner_write:
+                await check_team_access(kb_team_id, user, require_admin=True)
+            return kb
+        if not kb.created_by:
+            await check_team_access(kb_team_id, user)
+            if require_write and (not allow_owner_write or not is_owner):
+                await check_team_access(kb_team_id, user, require_admin=True)
+            return kb
+        raise BusinessError(
+            code=ResponseCode.KB_ACCESS_DENIED,
+            msg_key="kb_access_denied",
+            status_code=403,
+        )
+
     try:
         await check_team_access(kb_team_id, user)
     except BusinessError:
@@ -560,29 +604,36 @@ async def list_knowledge_bases(
     if team_id:
         # Check team access
         await check_team_access(team_id, current_user)
+        vis_filter = await kb_read_visibility_filter(current_user, team_id=team_id)
         if not include_shared or own_only:
-            query = query.filter(team_id=team_id)
+            query = query.filter(vis_filter)
         else:
             shared_kb_ids = await KnowledgeBaseShare.filter(
-                shared_with_team_id=team_id
+                shared_with_team_id=team_id,
+                knowledge_base__visibility__in=[
+                    KnowledgeBaseVisibility.TEAM.value,
+                    KnowledgeBaseVisibility.PUBLIC.value,
+                ],
             ).values_list("knowledge_base_id", flat=True)
-            query = query.filter(Q(team_id=team_id) | Q(id__in=shared_kb_ids))
+            query = query.filter(vis_filter | Q(id__in=shared_kb_ids))
     elif not current_user.is_superuser and _kb_access_mode.get() != "admin":
-        # Get all teams user belongs to
         memberships = await TeamMember.filter(user=current_user).values_list(
             "team_id", flat=True
         )
+        vis_filter = await kb_read_visibility_filter(current_user)
         if not include_shared or own_only:
-            query = query.filter(team_id__in=memberships)
+            query = query.filter(vis_filter)
         else:
             shared_kb_ids = await KnowledgeBaseShare.filter(
-                shared_with_team_id__in=memberships
+                shared_with_team_id__in=memberships,
+                knowledge_base__visibility__in=[
+                    KnowledgeBaseVisibility.TEAM.value,
+                    KnowledgeBaseVisibility.PUBLIC.value,
+                ],
             ).values_list("knowledge_base_id", flat=True)
-            query = query.filter(Q(team_id__in=memberships) | Q(id__in=shared_kb_ids))
-
+            query = query.filter(vis_filter | Q(id__in=shared_kb_ids))
     if own_only and not current_user.is_superuser:
         query = query.filter(created_by=current_user)
-
     if search:
         query = query.filter(name__icontains=search)
 
@@ -744,6 +795,14 @@ async def create_knowledge_base(
         embedding_model_id=kb_in.embedding_model_id,
         rerank_model_id=kb_in.rerank_model_id,
         settings=kb_in.settings.model_dump() if kb_in.settings else None,
+        visibility=(
+            getattr(kb_in, "visibility", None).value
+            if hasattr(getattr(kb_in, "visibility", None), "value")
+            else (
+                getattr(kb_in, "visibility", None)
+                or KnowledgeBaseVisibility.PRIVATE.value
+            )
+        ),
     )
 
     # Reload with relations
@@ -840,7 +899,12 @@ async def update_knowledge_base(
         KnowledgeBaseStatus.ARCHIVED.value,
     ]:
         kb.status = kb_in.status
-
+    if getattr(kb_in, "visibility", None) is not None:
+        kb.visibility = (
+            kb_in.visibility.value
+            if hasattr(kb_in.visibility, "value")
+            else kb_in.visibility
+        )
     await kb.save()
 
     # Reload with relations
@@ -2845,6 +2909,14 @@ async def share_knowledge_base(
             code=ResponseCode.TEAM_NOT_FOUND,
             msg_key="team_not_found",
             status_code=404,
+        )
+
+    kb_visibility = getattr(kb, "visibility", KnowledgeBaseVisibility.TEAM.value)
+    if kb_visibility == KnowledgeBaseVisibility.PRIVATE.value:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="private_kb_cannot_be_shared",
+            status_code=400,
         )
 
     if kb_team_id == share_data.team_id:

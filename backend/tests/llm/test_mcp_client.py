@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call
 
@@ -100,6 +101,7 @@ async def test_transport_initializes_session_without_real_io(monkeypatch, transp
             ["--flag"],
             {"TOKEN": "secret"},
         )
+        assert transport_call.await_args.kwargs["errlog"] is sys.__stderr__
     elif transport == "sse":
         transport_call.assert_awaited_once_with(
             "https://mcp.example.test",
@@ -119,9 +121,9 @@ async def test_transport_initializes_session_without_real_io(monkeypatch, transp
 async def test_list_tools_returns_structured_tool_info(monkeypatch):
     tools = [
         SimpleNamespace(
-            name="search", description="Search", inputSchema={"type": "object"}
+            name="search", description="Search", input_schema={"type": "object"}
         ),
-        SimpleNamespace(name="ping", description=None),
+        SimpleNamespace(name="ping", description=None, inputSchema={}),
     ]
     session = SimpleNamespace(
         list_tools=AsyncMock(return_value=SimpleNamespace(tools=tools))
@@ -147,7 +149,7 @@ async def test_list_tools_returns_structured_tool_info(monkeypatch):
 async def test_execute_tool_returns_structured_success(monkeypatch, content, expected):
     session = SimpleNamespace(
         call_tool=AsyncMock(
-            return_value=SimpleNamespace(isError=False, content=content)
+            return_value=SimpleNamespace(is_error=False, content=content)
         )
     )
     client = mcp_client.McpClient({})
@@ -170,7 +172,7 @@ async def test_execute_tool_maps_server_timeout_and_connection_errors(monkeypatc
     error_session = SimpleNamespace(
         call_tool=AsyncMock(
             return_value=SimpleNamespace(
-                isError=True,
+                is_error=True,
                 content=[SimpleNamespace(text="bad "), SimpleNamespace(text="request")],
             )
         )
@@ -204,6 +206,25 @@ async def test_execute_tool_maps_server_timeout_and_connection_errors(monkeypatc
     mask_error.assert_called_once()
     assert isinstance(mask_error.call_args.args[0], RuntimeError)
     assert mask_error.call_args.kwargs == {"fallback_key": "mcp_tool_execution_failed"}
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_accepts_legacy_camel_case_error_flag(monkeypatch):
+    session = SimpleNamespace(
+        call_tool=AsyncMock(
+            return_value=SimpleNamespace(
+                isError=True,
+                content=[SimpleNamespace(text="legacy failure")],
+            )
+        )
+    )
+    client = mcp_client.McpClient({})
+    monkeypatch.setattr(client, "connect", lambda: _context(session))
+
+    result = await client.execute_tool("fail", {})
+
+    assert result.success is False
+    assert result.error == "legacy failure"
 
 
 @pytest.mark.asyncio

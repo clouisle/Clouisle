@@ -36,7 +36,16 @@ def _app() -> FastAPI:
 @pytest.fixture
 def notification_client():
     app = _app()
-    user = SimpleNamespace(id=uuid4(), is_active=True, is_superuser=False)
+    user = SimpleNamespace(
+        id=uuid4(),
+        is_active=True,
+        is_superuser=False,
+        roles=[
+            SimpleNamespace(
+                permissions=[SimpleNamespace(code="admin:notification:delete")]
+            )
+        ],
+    )
 
     async def fake_current_user():
         return user
@@ -126,4 +135,31 @@ def test_superuser_deletes_global_notification(notification_client):
     assert response.json()["data"] == {"id": str(notification_id)}
     mocked_audit.assert_awaited_once()
     mocked_filter.assert_any_call(id=notification_id)
+    query.delete.assert_awaited_once_with()
+
+
+def test_team_notification_deletion_checks_team_admin_access(notification_client):
+    client, user = notification_client
+    notification_id = uuid4()
+    team_id = uuid4()
+    notification = SimpleNamespace(
+        id=notification_id,
+        scope=NotificationScope.TEAM,
+        team_id=team_id,
+    )
+    query = MagicMock()
+    query.first = AsyncMock(return_value=notification)
+    query.delete = AsyncMock(return_value=1)
+
+    with (
+        patch.object(notifications.Notification, "filter", return_value=query),
+        patch.object(
+            notifications, "check_team_admin_permission", new=AsyncMock()
+        ) as check_team_admin,
+        patch.object(notifications, "create_notification_audit", new=AsyncMock()),
+    ):
+        response = client.delete(f"/api/v1/admin/notifications/{notification_id}")
+
+    assert response.status_code == 200
+    check_team_admin.assert_awaited_once_with(team_id, user)
     query.delete.assert_awaited_once_with()

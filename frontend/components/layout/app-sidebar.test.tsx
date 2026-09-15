@@ -34,28 +34,39 @@ mock.module('@/hooks/use-permissions', () => ({
   usePermissions: () => ({
     hasPermission: (permission: string) => allowedPermissions.has(permission),
     canAccessDashboard,
+    isSuperuser: false,
   }),
 }))
+
+const routePermissionMap: Record<string, string | string[]> = {
+  '/dashboard': 'dashboard:read',
+  '/teams': 'teams:read',
+  '/knowledge-bases': 'knowledge_bases:read',
+  '/activities': 'activities:read',
+  '/users': 'users:read',
+  '/roles': 'roles:read',
+  '/permissions': 'permissions:read',
+  '/models': 'models:read',
+  '/apps': 'apps:read',
+  '/capabilities': 'capabilities:read',
+  '/api-keys': 'api_keys:read',
+  '/memories': 'memories:read',
+  '/dashboard/observability': 'observability:read',
+  '/notifications': 'notifications:read',
+  '/audit-logs': 'audit_logs:read',
+  '/site-settings': 'settings:read',
+}
+
+const canAccessRoute = (url: string, hasPermission: (permission: string) => boolean) => {
+  const required = routePermissionMap[url]
+  return !required || (Array.isArray(required) ? required.every(hasPermission) : hasPermission(required))
+}
+
 mock.module('@/lib/route-permissions', () => ({
-  ROUTE_PERMISSION_MAP: {
-    '/dashboard': 'dashboard:read',
-    '/teams': 'teams:read',
-    '/knowledge-bases': 'knowledge_bases:read',
-    '/activities': 'activities:read',
-    '/users': 'users:read',
-    '/roles': 'roles:read',
-    '/permissions': 'permissions:read',
-    '/models': 'models:read',
-    '/apps': 'apps:read',
-    '/capabilities': 'capabilities:read',
-    '/api-keys': 'api_keys:read',
-    '/memories': 'memories:read',
-    '/dashboard/observability': 'observability:read',
-    '/notifications': 'notifications:read',
-    '/audit-logs': 'audit_logs:read',
-    '/site-settings': 'settings:read',
-  },
+  canAccessRoute,
+  ROUTE_PERMISSION_MAP: routePermissionMap,
 }))
+
 mock.module('@/contexts/site-settings-context', () => ({
   useSiteSettings: () => ({ settings: { site_name: 'Test Site', site_icon: '', theme_branding_display: 'both' } }),
 }))

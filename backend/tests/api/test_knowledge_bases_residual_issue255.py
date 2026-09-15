@@ -6,7 +6,9 @@ from uuid import uuid4
 import pytest
 from starlette.datastructures import URL
 
+from app.api import team_access as shared_team_access
 from app.api.v1.endpoints import knowledge_bases as kb_api
+
 from app.models.knowledge_base import DocumentStatus
 from app.schemas.knowledge_base import (
     ChunkPreviewRequest,
@@ -25,8 +27,8 @@ class Query:
         self.filters = []
         self.updated = None
 
-    def filter(self, **kwargs):
-        self.filters.append(kwargs)
+    def filter(self, *args, **kwargs):
+        self.filters.append(kwargs if not args else (args, kwargs))
         return self
 
     def exclude(self, **kwargs):
@@ -93,7 +95,12 @@ class Recorder:
 
 @pytest.fixture
 def user():
-    return SimpleNamespace(id=uuid4(), is_superuser=False, roles=[], locale="en")
+    return SimpleNamespace(
+        id=uuid4(),
+        is_superuser=False,
+        roles=[SimpleNamespace(permissions=[SimpleNamespace(code="team:read")])],
+        locale="en",
+    )
 
 
 @pytest.fixture
@@ -233,20 +240,28 @@ async def test_admin_dependency_enforces_actions_only_on_admin_routes(user):
 async def test_team_access_admin_role_and_missing_team_branches(
     monkeypatch, user, team
 ):
-    monkeypatch.setattr(kb_api.Team, "filter", lambda **_kwargs: Query())
+    monkeypatch.setattr(shared_team_access.Team, "filter", lambda **_kwargs: Query())
+
     with pytest.raises(BusinessError) as exc_info:
         await kb_api.check_team_access(team.id, user)
     assert exc_info.value.code == ResponseCode.TEAM_NOT_FOUND
 
-    monkeypatch.setattr(kb_api.Team, "filter", lambda **_kwargs: Query(first=team))
-    monkeypatch.setattr(kb_api.TeamMember, "filter", lambda **_kwargs: Query())
+    monkeypatch.setattr(
+        shared_team_access.Team, "filter", lambda **_kwargs: Query(first=team)
+    )
+    monkeypatch.setattr(
+        shared_team_access.TeamMember, "filter", lambda **_kwargs: Query()
+    )
+
     with pytest.raises(BusinessError) as exc_info:
         await kb_api.check_team_access(team.id, user)
     assert exc_info.value.code == ResponseCode.NOT_TEAM_MEMBER
 
     member = SimpleNamespace(role="member")
     monkeypatch.setattr(
-        kb_api.TeamMember, "filter", lambda **_kwargs: Query(first=member)
+        shared_team_access.TeamMember,
+        "filter",
+        lambda **_kwargs: Query(first=member),
     )
     with pytest.raises(BusinessError) as exc_info:
         await kb_api.check_team_access(team.id, user, require_admin=True)

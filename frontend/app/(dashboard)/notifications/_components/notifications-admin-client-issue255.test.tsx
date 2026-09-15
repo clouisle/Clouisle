@@ -73,6 +73,12 @@ function render() {
   renderers.push(renderer!)
   return renderer!
 }
+function renderStrict() {
+  let renderer: ReactTestRenderer
+  act(() => { renderer = create(<React.StrictMode><NotificationsAdminClient /></React.StrictMode>) })
+  renderers.push(renderer!)
+  return renderer!
+}
 async function settle() { await act(async () => {}) }
 function buttons(renderer: ReactTestRenderer, text: string) { return renderer.root.findAllByType('button').filter((button) => button.findAll((node) => node.children.includes(text)).length > 0) }
 function checkboxes(renderer: ReactTestRenderer) { return renderer.root.findAllByProps({ type: 'checkbox' }) }
@@ -89,6 +95,13 @@ function selectedRows(renderer: ReactTestRenderer) { return renderer.root.findAl
     expect(output).toContain('no route')
     expect(output).toContain('custom')
     expect(output).toContain('date:now')
+  })
+
+  test('coalesces duplicate initial list requests in StrictMode', async () => {
+    renderStrict()
+    await settle()
+
+    expect(adminList).toHaveBeenCalledTimes(1)
   })
 
   test('shows empty state after a failed fetch', async () => {

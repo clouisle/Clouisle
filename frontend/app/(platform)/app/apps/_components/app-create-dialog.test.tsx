@@ -168,12 +168,27 @@ describe('AppCreateDialog', () => {
       team_id: 'team-1',
       name: 'Support agent',
       description: 'Handles requests',
+      visibility: 'private',
     })
     expect(createWorkflow).not.toHaveBeenCalled()
     expect(onOpenChange).toHaveBeenCalledWith(false)
     expect(toastSuccess).toHaveBeenCalledWith('appCreated')
     expect(onSuccess).toHaveBeenCalledTimes(1)
     expect(push).toHaveBeenCalledWith('/agents/agent-1/edit')
+  })
+
+  test('renders the private visibility label in the trigger and option list', () => {
+    const props = {
+      open: true,
+      onOpenChange: mock(),
+      api: { createAgent: mock(async () => ({ id: 'agent-1' })), createWorkflow: mock(async () => ({ id: 'workflow-1' })) },
+      teamId: 'team-1',
+    } as unknown as Props
+    mount(props)
+
+    const trigger = find(render(props), (tree) => tree.props.id === 'app-visibility')
+    expect(find(trigger.props.children as ReactNode, (tree) => tree.type === 'select-value').props.children).toBe('visibility.private')
+    expect(find(render(props), (tree) => tree.type === 'option' && tree.props.value === 'private').props.children).toBe('visibility.private')
   })
 
   test('creates the selected workflow and exposes normalized API errors', async () => {
@@ -198,6 +213,7 @@ describe('AppCreateDialog', () => {
       team_id: 'team-1',
       name: 'Release flow',
       description: undefined,
+      visibility: 'private',
     })
     expect(createAgent).not.toHaveBeenCalled()
     expect(find(render(props), (tree) => tree.props.children === 'Already exists')).toBeDefined()

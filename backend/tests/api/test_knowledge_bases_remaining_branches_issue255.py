@@ -22,9 +22,25 @@ class Query:
         self.count_value = count
         self.awaited = self.items if awaited is None else awaited
         self.filters = []
+        self.filter_keys = []
 
-    def filter(self, **kwargs):
-        self.filters.append(kwargs)
+    def filter(self, *args, **kwargs):
+        self.filters.append(kwargs if not args else (args, kwargs))
+        if args:
+
+            def keys(value):
+                if isinstance(value, tuple) and value:
+                    return [value[0]]
+                return [
+                    key
+                    for child in getattr(value, "children", ())
+                    for key in keys(child)
+                ]
+
+            q_keys = [key for arg in args for key in keys(arg)]
+            self.filter_keys.append(q_keys[0] if q_keys else "q")
+        else:
+            self.filter_keys.extend(kwargs)
         return self
 
     def exclude(self, **_kwargs):
@@ -77,7 +93,7 @@ class Query:
 
 
 def user(*, superuser=False):
-    return SimpleNamespace(id=uuid4(), is_superuser=superuser)
+    return SimpleNamespace(id=uuid4(), is_superuser=superuser, roles=[])
 
 
 def document(*, status=DocumentStatus.COMPLETED.value, metadata=None, **overrides):
@@ -132,7 +148,7 @@ def transaction_context(monkeypatch):
         (
             user(),
             {"own_only": True, "search": "docs", "status": ["active"]},
-            ["team_id__in", "created_by", "name__icontains", "status__in"],
+            ["q", "created_by", "name__icontains", "status__in"],
         ),
     ],
 )
@@ -143,11 +159,14 @@ async def test_list_knowledge_bases_optional_filters(
     monkeypatch.setattr(endpoint.KnowledgeBase, "all", lambda: query)
     monkeypatch.setattr(endpoint.TeamMember, "filter", lambda **_kwargs: Query())
     monkeypatch.setattr(endpoint.Model, "filter", lambda **_kwargs: Query())
+    monkeypatch.setattr(
+        endpoint.KnowledgeBaseShare, "filter", lambda **_kwargs: Query()
+    )
 
     result = await endpoint.list_knowledge_bases(current_user=current_user, **kwargs)
 
     assert result["data"]["items"] == []
-    assert [next(iter(item)) for item in query.filters] == expected_filters
+    assert query.filter_keys == expected_filters
 
 
 @pytest.mark.asyncio

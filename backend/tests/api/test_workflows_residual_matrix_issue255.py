@@ -212,6 +212,26 @@ async def test_global_run_stats_applies_visibility_scope_to_workflow_queryset(
 
 
 @pytest.mark.anyio
+async def test_global_run_stats_uses_creator_scope_for_personal_view(monkeypatch):
+    user = SimpleNamespace(id=uuid4(), is_superuser=False)
+    workflow_query = Query([])
+    monkeypatch.setattr(workflows.Workflow, "all", Mock(return_value=workflow_query))
+    monkeypatch.setattr(
+        workflow_access.TeamMember, "filter", Mock(return_value=Query([]))
+    )
+
+    await workflows.get_workflow_run_stats(
+        team_id=None,
+        own_only=True,
+        current_user=user,
+    )
+
+    assert any(
+        kwargs == {"created_by": user} for _args, kwargs in workflow_query.filters
+    )
+
+
+@pytest.mark.anyio
 async def test_global_run_list_and_stats_return_empty_for_no_accessible_workflows(
     monkeypatch,
 ):
@@ -405,12 +425,12 @@ async def test_version_list_detail_create_and_missing_restore(monkeypatch):
     version = SimpleNamespace(id=uuid4())
     version_query = Query([version], total=1)
     access = AsyncMock(return_value=workflow)
-    scope = AsyncMock()
+    team_permission = AsyncMock()
     create = AsyncMock(return_value=version)
     audit = AsyncMock()
 
     monkeypatch.setattr(workflows, "check_workflow_access", access)
-    monkeypatch.setattr(workflows.deps, "check_scoped_permission", scope)
+    monkeypatch.setattr(workflows, "check_team_permission", team_permission)
     monkeypatch.setattr(
         workflows.WorkflowVersion,
         "filter",
@@ -449,5 +469,5 @@ async def test_version_list_detail_create_and_missing_restore(monkeypatch):
     assert restore_error.value.msg_key == "workflow_version_not_found"
     assert created["data"] == {"version": 4}
     assert create.await_args.kwargs["description"] == "checkpoint"
-    scope.assert_any_await(user, "workflow:update", "team", workflow.team_id)
+    team_permission.assert_any_await(workflow.team_id, user, "workflow:update")
     assert audit.await_args.kwargs["action"] == "create_workflow_version"

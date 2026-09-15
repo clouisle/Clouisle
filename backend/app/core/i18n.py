@@ -323,6 +323,7 @@ def get_code_message(code: int, lang: Optional[str] = None) -> str:
         # 知识库错误 (6000-6099)
         ResponseCode.KB_NOT_FOUND: "kb_not_found",
         ResponseCode.KB_NAME_EXISTS: "kb_name_exists",
+        ResponseCode.KB_ACCESS_DENIED: "kb_access_denied",
         ResponseCode.DOCUMENT_NOT_FOUND: "document_not_found",
         ResponseCode.INVALID_DOCUMENT_TYPE: "invalid_document_type",
         ResponseCode.DOCUMENT_PROCESSING_FAILED: "document_processing_failed",

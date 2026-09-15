@@ -24,6 +24,7 @@ mock.module('react', () => ({
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
+mock.module('next/image', () => ({ default: component }))
 mock.module('lucide-react', () => Object.fromEntries([
   'AlertCircle', 'Bot', 'Calculator', 'ChartColumn', 'Check', 'ChevronDown', 'Clock3', 'Code2', 'Database',
   'ExternalLink', 'FolderOpen', 'Globe', 'History', 'Image', 'Info', 'Link', 'Loader2', 'Pencil', 'Plus',

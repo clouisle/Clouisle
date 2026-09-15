@@ -241,6 +241,7 @@ describe('platform code tool page', () => {
       description: 'Processes test input',
       icon: 'https://images.test/tool.png',
       category: 'data',
+      visibility: 'private',
       type: 'custom',
       custom_type: 'code',
       code_config: {

@@ -26,6 +26,7 @@ mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam: n
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.flat().filter(Boolean).join(' ') }))
 
 const element = (tag: string) => ({ children, ...props }: { children?: ReactNode }) => ({ type: tag, props: { ...props, children } })
+mock.module('next/image', () => ({ default: element('img') }))
 mock.module('@/components/ui/button', () => ({ Button: element('button') }))
 mock.module('@/components/ui/tooltip', () => ({ Tooltip: element('tooltip'), TooltipContent: element('tooltip-content'), TooltipTrigger: element('button') }))
 mock.module('@/components/ui/badge', () => ({ Badge: element('badge') }))
@@ -255,5 +256,46 @@ describe('ToolSelector', () => {
     state = []
     const addTree = renderAdd({ availableTools: [dbTool] })
     expect(text(addTree)).toContain('Orders DB')
+  })
+
+  test('renders image icon for custom tools with url icons', () => {
+    const iconTool: Tool = {
+      id: 'icon-tool-1',
+      name: 'icon_tool',
+      display_name: 'Icon Tool',
+      description: 'Tool with custom image icon',
+      type: 'custom',
+      category: 'other',
+      icon: 'https://example.com/icon.png',
+      parameters: [],
+      is_enabled: true,
+      requires_config: false,
+      config_fields: [],
+    }
+    const config: ToolConfig = { type: 'custom', tool_id: 'icon-tool-1' }
+    stateIndex = 0
+    const tree = ToolSelector({
+      toolsConfig: [config],
+      availableTools: [iconTool],
+      onChange: mock(),
+    })
+    const images = findAll(tree, (node) => node.type === 'img')
+    expect(images.length).toBeGreaterThan(0)
+    expect(images[0].props.src).toBe('https://example.com/icon.png')
+  })
+
+  test('hides delete switch and settings button when readOnly is true', () => {
+    const config: ToolConfig = { type: 'builtin', name: 'clock' }
+    stateIndex = 0
+    const tree = ToolSelector({
+      toolsConfig: [config],
+      availableTools: [builtin],
+      onChange: mock(),
+      readOnly: true,
+    })
+    const switches = findAll(tree, (node) => node.type === 'switch')
+    expect(switches).toHaveLength(0)
+    const deleteButtons = findAll(tree, (node) => node.type === 'button')
+    expect(deleteButtons).toHaveLength(0)
   })
 })

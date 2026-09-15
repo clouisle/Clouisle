@@ -19,6 +19,7 @@ def query_returning(*, first=None, all=None, count=0) -> MagicMock:
     query.exclude.return_value = query
     query.distinct.return_value = query
     query.offset.return_value = query
+    query.exists = AsyncMock(return_value=False)
     query.limit.return_value = query
     query.prefetch_related.return_value = query
     return query
@@ -352,7 +353,7 @@ async def test_update_user_updates_password_and_roles(
 ) -> None:
     target = user()
     refreshed = user(id=target.id)
-    admin_role = SimpleNamespace(name="admin")
+    admin_role = SimpleNamespace(name="admin", permissions=[])
     model = MagicMock()
     model.filter.return_value = query_returning(first=target)
     model.get.return_value.prefetch_related = AsyncMock(return_value=refreshed)
@@ -362,6 +363,10 @@ async def test_update_user_updates_password_and_roles(
         query_returning(first=None),
     ]
     monkeypatch.setattr(users_endpoints, "User", model)
+    team_members = query_returning()
+    monkeypatch.setattr(
+        users_endpoints.TeamMember, "filter", lambda **_kwargs: team_members
+    )
     monkeypatch.setattr(users_endpoints, "Role", role_model)
     monkeypatch.setattr(
         users_endpoints, "validate_password", AsyncMock(return_value=(True, []))

@@ -188,4 +188,10 @@ describe('variable editor', () => {
     expect(onChange).toHaveBeenCalledWith([variables[0]])
     expect(onEditingIndexChange).toHaveBeenCalledWith(null)
   })
+
+  test('hides edit and delete buttons when readOnly is true', () => {
+    const tree = renderEditor({ variables, onChange: mock(() => {}), readOnly: true })
+    const actionButtons = findAll(tree, (node) => node.type === 'button' && node.props.size === 'icon')
+    expect(actionButtons).toHaveLength(0)
+  })
 })

@@ -1668,6 +1668,7 @@ async def edit_user_message_stream(
         rag_contexts = aggregate_rag_contexts(
             await perform_rag_retrieval(
                 agent,
+                current_user,
                 edited_content,
                 original_prefix[-AUTO_RAG_HISTORY_LIMIT:],
             )
@@ -1901,6 +1902,7 @@ async def _enqueue_durable_chat_run(
         rag_contexts = aggregate_rag_contexts(
             await perform_rag_retrieval(
                 agent,
+                current_user,
                 chat_in.message,
                 await get_visible_conversation_messages(
                     conversation.id, limit=AUTO_RAG_HISTORY_LIMIT
@@ -2526,6 +2528,7 @@ async def regenerate_message(
         rag_contexts = aggregate_rag_contexts(
             await perform_rag_retrieval(
                 agent,
+                current_user,
                 user_message.content,
                 prefix_for_message[-AUTO_RAG_HISTORY_LIMIT:],
             )

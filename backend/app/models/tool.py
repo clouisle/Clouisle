@@ -44,6 +44,13 @@ class ToolCategory(str, Enum):
     OTHER = "other"
 
 
+class ToolVisibility(str, Enum):
+    """Tool visibility within the owning team."""
+
+    PRIVATE = "private"  # Only the creator can access
+    TEAM = "team"  # Team members can access
+
+
 class ToolSharePermission(str, Enum):
     """Tool sharing permission level"""
 
@@ -78,6 +85,12 @@ class Tool(models.Model):
     icon = fields.CharField(max_length=100, null=True, description="Icon emoji or URL")
     category = fields.CharField(
         max_length=100, default=ToolCategory.OTHER.value, description="Tool category"
+    )
+    # Visibility
+    visibility = fields.CharEnumField(
+        ToolVisibility,
+        default=ToolVisibility.PRIVATE,
+        description="Visibility within the owning team",
     )
 
     # Tool type

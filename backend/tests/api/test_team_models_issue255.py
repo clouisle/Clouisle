@@ -13,7 +13,6 @@ from app.schemas.model import (
     TeamModelUpdate,
 )
 from app.schemas.response import BusinessError, ResponseCode
-from app.schemas.team import TeamMemberRole
 
 
 class Query:
@@ -94,49 +93,6 @@ def authorization(item=None, **overrides):
 def assert_error(exc_info, code, status_code):
     assert exc_info.value.code == code
     assert exc_info.value.status_code == status_code
-
-
-@pytest.mark.anyio
-async def test_check_team_admin_permission_covers_missing_denied_and_allowed(
-    monkeypatch,
-):
-    team = SimpleNamespace(id=uuid4())
-    user = SimpleNamespace(is_superuser=False)
-
-    monkeypatch.setattr(
-        team_models.Team,
-        "filter",
-        MagicMock(side_effect=[Query(None), Query(team), Query(team), Query(team)]),
-    )
-    monkeypatch.setattr(
-        team_models.TeamMember,
-        "filter",
-        MagicMock(
-            side_effect=[
-                Query(None),
-                Query(SimpleNamespace(role=TeamMemberRole.MEMBER)),
-                Query(SimpleNamespace(role=TeamMemberRole.ADMIN)),
-            ]
-        ),
-    )
-
-    with pytest.raises(BusinessError) as missing:
-        await team_models.check_team_admin_permission(team.id, user)
-    assert_error(missing, ResponseCode.TEAM_NOT_FOUND, 404)
-
-    with pytest.raises(BusinessError) as no_membership:
-        await team_models.check_team_admin_permission(team.id, user)
-    assert_error(no_membership, ResponseCode.TEAM_ADMIN_REQUIRED, 403)
-
-    with pytest.raises(BusinessError) as wrong_role:
-        await team_models.check_team_admin_permission(team.id, user)
-    assert_error(wrong_role, ResponseCode.TEAM_ADMIN_REQUIRED, 403)
-
-    assert await team_models.check_team_admin_permission(team.id, user) is team
-
-    user.is_superuser = True
-    monkeypatch.setattr(team_models.Team, "filter", MagicMock(return_value=Query(team)))
-    assert await team_models.check_team_admin_permission(team.id, user) is team
 
 
 @pytest.mark.anyio

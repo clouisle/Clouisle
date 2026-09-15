@@ -142,7 +142,7 @@ async def get_workflow_metrics(
     Returns:
         Detailed workflow execution metrics
     """
-    await check_workflow_access(workflow_id, current_user)
+    await check_workflow_access(workflow_id, current_user, require_write=True)
     metrics_collector = get_metrics_collector()
     metrics = await metrics_collector.get_workflow_metrics(
         str(workflow_id),

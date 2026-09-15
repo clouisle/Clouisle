@@ -39,6 +39,9 @@ mock.module('@/components/ui/tabs', () => ({
   TabsList: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   TabsTrigger: ({ children }: React.PropsWithChildren) => <button>{children}</button>,
 }))
+mock.module('@/components/permission-guard', () => ({
+  PermissionGuard: ({ children }: React.PropsWithChildren) => <>{children}</>,
+}))
 
 const { WorkflowApiContent } = await import('./workflow-api-content')
 

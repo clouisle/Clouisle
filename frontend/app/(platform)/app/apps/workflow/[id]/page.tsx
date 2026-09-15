@@ -312,6 +312,9 @@ export function WorkflowEditorContent({
     workflow && (currentUser?.is_superuser || (allowPermissionUpdate && canPerform(updatePermission)) || isWorkflowTeamAdmin || isWorkflowOwner)
   )
   const canPublishWorkflow = canUpdateWorkflow
+  const canViewMonitor = Boolean(
+    workflow && (currentUser?.is_superuser || isWorkflowTeamAdmin || isWorkflowOwner)
+  )
 
   // ReactFlow instance
   const reactFlowInstance = useReactFlow()
@@ -1510,13 +1513,15 @@ export function WorkflowEditorContent({
                     <FileText className="h-4 w-4" />
                     <span>{t('logs')}</span>
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="gap-2"
-                    onClick={() => router.push(`${baseUrl}/monitor`)}
-                  >
-                    <Activity className="h-4 w-4" />
-                    <span>{t('monitor')}</span>
-                  </DropdownMenuItem>
+                  {canViewMonitor && (
+                    <DropdownMenuItem
+                      className="gap-2"
+                      onClick={() => router.push(`${baseUrl}/monitor`)}
+                    >
+                      <Activity className="h-4 w-4" />
+                      <span>{t('monitor')}</span>
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

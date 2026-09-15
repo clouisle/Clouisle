@@ -354,20 +354,20 @@ async def test_role_permission_missing_code_stops_add_and_reload(monkeypatch):
 
 @pytest.mark.anyio
 async def test_delete_role_guards_usage_then_deletes(monkeypatch):
-    role = SimpleNamespace(is_system_role=False, delete=AsyncMock())
+    role = SimpleNamespace(
+        is_system_role=False,
+        permissions=[],
+        delete=AsyncMock(),
+    )
     monkeypatch.setattr(roles.Role, "filter", lambda **kwargs: Query(first=role))
-    user_count = MagicMock(side_effect=[Query(count=2), Query(count=0), Query(count=0)])
-    scoped_count = MagicMock(side_effect=[Query(count=1), Query(count=0)])
+    user_count = MagicMock(side_effect=[Query(count=2), Query(count=0)])
     monkeypatch.setattr(roles.User, "filter", user_count)
-    monkeypatch.setattr(roles.ScopedRoleAssignment, "filter", scoped_count)
 
-    with pytest.raises(BusinessError) as global_use:
-        await roles.delete_role(uuid4(), current_user=object())
-    with pytest.raises(BusinessError) as scoped_use:
+    with pytest.raises(BusinessError) as in_use:
         await roles.delete_role(uuid4(), current_user=object())
     result = await roles.delete_role(uuid4(), current_user=object())
 
-    assert global_use.value.code == scoped_use.value.code == ResponseCode.ROLE_IN_USE
+    assert in_use.value.code == ResponseCode.ROLE_IN_USE
     assert result["data"] is role
     role.delete.assert_awaited_once()
 

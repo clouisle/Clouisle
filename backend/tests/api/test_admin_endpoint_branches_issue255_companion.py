@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.api import team_access
 from app.api.v1.admin.endpoints import (
     agents,
     conversations,
@@ -84,14 +85,14 @@ async def test_storage_validation_requires_object_credentials(monkeypatch):
 @pytest.mark.asyncio
 async def test_conversation_team_access_branches(monkeypatch):
     team = SimpleNamespace(id=uuid4())
-    monkeypatch.setattr(conversations.Team, "filter", Mock(return_value=Query(None)))
+    monkeypatch.setattr(team_access.Team, "filter", Mock(return_value=Query(None)))
     with pytest.raises(BusinessError) as exc:
         await conversations.check_team_access(
             team.id, SimpleNamespace(is_superuser=True)
         )
     assert exc.value.code == ResponseCode.TEAM_NOT_FOUND
 
-    monkeypatch.setattr(conversations.Team, "filter", Mock(return_value=Query(team)))
+    monkeypatch.setattr(team_access.Team, "filter", Mock(return_value=Query(team)))
     assert (
         await conversations.check_team_access(
             team.id, SimpleNamespace(is_superuser=True)
@@ -100,7 +101,7 @@ async def test_conversation_team_access_branches(monkeypatch):
     )
 
     monkeypatch.setattr(
-        conversations.TeamMember, "filter", Mock(return_value=Query(None))
+        team_access.TeamMember, "filter", Mock(return_value=Query(None))
     )
     with pytest.raises(BusinessError) as exc:
         await conversations.check_team_access(

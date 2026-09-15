@@ -80,11 +80,16 @@ async def test_check_team_admin_permission_issue255_rejects_non_admin_member(
 
 
 @pytest.mark.asyncio
-async def test_admin_list_notifications_issue255_non_superuser_cannot_query_global():
+async def test_team_admin_cannot_query_global_notifications():
+    team_admin = SimpleNamespace(
+        is_superuser=False,
+        roles=[],
+        team_memberships=[SimpleNamespace(role="admin")],
+    )
+
     with pytest.raises(BusinessError) as exc_info:
         await notifications.admin_list_notifications(
-            scope=[NotificationScope.GLOBAL],
-            current_user=SimpleNamespace(is_superuser=False),
+            scope=[NotificationScope.GLOBAL], current_user=team_admin
         )
 
     assert exc_info.value.code == ResponseCode.INSUFFICIENT_PRIVILEGES

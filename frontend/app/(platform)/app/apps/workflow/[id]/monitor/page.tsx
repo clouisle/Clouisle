@@ -3,6 +3,8 @@
 import * as React from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
+import { useTeam } from '@/contexts/team-context'
+import { usePermissions } from '@/hooks/use-permissions'
 import {
   Activity,
   TrendingUp,
@@ -179,7 +181,8 @@ export default function WorkflowMonitorPage() {
   const t = useTranslations('workflow')
   const tMonitor = useTranslations('workflow.monitor_page')
   const workflowId = params.id as string
-
+  const { currentTeam, isLoading: isTeamLoading } = useTeam()
+  const { user, loading: isUserLoading } = usePermissions()
   const [workflow, setWorkflow] = React.useState<Workflow | null>(null)
   const [stats, setStats] = React.useState<{
     total_runs: number
@@ -196,12 +199,25 @@ export default function WorkflowMonitorPage() {
   const [isRefreshing, setIsRefreshing] = React.useState(false)
 
   const fetchData = React.useCallback(async () => {
+    if (isUserLoading || isTeamLoading) return
+
     try {
       setIsRefreshing(true)
 
-      // 获取工作流信息、统计数据、趋势数据和最近运行记录
-      const [workflowData, statsData, trendsData, runsData] = await Promise.all([
-        workflowsApi.getWorkflow(workflowId),
+      const workflowData = await workflowsApi.getWorkflow(workflowId)
+      const isWorkflowOwner = Boolean(user?.id && workflowData.created_by_id === user.id)
+      const isWorkflowTeamAdmin = Boolean(
+        workflowData && currentTeam?.id === workflowData.team_id && (currentTeam.role === 'owner' || currentTeam.role === 'admin')
+      )
+      const canViewMonitor = Boolean(
+        workflowData && (user?.is_superuser || isWorkflowTeamAdmin || isWorkflowOwner)
+      )
+      if (!canViewMonitor) {
+        router.push('/app/apps')
+        return
+      }
+
+      const [statsData, trendsData, runsData] = await Promise.all([
         workflowsApi.getWorkflowStats(workflowId),
         workflowsApi.getWorkflowTrends(workflowId, period),
         workflowsApi.getWorkflowRuns(workflowId, { page: 1, pageSize: 5 }),
@@ -213,11 +229,12 @@ export default function WorkflowMonitorPage() {
       setRecentRuns(runsData.items)
     } catch (error) {
       console.error('Failed to fetch monitor data:', error)
+      router.push('/app/apps')
     } finally {
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }, [workflowId, period])
+  }, [workflowId, period, user, currentTeam, isUserLoading, isTeamLoading, router])
 
   React.useEffect(() => {
     fetchData()

@@ -4,6 +4,7 @@ import type { PageData } from './users'
 // ============ Types ============
 
 export type ToolType = 'builtin' | 'custom' | 'mcp' | 'skill'
+export type ToolVisibility = 'private' | 'team'
 
 export type CustomToolType = 'http' | 'code' | 'database'
 
@@ -121,7 +122,6 @@ export interface McpConfig {
   url?: string
   headers?: Record<string, string>
 }
-
 export interface Tool {
   id?: string
   name: string
@@ -129,6 +129,7 @@ export interface Tool {
   description: string
   type: ToolType
   category: ToolCategory
+  visibility: ToolVisibility
   icon?: string
   parameters: ToolParameter[]
   is_enabled: boolean
@@ -193,6 +194,7 @@ export interface ToolCreateInput {
   category?: ToolCategory
   type?: ToolType
   custom_type?: CustomToolType
+  visibility?: ToolVisibility
   parameters?: ToolParameter[]
   http_config?: HttpConfig
   code_config?: CodeConfig
@@ -209,6 +211,7 @@ export interface ToolUpdateInput {
   icon?: string
   category?: ToolCategory
   type?: ToolType
+  visibility?: ToolVisibility
   custom_type?: CustomToolType
   parameters?: ToolParameter[]
   http_config?: HttpConfig

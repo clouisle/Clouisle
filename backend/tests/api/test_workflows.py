@@ -110,11 +110,9 @@ async def test_create_workflow_checks_scope_rejects_duplicate_name():
     team_id = uuid4()
     user = SimpleNamespace(id=uuid4())
     scoped = AsyncMock()
-    team_access = AsyncMock(return_value=SimpleNamespace(id=team_id))
 
     with (
-        patch.object(workflows.deps, "check_scoped_permission", scoped),
-        patch.object(workflows, "check_team_access", team_access),
+        patch.object(workflows, "check_team_permission", scoped),
         patch.object(workflows.Workflow, "filter", return_value=_Query(object())),
         patch.object(workflows.Workflow, "create", new=AsyncMock()) as create,
     ):
@@ -126,8 +124,7 @@ async def test_create_workflow_checks_scope_rejects_duplicate_name():
             )
 
     assert error.value.code == ResponseCode.DUPLICATE_NAME
-    scoped.assert_awaited_once_with(user, "workflow:create", "team", team_id)
-    team_access.assert_awaited_once_with(team_id, user)
+    scoped.assert_awaited_once_with(team_id, user, "workflow:create")
     create.assert_not_awaited()
 
 
@@ -141,8 +138,9 @@ async def test_create_workflow_persists_default_definition_and_audits():
     reloaded = _workflow(id=created.id, team_id=team_id, created_by_id=user.id)
 
     with (
-        patch.object(workflows.deps, "check_scoped_permission", new=AsyncMock()),
-        patch.object(workflows, "check_team_access", new=AsyncMock(return_value=team)),
+        patch.object(
+            workflows, "check_team_permission", new=AsyncMock(return_value=team)
+        ),
         patch.object(workflows.Workflow, "filter", return_value=_Query(None)),
         patch.object(
             workflows.Workflow, "create", new=AsyncMock(return_value=created)
@@ -181,9 +179,7 @@ async def test_update_workflow_rejects_duplicate_name_before_persisting():
         patch.object(
             workflows, "check_workflow_access", new=AsyncMock(return_value=workflow)
         ),
-        patch.object(
-            workflows.deps, "check_scoped_permission", new=AsyncMock()
-        ) as scoped,
+        patch.object(workflows, "check_team_permission", new=AsyncMock()) as scoped,
         patch.object(workflows.Workflow, "filter", return_value=_Query(object())),
     ):
         with pytest.raises(BusinessError) as error:
@@ -195,7 +191,7 @@ async def test_update_workflow_rejects_duplicate_name_before_persisting():
             )
 
     assert error.value.msg_key == "workflow_name_exists"
-    scoped.assert_awaited_once_with(user, "workflow:update", "team", workflow.team_id)
+    scoped.assert_awaited_once_with(workflow.team_id, user, "workflow:update")
     workflow.save.assert_not_awaited()
 
 
@@ -208,9 +204,7 @@ async def test_update_workflow_applies_fields_and_increments_version():
 
     with (
         patch.object(workflows, "check_workflow_access", access),
-        patch.object(
-            workflows.deps, "check_scoped_permission", new=AsyncMock()
-        ) as scoped,
+        patch.object(workflows, "check_team_permission", new=AsyncMock()) as scoped,
         patch.object(workflows.Workflow, "filter", return_value=_Query(None)),
         patch.object(workflows.Workflow, "get", return_value=_Query(reloaded)),
         patch.object(workflows.AuditLogService, "log", new=AsyncMock()),
@@ -233,7 +227,7 @@ async def test_update_workflow_applies_fields_and_increments_version():
         )
 
     access.assert_awaited_once_with(workflow.id, user, require_write=True)
-    scoped.assert_awaited_once_with(user, "workflow:update", "team", workflow.team_id)
+    scoped.assert_awaited_once_with(workflow.team_id, user, "workflow:update")
     assert workflow.name == "Updated"
     assert workflow.version == 4
     assert workflow.visibility == WorkflowVisibility.PUBLIC
@@ -298,8 +292,8 @@ async def test_regenerate_webhook_token_checks_permission_before_persisting():
             workflows, "check_workflow_access", new=AsyncMock(return_value=workflow)
         ),
         patch.object(
-            workflows.deps,
-            "check_scoped_permission",
+            workflows,
+            "check_team_permission",
             new=AsyncMock(side_effect=permission_error),
         ),
     ):
@@ -404,9 +398,7 @@ async def test_version_detail_not_found_and_restore_persists_snapshots():
 
     with (
         patch.object(workflows, "check_workflow_access", access),
-        patch.object(
-            workflows.deps, "check_scoped_permission", new=AsyncMock()
-        ) as scoped,
+        patch.object(workflows, "check_team_permission", new=AsyncMock()) as scoped,
         patch.object(workflows.WorkflowVersion, "filter", return_value=_Query(saved)),
         patch.object(workflows.WorkflowVersion, "create", new=create_version),
         patch.object(workflows.Workflow, "get", return_value=_Query(reloaded)),
@@ -420,7 +412,7 @@ async def test_version_detail_not_found_and_restore_persists_snapshots():
             user,
         )
 
-    scoped.assert_awaited_once_with(user, "workflow:update", "team", workflow.team_id)
+    scoped.assert_awaited_once_with(workflow.team_id, user, "workflow:update")
     assert create_version.await_count == 2
     assert workflow.definition == saved.definition
     assert workflow.trigger_config == {}
@@ -452,7 +444,7 @@ async def test_update_workflow_rejects_invalid_pause_approvers():
 
     with (
         patch.object(workflows, "check_workflow_access", access),
-        patch.object(workflows.deps, "check_scoped_permission", new=AsyncMock()),
+        patch.object(workflows, "check_team_permission", new=AsyncMock()),
         patch.object(
             workflows,
             "validate_pause_approvers",
@@ -496,7 +488,7 @@ async def test_update_workflow_accepts_valid_pause_approvers():
 
     with (
         patch.object(workflows, "check_workflow_access", access),
-        patch.object(workflows.deps, "check_scoped_permission", new=AsyncMock()),
+        patch.object(workflows, "check_team_permission", new=AsyncMock()),
         patch.object(workflows.Workflow, "filter", return_value=_Query(None)),
         patch.object(workflows.Workflow, "get", return_value=_Query(workflow)),
         patch.object(workflows.AuditLogService, "log", new=AsyncMock()),

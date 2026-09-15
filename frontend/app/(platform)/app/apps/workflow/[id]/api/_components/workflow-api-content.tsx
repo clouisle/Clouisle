@@ -14,6 +14,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs'
+import { PermissionGuard } from '@/components/permission-guard'
 import type { Workflow } from '@/lib/api/workflows'
 
 interface WorkflowApiContentProps {
@@ -180,16 +181,18 @@ if (result.code === 0) {
             <Section title={t('authentication')}>
               <div className="flex items-start justify-between gap-4 mb-3">
                 <p className="text-sm text-muted-foreground flex-1">{t('authDescription')}</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={() => window.open('/app/api-keys', '_blank')}
-                >
-                  <Key className="h-4 w-4 mr-2" />
-                  {t('manageApiKeys')}
-                  <ExternalLink className="h-3 w-3 ml-2" />
-                </Button>
+                <PermissionGuard permission="apikey:read">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => window.open('/app/api-keys', '_blank')}
+                  >
+                    <Key className="h-4 w-4 mr-2" />
+                    {t('manageApiKeys')}
+                    <ExternalLink className="h-3 w-3 ml-2" />
+                  </Button>
+                </PermissionGuard>
               </div>
               <CodeBlock
                 code={`Authorization: Bearer YOUR_API_KEY`}

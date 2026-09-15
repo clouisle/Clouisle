@@ -44,7 +44,8 @@ import {
   McpConfig,
   McpTransportType,
   McpToolInfo,
-  toolsApi
+  toolsApi,
+  ToolVisibility,
 } from '@/lib/api/tools'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { ToolCategoryInput } from './tool-category-input'
@@ -106,6 +107,7 @@ export function McpToolDialog({
   const [displayName, setDisplayName] = useState('')
   const [icon, setIcon] = useState('')
   const [category, setCategory] = useState('api')
+  const [visibility, setVisibility] = useState<ToolVisibility>('private')
   const [isEnabled, setIsEnabled] = useState(true)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
@@ -143,6 +145,7 @@ export function McpToolDialog({
         setDisplayName(tool.display_name)
         setIcon(tool.icon || '')
         setCategory(tool.category || 'api')
+        setVisibility((tool.visibility as ToolVisibility) || 'private')
         setIsEnabled(tool.is_enabled)
         setFieldErrors({})
         setFieldErrors({})
@@ -181,6 +184,7 @@ export function McpToolDialog({
         setDisplayName('')
         setIcon('')
         setCategory('api')
+        setVisibility('private')
         setIsEnabled(true)
         setFieldErrors({})
         setTransportType('stdio')
@@ -299,6 +303,7 @@ export function McpToolDialog({
         description: toolsDescription || `MCP Server: ${displayName || name}`,
         icon,
         category,
+        visibility,
         is_enabled: isEnabled,
         type: 'mcp',
         mcp_config: mcpConfig,
@@ -445,6 +450,21 @@ export function McpToolDialog({
                 aria-invalid={!!fieldErrors.displayName}
               />
               <FieldError>{fieldErrors.displayName}</FieldError>
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="mcp-visibility">{t('visibility')}</Label>
+              <Select value={visibility} onValueChange={(val) => setVisibility(val as ToolVisibility)}>
+                <SelectTrigger id="mcp-visibility">
+                  <SelectValue>
+                    {visibility === 'private' ? t('visibilityPrivate') : t('visibilityTeam')}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent side="bottom" alignItemWithTrigger={false}>
+                  <SelectItem value="private">{t('visibilityPrivate')}</SelectItem>
+                  <SelectItem value="team">{t('visibilityTeam')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{t('visibilityHint')}</p>
             </div>
           </div>
 

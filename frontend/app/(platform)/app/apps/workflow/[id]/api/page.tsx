@@ -3,6 +3,8 @@
 import * as React from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
+import { useTeam } from '@/contexts/team-context'
+import { usePermissions } from '@/hooks/use-permissions'
 import { ArrowLeft, Loader2, ExternalLink, FileText, Activity, LayoutGrid, GitBranch } from 'lucide-react'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
@@ -19,9 +21,18 @@ export default function WorkflowApiPage() {
   const params = useParams()
   const router = useRouter()
   const t = useTranslations('workflow')
+  const { currentTeam } = useTeam()
+  const { user } = usePermissions()
   const [workflow, setWorkflow] = React.useState<Workflow | null>(null)
   const [loading, setLoading] = React.useState(true)
 
+  const isWorkflowOwner = Boolean(user?.id && workflow?.created_by_id === user.id)
+  const isWorkflowTeamAdmin = Boolean(
+    workflow && currentTeam?.id === workflow.team_id && (currentTeam.role === 'owner' || currentTeam.role === 'admin')
+  )
+  const canViewMonitor = Boolean(
+    workflow && (user?.is_superuser || isWorkflowTeamAdmin || isWorkflowOwner)
+  )
   const workflowId = params.id as string
 
   React.useEffect(() => {
@@ -121,13 +132,15 @@ export default function WorkflowApiPage() {
               <FileText className="h-4 w-4" />
               <span>{t('logs')}</span>
             </DropdownMenuItem>
-            <DropdownMenuItem
-              className="gap-2"
-              onClick={() => router.push(`/app/apps/workflow/${workflowId}/monitor`)}
-            >
-              <Activity className="h-4 w-4" />
-              <span>{t('monitor')}</span>
-            </DropdownMenuItem>
+            {canViewMonitor && (
+              <DropdownMenuItem
+                className="gap-2"
+                onClick={() => router.push(`/app/apps/workflow/${workflowId}/monitor`)}
+              >
+                <Activity className="h-4 w-4" />
+                <span>{t('monitor')}</span>
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

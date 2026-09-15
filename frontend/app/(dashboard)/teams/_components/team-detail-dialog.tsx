@@ -68,7 +68,8 @@ import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TeamModelsTab } from './team-models-tab'
 import { useDebounce } from '@/hooks/use-debounce'
-import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { PermissionGuard } from '@/components/permission-guard'
+import { usePermissions } from '@/hooks/use-permissions'
 
 type TeamRole = 'owner' | 'admin' | 'member' | 'viewer'
 type AddableRole = 'admin' | 'member' | 'viewer'
@@ -104,9 +105,7 @@ export function TeamDetailDialog({
 }: TeamDetailDialogProps) {
   const t = useTranslations('teams')
   const commonT = useTranslations('common')
-  const { canPerform } = useCanPerform()
-  const canManageTeam = canPerform('team:manage')
-  
+  const { user, hasPermission, loading: permissionsLoading } = usePermissions()
   // 数据状态
   const [team, setTeam] = React.useState<TeamWithMembers | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
@@ -132,6 +131,15 @@ export function TeamDetailDialog({
   
   const [leaveDialogOpen, setLeaveDialogOpen] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
+
+  const currentMembership = team?.members.find((member) => member.user_id === user?.id)
+  const hasTeamAdminMembership = currentMembership?.role === 'owner' || currentMembership?.role === 'admin'
+  const canManageTeam = !permissionsLoading && (
+    user?.is_superuser === true || (hasTeamAdminMembership && hasPermission('team:manage'))
+  )
+  const canUpdateTeam = !permissionsLoading && (
+    user?.is_superuser === true || (hasTeamAdminMembership && hasPermission('team:update'))
+  )
 
   // 加载团队详情
   const loadTeam = React.useCallback(async () => {
@@ -365,7 +373,7 @@ export function TeamDetailDialog({
                   <div className="flex min-h-0 flex-1 flex-col">
                     <div className="mb-3 flex items-center justify-between">
                       <h3 className="font-medium">{t('members')} ({team.members.length})</h3>
-                      <PermissionGuard permission="team:manage">
+                      {canManageTeam && (
                         <Popover open={addMemberOpen} onOpenChange={setAddMemberOpen}>
                           <PopoverTrigger
                             render={
@@ -453,7 +461,7 @@ export function TeamDetailDialog({
                             )}
                           </PopoverContent>
                         </Popover>
-                      </PermissionGuard>
+                      )}
                     </div>
                   
                   <ScrollArea className="min-h-0 flex-1">
@@ -485,7 +493,7 @@ export function TeamDetailDialog({
                               <span>{t(`roles.${member.role}`)}</span>
                             </Badge>
 
-                            {member.role !== 'owner' && canPerform('team:manage') && (
+                            {member.role !== 'owner' && canManageTeam && (
                               <DropdownMenu>
                                 <DropdownMenuTrigger
                                   render={
@@ -548,12 +556,12 @@ export function TeamDetailDialog({
                       </>
                     )}
                   </div>
-                  <PermissionGuard permission="team:update">
+                  {canUpdateTeam && (
                     <Button variant="outline" size="sm" onClick={onEdit}>
                       <Pencil className="mr-2 h-4 w-4" />
                       {commonT('edit')}
                     </Button>
-                  </PermissionGuard>
+                  )}
                 </div>
               </TabsContent>
 

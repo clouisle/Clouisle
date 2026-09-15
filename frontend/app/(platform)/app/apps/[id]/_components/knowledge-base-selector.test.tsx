@@ -216,5 +216,19 @@ describe("knowledge base selector", () => {
       search_mode: "fulltext",
     });
     expect(changes[1][1]).toEqual(configs[1]);
+
+    const readOnlyTree = render(() =>
+      KnowledgeBaseSelector({
+        configs,
+        availableKnowledgeBases: knowledgeBases,
+        onChange: () => undefined,
+        readOnly: true,
+      })
+    );
+    const readOnlyIconButtons = findAll(
+      readOnlyTree,
+      (node) => node.type === "Button" && node.props.size === "icon",
+    );
+    expect(readOnlyIconButtons).toHaveLength(0);
   });
 });

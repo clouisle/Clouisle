@@ -127,6 +127,7 @@ async def test_workflow_run_stats_team_filter_calculates_completed_average(monke
     workflow_query = _Query([workflow])
     access = AsyncMock()
     membership_team_id = uuid4()
+    current_user = SimpleNamespace(id=uuid4(), is_superuser=False)
 
     monkeypatch.setattr(workflows, "check_team_access", access)
     monkeypatch.setattr(workflows.Workflow, "all", lambda: workflow_query)
@@ -149,7 +150,7 @@ async def test_workflow_run_stats_team_filter_calculates_completed_average(monke
     )
 
     response = await workflows.get_workflow_run_stats(
-        team_id=uuid4(), current_user=SimpleNamespace(id=uuid4(), is_superuser=False)
+        team_id=uuid4(), own_only=False, current_user=current_user
     )
 
     access.assert_awaited_once()
@@ -166,10 +167,10 @@ async def test_workflow_run_stats_team_filter_calculates_completed_average(monke
         "team_id__in": [membership_team_id],
         "visibility__in": [WorkflowVisibility.TEAM, WorkflowVisibility.PUBLIC],
     } in leaves
-    assert any(
-        leaf.get("visibility") == WorkflowVisibility.PRIVATE and "created_by_id" in leaf
-        for leaf in leaves
-    ), "the caller's own private workflows must stay readable"
+    assert {
+        "created_by_id": current_user.id,
+        "visibility": WorkflowVisibility.PRIVATE,
+    } in leaves
     assert response["data"]["avg_duration_ms"] == 1500
 
 
@@ -250,7 +251,9 @@ async def test_update_workflow_changes_description_without_optional_fields(monke
     monkeypatch.setattr(
         workflows, "check_workflow_access", AsyncMock(return_value=workflow)
     )
-    monkeypatch.setattr(workflows.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(
+        workflows, "check_team_permission", AsyncMock(return_value=workflow)
+    )
     monkeypatch.setattr(workflows.AuditLogService, "log", AsyncMock())
     monkeypatch.setattr(
         workflows.Workflow,
@@ -464,7 +467,9 @@ async def test_update_workflow_applies_run_page_config(monkeypatch):
     monkeypatch.setattr(
         workflows, "check_workflow_access", AsyncMock(return_value=workflow)
     )
-    monkeypatch.setattr(workflows.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(
+        workflows, "check_team_permission", AsyncMock(return_value=workflow)
+    )
     monkeypatch.setattr(workflows.AuditLogService, "log", AsyncMock())
     monkeypatch.setattr(
         workflows.Workflow,

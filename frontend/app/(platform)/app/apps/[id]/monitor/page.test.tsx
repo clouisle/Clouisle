@@ -54,6 +54,14 @@ const getTrends = mock(() => Promise.resolve(trendsFixture()));
 const getToolUsage = mock(() => Promise.resolve({ tools: [] }));
 
 mock.module("next/navigation", () => ({ useRouter: () => router }));
+let currentTeam: { id: string; role: string } | null = { id: "team-1", role: "admin" };
+let currentUser: { id: string; is_superuser?: boolean } | null = { id: "user-1" };
+mock.module("@/contexts/team-context", () => ({
+  useTeam: () => ({ currentTeam }),
+}));
+mock.module("@/hooks/use-permissions", () => ({
+  usePermissions: () => ({ user: currentUser }),
+}));
 mock.module("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, unknown>) =>
     values ? `${key}(${JSON.stringify(values)})` : key,
@@ -164,7 +172,6 @@ test("labels the tool usage distribution with display names", async () => {
       { name: "knowledge_search", display_name: "Knowledge Search", count: 2 },
     ],
   }));
-
   const view = await render();
   const output = textOf(view.root);
 
@@ -176,6 +183,20 @@ test("labels the tool usage distribution with display names", async () => {
   // Each legend row carries its call count.
   expect(output).toContain("36");
   expect(output).toContain("2");
+});
+
+test("redirects non-admin non-creator to /app/apps", async () => {
+  currentTeam = { id: "team-1", role: "member" };
+  currentUser = { id: "viewer-1", is_superuser: false };
+  getAgent.mockImplementation(() =>
+    Promise.resolve({ id: "agent-1", name: "Support", created_by: { id: "creator-1" } })
+  );
+  push.mockClear();
+  await render();
+  expect(push).toHaveBeenCalledWith("/app/apps");
+  currentTeam = { id: "team-1", role: "admin" };
+  currentUser = { id: "user-1" };
+  getAgent.mockImplementation(() => Promise.resolve({ id: "agent-1", name: "Support" }));
 });
 
 test("reports execution health with a success rate over terminal runs", async () => {

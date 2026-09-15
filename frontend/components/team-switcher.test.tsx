@@ -3,9 +3,6 @@ import { expect, mock, test } from 'bun:test'
 const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props })
 let teamState: Record<string, unknown> = {}
 
-function Avatar() {}
-function AvatarFallback() {}
-function AvatarImage() {}
 function Button() {}
 function DropdownMenu() {}
 function DropdownMenuContent() {}
@@ -15,7 +12,8 @@ function DropdownMenuTrigger() {}
 function Check() {}
 function ChevronsUpDown() {}
 function Users() {}
-
+function Settings() {}
+function Link() {}
 mock.module('react/jsx-runtime', () => ({
   jsx,
   jsxs: jsx,
@@ -26,8 +24,14 @@ mock.module('react/jsx-dev-runtime', () => ({
   Fragment: Symbol.for('react.fragment'),
 }))
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
+mock.module('next/link', () => ({ default: Link }))
 mock.module('@/contexts/team-context', () => ({ useTeam: () => teamState }))
-mock.module('@/components/ui/avatar', () => ({ Avatar, AvatarFallback, AvatarImage }))
+mock.module('@/hooks/use-permissions', () => ({
+  usePermissions: () => ({
+    hasPermission: (perm: string) => perm === 'team:manage',
+    isSuperuser: false,
+  }),
+}))
 mock.module('@/components/ui/button', () => ({ Button }))
 mock.module('@/components/ui/dropdown-menu', () => ({
   DropdownMenu,
@@ -36,7 +40,7 @@ mock.module('@/components/ui/dropdown-menu', () => ({
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 }))
-mock.module('lucide-react', () => ({ Check, ChevronsUpDown, Users }))
+mock.module('lucide-react', () => ({ Check, ChevronsUpDown, Users, Settings }))
 
 const { TeamSwitcher } = await import('./team-switcher')
 
@@ -54,8 +58,8 @@ test('renders loading and no-current-team states', () => {
 
 test('renders teams, initials, selection, and team-switch behavior', () => {
   const setCurrentTeam = mock(() => {})
-  const alpha = { id: 'alpha', name: 'Alpha Team', avatar_url: '' }
-  const beta = { id: 'beta', name: 'Beta', avatar_url: '/beta.png' }
+  const alpha = { id: 'alpha', name: 'Alpha Team', avatar_url: '', role: 'admin' }
+  const beta = { id: 'beta', name: 'Beta', avatar_url: '/beta.png', role: 'member' }
   teamState = {
     isLoading: false,
     teams: [alpha, beta],
@@ -69,8 +73,10 @@ test('renders teams, initials, selection, and team-switch behavior', () => {
   ) as {
     props: Record<string, unknown>
   }
-  const [, items, separator, manage] = content.props.children as Array<unknown>
-  const [alphaItem, betaItem] = items as Array<{ props: Record<string, unknown> }>
+  const children = content.props.children as Array<unknown>
+  const items = children[1] as Array<{ props: Record<string, unknown> }>
+  const [separator, manageCurrentTeam, manageAllTeams] = children.slice(2) as Array<unknown>
+  const [alphaItem, betaItem] = items
 
   expect((tree.type as { name?: string }).name).toBe('DropdownMenu')
   expect(triggerButton.props.className).toContain('cursor-pointer')
@@ -85,6 +91,27 @@ test('renders teams, initials, selection, and team-switch behavior', () => {
   expect(setCurrentTeam).toHaveBeenNthCalledWith(1, alpha)
   expect(setCurrentTeam).toHaveBeenNthCalledWith(2, beta)
   expect((separator as { type: { name?: string } }).type.name).toBe('DropdownMenuSeparator')
-  expect((manage as { type: string }).type).toBe('a')
-  expect((manage as { props: Record<string, unknown> }).props.href).toBe('/teams')
+  expect((manageCurrentTeam as { type: { name?: string } }).type.name).toBe('DropdownMenuItem')
+  const manageLink = (manageCurrentTeam as { props: { render: (props: Record<string, unknown>) => { props: Record<string, unknown> } } }).props.render({
+    className: 'flex items-center gap-2 px-2 py-1.5 text-sm',
+  })
+  expect(manageLink.props.className).toContain('flex')
+  expect(manageLink.props.className).toContain('items-center')
+  expect(manageLink.props.className).toContain('gap-2')
+  expect(manageAllTeams).toBe(false)
+})
+
+test('hides team management link when user only has member teams', () => {
+  const team = { id: 'member-team', name: 'Member Team', avatar_url: '', role: 'member' }
+  teamState = {
+    isLoading: false,
+    teams: [team],
+    currentTeam: team,
+    setCurrentTeam: mock(() => {}),
+  }
+
+  const tree = TeamSwitcher() as { props: Record<string, unknown> }
+  const [, content] = tree.props.children as Array<{ props: Record<string, unknown> }>
+  const children = content.props.children as Array<unknown>
+  expect(children.slice(2).every((item) => !item)).toBe(true)
 })

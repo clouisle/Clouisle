@@ -4,7 +4,9 @@ from uuid import uuid4
 
 import pytest
 
+from app.api import team_access
 from app.api.v1.endpoints import conversations
+
 from app.schemas.response import BusinessError
 
 
@@ -86,19 +88,14 @@ def conversation(*, owner_id=None, agent_id=None, title="Conversation"):
 async def test_team_access_and_admin_access_validation(monkeypatch):
     actor = user()
     team = SimpleNamespace(id=uuid4())
-
-    monkeypatch.setattr(
-        conversations.Team, "filter", lambda **_kwargs: Query(first=None)
-    )
+    monkeypatch.setattr(team_access.Team, "filter", lambda **_kwargs: Query(first=None))
     with pytest.raises(BusinessError) as error:
         await conversations.check_team_access(team.id, actor)
     assert error.value.status_code == 404
 
+    monkeypatch.setattr(team_access.Team, "filter", lambda **_kwargs: Query(first=team))
     monkeypatch.setattr(
-        conversations.Team, "filter", lambda **_kwargs: Query(first=team)
-    )
-    monkeypatch.setattr(
-        conversations.TeamMember, "filter", lambda **_kwargs: Query(first=None)
+        team_access.TeamMember, "filter", lambda **_kwargs: Query(first=None)
     )
     with pytest.raises(BusinessError) as error:
         await conversations.check_team_access(team.id, actor)

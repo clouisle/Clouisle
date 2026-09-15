@@ -52,6 +52,21 @@ from app.api.v1.endpoints.upload import save_generated_upload
 from app.services.document_processor import document_processor
 
 
+async def _check_permission(
+    user: User,
+    permission: str,
+    team_id: UUID | None = None,
+) -> None:
+    if user.is_superuser:
+        return
+    if team_id is not None:
+        from app.api.team_access import check_team_permission
+
+        await check_team_permission(team_id, user, permission)
+        return
+    _require_permission(user, permission)
+
+
 def _has_permission(user: User, permission: str) -> bool:
     if user.is_superuser:
         return True
@@ -269,11 +284,15 @@ class ResourcePackageAdapter(ABC):
     def ensure_export_permission(self, user: User) -> None:
         _require_permission(user, self.read_permission)
 
-    def ensure_import_permission(self, user: User) -> None:
-        _require_permission(user, self.import_permission)
+    async def ensure_import_permission(
+        self, user: User, team_id: UUID | None = None
+    ) -> None:
+        await _check_permission(user, self.import_permission, team_id)
 
-    def ensure_update_permission(self, user: User) -> None:
-        _require_permission(user, self.update_permission)
+    async def ensure_update_permission(
+        self, user: User, team_id: UUID | None = None
+    ) -> None:
+        await _check_permission(user, self.update_permission, team_id)
 
     @abstractmethod
     async def export(
@@ -380,6 +399,9 @@ class ToolPackageAdapter(ResourcePackageAdapter):
             "parameters": _copy_json(tool.parameters) or [],
             "http_config": _sanitize_dict(tool.http_config or {}),
             "code_config": _sanitize_dict(tool.code_config or {}),
+            "database_config": _sanitize_dict(
+                getattr(tool, "database_config", None) or {}
+            ),
             "mcp_config": _sanitize_dict(tool.mcp_config or {}),
             "is_enabled": tool.is_enabled,
         }
@@ -423,7 +445,7 @@ class ToolPackageAdapter(ResourcePackageAdapter):
         async with in_transaction():
             if install_in.action == ClouisleConflictAction.UPDATE:
                 if check_update_permission:
-                    self.ensure_update_permission(user)
+                    await self.ensure_update_permission(user, team_id=team.id)
                 existing = await Tool.filter(
                     team_id=team.id, name=resource_payload.get("name")
                 ).first()
@@ -603,7 +625,7 @@ class AgentPackageAdapter(ResourcePackageAdapter):
         async with in_transaction():
             if install_in.action == ClouisleConflictAction.UPDATE:
                 if check_update_permission:
-                    self.ensure_update_permission(user)
+                    await self.ensure_update_permission(user, team_id=team.id)
                 existing = await Agent.filter(
                     team_id=team.id, name=resource_payload.get("name")
                 ).first()
@@ -716,7 +738,7 @@ class WorkflowPackageAdapter(ResourcePackageAdapter):
         async with in_transaction():
             if install_in.action == ClouisleConflictAction.UPDATE:
                 if check_update_permission:
-                    self.ensure_update_permission(user)
+                    await self.ensure_update_permission(user, team_id=team.id)
                 existing = await Workflow.filter(
                     team_id=team.id, name=resource_payload.get("name")
                 ).first()
@@ -894,7 +916,7 @@ class KnowledgeBasePackageAdapter(ResourcePackageAdapter):
         async with in_transaction():
             if install_in.action == ClouisleConflictAction.UPDATE:
                 if check_update_permission:
-                    self.ensure_update_permission(user)
+                    await self.ensure_update_permission(user, team_id=team.id)
                 existing = await KnowledgeBase.filter(
                     team_id=team.id, name=resource_payload.get("name")
                 ).first()
@@ -966,6 +988,7 @@ def _tool_fields(payload: dict[str, Any]) -> dict[str, Any]:
         "parameters": payload.get("parameters") or [],
         "http_config": payload.get("http_config") or {},
         "code_config": payload.get("code_config") or {},
+        "database_config": payload.get("database_config") or {},
         "mcp_config": payload.get("mcp_config") or {},
     }
 

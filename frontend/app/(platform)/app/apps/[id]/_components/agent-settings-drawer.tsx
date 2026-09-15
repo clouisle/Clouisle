@@ -70,6 +70,7 @@ interface AgentSettingsDrawerProps {
   onHideReasoningChange: (value: boolean) => void
   // Tool-related
   hasToolsEnabled: boolean
+  readOnly?: boolean
 }
 
 interface SettingsSectionProps {
@@ -127,6 +128,7 @@ export function AgentSettingsDrawer({
   hideReasoning,
   onHideReasoningChange,
   hasToolsEnabled,
+  readOnly = false,
 }: AgentSettingsDrawerProps) {
   const t = useTranslations('agents')
   const ts = useTranslations('agents.settings')
@@ -183,6 +185,7 @@ export function AgentSettingsDrawer({
                   previewSize="lg"
                   category="icons"
                   placeholder={<Bot className="h-8 w-8 text-muted-foreground/50" />}
+                  disabled={readOnly}
                 />
               </div>
 
@@ -194,6 +197,7 @@ export function AgentSettingsDrawer({
                   value={name}
                   onChange={(e) => onNameChange(e.target.value)}
                   placeholder={t('namePlaceholder')}
+                  disabled={readOnly}
                 />
               </div>
 
@@ -207,13 +211,14 @@ export function AgentSettingsDrawer({
                   placeholder={t('descriptionPlaceholder')}
                   rows={2}
                   className="resize-none"
+                  disabled={readOnly}
                 />
               </div>
 
               {/* Visibility */}
               <div data-testid="settings-visibility-select" className="space-y-1.5">
                 <Label htmlFor="visibility" className="text-xs">{t('visibility')}</Label>
-                <Select value={visibility} onValueChange={(v) => v && onVisibilityChange(v as AgentVisibility)}>
+                <Select value={visibility} onValueChange={(v) => v && onVisibilityChange(v as AgentVisibility)} disabled={readOnly}>
                   <SelectTrigger id="visibility">
                     <SelectValue>
                       {visibility === 'private' ? t('visibilityPrivate') : t('visibilityTeam')}
@@ -233,7 +238,7 @@ export function AgentSettingsDrawer({
               <div data-testid="settings-model-select" className="space-y-1.5">
                 <Label className="text-xs">{t('model')}</Label>
                 <DropdownMenu>
-                  <DropdownMenuTrigger className="w-full inline-flex items-center justify-between gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground h-9 px-3">
+                  <DropdownMenuTrigger disabled={readOnly} className="w-full inline-flex items-center justify-between gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground h-9 px-3">
                     {selectedModel ? (
                       <div className="flex items-center gap-2 min-w-0">
                         <div className="w-5 h-5 rounded bg-green-100 text-green-700 flex items-center justify-center shrink-0">
@@ -284,7 +289,6 @@ export function AgentSettingsDrawer({
                   </div>
                 </div>
               )}
-
               {/* Model params hint */}
               <p className="text-xs text-muted-foreground">
                 {ts('modelParamsHint')}
@@ -295,21 +299,21 @@ export function AgentSettingsDrawer({
                   <Label className="text-xs">{ts('hideToolCalls')}</Label>
                   <p className="text-xs text-muted-foreground">{ts('hideToolCallsDesc')}</p>
                 </div>
-                <Switch checked={hideToolCalls} onCheckedChange={onHideToolCallsChange} />
+                <Switch checked={hideToolCalls} onCheckedChange={onHideToolCallsChange} disabled={readOnly} />
               </div>
               <div data-testid="settings-hide-message-actions" className="flex items-start justify-between gap-3 rounded-lg border p-3">
                 <div className="space-y-1">
                   <Label className="text-xs">{ts('hideMessageActions')}</Label>
                   <p className="text-xs text-muted-foreground">{ts('hideMessageActionsDesc')}</p>
                 </div>
-                <Switch checked={hideMessageActions} onCheckedChange={onHideTokenStatsChange} />
+                <Switch checked={hideMessageActions} onCheckedChange={onHideTokenStatsChange} disabled={readOnly} />
               </div>
               <div data-testid="settings-hide-reasoning" className="flex items-start justify-between gap-3 rounded-lg border p-3">
                 <div className="space-y-1">
                   <Label className="text-xs">{ts('hideReasoning')}</Label>
                   <p className="text-xs text-muted-foreground">{ts('hideReasoningDesc')}</p>
                 </div>
-                <Switch checked={hideReasoning} onCheckedChange={onHideReasoningChange} />
+                <Switch checked={hideReasoning} onCheckedChange={onHideReasoningChange} disabled={readOnly} />
               </div>
             </SettingsSection>
 
@@ -325,6 +329,7 @@ export function AgentSettingsDrawer({
                   placeholder={t('openingMessagePlaceholder')}
                   rows={2}
                   className="resize-none"
+                  disabled={readOnly}
                 />
               </div>
 
@@ -335,18 +340,16 @@ export function AgentSettingsDrawer({
                   id="suggestedQuestions"
                   value={suggestedQuestions.join('\n')}
                   onChange={(e) => {
-                    // 保留所有行（包括空行），让用户可以换行输入
                     const lines = e.target.value.split('\n')
                     onSuggestedQuestionsChange(lines)
                   }}
                   onBlur={(e) => {
-                    // 失焦时过滤空行
                     const lines = e.target.value.split('\n').filter((q) => q.trim())
                     onSuggestedQuestionsChange(lines)
                   }}
-                  placeholder={ts('suggestedQuestionsPlaceholder')}
                   rows={3}
                   className="resize-none"
+                  disabled={readOnly}
                 />
                 <p className="text-xs text-muted-foreground">
                   {t('suggestedQuestionsHint')}
@@ -362,6 +365,7 @@ export function AgentSettingsDrawer({
                   onChange={(e) => onPoweredByTextChange(e.target.value)}
                   placeholder={t('poweredByTextPlaceholder')}
                   maxLength={200}
+                  disabled={readOnly}
                 />
                 <p className="text-xs text-muted-foreground">
                   {t('poweredByTextHint')}

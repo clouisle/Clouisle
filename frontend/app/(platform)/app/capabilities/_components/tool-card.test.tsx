@@ -29,6 +29,7 @@ const baseTool: Tool = {
   description: 'Current conditions',
   type: 'custom',
   category: 'web',
+  visibility: 'team',
   parameters: [],
   is_enabled: true,
   requires_config: false,
@@ -86,4 +87,29 @@ test('shows sharing context and withholds owner actions for a shared tool', () =
   expect(text).toContain('platform.tools.share.sharedFrom:Platform Team')
   expect(nodes.some((element) => element.props.disabled)).toBe(true)
   expect(restrictedCalls).toEqual([])
+})
+
+test('displays private badge when tool visibility is private', () => {
+  const tree = ToolCard({
+    tool: {
+      ...baseTool,
+      visibility: 'private',
+    },
+  })
+  const nodes = elements(tree)
+  const text = nodes.flatMap((element) => element.props.children).filter((child) => typeof child === 'string')
+  expect(text).toContain('platform.tools.visibilityPrivate')
+})
+
+test('does not display private badge for built-in tools', () => {
+  const tree = ToolCard({
+    tool: {
+      ...baseTool,
+      type: 'builtin',
+      visibility: 'private',
+    },
+  })
+  const nodes = elements(tree)
+  const text = nodes.flatMap((element) => element.props.children).filter((child) => typeof child === 'string')
+  expect(text).not.toContain('platform.tools.visibilityPrivate')
 })

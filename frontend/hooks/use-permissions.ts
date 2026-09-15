@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect } from 'react'
 import { authApi, type User } from '@/lib/api'
-import { ROUTE_PERMISSION_MAP } from '@/lib/route-permissions'
+import { canAccessRoute, ROUTE_PERMISSION_MAP } from '@/lib/route-permissions'
 
 export function usePermissions() {
   const [user, setUser] = useState<User | null>(null)
@@ -70,7 +70,7 @@ export function usePermissions() {
   }
 }
 
-export const MENU_PERMISSION_MAP: Record<string, string> = ROUTE_PERMISSION_MAP
+export const MENU_PERMISSION_MAP: Record<string, string | string[]> = ROUTE_PERMISSION_MAP
 
 /**
  * Check if a menu item should be visible based on user permissions
@@ -79,8 +79,5 @@ export function canAccessMenuItem(
   url: string,
   hasPermission: (perm: string) => boolean
 ): boolean {
-  const requiredPerm = MENU_PERMISSION_MAP[url]
-  // If no permission mapping exists, allow access
-  if (!requiredPerm) return true
-  return hasPermission(requiredPerm)
+  return canAccessRoute(url, hasPermission)
 }

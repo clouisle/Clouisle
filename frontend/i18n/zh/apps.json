@@ -23,6 +23,11 @@
     "descriptionLabel": "描述",
     "descriptionPlaceholder": "描述这个应用的功能",
     "optional": "可选",
+    "visibilityLabel": "可见性",
+    "visibility": {
+      "private": "私有",
+      "team": "团队"
+    },
     "comingSoon": "即将推出",
     "workflowComingSoon": "工作流功能即将推出",
     "noApps": "暂无应用",

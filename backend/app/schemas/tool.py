@@ -45,6 +45,13 @@ class ToolCategory(str, Enum):
     OTHER = "other"  # 其他
 
 
+class ToolVisibility(str, Enum):
+    """工具可见性"""
+
+    PRIVATE = "private"
+    TEAM = "team"
+
+
 class ToolSharePermission(str, Enum):
     """工具共享权限级别"""
 
@@ -247,6 +254,9 @@ class ToolOut(BaseModel):
         default=None, description="创建者 ID (可能已删除)"
     )
     created_by_name: str | None = Field(default=None, description="创建者名称")
+    visibility: ToolVisibility = Field(
+        default=ToolVisibility.PRIVATE, description="工具可见性"
+    )
 
     # 工具共享相关字段
     is_owned: bool = Field(default=True, description="当前团队是否拥有此工具")
@@ -317,6 +327,9 @@ class ToolCreateInput(BaseModel):
     custom_type: CustomToolType | None = Field(
         default=None, description="自定义工具类型（仅 type=custom 时有效）"
     )
+    visibility: ToolVisibility = Field(
+        default=ToolVisibility.PRIVATE, description="工具可见性"
+    )
     parameters: list[ToolParameterSchema] = Field(
         default_factory=list, description="参数定义"
     )
@@ -348,6 +361,7 @@ class ToolUpdateInput(BaseModel):
     description: str | None = Field(default=None)
     icon: str | None = None
     category: str | None = Field(default=None, max_length=100)
+    visibility: ToolVisibility | None = None
     custom_type: CustomToolType | None = None
     parameters: list[ToolParameterSchema] | None = None
     http_config: HttpConfigSchema | None = None

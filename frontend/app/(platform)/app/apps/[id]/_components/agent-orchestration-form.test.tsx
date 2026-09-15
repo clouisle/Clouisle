@@ -127,11 +127,11 @@ function descendants(value: unknown): Node[] {
   return [node, ...descendants(node.props.children), ...descendants(node.props.action)]
 }
 
-function render(onUpdate = mock(() => undefined), currentAgent = agent) {
+function render(onUpdate = mock(() => undefined), currentAgent = agent, options: { canUpdate?: boolean } = {}) {
   stateIndex = 0
   effectIndex = 0
   return {
-    tree: AgentOrchestrationForm({ agent: currentAgent, onUpdate }) as Node,
+    tree: AgentOrchestrationForm({ agent: currentAgent, onUpdate, canUpdate: options.canUpdate }) as Node,
     onUpdate,
   }
 }
@@ -446,5 +446,19 @@ describe('AgentOrchestrationForm', () => {
 
       rag_mode: 'off',
     }))
+  })
+
+  test('hides add buttons and switches when canUpdate is false', () => {
+    const tree = render(mock(() => undefined), undefined, { canUpdate: false }).tree
+    expect(find(tree, AddVariableButton)).toHaveLength(0)
+    expect(find(tree, AddKnowledgeBaseButton)).toHaveLength(0)
+    expect(find(tree, AddToolButton)).toHaveLength(0)
+    expect(find(tree, Switch)).toHaveLength(0)
+    const variableEditor = find(tree, VariableEditor)[0]
+    expect(variableEditor.props.readOnly).toBe(true)
+    const kbSelector = find(tree, KnowledgeBaseSelector)[0]
+    expect(kbSelector.props.readOnly).toBe(true)
+    const toolSelector = find(tree, ToolSelector)[0]
+    expect(toolSelector.props.readOnly).toBe(true)
   })
 })

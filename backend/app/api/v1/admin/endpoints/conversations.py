@@ -17,8 +17,9 @@ from tortoise.functions import Count
 from app.api import deps
 from app.core.i18n import t
 from app.core.timezone import now, to_local, to_utc
-from app.models.user import User, Team, TeamMember
+from app.models.user import User, TeamMember
 from app.models.agent import Agent, Conversation, Message
+from app.api.team_access import check_team_access
 from app.schemas.agent import (
     ConversationListOut,
     ConversationOut,
@@ -58,30 +59,6 @@ def _normalize_flat_values(
     values: Iterable[FlatValue | tuple[FlatValue]],
 ) -> list[FlatValue]:
     return [value[0] if isinstance(value, tuple) else value for value in values]
-
-
-async def check_team_access(team_id: UUID, user: User) -> Team:
-    """Check if user has access to the team."""
-    team = await Team.filter(id=team_id).first()
-    if not team:
-        raise BusinessError(
-            code=ResponseCode.TEAM_NOT_FOUND,
-            msg_key="team_not_found",
-            status_code=404,
-        )
-
-    if user.is_superuser:
-        return team
-
-    membership = await TeamMember.filter(team=team, user=user).first()
-    if not membership:
-        raise BusinessError(
-            code=ResponseCode.NOT_TEAM_MEMBER,
-            msg_key="not_team_member",
-            status_code=403,
-        )
-
-    return team
 
 
 async def get_user_team_agent_ids(

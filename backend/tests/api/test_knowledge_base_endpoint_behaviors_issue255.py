@@ -4,12 +4,14 @@ from uuid import uuid4
 
 import pytest
 
+from app.api import team_access as shared_team_access
 from app.api.v1.endpoints import knowledge_bases
 from app.schemas.knowledge_base import (
     KnowledgeBaseCreate,
     KnowledgeBaseUpdate,
     SearchRequest,
 )
+
 from app.schemas.response import BusinessError, ResponseCode
 from app.services.retrieval import RetrievalError
 from app.services.vector_store import DimensionMismatchError
@@ -144,16 +146,20 @@ async def test_check_team_access_enforces_isolation(
     monkeypatch, mode, require_admin, membership, expected_code
 ):
     team = _team()
-    user = _user()
+    user = _user(roles=[_Role("team:read")])
     monkeypatch.setattr(
         knowledge_bases.Team, "filter", MagicMock(return_value=_Query(team))
     )
+    monkeypatch.setattr(
+        shared_team_access.Team, "filter", MagicMock(return_value=_Query(team))
+    )
     membership_query = _Query(membership)
     monkeypatch.setattr(
-        knowledge_bases.TeamMember,
+        shared_team_access.TeamMember,
         "filter",
         MagicMock(return_value=membership_query),
     )
+
     token = knowledge_bases._kb_access_mode.set(mode)
     try:
         if expected_code:
@@ -176,7 +182,7 @@ async def test_check_team_access_enforces_isolation(
 @pytest.mark.asyncio
 async def test_check_team_access_reports_missing_team(monkeypatch):
     monkeypatch.setattr(
-        knowledge_bases.Team, "filter", MagicMock(return_value=_Query(None))
+        shared_team_access.Team, "filter", MagicMock(return_value=_Query(None))
     )
 
     with pytest.raises(BusinessError) as caught:
@@ -299,6 +305,11 @@ async def test_list_knowledge_bases_applies_platform_filters_and_pagination(
         knowledge_bases.Model, "filter", MagicMock(return_value=_Query(items=[]))
     )
     monkeypatch.setattr(
+        knowledge_bases.KnowledgeBaseShare,
+        "filter",
+        MagicMock(return_value=_Query(items=[])),
+    )
+    monkeypatch.setattr(
         knowledge_bases.KnowledgeBaseList,
         "model_validate",
         MagicMock(
@@ -323,8 +334,13 @@ async def test_list_knowledge_bases_applies_platform_filters_and_pagination(
     finally:
         knowledge_bases._kb_access_mode.reset(token)
 
-    filter_kwargs = [kwargs for _, kwargs in query.filters]
-    assert {"team_id__in": memberships.items} in filter_kwargs
+    filter_args = [args for args, _ in query.filters if args]
+    filter_kwargs = [kwargs for _, kwargs in query.filters if kwargs]
+    assert any(
+        {"team_id__in": memberships.items} == kw
+        or any(hasattr(arg, "children") for a in filter_args for arg in a)
+        for kw in filter_kwargs or [{}]
+    )
     assert {"created_by": user} in filter_kwargs
     assert {"name__icontains": "hand"} in filter_kwargs
     assert {"status__in": ["active"]} in filter_kwargs

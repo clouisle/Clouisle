@@ -635,7 +635,6 @@ async def test_admin_update_workflow_applies_run_page_config(monkeypatch):
     monkeypatch.setattr(
         admin_workflows.Workflow, "get", lambda **kwargs: _AwaitableQuery()
     )
-    monkeypatch.setattr(admin_workflows.deps, "check_scoped_permission", AsyncMock())
     monkeypatch.setattr(admin_workflows.AuditLogService, "log", AsyncMock())
 
     response = await admin_workflows.update_workflow(

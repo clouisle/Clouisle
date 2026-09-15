@@ -193,3 +193,46 @@ def test_tool_names_accept_identifiers_and_reject_invalid_values():
 
     with pytest.raises(ValueError, match="tool_name_invalid_format"):
         ToolUpdateInput(name="weather-api")
+
+
+@pytest.mark.asyncio
+async def test_tool_test_executes_database_custom_tool():
+    tool = DummyTool()
+    tool.name = "company_db"
+    tool.custom_type = CustomToolType.DATABASE
+    tool.database_config = {
+        "db_type": "postgresql",
+        "host": "127.0.0.1",
+        "database": "analytics",
+        "timeout": 12.0,
+    }
+
+    req = ToolExecuteRequest(
+        name="company_db",
+        arguments={"action": "query", "sql": "SELECT 1"},
+    )
+    user = DummyUser()
+
+    with (
+        patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
+        patch(
+            "app.api.v1.endpoints.tools.check_team_access", AsyncMock(return_value=None)
+        ),
+        patch(
+            "app.api.v1.endpoints.tools.Tool.filter",
+            return_value=DummyFilterResult(tool),
+        ),
+        patch(
+            "app.llm.tools.builtin.db_executor.execute_database_tool",
+            new=AsyncMock(return_value={"success": True, "rows": [{"count": 10}]}),
+        ) as mock_db_exec,
+    ):
+        resp = await execute_test_tool(req, tool.team_id, user)
+        assert resp["data"].success is True
+        assert resp["data"].result == {"success": True, "rows": [{"count": 10}]}
+        assert resp["data"].error is None
+        mock_db_exec.assert_awaited_once_with(
+            tool=tool,
+            arguments={"action": "query", "sql": "SELECT 1"},
+            timeout=12.0,
+        )

@@ -56,7 +56,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { PermissionGuard } from '@/components/permission-guard'
+import { usePermissions } from '@/hooks/use-permissions'
 
 interface TeamModelsTabProps {
   teamId: string
@@ -112,8 +113,9 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
   const t = useTranslations('teams')
   const modelT = useTranslations('models')
   const commonT = useTranslations('common')
-  const { canPerform } = useCanPerform()
-  const canManageTeam = canPerform('team:manage')
+  const { hasPermission, isSuperuser } = usePermissions()
+  const canAuthorizeModels = isSuperuser || hasPermission('admin:model:update')
+  const canReadSystemModels = isSuperuser || hasPermission('admin:model:read')
 
   // 数据状态
   const [teamModels, setTeamModels] = React.useState<TeamModel[]>([])
@@ -138,19 +140,23 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
   const loadData = React.useCallback(async () => {
     setIsLoading(true)
     try {
-      const [teamModelsData, allModelsData] = await Promise.all([
+      const promises: [Promise<TeamModel[]>, Promise<{ items: Model[] } | null>] = [
         teamModelsApi.getTeamModels(teamId),
-        modelsApi.getModels({ pageSize: 100 }),
-      ])
+        canReadSystemModels
+          ? modelsApi.getModels({ pageSize: 100 })
+          : Promise.resolve(null),
+      ]
+      const [teamModelsData, allModelsData] = await Promise.all(promises)
       setTeamModels(teamModelsData)
-      setAllModels(allModelsData.items)
+      if (allModelsData) {
+        setAllModels(allModelsData.items)
+      }
     } catch {
       // 错误已由 API 客户端处理
     } finally {
       setIsLoading(false)
     }
-  }, [teamId])
-
+  }, [teamId, canReadSystemModels])
   React.useEffect(() => {
     loadData()
   }, [loadData])
@@ -290,7 +296,7 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
         <h3 className="font-medium">
           {t('authorizedModels')} ({teamModels.length})
         </h3>
-        <PermissionGuard permission="team:manage">
+        <PermissionGuard permission="admin:model:update">
           <Popover open={addModelOpen} onOpenChange={setAddModelOpen}>
             <PopoverTrigger
               render={
@@ -416,15 +422,19 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
                     <UsageBar used={tm.monthly_tokens_used} limit={tm.monthly_token_limit} />
                   </TableCell>
                   <TableCell>
-                    {canManageTeam ? (
+                    {canAuthorizeModels ? (
                       <Switch
                         checked={tm.is_enabled}
                         onCheckedChange={() => handleToggleEnabled(tm)}
                       />
-                    ) : null}
+                    ) : (
+                      <Badge variant={tm.is_enabled ? 'default' : 'outline'} className="text-[10px]">
+                        {tm.is_enabled ? '已启用' : '已停用'}
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell>
-                    {canManageTeam && (
+                    {canAuthorizeModels && (
                       <div className="flex items-center gap-1">
                         <Button
                           variant="ghost"

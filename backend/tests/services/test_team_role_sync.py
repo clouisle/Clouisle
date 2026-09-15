@@ -70,133 +70,6 @@ async def test_assign_default_team_does_not_resync_existing_membership(monkeypat
         "get_or_create",
         AsyncMock(return_value=(membership, False)),
     )
-    sync = AsyncMock()
-    monkeypatch.setattr(team_role_sync, "sync_scoped_role_assignment", sync)
-
-    assigned = await team_role_sync.assign_default_team(user)
-
-    assert assigned is False
-    sync.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_sync_user_role_from_teams_syncs_and_prunes(monkeypatch):
-    user = SimpleNamespace(id=uuid4())
-    memberships = [
-        SimpleNamespace(team=SimpleNamespace(id=uuid4())),
-        SimpleNamespace(team=SimpleNamespace(id=uuid4())),
-    ]
-    membership_query = QueryMock(memberships)
-    assignment_query = QueryMock()
-    monkeypatch.setattr(
-        team_role_sync.TeamMember,
-        "filter",
-        MagicMock(return_value=membership_query),
-    )
-    assignment_filter = MagicMock(return_value=assignment_query)
-    monkeypatch.setattr(
-        team_role_sync.ScopedRoleAssignment, "filter", assignment_filter
-    )
-    sync = AsyncMock()
-    monkeypatch.setattr(team_role_sync, "sync_scoped_role_assignment", sync)
-
-    await team_role_sync.sync_user_role_from_teams(user)
-
-    membership_query.prefetch_related.assert_called_once_with("team", "user")
-    assert [call.args for call in sync.await_args_list] == [
-        (membership,) for membership in memberships
-    ]
-    assignment_filter.assert_called_once_with(
-        user=user, scope_type="team", source="system"
-    )
-    assignment_query.exclude.assert_called_once_with(
-        scope_id__in={membership.team.id for membership in memberships}
-    )
-    assignment_query.delete.assert_awaited_once_with()
-
-
-@pytest.mark.asyncio
-async def test_sync_scoped_role_assignment_skips_unknown_and_missing_roles(
-    monkeypatch,
-):
-    membership = SimpleNamespace(
-        role="unknown",
-        user=SimpleNamespace(id=uuid4()),
-        team=SimpleNamespace(id=uuid4()),
-    )
-    role_filter = MagicMock(return_value=QueryMock())
-    assignment_filter = MagicMock(return_value=QueryMock())
-    get_or_create = AsyncMock()
-    monkeypatch.setattr(team_role_sync.Role, "filter", role_filter)
-    monkeypatch.setattr(
-        team_role_sync.ScopedRoleAssignment, "filter", assignment_filter
-    )
-    monkeypatch.setattr(
-        team_role_sync.ScopedRoleAssignment, "get_or_create", get_or_create
-    )
-
-    await team_role_sync.sync_scoped_role_assignment(membership)
-    role_filter.assert_not_called()
-
-    membership.role = "admin"
-    await team_role_sync.sync_scoped_role_assignment(membership)
-
-    role_filter.assert_called_once_with(name="Admin")
-    assignment_filter.assert_not_called()
-    get_or_create.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_sync_scoped_role_assignment_replaces_system_assignment(monkeypatch):
-    user = SimpleNamespace(id=uuid4())
-    team = SimpleNamespace(id=uuid4())
-    role = SimpleNamespace(id=uuid4())
-    membership = SimpleNamespace(role="viewer", user=user, team=team)
-    role_query = QueryMock(role)
-    assignment_query = QueryMock()
-    assignment_filter = MagicMock(return_value=assignment_query)
-    get_or_create = AsyncMock()
-    monkeypatch.setattr(
-        team_role_sync.Role, "filter", MagicMock(return_value=role_query)
-    )
-    monkeypatch.setattr(
-        team_role_sync.ScopedRoleAssignment, "filter", assignment_filter
-    )
-    monkeypatch.setattr(
-        team_role_sync.ScopedRoleAssignment, "get_or_create", get_or_create
-    )
-
-    await team_role_sync.sync_scoped_role_assignment(membership)
-
-    assignment_filter.assert_called_once_with(
-        user=user, scope_type="team", scope_id=team.id, source="system"
-    )
-    assignment_query.delete.assert_awaited_once_with()
-    get_or_create.assert_awaited_once_with(
-        user=user,
-        role=role,
-        scope_type="team",
-        scope_id=team.id,
-        defaults={"source": "system"},
-    )
-
-
-@pytest.mark.asyncio
-async def test_remove_scoped_role_assignment(monkeypatch):
-    user = SimpleNamespace(id=uuid4())
-    team_id = uuid4()
-    query = QueryMock()
-    assignment_filter = MagicMock(return_value=query)
-    monkeypatch.setattr(
-        team_role_sync.ScopedRoleAssignment, "filter", assignment_filter
-    )
-
-    await team_role_sync.remove_scoped_role_assignment(user, team_id)
-
-    assignment_filter.assert_called_once_with(
-        user=user, scope_type="team", scope_id=team_id
-    )
-    query.delete.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio
@@ -255,14 +128,10 @@ async def test_assign_default_team_creates_membership(monkeypatch):
         async def first(self):
             return team
 
-    membership = SimpleNamespace(role="viewer")
-    sync_scoped_role_assignment = AsyncMock()
-
     monkeypatch.setattr(team_role_sync.SiteSetting, "get_value", get_value)
-    monkeypatch.setattr(team_role_sync.Team, "filter", lambda **kwargs: TeamQuery())
-    monkeypatch.setattr(
-        team_role_sync, "sync_scoped_role_assignment", sync_scoped_role_assignment
-    )
+    monkeypatch.setattr(team_role_sync.Team, "filter", lambda **_kwargs: TeamQuery())
+
+    membership = SimpleNamespace(role="viewer")
     monkeypatch.setattr(
         team_role_sync.TeamMember,
         "get_or_create",
@@ -277,7 +146,6 @@ async def test_assign_default_team_creates_membership(monkeypatch):
         user=user,
         defaults={"role": "viewer"},
     )
-    sync_scoped_role_assignment.assert_awaited_once_with(membership)
 
 
 @pytest.mark.asyncio
@@ -297,14 +165,10 @@ async def test_assign_default_team_falls_back_invalid_role(monkeypatch):
         async def first(self):
             return team
 
-    membership = SimpleNamespace(role="member")
-    sync_scoped_role_assignment = AsyncMock()
-
     monkeypatch.setattr(team_role_sync.SiteSetting, "get_value", get_value)
-    monkeypatch.setattr(team_role_sync.Team, "filter", lambda **kwargs: TeamQuery())
-    monkeypatch.setattr(
-        team_role_sync, "sync_scoped_role_assignment", sync_scoped_role_assignment
-    )
+    monkeypatch.setattr(team_role_sync.Team, "filter", lambda **_kwargs: TeamQuery())
+
+    membership = SimpleNamespace(role="member")
     monkeypatch.setattr(
         team_role_sync.TeamMember,
         "get_or_create",
@@ -319,7 +183,6 @@ async def test_assign_default_team_falls_back_invalid_role(monkeypatch):
         user=user,
         defaults={"role": "member"},
     )
-    sync_scoped_role_assignment.assert_awaited_once_with(membership)
 
 
 @pytest.mark.asyncio

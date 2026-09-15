@@ -4,8 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.api.deps import check_scoped_permission
-from app.api.team_access import check_team_access
+from app.api.team_access import check_team_access, check_team_permission
 from app.api.workflow_access import check_workflow_access
 from app.models.workflow import WorkflowVisibility
 from app.schemas.response import BusinessError
@@ -85,13 +84,32 @@ async def test_superuser_bypasses_team_membership_check(monkeypatch):
 @pytest.mark.anyio
 async def test_team_admin_can_use_team_admin_action(monkeypatch):
     team = SimpleNamespace(id=uuid4())
-    user = SimpleNamespace(id=uuid4(), is_superuser=False)
+    user = SimpleNamespace(id=uuid4(), is_superuser=False, roles=[_Role("team:read")])
     _TeamModel.team = team
     _TeamMemberModel.membership = SimpleNamespace(role="admin")
     monkeypatch.setattr("app.api.team_access.Team", _TeamModel)
     monkeypatch.setattr("app.api.team_access.TeamMember", _TeamMemberModel)
 
     assert await check_team_access(team.id, user, require_admin=True) is team
+
+
+@pytest.mark.anyio
+async def test_viewer_cannot_write_despite_global_permission(monkeypatch):
+    team = SimpleNamespace(id=uuid4())
+    user = SimpleNamespace(
+        id=uuid4(),
+        is_superuser=False,
+        roles=[_Role("agent:create")],
+    )
+    _TeamModel.team = team
+    _TeamMemberModel.membership = SimpleNamespace(role="viewer")
+    monkeypatch.setattr("app.api.team_access.Team", _TeamModel)
+    monkeypatch.setattr("app.api.team_access.TeamMember", _TeamMemberModel)
+
+    with pytest.raises(BusinessError) as error:
+        await check_team_permission(team.id, user, "agent:create")
+
+    assert error.value.msg_key == "operation_not_permitted"
 
 
 class _WorkflowModel:
@@ -142,43 +160,78 @@ async def test_team_workflow_write_delegates_to_team_admin_check(monkeypatch):
     check_team.assert_any_await(team.id, user, require_admin=True)
 
 
-class _ScopedAssignmentModel:
-    assignments = []
-
-    @classmethod
-    def filter(cls, **_kwargs):
-        return _Query(cls.assignments)
-
-
 @pytest.mark.anyio
-async def test_team_scoped_role_cannot_satisfy_admin_permission(monkeypatch):
+async def test_team_admin_membership_needs_explicit_global_management_permission(
+    monkeypatch,
+):
+    team = SimpleNamespace(id=uuid4())
     user = SimpleNamespace(
         id=uuid4(),
         is_superuser=False,
-        roles=[],
+        roles=[_Role("team:read")],
     )
-    _ScopedAssignmentModel.assignments = [SimpleNamespace(role=_Role("admin:*", "*"))]
-    monkeypatch.setattr("app.api.deps.ScopedRoleAssignment", _ScopedAssignmentModel)
+    _TeamModel.team = team
+    _TeamMemberModel.membership = SimpleNamespace(role="admin")
+    monkeypatch.setattr("app.api.team_access.Team", _TeamModel)
+    monkeypatch.setattr("app.api.team_access.TeamMember", _TeamMemberModel)
 
     with pytest.raises(BusinessError) as error:
-        await check_scoped_permission(user, "admin:dashboard:access", "team", uuid4())
+        await check_team_permission(
+            team.id,
+            user,
+            "team:manage",
+            require_team_admin=True,
+        )
 
     assert error.value.msg_key == "operation_not_permitted"
 
 
 @pytest.mark.anyio
-async def test_team_scoped_role_satisfies_non_admin_permission(monkeypatch):
+async def test_explicit_team_management_permission_needs_admin_membership(monkeypatch):
+    team = SimpleNamespace(id=uuid4())
     user = SimpleNamespace(
         id=uuid4(),
         is_superuser=False,
-        roles=[],
+        roles=[_Role("team:read", "team:manage")],
     )
-    _ScopedAssignmentModel.assignments = [
-        SimpleNamespace(role=_Role("workflow:update"))
-    ]
-    monkeypatch.setattr("app.api.deps.ScopedRoleAssignment", _ScopedAssignmentModel)
+    _TeamModel.team = team
+    _TeamMemberModel.membership = SimpleNamespace(role="member")
+    monkeypatch.setattr("app.api.team_access.Team", _TeamModel)
+    monkeypatch.setattr("app.api.team_access.TeamMember", _TeamMemberModel)
 
-    await check_scoped_permission(user, "workflow:update", "team", uuid4())
+    with pytest.raises(BusinessError) as error:
+        await check_team_permission(
+            team.id,
+            user,
+            "team:manage",
+            require_team_admin=True,
+        )
+
+    assert error.value.msg_key == "team_admin_required"
+
+
+@pytest.mark.anyio
+async def test_team_admin_requires_and_accepts_both_explicit_grants(monkeypatch):
+    team = SimpleNamespace(id=uuid4())
+    user = SimpleNamespace(
+        id=uuid4(),
+        is_superuser=False,
+        roles=[_Role("team:read", "team:manage")],
+    )
+    _TeamModel.team = team
+    _TeamMemberModel.membership = SimpleNamespace(role="admin")
+    monkeypatch.setattr("app.api.team_access.Team", _TeamModel)
+    monkeypatch.setattr("app.api.team_access.TeamMember", _TeamMemberModel)
+
+    assert (
+        await check_team_permission(
+            team.id,
+            user,
+            "team:manage",
+            require_team_admin=True,
+        )
+        is team
+    )
 
 
 @pytest.mark.anyio

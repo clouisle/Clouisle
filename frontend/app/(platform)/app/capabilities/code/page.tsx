@@ -38,7 +38,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { formatValidationSummaryMessage } from '@/lib/validation'
 import { toast } from 'sonner'
-import { toolsApi, ToolCreateInput, ToolUpdateInput, CodeConfig, ToolParameter, ToolCategory, SandboxArtifactConfig, SandboxLimitsConfig } from '@/lib/api/tools'
+import { toolsApi, ToolCreateInput, ToolUpdateInput, CodeConfig, ToolParameter, ToolCategory, ToolVisibility, SandboxArtifactConfig, SandboxLimitsConfig } from '@/lib/api/tools'
 import { ApiError } from '@/lib/api'
 import { useTeam } from '@/contexts/team-context'
 import { ImageUpload } from '@/components/ui/image-upload'
@@ -224,6 +224,7 @@ export default function CodeToolPage() {
   const [description, setDescription] = useState('')
   const [icon, setIcon] = useState('')
   const [category, setCategory] = useState<ToolCategory>('code')
+  const [visibility, setVisibility] = useState<ToolVisibility>('private')
   const [isEnabled, setIsEnabled] = useState(true)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
@@ -271,6 +272,7 @@ export default function CodeToolPage() {
       setDescription(tool.description)
       setIcon(tool.icon || '')
       setCategory(tool.category || 'code')
+      setVisibility((tool.visibility as ToolVisibility) || 'private')
       setIsEnabled(tool.is_enabled)
       setFieldErrors({})
 
@@ -484,6 +486,7 @@ export default function CodeToolPage() {
         description: description.trim() || t('codeEditor.defaultDescription'),
         icon,
         category,
+        visibility,
         is_enabled: isEnabled,
         type: 'custom',
         custom_type: 'code',
@@ -800,6 +803,23 @@ export default function CodeToolPage() {
                     aria-invalid={!!fieldErrors.description}
                   />
                   {fieldErrors.description && <p className="text-xs text-destructive">{fieldErrors.description}</p>}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="code-visibility" className="text-xs text-muted-foreground">
+                    {t('visibility')}
+                  </Label>
+                  <Select value={visibility} onValueChange={(val) => setVisibility(val as ToolVisibility)}>
+                    <SelectTrigger id="code-visibility" className="h-8 text-sm">
+                      <SelectValue>
+                        {visibility === 'private' ? t('visibilityPrivate') : t('visibilityTeam')}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      <SelectItem value="private">{t('visibilityPrivate')}</SelectItem>
+                      <SelectItem value="team">{t('visibilityTeam')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">{t('visibilityHint')}</p>
                 </div>
                 <div className="flex items-center justify-between pt-1">
                   <Label htmlFor="enabled" className="text-xs text-muted-foreground">

@@ -87,9 +87,9 @@ beforeAll(async () => {
 })
 
 const tools = [
-  { id: '1', name: 'web_search', display_name: 'Web Search', description: 'Find pages', category: 'search', type: 'builtin' },
-  { id: '2', name: 'summarize', display_name: 'Summarizer', description: 'Condense text', category: 'Writing', type: 'custom' },
-  { id: '3', name: 'remote_docs', display_name: 'Remote Docs', description: 'Fetch manuals', category: 'search', type: 'mcp' },
+  { id: '1', name: 'web_search', display_name: 'Web Search', description: 'Find pages', category: 'search', type: 'builtin', visibility: 'team' },
+  { id: '2', name: 'summarize', display_name: 'Summarizer', description: 'Condense text', category: 'Writing', type: 'custom', visibility: 'private' },
+  { id: '3', name: 'remote_docs', display_name: 'Remote Docs', description: 'Fetch manuals', category: 'search', type: 'mcp', visibility: 'team' },
 ] as Tool[]
 
 const roots: Root[] = []

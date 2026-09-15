@@ -25,6 +25,14 @@ mock.module('next/navigation', () => ({ usePathname: () => pathname }))
 mock.module('next-intl', () => ({
   useTranslations: () => (key: string) => `sidebar.${key}`,
 }))
+let currentTeam: { id: string; role: string } | null = { id: 'team-1', role: 'admin' }
+let currentUser: { id: string; is_superuser?: boolean } | null = { id: 'user-1' }
+mock.module('@/contexts/team-context', () => ({
+  useTeam: () => ({ currentTeam }),
+}))
+mock.module('@/hooks/use-permissions', () => ({
+  usePermissions: () => ({ user: currentUser }),
+}))
 mock.module('lucide-react', () => ({
   LayoutGrid,
   Code2,
@@ -96,4 +104,34 @@ test('uses default destinations and the empty-icon fallback', () => {
 
 test('renders no sidebar at the collapsed boundary', () => {
   expect(AgentSidebar({ agent: agent as never, collapsed: true })).toBeNull()
+})
+
+test('hides monitor nav item when user is a regular member and not the creator', () => {
+  currentTeam = { id: 'team-1', role: 'member' }
+  currentUser = { id: 'other-user', is_superuser: false }
+  const sidebar = AgentSidebar({
+    agent: { ...agent, created_by: { id: 'creator-user' } } as never,
+  }) as Node
+  const nodes = descendants(sidebar)
+  const links = nodes.filter((node) => node.type === Link)
+  const navLinks = links.filter((node) => node.props['data-testid'])
+
+  expect(navLinks.map((node) => node.props['data-testid'])).toEqual([
+    'agent-nav-orchestration',
+    'agent-nav-api',
+    'agent-nav-logs',
+  ])
+})
+
+test('shows monitor nav item when user is the creator even if member', () => {
+  currentTeam = { id: 'team-1', role: 'member' }
+  currentUser = { id: 'creator-user', is_superuser: false }
+  const sidebar = AgentSidebar({
+    agent: { ...agent, created_by: { id: 'creator-user' } } as never,
+  }) as Node
+  const nodes = descendants(sidebar)
+  const links = nodes.filter((node) => node.type === Link)
+  const navLinks = links.filter((node) => node.props['data-testid'])
+
+  expect(navLinks.map((node) => node.props['data-testid'])).toContain('agent-nav-monitor')
 })

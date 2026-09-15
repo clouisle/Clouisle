@@ -170,4 +170,38 @@ describe('HttpToolDialog', () => {
     }))
     expect(renderer.root.findAllByProps({ role: 'alert' }).map((item) => text(item.props.children)).join(' ')).toContain('Timeout is too high')
   })
-})
+  test('manages request pairs, body content, and empty edit fallbacks', async () => {
+    const { renderer, onSave } = render()
+    changeInput(renderer, { id: 'name' }, 'create_event')
+    changeInput(renderer, { id: 'displayName' }, 'Create event')
+    changeInput(renderer, { placeholder: 'tools.httpDialog.urlPlaceholder' }, 'https://api.example.test/events')
+
+    act(() => button(renderer, 'tools.httpDialog.addHeader').props.onClick())
+    act(() => button(renderer, 'tools.httpDialog.addParam').props.onClick())
+    const keys = renderer.root.findAllByProps({ placeholder: 'Key' })
+    const values = renderer.root.findAllByProps({ placeholder: 'Value' })
+    act(() => keys[1].props.onChange({ target: { value: 'X-Request' } }))
+    act(() => values[1].props.onChange({ target: { value: 'request-1' } }))
+    act(() => keys[2].props.onChange({ target: { value: 'limit' } }))
+    act(() => values[2].props.onChange({ target: { value: '10' } }))
+
+    act(() => renderer.root.findByProps({ 'data-value': 'POST' }).props.onClick())
+    act(() => renderer.root.findByType('textarea').props.onChange({ target: { value: '{"event":"created"}' } }))
+    await act(async () => button(renderer, 'common.create').props.onClick())
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      http_config: expect.objectContaining({
+        method: 'POST',
+        body_template: '{"event":"created"}',
+      }),
+    }))
+    render({
+      tool: {
+        id: 'empty-config', name: 'empty_config', display_name: 'Empty config', description: '', icon: '', category: 'api', is_enabled: true,
+        type: 'custom', custom_type: 'http', parameters: [],
+        http_config: { method: 'GET', url: 'https://api.example.test', headers: undefined, query_params: undefined },
+      } as React.ComponentProps<typeof HttpToolDialog>['tool'],
+    })
+  })
+
+ })

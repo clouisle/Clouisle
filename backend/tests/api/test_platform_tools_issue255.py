@@ -8,6 +8,7 @@ import pytest
 from app.api.v1.endpoints import tools
 from app.models.tool import CustomToolType as DBCustomToolType
 from app.models.tool import ToolType as DBToolType
+from app.models.tool import ToolVisibility as DBToolVisibility
 from app.models.tool_config import ToolConfig
 from app.schemas.response import BusinessError
 from app.schemas.tool import ToolCreateInput, ToolExecuteRequest, ToolUpdateInput
@@ -73,6 +74,7 @@ def db_tool(**overrides):
         "icon": None,
         "category": "other",
         "type": DBToolType.CUSTOM,
+        "visibility": DBToolVisibility.TEAM,
         "custom_type": DBCustomToolType.HTTP,
         "parameters": [],
         "http_config": {"url": "https://example.test", "method": "GET"},
@@ -211,14 +213,14 @@ async def test_get_tool_detail_handles_not_found_and_checks_access(monkeypatch):
         await tools.get_tool_by_id(uuid4(), current)
     assert exc_info.value.msg_key == "tool_not_found"
 
-    existing = db_tool(created_by=None)
+    existing = db_tool(created_by=None, visibility=DBToolVisibility.TEAM)
     access = AsyncMock()
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(first=existing))
-    monkeypatch.setattr(tools, "check_team_access", access)
+    monkeypatch.setattr(tools, "check_tool_access", access)
     result = data(await tools.get_tool_by_id(existing.id, current))
     assert result.name == existing.name
     assert result.created_by_name is None
-    access.assert_awaited_once_with(existing.team_id, current)
+    access.assert_awaited_once_with(existing, current)
 
 
 @pytest.mark.asyncio
@@ -232,10 +234,8 @@ async def test_create_tool_validates_duplicate_and_persists_with_audit(monkeypat
         custom_type="code",
         code_config={"language": "python", "code": "return 1"},
     )
-    access = AsyncMock()
-    scoped = AsyncMock()
-    monkeypatch.setattr(tools, "check_team_access", access)
-    monkeypatch.setattr(tools.deps, "check_scoped_permission", scoped)
+    permission = AsyncMock()
+    monkeypatch.setattr(tools, "check_team_permission", permission)
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query())
     created = db_tool(
         team_id=team_id,
@@ -256,8 +256,7 @@ async def test_create_tool_validates_duplicate_and_persists_with_audit(monkeypat
 
     assert result.name == "runner"
     assert create.await_args.kwargs["created_by"] is current
-    access.assert_awaited_once_with(team_id, current)
-    scoped.assert_awaited_once_with(current, "tool:create", "team", team_id)
+    permission.assert_awaited_once_with(team_id, current, "tool:create")
     audit.assert_awaited_once()
 
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(first=created))
@@ -275,7 +274,7 @@ async def test_update_tool_persists_fields_and_stops_on_duplicate(monkeypatch):
     queries = iter([Query(first=existing), Query()])
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: next(queries))
     monkeypatch.setattr(tools, "check_tool_write_access", AsyncMock())
-    monkeypatch.setattr(tools.deps, "check_scoped_permission", AsyncMock())
+    monkeypatch.setattr(tools, "check_team_permission", AsyncMock())
     monkeypatch.setattr(tools.AuditLogService, "log", AsyncMock())
     update = ToolUpdateInput(
         name="renamed",
@@ -320,17 +319,18 @@ async def test_delete_and_toggle_cover_not_found_access_and_persistence(monkeypa
     assert exc_info.value.msg_key == "tool_not_found"
 
     existing = db_tool(is_enabled=True)
-    access = AsyncMock()
-    audit = AsyncMock()
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(first=existing))
-    monkeypatch.setattr(tools, "check_team_access", access)
+    audit = AsyncMock()
+    permission = AsyncMock()
+    monkeypatch.setattr(tools, "check_team_permission", permission)
     monkeypatch.setattr(tools, "check_tool_write_access", AsyncMock())
-    monkeypatch.setattr(tools.deps, "check_scoped_permission", AsyncMock())
     monkeypatch.setattr(tools.AuditLogService, "log", audit)
 
     await tools.delete_tool(existing.id, request, current)
     existing.delete.assert_awaited_once()
-    access.assert_awaited_once_with(existing.team_id, current, require_admin=True)
+    permission.assert_awaited_once_with(
+        existing.team_id, current, "tool:delete", require_team_admin=True
+    )
 
     result = data(await tools.toggle_tool(existing.id, request, current))
     assert result.is_enabled is False
@@ -382,15 +382,15 @@ async def test_custom_execution_checks_team_and_covers_http_and_missing(monkeypa
     team_id = uuid4()
     access = AsyncMock()
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: None)
-    monkeypatch.setattr(tools, "check_team_access", access)
+    monkeypatch.setattr(tools, "check_tool_access", access)
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query())
 
     with pytest.raises(BusinessError) as exc_info:
         await tools.test_tool(ToolExecuteRequest(name="missing"), team_id, current)
     assert exc_info.value.msg_key == "tool_not_found"
-    access.assert_awaited_once_with(team_id, current)
+    access.assert_not_awaited()
 
-    existing = db_tool(team_id=team_id)
+    existing = db_tool(team_id=team_id, visibility=DBToolVisibility.TEAM)
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(first=existing))
     execute = AsyncMock(return_value={"success": False, "error": "upstream"})
     monkeypatch.setattr(tools, "execute_http_tool", execute)
@@ -406,6 +406,7 @@ async def test_custom_execution_checks_team_and_covers_http_and_missing(monkeypa
     execute.assert_awaited_once_with(
         existing.http_config, {"city": "Paris"}, existing.credentials
     )
+    access.assert_awaited_once_with(existing, current)
 
 
 @pytest.mark.asyncio

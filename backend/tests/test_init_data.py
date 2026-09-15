@@ -133,6 +133,29 @@ async def test_startup_migration_resets_lock_timeout_after_failure() -> None:
 
 
 @pytest.mark.asyncio
+async def test_kb_visibility_migration_preserves_legacy_team_access(
+    monkeypatch,
+) -> None:
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(
+            side_effect=[
+                (1, [{"table_name": "knowledge_bases"}]),
+                (0, []),
+                None,
+                None,
+            ]
+        )
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    await init_data.init_kb_visibility_fields()
+
+    queries = [call.args[0] for call in conn.execute_query.await_args_list]
+    assert "DEFAULT 'team'" in queries[2]
+    assert "SET DEFAULT 'private'" in queries[3]
+
+
+@pytest.mark.asyncio
 async def test_pause_request_migration_uses_mapped_node_execution_table(monkeypatch):
     conn = SimpleNamespace(
         capabilities=SimpleNamespace(dialect="postgres"),
@@ -370,7 +393,7 @@ async def test_init_db_initializes_roles_settings_and_tables(
         "init_kb_rerank_fields",
         "init_clouisle_import_sessions_table",
         "drop_obsolete_retrieval_evaluation_tables",
-        "init_scoped_role_assignments_table",
+        "migrate_team_admin_roles",
         "init_model_endpoint_allowlist",
         "init_default_settings",
         "migrate_auto_notification_types",
@@ -428,13 +451,20 @@ async def test_init_db_initializes_roles_settings_and_tables(
 
     await init_data.init_db()
 
-    assert set(roles) == {init_data.SUPER_ADMIN_ROLE, "Admin", "Member", "Viewer"}
+    assert set(roles) == {
+        init_data.SUPER_ADMIN_ROLE,
+        "Admin",
+        "Member",
+        "Team Admin",
+        "Viewer",
+    }
     roles[init_data.SUPER_ADMIN_ROLE].permissions.add.assert_awaited_once_with(
         all_permission
     )
     assert [awaited.args[2] for awaited in sync_permissions.await_args_list] == [
         "Admin",
         "Member",
+        "Team Admin",
         "Viewer",
     ]
     set_value.assert_awaited_once_with(
@@ -485,7 +515,7 @@ async def test_init_db_continues_after_optional_migration_failures(
     monkeypatch.setattr(init_data, "sync_role_permissions", AsyncMock())
     monkeypatch.setattr(
         init_data,
-        "init_scoped_role_assignments_table",
+        "migrate_team_admin_roles",
         AsyncMock(side_effect=RuntimeError("required migration failed")),
     )
 
@@ -496,6 +526,7 @@ async def test_init_db_continues_after_optional_migration_failures(
         init_data.SUPER_ADMIN_ROLE,
         "Admin",
         "Member",
+        "Team Admin",
         "Viewer",
     ]
 
@@ -633,7 +664,7 @@ async def test_model_provider_uniqueness_migration(
 
 
 @pytest.mark.asyncio
-async def test_scoped_role_assignments_backfills_supported_memberships(
+async def test_team_admin_migration_grants_visible_roles_and_cleans_legacy_assignments(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     conn = SimpleNamespace()
@@ -641,60 +672,33 @@ async def test_scoped_role_assignments_backfills_supported_memberships(
     monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
     monkeypatch.setattr(init_data, "execute_startup_migration_query", execute)
 
-    roles = {
-        "Admin": SimpleNamespace(id="role-admin"),
-        "Member": SimpleNamespace(id="role-member"),
-        "Viewer": None,
-    }
-
-    class RoleQuery:
-        async def first(self):
-            return roles[self.name]
-
-        def __init__(self, name: str):
-            self.name = name
-
-    monkeypatch.setattr(init_data.Role, "filter", lambda *, name: RoleQuery(name))
+    owner = SimpleNamespace(id="user-owner", roles=SimpleNamespace(add=AsyncMock()))
+    administrator = SimpleNamespace(
+        id="user-admin", roles=SimpleNamespace(add=AsyncMock())
+    )
     memberships = [
-        SimpleNamespace(
-            role="owner",
-            user=SimpleNamespace(id="user-owner"),
-            team=SimpleNamespace(id="team-1"),
-        ),
-        SimpleNamespace(
-            role="member",
-            user=SimpleNamespace(id="user-member"),
-            team=SimpleNamespace(id="team-1"),
-        ),
-        SimpleNamespace(
-            role="viewer",
-            user=SimpleNamespace(id="user-viewer"),
-            team=SimpleNamespace(id="team-1"),
-        ),
-        SimpleNamespace(
-            role="legacy",
-            user=SimpleNamespace(id="user-legacy"),
-            team=SimpleNamespace(id="team-1"),
-        ),
+        SimpleNamespace(role="owner", user=owner),
+        SimpleNamespace(role="admin", user=administrator),
+        SimpleNamespace(role="admin", user=administrator),
     ]
 
     class MembershipQuery:
         async def prefetch_related(self, *_relations):
             return memberships
 
-    monkeypatch.setattr(init_data.TeamMember, "all", lambda: MembershipQuery())
+    member_filter = MagicMock(return_value=MembershipQuery())
+    monkeypatch.setattr(init_data.TeamMember, "filter", member_filter)
+    member_role = SimpleNamespace(id="role-member")
+    team_admin_role = SimpleNamespace(id="role-team-admin")
 
-    await init_data.init_scoped_role_assignments_table()
+    await init_data.migrate_team_admin_roles(member_role, team_admin_role)
 
-    assert execute.await_count == 5
-    statements = [awaited.args[1] for awaited in execute.await_args_list]
-    assert "CREATE TABLE IF NOT EXISTS scoped_role_assignments" in statements[0]
-    assert "gen_random_uuid(), 'user-owner', 'role-admin'" in statements[3]
-    assert "NOW(), NOW()" in statements[3]
-    assert "gen_random_uuid(), 'user-member', 'role-member'" in statements[4]
-    assert "NOW(), NOW()" in statements[4]
-    assert all("user-viewer" not in statement for statement in statements)
-    assert all("user-legacy" not in statement for statement in statements)
+    member_filter.assert_called_once_with(role__in=["owner", "admin"])
+    owner.roles.add.assert_awaited_once_with(team_admin_role)
+    administrator.roles.add.assert_awaited_once_with(team_admin_role)
+    execute.assert_awaited_once()
+    assert "DELETE FROM scoped_role_assignments" in execute.await_args.args[1]
+    assert "source IN ('system', 'migration')" in execute.await_args.args[1]
 
 
 @pytest.mark.asyncio
