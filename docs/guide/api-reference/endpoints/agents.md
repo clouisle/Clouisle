@@ -584,7 +584,14 @@ The unpublish endpoint returns the full `AgentOut` object (`200 OK`). The abbrev
 
 ## Duplicate Agent
 
-Duplicate an existing agent within its team, copying all prompts, configs, model attachments, and tool configurations with a modified name.
+Duplicate an existing agent within its team, copying configurations with a modified name. The following are duplicated:
+
+- **Prompts**: System prompt, opening message, suggested questions, powered-by text
+- **Configurations**: Tools, attachments, memory, context compression, RAG mode, variables, iteration limits
+- **Media generation**: Image and video generation settings, **except** `allow_model_override` is removed from both configs for security
+- **Knowledge bases**: All knowledge base associations with retrieval settings
+
+The duplicated agent is always created as **PRIVATE** visibility and **DRAFT** status.
 
 ### Endpoint
 

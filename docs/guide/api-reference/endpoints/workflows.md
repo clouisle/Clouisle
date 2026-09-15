@@ -491,8 +491,11 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "action": "approve",
-  "inputs": {"comments": "Looks good"}
+  "values": {
+    "user_input": "Approved with minor changes",
+    "priority": "high"
+  },
+  "comment": "Reviewed and looks good to proceed"
 }
 ```
 Progress is available via `GET /api/v1/workflows/runs/{run_id}/stream` (SSE, optional `from_sequence` query parameter) and `GET /api/v1/workflows/runs/{run_id}`. The SSE stream requires an authenticated user with access to the workflow; a webhook token or stream URL is not a public authorization mechanism.
