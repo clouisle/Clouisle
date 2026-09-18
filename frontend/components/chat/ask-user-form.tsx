@@ -234,7 +234,10 @@ export function AskUserForm({
       </div>
 
       <div className="pr-1">
-        <div className="mb-2 text-sm font-semibold text-foreground">
+        <div
+          id={`ask-user-question-${question.id}`}
+          className="mb-2 text-sm font-semibold text-foreground"
+        >
           {question.question}
           {question.required !== false && <span className="text-destructive ml-0.5">*</span>}
         </div>
@@ -248,12 +251,13 @@ export function AskUserForm({
                 type="button"
                 disabled={isDisabled}
                 data-checked={isChecked ? true : undefined}
+                aria-pressed={isChecked}
                 onClick={() => {
                   setValues((current) => ({ ...current, [question.id]: option }))
                   setErrors((current) => ({ ...current, [question.id]: false }))
                 }}
                 className={cn(
-                  'group/questionnaire-choice relative flex min-h-9 w-full cursor-pointer items-center gap-2.5 rounded-md border border-input bg-background/50 px-3 py-1.5 text-start text-sm transition-colors outline-none select-none hover:bg-muted/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50',
+                  'group/questionnaire-choice relative flex min-h-9 w-full cursor-pointer items-center gap-2.5 rounded-md border border-input bg-background/50 px-3 py-1.5 text-start text-sm transition-colors outline-none select-none hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50',
                   isChecked
                     ? 'border-primary bg-primary/15 font-medium text-primary shadow-sm ring-1 ring-primary/40 dark:bg-primary/25'
                     : '',
@@ -264,20 +268,22 @@ export function AskUserForm({
             )
           })}
         </div>
-          <input
-            id={`ask-user-${question.id}`}
-            data-slot="questionnaire-input"
-            value={question.options?.includes(values[question.id] ?? '') ? '' : values[question.id] ?? ''}
-            placeholder={question.options?.length ? t('customAnswer') : undefined}
-            disabled={isDisabled}
-            aria-invalid={invalid}
-            onInput={(event) => {
-              const text = event.currentTarget.value
-              setValues((current) => ({ ...current, [question.id]: text }))
-              setErrors((current) => ({ ...current, [question.id]: false }))
-            }}
-            className="mt-1.5 h-9 w-full min-w-0 rounded-md border border-input bg-background/50 px-2.5 py-1 text-sm transition-[color,box-shadow,background-color] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive"
-          />
+        <input
+          id={`ask-user-${question.id}`}
+          data-slot="questionnaire-input"
+          value={question.options?.includes(values[question.id] ?? '') ? '' : values[question.id] ?? ''}
+          placeholder={question.options?.length ? t('customAnswer') : undefined}
+          disabled={isDisabled}
+          aria-labelledby={`ask-user-question-${question.id}`}
+          aria-required={question.required !== false}
+          aria-invalid={invalid}
+          onInput={(event) => {
+            const text = event.currentTarget.value
+            setValues((current) => ({ ...current, [question.id]: text }))
+            setErrors((current) => ({ ...current, [question.id]: false }))
+          }}
+          className="mt-1.5 h-9 w-full min-w-0 rounded-md border border-input bg-background/50 px-2.5 py-1 text-sm transition-[color,box-shadow,background-color] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive"
+        />
 
         {invalid && <p className="text-xs text-destructive">{t('answerRequired')}</p>}
       </div>

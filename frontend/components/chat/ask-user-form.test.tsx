@@ -162,9 +162,16 @@ describe('AskUserForm', () => {
     const inputElement = container.querySelector('[data-slot=questionnaire-input]') as HTMLInputElement
     expect(inputElement).not.toBeNull()
     expect(inputElement.placeholder).toBe('chat.askUser.customAnswer')
+    expect(inputElement.getAttribute('aria-labelledby')).toBe('ask-user-question-target')
+    expect(inputElement.getAttribute('aria-required')).toBe('true')
+    expect(container.querySelector('#ask-user-question-target')?.textContent).toContain('Where to deploy?')
+    expect(cloudOption.getAttribute('aria-pressed')).toBe('false')
 
     act(() => submitButton(container).click())
     expect(answers).toHaveLength(0)
+    act(() => cloudOption.click())
+    expect(cloudOption.getAttribute('aria-pressed')).toBe('true')
+    expect(cloudOption.className).toContain('focus-visible:ring-2')
     act(() => {
       const CustomEvent = window.Event || Event
       inputElement.value = 'self-hosted'

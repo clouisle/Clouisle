@@ -1183,6 +1183,16 @@ describe('message behavior', () => {
     expect(lastStreamdownProps.children).toBe(table)
     expect(lastStreamdownProps.children).not.toContain('__')
   })
+  test('normalizes strong markers in prose lines that contain a pipe', () => {
+    renderToStaticMarkup(<Message message={{
+      id: 'pipe-prose',
+      role: 'assistant',
+      parts: [{ type: 'text', text: '**重要**说明 | details', state: 'done' }],
+    }} />)
+
+    expect(lastStreamdownProps.children).toBe('<strong>重要</strong>说明 | details')
+  })
+
 
   test('renders canonical and legacy known citation markers as inline source cards', () => {
     const legacyCitationMarker = '\ue200cite\ue202web_b2\ue200'
