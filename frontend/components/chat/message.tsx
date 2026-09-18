@@ -1991,7 +1991,7 @@ const BARE_MATH_BLOCK_REGEX = /(^|\n)\s*\[((?:\[[^\[\]]*\]|[^\[\]])*)\]\s*(?=\n|
 const BARE_LATEX_INLINE_REGEX = /(^|[\s，。；：、])\(\s*((?:\([^()]*\)|[^()])*)\s*\)(?=$|[\s，。；：、,.!?])/g
 const BARE_LATEX_FORMULA_LINE_REGEX = /^(\s*)(\\(?:cos|sin|tan|log|ln|text|frac|sqrt|sum|prod|int|mathbf|mathrm|mathbb|cdot|times|leq|geq)\b.*(?:=|\\frac|\\sum|\\sqrt|\\cdot).*)\s*$/
 const MATH_COMMAND_REGEX = /\\[A-Za-z]+/
-const TIGHT_STRONG_MARKER_REGEX = /\*\*([^*\n]+?)\*\*(?=[\p{Script=Han}\p{Letter}\p{Number}])/gu
+const TIGHT_STRONG_MARKER_REGEX = /\*\*([^*|\n]+?)\*\*(?=[\p{Script=Han}\p{Letter}\p{Number}])/gu
 
 function collectCitedSourceIds(parts: MessagePart[]) {
   const sourceIds = new Set<string>()
@@ -2032,13 +2032,8 @@ function normalizeTightStrongMarkers(input: string) {
     return input || ''
   }
 
-  const normalizeSegment = (segment: string) => segment
-    .split('\n')
-    .map((line) => line.includes('|') ? line : line.replace(TIGHT_STRONG_MARKER_REGEX, '<strong>$1</strong>'))
-    .join('\n')
-
   if (!input.includes('`')) {
-    return normalizeSegment(input)
+    return input.replace(TIGHT_STRONG_MARKER_REGEX, '<strong>$1</strong>')
   }
 
   return input
@@ -2047,7 +2042,7 @@ function normalizeTightStrongMarkers(input: string) {
       if (!segment || segment.startsWith('`') || !segment.includes('**')) {
         return segment
       }
-      return normalizeSegment(segment)
+      return segment.replace(TIGHT_STRONG_MARKER_REGEX, '<strong>$1</strong>')
     })
     .join('')
 }

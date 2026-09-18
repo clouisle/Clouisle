@@ -152,14 +152,12 @@ export function AskUserForm({
     candidate.required === false || Boolean(values[candidate.id]?.trim())
   )
 
-  const validateQuestion = (candidate: AskUserQuestion) => {
-    const valid = hasRequiredAnswer(candidate)
-    setErrors((current) => ({ ...current, [candidate.id]: !valid }))
-    return valid
-  }
 
   const goToNextPage = () => {
-    if (isDisabled || !validateQuestion(question)) return
+    if (isDisabled) return
+    const valid = hasRequiredAnswer(question)
+    setErrors((current) => ({ ...current, [question.id]: !valid }))
+    if (!valid) return
     setPageIndex((current) => Math.min(current + 1, questions.length - 1))
   }
 
@@ -274,11 +272,6 @@ export function AskUserForm({
             disabled={isDisabled}
             aria-invalid={invalid}
             onInput={(event) => {
-              const text = event.currentTarget.value
-              setValues((current) => ({ ...current, [question.id]: text }))
-              setErrors((current) => ({ ...current, [question.id]: false }))
-            }}
-            onChange={(event) => {
               const text = event.currentTarget.value
               setValues((current) => ({ ...current, [question.id]: text }))
               setErrors((current) => ({ ...current, [question.id]: false }))
