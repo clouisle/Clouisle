@@ -260,6 +260,17 @@ describe('PlatformHeader', () => {
     expect(push).toHaveBeenNthCalledWith(1, '/app/api-keys')
     expect(push).toHaveBeenNthCalledWith(2, '/app/memories')
   })
+  test('renders canonical About links and keeps the version in the footer', async () => {
+    const renderer = await renderHeader()
+    const links = renderer.root.findAllByType('a')
+
+    expect(links.map((link) => link.props.href)).toContain('https://github.com/clouisle/Clouisle')
+    expect(links.map((link) => link.props.href)).toContain('https://docs.clouisle.asia')
+    expect(links.map((link) => link.props.href)).toContain('https://clouisle.asia')
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('aboutVersion')
+    expect(JSON.stringify(renderer.toJSON())).toContain('" V"')
+    expect(JSON.stringify(renderer.toJSON())).toContain('"0.0.0-dev"')
+  })
 
   test('toggles and closes mobile navigation', async () => {
     const renderer = await renderHeader()

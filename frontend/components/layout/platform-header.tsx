@@ -57,7 +57,7 @@ import { SettingsDialog } from '@/components/settings-dialog'
 import { TeamSwitcher } from '@/components/team-switcher'
 import { useSettings } from '@/hooks/use-settings'
 import { cn, formatDateTime } from '@/lib/utils'
-import { APP_VERSION, BUILD_DATE, APP_NAME, GITHUB_URL, DOCS_URL, CHANGELOG_URL } from '@/lib/constants'
+import { APP_VERSION, BUILD_DATE, APP_NAME, GITHUB_URL, DOCS_URL, WEBSITE_URL, CHANGELOG_URL } from '@/lib/constants'
 import { DefaultSiteIcon } from '@/components/default-site-icon'
 import { getBrandingVisibility } from '@/lib/theme-config'
 
@@ -607,9 +607,6 @@ export function PlatformHeader() {
               {siteSettings.site_name || APP_NAME}
             </h2>
 
-            <p className="text-sm text-muted-foreground mb-4">
-              {t('aboutVersion')} {APP_VERSION}
-            </p>
 
             {/* 版权和链接 */}
             <p className="text-sm text-muted-foreground mb-2">
@@ -638,13 +635,22 @@ export function PlatformHeader() {
               >
                 {t('aboutDocs')}
               </a>
+              <span className="text-muted-foreground">,</span>
+              <a
+                href={WEBSITE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                {t('aboutWebsite')}
+              </a>
             </div>
           </div>
 
           {/* 底部 */}
           <div className="flex items-center justify-between border-t pt-4">
             <p className="text-sm text-muted-foreground">
-              {APP_NAME} {APP_VERSION}
+              {APP_NAME} V{APP_VERSION}
             </p>
             <a
               href={CHANGELOG_URL}

@@ -32,6 +32,7 @@ export type PlatformMessages = {
     aboutNewVersion: string
     aboutChangelog: string
     aboutGitHub: string
+    aboutWebsite: string
     teams: string
     manageTeams: string
     noTeams: string

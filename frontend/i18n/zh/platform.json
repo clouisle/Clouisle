@@ -30,6 +30,7 @@
     "aboutNewVersion": "发现新版本 {version}",
     "aboutChangelog": "更新日志",
     "aboutGitHub": "GitHub 仓库",
+    "aboutWebsite": "官方网站",
     "teams": "团队",
     "manageTeams": "管理全部团队 (系统后台)",
     "teamSettings": "团队设置",
