@@ -2032,8 +2032,13 @@ function normalizeTightStrongMarkers(input: string) {
     return input || ''
   }
 
+  const normalizeSegment = (segment: string) => segment
+    .split('\n')
+    .map((line) => line.includes('|') ? line : line.replace(TIGHT_STRONG_MARKER_REGEX, '<strong>$1</strong>'))
+    .join('\n')
+
   if (!input.includes('`')) {
-    return input.replace(TIGHT_STRONG_MARKER_REGEX, '<strong>$1</strong>')
+    return normalizeSegment(input)
   }
 
   return input
@@ -2042,10 +2047,11 @@ function normalizeTightStrongMarkers(input: string) {
       if (!segment || segment.startsWith('`') || !segment.includes('**')) {
         return segment
       }
-      return segment.replace(TIGHT_STRONG_MARKER_REGEX, '<strong>$1</strong>')
+      return normalizeSegment(segment)
     })
     .join('')
 }
+
 
 function normalizeBareLatexFormulaLines(input: string) {
   if (!input) {

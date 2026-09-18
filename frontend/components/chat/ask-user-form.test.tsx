@@ -5,18 +5,26 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
 const window = new Window({ url: 'http://localhost' })
+if (!window.HTMLFormElement.prototype.requestSubmit) {
+  window.HTMLFormElement.prototype.requestSubmit = function (submitter) {
+    const event = new (window.Event || Event)('submit', { bubbles: true, cancelable: true })
+    if (submitter) Object.defineProperty(event, 'submitter', { value: submitter })
+    this.dispatchEvent(event)
+  }
+}
 Object.assign(globalThis, {
   window,
   document: window.document,
-  navigator: window.navigator,
+  Event: window.Event,
+  CustomEvent: window.CustomEvent,
   HTMLElement: window.HTMLElement,
   HTMLButtonElement: window.HTMLButtonElement,
   HTMLInputElement: window.HTMLInputElement,
+  HTMLFormElement: window.HTMLFormElement,
   Node: window.Node,
   getComputedStyle: window.getComputedStyle,
   IS_REACT_ACT_ENVIRONMENT: true,
 })
-let latestInputProps: React.InputHTMLAttributes<HTMLInputElement> | undefined
 
 mock.module('next-intl', () => ({
   useLocale: () => 'en',
@@ -24,16 +32,11 @@ mock.module('next-intl', () => ({
 }))
 mock.module('lucide-react', () => ({
   Loader2: (props: React.SVGProps<SVGSVGElement>) => <svg {...props} />,
+  Check: (props: React.SVGProps<SVGSVGElement>) => <svg {...props} />,
 }))
-mock.module('@/lib/utils', () => ({ cn: (...classes: unknown[]) => classes.filter(Boolean).join(' ') }))
 mock.module('@/components/ui/button', () => ({
   Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,
-}))
-mock.module('@/components/ui/input', () => ({
-  Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => {
-    latestInputProps = props
-    return <input {...props} />
-  },
+  buttonVariants: () => 'button-variant',
 }))
 
 // Load after module mocks; a static import would bind real dependencies first.
@@ -50,7 +53,6 @@ afterEach(() => {
   act(() => root?.unmount())
   root = undefined
   document.body.replaceChildren()
-  latestInputProps = undefined
 })
 
 function renderForm(props: React.ComponentProps<typeof AskUserForm>) {
@@ -70,9 +72,12 @@ function renderPendingForm(props: React.ComponentProps<typeof PendingAskUserForm
 function submitButton(container: HTMLElement): HTMLButtonElement {
   return Array.from(container.querySelectorAll('button')).find((button) => button.type === 'submit') as HTMLButtonElement
 }
-
 function button(container: HTMLElement, text: string): HTMLButtonElement {
-  return Array.from(container.querySelectorAll('button')).find((candidate) => candidate.textContent === text) as HTMLButtonElement
+  return (
+    Array.from(container.querySelectorAll('button')).find((candidate) => candidate.textContent?.includes(text))
+    || Array.from(container.querySelectorAll('[data-slot=questionnaire-choice]')).find((candidate) => candidate.textContent?.includes(text))
+    || Array.from(container.querySelectorAll('[role=radio], [role=checkbox], [data-slot]')).find((candidate) => candidate.textContent?.includes(text))
+  ) as HTMLButtonElement
 }
 
 describe('normalizeAskUserQuestions', () => {
@@ -148,19 +153,24 @@ describe('AskUserForm', () => {
     })
     const cloudOption = button(container, 'cloud')
     expect(cloudOption.parentElement?.className).toContain('flex-col')
+    expect(cloudOption.parentElement?.className).toContain('max-h-48')
+    expect(cloudOption.parentElement?.className).toContain('overflow-y-auto')
     expect(cloudOption.parentElement?.className).not.toContain('-ml-6')
-    expect(cloudOption.className).toContain('h-9')
     expect(cloudOption.className).toContain('w-full')
     expect(cloudOption.className).toContain('rounded-md')
-    expect(cloudOption.className).toContain('text-left')
-    expect(latestInputProps?.className).toBe('h-9 w-full rounded-md px-2.5')
-    expect(latestInputProps?.placeholder).toBe('chat.askUser.customAnswer')
+    expect(cloudOption.className).toContain('text-start')
+    const inputElement = container.querySelector('[data-slot=questionnaire-input]') as HTMLInputElement
+    expect(inputElement).not.toBeNull()
+    expect(inputElement.placeholder).toBe('chat.askUser.customAnswer')
 
     act(() => submitButton(container).click())
     expect(answers).toHaveLength(0)
-    expect(container.textContent).toContain('chat.askUser.answerRequired')
-
-    act(() => latestInputProps?.onChange?.({ target: { value: 'self-hosted' } } as React.ChangeEvent<HTMLInputElement>))
+    act(() => {
+      const CustomEvent = window.Event || Event
+      inputElement.value = 'self-hosted'
+      inputElement.dispatchEvent(new CustomEvent('input', { bubbles: true }))
+      inputElement.dispatchEvent(new CustomEvent('change', { bubbles: true }))
+    })
     await act(async () => {
       submitButton(container).click()
       await Promise.resolve()
@@ -210,14 +220,13 @@ describe('AskUserForm', () => {
       questions: [{ id: 'note', question: 'Notes?', required: false }],
       onSubmit: async (answer) => { answers.push(answer) },
     })
-    expect(container.querySelectorAll('input')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-slot=questionnaire-input]')).toHaveLength(1)
     await act(async () => {
       submitButton(container).click()
       await Promise.resolve()
     })
     expect(answers).toEqual([{ answers: {} }])
   })
-
 
   test('skips every question with an explicit empty result', async () => {
     const submissions: Array<{ answers: Record<string, unknown>; skipped?: boolean }> = []

@@ -1172,6 +1172,17 @@ describe('message behavior', () => {
     expect(html).toContain('(ref:9)')
     expect(html).toContain('$$')
   })
+  test('preserves strong Markdown markers inside tables for Streamdown', () => {
+    const table = '| 维度 | 你的选择 | 性格倾向 |\n|------|----------|----------|\n| **能量来源** | 独处或与一两个亲密朋友相处 | **内向 (I)** |'
+    renderToStaticMarkup(<Message message={{
+      id: 'markdown-table',
+      role: 'assistant',
+      parts: [{ type: 'text', text: table, state: 'done' }],
+    }} />)
+
+    expect(lastStreamdownProps.children).toBe(table)
+    expect(lastStreamdownProps.children).not.toContain('__')
+  })
 
   test('renders canonical and legacy known citation markers as inline source cards', () => {
     const legacyCitationMarker = '\ue200cite\ue202web_b2\ue200'

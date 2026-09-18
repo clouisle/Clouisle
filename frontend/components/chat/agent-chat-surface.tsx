@@ -267,7 +267,7 @@ export function AgentChatSurface({
             )}
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <div className="px-2.5 pb-2.5 pt-0.5">
+            <div className="max-h-60 overflow-y-auto px-2.5 pb-2.5 pt-0.5 [scrollbar-width:thin]">
               <VariableForm
                 variables={variables}
                 values={variableValues}
