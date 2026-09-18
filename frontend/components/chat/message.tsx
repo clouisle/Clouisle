@@ -1991,7 +1991,46 @@ const BARE_MATH_BLOCK_REGEX = /(^|\n)\s*\[((?:\[[^\[\]]*\]|[^\[\]])*)\]\s*(?=\n|
 const BARE_LATEX_INLINE_REGEX = /(^|[\s，。；：、])\(\s*((?:\([^()]*\)|[^()])*)\s*\)(?=$|[\s，。；：、,.!?])/g
 const BARE_LATEX_FORMULA_LINE_REGEX = /^(\s*)(\\(?:cos|sin|tan|log|ln|text|frac|sqrt|sum|prod|int|mathbf|mathrm|mathbb|cdot|times|leq|geq)\b.*(?:=|\\frac|\\sum|\\sqrt|\\cdot).*)\s*$/
 const MATH_COMMAND_REGEX = /\\[A-Za-z]+/
-const TIGHT_STRONG_MARKER_REGEX = /\*\*([^*\n]+?)\*\*(?=[\p{Script=Han}\p{Letter}\p{Number}])/gu
+const TIGHT_STRONG_MARKER_REGEX = /\*\*([^*|\n]+?)\*\*(?=[\p{Script=Han}\p{Letter}\p{Number}])/gu
+const MARKDOWN_TABLE_DELIMITER_CELL_REGEX = /^:?-{3,}:?$/
+
+function markdownTableCells(line: string) {
+  const trimmed = line.trim()
+  if (!trimmed.includes('|')) return []
+  const cells = trimmed.split('|')
+  if (cells[0]?.trim() === '') cells.shift()
+  if (cells.at(-1)?.trim() === '') cells.pop()
+  return cells
+}
+
+function isMarkdownTableRow(line: string) {
+  const cells = markdownTableCells(line)
+  return cells.length >= 2 && cells.every((cell) => cell.trim().length > 0)
+}
+
+function isMarkdownTableDelimiter(line: string) {
+  const cells = markdownTableCells(line)
+  return cells.length >= 2 && cells.every((cell) => MARKDOWN_TABLE_DELIMITER_CELL_REGEX.test(cell.trim()))
+}
+
+function normalizeStrongMarkersOutsideTables(input: string) {
+  const lines = input.split('\n')
+  const tableLines = new Set<number>()
+
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!isMarkdownTableDelimiter(lines[index])) continue
+
+    let start = index - 1
+    while (start >= 0 && isMarkdownTableRow(lines[start])) start -= 1
+    let end = index + 1
+    while (end < lines.length && isMarkdownTableRow(lines[end])) end += 1
+    for (let row = start + 1; row < end; row += 1) tableLines.add(row)
+  }
+
+  return lines
+    .map((line, index) => tableLines.has(index) ? line : line.replace(TIGHT_STRONG_MARKER_REGEX, '<strong>$1</strong>'))
+    .join('\n')
+}
 
 function collectCitedSourceIds(parts: MessagePart[]) {
   const sourceIds = new Set<string>()
@@ -2033,7 +2072,7 @@ function normalizeTightStrongMarkers(input: string) {
   }
 
   if (!input.includes('`')) {
-    return input.replace(TIGHT_STRONG_MARKER_REGEX, '<strong>$1</strong>')
+    return normalizeStrongMarkersOutsideTables(input)
   }
 
   return input
@@ -2042,10 +2081,11 @@ function normalizeTightStrongMarkers(input: string) {
       if (!segment || segment.startsWith('`') || !segment.includes('**')) {
         return segment
       }
-      return segment.replace(TIGHT_STRONG_MARKER_REGEX, '<strong>$1</strong>')
+      return normalizeStrongMarkersOutsideTables(segment)
     })
     .join('')
 }
+
 
 function normalizeBareLatexFormulaLines(input: string) {
   if (!input) {

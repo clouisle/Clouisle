@@ -2,13 +2,9 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import type { AgentRunAnswerPayload, AskUserQuestion } from '@/lib/api'
 import type { ChatMessage } from './types'
-
-const ANSWER_CONTROL_SIZE_CLASS = 'h-9 w-full rounded-md px-2.5'
 
 export interface AskUserFormProps {
   /** Questions rendered by this shared multi-question form. */
@@ -128,8 +124,9 @@ export function PendingAskUserForm({
 }
 
 /**
- * One question at a time for an ask_user tool call. Answers are retained
- * across pages and submitted as one structured map from the last page.
+ * Questionnaire-styled interaction surface for an ask_user tool call.
+ * Questions are rendered sequentially with choices, optional freeform text,
+ * and skip support.
  */
 export function AskUserForm({
   questions,
@@ -144,24 +141,23 @@ export function AskUserForm({
   const [submitting, setSubmitting] = React.useState(false)
   const [submitError, setSubmitError] = React.useState<string | null>(null)
 
-  if (questions.length === 0) return null
-
-  const currentPageIndex = Math.min(pageIndex, questions.length - 1)
+  const currentPageIndex = Math.min(pageIndex, Math.max(questions.length - 1, 0))
   const question = questions[currentPageIndex]
   const isLastPage = currentPageIndex === questions.length - 1
   const isDisabled = disabled || submitting
+
+
+  if (questions.length === 0 || !question) return null
   const hasRequiredAnswer = (candidate: AskUserQuestion) => (
     candidate.required === false || Boolean(values[candidate.id]?.trim())
   )
 
-  const validateQuestion = (candidate: AskUserQuestion) => {
-    const valid = hasRequiredAnswer(candidate)
-    setErrors((current) => ({ ...current, [candidate.id]: !valid }))
-    return valid
-  }
 
   const goToNextPage = () => {
-    if (isDisabled || !validateQuestion(question)) return
+    if (isDisabled) return
+    const valid = hasRequiredAnswer(question)
+    setErrors((current) => ({ ...current, [question.id]: !valid }))
+    if (!valid) return
     setPageIndex((current) => Math.min(current + 1, questions.length - 1))
   }
 
@@ -217,106 +213,121 @@ export function AskUserForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className={cn('space-y-3 rounded-t-lg border border-b-0 bg-muted/30 px-3 pb-3 pt-2', className)}
+      className={cn(
+        'rounded-t-lg border border-b-0 bg-muted/30 px-3.5 pb-3 pt-2.5 shadow-xs',
+        className
+      )}
       data-ask-user-form
       data-ask-user-page={currentPageIndex + 1}
       data-ask-user-question-id={question.id}
     >
-      <div className="flex items-start gap-2">
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center text-blue-500" aria-hidden="true">?</span>
-        <div className="min-w-0 flex-1 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('title')}</p>
-            {questions.length > 1 && (
-              <span className="text-xs text-muted-foreground">
-                {t('progress', { current: currentPageIndex + 1, total: questions.length })}
-              </span>
-            )}
-          </div>
-          <div className="space-y-1.5">
-            <label
-              htmlFor={`ask-user-${question.id}`}
-              className="block text-sm font-medium leading-5"
-            >
-              {question.question}
-              {question.required !== false && <span className="text-destructive"> *</span>}
-            </label>
-            {question.options && question.options.length > 0 && (
-              <div className="flex flex-col gap-2">
-                {question.options.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    disabled={isDisabled}
-                    onClick={() => {
-                      setValues((current) => ({ ...current, [question.id]: option }))
-                      setErrors((current) => ({ ...current, [question.id]: false }))
-                    }}
-                    className={cn(
-                      'cursor-pointer justify-start border text-left text-sm transition-colors',
-                      ANSWER_CONTROL_SIZE_CLASS,
-                      values[question.id] === option
-                        ? 'border-primary bg-primary/10 font-medium text-primary'
-                        : 'border-border bg-background hover:bg-accent',
-                      isDisabled && 'cursor-not-allowed opacity-60'
-                    )}
-                  >
-                    {option}
-                  </button>
-                ))}
-              </div>
-            )}
-            <Input
-              id={`ask-user-${question.id}`}
-              value={values[question.id] ?? ''}
-              placeholder={question.options?.length ? t('customAnswer') : undefined}
-              className={ANSWER_CONTROL_SIZE_CLASS}
-              disabled={isDisabled}
-              aria-invalid={invalid}
-              onChange={(event) => {
-                setValues((current) => ({ ...current, [question.id]: event.target.value }))
-                setErrors((current) => ({ ...current, [question.id]: false }))
-              }}
-            />
-            {invalid && (
-              <p className="text-xs text-destructive">{t('answerRequired')}</p>
-            )}
-          </div>
-        </div>
-      </div>
-      {submitError && (
-        <p className="text-xs text-destructive" role="alert">{submitError}</p>
-      )}
       <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-blue-500/10 text-[10px] font-bold text-blue-600 dark:text-blue-400">?</span>
+          {t('title')}
+        </div>
+        {questions.length > 1 && (
+          <span className="text-xs text-muted-foreground">
+            {t('progress', { current: currentPageIndex + 1, total: questions.length })}
+          </span>
+        )}
+      </div>
+
+      <div className="pr-1">
+        <div
+          id={`ask-user-question-${question.id}`}
+          className="mb-2 text-sm font-semibold text-foreground"
+        >
+          {question.question}
+          {question.required !== false && <span className="text-destructive ml-0.5">*</span>}
+        </div>
+
+        <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto p-1 [scrollbar-width:thin]">
+          {question.options?.map((option) => {
+            const isChecked = values[question.id] === option
+            return (
+              <button
+                key={option}
+                type="button"
+                disabled={isDisabled}
+                data-checked={isChecked ? true : undefined}
+                aria-pressed={isChecked}
+                onClick={() => {
+                  setValues((current) => ({ ...current, [question.id]: option }))
+                  setErrors((current) => ({ ...current, [question.id]: false }))
+                }}
+                className={cn(
+                  'group/questionnaire-choice relative flex min-h-9 w-full cursor-pointer items-center gap-2.5 rounded-md border border-input bg-background/50 px-3 py-1.5 text-start text-sm transition-colors outline-none select-none hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50',
+                  isChecked
+                    ? 'border-primary bg-primary/15 font-medium text-primary shadow-sm ring-1 ring-primary/40 dark:bg-primary/25'
+                    : '',
+                )}
+              >
+                {option}
+              </button>
+            )
+          })}
+        </div>
+        <input
+          id={`ask-user-${question.id}`}
+          data-slot="questionnaire-input"
+          value={question.options?.includes(values[question.id] ?? '') ? '' : values[question.id] ?? ''}
+          placeholder={question.options?.length ? t('customAnswer') : undefined}
+          disabled={isDisabled}
+          aria-labelledby={`ask-user-question-${question.id}`}
+          aria-required={question.required !== false}
+          aria-invalid={invalid}
+          onInput={(event) => {
+            const text = event.currentTarget.value
+            setValues((current) => ({ ...current, [question.id]: text }))
+            setErrors((current) => ({ ...current, [question.id]: false }))
+          }}
+          className="mt-1.5 h-9 w-full min-w-0 rounded-md border border-input bg-background/50 px-2.5 py-1 text-sm transition-[color,box-shadow,background-color] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive"
+        />
+
+        {invalid && <p className="text-xs text-destructive">{t('answerRequired')}</p>}
+      </div>
+
+      {submitError && <p className="text-xs text-destructive" role="alert">{submitError}</p>}
+
+      <div className="flex items-center justify-between gap-2 pt-1">
         {currentPageIndex > 0 ? (
-          <Button
+          <button
             type="button"
-            variant="ghost"
-            size="sm"
             disabled={isDisabled}
             onClick={() => setPageIndex((current) => Math.max(current - 1, 0))}
+            className="h-8 rounded-md px-2.5 text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
           >
             {t('previous')}
-          </Button>
+          </button>
         ) : <span />}
         <div className="flex items-center gap-2">
-          <Button
+          <button
             type="button"
-            variant="ghost"
-            size="sm"
             disabled={isDisabled}
             onClick={skipAnswers}
+            className="h-8 rounded-md px-2.5 text-sm text-muted-foreground hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
           >
             {t('skipAll')}
-          </Button>
-          <Button
-            type={isLastPage ? 'submit' : 'button'}
-            size="sm"
-            disabled={isDisabled}
-            onClick={isLastPage ? undefined : goToNextPage}
-          >
-            {isLastPage ? (submitting ? t('submitting') : t('submit')) : t('next')}
-          </Button>
+          </button>
+          {isLastPage ? (
+            <button
+              type="submit"
+              disabled={isDisabled}
+              className="h-8 rounded-md bg-primary px-3 text-sm text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+            >
+              {submitting ? t('submitting') : t('submit')}
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={isDisabled}
+              onClick={goToNextPage}
+              className="h-8 rounded-md bg-primary px-3 text-sm text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+            >
+              {t('next')}
+            </button>
+          )}
         </div>
       </div>
     </form>

@@ -90,6 +90,8 @@ describe('AgentChatSurface', () => {
     expect(html).toContain('max-w-3xl')
     expect(html).toContain('w-full')
     expect(html).toContain('w-[70%]')
+    expect(html).toContain('max-h-60')
+    expect(html).toContain('overflow-y-auto')
     expect(html).not.toContain('w-full overflow-hidden rounded-t-lg')
   })
 
