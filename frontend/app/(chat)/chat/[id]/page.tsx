@@ -120,6 +120,13 @@ export default function PublicChatPage({
   const [runningConversationIds, setRunningConversationIds] = React.useState<Set<string>>(() => new Set())
   const runStatusPollGenerationRef = React.useRef(0)
   const pendingConversationTitleRefreshRef = React.useRef<string | null>(null)
+  const pendingConversationTitleRefreshTimeoutRef = React.useRef<ReturnType<typeof globalThis.setTimeout> | null>(null)
+
+  React.useEffect(() => () => {
+    if (pendingConversationTitleRefreshTimeoutRef.current !== null) {
+      globalThis.clearTimeout(pendingConversationTitleRefreshTimeoutRef.current)
+    }
+  }, [])
 
   const [loadingConversations, setLoadingConversations] = React.useState(false)
   const [conversationPage, setConversationPage] = React.useState(1)
@@ -277,7 +284,13 @@ export default function PublicChatPage({
       // needlessly reloads the history sidebar.
       if (!pendingConversationTitleRefreshRef.current) return
       pendingConversationTitleRefreshRef.current = null
-      globalThis.setTimeout(() => { void refreshConversations() }, 3000)
+      if (pendingConversationTitleRefreshTimeoutRef.current !== null) {
+        globalThis.clearTimeout(pendingConversationTitleRefreshTimeoutRef.current)
+      }
+      pendingConversationTitleRefreshTimeoutRef.current = globalThis.setTimeout(() => {
+        pendingConversationTitleRefreshTimeoutRef.current = null
+        void refreshConversations()
+      }, 3000)
     },
     api: adapter,
     initialMessages: greetingMessages,

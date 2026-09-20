@@ -95,13 +95,14 @@ describe('ModelDistributionChart', () => {
     expect(labelLineValue).toEqual({ stroke: 'hsl(var(--muted-foreground))', strokeWidth: 1 })
   })
 
-  test('labels UUID-only entries as deleted models while preserving the short identifier', () => {
+  test('uses the full UUID in tooltips while preserving the short chart label', () => {
+    const fullUuid = '550e8400-e29b-41d4-a716-446655440000'
     const html = render({
-      data: [{ model: '550e8400-e29b-41d4-a716-446655440000', count: 12, percentage: 100 }],
+      data: [{ model: fullUuid, count: 12, percentage: 100 }],
     })
 
     expect(html).toContain('models.deletedModel · 550e8400')
-    expect(html).not.toContain('550e8400-e29b-41d4-a716-446655440000')
+    expect(html).toContain(fullUuid)
   })
 
   test('uses the unknown label for unnamed models', () => {

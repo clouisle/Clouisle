@@ -112,7 +112,7 @@ export function ModelDistributionChart({ data, isLoading }: ModelDistributionCha
                   const data = payload[0].payload as ModelDistribution
                   return (
                     <div className="rounded-lg border border-chart-tooltip-border bg-chart-tooltip-bg p-3 text-chart-tooltip-text shadow-md">
-                      <div className="font-semibold mb-2">{getModelLabel(data.model)}</div>
+                      <div className="font-semibold mb-2">{data.model.trim() || t('common.unknown')}</div>
                       <div className="text-sm space-y-1">
                         <div>
                           {t('common.usageCount')}: {formatNumber(data.count)}

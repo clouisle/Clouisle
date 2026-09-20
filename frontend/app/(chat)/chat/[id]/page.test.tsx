@@ -27,6 +27,7 @@ const observe = mock()
 const historyPush = mock()
 const historyReplace = mock()
 const clearInterval = mock()
+const clearTimeoutMock = mock()
 let timeoutCallbacks: Array<() => void> = []
 const setTimeoutMock = mock((callback: () => void) => {
   timeoutCallbacks.push(callback)
@@ -201,7 +202,7 @@ beforeEach(() => {
   pendingAskUserFormProps = {}
   observerCallback = undefined
   faviconHref = null
-  for (const fn of [push, getPublicAgent, getConversations, getConversation, getRunStatus, deleteConversation, updateConversation, uploadFileWithProgress, getStoredRunSnapshot, removeRunSnapshot, convertBackendMessages, sendMessage, regenerate, editMessage, switchVersion, stop, resetChat, setMessages, setConversationId, validateVariables, toastError, disconnect, observe, historyPush, historyReplace, clearInterval, setTimeoutMock, setIntervalMock]) fn.mockReset()
+  for (const fn of [push, getPublicAgent, getConversations, getConversation, getRunStatus, deleteConversation, updateConversation, uploadFileWithProgress, getStoredRunSnapshot, removeRunSnapshot, convertBackendMessages, sendMessage, regenerate, editMessage, switchVersion, stop, resetChat, setMessages, setConversationId, validateVariables, toastError, disconnect, observe, historyPush, historyReplace, clearInterval, clearTimeoutMock, setTimeoutMock, setIntervalMock]) fn.mockReset()
   timeoutCallbacks = []
   intervalCallbacks = []
   setTimeoutMock.mockImplementation((callback: () => void) => {
@@ -227,6 +228,7 @@ beforeEach(() => {
     setInterval: { configurable: true, value: setIntervalMock },
     setTimeout: { configurable: true, value: setTimeoutMock },
     clearInterval: { configurable: true, value: clearInterval },
+    clearTimeout: { configurable: true, value: clearTimeoutMock },
   })
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: mock(() => token) } })
   Object.defineProperty(globalThis, 'window', {
@@ -390,6 +392,23 @@ describe('PublicChatPage', () => {
 
     await act(async () => chatOptions.onStreamEnd?.())
     expect(setTimeoutMock).toHaveBeenCalledTimes(1)
+  })
+
+  test('clears the delayed title refresh when the page unmounts', async () => {
+    render()
+    await flush()
+
+    await act(async () => {
+      chatOptions.onConversationChange?.('conv-new')
+      await Promise.resolve()
+      chatOptions.onStreamEnd?.()
+    })
+
+    expect(setTimeoutMock).toHaveBeenCalledTimes(1)
+    act(() => renderer!.unmount())
+
+    expect(clearTimeoutMock).toHaveBeenCalledWith(0)
+    renderer = undefined
   })
 
   test('places the queued label in the conversation instead of below the composer', async () => {
