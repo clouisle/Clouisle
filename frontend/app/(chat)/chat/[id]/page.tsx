@@ -119,6 +119,14 @@ export default function PublicChatPage({
   const [conversations, setConversations] = React.useState<ConversationListItem[]>([])
   const [runningConversationIds, setRunningConversationIds] = React.useState<Set<string>>(() => new Set())
   const runStatusPollGenerationRef = React.useRef(0)
+  const pendingConversationTitleRefreshRef = React.useRef<string | null>(null)
+  const pendingConversationTitleRefreshTimeoutRef = React.useRef<ReturnType<typeof globalThis.setTimeout> | null>(null)
+
+  React.useEffect(() => () => {
+    if (pendingConversationTitleRefreshTimeoutRef.current !== null) {
+      globalThis.clearTimeout(pendingConversationTitleRefreshTimeoutRef.current)
+    }
+  }, [])
 
   const [loadingConversations, setLoadingConversations] = React.useState(false)
   const [conversationPage, setConversationPage] = React.useState(1)
@@ -261,18 +269,28 @@ export default function PublicChatPage({
     agentId: agent?.id || '',
     variables: variableValues,
     onConversationChange: (id) => {
+      const isNewConversation = !conversations.some((conversation) => conversation.id === id)
+      if (isNewConversation) {
+        pendingConversationTitleRefreshRef.current = id
+        void refreshConversations()
+      }
       // Keep the active conversation addressable after a browser refresh.
       syncConversationUrl(id)
-      // Refresh conversation list when new conversation is created
-      refreshConversations()
       onExternalConversationChange?.(id)
     },
     onStreamEnd: () => {
-      void refreshConversations()
-      // Conversation titles are generated asynchronously by the backend
-      // after the run completes.  A second refresh after a short delay
-      // picks up the title once it is ready.
-      globalThis.setTimeout(() => { void refreshConversations() }, 3000)
+      // Only a newly created conversation needs a delayed fetch for its
+      // asynchronously generated title. Refreshing on every completed reply
+      // needlessly reloads the history sidebar.
+      if (!pendingConversationTitleRefreshRef.current) return
+      pendingConversationTitleRefreshRef.current = null
+      if (pendingConversationTitleRefreshTimeoutRef.current !== null) {
+        globalThis.clearTimeout(pendingConversationTitleRefreshTimeoutRef.current)
+      }
+      pendingConversationTitleRefreshTimeoutRef.current = globalThis.setTimeout(() => {
+        pendingConversationTitleRefreshTimeoutRef.current = null
+        void refreshConversations()
+      }, 3000)
     },
     api: adapter,
     initialMessages: greetingMessages,

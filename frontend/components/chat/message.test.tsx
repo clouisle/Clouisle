@@ -636,6 +636,48 @@ describe('message behavior', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
+  test('groups non-reasoning tool activity in the collapsed execution trace', () => {
+    const parts = [
+      { type: 'tool-call' as const, toolCallId: 'weather', toolName: 'weather_lookup', toolDisplayName: 'Weather lookup', input: { city: 'Beijing' }, state: 'done' as const },
+      { type: 'tool-result' as const, toolCallId: 'weather', toolName: 'weather_lookup', toolDisplayName: 'Weather lookup', output: { temperature: 26 } },
+      { type: 'text' as const, text: 'It is sunny.', state: 'done' as const },
+    ]
+    const container = render(<Message
+      message={{ id: 'tool-only', role: 'assistant', parts }}
+      chainOfThoughtOpen
+    />)
+
+    const trace = container.querySelector('[data-chat-thought-process="true"]')
+    const tool = container.querySelector('[data-chat-tool-node="true"]')
+    expect(trace).not.toBeNull()
+    expect(trace?.querySelector('h3')?.textContent).toBe('chat.task.toolsExecuted count=1')
+    expect(trace?.contains(tool)).toBe(true)
+    expect(container.textContent).toContain('It is sunny.')
+
+    const embedded = render(<Message
+      message={{ id: 'tool-only-embedded', role: 'assistant', parts }}
+      hideReasoning
+    />)
+    expect(embedded.querySelector('[data-chat-thought-process="true"]')).toBeNull()
+    expect(embedded.querySelector('[data-chat-tool-node="true"]')).not.toBeNull()
+  })
+
+  test('groups an unpaired tool result in the execution trace', () => {
+    const container = render(<Message
+      message={{
+        id: 'orphaned-tool-result',
+        role: 'assistant',
+        parts: [{ type: 'tool-result', toolCallId: 'missing-call', toolName: 'inspect', toolDisplayName: 'Inspect repository', output: 'clean' }],
+      }}
+      chainOfThoughtOpen
+    />)
+
+    const trace = container.querySelector('[data-chat-thought-process="true"]')
+    expect(trace?.querySelector('h3')?.textContent).toBe('chat.task.toolsExecuted count=1')
+    expect(trace?.querySelector('[data-chat-tool-node="true"]')).not.toBeNull()
+    expect(trace?.querySelector('[data-tool-state]')?.getAttribute('data-tool-state')).toBe('output-available')
+  })
+
   test('keeps a stable header for the aggregated thought process', () => {
     const thinking = renderToStaticMarkup(<Message
       message={{
@@ -694,7 +736,8 @@ describe('message behavior', () => {
         ],
       }}
     />)
-    expect(failed).not.toContain('data-chat-thought-process="true"')
+    expect(failed).toContain('data-chat-thought-process="true"')
+    expect(failed).toContain('chat.task.toolsExecuted count=1')
     expect(failed).toContain('Inspect repository')
     const finalStep = renderToStaticMarkup(<Message
       message={{

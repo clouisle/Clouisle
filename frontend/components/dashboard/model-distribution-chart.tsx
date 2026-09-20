@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts'
 import { Cpu } from 'lucide-react'
 import type { ModelDistribution } from '@/lib/api/admin/dashboard'
 import { CHART_SURFACE_COLORS } from '@/lib/chart-theme'
@@ -16,6 +16,14 @@ const COLORS = CHART_SURFACE_COLORS
 
 export function ModelDistributionChart({ data, isLoading }: ModelDistributionChartProps) {
   const t = useTranslations('dashboard')
+  const getModelLabel = (model: string) => {
+    const value = model.trim()
+    if (!value) return t('common.unknown')
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+      return `${t('models.deletedModel')} · ${value.slice(0, 8)}`
+    }
+    return value
+  }
 
   const formatNumber = (num: number | undefined) => {
     if (num === undefined || num === null) return '0'
@@ -75,15 +83,24 @@ export function ModelDistributionChart({ data, isLoading }: ModelDistributionCha
         <div className="min-h-[300px] flex-1">
           <ResponsiveContainer width="100%" height="100%">
           <PieChart>
+            <Legend
+              layout="vertical"
+              align="right"
+              verticalAlign="middle"
+              formatter={(value) => getModelLabel(String(value))}
+              wrapperStyle={{ maxWidth: '42%', lineHeight: '1.5' }}
+            />
             <Pie
               data={data as Array<ModelDistribution & Record<string, unknown>>}
               cx="50%"
               cy="50%"
-              innerRadius={76}
-              outerRadius={96}
+              innerRadius={62}
+              outerRadius={94}
               fill="#8884d8"
               dataKey="count"
               nameKey="model"
+              label={({ name, percent }) => Number(percent) >= 0.08 ? getModelLabel(String(name ?? '')) : ''}
+              labelLine={{ stroke: 'hsl(var(--muted-foreground))', strokeWidth: 1 }}
             >
               {data.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -95,7 +112,7 @@ export function ModelDistributionChart({ data, isLoading }: ModelDistributionCha
                   const data = payload[0].payload as ModelDistribution
                   return (
                     <div className="rounded-lg border border-chart-tooltip-border bg-chart-tooltip-bg p-3 text-chart-tooltip-text shadow-md">
-                      <div className="font-semibold mb-2">{data.model || t('common.unknown')}</div>
+                      <div className="font-semibold mb-2">{data.model.trim() || t('common.unknown')}</div>
                       <div className="text-sm space-y-1">
                         <div>
                           {t('common.usageCount')}: {formatNumber(data.count)}

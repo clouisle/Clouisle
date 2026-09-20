@@ -27,6 +27,12 @@ const observe = mock()
 const historyPush = mock()
 const historyReplace = mock()
 const clearInterval = mock()
+const clearTimeoutMock = mock()
+let timeoutCallbacks: Array<() => void> = []
+const setTimeoutMock = mock((callback: () => void) => {
+  timeoutCallbacks.push(callback)
+  return 0
+})
 const setIntervalMock = mock((callback: () => void) => {
   intervalCallbacks.push(callback)
   return 0
@@ -196,7 +202,13 @@ beforeEach(() => {
   pendingAskUserFormProps = {}
   observerCallback = undefined
   faviconHref = null
-  for (const fn of [push, getPublicAgent, getConversations, getConversation, getRunStatus, deleteConversation, updateConversation, uploadFileWithProgress, getStoredRunSnapshot, removeRunSnapshot, convertBackendMessages, sendMessage, regenerate, editMessage, switchVersion, stop, resetChat, setMessages, setConversationId, validateVariables, toastError, disconnect, observe, historyPush, historyReplace, clearInterval, setIntervalMock]) fn.mockReset()
+  for (const fn of [push, getPublicAgent, getConversations, getConversation, getRunStatus, deleteConversation, updateConversation, uploadFileWithProgress, getStoredRunSnapshot, removeRunSnapshot, convertBackendMessages, sendMessage, regenerate, editMessage, switchVersion, stop, resetChat, setMessages, setConversationId, validateVariables, toastError, disconnect, observe, historyPush, historyReplace, clearInterval, clearTimeoutMock, setTimeoutMock, setIntervalMock]) fn.mockReset()
+  timeoutCallbacks = []
+  intervalCallbacks = []
+  setTimeoutMock.mockImplementation((callback: () => void) => {
+    timeoutCallbacks.push(callback)
+    return 0
+  })
   setIntervalMock.mockImplementation((callback: () => void) => {
     intervalCallbacks.push(callback)
     return 0
@@ -212,10 +224,11 @@ beforeEach(() => {
   sendMessage.mockResolvedValue(undefined)
   uploadFileWithProgress.mockResolvedValue({ url: 'https://files.example.test/safe.pdf' })
 
-  intervalCallbacks = []
   Object.defineProperties(globalThis, {
     setInterval: { configurable: true, value: setIntervalMock },
+    setTimeout: { configurable: true, value: setTimeoutMock },
     clearInterval: { configurable: true, value: clearInterval },
+    clearTimeout: { configurable: true, value: clearTimeoutMock },
   })
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: mock(() => token) } })
   Object.defineProperty(globalThis, 'window', {
@@ -313,7 +326,7 @@ describe('PublicChatPage', () => {
     })
   })
 
-  test('prevents empty chat flash and preserves sidebar conversation items on refresh', async () => {
+  test('keeps the sidebar stable when an existing conversation stream ends', async () => {
     query = new URLSearchParams('conversation=conv-1')
     let resolveConversation!: (value: { messages: unknown[] }) => void
     getConversation.mockImplementationOnce(() => new Promise((resolve) => { resolveConversation = resolve }))
@@ -339,24 +352,63 @@ describe('PublicChatPage', () => {
     expect(output()).toContain('First chat')
     expect(output()).toContain('untitledChat')
 
-    // When onStreamEnd triggers refreshConversations with identical items
-    let resolveRefresh!: (value: { items: typeof conversations; total: number }) => void
-    getConversations.mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve }))
+    // Completing another reply in an existing conversation must not reload the sidebar.
     await act(async () => {
       chatOptions.onStreamEnd?.()
       await Promise.resolve()
     })
-    await act(async () => {
-      resolveRefresh({ items: conversations, total: 2 })
-      await Promise.resolve()
-    })
     await flush()
 
-    expect(getConversations).toHaveBeenCalledTimes(2)
-    // Verify continuity of rendered sidebar entries
+    expect(getConversations).toHaveBeenCalledTimes(1)
     expect(output()).toContain('First chat')
     expect(output()).toContain('untitledChat')
     expect(renderer!.root.findAllByProps({ 'data-chat-container': true })).toHaveLength(1)
+  })
+
+  test('delays one title refresh for a newly created conversation', async () => {
+    render()
+    await flush()
+
+    await act(async () => {
+      chatOptions.onConversationChange?.('conv-new')
+      await Promise.resolve()
+    })
+    await flush()
+    expect(getConversations).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      chatOptions.onStreamEnd?.()
+      await Promise.resolve()
+    })
+    expect(setTimeoutMock).toHaveBeenCalledTimes(1)
+    expect(getConversations).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      timeoutCallbacks[0]!()
+      await Promise.resolve()
+    })
+    await flush()
+    expect(getConversations).toHaveBeenCalledTimes(3)
+
+    await act(async () => chatOptions.onStreamEnd?.())
+    expect(setTimeoutMock).toHaveBeenCalledTimes(1)
+  })
+
+  test('clears the delayed title refresh when the page unmounts', async () => {
+    render()
+    await flush()
+
+    await act(async () => {
+      chatOptions.onConversationChange?.('conv-new')
+      await Promise.resolve()
+      chatOptions.onStreamEnd?.()
+    })
+
+    expect(setTimeoutMock).toHaveBeenCalledTimes(1)
+    act(() => renderer!.unmount())
+
+    expect(clearTimeoutMock).toHaveBeenCalledWith(0)
+    renderer = undefined
   })
 
   test('places the queued label in the conversation instead of below the composer', async () => {
@@ -587,8 +639,9 @@ describe('PublicChatPage', () => {
 
     await act(async () => chatOptions.onConversationChange?.('conv-2'))
     expect(getConversations).toHaveBeenCalledWith('agent-1', { page: 1, pageSize: 5 })
+    const refreshCount = getConversations.mock.calls.length
     await act(async () => chatOptions.onStreamEnd?.())
-    expect(getConversations).toHaveBeenCalledWith('agent-1', { page: 1, pageSize: 5 })
+    expect(getConversations).toHaveBeenCalledTimes(refreshCount)
 
     const newChat = renderer!.root.findAllByProps({ 'aria-label': 'newChat' })[0]
     act(() => newChat.props.onClick())
