@@ -18,6 +18,15 @@ interface ModelDetailsCardProps {
 
 export function ModelDetailsCard({ data, isLoading }: ModelDetailsCardProps) {
   const t = useTranslations('dashboard')
+  const getModelLabel = (model: string) => {
+    const value = model.trim()
+    if (!value) return t('common.unknown')
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+      return `${t('models.deletedModel')} · ${value.slice(0, 8)}`
+    }
+    return value
+  }
+
 
   if (isLoading) {
     return (
@@ -73,7 +82,7 @@ export function ModelDetailsCard({ data, isLoading }: ModelDetailsCardProps) {
               <div className="flex-1 min-w-0">
                 <Tooltip>
                   <TooltipTrigger className="block w-full text-left">
-                    <span className="block w-full font-medium truncate">{model.model || t('common.unknown')}</span>
+                    <span className="block w-full font-medium truncate">{getModelLabel(model.model)}</span>
                   </TooltipTrigger>
                   <TooltipContent>
                     <p>{model.model || t('common.unknown')}</p>

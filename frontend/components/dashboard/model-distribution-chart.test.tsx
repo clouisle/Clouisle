@@ -15,6 +15,9 @@ mock.module('recharts', () => ({
     return <>{children}</>
   },
   Cell: () => null,
+  Legend: ({ formatter }: { formatter: (value: string) => string }) => (
+    <>{pieData.map((payload, index) => <div key={index}>{formatter(payload.model)}</div>)}</>
+  ),
   Tooltip: ({ content }: { content: (props: unknown) => React.ReactNode }) => (
     <>{pieData.map((payload, index) => <div key={index}>{content({ active: true, payload: [{ payload }] })}</div>)}</>
   ),
@@ -58,6 +61,15 @@ describe('ModelDistributionChart', () => {
     expect(html).toContain('common.usageCount: 1.2K')
     expect(html).toContain('common.usageCount: 2.3M')
     expect(html).toContain('common.percentage: 12.35%')
+  })
+
+  test('labels UUID-only entries as deleted models while preserving the short identifier', () => {
+    const html = render({
+      data: [{ model: '550e8400-e29b-41d4-a716-446655440000', count: 12, percentage: 100 }],
+    })
+
+    expect(html).toContain('models.deletedModel · 550e8400')
+    expect(html).not.toContain('550e8400-e29b-41d4-a716-446655440000')
   })
 
   test('uses the unknown label for unnamed models', () => {
