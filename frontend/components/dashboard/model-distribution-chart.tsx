@@ -99,7 +99,7 @@ export function ModelDistributionChart({ data, isLoading }: ModelDistributionCha
               fill="#8884d8"
               dataKey="count"
               nameKey="model"
-              label={({ name, percent }) => Number(percent) >= 8 ? getModelLabel(String(name ?? '')) : ''}
+              label={({ name, percent }) => Number(percent) >= 0.08 ? getModelLabel(String(name ?? '')) : ''}
               labelLine={{ stroke: 'hsl(var(--muted-foreground))', strokeWidth: 1 }}
             >
               {data.map((entry, index) => (
