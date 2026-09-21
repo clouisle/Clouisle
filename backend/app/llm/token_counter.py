@@ -45,6 +45,7 @@ PROVIDER_ENCODING_MAP = {
     "google": "cl100k_base",  # Approximate
     "deepseek": "cl100k_base",  # DeepSeek uses similar tokenization
     "qwen": "cl100k_base",  # Qwen uses similar tokenization
+    "typesafe": "cl100k_base",  # TypeSafe does not publish a tokenizer
     "default": "cl100k_base",
 }
 

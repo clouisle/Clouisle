@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-11T17:53:25.755Z
+// GENERATED — 2026-09-21T12:44:16.154Z
 // Source: i18n/en/models.json
 export type ModelsMessages = {
   models: {
@@ -222,6 +222,7 @@ export type ModelsMessages = {
       midjourney: string
       siliconflow: string
       volcengine: string
+      typesafe: string
       custom: string
     }
     providerGroups: {
@@ -235,6 +236,7 @@ export type ModelsMessages = {
       chat: string
       embedding: string
       rerank: string
+      decision: string
       tts: string
       stt: string
       audio_generation: string
@@ -245,6 +247,7 @@ export type ModelsMessages = {
       chat: string
       embedding: string
       rerank: string
+      decision: string
       tts: string
       stt: string
       audio_generation: string

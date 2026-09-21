@@ -220,6 +220,7 @@
       "midjourney": "Midjourney",
       "siliconflow": "SiliconFlow",
       "volcengine": "Volcengine Ark",
+      "typesafe": "TypeSafe AI",
       "custom": "OpenAI Compatible"
     },
     "providerGroups": {
@@ -233,6 +234,7 @@
       "chat": "Chat",
       "embedding": "Embedding",
       "rerank": "Rerank",
+      "decision": "Decision",
       "tts": "Text to Speech",
       "stt": "Speech to Text",
       "audio_generation": "Audio Generation",
@@ -243,6 +245,7 @@
       "chat": "Chat",
       "embedding": "Embed",
       "rerank": "Rerank",
+      "decision": "Decision",
       "tts": "TTS",
       "stt": "STT",
       "audio_generation": "Audio",

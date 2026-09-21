@@ -88,6 +88,7 @@ const providers = [
   { code: 'volcengine', name: 'Volcengine', base_url: 'https://ark.cn-beijing.volces.com' },
   { code: 'runway', name: 'Runway', base_url: 'https://api.dev.runwayml.com' },
   { code: 'stability', name: 'Stability', base_url: 'https://api.stability.ai' },
+  { code: 'typesafe', name: 'TypeSafe AI', base_url: 'https://api.typesafe.ai/v1' },
   { code: 'ollama', name: 'Ollama', base_url: 'http://localhost:11434/v1' },
 ]
 const modelTypes = [
@@ -95,6 +96,7 @@ const modelTypes = [
   { code: 'text_to_image', name: 'Image' },
   { code: 'text_to_video', name: 'Video' },
   { code: 'tts', name: 'TTS' },
+  { code: 'decision', name: 'Decision' },
 ]
 const onOpenChange = mock()
 const onSuccess = mock()
@@ -208,6 +210,19 @@ describe('ModelDialog', () => {
       (providerTrigger.props.render as (props: Record<string, unknown>) => ReactNode)({}),
     ) as Tree
     expect(providerButton.props['data-testid']).toBe('admin-model-dialog-provider')
+  })
+
+  test('offers only TypeSafe when the decision model type is selected', () => {
+    chooseModelType('decision')
+    const tree = render()
+
+    const labels = findAll(tree, (node) => node.type === 'tooltiptrigger')
+      .map((node) => node.props.render)
+      .filter((render): render is (props: Record<string, unknown>) => ReactNode => typeof render === 'function')
+      .flatMap((render) => findAll(resolve(render({})) as ReactNode, (node) => node.type === 'span'))
+      .map((node) => String(node.props.children))
+
+    expect(labels).toEqual(['providers.typesafe'])
   })
 
   test('creates an Ollama chat model without requiring an API key', async () => {

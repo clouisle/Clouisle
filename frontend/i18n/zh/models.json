@@ -220,6 +220,7 @@
       "midjourney": "Midjourney",
       "siliconflow": "SiliconFlow",
       "volcengine": "火山方舟",
+      "typesafe": "TypeSafe AI",
       "custom": "OpenAI 兼容接口"
     },
     "providerGroups": {
@@ -233,6 +234,7 @@
       "chat": "对话模型",
       "embedding": "嵌入模型",
       "rerank": "重排序模型",
+      "decision": "决策模型",
       "tts": "语音合成",
       "stt": "语音识别",
       "audio_generation": "音频生成",
@@ -243,6 +245,7 @@
       "chat": "对话",
       "embedding": "嵌入",
       "rerank": "重排序",
+      "decision": "决策",
       "tts": "语音合成",
       "stt": "语音识别",
       "audio_generation": "音频生成",

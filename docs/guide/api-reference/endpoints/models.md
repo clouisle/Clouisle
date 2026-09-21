@@ -152,6 +152,11 @@ curl -X GET "https://your-domain.com/api/v1/models/types"
       "code": "text_to_video",
       "name": "Text to Video",
       "description": "文生视频"
+    },
+    {
+      "code": "decision",
+      "name": "Decision",
+      "description": "决策模型"
     }
   ],
   "msg": "success"
@@ -337,7 +342,7 @@ curl -X GET "https://your-domain.com/api/v1/admin/models?page=1&page_size=20" \
 | `provider` | string | Provider identifier |
 | `provider_display_name` | string | Optional user-facing provider/gateway name |
 | `model_id` | string | Model identifier (e.g. `gpt-4-turbo-preview`) |
-| `model_type` | string | Model type: `chat`, `embedding`, `rerank`, `tts`, `stt`, `audio_generation`, `text_to_image`, `text_to_video` |
+| `model_type` | string | Model type: `chat`, `embedding`, `rerank`, `decision`, `tts`, `stt`, `audio_generation`, `text_to_image`, `text_to_video` |
 | `base_url` | string | Custom API URL |
 | `has_api_key` | boolean | Whether an API key is configured (key itself is hidden) |
 | `context_length` | integer | Context length |

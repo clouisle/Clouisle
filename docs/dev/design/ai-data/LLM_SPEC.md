@@ -79,6 +79,7 @@
 | 对话 | `chat` | 文本/图片 | 文本 | OpenAI, Anthropic, DeepSeek |
 | 嵌入 | `embedding` | 文本 | 向量 | OpenAI, Cohere |
 | 重排序 | `rerank` | Query + Docs | 分数 | Cohere, Jina |
+| 决策 | `decision` | state + 类型化问题 | 类型化答案 + 概率 | TypeSafe AI |
 | 语音合成 | `tts` | 文本 | 音频 | OpenAI, Azure |
 | 语音识别 | `stt` | 音频 | 文本 | OpenAI Whisper |
 | 文生图 | `text_to_image` | 文本 | 图片 | DALL-E, Midjourney |
@@ -116,6 +117,9 @@ class ModelManager:
     # ========== Audio ==========
     async def text_to_speech(request, model_id=None) -> TTSResponse
     async def speech_to_text(request, model_id=None) -> STTResponse
+
+    # ========== Decision ==========
+    async def decide(request, model_id=None) -> DecisionResponse
 ```
 
 ### 4.2 使用示例

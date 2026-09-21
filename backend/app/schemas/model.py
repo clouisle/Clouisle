@@ -43,6 +43,9 @@ class ModelProvider(str, Enum):
     STABILITY = "stability"
     MIDJOURNEY = "midjourney"
 
+    # Decision models (non-generative typed decisions)
+    TYPESAFE = "typesafe"
+
     # Custom/OpenAI-compatible
     CUSTOM = "custom"
 
@@ -58,6 +61,7 @@ class ModelType(str, Enum):
     AUDIO_GENERATION = "audio_generation"
     TEXT_TO_IMAGE = "text_to_image"
     TEXT_TO_VIDEO = "text_to_video"
+    DECISION = "decision"
 
 
 class ProviderInfo(BaseModel):

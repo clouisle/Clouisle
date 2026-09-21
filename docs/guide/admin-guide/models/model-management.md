@@ -28,7 +28,7 @@ The model list shows:
 - **Model name**
 - **Provider** (OpenAI, Anthropic, Azure OpenAI, etc.)
 - **Model ID** (gpt-4-turbo, claude-3-5-sonnet, etc.)
-- **Type** (chat, embedding, rerank, tts, stt, image/video generation, etc.)
+- **Type** (chat, embedding, rerank, decision, tts, stt, image/video generation, etc.)
 - **Status** (Enabled / Disabled)
 - **Default** (whether it is the default model)
 
