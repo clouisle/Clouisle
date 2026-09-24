@@ -1269,6 +1269,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Invalid webhook token",
         "zh": "无效的 Webhook 令牌",
     },
+    "kb_access_denied": {
+        "en": "You don't have access to this knowledge base",
+        "zh": "您无权访问此知识库",
+    },
     "kb_already_shared": {
         "en": "Knowledge base already shared with this team",
         "zh": "该知识库已共享给该团队",
@@ -1292,10 +1296,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "知识库中未找到相关信息。",
     },
     "kb_not_found": {"en": "Knowledge base not found", "zh": "知识库未找到"},
-    "kb_access_denied": {
-        "en": "You don't have access to this knowledge base",
-        "zh": "您无权访问此知识库",
-    },
     "kb_share_not_found": {
         "en": "Knowledge base share not found",
         "zh": "知识库共享记录不存在",
@@ -1635,6 +1635,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "The embedding API response format is incompatible with OpenAI",
         "zh": "Embedding API 返回格式与 OpenAI 不兼容",
     },
+    "model_test_empty_decision_result": {
+        "en": "The decision model returned no answers",
+        "zh": "决策模型未返回任何答案",
+    },
     "model_test_empty_embedding_result": {
         "en": "The embedding model returned an empty result",
         "zh": "Embedding 模型返回了空结果",
@@ -1720,6 +1724,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "node_type_answer": {"en": "Answer", "zh": "回复"},
     "node_type_code": {"en": "Code Execution", "zh": "代码执行"},
     "node_type_condition": {"en": "Condition", "zh": "条件分支"},
+    "node_type_decision": {"en": "Decision", "zh": "决策"},
     "node_type_end": {"en": "End", "zh": "结束"},
     "node_type_http_request": {"en": "HTTP Request", "zh": "HTTP 请求"},
     "node_type_iteration": {"en": "Iteration", "zh": "迭代"},

@@ -280,6 +280,7 @@ mock.module('./nodes/sub-workflow-node', () => ({ SubWorkflowNode: (props: Recor
 mock.module('./nodes/agent-node', () => ({ AgentNode: (props: Record<string, unknown>) => jsx('agent-node', props) }))
 mock.module('./nodes/tool-node', () => ({ ToolNode: (props: Record<string, unknown>) => jsx('tool-node', props), defaultToolNodeConfig: defaultNodeConfig }))
 mock.module('./nodes/knowledge-retrieval-node', () => ({ KnowledgeRetrievalNode: (props: Record<string, unknown>) => jsx('knowledge-retrieval-node', props) }))
+mock.module('./nodes/decision-node', () => ({ DecisionNode: (props: Record<string, unknown>) => jsx('decision-node', props), defaultDecisionNodeConfig: defaultNodeConfig }))
 mock.module('./nodes/iteration-node', () => ({ IterationNode: (props: Record<string, unknown>) => jsx('iteration-node', props), IterationStartNode: (props: Record<string, unknown>) => jsx('iteration-start-node', props), IterationExitNode: (props: Record<string, unknown>) => jsx('iteration-exit-node', props), defaultIterationConfig: defaultNodeConfig }))
 mock.module('./nodes/loop-node', () => ({ LoopNode: (props: Record<string, unknown>) => jsx('loop-node', props), LoopStartNode: (props: Record<string, unknown>) => jsx('loop-start-node', props), LoopExitNode: (props: Record<string, unknown>) => jsx('loop-exit-node', props), defaultLoopConfig: defaultNodeConfig }))
 mock.module('./nodes/code-node', () => ({ CodeNode: (props: Record<string, unknown>) => jsx('code-node', props), defaultCodeConfig: defaultNodeConfig }))
@@ -299,6 +300,7 @@ mock.module('./workflow-publish-dialog', () => ({ WorkflowPublishDialog: (props:
 mock.module('./validation-checklist', () => ({ ValidationChecklist: (props: Record<string, unknown>) => jsx('validation-checklist', props) }))
 mock.module('./workflow-validator', () => ({ validateWorkflow: () => [], ValidationIssue: {} }))
 mock.module('../../[id]/_components/embed-config-dialog', () => ({ EmbedConfigDialog: (props: Record<string, unknown>) => jsx('embed-config-dialog', props) }))
+mock.module('./node-config/configs/decision-node-config', () => ({ DecisionNodeConfig: (props: Record<string, unknown>) => jsx('DecisionNodeConfig', props) }))
 mock.module('./node-output-renderer', () => ({
   nodeStatusConfig: {},
   renderNodeOutput: (value: unknown) => jsx('node-output', { value }),

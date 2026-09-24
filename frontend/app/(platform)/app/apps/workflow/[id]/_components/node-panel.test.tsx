@@ -26,15 +26,15 @@ test('renders available workflow nodes and invokes each add action', () => {
 
   expect(findAll(tree, (node) => node.props.children === 'nodePanel.addNode')).toHaveLength(1)
   expect(findAll(tree, (node) => node.props.children === 'nodePanel.dragOrClickToAdd')).toHaveLength(1)
-  for (const type of ['llm', 'condition', 'pause', 'sub_workflow', 'tool', 'code']) {
+  for (const type of ['decision', 'llm', 'condition', 'pause', 'sub_workflow', 'tool', 'code']) {
     expect(findAll(tree, (node) => node.props.children === `nodeLabels.${type}`)).toHaveLength(1)
     expect(findAll(tree, (node) => node.props.children === `nodeDescriptions.${type}`)).toHaveLength(1)
   }
 
   const options = findAll(tree, (node) => node.type === 'button')
-  expect(options).toHaveLength(6)
+  expect(options).toHaveLength(7)
   options.forEach((option) => (option.props.onClick as () => void)())
   expect(onAddNode.mock.calls).toEqual([
-    ['llm'], ['condition'], ['pause'], ['sub_workflow'], ['tool'], ['code'],
+    ['llm'], ['decision'], ['condition'], ['pause'], ['sub_workflow'], ['tool'], ['code'],
   ])
 })

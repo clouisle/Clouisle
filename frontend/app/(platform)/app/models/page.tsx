@@ -17,6 +17,7 @@ const MODEL_TYPES = [
   'chat',
   'embedding', 
   'rerank',
+  'decision',
   'tts',
   'stt',
   'text_to_image',

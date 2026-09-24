@@ -30,6 +30,7 @@ const modelTypeIcons: Record<string, React.ComponentType<{ className?: string }>
   chat: MessageSquare,
   embedding: Layers,
   rerank: ArrowUpDown,
+  decision: TrendingUp,
   tts: Volume2,
   stt: Mic,
   text_to_image: Image,
@@ -49,6 +50,7 @@ const providerColors: Record<string, string> = {
   qwen: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
   baichuan: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
   minimax: 'bg-pink-500/10 text-pink-600 dark:text-pink-400',
+  typesafe: 'bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400',
   ollama: 'bg-gray-500/10 text-gray-600 dark:text-gray-400',
   custom: 'bg-slate-500/10 text-slate-600 dark:text-slate-400',
 }

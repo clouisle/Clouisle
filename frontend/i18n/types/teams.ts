@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-11T17:53:25.757Z
+// GENERATED — 2026-09-23T17:20:52.223Z
 // Source: i18n/en/teams.json
 export type TeamsMessages = {
   teams: {
@@ -91,5 +91,18 @@ export type TeamsMessages = {
     revokeModelAuth: string
     revokeModelAuthConfirm: string
     revoke: string
+    settings: string
+    basicSettings: string
+    basicSettingsDesc: string
+    avatarUrl: string
+    modelAuthDescription: string
+    dangerZone: string
+    dangerZoneDesc: string
+    leaveTeamDesc: string
+    ownerCannotLeaveWarning: string
+    addMemberPrompt: string
+    addMemberExactHint: string
+    userIdentifier: string
+    userIdentifierPlaceholder: string
   }
 }

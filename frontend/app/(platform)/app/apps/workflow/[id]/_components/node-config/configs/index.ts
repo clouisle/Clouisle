@@ -17,3 +17,4 @@ export { SubWorkflowNodeConfig, type SubWorkflowNodeConfig as SubWorkflowNodeCon
 export { AgentNodeConfig, type AgentNodeConfig as AgentNodeConfigType, defaultAgentNodeConfig, getAgentNodeOutputVariables } from './agent-node-config'
 export { KnowledgeRetrievalNodeConfig, type KnowledgeRetrievalNodeConfig as KnowledgeRetrievalNodeConfigType, defaultKnowledgeRetrievalNodeConfig } from './knowledge-retrieval-node-config'
 export { PauseNodeConfig, type PauseNodeConfig as PauseNodeConfigType, defaultPauseNodeConfig } from './pause-node-config'
+export { DecisionNodeConfig } from './decision-node-config'

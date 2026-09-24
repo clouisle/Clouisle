@@ -45,6 +45,9 @@ class ModelProvider(str, Enum):
     STABILITY = "stability"
     MIDJOURNEY = "midjourney"
 
+    # Decision models (non-generative typed decisions)
+    TYPESAFE = "typesafe"
+
     # Custom provider
     CUSTOM = "custom"
 
@@ -60,6 +63,7 @@ class ModelType(str, Enum):
     AUDIO_GENERATION = "audio_generation"  # Prompt-to-audio generation
     TEXT_TO_IMAGE = "text_to_image"  # Text-to-image generation
     TEXT_TO_VIDEO = "text_to_video"  # Text-to-video generation
+    DECISION = "decision"  # Typed decision models (choice/score/yes-no)
 
 
 # Provider default configurations (base URLs, etc.)
@@ -169,6 +173,11 @@ PROVIDER_DEFAULTS: dict[ModelProvider, dict[str, str | None]] = {
         "base_url": None,  # Proxy required
         "icon": "midjourney",
     },
+    ModelProvider.TYPESAFE: {
+        "name": "TypeSafe AI",
+        "base_url": "https://api.typesafe.ai/v1",
+        "icon": "typesafe",
+    },
     ModelProvider.CUSTOM: {
         "name": "OpenAI Compatible",
         "base_url": None,
@@ -185,6 +194,10 @@ MODEL_TYPE_PROVIDER_DEFAULT_BASE_URLS: dict[tuple[ModelProvider, ModelType], str
         ModelProvider.VOLCENGINE,
         ModelType.AUDIO_GENERATION,
     ): "https://openspeech.bytedance.com/api/v3/tts/create",
+    (
+        ModelProvider.TYPESAFE,
+        ModelType.DECISION,
+    ): "https://api.typesafe.ai/v1",
 }
 
 

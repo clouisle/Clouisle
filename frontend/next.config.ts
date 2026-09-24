@@ -5,6 +5,9 @@ import path from 'path';
 const withNextIntl = createNextIntlPlugin('./i18n/request.ts');
 
 const nextConfig: NextConfig = {
+  experimental: {
+    turbopackFileSystemCacheForDev: false,
+  },
   // Enable standalone output for Docker deployment
   output: 'standalone',
   env: {

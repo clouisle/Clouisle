@@ -73,6 +73,15 @@ from .embedding import (
     EmbeddingResponse,
 )
 
+# Decision types
+from .decision import (
+    DecisionQuestionType,
+    DecisionQuestion,
+    DecisionRequest,
+    DecisionAnswer,
+    DecisionResponse,
+)
+
 __all__ = [
     # Base
     "MediaContent",
@@ -124,4 +133,10 @@ __all__ = [
     "RerankResponse",
     # Embedding
     "EmbeddingResponse",
+    # Decision
+    "DecisionQuestionType",
+    "DecisionQuestion",
+    "DecisionRequest",
+    "DecisionAnswer",
+    "DecisionResponse",
 ]

@@ -44,6 +44,7 @@ export const nodeTypeInfo: Record<string, { icon: React.ElementType; color: stri
   loop: { icon: Infinity, color: 'bg-cyan-500', titleKey: 'loop' },
   pause: { icon: CirclePause, color: 'bg-amber-500', titleKey: 'pause' },
   question_classifier: { icon: Tags, color: 'bg-violet-500', titleKey: 'question_classifier' },
+  decision: { icon: GitBranch, color: 'bg-violet-500', titleKey: 'decision' },
   answer: { icon: MessageSquareText, color: 'bg-emerald-500', titleKey: 'answer' },
   sub_workflow: { icon: Workflow, color: 'bg-purple-500', titleKey: 'sub_workflow' },
   agent: { icon: Sparkles, color: 'bg-indigo-500', titleKey: 'agent' },

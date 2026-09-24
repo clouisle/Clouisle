@@ -12,6 +12,7 @@
     - None: 使用该类型的默认模型
 """
 
+import json
 import logging
 import uuid
 from collections.abc import AsyncIterator, Sequence
@@ -33,6 +34,7 @@ from app.services.usage_tracker import usage_tracker, QuotaExceededError
 from .adapters import (
     create_audio_generation_adapter,
     create_chat_model,
+    create_decision_adapter,
     create_embedding_model,
     create_image_adapter,
     create_rerank_adapter,
@@ -70,6 +72,8 @@ from .types import (
     Message,
     ChatResponse,
     ChatStreamChunk,
+    DecisionRequest,
+    DecisionResponse,
     ToolDefinition,
     ImageGenerationRequest,
     ImageGenerationResponse,
@@ -599,6 +603,38 @@ class ModelManager:
             return await adapter.rerank(query, documents, top_n=top_n, **kwargs)
         except Exception as e:
             logger.exception(f"Rerank error: {e}")
+            raise self._handle_error(e, model_config.provider, model_config.model_id)
+
+    # ==================== Decision 方法 ====================
+
+    async def decide(
+        self,
+        request: DecisionRequest | dict[str, Any],
+        model_id: str | None = None,
+        **kwargs: Any,
+    ) -> DecisionResponse:
+        """
+        对 state 上的类型化问题求值（决策模型）
+
+        Args:
+            request: 决策请求（state + questions）
+            model_id: 模型 ID
+
+        Returns:
+            DecisionResponse: 每个问题的类型化答案
+        """
+        if isinstance(request, dict):
+            request = DecisionRequest(**request)
+
+        model_config = await self._get_model_config(model_id, ModelType.DECISION)
+        adapter = create_decision_adapter(model_config)
+
+        try:
+            return await adapter.decide(request, **kwargs)
+        except LLMError:
+            raise
+        except Exception as e:
+            logger.exception(f"Decision error: {e}")
             raise self._handle_error(e, model_config.provider, model_config.model_id)
 
     # ==================== Image 方法 ====================
@@ -1150,6 +1186,64 @@ class ModelManager:
             return result
         except Exception as e:
             logger.exception(f"Team rerank error: {e}")
+            raise self._handle_error(e, model_config.provider, model_config.model_id)
+
+    async def team_decide(
+        self,
+        team_id: str,
+        request: DecisionRequest | dict[str, Any],
+        model_id: str | None = None,
+        **kwargs: Any,
+    ) -> DecisionResponse:
+        """
+        团队级决策求值（带配额检查和用量追踪）
+        """
+        if isinstance(request, dict):
+            request = DecisionRequest(**request)
+
+        model_config, team_model = await self._get_team_model(
+            team_id, model_id, ModelType.DECISION
+        )
+
+        try:
+            await usage_tracker.check_quota_with_model(team_model)
+        except QuotaExceededError as e:
+            raise LLMQuotaExceededError(
+                message=str(e),
+                quota_type=e.quota_type,
+                team_id=team_id,
+                model=str(model_config.id),
+            )
+
+        adapter = create_decision_adapter(model_config)
+
+        try:
+            result = await adapter.decide(request, **kwargs)
+
+            total_tokens = result.usage.total_tokens if result.usage else 0
+            if total_tokens <= 0:
+                from app.llm.token_counter import count_tokens
+
+                total_tokens = count_tokens(
+                    json.dumps(
+                        request.model_dump(exclude_none=True), ensure_ascii=False
+                    ),
+                    model_config.model_id,
+                    model_config.provider,
+                )
+                total_tokens = max(total_tokens, 1)
+
+            await self._check_and_record_usage(
+                team_id=team_id,
+                model_id=str(model_config.id),
+                tokens_used=total_tokens,
+            )
+
+            return result
+        except LLMError:
+            raise
+        except Exception as e:
+            logger.exception(f"Team decision error: {e}")
             raise self._handle_error(e, model_config.provider, model_config.model_id)
 
 

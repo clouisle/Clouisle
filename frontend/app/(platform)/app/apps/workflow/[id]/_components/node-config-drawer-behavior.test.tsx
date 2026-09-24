@@ -6,6 +6,7 @@ const component = (name: string) => (props: Record<string, unknown>) => jsx(name
 
 let state: unknown[] = []
 let stateIndex = 0
+let runEffects = true
 const useState = (initial: unknown) => {
   const index = stateIndex++
   if (!(index in state)) state[index] = typeof initial === 'function' ? initial() : initial
@@ -16,7 +17,7 @@ const useState = (initial: unknown) => {
 
 mock.module('react', () => ({
   useState,
-  useEffect: (effect: () => void | (() => void)) => effect(),
+  useEffect: (effect: () => void | (() => void)) => { if (runEffects) effect() },
   useCallback: (callback: unknown) => callback,
 }))
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
@@ -65,6 +66,7 @@ for (const [path, exports] of [
   ['./nodes/answer-node', { defaultAnswerNodeConfig: defaults.answer }],
   ['./nodes/tool-node', { defaultToolNodeConfig: defaults.tool }],
   ['./nodes/media-generation-node', { defaultMediaGenerationConfig: defaults.media }],
+  ['./nodes/decision-node', { defaultDecisionNodeConfig: { stateTemplate: '', questionId: 'decision', questionType: 'choice', instructions: '', options: ['yes', 'no'], defaultHandle: 'default' } }],
 ] as const) mock.module(path, () => exports)
 
 mock.module('./nodes/comment-node', () => ({
@@ -73,6 +75,7 @@ mock.module('./nodes/comment-node', () => ({
     blue: { bg: 'blue', borderSelected: 'blue-selected' },
   },
 }))
+mock.module('./node-config/configs/decision-node-config', () => ({ DecisionNodeConfig: component('DecisionNodeConfig') }))
 
 const configNames = [
   'StartNodeConfig', 'LLMNodeConfig', 'MediaGenerationNodeConfig', 'CodeNodeConfig',
@@ -155,6 +158,7 @@ function render(node: ReturnType<typeof baseNode> | null, overrides: Record<stri
 beforeEach(() => {
   state = []
   stateIndex = 0
+  runEffects = true
   renderNodeOutput.mockClear()
 })
 
@@ -207,8 +211,7 @@ describe('NodeConfigDrawer', () => {
       condition: 'ConditionNodeConfig', iteration: 'IterationNodeConfig', loop: 'LoopNodeConfig', code: 'CodeNodeConfig',
       template: 'TemplateNodeConfig', file_to_url: 'FileToUrlNodeConfig', variable_aggregator: 'VariableAggregatorNodeConfig',
       variable_assignment: 'VariableAssignmentNodeConfig', parameter_extractor: 'ParameterExtractorNodeConfig',
-      question_classifier: 'QuestionClassifierNodeConfig', sub_workflow: 'SubWorkflowNodeConfig', agent: 'AgentNodeConfig',
-      tool: 'ToolNodeConfig', knowledge_retrieval: 'KnowledgeRetrievalNodeConfig', pause: 'PauseNodeConfig', answer: 'AnswerNodeConfig',
+      question_classifier: 'QuestionClassifierNodeConfig', decision: 'DecisionNodeConfig', sub_workflow: 'SubWorkflowNodeConfig', agent: 'AgentNodeConfig',
     }
 
     for (const [type, editor] of Object.entries(routes)) {
@@ -437,6 +440,22 @@ describe('NodeConfigDrawer', () => {
     expect(descendants(render(node)).find(item => item.type === 'CodeInputDialog')!.props.existingInputs).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'source', name: 'payload' })]))
   })
 
+  test('updates the node name and description from the visible fields', () => {
+    const node = baseNode('llm', { label: 'Draft', description: 'Before' })
+    const props = { readOnly: false }
+    const nodes = descendants(render(node, props))
+    const nameInput = nodes.find(item => item.type === 'Input' && item.props.id === 'node-label')!
+    const descriptionInput = nodes.find(item => item.type === 'Textarea' && item.props.id === 'node-description')!
+
+    ;(nameInput.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'Updated' } })
+    ;(descriptionInput.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'After' } })
+    runEffects = false
+
+    const updated = descendants(render(node, props))
+    expect(updated.find(item => item.type === 'Input' && item.props.id === 'node-label')?.props.value).toBe('Updated')
+    expect(updated.find(item => item.type === 'Textarea' && item.props.id === 'node-description')?.props.value).toBe('After')
+  })
+
   test('renders comment editing without tabs and updates color and content', () => {
     const node = baseNode('comment', { content: 'Old note', color: 'blue' })
     render(node)
@@ -480,6 +499,30 @@ describe('NodeConfigDrawer', () => {
     state = []
     const empty = descendants(render(baseNode('llm')))
     expect(empty.some(node => node.props.children === 'nodeConfig.noRunHistory')).toBe(true)
+  })
+
+  test('persists typed decision settings from the focused editor', async () => {
+    const initial = {
+      modelId: 'model-1',
+      stateTemplate: '{{start.input}}',
+      questionId: 'route',
+      questionType: 'choice',
+      instructions: 'Choose a route',
+      options: ['accept', 'reject'],
+    }
+    const updated = { ...initial, questionType: 'noul', options: [] }
+    const node = baseNode('decision', { decisionConfig: initial })
+    const onUpdate = mock(() => undefined)
+    const overrides = { readOnly: false, onUpdate }
+
+    render(node, overrides)
+    const editor = descendants(render(node, overrides)).find(item => item.type === 'DecisionNodeConfig')!
+    expect(editor.props.config).toEqual(initial)
+    ;(editor.props.onConfigChange as (value: typeof initial) => void)(updated)
+    render(node, overrides)
+
+    await new Promise(resolve => setTimeout(resolve, 320))
+    expect(onUpdate).toHaveBeenCalledWith(node.id, expect.objectContaining({ decisionConfig: updated }))
   })
 
   test('debounces observable updates and suppresses them in read-only mode', async () => {

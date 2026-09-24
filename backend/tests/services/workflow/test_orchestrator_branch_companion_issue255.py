@@ -20,9 +20,11 @@ async def test_issue255_orchestrator_node_label_known_and_unknown_branches():
         ) as translate,
     ):
         assert await get_node_type_label("answer") == "Answer"
+        assert await get_node_type_label("question_classifier") == "Answer"
         assert await get_node_type_label("not-a-node") is None
 
-    translate.assert_called_once_with("node_type_answer", lang="en")
+    translate.assert_any_call("node_type_answer", lang="en")
+    translate.assert_any_call("node_type_question_classifier", lang="en")
 
 
 @pytest.mark.asyncio

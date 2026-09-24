@@ -64,7 +64,7 @@ import type { ProviderInfo, ModelTypeInfo } from '@/lib/api/models'
 
 // 供应商分组
 const PROVIDER_GROUPS = {
-  international: ['openai', 'openai_responses', 'anthropic', 'google', 'xai', 'azure_openai', 'runway', 'luma', 'stability'],
+  international: ['openai', 'openai_responses', 'anthropic', 'google', 'xai', 'azure_openai', 'runway', 'luma', 'stability', 'typesafe'],
   domestic: ['deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'volcengine'],
   other: ['ollama', 'custom'],
 }
@@ -103,6 +103,7 @@ const RUNWAY_LUMA_IMAGE_SIZE_OPTIONS = [
 const MODEL_CATEGORIES = {
   text: ['chat', 'embedding'],
   rerank: ['rerank'],
+  decision: ['decision'],
   image: ['text_to_image'],
   video: ['text_to_video'],
   audio: ['tts', 'stt', 'audio_generation'],
@@ -851,6 +852,7 @@ export function ModelDialog({
     const providersByCategory: Record<string, string[]> = {
       text: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'volcengine', 'ollama', 'custom'],
       rerank: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'volcengine', 'ollama', 'custom'],
+      decision: ['typesafe'],
       image: ['openai', 'openai_responses', 'google', 'azure_openai', 'custom', 'siliconflow', 'volcengine', 'minimax', 'runway', 'luma', 'stability'],
       video: ['volcengine', 'minimax', 'runway', 'luma'],
       audio: modelType === 'tts'

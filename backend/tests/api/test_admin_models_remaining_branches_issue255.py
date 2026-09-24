@@ -135,6 +135,7 @@ async def test_list_without_filters_and_update_with_nonempty_key():
     [
         (ModelType.EMBEDDING, "_test_embedding_model"),
         (ModelType.RERANK, "_test_rerank_model"),
+        (ModelType.DECISION, "_test_decision_model"),
         (ModelType.TEXT_TO_IMAGE, "_test_image_model"),
         (ModelType.TEXT_TO_VIDEO, "_test_video_model"),
     ],
@@ -210,6 +211,7 @@ async def test_saved_connection_rejects_unhandled_enum_member(monkeypatch):
         CHAT = ModelType.CHAT
         EMBEDDING = ModelType.EMBEDDING
         RERANK = ModelType.RERANK
+        DECISION = ModelType.DECISION
         TEXT_TO_IMAGE = ModelType.TEXT_TO_IMAGE
         TEXT_TO_VIDEO = ModelType.TEXT_TO_VIDEO
         TTS = ModelType.TTS

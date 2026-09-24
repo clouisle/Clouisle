@@ -92,6 +92,11 @@ from .types import (
     STTResponse,
     RerankResult,
     RerankResponse,
+    # Decision
+    DecisionQuestion,
+    DecisionRequest,
+    DecisionAnswer,
+    DecisionResponse,
 )
 from .tools import tool_registry, ToolRegistry, ToolInfo, ToolParameter
 
@@ -150,6 +155,11 @@ __all__ = [
     # Rerank Types
     "RerankResult",
     "RerankResponse",
+    # Decision Types
+    "DecisionQuestion",
+    "DecisionRequest",
+    "DecisionAnswer",
+    "DecisionResponse",
     # Tools
     "tool_registry",
     "ToolRegistry",

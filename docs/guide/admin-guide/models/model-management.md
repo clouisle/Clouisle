@@ -28,7 +28,7 @@ The model list shows:
 - **Model name**
 - **Provider** (OpenAI, Anthropic, Azure OpenAI, etc.)
 - **Model ID** (gpt-4-turbo, claude-3-5-sonnet, etc.)
-- **Type** (chat, embedding, rerank, tts, stt, image/video generation, etc.)
+- **Type** (chat, embedding, rerank, decision, tts, stt, image/video generation, etc.)
 - **Status** (Enabled / Disabled)
 - **Default** (whether it is the default model)
 
@@ -319,6 +319,8 @@ Providers are not configured as separate entities. Each model carries its own pr
 5. Save changes
 
 Remote model discovery is supported via `POST /api/v1/admin/models/discover`, which lists models available from a provider configuration before you save them.
+
+For TypeSafe, discovery appends `/v1/models` to the configured API base path. For example, `https://gateway.example.com/api` requests `/api/v1/models`, while a base URL ending in `/v1` requests `/v1/models` without duplicating the version segment.
 
 ### Approve Model API Origins
 

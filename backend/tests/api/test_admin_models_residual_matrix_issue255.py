@@ -520,3 +520,12 @@ def test_validate_provider_model_type_handles_invalid_string_values() -> None:
     with pytest.raises(BusinessError) as exc_info:
         models._validate_provider_model_type("invalid_provider", "embedding")
     assert exc_info.value.msg_key == "model_type_not_supported"
+
+
+def test_validate_provider_model_type_gates_decision_models_to_typesafe() -> None:
+    models._validate_provider_model_type(ModelProvider.TYPESAFE, ModelType.DECISION)
+    models._validate_provider_model_type(ModelProvider.TYPESAFE, ModelType.CHAT)
+
+    with pytest.raises(BusinessError) as exc_info:
+        models._validate_provider_model_type(ModelProvider.OPENAI, ModelType.DECISION)
+    assert exc_info.value.msg_key == "model_type_not_supported"

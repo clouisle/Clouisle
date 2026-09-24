@@ -27,6 +27,7 @@ DEFAULT_MODEL_ENDPOINT_ALLOWLIST = [
     "https://api.lumalabs.ai",
     "https://api.klingai.com",
     "https://api.stability.ai",
+    "https://api.typesafe.ai",
 ]
 
 

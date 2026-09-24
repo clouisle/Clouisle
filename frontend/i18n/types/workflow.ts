@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-11T17:53:25.759Z
+// GENERATED — 2026-09-23T17:20:52.225Z
 // Source: i18n/en/workflow.json
 export type WorkflowMessages = {
   workflow: {
@@ -312,6 +312,7 @@ export type WorkflowMessages = {
       parameter_extractor: string
       iteration: string
       loop: string
+      decision: string
       question_classifier: string
       answer: string
       file_to_url: string
@@ -337,6 +338,7 @@ export type WorkflowMessages = {
       llm: string
       media_generation: string
       condition: string
+      decision: string
       question_classifier: string
       iteration: string
       loop: string
@@ -373,6 +375,15 @@ export type WorkflowMessages = {
       inputVariableEmpty: string
       variableNotAvailable: string
       modelNotSelected: string
+      decisionStateRequired: string
+      decisionInstructionsRequired: string
+      decisionOptionsRequired: string
+      decisionLevelsRequired: string
+      decisionOptionsInvalid: string
+      decisionOptionsLimit: string
+      decisionLevelsInvalid: string
+      decisionLevelsLimit: string
+      decisionBranchHandleInvalid: string
       atLeastOneCategory: string
       unnamedCategories: string
       outputVariableEmpty: string
@@ -706,6 +717,30 @@ export type WorkflowMessages = {
       methodJsonPathDesc: string
       clickToConfigure: string
       moreParams: string
+    }
+    nodesDecision: {
+      label: string
+      modelNotSelected: string
+    }
+    decisionConfig: {
+      model: string
+      selectModel: string
+      state: string
+      stateHint: string
+      type: string
+      typeChoice: string
+      typeScore: string
+      typeNoul: string
+      instructions: string
+      instructionsPlaceholder: string
+      options: string
+      levels: string
+      scoreHint: string
+      addOption: string
+      defaultHandle: string
+      confidenceThreshold: string
+      optionLimit: string
+      noulHint: string
     }
     nodesQuestionClassifier: {
       label: string

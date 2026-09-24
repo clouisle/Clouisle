@@ -97,6 +97,12 @@ import { VariableAggregatorNode } from './_components/nodes/variable-aggregator-
 import { VariableAssignmentNode } from './_components/nodes/variable-assignment-node'
 import { ParameterExtractorNode } from './_components/nodes/parameter-extractor-node'
 import { QuestionClassifierNode } from './_components/nodes/question-classifier-node'
+import { DecisionNode } from './_components/nodes/decision-node'
+import {
+  migrateLegacyDecisionBranchEdges,
+  remapDecisionBranchEdges,
+  type DecisionBranchConfig,
+} from './_components/nodes/decision-branch-handles'
 import { AnswerNode } from './_components/nodes/answer-node'
 import { CommentNode, type CommentColor } from './_components/nodes/comment-node'
 
@@ -119,6 +125,7 @@ type WorkflowNodeData = {
   label: string
   description?: string
   config: Record<string, unknown>
+  decisionConfig?: DecisionBranchConfig
   parentIterationId?: string
   parentLoopId?: string
   // 注释节点字段
@@ -156,6 +163,7 @@ const nodeTypes = {
   variable_assignment: VariableAssignmentNode,
   parameter_extractor: ParameterExtractorNode,
   question_classifier: QuestionClassifierNode,
+  decision: DecisionNode,
   answer: AnswerNode,
   comment: CommentNode,
   // 兼容旧版本节点类型
@@ -367,6 +375,15 @@ export function WorkflowEditorContent({
   const [nodes, setNodes, onNodesChangeBase] = useNodesState<WorkflowNode>([])
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState<WorkflowEdge>([])
 
+  const nodesRef = React.useRef(nodes)
+  const edgesRef = React.useRef(edges)
+  React.useEffect(() => {
+    nodesRef.current = nodes
+  }, [nodes])
+  React.useEffect(() => {
+    edgesRef.current = edges
+  }, [edges])
+
   const toggleValidationChecklist = React.useCallback(() => {
     if (!showValidationChecklist) {
       setConfigDrawerOpen(false)
@@ -489,8 +506,12 @@ export function WorkflowEditorContent({
 
         // Initialize ReactFlow nodes and edges from workflow definition
         if (workflowData.definition && workflowData.definition.nodes && workflowData.definition.nodes.length > 0) {
-          setNodes(workflowData.definition.nodes as unknown as WorkflowNode[])
-          setEdges(workflowData.definition.edges as unknown as WorkflowEdge[])
+          const loadedNodes = workflowData.definition.nodes as unknown as WorkflowNode[]
+          const storedEdges = workflowData.definition.edges as unknown as WorkflowEdge[]
+          const loadedEdges = migrateLegacyDecisionBranchEdges(loadedNodes, storedEdges)
+          setNodes(loadedNodes)
+          setEdges(loadedEdges)
+          if (loadedEdges !== storedEdges) setHasChanges(true)
         } else {
           // New workflow - show start node selector
           setShowStartSelector(true)
@@ -835,6 +856,20 @@ export function WorkflowEditorContent({
 
   // Handle node update from config drawer
   const handleNodeUpdate = React.useCallback((nodeId: string, data: Record<string, unknown>) => {
+    const currentNode = nodesRef.current.find((current) => current.id === nodeId)
+    const currentNodeType = currentNode?.type || currentNode?.data.type
+    const previousConfig = (currentNode?.data as { decisionConfig?: DecisionBranchConfig } | undefined)
+      ?.decisionConfig || {}
+    const nextConfig = data.decisionConfig as DecisionBranchConfig | undefined
+    if (currentNodeType === 'decision' && nextConfig) {
+      const currentEdges = edgesRef.current
+      const nextEdges = remapDecisionBranchEdges(currentEdges, nodeId, previousConfig, nextConfig)
+      if (nextEdges !== currentEdges) {
+        edgesRef.current = nextEdges
+        setEdges(nextEdges)
+      }
+    }
+
     setNodes((nds) =>
       nds.map((n) => {
         if (n.id === nodeId) {
@@ -864,7 +899,7 @@ export function WorkflowEditorContent({
       })
     )
     setHasChanges(true)
-  }, [setNodes])
+  }, [setEdges, setNodes])
 
   // Check if a point is inside a node bounds
   const isInsideNode = React.useCallback((point: { x: number; y: number }, node: WorkflowNode) => {

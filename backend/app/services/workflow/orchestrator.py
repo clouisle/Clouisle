@@ -58,6 +58,7 @@ NODE_TYPE_KEYS = {
     "answer": "node_type_answer",
     "condition": "node_type_condition",
     "question_classifier": "node_type_question_classifier",
+    "decision": "node_type_decision",
     "code": "node_type_code",
     "http_request": "node_type_http_request",
     "tool": "node_type_tool",

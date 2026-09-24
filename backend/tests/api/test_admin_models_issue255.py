@@ -375,6 +375,7 @@ async def test_delete_and_set_default_persist(monkeypatch):
         (ModelType.TEXT_TO_VIDEO, "_test_video_model"),
         (ModelType.TTS, "_test_tts_model"),
         (ModelType.AUDIO_GENERATION, "_test_audio_generation_model"),
+        (ModelType.DECISION, "_test_decision_model"),
     ],
 )
 async def test_config_connection_dispatches_supported_types(

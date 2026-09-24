@@ -1485,6 +1485,9 @@ msgstr "Embedding 模型返回了空结果"
 msgid "model_test_empty_rerank_result"
 msgstr "Rerank 模型返回了空结果"
 
+msgid "model_test_empty_decision_result"
+msgstr "决策模型未返回任何答案"
+
 msgid "node_not_found_in_execution_plan"
 msgstr "执行计划中未找到该节点"
 
@@ -1553,6 +1556,8 @@ msgstr "LLM"
 
 msgid "node_type_parameter_extractor"
 msgstr "参数提取"
+msgid "node_type_decision"
+msgstr "决策"
 
 msgid "node_type_question_classifier"
 msgstr "问题分类"

@@ -1485,6 +1485,9 @@ msgstr "The embedding model returned an empty result"
 msgid "model_test_empty_rerank_result"
 msgstr "The rerank model returned an empty result"
 
+msgid "model_test_empty_decision_result"
+msgstr "The decision model returned no answers"
+
 msgid "node_not_found_in_execution_plan"
 msgstr "Node not found in execution plan"
 
@@ -1553,6 +1556,8 @@ msgstr "LLM"
 
 msgid "node_type_parameter_extractor"
 msgstr "Parameter Extractor"
+msgid "node_type_decision"
+msgstr "Decision"
 
 msgid "node_type_question_classifier"
 msgstr "Question Classifier"

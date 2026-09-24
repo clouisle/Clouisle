@@ -2,9 +2,10 @@ import { describe, expect, mock, test } from 'bun:test'
 import { WorkflowPublishDialog } from './workflow-publish-dialog'
 const jsx = (type: unknown, props: Record<string, unknown> = {}) => ({ type, props })
 let stateValue = 'simple'
+let runEffects = false
 mock.module('react', () => ({
   useState: (initial: unknown) => [typeof initial === 'string' ? stateValue : initial, (v: unknown) => { stateValue = typeof v === 'function' ? (v as (o: unknown) => unknown)(stateValue) : v }],
-  useEffect: () => {},
+ useEffect: (effect: () => void) => { if (runEffects) effect() },
 }))
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
@@ -47,7 +48,67 @@ describe('WorkflowPublishDialog', () => {
     expect((tree as { type: unknown }).type).toBeDefined()
   })
 
+  test('resets the selected presentation to the saved value when the dialog opens', () => {
+    stateValue = 'result_first'
+    runEffects = true
+    const props = {
+      open: true,
+      onOpenChange: mock(() => {}),
+      presentation: 'simple' as const,
+      isPublishing: false,
+      onPublish: mock(async () => {}),
+    }
+    WorkflowPublishDialog(props)
+    runEffects = false
+
+    const tree = WorkflowPublishDialog(props)
+    const findRadioGroup = (value: unknown): { props: Record<string, unknown> } | undefined => {
+      if (!value || typeof value !== 'object' || !('type' in value) || !('props' in value)) return undefined
+      const node = value as { type: unknown; props: Record<string, unknown> & { children?: unknown } }
+      if (typeof node.type === 'function' && node.type.name === 'RadioGroup') return node
+      const children = node.props.children
+      for (const child of Array.isArray(children) ? children : [children]) {
+        const found = findRadioGroup(child)
+        if (found) return found
+      }
+      return undefined
+    }
+
+    expect(findRadioGroup(tree)?.props.value).toBe('simple')
+  })
+
+  test('publishes the presentation selected from the visible options', async () => {
+    stateValue = 'simple'
+    const onPublish = mock(async () => {})
+    const props = {
+      open: true,
+      onOpenChange: mock(() => {}),
+      presentation: 'simple' as const,
+      isPublishing: false,
+      onPublish,
+    }
+    const findNodes = (value: unknown, predicate: (node: { type: unknown; props: Record<string, unknown> }) => boolean): { type: unknown; props: Record<string, unknown> }[] => {
+      if (!value || typeof value !== 'object' || !('type' in value) || !('props' in value)) return []
+      const node = value as { type: unknown; props: Record<string, unknown> & { children?: unknown } }
+      return [
+        ...(predicate(node) ? [node] : []),
+        ...(Array.isArray(node.props.children) ? node.props.children.flatMap(child => findNodes(child, predicate)) : findNodes(node.props.children, predicate)),
+      ]
+    }
+
+    let tree = WorkflowPublishDialog(props)
+    const radioGroup = findNodes(tree, node => typeof node.type === 'function' && node.type.name === 'RadioGroup')[0]
+    expect(radioGroup?.props.value).toBe('simple')
+    ;(radioGroup?.props.onValueChange as (value: string) => void)('result_first')
+
+    tree = WorkflowPublishDialog(props)
+    const buttons = findNodes(tree, node => typeof node.type === 'function' && node.type.name === 'Button')
+    await (buttons[1].props.onClick as () => Promise<void>)()
+    expect(onPublish).toHaveBeenCalledWith('result_first')
+  })
+
   test('invokes onPublish with the selected presentation', async () => {
+    stateValue = 'simple'
     const onPublish = mock(async () => {})
     const tree = WorkflowPublishDialog({
       open: true,

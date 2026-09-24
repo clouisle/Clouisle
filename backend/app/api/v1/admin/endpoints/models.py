@@ -92,6 +92,11 @@ EMBEDDING_SUPPORTED_PROVIDERS: set[ModelProvider] = {
     ModelProvider.CUSTOM,
 }
 
+# Decision models speak the TypeSafe evaluation API
+DECISION_SUPPORTED_PROVIDERS: set[ModelProvider] = {
+    ModelProvider.TYPESAFE,
+}
+
 
 def _validate_provider_model_type(
     provider: ModelProvider | str, model_type: ModelType | str
@@ -112,6 +117,13 @@ def _validate_provider_model_type(
 
     if model_type_enum == ModelType.EMBEDDING:
         if provider_enum not in EMBEDDING_SUPPORTED_PROVIDERS:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="model_type_not_supported",
+            )
+
+    if model_type_enum == ModelType.DECISION:
+        if provider_enum not in DECISION_SUPPORTED_PROVIDERS:
             raise BusinessError(
                 code=ResponseCode.VALIDATION_ERROR,
                 msg_key="model_type_not_supported",
@@ -311,6 +323,10 @@ async def test_model_connection(
             await _test_rerank_model(
                 provider, model.model_id, model.api_key, model.base_url, config
             )
+        elif model_type == ModelType.DECISION:
+            await _test_decision_model(
+                provider, model.model_id, model.api_key, model.base_url, config
+            )
         elif model_type == ModelType.TEXT_TO_IMAGE:
             await _test_image_model(
                 provider,
@@ -450,6 +466,8 @@ async def test_model_config(
             await _test_embedding_model(provider, model_id, api_key, base_url, config)
         elif model_type == ModelType.RERANK:
             await _test_rerank_model(provider, model_id, api_key, base_url, config)
+        elif model_type == ModelType.DECISION:
+            await _test_decision_model(provider, model_id, api_key, base_url, config)
         elif model_type == ModelType.TEXT_TO_IMAGE:
             await _test_image_model(
                 provider,
@@ -594,6 +612,7 @@ _MODEL_DISCOVERY_SUPPORTED_PROVIDERS = frozenset(
         ModelProvider.VOLCENGINE,
         ModelProvider.SILICONFLOW,
         ModelProvider.XAI,
+        ModelProvider.TYPESAFE,
         ModelProvider.OLLAMA,
         ModelProvider.CUSTOM,
     }
@@ -612,6 +631,7 @@ _MODEL_DISCOVERY_PROVIDER_PATHS = {
     ModelProvider.VOLCENGINE: "/api/v3/models",
     ModelProvider.SILICONFLOW: "/v1/models",
     ModelProvider.XAI: "/v1/models",
+    ModelProvider.TYPESAFE: "/v1/models",
     ModelProvider.OLLAMA: "/api/tags",
     ModelProvider.CUSTOM: "/v1/models",
 }
@@ -641,7 +661,9 @@ async def discover_models(
     if _requires_api_key(provider) and not api_key:
         return _model_discovery_failure("model_discovery_api_key_required")
 
-    request_path, headers, params = _build_model_discovery_request(provider, api_key)
+    request_path, headers, params = _build_model_discovery_request(
+        provider, api_key, base_url
+    )
     try:
         async with httpx.AsyncClient(
             base_url=allowed_origin,
@@ -706,8 +728,15 @@ def _normalize_model_discovery_base_url(value: str) -> str | None:
 def _build_model_discovery_request(
     provider: ModelProvider,
     api_key: str,
+    base_url: str,
 ) -> tuple[str, dict[str, str], dict[str, str] | None]:
     request_path = _MODEL_DISCOVERY_PROVIDER_PATHS[provider]
+    if provider == ModelProvider.TYPESAFE:
+        configured_path = urlsplit(base_url).path.rstrip("/")
+        if configured_path.endswith("/v1"):
+            request_path = configured_path + request_path[len("/v1") :]
+        elif configured_path:
+            request_path = configured_path + request_path
     if provider == ModelProvider.OLLAMA:
         return request_path, {}, None
     if provider == ModelProvider.ANTHROPIC:
@@ -1143,6 +1172,46 @@ async def _test_rerank_model(
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="model_test_empty_rerank_result",
+        )
+
+
+async def _test_decision_model(
+    provider: ModelProvider,
+    model_id: str,
+    api_key: str | None,
+    base_url: Optional[str],
+    config: dict,
+) -> None:
+    class TempModel:
+        def __init__(self):
+            self.provider = provider
+            self.model_id = model_id
+            self.api_key = api_key
+            self.base_url = base_url
+            self.default_params = {}
+            self.max_output_tokens = None
+            self.config = config
+
+    from app.llm.adapters.decision import create_decision_adapter
+    from app.llm.types import DecisionQuestion, DecisionRequest
+
+    adapter = create_decision_adapter(TempModel())
+    request = DecisionRequest(
+        state="The user cannot log in after resetting their password.",
+        questions={
+            "needs_support": DecisionQuestion(
+                type="noul",
+                instructions="Does this message report a problem?",
+            )
+        },
+    )
+
+    result = await adapter.decide(request)
+
+    if not result.answers:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="model_test_empty_decision_result",
         )
 
 

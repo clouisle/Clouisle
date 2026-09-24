@@ -286,4 +286,41 @@ describe('useWorkflowRun', () => {
     expect(onError).toHaveBeenCalledWith(failure)
     expect(streamWorkflowRun).toHaveBeenCalledTimes(1)
   })
+
+  test('creates an assistant message when answer tokens arrive without prior node output', async () => {
+    const options = { workflowId: 'workflow-1' }
+    let hook = render(options)
+    await hook.start({ query: 'Question' })
+
+    emit('node_start', { node_id: 'answer', node_type: 'answer' })
+    emit('token', { node_id: 'answer', token: 'Answer' })
+    hook = render(options)
+
+    expect(hook.messages).toEqual([
+      expect.objectContaining({ role: 'user', parts: [{ type: 'text', text: 'Question' }] }),
+      expect.objectContaining({ role: 'assistant', parts: [{ type: 'text', text: 'Answer', state: 'streaming' }] }),
+    ])
+  })
+  test('reports cancellation failures and clears the cancelling state', async () => {
+    const onError = mock(() => {})
+    const options = { workflowId: 'workflow-1', onError }
+    let hook = render(options)
+    await hook.start({})
+
+    const failure = new Error('cancel failed')
+    cancelWorkflowRun.mockRejectedValueOnce(failure)
+    hook = render(options)
+
+    const originalError = console.error
+    console.error = () => {}
+    try {
+      await hook.stop()
+    } finally {
+      console.error = originalError
+    }
+
+    hook = render(options)
+    expect(onError).toHaveBeenCalledWith(failure)
+    expect(hook.isCancelling).toBe(false)
+  })
 })

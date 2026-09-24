@@ -465,6 +465,7 @@ class MetricsCollector:
             "answer",
             "llm",
             "condition",
+            "decision",
             "question_classifier",
             "code",
             "template",

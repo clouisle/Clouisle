@@ -190,6 +190,7 @@ mock.module('./_components/nodes/variable-aggregator-node', () => ({ VariableAgg
 mock.module('./_components/nodes/variable-assignment-node', () => ({ VariableAssignmentNode: element }))
 mock.module('./_components/nodes/parameter-extractor-node', () => ({ ParameterExtractorNode: element }))
 mock.module('./_components/nodes/question-classifier-node', () => ({ QuestionClassifierNode: element }))
+mock.module('./_components/nodes/decision-node', () => ({ DecisionNode: element }))
 mock.module('./_components/nodes/answer-node', () => ({ AnswerNode: element }))
 mock.module('./_components/nodes/comment-node', () => ({ CommentNode: element }))
 

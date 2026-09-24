@@ -98,6 +98,11 @@ async def get_model_types() -> Any:
             "name": "Text to Video",
             "description": "文生视频",
         },
+        {
+            "code": OrmModelType.DECISION.value,
+            "name": "Decision",
+            "description": "决策模型",
+        },
     ]
     return success(data=types)
 

@@ -59,6 +59,95 @@ describe('validateWorkflow', () => {
     expect(validateWorkflow(nodes, edges)).toEqual([])
   })
 
+  test('validates decision choices and score levels against TypeSafe limits', () => {
+    const singleChoice = node('decision', {
+      label: 'Single Choice',
+      decisionConfig: {
+        modelId: 'model-1', stateTemplate: 'state text', instructions: 'Choose',
+        questionType: 'choice', options: ['yes'],
+      },
+    })
+    const duplicateChoice = node('decision', {
+      label: 'Duplicate Choice',
+      decisionConfig: {
+        modelId: 'model-1', stateTemplate: 'state text', instructions: 'Choose',
+        questionType: 'choice', options: ['yes', 'yes'],
+      },
+    })
+    const tooManyChoices = node('decision', {
+      label: 'Too Many Choices',
+      decisionConfig: {
+        modelId: 'model-1', stateTemplate: 'state text', instructions: 'Choose',
+        questionType: 'choice', options: Array.from({ length: 256 }, (_, index) => `option-${index}`),
+      },
+    })
+    const tooManyLevels = node('decision', {
+      label: 'Too Many Levels',
+      decisionConfig: {
+        modelId: 'model-1', stateTemplate: 'state text', instructions: 'Rate',
+        questionType: 'score', options: Array.from({ length: 11 }, (_, index) => `level-${index}`),
+      },
+    })
+
+    expect(messages([singleChoice]).filter((issue) => issue.nodeId === singleChoice.id && issue.message.startsWith('decision'))).toEqual([])
+    expect(messages([duplicateChoice, tooManyChoices, tooManyLevels])
+      .filter((issue) => issue.message.startsWith('decision'))
+      .map(({ nodeId, message, params }) => [nodeId, message, params]))
+      .toEqual([
+        [duplicateChoice.id, 'decisionOptionsInvalid', undefined],
+        [tooManyChoices.id, 'decisionOptionsLimit', { max: 255 }],
+        [tooManyLevels.id, 'decisionLevelsLimit', { max: 10 }],
+      ])
+  })
+
+  test('exposes only the API-backed outputs for Noul decisions', () => {
+    const decision = node('decision', {
+      label: 'Decision',
+      decisionConfig: {
+        modelId: 'model-1', stateTemplate: 'state text', instructions: 'Judge',
+        questionType: 'noul', options: [],
+      },
+    })
+    const downstream = node('variable_assignment', {
+      label: 'Output',
+      variableAssignmentConfig: {
+        assignments: [
+          { targetVariable: 'probability', sourceVariable: `${decision.id}.noul` },
+          { targetVariable: 'confidence', sourceVariable: `${decision.id}.confidence` },
+        ],
+      },
+    })
+
+    expect(messages([decision, downstream], [edge(decision.id, downstream.id)])
+      .filter((issue) => issue.nodeId === downstream.id)
+      .map(({ message, params }) => [message, params]))
+      .toEqual([['assignmentRefNotExist', { ref: 'confidence' }]])
+  })
+
+  test('reports decision connections that reference removed output handles', () => {
+    const decision = node('decision', {
+      label: 'Route',
+      decisionConfig: {
+        modelId: 'model-1',
+        stateTemplate: 'state text',
+        instructions: 'Choose a route',
+        questionType: 'choice',
+        options: ['support', 'billing'],
+      },
+    })
+    const staleEdge: Edge = {
+      id: 'stale-yes-edge',
+      source: decision.id,
+      target: 'support',
+      sourceHandle: 'yes',
+    }
+
+    expect(messages([decision], [staleEdge])
+      .filter((issue) => issue.message === 'decisionBranchHandleInvalid')
+      .map(({ message, params }) => [message, params]))
+      .toEqual([['decisionBranchHandleInvalid', { handle: 'yes' }]])
+  })
+
   test('reports concrete classifier, answer, LLM, media, and condition failures', () => {
     const nodes = [
       node('user_input', { label: 'Input', parameters: [{ name: 'question', type: 'string' }] }),
