@@ -483,6 +483,30 @@ describe('NodeConfigDrawer', () => {
     expect(empty.some(node => node.props.children === 'nodeConfig.noRunHistory')).toBe(true)
   })
 
+  test('persists typed decision settings from the focused editor', async () => {
+    const initial = {
+      modelId: 'model-1',
+      stateTemplate: '{{start.input}}',
+      questionId: 'route',
+      questionType: 'choice',
+      instructions: 'Choose a route',
+      options: ['accept', 'reject'],
+    }
+    const updated = { ...initial, questionType: 'noul', options: [] }
+    const node = baseNode('decision', { decisionConfig: initial })
+    const onUpdate = mock(() => undefined)
+    const overrides = { readOnly: false, onUpdate }
+
+    render(node, overrides)
+    const editor = descendants(render(node, overrides)).find(item => item.type === 'DecisionNodeConfig')!
+    expect(editor.props.config).toEqual(initial)
+    ;(editor.props.onConfigChange as (value: typeof initial) => void)(updated)
+    render(node, overrides)
+
+    await new Promise(resolve => setTimeout(resolve, 320))
+    expect(onUpdate).toHaveBeenCalledWith(node.id, expect.objectContaining({ decisionConfig: updated }))
+  })
+
   test('debounces observable updates and suppresses them in read-only mode', async () => {
     const node = baseNode('llm', { description: 'Saved description' })
     const onUpdate = mock(() => undefined)
