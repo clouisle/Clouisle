@@ -15,6 +15,7 @@ const resetWorkflow = mock(() => {})
 
 let agentMessages: Array<{ id: string; role: 'assistant'; parts: Array<Record<string, unknown>> }> = []
 const workflowState = { nodes: new Map([['workflow-node', { id: 'workflow-node', status: 'running' }]]), progress: { current: 0, total: 1 } }
+let agentOptions: Record<string, unknown> = {}
 
 mock.module('react', () => ({
   useMemo: (callback: () => unknown) => {
@@ -26,20 +27,23 @@ mock.module('react', () => ({
 
 mock.module('next-intl', () => ({ useTranslations: (namespace: string) => (key: string) => `${namespace}.${key}` }))
 mock.module('./use-chat', () => ({
-  useChat: mock((options: Record<string, unknown>) => ({
-    messages: agentMessages,
-    isStreaming: true,
-    isLoading: true,
-    conversationId: options.conversationId || 'conv-1',
-    runId: 'run-1',
-    runStatus: 'running',
-    sendMessage: sendAgentMessage,
-    stop: stopAgent,
-    reset: resetAgent,
-    reconnect: reconnectAgent,
-    regenerate,
-    switchVersion,
-  })),
+  useChat: mock((options: Record<string, unknown>) => {
+    agentOptions = options
+    return {
+      messages: agentMessages,
+      isStreaming: true,
+      isLoading: true,
+      conversationId: options.conversationId || 'conv-1',
+      runId: 'run-1',
+      runStatus: 'running',
+      sendMessage: sendAgentMessage,
+      stop: stopAgent,
+      reset: resetAgent,
+      reconnect: reconnectAgent,
+      regenerate,
+      switchVersion,
+    }
+  }),
 }))
 mock.module('./use-workflow-run', () => ({
   useWorkflowRun: mock(() => ({
@@ -73,6 +77,7 @@ beforeEach(() => {
   memoValues = []
   memoIndex = 0
   agentMessages = []
+  agentOptions = {}
   sendAgentMessage.mockClear()
   stopAgent.mockClear()
   resetAgent.mockClear()
@@ -139,5 +144,14 @@ describe('useRun', () => {
     expect(startWorkflow).toHaveBeenCalledWith({ query: 'run this', locale: 'en' })
     expect(stopWorkflow).toHaveBeenCalledTimes(1)
     expect(resetWorkflow).toHaveBeenCalledTimes(1)
+  })
+  test('forwards agent stream errors as Error instances', () => {
+    const onError = mock(() => {})
+    render({ id: 'agent-1', type: 'agent', onError })
+
+    const streamError = { message: 'stream failed' }
+    ;(agentOptions.onError as (error: { message: string }) => void)(streamError)
+
+    expect(onError).toHaveBeenCalledWith(new Error('stream failed'))
   })
 })
