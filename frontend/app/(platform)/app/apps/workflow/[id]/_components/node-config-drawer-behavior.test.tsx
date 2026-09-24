@@ -6,6 +6,7 @@ const component = (name: string) => (props: Record<string, unknown>) => jsx(name
 
 let state: unknown[] = []
 let stateIndex = 0
+let runEffects = true
 const useState = (initial: unknown) => {
   const index = stateIndex++
   if (!(index in state)) state[index] = typeof initial === 'function' ? initial() : initial
@@ -16,7 +17,7 @@ const useState = (initial: unknown) => {
 
 mock.module('react', () => ({
   useState,
-  useEffect: (effect: () => void | (() => void)) => effect(),
+  useEffect: (effect: () => void | (() => void)) => { if (runEffects) effect() },
   useCallback: (callback: unknown) => callback,
 }))
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
@@ -157,6 +158,7 @@ function render(node: ReturnType<typeof baseNode> | null, overrides: Record<stri
 beforeEach(() => {
   state = []
   stateIndex = 0
+  runEffects = true
   renderNodeOutput.mockClear()
 })
 
@@ -436,6 +438,22 @@ describe('NodeConfigDrawer', () => {
     dialog = descendants(render(node)).find(item => item.type === 'CodeInputDialog')!
     ;(dialog.props.onSave as (value: Record<string, unknown>) => void)({ ...input, name: 'payload' })
     expect(descendants(render(node)).find(item => item.type === 'CodeInputDialog')!.props.existingInputs).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'source', name: 'payload' })]))
+  })
+
+  test('updates the node name and description from the visible fields', () => {
+    const node = baseNode('llm', { label: 'Draft', description: 'Before' })
+    const props = { readOnly: false }
+    const nodes = descendants(render(node, props))
+    const nameInput = nodes.find(item => item.type === 'Input' && item.props.id === 'node-label')!
+    const descriptionInput = nodes.find(item => item.type === 'Textarea' && item.props.id === 'node-description')!
+
+    ;(nameInput.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'Updated' } })
+    ;(descriptionInput.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'After' } })
+    runEffects = false
+
+    const updated = descendants(render(node, props))
+    expect(updated.find(item => item.type === 'Input' && item.props.id === 'node-label')?.props.value).toBe('Updated')
+    expect(updated.find(item => item.type === 'Textarea' && item.props.id === 'node-description')?.props.value).toBe('After')
   })
 
   test('renders comment editing without tabs and updates color and content', () => {
