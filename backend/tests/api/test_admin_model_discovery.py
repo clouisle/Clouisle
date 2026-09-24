@@ -202,6 +202,26 @@ async def test_discover_models_normalizes_safe_remote_metadata(monkeypatch):
             ("gemini-2.5-pro", "Gemini 2.5 Pro"),
         ),
         (
+            ModelProvider.TYPESAFE,
+            "https://typesafe.example.test/api",
+            "typesafe-key",
+            {"data": [{"id": "jev-1.13.0"}]},
+            "https://typesafe.example.test/api/v1/models",
+            {"Authorization": "Bearer typesafe-key"},
+            None,
+            ("jev-1.13.0", "jev-1.13.0"),
+        ),
+        (
+            ModelProvider.TYPESAFE,
+            "https://typesafe.example.test/v1",
+            "typesafe-key",
+            {"data": [{"id": "jev-1.13.0"}]},
+            "https://typesafe.example.test/v1/models",
+            {"Authorization": "Bearer typesafe-key"},
+            None,
+            ("jev-1.13.0", "jev-1.13.0"),
+        ),
+        (
             ModelProvider.OLLAMA,
             "http://ollama.example.test:11434",
             None,
@@ -435,7 +455,9 @@ def test_model_discovery_uses_fixed_provider_paths(
     headers,
     params,
 ):
-    assert models._build_model_discovery_request(provider, api_key) == (
+    assert models._build_model_discovery_request(
+        provider, api_key, "https://api.test"
+    ) == (
         endpoint,
         headers,
         params,

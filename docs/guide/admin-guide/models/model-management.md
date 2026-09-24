@@ -320,6 +320,8 @@ Providers are not configured as separate entities. Each model carries its own pr
 
 Remote model discovery is supported via `POST /api/v1/admin/models/discover`, which lists models available from a provider configuration before you save them.
 
+For TypeSafe, discovery appends `/v1/models` to the configured API base path. For example, `https://gateway.example.com/api` requests `/api/v1/models`, while a base URL ending in `/v1` requests `/v1/models` without duplicating the version segment.
+
 ### Approve Model API Origins
 
 Before saving or testing a model with a new API endpoint:

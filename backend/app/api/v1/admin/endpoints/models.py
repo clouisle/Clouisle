@@ -661,7 +661,9 @@ async def discover_models(
     if _requires_api_key(provider) and not api_key:
         return _model_discovery_failure("model_discovery_api_key_required")
 
-    request_path, headers, params = _build_model_discovery_request(provider, api_key)
+    request_path, headers, params = _build_model_discovery_request(
+        provider, api_key, base_url
+    )
     try:
         async with httpx.AsyncClient(
             base_url=allowed_origin,
@@ -726,8 +728,15 @@ def _normalize_model_discovery_base_url(value: str) -> str | None:
 def _build_model_discovery_request(
     provider: ModelProvider,
     api_key: str,
+    base_url: str,
 ) -> tuple[str, dict[str, str], dict[str, str] | None]:
     request_path = _MODEL_DISCOVERY_PROVIDER_PATHS[provider]
+    if provider == ModelProvider.TYPESAFE:
+        configured_path = urlsplit(base_url).path.rstrip("/")
+        if configured_path.endswith("/v1"):
+            request_path = configured_path + request_path[len("/v1") :]
+        elif configured_path:
+            request_path = configured_path + request_path
     if provider == ModelProvider.OLLAMA:
         return request_path, {}, None
     if provider == ModelProvider.ANTHROPIC:
