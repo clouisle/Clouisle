@@ -82,6 +82,7 @@
       "teamRanking": "Team Token Ranking",
       "teamRankingDesc": "Top teams by token usage",
       "modelDetails": "Model Details",
+      "deletedModel": "Deleted model",
       "topAgentsByTokens": "Top Agents by Tokens"
     },
     "analytics": {

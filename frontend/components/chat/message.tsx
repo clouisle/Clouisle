@@ -562,6 +562,8 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     )
     const textParts = React.useMemo(() => otherParts.filter(isTextPart), [otherParts])
     const hasReasoning = reasoningParts.length > 0
+    const hasTasks = taskParts.length > 0
+    const hasUserInstructions = otherParts.some(isUserInstructionPart)
 
 
     // Get text content for copying
@@ -859,6 +861,29 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         pairedToolResultIndexes: pairedResultIndexes,
       }
     }, [otherPartEntries])
+    const toolActivityCount = React.useMemo(() => {
+      let count = 0
+      for (const part of toolCallParts) {
+        if (!isAskUserInteractionPart(part)) count += 1
+      }
+      for (const { part, index } of otherPartEntries) {
+        if (
+          (isToolResultPart(part) || isMcpToolResultPart(part))
+          && !isAskUserInteractionPart(part)
+          && !pairedToolResultIndexes.has(index)
+        ) {
+          count += 1
+        }
+      }
+      return count
+    }, [otherPartEntries, pairedToolResultIndexes, toolCallParts])
+    const hasToolActivity = toolActivityCount > 0 && !hideToolCalls
+    const hasChainOfThought = (
+      hasReasoning
+      || hasTasks
+      || hasUserInstructions
+      || hasToolActivity
+    ) && !hideReasoning
 
     const renderDefaultPart = React.useCallback((part: MessagePart, index: number) => {
       if (isTextPart(part)) {
@@ -890,7 +915,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       if (isToolCallPart(part) || isMcpToolCallPart(part)) {
         const result = toolResultsByCallIndex.get(index)
         if (hideToolCalls) return null
-        if (hasReasoning && !hideReasoning) return null
+        if (hasChainOfThought) return null
         const toolName = isToolCallPart(part)
           ? (part.toolDisplayName || part.toolName)
           : `${part.serverName}/${part.toolName}`
@@ -919,7 +944,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       }
 
       if (isToolResultPart(part) || isMcpToolResultPart(part)) {
-        if (hideToolCalls || pairedToolResultIndexes.has(index)) return null
+        if (hideToolCalls || pairedToolResultIndexes.has(index) || hasChainOfThought) return null
         const toolName = isToolResultPart(part)
           ? (part.toolDisplayName || part.toolName)
           : `${part.serverName}/${part.toolName}`
@@ -1027,8 +1052,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       activeSpeechSentence,
       citedSources,
       hasIterationCapMarker,
-      hasReasoning,
-      hideReasoning,
+      hasChainOfThought,
       hideToolCalls,
       isStreaming,
       isUser,
@@ -1091,9 +1115,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       && !hasVisibleTimelineContent
       && !isLoadingMessage
     )
-    const hasTasks = taskParts.length > 0
-    const hasUserInstructions = otherParts.some(isUserInstructionPart)
-    const hasChainOfThought = (hasReasoning || hasTasks || hasUserInstructions) && !hideReasoning
     const activeToolActions = React.useMemo(() => {
       return getActiveToolActions(message.parts || [])
     }, [message.parts])
@@ -1150,17 +1171,20 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         if (activeToolActions.length > 1) {
           return tReasoning('actionCallingToolsParallel', { count: activeToolActions.length })
         }
-        return tReasoning('thinkingDefault')
+        return hasReasoning || !hasToolActivity ? tReasoning('thinkingDefault') : tTask('executingTools')
       }
       if (isStreaming && !hasTextContent) {
-        return tReasoning('thinkingDefault')
+        return hasReasoning || !hasToolActivity ? tReasoning('thinkingDefault') : tTask('executingTools')
       }
       if (totalReasoningDuration !== null) {
         const seconds = Math.max(1, Math.ceil(totalReasoningDuration / 1000))
         return tReasoning('thoughtFor', { seconds })
       }
+      if (!hasReasoning && hasToolActivity) {
+        return tTask('toolsExecuted', { count: toolActivityCount })
+      }
       return tReasoning('thought')
-    }, [activeToolActions, hasActiveThoughtActivity, hasTextContent, isStreaming, totalReasoningDuration, tReasoning])
+    }, [activeToolActions, hasActiveThoughtActivity, hasReasoning, hasTextContent, hasToolActivity, isStreaming, tReasoning, tTask, toolActivityCount, totalReasoningDuration])
     // Convert task state to step status
     const getStepStatus = React.useCallback((state: TaskPart['state']) => {
       switch (state) {
@@ -1347,9 +1371,6 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           )
           return
         }
-
-        if (!hasReasoning) return
-
         if (isToolCallPart(part) || isMcpToolCallPart(part)) {
           if (isAskUserInteractionPart(part)) return
           const toolName = isToolCallPart(part)
@@ -1388,7 +1409,30 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           )
           return
         }
+        if (isToolResultPart(part) || isMcpToolResultPart(part)) {
+          if (hideToolCalls || pairedToolResultIndexes.has(index)) return
+          const toolName = isToolResultPart(part)
+            ? (part.toolDisplayName || part.toolName)
+            : `${part.serverName}/${part.toolName}`
+          const state = part.isError ? 'output-error' : 'output-available'
 
+          steps.push(
+            <ChainOfThoughtStep
+              key={`tool-result-${part.toolCallId}-${index}`}
+              icon={Wrench}
+              label={part.isError ? t('toolFailed', { name: toolName }) : t('toolCompleted', { name: toolName })}
+              status={part.isError ? 'error' : 'complete'}
+            >
+              <Tool defaultOpen={false} className="mt-2">
+                <ToolHeader title={toolName} type="tool-call" state={state} />
+                <AIToolContent>
+                  {renderToolResultContent(part.output, part.isError)}
+                </AIToolContent>
+              </Tool>
+            </ChainOfThoughtStep>
+          )
+          return
+        }
         if (isReasoningPart(part)) {
           steps.push(
             <ChainOfThoughtStep
@@ -1416,7 +1460,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       getTaskTitle,
       getToolCallLabel,
       getToolCallStepStatus,
-      hasReasoning,
+      pairedToolResultIndexes,
       hideToolCalls,
       otherPartEntries,
       renderToolResultContent,

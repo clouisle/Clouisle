@@ -82,6 +82,7 @@
       "teamRanking": "团队 Token 排行",
       "teamRankingDesc": "各团队 Token 使用排行",
       "modelDetails": "模型详情",
+      "deletedModel": "已删除模型",
       "topAgentsByTokens": "Token 消耗最多的 Agent"
     },
     "analytics": {
