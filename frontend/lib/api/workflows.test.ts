@@ -156,6 +156,39 @@ describe('workflowsApi request construction', () => {
     expect(deleteSpy).toHaveBeenCalledWith('/workflows/runs/run-1')
   })
 
+  it('constructs current-user run and pause-request routes', async () => {
+    const pauseRequest = { id: 'pause-1', node_id: 'approval' }
+    getSpy = spyOn(api, 'get').mockResolvedValue({ pause_request: pauseRequest } as never)
+    postSpy = spyOn(api, 'post').mockResolvedValue({ pause_request_id: 'pause-1', status: 'resumed' } as never)
+
+    await workflowsApi.getMyWorkflowRuns('workflow-1', {
+      page: 2,
+      pageSize: 5,
+      status: 'waiting',
+      search: 'approval',
+      createdAfter: '2026-01-01',
+      createdBefore: '2026-02-01',
+    })
+    await workflowsApi.getMyWorkflowRun('workflow-1', 'run-1')
+    await workflowsApi.getMyRunNodeExecutions('workflow-1', 'run-1')
+    const pending = await workflowsApi.getPendingPauseRequest('workflow-1', 'run-1')
+    const submitted = await workflowsApi.submitPauseRequest('workflow-1', 'run-1', 'pause-1', { approved: true }, 'looks good')
+
+    expect(getSpy).toHaveBeenNthCalledWith(
+      1,
+      '/workflows/workflow-1/runs/mine?page=2&page_size=5&status=waiting&search=approval&created_after=2026-01-01&created_before=2026-02-01',
+    )
+    expect(getSpy).toHaveBeenNthCalledWith(2, '/workflows/workflow-1/runs/mine/run-1')
+    expect(getSpy).toHaveBeenNthCalledWith(3, '/workflows/workflow-1/runs/mine/run-1/nodes')
+    expect(getSpy).toHaveBeenNthCalledWith(4, '/workflows/workflow-1/runs/run-1/pause-request')
+    expect(postSpy).toHaveBeenCalledWith(
+      '/workflows/workflow-1/runs/run-1/pause-requests/pause-1/submit',
+      { values: { approved: true }, comment: 'looks good' },
+    )
+    expect(pending).toEqual(pauseRequest)
+    expect(submitted).toEqual({ pause_request_id: 'pause-1', status: 'resumed' })
+  })
+
   it('constructs version routes with default and supplied payloads', async () => {
     getSpy = spyOn(api, 'get').mockResolvedValue(undefined as never)
     postSpy = spyOn(api, 'post').mockResolvedValue(undefined as never)
