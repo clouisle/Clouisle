@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'bun:test'
 
-const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props })
+const jsx = (type: unknown, props: Record<string, unknown>, key?: unknown) => ({ type, props: { ...props, ...(key === undefined ? {} : { key }) } })
 const Component = function Component() {}
 const selectComponents = Object.fromEntries(
   ['Select', 'SelectContent', 'SelectItem', 'SelectTrigger', 'SelectValue'].map((name) => [
@@ -252,4 +252,26 @@ test('updates state, instructions, fallback, threshold, and model search control
   const search = findAll(tree, (node) => node.type === Component && node.props.placeholder === 'configCommon.searchModel')[0]
   ;(search.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'typed' } })
   expect(stateUpdates).toContain('typed')
+})
+
+
+test('preserves option row identity when an option label changes', () => {
+  hookIndex = 0
+  let updatedOptions: string[] = []
+  const render = (options: string[]) => DecisionNodeConfig({
+    config: { stateTemplate: '', questionId: 'decision', questionType: 'choice', instructions: '', options },
+    variables: [],
+    onConfigChange: (config) => { updatedOptions = config.options },
+  }) as TreeNode
+
+  const before = render(['yes', 'no'])
+  const beforeRows = findAll(before, (node) => node.type === 'div' && node.props.className === 'flex gap-2')
+  const yesInput = findAll(before, (node) => node.type === Component && node.props.value === 'yes')[0]
+  ;(yesInput.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'approved' } })
+  expect(updatedOptions).toEqual(['approved', 'no'])
+
+  hookIndex = 0
+  const after = render(updatedOptions)
+  const afterRows = findAll(after, (node) => node.type === 'div' && node.props.className === 'flex gap-2')
+  expect(afterRows.map((row) => row.props.key)).toEqual(beforeRows.map((row) => row.props.key))
 })

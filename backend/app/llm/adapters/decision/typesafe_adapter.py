@@ -34,8 +34,8 @@ SYSTEMONE_PATH = "/systemone"
 class TypeSafeDecisionAdapter(BaseDecisionAdapter):
     """调用 TypeSafe 决策模型端点
 
-    ``base_url`` 应为包含版本段的 API 根地址（默认 ``https://api.typesafe.ai/v1``），
-    适配器在其后拼接 ``/systemone``。
+    ``base_url`` 可为包含或不包含版本段的 API 根地址（默认 ``https://api.typesafe.ai/v1``）。
+    适配器会确保路径包含 ``/v1``，再拼接 ``/systemone``。
     """
 
     def _provider_value(self) -> str:
@@ -52,7 +52,10 @@ class TypeSafeDecisionAdapter(BaseDecisionAdapter):
         )
         if not base_url:
             raise ValueError("Decision model requires base_url to be configured")
-        return str(base_url).rstrip("/") + SYSTEMONE_PATH
+        root = str(base_url).rstrip("/")
+        if not root.endswith("/v1"):
+            root += "/v1"
+        return root + SYSTEMONE_PATH
 
     def _build_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}

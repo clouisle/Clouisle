@@ -167,7 +167,7 @@ export function DecisionNodeConfig({ config, variables, onConfigChange }: Props)
       {(safe.questionType === 'choice' || safe.questionType === 'score') && <div className="space-y-2">
         <Label>{t(safe.questionType === 'score' ? 'decisionConfig.levels' : 'decisionConfig.options')}</Label>
         {safe.questionType === 'score' && <p className="text-xs text-muted-foreground">{t('decisionConfig.scoreHint')}</p>}
-        {safe.options.map((option, index) => <div className="flex gap-2" key={`${index}-${option}`}><Input value={option} onChange={(event) => update({ options: safe.options.map((item, itemIndex) => itemIndex === index ? event.target.value : item) })} /><Button type="button" variant="ghost" size="icon" onClick={() => update({ options: safe.options.filter((_, itemIndex) => itemIndex !== index) })}><Trash2 className="h-4 w-4" /></Button></div>)}
+        {safe.options.map((option, index) => <div className="flex gap-2" key={index}><Input value={option} onChange={(event) => update({ options: safe.options.map((item, itemIndex) => itemIndex === index ? event.target.value : item) })} /><Button type="button" variant="ghost" size="icon" onClick={() => update({ options: safe.options.filter((_, itemIndex) => itemIndex !== index) })}><Trash2 className="h-4 w-4" /></Button></div>)}
         <Button type="button" variant="outline" size="sm" disabled={atOptionLimit} onClick={() => update({ options: [...safe.options, `option_${safe.options.length + 1}`] })}><Plus className="mr-1 h-4 w-4" />{t('decisionConfig.addOption')}</Button>
         {atOptionLimit && <p className="text-xs text-muted-foreground">{t('decisionConfig.optionLimit', { max: maxOptions })}</p>}
       </div>}

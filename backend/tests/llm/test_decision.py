@@ -106,6 +106,11 @@ class TestTypeSafeDecisionAdapter:
         )
         assert configured._get_endpoint() == "https://proxy.example/v1/systemone"
 
+        sdk_style = TypeSafeDecisionAdapter(
+            build_config(base_url="https://openrouter.ai/api")
+        )
+        assert sdk_style._get_endpoint() == "https://openrouter.ai/api/v1/systemone"
+
         defaulted = TypeSafeDecisionAdapter(build_config(base_url=None))
         assert defaulted._get_endpoint() == SYSTEMONE_URL
 
