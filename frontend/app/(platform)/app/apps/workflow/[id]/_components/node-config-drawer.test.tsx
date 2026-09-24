@@ -65,6 +65,7 @@ for (const [path, exports] of [
   ['./nodes/answer-node', { defaultAnswerNodeConfig: defaults.answer }],
   ['./nodes/tool-node', { defaultToolNodeConfig: defaults.tool }],
   ['./nodes/media-generation-node', { defaultMediaGenerationConfig: defaults.media }],
+  ['./nodes/decision-node', { defaultDecisionNodeConfig: { stateTemplate: '', questionId: 'decision', questionType: 'choice', instructions: '', options: ['yes', 'no'], defaultHandle: 'default' } }],
 ] as const) mock.module(path, () => exports)
 
 mock.module('./nodes/comment-node', () => ({
@@ -73,6 +74,7 @@ mock.module('./nodes/comment-node', () => ({
     blue: { bg: 'blue', borderSelected: 'blue-selected' },
   },
 }))
+mock.module('./node-config/configs/decision-node-config', () => ({ DecisionNodeConfig: component('DecisionNodeConfig') }))
 
 const configNames = [
   'StartNodeConfig', 'LLMNodeConfig', 'MediaGenerationNodeConfig', 'CodeNodeConfig',
