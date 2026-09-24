@@ -286,4 +286,26 @@ describe('useWorkflowRun', () => {
     expect(onError).toHaveBeenCalledWith(failure)
     expect(streamWorkflowRun).toHaveBeenCalledTimes(1)
   })
+  test('reports cancellation failures and clears the cancelling state', async () => {
+    const onError = mock(() => {})
+    const options = { workflowId: 'workflow-1', onError }
+    let hook = render(options)
+    await hook.start({})
+
+    const failure = new Error('cancel failed')
+    cancelWorkflowRun.mockRejectedValueOnce(failure)
+    hook = render(options)
+
+    const originalError = console.error
+    console.error = () => {}
+    try {
+      await hook.stop()
+    } finally {
+      console.error = originalError
+    }
+
+    hook = render(options)
+    expect(onError).toHaveBeenCalledWith(failure)
+    expect(hook.isCancelling).toBe(false)
+  })
 })
