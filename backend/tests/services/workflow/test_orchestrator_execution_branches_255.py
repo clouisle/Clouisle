@@ -11,6 +11,7 @@ from app.services.workflow.errors import (
 )
 from app.services.workflow.executor import ExecutionResult
 from app.services.workflow.orchestrator import WorkflowOrchestrator
+from app.services.workflow.plan import ExecutionPlan
 
 
 def _plan(*stages: list[str]) -> MagicMock:
@@ -109,4 +110,71 @@ async def test_execute_prunes_untaken_branch_and_collects_answer() -> None:
         reason="branch_not_taken",
         node_type="code",
         node_label="Skipped",
+    )
+
+
+@pytest.mark.asyncio
+async def test_execute_routes_legacy_yes_no_edges_to_renamed_options() -> None:
+    workflow_def = {
+        "nodes": [
+            {"id": "start", "data": {"type": "user_input"}},
+            {
+                "id": "decision",
+                "data": {
+                    "type": "decision",
+                    "decisionConfig": {
+                        "questionType": "choice",
+                        "options": ["男生", "女生"],
+                    },
+                },
+            },
+            {
+                "id": "male",
+                "data": {"type": "answer", "label": "Male branch"},
+            },
+            {
+                "id": "female",
+                "data": {"type": "answer", "label": "Female branch"},
+            },
+        ],
+        "edges": [
+            {"source": "start", "target": "decision"},
+            {"source": "decision", "target": "male", "sourceHandle": "yes"},
+            {"source": "decision", "target": "female", "sourceHandle": "no"},
+        ],
+    }
+    plan = ExecutionPlan.from_workflow(workflow_def)
+    orchestrator = WorkflowOrchestrator(enable_cache=False, enable_metrics=False)
+    orchestrator._execute_node = AsyncMock(
+        side_effect=[
+            ExecutionResult(outputs={}),
+            ExecutionResult(outputs={}, next_handles=["男生"]),
+            ExecutionResult(outputs={"selected": "male"}),
+        ]
+    )
+    context = MagicMock(get_status=AsyncMock(return_value="running"))
+    stream = MagicMock(publish_node_skip=AsyncMock())
+
+    with patch("app.services.workflow.orchestrator.NodeExecution") as node_cls:
+        node_cls.filter.return_value.first = AsyncMock(return_value=None)
+        node_cls.filter.return_value.all = AsyncMock(return_value=[])
+        node_cls.create = AsyncMock()
+        outputs, node_count = await orchestrator._execute(
+            plan, context, MagicMock(), stream, start_time=time.time()
+        )
+
+    assert outputs == {"selected": "male"}
+    assert node_count == 3
+    assert [
+        item.kwargs["node_id"] for item in orchestrator._execute_node.await_args_list
+    ] == [
+        "start",
+        "decision",
+        "male",
+    ]
+    assert stream.publish_node_skip.await_args == call(
+        node_id="female",
+        reason="branch_not_taken",
+        node_type="answer",
+        node_label="Female branch",
     )

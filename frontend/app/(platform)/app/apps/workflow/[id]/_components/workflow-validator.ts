@@ -1,4 +1,5 @@
 import type { Node, Edge } from '@xyflow/react'
+import { getDecisionOutputHandles } from './nodes/decision-branch-handles'
 import { isValidVariableName } from './node-config/utils'
 
 // 校验问题类型
@@ -51,6 +52,15 @@ interface WorkflowNodeData {
     modelId?: string
     modelName?: string
     categories?: Array<{ id: string; name: string }>
+  }
+
+  decisionConfig?: {
+    modelId?: string
+    stateTemplate?: string
+    questionType?: 'choice' | 'score' | 'noul'
+    instructions?: string
+    options?: string[]
+    defaultHandle?: string
   }
   // 输出节点
   answerConfig?: {
@@ -174,6 +184,7 @@ const nodeTypeLabelKeys: Record<string, string> = {
   variable_aggregator: 'nodeLabels.variable_aggregator',
   variable_assignment: 'nodeLabels.variable_assignment',
   parameter_extractor: 'nodeLabels.parameter_extractor',
+  decision: 'nodeLabels.decision',
   question_classifier: 'nodeLabels.question_classifier',
   answer: 'nodeLabels.answer',
   pause: 'nodeLabels.pause',
@@ -189,6 +200,7 @@ export const getNodeTypeColor = (nodeType: string): string => {
     llm: 'bg-blue-500',
     media_generation: 'bg-fuchsia-500',
     condition: 'bg-blue-500',
+    decision: 'bg-violet-500',
     question_classifier: 'bg-violet-500',
     answer: 'bg-emerald-500',
     tool: 'bg-orange-500',
@@ -370,6 +382,19 @@ function getNodeOutputVariables(node: WorkflowNode): string[] {
       break
     }
     
+    case 'decision': {
+      const questionType = node.data.decisionConfig?.questionType || 'choice'
+      variables.push(`${node.id}.answer`, `${node.id}.selected_handle`, `${node.id}.usage`)
+      if (questionType === 'choice') {
+        variables.push(`${node.id}.choice`, `${node.id}.confidence`, `${node.id}.probabilities`)
+      } else if (questionType === 'score') {
+        variables.push(`${node.id}.score`, `${node.id}.confidence`, `${node.id}.probabilities`)
+      } else if (questionType === 'noul') {
+        variables.push(`${node.id}.noul`)
+      }
+      break
+    }
+
     case 'question_classifier': {
       // 问题分类器输出匹配的分类 ID
       variables.push(`${node.id}.matched_category`)
@@ -539,8 +564,43 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
     
     // 获取当前节点可用的上游变量
     const availableVars = getAvailableVariables(node.id, workflowNodes, edges)
-
     switch (nodeType) {
+      // ========== 决策节点 ==========
+      case 'decision': {
+        const config = node.data.decisionConfig
+        if (!config?.modelId) issues.push(createIssue(node, 'error', 'modelNotSelected', 'modelId'))
+        if (!config?.stateTemplate) issues.push(createIssue(node, 'error', 'decisionStateRequired', 'stateTemplate'))
+        if (!config?.instructions) issues.push(createIssue(node, 'error', 'decisionInstructionsRequired', 'instructions'))
+        const questionType = config?.questionType || 'choice'
+        const options = config?.options || []
+        const minOptions = questionType === 'score' ? 2 : 1
+        if ((questionType === 'choice' || questionType === 'score') && options.length < minOptions) {
+          issues.push(createIssue(node, 'error', questionType === 'score' ? 'decisionLevelsRequired' : 'decisionOptionsRequired', 'options'))
+        } else if (questionType === 'choice' || questionType === 'score') {
+          const maxOptions = questionType === 'choice' ? 255 : 10
+          if (options.length > maxOptions) {
+            issues.push(createIssue(node, 'error', questionType === 'score' ? 'decisionLevelsLimit' : 'decisionOptionsLimit', 'options', { max: maxOptions }))
+          }
+          if (options.some((option) => !option.trim()) || new Set(options).size !== options.length) {
+            issues.push(createIssue(node, 'error', questionType === 'score' ? 'decisionLevelsInvalid' : 'decisionOptionsInvalid', 'options'))
+          }
+        }
+        const validBranchHandles = new Set(getDecisionOutputHandles({
+          questionType: config?.questionType,
+          options: config?.options,
+          defaultHandle: config?.defaultHandle,
+        }))
+        const staleHandles = new Set(
+          edges
+            .filter((edge) => edge.source === node.id)
+            .map((edge) => edge.sourceHandle || 'output')
+            .filter((handle) => !validBranchHandles.has(handle))
+        )
+        for (const handle of staleHandles) {
+          issues.push(createIssue(node, 'error', 'decisionBranchHandleInvalid', 'decisionConfig', { handle }))
+        }
+        break
+      }
       // ========== 问题分类器 ==========
       case 'question_classifier': {
         const config = node.data.questionClassifierConfig

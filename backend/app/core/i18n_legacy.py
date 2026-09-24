@@ -1724,6 +1724,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "node_type_answer": {"en": "Answer", "zh": "回复"},
     "node_type_code": {"en": "Code Execution", "zh": "代码执行"},
     "node_type_condition": {"en": "Condition", "zh": "条件分支"},
+    "node_type_decision": {"en": "Decision", "zh": "决策"},
     "node_type_end": {"en": "End", "zh": "结束"},
     "node_type_http_request": {"en": "HTTP Request", "zh": "HTTP 请求"},
     "node_type_iteration": {"en": "Iteration", "zh": "迭代"},

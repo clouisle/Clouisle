@@ -320,6 +320,23 @@ class ConditionNodeConfig(BaseModel):
     false_output: str = Field(default="false")
 
 
+class DecisionNodeConfig(BaseModel):
+    """Configuration for a typed decision-model branch node."""
+
+    model_id: str | None = Field(default=None, alias="modelId")
+    state_template: str = Field(default="", alias="stateTemplate")
+    question_id: str = Field(default="decision", alias="questionId")
+    question_type: str = Field(default="choice", alias="questionType")
+    instructions: str = ""
+    options: list[str] = Field(default_factory=list)
+    default_handle: str | None = Field(default=None, alias="defaultHandle")
+    confidence_threshold: float | None = Field(
+        default=None, ge=0, le=1, alias="confidenceThreshold"
+    )
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class LoopNodeConfig(BaseModel):
     """Configuration for loop node"""
 

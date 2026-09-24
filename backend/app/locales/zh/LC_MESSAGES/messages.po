@@ -1556,6 +1556,8 @@ msgstr "LLM"
 
 msgid "node_type_parameter_extractor"
 msgstr "参数提取"
+msgid "node_type_decision"
+msgstr "决策"
 
 msgid "node_type_question_classifier"
 msgstr "问题分类"

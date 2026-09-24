@@ -67,6 +67,7 @@ DEFAULT_POLICIES = {
     "http_request": RetryPolicy(max_retries=3, base_delay=1.0),
     "tool": RetryPolicy(max_retries=2, base_delay=1.0),
     "agent": RetryPolicy(max_retries=2, base_delay=2.0),
+    "decision": RetryPolicy(max_retries=2, base_delay=1.0),
     "knowledge_retrieval": RetryPolicy(max_retries=2, base_delay=1.0),
     "sub_workflow": RetryPolicy(max_retries=1, base_delay=5.0),
     # Code/template nodes don't retry by default (deterministic)

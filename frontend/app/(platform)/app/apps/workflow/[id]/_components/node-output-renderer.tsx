@@ -205,9 +205,9 @@ export function renderNodeOutput(
   }
 
   // Condition / Question Classifier 节点 - 显示匹配的分支
-  if (nodeType === 'condition' || nodeType === 'question_classifier') {
-    const matchedBranch = outputs.matched_branch || outputs.matched_category || outputs.branch
-    const matchedHandle = outputs.matched_handle || outputs.handle
+  if (nodeType === 'condition' || nodeType === 'question_classifier' || nodeType === 'decision') {
+    const matchedBranch = outputs.matched_branch || outputs.matched_category || outputs.selected_handle || outputs.answer || outputs.branch
+    const matchedHandle = outputs.matched_handle || outputs.selected_handle || outputs.handle
     return (
       <div className="p-2 bg-background rounded space-y-1">
         {!!matchedBranch && (

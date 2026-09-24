@@ -1556,6 +1556,8 @@ msgstr "LLM"
 
 msgid "node_type_parameter_extractor"
 msgstr "Parameter Extractor"
+msgid "node_type_decision"
+msgstr "Decision"
 
 msgid "node_type_question_classifier"
 msgstr "Question Classifier"

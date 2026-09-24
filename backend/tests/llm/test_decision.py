@@ -56,6 +56,24 @@ def build_request(**overrides: object) -> DecisionRequest:
     return DecisionRequest(**values)
 
 
+@pytest.mark.parametrize(
+    "question",
+    [
+        {"type": "choice", "criteria": ["yes", "no"]},
+        {"type": "choice", "criteria": {"": None}},
+        {
+            "type": "choice",
+            "criteria": {f"option-{index}": None for index in range(256)},
+        },
+        {"type": "score", "criteria": ["only level"]},
+        {"type": "noul", "criteria": ["yes", "no"]},
+    ],
+)
+def test_decision_question_rejects_non_typesafe_criteria(question):
+    with pytest.raises(ValueError):
+        DecisionQuestion(instructions="Evaluate this state", **question)
+
+
 def http_status_error(status: int, body: object) -> httpx.HTTPStatusError:
     request = httpx.Request("POST", SYSTEMONE_URL)
     response = httpx.Response(status, json=body, request=request)
@@ -113,6 +131,37 @@ class TestTypeSafeDecisionAdapter:
         assert adapter._build_headers()["Authorization"] == "Bearer key-1"
         payload = adapter._build_payload(build_request(model="jev-1.13.0"))
         assert payload["model"] == "jev-1.13.0"
+
+    def test_payload_preserves_choice_options_and_ordered_score_levels(self):
+        adapter = TypeSafeDecisionAdapter(build_config())
+        request = DecisionRequest(
+            state="Support ticket",
+            questions={
+                "route": DecisionQuestion(
+                    type="choice",
+                    instructions="Which team should handle it?",
+                    criteria={"support": None, "billing": None},
+                ),
+                "priority": DecisionQuestion(
+                    type="score",
+                    instructions="How urgent is it?",
+                    criteria=["Not urgent", "Urgent"],
+                ),
+            },
+        )
+
+        assert adapter._build_payload(request)["questions"] == {
+            "route": {
+                "type": "choice",
+                "instructions": "Which team should handle it?",
+                "criteria": {"support": None, "billing": None},
+            },
+            "priority": {
+                "type": "score",
+                "instructions": "How urgent is it?",
+                "criteria": ["Not urgent", "Urgent"],
+            },
+        }
 
     def test_provider_value_handles_plain_strings_and_missing_provider(self):
         assert (

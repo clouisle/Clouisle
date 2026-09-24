@@ -17,6 +17,7 @@ from . import tool
 from . import subworkflow
 from . import knowledge
 from . import media_generation
+from . import decision
 from . import pause
 
 __all__ = [
@@ -32,5 +33,6 @@ __all__ = [
     "subworkflow",
     "knowledge",
     "media_generation",
+    "decision",
     "pause",
 ]

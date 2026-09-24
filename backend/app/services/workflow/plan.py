@@ -19,6 +19,39 @@ logger = logging.getLogger(__name__)
 NON_EXECUTABLE_NODE_TYPES = {"comment"}
 
 
+def _decision_output_handles(node_data: dict) -> tuple[list[str], dict[str, str]]:
+    data = node_data.get("data") or {}
+    config = data.get("decisionConfig") or data.get("config") or {}
+    question_type = config.get("questionType", "choice")
+    if question_type in ("choice", "score"):
+        options = config.get("options", ["yes", "no"])
+        branch_handles = (
+            [option for option in options if isinstance(option, str)]
+            if isinstance(options, list)
+            else []
+        )
+    else:
+        branch_handles = ["yes", "no"]
+    fallback = config.get("defaultHandle")
+    if not isinstance(fallback, str) or not fallback:
+        fallback = "default"
+
+    legacy_handle_map: dict[str, str] = {}
+    if (
+        question_type in ("choice", "score")
+        and len(branch_handles) == 2
+        and len(set(branch_handles)) == 2
+        and all(branch_handles)
+        and not {"yes", "no"}.intersection(branch_handles)
+        and fallback not in {"yes", "no"}
+    ):
+        # Older two-option edges used yes/no after option labels were renamed.
+        legacy_handle_map = {"yes": branch_handles[0], "no": branch_handles[1]}
+
+    available_handles = list(dict.fromkeys([*branch_handles, fallback]))
+    return available_handles, legacy_handle_map
+
+
 @dataclass
 class NodeDependency:
     """
@@ -151,6 +184,22 @@ class ExecutionPlan:
 
             source_node = self.nodes[source]
             target_node = self.nodes[target]
+
+            if source_node.node_type == "decision":
+                available_handles, legacy_handle_map = _decision_output_handles(
+                    source_node.node_data
+                )
+                if isinstance(source_handle, str):
+                    source_handle = legacy_handle_map.get(source_handle, source_handle)
+                if source_handle not in available_handles:
+                    raise WorkflowValidationError(
+                        details={
+                            "errors": [
+                                f"Decision node {source!r} has an edge from invalid output handle {source_handle!r}; "
+                                f"available handles: {', '.join(available_handles)}"
+                            ]
+                        }
+                    )
 
             # Add to dependency sets
             source_node.downstream.add(target)

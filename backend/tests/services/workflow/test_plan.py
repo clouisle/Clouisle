@@ -160,6 +160,45 @@ class TestExecutionPlanFromWorkflow:
         assert "true" in condition_node.handle_map
         assert "false" in condition_node.handle_map
 
+    def test_legacy_yes_no_decision_edges_follow_current_options(self):
+        workflow_def = {
+            "nodes": [
+                {"id": "start", "data": {"type": "user_input"}},
+                {
+                    "id": "decision",
+                    "data": {
+                        "type": "decision",
+                        "decisionConfig": {
+                            "questionType": "choice",
+                            "options": ["男生", "女生"],
+                        },
+                    },
+                },
+                {"id": "male", "data": {"type": "variable_assignment"}},
+                {"id": "female", "data": {"type": "variable_assignment"}},
+            ],
+            "edges": [
+                {"source": "start", "target": "decision"},
+                {"source": "decision", "target": "male", "sourceHandle": "yes"},
+                {"source": "decision", "target": "female", "sourceHandle": "no"},
+            ],
+        }
+
+        plan = ExecutionPlan.from_workflow(workflow_def)
+
+        assert plan.get_node("decision").handle_map == {
+            "男生": ["male"],
+            "女生": ["female"],
+        }
+        assert workflow_def["edges"][1]["sourceHandle"] == "yes"
+
+        workflow_def["edges"][1]["sourceHandle"] = "unrecognized"
+        with pytest.raises(WorkflowValidationError) as error:
+            ExecutionPlan.from_workflow(workflow_def)
+
+        assert "unrecognized" in error.value.details["errors"][0]
+        assert "男生, 女生, default" in error.value.details["errors"][0]
+
 
 class TestExecutionPlanValidation:
     """Tests for ExecutionPlan validation."""

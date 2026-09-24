@@ -22,6 +22,8 @@ import { VariableAggregatorConfig, defaultVariableAggregatorConfig, aggregationM
 import { VariableAssignmentConfig, defaultVariableAssignmentConfig } from './nodes/variable-assignment-node'
 import { ParameterExtractorConfig, defaultParameterExtractorConfig } from './nodes/parameter-extractor-node'
 import { QuestionClassifierConfig, defaultQuestionClassifierConfig } from './nodes/question-classifier-node'
+import { DecisionNodeConfig as DecisionNodeConfigComponent } from './node-config/configs/decision-node-config'
+import { DecisionNodeConfig, defaultDecisionNodeConfig } from './nodes/decision-node'
 import { AnswerNodeConfig as AnswerNodeConfigData, defaultAnswerNodeConfig } from './nodes/answer-node'
 import { ToolNodeConfig as ToolNodeConfigData, defaultToolNodeConfig } from './nodes/tool-node'
 import { MediaGenerationConfig, defaultMediaGenerationConfig } from './nodes/media-generation-node'
@@ -125,6 +127,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
   
   // 问题分类器配置状态
   const [questionClassifierConfig, setQuestionClassifierConfig] = React.useState<QuestionClassifierConfig>(defaultQuestionClassifierConfig)
+  const [decisionConfig, setDecisionConfig] = React.useState<DecisionNodeConfig>(defaultDecisionNodeConfig)
   
   // 输出节点配置状态
   const [answerConfig, setAnswerConfig] = React.useState<AnswerNodeConfigData>(defaultAnswerNodeConfig)
@@ -241,6 +244,10 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         const existingConfig = (node.data as { questionClassifierConfig?: QuestionClassifierConfig })?.questionClassifierConfig
         setQuestionClassifierConfig(existingConfig || defaultQuestionClassifierConfig)
       }
+      if (nodeType === 'decision') {
+        const existingConfig = (node.data as { decisionConfig?: DecisionNodeConfig })?.decisionConfig
+        setDecisionConfig(existingConfig || defaultDecisionNodeConfig)
+      }
       
       if (nodeType === 'answer') {
         const existingConfig = (node.data as { answerConfig?: AnswerNodeConfigData })?.answerConfig
@@ -308,6 +315,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         if (nodeType === 'variable_assignment') updateData.variableAssignmentConfig = variableAssignmentConfig
         if (nodeType === 'parameter_extractor') updateData.parameterExtractorConfig = parameterExtractorConfig
         if (nodeType === 'question_classifier') updateData.questionClassifierConfig = questionClassifierConfig
+        if (nodeType === 'decision') updateData.decisionConfig = decisionConfig
         if (nodeType === 'answer') updateData.answerConfig = answerConfig
         if (nodeType === 'tool') updateData.toolConfig = toolConfig
         if (nodeType === 'sub_workflow') updateData.subWorkflowConfig = subWorkflowConfig
@@ -323,7 +331,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
       }, 300)
       return () => clearTimeout(timer)
     }
-  }, [label, description, parameters, branches, iterationConfig, loopConfig, llmConfig, mediaGenerationConfig, codeConfig, templateConfig, fileToUrlConfig, variableAggregatorConfig, variableAssignmentConfig, parameterExtractorConfig, questionClassifierConfig, answerConfig, toolConfig, subWorkflowConfig, agentConfig, knowledgeRetrievalConfig, pauseConfig, commentColor, commentContent, node, onUpdate, readOnly])
+  }, [label, description, parameters, branches, iterationConfig, loopConfig, llmConfig, mediaGenerationConfig, codeConfig, templateConfig, fileToUrlConfig, variableAggregatorConfig, variableAssignmentConfig, parameterExtractorConfig, questionClassifierConfig, decisionConfig, answerConfig, toolConfig, subWorkflowConfig, agentConfig, knowledgeRetrievalConfig, pauseConfig, commentColor, commentContent, node, onUpdate, readOnly])
 
   // 获取上游节点 ID 集合（当前节点可以引用的节点）
   const getUpstreamNodeIds = React.useCallback((): Set<string> => {
@@ -1286,6 +1294,14 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
             onConfigChange={setQuestionClassifierConfig}
             onVariableSearchChange={setVariableSearch}
             onOpenVariablePopoverChange={setOpenVariablePopover}
+          />
+        )
+      case 'decision':
+        return (
+          <DecisionNodeConfigComponent
+            config={decisionConfig}
+            variables={getAvailableVariables()}
+            onConfigChange={setDecisionConfig}
           />
         )
       

@@ -22,6 +22,7 @@ const nodeDefinitions: Record<string, { icon: React.ElementType; color: string }
   condition: { icon: GitBranch, color: 'bg-cyan-500' },
   pause: { icon: CirclePause, color: 'bg-amber-500' },
   question_classifier: { icon: Tags, color: 'bg-violet-500' },
+  decision: { icon: GitBranch, color: 'bg-violet-500' },
   iteration: { icon: RefreshCw, color: 'bg-cyan-500' },
   loop: { icon: Infinity, color: 'bg-cyan-500' },
   iteration_exit: { icon: LogOut, color: 'bg-orange-500' },
@@ -44,21 +45,21 @@ type CategoryDef = { labelKey: string; nodeTypes: string[] }
 
 const normalCategories: CategoryDef[] = [
   { labelKey: 'model', nodeTypes: ['llm', 'media_generation'] },
-  { labelKey: 'logic', nodeTypes: ['condition', 'question_classifier', 'iteration', 'loop', 'pause'] },
+  { labelKey: 'logic', nodeTypes: ['condition', 'question_classifier', 'decision', 'iteration', 'loop', 'pause'] },
   { labelKey: 'transform', nodeTypes: ['code', 'template', 'file_to_url', 'variable_aggregator', 'variable_assignment', 'parameter_extractor'] },
   { labelKey: 'extension', nodeTypes: ['sub_workflow', 'agent', 'tool', 'knowledge_retrieval', 'answer'] },
 ]
 
 const iterationCategories: CategoryDef[] = [
   { labelKey: 'model', nodeTypes: ['llm', 'media_generation'] },
-  { labelKey: 'logic', nodeTypes: ['condition', 'question_classifier', 'iteration_exit'] },
+  { labelKey: 'logic', nodeTypes: ['condition', 'question_classifier', 'decision', 'iteration_exit'] },
   { labelKey: 'transform', nodeTypes: ['code', 'template', 'file_to_url', 'variable_aggregator', 'variable_assignment', 'parameter_extractor'] },
   { labelKey: 'extension', nodeTypes: ['sub_workflow', 'agent', 'tool', 'knowledge_retrieval', 'answer'] },
 ]
 
 const loopCategories: CategoryDef[] = [
   { labelKey: 'model', nodeTypes: ['llm', 'media_generation'] },
-  { labelKey: 'logic', nodeTypes: ['condition', 'question_classifier', 'loop_exit'] },
+  { labelKey: 'logic', nodeTypes: ['condition', 'question_classifier', 'decision', 'loop_exit'] },
   { labelKey: 'transform', nodeTypes: ['code', 'template', 'file_to_url', 'variable_aggregator', 'variable_assignment', 'parameter_extractor'] },
   { labelKey: 'extension', nodeTypes: ['sub_workflow', 'agent', 'tool', 'knowledge_retrieval', 'answer'] },
 ]
