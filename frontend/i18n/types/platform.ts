@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-14T07:19:09.075Z
+// GENERATED — 2026-09-23T17:20:52.218Z
 // Source: i18n/en/platform.json
 export type PlatformMessages = {
   platform: {
@@ -35,6 +35,8 @@ export type PlatformMessages = {
     aboutWebsite: string
     teams: string
     manageTeams: string
+    teamSettings: string
+    manageCurrentTeam: string
     noTeams: string
     noTeam: {
       title: string
