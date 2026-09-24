@@ -209,8 +209,7 @@ describe('NodeConfigDrawer', () => {
       condition: 'ConditionNodeConfig', iteration: 'IterationNodeConfig', loop: 'LoopNodeConfig', code: 'CodeNodeConfig',
       template: 'TemplateNodeConfig', file_to_url: 'FileToUrlNodeConfig', variable_aggregator: 'VariableAggregatorNodeConfig',
       variable_assignment: 'VariableAssignmentNodeConfig', parameter_extractor: 'ParameterExtractorNodeConfig',
-      question_classifier: 'QuestionClassifierNodeConfig', sub_workflow: 'SubWorkflowNodeConfig', agent: 'AgentNodeConfig',
-      tool: 'ToolNodeConfig', knowledge_retrieval: 'KnowledgeRetrievalNodeConfig', pause: 'PauseNodeConfig', answer: 'AnswerNodeConfig',
+      question_classifier: 'QuestionClassifierNodeConfig', decision: 'DecisionNodeConfig', sub_workflow: 'SubWorkflowNodeConfig', agent: 'AgentNodeConfig',
     }
 
     for (const [type, editor] of Object.entries(routes)) {
