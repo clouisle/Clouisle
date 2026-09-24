@@ -17,6 +17,7 @@ const teamModel = {
 let hookIndex = 0
 let pendingEffect: (() => void | (() => void)) | undefined
 let getTeamModels: (teamId: string, modelType: string) => Promise<typeof teamModel[]> = async () => [teamModel]
+let modelSearch = ''
 const stateUpdates: unknown[] = []
 type TreeNode = { type?: unknown; props: Record<string, unknown> }
 const findAll = (node: unknown, predicate: (node: TreeNode) => boolean): TreeNode[] => {
@@ -45,12 +46,13 @@ const translations: Record<string, string> = {
   'decisionConfig.optionLimit': 'Maximum {max} options or levels',
   'decisionConfig.noulHint': 'Noul routes to yes at probability 0.5 and has no confidence output.',
   'configCommon.noAvailableModels': 'No models',
+  'configCommon.noMatchingModels': 'No matching models',
 }
 
 mock.module('react', () => ({
   useState: <T,>(initial: T) => {
     const index = hookIndex++
-    return [index === 0 ? [teamModel] as T : initial, (value: T) => { stateUpdates.push(value) }] as const
+    return [index === 0 ? [teamModel] as T : index === 3 ? modelSearch as T : initial, (value: T) => { stateUpdates.push(value) }] as const
   },
   useEffect: (effect: () => void | (() => void)) => { pendingEffect = effect },
   useMemo: <T,>(factory: () => T) => factory(),
@@ -90,11 +92,13 @@ test('loads enabled decision models for the current team', async () => {
     return await request as typeof teamModel[]
   }
   DecisionNodeConfig({ config: { stateTemplate: '', questionId: 'decision', questionType: 'choice', instructions: '', options: [] }, variables: [], onConfigChange: () => {} })
-  pendingEffect?.()
+  const cleanup = pendingEffect?.()
   await request
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(stateUpdates).toContainEqual([teamModel])
   expect(stateUpdates).toContain(false)
+  expect(cleanup).toBeFunction()
+  if (typeof cleanup === 'function') cleanup()
 })
 
 
@@ -127,19 +131,25 @@ test('selected question type label matches its menu option label', () => {
 })
 
 test('decision model selection stores the model UUID, not the team authorization ID', () => {
-  hookIndex = 0
   let updated: Record<string, unknown> | undefined
-  const tree = DecisionNodeConfig({
-    config: { modelId: 'model-config-uuid', stateTemplate: '', questionId: 'decision', questionType: 'choice', instructions: '', options: ['yes', 'no'] },
-    variables: [],
-    onConfigChange: (config) => { updated = config },
-  }) as TreeNode
+  const config = { modelId: 'model-config-uuid', stateTemplate: '', questionId: 'decision', questionType: 'choice' as const, instructions: '', options: ['yes', 'no'] }
+  hookIndex = 0
+  modelSearch = 'missing-model'
+  const noMatchTree = DecisionNodeConfig({ config, variables: [], onConfigChange: () => {} }) as TreeNode
+  expect(findAll(noMatchTree, (node) => node.props.children === 'No matching models')).toHaveLength(1)
 
+  modelSearch = 'vendor-model'
+  hookIndex = 0
+  const tree = DecisionNodeConfig({ config, variables: [], onConfigChange: (value) => { updated = value } }) as TreeNode
   const selectedLabel = findAll(tree, (node) => node.props.children === 'OpenAI · Typed Model')[0]
   const modelButton = findAll(tree, (node) => node.type === 'button' && findAll(node.props.children, (child) => child.props.children === 'Typed Model').length > 0)[0]
+  const searchInput = findAll(tree, (node) => node.type === Component && node.props.placeholder === 'configCommon.searchModel')[0]
   expect(selectedLabel).toBeDefined()
+  ;(searchInput.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'typed' } })
+  expect(stateUpdates.slice(-1)).toEqual(['typed'])
   ;(modelButton.props.onClick as () => void)()
   expect(updated?.modelId).toBe('model-config-uuid')
+  modelSearch = ''
 })
 
 test('caps score levels at the provider maximum', () => {
