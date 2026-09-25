@@ -391,8 +391,18 @@ class NodeExecutorRegistry:
 
 使用 Celery 实现分布式节点执行。
 
+> **实现现状（2026-09）**：实际生效的工作流任务在 `backend/app/tasks/workflow.py`
+> （`app.tasks.workflow.run_workflow_task` / `resume_workflow_task` /
+> `cancel_workflow_task`，由 `app.tasks.workflow.*` 路由到 `workflow` 队列，模块在
+> `app/core/celery.py` 的 `include` 中注册）。下面这段设计示例中的
+> `backend/app/services/workflow/tasks.py` 属于**未接线**的实现：它不在 Celery
+> `include` 列表中，也没有生产代码导入，任务名（`workflow.*`）不匹配现有
+> `task_routes`，因此其中定义的
+> `workflow.execute` / `execute_node` / `execute_stage` / `cancel` / `cleanup` /
+> `check_scheduled` / `cleanup_old_runs` 在当前部署中不会注册。
+
 ```python
-# backend/app/services/workflow/tasks.py
+# backend/app/services/workflow/tasks.py（未接线，见上）
 
 from celery import shared_task, chain, group, chord
 from app.core.celery import celery_app
@@ -736,12 +746,16 @@ celery_app.conf.task_routes = {
 
 不存在 `workflow_orchestrate` / `workflow_nodes` / `workflow_llm` /
 `workflow_code` 这些按节点类型拆分的队列，也没有 `task_default_priority` /
-`task_queue_max_priority` 配置。工作流编排与节点执行的任务统一路由到
-`workflow` 队列：任务定义在 `backend/app/services/workflow/tasks.py`，注册名为
-`workflow.execute` / `workflow.execute_node` / `workflow.execute_stage` /
-`workflow.cancel` / `workflow.cleanup` / `workflow.check_scheduled` /
-`workflow.cleanup_old_runs`，直接调用 orchestrator 在单进程内
-执行 DAG，节点级并行由编排器内部调度，而不是按节点类型分发 Celery 任务。
+`task_queue_max_priority` 配置。工作流编排/取消由 `backend/app/tasks/workflow.py`
+的任务承担，Celery 名称为 `app.tasks.workflow.run_workflow_task` /
+`resume_workflow_task` / `cancel_workflow_task`，由 `app.tasks.workflow.*`
+路由到 `workflow` 队列；它们直接调用 orchestrator 在单进程内执行 DAG，
+节点级并行由编排器内部调度，而不是按节点类型分发 Celery 任务。
+
+`backend/app/services/workflow/tasks.py` 是另一套**未接线**实现（`workflow.execute` /
+`execute_node` / `execute_stage` / `cancel` / `cleanup` / `check_scheduled` /
+`cleanup_old_runs`）：既不在 Celery `include` 列表中，也无生产代码导入，任务名不匹配
+`task_routes`，因此不会注册；`workflow.check_scheduled` 因此也无法被 beat 调度。
 
 ### 5.2 Worker 配置建议
 

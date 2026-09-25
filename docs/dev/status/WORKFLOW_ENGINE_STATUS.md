@@ -2,7 +2,7 @@
 
 ## All Phases (1, 2, 3, 4, 5 & 6) Complete ✅
 
-All core engine capabilities, typed variable systems, executors, and distributed Celery tasks are fully implemented and integrated.
+All core engine capabilities, typed variable systems, and executors are fully implemented and integrated. The distributed Celery tasks that actually run workflows live in `backend/app/tasks/workflow.py` (`app.tasks.workflow.run_workflow_task` / `resume_workflow_task` / `cancel_workflow_task`, routed to the `workflow` queue). The separate `services/workflow/tasks.py` set (`workflow.*`) is **not wired up** — see the Celery section below.
 
 Native object/array passthrough between nodes plus a structural TypeSpec
 system that auto-infers from debug runs. See
@@ -28,7 +28,7 @@ backend/app/services/workflow/
 ├── plan.py               # ExecutionPlan (DAG parsing, topological sort)
 ├── stream.py             # StreamManager (SSE streaming)
 ├── orchestrator.py       # WorkflowOrchestrator (main entry point)
-├── tasks.py              # Celery distributed tasks ✨
+├── tasks.py              # Celery tasks (NOT wired up: absent from celery include/beat/routes)
 ├── retry.py              # Retry mechanism & circuit breaker ✨
 ├── cache.py              # Caching layer ✨ (Phase 4)
 ├── metrics.py            # Metrics collection ✨ (Phase 4)
@@ -158,28 +158,36 @@ pytest tests/services/workflow/ -v
 
 ### Celery Distributed Tasks
 
-```python
-from app.services.workflow.tasks import execute_workflow_task
+**Active implementation** — `backend/app/tasks/workflow.py` (module registered in
+`backend/app/core/celery.py` `include`, routed by `app.tasks.workflow.*` → `workflow` queue):
 
-# Async workflow execution
-task = execute_workflow_task.delay(
+```python
+from app.tasks.workflow import run_workflow_task
+
+# Async workflow execution (dispatched by POST /workflows/{id}/run, /debug, webhook, embed)
+task = run_workflow_task.delay(
+    run_id=str(run.id),
     workflow_id=str(workflow_id),
     inputs={"query": "Hello"},
     user_id=str(user_id),
 )
-
-# Get result
-result = task.get(timeout=300)
 ```
 
-**Task Types:**
-- `execute_workflow_task` - Main async workflow execution
-- `execute_node_task` - Single node execution with retry
-- `execute_stage_task` - Parallel stage execution using Celery groups
-- `cancel_workflow_task` - Cancel running workflow
-- `cleanup_workflow_task` - Clean up workflow state after completion
-- `check_scheduled_workflows` - Cron trigger checking (beat task)
-- `cleanup_old_runs` - Old run cleanup (daily beat task)
+**Active task types:**
+- `run_workflow_task` - Main async workflow execution (also used for debug runs)
+- `resume_workflow_task` - Resume a run paused at a `pause` node
+- `cancel_workflow_task` - Cancel a running workflow
+
+**Not wired up** — `backend/app/services/workflow/tasks.py` defines a newer,
+finer-grained set (`execute_workflow_task`, `execute_node_task`, `execute_stage_task`,
+`cancel_workflow_task`, `cleanup_workflow_task`, `check_scheduled_workflows`,
+`cleanup_old_runs`, registered as `workflow.execute` / `execute_node` /
+`execute_stage` / `cancel` / `cleanup` / `check_scheduled` / `cleanup_old_runs`).
+Nothing imports it in production, it is absent from the Celery `include` list, its task
+names match no `task_routes` entry, and `workflow.check_scheduled` is absent from
+`beat_schedule` — so those tasks never register and cron triggers do not fire
+(the task also reads `trigger_config["cron"]` while the UI writes
+`trigger_config["cron_expression"]`).
 
 ### Retry Mechanism
 

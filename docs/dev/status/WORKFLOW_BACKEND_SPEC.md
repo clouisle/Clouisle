@@ -21,15 +21,24 @@
 - ✅ **调试运行** — `POST /api/v1/workflows/{id}/debug`（使用草稿并推断类型）
 - ✅ **流式输出** — SSE：`GET /api/v1/workflows/runs/{run_id}/stream`
 - ✅ **Webhook 触发** — `POST /api/v1/workflows/webhook/{webhook_token}`
-- ✅ 分布式执行任务 — `backend/app/services/workflow/tasks.py`
-  （Celery 任务名 `workflow.execute` / `workflow.execute_node` /
-  `workflow.execute_stage` / `workflow.cancel` / `workflow.cleanup` /
-  `workflow.check_scheduled` / `workflow.cleanup_old_runs`，统一路由到
-  `workflow` 队列）
+- ✅ 分布式执行任务 — `backend/app/tasks/workflow.py`：`run_workflow_task`（运行）、
+  `resume_workflow_task`（暂停恢复）、`cancel_workflow_task`（取消），Celery 名称为
+  `app.tasks.workflow.*`，由 `app.tasks.workflow.*` 路由规则投递到 `workflow` 队列；
+  该模块在 `backend/app/core/celery.py` 的 `include` 列表中注册
+- ⚠️ **未接线** — `backend/app/services/workflow/tasks.py` 定义了
+  `workflow.execute` / `workflow.execute_node` / `workflow.execute_stage` /
+  `workflow.cancel` / `workflow.cleanup` / `workflow.check_scheduled` /
+  `workflow.cleanup_old_runs`，但该模块既不在 Celery `include` 列表中，也没有生产代码
+  导入它（仅测试引用），任务名又不匹配现有 `task_routes` —— 因此这些任务在当前部署中
+  **不会注册**，投递会报 unregistered task
 
 ### 待实现（后端）
-- ❌ **Cron 定时调度** — `workflow.check_scheduled`
-  （`backend/app/services/workflow/tasks.py`）已实现，但未注册到 Celery Beat
+- ❌ **Cron 定时调度** — 扫描逻辑位于 `backend/app/services/workflow/tasks.py`
+  的 `workflow.check_scheduled`（读取已发布且 `trigger_type=cron` 的工作流，
+  用 `croniter` 做分钟匹配）。要真正生效需同时满足：把该模块加入 Celery
+  `include`、把任务加入 `beat_schedule`（例如每分钟）、并为任务名补充
+  `task_routes`；此外任务读取的 cron 字段是 `trigger_config["cron"]`，需与前端
+  写入的字段名一致
 - ❌ **断点 / 单步调试** — `services/workflow/debugger.py` 已有断点与单步
   原语，但尚未接入任何 API
 
@@ -782,9 +791,11 @@ POST /api/v1/workflows/webhook/{webhook_token}
 
 ### 待办
 
-1. [ ] **Cron 定时任务** — `workflow.check_scheduled`
-   （`backend/app/services/workflow/tasks.py`）已实现定期扫描逻辑，但未注册到
-   Celery Beat，需要补充 beat 调度与触发器管理 API
+1. [ ] **Cron 定时任务** — 扫描逻辑在 `backend/app/services/workflow/tasks.py` 的
+   `workflow.check_scheduled`（已实现定期扫描），但要生效需要三处接线：加入
+   `backend/app/core/celery.py` 的 `include` 列表、加入 `beat_schedule`、并为
+   `workflow.*` 任务名补充 `task_routes`；另外任务读取 `trigger_config["cron"]`
+   而前端写入的是 `trigger_config["cron_expression"]`，字段名需统一
 2. [ ] **断点 / 单步调试** — 将 `backend/app/services/workflow/debugger.py`
    的断点、单步、变量查看能力接入 API 与前端调试面板
 3. [ ] **调试 API 补全** — 现有调试入口仅
@@ -800,6 +811,9 @@ POST /api/v1/workflows/webhook/{webhook_token}
 
 ```
 backend/app/
+├── tasks/
+│   └── workflow.py             # 已注册：app.tasks.workflow.run_workflow_task /
+│                               # resume_workflow_task / cancel_workflow_task（workflow 队列）
 ├── services/workflow/
 │   ├── orchestrator.py         # 执行引擎核心
 │   ├── context.py              # 执行上下文
@@ -810,7 +824,8 @@ backend/app/
 │   ├── versioning.py / debugger.py / templates.py / benchmark.py
 │   ├── types.py / serialization.py / schema_inference.py
 │   ├── pause_approvers.py
-│   ├── tasks.py                # workflow.execute / execute_node / execute_stage /
+│   ├── tasks.py                # 未接线（不在 Celery include / beat / routes）：
+│   │                           # workflow.execute / execute_node / execute_stage /
 │   │                           # cancel / cleanup / check_scheduled / cleanup_old_runs
 │   └── executors/              # 各类型节点执行器
 │       ├── start.py            # user_input, trigger
