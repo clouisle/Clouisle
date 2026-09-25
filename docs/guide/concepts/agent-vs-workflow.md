@@ -19,7 +19,7 @@ Understanding the difference between Agents and Workflows.
 **Visual graph execution**:
 - A workflow is a published version of a graph, not necessarily a deterministic straight-line script
 - Graphs can include entry and output nodes (user input, triggers, answer), model/media nodes (LLM, Agent, media generation), integrations (tool, HTTP request, and sub-workflow), retrieval/document nodes (knowledge retrieval, document extraction, and file-to-URL), transformation nodes (code, template, variable assignment/aggregation, and parameter extraction), and control-flow nodes (condition, question classifier, iteration/loop with exit markers, and pause)
-- Runs can be started manually or by cron/webhook triggers; cron triggers only fire when an operator schedules the `workflow.check_scheduled` task, which is not part of the shipped Celery Beat schedule
+- Runs can be started manually or by cron/webhook triggers; cron triggers only fire when an operator registers and schedules the `workflow.check_scheduled` task, which the shipped deployment neither registers (absent from the Celery `include` list) nor schedules
 - Drafts can be tested in debug mode; published snapshots provide stable runtime definitions
 
 **Use cases**:

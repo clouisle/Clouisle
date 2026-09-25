@@ -391,8 +391,27 @@ class NodeExecutorRegistry:
 
 使用 Celery 实现分布式节点执行。
 
+> **实现现状（2026-09）**：实际生效的工作流任务在 `backend/app/tasks/workflow.py`
+> （`app.tasks.workflow.run_workflow_task` / `resume_workflow_task` /
+> `cancel_workflow_task`）：该模块在 `app/core/celery.py` 的 `include` 列表中，Worker
+> 启动时导入它，任务因此**已注册**；`app.tasks.workflow.*` 路由把它们指向 `workflow`
+> 队列。
+>
+> 下面这段设计示例中的 `backend/app/services/workflow/tasks.py` 属于**未接线**的实现，
+> 但三个机制要分开看：
+>
+> - **注册**：Celery 在模块被导入时注册任务。该模块不在 `include` 列表中，生产代码也
+>   没有导入它（仅测试引用），所以 Worker 里 `workflow.execute` / `execute_node` /
+>   `execute_stage` / `cancel` / `cleanup` / `check_scheduled` / `cleanup_old_runs`
+>   都**没有注册**——这是投递失败的直接原因。
+> - **Beat 调度**：即使注册了，`beat_schedule` 里也没有 `workflow.check_scheduled`，
+>   所以不会有周期性投递。
+> - **路由**：`task_routes` 只决定队列归属，不影响注册。这些 `workflow.*` 名字不匹配
+>   任何规则，因此若注册后会落到 `task_default_queue`（`default`）；未匹配路由本身
+>   不是缺陷，只有当 Worker 不消费 `default` 时才需要补规则。
+
 ```python
-# backend/app/services/workflow/tasks.py
+# backend/app/services/workflow/tasks.py（未接线，见上）
 
 from celery import shared_task, chain, group, chord
 from app.core.celery import celery_app
@@ -736,12 +755,18 @@ celery_app.conf.task_routes = {
 
 不存在 `workflow_orchestrate` / `workflow_nodes` / `workflow_llm` /
 `workflow_code` 这些按节点类型拆分的队列，也没有 `task_default_priority` /
-`task_queue_max_priority` 配置。工作流编排与节点执行的任务统一路由到
-`workflow` 队列：任务定义在 `backend/app/services/workflow/tasks.py`，注册名为
-`workflow.execute` / `workflow.execute_node` / `workflow.execute_stage` /
-`workflow.cancel` / `workflow.cleanup` / `workflow.check_scheduled` /
-`workflow.cleanup_old_runs`，直接调用 orchestrator 在单进程内
-执行 DAG，节点级并行由编排器内部调度，而不是按节点类型分发 Celery 任务。
+`task_queue_max_priority` 配置。工作流编排/取消由 `backend/app/tasks/workflow.py`
+的任务承担，Celery 名称为 `app.tasks.workflow.run_workflow_task` /
+`resume_workflow_task` / `cancel_workflow_task`，由 `app.tasks.workflow.*`
+路由到 `workflow` 队列；它们直接调用 orchestrator 在单进程内执行 DAG，
+节点级并行由编排器内部调度，而不是按节点类型分发 Celery 任务。
+
+`backend/app/services/workflow/tasks.py` 是另一套**未接线**实现（`workflow.execute` /
+`execute_node` / `execute_stage` / `cancel` / `cleanup` / `check_scheduled` /
+`cleanup_old_runs`）：不在 Celery `include` 列表中、也无生产代码导入，所以 Worker
+启动时不会注册这些任务；`beat_schedule` 中也没有 `workflow.check_scheduled`，因此
+不存在周期性投递。路由是另一件事：这些名字不匹配任何 `task_routes` 规则，注册后会落到
+`task_default_queue`（`default`）——默认 Worker 消费 `default`，所以路由本身不是阻塞项。
 
 ### 5.2 Worker 配置建议
 

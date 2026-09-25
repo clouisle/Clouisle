@@ -122,7 +122,7 @@ Type: cron
 Cron: "0 9 * * 1-5"  # 9 AM weekdays
 ```
 
-The `workflow.check_scheduled` task implements cron evaluation for published workflows. It is not included in the supplied Celery Beat schedule by default, so operators who need cron execution must schedule this task (for example every minute) in their deployment. A stored `trigger_type: cron` alone does not run a workflow.
+The `workflow.check_scheduled` task implements cron evaluation for published workflows, but it is **not registered** in the shipped deployment: `backend/app/services/workflow/tasks.py` is absent from the Celery `include` list (the worker never imports it) and the task has no `beat_schedule` entry, so nothing dispatches it. Operators who need cron execution must wire it up (register the module and schedule the task — for example every minute) before a stored `trigger_type: cron` can run. A `task_routes` entry is optional: an unmatched task goes to `task_default_queue` (`default`), which the supplied worker consumes, so a route is only needed if your worker does not consume `default` (for example to send it to the `workflow` queue). The task also reads `trigger_config["cron"]` while the workflow settings UI writes `trigger_config["cron_expression"]`, so the field name must be aligned as part of that work.
 
 ### Node Configuration Example
 
@@ -302,7 +302,7 @@ curl -X POST "https://your-domain.com/api/v1/workflows/webhook/TOKEN" \
 
 ### View Schedules
 
-There is no schedule-management UI or next-run listing. Cron configuration is stored in the workflow's `trigger_config`; operators must ensure `workflow.check_scheduled` is dispatched periodically.
+There is no schedule-management UI or next-run listing. Cron configuration is stored in the workflow's `trigger_config`; note that the evaluation task is not registered in the shipped deployment (see [Trigger Configuration](#trigger-configuration)), so operators must both wire it up and dispatch it periodically.
 
 ## Workflow Limits
 
@@ -361,7 +361,7 @@ There is no schedule-management UI or next-run listing. Cron configuration is st
 **Solutions:**
 1. Confirm the workflow is `published` and `trigger_type` is `cron`.
 2. Confirm `trigger_config.cron` contains a valid cron expression.
-3. Confirm Celery Beat or another scheduler dispatches `workflow.check_scheduled` periodically; the supplied Beat schedule does not add it automatically.
+3. Confirm the cron evaluation task is both registered (its module in the Celery `include` list, so the worker imports it) and dispatched periodically; the supplied deployment does neither for `workflow.check_scheduled`.
 
 ### High Execution Time
 
