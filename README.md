@@ -7,7 +7,7 @@
 <p align="center"><b>Next-Generation Multi-Agent Collaboration Platform and Workflow Engine</b></p>
 
 <p align="center">
-Build, orchestrate, and deploy production-ready AI agent teams and visual workflows with sandboxed execution, hybrid RAG, and enterprise-grade security.
+Build and orchestrate production-ready AI agent teams with sandboxed execution, hybrid RAG, and enterprise-grade security.
 </p>
 
 <p align="center">
@@ -58,11 +58,11 @@ Modern enterprises face a common challenge: **data fragmentation, low reusabilit
 
 **Clouisle transforms this reality** by providing:
 
-- **Multi-Agent & Collaborative Runtime**: Stateful AI agents and agent teams capable of reasoning, sandboxed tool execution, human-in-the-loop interaction, and durable execution
-- **Visual Workflow Orchestration**: Graph-based workflow builder with 15+ node types, nested sub-workflows, human approval steps, and execution profiling
+- **Multi-Agent & Collaborative Runtime**: Build and orchestrate production-ready AI agent teams — workflows compose published agents through `agent` and `sub_workflow` nodes — with reasoning, sandboxed tool execution, human-in-the-loop interaction, and durable execution
+- **Visual Workflow Orchestration**: Graph-based workflow builder with 19 node types, nested sub-workflows, human approval steps, and execution profiling
 - **Intelligent Knowledge & Evaluation**: Hybrid search (vector + lexical) with reranking, multi-format parsing, and automated retrieval evaluation labs
 - **Enterprise-Grade Security & Governance**: Multi-tenancy, granular RBAC, SSO (OIDC/SAML/CAS), TOTP 2FA, field-level audit diffs, and centralized observability
-- **Production Portability**: Standardized `.clouisle` packages for safe multi-environment migration, 24+ LLM providers, and rootless sandboxed execution
+- **Production Portability**: Standardized `.clouisle` packages for safe multi-environment migration, 23 LLM providers, and sandboxed execution isolated in Bubblewrap user and mount namespaces
 
 > Think of Clouisle as a **living intelligence layer** that evolves with your business.
 
@@ -72,20 +72,21 @@ Modern enterprises face a common challenge: **data fragmentation, low reusabilit
 
 ### AI Agent & Multi-Agent Collaboration
 
+- **Multi-Agent Orchestration**: Workflows invoke published agents through `agent` and `sub_workflow` nodes, composing them into multi-agent pipelines
 - **Multi-Model Support**: Configure agents with different LLM providers, parameters, and thinking/reasoning modes
 - **Human-in-the-Loop & Durable State**: Model-driven interactive inputs via durable `ask_user` tool with options, freeform answers, run-pause/resume lifecycle, and explicit skip
 - **RAG Integration**: Multiple retrieval modes — `off` (disabled), `auto` (automatic retrieval), and `agentic` (Agent-driven tool retrieval) — with knowledge base binding
 - **Streaming & Thinking**: Real-time streaming responses with reasoning/thinking content support
-- **Conversation Management**: Multi-turn conversations with version branching, manual stop, token usage tracking, and session memory
-- **Media Generation**: Built-in support for text-to-image, video, and audio generation within conversations
+- **Conversation Management**: Multi-turn conversations with version branching, manual stop, token usage tracking, and long-term memory (an entity/relation graph with semantic search)
+- **Media Generation**: Text-to-image and text-to-video generation within conversations (audio generation is available at the model/adapter level)
 - **Tool System & Skills**: Built-in tools, custom HTTP API tools, reusable Skill packages, and MCP protocol integration
-- **Context Compression**: Automatic 3-level conversation context compression for long-running sessions
+- **Context Compression**: Automatic context summarization for long-running sessions — before each model call the request is estimated and, above 90% of the context limit, a single generated summary replaces the old history
 - **Visibility Control**: Private, team, or public access levels with RBAC enforcement
 
 ### Visual Workflow Builder
 
 - **No-Code Interface**: Drag-and-drop workflow creation with real-time node configuration
-- **15+ Node Types**: LLM, Agent, Condition, Question Classifier, Code Execution (Python), Knowledge Retriever, HTTP Request, Tool, Sub-workflow, Media Generation, Iteration/Loop, Pause/Approval, Template, Variable Assignment/Aggregation, Parameter Extractor, and Answer
+- **19 Node Types**: LLM, Media Generation, Decision, Agent, Condition, Question Classifier, Code Execution (Python/JavaScript), Knowledge Retriever, File to URL, Tool, Sub-workflow, Iteration, Loop, Pause/Approval, Template, Variable Assignment, Variable Aggregation, Parameter Extractor, and Answer
 - **Human-in-the-Loop Approval**: Pause nodes with configurable multi-strategy approval, form variables, and deep-link resumes
 - **Execution Triggers**: Manual, scheduled (Cron), webhook, or API — flexible for any use case
 - **Versioning**: Draft/publish lifecycle with version history and rollback
@@ -107,7 +108,9 @@ Modern enterprises face a common challenge: **data fragmentation, low reusabilit
 - **Search Modes**: Vector-only, full-text only, or hybrid with configurable weight tuning
 ### LLM Provider Support
 
-Supports 24+ providers out of the box, plus any OpenAI-compatible endpoint.
+Supports 23 providers out of the box, plus any OpenAI-compatible endpoint.
+
+> Representative model names below are illustrative and change as provider catalogs evolve.
 
 **Chat & Completion**
 
@@ -134,6 +137,7 @@ Supports 24+ providers out of the box, plus any OpenAI-compatible endpoint.
 | Provider | Latest Models | Modality |
 |---|---|---|
 | OpenAI | GPT image-2, GPT image-1.5 | Text-to-Image |
+| OpenAI Responses | GPT image-2, GPT image-1.5 | Text-to-Image |
 | Stability AI | Stable Diffusion 3.5 Large, Stable Audio 3.0 | Image, Audio |
 | Midjourney | V8.2, V8.1 | Text-to-Image (via proxy) |
 | Google | Imagen 4, Imagen 3 | Text-to-Image |
@@ -145,10 +149,16 @@ Supports 24+ providers out of the box, plus any OpenAI-compatible endpoint.
 | Volcengine | Seedance 2.5, Doubao 2.1 Pro | Image, Video, TTS, Audio |
 | SiliconFlow | FLUX 1.1 Pro, Wan2.2, CosyVoice2, Fish-Speech | Image, Video, Audio |
 
+**Decision**
+
+| Provider | Model IDs | Output |
+|---|---|---|
+| TypeSafe AI | `jev-1.13.0`, `jev-latest` | Typed decisions: choice, ordered score, or yes/no probability |
+
 ### Model Management
 
-- **Multi-Provider**: Centralized model configuration across 24+ providers with standardized interfaces
-- **Model Registry**: Register and manage chat, embedding, rerank, TTS, STT, image, and video models
+- **Multi-Provider**: Centralized model configuration across 23 providers with standardized interfaces
+- **Model Registry**: Register and manage chat, embedding, rerank, decision, TTS, STT, audio generation, text-to-image, and text-to-video models
 - **Team Authorization**: Granular per-team model access control with daily/monthly token and request quotas
 - **Connection Testing**: Built-in model connectivity testing before deployment
 - **Default Parameters**: Configurable per-model defaults (temperature, top_p, max_tokens, thinking, etc.)
@@ -171,10 +181,10 @@ Supports 24+ providers out of the box, plus any OpenAI-compatible endpoint.
 
 ### Tool System
 
-- **Built-in Tools**: Time/Date, Calculator, Web Search (Tavily), File Parser, and Python Code Interpreter
+- **Built-in Tools**: Time/date, datetime formatting, calculator, unit conversion, web search (`auto`/Tavily/BoCha/DuckDuckGo), webpage fetch, RSS reader, file parsing (MarkItDown), image/video generation, artifacts, and sandboxed bash/read/write/edit
 - **Custom Tools**: Configurable HTTP API tools with authentication (API key, Bearer, Basic) and variable mapping
 - **MCP Integration**: Model Context Protocol for standardized tool capabilities and resource access
-- **Sandboxed Execution**: Secure, isolated Python/Node.js code execution environment with rootless container isolation and resource limits
+- **Sandboxed Execution**: Secure, isolated Python/JavaScript code execution environment with resource limits — a dedicated sandbox worker runs each task inside a fresh Bubblewrap user and mount namespace (the worker itself needs `CAP_SYS_ADMIN` and an `Unconfined` seccomp profile)
 - **Tool Registry**: Centralized tool management with credential injection and lifecycle hooks
 ---
 
@@ -304,7 +314,7 @@ Configure via the admin dashboard:
 | **Enterprise Q&A** | Deploy AI agents grounded in your internal knowledge with hybrid search and reranking for accurate, context-aware answers across documents |
 | **Workflow Automation** | Build no-code workflows combining LLM reasoning, API integrations, code execution, and branching logic |
 | **Customer Support** | Create intelligent support agents with knowledge base access, conversation memory, and escalation workflows |
-| **Content Generation** | Automate text, image, video, and audio generation pipelines with AI agents and media generation nodes |
+| **Content Generation** | Automate text, image, and video generation pipelines with AI agents and media generation nodes |
 | **Data Analysis** | Connect agents to internal databases and APIs for natural-language data querying and reporting |
 | **Compliance & Risk** | Automate document analysis for contracts, policies, and regulatory requirements with audit trails |
 | **Engineering Productivity** | Accelerate onboarding with instant access to documentation and tribal knowledge via RAG agents |
@@ -313,7 +323,7 @@ Configure via the admin dashboard:
 
 ## Roadmap
 
-- [x] Multi-provider LLM support (24+ providers)
+- [x] Multi-provider LLM support (23 providers)
 - [x] Visual workflow builder with human-in-the-loop approval
 - [x] Hybrid RAG knowledge base with evaluation lab
 - [x] Enterprise SSO (OIDC, SAML, CAS, OAuth2)
@@ -321,7 +331,8 @@ Configure via the admin dashboard:
 - [x] Field-level audit logging & diff snapshots
 - [x] Admin observability & performance dashboard
 - [x] Standardized `.clouisle` asset packages for cross-environment migration
-- [ ] Multi-agent team orchestration and group collaboration
+- [x] Build and orchestrate AI agent teams — workflows compose published agents through `agent` and `sub_workflow` nodes
+- [ ] Autonomous peer-to-peer agent collaboration (agents negotiating with each other outside workflow orchestration)
 - [ ] Industry-specific agent templates
 - [ ] Plugin & tool marketplace
 - [ ] Mobile application

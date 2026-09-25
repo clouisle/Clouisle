@@ -10,13 +10,13 @@ Workflow nodes are building blocks for creating automated processes. Each node t
 
 Clouisle supports the following user-configurable node types:
 
-- **Flow / Logic**: `trigger`, `user_input`, `end`, `condition`, `question_classifier`, `iteration_start`, `loop_start`, `iteration`, `loop`, `pause`
+- **Flow / Logic**: `trigger`, `user_input`, `end`, `condition`, `question_classifier`, `decision`, `iteration_start`, `loop_start`, `iteration`, `loop`, `pause`
 - **Model**: `llm`, `media_generation`
 - **Data**: `code`, `template`, `file_to_url`, `variable_assignment`, `variable_aggregator`, `parameter_extractor`
 - **Knowledge**: `knowledge_retrieval`
 - **Integration**: `tool`, `agent`, `sub_workflow`, `answer`
 
-`document_extractor` and `http_request` remain executor/API-level capabilities rather than nodes shown in the builder palette. `iteration_exit` and `loop_exit` are internal container nodes used by the workflow engine; do not add them as standalone nodes.
+`document_extractor` and `http_request` remain executor/API-level capabilities rather than nodes shown in the builder palette. `iteration_exit` and `loop_exit` are only offered by the palette while you are inside their container (iteration / loop); they are not available from the top-level palette.
 
 > **Note:** Node types such as Transform, Parallel, Wait, Switch, Database, Email, Webhook (as a node), Log, Delay, Merge, Input, and Output are **not implemented**. Variable handling is done via `variable_assignment` and `variable_aggregator`.
 
@@ -68,6 +68,33 @@ Output Variable: variable_name
 ```
 
 **Output variables:** `response`, `reasoning`, `usage` (plus the configured output variable).
+
+### decision
+
+Ask a **decision model** (type `decision`, currently TypeSafe AI) a single typed question about a state and take the branch that matches the answer. Unlike `llm`, the model does not produce prose — it returns a typed answer plus probabilities, which the node maps onto output handles.
+
+**Configuration:**
+```yaml
+Type: decision
+Model: <decision model reference>
+State: "{{start.query}}"
+Question Type: choice | score | noul
+Instructions: What should the model decide?
+Options / Levels: [option-a, option-b]      # choice and score only
+Fallback Branch: default                    # handle taken when the confidence threshold is not met
+Confidence Threshold: 0.6                   # optional, choice and score only
+```
+
+- **State**: the text/observation the model evaluates; supports `{{variables}}` and must resolve to a string.
+- **Question Type**:
+  - `choice` (**Choose an option**) — pick one of 1–255 unique options; each option becomes a branch handle.
+  - `score` (**Score against ordered levels**) — rate the state against 2–10 unique **ordered** levels; the branch follows the level with the highest probability and the numeric `score` is also available as an output.
+  - `noul` (**Yes / No probability**) — routes to `yes` when the probability is at least `0.5`, otherwise `no`. `noul` does not return a confidence.
+- **Fallback Branch**: handle taken when a **Confidence Threshold** is set and the returned confidence is below it; it is also used whenever no branch handle was resolved.
+
+**Output variables:** `answer` (selected option/level, or `yes`/`no`), `selected_handle`, `usage`, plus type-specific `choice` + `confidence` + `probabilities` (choice), `score` + `confidence` + `probabilities` (score), or `noul` (noul).
+
+**Branch handles:** each option (choice) or level (score), plus the fallback branch (`default` by default). `noul` branches are fixed to `yes` and `no`. Renaming options remaps existing connections where possible; connections that use an outdated handle are rejected by the validator and must be reconnected.
 
 ### media_generation
 
@@ -311,4 +338,4 @@ Use `{{variable_name}}` to reference variables in prompts, conditions, and param
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-26

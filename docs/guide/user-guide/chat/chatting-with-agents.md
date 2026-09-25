@@ -40,7 +40,7 @@ There is no global Chat/Conversations page or global **New Chat** picker. Each a
 │                                                  │
 │  You: What is Clouisle?                         │
 │                                                  │
-│  Agent: Clouisle is an enterprise-grade...      │
+│  Agent: Clouisle is a multi-agent...           │
 │  [Sources: doc1.pdf, doc2.md]                   │
 │                                                  │
 │                                                  │
@@ -226,7 +226,7 @@ Agents maintain context across messages:
 
 ```
 You: What is Clouisle?
-Agent: Clouisle is an AI platform...
+Agent: Clouisle is a multi-agent collaboration platform and workflow engine...
 
 You: How do I install it?
 Agent: To install Clouisle, follow these steps...

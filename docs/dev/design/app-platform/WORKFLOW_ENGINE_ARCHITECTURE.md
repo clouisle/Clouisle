@@ -392,7 +392,7 @@ class NodeExecutorRegistry:
 使用 Celery 实现分布式节点执行。
 
 ```python
-# backend/app/tasks/workflow.py
+# backend/app/services/workflow/tasks.py
 
 from celery import shared_task, chain, group, chord
 from app.core.celery import celery_app
@@ -717,41 +717,42 @@ def _should_use_distributed(
 
 ### 5.1 Celery 队列配置
 
-```python
-# 队列配置
-celery_app.conf.task_routes = {
-    # 工作流编排任务 - 高优先级队列
-    "app.tasks.workflow.orchestrate_workflow": {"queue": "workflow_orchestrate"},
-    
-    # 节点执行任务 - 按节点类型分队列
-    "app.tasks.workflow.execute_node_task": {"queue": "workflow_nodes"},
-    
-    # LLM 节点单独队列（耗时长）
-    "app.tasks.workflow.execute_llm_node": {"queue": "workflow_llm"},
-    
-    # 代码执行节点单独队列（需要沙箱）
-    "app.tasks.workflow.execute_code_node": {"queue": "workflow_code"},
-}
+实际配置见 `backend/app/core/celery.py`。只有四个专用队列，其余任务走默认队列：
 
-# 队列优先级
-celery_app.conf.task_default_priority = 5
-celery_app.conf.task_queue_max_priority = 10
+```python
+celery_app.conf.update(
+    task_default_queue="default",
+)
+
+celery_app.conf.task_routes = {
+    "app.tasks.knowledge_base.*": {"queue": "knowledge"},
+    "app.tasks.workflow.*": {"queue": "workflow"},
+    "app.tasks.agent.*": {"queue": "agent"},
+    "app.tasks.sandbox.*": {"queue": "sandbox"},
+    # usage / notification / audit_log / api_key / password_expiration /
+    # memory 以及 beat 任务走 default
+}
 ```
+
+不存在 `workflow_orchestrate` / `workflow_nodes` / `workflow_llm` /
+`workflow_code` 这些按节点类型拆分的队列，也没有 `task_default_priority` /
+`task_queue_max_priority` 配置。工作流编排与节点执行的任务统一路由到
+`workflow` 队列：任务定义在 `backend/app/services/workflow/tasks.py`，注册名为
+`workflow.execute` / `workflow.execute_node` / `workflow.execute_stage` /
+`workflow.cancel` / `workflow.cleanup` / `workflow.check_scheduled` /
+`workflow.cleanup_old_runs`，直接调用 orchestrator 在单进程内
+执行 DAG，节点级并行由编排器内部调度，而不是按节点类型分发 Celery 任务。
 
 ### 5.2 Worker 配置建议
 
+与根目录 `main.py` 的 `worker` / `sandbox-worker` 子命令保持一致：
+
 ```bash
-# 通用节点 worker
-celery -A app.core.celery worker -Q workflow_nodes -c 4
+# 通用 worker：默认任务 + Agent + 知识库 + 工作流
+celery -A app.core.celery worker -Q default,agent,knowledge,workflow -c 4
 
-# LLM 专用 worker（并发低，因为是 IO 密集）
-celery -A app.core.celery worker -Q workflow_llm -c 10
-
-# 代码执行 worker（需要沙箱隔离）
-celery -A app.core.celery worker -Q workflow_code -c 2
-
-# 编排 worker
-celery -A app.core.celery worker -Q workflow_orchestrate -c 2
+# 沙箱 worker（代码执行隔离，独立部署）
+celery -A app.core.celery worker -Q sandbox -c 1
 ```
 
 ---
@@ -1072,45 +1073,59 @@ async def cancel_run(
 ```
 backend/app/
 ├── services/
-│   └── workflow/
-│       ├── __init__.py
-│       ├── orchestrator.py        # 工作流编排器
-│       ├── context.py             # 执行上下文（Redis 状态管理）
-│       ├── executor.py            # 节点执行器基类和注册表
-│       ├── stream.py              # 流式输出管理
-│       ├── plan.py                # 执行计划（DAG 解析）
-│       ├── errors.py              # 错误定义
-│       ├── executors/             # 各节点类型执行器
-│       │   ├── __init__.py
-│       │   ├── base.py            # 基类
-│       │   ├── start.py           # user_input, trigger
-│       │   ├── llm.py             # llm
-│       │   ├── classifier.py      # question_classifier
-│       │   ├── extractor.py       # parameter_extractor
-│       │   ├── condition.py       # condition
-│       │   ├── iteration.py       # iteration
-│       │   ├── loop.py            # loop
-│       │   ├── code.py            # code (sandbox)
-│       │   ├── template.py        # template (Jinja2)
-│       │   ├── tool.py            # tool
-│       │   ├── agent.py           # agent
-│       │   ├── sub_workflow.py    # sub_workflow
-│       │   ├── variable.py        # aggregator, assignment
-│       │   ├── file.py            # file_to_url
-│       │   └── output.py          # answer
-│       └── sandbox/               # 代码沙箱
-│           ├── __init__.py
-│           ├── python.py          # Python 沙箱
-│           └── javascript.py      # JavaScript 沙箱
+│   ├── workflow/
+│   │   ├── __init__.py
+│   │   ├── orchestrator.py        # 工作流编排器
+│   │   ├── context.py             # 执行上下文（Redis 状态管理）
+│   │   ├── executor.py            # 节点执行器基类和注册表
+│   │   ├── stream.py              # 流式输出管理
+│   │   ├── lazy_stream.py         # 惰性流式读取
+│   │   ├── plan.py                # 执行计划（DAG 解析）
+│   │   ├── errors.py              # 错误定义
+│   │   ├── retry.py               # 重试与熔断
+│   │   ├── cache.py               # 缓存层
+│   │   ├── metrics.py             # 指标采集
+│   │   ├── profiler.py            # 性能剖析
+│   │   ├── versioning.py          # 版本管理
+│   │   ├── debugger.py            # 调试器（断点/单步，未接入 API）
+│   │   ├── templates.py           # 工作流模板（纯服务，无 HTTP 路由）
+│   │   ├── benchmark.py           # 压测工具
+│   │   ├── types.py               # TypeSpec / WorkflowValue
+│   │   ├── serialization.py       # msgpack-in-base64 运行时序列化
+│   │   ├── schema_inference.py    # 调试运行类型推断
+│   │   ├── pause_approvers.py     # pause 节点审批人解析
+│   │   ├── tasks.py               # workflow.* 分布式任务集
+│   │   └── executors/             # 各节点类型执行器
+│   │       ├── __init__.py        # 自动导入并注册全部执行器
+│   │       ├── start.py           # user_input, trigger
+│   │       ├── answer.py          # answer
+│   │       ├── llm.py             # llm
+│   │       ├── decision.py        # decision（类型化决策模型分支）
+│   │       ├── condition.py       # condition, question_classifier
+│   │       ├── code.py            # code (sandbox)
+│   │       ├── template.py        # template (Jinja2)
+│   │       ├── variable.py        # variable_assignment, variable_aggregator, parameter_extractor
+│   │       ├── iteration.py       # iteration, loop
+│   │       ├── tool.py            # tool, agent, http_request
+│   │       ├── subworkflow.py     # sub_workflow, file_to_url
+│   │       ├── knowledge.py       # knowledge_retrieval, document_extractor
+│   │       ├── media_generation.py # media_generation
+│   │       └── pause.py           # pause
+│   └── sandbox/                   # 代码沙箱（独立服务与 worker）
+│       ├── manager.py
+│       ├── gateway.py
+│       ├── scheduler.py
+│       ├── worker.py
+│       └── ...
 │
 ├── tasks/
-│   └── workflow.py                # Celery 任务定义
+│   └── workflow.py                # 主动派发的 Celery 任务（run/resume/cancel）
 │
 ├── api/v1/endpoints/
-│   └── workflows.py               # 添加 run/debug API
+│   └── workflows.py               # 工作流 CRUD + 运行/调试/运行记录/版本 API
 │
 └── schemas/
-    └── workflow.py                # 添加运行相关的 schema
+    └── workflow.py                # 工作流相关 schema
 ```
 
 ---

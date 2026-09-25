@@ -44,9 +44,11 @@ GET /api/v1/knowledge-bases
 |-----------|------|----------|---------|-------------|
 | `page` | integer | No | 1 | Page number |
 | `page_size` | integer | No | 20 | Items per page |
-| `team_id` | string | No | - | Filter by team ID |
+| `team_id` | string | No | - | Filter by team ID (requires team membership) |
 | `status` | array | No | - | Filter by status: `active`, `processing`, `error`, `archived` (repeatable) |
-| `search` | string | No | - | Search by name or description |
+| `search` | string | No | - | Case-insensitive search by name |
+| `own_only` | boolean | No | false | Only KBs created by the current user (non-superusers) |
+| `include_shared` | boolean | No | true | Also include KBs shared with the caller's teams (shared KBs whose visibility is `team` or `public`); ignored when `own_only=true` |
 
 ### Request Example
 
@@ -80,6 +82,7 @@ curl -X GET "https://your-domain.com/api/v1/knowledge-bases?page=1&page_size=20"
           "avatar_url": null
         },
         "status": "active",
+        "visibility": "team",
         "embedding_model_id": "model-emb-01",
         "embedding_model": {
           "id": "model-emb-01",
@@ -98,7 +101,12 @@ curl -X GET "https://your-domain.com/api/v1/knowledge-bases?page=1&page_size=20"
         "document_count": 156,
         "total_chunks": 2340,
         "total_tokens": 456789,
-        "created_at": "2026-02-11T10:00:00Z"
+        "created_at": "2026-02-11T10:00:00Z",
+        "is_owned": true,
+        "owner_team_id": "team-123",
+        "owner_team_name": "Support Team",
+        "share_permission": null,
+        "shared_with_count": 2
       }
     ],
     "total": 42,
@@ -948,4 +956,4 @@ Authorization: Bearer <token>
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-26

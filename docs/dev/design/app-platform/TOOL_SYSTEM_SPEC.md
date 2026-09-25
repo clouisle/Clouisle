@@ -26,7 +26,9 @@
 
 ### 内置工具 (Builtin)
 
-系统预置的工具，通过 `tool_registry` 注册，无需用户配置即可使用。
+系统预置的工具，通过 `tool_registry` 注册，无需用户配置即可使用
+（注册入口 `backend/app/llm/tools/builtin/__init__.py:18-28`，元数据见
+`backend/app/schemas/tool.py` 的 `BUILTIN_TOOLS_METADATA`）。
 
 | 工具名 | 功能 | 分类 |
 |--------|------|------|
@@ -36,6 +38,21 @@
 | `unit_convert` | 单位转换 | math |
 | `web_search` | 网页搜索 | search |
 | `fetch_webpage` | 获取网页内容 | web |
+| `rss_feed_reader` | 读取 RSS/Atom 订阅 | web |
+| `markitdown` | 文档转 Markdown（文件解析器） | file |
+| `generate_image` | 文生图 | other |
+| `generate_video` | 文/图生视频 | other |
+| `bash` | 沙箱内执行 Shell 命令 | sandbox |
+| `read` | 读取沙箱文件 | sandbox |
+| `write` | 写入沙箱文件 | sandbox |
+| `edit` | 编辑沙箱文件 | sandbox |
+| `artifact` | 保存 / 导出产物 | sandbox |
+| `ask_user` | 向用户追问（需 Agent 开启 `enable_user_input_request`） | interaction |
+
+数据库连接器（PostgreSQL / MySQL / MongoDB / Redis）位于同一包下
+（`backend/app/llm/tools/builtin/{postgresql,mysql_db,mongo_db,redis_db}.py`），
+但不走内置工具注册表，而是作为 `custom` 工具的 `database` 子类型由
+`db_executor.py` 执行。
 
 ### 自定义工具 (Custom)
 
@@ -679,13 +696,16 @@ Content-Type: application/json
 
 ## 前端集成
 
-### 代码编辑器页面
+### 工具 / 代码编辑器页面
 
-**路由：** `/app/tools/code`
+**路由：** `/app/capabilities`、`/app/capabilities/code`、`/app/capabilities/skills/[id]`
 
-**功能：**
-- Monaco Editor 代码编辑
-- 支持 JavaScript/Python 语法高亮
+工具与 Skill 管理、代码工具编辑器统一在 `capabilities` 模块下，**不存在**
+`/app/tools` 路由。
+
+**代码编辑器页面（`/app/capabilities/code`）功能：**
+- Monaco Editor 代码编辑（`@monaco-editor/react`）
+- 支持 JavaScript / Python 语法高亮
 - 参数定义面板
 - 即时测试执行
 - 保存为工具
@@ -693,15 +713,24 @@ Content-Type: application/json
 ### 关键组件
 
 ```
-frontend/app/(platform)/app/tools/
-├── page.tsx                    # 工具列表页
+frontend/app/(platform)/app/capabilities/
+├── page.tsx                    # 工具 / Skill 列表
 ├── code/
-│   └── page.tsx               # 代码编辑器页面
+│   └── page.tsx                # 代码工具编辑器页面
+├── skills/
+│   └── [id]/
+│       └── page.tsx            # Skill 详情
 └── _components/
-    ├── tool-list.tsx          # 工具列表
-    ├── tool-test-panel.tsx    # 测试面板
-    ├── http-tool-dialog.tsx   # HTTP 工具编辑
-    └── mcp-tool-dialog.tsx    # MCP 工具编辑
+    ├── tool-list.tsx           # 工具列表
+    ├── tool-card.tsx
+    ├── tool-test-panel.tsx     # 测试面板
+    ├── tool-config-dialog.tsx
+    ├── tool-category-input.tsx
+    ├── tool-share-dialog.tsx
+    ├── http-tool-dialog.tsx    # HTTP 工具编辑
+    ├── mcp-tool-dialog.tsx     # MCP 工具编辑
+    ├── database-tool-dialog.tsx # 数据库工具编辑
+    └── skills-panel.tsx        # Skill 管理面板
 ```
 
 ### API 客户端

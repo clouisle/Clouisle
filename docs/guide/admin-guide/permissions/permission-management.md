@@ -235,7 +235,7 @@ Permissions:
    - Permissions
 5. Save changes
 
-**Note:** System roles (Super Admin, Admin, Member, Viewer) cannot be modified or deleted. Custom roles are edited via `PUT /api/v1/admin/roles/{role_id}` and `PUT /api/v1/admin/roles/{role_id}/permissions` (replaces the full permission set).
+**Note:** System roles (Super Admin, Admin, Team Admin, Member, Viewer) cannot be modified or deleted. Custom roles are edited via `PUT /api/v1/admin/roles/{role_id}` and `PUT /api/v1/admin/roles/{role_id}/permissions` (replaces the full permission set).
 
 ### Delete Role
 

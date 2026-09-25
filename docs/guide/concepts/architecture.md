@@ -1,6 +1,6 @@
 # System Architecture
 
-This document provides an overview of Clouisle's system architecture, explaining how different components work together to deliver an enterprise-grade AI Agent and knowledge base platform.
+This document provides an overview of Clouisle's system architecture, explaining how different components work together to deliver a multi-agent collaboration platform and workflow engine with sandboxed execution, hybrid RAG, and enterprise-grade security.
 
 ## Architecture Overview
 
@@ -108,7 +108,7 @@ Browser → (optional external reverse proxy / Ingress) → Next.js SSR (node se
 Clouisle implements a durable, decoupled `AgentRun` execution model for conversational agents:
 
 ```
-User Message ──► FastAPI (POST /api/v1/agents/{agent_id}/chat/runs) ──► Redis Queue (Celery default)
+User Message ──► FastAPI (POST /api/v1/agents/{agent_id}/chat/runs) ──► Redis Queue (Celery agent queue)
                        │ (202 Accepted, run_id)                           │
                        ▼                                                  ▼
                   SSE Stream                                  Celery Worker (run_agent_task)
@@ -237,7 +237,7 @@ Trigger Event / User Input ──► FastAPI (POST /workflows/{id}/runs) ──�
 **Caching**:
 - JWT access-token lifetime is controlled by the `session_timeout_days` security setting (seeded to 30 days; the login endpoint uses a 7-day fallback if the setting is absent); Redis stores blacklist entries and optional single-session state, not primary sessions
 - Site settings (no cache — read directly from the database on each lookup)
-- Rate limit counters (1-hour TTL, stored in Redis)
+- Rate limit and lockout counters are stored in Redis with mechanism-specific windows: bulk-email per-sender counters expire after 1 hour, per-recipient email counters after 24 hours, IP login-attempt counters after 1 hour, and TOTP verification attempts after a 5-minute window (lockout 15 minutes)
 
 **Database Indexing**:
 - Primary keys (UUID)
@@ -274,7 +274,7 @@ Trigger Event / User Input ──► FastAPI (POST /workflows/{id}/runs) ──�
 └─────────────────────────────────────────────────────────────┘
 ```
 
-The worker consumes the `default`, `knowledge`, and `workflow` queues; sandbox execution uses the dedicated sandbox-worker process/queue when enabled.
+The worker consumes the `default`, `agent`, `knowledge`, and `workflow` queues; durable AgentRun tasks are routed to the dedicated `agent` queue, and sandbox execution uses the dedicated sandbox-worker process/queue (`sandbox`) when enabled.
 
 ### Kubernetes (Large Production)
 
@@ -290,6 +290,11 @@ The worker consumes the `default`, `knowledge`, and `workflow` queues; sandbox e
 │  │ Frontend │  │ Backend  │  │  Worker  │  │   Beat   │   │
 │  │ (2 pods) │  │ (2 pods) │  │ (2 pods) │  │ (1 pod)  │   │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
+│  ┌──────────┐                                             │
+│  │ Sandbox  │                                             │
+│  │ worker   │                                             │
+│  │ (1 pod)  │                                             │
+│  └──────────┘                                             │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐                 │
 │  │PostgreSQL│  │  Redis   │  │  Qdrant  │                 │
 │  │(StatefulSet)│(Deployment)│(StatefulSet)│               │

@@ -35,11 +35,11 @@ See [Team Roles](./team-roles.md) for detailed permissions.
 
 ## How Users Join Teams
 
-> **Note:** There is no email-invitation flow, no "Accept/Decline invitation" action, and no join-request/approval flow. Members are added directly by user ID.
+> **Note:** There is no email-invitation flow, no "Accept/Decline invitation" action, and no join-request/approval flow. Members are added directly by exact username or email address.
 
 ### Ways to become a member
 
-1. **Added by an Owner/Admin**: A team Owner or Admin adds you by your user ID and assigns a role (Admin, Member, or Viewer)
+1. **Added by an Owner/Admin**: A team Owner or Admin enters your exact username or email address and assigns a role (Admin, Member, or Viewer)
 2. **Default team**: If the administrator configured a default team, newly registered users are automatically added to it with the configured role (default `member`)
 3. **Created as owner**: The user who creates a team becomes its Owner
 
@@ -186,4 +186,4 @@ If you need assistance with team membership:
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-26

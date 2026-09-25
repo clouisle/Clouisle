@@ -154,36 +154,44 @@ POST   /api/v1/teams/{id}/transfer-ownership
 
 ## 4. API 设计
 
-### 3.1 管理端 API（Superuser）
+### 4.1 团队模型管理 API（仅超级管理员）
+
+实际实现位于 `backend/app/api/v1/endpoints/team_models.py`，router 挂在
+`/api/v1/teams` 前缀下。所有写操作都要求
+`get_current_active_superuser`（即 `is_superuser`）。
 
 ```
 # 团队模型授权管理
-POST   /api/v1/admin/teams/{team_id}/models           # 为团队授权模型
-GET    /api/v1/admin/teams/{team_id}/models           # 获取团队已授权模型
-PUT    /api/v1/admin/teams/{team_id}/models/{model_id} # 更新授权配置
-DELETE /api/v1/admin/teams/{team_id}/models/{model_id} # 撤销授权
+POST   /api/v1/teams/{team_id}/models                        # 为团队授权模型（superuser）
+PUT    /api/v1/teams/{team_id}/models/{model_id}             # 更新授权配置（superuser）
+DELETE /api/v1/teams/{team_id}/models/{model_id}             # 撤销授权（superuser）
 
 # 批量操作
-POST   /api/v1/admin/teams/{team_id}/models/batch     # 批量授权
-DELETE /api/v1/admin/teams/{team_id}/models/batch     # 批量撤销
-
-# 用量统计
-GET    /api/v1/admin/teams/{team_id}/models/usage     # 团队模型用量统计
-GET    /api/v1/admin/models/{model_id}/usage          # 单个模型全局用量
+POST   /api/v1/teams/{team_id}/models/batch                  # 批量授权（superuser）
+DELETE /api/v1/teams/{team_id}/models/batch                  # 批量撤销（superuser）
 ```
 
-### 3.2 中台 API（Team Member）
+不存在 `/api/v1/admin/teams/{team_id}/models*` 路由，也没有
+`/api/v1/admin/models/{model_id}/usage` 端点。
+
+### 4.2 中台 API（团队成员）
 
 ```
-# 团队可用模型
-GET    /api/v1/teams/{team_id}/models                 # 获取团队可用模型列表
-GET    /api/v1/teams/{team_id}/models/{type}          # 按类型筛选 (chat, embedding, etc.)
-GET    /api/v1/teams/{team_id}/models/default/{type}  # 获取默认模型
+# 团队可用模型（任意登录用户；非超管必须是该团队成员）
+GET    /api/v1/teams/{team_id}/models?model_type=…           # 团队已授权模型列表
+GET    /api/v1/teams/{team_id}/available-models?model_type=…  # 已授权且启用的模型
 
-# 用量查询
-GET    /api/v1/teams/{team_id}/models/usage           # 当前用量
-GET    /api/v1/teams/{team_id}/models/{model_id}/quota # 单个模型配额状态
+# 配额状态（任意登录用户；非超管必须是该团队成员）
+GET    /api/v1/teams/{team_id}/models/quota                  # 团队模型配额使用状态
+
+# 默认模型（全局接口）
+GET    /api/v1/models/default/{model_type}                   # 按类型的全局默认模型
 ```
+
+没有 `/api/v1/teams/{team_id}/models/{type}`、团队前缀下的
+`/models/default/{type}`、`/models/usage`、`/models/{model_id}/quota` 这些路径：
+按类型筛选统一用 `?model_type=` 查询参数，默认模型走全局
+`GET /api/v1/models/default/{model_type}`。
 
 ---
 

@@ -11,11 +11,12 @@ The Chat API allows you to:
 - **Manage conversations**: Create, list, and delete conversations
 - **View history**: Access conversation history
 
-Chat endpoints live under the agents router; conversation-management endpoints live under their own router.
+Chat endpoints live under the agents router, which also registers the user-scoped conversation routes at `/api/v1/agents/conversations/...`; the team/admin-oriented conversation routes live under their own `/api/v1/conversations` router.
 
 **Base URLs**:
 - Chat: `/api/v1/agents`
-- Conversations: `/api/v1/conversations`
+- Agent-scoped conversations: `/api/v1/agents/conversations`
+- Conversations (team/admin): `/api/v1/conversations`
 
 ## Authentication
 
@@ -206,10 +207,13 @@ steering/follow-up was committed), `run_end` (exactly one terminal event with
 
 | Method | Path | Purpose |
 |---|---|---|
+| POST | `/api/v1/agents/{agent_id}/chat/runs` | Queue a durable run (`202 Accepted`); returns run identity + `stream_url` |
 | GET | `/api/v1/agents/{agent_id}/chat/runs/{run_id}` | Run status (owner-scoped) |
 | GET | `/api/v1/agents/{agent_id}/chat/runs/{run_id}/events?after_sequence=N` | Replay buffered events after N |
+| GET | `/api/v1/agents/{agent_id}/chat/runs/{run_id}/stream?after_sequence=N` | SSE stream of a run's events (resumable) |
 | POST | `/api/v1/agents/{agent_id}/chat/runs/{run_id}/inputs` | Queue steering/follow-up (`delivery: steer / follow_up / auto`) |
 | POST | `/api/v1/agents/{agent_id}/chat/runs/{run_id}/answers` | Submit structured answers for a waiting `ask_user` call |
+| POST | `/api/v1/agents/{agent_id}/chat/runs/{run_id}/stop` | Cooperatively stop a queued/running/waiting run |
 Submit answers for a waiting `ask_user` call:
 
 ```
@@ -235,6 +239,53 @@ POST /api/v1/agents/{agent_id}/chat/runs/{run_id}/answers
 
 The run must be in `waiting` status and the `tool_call_id` must match the pending interaction. On success the run resumes from its paused state.
 
+**Start a run:**
+
+```
+POST /api/v1/agents/{agent_id}/chat/runs
+```
+
+Accepts the same `ChatRequest` body as `POST /api/v1/agents/{agent_id}/chat` and returns immediately with **`202 Accepted`** instead of waiting for the assistant reply. The response data is a `RunStartOut`:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "run_id": "8f3b1c9d-2b10-4a1b-9c3d-7f3a1c9d2b10",
+    "conversation_id": "conv-123",
+    "user_message_id": "msg-456",
+    "status": "queued",
+    "stream_url": "/agents/agent-123/chat/runs/8f3b1c9d-2b10-4a1b-9c3d-7f3a1c9d2b10/stream"
+  },
+  "msg": "success"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `run_id` | string | Durable run UUID |
+| `conversation_id` | string | Conversation UUID (created if the request omitted `conversation_id`) |
+| `user_message_id` | string | Persisted user message UUID |
+| `status` | string | Run status at enqueue time: `queued`, `running`, `stopping`, `completing`, `waiting`, `completed`, `stopped`, `failed`, or `interrupted` |
+| `stream_url` | string | Relative URL of the run's SSE stream (no `/api/v1` prefix) |
+
+**Stream a run:**
+
+```
+GET /api/v1/agents/{agent_id}/chat/runs/{run_id}/stream?after_sequence=N
+```
+
+Returns `text/event-stream` and replays every buffered event whose `sequence` is greater than `after_sequence` (default `0`) before following the run to its terminal event, so a reconnecting client can resume without duplicates by passing the highest `sequence` it has already processed. Accepts a JWT bearer token or an API key.
+
+**Stop a run:**
+
+```
+POST /api/v1/agents/{agent_id}/chat/runs/{run_id}/stop
+```
+
+No request body. Cooperatively stops a `queued`, `running`, or `waiting` run and returns the updated `RunOut`; the terminal `run_end` event then carries `status: "stopped"`. `RunOut` reports `id`, `agent_id`, `conversation_id`, `mode`, `status`, `source_message_id`, `canonical_message_id`, `active_round_id`, `error_code`, `error_message`, `started_at`, `finished_at`, and the pending `ask_user` interaction (`pending_tool_call_id`, `pending_tool_name`, `pending_tool_input`).
+
+All run routes are owner-scoped (or agent-scoped for an API key): an unknown run — or one that does not belong to `{agent_id}` — returns `404` (`run_not_found`), while a run whose conversation belongs to another user returns `403` (`access_denied`); superusers bypass the ownership check. The full event catalogue — including the run-scoped `run_start`, `run_status`, `input_accepted`, and `run_end` events — is documented in [SSE Streaming](../sse-streaming.md).
 
 While a run is active, the composer can queue steering (mid-work) or
 follow-up (final boundary) instead of being disabled; stop sends a server
@@ -709,4 +760,4 @@ console.log('Conversation ID:', response.conversation_id);
 
 ---
 
-**Last Updated**: 2026-09-08
+**Last Updated**: 2026-09-26

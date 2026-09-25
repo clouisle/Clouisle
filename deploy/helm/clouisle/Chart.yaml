@@ -1,6 +1,6 @@
 apiVersion: v2
 name: clouisle
-description: Helm chart for Clouisle knowledge base and AI agent platform
+description: Helm chart for the Clouisle multi-agent collaboration platform and workflow engine
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

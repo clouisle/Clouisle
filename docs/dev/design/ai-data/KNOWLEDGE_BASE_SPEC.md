@@ -16,7 +16,7 @@
 | 功能 | 技术方案 | 说明 |
 |------|----------|------|
 | 文档解析 | MarkItDown | 微软开源，统一转换为 Markdown |
-| 文本分块 | 自研 TextChunker | 语义感知分块 |
+| 文本分块 | `chunk_text()`（LangChain RecursiveCharacterTextSplitter） | 字符级语义感知分块，Markdown 走 AST 分块 |
 | 权威数据 | PostgreSQL | 保存知识库、文档、分块及索引状态 |
 | Dense 索引 | Qdrant | 保存向量并执行语义召回 |
 | Lexical 检索 | PostgreSQL pg_search | 对同库可重建的 Chunk 投影执行 BM25 关键词召回 |
@@ -77,13 +77,24 @@ class KnowledgeBase(Model):
     team_id: UUID              # 所属团队
     name: str                  # 知识库名称
     description: str           # 描述
+    icon: str                  # 图标
+    created_by_id: UUID        # 创建者
     embedding_model_id: UUID   # 使用的向量模型
-    chunk_size: int = 500      # 分块大小 (tokens)
-    chunk_overlap: int = 50    # 分块重叠
-    is_active: bool = True
+    rerank_model_id: UUID      # 重排模型
+    embedding_dimension: int   # 向量维度（首次处理文档时写入）
+    status: str                # KnowledgeBaseStatus: active / processing / error / archived
+    visibility: str            # KnowledgeBaseVisibility: private / team / public(reserved)
+    settings: dict             # 分块等设置（chunk_size / chunk_overlap 等）
+    document_count: int        # 文档数（缓存统计）
+    total_chunks: int          # 分块总数
+    total_tokens: int          # token 估算总量
     created_at: datetime
     updated_at: datetime
 ```
+
+> 注意：模型**没有** `chunk_size` / `chunk_overlap` / `is_active` 列。分块参数
+> 放在 `settings` JSON 字段（默认值见 §5.3.1），启用/归档状态由 `status`
+> （`KnowledgeBaseStatus`）表达。
 
 ### 3.2 文档 (Document)
 
@@ -92,14 +103,14 @@ class DocumentStatus(str, Enum):
     PENDING = "pending"        # 待处理
     PROCESSING = "processing"  # 处理中
     COMPLETED = "completed"    # 完成
-    FAILED = "failed"          # 失败
+    ERROR = "error"            # 失败
 
 class DocumentType(str, Enum):
     PDF = "pdf"
     DOCX = "docx"
     DOC = "doc"
     TXT = "txt"
-    MD = "md"
+    MD = "markdown"
     HTML = "html"
     CSV = "csv"
     XLSX = "xlsx"
@@ -207,11 +218,12 @@ title = result.title            # 标题 (如有)
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `chunk_size` | 500 | 目标分块大小 (tokens) |
-| `chunk_overlap` | 50 | 分块重叠 (tokens) |
-| `separator` | 自动 | 自定义分隔符 (可选) |
+| `chunk_size` | 1000 | 目标分块大小（字符，不是 token） |
+| `chunk_overlap` | 100 | 分块重叠（字符） |
+| `separators` | 自动 | 自定义分隔符 (可选) |
 
-> **Token 估算**：约 4 个字符 ≈ 1 token
+默认值定义在 `backend/app/services/document_processor.py`
+（`DEFAULT_CHUNK_SIZE = 1000`、`DEFAULT_CHUNK_OVERLAP = 100`，单位均为字符）。
 
 #### 5.3.2 分块策略
 
@@ -239,26 +251,28 @@ DEFAULT_SEPARATORS = [
 #### 5.3.3 分块算法
 
 ```
-1. 计算目标字符数: target_chars = chunk_size × 4
-2. 按分隔符列表顺序尝试分割文本
-3. 对每个分割片段:
-   - 如果 <= target_chars: 累积到当前块
-   - 如果 > target_chars: 递归使用更细粒度分隔符分割
-4. 应用重叠: 下一块开头包含上一块末尾的 overlap 字符
+1. 以字符为单位，目标长度 chunk_size（默认 1000）
+2. 用 LangChain RecursiveCharacterTextSplitter 按分隔符列表顺序递归切分
+3. 对每个分割片段: 超过 chunk_size 的片段继续用更细粒度分隔符递归分割
+4. 先以 overlap=0 切分，再在块首补上上一块末尾的 chunk_overlap 个字符
+   （字符级精确重叠；CJK 文本下 LangChain 自带的 unit 级重叠会过大）
 5. 无法继续分割时: 硬切分到目标长度
 ```
+
+Markdown 文本会走 `chunk_markdown_ast()` 的 AST 感知分块路径，其余文本走
+`chunk_text()`。
 
 #### 5.3.4 使用示例
 
 ```python
-from app.services.document_processor import TextChunker
+from app.services.document_processor import chunk_text
 
-chunker = TextChunker(
-    chunk_size=100,      # 100 tokens (~400 字符)
-    chunk_overlap=10,    # 10 tokens (~40 字符) 重叠
+# 参数单位是字符
+chunks = chunk_text(
+    text,
+    chunk_size=400,
+    chunk_overlap=40,
 )
-
-chunks = chunker.chunk_text(text)
 # [
 #     {"content": "...", "chunk_index": 0, "token_count": 95, "char_count": 380},
 #     {"content": "...", "chunk_index": 1, "token_count": 98, "char_count": 392},

@@ -11,15 +11,27 @@
 - ✅ WorkflowVersion 版本历史
 - ✅ 发布/取消发布
 - ✅ 版本快照和恢复
+- ✅ **工作流执行引擎** — `backend/app/services/workflow/`
+  （orchestrator / plan / context / executor）
+- ✅ **节点执行器** — `backend/app/services/workflow/executors/`（start、answer、
+  llm、decision、condition、code、template、variable、iteration、tool、
+  subworkflow、knowledge、media_generation、pause）
+- ✅ **变量系统** — `ExecutionContext` + TypeSpec
+  （types.py / serialization.py / schema_inference.py）
+- ✅ **调试运行** — `POST /api/v1/workflows/{id}/debug`（使用草稿并推断类型）
+- ✅ **流式输出** — SSE：`GET /api/v1/workflows/runs/{run_id}/stream`
+- ✅ **Webhook 触发** — `POST /api/v1/workflows/webhook/{webhook_token}`
+- ✅ 分布式执行任务 — `backend/app/services/workflow/tasks.py`
+  （Celery 任务名 `workflow.execute` / `workflow.execute_node` /
+  `workflow.execute_stage` / `workflow.cancel` / `workflow.cleanup` /
+  `workflow.check_scheduled` / `workflow.cleanup_old_runs`，统一路由到
+  `workflow` 队列）
 
 ### 待实现（后端）
-- ❌ **工作流执行引擎** - 核心功能
-- ❌ **节点执行器** - 各类型节点的执行逻辑
-- ❌ **变量系统** - 节点间变量传递和解析
-- ❌ **调试运行** - 单步调试、断点
-- ❌ **流式输出** - SSE 实时返回
-- ❌ **定时任务** - Cron 触发器
-- ❌ **Webhook 触发** - 外部调用
+- ❌ **Cron 定时调度** — `workflow.check_scheduled`
+  （`backend/app/services/workflow/tasks.py`）已实现，但未注册到 Celery Beat
+- ❌ **断点 / 单步调试** — `services/workflow/debugger.py` 已有断点与单步
+  原语，但尚未接入任何 API
 
 ---
 
@@ -150,6 +162,36 @@ interface LLMNodeConfig {
 4. 流式模式：通过 SSE 返回 chunk
 5. 记录 token 用量到 NodeExecution
 6. 输出变量：`response`, `reasoning`, `usage`
+
+---
+
+#### decision（决策）
+
+调用类型为 `decision` 的决策模型（当前为 TypeSafe AI System One），对 state 提出一个类型化问题并按其答案分支，不生成自由文本。
+
+```typescript
+type DecisionQuestionType = 'choice' | 'score' | 'noul'
+
+interface DecisionNodeConfig {
+  modelId?: string                    // 团队模型授权 ID（仅 decision 类型模型）
+  modelName?: string
+
+  stateTemplate: string               // 被评估的内容，支持 {{变量}}
+  questionId: string                  // 问题 id，默认 'decision'
+  questionType: DecisionQuestionType  // choice | score | noul
+  instructions: string                // 要模型判断的问题
+  options: string[]                   // choice: 1-255 唯一选项；score: 2-10 有序等级
+  defaultHandle?: string              // 兜底分支，默认 'default'
+  confidenceThreshold?: number        // 0-1，低于该置信度走兜底分支
+}
+```
+
+**后端执行逻辑**：
+1. 校验配置：`modelId`、`stateTemplate`、`instructions` 必填；choice 需 1-255 个唯一非空选项，score 需 2-10 个唯一有序等级
+2. 解析 `stateTemplate` 变量，经 `ModelManager.team_decide` 调用决策适配器（`POST {base_url}/v1/systemone`）
+3. 校验返回答案的类型与选项集合，任一项不符即 `decision_result_missing`
+4. 映射分支 handle：choice 取 `choice`；score 取概率最高的等级；noul 概率 ≥ 0.5 走 `yes`，否则 `no`；低于置信度阈值时走兜底 handle
+5. 输出 `answer`、`selected_handle`、`usage`，以及类型化字段（choice: `choice`/`confidence`/`probabilities`；score: `score`/`confidence`/`probabilities`；noul: `noul`）
 
 ---
 
@@ -696,99 +738,97 @@ class LLMNodeExecutor(NodeExecutor):
 
 ### 3.4 API 端点
 
+已实现的运行相关端点（实现见 `backend/app/api/v1/endpoints/workflows.py`）：
+
 ```python
-# 执行工作流
+# 运行工作流（返回 run_id，异步执行）
 POST /api/v1/workflows/{workflow_id}/run
-Body: {
-    "inputs": {"query": "hello"},
-    "is_debug": false
-}
-Response: WorkflowRun
+Body: WorkflowRunRequest (inputs, ...)
+Response: { "run_id": "...", "stream_url": "/api/v1/workflows/runs/{run_id}/stream" }
 
-# 流式执行（SSE）
-POST /api/v1/workflows/{workflow_id}/run/stream
-Body: same as above
-Response: SSE stream with events:
-  - node_start: {"node_id": "xxx", "node_type": "llm"}
-  - node_output: {"node_id": "xxx", "chunk": "hello"}
-  - node_end: {"node_id": "xxx", "outputs": {...}}
-  - workflow_end: {"status": "success", "outputs": {...}}
-
-# 调试运行（单步）
+# 调试运行（使用草稿而非已发布版本）
 POST /api/v1/workflows/{workflow_id}/debug
-Body: {
-    "inputs": {"query": "hello"},
-    "breakpoints": ["node_id_1", "node_id_2"]
-}
+Body: WorkflowRunRequest
 
-# 继续调试
-POST /api/v1/workflows/runs/{run_id}/continue
+# 流式输出（SSE）
+GET /api/v1/workflows/runs/{run_id}/stream?from_sequence=0
+Response: SSE stream
 
 # 取消运行
 POST /api/v1/workflows/runs/{run_id}/cancel
+
+# 运行记录
+GET  /api/v1/workflows/runs
+GET  /api/v1/workflows/runs/stats
+GET  /api/v1/workflows/runs/{run_id}
+GET  /api/v1/workflows/runs/{run_id}/nodes
+DELETE /api/v1/workflows/runs/{run_id}
+
+# Webhook 触发
+POST /api/v1/workflows/webhook/{webhook_token}
 ```
+
+没有独立的 `POST /{workflow_id}/run/stream` 端点（SSE 走
+`GET /runs/{run_id}/stream`），也没有 `/runs/{run_id}/continue`、`/step`
+等逐步调试端点。
 
 ---
 
 ## 四、待办事项
 
-### 优先级 P0（核心功能）
-1. [ ] 工作流执行引擎核心逻辑
-2. [ ] 变量上下文管理
-3. [ ] LLM 节点执行器
-4. [ ] 条件分支节点执行器
-5. [ ] 输出节点执行器
-6. [ ] 流式输出 SSE 支持
-7. [ ] 运行 API 端点
+原 P0～P2（执行引擎、变量上下文、各类型节点执行器、调试运行、SSE、运行 API）
+已全部落地，实现说明与端点清单见
+`docs/dev/status/WORKFLOW_ENGINE_STATUS.md`；本节只保留仍未完成的项。
 
-### 优先级 P1（基础节点）
-1. [ ] 代码节点执行器（Python 沙箱）
-2. [ ] 工具节点执行器
-3. [ ] 模板节点执行器
-4. [ ] 变量聚合器执行器
-5. [ ] 变量赋值执行器
-6. [ ] 参数提取器执行器
+### 待办
 
-### 优先级 P2（高级功能）
-1. [ ] 迭代节点执行器
-2. [ ] 循环节点执行器
-3. [ ] 子工作流执行器
-4. [ ] Agent 节点执行器
-5. [ ] 问题分类器执行器
-6. [ ] 调试模式（断点、单步）
-
-### 优先级 P3（触发器）
-1. [ ] Webhook 触发器
-2. [ ] Cron 定时任务（Celery Beat）
-3. [ ] 触发器管理 API
+1. [ ] **Cron 定时任务** — `workflow.check_scheduled`
+   （`backend/app/services/workflow/tasks.py`）已实现定期扫描逻辑，但未注册到
+   Celery Beat，需要补充 beat 调度与触发器管理 API
+2. [ ] **断点 / 单步调试** — 将 `backend/app/services/workflow/debugger.py`
+   的断点、单步、变量查看能力接入 API 与前端调试面板
+3. [ ] **调试 API 补全** — 现有调试入口仅
+   `POST /api/v1/workflows/{workflow_id}/debug`（整轮运行），没有
+   `/runs/{run_id}/continue`、`/step` 等逐步控制端点
 
 ---
 
-## 五、文件结构建议
+## 五、文件结构
+
+本规范最初是"待实现"的对接建议；以下是引擎落地后的实际布局
+（完整说明见 `docs/dev/status/WORKFLOW_ENGINE_STATUS.md`）：
 
 ```
 backend/app/
-├── services/
-│   └── workflow/
-│       ├── __init__.py
-│       ├── engine.py           # 执行引擎核心
-│       ├── context.py          # 执行上下文
-│       ├── executor.py         # 节点执行器基类
-│       ├── executors/          # 各类型节点执行器
-│       │   ├── __init__.py
-│       │   ├── start.py        # user_input, trigger
-│       │   ├── llm.py          # llm, question_classifier
-│       │   ├── condition.py    # condition
-│       │   ├── iteration.py    # iteration, loop
-│       │   ├── code.py         # code
-│       │   ├── template.py     # template
-│       │   ├── tool.py         # tool
-│       │   ├── variable.py     # aggregator, assignment
-│       │   └── output.py       # answer
-│       └── triggers/           # 触发器
-│           ├── __init__.py
-│           ├── webhook.py
-│           └── cron.py
-├── api/v1/endpoints/
-│   └── workflows.py            # 添加运行相关端点
+├── services/workflow/
+│   ├── orchestrator.py         # 执行引擎核心
+│   ├── context.py              # 执行上下文
+│   ├── executor.py             # 节点执行器基类 + 注册表
+│   ├── plan.py                 # DAG 解析与执行计划
+│   ├── stream.py               # SSE 流式输出
+│   ├── retry.py / cache.py / metrics.py / profiler.py
+│   ├── versioning.py / debugger.py / templates.py / benchmark.py
+│   ├── types.py / serialization.py / schema_inference.py
+│   ├── pause_approvers.py
+│   ├── tasks.py                # workflow.execute / execute_node / execute_stage /
+│   │                           # cancel / cleanup / check_scheduled / cleanup_old_runs
+│   └── executors/              # 各类型节点执行器
+│       ├── start.py            # user_input, trigger
+│       ├── answer.py           # answer
+│       ├── llm.py              # llm
+│       ├── decision.py         # decision
+│       ├── condition.py        # condition, question_classifier
+│       ├── code.py             # code
+│       ├── template.py         # template
+│       ├── variable.py         # variable_assignment / aggregator / parameter_extractor
+│       ├── iteration.py        # iteration, loop
+│       ├── tool.py             # tool, agent, http_request
+│       ├── subworkflow.py      # sub_workflow, file_to_url
+│       ├── knowledge.py        # knowledge_retrieval, document_extractor
+│       ├── media_generation.py # media_generation
+│       └── pause.py            # pause
+└── api/v1/endpoints/workflows.py  # 工作流与运行相关端点
 ```
+
+Webhook / 运行记录端点直接实现在 `api/v1/endpoints/workflows.py` 内，
+没有单独的 `triggers/`、`engine.py` 或 `output.py` 模块。

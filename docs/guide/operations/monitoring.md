@@ -9,7 +9,7 @@ Monitoring setup for Clouisle.
 
 ## Admin Observability
 
-> **Note:** Clouisle has no Prometheus-style `/metrics` endpoint. Observability data is provided by the admin observability API under `/api/v1/admin/observability/*` and the frontend Observability dashboard (`/dashboard/observability`). All endpoints require the `admin:dashboard:access` permission and accept a `time_range` of `7d`, `30d`, `90d`, or `all`.
+> **Note:** Clouisle has no Prometheus-style `/metrics` endpoint. Observability data is provided by the admin observability API under `/api/v1/admin/observability/*` and the frontend Observability dashboard (`/dashboard/observability`). All endpoints require the `admin:dashboard:access` permission. The usage endpoints (`/overview`, `/agents`, `/agent/{agent_id}`, `/workflows`, `/workflow/{workflow_id}`, `/timeouts`, `/throughput`, `/tokens`) accept a `time_range` of `7d`, `30d`, `90d`, or `all`; the `/system/*` endpoints are current snapshots and take no `time_range` (`/system/slow-queries` instead takes `threshold_ms`, `page`, and `page_size`).
 
 - `/overview` - Summary statistics for the selected time range
 - `/agents`, `/agent/{agent_id}` - Agent request counts, latency percentiles (p50/p95), success rate, token usage

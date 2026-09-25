@@ -17,7 +17,7 @@ As an administrator, you can:
 ### Admin Dashboard
 
 1. Log in as administrator
-2. Navigate to **Admin** → **Tools**
+2. Navigate to **Admin** → **Capabilities** and open the **Tools** tab (route `/capabilities`); there is no separate Tools sidebar item
 3. View tool management interface
 
 ### Tool List View
@@ -25,7 +25,7 @@ As an administrator, you can:
 The tool list shows:
 
 - **Tool name**
-- **Type** (Builtin, Custom — HTTP or Code, MCP)
+- **Type** (Builtin, Custom — HTTP, Code, or Database, MCP)
 - **Category** (Time, Math, Search, Web, File, Code, Sandbox, API, Data, etc.)
 - **Status** (Enabled / Disabled)
 
@@ -52,6 +52,7 @@ The tool list shows:
 **Search / Web Tools:**
 - **Web Search**: Search the web (requires Tavily API key)
 - **Fetch Webpage**: Fetch and extract webpage content
+- **RSS Feed Reader**: Fetch and parse RSS or Atom feeds into a structured article list
 
 **File Tools:**
 - **MarkItDown**: Parse PDF, Word, Excel, PowerPoint, and text files
@@ -78,10 +79,11 @@ Category: Search
 Status: Enabled
 
 Configuration:
-  API Key: TAVILY_API_KEY
+  TAVILY_API_KEY: ...
+  BOCHA_API_KEY: ...
 ```
 
-Web Search is powered by **Tavily**. The API key is stored under the tool configuration key `TAVILY_API_KEY`; query parameters (e.g. `max_results`) are passed by the agent at call time. There is no Google Custom Search configuration.
+Web Search can use **Tavily** (`TAVILY_API_KEY`) or **Bocha** (`BOCHA_API_KEY`); if neither key is configured it falls back to keyless **DuckDuckGo** search. Query parameters (e.g. `max_results`) are passed by the agent at call time. There is no Google Custom Search configuration.
 
 **Update Configuration:**
 1. Select tool
@@ -162,6 +164,8 @@ Example Response:
   }
 ```
 > **Important:** Custom HTTP tools do not support `{{variable}}` substitution in the URL path or URL string. Keep the endpoint URL static and pass variables through `Query Parameters`, request `Headers`, or `Body Template` fields.
+
+> **Note:** A custom tool can also be a **Database** tool (`type: database`) that runs a SQL query against a configured connection (PostgreSQL, MySQL, Redis, or MongoDB), configured with host/port/database/credentials, a query timeout, and a maximum row limit. Verify connectivity with `POST /api/v1/tools/database/test-connection` (requires `tool:create`).
 
 ### Custom Tool with POST
 
@@ -256,7 +260,7 @@ Example Response:
 
 ### Available Integrations
 
-> **Note:** Not implemented / Roadmap. There is no "integration" tool type (Salesforce, HubSpot, Slack apps, GitHub, Jira, etc.). Tool types are limited to `builtin`, `custom` (HTTP or Code), and `mcp` (MCP server tools). External services are integrated either as HTTP custom tools, MCP servers, or through the notification channel settings (DingTalk, WeChat Work, Feishu, Slack, webhook) in Site Settings.
+> **Note:** Not implemented / Roadmap. There is no "integration" tool type (Salesforce, HubSpot, Slack apps, GitHub, Jira, etc.). Tool types are limited to `builtin`, `custom` (HTTP, Code, or Database), and `mcp` (MCP server tools). External services are integrated either as HTTP custom tools, MCP servers, or through the notification channel settings (DingTalk, WeChat Work, Feishu, Slack, webhook) in Site Settings.
 
 ## Testing Tools
 

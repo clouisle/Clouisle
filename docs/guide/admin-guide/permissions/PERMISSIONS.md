@@ -24,6 +24,8 @@ These permissions are for dashboard management functions, typically only admin r
 | `admin:permission:read` | View permission list |
 | `admin:model:read/create/update/delete` | Model management |
 | `admin:memory:read` | View memory records |
+| `admin:memory:update` | Modify memory records (Admin preset holds only `admin:memory:read`) |
+| `admin:memory:delete` | Delete memory records (Admin preset holds only `admin:memory:read`) |
 | `admin:conversation:read/delete` | Dashboard conversation management |
 | `admin:notification:create/delete` | Dashboard notification management |
 | `admin:team:read/create/update/delete` | System-wide team management |
@@ -78,6 +80,7 @@ These permissions are for managing business resources. All users may have them, 
 | `admin:permission:create/update/delete` | ✓ | | | | |
 | `admin:model:*` | ✓ | ✓ | | | |
 | `admin:memory:read` | ✓ | ✓ | | | |
+| `admin:memory:update/delete` | ✓ | | | | |
 | `admin:conversation:read/delete` | ✓ | ✓ | | | |
 | `admin:notification:create/delete` | ✓ | ✓ | | | |
 | `admin:settings:read` | ✓ | ✓ | | | |
@@ -179,9 +182,9 @@ Editing storage settings requires `admin:settings:update`; archiving/exporting a
 | Menu Item | Required Permission | Super Admin | Admin | Member | Viewer |
 |-----------|---------------------|:-----------:|:-----:|:------:|:------:|
 | Dashboard | `admin:dashboard:access` | ✓ | ✓ | | |
-| Teams | `team:read` | ✓ | ✓ | ✓ | ✓ |
+| Teams | `admin:team:read` | ✓ | ✓ | | |
 | Knowledge Bases | `admin:knowledge-base:read` | ✓ | ✓ | | |
-| Activities | `conversation:read` | ✓ | ✓ | ✓ | ✓ |
+| Activities | `admin:conversation:read` + `workflow:read` (all-of) | ✓ | ✓ | | |
 | Users | `admin:user:read` | ✓ | ✓ | | |
 | Roles | `admin:role:read` | ✓ | ✓ | | |
 | Permissions | `admin:permission:read` | ✓ | ✓ | | |
@@ -195,9 +198,11 @@ Editing storage settings requires `admin:settings:update`; archiving/exporting a
 | Audit Logs | `audit:read` | ✓ | ✓ | | |
 | Site Settings | `admin:settings:read` | ✓ | ✓ | | |
 
-### 5.2 Management Menu Group Visibility
+### 5.2 Sidebar Group Visibility
 
-The "Management" menu group (including Users, Roles, Permissions, Models, Audit Logs, etc.) is only visible when the user has `admin:dashboard:access` permission.
+The admin sidebar renders five groups: **General** (Dashboard, Teams, Knowledge Bases, Activities), **System** (Users, Roles, Permissions), **Resources** (Models, Apps, Capabilities, API Keys, Memories), **Monitoring** (Observability, Notifications, Audit Logs), and **Settings** (Site Settings, Help Center).
+
+Only **System**, **Resources**, and **Monitoring** are gated on `admin:dashboard:access`; the whole group is hidden without it. **General** and **Settings** are not gated on `admin:dashboard:access`, but each of their items still requires its own route permission, so a user only sees the entries they may open.
 
 ---
 

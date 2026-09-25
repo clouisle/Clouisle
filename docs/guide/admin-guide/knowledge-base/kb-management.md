@@ -23,25 +23,13 @@ As an administrator, you can:
 
 ### Knowledge Base List View
 
-The KB list shows:
-
-- **KB name and description**
-- **Team ownership**
-- **Document count**
-- **Total size**
-- **Embedding model**
-- **Status** (`active`, `processing`, `error`, or `archived`)
-- **Last updated**
-- **Created date**
+The KB table columns are **Name** (with the description shown as a secondary line), **Team**, **Documents**, **Chunks**, **Status**, and **Created At**, plus a selection checkbox and per-row actions.
 
 **Filters:**
-- Team
-- Status
-- Embedding model
-- Date range
+- Search box (matches the KB name)
+- Status facet with `active` and `archived` options
 
-**Search:**
-- Search by KB name or description
+The list only renders the active ↔ archived toggle for **Status**, even though a record can also be `processing` or `error`. The underlying list API accepts `team_id`, `search`, `status`, `own_only`, and `include_shared` query parameters.
 
 ## Creating Knowledge Bases
 

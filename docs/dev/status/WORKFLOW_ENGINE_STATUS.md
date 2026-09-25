@@ -45,6 +45,7 @@ backend/app/services/workflow/
     ├── start.py          # user_input, trigger nodes
     ├── answer.py         # answer (output) node
     ├── llm.py            # LLM node
+    ├── decision.py       # decision node (typed decision models)
     ├── condition.py      # condition, question_classifier nodes
     ├── code.py           # code node (sandboxed Python)
     ├── template.py       # template node
@@ -52,7 +53,9 @@ backend/app/services/workflow/
     ├── iteration.py      # iteration, loop nodes
     ├── tool.py           # tool, agent, http_request nodes
     ├── subworkflow.py    # sub_workflow, file_to_url nodes
-    └── knowledge.py      # knowledge_retrieval, document_extractor nodes
+    ├── knowledge.py      # knowledge_retrieval, document_extractor nodes
+    ├── media_generation.py # media_generation node
+    └── pause.py          # pause node (human-in-the-loop)
 ```
 
 ### API Endpoints Added
@@ -64,11 +67,19 @@ backend/app/services/workflow/
 - `POST /api/v1/workflows/runs/{id}/cancel` - Cancel running workflow
 
 **Monitoring (Phase 4):**
-- `GET /api/v1/workflows/metrics/dashboard` - Dashboard summary
-- `GET /api/v1/workflows/metrics/workflows/{id}` - Workflow metrics
-- `GET /api/v1/workflows/metrics/nodes` - Node type metrics
-- `GET /api/v1/workflows/metrics/running` - Running workflows
-- `GET /api/v1/workflows/metrics/cache` - Cache statistics
+
+The metrics router is mounted only on the admin router
+(`backend/app/api/v1/admin/api.py:65`), so all paths live under
+`/api/v1/admin/workflows/metrics/`. Every route below requires
+`admin:dashboard:access`.
+
+- `GET /api/v1/admin/workflows/metrics/dashboard` - Dashboard summary
+- `GET /api/v1/admin/workflows/metrics/workflows/{id}` - Workflow metrics
+- `GET /api/v1/admin/workflows/metrics/nodes` - Node type metrics
+- `GET /api/v1/admin/workflows/metrics/nodes/{node_type}` - Metrics for one node type
+- `GET /api/v1/admin/workflows/metrics/running` - Running workflows
+- `GET /api/v1/admin/workflows/metrics/cache` - Cache statistics
+- `DELETE /api/v1/admin/workflows/metrics/cache` - Clear caches (requires `admin:settings:update`)
 
 **Version Control (Phase 5):**
 - `POST /api/v1/workflow-versions` - Create new version
@@ -79,19 +90,15 @@ backend/app/services/workflow/
 - `GET /api/v1/workflow-versions/{workflow_id}/diff` - Version diff
 - `POST /api/v1/workflow-versions/{workflow_id}/rollback` - Rollback
 - `POST /api/v1/workflow-versions/{workflow_id}/fork` - Fork workflow
+- `GET /api/v1/workflow-versions/{workflow_id}/stats` - Version statistics
 
-**Templates (Phase 5):**
-- `GET /api/v1/workflow-templates` - List templates
-- `GET /api/v1/workflow-templates/featured` - Featured templates
-- `GET /api/v1/workflow-templates/search` - Search templates
-- `GET /api/v1/workflow-templates/categories` - Template categories
-- `GET /api/v1/workflow-templates/{id}` - Get template
-- `POST /api/v1/workflow-templates` - Create template
-- `POST /api/v1/workflow-templates/{id}/instantiate` - Instantiate template
-- `POST /api/v1/workflow-templates/{id}/rate` - Rate template
-- `DELETE /api/v1/workflow-templates/{id}` - Delete template
+**Templates (Phase 5):** service-only, no HTTP API.
 
-### All Node Types Implemented (24/24) ✅
+`backend/app/services/workflow/templates.py` exposes an in-memory
+`TemplateManager` (`get_template_manager()`); it is not mounted on any
+router, so there are no `/api/v1/workflow-templates` endpoints.
+
+### All Node Types Implemented (25/25) ✅
 
 | Node Type | File | Description |
 |-----------|------|-------------|
@@ -99,6 +106,7 @@ backend/app/services/workflow/
 | trigger | start.py | Scheduled/webhook trigger |
 | answer | answer.py | Output node |
 | llm | llm.py | LLM inference with streaming |
+| decision | decision.py | Typed decision-model branching (choice / score / noul) |
 | condition | condition.py | Conditional branching |
 | question_classifier | condition.py | LLM-based classification |
 | code | code.py | Sandboxed Python execution |
@@ -587,28 +595,32 @@ results = await compare_benchmarks(
 
 ### Monitoring API Endpoints
 
-New API endpoints for workflow monitoring:
+Workflow-monitoring endpoints are admin-scoped: the router is included
+without a prefix on the admin router, so its own `/workflows/metrics`
+prefix yields `/api/v1/admin/workflows/metrics/*`. Reads require
+`admin:dashboard:access`; clearing the cache requires
+`admin:settings:update`.
 
 ```
-GET /api/v1/workflows/metrics/dashboard
+GET /api/v1/admin/workflows/metrics/dashboard
     - Dashboard summary with overall metrics
 
-GET /api/v1/workflows/metrics/workflows/{workflow_id}
+GET /api/v1/admin/workflows/metrics/workflows/{workflow_id}
     - Detailed metrics for a specific workflow
 
-GET /api/v1/workflows/metrics/nodes
+GET /api/v1/admin/workflows/metrics/nodes
     - Metrics for all node types
 
-GET /api/v1/workflows/metrics/nodes/{node_type}
+GET /api/v1/admin/workflows/metrics/nodes/{node_type}
     - Metrics for a specific node type
 
-GET /api/v1/workflows/metrics/running
+GET /api/v1/admin/workflows/metrics/running
     - List of currently running workflows
 
-GET /api/v1/workflows/metrics/cache
+GET /api/v1/admin/workflows/metrics/cache
     - Cache statistics
 
-DELETE /api/v1/workflows/metrics/cache
+DELETE /api/v1/admin/workflows/metrics/cache
     - Clear all workflow caches
 ```
 

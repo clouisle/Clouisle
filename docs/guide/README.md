@@ -23,6 +23,10 @@ Welcome to the user and operator documentation for Clouisle. For the extended Ch
 - [Upload documents](user-guide/knowledge-base/uploading-documents.md)
 - [Manage documents](user-guide/knowledge-base/document-management.md)
 - [Search knowledge bases](user-guide/knowledge-base/searching.md)
+- [Document metadata](user-guide/knowledge-base/document-metadata.md)
+- [Knowledge base settings](user-guide/knowledge-base/kb-settings.md)
+- [Configure agents](user-guide/agents/agent-configuration.md)
+- [Embed and share agents](user-guide/agents/embed-and-share.md)
 - [Chat with agents](user-guide/chat/chatting-with-agents.md)
 - [Conversation management](user-guide/chat/conversation-management.md)
 - [Chat file uploads](user-guide/chat/file-uploads.md)
@@ -33,6 +37,8 @@ Welcome to the user and operator documentation for Clouisle. For the extended Ch
 - [API key management](user-guide/api-keys/managing-api-keys.md)
 - [API key scopes](user-guide/api-keys/api-key-scopes.md)
 - [Skills and memories](user-guide/settings/skills-and-memories.md)
+- [Notification preferences](user-guide/settings/notification-preferences.md)
+- [Team settings](user-guide/settings/team-settings.md)
 
 ### Admin guide
 - [User management](admin-guide/users/user-management.md)
@@ -42,7 +48,9 @@ Welcome to the user and operator documentation for Clouisle. For the extended Ch
 - [Workflow management](admin-guide/workflows/workflow-management.md)
 - [Model management](admin-guide/models/model-management.md)
 - [Tool management](admin-guide/tools/tool-management.md)
+- [Tools reference](admin-guide/tools/TOOLS.md)
 - [Permissions](admin-guide/permissions/PERMISSIONS.md)
+- [Permission management](admin-guide/permissions/permission-management.md)
 - [System settings](admin-guide/settings/system-settings.md)
 - [SSO settings](admin-guide/settings/SSO.md)
 - [Automatic notifications](admin-guide/settings/AUTO_NOTIFICATIONS.md)
@@ -51,23 +59,46 @@ Welcome to the user and operator documentation for Clouisle. For the extended Ch
 
 ### API reference
 - [Overview](api-reference/overview.md)
+- [Quick start](api-reference/quick-start.md)
 - [Authentication](api-reference/authentication.md)
 - [Response format](api-reference/response-format.md)
 - [Error codes](api-reference/error-codes.md)
+- [Error handling](api-reference/error-handling.md)
 - [Pagination](api-reference/pagination.md)
 - [Filtering](api-reference/filtering.md)
 - [Rate limiting](api-reference/rate-limiting.md)
 - [File uploads](api-reference/file-uploads.md)
 - [SSE streaming](api-reference/sse-streaming.md)
+- [WebSocket API](api-reference/websocket-api.md)
 - [Webhooks](api-reference/webhooks.md)
+- [Webhooks guide](api-reference/webhooks-guide.md)
 - [Batch operations](api-reference/batch-operations.md)
 - [Sorting](api-reference/sorting.md)
 - [SDK examples](api-reference/sdk-examples.md)
+- [API best practices](api-reference/api-best-practices.md)
 - [Endpoint reference directory](api-reference/endpoints/)
+- [Agents API](api-reference/endpoints/agents.md)
+- [API Keys API](api-reference/endpoints/api-keys.md)
 - [Auth API](api-reference/endpoints/auth.md)
+- [Chat API](api-reference/endpoints/chat.md)
+- [Conversation Statistics API](api-reference/endpoints/conversations.md)
 - [Embed API](api-reference/endpoints/embed.md)
+- [Knowledge Bases API](api-reference/endpoints/knowledge-bases.md)
+- [Memories API](api-reference/endpoints/memories.md)
+- [Models API](api-reference/endpoints/models.md)
+- [Notifications API](api-reference/endpoints/notifications.md)
+- [Packages API](api-reference/endpoints/packages.md)
 - [Prompts API](api-reference/endpoints/prompts.md)
+- [Settings API](api-reference/endpoints/settings.md)
+- [Skills API](api-reference/endpoints/skills.md)
+- [SSO API](api-reference/endpoints/sso.md)
+- [Team Models API](api-reference/endpoints/team-models.md)
+- [Teams API](api-reference/endpoints/teams.md)
+- [Tools API](api-reference/endpoints/tools.md)
+- [TOTP API](api-reference/endpoints/totp.md)
+- [Users API](api-reference/endpoints/users.md)
 - [Workflow Versions API](api-reference/endpoints/workflow-versions.md)
+- [Workflows API](api-reference/endpoints/workflows.md)
 
 ### Concepts
 - [Architecture](concepts/architecture.md)
@@ -94,6 +125,7 @@ Welcome to the user and operator documentation for Clouisle. For the extended Ch
 
 ### Operations
 - [Backup and recovery](deployment/backup-recovery.md)
+- [Backup and restore](operations/backup-restore.md)
 - [Monitoring](operations/monitoring.md)
 - [Upgrading](operations/upgrading.md)
 - [Troubleshooting](deployment/troubleshooting.md)
@@ -101,6 +133,9 @@ Welcome to the user and operator documentation for Clouisle. For the extended Ch
 
 ### Testing
 - [Agent UI automation](testing/agent-ui-automation.md)
+
+### Release notes
+- [Changelog](CHANGELOG.md)
 
 ## Related docs
 

@@ -30,6 +30,20 @@ Knowledge base settings control how documents are processed, indexed, and retrie
 
 > **Note:** Knowledge bases belong to a team and are visible to that team's members. There is no per-KB public visibility setting.
 
+## Team Sharing
+
+A knowledge base can be shared with other teams as **read-only**:
+
+1. Open **Knowledge Base** (`/app/kb`) and choose **Share** from a KB card's **⋯** menu. The action is only shown for KBs your team owns and only to team Owners/Admins.
+2. In the **Share** dialog, select the target team. The permission level is fixed to **Read Only** — the receiving team can view, retrieve, and associate the KB with its agents, but cannot edit it.
+3. Click **Share**. The dialog's **Shared With** list shows the current shares, and each can be revoked.
+
+Effects and rules:
+
+- Sharing requires the team Owner/Admin role on the KB's own team; private KBs cannot be shared.
+- On the KB list, a KB your team owns that others use shows a **"Shared with N teams"** badge; a KB shared to your team shows a **"From {team}"** badge.
+- A shared KB appears in the receiving team's `/app/kb` list, can be searched and used by its agents, and is read-only: its settings, documents, and upload/edit actions are disabled.
+
 ## Embedding Settings
 
 ### Embedding Model
@@ -178,4 +192,4 @@ Per-KB retrieval parameters for agents: `retrieval_top_k` (default 5), `score_th
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-26

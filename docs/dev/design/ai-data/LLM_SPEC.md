@@ -18,7 +18,7 @@
 |----------|----------|------|
 | Chat / Embedding / Rerank | LangChain | 生态丰富，支持 50+ 供应商 |
 | Image / Video / Audio | 自研适配器 | LangChain 支持不完善 |
-| Tools / MCP | LangChain + langchain-mcp-adapters | 原生支持 |
+| Tools / MCP | 自研 Registry + 官方 `mcp` SDK | 工具注册表见 `app/llm/tools/`，MCP 客户端为 `tools/mcp_client.py` |
 | Agent | LangGraph | 复杂工作流支持 |
 
 ---
@@ -67,6 +67,9 @@
 │                                                                      │
 │  Audio (自研):                                                       │
 │  ├── OpenAI TTS/Whisper, Azure, ElevenLabs                          │
+│                                                                      │
+│  Decision (自研):                                                    │
+│  └── TypeSafe AI (System One, POST /v1/systemone)                   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -133,6 +136,8 @@ from app.llm.types import (
     STTRequest,
     ImageContent,
     AudioContent,
+    DecisionRequest,
+    DecisionQuestion,
 )
 
 # ========== Chat ==========
@@ -184,6 +189,25 @@ audio = await model_manager.text_to_speech(
 transcript = await model_manager.speech_to_text(
     STTRequest(audio=AudioContent(file_path="audio.mp3")),
 )
+
+# ========== Decision（类型化决策，非生成式） ==========
+decision = await model_manager.decide(
+    DecisionRequest(
+        state="用户申请退款 200 元，订单已超过 7 天",
+        questions={
+            "refund": DecisionQuestion(
+                type="choice",
+                instructions="是否批准该退款申请？",
+                criteria={"approve": None, "reject": None},
+            )
+        },
+    ),
+    model_id="jev-1.13.0",
+)
+answer = decision.answers["refund"]
+answer.choice          # 概率最高的选项
+answer.probabilities   # 每个选项/等级的概率分布
+answer.confidence      # 由分布推导的确定性（noul 不返回）
 ```
 
 ---
@@ -279,6 +303,36 @@ class STTRequest(BaseModel):
     prompt: str | None = None
 ```
 
+### 5.4 决策类型
+
+```python
+DecisionQuestionType = Literal["choice", "score", "noul"]
+
+class DecisionQuestion(BaseModel):
+    type: DecisionQuestionType            # choice / score / noul
+    instructions: str | dict | list       # 要评估的问题
+    criteria: dict[str, Any] | list[Any] | None = None
+
+class DecisionRequest(BaseModel):
+    state: str | dict | list              # 被评估的内容
+    questions: dict[str, DecisionQuestion]  # 以 id 为键，便于回读答案
+    model: str | None = None              # 覆盖供应商配置的模型
+
+class DecisionAnswer(BaseModel):
+    type: DecisionQuestionType
+    choice: str | None = None             # choice：概率最高的选项
+    probabilities: dict[str, float] | None = None  # 每个选项/等级的概率
+    confidence: float | None = None       # 由分布推导的确定性（noul 不返回）
+    score: float | None = None            # score：按概率加权的位置
+    legend: dict[str, str] | None = None  # score：等级编号 -> 描述
+    noul: float | None = None             # noul：答案为 yes 的概率
+
+class DecisionResponse(BaseModel):
+    model: str                            # 产生答案的模型
+    answers: dict[str, DecisionAnswer]    # 以问题 id 为键
+    usage: Usage
+```
+
 ---
 
 ## 6. 错误处理
@@ -319,47 +373,54 @@ class ProviderError(LLMError):
 backend/app/llm/
 ├── __init__.py                    # 导出 model_manager
 ├── manager.py                     # ModelManager 主类
+├── errors.py                      # 统一异常
+├── token_counter.py               # token 计数（tiktoken）
 ├── types/
 │   ├── __init__.py
 │   ├── base.py                    # 基础类型
 │   ├── chat.py                    # Chat 类型
+│   ├── embedding.py               # Embedding 类型
+│   ├── rerank.py                  # 重排类型
 │   ├── image.py                   # 图像生成类型
 │   ├── video.py                   # 视频生成类型
-│   └── audio.py                   # 音频类型
+│   ├── audio.py                   # 音频类型
+│   └── decision.py                # 决策类型（choice / score / noul）
 ├── adapters/
 │   ├── __init__.py
-│   ├── base.py                    # 适配器基类
-│   ├── chat/                      # Chat 适配器 (LangChain)
-│   │   ├── __init__.py
-│   │   └── factory.py
-│   ├── image/                     # 图像生成适配器
-│   │   ├── __init__.py
-│   │   ├── openai.py
-│   │   ├── stability.py
-│   │   └── midjourney.py
-│   ├── video/                     # 视频生成适配器
-│   │   ├── __init__.py
-│   │   ├── runway.py
-│   │   ├── pika.py
-│   │   ├── luma.py
-│   │   └── kling.py
-│   └── audio/                     # 音频适配器
-│       ├── __init__.py
-│       ├── openai_tts.py
-│       ├── openai_stt.py
-│       └── elevenlabs.py
-├── tools/                         # 工具系统
-│   ├── __init__.py
-│   ├── registry.py
-│   └── builtin/
-├── mcp/                           # MCP 集成
-│   ├── __init__.py
-│   └── manager.py
-├── agents/                        # Agent 系统
-│   ├── __init__.py
-│   └── react.py
-└── errors.py                      # 统一异常
+│   ├── chat/                      # Chat 适配器（LangChain）
+│   │   ├── base.py / factory.py
+│   │   ├── openai_adapter.py / openai_compatible_adapter.py
+│   │   ├── anthropic_adapter.py / gemini_adapter.py
+│   │   ├── deepseek_adapter.py / moonshot_adapter.py
+│   │   ├── ollama_adapter.py / xai_adapter.py
+│   │   ├── thinking.py / tool_call_accumulator.py
+│   ├── embedding/                 # adapter.py + factory.py
+│   ├── rerank/                    # base.py / factory.py / llm_adapter.py / openai_compatible_adapter.py
+│   ├── image/                     # base.py + openai / openai_responses / google /
+│   │                              #   stability / minimax / luma / runway / siliconflow / volcengine
+│   ├── video/                     # base.py + dashscope / kling / luma / minimax /
+│   │                              #   pika / runway / siliconflow / volcengine
+│   ├── audio/                     # base.py + openai_tts / openai_stt / minimax_tts /
+│   │                              #   volcengine_tts / volcengine_generation
+│   ├── decision/                  # base.py / factory.py / typesafe_adapter.py
+│   ├── *_client.py                # 供应商直连客户端（runway / luma / pika / kling /
+│   │                              #   minimax / dashscope_video / siliconflow / volcengine）
+│   └── media_utils.py
+└── tools/                         # 工具系统
+    ├── __init__.py
+    ├── registry.py                # Tool Registry
+    ├── executors.py
+    ├── mcp_client.py              # MCP 客户端（基于官方 mcp SDK，无独立 llm/mcp/ 包）
+    ├── memory_tools.py            # 记忆工具
+    ├── interaction.py
+    ├── bash.py / bash_output.py
+    ├── sandbox.py / sandbox_files.py / sandbox_paths.py
+    └── builtin/                   # 内置工具（含数据库连接器，见 TOOL_SYSTEM_SPEC）
 ```
+
+没有顶层 `adapters/base.py`、`adapters/image/midjourney.py`、
+`adapters/audio/elevenlabs.py`、`llm/mcp/` 或 `llm/agents/` 包；Agent 循环
+实现位于 `backend/app/services/agent_loop.py` 等模块。
 
 ---
 
@@ -382,20 +443,17 @@ backend/app/llm/
 
 ## 9. 依赖包
 
+以 `backend/pyproject.toml` 为唯一事实来源，当前相关 pin 为：
+
 ```toml
-# LangChain 核心
-langchain = "^0.3"
-langchain-core = "^0.3"
-langchain-community = "^0.3"
-
-# 供应商支持
-langchain-openai = "^0.2"
-langchain-anthropic = "^0.2"
-langchain-google-genai = "^2.0"
-
-# Agent 框架
-langgraph = "^0.2"
-
-# MCP 支持
-langchain-mcp-adapters = "^0.1"
+langchain>=1.3.9
+langchain-core>=1.3.3
+langchain-community>=0.4.1
+langchain-openai>=1.2.1
+langchain-anthropic>=1.4.6
+langchain-google-genai>=4.2.1
+google-genai>=1.72.0
+langgraph>=1.1.6
+mcp>=1.27.0            # MCP 客户端基于官方 mcp SDK，未使用 langchain-mcp-adapters
+tiktoken>=0.12.0
 ```

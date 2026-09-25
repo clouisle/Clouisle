@@ -72,7 +72,7 @@ The backend image is shared across three services, and sandbox execution uses a 
 | Service | Command | Replicas |
 |---------|---------|----------|
 | api | `python main.py server -H 0.0.0.0 -w 4 --no-reload` | 1+ |
-| worker | `python main.py worker -c 4 -Q default,knowledge,workflow` | 1+ |
+| worker | `python main.py worker -c 4 -Q default,agent,knowledge,workflow` | 1+ |
 | sandbox-worker | `python main.py sandbox-worker -c ${SANDBOX_WORKER_CONCURRENCY:-1}` | 1+ |
 | beat | `python main.py beat` | **Exactly 1** |
 
@@ -689,11 +689,11 @@ Browser
   └── API requests (/api/*) ──► Next rewrites (frontend container) ──► Backend Gunicorn (:8000)
 ```
 
-The frontend container runs the Next.js standalone server (`node server.js`) on port 3000. It handles server-side rendering and proxies `/api/*` requests to the backend through Next.js rewrites (`frontend/next.config.ts`, destination from `BACKEND_INTERNAL_URL`, default `http://api:8000`).
+The frontend container runs the Next.js standalone server (`node server.js`) on port 3000. It handles server-side rendering and proxies `/api/*` requests to the backend through Next.js rewrites (`frontend/next.config.ts`, destination from `BACKEND_INTERNAL_URL`, code default `http://localhost:8000`; Compose sets it to `http://api:8000`).
 
 ### Header Forwarding
 
-The optional external Nginx (`deploy/nginx/default.conf`) forwards the following headers to the backend on `/api/*` requests (when used in front of the frontend container):
+The optional Nginx example (`deploy/nginx/default.conf`) is a sidecar layout, not the shipped frontend image: it listens on port 3000, proxies `/api/` to `http://api:8000`, and proxies all other requests to the Next.js server on `http://127.0.0.1:3001` (the frontend image itself serves `node server.js` on port 3000 with no Nginx). It forwards the following headers to the backend on `/api/*` requests:
 
 | Header | Value | Purpose |
 |--------|-------|---------|
@@ -859,7 +859,7 @@ Common causes:
 
 ### Frontend returns 502 for API requests
 
-The frontend container proxies `/api/*` to `http://api:8000` via Next.js rewrites (destination from `BACKEND_INTERNAL_URL`). A 502 means the backend is unreachable.
+The frontend container proxies `/api/*` to the backend via Next.js rewrites (destination from `BACKEND_INTERNAL_URL`; code default `http://localhost:8000`, Compose sets `http://api:8000`). A 502 means the backend is unreachable.
 
 ```bash
 # Check if backend is running
@@ -944,6 +944,6 @@ Adjust resource limits in `docker-compose.yml` (add `deploy.resources`) or in `c
 
 The default proxy timeout is 1800 seconds (30 minutes). For very long LLM operations:
 
-- Optional external Nginx: edit `proxy_read_timeout` / `proxy_send_timeout` in `deploy/nginx/default.conf`
+- Optional Nginx sidecar example: edit `proxy_read_timeout` / `proxy_send_timeout` in `deploy/nginx/default.conf`
 - K8s Ingress: edit `nginx.ingress.kubernetes.io/proxy-read-timeout` annotation
 - Gunicorn: edit `--timeout` in the `start_server` command in `main.py` (the production gunicorn invocation) — the supplied Compose/K8s `api` command does not override it

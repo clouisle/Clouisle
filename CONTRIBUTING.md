@@ -21,7 +21,7 @@ This project and everyone participating in it is governed by the [Clouisle Code 
 
 If you want to ask a question, we assume that you have read the available [Documentation](README.md).
 
-Before you ask a question, it is best to search for existing [Issues](https://github.com/yunhai-dev/Clouisle/issues) that might help you. In case you've found a suitable issue and still need clarification, you can write your question in this issue. It is also advisable to search the internet for answers first.
+Before you ask a question, it is best to search for existing [Issues](https://github.com/clouisle/Clouisle/issues) that might help you. In case you've found a suitable issue and still need clarification, you can write your question in this issue. It is also advisable to search the internet for answers first.
 
 ## I Want To Contribute
 
@@ -44,4 +44,4 @@ This section guides you through submitting an enhancement suggestion for Clouisl
 
 ## Development Setup
 
-Please refer to the [README.md](README.md) for instructions on setting up the backend (FastAPI/uv) and frontend (Next.js/Bun).
+Please refer to the [Development Guide](docs/guide/getting-started/development.md) for instructions on setting up the backend (FastAPI/uv) and frontend (Next.js/Bun).

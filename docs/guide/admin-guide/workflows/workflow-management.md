@@ -70,6 +70,7 @@ The workflow list shows:
 The editor provides these node types:
 
 - **LLM** (`llm`): Call a language model
+- **Decision** (`decision`): Route on a decision model's typed answer (choice, score, or yes/no)
 - **Media Generation** (`media_generation`): Generate media with a compatible model
 - **Condition** (`condition`): Branch on a condition
 - **Question Classifier** (`question_classifier`): Classify input questions
@@ -170,11 +171,12 @@ Output Variable: kb_results
 
 > **Note:** Not implemented / Roadmap: there is no real-time execution dashboard (running/queued executions, success rate, average execution time, cost). Run statistics are available via `GET /api/v1/workflows/runs/stats` (team-filterable) and `GET /api/v1/workflows/{workflow_id}/stats` (+ `/stats/trends`).
 
-### View Execution History
+### View Run History
 
-1. Select workflow
-2. Click **Execution History** tab
-3. View run list:
+There is no per-workflow "Execution History" tab. Admin run history is available in **Admin** → **Activities** → **Workflow Runs** (the run table also backs the run endpoints listed below).
+
+1. Open **Activities** → **Workflow Runs**
+2. View run list:
    - Run ID
    - Status (`running`, `success`, `failed`, etc.)
    - Start time
@@ -319,7 +321,7 @@ There is no schedule-management UI or next-run listing. Cron configuration is st
 **Solutions:**
 
 1. **Check run details:**
-   - Open the failed run in **Execution History**
+   - Open the failed run in **Activities** → **Workflow Runs**
    - Review node executions and error details
 
 2. **Common errors:**
@@ -375,9 +377,9 @@ There is no schedule-management UI or next-run listing. Cron configuration is st
    - Optimize tool calls
 
 2. **Use parallel execution:**
-   - Identify independent nodes
-   - Use Parallel node
-   - Execute concurrently
+   - Identify independent items that can run at the same time
+   - Use an **Iteration** node with **parallel** execution enabled and a **max parallel** limit
+   - Each item then runs concurrently up to that limit
 
 3. **Add timeouts:**
    - Set node timeouts

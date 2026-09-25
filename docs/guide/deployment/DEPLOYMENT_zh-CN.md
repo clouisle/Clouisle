@@ -72,7 +72,7 @@ frontend 容器直接运行 Next.js standalone 服务（`node server.js`，端�
 | 服务 | 命令 | 副本数 |
 |------|------|--------|
 | api | `python main.py server -H 0.0.0.0 -w 4 --no-reload` | 1+ |
-| worker | `python main.py worker -c 4 -Q default,knowledge,workflow` | 1+ |
+| worker | `python main.py worker -c 4 -Q default,agent,knowledge,workflow` | 1+ |
 | sandbox-worker | `python main.py sandbox-worker -c ${SANDBOX_WORKER_CONCURRENCY:-1}` | 1+ |
 | beat | `python main.py beat` | **必须为 1** |
 
@@ -700,11 +700,11 @@ Browser
   └── API requests (/api/*) ──► Next rewrites（frontend 容器）──► Backend Gunicorn (:8000)
 ```
 
-frontend 容器运行 Next.js standalone 服务（`node server.js`），监听 3000 端口。它负责 SSR，并通过 Next.js rewrites（`frontend/next.config.ts`，目标取自 `BACKEND_INTERNAL_URL`，默认 `http://api:8000`）将 `/api/*` 请求代理到后端。
+frontend 容器运行 Next.js standalone 服务（`node server.js`），监听 3000 端口。它负责 SSR，并通过 Next.js rewrites（`frontend/next.config.ts`，目标取自 `BACKEND_INTERNAL_URL`，代码默认 `http://localhost:8000`，Compose 中设为 `http://api:8000`）将 `/api/*` 请求代理到后端。
 
 ### Header 转发
 
-可选的外部 Nginx（`deploy/nginx/default.conf`，置于 frontend 容器之前时）在 `/api/*` 请求中向后端转发以下 Header：
+可选的 Nginx 示例（`deploy/nginx/default.conf`）是 sidecar 布局，并非 frontend 镜像本身：它监听 3000 端口，将 `/api/` 代理到 `http://api:8000`，其余请求代理到 `http://127.0.0.1:3001` 上的 Next.js 服务（frontend 镜像本身在 3000 端口运行 `node server.js`，不含 Nginx）。它在 `/api/*` 请求中向后端转发以下 Header：
 
 | Header | 值 | 用途 |
 |--------|----|------|
@@ -868,7 +868,7 @@ kubectl -n clouisle exec statefulset/postgres -- pg_isready -U postgres
 
 ### Frontend 访问 API 返回 502
 
-frontend 容器通过 Next.js rewrites（目标取自 `BACKEND_INTERNAL_URL`）将 `/api/*` 代理到 `http://api:8000`。502 说明 backend 不可达。
+frontend 容器通过 Next.js rewrites（目标取自 `BACKEND_INTERNAL_URL`；代码默认 `http://localhost:8000`，Compose 中设为 `http://api:8000`）将 `/api/*` 代理到后端。502 说明 backend 不可达。
 
 ```bash
 # Check if backend is running
@@ -953,6 +953,6 @@ kubectl -n clouisle describe pod "$POD_NAME"  # Check "Last State" for OOMKilled
 
 默认代理超时为 1800 秒（30 分钟）。若 LLM 操作较长：
 
-- 可选外部 Nginx：编辑 `deploy/nginx/default.conf` 中的 `proxy_read_timeout` / `proxy_send_timeout`
+- 可选 Nginx sidecar 示例：编辑 `deploy/nginx/default.conf` 中的 `proxy_read_timeout` / `proxy_send_timeout`
 - K8s Ingress：编辑 `nginx.ingress.kubernetes.io/proxy-read-timeout` 注解
 - Gunicorn：编辑 `main.py` 中 `start_server` 命令的 `--timeout`（生产 gunicorn 调用）——项目提供的 Compose/K8s `api` 命令未覆盖该值

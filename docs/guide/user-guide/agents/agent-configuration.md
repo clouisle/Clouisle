@@ -170,7 +170,7 @@ The following toggles control the chat experience:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| **Max tool iterations** | 5 (1-200) | Maximum tool-call iterations per round |
+| **Max Iterations** | 5 (1-200) | Maximum tool-call iterations per round |
 | **Hide tool calls** | off | Hide tool call details in the chat UI |
 | **Hide message actions** | off | Hide token usage / speed stats in the chat UI |
 | **Hide reasoning** | off | Hide reasoning / chain-of-thought in the chat UI |
@@ -328,4 +328,4 @@ Once satisfied with the preview results:
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-26

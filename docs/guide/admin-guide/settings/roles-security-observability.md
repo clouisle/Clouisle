@@ -27,10 +27,10 @@ Navigate to **System Settings > Roles** (`/roles`):
 ## 1. Security Settings (`/site-settings/security`)
 
 - **SSRF Outbound Network Allowlist**: Restrict HTTP request nodes, Webhook triggers, and document URL importers to prevent Server-Side Request Forgery against private subnets.
-- **Click Captcha Verification**: Configure human verification thresholds for registration and login pages to defend against automated brute-force attacks.
+- **Enable Human Verification**: A single `enable_captcha` switch that shows human verification on the login and registration pages to defend against automated brute-force attacks. There is no separate verification threshold to configure.
 
 ## 2. System Observability (`/dashboard/observability`)
 
 - **Real-time Overview**: Track active agent sessions, workflow run throughput, and token consumption rates.
-- **Worker & Queue Health**: Monitor Celery backlog and active worker concurrency across `default`, `agent`, `knowledge`, and `workflow` queues.
-- **Slow Queries & Interrupted Runs**: Identify and diagnose long-running SQL queries or unexpected worker restarts that resulted in interrupted executions.
+- **Worker & Queue Health**: Monitor Celery backlog and active worker concurrency across the `default`, `agent`, `knowledge`, `workflow`, and `sandbox` queues.
+- **Slow Queries & Workers**: The **Slow Queries** tab surfaces the longest-running SQL statements, and the **Workers** tab shows per-queue backlog, worker activity, and task details. The console's nine tabs are Overview, System Health, Agent Performance, Workflow Performance, Timeout Analysis, System Throughput, Token & Cost, Workers, and Slow Queries.

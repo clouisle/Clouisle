@@ -19,6 +19,7 @@ Internal engineering documentation lives here.
 - [Backend API reference](api/BACKEND_API.md)
 
 ### Design specs
+- [Section index](design/README.md)
 - [RBAC spec](design/access-control/RBAC_SPEC.md)
 - [Team model auth spec](design/access-control/TEAM_MODEL_AUTH_SPEC.md)
 - [Workflow engine architecture](design/app-platform/WORKFLOW_ENGINE_ARCHITECTURE.md)

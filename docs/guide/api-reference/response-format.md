@@ -214,7 +214,7 @@ GET /api/v1/agents?page=1&page_size=20
 | `page` | integer | Current page number |
 | `page_size` | integer | Items per page |
 
-There are no `total_pages`, `has_next`, or `has_prev` fields — compute them client-side when needed.
+Pagination responses normally return only `total`, `page`, and `page_size`; they do not include `total_pages`, `has_next`, or `has_prev` — compute them client-side when needed. The exception is the admin audit-log list (`GET /api/v1/admin/audit-logs`), whose `data` also includes `total_pages`.
 
 ### Pagination Examples
 
@@ -272,7 +272,7 @@ HTTP/1.1 401 Unauthorized
 
 Responses use the standard HTTP headers (`Content-Type: application/json` for JSON endpoints, `text/event-stream` for SSE streams). Clouisle does **not** add custom response headers such as `X-Request-ID`, `X-Response-Time`, `X-RateLimit-*`, or pagination headers (`X-Total-Count`, `X-Page`, `X-Page-Size`).
 
-Pagination metadata is returned exclusively in the response body (`data.total`, `data.page`, `data.page_size`).
+Pagination metadata is returned exclusively in the response body (normally `data.total`, `data.page`, `data.page_size`; the admin audit-log list additionally returns `data.total_pages`).
 
 ## Timestamps
 
@@ -596,4 +596,4 @@ def process_response(data: Dict[str, Any]) -> Optional[Dict]:
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-26

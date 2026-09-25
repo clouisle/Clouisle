@@ -694,6 +694,12 @@ When the failure that triggers the lock is the last allowed attempt, the respons
 
 **Description**: Document is still processing
 
+### 6007 - KB Access Denied
+
+**Description**: The current user/API key has no access to this knowledge base
+
+**HTTP Status**: 403 Forbidden
+
 ## Model Errors (6100-6199)
 
 ### 6100 - Model Not Found
@@ -738,6 +744,10 @@ When the failure that triggers the lock is the last allowed attempt, the respons
 ### 6105 - Model Vision Not Supported
 
 **Description**: The model does not support vision inputs
+
+### 6106 - Model Disabled
+
+**Description**: The model is disabled and cannot be used for chat or embeddings
 
 ## Agent Errors (6200-6299)
 
@@ -872,4 +882,4 @@ def make_request_with_retry(url, max_retries=3):
 
 ---
 
-**Last Updated**: 2026-08-14
+**Last Updated**: 2026-09-26

@@ -50,7 +50,7 @@ curl -X GET "https://your-domain.com/api/v1/agents?page=2&page_size=50" \
 - `page`: Current page number
 - `page_size`: Number of items per page
 
-There are **no** `total_pages`, `has_next`, or `has_prev` fields, and no cursor-based pagination. Compute page boundaries client-side from `total` and `page_size`:
+Pagination responses normally return only `total`, `page`, and `page_size` — they do **not** include `total_pages`, `has_next`, or `has_prev`, and there is no cursor-based pagination. The one exception is the admin audit-log list (`GET /api/v1/admin/audit-logs`), whose `data` additionally includes `total_pages`. Everywhere else, compute page boundaries client-side from `total` and `page_size`:
 
 ```python
 total_pages = math.ceil(total / page_size)  # last page, for iteration
@@ -442,4 +442,4 @@ results = filter_paginated({
 
 ---
 
-**Last Updated**: 2026-08-14
+**Last Updated**: 2026-09-26

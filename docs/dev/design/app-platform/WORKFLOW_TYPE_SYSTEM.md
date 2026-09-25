@@ -141,6 +141,11 @@ overrides (the only ones today):
   the legacy type string.
 - `ParameterExtractorNodeExecutor` — per-parameter `typeSpec` honoured;
   always emits a trailing `_extraction_confidence: number`.
+- `DecisionNodeExecutor` — fixed per question type: always
+  `answer: string`, `selected_handle: string`, `usage: object`; plus
+  `choice: string`, `confidence: number`, `probabilities: object` for
+  `choice`, `score: number`, `confidence: number`, `probabilities: object`
+  for `score`, or `noul: number` for `noul`.
 
 Other executors stay on the auto-converted default; they can opt in
 incrementally as their UIs gain richer schema editing.
@@ -230,8 +235,8 @@ hard cutover means:
   return native values, embedded interpolation renders as JSON, branches
   round-trip as lists.
 - `backend/tests/services/workflow/test_output_schema.py` — default
-  legacy-type lift; LLM / code / parameter_extractor overrides; user
-  `typeSpec` honoured.
+  legacy-type lift; LLM / code / parameter_extractor / decision overrides;
+  user `typeSpec` honoured.
 - `backend/tests/services/workflow/test_schema_inference.py` — inference,
   union merge across iterations, read / write of `inferredSchema` on
   workflow definitions.

@@ -12,7 +12,7 @@ Users are usually in a work context where they need confidence, traceability, an
 
 ## Product Purpose
 
-Clouisle is an enterprise-grade AI agent, knowledge base, and workflow automation platform. It helps organizations build, deploy, monitor, and govern intelligent AI applications that can retrieve, reason, and execute across internal knowledge and external tools.
+Clouisle is a multi-agent collaboration platform and workflow engine for enterprise use: production-ready AI agent teams with sandboxed execution, hybrid RAG, and enterprise-grade security, plus the knowledge base, model, and governance surfaces needed to operate them. It helps organizations build, deploy, monitor, and govern intelligent AI applications that can retrieve, reason, and execute across internal knowledge and external tools.
 
 Success means users can understand system state quickly, configure AI capabilities safely, and trust that agents, workflows, knowledge bases, models, permissions, and operations remain observable and manageable at scale.
 

@@ -8,7 +8,7 @@
 
 | 权限 | 说明 | 用途 |
 |------|------|------|
-| `*` | 超级权限 | 仅 Super Admin 角色拥有，绕过所有权限检查 |
+| `*` | 通配权限码 | 满足权限码检查；后端检查真正的运行时旁路是 `User.is_superuser` |
 | `admin:dashboard:access` | 后台访问权限 | 控制是否能访问管理后台，是区分「管理员」和「普通用户」的关键权限 |
 
 ### 1.2 后台管理权限（需要 `admin:dashboard:access`）
@@ -22,6 +22,8 @@
 | `admin:permission:read` | 查看权限列表 |
 | `admin:model:read/create/update/delete` | 模型管理 |
 | `admin:memory:read` | 查看记忆记录 |
+| `admin:memory:update` | 修改记忆记录（Admin 预设角色仅持有 `admin:memory:read`） |
+| `admin:memory:delete` | 删除记忆记录（Admin 预设角色仅持有 `admin:memory:read`） |
 | `admin:conversation:read/delete` | 后台对话管理 |
 | `admin:notification:create/delete` | 后台通知管理 |
 | `admin:team:read/create/update/delete` | 全局团队管理 |
@@ -76,6 +78,7 @@
 | `admin:permission:create/update/delete` | ✓ | | | | |
 | `admin:model:*` | ✓ | ✓ | | | |
 | `admin:memory:read` | ✓ | ✓ | | | |
+| `admin:memory:update/delete` | ✓ | | | | |
 | `admin:conversation:read/delete` | ✓ | ✓ | | | |
 | `admin:notification:create/delete` | ✓ | ✓ | | | |
 | `admin:settings:read` | ✓ | ✓ | | | |
@@ -157,9 +160,9 @@
 | 菜单项 | 所需权限 | Super Admin | Admin | Member | Viewer |
 |--------|---------|:-----------:|:-----:|:------:|:------:|
 | 仪表盘 | `admin:dashboard:access` | ✓ | ✓ | | |
-| 团队 | `team:read` | ✓ | ✓ | ✓ | ✓ |
+| 团队 | `admin:team:read` | ✓ | ✓ | | |
 | 知识库 | `admin:knowledge-base:read` | ✓ | ✓ | | |
-| 活动 | `conversation:read` | ✓ | ✓ | ✓ | ✓ |
+| 活动 | `admin:conversation:read` + `workflow:read`（均需满足） | ✓ | ✓ | | |
 | 用户 | `admin:user:read` | ✓ | ✓ | | |
 | 角色 | `admin:role:read` | ✓ | ✓ | | |
 | 权限 | `admin:permission:read` | ✓ | ✓ | | |
@@ -173,9 +176,11 @@
 | 审计日志 | `audit:read` | ✓ | ✓ | | |
 | 站点设置 | `admin:settings:read` | ✓ | ✓ | | |
 
-### 5.2 管理菜单组可见性
+### 5.2 侧边栏分组可见性
 
-「管理」菜单组（包含用户、角色、权限、模型、审计日志等）仅在用户拥有 `admin:dashboard:access` 权限时显示。
+后台侧边栏共渲染五个分组：**General**（仪表盘、团队、知识库、活动）、**System**（用户、角色、权限）、**Resources**（模型、Apps、Capabilities、API Keys、Memories）、**Monitoring**（Observability、通知、审计日志）、**Settings**（站点设置、帮助中心）。
+
+只有 **System**、**Resources**、**Monitoring** 三个分组受 `admin:dashboard:access` 控制，缺少该权限时整组隐藏。**General** 与 **Settings** 不受 `admin:dashboard:access` 控制，但组内每个条目仍需各自的页面权限，因此用户只会看到自己有权打开的条目。
 
 ---
 

@@ -57,30 +57,37 @@ Content-Type: application/json
 | `style.focus` | string | No | `task-oriented`, `conversational`, or `balanced` |
 | `style.include_cot` | boolean | No | Whether to include Chain-of-Thought thinking guidelines |
 | `style.include_constraints` | boolean | No | Whether to include explicit safety and boundary constraints |
-| `context` | object | No | Bound tools, knowledge base metadata, and RAG configuration |
+| `context` | object | No | Bound agent context; see the subfields below |
+| `context.tools` | array | No | Configured tools (`[{"name": ..., "description": ...}]`) |
+| `context.knowledge_bases` | array | No | Knowledge base metadata (`[{"name": ..., "description": ...}]`) |
+| `context.rag_mode` | string | No | RAG retrieval mode |
+| `context.variables` | array | No | Defined variables |
+| `context.capabilities` | object | No | Enabled runtime capabilities |
 
 ### Response (`200 OK`, `text/event-stream`)
 
-Streams real-time markdown text chunks containing the generated prompt.
+Streams the generated prompt as SSE events: `start` (`{"model": "..."}`), `content_delta` (`{"delta": "..."}`), `complete` (`{"total_length": n}`), and `error` (`{"code": ..., "msg": "..."}`).
 
 ---
 
 ## 2. Optimize Existing Prompt
 
-Refine an existing prompt for clarity, conciseness, instruction-following adherence, and tool use accuracy.
+Refine an existing prompt for clarity, conciseness, instruction-following adherence, and tool use accuracy. Unlike `/generate` (which takes a JSON body), this endpoint takes both inputs as **query parameters**.
 
 ```http
-POST /api/v1/prompts/optimize HTTP/1.1
+POST /api/v1/prompts/optimize?current_prompt=You%20are%20a%20support%20bot.%20Answer%20questions%20about%20products.&feedback=Make%20it%20more%20structured%20with%20markdown%20headings%2C%20handle%20edge%20cases%2C%20and%20ask%20clarifying%20questions%20before%20answering. HTTP/1.1
 Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "current_prompt": "You are a support bot. Answer questions about products.",
-  "feedback": "Make it more structured with markdown headings, handle edge cases, and ask clarifying questions before answering.",
-  "language": "zh"
-}
 ```
+
+### Query Parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `current_prompt` | string | Yes | The system prompt to optimize |
+| `feedback` | string | Yes | Instructions describing how the prompt should be improved |
+
+There is no `language` parameter — the optimization meta-prompt is always built in Chinese and the model is asked to return the rewritten prompt.
 
 ### Response (`200 OK`, `text/event-stream`)
 
-Streams the rewritten and optimized system prompt.
+Streams the rewritten and optimized system prompt as SSE events: `start`, `content_delta` (`{"delta": "..."}`), `complete` (`{"total_length": n}`), and `error` (`{"code": ..., "msg": "..."}`).

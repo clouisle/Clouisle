@@ -243,6 +243,9 @@ data:
   PUBLIC_API_URL: ""
   API_INTERNAL_BASE_URL: "http://api:8000"
   SANDBOX_ARTIFACT_UPLOAD_BASE_URL: "http://api:8000"
+  SANDBOX_WORKER_CONCURRENCY: "1"
+  SANDBOX_FILESYSTEM_ISOLATION_ENABLED: "true"
+  SANDBOX_FILESYSTEM_ISOLATION_BINARY: "/usr/bin/bwrap"
   FRONTEND_URL: "http://frontend:3000"
   BACKEND_CORS_ORIGINS: '["http://localhost:3000"]'
   POSTGRES_SERVER: "postgres"
@@ -645,7 +648,7 @@ spec:
             periodSeconds: 30
 ```
 
-The frontend runs the Next.js standalone server (`node server.js`); it proxies `/api/*` to the backend via Next.js rewrites (backend URL from `BACKEND_INTERNAL_URL`, defaulting to `http://api:8000`). There is no `NEXT_PUBLIC_API_URL` runtime env in the supplied manifest (it is baked in at image build time).
+The frontend runs the Next.js standalone server (`node server.js`). The supplied manifest and Helm chart set no frontend environment variables, so `BACKEND_INTERNAL_URL` is unset and its Next.js rewrite destination falls back to the code default `http://localhost:8000`. Browser `/api` traffic does not rely on that rewrite: the Ingress routes `/api` to the `api` Service (:8000) and `/` to the `frontend` Service (:3000). There is no `NEXT_PUBLIC_API_URL` runtime env either (it is baked in at image build time).
 
 ## Worker and Beat Deployments
 
@@ -675,7 +678,7 @@ spec:
       containers:
         - name: worker
           image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
-          command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,knowledge,workflow"]
+          command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,agent,knowledge,workflow"]
           envFrom:
             - configMapRef: { name: clouisle-config }
             - secretRef: { name: clouisle-secret }
@@ -1024,4 +1027,4 @@ kubectl describe node <node-name>
 
 ---
 
-**Last Updated**: 2026-08-14
+**Last Updated**: 2026-09-26

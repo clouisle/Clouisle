@@ -62,6 +62,7 @@ Agents can invoke code tools via function calling. The LLM decides when to run c
 | Variable | Generic Default | Sandbox Worker Deployment | Description |
 |---|---|---|---|
 | `SANDBOX_RUNTIME_ENABLED` | `true` | `true` | Enable the sandbox runtime |
+| `SANDBOX_LEGACY_FALLBACK_ENABLED` | `true` | `true` | Run the code with the in-process legacy runner when the sandbox runtime task fails; set to `false` to fail closed instead |
 | `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `false` | `true` | Launch executable payloads inside the Bubblewrap filesystem namespace |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `bwrap` | `/usr/bin/bwrap` | Bubblewrap executable name or absolute path |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | `1` | Number of concurrent sandbox worker slots |
@@ -70,7 +71,7 @@ Agents can invoke code tools via function calling. The LLM decides when to run c
 | `SANDBOX_SESSION_TTL_HOURS` | `24` | Same | Session lifetime before cleanup |
 | `SANDBOX_RESULT_TTL_SECONDS` | `86400` | Same | Result retention period |
 
-The sandbox-worker image installs Bubblewrap and enables isolation. When isolation is enabled, a missing binary or missing workspace root fails the task instead of falling back to direct execution.
+The sandbox-worker image installs Bubblewrap and enables isolation. When isolation is enabled, a missing binary or missing workspace root fails the task instead of falling back to direct execution. Caller-side fallback is a separate switch: with `SANDBOX_LEGACY_FALLBACK_ENABLED` enabled (the default), a failed sandbox runtime task falls back to the in-process legacy runner; set it to `false` to return the failure instead.
 
 ## Security Model
 

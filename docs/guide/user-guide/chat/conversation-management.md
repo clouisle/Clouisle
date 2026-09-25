@@ -9,7 +9,6 @@ Conversations in Clouisle are persistent chat sessions with AI agents. You can:
 - **Create new conversations**: Start fresh chats with agents
 - **Continue conversations**: Resume previous chats
 - **Rename conversations**: Give conversations a custom title
-- **Search conversations**: Find past discussions by title or ID
 - **Delete conversations**: Remove unwanted chats
 
 > **Note:** Archiving, sharing, exporting, folders, and tags for conversations are **not implemented**.
@@ -54,9 +53,10 @@ Open the conversation's **...** menu, choose **Delete**, and confirm. Deletion r
 
 ## Searching Conversations
 
-Conversation search is available from the current agent's chat page. Enter a term in that page's conversation controls to filter that agent's recent conversations. There is no cross-agent/global conversation search.
+An agent's chat page has **no conversation search** — its sidebar lists that agent's recent conversations without a filter box.
 
-Search matches conversation title or ID; message content is not searched.
+The only conversation search in Clouisle is on the administrator **Activities** page (`/activities` → **Conversations**), which requires the `admin:conversation:read` permission (the route also accepts `workflow:read`). It matches the conversation **title or ID**; message content is not searched.
+
 ## Conversation Settings
 
 A conversation's only editable setting is its **title** (rename). There are no per-conversation notification, auto-save, or context-window settings.
@@ -105,15 +105,14 @@ A conversation's only editable setting is its **title** (rename). There are no p
 2. Refresh the page
 3. Contact the administrator
 
-### Search Not Working
+### Cannot Find a Past Conversation
 
-**Problem**: Search doesn't return expected results
+**Problem**: No search box is available on the agent chat page
 
 **Solutions:**
-1. Check spelling
-2. Try different search terms
-3. Note that only titles/IDs are searched (not message content)
-4. Refresh the page
+1. Reopen the conversation from that agent's recent-conversation list
+2. Rename conversations with descriptive titles so they are easy to spot
+3. Administrators can search by title or ID on the **Activities** page (`/activities`)
 
 ## Related Documentation
 
@@ -130,4 +129,4 @@ If you need assistance with conversation management:
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-26
