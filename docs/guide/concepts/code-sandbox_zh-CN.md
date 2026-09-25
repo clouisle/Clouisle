@@ -51,6 +51,7 @@ Agent 可以通过函数调用触发代码工具。LLM 根据任务需要决定�
 | 变量 | 通用默认值 | Sandbox Worker 部署值 | 说明 |
 |---|---|---|---|
 | `SANDBOX_RUNTIME_ENABLED` | `true` | `true` | 启用沙箱运行时 |
+| `SANDBOX_LEGACY_FALLBACK_ENABLED` | `true` | `true` | 沙箱运行时任务失败时，改用进程内的 legacy runner 执行代码；设为 `false` 则直接失败（fail-closed） |
 | `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `false` | `true` | 在 Bubblewrap 文件系统命名空间内启动可执行任务 |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `bwrap` | `/usr/bin/bwrap` | Bubblewrap 命令名或绝对路径 |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | `1` | Sandbox Worker 并发槽位数 |
@@ -59,7 +60,7 @@ Agent 可以通过函数调用触发代码工具。LLM 根据任务需要决定�
 | `SANDBOX_SESSION_TTL_HOURS` | `24` | 相同 | 会话过期清理时间 |
 | `SANDBOX_RESULT_TTL_SECONDS` | `86400` | 相同 | 结果保留时间 |
 
-Sandbox Worker 镜像会安装 Bubblewrap 并启用隔离。启用隔离后，如果找不到 `bwrap` 或任务没有工作空间根目录，任务会直接失败，不会降级为未隔离执行。
+Sandbox Worker 镜像会安装 Bubblewrap 并启用隔离。启用隔离后，如果找不到 `bwrap` 或任务没有工作空间根目录，任务会直接失败，不会降级为未隔离执行。调用侧的降级是另一个开关：`SANDBOX_LEGACY_FALLBACK_ENABLED` 默认开启，沙箱运行时任务失败时会降级为进程内的 legacy runner 执行；设为 `false` 则直接返回失败。
 
 ## 安全模型
 

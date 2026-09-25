@@ -179,7 +179,7 @@ Tool Settings:
 
 ### Usage Statistics
 
-The statistics endpoints (`GET /api/v1/agents/{agent_id}/stats`) expose per-agent metrics for a time period (`period`: `24h`, `7d`, `30d`, `all`):
+The statistics endpoints (`GET /api/v1/agents/{agent_id}/stats`) expose per-agent metrics for a time period: `/stats` and `/stats/tool-usage` accept `24h`, `7d`, `30d`, or `all`, while `/stats/trends` accepts only `24h`, `7d`, and `30d` (any other value falls back to `30d`):
 
 - Total conversations and messages
 - Active users
@@ -190,7 +190,7 @@ The statistics endpoints (`GET /api/v1/agents/{agent_id}/stats`) expose per-agen
 - Tool call count and tool usage (`GET /api/v1/agents/{agent_id}/stats/tool-usage`)
 - Usage trends (`GET /api/v1/agents/{agent_id}/stats/trends`)
 
-The admin list/detail actions expose these metrics; there is no separate **Statistics** tab.
+The admin **Apps** console does not expose these metrics: its list renders only each agent's `conversation_count` and `message_count`, with no separate **Statistics** tab. The rich metrics above are shown on the platform **Agent Monitor** page (`/app/apps/{agent_id}/monitor`).
 
 > **Note:** Not implemented / Roadmap: per-agent cost breakdowns, request-level response-time percentiles (p50/p95/p99) beyond first-token latency, export of statistics (CSV/PDF), and scheduled usage reports are not available. The statistics API returns the metrics listed above only.
 

@@ -6,7 +6,7 @@
 <p align="center"><b>新一代多智能体协同平台与工作流编排引擎</b></p>
 
 <p align="center">
-构建、编排和部署面向生产的 AI 智能体团队与可视化工作流，支持安全沙箱执行、混合知识检索（RAG）与企业级安全底座。
+构建并编排面向生产的 AI 智能体团队，具备安全沙箱执行、混合知识检索（RAG）与企业级安全能力。
 </p>
 
 <p align="center">
@@ -70,6 +70,10 @@
 - [上传文档](user-guide/knowledge-base/uploading-documents.md)
 - [文档管理](user-guide/knowledge-base/document-management.md)
 - [知识库搜索](user-guide/knowledge-base/searching.md)
+- [文档元数据](user-guide/knowledge-base/document-metadata.md)
+- [知识库设置](user-guide/knowledge-base/kb-settings.md)
+- [Agent 配置](user-guide/agents/agent-configuration.md)
+- [嵌入与分享 Agent](user-guide/agents/embed-and-share.md)
 - [与 Agent 对话](user-guide/chat/chatting-with-agents.md)
 - [会话管理](user-guide/chat/conversation-management.md)
 - [聊天文件上传](user-guide/chat/file-uploads.md)
@@ -80,6 +84,8 @@
 - [API 密钥管理](user-guide/api-keys/managing-api-keys.md)
 - [API 密钥作用域](user-guide/api-keys/api-key-scopes.md)
 - [技能中心与记忆图谱](user-guide/settings/skills-and-memories.md)
+- [通知偏好](user-guide/settings/notification-preferences.md)
+- [团队设置](user-guide/settings/team-settings.md)
 
 ### 管理指南
 - [用户管理](admin-guide/users/user-management.md)
@@ -89,7 +95,9 @@
 - [工作流管理](admin-guide/workflows/workflow-management.md)
 - [模型管理](admin-guide/models/model-management.md)
 - [工具管理](admin-guide/tools/tool-management.md)
+- [工具系统](admin-guide/tools/TOOLS_zh-CN.md)
 - [权限](admin-guide/permissions/PERMISSIONS_zh-CN.md)
+- [权限管理](admin-guide/permissions/permission-management.md)
 - [系统设置](admin-guide/settings/system-settings.md)
 - [SSO 设置](admin-guide/settings/SSO_zh-CN.md)
 - [自动通知](admin-guide/settings/AUTO_NOTIFICATIONS_zh-CN.md)
@@ -98,22 +106,45 @@
 
 ### API 参考
 - [概览](api-reference/overview.md)
+- [快速开始](api-reference/quick-start.md)
 - [认证](api-reference/authentication.md)
 - [响应格式](api-reference/response-format.md)
 - [错误码](api-reference/error-codes.md)
+- [错误处理](api-reference/error-handling.md)
 - [分页](api-reference/pagination.md)
 - [筛选](api-reference/filtering.md)
 - [批量操作](api-reference/batch-operations.md)
 - [排序规则](api-reference/sorting.md)
+- [Agents API](api-reference/endpoints/agents.md)
+- [API 密钥 API](api-reference/endpoints/api-keys.md)
 - [认证与登录 API](api-reference/endpoints/auth.md)
+- [对话 API](api-reference/endpoints/chat.md)
+- [会话统计 API](api-reference/endpoints/conversations.md)
 - [外部免登嵌入 API](api-reference/endpoints/embed.md)
+- [知识库 API](api-reference/endpoints/knowledge-bases.md)
+- [记忆 API](api-reference/endpoints/memories.md)
+- [模型 API](api-reference/endpoints/models.md)
+- [通知 API](api-reference/endpoints/notifications.md)
+- [资源包 API](api-reference/endpoints/packages.md)
 - [智能 Prompt 生成 API](api-reference/endpoints/prompts.md)
+- [设置 API](api-reference/endpoints/settings.md)
+- [技能 API](api-reference/endpoints/skills.md)
+- [SSO API](api-reference/endpoints/sso.md)
+- [团队模型 API](api-reference/endpoints/team-models.md)
+- [团队 API](api-reference/endpoints/teams.md)
+- [工具 API](api-reference/endpoints/tools.md)
+- [双因素认证（TOTP）API](api-reference/endpoints/totp.md)
+- [用户 API](api-reference/endpoints/users.md)
 - [工作流版本与模板 API](api-reference/endpoints/workflow-versions.md)
+- [工作流 API](api-reference/endpoints/workflows.md)
 - [速率限制](api-reference/rate-limiting.md)
 - [文件上传](api-reference/file-uploads.md)
 - [SSE 流式传输](api-reference/sse-streaming.md)
+- [WebSocket API](api-reference/websocket-api.md)
 - [Webhook](api-reference/webhooks.md)
+- [Webhook 指南](api-reference/webhooks-guide.md)
 - [SDK 示例](api-reference/sdk-examples.md)
+- [API 最佳实践](api-reference/api-best-practices.md)
 - [端点参考目录](api-reference/endpoints/)
 
 ### 概念
@@ -139,6 +170,7 @@
 - [扩展](deployment/scaling.md)
 - [生产检查清单](deployment/production-checklist.md)
 - [备份与恢复](deployment/backup-recovery.md)
+- [备份与恢复（运维手册）](operations/backup-restore_zh-CN.md)
 - [监控](operations/monitoring_zh-CN.md)
 - [升级](operations/upgrading_zh-CN.md)
 - [故障排查](deployment/troubleshooting.md)
@@ -146,6 +178,9 @@
 
 ### 测试
 - [Agent UI 自动化](testing/agent-ui-automation.md)
+
+### 发布说明
+- [更新日志](CHANGELOG_zh-CN.md)
 
 ---
 
@@ -156,8 +191,8 @@
 
 **Clouisle 改变这一现状**，提供：
 
-- **多智能体协同与持久化运行时**：支持复杂推理、沙箱工具执行、人机交互协同（Human-in-the-Loop）与长程状态持久化的智能体团队
-- **可视化工作流编排**：拖拽式图编排引擎，支持 15+ 种节点、嵌套子流程、人工审批与执行性能分析
+- **多智能体协同与持久化运行时**：构建并编排面向生产的 AI 智能体团队——工作流通过 `agent` 与 `sub_workflow` 节点组合已发布的 Agent——支持复杂推理、沙箱工具执行、人机交互协同（Human-in-the-Loop）与长程状态持久化
+- **可视化工作流编排**：拖拽式图编排引擎，支持 19 种节点、嵌套子流程、人工审批与执行性能分析
 - **智能知识管理与评估实验室**：混合搜索（向量 + 全文）+ 重排序，多格式文档处理，以及内置检索命中测试与召回评估
 - **企业级安全与治理**：多租户隔离、细粒度 RBAC、企业 SSO（OIDC/SAML/CAS）、TOTP 双因素认证、字段级审计快照与集中可观测性监控
 - **资产标准化流转**：标准的 `.clouisle` 资产包，支持多环境无缝迁移与离线备份，结合无特权（rootless）容器代码沙箱
@@ -170,19 +205,20 @@
 
 ### AI Agent 与多智能体协同
 
+- **多智能体编排**：工作流通过 `agent` 与 `sub_workflow` 节点调用已发布的 Agent，将其组合为多智能体流水线
 - **多模型支持**：使用已配置的 LLM 提供商、模型、参数和思考/推理模式配置 Agent
 - **人机交互与持久化运行**：支持基于原生 `ask_user` 工具的结构化用户提问、选项与自由输入、运行挂起与断点恢复，以及显式跳过
 - **RAG 集成**：支持 off（关闭）、auto（自动检索）和 agentic（Agent 自主检索）模式，并可绑定知识库
 - **流式与思考**：实时流式响应，支持推理/思考内容展示
-- **对话管理**：多轮对话，支持分支版本、手动停止、Token 用量追踪和会话记忆
-- **媒体生成**：对话中支持文本和图像、视频生成（具体能力取决于已配置模型）
+- **对话管理**：多轮对话，支持分支版本、手动停止、Token 用量追踪与长期记忆（实体/关系图谱 + 语义检索）
+- **媒体生成**：对话中支持文生图与文生视频（音频生成位于模型/适配器层）
 - **工具系统与 Skills**：内置工具（网页搜索、计算器、文件解析器）、自定义 HTTP API 工具、可复用 Skill 技能包和 MCP 协议集成
-- **上下文压缩**：长会话对话上下文的三级自动压缩与预算控制
+- **上下文压缩**：长会话自动摘要——每次模型调用前预估请求规模，超过上下文上限 90% 时用一次生成的摘要替换旧历史
 - **可见性控制**：私有、团队或公开访问级别，受 RBAC 约束
 ### 可视化工作流构建器
 
 - **无代码界面**：拖拽式工作流创建，实时节点配置
-- **多种节点类型**：LLM/媒体生成、条件/问题分类、Iteration/Loop/Pause、代码/模板、变量聚合与赋值、参数提取、子工作流、Agent、Tool、知识检索和 Answer 等
+- **多种节点类型**：LLM/媒体生成、条件/问题分类/决策、Iteration/Loop/Pause、代码/模板、变量聚合与赋值、参数提取、子工作流、Agent、Tool、知识检索和 Answer 等
 - **执行触发方式**：手动、定时（Cron）或 Webhook
 - **版本管理**：草稿/发布生命周期，支持版本历史和回滚
 - **实时监控**：流式执行，节点级实时状态更新
@@ -301,7 +337,7 @@ curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/insta
 - ORM：Tortoise ORM + AsyncPG
 - 任务队列：Celery + Redis
 - 向量数据库：Qdrant
-- LLM 框架：LangChain + LangGraph
+- LLM 框架：LangChain
 
 **前端**
 - 框架：Next.js 16 (App Router)
@@ -360,7 +396,7 @@ curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/insta
 
 ## 路线图
 
-- [x] 多提供商 LLM 支持（支持 24+ 提供商及自定义端点）
+- [x] 多提供商 LLM 支持（支持 23 个提供商，包括自定义提供商）
 - [x] 可视化工作流构建器（支持人工审批与调试）
 - [x] 带评估实验室的混合 RAG 知识库
 - [x] 企业 SSO（OIDC、SAML、CAS、OAuth2）
@@ -368,7 +404,8 @@ curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/insta
 - [x] 字段级审计快照与日志追踪
 - [x] 管理后台可观测性与性能监控
 - [x] 标准化 `.clouisle` 资产包（跨环境迁移）
-- [ ] 多智能体团队编排与群组协同（Multi-Agent Collaboration）
+- [x] 构建并编排 AI 智能体团队 —— 工作流通过 `agent` 与 `sub_workflow` 节点组合已发布的 Agent
+- [ ] 自主的点对点 Agent 协作（不在工作流编排下、由 Agent 相互协商）
 - [ ] 行业特定 Agent 模板
 - [ ] 插件与工具市场
 - [ ] 移动应用

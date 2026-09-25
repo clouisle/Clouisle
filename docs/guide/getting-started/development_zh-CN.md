@@ -139,7 +139,7 @@ clouisle/
 
 ## 常见问题
 
-确保 PostgreSQL 正在运行且可访问。开发 compose 文件使用固定凭据和端口：PostgreSQL `postgres`/`password` 使用 `5432`，Redis 密码为 `clouisle-redis-cbd3c07` 使用 `6379`，Qdrant 使用 `6333`。`.env` 不会改变这些 compose 值；文档化的 compose 配置只从 `.env` 读取 `QDRANT_API_KEY`。
+确保 PostgreSQL 正在运行且可访问。开发 compose 文件使用固定凭据和端口：PostgreSQL `postgres`/`password` 使用 `5432`，Redis 密码为 `clouisle-redis-cbd3c07d` 使用 `6379`，Qdrant 使用 `6333`。`.env` 不会改变这些 compose 值；文档化的 compose 配置只从 `.env` 读取 `QDRANT_API_KEY`。
 
 ### 端口冲突
 

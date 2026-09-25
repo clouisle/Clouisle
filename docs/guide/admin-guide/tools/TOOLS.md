@@ -11,6 +11,7 @@ This guide explains how to use the Tools feature in Clouisle to extend Agent cap
   - [Builtin Tools](#builtin-tools)
   - [HTTP Tools](#http-tools)
   - [Code Tools](#code-tools)
+  - [Database Tools](#database-tools)
   - [MCP Tools](#mcp-tools)
 - [Code Sandbox](#code-sandbox)
   - [Available Modules](#available-modules)
@@ -37,6 +38,7 @@ Tools allow Agents to perform actions beyond text generation, such as:
 - [Memory Tools](#memory-tools)
 - [HTTP Tools](#http-tools)
 - [Code Tools](#code-tools)
+- [Database Tools](#database-tools)
 - [MCP Tools](#mcp-tools)
 
 ### Builtin Tools
@@ -51,6 +53,7 @@ System-provided tools that are ready to use without configuration.
 | `unit_convert` | Convert between units | Math |
 | `web_search` | Search the web (requires Tavily API key) | Search |
 | `fetch_webpage` | Fetch and extract webpage content | Web |
+| `rss_feed_reader` | Fetch and parse RSS or Atom feeds into a structured article list | Web |
 
 ### Memory Tools
 
@@ -100,6 +103,15 @@ Execute custom JavaScript or Python code in a secure sandbox.
 - Parameter injection via `params` object
 - Console/print output capture
 - 30-second timeout protection
+
+### Database Tools
+
+Run a SQL query against a configured database connection (custom tool type `database`).
+
+**Features:**
+- PostgreSQL, MySQL, Redis, and MongoDB connections
+- Host/port/database plus credentials stored as the tool configuration
+- Query timeout and maximum returned row limit per tool
 
 ### MCP Tools
 
@@ -288,6 +300,7 @@ return hash;
 3. Choose tool type:
    - **HTTP Tool**: Configure API endpoint and request format
    - **Code Tool**: Write JavaScript or Python code
+   - **Database Tool**: Configure a database connection and SQL query
    - **MCP Tool**: Configure MCP server connection
 4. Define parameters that the tool accepts
 5. Test the tool with sample inputs
@@ -298,7 +311,7 @@ return hash;
 | Field | Description |
 |-------|-------------|
 | Method | HTTP method (GET, POST, PUT, PATCH, DELETE) |
-| URL | Endpoint URL, supports `{{variable}}` substitution |
+| URL | Static endpoint URL (`{{variable}}` placeholders are rejected by the executor — pass variables via Query Params, Headers, or Body Template) |
 | Headers | Request headers, supports `{{variable}}` substitution |
 | Query Params | URL query parameters |
 | Body Template | Request body for POST/PUT/PATCH |
@@ -312,6 +325,18 @@ return hash;
 | Language | `javascript` or `python` |
 | Code | The code to execute |
 | Parameters | Input parameter definitions |
+
+### Database Tool Configuration
+
+| Field | Description |
+|-------|-------------|
+| Type | `postgresql`, `mysql`, `redis`, or `mongodb` |
+| Host / Port | Server address (`url` instead for Redis/MongoDB) |
+| Database | Database name (`db` index for Redis, `auth_source` for MongoDB) |
+| Username / Password | Connection credentials |
+| SSL | TLS configuration |
+| Timeout | Query timeout in seconds (default 15, max 120) |
+| Max Limit | Maximum returned rows (default 100, max 1000) |
 
 ### MCP Tool Configuration
 

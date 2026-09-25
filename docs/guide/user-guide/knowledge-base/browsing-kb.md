@@ -33,6 +33,12 @@ The list shows:
 - Filter by status
 - Search by name
 
+**Sharing badges:**
+- **From {team}**: the knowledge base belongs to another team and is shared with your team (read-only).
+- **Shared with N teams**: your team owns the knowledge base and has shared it with other teams.
+
+KBs shared to your team from another team are listed here as well; they are read-only, so **Upload**, **Import URL**, and the edit actions are disabled. See [Knowledge Base Settings](./kb-settings.md) for how sharing works.
+
 ## Knowledge Base Details
 
 ### Overview Tab
@@ -156,9 +162,10 @@ See how the document is split into chunks:
 Chunk 1 (245 tokens)
 "Introduction to Clouisle
 
-Clouisle is an enterprise-grade AI platform that
-enables organizations to build and deploy intelligent
-agents..."
+Clouisle is a multi-agent collaboration platform and
+workflow engine for production AI agent teams with
+sandboxed execution, hybrid RAG, and enterprise-grade
+security..."
 
 [View Full Chunk]
 ```
@@ -408,4 +415,4 @@ If you need assistance:
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-26

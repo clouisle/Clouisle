@@ -93,6 +93,19 @@ The variables in this section are read by the backend Pydantic `Settings` class 
 PROJECT_NAME=Clouisle
 ```
 
+### API_V1_STR
+
+**Description**: URL path prefix under which the backend mounts all API routers (`app.include_router(api_router, prefix=settings.API_V1_STR)` in `backend/app/main.py`). It must match the frontend build arg `NEXT_PUBLIC_API_URL` (default `/api/v1` in `deploy/dockerfiles/frontend.Dockerfile`) and the ingress/proxy paths that forward `/api/v1` to the backend.
+
+**Required**: No
+
+**Default**: `/api/v1`
+
+**Example**:
+```bash
+API_V1_STR=/api/v1
+```
+
 ### API_BASE_URL
 
 **Description**: Internal API URL used by services (file access, sandbox artifact upload, internal calls). Put public domains in `PUBLIC_API_URL` / `FRONTEND_URL` / `BACKEND_CORS_ORIGINS`.
@@ -762,4 +775,4 @@ Error: Cannot connect to database
 
 ---
 
-**Last Updated**: 2026-08-14
+**Last Updated**: 2026-09-26

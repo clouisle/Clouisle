@@ -44,7 +44,7 @@ RAG combines retrieval with language-model generation. Clouisle retrieves comple
                                                               ▼
                                   ┌────────────────────────────────────────────────────────┐
                                   │ Context Assembly & Token Budget Guard                  │
-                                  │ • Adjacent Chunk Window Expansion (expand_adjacent)    │
+                                  │ • Adjacent Chunk Window Expansion (opt-in, default off) │
                                   │ • Per-Document Chunk Throttling & Token Truncation     │
                                   └────────────────────────────────────────────────────────┘
 ```
@@ -76,12 +76,12 @@ $$\text{Score}(d) = \sum_{c \in \{\text{dense}, \text{lexical}\}} \frac{w_c}{k_{
 ### 4. Optional Cross-Encoder Reranking
 
 When `rerank_enabled = true`:
-- Top candidate chunks (e.g. `top_n = 20`) from RRF are fed into a neural Cross-Encoder reranker.
+- The top `rerank_candidate_k` chunks from RRF (default 10; configurable per knowledge base and overridable per search) are fed into a neural Cross-Encoder reranker.
 - Chunks are rescored based on deep semantic query-document alignment and filtered by `rerank_score_threshold`.
 
 ### 5. Context Assembly & Window Expansion
 
-- **Adjacent Chunk Window Expansion (`expand_adjacent = true`)**: When a chunk is matched, the engine can fetch adjacent sibling chunks (`chunk_index - 1`, `chunk_index + 1`) to reconstruct coherent paragraphs and restore fragmented context.
+- **Adjacent Chunk Window Expansion (`expand_adjacent`, opt-in, default off)**: When the retrieval request sets `expand_adjacent = true`, the engine fetches adjacent sibling chunks (`chunk_index - 1`, `chunk_index + 1`) to reconstruct coherent paragraphs and restore fragmented context. The flag is not part of the public search request schema and no built-in caller enables it today.
 - **Token Budget & Per-Document Throttling**: Context assembly adheres strictly to `context_token_budget`, capping the total token count and applying `max_chunks_per_document` to prevent single long files from starving other search results.
 ## Embedding compatibility
 

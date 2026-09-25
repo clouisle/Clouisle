@@ -513,7 +513,7 @@ Because of this redaction, raw secrets never appear in audit logs.
 - CSV
 - JSON
 
-The export endpoint (`GET /api/v1/admin/audit-logs/export?format=csv|json`) accepts the same filters as the list endpoint and returns up to 10,000 matching logs. CSV columns are: ID, Time, User, Action, Resource Type, Resource Name, Operation, Status, IP Address, Error Message. JSON exports the full serialized entries (including `changes`).
+The export endpoint (`GET /api/v1/admin/audit-logs/export?format=csv|json`) accepts the same filters as the list endpoint **except `resource_id`**, and returns up to 10,000 matching logs. Note that its `search` parameter matches only the resource name and IP address, whereas the list endpoint's `search` also matches `resource_id`. CSV columns are: ID, Time, User, Action, Resource Type, Resource Name, Operation, Status, IP Address, Error Message. JSON exports the full serialized entries (including `changes`).
 
 **Export Logs:**
 1. Apply filters (optional)
@@ -585,9 +585,11 @@ The retention period is stored in the site setting `audit_log_retention_days` (d
 ### Archive Logs
 
 **Manual Archive:**
-1. Navigate to **Audit Logs** → **Archive**
-2. Click **Archive**
-3. The archiving task runs asynchronously (requires `audit:export`); track its status via the returned task ID
+1. Navigate to **Admin** → **Site Settings** → **Storage**
+2. Click **Archive Now** in the audit log archive section (visible only with `audit:export`)
+3. The archiving task runs asynchronously; the page starts it via `POST /api/v1/admin/site-settings/archive-audit-logs` and polls `GET /api/v1/admin/site-settings/archive-audit-logs/{task_id}` for progress
+
+> **Note:** The `/api/v1/admin/audit-logs/archive` endpoint exists in the API but has no UI; use the Storage page to trigger a manual archive from the console.
 
 **How Archiving Works:**
 - The archive task (`tasks.archive_old_audit_logs`) selects logs older than the retention cutoff

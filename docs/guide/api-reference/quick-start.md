@@ -40,7 +40,7 @@ The token is valid for the `session_timeout_days` site setting (default **30 day
 1. Log in to Clouisle
 2. Go to **Settings** → **API Keys**
 3. Click **Create API Key** (optionally restrict it to specific agents/workflows)
-4. Copy your API key — the full key `clou_...` (68 characters) is shown only once
+4. Copy your API key — the full key `clou_...` (69 characters) is shown only once
 
 ## Your First API Call
 
@@ -385,4 +385,4 @@ Now that you've made your first API calls, explore more features:
 
 ---
 
-**Last Updated**: 2026-08-14
+**Last Updated**: 2026-09-26

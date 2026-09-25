@@ -1,18 +1,20 @@
 # Introduction to Clouisle
 
-Clouisle is an enterprise-grade AI Agent and knowledge base platform.
+Clouisle is a multi-agent collaboration platform and workflow engine for production use.
 
 ## What is Clouisle?
 
-Clouisle enables organizations to build, deploy, and manage intelligent AI agents with advanced knowledge retrieval capabilities.
+Clouisle lets organizations build, orchestrate, and deploy production-ready AI agent teams with sandboxed execution, hybrid knowledge retrieval (RAG), and enterprise-grade security. Agents, workflows, knowledge bases, tools, and models are configured per team, governed by RBAC, and observable from the admin console.
 
 ## Key Features
 
-- **AI Agent Management**: Create and configure conversational AI agents
-- **Knowledge Base System**: Store and retrieve documents with vector search
-- **Workflow Automation**: Build no-code workflows with visual editor
-- **Enterprise Security**: Multi-tenancy, RBAC, SSO, and audit logging
-- **Multi-LLM Support**: 15+ LLM providers supported
+- **Multi-Agent Orchestration**: Compose published agents into multi-agent pipelines with visual workflows (`agent` and `sub_workflow` nodes)
+- **AI Agent Management**: Create and configure conversational AI agents with tools, skills, memory, and RAG modes
+- **Visual Workflow Engine**: Drag-and-drop graph builder with 19 node types, nested sub-workflows, and human-in-the-loop approval
+- **Knowledge Base System**: Store and retrieve documents with hybrid vector + full-text search and reranking
+- **Sandboxed Execution**: Run agent and workflow code in isolated sandbox sessions with CPU/memory/disk limits
+- **Enterprise Security**: Multi-tenancy, RBAC, SSO (OIDC/SAML/CAS), TOTP 2FA, and field-level audit logging
+- **Multi-LLM Support**: 23 built-in providers, plus any OpenAI-compatible endpoint
 
 ## Why Choose Clouisle?
 

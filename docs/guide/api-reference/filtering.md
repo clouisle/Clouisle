@@ -70,6 +70,7 @@ GET /api/v1/conversations?search=invoice
 | `search` | string | Case-insensitive match on KB name |
 | `status` | list (repeatable) | `active`, `processing`, `error`, `archived`; repeat the parameter for multiple values |
 | `own_only` | boolean | Only KBs created by the current user (non-superusers) |
+| `include_shared` | boolean | Default `true`: also include KBs shared with the caller's teams (shared KBs whose visibility is `team` or `public`); ignored when `own_only=true` |
 
 **Examples:**
 ```bash
@@ -259,4 +260,4 @@ print(f"Found {results['total']} results")
 
 ---
 
-**Last Updated**: 2026-08-14
+**Last Updated**: 2026-09-26

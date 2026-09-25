@@ -38,8 +38,8 @@ The workflow builder allows you to:
 │ Workflow Name                    [Test] [Save] [×]  │
 ├──────────┬──────────────────────────────────────────┤
 │          │                                          │
-│  Nodes   │                                          │
-│  Panel   │         Canvas                           │
+│  Palette │                                          │
+│          │         Canvas                           │
 │          │         (Drag & Drop)                    │
 │          │                                          │
 │  ┌────┐  │    ┌────────┐                          │
@@ -56,12 +56,13 @@ The workflow builder allows you to:
 
 ### Components
 
-**Nodes Panel (Left):**
-- Available node types, organized by category:
+**Add-node palette:**
+- Available node types, organized by category (opened from the **+** button in the left toolbar, or by dropping a connection on empty canvas):
   - **Model**: LLM, Media Generation
-  - **Logic**: Condition, Question Classifier, Iteration, Loop, Pause
+  - **Logic**: Condition, Question Classifier, Decision, Iteration, Loop, Pause
   - **Transform**: Code, Template, File to URL, Variable Aggregator, Variable Assignment, Parameter Extractor
   - **Extension**: Sub-workflow, Agent, Tool, Knowledge Retrieval, Answer
+- Inside an iteration or loop container, the **Logic** category instead offers Condition, Question Classifier, Decision, and that container's exit node.
 
 **Canvas (Center):**
 - Workflow design area
@@ -73,9 +74,10 @@ The workflow builder allows you to:
 - Variables
 
 **Toolbar (Top):**
-- Save workflow
-- Test (debug) workflow
-- Zoom controls
+- Test (debug) workflow, Save, Publish, Embed, and Settings
+
+**Zoom controls (bottom-right):**
+- Zoom out, zoom percentage, zoom in, and a minimap
 
 ## Building a Workflow
 
@@ -267,10 +269,24 @@ Templates are instantiated into new workflows (variables such as `model_id` / `k
 
 ## Keyboard Shortcuts
 
-**Canvas Navigation:**
-- `Space + Drag`: Pan canvas
-- `Ctrl/Cmd + Scroll`: Zoom
-- `Ctrl/Cmd + 0`: Reset zoom
+**Editor actions:**
+- `Cmd/Ctrl + S`: Save workflow
+- `Cmd/Ctrl + C`: Copy selected nodes
+- `Cmd/Ctrl + V`: Paste copied nodes
+- `Delete` / `Backspace`: Delete selected nodes
+- `Cmd/Ctrl + 1`: Open the add-node palette
+- `Cmd/Ctrl + 2`: Add a comment
+- `Cmd/Ctrl + 3`: Pointer (select) mode
+- `Cmd/Ctrl + 4`: Hand (pan) mode
+- `Cmd/Ctrl + 5`: Auto-layout the workflow
+- `Escape`: Exit fullscreen (and close the add-node palette)
+
+**Canvas navigation:**
+- `Scroll`: Pan the canvas
+- `Cmd/Ctrl + Scroll`: Zoom in / out
+- Trackpad pinch: Zoom
+- Drag: Pan in Hand mode; in Pointer mode hold `Cmd/Ctrl` while dragging to pan
+- Use the **Zoom controls** (bottom-right) to zoom in/out; there is no reset-zoom keyboard shortcut
 
 ## Troubleshooting
 
@@ -304,4 +320,4 @@ Templates are instantiated into new workflows (variables such as `model_id` / `k
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-26

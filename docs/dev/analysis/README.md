@@ -46,6 +46,17 @@ Use other `docs/dev/` areas for canonical engineering guidance:
 - `../frontend/` for frontend conventions
 - `../design/` for design specs
 
+## Backend walkthroughs
+
+- [Overview](backend/00-overview.md), [login](backend/01-login.md), [users](backend/02-users.md), [teams](backend/03-teams.md), [roles](backend/04-roles.md), [permissions](backend/05-permissions.md)
+- [agents](backend/06-agents.md), [models](backend/07-models.md), [knowledge bases](backend/08-knowledge-bases.md), [tools](backend/09-tools.md), [workflows](backend/10-workflows.md)
+- [API keys](backend/11-api-keys.md), [chat](backend/12-chat.md), [notifications](backend/13-notifications.md), [SSO](backend/14-sso.md), [site settings](backend/15-site-settings.md)
+- [dashboard](backend/16-dashboard.md), [audit logs](backend/17-audit-logs.md), [prompt generator](backend/18-prompt-generator.md), [conversations](backend/19-conversations.md)
+
+## Frontend walkthroughs
+
+- [Overview](frontend/00-overview.md), [auth](frontend/01-auth.md), [dashboard](frontend/02-dashboard.md), [platform](frontend/03-platform.md), [chat](frontend/04-chat.md)
+
 ## Quick links
 
 - [Backend overview](backend/00-overview.md)

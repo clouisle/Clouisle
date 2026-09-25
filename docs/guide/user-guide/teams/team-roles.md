@@ -71,8 +71,8 @@ Viewer (lowest permissions)
 | Create tools | ✅ | ✅ | ✅ | ❌ |
 | Edit own tools | ✅ | ✅ | ✅ | ❌ |
 | Edit others' tools | ✅ | ✅ | ❌ | ❌ |
-| Delete tools | ✅ | ✅ | ✅ | ❌ |
-| Create/edit/delete skills | ✅ | ✅ | ✅ | ❌ |
+| Delete tools | ✅ | ✅ | ❌ | ❌ |
+| Create/edit/delete skills | ✅ | ✅ | ❌ | ❌ |
 | Execute approved tools | ✅ | ✅ | ✅ | ✅ |
 | Execute approved skills | ✅ | ✅ | ✅ | ✅ |
 
@@ -129,7 +129,7 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 
 **Shared with Admin:**
 - Add/remove members
-- Update team information from **Manage Teams**
+- Update team information from **Manage Current Team**
 
 > **Note:** Billing and subscriptions are **not implemented**.
 
@@ -145,33 +145,25 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 
 **Steps:**
 
-1. Open **Manage Teams** (`/teams`) and select the team.
+1. Open **Manage Current Team** (`/app/team`) and select the team.
 2. Find member to transfer to
 3. Click **"..."** menu
 4. Select **"Transfer Ownership"**
-5. Confirm transfer
+5. Confirm in the dialog (**Cancel** / **Confirm**)
 6. You become Admin
 7. New owner has full control
 
-**Transfer confirmation:**
+**Transfer confirmation:** a single confirmation dialog with no typed confirmation:
+
 ```
 ┌─────────────────────────────────────────┐
-│ ⚠️ Transfer Ownership?                  │
+│ Transfer Ownership                      │
 ├─────────────────────────────────────────┤
+│ Are you sure you want to transfer       │
+│ ownership to "Alice"? You will lose     │
+│ owner privileges.                       │
 │                                         │
-│ Transfer ownership to:                  │
-│ Alice (alice@example.com)               │
-│                                         │
-│ What happens:                           │
-│ • Alice becomes team Owner              │
-│ • You become team Admin                 │
-│ • Alice gains full control              │
-│ • This cannot be undone                 │
-│                                         │
-│ Type "TRANSFER" to confirm:             │
-│ [________________]                      │
-│                                         │
-│ [Cancel]  [Transfer Ownership]          │
+│ [Cancel]  [Confirm]                     │
 │                                         │
 └─────────────────────────────────────────┘
 ```
@@ -183,7 +175,7 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 **Admins help manage the team:**
 
 - Manage team members
-- Configure team information from **Manage Teams**
+- Configure team information from **Manage Current Team**
 - Oversee resources
 - Monitor team activity
 - Support team members
@@ -191,9 +183,8 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 ### Admin Permissions
 
 **Member management:**
-- Add new members (by user ID)
-- Remove members (except Owner)
-- Change member roles (except Owner)
+- Add new members by exact username or email
+- Remove members (except the Owner)
 
 **Resource management:**
 - Create/update/delete team resources allowed by team-scoped RBAC
@@ -201,7 +192,7 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 - Configure resource settings
 
 **Team information:**
-- Update team name, description, and avatar from **Manage Teams**
+- Update team name, description, and avatar from **Manage Current Team**
 
 **Monitoring:**
 - View team resources and usage
@@ -212,6 +203,7 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 **Cannot:**
 - Delete the team
 - Transfer ownership
+- Change member roles — only the Owner can change roles
 - Remove or demote Owner
 - Change own role to Owner
 
@@ -251,8 +243,8 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 - Update knowledge base documents
 
 **Tools & skills:**
-- Members can create, edit (own tools), and delete tools and skills (they hold `tool:create/update/delete` and `skill:create/update/delete`)
-- Editing others' tools requires the team Owner/Admin
+- Members can create tools and edit the tools they created (`tool:create` / `tool:update`)
+- Editing others' tools, deleting tools, and creating/editing/deleting skills all require the team Owner/Admin — those endpoints add a team-admin check on top of the permission
 
 **Knowledge bases:**
 - Members can create KBs, upload/rename/delete documents, and search (they hold `kb:create/update/delete`)
@@ -261,11 +253,12 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 ### Member Limitations
 
 **Cannot:**
-- Manage team information from **Manage Teams**
+- Manage team information from **Manage Current Team**
 - Add or remove members
 - Change member roles
 - Delete or publish agents and workflows
 - Update others' tools
+- Delete tools or manage skills
 - View audit logs
 - Access admin dashboards
 
@@ -300,7 +293,7 @@ Team roles only apply inside the team where they are assigned. A team Admin can 
 - Create any resources
 - Update any resources
 - Delete any resources
-- Manage team information from **Manage Teams**
+- Manage team information from **Manage Current Team**
 - Add members
 - Upload documents
 - Create API keys
@@ -325,7 +318,7 @@ When a default team is configured, new users can be added automatically as `view
 
 **Steps (Owner only):**
 
-1. Open **Manage Teams** (`/teams`) and select the team.
+1. Open **Manage Current Team** (`/app/team`) and select the team.
 2. Find member
 3. Click **"..."** menu
 4. Select **"Change Role"**
@@ -363,8 +356,8 @@ Your role in "Marketing Team" has been changed from Member to Admin by Alice.
 
 You now have additional permissions:
 • Manage team members
-• Update team information from **Manage Teams**
-• View audit logs
+• Update team information from **Manage Current Team**
+• Manage team resources (agents, workflows, knowledge bases)
 
 [View New Permissions]
 ```
@@ -377,7 +370,7 @@ You now have additional permissions:
 
 1. Go to team dashboard
 2. Your role is displayed under team name
-3. Or open **Manage Teams** (`/teams`) and select the team.
+3. Or open **Manage Current Team** (`/app/team`) and select the team.
 4. Find yourself in member list
 
 **Role display:**
@@ -523,4 +516,4 @@ If you need assistance with team roles:
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-26

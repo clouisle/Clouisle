@@ -7,6 +7,12 @@ This group covers tenancy, authorization, and team-scoped access rules.
 - [RBAC spec](RBAC_SPEC.md)
 - [Team model auth spec](TEAM_MODEL_AUTH_SPEC.md)
 
+## Historical audits (dated snapshots — not current reference)
+
+- [Full RBAC audit report](FULL_RBAC_AUDIT_REPORT.md)
+- [Permission audit report](PERMISSION_AUDIT_REPORT.md)
+- [RBAC remediation plan](RBAC_REMEDIATION_PLAN.md)
+
 ## Scope
 
 Use this area for:

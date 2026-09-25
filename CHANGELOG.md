@@ -7,7 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### Chat and File Previews
+- Added a unified artifact list with file counts, expandable results, authenticated downloads, and shared previews for common document, media, and code formats.
+- Added DOCX thumbnails, page synchronization, responsive fit-to-width, and zoom controls; added read-only PDF and spreadsheet preview controls.
+
+#### Memory and RAG
+- Added optional background memory extraction controls in the admin `memory` site-settings category, including model selection, debounce cooldown, and pending-turn trigger limits.
+- Added the bounded `get_memory_subgraph` Agent tool for relationship-aware memory retrieval.
+
+#### Models and Workflows
+- Added the TypeSafe AI (`typesafe`) decision-model provider and the `decision` model type, which evaluates a state against typed `choice`, `score`, or `noul` questions and returns typed answers with probability distributions and confidence.
+- Added the Decision workflow node: it asks one typed question, routes on the returned answer (or the highest-probability score level), and supports a fallback branch plus an optional confidence threshold.
+
 ### Changed
+
+#### Assets and Media
+- Persisted generated images and videos as scoped Assets and exposed conversation/workflow-scoped media references for model use.
+- Updated CSV handling for GBK/GB18030 content and removed duplicate spreadsheet viewer downloads.
+
+#### Agent Retrieval and Chat Timeline
+- Agents with no knowledge-base associations now persist and run with `rag_mode: off`; the Agent editor hides the RAG selector until a knowledge base is selected.
+- RAG context remains `null` when retrieval did not run and `[]` when retrieval ran but returned no contexts.
 
 #### Dependencies and Tooling
 - Updated backend and frontend dependency manifests and lockfiles to current compatible releases.
@@ -15,6 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `MIT-0` to the approved permissive-license policy.
 
 ### Fixed
+
+#### Asset Access and Previews
+- Protected generated images, generated videos, and sandbox artifacts with scope-aware authorization and authenticated client downloads.
+- Preserved explicit too-large, unauthorized, permission-denied, unsupported, and parse-failure preview states without falling back to unprotected URLs.
 
 #### Chat Experience
 - Kept agent conversations pinned to the latest message as soon as a send begins, before streaming starts.
@@ -321,11 +347,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - shadcn/ui + Tailwind CSS
 - TypeScript
 
-[Unreleased]: https://github.com/yunhai-dev/Clouisle/compare/v0.2.9...HEAD
-[0.2.9]: https://github.com/yunhai-dev/Clouisle/compare/v0.2.5...v0.2.9
-[0.2.5]: https://github.com/yunhai-dev/Clouisle/compare/v0.2.1...v0.2.5
-[0.2.1]: https://github.com/yunhai-dev/Clouisle/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/yunhai-dev/Clouisle/compare/v0.1.2...v0.2.0
-[0.1.2]: https://github.com/yunhai-dev/Clouisle/compare/v0.1.1...v0.1.2
-[0.1.1]: https://github.com/yunhai-dev/Clouisle/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/yunhai-dev/Clouisle/releases/tag/v0.1.0
+[Unreleased]: https://github.com/clouisle/Clouisle/compare/v0.2.9...HEAD
+[0.2.9]: https://github.com/clouisle/Clouisle/compare/v0.2.5...v0.2.9
+[0.2.5]: https://github.com/clouisle/Clouisle/compare/v0.2.1...v0.2.5
+[0.2.1]: https://github.com/clouisle/Clouisle/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/clouisle/Clouisle/compare/v0.1.2...v0.2.0
+[0.1.2]: https://github.com/clouisle/Clouisle/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/clouisle/Clouisle/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/clouisle/Clouisle/releases/tag/v0.1.0

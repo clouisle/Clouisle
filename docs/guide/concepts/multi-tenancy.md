@@ -96,7 +96,7 @@ Some resources have additional user-level isolation:
 
 **Conversations**:
 - Regular users can only see their own conversations
-- Users with the `admin:dashboard:access` permission (or super admins) can see all conversations in their teams; team-scoped access additionally requires the `owner` or `admin` team role
+- Users with the `admin:dashboard:access` permission (or super admins) can see all conversations in their teams; scoping the query to a team requires team membership plus the `team:read` permission, which both the Member and Viewer roles hold
 
 **API Keys**:
 - Users can only see and manage their own API keys

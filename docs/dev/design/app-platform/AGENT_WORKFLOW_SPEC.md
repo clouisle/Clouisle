@@ -90,7 +90,7 @@ class Agent(Model):
     name = fields.CharField(max_length=100)
     description = fields.TextField(null=True)
     avatar_url = fields.CharField(max_length=500, null=True)
-    icon = fields.CharField(max_length=50, null=True)  # emoji 或图标名
+    icon = fields.CharField(max_length=500, null=True)  # emoji 或图标 URL
     
     # 模型配置
     model = fields.ForeignKeyField(
@@ -99,9 +99,10 @@ class Agent(Model):
         null=True,  # 可使用团队默认模型
     )
     system_prompt = fields.TextField(null=True)
-    temperature = fields.FloatField(default=0.7)
-    max_tokens = fields.IntField(null=True)
-    top_p = fields.FloatField(null=True)
+    max_iterations = fields.IntField(default=5)          # 最大工具调用轮数 (1-200)
+    hide_tool_calls = fields.BooleanField(default=False)      # 聊天界面隐藏工具调用明细
+    hide_message_actions = fields.BooleanField(default=False) # 隐藏 token 用量/速度统计
+    hide_reasoning = fields.BooleanField(default=False)       # 隐藏思维链
     
     # 工具配置 (JSON 数组)
     # [{"type": "builtin", "name": "web_search"}, {"type": "mcp", "server_id": "xxx"}]
@@ -132,6 +133,14 @@ class Agent(Model):
         ordering = ["-updated_at"]
 ```
 
+> 说明：`Agent` 模型没有 `temperature` / `max_tokens` / `top_p` 字段，采样参数来自
+> 所选 `TeamModel` 的模型配置。除上表字段外，Agent 还通过一批 JSON 配置字段
+> 承载能力开关（如 `tools_config`、`tools_credentials`、`attachment_config`、
+> `enable_attachments`、`enable_memory` / `memory_config`、
+> `enable_image_generation` / `image_generation_config`、
+> `enable_video_generation` / `video_generation_config`、`streaming_config` 等），
+> 定义见 `backend/app/models/agent.py`。
+
 #### 2.2.2 Agent-知识库关联
 
 ```python
@@ -143,7 +152,8 @@ class AgentKnowledgeBase(Model):
     
     # RAG 配置
     retrieval_top_k = fields.IntField(default=5)
-    score_threshold = fields.FloatField(default=0.5)
+    score_threshold = fields.FloatField(default=0.3)  # 相似度阈值 0-1，越低召回越多
+    search_mode = fields.CharField(max_length=20, default="hybrid")  # vector / fulltext / hybrid
     
     created_at = fields.DatetimeField(auto_now_add=True)
 
@@ -231,38 +241,43 @@ POST   /api/v1/agents/{id}/unpublish     # 取消发布
 - `keyword`: 名称/描述搜索
 - `page`, `page_size`: 分页
 
-**创建/更新 Schema**：
+**创建/更新 Schema**（`backend/app/schemas/agent.py`，节选主要字段）：
 ```python
 class AgentCreate(BaseModel):
+    team_id: UUID
     name: str = Field(..., min_length=1, max_length=100)
     description: str | None = None
     avatar_url: str | None = None
     icon: str | None = None
-    model_id: UUID | None = None
+    model_id: UUID | None = None               # TeamModel ID，可为空（用团队默认模型）
     system_prompt: str | None = None
-    temperature: float = Field(default=0.7, ge=0, le=2)
-    max_tokens: int | None = Field(default=None, ge=1)
-    top_p: float | None = Field(default=None, ge=0, le=1)
-    tools_config: list[dict] = []
-    knowledge_base_ids: list[UUID] = []
-    variables: list[dict] = []
-    visibility: AgentVisibility = AgentVisibility.PRIVATE
+    max_iterations: int = Field(default=5, ge=1, le=200)
+    hide_tool_calls: bool = False              # 隐藏工具调用明细
+    hide_message_actions: bool = False         # 隐藏 token/速度统计
+    hide_reasoning: bool = False               # 隐藏思维链
+    tools_config: list[ToolConfig] = []
+    tools_credentials: dict[str, str] = {}
+    knowledge_base_configs: list[AgentKnowledgeBaseConfig] = []
+    variables: list[VariableDefinition] = []
+    opening_message: str | None = None
+    suggested_questions: list[str] = []
+    powered_by_text: str | None = None
+    visibility: str = "private"
+    # 另有能力开关：enable_attachments / attachment_config、
+    # enable_user_input_request、enable_memory / memory_config、
+    # enable_image_generation / image_generation_config、
+    # enable_video_generation / video_generation_config、rag_mode、
+    # context_compression_config 等
 
 class AgentUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=100)
-    description: str | None = None
-    avatar_url: str | None = None
-    icon: str | None = None
-    model_id: UUID | None = None
-    system_prompt: str | None = None
-    temperature: float | None = Field(default=None, ge=0, le=2)
-    max_tokens: int | None = Field(default=None, ge=1)
-    top_p: float | None = Field(default=None, ge=0, le=1)
-    tools_config: list[dict] | None = None
-    knowledge_base_ids: list[UUID] | None = None
-    variables: list[dict] | None = None
-    visibility: AgentVisibility | None = None
+    # 上述字段全部可选（Optional），另支持 embed_config
+    ...
 ```
+
+> 没有 `temperature` / `max_tokens` / `top_p` 字段：采样参数由所选 `TeamModel`
+> 的模型配置决定。知识库绑定使用 `knowledge_base_configs`
+> （每项含 `retrieval_top_k`、`score_threshold`、`search_mode`），不是
+> `knowledge_base_ids`。
 
 #### 2.3.2 对话 API
 
@@ -322,10 +337,20 @@ data: {"code": 1001, "msg": "Error message"}
 
 ```
 GET    /api/v1/conversations             # 我的所有对话
+GET    /api/v1/conversations/stats       # 会话统计
+GET    /api/v1/conversations/stats/trends # 会话趋势
 GET    /api/v1/conversations/{id}        # 对话详情（含消息列表）
 DELETE /api/v1/conversations/{id}        # 删除对话
-PATCH  /api/v1/conversations/{id}        # 更新（如修改标题）
-DELETE /api/v1/conversations/{id}/messages/{msg_id}  # 删除单条消息
+DELETE /api/v1/conversations             # 批量删除对话
+```
+
+`conversations` router 没有 `PATCH`，也没有单条消息删除。这两个操作实现
+在 agent router 下（`backend/app/api/v1/endpoints/agents.py`）：
+
+```
+PATCH  /api/v1/agents/conversations/{id}                       # 更新对话（如重命名标题）
+DELETE /api/v1/agents/conversations/{id}                       # 删除对话
+DELETE /api/v1/agents/conversations/{id}/messages/{msg_id}     # 删除单条消息
 ```
 
 ### 2.4 前端路由
@@ -882,15 +907,20 @@ class NodeExecution(Model):
 #### 3.4.1 工作流 CRUD
 
 ```
-GET    /api/v1/workflows                  # 列表
-POST   /api/v1/workflows                  # 创建
-GET    /api/v1/workflows/{id}             # 详情
-PUT    /api/v1/workflows/{id}             # 更新定义
-DELETE /api/v1/workflows/{id}             # 删除
-POST   /api/v1/workflows/{id}/duplicate   # 复制
-POST   /api/v1/workflows/{id}/publish     # 发布
-POST   /api/v1/workflows/{id}/archive     # 归档
+GET    /api/v1/workflows                       # 列表
+POST   /api/v1/workflows                       # 创建
+GET    /api/v1/workflows/{id}                  # 详情
+GET    /api/v1/workflows/{id}/stats            # 统计
+GET    /api/v1/workflows/{id}/stats/trends     # 趋势
+PUT    /api/v1/workflows/{id}                  # 更新定义
+DELETE /api/v1/workflows/{id}                  # 删除
+POST   /api/v1/workflows/{id}/duplicate        # 复制
+POST   /api/v1/workflows/{id}/publish          # 发布
+POST   /api/v1/workflows/{id}/unpublish        # 取消发布
+POST   /api/v1/workflows/{id}/regenerate-webhook-token  # 重新生成 Webhook Token
 ```
+
+没有 `/api/v1/workflows/{id}/archive` 端点；取消发布使用 `/unpublish`。
 
 **创建/更新 Schema**：
 ```python
@@ -912,105 +942,146 @@ class WorkflowUpdate(BaseModel):
 #### 3.4.2 执行 API
 
 ```
-POST   /api/v1/workflows/{id}/run         # 执行工作流
-POST   /api/v1/workflows/{id}/debug       # 调试执行 (SSE 流式)
-GET    /api/v1/workflows/{id}/runs        # 执行历史
+POST   /api/v1/workflows/{id}/run              # 执行工作流（返回 run_id，异步执行）
+POST   /api/v1/workflows/{id}/debug            # 调试执行（使用草稿定义）
+GET    /api/v1/workflows/{id}/runs             # 某工作流的执行历史
+GET    /api/v1/workflows/{id}/runs/mine        # 我的执行历史（该工作流）
+GET    /api/v1/workflows/runs                  # 执行记录列表（按 team/workflow/status/trigger/user 筛选）
+GET    /api/v1/workflows/runs/stats            # 执行统计
+GET    /api/v1/workflows/runs/{run_id}         # 执行详情
+GET    /api/v1/workflows/runs/{run_id}/nodes   # 节点执行记录
+DELETE /api/v1/workflows/runs/{run_id}         # 删除执行记录
+GET    /api/v1/workflows/runs/{run_id}/stream  # SSE 流式输出
+POST   /api/v1/workflows/runs/{run_id}/cancel  # 取消执行
 ```
 
 **执行请求**：
 ```python
 class WorkflowRunRequest(BaseModel):
     inputs: dict[str, Any] = {}           # 输入变量
-    async_mode: bool = True               # 是否异步执行
 ```
 
-**调试流式响应 (SSE)**：
+执行始终在 Celery worker 中异步完成；`run`/`debug` 返回 `run_id` 与
+`stream_url`，前端据此连接 `GET /runs/{run_id}/stream` 获取 SSE 流。
+
+**流式响应 (SSE)**：
+
+SSE 帧形如 `event: <type>\ndata: <json>`，其中 JSON 为统一信封
+`{"event", "data", "node_id", "timestamp", "sequence"}`：
+
 ```
-event: run_start
-data: {"run_id": "xxx"}
+event: workflow_start
+data: {"event":"workflow_start","data":{"workflow_id":"xxx","workflow_name":"...","inputs":{}},"node_id":null,"timestamp":"...","sequence":0}
 
 event: node_start
-data: {"node_id": "node1", "type": "llm"}
+data: {"event":"node_start","data":{"node_type":"llm","node_label":"LLM","is_streaming":true},"node_id":"node1",...}
 
-event: node_output
-data: {"node_id": "node1", "delta": "生成中..."}
+event: chunk
+data: {"event":"chunk","data":{"chunk":"生成中...","type":"text"},"node_id":"node1",...}
 
-event: node_end
-data: {"node_id": "node1", "outputs": {...}, "duration_ms": 1500}
+event: node_complete
+data: {"event":"node_complete","data":{"outputs":{...},"duration_ms":1500,"node_type":"llm","is_streaming":false},"node_id":"node1",...}
 
-event: node_start
-data: {"node_id": "node2", "type": "condition"}
+event: workflow_complete
+data: {"event":"workflow_complete","data":{"outputs":{...},"duration_ms":3000},"node_id":null,...}
 
-event: node_end
-data: {"node_id": "node2", "outputs": {"branch": "true"}}
-
-event: run_end
-data: {"status": "success", "outputs": {...}, "duration_ms": 3000}
-
-event: error
-data: {"node_id": "node1", "code": 1001, "msg": "Error"}
+event: workflow_error
+data: {"event":"workflow_error","data":{"error":"..."},"node_id":"node1",...}
 ```
+
+其它事件类型：`workflow_waiting`（暂停等待人工输入）、`node_error`、
+`node_skip`、`token`、`output`、`progress`、`status`、`iteration_start`、
+`iteration_complete`、`debug`（定义见
+`backend/app/services/workflow/stream.py`）。
 
 #### 3.4.3 执行记录 API
 
+执行记录端点都在 `/api/v1/workflows/runs` 下（没有独立的 `workflow-runs`
+router）：
+
 ```
-GET    /api/v1/workflow-runs/{id}         # 执行详情
-POST   /api/v1/workflow-runs/{id}/cancel  # 取消执行
-GET    /api/v1/workflow-runs/{id}/logs    # 执行日志
+GET    /api/v1/workflows/runs/{run_id}         # 执行详情
+GET    /api/v1/workflows/runs/{run_id}/nodes   # 节点执行记录
+DELETE /api/v1/workflows/runs/{run_id}         # 删除执行记录
+POST   /api/v1/workflows/runs/{run_id}/cancel  # 取消执行
+GET    /api/v1/workflows/runs/{run_id}/stream  # SSE 流式输出
 ```
+
+没有 `/api/v1/workflow-runs/{id}/logs` 端点；`pause` 节点的外部输入通过
+`GET  /api/v1/workflows/{workflow_id}/runs/{run_id}/pause-request` 与
+`POST /api/v1/workflows/{workflow_id}/runs/{run_id}/pause-requests/{pause_request_id}/submit`
+处理。
 
 #### 3.4.4 Webhook API
 
 ```
-POST   /api/v1/webhooks/workflow/{token}  # Webhook 触发入口
+POST   /api/v1/workflows/webhook/{webhook_token}  # Webhook 触发入口
 ```
+
+Webhook token 由 `POST /api/v1/workflows/{id}/regenerate-webhook-token` 生成/轮换。
 
 ### 3.5 前端路由
 
+Agent 与 Workflow 都归在「应用」模块 `(platform)/app/apps/**` 下：
+
 ```
-(platform)/app/
-├── workflows/
-│   ├── page.tsx                          # 工作流列表
-│   └── _components/
-│       ├── workflow-grid.tsx
-│       ├── workflow-card.tsx
-│       ├── create-workflow-dialog.tsx
-│       └── index.ts
+(platform)/app/apps/
+├── page.tsx                              # 应用列表（Agent / Workflow Tab）
+├── _components/                          # 应用卡片、创建对话框等
 │
-├── workflows/[id]/
-│   ├── page.tsx                          # 工作流编辑器
-│   ├── runs/
-│   │   ├── page.tsx                      # 执行历史
-│   │   └── _components/
-│   │       ├── run-list.tsx
-│   │       └── index.ts
+├── [id]/                                 # Agent 应用
+│   ├── page.tsx                          # 配置 / 编排
+│   ├── logs/page.tsx                     # 运行日志
+│   ├── monitor/page.tsx                  # 监控统计
 │   └── _components/
-│       ├── flow-editor.tsx               # ReactFlow 编辑器
-│       ├── node-panel.tsx                # 左侧节点面板
-│       ├── config-panel.tsx              # 右侧配置面板
-│       ├── toolbar.tsx                   # 顶部工具栏
-│       ├── debug-panel.tsx               # 调试面板
-│       ├── variable-panel.tsx            # 变量面板
-│       ├── nodes/                        # 自定义节点组件
-│       │   ├── base-node.tsx
-│       │   ├── start-node.tsx
-│       │   ├── end-node.tsx
-│       │   ├── llm-node.tsx
-│       │   ├── agent-node.tsx
-│       │   ├── condition-node.tsx
-│       │   ├── loop-node.tsx
-│       │   ├── code-node.tsx
-│       │   ├── http-node.tsx
-│       │   └── index.ts
-│       └── index.ts
+│       ├── agent-config-form.tsx
+│       ├── agent-orchestration-form.tsx
+│       ├── agent-sidebar.tsx / agent-toolbar.tsx / agent-settings-drawer.tsx
+│       ├── agent-preview-panel.tsx
+│       ├── prompt-editor.tsx
+│       ├── tool-selector.tsx
+│       ├── knowledge-base-selector.tsx
+│       ├── variable-editor.tsx
+│       └── embed-config-dialog.tsx
 │
-└── workflows/[id]/runs/[runId]/
-    ├── page.tsx                          # 单次执行详情
+└── workflow/[id]/                        # 工作流编辑器
+    ├── page.tsx                          # ReactFlow 编辑器
+    ├── api/page.tsx                      # API / Webhook 接入信息
+    ├── logs/page.tsx                     # 执行日志
+    ├── monitor/page.tsx                  # 执行监控
     └── _components/
-        ├── run-detail.tsx
-        ├── node-result.tsx
-        └── index.ts
+        ├── node-panel.tsx                # 左侧节点面板
+        ├── node-config-drawer.tsx        # 右侧配置抽屉
+        ├── add-node-popover.tsx
+        ├── start-node-selector.tsx
+        ├── workflow-settings-drawer.tsx
+        ├── workflow-run-drawer.tsx       # 运行/调试结果抽屉
+        ├── workflow-publish-dialog.tsx
+        ├── workflow-validator.ts / validation-checklist.tsx
+        ├── node-output-renderer.tsx
+        ├── node-config/                  # 各节点配置（configs/、dialogs/、components/、type-spec-editor.tsx、variable-selector.tsx）
+        └── nodes/                        # 自定义节点组件
+            ├── start-node.tsx / user-input-node.tsx / trigger-node.tsx
+            ├── llm-node.tsx / agent-node.tsx / tool-node.tsx
+            ├── decision-node.tsx / condition-node.tsx / question-classifier-node.tsx
+            ├── iteration-node.tsx / loop-node.tsx
+            ├── code-node.tsx / template-node.tsx / http-request 类节点
+            ├── knowledge-retrieval-node.tsx / media-generation-node.tsx
+            ├── sub-workflow-node.tsx / file-to-url-node.tsx / pause-node.tsx
+            └── ...
 ```
+
+Agent 对话与运行结果页在 `(chat)` route group：
+
+```
+(chat)/
+├── layout.tsx
+├── chat/[id]/page.tsx                    # Agent 对话
+└── run/[id]/page.tsx                     # 工作流/Agent 运行结果页
+```
+
+工具、Skill 管理与代码编辑器不在应用模块下，而在
+`(platform)/app/capabilities/**`（见 `TOOL_SYSTEM_SPEC.md`）。
 
 ### 3.6 执行引擎设计
 
@@ -1347,44 +1418,45 @@ backend/app/
 │   └── workflow.py               # Workflow, WorkflowRun, NodeExecution Schema
 │
 ├── api/v1/
-│   ├── agents.py                 # Agent CRUD + 对话 API
-│   ├── conversations.py          # 会话管理 API
-│   ├── workflows.py              # 工作流 CRUD + 执行 API
-│   ├── workflow_runs.py          # 执行记录 API
-│   └── webhooks.py               # Webhook 入口
+│   ├── api.py                    # 路由挂载（agents / conversations / workflows / workflow-versions / ...）
+│   ├── workflow_metrics.py       # 工作流监控指标（挂在 admin router）
+│   ├── workflow_versions.py      # 版本管理 API
+│   └── endpoints/
+│       ├── agents.py             # Agent CRUD + 会话/消息 API
+│       ├── conversations.py      # 会话管理 API
+│       ├── workflows.py          # 工作流 CRUD + 运行/调试/运行记录/版本 API
+│       └── ...
 │
 ├── services/
-│   ├── agent_executor.py         # Agent 执行服务
+│   ├── agent.py                  # Agent 领域服务
+│   ├── agent_loop.py             # Agent 主循环
+│   ├── agent_round.py            # 单轮执行
+│   ├── agent_run_worker.py       # 持久化 AgentRun worker
+│   ├── sandbox/                  # 代码沙箱（独立服务）
 │   └── workflow/
 │       ├── __init__.py
-│       ├── executor.py           # WorkflowExecutor（核心执行器）
+│       ├── orchestrator.py       # WorkflowOrchestrator（核心编排器）
 │       ├── context.py            # ExecutionContext（执行上下文）
-│       ├── graph.py              # WorkflowGraph（图解析、拓扑排序）
-│       ├── logger.py             # ExecutionLogger（批量日志记录）
-│       ├── stats.py              # RunStatsTracker（Redis 统计）
-│       ├── storage.py            # DataStorage（大数据存储）
-│       ├── limiter.py            # ConcurrencyLimiter（并发限制）
-│       ├── events.py             # EventEmitter 接口
-│       └── nodes/                # 节点执行器
-│           ├── __init__.py
-│           ├── base.py           # BaseNodeExecutor
-│           ├── start.py          # 开始节点
-│           ├── end.py            # 结束节点
-│           ├── llm.py            # LLM 节点
-│           ├── agent.py          # Agent 节点
-│           ├── sub_workflow.py   # 子工作流节点
-│           ├── kb_retrieval.py   # 知识库检索节点
-│           ├── condition.py      # 条件分支节点
-│           ├── loop.py           # 循环节点
-│           ├── code.py           # 代码执行节点
-│           ├── http.py           # HTTP 请求节点
-│           ├── tool.py           # 工具调用节点
-│           ├── variable.py       # 变量赋值节点
-│           └── delay.py          # 延时节点
+│       ├── plan.py               # ExecutionPlan（DAG 解析、拓扑排序）
+│       ├── executor.py           # NodeExecutor 基类 + 注册表
+│       ├── stream.py             # StreamManager（SSE）
+│       ├── retry.py / cache.py / metrics.py / profiler.py
+│       ├── versioning.py / debugger.py / templates.py / benchmark.py
+│       ├── types.py / serialization.py / schema_inference.py
+│       ├── pause_approvers.py / lazy_stream.py / errors.py
+│       ├── tasks.py              # workflow.* 分布式任务集
+│       └── executors/            # 节点执行器
+│           ├── start.py / answer.py / llm.py / decision.py / condition.py
+│           ├── code.py / template.py / variable.py / iteration.py / tool.py
+│           └── subworkflow.py / knowledge.py / media_generation.py / pause.py
 │
 └── tasks/
-    └── workflow.py               # Celery 异步任务（预留）
+    └── workflow.py               # Celery 异步任务（run / resume / cancel）
 ```
+
+不存在 `api/v1/workflow_runs.py`、`api/v1/webhooks.py`、`services/agent_executor.py`
+或 `services/workflow/{graph,logger,stats,storage,limiter,events,nodes}.py`；
+执行记录与 Webhook 端点都实现在 `endpoints/workflows.py` 内。
 
 ---
 

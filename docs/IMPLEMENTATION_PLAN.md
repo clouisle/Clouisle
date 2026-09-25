@@ -135,26 +135,26 @@
   - [x] 11. Pika video start-image support
   - [x] 12. Volcengine video start-image support
 
-- **helm-chart-deployment** — In progress. Add a minimal production-ready Helm chart for the current API/worker/sandbox-worker/scheduler/frontend deployment model. See `docs/plan/helm-chart-deployment.md`
+- **helm-chart-deployment** — Complete. Add a minimal production-ready Helm chart for the current API/worker/sandbox-worker/scheduler/frontend deployment model. See `docs/plan/helm-chart-deployment.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Helm chart scaffold and values schema
   - [x] 3. Application service templates
   - [x] 4. Built-in infrastructure templates
-  - [ ] 5. Helm deployment docs and validation
+  - [x] 5. Helm deployment docs and validation
 
-- **admin-capabilities** — In progress. Rename admin Tools to Capabilities, add Tools/Skills tabs, and back them with admin-prefixed APIs. See `docs/plan/admin-capabilities.md`
+- **admin-capabilities** — Complete. Rename admin Tools to Capabilities, add Tools/Skills tabs, and back them with admin-prefixed APIs. See `docs/plan/admin-capabilities.md`
   - [x] 1. Design docs and implementation index
-  - [ ] 2. Admin capability permissions and APIs
-  - [ ] 3. Admin route, navigation, search, and i18n
-  - [ ] 4. Admin Tools tab on `/admin/tools` APIs
-  - [ ] 5. Admin Skills tab on `/admin/skills` APIs
-  - [ ] 6. Validation and regression checks
+  - [x] 2. Admin capability permissions and APIs
+  - [x] 3. Admin route, navigation, search, and i18n
+  - [x] 4. Admin Tools tab on `/admin/tools` APIs
+  - [x] 5. Admin Skills tab on `/admin/skills` APIs
+  - [x] 6. Validation and regression checks
 
 - **agent-skills** — In progress. Redesign Agent Skills around zip/Git package import: scan multiple `SKILL.md` roots, preview/install selected Skills, keep Agent-scoped function calling, and run only declared script Skills in sandbox. See `docs/plan/agent-skills.md`
   - [x] 1. Design docs and implementation index
-  - [ ] 2. Backend package-driven Skill model and schemas
-  - [ ] 3. Zip/Git scanning, package parsing, and import sessions
-  - [ ] 4. Skills import API, permissions, audit, and i18n
+  - [x] 2. Backend package-driven Skill model and schemas
+  - [x] 3. Zip/Git scanning, package parsing, and import sessions
+  - [x] 4. Skills import API, permissions, audit, and i18n
   - [x] 5. Skill tool definition and instructions/script execution
   - [x] 6. Frontend import, preview, install, detail, and test UI
   - [ ] 7. Agent selection and end-to-end security/regression tests

@@ -11,6 +11,9 @@ The Tools API allows you to:
 - **Test tools**: Execute a tool once with arguments
 - **Execute code**: Run code directly in the sandbox
 - **Manage custom tools**: Create and configure tools
+- **Toggle & duplicate tools**: Enable/disable or copy a tool
+- **Tool configuration**: Store tool credentials globally or per team
+- **Share tools**: Share a tool across teams and manage its shares
 
 **Base URL**: `/api/v1/tools`
 
@@ -93,10 +96,12 @@ curl -X GET "https://your-domain.com/api/v1/tools?category=search" \
         "custom_type": null,
         "http_config": null,
         "code_config": null,
+        "database_config": null,
         "mcp_config": null,
         "team_id": null,
         "created_by_id": null,
         "created_by_name": null,
+        "visibility": "private",
         "is_owned": true,
         "owner_team_id": null,
         "owner_team_name": null,
@@ -108,6 +113,187 @@ curl -X GET "https://your-domain.com/api/v1/tools?category=search" \
     "page": 1,
     "page_size": 10
   },
+  "msg": "success"
+}
+```
+
+## List Tool Filter Options
+
+Get the filter option lists (types, categories, statuses, teams, creators) for the current user's accessible tools.
+
+### Endpoint
+
+```
+GET /api/v1/tools/filters
+```
+
+### Response
+
+**Success (200 OK):**
+
+```json
+{
+  "code": 0,
+  "data": {
+    "types": [
+      { "value": "builtin", "label": "builtin" },
+      { "value": "custom", "label": "custom" },
+      { "value": "mcp", "label": "mcp" }
+    ],
+    "categories": [
+      { "value": "search", "label": "search" }
+    ],
+    "statuses": [
+      { "value": "enabled", "label": "enabled" },
+      { "value": "disabled", "label": "disabled" }
+    ],
+    "teams": [
+      { "value": "team-123", "label": "Engineering" }
+    ],
+    "creators": [
+      { "value": "alice", "label": "alice" }
+    ]
+  },
+  "msg": "success"
+}
+```
+
+`categories` contains every defined tool category plus any custom category present on accessible tools. `teams` lists the teams the user can access, and `creators` the distinct creator names of accessible tools.
+
+## List Legacy Team Tools
+
+Legacy compatibility endpoint returning a team's tools grouped by kind. Prefer [List Tools](#list-tools) for new integrations.
+
+### Endpoint
+
+```
+GET /api/v1/tools/legacy?team_id={team_id}
+```
+
+### Query Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `team_id` | string | Yes | - | Team UUID |
+| `include_shared` | boolean | No | true | Include tools shared with the team by other teams |
+
+### Response
+
+**Success (200 OK):**
+
+```json
+{
+  "code": 0,
+  "data": {
+    "builtin": [],
+    "custom": [
+      {
+        "id": "tool-789",
+        "name": "crm_lookup",
+        "display_name": "CRM Lookup",
+        "description": "Look up customer information in CRM",
+        "type": "custom",
+        "category": "data",
+        "icon": "👤",
+        "parameters": [],
+        "is_enabled": true,
+        "requires_config": false,
+        "config_fields": [],
+        "custom_type": "http",
+        "team_id": "team-123",
+        "created_by_id": "user-1",
+        "created_by_name": "alice",
+        "visibility": "private",
+        "is_owned": true,
+        "owner_team_id": "team-123",
+        "owner_team_name": null,
+        "share_permission": null,
+        "shared_with_count": 0
+      }
+    ],
+    "mcp": []
+  },
+  "msg": "success"
+}
+```
+
+`builtin` always contains the full builtin tool list; `custom` and `mcp` contain the team's own tools (excluding other members' private tools) and, when `include_shared` is true, tools shared with the team.
+
+## List Builtin Tools
+
+Get every builtin tool (including the sandbox tools `artifact`, `bash`, `edit`, `read`, `write`).
+
+### Endpoint
+
+```
+GET /api/v1/tools/builtin
+```
+
+### Response
+
+**Success (200 OK):**
+
+```json
+{
+  "code": 0,
+  "data": [
+    {
+      "id": null,
+      "name": "web_search",
+      "display_name": "Web Search",
+      "description": "Search the internet for information",
+      "type": "builtin",
+      "category": "search",
+      "icon": "🔍",
+      "parameters": [],
+      "is_enabled": true,
+      "requires_config": true,
+      "config_fields": ["TAVILY_API_KEY"],
+      "custom_type": null,
+      "is_owned": true,
+      "visibility": "private"
+    }
+  ],
+  "msg": "success"
+}
+```
+
+## List File Parsers
+
+Get the tools usable as document parsers for file uploads: builtin parsers (such as `markitdown`) plus the team's enabled custom tools with `category=file`.
+
+### Endpoint
+
+```
+GET /api/v1/tools/file-parsers?team_id={team_id}
+```
+
+### Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `team_id` | string | Yes | Team UUID whose custom file parsers are included |
+
+### Response
+
+**Success (200 OK):**
+
+```json
+{
+  "code": 0,
+  "data": [
+    {
+      "id": null,
+      "name": "markitdown",
+      "display_name": "MarkItDown",
+      "description": "Convert documents to Markdown",
+      "type": "builtin",
+      "category": "file",
+      "icon": null,
+      "parameters": [],
+      "is_enabled": true
+    }
+  ],
   "msg": "success"
 }
 ```
@@ -173,10 +359,12 @@ curl -X GET "https://your-domain.com/api/v1/tools/id/tool-123" \
     "custom_type": null,
     "http_config": null,
     "code_config": null,
+    "database_config": null,
     "mcp_config": null,
     "team_id": null,
     "created_by_id": null,
     "created_by_name": null,
+    "visibility": "private",
     "is_owned": true,
     "owner_team_id": null,
     "owner_team_name": null,
@@ -198,6 +386,12 @@ Execute a tool once by name with arguments. There is no standalone `POST /tools/
 ```
 POST /api/v1/tools/test
 ```
+
+### Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `team_id` | string | No | Team UUID used to resolve custom tools and look up tool credentials (team configuration first, then global) |
 
 ### Request Body
 
@@ -401,10 +595,12 @@ POST /api/v1/tools?team_id={team_id}
 | `icon` | string | No | Icon (emoji or URL, max 100 chars) |
 | `category` | string | No | Tool category (default: `other`) |
 | `type` | string | No | Tool type: `builtin`, `custom`, `mcp` (default: `custom`) |
-| `custom_type` | string | No | Custom tool type: `http`, `code`, `mcp` (only for `type=custom`) |
+| `custom_type` | string | No | Custom tool type: `http`, `code`, `database`, `mcp` (only for `type=custom`) |
+| `visibility` | string | No | Tool visibility: `private`, `team` (default: `private`) |
 | `parameters` | array | No | Parameter definitions (`name`, `type`, `description`, `required`, `enum`, `default`) |
 | `http_config` | object | No | HTTP config (`method`, `url`, `headers`, `query_params`, `body_template`, `content_type`, `form_fields`, `timeout`, `response_path`) |
-| `code_config` | object | No | Code config (`language`, `code`, `command`, `python_packages`, `js_packages`, `artifacts`, `limits`) |
+| `code_config` | object | No | Code config (`language`, `code`, `command`, `python_packages`, `js_packages`, `python_package_index_url`, `node_package_registry_url`, `artifacts`, `limits`) |
+| `database_config` | object | No | Database config (`db_type`, `host`, `port`, `database`, `username`, `password`, `ssl`, `url`, `db`, `auth_source`, `timeout`, `max_limit`) |
 | `mcp_config` | object | No | MCP Server config (`transport`, `command`, `args`, `env`, `url`, `headers`) |
 | `credentials` | object | No | Tool credentials |
 | `is_enabled` | boolean | No | Enabled status (default: true) |
@@ -560,6 +756,190 @@ curl -X DELETE "https://your-domain.com/api/v1/tools/tool-789" \
 }
 ```
 
+## Toggle Tool
+
+Flip a tool's enabled state. There is no request body.
+
+### Endpoint
+
+```
+POST /api/v1/tools/{tool_id}/toggle
+```
+
+### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `tool_id` | string | Yes | Tool UUID |
+
+### Request Example
+
+```bash
+curl -X POST "https://your-domain.com/api/v1/tools/tool-789/toggle" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Response
+
+**Success (200 OK):**
+
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "tool-789",
+    "name": "crm_lookup",
+    "display_name": "CRM Lookup",
+    "type": "custom",
+    "is_enabled": false,
+    "team_id": "team-123",
+    "created_at": "2026-02-11T16:00:00Z",
+    "updated_at": "2026-02-11T16:05:00Z",
+    "created_by_name": "alice"
+  },
+  "msg": "Tool updated successfully"
+}
+```
+
+The tool creator or a team admin/owner can toggle a tool. Only custom and MCP tools (database-backed) can be toggled; builtin tools are always enabled.
+
+## Duplicate Tool
+
+Copy a database-backed tool within its owning team.
+
+### Endpoint
+
+```
+POST /api/v1/tools/{tool_id}/duplicate
+```
+
+### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `tool_id` | string | Yes | Tool UUID |
+
+### Request Example
+
+```bash
+curl -X POST "https://your-domain.com/api/v1/tools/tool-789/duplicate" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Response
+
+**Success (200 OK):**
+
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "tool-790",
+    "name": "crm_lookup_copy",
+    "display_name": "CRM Lookup (Copy)",
+    "type": "custom",
+    "custom_type": "http",
+    "is_enabled": false,
+    "team_id": "team-123",
+    "created_at": "2026-02-11T16:10:00Z",
+    "updated_at": "2026-02-11T16:10:00Z",
+    "created_by_name": "alice"
+  },
+  "msg": "Tool duplicated successfully"
+}
+```
+
+The copy is created in the same team with visibility `private` and `is_enabled=false`. The name gets a `_copy` suffix (`_copy_1`, `_copy_2`, … when that name is already taken) and the display name gets a `(Copy)` suffix. Requires the `tool:create` permission and team admin rights.
+
+## Tool Configuration
+
+Store credentials (API keys, tokens) for builtin or database tools, either globally (superuser only) or per team.
+
+### List Tool Configurations
+
+```
+GET /api/v1/tools/config?team_id={team_id}
+```
+
+### Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `team_id` | string | No | Team UUID. Omit to list global configurations (superuser only) |
+
+### Get Tool Configuration
+
+```
+GET /api/v1/tools/config/{tool_name}?team_id={team_id}
+```
+
+### Create Tool Configuration
+
+```
+POST /api/v1/tools/config?team_id={team_id}
+```
+
+```json
+{
+  "tool_name": "web_search",
+  "credentials": {
+    "TAVILY_API_KEY": "tvly-..."
+  }
+}
+```
+
+### Update Tool Configuration
+
+```
+PUT /api/v1/tools/config/{tool_name}?team_id={team_id}
+```
+
+```json
+{
+  "credentials": {
+    "TAVILY_API_KEY": "tvly-updated"
+  }
+}
+```
+
+### Delete Tool Configuration
+
+```
+DELETE /api/v1/tools/config/{tool_name}?team_id={team_id}
+```
+
+### Path & Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `tool_name` | string | Yes | Tool name (path parameter), e.g. `web_search` |
+| `team_id` | string | No | Team UUID query parameter. Omit for the global configuration |
+
+With `team_id`, team admin rights are required for create/update/delete and team membership for read; without `team_id`, only superusers may read or write the global configuration. Reading a team configuration for a known builtin tool name creates an empty configuration automatically; an unknown name returns 404.
+
+### Response
+
+**Success (200 OK)** — for the list endpoint `data` is an array of the object below; for get/create/update it is the object itself:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "cfg-001",
+    "tool_name": "web_search",
+    "team_id": "team-123",
+    "credentials": {
+      "TAVILY_API_KEY": "tvly-..."
+    },
+    "created_at": "2026-02-11T16:00:00Z",
+    "updated_at": "2026-02-11T16:00:00Z"
+  },
+  "msg": "Tool configuration created successfully"
+}
+```
+
+**Success (200 OK)** — delete returns `data: null` with `msg: "Tool configuration deleted successfully"`.
+
 ## Get Tool Usage
 
 > **Note:** Not implemented / Roadmap. There is no per-tool usage statistics endpoint.
@@ -568,9 +948,15 @@ curl -X DELETE "https://your-domain.com/api/v1/tools/tool-789" \
 
 | Code | Message | Description |
 |------|---------|-------------|
-| `4000` | Not found | Tool does not exist |
-| `3000` | Permission denied | Insufficient permissions |
+| `4000` | Not found | Tool, tool configuration, or tool share does not exist |
+| `4004` | Team not found | Target team for a share does not exist |
+| `3000` | Permission denied | Insufficient permissions, or private tool access denied |
+| `3002` | Not a team member | A requested `team_id` filter refers to a team the user cannot access |
 | `1001` | Validation failed | Invalid request data |
+| `1002` | Bad request | Private tool cannot be shared, share target is the owning team, or database connection failed |
+| `1003` | Internal error | MCP server connection failed |
+| `5001` | Already exists | A tool with the same name already exists in the team |
+| `5104` | Duplicate name | Tool is already shared with that team, or the tool configuration already exists |
 
 > **Note:** No per-endpoint rate limits are implemented. There is no rate-limit middleware on these endpoints. (Codes `6300`-`6306` are reserved for SSO errors and are not used by the Tools API.)
 
@@ -723,13 +1109,34 @@ GET /api/v1/tools/shared-with-me?team_id=my-team-uuid HTTP/1.1
 Authorization: Bearer <token>
 ```
 
+Returns a `ToolListOut` object (`builtin` is always empty here; shared tools appear in `custom` or `mcp`) where each tool has `is_owned: false`, `owner_team_id`, `owner_team_name` and `share_permission` set.
+
+### Unshare Tool
+
+```http
+DELETE /api/v1/tools/{tool_id}/share/{team_id} HTTP/1.1
+Authorization: Bearer <token>
+```
+
+Revokes a team's access to the tool. Response:
+
+```json
+{
+  "code": 0,
+  "data": null,
+  "msg": "Tool sharing revoked successfully"
+}
+```
+
+Only an admin/owner of the tool's owning team can share or unshare it, and only non-private tools can be shared. `permission` is one of `read_only` (view and use the tool) or `read_execute` (also view execution results). Workspace admins use the equivalent `DELETE /api/v1/admin/tools/{tool_id}/share/{team_id}` route under the admin API (gated by `admin:capability:update`), which is documented with the admin API rather than here.
+
 ---
 
 ## MCP & Database Tool Diagnostics
 
 ### Discover MCP Server Tools
 
-Query and dynamically discover tool definitions from a configured MCP server.
+Query and dynamically discover tool definitions from a configured MCP server. Requires the `tool:read` permission.
 
 ```http
 POST /api/v1/tools/mcp/list-tools HTTP/1.1
@@ -737,13 +1144,39 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "server_type": "sse",
-  "url": "https://mcp.internal.example.com/sse",
-  "headers": {}
+  "mcp_config": {
+    "transport": "sse",
+    "url": "https://mcp.internal.example.com/sse",
+    "headers": {}
+  }
 }
 ```
 
+Response:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "tools": [
+      {
+        "name": "query_orders",
+        "description": "Query the orders database",
+        "parameters": { "type": "object", "properties": {} }
+      }
+    ],
+    "server_name": null,
+    "server_version": null
+  },
+  "msg": "success"
+}
+```
+
+A connection failure returns code `1003` with `msg: "Failed to connect to MCP server"`.
+
 ### Test Database Tool Connection
+
+Requires the `tool:create` permission.
 
 ```http
 POST /api/v1/tools/database/test-connection HTTP/1.1
@@ -760,6 +1193,22 @@ Content-Type: application/json
 }
 ```
 
+Response:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "success": true,
+    "message": "PostgreSQL connection successful",
+    "ping": 1
+  },
+  "msg": "success"
+}
+```
+
+A failed connection returns code `1002` (bad request) with the driver's error key as `msg`.
+
 ## Related Documentation
 
 - [Agent Configuration](../../user-guide/agents/agent-configuration.md) - Using tools with agents
@@ -769,4 +1218,4 @@ Content-Type: application/json
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-26

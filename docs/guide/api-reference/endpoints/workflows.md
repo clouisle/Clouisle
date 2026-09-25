@@ -428,7 +428,7 @@ Execution is always asynchronous: the run is submitted to Celery and the endpoin
     "run_id": "run-789",
     "stream_url": "/api/v1/workflows/runs/run-789/stream"
   },
-  "msg": "Workflow execution started"
+  "msg": "Workflow run started"
 }
 ```
 
@@ -737,7 +737,7 @@ curl -X POST "https://your-domain.com/api/v1/workflows/webhook/wh_abc123" \
 ```json
 {
   "code": 0,
-  "message": "success",
+  "msg": "success",
   "data": {
     "run_id": "550e8400-e29b-41d4-a716-446655440000",
     "status": "running"
@@ -765,7 +765,7 @@ Authorization: Bearer <token>
 ```json
 {
   "code": 0,
-  "message": "success",
+  "msg": "success",
   "data": {
     "pause_request": {
       "id": "pr_01j8abcde",
@@ -803,10 +803,11 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "action": "approve",
-  "variables": {
+  "values": {
+    "decision": "approved",
     "reviewer_comment": "Verified and approved for dispatch"
-  }
+  },
+  "comment": "Approved by the on-call reviewer"
 }
 ```
 
@@ -815,23 +816,11 @@ Content-Type: application/json
 ```json
 {
   "code": 0,
-  "message": "Pause request submitted successfully; workflow run resumed",
   "data": {
-    "run_id": "run_01j8xyz",
-    "status": "running"
-  }
-}
-```
-
-```json
-{
-  "code": 0,
-  "data": {
-    "run_id": "run-789",
-    "status": "pending",
-    "stream_url": "/api/v1/workflows/runs/run-789/stream"
+    "pause_request_id": "8f3c1d2e-6a4b-4c7d-9e21-3b5a7c9d1e2f",
+    "status": "submitted"
   },
-  "msg": "Workflow execution started"
+  "msg": "Pause variables submitted"
 }
 ```
 
@@ -903,4 +892,4 @@ A trends endpoint is also available: `GET /api/v1/workflows/{workflow_id}/stats/
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-26

@@ -124,10 +124,10 @@ command: python main.py server --no-reload -w 8 -H 0.0.0.0 -p 8000
 
 ```yaml
 # Increase Celery concurrency (worker service)
-python main.py worker -c 8 -Q default,knowledge,workflow
+python main.py worker -c 8 -Q default,agent,knowledge,workflow
 
 # Or in docker-compose.yml
-command: python main.py worker -c 8 -Q default,knowledge,workflow
+command: python main.py worker -c 8 -Q default,agent,knowledge,workflow
 ```
 
 ## Horizontal Scaling
@@ -651,12 +651,13 @@ celery_app.conf.task_routes = {
     'app.tasks.audit_log.*': {'queue': 'default'},
     'app.tasks.api_key.*': {'queue': 'default'},
     'app.tasks.password_expiration.*': {'queue': 'default'},
-    'app.tasks.agent.*': {'queue': 'default'},
+    'app.tasks.agent.*': {'queue': 'agent'},
+    'app.tasks.memory.*': {'queue': 'default'},
     # ... (see backend/app/core/celery.py for the complete route table)
 }
 
-# The supplied worker service consumes all three main queues:
-#   python main.py worker -c 4 -Q default,knowledge,workflow
+# The supplied worker service consumes all four main queues:
+#   python main.py worker -c 4 -Q default,agent,knowledge,workflow
 # The sandbox-worker service consumes only the sandbox queue:
 #   python main.py sandbox-worker -c ${SANDBOX_WORKER_CONCURRENCY:-1}
 ```
@@ -673,7 +674,7 @@ docker compose up -d --scale worker=3 --scale sandbox-worker=2
 
 For Docker Swarm, use a separate stack file with `deploy.replicas` and deploy it with `docker stack deploy`; ordinary `docker compose up` ignores those Swarm keys.
 
-Knowledge-base and workflow tasks use the `knowledge` and `workflow` queues on the worker service; sandbox jobs use the separate `sandbox-worker` queue. Scale the corresponding service when queue lag appears.
+Knowledge-base, agent, and workflow tasks use the `knowledge`, `agent`, and `workflow` queues on the worker service; sandbox jobs use the separate `sandbox-worker` queue. Scale the corresponding service when queue lag appears.
 
 ## Vector Database Scaling
 
@@ -911,4 +912,4 @@ total_cost = sum(sum(v.values()) if isinstance(v, dict) else v for v in costs.va
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-26

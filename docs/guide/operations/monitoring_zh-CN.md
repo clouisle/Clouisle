@@ -9,7 +9,7 @@ Clouisle 的监控设置。
 
 ## 管理端可观测性
 
-> **Note:** Clouisle 没有 Prometheus 风格的 `/metrics` 端点。可观测性数据由 `/api/v1/admin/observability/*` 管理端 API 和前端可观测性仪表盘（`/dashboard/observability`）提供。所有端点都需要 `admin:dashboard:access` 权限，并接受 `7d`、`30d`、`90d` 或 `all` 的 `time_range` 参数。
+> **Note:** Clouisle 没有 Prometheus 风格的 `/metrics` 端点。可观测性数据由 `/api/v1/admin/observability/*` 管理端 API 和前端可观测性仪表盘（`/dashboard/observability`）提供。所有端点都需要 `admin:dashboard:access` 权限。用量类端点（`/overview`、`/agents`、`/agent/{agent_id}`、`/workflows`、`/workflow/{workflow_id}`、`/timeouts`、`/throughput`、`/tokens`）接受 `7d`、`30d`、`90d` 或 `all` 的 `time_range` 参数；`/system/*` 端点为当前快照，不接受 `time_range`（其中 `/system/slow-queries` 接受 `threshold_ms`、`page` 和 `page_size`）。
 
 - `/overview` - 所选时间范围内的汇总统计
 - `/agents`、`/agent/{agent_id}` - Agent 请求数、延迟百分位（p50/p95）、成功率、Token 用量

@@ -193,7 +193,7 @@ The production Compose file (`deploy/docker-compose.yml`) defines these services
 | `redis` | `redis:7-alpine` | `redis-server --requirepass …` (when password set) | 6379 |
 | `qdrant` | `qdrant/qdrant:v1.18.3` | default | 6333 |
 | `api` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest` | `python main.py server -H 0.0.0.0 -w 4 --no-reload` | 8000 |
-| `worker` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest` | `python main.py worker -c 4 -Q default,knowledge,workflow` | — |
+| `worker` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest` | `python main.py worker -c 4 -Q default,agent,knowledge,workflow` | — |
 | `sandbox-worker` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest` | `python main.py sandbox-worker -c ${SANDBOX_WORKER_CONCURRENCY:-1}` | — |
 | `beat` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest` | `python main.py beat` | — |
 | `frontend` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend:latest` | `node server.js` (image default) | 3000 |
@@ -273,7 +273,7 @@ services:
 
   worker:
     image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
-    command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,knowledge,workflow"]
+    command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,agent,knowledge,workflow"]
     env_file: .env
     environment:
       UPLOAD_STORAGE_MODE: remote
@@ -782,4 +782,4 @@ docker volume inspect deploy_postgres_data
 
 ---
 
-**Last Updated**: 2026-08-14
+**Last Updated**: 2026-09-26

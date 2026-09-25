@@ -51,7 +51,7 @@ Content-Type: application/octet-stream
 ```json
 {
   "code": 0,
-  "message": "success",
+  "msg": "success",
   "data": {
     "session_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
     "resources": [
@@ -86,7 +86,7 @@ Content-Type: application/json
 ```json
 {
   "code": 0,
-  "message": "success",
+  "msg": "success",
   "data": {
     "installed": [
       {

@@ -18,8 +18,7 @@ In Clouisle, Capabilities include:
 
 Navigate to **Capabilities > Skills** from the workspace navigation:
 
-1. **Create or Import Skill**:
-   - **Manual Creation**: Write skill code directly in the code editor with parameter schemas.
+1. **Import Skill** — skills are created only by importing a package; there is no manual code editor:
    - **Import from ZIP**: Upload a structured skill ZIP bundle containing `manifest.json`, `index.py`, and dependencies.
    - **Import from Git**: Provide a public or authenticated Git repository URL containing standard Clouisle skill packages.
 2. **Test and Verify**:

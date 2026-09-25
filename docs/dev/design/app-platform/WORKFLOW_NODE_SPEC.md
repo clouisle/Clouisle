@@ -138,6 +138,7 @@
 | 开始/用户输入 | Primary | `bg-primary` |
 | 触发器 | 琥珀色 | `bg-amber-500` |
 | LLM | 蓝色 | `bg-blue-500` |
+| 决策 | 紫罗兰 | `bg-violet-500` |
 | 条件分支 | 青色 | `bg-cyan-500` |
 | 问题分类 | 紫罗兰 | `bg-violet-500` |
 | 迭代/循环 | 青色 | `bg-cyan-500` |
@@ -160,6 +161,7 @@
 │   ├── 用户输入节点 (user_input)
 │   ├── 触发器节点 (trigger)
 │   ├── LLM 节点 (llm) ✅
+│   ├── 决策节点 (decision) ✅
 │   ├── 工具节点 (tool) ✅
 │   ├── 子工作流节点 (sub_workflow)
 │   ├── 代码节点 (code) ✅
@@ -316,6 +318,55 @@ interface LLMNodeConfigData {
 | `response` | String | 模型的文本回复 |
 | `reasoning` | String | 模型的推理过程（如有） |
 | `usage` | Number | 本次调用的总 token 数 |
+
+---
+
+### 决策节点 (decision) ✅
+
+**用途**：调用决策模型（类型 `decision`，当前为 TypeSafe AI）对 state 提出一个类型化问题，并按答案分支。与 LLM 节点不同，它不生成文本，只返回类型化答案与概率分布。
+
+**视觉特点**：
+- 图标：`GitBranch` (lucide-react)
+- 主题色：`bg-violet-500`
+- 布局：水平布局，图标+名称
+- 顶部标签：「Decision」
+- 副标题：显示选中的决策模型名称
+
+**配置项**：
+
+```typescript
+type DecisionQuestionType = 'choice' | 'score' | 'noul'
+
+interface DecisionNodeConfigData {
+  modelId?: string                    // 团队模型授权 ID（仅 decision 类型模型）
+  modelName?: string                  // 模型名称（显示用）
+  stateTemplate: string               // 被评估的内容，支持 {{变量}}，必须为字符串
+  questionId: string                  // 问题 id，默认 'decision'
+  questionType: DecisionQuestionType  // choice | score | noul
+  instructions: string                // 要模型判断的问题
+  options: string[]                   // choice: 1-255 个唯一非空选项；score: 2-10 个有序等级
+  defaultHandle?: string              // 兜底分支，默认 'default'
+  confidenceThreshold?: number        // 0-1，低于该置信度走兜底分支（choice/score 生效）
+}
+```
+
+**分支 Handle**：
+- `choice`：每个选项一个 handle（handle 名即选项文本）
+- `score`：每个等级一个 handle，取概率最高的等级
+- `noul`：固定 `yes` / `no`，概率 ≥ 0.5 走 `yes`
+- 兜底分支 handle 始终存在；重命名选项时会尽力重映射已有连线（`migrateLegacyDecisionBranchEdges` / `remapDecisionBranchEdges`），遗留的旧 handle 会被 workflow-validator 标记为需重连
+
+**输出变量**：
+| 变量名 | 类型 | 说明 |
+|--------|------|------|
+| `answer` | String | 选中的选项/等级，或 `yes`/`no` |
+| `selected_handle` | String | 实际激活的分支 handle |
+| `choice` | String | choice：概率最高的选项 |
+| `score` | Number | score：按概率加权的位置 |
+| `noul` | Number | noul：答案为 yes 的概率 |
+| `confidence` | Number | choice/score：由分布推导的确定性（noul 不返回） |
+| `probabilities` | Object | choice/score：每个选项或等级的概率 |
+| `usage` | Object | 本次调用的 token 用量 |
 
 ---
 
@@ -1205,6 +1256,7 @@ const nodeTypes = {
   user_input: UserInputNode,
   trigger: TriggerNode,
   llm: LLMNode,
+  decision: DecisionNode,
   tool: ToolNode,
   sub_workflow: SubWorkflowNode,
   code: CodeNode,
@@ -1262,6 +1314,8 @@ frontend/app/(platform)/app/apps/workflow/[id]/
     │   ├── user-input-node.tsx   # 用户输入节点
     │   ├── trigger-node.tsx      # 触发器节点
     │   ├── llm-node.tsx          # LLM 节点 ✅
+    │   ├── decision-node.tsx     # 决策节点 ✅
+    │   ├── decision-branch-handles.ts  # 决策分支 handle 生成与连线重映射 ✅
     │   ├── tool-node.tsx         # 工具节点 ✅
     │   ├── sub-workflow-node.tsx # 子工作流节点
     │   ├── code-node.tsx         # 代码节点 ✅
@@ -1289,6 +1343,7 @@ frontend/app/(platform)/app/apps/workflow/[id]/
     │   │   ├── index.ts
     │   │   ├── start-node-config.tsx      # 开始节点配置
     │   │   ├── llm-node-config.tsx        # LLM 节点配置 ✅
+    │   │   ├── decision-node-config.tsx   # 决策节点配置 ✅
     │   │   ├── tool-node-config.tsx       # 工具节点配置 ✅
     │   │   ├── code-node-config.tsx       # 代码节点配置 ✅
     │   │   ├── answer-node-config.tsx     # 输出节点配置 ✅
@@ -1313,6 +1368,11 @@ frontend/app/(platform)/app/apps/workflow/[id]/
 ---
 
 ## 更新日志
+
+- **2026-09-25**：新增决策节点
+  - 新增决策节点 (decision)：调用类型为 `decision` 的决策模型（TypeSafe AI System One），对 state 提出单个类型化问题（choice / score / noul）并按答案分支
+  - 输出 `answer`、`selected_handle`、`usage` 及类型化字段（`choice`/`score`/`noul`、`confidence`、`probabilities`）
+  - 支持置信度阈值与兜底分支；选项改名时自动重映射连线，遗留 handle 由校验器提示重连
 
 - **2025-01-02**：新增流程控制和输出节点
   - 新增问题分类节点 (question_classifier)：基于 LLM 的智能问题分类，多分支输出

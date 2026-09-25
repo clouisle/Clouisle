@@ -35,6 +35,12 @@ Use this area for:
 - codebase analysis
 - engineering status documents
 
+## Other document areas
+
+- [`plan/`](plan/) — design proposals, feature specs, and historical RFCs. These describe intended or in-progress work and are not guaranteed to match shipped behavior.
+- [`analysis/`](analysis/) — one-off engineering analyses such as [`analysis/timeout-analysis.md`](analysis/timeout-analysis.md); historical diagnostics rather than maintained reference.
+- [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) — live checklist of active and completed cross-cutting work items.
+
 ## Developer sections
 
 - [`dev/backend/README.md`](dev/backend/README.md)

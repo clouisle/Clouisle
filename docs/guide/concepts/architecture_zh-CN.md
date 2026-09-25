@@ -1,6 +1,6 @@
 # 系统架构
 
-本文档概述了 Clouisle 的系统架构，解释不同组件如何协同工作，提供企业级 AI Agent 和知识库平台。
+本文档概述了 Clouisle 的系统架构，解释不同组件如何协同工作，构成多智能体协同平台与工作流引擎，并提供安全沙箱执行、混合 RAG 与企业级安全能力。
 
 ## 架构概览
 
@@ -217,7 +217,7 @@ Agent 使用 `off`、`auto` 或 `agentic` 选择 RAG 行为。知识库检索另
 **缓存策略**:
 - JWT 访问令牌的有效期由 `session_timeout_days` 安全设置控制（种子值为 30 天；设置缺失时登录端点使用 7 天回退值）；Redis 只保存黑名单条目和可选的单会话状态，不是主要会话存储
 - 站点设置（无缓存——每次查找直接读取数据库）
-- 速率限制计数器（1 小时 TTL，存储于 Redis）
+- 速率限制与锁定计数器存储在 Redis 中，窗口按机制区分：批量邮件按发送者计数 1 小时过期，按收件人计数 24 小时过期，IP 登录尝试计数 1 小时过期，TOTP 验证尝试为 5 分钟窗口（锁定时长 15 分钟）
 
 **数据库索引**:
 - 主键（UUID）
@@ -255,7 +255,7 @@ Agent 使用 `off`、`auto` 或 `agentic` 选择 RAG 行为。知识库检索另
 └─────────────────────────────────────────────────────────────┘
 ```
 
-Worker 消费 `default`、`knowledge` 和 `workflow` 队列；启用沙箱时，沙箱执行使用专用 sandbox-worker 进程/队列。
+Worker 消费 `default`、`agent`、`knowledge` 和 `workflow` 队列；持久化 AgentRun 任务路由到专用的 `agent` 队列；启用沙箱时，沙箱执行使用专用 sandbox-worker 进程/队列（`sandbox`）。
 
 ### Kubernetes（大型生产）
 
@@ -271,6 +271,11 @@ Worker 消费 `default`、`knowledge` 和 `workflow` 队列；启用沙箱时，
 │  │  前端    │  │  后端    │  │  Worker  │  │   Beat   │   │
 │  │ (2 pods) │  │ (2 pods) │  │ (2 pods) │  │ (1 pod)  │   │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
+│  ┌──────────┐                                             │
+│  │ Sandbox  │                                             │
+│  │ worker   │                                             │
+│  │ (1 pod)  │                                             │
+│  └──────────┘                                             │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐                 │
 │  │PostgreSQL│  │  Redis   │  │  Qdrant  │                 │
 │  │(StatefulSet)│(Deployment)│(StatefulSet)│               │

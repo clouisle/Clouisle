@@ -4,7 +4,7 @@ This file provides quick guidance to code agents working in this repository.
 
 ## Project Overview
 
-Clouisle is an enterprise-grade knowledge base and AI Agent platform. The repository is a monorepo with a FastAPI backend and a Next.js frontend.
+Clouisle is a multi-agent collaboration platform and workflow engine (production-ready AI agent teams with sandboxed execution, hybrid RAG, and enterprise-grade security). The repository is a monorepo with a FastAPI backend and a Next.js frontend.
 
 ## Top-level directories
 

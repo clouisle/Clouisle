@@ -47,6 +47,7 @@ Administrators choose which automatic event types are enabled (`enabled_types`).
 | `user.pending_approval` | New registration awaiting approval |
 | `kb.doc_indexed` / `kb.doc_failed` | Knowledge base document processing |
 | `workflow.run_failed` | Workflow execution failures |
+| `workflow.pause_pending` | Workflow paused and waiting for an approval/input request |
 | `apikey.expiring` / `apikey.expired` | API key lifecycle |
 | `security.login_anomaly` | Login from a new location/device |
 | `security.account_locked` | Account locked after failed attempts |
@@ -95,4 +96,4 @@ See [Notifications](../profile/notifications.md) for details.
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-26

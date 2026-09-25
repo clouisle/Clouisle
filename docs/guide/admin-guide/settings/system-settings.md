@@ -122,7 +122,7 @@ password_expiration_days: 90
 password_expiration_warning_days: 7
 password_history_count: 5
 password_min_age_days: 0
-force_password_change_on_first_login: false
+force_password_change_first_login: false
 ```
 
 ### Session Settings
@@ -199,8 +199,8 @@ smtp_port: 587
 smtp_encryption: tls       # none, ssl, or tls
 smtp_username: noreply@your-domain.com
 smtp_password: ********
-email_sender_name: Clouisle
-email_sender_address: noreply@your-domain.com
+email_from_name: Clouisle
+email_from_address: noreply@your-domain.com
 ```
 
 **Update SMTP Settings:**

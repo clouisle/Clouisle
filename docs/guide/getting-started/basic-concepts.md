@@ -4,7 +4,7 @@ Core concepts you need to understand to use Clouisle effectively.
 
 ## Teams and Multi-Tenancy
 
-Every resource in Clouisle belongs to a team. Users can be members of multiple teams.
+Most resources in Clouisle belong to a team, and users can be members of multiple teams. Platform resources are the exceptions: users, roles, permissions, and site settings are platform-global, system skills have no team, and tools can be shared across teams.
 
 ## AI Agents
 
@@ -16,7 +16,7 @@ Document repositories with vector search capabilities for RAG (Retrieval-Augment
 
 ## Workflows
 
-Visual automation workflows with 15+ node types for complex business logic.
+Visual automation workflows with 19 node types for complex business logic, composing agents, tools, and knowledge retrieval into multi-agent pipelines.
 
 ## RAG Modes
 

@@ -36,6 +36,7 @@ Tool handlers for LLM:
 - `handle_create_relation()`: Create relation from LLM call
 - `handle_update_entity()`: Update entity from LLM call
 - `handle_search_memory()`: Search memory from LLM call
+- `handle_get_memory_subgraph()`: Return a user-scoped memory subgraph (entities + relations) around the entities returned by a search
 
 ### API Endpoints (`backend/app/api/v1/endpoints/memories.py`)
 - `GET /api/v1/memories/entities` - List user entities
@@ -55,6 +56,7 @@ Tool handlers for LLM:
 - `create_memory_relation`: Create relation between entities
 - `update_memory_entity`: Update existing entity
 - `search_memory`: Search user's memory graph
+- `get_memory_subgraph`: Traverse the memory graph around entities returned by `search_memory` (by entity id, or exact name), returning connected entities and relations up to `max_depth`
 
 #### Chat Integration (`backend/app/api/v1/endpoints/chat.py`)
 1. **Tool Registration** (in `get_agent_tools()`):
@@ -62,7 +64,7 @@ Tool handlers for LLM:
    - Uses `get_memory_tools()` to get tool definitions
 
 2. **Tool Execution** (in `execute_tool_call()`):
-   - Handles all 4 memory tool calls
+   - Handles all 5 memory tool calls
    - Calls appropriate `MemoryService.handle_*()` methods
    - Returns JSON results to LLM
 

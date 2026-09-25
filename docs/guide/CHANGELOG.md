@@ -19,6 +19,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - Added optional background memory extraction controls in the admin `memory` site-settings category, including model selection, debounce cooldown, and pending-turn trigger limits.
 - Added the bounded `get_memory_subgraph` Agent tool for relationship-aware memory retrieval.
 
+#### Models and Workflows
+- Added the TypeSafe AI (`typesafe`) decision-model provider and the `decision` model type, which evaluates a state against typed `choice`, `score`, or `noul` questions and returns typed answers with probability distributions and confidence.
+- Added the Decision workflow node: it asks one typed question, routes on the returned answer (or the highest-probability score level), and supports a fallback branch plus an optional confidence threshold.
+
 ### Changed
 
 #### Assets and Media

@@ -39,11 +39,7 @@ MySecure#Pass2026!
 ❌ Pass123        (too short)
 ```
 
-> **Note:** There is no dictionary / weak-password check.
-
-### Password Strength Indicator
-
-As you type, the UI shows a strength indicator (weak / fair / good / strong).
+> **Note:** There is no dictionary / weak-password check, and there is no password-strength meter. Password policy violations are reported as field errors on the new-password field when you submit the form.
 
 **Tips for strong passwords:**
 - Use a mix of character types
@@ -66,7 +62,7 @@ If you forgot your password:
 ### Step 2: Check Your Email
 
 You'll receive an email with:
-- Subject: "Password Reset Request - Clouisle"
+- Subject: `【{site_name}】Reset Password` (the configured site name is substituted, e.g. `【Clouisle】Reset Password`)
 - Reset link with a verification code (valid for **10 minutes**)
 - Instructions
 
@@ -289,4 +285,4 @@ If you need assistance with password issues:
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-09-26

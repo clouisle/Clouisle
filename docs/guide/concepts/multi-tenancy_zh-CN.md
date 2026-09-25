@@ -96,7 +96,7 @@ else:
 
 **对话**：
 - 普通用户只能看到自己的对话
-- 拥有 `admin:dashboard:access` 权限的用户（或超级管理员）可以看到其团队内的所有对话；团队范围内的访问还需要 `owner` 或 `admin` 团队角色
+- 拥有 `admin:dashboard:access` 权限的用户（或超级管理员）可以看到其团队内的所有对话；把查询限定到某个团队需要团队成员资格加上 `team:read` 权限，Member 和 Viewer 角色都持有该权限
 
 **API 密钥**：
 - 用户只能查看和管理自己的 API 密钥

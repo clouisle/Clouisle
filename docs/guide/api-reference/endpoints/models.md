@@ -444,7 +444,7 @@ POST /api/v1/admin/models
 | `name` | string | Yes | Display name (max 100 chars) |
 | `provider` | string | Yes | Provider identifier (must be a supported provider) |
 | `model_id` | string | Yes | Model identifier (max 100 chars) |
-| `model_type` | string | Yes | Model type |
+| `model_type` | string | Yes | Model type. `decision` requires the `typesafe` provider |
 | `provider_display_name` | string | No | Optional user-facing provider or gateway name |
 | `base_url` | string | No | Custom API URL (max 512 chars) |
 | `api_key` | string | No | API key (optional for local providers) |
@@ -754,6 +754,8 @@ curl -X POST "https://your-domain.com/api/v1/admin/models/test" \
 }
 ```
 
+> **Note:** Both test endpoints handle `decision` models by sending a fixed yes/no question through the decision adapter (`POST {base_url}/v1/systemone`); the test fails with a validation error when no answers come back.
+
 ## Discover Models (admin)
 
 List models exposed by a provider without persisting the supplied key.
@@ -800,6 +802,8 @@ POST /api/v1/admin/models/discover
   "msg": "success"
 }
 ```
+
+> **Note:** Discovery paths are provider-specific. TypeSafe appends `/v1/models` to the configured API base path — `https://gateway.example.com/api` requests `/api/v1/models`, while a base URL ending in `/v1` requests `/v1/models` without duplicating the version segment.
 
 ## Error Codes
 

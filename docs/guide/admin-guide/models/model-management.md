@@ -191,6 +191,36 @@ For custom or self-hosted models:
 5. Set capabilities
 6. Test and save
 
+### Add TypeSafe Decision Model
+
+Decision models do not generate text. They evaluate a state against typed questions and return typed answers with probability distributions, and they are used by the **Decision** workflow node.
+
+1. Click **Add Model** button
+2. Select provider: **TypeSafe AI**
+3. Fill in model details:
+   - **Name**: Display name (e.g., "Jev")
+   - **Model ID**: TypeSafe model identifier (e.g., `jev-1.13.0`, or `jev-latest` to follow the provider's current release)
+   - **Type**: Decision
+4. Configure API settings:
+   - **API Key**: TypeSafe API key (sent as `Authorization: Bearer <key>`)
+   - **API Base**: (Optional) defaults to `https://api.typesafe.ai/v1`
+
+5. Test and save
+
+**TypeSafe Model Configuration Example:**
+```yaml
+Name: Jev
+Model ID: jev-1.13.0
+Provider: TypeSafe AI
+Type: decision
+
+API Settings:
+  API Key: ...
+  API Base: https://api.typesafe.ai/v1
+```
+
+Runtime requests go to `POST {API Base}/v1/systemone` (the adapter adds the `/v1` segment when the configured base path does not already end in it). The `decision` model type currently only accepts the `typesafe` provider, and only models granted to the team can be selected in the Decision node. `https://api.typesafe.ai` is included in the default **Model Endpoint Allowlist**; a custom gateway must be added under **Admin** → **Site Settings** → **Security** first.
+
 ## Editing Models
 
 ### Update Model Settings
@@ -308,7 +338,7 @@ Response Time: 1.2 seconds
 
 ### Configure Providers
 
-Providers are not configured as separate entities. Each model carries its own provider (`openai`, `anthropic`, `azure_openai`, `ollama`, `custom`, etc.), API key, base URL, and provider display name. There is no global provider registry with default API keys, timeouts, or retry policies.
+Providers are not configured as separate entities. Each model carries its own provider (`openai`, `anthropic`, `azure_openai`, `ollama`, `typesafe`, `custom`, etc.), API key, base URL, and provider display name. There is no global provider registry with default API keys, timeouts, or retry policies.
 
 ### Update Provider Settings
 

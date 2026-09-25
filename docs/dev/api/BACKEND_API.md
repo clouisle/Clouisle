@@ -129,7 +129,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 ```json
 {
-  "code": 5001,
+  "code": 5002,
   "data": null,
   "msg": "用户名已被注册"
 }
@@ -147,11 +147,12 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 - `5000-5099`: 注册相关错误
 - `5100-5199`: 重复资源错误
 - `5200-5299`: 禁止操作错误
-- `5300-5399`: 登录安全错误
+- `5300-5399`: 登录安全错误（TOTP 2FA 为 `5310-5316`）
 - `5400-5499`: 限流错误
 - `6000-6099`: 知识库错误
 - `6100-6199`: 模型错误
 - `6200-6299`: Agent 错误
+- `6300-6399`: SSO 错误
 
 更多实现约束（如 `BusinessError`、路由隔离、i18n 规则）见 `../backend/api-conventions.md`。
 
@@ -282,7 +283,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `GET /api/v1/admin/users/`
 - **认证**: 需要
-- **权限**: `user:read`
+- **权限**: `admin:user:read`
 
 **查询参数**:
 
@@ -311,7 +312,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `GET /api/v1/admin/users/{user_id}`
 - **认证**: 需要
-- **权限**: `user:read`
+- **权限**: `admin:user:read`
 
 ---
 
@@ -319,7 +320,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `POST /api/v1/admin/users/`
 - **认证**: 需要
-- **权限**: `user:create`
+- **权限**: `admin:user:create`
 
 **请求参数**:
 
@@ -337,7 +338,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `PUT /api/v1/admin/users/{user_id}`
 - **认证**: 需要
-- **权限**: `user:update`
+- **权限**: `admin:user:update`
 
 **请求参数**:
 
@@ -356,7 +357,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `POST /api/v1/admin/users/{user_id}/activate`
 - **认证**: 需要
-- **权限**: `user:update`
+- **权限**: `admin:user:update`
 
 **响应示例**:
 ```json
@@ -386,7 +387,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `POST /api/v1/admin/users/{user_id}/deactivate`
 - **认证**: 需要
-- **权限**: `user:update`
+- **权限**: `admin:user:update`
 
 **响应示例**:
 ```json
@@ -415,7 +416,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `DELETE /api/v1/admin/users/{user_id}`
 - **认证**: 需要
-- **权限**: `user:delete`
+- **权限**: `admin:user:delete`
 
 **限制**: 超级管理员用户不可删除
 
@@ -429,6 +430,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `GET /api/v1/admin/roles/`
 - **认证**: 需要
+- **权限**: `admin:role:read`
 
 **查询参数**:
 
@@ -443,6 +445,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `GET /api/v1/admin/roles/{role_id}`
 - **认证**: 需要
+- **权限**: `admin:role:read`
 
 ---
 
@@ -450,7 +453,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `POST /api/v1/admin/roles/`
 - **认证**: 需要
-- **权限**: `user:manage`
+- **权限**: `admin:role:create`
 
 **请求参数**:
 
@@ -465,7 +468,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 {
   "name": "Editor",
   "description": "Can edit content",
-  "permissions": ["user:read", "user:update"]
+  "permissions": ["agent:read", "agent:update"]
 }
 ```
 
@@ -475,7 +478,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `PUT /api/v1/admin/roles/{role_id}`
 - **认证**: 需要
-- **权限**: `user:manage`
+- **权限**: `admin:role:update`
 
 **请求参数**:
 
@@ -492,7 +495,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `PUT /api/v1/admin/roles/{role_id}/permissions`
 - **认证**: 需要
-- **权限**: `user:manage`
+- **权限**: `admin:role:update`
 
 **请求参数**:
 
@@ -503,7 +506,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 **请求示例**:
 ```json
 {
-  "permissions": ["user:read", "user:create", "user:update"]
+  "permissions": ["agent:read", "agent:create", "agent:update"]
 }
 ```
 
@@ -515,7 +518,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `DELETE /api/v1/admin/roles/{role_id}`
 - **认证**: 需要
-- **权限**: `user:manage`
+- **权限**: `admin:role:delete`
 
 **限制**: 
 - 系统角色不可删除
@@ -531,6 +534,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `GET /api/v1/admin/permissions/`
 - **认证**: 需要
+- **权限**: `admin:permission:read`
 
 **查询参数**:
 
@@ -546,6 +550,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `GET /api/v1/admin/permissions/{permission_id}`
 - **认证**: 需要
+- **权限**: `admin:permission:read`
 
 ---
 
@@ -553,7 +558,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `POST /api/v1/admin/permissions/`
 - **认证**: 需要
-- **权限**: `user:manage`
+- **权限**: `admin:permission:create`
 
 **请求参数**:
 
@@ -578,7 +583,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `PUT /api/v1/admin/permissions/{permission_id}`
 - **认证**: 需要
-- **权限**: `user:manage`
+- **权限**: `admin:permission:update`
 
 ---
 
@@ -586,9 +591,9 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `DELETE /api/v1/admin/permissions/{permission_id}`
 - **认证**: 需要
-- **权限**: `user:manage`
+- **权限**: `admin:permission:delete`
 
-**限制**: 通配符权限 `*` 不可删除
+**限制**: 系统权限（`is_system=True`，含通配符 `*`）不可删除
 
 ---
 
@@ -597,14 +602,15 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 团队是资源隔离和协作的基本单位。每个团队有独立的成员和角色体系。
 
 > **路由说明**：
-> - 全量列表、创建、删除团队 → 管理侧 `/api/v1/admin/teams/`
-> - 我的团队、团队详情、成员管理、离开、转让 → 平台侧 `/api/v1/teams/`
+> - 创建、删除团队 → 仅管理侧 `/api/v1/admin/teams/`（平台侧不提供创建/删除接口）
+> - 全量列表 → 管理侧 `/api/v1/admin/teams/`
+> - 我的团队、团队详情、更新团队、成员管理、离开、转让 → 平台侧 `/api/v1/teams/`
 
 ### 成员角色
 
 | 角色 | 说明 |
 |------|------|
-| `owner` | 所有者，拥有团队全部权限，可删除团队、转让所有权 |
+| `owner` | 所有者，拥有团队全部权限，可更新团队、转让所有权（团队删除仅限管理侧） |
 | `admin` | 管理员，可管理成员 |
 | `member` | 普通成员 |
 | `viewer` | 只读成员 |
@@ -615,7 +621,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `GET /api/v1/admin/teams/`
 - **认证**: 需要
-- **权限**: `team:read`
+- **权限**: `admin:team:read`
 
 返回系统中所有团队（不限成员关系）。
 
@@ -625,7 +631,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `POST /api/v1/admin/teams/`
 - **认证**: 需要
-- **权限**: `team:create`
+- **权限**: `admin:team:create`
 
 创建者自动成为团队 `owner`。
 
@@ -635,7 +641,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 - **URL**: `DELETE /api/v1/admin/teams/{team_id}`
 - **认证**: 需要
-- **权限**: `team:delete`
+- **权限**: `admin:team:delete`
 
 **限制**: 默认团队不可删除
 
@@ -663,33 +669,6 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
     }
   ],
   "msg": "success"
-}
-```
-
----
-
-### 创建团队
-
-- **URL**: `POST /api/v1/teams/`
-- **认证**: 需要
-
-创建者自动成为团队 `owner`。
-
-> **注意**：此接口为平台侧，创建者成为 owner。管理员批量管理请使用 `/api/v1/admin/teams/`。
-
-**请求参数**:
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| name | string | 是 | 团队名称（唯一） |
-| description | string | 否 | 团队描述 |
-| avatar_url | string | 否 | 团队头像 URL |
-
-**请求示例**:
-```json
-{
-  "name": "Development Team",
-  "description": "Core development team"
 }
 ```
 
@@ -750,16 +729,6 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 | name | string | 否 | 团队名称 |
 | description | string | 否 | 团队描述 |
 | avatar_url | string | 否 | 团队头像 URL |
-
----
-
-### 删除团队
-
-- **URL**: `DELETE /api/v1/teams/{team_id}`
-- **认证**: 需要
-- **权限**: `owner` 或超级管理员
-
-**限制**: 默认团队不可删除
 
 ---
 
@@ -1145,25 +1114,33 @@ API 密钥用于程序化访问 API，支持细粒度的权限控制和速率限
 
 ### 系统权限
 
-| Code | Scope | 说明 |
-|------|-------|------|
-| `*` | system | 所有权限（超级管理员） |
-| `user:read` | user | 读取用户 |
-| `user:create` | user | 创建用户 |
-| `user:update` | user | 更新用户 |
-| `user:delete` | user | 删除用户 |
-| `user:manage` | user | 管理用户、角色、权限 |
-| `apikey:read` | apikey | 读取 API 密钥 |
-| `apikey:create` | apikey | 创建 API 密钥 |
-| `apikey:update` | apikey | 更新 API 密钥 |
-| `apikey:delete` | apikey | 删除 API 密钥 |
+权限代码的唯一来源是 `backend/app/core/permissions.py` 中的 `SystemPermissions`（启动时同步进数据库）。格式为 `scope:resource:action` 或 `scope:action`，此外 `*` 为超级管理员通配符。当前共 93 个权限，按 scope 分组：
+
+| Scope | 数量 | Code |
+|-------|------|------|
+| `admin` | 48 | `admin:dashboard:access`、`admin:user:{read,create,update,delete}`、`admin:role:{read,create,update,delete}`、`admin:permission:{read,create,update,delete}`、`admin:team:{read,create,update,delete}`、`admin:model:{read,create,update,delete}`、`admin:capability:{read,create,update,delete,execute}`、`admin:app:{read,create,update,delete,publish,duplicate}`、`admin:knowledge-base:{read,test,create,update,delete}`、`admin:settings:{read,update}`、`admin:sso:{read,update}`、`admin:conversation:{read,delete}`、`admin:notification:{create,delete}`、`admin:memory:{read,update,delete}` |
+| `audit` | 2 | `audit:read`、`audit:export` |
+| `team` | 5 | `team:read`、`team:create`、`team:update`、`team:delete`、`team:manage` |
+| `agent` | 6 | `agent:read`、`agent:create`、`agent:update`、`agent:delete`、`agent:publish`、`agent:chat` |
+| `workflow` | 7 | `workflow:read`、`workflow:create`、`workflow:update`、`workflow:delete`、`workflow:publish`、`workflow:run`、`workflow:execute` |
+| `kb` | 5 | `kb:read`、`kb:test`、`kb:create`、`kb:update`、`kb:delete` |
+| `tool` | 5 | `tool:read`、`tool:create`、`tool:update`、`tool:delete`、`tool:execute` |
+| `skill` | 5 | `skill:read`、`skill:create`、`skill:update`、`skill:delete`、`skill:execute` |
+| `apikey` | 4 | `apikey:read`、`apikey:create`、`apikey:update`、`apikey:delete` |
+| `conversation` | 2 | `conversation:read`、`conversation:delete` |
+| `memory` | 4 | `memory:read`、`memory:create`、`memory:update`、`memory:delete` |
 
 ### 系统角色
+
+启动时种入五个系统角色（见 `backend/app/core/init_data.py`，由 `backend/tests/test_init_data.py` 断言）：
 
 | 名称 | 权限 | 说明 |
 |------|------|------|
 | Super Admin | `*` | 完全控制，拥有所有权限 |
-| Viewer | `user:read` | 只读访问 |
+| Admin | 79 个：38 个 `admin:*` 权限 + `audit:*`（2 个）+ 39 个团队范围平台权限（不含 `memory:*`） | 管理后台访问、系统只读可见性，以及团队范围内的资源管理 |
+| Member | 30 个平台权限（`team:read`、`agent:*`（除 delete/publish）、`workflow:{read,create,update,run}`、`kb:{read,test,create,update,delete}`、`tool:{read,create,update,delete,execute}`、`skill:{read,create,update,delete,execute}`、`apikey:{read,create,update,delete}`、`conversation:{read,delete}`） | 日常资源创建与编辑，无管理后台访问 |
+| Team Admin | Member 权限并集再加 `team:update`、`team:manage`（共 32 个） | 团队管理员，可管理团队设置与成员 |
+| Viewer | 12 个只读/执行权限（`team:read`、`agent:{read,chat}`、`workflow:{read,run}`、`kb:{read,test}`、`tool:{read,execute}`、`skill:{read,execute}`、`conversation:read`） | 默认只读角色，含执行类权限 |
 
 ---
 
@@ -1188,7 +1165,9 @@ API 密钥用于程序化访问 API，支持细粒度的权限控制和速率限
 | 2000-2999 | 认证错误 | `UNAUTHORIZED` (2000), `INVALID_TOKEN` (2001), `TOKEN_EXPIRED` (2002), `INVALID_CREDENTIALS` (2003), `INACTIVE_USER` (2004) |
 | 3000-3999 | 权限错误 | `PERMISSION_DENIED` (3000), `INSUFFICIENT_PRIVILEGES` (3001) |
 | 4000-4999 | 资源错误 | `NOT_FOUND` (4000), `USER_NOT_FOUND` (4001), `ROLE_NOT_FOUND` (4002), `PERMISSION_NOT_FOUND` (4003) |
-| 5000-5999 | 业务逻辑错误 | `ALREADY_EXISTS` (5000), `USERNAME_EXISTS` (5001), `EMAIL_EXISTS` (5002), `CANNOT_DELETE_SYSTEM_ROLE` (5010), `ROLE_IN_USE` (5020) |
+| 5000-5999 | 业务逻辑错误 | `REGISTRATION_DISABLED` (5000), `ALREADY_EXISTS` (5001), `USERNAME_EXISTS` (5002), `EMAIL_EXISTS` (5003), `CANNOT_DELETE_SYSTEM_ROLE` (5200), `ROLE_IN_USE` (5211) |
+| 5310-5316 | TOTP 2FA 错误 | `TOTP_REQUIRED` (5310), `TOTP_INVALID` (5311), `TOTP_RATE_LIMITED` (5312), `TOTP_NOT_ENABLED` (5313), `TOTP_ALREADY_ENABLED` (5314), `TOTP_SETUP_EXPIRED` (5315), `TOTP_SETUP_REQUIRED` (5316) |
+| 6300-6399 | SSO 错误 | `SSO_PROVIDER_NOT_FOUND` (6300), `SSO_SESSION_EXPIRED` (6301), `SSO_REGISTRATION_DISABLED` (6302), `SSO_AUTHENTICATION_FAILED` (6303), `SSO_INVALID_CONFIGURATION` (6304), `SSO_PROVIDER_NAME_EXISTS` (6305), `PASSWORD_LOGIN_DISABLED` (6306) |
 
 ### 常见 HTTP 状态码
 
@@ -1221,7 +1200,7 @@ API 密钥用于程序化访问 API，支持细粒度的权限控制和速率限
 **业务错误 (400)**:
 ```json
 {
-  "code": 5001,
+  "code": 5002,
   "data": null,
   "msg": "用户名已被注册"
 }
