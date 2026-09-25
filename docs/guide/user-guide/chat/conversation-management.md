@@ -58,7 +58,7 @@ An agent's chat page has **no conversation search** — its sidebar lists that a
 Conversation search is available in two other places, and both match the conversation **title or ID** only (message content is never searched):
 
 - **Agent Logs** (`/app/apps/{agent_id}/logs`) — the current user's own conversations with that agent (`GET /api/v1/agents/{agent_id}/conversations` requires `conversation:read`; it also supports `created_after`/`created_before` and `sort_by`).
-- **Activities** (`/activities` → **Conversations**, administrator console) — all conversations, requiring the `admin:conversation:read` permission (the route also accepts `workflow:read`).
+- **Activities** (`/activities` → **Conversations**, administrator console) — conversations of the agents you can access (agents in your teams; all agents for a superuser), and only **your own** conversations unless you hold `admin:dashboard:access`. Requires the `admin:conversation:read` permission (the route guard also accepts `workflow:read`).
 
 ## Conversation Settings
 
@@ -115,7 +115,7 @@ A conversation's only editable setting is its **title** (rename). There are no p
 **Solutions:**
 1. Reopen the conversation from that agent's recent-conversation list
 2. Rename conversations with descriptive titles so they are easy to spot
-3. Search by title or ID on the agent's **Logs** page (`/app/apps/{agent_id}/logs`); administrators can search all conversations on the **Activities** page (`/activities`)
+3. Search by title or ID on the agent's **Logs** page (`/app/apps/{agent_id}/logs`); the **Activities** page (`/activities`) additionally searches the agents you can access, but returns only your own conversations unless you hold `admin:dashboard:access`
 
 ## Related Documentation
 
