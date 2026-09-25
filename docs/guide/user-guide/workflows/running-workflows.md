@@ -230,7 +230,7 @@ The webhook token is generated per workflow (regenerable via `POST /api/v1/workf
 
 Workflows support a **Cron** trigger. In workflow settings, select the cron trigger and configure a five-field cron expression (for example, `30 8 * * 2` for Tuesdays at 08:30), then save and publish the workflow.
 
-> **Note:** A stored cron trigger does not run by itself. The evaluation task (`workflow.check_scheduled`, defined in `backend/app/services/workflow/tasks.py`) is **not registered** in the shipped deployment: the module is not in the Celery `include` list, the task is not in `beat_schedule`, and its name matches no `task_routes` entry. Cron execution therefore requires a code/config change (register the module, schedule the task, add a route) in addition to the workflow setting. The shipped worker tasks are `app.tasks.workflow.run_workflow_task` / `resume_workflow_task` / `cancel_workflow_task`.
+> **Note:** A stored cron trigger does not run by itself. The evaluation task (`workflow.check_scheduled`, defined in `backend/app/services/workflow/tasks.py`) is **not registered** in the shipped deployment: the module is not in the Celery `include` list (so the worker never imports it) and the task has no `beat_schedule` entry (so nothing dispatches it). Cron execution therefore requires a code/config change (register the module and schedule the task) in addition to the workflow setting — a `task_routes` entry is only needed when your worker does not consume the default queue. The shipped worker tasks are `app.tasks.workflow.run_workflow_task` / `resume_workflow_task` / `cancel_workflow_task`.
 
 ## Workflow Variables
 

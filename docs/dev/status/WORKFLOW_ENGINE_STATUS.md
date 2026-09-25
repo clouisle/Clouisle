@@ -28,7 +28,8 @@ backend/app/services/workflow/
 ├── plan.py               # ExecutionPlan (DAG parsing, topological sort)
 ├── stream.py             # StreamManager (SSE streaming)
 ├── orchestrator.py       # WorkflowOrchestrator (main entry point)
-├── tasks.py              # Celery tasks (NOT wired up: absent from celery include/beat/routes)
+├── tasks.py              # Celery tasks (NOT registered: module not imported by the worker;
+│                         # also absent from beat_schedule; no matching task_routes)
 ├── retry.py              # Retry mechanism & circuit breaker ✨
 ├── cache.py              # Caching layer ✨ (Phase 4)
 ├── metrics.py            # Metrics collection ✨ (Phase 4)
@@ -184,16 +185,19 @@ task = run_workflow_task.delay(
 - `resume_workflow_task` - Resume a run paused at a `pause` node
 - `cancel_workflow_task` - Cancel a running workflow
 
-**Not wired up** — `backend/app/services/workflow/tasks.py` defines a newer,
+**Not registered** — `backend/app/services/workflow/tasks.py` defines a newer,
 finer-grained set (`execute_workflow_task`, `execute_node_task`, `execute_stage_task`,
 `cancel_workflow_task`, `cleanup_workflow_task`, `check_scheduled_workflows`,
 `cleanup_old_runs`, registered as `workflow.execute` / `execute_node` /
 `execute_stage` / `cancel` / `cleanup` / `check_scheduled` / `cleanup_old_runs`).
-Nothing imports it in production, it is absent from the Celery `include` list, its task
-names match no `task_routes` entry, and `workflow.check_scheduled` is absent from
-`beat_schedule` — so those tasks never register and cron triggers do not fire
-(the task also reads `trigger_config["cron"]` while the UI writes
-`trigger_config["cron_expression"]`).
+Celery registers a task when its module is imported, and nothing imports this module in
+production (only tests) — it is absent from the `include` list, so the worker never
+knows these tasks. Two further, independent gaps: `workflow.check_scheduled` has no
+`beat_schedule` entry (no periodic dispatch), and the `workflow.*` names match no
+`task_routes` rule — routing only chooses the queue, so an unmatched task would land on
+`task_default_queue` (`default`), which the shipped worker consumes; a route is needed
+only for a worker that does not consume `default`. Cron triggers additionally need the
+`trigger_config` key aligned (the task reads `cron`, the UI writes `cron_expression`).
 
 ### Retry Mechanism
 

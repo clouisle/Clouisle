@@ -122,7 +122,7 @@ Type: cron
 Cron: "0 9 * * 1-5"  # 9 AM weekdays
 ```
 
-The `workflow.check_scheduled` task implements cron evaluation for published workflows, but it is **not registered** in the shipped deployment: `backend/app/services/workflow/tasks.py` is absent from the Celery `include` list, the task is absent from `beat_schedule`, and the `workflow.*` names match no `task_routes` entry. Operators who need cron execution must wire it up (register the module, schedule the task — for example every minute — and add a route) before a stored `trigger_type: cron` can run. The task also reads `trigger_config["cron"]` while the workflow settings UI writes `trigger_config["cron_expression"]`, so the field name must be aligned as part of that work.
+The `workflow.check_scheduled` task implements cron evaluation for published workflows, but it is **not registered** in the shipped deployment: `backend/app/services/workflow/tasks.py` is absent from the Celery `include` list (the worker never imports it) and the task has no `beat_schedule` entry, so nothing dispatches it. Operators who need cron execution must wire it up (register the module and schedule the task — for example every minute) before a stored `trigger_type: cron` can run. A `task_routes` entry is optional: an unmatched task goes to `task_default_queue` (`default`), which the supplied worker consumes, so a route is only needed if your worker does not consume `default` (for example to send it to the `workflow` queue). The task also reads `trigger_config["cron"]` while the workflow settings UI writes `trigger_config["cron_expression"]`, so the field name must be aligned as part of that work.
 
 ### Node Configuration Example
 
@@ -361,7 +361,7 @@ There is no schedule-management UI or next-run listing. Cron configuration is st
 **Solutions:**
 1. Confirm the workflow is `published` and `trigger_type` is `cron`.
 2. Confirm `trigger_config.cron` contains a valid cron expression.
-3. Confirm the cron evaluation task is both registered (Celery `include` + `task_routes`) and dispatched periodically; the supplied deployment does not register or schedule `workflow.check_scheduled`.
+3. Confirm the cron evaluation task is both registered (its module in the Celery `include` list, so the worker imports it) and dispatched periodically; the supplied deployment does neither for `workflow.check_scheduled`.
 
 ### High Execution Time
 
