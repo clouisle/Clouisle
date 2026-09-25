@@ -26,6 +26,8 @@ This document describes the API endpoints for workflow version control (history,
 
 **Response format**: unlike most Clouisle endpoints, the routes in this module return their payload directly — there is no `{ code, data, msg }` envelope on success. Errors still use the standard envelope.
 
+> **Warning:** This module is backed by an **in-process, in-memory** version store (`WorkflowVersionManager._versions` in `backend/app/services/workflow/versioning.py`) — versions are not written to PostgreSQL and are lost on process restart, and each API worker holds its own copy. It is a separate store from the workflow's DB-level version history (`GET /api/v1/workflows/{workflow_id}/versions`, which is what the editor's version panel reads). Use the DB-backed routes for production history and treat these endpoints as a preview surface.
+
 ---
 
 ### Compare Versions (Diff)

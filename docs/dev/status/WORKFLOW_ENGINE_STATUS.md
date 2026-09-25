@@ -92,6 +92,12 @@ The metrics router is mounted only on the admin router
 - `POST /api/v1/workflow-versions/{workflow_id}/fork` - Fork workflow
 - `GET /api/v1/workflow-versions/{workflow_id}/stats` - Version statistics
 
+**Version control store (Phase 5):** the `/api/v1/workflow-versions/*` routes are backed by an
+**in-memory** `WorkflowVersionManager` (`backend/app/services/workflow/versioning.py`,
+`_versions` dict) — versions live per process and are lost on restart. The DB-backed
+`/api/v1/workflows/{workflow_id}/versions*` routes (used by the workflow editor) are the
+persistent history.
+
 **Templates (Phase 5):** service-only, no HTTP API.
 
 `backend/app/services/workflow/templates.py` exposes an in-memory
