@@ -411,6 +411,7 @@ async def test_init_db_initializes_roles_settings_and_tables(
         "init_agent_hide_tool_calls_field",
         "init_agent_hide_message_actions_reasoning_fields",
         "init_agent_memory_fields",
+        "init_agent_hide_artifact_list_field",
         "init_agent_media_generation_fields",
     ]
     migrations = {name: AsyncMock() for name in migration_names}
@@ -1438,6 +1439,16 @@ async def test_agent_memory_and_media_field_migration_paths(
     assert "image_generation_config" in statements[1]
     assert "enable_video_generation" in statements[2]
     assert "video_generation_config" in statements[3]
+
+    helper.reset_mock()
+    conn.execute_query.return_value = (0, [])
+    await init_data.init_agent_hide_artifact_list_field()
+    helper.assert_not_awaited()
+
+    conn.execute_query.return_value = (1, ["agents"])
+    await init_data.init_agent_hide_artifact_list_field()
+    helper.assert_awaited_once()
+    assert "hide_artifact_list" in helper.await_args.args[1]
 
 
 @pytest.mark.asyncio

@@ -4,10 +4,10 @@ This guide covers how to configure AI agents in Clouisle.
 
 ## Overview
 
-Clouisle provides a dedicated **Agent Studio** workspace (`/app/apps/{agent_id}`) featuring a two-column responsive interface:
-- **Left Column (Orchestration Editor)**: Collapsible cards for model selection, system prompt editing, dynamic variables, knowledge bases, tool bindings, chat behavior flags, and advanced runtime parameters.
-- **Right Column (Live Preview Panel)**: A persistent, fully functional chat sandbox that lets you immediately interact with and test your draft agent configuration without leaving the page or publishing changes.
-- **Top Toolbar**: Quick access to agent metadata (name, icon, status), publication controls (`Draft` vs `Published`), the Embed widget drawer, and the Agent Settings drawer.
+Clouisle provides a dedicated **Agent Studio** (`/app/apps/{agent_id}`) with a responsive editor and live preview:
+- **Orchestration Editor**: Configure the model, prompt, variables, knowledge bases, tools, chat behavior, and runtime parameters.
+- **Live Preview Panel**: A persistent side-by-side chat sandbox on desktop, where you can test draft changes without publishing.
+- **Top Toolbar**: Access agent metadata, preview, publication controls, the Embed widget drawer, and Agent Settings.
 
 ---
 
@@ -38,6 +38,8 @@ Clouisle provides a dedicated **Agent Studio** workspace (`/app/apps/{agent_id}`
 │  ▼ Chat Behavior & Advanced Settings    │                                              │
 └─────────────────────────────────────────┴──────────────────────────────────────────────┘
 ```
+
+On phones, the side-by-side preview is hidden so the editor stays full-width. Select **Preview** in the toolbar to open the chat in a full-screen, drawer-like overlay; close the preview to return to editing.
 
 ### Accessing Agent Configuration
 
@@ -174,6 +176,7 @@ The following toggles control the chat experience:
 | **Hide tool calls** | off | Hide tool call details in the chat UI |
 | **Hide message actions** | off | Hide token usage / speed stats in the chat UI |
 | **Hide reasoning** | off | Hide reasoning / chain-of-thought in the chat UI |
+| **Hide artifact list** | off | Hide the generated files list under assistant messages in chat and preview. |
 | **Enable attachments** | off | Allow file and image attachments (limits configurable) |
 | **Enable interactive questions** | off | Allow the agent to pause and ask one or more structured questions; users can pick options, type custom text, or skip |
 | **Enable memory** | off | Remember user information across conversations (memory config: max memories per retrieval, auto-extract, importance threshold) |
@@ -328,4 +331,4 @@ Once satisfied with the preview results:
 
 ---
 
-**Last Updated**: 2026-09-26
+**Last Updated**: 2026-09-27

@@ -121,13 +121,23 @@ def close_coroutine(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("fail_initializers", "fail_provider_display_name"),
-    [(False, False), (True, False), (False, True)],
+    (
+        "fail_initializers",
+        "fail_provider_display_name",
+        "fail_agent_artifact_migration",
+    ),
+    [
+        (False, False, False),
+        (True, False, False),
+        (False, True, False),
+        (False, False, True),
+    ],
 )
 async def test_lifespan_mocks_initializers_and_external_boundaries(
     monkeypatch: pytest.MonkeyPatch,
     fail_initializers: bool,
     fail_provider_display_name: bool,
+    fail_agent_artifact_migration: bool,
 ) -> None:
     import app.api.v1.endpoints.upload as upload_module
     import app.core.init_data as init_data_module
@@ -176,6 +186,16 @@ async def test_lifespan_mocks_initializers_and_external_boundaries(
     )
     for name, initializer in initializers.items():
         monkeypatch.setattr(init_data_module, name, initializer)
+    artifact_list_migration = AsyncMock(
+        side_effect=RuntimeError("artifact list migration failed")
+        if fail_agent_artifact_migration
+        else None
+    )
+    monkeypatch.setattr(
+        init_data_module,
+        "init_agent_hide_artifact_list_field",
+        artifact_list_migration,
+    )
 
     init_postgres_lexical_search = AsyncMock()
     monkeypatch.setattr(
@@ -217,6 +237,14 @@ async def test_lifespan_mocks_initializers_and_external_boundaries(
         generate_schemas.assert_not_awaited()
         init_db.assert_not_awaited()
         return
+    if fail_agent_artifact_migration:
+        with pytest.raises(RuntimeError, match="artifact list migration failed"):
+            async with lifespan(SimpleNamespace()):
+                pass
+        artifact_list_migration.assert_awaited_once()
+        generate_schemas.assert_not_awaited()
+        init_db.assert_not_awaited()
+        return
 
     async with lifespan(SimpleNamespace()):
         generate_schemas.assert_awaited_once()
@@ -225,6 +253,7 @@ async def test_lifespan_mocks_initializers_and_external_boundaries(
     assert init.await_args.kwargs["db_url"] == "postgres://user:pass@db:5432/clouisle"
     assert all(mock.await_count == 1 for mock in initializers.values())
     init_postgres_lexical_search.assert_awaited_once()
+    artifact_list_migration.assert_awaited_once()
     init_db.assert_awaited_once()
     assert task.cancelled
     close_connections.assert_awaited_once()

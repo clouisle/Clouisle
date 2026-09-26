@@ -21,6 +21,7 @@ import {
   type VideoGenerationConfig,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api/client'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { AgentSidebar } from './_components/agent-sidebar'
@@ -68,6 +69,8 @@ export function AgentEditor({
   const [isSaving, setIsSaving] = React.useState(false)
   const [showSettings, setShowSettings] = React.useState(false)
   const [showEmbed, setShowEmbed] = React.useState(false)
+  const [mobilePreviewOpen, setMobilePreviewOpen] = React.useState(false)
+  const mobilePreviewTriggerRef = React.useRef<HTMLButtonElement>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false)
 
   // Form state
@@ -80,6 +83,7 @@ export function AgentEditor({
   const [hideToolCalls, setHideToolCalls] = React.useState(false)
   const [hideMessageActions, setHideTokenStats] = React.useState(false)
   const [hideReasoning, setHideReasoning] = React.useState(false)
+  const [hideArtifactList, setHideArtifactList] = React.useState(false)
   const [openingMessage, setOpeningMessage] = React.useState('')
   const [suggestedQuestions, setSuggestedQuestions] = React.useState<string[]>([])
   const [poweredByText, setPoweredByText] = React.useState('')
@@ -114,6 +118,7 @@ export function AgentEditor({
       setHideToolCalls(data.hide_tool_calls || false)
       setHideTokenStats(data.hide_message_actions || false)
       setHideReasoning(data.hide_reasoning || false)
+      setHideArtifactList(data.hide_artifact_list || false)
       setOpeningMessage(data.opening_message || '')
       setSuggestedQuestions(data.suggested_questions || [])
       setPoweredByText(data.powered_by_text || '')
@@ -163,6 +168,7 @@ export function AgentEditor({
         hide_tool_calls: hideToolCalls,
         hide_message_actions: hideMessageActions,
         hide_reasoning: hideReasoning,
+        hide_artifact_list: hideArtifactList,
         opening_message: openingMessage || null,
         suggested_questions: suggestedQuestions.filter((q) => q.trim()),
         powered_by_text: poweredByText.trim() || null,
@@ -207,6 +213,7 @@ export function AgentEditor({
     hideToolCalls,
     hideMessageActions,
     hideReasoning,
+    hideArtifactList,
     openingMessage,
     suggestedQuestions,
     poweredByText,
@@ -335,6 +342,8 @@ export function AgentEditor({
           onSave={handleSave}
           isSaving={isSaving}
           onSettingsClick={() => setShowSettings(true)}
+          onPreviewClick={() => setMobilePreviewOpen(true)}
+          previewButtonRef={mobilePreviewTriggerRef}
           onEmbedClick={() => setShowEmbed(true)}
           sidebarCollapsed={sidebarCollapsed}
           onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -343,7 +352,7 @@ export function AgentEditor({
         />
 
         {/* Content */}
-        <div className="flex-1 flex h-full overflow-hidden p-6 gap-6 min-h-0">
+        <div className="relative flex-1 flex h-full overflow-hidden p-3 sm:p-6 gap-6 min-h-0">
           {/* Orchestration Form */}
           <ScrollArea className="flex-1 min-h-0 [&_[data-slot=scroll-area-scrollbar]]:border-l-0">
             <div className="w-full max-w-6xl">
@@ -356,9 +365,25 @@ export function AgentEditor({
           </ScrollArea>
 
           {/* Preview Panel */}
-          <div className="w-95 min-w-95 2xl:w-[clamp(30rem,28vw,42rem)] 2xl:min-w-[30rem] shrink-0 h-full min-h-0 overflow-hidden border rounded-lg">
-            <AgentPreviewPanel agent={{ ...agent, hide_tool_calls: hideToolCalls, hide_message_actions: hideMessageActions, hide_reasoning: hideReasoning }} />
+          <div className="hidden md:block md:w-95 md:min-w-95 2xl:w-[clamp(30rem,28vw,42rem)] 2xl:min-w-[30rem] shrink-0 h-full min-h-0 overflow-hidden border rounded-lg">
+            <AgentPreviewPanel agent={{ ...agent, hide_tool_calls: hideToolCalls, hide_message_actions: hideMessageActions, hide_reasoning: hideReasoning, hide_artifact_list: hideArtifactList }} />
           </div>
+          <Dialog open={mobilePreviewOpen} onOpenChange={setMobilePreviewOpen}>
+            <DialogContent
+              keepMounted
+              showCloseButton={false}
+              hideOverlay
+              aria-label={t('orchestration.preview.title')}
+              initialFocus={true}
+              finalFocus={mobilePreviewTriggerRef}
+              className="top-0 left-0 h-[100dvh] w-screen max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none p-0 md:hidden"
+            >
+              <AgentPreviewPanel
+                agent={{ ...agent, hide_tool_calls: hideToolCalls, hide_message_actions: hideMessageActions, hide_reasoning: hideReasoning, hide_artifact_list: hideArtifactList }}
+                onClose={() => setMobilePreviewOpen(false)}
+              />
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -388,6 +413,8 @@ export function AgentEditor({
         hideMessageActions={hideMessageActions}
         onHideTokenStatsChange={setHideTokenStats}
         hideReasoning={hideReasoning}
+        hideArtifactList={hideArtifactList}
+        onHideArtifactListChange={setHideArtifactList}
         onHideReasoningChange={setHideReasoning}
         hasToolsEnabled={hasToolsEnabled}
         readOnly={!canUpdateAgent}

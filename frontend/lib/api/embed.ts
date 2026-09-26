@@ -40,6 +40,7 @@ export interface EmbedAgentInfo {
   hide_tool_calls: boolean
   hide_message_actions: boolean
   hide_reasoning: boolean
+  hide_artifact_list: boolean
   embed_config: Record<string, unknown>
 }
 

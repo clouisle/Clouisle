@@ -24,6 +24,7 @@ const AgentChatSurface = (props: Record<string, unknown>) => {
         onRegenerate: props.onRegenerate,
         onEditMessage: props.onEditMessage,
         onSwitchVersion: props.onSwitchVersion,
+        hideArtifactList: props.hideArtifactList,
       }),
       props.pendingAskUserToolCallId
         ? jsx(PendingAskUserForm, {
@@ -120,6 +121,7 @@ const { AgentPreviewPanel } = await import('./agent-preview-panel')
 const baseAgent = {
   id: 'agent-1', variables: [], suggested_questions: ['First?', 'Second?', 'Third?', 'Ignored?'],
  enable_attachments: false, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false,
+  hide_artifact_list: true,
 } as never
 
 function descendants(value: unknown): Node[] {
@@ -128,9 +130,9 @@ function descendants(value: unknown): Node[] {
   const node = value as Node
   return [node, ...descendants(node.props.children), ...descendants(node.props.emptyState)]
 }
-function render(agent = baseAgent) {
+function render(agent = baseAgent, onClose?: () => void) {
   stateIndex = 0
-  return AgentPreviewPanel({ agent }) as Node
+  return AgentPreviewPanel({ agent, onClose }) as Node
 }
 const find = (tree: Node, type: unknown) => descendants(tree).filter((node) => node.type === type)
 const text = (value: unknown): string => Array.isArray(value) ? value.map(text).join('')
@@ -169,6 +171,13 @@ beforeEach(() => {
 })
 
 describe('AgentPreviewPanel', () => {
+  test('labels the mobile preview close action for assistive technology', () => {
+    const onClose = mock(() => undefined)
+    const tree = render(baseAgent, onClose)
+    const closeButton = find(tree, Button).find((node) => node.props.onClick === onClose)
+
+    expect(closeButton?.props['aria-label']).toBe('agents.orchestration.preview.closePreview')
+  })
   test('gates invalid submissions, then sends suggested prompts', async () => {
     variableForm = { ...variableForm, needsInput: true, isValid: false }
     validate.mockReturnValue(false)
@@ -187,6 +196,7 @@ describe('AgentPreviewPanel', () => {
     const container = find(tree, ChatContainer)[0]
     const questions = descendants(container.props.emptyState).filter((node) => node.type === 'button')
     expect(questions).toHaveLength(4)
+    expect(container.props.hideArtifactList).toBe(true)
     await (questions[0].props.onClick as () => Promise<void>)()
     await flush()
     expect(sendMessage.mock.calls.map((call) => call[0])).toEqual(['First?'])

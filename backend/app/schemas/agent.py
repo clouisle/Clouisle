@@ -353,6 +353,9 @@ class AgentCreate(AgentBase):
     hide_reasoning: bool = Field(
         default=False, description="Hide reasoning/chain-of-thought in chat UI"
     )
+    hide_artifact_list: bool = Field(
+        default=False, description="Hide generated artifact lists in chat UI"
+    )
     tools_config: list[ToolConfig] = Field(default_factory=list)
     tools_credentials: dict[str, str] = Field(
         default_factory=dict, description="Tools credentials (API keys, tokens, etc.)"
@@ -422,6 +425,7 @@ class AgentUpdate(BaseModel):
     hide_tool_calls: bool | None = None
     hide_message_actions: bool | None = None
     hide_reasoning: bool | None = None
+    hide_artifact_list: bool | None = None
     tools_config: list[ToolConfig] | None = None
     tools_credentials: dict[str, str] | None = None
     enable_attachments: bool | None = None
@@ -471,6 +475,7 @@ class AgentOut(AgentBase):
     hide_tool_calls: bool = False
     hide_message_actions: bool = False
     hide_reasoning: bool = False
+    hide_artifact_list: bool = False
     tools_config: list[ToolConfig] = []
     tools_credentials: dict[str, str] = {}
     enable_attachments: bool = False
@@ -518,6 +523,7 @@ class AgentPublicOut(BaseModel):
     hide_tool_calls: bool = False
     hide_message_actions: bool = False
     hide_reasoning: bool = False
+    hide_artifact_list: bool = False
     created_by: CreatorInfo | None = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -539,6 +545,7 @@ class EmbedAgentInfo(BaseModel):
     hide_tool_calls: bool = False
     hide_message_actions: bool = False
     hide_reasoning: bool = False
+    hide_artifact_list: bool = False
     embed_config: dict[str, Any] = {}
 
     model_config = ConfigDict(from_attributes=True)

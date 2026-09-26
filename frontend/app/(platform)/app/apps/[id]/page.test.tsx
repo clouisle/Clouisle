@@ -37,6 +37,10 @@ mock.module('@/lib/api', () => ({ agentsApi: { getAgent, updateAgent, publishAge
 mock.module('@/lib/api/client', () => ({ ApiError: class ApiError extends Error {} }))
 mock.module('@/components/ui/skeleton', () => ({ Skeleton: ({ className }: { className?: string }) => <div className={className}>skeleton</div> }))
 mock.module('@/components/ui/scroll-area', () => ({ ScrollArea: ({ children }: { children: ReactNode }) => <div>{children}</div> }))
+mock.module('@/components/ui/dialog', () => ({
+  Dialog: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogContent: ({ children }: { children: ReactNode }) => <section>{children}</section>,
+}))
 mock.module('./_components/agent-sidebar', () => ({ AgentSidebar: ({ agent, backHref, baseUrl }: { agent: { name: string }; backHref: string; baseUrl: string }) => <aside>{agent.name}<a href={backHref}>back</a><a href={baseUrl}>orchestration</a></aside> }))
 mock.module('./_components/agent-toolbar', () => ({ AgentToolbar: (props: Record<string, unknown>) => { toolbarProps = props; const { canUpdate, canPublish, onSave, onPublish, onSettingsClick, onEmbedClick } = props as { canUpdate: boolean; canPublish: boolean; onSave: () => void; onPublish: () => void; onSettingsClick: () => void; onEmbedClick: () => void }; return <div><span>/chat/agent-1</span>{canUpdate && <><button data-testid="agent-save-button" onClick={onSave}>save</button><button data-testid="agent-settings-button" onClick={onSettingsClick}>settings</button><button data-testid="agent-embed-button" onClick={onEmbedClick}>embed</button></>}{canPublish && <button data-testid="agent-publish-button" onClick={onPublish}>publish</button>}</div> } }))
 mock.module('./_components/agent-orchestration-form', () => ({ AgentOrchestrationForm: (props: Record<string, unknown>) => { orchestrationProps = props; const { agent, onUpdate } = props as { agent: { system_prompt: string }; onUpdate: (data: Record<string, unknown>) => void }; return <button onClick={() => onUpdate({ system_prompt: 'changed prompt' })}>{agent.system_prompt}</button> } }))
@@ -59,6 +63,7 @@ const agent = {
   hide_tool_calls: false,
   hide_message_actions: false,
   hide_reasoning: false,
+  hide_artifact_list: true,
   tools_config: [],
   variables: [],
   opening_message: '',
@@ -117,6 +122,7 @@ describe('AgentEditor', () => {
 
     expect(html).toContain('Support agent')
     expect(html).toContain('preview Support agent')
+    expect(toolbarProps.onPreviewClick).toBeTypeOf('function')
     expect(html).toContain('data-testid="agent-save-button"')
     expect(html).toContain('data-testid="agent-settings-button"')
     expect(html).not.toContain('data-testid="agent-publish-button"')
@@ -132,7 +138,7 @@ describe('AgentEditor', () => {
   })
 
   it('saves initialized values and publishes or unpublishes the agent', async () => {
-    stateValues = [agent, false, false, false]
+    stateValues = [agent, false, false, false, false, false, false, '', '', '', null, '', 5, false, false, false, true]
     updateAgent.mockResolvedValue(agent)
     publishAgent.mockResolvedValue({ ...agent, status: 'published' })
 
@@ -142,6 +148,7 @@ describe('AgentEditor', () => {
 
     expect(updateAgent).toHaveBeenCalledWith('agent-1', expect.objectContaining({
       enable_user_input_request: false,
+      hide_artifact_list: true,
       name: '',
       memory_config: null,
       attachment_config: null,

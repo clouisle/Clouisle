@@ -36,6 +36,8 @@
       "hideMessageActionsDesc": "Hide the action toolbar under each message.",
       "hideReasoning": "Hide Reasoning",
       "hideReasoningDesc": "Hide the thinking process / chain of thought in chat.",
+      "hideArtifactList": "Hide Artifact List",
+      "hideArtifactListDesc": "Hide the generated files list shown under assistant messages.",
       "conversationConfig": "Conversation Settings",
       "suggestedQuestionsPlaceholder": "One question per line",
       "promptDesc": "Define the agent's role and behavior",
@@ -133,6 +135,8 @@
       },
       "toolbar": {
         "chat": "Chat",
+        "preview": "Preview",
+        "moreActions": "More actions",
         "embed": "Embed",
         "settings": "Agent Settings",
         "saving": "Saving...",
@@ -361,7 +365,8 @@
       },
       "preview": {
         "title": "Debug & Preview",
-        "empty": "Start a conversation to test your Agent",
+        "closePreview": "Close preview",
+        "empty": "Start a conversation",
         "placeholder": "Chat with Bot",
         "thinking": "Thinking...",
         "mockResponse": "This is a preview message. Actual functionality requires configuring a model.",

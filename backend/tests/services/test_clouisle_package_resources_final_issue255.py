@@ -114,6 +114,7 @@ async def test_agent_export_without_model_tools_or_permission(monkeypatch):
         hide_tool_calls=False,
         hide_message_actions=False,
         hide_reasoning=False,
+        hide_artifact_list=True,
         tools_config=[{"name": "ignored"}],
         enable_attachments=False,
         attachment_config={},
@@ -147,6 +148,7 @@ async def test_agent_export_without_model_tools_or_permission(monkeypatch):
 
     assert name == "Agent"
     assert payload["model"] is None
+    assert payload["hide_artifact_list"] is True
     assert dependencies == []
 
     agent.model_id = uuid4()

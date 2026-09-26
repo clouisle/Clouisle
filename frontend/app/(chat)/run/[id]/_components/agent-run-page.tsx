@@ -156,6 +156,7 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
           hideToolCalls={Boolean(metadata.hide_tool_calls)}
           hideMessageActions={Boolean(metadata.hide_message_actions)}
           hideReasoning={Boolean(metadata.hide_reasoning)}
+          hideArtifactList={Boolean(metadata.hide_artifact_list)}
           conversationId={conversationId}
           onRegenerate={regenerate}
           onEditMessage={editMessage}

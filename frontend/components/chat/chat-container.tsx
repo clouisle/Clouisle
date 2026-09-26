@@ -39,6 +39,8 @@ interface ChatContainerProps {
   hideMessageActions?: boolean;
   /** Hide reasoning / chain-of-thought panel */
   hideReasoning?: boolean;
+  /** Hide generated artifact lists below assistant messages. */
+  hideArtifactList?: boolean;
   /** Current conversation ID (shown on errors for debugging) */
   conversationId?: string | null;
   /** Reserve space for an absolutely-positioned floating header (e.g. embed
@@ -244,6 +246,7 @@ export function ChatContainer({
   hideToolCalls = false,
   hideMessageActions = false,
   hideReasoning = false,
+  hideArtifactList = false,
   conversationId,
   headerInset = false,
   showUserMessageScale = false,
@@ -596,7 +599,7 @@ export function ChatContainer({
                 loadingLabel={loadingLabel}
                 isCurrentStreaming={isCurrentStreaming}
                 renderPart={renderPart}
-                afterContent={messageArtifacts.length > 0 && !isGenerating ? (
+                afterContent={messageArtifacts.length > 0 && !isGenerating && !hideArtifactList ? (
                   <ArtifactFileList
                     key={`artifacts-${message.id}`}
                     files={messageArtifacts}

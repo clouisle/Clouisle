@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test'
 interface Node { type: unknown; props: Record<string, unknown> }
 const jsx = (type: unknown, props: Record<string, unknown>): Node => ({ type, props })
 const component = (name: string) => Object.assign(() => null, { displayName: name })
+const Label = component('Label')
 const Input = component('Input')
 const Textarea = component('Textarea')
 const Switch = component('Switch')
@@ -39,7 +40,7 @@ mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(
 mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam }) }))
 mock.module('@/components/ui/input', () => ({ Input }))
 mock.module('@/components/ui/textarea', () => ({ Textarea }))
-mock.module('@/components/ui/label', () => ({ Label: component('Label') }))
+mock.module('@/components/ui/label', () => ({ Label }))
 mock.module('@/components/ui/switch', () => ({ Switch }))
 mock.module('@/components/ui/badge', () => ({ Badge: component('Badge') }))
 mock.module('@/components/ui/image-upload', () => ({ ImageUpload }))
@@ -86,6 +87,7 @@ const callbacks = {
   onPoweredByTextChange: mock(() => undefined),
   onVisibilityChange: mock(() => undefined), onModelChange: mock(() => undefined),
   onMaxIterationsChange: mock(() => undefined), onHideToolCallsChange: mock(() => undefined),
+  onHideArtifactListChange: mock(() => undefined),
 }
 const agent = { model: { id: 'fallback', name: 'Fallback model' } } as never
 function render(overrides: Record<string, unknown> = {}) {
@@ -93,7 +95,7 @@ function render(overrides: Record<string, unknown> = {}) {
   return AgentSettingsDrawer({
     agent, open: true, name: 'Agent', description: 'Description', icon: '/icon.png',
     openingMessage: 'Hello', suggestedQuestions: ['One', 'Two'], poweredByText: 'Acme Inc', visibility: 'private',
-    modelId: null, maxIterations: 10, hideToolCalls: false, hasToolsEnabled: false,
+    modelId: null, maxIterations: 10, hideToolCalls: false, hideArtifactList: false, hasToolsEnabled: false,
     ...callbacks, ...overrides,
   } as never) as Node
 }
@@ -166,6 +168,13 @@ describe('AgentSettingsDrawer', () => {
     expect(callbacks.onDescriptionChange).toHaveBeenCalledWith('New description')
     expect(callbacks.onVisibilityChange.mock.calls).toEqual([['team']])
     expect(callbacks.onHideToolCallsChange).toHaveBeenCalledWith(true)
+    const artifactToggle = descendants(tree).find((node) => node.props['data-testid'] === 'settings-hide-artifact-list')!
+    ;(find(artifactToggle, Switch)[0].props.onCheckedChange as (value: boolean) => void)(true)
+    const artifactLabel = find(artifactToggle, Label)[0]
+    const artifactSwitch = find(artifactToggle, Switch)[0]
+    expect(artifactLabel.props.htmlFor).toBe('hideArtifactList')
+    expect(artifactSwitch.props.id).toBe(artifactLabel.props.htmlFor)
+    expect(callbacks.onHideArtifactListChange).toHaveBeenCalledWith(true)
   })
 
   test('normalizes suggested questions on blur', () => {

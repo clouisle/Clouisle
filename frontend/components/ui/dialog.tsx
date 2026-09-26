@@ -41,6 +41,7 @@ function DialogContent({
   children,
   showCloseButton = true,
   hideOverlay = false,
+  keepMounted = false,
   overlayClassName,
   disableOverlayAnimation = false,
   open,
@@ -48,6 +49,7 @@ function DialogContent({
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
   hideOverlay?: boolean
+  keepMounted?: boolean
   overlayClassName?: string
   disableOverlayAnimation?: boolean
   open?: boolean
@@ -76,7 +78,7 @@ function DialogContent({
   }, [open, hideOverlay])
 
   return (
-    <DialogPortal>
+    <DialogPortal keepMounted={keepMounted}>
       {!hideOverlay && (!disableOverlayAnimation || overlayVisible) && (
         <DialogOverlay
           className={cn(

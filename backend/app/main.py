@@ -97,6 +97,7 @@ async def lifespan(app: FastAPI):
         init_agent_user_input_request,
         init_agent_hide_tool_calls_field,
         init_agent_hide_message_actions_reasoning_fields,
+        init_agent_hide_artifact_list_field,
         init_agent_memory_fields,
         init_memory_tables,
         init_agent_media_generation_fields,
@@ -227,6 +228,9 @@ async def lifespan(app: FastAPI):
         logger.warning(
             f"Agent hide_message_actions/hide_reasoning migration failed: {e}"
         )
+
+    # Agent APIs require this column, so do not serve an incompatible schema.
+    await init_agent_hide_artifact_list_field()
 
     try:
         await init_memory_tables()

@@ -14,6 +14,7 @@ mock.module('@/lib/api/embed', () => ({
     getAgentInfo: mock(async () => ({
       id: 'agent-1', name: 'Embed Agent', description: '', icon: null, variables: [],
       enable_attachments: false, attachment_config: null,
+      hide_artifact_list: true,
     })),
     uploadFile: mock(async () => ({ url: '/file.png' })),
     chatStream: mock(() => () => {}),
@@ -44,6 +45,7 @@ describe('createEmbedChatAdapter', () => {
     const agent = await adapter.getAgent('agent-1')
     expect(agent.id).toBe('agent-1')
     expect(agent.name).toBe('Embed Agent')
+    expect(agent.hide_artifact_list).toBe(true)
   })
 
   test('saveConversation persists to localStorage and getConversations reads it back', async () => {

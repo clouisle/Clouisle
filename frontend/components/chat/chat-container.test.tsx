@@ -265,6 +265,15 @@ describe('ChatContainer', () => {
     )
     expect(completedHtml).toContain('data-artifact-file-list')
     expect(completedHtml).toContain('chart.svg')
+
+    const hiddenHtml = renderContainer(
+      <ChatContainer
+        messages={[artifactMessage]}
+        hideArtifactList
+      />,
+    )
+    expect(hiddenHtml).not.toContain('data-artifact-file-list')
+    expect(hiddenHtml).not.toContain('chart.svg')
   })
   test('withholds editing until a user message is persisted and the run is idle', () => {
     const onEditMessage = mock(() => Promise.resolve())
