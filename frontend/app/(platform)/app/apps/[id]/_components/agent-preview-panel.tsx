@@ -222,7 +222,7 @@ export function AgentPreviewPanel({ agent, onClose }: AgentPreviewPanelProps) {
         <h3 className="font-medium">{t('title')}</h3>
         <div className="flex items-center gap-1">
           {onClose && (
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose} aria-label={t('title')}>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose} aria-label={t('closePreview')}>
               <X className="h-4 w-4" />
             </Button>
           )}

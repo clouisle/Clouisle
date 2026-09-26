@@ -21,6 +21,7 @@ import {
   type VideoGenerationConfig,
 } from '@/lib/api'
 import { ApiError } from '@/lib/api/client'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { AgentSidebar } from './_components/agent-sidebar'
@@ -69,6 +70,7 @@ export function AgentEditor({
   const [showSettings, setShowSettings] = React.useState(false)
   const [showEmbed, setShowEmbed] = React.useState(false)
   const [mobilePreviewOpen, setMobilePreviewOpen] = React.useState(false)
+  const mobilePreviewTriggerRef = React.useRef<HTMLButtonElement>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false)
 
   // Form state
@@ -341,6 +343,7 @@ export function AgentEditor({
           isSaving={isSaving}
           onSettingsClick={() => setShowSettings(true)}
           onPreviewClick={() => setMobilePreviewOpen(true)}
+          previewButtonRef={mobilePreviewTriggerRef}
           onEmbedClick={() => setShowEmbed(true)}
           sidebarCollapsed={sidebarCollapsed}
           onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -365,11 +368,22 @@ export function AgentEditor({
           <div className="hidden md:block md:w-95 md:min-w-95 2xl:w-[clamp(30rem,28vw,42rem)] 2xl:min-w-[30rem] shrink-0 h-full min-h-0 overflow-hidden border rounded-lg">
             <AgentPreviewPanel agent={{ ...agent, hide_tool_calls: hideToolCalls, hide_message_actions: hideMessageActions, hide_reasoning: hideReasoning, hide_artifact_list: hideArtifactList }} />
           </div>
-          {mobilePreviewOpen && (
-            <div className="fixed inset-0 z-50 overflow-hidden bg-background md:hidden" role="dialog" aria-modal="true" aria-label={t('orchestration.preview.title')}>
-              <AgentPreviewPanel agent={{ ...agent, hide_tool_calls: hideToolCalls, hide_message_actions: hideMessageActions, hide_reasoning: hideReasoning, hide_artifact_list: hideArtifactList }} onClose={() => setMobilePreviewOpen(false)} />
-            </div>
-          )}
+          <Dialog open={mobilePreviewOpen} onOpenChange={setMobilePreviewOpen}>
+            <DialogContent
+              keepMounted
+              showCloseButton={false}
+              hideOverlay
+              aria-label={t('orchestration.preview.title')}
+              initialFocus={true}
+              finalFocus={mobilePreviewTriggerRef}
+              className="top-0 left-0 h-[100dvh] w-screen max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none p-0 md:hidden"
+            >
+              <AgentPreviewPanel
+                agent={{ ...agent, hide_tool_calls: hideToolCalls, hide_message_actions: hideMessageActions, hide_reasoning: hideReasoning, hide_artifact_list: hideArtifactList }}
+                onClose={() => setMobilePreviewOpen(false)}
+              />
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 

@@ -38,6 +38,7 @@ interface AgentToolbarProps {
   onSettingsClick: () => void
   onEmbedClick: () => void
   onPreviewClick: () => void
+  previewButtonRef: React.RefObject<HTMLButtonElement | null>
   sidebarCollapsed: boolean
   onToggleSidebar: () => void
   canUpdate?: boolean
@@ -52,6 +53,7 @@ export function AgentToolbar({
   onSettingsClick,
   onEmbedClick,
   onPreviewClick,
+  previewButtonRef,
   sidebarCollapsed,
   onToggleSidebar,
   canUpdate = false,
@@ -121,7 +123,7 @@ export function AgentToolbar({
       </div>
 
       <div className="flex shrink-0 items-center gap-1 md:hidden">
-        <Button data-testid="agent-mobile-preview-button" variant="outline" size="icon" aria-label={t('toolbar.preview')} onClick={onPreviewClick} className="h-8 w-8 cursor-pointer">
+        <Button ref={previewButtonRef} data-testid="agent-mobile-preview-button" variant="outline" size="icon" aria-label={t('toolbar.preview')} onClick={onPreviewClick} className="h-8 w-8 cursor-pointer">
           <Eye className="h-4 w-4" />
         </Button>
         <DropdownMenu>

@@ -229,10 +229,8 @@ async def lifespan(app: FastAPI):
             f"Agent hide_message_actions/hide_reasoning migration failed: {e}"
         )
 
-    try:
-        await init_agent_hide_artifact_list_field()
-    except Exception as e:
-        logger.warning(f"Agent hide_artifact_list migration failed: {e}")
+    # Agent APIs require this column, so do not serve an incompatible schema.
+    await init_agent_hide_artifact_list_field()
 
     try:
         await init_memory_tables()

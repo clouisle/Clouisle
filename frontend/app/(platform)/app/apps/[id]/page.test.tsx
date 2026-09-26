@@ -37,6 +37,10 @@ mock.module('@/lib/api', () => ({ agentsApi: { getAgent, updateAgent, publishAge
 mock.module('@/lib/api/client', () => ({ ApiError: class ApiError extends Error {} }))
 mock.module('@/components/ui/skeleton', () => ({ Skeleton: ({ className }: { className?: string }) => <div className={className}>skeleton</div> }))
 mock.module('@/components/ui/scroll-area', () => ({ ScrollArea: ({ children }: { children: ReactNode }) => <div>{children}</div> }))
+mock.module('@/components/ui/dialog', () => ({
+  Dialog: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DialogContent: ({ children }: { children: ReactNode }) => <section>{children}</section>,
+}))
 mock.module('./_components/agent-sidebar', () => ({ AgentSidebar: ({ agent, backHref, baseUrl }: { agent: { name: string }; backHref: string; baseUrl: string }) => <aside>{agent.name}<a href={backHref}>back</a><a href={baseUrl}>orchestration</a></aside> }))
 mock.module('./_components/agent-toolbar', () => ({ AgentToolbar: (props: Record<string, unknown>) => { toolbarProps = props; const { canUpdate, canPublish, onSave, onPublish, onSettingsClick, onEmbedClick } = props as { canUpdate: boolean; canPublish: boolean; onSave: () => void; onPublish: () => void; onSettingsClick: () => void; onEmbedClick: () => void }; return <div><span>/chat/agent-1</span>{canUpdate && <><button data-testid="agent-save-button" onClick={onSave}>save</button><button data-testid="agent-settings-button" onClick={onSettingsClick}>settings</button><button data-testid="agent-embed-button" onClick={onEmbedClick}>embed</button></>}{canPublish && <button data-testid="agent-publish-button" onClick={onPublish}>publish</button>}</div> } }))
 mock.module('./_components/agent-orchestration-form', () => ({ AgentOrchestrationForm: (props: Record<string, unknown>) => { orchestrationProps = props; const { agent, onUpdate } = props as { agent: { system_prompt: string }; onUpdate: (data: Record<string, unknown>) => void }; return <button onClick={() => onUpdate({ system_prompt: 'changed prompt' })}>{agent.system_prompt}</button> } }))

@@ -321,10 +321,10 @@ export function AgentSettingsDrawer({
               </div>
               <div data-testid="settings-hide-artifact-list" className="flex items-start justify-between gap-3 rounded-lg border p-3">
                 <div className="space-y-1">
-                  <Label className="text-xs">{ts('hideArtifactList')}</Label>
+                  <Label htmlFor="hideArtifactList" className="text-xs">{ts('hideArtifactList')}</Label>
                   <p className="text-xs text-muted-foreground">{ts('hideArtifactListDesc')}</p>
                 </div>
-                <Switch checked={hideArtifactList} onCheckedChange={onHideArtifactListChange} disabled={readOnly} />
+                <Switch id="hideArtifactList" checked={hideArtifactList} onCheckedChange={onHideArtifactListChange} disabled={readOnly} />
               </div>
             </SettingsSection>
 

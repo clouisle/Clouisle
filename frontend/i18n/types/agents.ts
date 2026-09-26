@@ -38,6 +38,8 @@ export type AgentsMessages = {
       hideMessageActionsDesc: string
       hideReasoning: string
       hideReasoningDesc: string
+      hideArtifactList: string
+      hideArtifactListDesc: string
       conversationConfig: string
       suggestedQuestionsPlaceholder: string
       promptDesc: string
@@ -137,6 +139,8 @@ export type AgentsMessages = {
         chat: string
         embed: string
         settings: string
+        preview: string
+        moreActions: string
         saving: string
         save: string
         published: string
@@ -363,6 +367,7 @@ export type AgentsMessages = {
       }
       preview: {
         title: string
+        closePreview: string
         empty: string
         placeholder: string
         thinking: string

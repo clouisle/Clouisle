@@ -130,9 +130,9 @@ function descendants(value: unknown): Node[] {
   const node = value as Node
   return [node, ...descendants(node.props.children), ...descendants(node.props.emptyState)]
 }
-function render(agent = baseAgent) {
+function render(agent = baseAgent, onClose?: () => void) {
   stateIndex = 0
-  return AgentPreviewPanel({ agent }) as Node
+  return AgentPreviewPanel({ agent, onClose }) as Node
 }
 const find = (tree: Node, type: unknown) => descendants(tree).filter((node) => node.type === type)
 const text = (value: unknown): string => Array.isArray(value) ? value.map(text).join('')
@@ -171,6 +171,13 @@ beforeEach(() => {
 })
 
 describe('AgentPreviewPanel', () => {
+  test('labels the mobile preview close action for assistive technology', () => {
+    const onClose = mock(() => undefined)
+    const tree = render(baseAgent, onClose)
+    const closeButton = find(tree, Button).find((node) => node.props.onClick === onClose)
+
+    expect(closeButton?.props['aria-label']).toBe('agents.orchestration.preview.closePreview')
+  })
   test('gates invalid submissions, then sends suggested prompts', async () => {
     variableForm = { ...variableForm, needsInput: true, isValid: false }
     validate.mockReturnValue(false)

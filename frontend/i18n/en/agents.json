@@ -365,6 +365,7 @@
       },
       "preview": {
         "title": "Debug & Preview",
+        "closePreview": "Close preview",
         "empty": "Start a conversation",
         "placeholder": "Chat with Bot",
         "thinking": "Thinking...",

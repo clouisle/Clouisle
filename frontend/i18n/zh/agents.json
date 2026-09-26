@@ -365,6 +365,7 @@
       },
       "preview": {
         "title": "调试与预览",
+        "closePreview": "关闭预览",
         "empty": "开始对话",
         "placeholder": "和 Bot 聊天",
         "thinking": "思考中...",
