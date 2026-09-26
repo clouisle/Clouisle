@@ -68,6 +68,8 @@ interface AgentSettingsDrawerProps {
   onHideTokenStatsChange: (value: boolean) => void
   hideReasoning: boolean
   onHideReasoningChange: (value: boolean) => void
+  hideArtifactList: boolean
+  onHideArtifactListChange: (value: boolean) => void
   // Tool-related
   hasToolsEnabled: boolean
   readOnly?: boolean
@@ -127,6 +129,8 @@ export function AgentSettingsDrawer({
   onHideTokenStatsChange,
   hideReasoning,
   onHideReasoningChange,
+  hideArtifactList,
+  onHideArtifactListChange,
   hasToolsEnabled,
   readOnly = false,
 }: AgentSettingsDrawerProps) {
@@ -314,6 +318,13 @@ export function AgentSettingsDrawer({
                   <p className="text-xs text-muted-foreground">{ts('hideReasoningDesc')}</p>
                 </div>
                 <Switch checked={hideReasoning} onCheckedChange={onHideReasoningChange} disabled={readOnly} />
+              </div>
+              <div data-testid="settings-hide-artifact-list" className="flex items-start justify-between gap-3 rounded-lg border p-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">{ts('hideArtifactList')}</Label>
+                  <p className="text-xs text-muted-foreground">{ts('hideArtifactListDesc')}</p>
+                </div>
+                <Switch checked={hideArtifactList} onCheckedChange={onHideArtifactListChange} disabled={readOnly} />
               </div>
             </SettingsSection>
 

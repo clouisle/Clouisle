@@ -1222,6 +1222,7 @@ export default function PublicChatPage({
               hideToolCalls={agent.hide_tool_calls}
               hideMessageActions={agent.hide_message_actions}
               hideReasoning={agent.hide_reasoning}
+              hideArtifactList={agent.hide_artifact_list}
               conversationId={conversationId}
               headerInset={showHeader}
               showUserMessageScale
@@ -1323,11 +1324,12 @@ export default function PublicChatPage({
           <>
             <ResizableHandle
               withHandle
+              className="max-md:hidden"
               onPointerDown={() => setIsPreviewResizing(true)}
               onPointerUp={() => setIsPreviewResizing(false)}
               onPointerCancel={() => setIsPreviewResizing(false)}
             />
-            <ResizablePanel data-chat-preview-panel defaultSize="38%" minSize={400}>
+            <ResizablePanel data-chat-preview-panel defaultSize="38%" minSize={400} className="max-md:!fixed max-md:!inset-0 max-md:!z-50 max-md:!h-dvh max-md:!w-screen max-md:!min-w-0 max-md:!max-w-none md:!relative md:!inset-auto md:!z-auto md:!h-auto md:!w-auto">
               <CodePreviewCanvas
                 key={activePreview.id}
                 preview={activePreview}

@@ -163,6 +163,7 @@ const agent = {
   id: 'agent-1', name: 'Safe Agent', description: 'Helpful description', opening_message: '',
   icon: '', avatar_url: '', suggested_questions: ['First question', 'Second question'], variables: [],
  enable_attachments: false, attachment_config: undefined, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false,
+  hide_artifact_list: true,
   created_by: { username: 'owner' },
 }
 const conversations = [
@@ -304,6 +305,7 @@ describe('PublicChatPage', () => {
     expect(chatContainerProps.onEditMessage).toBe(editMessage)
     expect(chatContainerProps.onSwitchVersion).toBe(switchVersion)
     expect(chatContainerProps.showUserMessageScale).toBe(true)
+    expect(chatContainerProps.hideArtifactList).toBe(true)
     expect(chatInputProps.onStop).toBe(stop)
   })
   test('aligns the conversation loading skeleton with message content', async () => {

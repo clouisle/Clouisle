@@ -160,6 +160,7 @@ async def test_public_agent_info_returns_minimal_projection(monkeypatch):
     current_agent.hide_tool_calls = False
     current_agent.hide_message_actions = False
     current_agent.hide_reasoning = False
+    current_agent.hide_artifact_list = True
     monkeypatch.setattr(chat, "get_public_agent", AsyncMock(return_value=current_agent))
 
     result = await chat.get_public_agent_info(current_agent.id, user())
@@ -169,6 +170,7 @@ async def test_public_agent_info_returns_minimal_projection(monkeypatch):
     assert result["data"].variables == []
     assert result["data"].powered_by_text == "Acme Inc"
     assert result["data"].created_by.username == "owner"
+    assert result["data"].hide_artifact_list is True
     assert not hasattr(result["data"], "system_prompt")
 
 

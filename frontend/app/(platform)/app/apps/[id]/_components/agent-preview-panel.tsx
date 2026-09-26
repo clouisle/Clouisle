@@ -26,6 +26,7 @@ async function fileToDataUrl(file: File): Promise<string> {
 
 interface AgentPreviewPanelProps {
   agent: Agent
+  onClose?: () => void
 }
 
 function showUploadValidationError(error: unknown, tCommon: ReturnType<typeof useTranslations>) {
@@ -40,7 +41,7 @@ function showUploadValidationError(error: unknown, tCommon: ReturnType<typeof us
   }
 }
 
-export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
+export function AgentPreviewPanel({ agent, onClose }: AgentPreviewPanelProps) {
   const t = useTranslations('agents.orchestration.preview')
   const tVars = useTranslations('chat.variables')
   const tCommon = useTranslations('common')
@@ -219,9 +220,16 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 shrink-0">
         <h3 className="font-medium">{t('title')}</h3>
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleReset}>
-          <RotateCcw className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          {onClose && (
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose} aria-label={t('title')}>
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleReset}>
+            <RotateCcw className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {/* Error Banner */}
@@ -246,6 +254,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
         hideToolCalls={agent.hide_tool_calls}
         hideMessageActions={agent.hide_message_actions}
         hideReasoning={agent.hide_reasoning}
+        hideArtifactList={agent.hide_artifact_list}
         conversationId={conversationId}
         onRegenerate={regenerate}
         onEditMessage={editMessage}

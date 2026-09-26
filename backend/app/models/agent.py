@@ -90,6 +90,9 @@ class Agent(models.Model):
     hide_reasoning = fields.BooleanField(
         default=False, description="Hide reasoning/chain-of-thought in chat UI"
     )
+    hide_artifact_list = fields.BooleanField(
+        default=False, description="Hide generated artifact lists in chat UI"
+    )
 
     # Tools configuration (JSON array)
     # [{"type": "builtin", "name": "web_search"}, {"type": "mcp", "server_id": "xxx"}]

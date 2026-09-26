@@ -226,6 +226,7 @@ async def test_check_agent_access_team_and_superuser(monkeypatch):
 @pytest.mark.anyio
 async def test_build_agent_outputs_relations_and_sanitizes_media(monkeypatch):
     item = agent(
+        hide_artifact_list=True,
         model_id=uuid4(),
         image_generation_config={"allow_model_override": True, "max_images": 2},
         video_generation_config={"allow_model_override": True},
@@ -265,6 +266,7 @@ async def test_build_agent_outputs_relations_and_sanitizes_media(monkeypatch):
     assert output["image_generation_config"] == {"max_images": 2}
     assert output["video_generation_config"] is None
     assert output["visibility"] == AgentVisibility.TEAM
+    assert output["hide_artifact_list"] is True
     assert listing["model"]["provider"] == "dummy"
 
 
@@ -363,6 +365,7 @@ async def test_create_agent_persists_config_and_knowledge_binding(monkeypatch):
                 "search_mode": "vector",
             }
         ],
+        hide_artifact_list=True,
         enable_memory=True,
         enable_user_input_request=True,
         memory_config={"max_memories_per_retrieval": 6},
@@ -396,6 +399,7 @@ async def test_create_agent_persists_config_and_knowledge_binding(monkeypatch):
     assert create.await_args.kwargs["tools_config"][0]["name"] == "clock"
     assert create.await_args.kwargs["memory_config"]["max_memories_per_retrieval"] == 6
     assert create.await_args.kwargs["enable_user_input_request"] is True
+    assert create.await_args.kwargs["hide_artifact_list"] is True
     binding_create.assert_awaited_once()
     agents.AuditLogService.log.assert_awaited_once()
 
@@ -521,6 +525,7 @@ async def test_delete_publish_and_unpublish(monkeypatch):
 async def test_duplicate_copies_bindings_and_strips_internal_media_config(monkeypatch):
     source = agent(
         enable_user_input_request=True,
+        hide_artifact_list=True,
         image_generation_config={"allow_model_override": True, "max_images": 3},
         video_generation_config={"allow_model_override": True, "poll_timeout_s": 30},
     )
@@ -554,6 +559,7 @@ async def test_duplicate_copies_bindings_and_strips_internal_media_config(monkey
     assert create.await_args.kwargs["enable_user_input_request"] is True
     assert create.await_args.kwargs["image_generation_config"] == {"max_images": 3}
     assert create.await_args.kwargs["video_generation_config"] == {"poll_timeout_s": 30}
+    assert create.await_args.kwargs["hide_artifact_list"] is True
     binding_create.assert_awaited_once()
 
 
@@ -863,6 +869,7 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
         hide_message_actions=False,
         hide_reasoning=False,
         opening_message="Hello",
+        hide_artifact_list=True,
         suggested_questions=["Help?"],
         powered_by_text="Acme Inc",
         visibility="public",
@@ -898,6 +905,7 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
     assert item.enable_attachments is True
     assert item.enable_user_input_request is True
     assert item.video_generation_config["default_model_ref"] == "dummy/model"
+    assert item.hide_artifact_list is True
     assert item.powered_by_text == "Acme Inc"
     fields = agents.AuditLogService.log.await_args.kwargs["metadata"]["fields_updated"]
     assert {
@@ -907,6 +915,7 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
         "model_id",
         "powered_by_text",
         "enable_user_input_request",
+        "hide_artifact_list",
     } <= set(fields)
 
 

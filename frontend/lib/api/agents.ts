@@ -173,6 +173,7 @@ export interface Agent {
   hide_tool_calls: boolean
   hide_message_actions: boolean
   hide_reasoning: boolean
+  hide_artifact_list: boolean
   tools_config: ToolConfig[]
   variables: VariableDefinition[]
   opening_message?: string | null
@@ -229,6 +230,7 @@ export interface AgentCreateInput {
   hide_tool_calls?: boolean
   hide_message_actions?: boolean
   hide_reasoning?: boolean
+  hide_artifact_list?: boolean
   tools_config?: ToolConfig[]
   knowledge_base_configs?: AgentKnowledgeBaseConfig[]
   variables?: VariableDefinition[]
@@ -260,6 +262,7 @@ export interface AgentUpdateInput {
   hide_tool_calls?: boolean
   hide_message_actions?: boolean
   hide_reasoning?: boolean
+  hide_artifact_list?: boolean
   tools_config?: ToolConfig[]
   knowledge_base_configs?: AgentKnowledgeBaseConfig[]
   variables?: VariableDefinition[]
@@ -1347,6 +1350,7 @@ export interface PublicAgent {
   hide_tool_calls: boolean
   hide_message_actions: boolean
   hide_reasoning: boolean
+  hide_artifact_list: boolean
   embed_config?: Record<string, unknown> | null
   created_by?: CreatorInfo | null
 }

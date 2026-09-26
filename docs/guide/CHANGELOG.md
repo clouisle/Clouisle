@@ -14,6 +14,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 #### Chat and File Previews
 - Added a unified artifact list with file counts, expandable results, authenticated downloads, and shared previews for common document, media, and code formats.
 - Added DOCX thumbnails, page synchronization, responsive fit-to-width, and zoom controls; added read-only PDF and spreadsheet preview controls.
+- Added an Agent setting to hide generated artifact lists from assistant messages in chat and preview; defaults to off.
 
 #### Memory and RAG
 - Added optional background memory extraction controls in the admin `memory` site-settings category, including model selection, debounce cooldown, and pending-turn trigger limits.

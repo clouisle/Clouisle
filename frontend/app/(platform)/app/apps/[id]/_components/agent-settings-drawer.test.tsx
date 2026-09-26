@@ -86,6 +86,7 @@ const callbacks = {
   onPoweredByTextChange: mock(() => undefined),
   onVisibilityChange: mock(() => undefined), onModelChange: mock(() => undefined),
   onMaxIterationsChange: mock(() => undefined), onHideToolCallsChange: mock(() => undefined),
+  onHideArtifactListChange: mock(() => undefined),
 }
 const agent = { model: { id: 'fallback', name: 'Fallback model' } } as never
 function render(overrides: Record<string, unknown> = {}) {
@@ -93,7 +94,7 @@ function render(overrides: Record<string, unknown> = {}) {
   return AgentSettingsDrawer({
     agent, open: true, name: 'Agent', description: 'Description', icon: '/icon.png',
     openingMessage: 'Hello', suggestedQuestions: ['One', 'Two'], poweredByText: 'Acme Inc', visibility: 'private',
-    modelId: null, maxIterations: 10, hideToolCalls: false, hasToolsEnabled: false,
+    modelId: null, maxIterations: 10, hideToolCalls: false, hideArtifactList: false, hasToolsEnabled: false,
     ...callbacks, ...overrides,
   } as never) as Node
 }
@@ -166,6 +167,9 @@ describe('AgentSettingsDrawer', () => {
     expect(callbacks.onDescriptionChange).toHaveBeenCalledWith('New description')
     expect(callbacks.onVisibilityChange.mock.calls).toEqual([['team']])
     expect(callbacks.onHideToolCallsChange).toHaveBeenCalledWith(true)
+    const artifactToggle = descendants(tree).find((node) => node.props['data-testid'] === 'settings-hide-artifact-list')!
+    ;(find(artifactToggle, Switch)[0].props.onCheckedChange as (value: boolean) => void)(true)
+    expect(callbacks.onHideArtifactListChange).toHaveBeenCalledWith(true)
   })
 
   test('normalizes suggested questions on blur', () => {

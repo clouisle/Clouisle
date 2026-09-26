@@ -24,6 +24,7 @@ const AgentChatSurface = (props: Record<string, unknown>) => {
         onRegenerate: props.onRegenerate,
         onEditMessage: props.onEditMessage,
         onSwitchVersion: props.onSwitchVersion,
+        hideArtifactList: props.hideArtifactList,
       }),
       props.pendingAskUserToolCallId
         ? jsx(PendingAskUserForm, {
@@ -120,6 +121,7 @@ const { AgentPreviewPanel } = await import('./agent-preview-panel')
 const baseAgent = {
   id: 'agent-1', variables: [], suggested_questions: ['First?', 'Second?', 'Third?', 'Ignored?'],
  enable_attachments: false, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false,
+  hide_artifact_list: true,
 } as never
 
 function descendants(value: unknown): Node[] {
@@ -187,6 +189,7 @@ describe('AgentPreviewPanel', () => {
     const container = find(tree, ChatContainer)[0]
     const questions = descendants(container.props.emptyState).filter((node) => node.type === 'button')
     expect(questions).toHaveLength(4)
+    expect(container.props.hideArtifactList).toBe(true)
     await (questions[0].props.onClick as () => Promise<void>)()
     await flush()
     expect(sendMessage.mock.calls.map((call) => call[0])).toEqual(['First?'])

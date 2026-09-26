@@ -70,6 +70,7 @@ def test_agent_create_defaults_and_nested_mapping_validation():
     assert agent.hide_tool_calls is False
     assert agent.hide_message_actions is False
     assert agent.hide_reasoning is False
+    assert agent.hide_artifact_list is False
     assert agent.rag_mode == "agentic"
     assert agent.visibility == "private"
     assert agent.tools_config == [ToolConfig(type="builtin", name="search")]

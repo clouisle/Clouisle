@@ -59,6 +59,7 @@ const agent = {
   hide_tool_calls: false,
   hide_message_actions: false,
   hide_reasoning: false,
+  hide_artifact_list: true,
   tools_config: [],
   variables: [],
   opening_message: '',
@@ -117,6 +118,7 @@ describe('AgentEditor', () => {
 
     expect(html).toContain('Support agent')
     expect(html).toContain('preview Support agent')
+    expect(toolbarProps.onPreviewClick).toBeTypeOf('function')
     expect(html).toContain('data-testid="agent-save-button"')
     expect(html).toContain('data-testid="agent-settings-button"')
     expect(html).not.toContain('data-testid="agent-publish-button"')
@@ -132,7 +134,7 @@ describe('AgentEditor', () => {
   })
 
   it('saves initialized values and publishes or unpublishes the agent', async () => {
-    stateValues = [agent, false, false, false]
+    stateValues = [agent, false, false, false, false, false, false, '', '', '', null, '', 5, false, false, false, true]
     updateAgent.mockResolvedValue(agent)
     publishAgent.mockResolvedValue({ ...agent, status: 'published' })
 
@@ -142,6 +144,7 @@ describe('AgentEditor', () => {
 
     expect(updateAgent).toHaveBeenCalledWith('agent-1', expect.objectContaining({
       enable_user_input_request: false,
+      hide_artifact_list: true,
       name: '',
       memory_config: null,
       attachment_config: null,

@@ -218,7 +218,7 @@ async def test_publish_transitions_audit_and_notify(
 
 @pytest.mark.anyio
 async def test_duplicate_copies_safe_configuration_and_knowledge(monkeypatch):
-    source = agent()
+    source = agent(hide_artifact_list=True)
     duplicate = agent(name="Coverage Agent (Copy)")
     association = SimpleNamespace(
         knowledge_base_id=uuid4(),
@@ -255,6 +255,7 @@ async def test_duplicate_copies_safe_configuration_and_knowledge(monkeypatch):
         not in create_agent.await_args.kwargs["video_generation_config"]
     )
     create_association.assert_awaited_once()
+    assert create_agent.await_args.kwargs["hide_artifact_list"] is True
     assert result["data"]["id"] == duplicate.id
 
 
@@ -275,6 +276,7 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
         hide_tool_calls=True,
         hide_message_actions=False,
         hide_reasoning=False,
+        hide_artifact_list=True,
         opening_message="Hello",
         suggested_questions=["Help?"],
         visibility="private",
@@ -309,6 +311,7 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
     assert item.visibility is AgentVisibility.PRIVATE
     assert item.attachment_config["max_file_size"] == 1024
     assert item.enable_user_input_request is True
+    assert item.hide_artifact_list is True
     assert item.memory_config["max_memories_per_retrieval"] == 4
     assert item.rag_mode.value == "auto"
     assert item.variables[0]["name"] == "topic"

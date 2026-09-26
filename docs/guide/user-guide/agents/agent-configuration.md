@@ -174,6 +174,7 @@ The following toggles control the chat experience:
 | **Hide tool calls** | off | Hide tool call details in the chat UI |
 | **Hide message actions** | off | Hide token usage / speed stats in the chat UI |
 | **Hide reasoning** | off | Hide reasoning / chain-of-thought in the chat UI |
+| **Hide artifact list** | off | Hide the generated files list under assistant messages in chat and preview. |
 | **Enable attachments** | off | Allow file and image attachments (limits configurable) |
 | **Enable interactive questions** | off | Allow the agent to pause and ask one or more structured questions; users can pick options, type custom text, or skip |
 | **Enable memory** | off | Remember user information across conversations (memory config: max memories per retrieval, auto-extract, importance threshold) |

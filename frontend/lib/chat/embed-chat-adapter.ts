@@ -57,6 +57,7 @@ function mapAgentInfo(info: EmbedAgentInfo): PublicAgent {
     hide_tool_calls: info.hide_tool_calls,
     hide_message_actions: info.hide_message_actions,
     hide_reasoning: info.hide_reasoning,
+    hide_artifact_list: info.hide_artifact_list,
     embed_config: info.embed_config,
   }
 }
