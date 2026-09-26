@@ -26,6 +26,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+#### Agent Studio
+
+- On phones, the Agent preview opens as a full-screen, drawer-like overlay instead of compressing the editor and chat side by side.
+
 #### Assets and Media
 - Persisted generated images and videos as scoped Assets and exposed conversation/workflow-scoped media references for model use.
 - Updated CSV handling for GBK/GB18030 content and removed duplicate spreadsheet viewer downloads.
