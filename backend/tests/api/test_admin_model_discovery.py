@@ -305,6 +305,14 @@ async def test_discover_models_uses_provider_specific_protocol(
             ),
             "model_discovery_base_url_invalid",
         ),
+        (
+            ModelDiscoveryRequest(
+                provider=ModelProvider.TYPESAFE,
+                base_url="https://api.example.test//evil.example/v1",
+                api_key="secret",
+            ),
+            "model_discovery_base_url_invalid",
+        ),
     ],
 )
 async def test_discover_models_rejects_unusable_configuration(

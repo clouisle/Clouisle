@@ -65,6 +65,7 @@ dependencies = [
     "trafilatura>=2.2.0",
     "asyncmy>=0.2.14",
     "motor>=3.7.1",
+    "sqlglot>=26.0.0",
 ]
 
 [tool.uv]

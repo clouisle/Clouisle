@@ -9,7 +9,11 @@ PostgreSQL 数据库工具
 
 from typing import Any
 
-from .db_common import sanitize_value, validate_readonly_sql
+from .db_common import sanitize_value
+
+
+def _quote_postgresql_identifier(identifier: str) -> str:
+    return '"' + identifier.replace('"', '""') + '"'
 
 
 def _parse_pg_config(db_config: dict[str, Any] | None) -> dict[str, Any]:
@@ -124,7 +128,9 @@ async def _pg_schema(
 
             samples = []
             if include_samples:
-                s_rows = await conn.fetch(f'SELECT * FROM "{table}" LIMIT 3')
+                s_rows = await conn.fetch(
+                    f"SELECT * FROM {_quote_postgresql_identifier(table)} LIMIT 3"
+                )
                 if s_rows:
                     col_names = list(s_rows[0].keys())
                     samples = [
@@ -149,8 +155,6 @@ async def _pg_schema(
 
 async def _pg_query(db_config: dict[str, Any], sql: str, limit: int) -> dict[str, Any]:
     import asyncpg
-
-    validate_readonly_sql(sql)
 
     conn = await asyncpg.connect(
         host=db_config["host"],

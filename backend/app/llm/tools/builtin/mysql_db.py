@@ -9,7 +9,11 @@ MySQL 数据库工具
 
 from typing import Any
 
-from .db_common import sanitize_value, validate_readonly_sql
+from .db_common import sanitize_value
+
+
+def _quote_mysql_identifier(identifier: str) -> str:
+    return "`" + identifier.replace("`", "``") + "`"
 
 
 def _parse_mysql_config(db_config: dict[str, Any] | None) -> dict[str, Any]:
@@ -108,7 +112,9 @@ async def _mysql_schema(
 
                 samples = []
                 if include_samples:
-                    await cursor.execute(f"SELECT * FROM `{table}` LIMIT 3")
+                    await cursor.execute(
+                        f"SELECT * FROM {_quote_mysql_identifier(table)} LIMIT 3"
+                    )
                     s_rows = await cursor.fetchall()
                     if s_rows:
                         samples = [
@@ -135,8 +141,6 @@ async def _mysql_query(
     db_config: dict[str, Any], sql: str, limit: int
 ) -> dict[str, Any]:
     import asyncmy
-
-    validate_readonly_sql(sql)
 
     conn = await asyncmy.connect(
         host=db_config["host"],

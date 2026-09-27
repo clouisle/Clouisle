@@ -156,7 +156,7 @@ async def execute_database_tool(
             sql = arguments.get("sql") or ""
             if not sql.strip():
                 return {"error": "sql_query_required", "success": False}
-            validate_readonly_sql(sql)
+            validate_readonly_sql(sql, dialect="postgres")
             limit = min(int(arguments.get("limit") or 50), max_limit)
             return await asyncio.wait_for(
                 _pg_query(pg_config, sql, limit), timeout=query_timeout
@@ -177,7 +177,7 @@ async def execute_database_tool(
             sql = arguments.get("sql") or ""
             if not sql.strip():
                 return {"error": "sql_query_required", "success": False}
-            validate_readonly_sql(sql)
+            validate_readonly_sql(sql, dialect="mysql")
             limit = min(int(arguments.get("limit") or 50), max_limit)
             return await asyncio.wait_for(
                 _mysql_query(mysql_config, sql, limit), timeout=query_timeout
