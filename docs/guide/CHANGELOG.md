@@ -43,7 +43,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 #### Asset Access and Previews
 - Protected generated images, generated videos, and sandbox artifacts with scope-aware authorization and authenticated client downloads.
+
 - Preserved explicit too-large, unauthorized, permission-denied, unsupported, and parse-failure preview states without falling back to unprotected URLs.
+
+#### Database Tools
+- Replaced regex and keyword-based SQL checks with bounded, dialect-aware AST validation; safely quote database-discovered table names before sampling.
 
 
 ## [0.2.9] - 2026-06-09

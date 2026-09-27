@@ -664,6 +664,10 @@ async def discover_models(
     request_path, headers, params = _build_model_discovery_request(
         provider, api_key, base_url
     )
+    # Never let a provider path become an HTTP authority or escape the allowlisted origin.
+    if not request_path.startswith("/") or request_path.startswith("//"):
+        return _model_discovery_failure("model_discovery_base_url_invalid")
+
     try:
         async with httpx.AsyncClient(
             base_url=allowed_origin,

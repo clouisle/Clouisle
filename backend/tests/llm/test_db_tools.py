@@ -43,8 +43,53 @@ def test_validate_readonly_sql():
         validate_readonly_sql("SELECT 1; DROP TABLE users;")
     with pytest.raises(ValueError, match="disallowed_sql_statement_type"):
         validate_readonly_sql("INSERT INTO users VALUES (1)")
-    with pytest.raises(ValueError, match="disallowed_sql_keyword"):
-        validate_readonly_sql("SELECT * FROM users WHERE id IN (DELETE FROM users)")
+
+
+@pytest.mark.parametrize(
+    ("sql", "dialect"),
+    [
+        ("/* comment */ SELECT 'DELETE' AS label", "postgres"),
+        ("-- comment\nSELECT `update` FROM `users`", "mysql"),
+        ("WITH recent AS (SELECT id FROM users) SELECT id FROM recent", "postgres"),
+        ("EXPLAIN SELECT 1", "postgres"),
+        ("EXPLAIN ANALYZE SELECT 1", "postgres"),
+        ("EXPLAIN (ANALYZE, BUFFERS) SELECT 1", "postgres"),
+        ("SHOW TABLES", "mysql"),
+        ("PRAGMA table_info('users')", None),
+    ],
+)
+def test_validate_readonly_sql_accepts_read_queries(sql, dialect):
+    validate_readonly_sql(sql, dialect=dialect)
+
+
+@pytest.mark.parametrize(
+    ("sql", "dialect", "error"),
+    [
+        ("SELECT 1; DROP TABLE users", "postgres", "multiple_statements_not_allowed"),
+        ("EXPLAIN DELETE FROM users", "postgres", "invalid_sql_syntax"),
+        ("SELECT (", "postgres", "invalid_sql_syntax"),
+        ("EXPLAIN -- SELECT 1\n DELETE FROM users", "postgres", "invalid_sql_syntax"),
+        (
+            "EXPLAIN /* outer /* SELECT 1 */ */ DELETE FROM users",
+            "postgres",
+            "invalid_sql_syntax",
+        ),
+    ],
+)
+def test_validate_readonly_sql_rejects_non_readonly_or_invalid_sql(sql, dialect, error):
+    with pytest.raises(ValueError, match=error):
+        validate_readonly_sql(sql, dialect=dialect)
+
+
+def test_validate_readonly_sql_rejects_oversized_input_before_parsing(monkeypatch):
+    from app.llm.tools.builtin import db_common
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("oversized SQL must be rejected before parsing")
+
+    monkeypatch.setattr(db_common.sqlglot, "parse", fail_if_called)
+    with pytest.raises(ValueError, match="sql_too_long"):
+        validate_readonly_sql("x" * (db_common._READONLY_SQL_MAX_LENGTH + 1))
 
 
 def test_sanitize_value():
@@ -777,3 +822,55 @@ async def test_pg_and_mysql_schema_empty_samples():
             tool_my, {"action": "schema", "include_samples": True}
         )
         assert res["selected_schemas"]["empty_table"]["samples"] == []
+
+
+@pytest.mark.asyncio
+async def test_postgresql_schema_samples_quote_table_identifiers():
+    table_name = 'products"; SELECT * FROM secrets; --'
+    conn = AsyncMock()
+    conn.fetch.side_effect = [
+        [{"table_name": table_name}],
+        [],
+        [],
+        [],
+    ]
+
+    from app.llm.tools.builtin.postgresql import _pg_schema
+
+    with patch("asyncpg.connect", new_callable=AsyncMock, return_value=conn):
+        await _pg_schema(
+            {
+                "host": "localhost",
+                "port": 5432,
+                "user": "reader",
+                "password": "",
+                "database": "app",
+            },
+            tables=None,
+            include_samples=True,
+        )
+
+    sample_query = conn.fetch.call_args_list[3].args[0]
+    assert (
+        sample_query == 'SELECT * FROM "products""; SELECT * FROM secrets; --" LIMIT 3'
+    )
+
+
+@pytest.mark.asyncio
+async def test_mysql_schema_samples_quote_table_identifiers():
+    table_name = "customers`; DROP TABLE users; --"
+    conn = MagicMock()
+    cursor = AsyncMock()
+    cursor.__aenter__.return_value = cursor
+    cursor.__aexit__.return_value = None
+    cursor.fetchall.side_effect = [[{"table_name": table_name}], [], []]
+    conn.cursor.return_value = cursor
+
+    with patch("asyncmy.connect", new_callable=AsyncMock, return_value=conn):
+        await execute_database_tool(
+            _db_tool("mysql", database="app"),
+            {"action": "schema", "include_samples": True},
+        )
+
+    sample_query = cursor.execute.call_args_list[2].args[0]
+    assert sample_query == "SELECT * FROM `customers``; DROP TABLE users; --` LIMIT 3"
