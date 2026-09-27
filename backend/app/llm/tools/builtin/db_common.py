@@ -14,7 +14,7 @@ from uuid import UUID
 
 import sqlglot
 from sqlglot import exp
-from sqlglot.errors import ParseError
+from sqlglot.errors import ParseError, TokenError
 
 
 _READONLY_SQL_MAX_LENGTH = 65_536
@@ -124,7 +124,7 @@ def validate_readonly_sql(sql: str, dialect: str | None = None) -> None:
             for statement in sqlglot.parse(sql, read=dialect)
             if statement is not None
         ]
-    except ParseError as exc:
+    except (ParseError, TokenError) as exc:
         raise ValueError("invalid_sql_syntax") from exc
     if not statements:
         raise ValueError("sql_empty")
@@ -144,10 +144,8 @@ def validate_readonly_sql(sql: str, dialect: str | None = None) -> None:
                 )
                 if item is not None
             ]
-        except ParseError as exc:
+        except (ParseError, TokenError) as exc:
             raise ValueError("invalid_sql_syntax") from exc
-        except ValueError:
-            raise
         if len(explained_statements) != 1:
             raise ValueError("disallowed_sql_statement_type: EXPLAIN")
         statement = explained_statements[0]

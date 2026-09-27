@@ -36,6 +36,8 @@ def test_validate_readonly_sql():
     validate_readonly_sql("EXPLAIN SELECT 1")
     validate_readonly_sql("SHOW TABLES")
     validate_readonly_sql("PRAGMA table_info('users')")
+    with pytest.raises(ValueError, match="sql_empty"):
+        validate_readonly_sql("   ")
 
     with pytest.raises(ValueError, match="sql_empty"):
         validate_readonly_sql("")
@@ -56,6 +58,8 @@ def test_validate_readonly_sql():
         ("EXPLAIN (ANALYZE, BUFFERS) SELECT 1", "postgres"),
         ("SHOW TABLES", "mysql"),
         ("PRAGMA table_info('users')", None),
+        ("EXPLAIN FORMAT = JSON SELECT 1", "postgres"),
+        ("EXPLAIN FORMAT JSON SELECT 1", "postgres"),
     ],
 )
 def test_validate_readonly_sql_accepts_read_queries(sql, dialect):
@@ -74,11 +78,32 @@ def test_validate_readonly_sql_accepts_read_queries(sql, dialect):
             "postgres",
             "invalid_sql_syntax",
         ),
+        ("EXPLAIN (", "postgres", "invalid_sql_syntax"),
+        ("EXPLAIN (BAD) SELECT 1", "postgres", "invalid_sql_syntax"),
+        ("EXPLAIN ANALYZE", "postgres", "invalid_sql_syntax"),
+        ("EXPLAIN 1", "postgres", "invalid_sql_syntax"),
+        ("EXPLAIN", "postgres", "invalid_sql_syntax"),
+        ("EXPLAIN SELECT (", "postgres", "invalid_sql_syntax"),
+        ("EXPLAIN @", "postgres", "invalid_sql_syntax"),
+        ("EXPLAIN -- trailing comment", "postgres", "invalid_sql_syntax"),
+        ("/* unterminated", "postgres", "invalid_sql_syntax"),
+        (";", "postgres", "sql_empty"),
+        ("SELECT 1 INTO archive", "postgres", "disallowed_sql_keyword"),
+        ("SELECT * FROM users FOR UPDATE", "postgres", "disallowed_sql_keyword"),
+        ("ANALYZE TABLE users", "postgres", "disallowed_sql_statement_type"),
     ],
 )
 def test_validate_readonly_sql_rejects_non_readonly_or_invalid_sql(sql, dialect, error):
     with pytest.raises(ValueError, match=error):
         validate_readonly_sql(sql, dialect=dialect)
+
+
+def test_explain_query_scanner_rejects_unclosed_comments():
+    from app.llm.tools.builtin.db_common import _extract_explained_query
+
+    for sql in (" ", "-- trailing comment", "/* unclosed"):
+        with pytest.raises(ValueError, match="invalid_sql_syntax"):
+            _extract_explained_query(sql)
 
 
 def test_validate_readonly_sql_rejects_oversized_input_before_parsing(monkeypatch):
