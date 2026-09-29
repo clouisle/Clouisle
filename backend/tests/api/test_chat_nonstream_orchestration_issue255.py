@@ -6,8 +6,211 @@ import pytest
 
 from app.api.v1.endpoints import chat
 from app.models.agent_run import AgentRunMode, AgentRunStatus
-from app.schemas.agent import ChatRequest, FileUrl, ImageContent, RunStartOut
+from app.schemas.agent import (
+    ChatRequest,
+    FileUrl,
+    ImageContent,
+    RunStartOut,
+    WorkflowAssetRef,
+)
 from app.schemas.response import BusinessError, ResponseCode
+
+
+def test_chat_request_accepts_variable_asset_ids_without_url_values():
+    asset_id = uuid4()
+    request = ChatRequest(message="", variable_asset_ids=[asset_id])
+
+    assert request.variable_asset_ids == [asset_id]
+    assert request.variables == {}
+
+
+def test_chat_request_accepts_workflow_asset_refs_without_text():
+    reference = WorkflowAssetRef(workflow_run_id=uuid4(), ref="a1b2")
+
+    request = ChatRequest(message="", workflow_asset_refs=[reference])
+
+    assert request.workflow_asset_refs == [reference]
+
+
+@pytest.mark.asyncio
+async def test_workflow_asset_refs_are_authorized_and_bound_to_conversation(
+    monkeypatch,
+):
+    from app.models.asset import AssetScopeType
+    from app.services import asset_access
+
+    workflow_run_id = uuid4()
+    conversation_id = uuid4()
+    team_id = uuid4()
+    user = SimpleNamespace(id=uuid4())
+    api_key = object()
+    agent = SimpleNamespace(team_id=team_id)
+    image_asset = SimpleNamespace(
+        id=uuid4(),
+        storage_key="generated-images/2026/09/image.png",
+        content_type="image/png",
+        display_filename="image.png",
+        size=12,
+    )
+    file_asset = SimpleNamespace(
+        id=uuid4(),
+        storage_key="sandbox-artifacts/2026/09/report.txt",
+        content_type="text/plain",
+        display_filename="report.txt",
+        size=24,
+    )
+    resolve_ref = AsyncMock(side_effect=[image_asset, file_asset])
+    authorize_scope = AsyncMock(side_effect=[image_asset, file_asset])
+    bindings = [SimpleNamespace(ref="e5f6"), SimpleNamespace(ref="789a")]
+    get_or_create_ref = AsyncMock(side_effect=bindings)
+    monkeypatch.setattr(asset_access, "resolve_authorized_asset_ref", resolve_ref)
+    monkeypatch.setattr(asset_access, "authorize_asset_for_scope", authorize_scope)
+    monkeypatch.setattr(chat.asset_service, "get_or_create_ref", get_or_create_ref)
+
+    assets = await chat._resolve_workflow_asset_refs(
+        references=[
+            WorkflowAssetRef(workflow_run_id=workflow_run_id, ref="a1b2"),
+            WorkflowAssetRef(workflow_run_id=workflow_run_id, ref="c3d4"),
+            WorkflowAssetRef(workflow_run_id=workflow_run_id, ref="a1b2"),
+        ],
+        agent=agent,
+        user=user,
+        api_key=api_key,
+    )
+    assert assets == [image_asset, file_asset]
+
+    images, files, links = await chat._bind_workflow_assets_to_conversation(
+        assets=assets,
+        conversation_id=conversation_id,
+        existing_asset_ids=set(),
+        first_position=0,
+        user=user,
+        api_key=api_key,
+        expected_team_id=team_id,
+    )
+
+    assert len(images) == len(files) == 1
+    assert (images[0].asset_id, images[0].asset_ref, images[0].url) == (
+        image_asset.id,
+        "e5f6",
+        "/api/v1/upload/files/generated-images/2026/09/image.png",
+    )
+    assert (files[0].asset_id, files[0].asset_ref, files[0].filename) == (
+        file_asset.id,
+        "789a",
+        "report.txt",
+    )
+    assert files[0].url == "/api/v1/upload/files/sandbox-artifacts/2026/09/report.txt"
+    assert links == [
+        (image_asset, "selected_reference", 0),
+        (file_asset, "selected_reference", 1),
+    ]
+    assert [call.args for call in resolve_ref.await_args_list] == [
+        ("a1b2",),
+        ("c3d4",),
+    ]
+    assert all(
+        call.kwargs
+        == {
+            "scope_type": AssetScopeType.WORKFLOW_RUN,
+            "scope_id": workflow_run_id,
+            "user": user,
+            "api_key": api_key,
+            "expected_team_id": team_id,
+        }
+        for call in resolve_ref.await_args_list
+    )
+    assert [call.args for call in authorize_scope.await_args_list] == [
+        (image_asset.id,),
+        (file_asset.id,),
+    ]
+    assert all(
+        call.kwargs
+        == {
+            "scope_type": AssetScopeType.CONVERSATION,
+            "scope_id": conversation_id,
+            "user": user,
+            "api_key": api_key,
+            "expected_team_id": team_id,
+        }
+        for call in authorize_scope.await_args_list
+    )
+    assert [call.kwargs for call in get_or_create_ref.await_args_list] == [
+        {
+            "scope_type": AssetScopeType.CONVERSATION,
+            "scope_id": conversation_id,
+            "asset": image_asset,
+        },
+        {
+            "scope_type": AssetScopeType.CONVERSATION,
+            "scope_id": conversation_id,
+            "asset": file_asset,
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_workflow_asset_import_stops_when_source_access_is_denied(monkeypatch):
+    from app.services import asset_access
+
+    error = BusinessError(
+        code=ResponseCode.PERMISSION_DENIED,
+        msg_key="access_denied",
+        status_code=403,
+    )
+    resolve_ref = AsyncMock(side_effect=error)
+    authorize_scope = AsyncMock()
+    get_or_create_ref = AsyncMock()
+    monkeypatch.setattr(asset_access, "resolve_authorized_asset_ref", resolve_ref)
+    monkeypatch.setattr(asset_access, "authorize_asset_for_scope", authorize_scope)
+    monkeypatch.setattr(chat.asset_service, "get_or_create_ref", get_or_create_ref)
+
+    with pytest.raises(BusinessError) as error_info:
+        await chat._resolve_workflow_asset_refs(
+            references=[WorkflowAssetRef(workflow_run_id=uuid4(), ref="a1b2")],
+            agent=SimpleNamespace(team_id=uuid4()),
+            user=SimpleNamespace(id=uuid4()),
+            api_key=object(),
+        )
+
+    assert error_info.value.status_code == 403
+    authorize_scope.assert_not_awaited()
+    get_or_create_ref.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_workflow_asset_import_stops_when_destination_access_is_denied(
+    monkeypatch,
+):
+    from app.services import asset_access
+
+    asset = SimpleNamespace(id=uuid4())
+    error = BusinessError(
+        code=ResponseCode.PERMISSION_DENIED,
+        msg_key="access_denied",
+        status_code=403,
+    )
+    monkeypatch.setattr(
+        asset_access, "resolve_authorized_asset_ref", AsyncMock(return_value=asset)
+    )
+    authorize_scope = AsyncMock(side_effect=error)
+    get_or_create_ref = AsyncMock()
+    monkeypatch.setattr(asset_access, "authorize_asset_for_scope", authorize_scope)
+    monkeypatch.setattr(chat.asset_service, "get_or_create_ref", get_or_create_ref)
+
+    with pytest.raises(BusinessError) as error_info:
+        await chat._bind_workflow_assets_to_conversation(
+            assets=[asset],
+            conversation_id=uuid4(),
+            existing_asset_ids=set(),
+            first_position=0,
+            user=SimpleNamespace(id=uuid4()),
+            api_key=object(),
+            expected_team_id=uuid4(),
+        )
+
+    assert error_info.value.status_code == 403
+    get_or_create_ref.assert_not_awaited()
 
 
 def _started() -> dict:
@@ -199,10 +402,50 @@ async def test_attach_message_assets_persists_links(monkeypatch):
 
     await chat._attach_message_assets(
         message_id=uuid4(),
-        assets=[(asset, "attachment", 0)],
+        assets=[(asset, "variable", 0)],
     )
 
     attach.assert_awaited_once()
     assert attach.await_args.kwargs["asset"] is asset
-    assert attach.await_args.kwargs["role"] == "attachment"
+    assert attach.await_args.kwargs["role"] == "variable"
     assert attach.await_args.kwargs["position"] == 0
+
+
+@pytest.mark.asyncio
+async def test_resolve_variable_asset_uuid_authorizes_for_agent_team(monkeypatch):
+    from app.models.asset import AssetScopeType
+    from app.services import asset_access
+
+    asset_id = uuid4()
+    conversation_id = uuid4()
+    asset = SimpleNamespace(id=asset_id)
+    authorize = AsyncMock(return_value=asset)
+    monkeypatch.setattr(asset_access, "authorize_asset_for_scope", authorize)
+    binding = SimpleNamespace(ref="a1b2")
+    get_or_create_ref = AsyncMock(return_value=binding)
+    monkeypatch.setattr(chat.asset_service, "get_or_create_ref", get_or_create_ref)
+    team_id = uuid4()
+    agent = SimpleNamespace(team_id=team_id)
+    user = SimpleNamespace(id=uuid4())
+
+    resolved = await chat._resolve_message_assets(
+        attachments=[asset_id],
+        agent=agent,
+        user=user,
+        conversation_id=conversation_id,
+    )
+
+    authorize.assert_awaited_once_with(
+        asset_id,
+        scope_type=AssetScopeType.CONVERSATION,
+        scope_id=conversation_id,
+        user=user,
+        api_key=None,
+        expected_team_id=team_id,
+    )
+    get_or_create_ref.assert_awaited_once_with(
+        scope_type=AssetScopeType.CONVERSATION,
+        scope_id=conversation_id,
+        asset=asset,
+    )
+    assert resolved == [(asset, "attachment", 0)]

@@ -46,6 +46,32 @@ def _make_service(asset, capabilities=None):
     return svc
 
 
+@pytest.fixture(autouse=True)
+def mock_scoped_asset_resolution(monkeypatch):
+    async def resolve_asset_ref(
+        ref,
+        *,
+        scope_type,
+        scope_id,
+        user,
+        api_key=None,
+        expected_team_id=None,
+    ):
+        from app.services.asset import asset_service
+
+        return await asset_service.resolve_ref(
+            scope_type=scope_type,
+            scope_id=scope_id,
+            ref=ref,
+            team_id=expected_team_id,
+            user_id=user.id if user is not None else None,
+        )
+
+    monkeypatch.setattr(
+        "app.services.asset_access.resolve_authorized_asset_ref", resolve_asset_ref
+    )
+
+
 @pytest.mark.asyncio
 async def test_inspect_asset_returns_no_uuid():
     asset = _asset()
@@ -292,6 +318,46 @@ async def test_asset_tool_no_conversation_id():
     )
     data = json.loads(result)
     assert "error" in data
+
+
+@pytest.mark.asyncio
+async def test_read_asset_resolves_workflow_run_ref_without_user():
+    from app.models.asset import AssetScopeType
+    from app.models.workflow import Workflow, WorkflowRun
+
+    team_id = uuid4()
+    run_id = uuid4()
+    workflow_id = uuid4()
+    asset = _asset(ctype="text/plain", orig="report.txt")
+    svc = _make_service(asset)
+    run = SimpleNamespace(id=run_id, workflow_id=workflow_id)
+    workflow = SimpleNamespace(id=workflow_id, team_id=team_id)
+
+    with (
+        patch.object(WorkflowRun, "get_or_none", AsyncMock(return_value=run)),
+        patch.object(Workflow, "get_or_none", AsyncMock(return_value=workflow)),
+        patch("app.services.asset.asset_service", svc),
+        patch("app.api.v1.endpoints.upload.UPLOAD_ROOT", None),
+        patch("app.services.upload_storage.get_upload_storage_backend", AsyncMock()),
+    ):
+        result = await _execute_asset_tool(
+            "read_asset",
+            {"ref": "a1b2"},
+            agent=_agent(team_id=team_id),
+            user=None,
+            conversation_id=None,
+            workflow_run_id=run_id,
+        )
+
+    data = json.loads(result)
+    assert data["content"] == "hello"
+    svc.resolve_ref.assert_awaited_once_with(
+        scope_type=AssetScopeType.WORKFLOW_RUN,
+        scope_id=run_id,
+        ref="a1b2",
+        team_id=team_id,
+        user_id=None,
+    )
 
 
 @pytest.mark.asyncio

@@ -47,6 +47,7 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
     void fetchMetadata()
   }, [id, t])
 
+  const [variableAssetIds, setVariableAssetIds] = React.useState<Record<string, string | string[]>>({})
   const variables = React.useMemo(() => extractVariables(metadata, 'agent'), [metadata])
   const {
     values: variableValues,
@@ -79,7 +80,7 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
       return
     }
     setInput('')
-    await sendMessage(text)
+    await sendMessage(text, undefined, undefined, Object.values(variableAssetIds).flatMap((value) => Array.isArray(value) ? value : [value]))
   }
 
   if (isLoading) {
@@ -182,6 +183,12 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
           onSubmitAskUser={submitAskUser}
           variables={variables}
           variableValues={variableValues}
+          onVariableAssetIdsChange={(name, ids) => setVariableAssetIds((previous) => {
+            const next = { ...previous }
+            if (ids === null) delete next[name]
+            else next[name] = ids
+            return next
+          })}
           onVariablesChange={setVariableValues}
           variableFieldErrors={variableFieldErrors}
           variablesOpen={variablesOpen}

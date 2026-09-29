@@ -159,7 +159,7 @@ class TestMediaGenerationNodeExecutor:
         assert kwargs["user"].id == user_id
 
     @pytest.mark.anyio
-    async def test_execute_video_passes_start_image_as_current_image(self):
+    async def test_execute_video_passes_resolved_start_image_content(self):
         executor = MediaGenerationNodeExecutor()
         node = {
             "id": "media_2",
@@ -175,7 +175,7 @@ class TestMediaGenerationNodeExecutor:
         }
         context = MagicMock()
         context.resolve_variable_ref = AsyncMock(
-            return_value={"url": "https://x.test/a.png"}
+            return_value={"base64": "data:image/png;base64,eA=="}
         )
         team_model = SimpleNamespace(model=SimpleNamespace(id="model-1"))
 
@@ -225,8 +225,9 @@ class TestMediaGenerationNodeExecutor:
         }
         mock_generate_video.assert_awaited_once()
         kwargs = mock_generate_video.await_args.kwargs
-        assert kwargs["start_image_index"] == 1
-        assert kwargs["current_images"] == [{"url": "https://x.test/a.png"}]
+        start_image = kwargs["start_image_content"]
+        assert start_image.base64 == "eA=="
+        assert start_image.format == "png"
         assert kwargs["agent"].video_generation_config["default_model_ref"] == "model-1"
         assert kwargs["workflow_run_id"] == run_id
         assert kwargs["user"].id == user_id

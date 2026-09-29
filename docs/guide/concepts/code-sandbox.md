@@ -57,6 +57,16 @@ Embed code directly in workflow graphs. The code node receives input variables a
 
 Agents can invoke code tools via function calling. The LLM decides when to run code based on the task.
 
+## Moving files between chat and sandbox
+
+Chat uploads, generated media, and collected sandbox artifacts are durable `Asset`s. Agent tools see four-character `asset_ref` values in `<available_assets>`. A ref is scoped to one conversation or workflow run, not a global file ID or workspace path.
+
+- `materialize_asset(ref, path)` resolves the ref in the active authorized conversation or workflow-run scope and stages verified bytes under `/workspace` in the active sandbox session. Generated images and videos can be staged this way; images can also be supplied as `reference_image_refs` for image generation.
+- `read_asset` returns text only for text MIME types and JSON/XML. `parse_asset` handles supported document types; images are vision inputs. Video and other binary assets must be materialized and processed by sandbox code; available decoders and packages determine supported operations.
+- A sandbox output becomes a reusable Asset only when the job collects it as an artifact. Collected artifacts are bound to the active conversation or workflow run; uncollected files remain workspace-only. Sandbox file tools can access session files while the session exists. Collected artifacts appear in the Asset manifest on a later Agent run.
+- `workflow_asset_refs` imports selected workflow-run Assets into a conversation. The server authorizes both the source run and destination conversation before linking them.
+- Cross-scope or cross-team access is not a file conversion. Each operation reauthorizes its source and destination; generated-media and artifact download URLs are protected. Never guess refs or reuse paths from another conversation.
+
 ## Configuration
 
 | Variable | Generic Default | Sandbox Worker Deployment | Description |

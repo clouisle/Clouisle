@@ -218,7 +218,7 @@ describe('AgentRunPage uncovered durable-run paths', () => {
     await act(async () => {
       suggestedQuestion!.props.onClick()
     })
-    expect(sendMessage).toHaveBeenCalledWith('What can you do?')
+    expect(sendMessage).toHaveBeenCalledWith('What can you do?', undefined, undefined, [])
 
     sendMessage.mockClear()
     await act(async () => {
@@ -229,7 +229,7 @@ describe('AgentRunPage uncovered durable-run paths', () => {
     await act(async () => {
       await inputProps!.onSubmit('hello')
     })
-    expect(sendMessage).toHaveBeenCalledWith('hello')
+    expect(sendMessage).toHaveBeenCalledWith('hello', undefined, undefined, [])
 
     runOptions!.onConversationChange('conversation-1')
     expect(routerReplace).toHaveBeenCalledWith(

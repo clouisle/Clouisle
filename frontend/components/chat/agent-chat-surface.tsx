@@ -134,7 +134,7 @@ export interface AgentChatSurfaceProps {
 
   variables?: RunVariableDefinition[]
   variableValues?: Record<string, unknown>
-  onVariablesChange?: (values: Record<string, unknown>) => void
+  onVariableAssetIdsChange?: (variableName: string, assetIds: string | string[] | null) => void
   variableFieldErrors?: Record<string, string>
   variablesOpen?: boolean
   onVariablesOpenChange?: (open: boolean) => void
@@ -220,6 +220,7 @@ export function AgentChatSurface({
   variables = [],
   variableValues = {},
   onVariablesChange,
+  onVariableAssetIdsChange,
   variableFieldErrors,
   variablesOpen = true,
   onVariablesOpenChange,
@@ -274,6 +275,7 @@ export function AgentChatSurface({
                 variables={variables}
                 values={variableValues}
                 onChange={onVariablesChange}
+                onAssetIdsChange={onVariableAssetIdsChange}
                 fieldErrors={variableFieldErrors}
                 className="space-y-2"
               />

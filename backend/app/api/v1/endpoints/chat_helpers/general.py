@@ -132,7 +132,7 @@ def build_conversation_image_inventory(
 
     lines = [
         "<available_conversation_images>",
-        "Use these 1-based indexes with reference_image_indexes or start_image_index:",
+        "Use 1-based indexes with reference_image_indexes only for legacy images without Asset refs. For Asset refs, use reference_image_refs or start_image_ref from <available_assets>.",
     ]
     for index, item in enumerate(inventory, start=1):
         context = item.get("context") or "no context"

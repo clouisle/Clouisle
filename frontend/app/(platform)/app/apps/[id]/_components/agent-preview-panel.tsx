@@ -56,6 +56,7 @@ export function AgentPreviewPanel({ agent, onClose }: AgentPreviewPanelProps) {
   // File upload state with progress tracking
   const [files, setFiles] = React.useState<ChatInputFile[]>([])
   const [isUploading, setIsUploading] = React.useState(false)
+  const [variableAssetIds, setVariableAssetIds] = React.useState<Record<string, string | string[]>>({})
 
   // Variable form state
   const {
@@ -180,7 +181,7 @@ export function AgentPreviewPanel({ agent, onClose }: AgentPreviewPanelProps) {
       }
     }
     
-    await sendMessage(message, images, fileUrls)
+    await sendMessage(message, images, fileUrls, Object.values(variableAssetIds).flatMap((value) => Array.isArray(value) ? value : [value]))
     setInput('')
     setFiles([])
   }
@@ -188,6 +189,7 @@ export function AgentPreviewPanel({ agent, onClose }: AgentPreviewPanelProps) {
   // Handle reset
   const handleReset = () => {
     reset()
+    setVariableAssetIds({})
     resetVariables()
     setInput('')
     setFiles([])
@@ -286,6 +288,12 @@ export function AgentPreviewPanel({ agent, onClose }: AgentPreviewPanelProps) {
         onSubmitAskUser={submitAskUser}
         variables={agent.variables || []}
         variableValues={variableValues}
+        onVariableAssetIdsChange={(name, ids) => setVariableAssetIds((previous) => {
+          const next = { ...previous }
+          if (ids === null) delete next[name]
+          else next[name] = ids
+          return next
+        })}
         onVariablesChange={setVariableValues}
         variableFieldErrors={variableFieldErrors}
         variablesOpen={variablesOpen}

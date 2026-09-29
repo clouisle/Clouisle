@@ -697,7 +697,7 @@ describe('PublicChatPage', () => {
     act(() => newChat.props.onClick())
     await act(async () => (chatInputProps.onSubmit as (message: string, files?: unknown[]) => Promise<void>)('after switch', []))
 
-    expect(sendMessage).toHaveBeenCalledWith('after switch', undefined, undefined)
+    expect(sendMessage).toHaveBeenCalledWith('after switch', undefined, undefined, [])
   })
 
   test('shows the new-chat control when embed history is disabled', async () => {
@@ -811,6 +811,7 @@ describe('PublicChatPage', () => {
       'with files',
       [{ asset_id: 'image-asset', type: 'image_url', url: 'https://files.example.test/safe.png' }],
       [{ asset_id: 'document-asset', filename: 'safe.pdf', url: 'https://files.example.test/safe.pdf', size: 4, mime_type: 'application/pdf' }],
+      [],
     )
   })
 

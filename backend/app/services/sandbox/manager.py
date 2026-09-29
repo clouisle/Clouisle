@@ -137,6 +137,8 @@ class SandboxManager:
             workspace,
             team_id=asset_team_id,
             user_id=asset_user_id,
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
         )
         self._enforce_disk_limit(job, workspace, stage="prepare")
         metadata.mark_prepare_completed(datetime.now(UTC))
@@ -259,6 +261,8 @@ class SandboxManager:
         *,
         team_id: UUID | None = None,
         user_id: UUID | None = None,
+        conversation_id: UUID | None = None,
+        workflow_run_id: UUID | None = None,
     ) -> None:
         for input_file in job.input_files:
             target = self.workspace_manager.resolve_workspace_path(
@@ -271,11 +275,59 @@ class SandboxManager:
             if input_file.asset_id is not None:
                 from app.services.asset import asset_service
 
-                asset = await asset_service.get_authorized(
-                    input_file.asset_id,
-                    team_id=team_id,
-                    user_id=user_id,
-                )
+                if input_file.asset_ref is not None:
+                    from app.models.asset import AssetScopeType
+                    from app.models.user import User
+                    from app.services.asset_access import resolve_authorized_asset_ref
+
+                    scope_type = AssetScopeType(input_file.scope_type)
+                    expected_scope_id = (
+                        conversation_id
+                        if scope_type == AssetScopeType.CONVERSATION
+                        else workflow_run_id
+                    )
+                    if (
+                        expected_scope_id is None
+                        or input_file.scope_id != expected_scope_id
+                    ):
+                        raise BusinessError(
+                            code=ResponseCode.PERMISSION_DENIED,
+                            msg_key="access_denied",
+                            status_code=403,
+                        )
+                    user = (
+                        await User.filter(id=user_id)
+                        .prefetch_related("roles__permissions")
+                        .first()
+                        if user_id is not None
+                        else None
+                    )
+                    asset = await resolve_authorized_asset_ref(
+                        input_file.asset_ref,
+                        scope_type=scope_type,
+                        scope_id=input_file.scope_id,
+                        user=user,
+                        expected_team_id=team_id,
+                    )
+                    if asset.id != input_file.asset_id:
+                        raise BusinessError(
+                            code=ResponseCode.PERMISSION_DENIED,
+                            msg_key="access_denied",
+                            status_code=403,
+                        )
+                else:
+                    if conversation_id is not None or workflow_run_id is not None:
+                        raise BusinessError(
+                            code=ResponseCode.PERMISSION_DENIED,
+                            msg_key="access_denied",
+                            status_code=403,
+                        )
+                    asset = await asset_service.get_authorized(
+                        input_file.asset_id,
+                        team_id=team_id,
+                        user_id=user_id,
+                    )
+
                 if settings.UPLOAD_STORAGE_MODE == "remote":
                     content = await upload_gateway.read(asset.storage_key)
                     if (
@@ -670,10 +722,10 @@ async function __execute__() {{
         from app.services.asset import asset_service
 
         scope: tuple[AssetScopeType, UUID] | None = None
-        if conversation_id is not None:
-            scope = (AssetScopeType.CONVERSATION, conversation_id)
-        elif workflow_run_id is not None:
+        if workflow_run_id is not None:
             scope = (AssetScopeType.WORKFLOW_RUN, workflow_run_id)
+        elif conversation_id is not None:
+            scope = (AssetScopeType.CONVERSATION, conversation_id)
         if scope is None:
             return
         for artifact in artifacts:
@@ -694,12 +746,13 @@ async function __execute__() {{
                     "workspace_path": artifact.path,
                 },
             )
-            await asset_service.get_or_create_ref(
+            binding = await asset_service.get_or_create_ref(
                 scope_type=scope[0],
                 scope_id=scope[1],
                 asset=asset,
             )
             artifact.asset_id = asset.id
+            artifact.asset_ref = binding.ref
 
     @staticmethod
     def _optional_uuid(value: Any) -> UUID | None:
@@ -711,9 +764,9 @@ async function __execute__() {{
             return None
 
     @staticmethod
-    def _artifact_storage_key(url: str) -> str | None:
+    def _artifact_storage_key(url: str | None) -> str | None:
         marker = "/api/v1/upload/files/"
-        if marker not in url:
+        if not url or marker not in url:
             return None
         return url.split(marker, 1)[1]
 
