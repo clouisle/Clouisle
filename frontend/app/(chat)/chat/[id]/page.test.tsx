@@ -729,6 +729,22 @@ describe('PublicChatPage', () => {
     expect(sendMessage).toHaveBeenCalledWith('new conversation', undefined, undefined, [])
   })
 
+  test('forwards current variable asset refs when submitting a chat', async () => {
+    getPublicAgent.mockResolvedValueOnce({
+      ...agent,
+      variables: [{ name: 'documents', type: 'file', required: false, hidden: false }],
+    })
+    render()
+    await flush()
+
+    act(() => variableAssetIdsChange!('documents', ['asset-one', 'asset-two']))
+    await act(async () => {
+      await (chatInputProps.onSubmit as (message: string, files?: unknown[]) => Promise<void>)('summarize these')
+    })
+
+    expect(sendMessage).toHaveBeenCalledWith('summarize these', undefined, undefined, ['asset-one', 'asset-two'])
+  })
+
   test('shows the new-chat control when embed history is disabled', async () => {
     // show_history: false keeps sidebarOpen true on desktop (no sidebar, no
     // toggle to close it), so the control must not depend on !sidebarOpen.
