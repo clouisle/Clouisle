@@ -167,6 +167,7 @@ export default function PublicChatPage({
 
   // Variable form state
   const [variablesOpen, setVariablesOpen] = React.useState(true)
+  const [variableAssetIds, setVariableAssetIds] = React.useState<Record<string, string | string[]>>({})
   const variables = React.useMemo(() => agent?.variables || [], [agent])
   const {
     values: variableValues,
@@ -549,6 +550,7 @@ export default function PublicChatPage({
     setInput('')
     setFiles([])
     setSelectedImageRefs([])
+    setVariableAssetIds({})
     dismissPreview()
     setIsUploading(false)
     setLoadingConversation(false)
@@ -753,7 +755,7 @@ export default function PublicChatPage({
     setInput('')
     setFiles([])
     setSelectedImageRefs([])
-    await sendMessage(message, images, fileUrls)
+    await sendMessage(message, images, fileUrls, Object.values(variableAssetIds).flatMap((value) => Array.isArray(value) ? value : [value]))
   }
 
   if (isLoading || isLoggedIn === null) {
@@ -877,6 +879,12 @@ export default function PublicChatPage({
                   <VariableForm
                     variables={variables}
                     values={variableValues}
+                    onAssetIdsChange={(name, ids) => setVariableAssetIds((previous) => {
+                      const next = { ...previous }
+                      if (ids === null) delete next[name]
+                      else next[name] = ids
+                      return next
+                    })}
                     onChange={setVariableValues}
                     fieldErrors={variableFieldErrors}
                     className="space-y-2"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -73,6 +73,13 @@ class SandboxInputFileSpec(BaseModel):
     asset_id: UUID | None = Field(
         default=None, description="Durable Asset ID resolved server-side"
     )
+    asset_ref: str | None = Field(
+        default=None, min_length=4, max_length=4, description="Scope-local Asset ref"
+    )
+    scope_type: Literal["conversation", "workflow_run"] | None = Field(
+        default=None, description="Execution scope for the Asset reference"
+    )
+    scope_id: UUID | None = Field(default=None)
     expected_checksum: str | None = Field(default=None, min_length=64, max_length=64)
     expected_size: int | None = Field(default=None, ge=0)
     mode: int | None = Field(
@@ -83,6 +90,14 @@ class SandboxInputFileSpec(BaseModel):
     def validate_source(self) -> "SandboxInputFileSpec":
         if (self.content_base64 is None) == (self.asset_id is None):
             raise ValueError("Exactly one Sandbox input source is required")
+        if self.asset_ref is not None and (
+            self.asset_id is None or self.scope_type is None or self.scope_id is None
+        ):
+            raise ValueError("Scoped Asset inputs require an ID and scope")
+        if self.asset_ref is None and (
+            self.scope_type is not None or self.scope_id is not None
+        ):
+            raise ValueError("Sandbox input scope requires an Asset ref")
         return self
 
 
@@ -99,9 +114,14 @@ class SandboxArtifact(BaseModel):
     )
     content_type: str | None = Field(default=None, description="Detected content type")
     storage_path: str = Field(..., description="Persisted storage path")
-    url: str = Field(..., description="Backend file URL")
+    url: str | None = Field(
+        default=None, description="Download URL for the persisted artifact"
+    )
     filename: str = Field(..., description="Persisted filename")
     asset_id: UUID | None = Field(default=None, description="Durable Asset ID")
+    asset_ref: str | None = Field(
+        default=None, description="Conversation- or workflow-run-scoped Asset ref"
+    )
 
 
 class SandboxLimits(BaseModel):

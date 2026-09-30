@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { ReactNode } from 'react'
 
-const uploadFile = mock(() => Promise.resolve({ url: '/uploads/new.txt' }))
+const uploadFile = mock(() => Promise.resolve({ url: '/uploads/new.txt', asset_id: 'asset-single' }))
 
 const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props })
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: 'fragment' }))
@@ -71,12 +71,12 @@ function findAll(node: ReactNode, predicate: (tree: Tree) => boolean): Tree[] {
 }
 
 const variable = (name: string, type: Variable['type'], extra: Partial<Variable> = {}): Variable => ({ name, type, required: false, ...extra })
-const render = (variables: Variable[], values: Record<string, unknown>, onChange = mock(), onSubmit?: () => void, fieldErrors?: Record<string, string>) =>
-  VariableForm({ variables, values, onChange, onSubmit, fieldErrors })
+const render = (variables: Variable[], values: Record<string, unknown>, onChange = mock(), onSubmit?: () => void, fieldErrors?: Record<string, string>, onAssetIdsChange = mock()) =>
+  VariableForm({ variables, values, onChange, onAssetIdsChange, onSubmit, fieldErrors })
 
 beforeEach(() => {
   uploadFile.mockReset()
-  uploadFile.mockResolvedValue({ url: '/uploads/new.txt' })
+  uploadFile.mockResolvedValue({ url: '/uploads/new.txt', asset_id: 'asset-single' })
 })
 
 describe('VariableForm', () => {
@@ -124,13 +124,14 @@ describe('VariableForm', () => {
 
   test('handles file limits, mocked uploads, removals, and field errors', async () => {
     const onChange = mock()
-    const single = render([variable('file', 'file', { fileConfig: { accept: ['text/plain'], maxSize: 1 } })], {}, onChange, undefined, { file: 'server error' })
+    const onAssetIdsChange = mock()
+    const single = render([variable('file', 'file', { fileConfig: { accept: ['text/plain'], maxSize: 1 } })], {}, onChange, undefined, { file: 'server error' }, onAssetIdsChange)
     const singleInput = findAll(single, (node) => node.type === 'input' && node.props.type === 'file')[0]
     expect(singleInput.props.accept).toBe('text/plain')
     await (singleInput.props.onChange as (event: { target: { files: File[] } }) => Promise<void>)({ target: { files: [new File(['ok'], 'new.txt')] } })
     expect(uploadFile).toHaveBeenCalledWith(expect.any(File), 'workflow-input')
     expect(onChange).toHaveBeenCalledWith({ file: '/uploads/new.txt' })
-    expect(findAll(single, (node) => node.type === 'alert').some((node) => node.props.children === 'server error')).toBe(true)
+    expect(onAssetIdsChange).toHaveBeenCalledWith('file', 'asset-single')
 
     const existing = render([variable('file', 'file')], { file: '/uploads/old.txt' }, onChange)
     ;(findAll(existing, (node) => node.type === 'button')[0].props.onClick as () => void)()

@@ -982,6 +982,7 @@ class SandboxArtifactTool:
                     "path": artifact.path,
                     "filename": artifact.filename,
                     "url": artifact.url,
+                    "asset_ref": getattr(artifact, "asset_ref", None),
                     "size": artifact.size,
                     "content_type": artifact.content_type,
                 }
@@ -1030,7 +1031,21 @@ class SandboxArtifactTool:
         error: str | None = None,
     ) -> ToolExecutionResult:
         files = files or []
-        markdown_links = [f"[{file['filename']}]({file['url']})" for file in files]
+        markdown_links = [
+            f"[{file['filename']}]({file['url']})"
+            for file in files
+            if isinstance(file.get("url"), str) and file["url"]
+        ]
+        result_instruction = (
+            "Use these Markdown links in your final answer."
+            if markdown_links
+            else "No downloadable links are available for these artifacts."
+        )
+        if any(file.get("asset_ref") for file in files):
+            result_instruction += (
+                " To inspect, read, parse, or reuse a collected file, pass its "
+                "asset_ref to the matching Asset tool."
+            )
         display_result = {
             "success": success,
             "result": f"Generated {len(markdown_links)} downloadable link(s) for the assistant response.",
@@ -1040,9 +1055,7 @@ class SandboxArtifactTool:
         }
         llm_result = {
             "success": success,
-            "result": "Use these Markdown links in your final answer."
-            if success
-            else None,
+            "result": result_instruction if success else None,
             "markdown_links": markdown_links,
             "files": files,
             "error": error,
@@ -1397,10 +1410,11 @@ def register_sandbox_file_tools() -> None:
         name="artifact",
         description=(
             "Collect existing files or directories from /workspace and return fresh Markdown "
-            "download links plus preview metadata. Call this only after verifying final user-facing "
-            "files. If write, edit, or bash changes a collected file, call artifact again because "
-            "earlier URLs are stale snapshots. Include the newest returned Markdown links in the "
-            "final response body. Relative paths are interpreted from /workspace."
+            "download links, preview metadata, and scoped Asset refs when available. Call this "
+            "only after verifying final user-facing files. If write, edit, or bash changes a "
+            "collected file, call artifact again because earlier URLs are stale snapshots. Include "
+            "the newest Markdown links in the final response body; use returned Asset refs with "
+            "the Asset tools when further processing is needed. Relative paths are from /workspace."
         ),
         parameters=[
             ToolParameter(

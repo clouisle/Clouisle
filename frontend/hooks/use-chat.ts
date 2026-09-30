@@ -28,6 +28,7 @@ import type {
   AgentRunStartOut,
   AgentRunStatus,
   AgentRunStatusOut,
+  WorkflowAssetRef,
 } from '@/lib/api/agents'
 import type {
   ChatMessage,
@@ -150,7 +151,7 @@ export interface UseChatReturn {
   pendingAskUserToolCallId: string | null
   /** Currently queued inputs (e.g. user instructions) waiting to be accepted by the run */
   pendingRunInputs: Array<{ content: string; requestId: string }>
-  sendMessage: (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[]) => Promise<void>
+  sendMessage: (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[], variableAssetIds?: string[], workflowAssetRefs?: WorkflowAssetRef[]) => Promise<void>
   /** Submit one structured answer result for the waiting ask_user interaction. */
   submitAskUser: (toolCallId: string, answer: Omit<AgentRunAnswerInput, 'tool_call_id'>) => Promise<void>
   /** Regenerate (retry) a message by ID */
@@ -1256,12 +1257,12 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     tError,
   ])
 
-  const sendMessage = useCallback(async (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[]) => {
+  const sendMessage = useCallback(async (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[], variableAssetIds?: string[], workflowAssetRefs?: WorkflowAssetRef[]) => {
     const content = message.trim()
-    if (!content && !images?.length && !fileUrls?.length) return
+    if (!content && !images?.length && !fileUrls?.length && !variableAssetIds?.length && !workflowAssetRefs?.length) return
     if (runStatusRef.current === 'waiting') return
     if (statusRef.current === 'loading' || statusRef.current === 'streaming') {
-      if (images?.length || fileUrls?.length) return
+      if (images?.length || fileUrls?.length || workflowAssetRefs?.length) return
       await submitRunInput(content)
       return
     }
@@ -1311,7 +1312,11 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       images,
       file_urls: fileUrls,
       conversation_id: conversationIdRef.current,
+      variable_asset_ids: variableAssetIds,
       variables,
+    }
+    if (workflowAssetRefs?.length) {
+      request.workflow_asset_refs = workflowAssetRefs
     }
     if (api.startRun && api.streamRun) {
       const startWaiter = createRunStartWaiter(session)

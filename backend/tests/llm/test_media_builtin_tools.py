@@ -10,6 +10,7 @@ import pytest
 
 from app.llm.tools import tool_registry
 from app.llm.tools.builtin.media import (
+    _resolve_generation_reference_refs,
     build_image_llm_result,
     build_video_llm_result,
     generate_image,
@@ -180,6 +181,60 @@ async def test_generate_image_uses_legacy_indexes_when_refs_are_empty():
     assert reference is not None
     assert reference[0].base64 == "cmVm"
     assert reference[0].format == "png"
+
+
+@pytest.mark.parametrize("include_user", [False, True])
+@pytest.mark.anyio
+async def test_generation_refs_resolve_from_workflow_run_scope(
+    include_user: bool,
+):
+    from app.models.asset import AssetScopeType
+    from app.models.workflow import Workflow, WorkflowRun
+
+    team_id = uuid4()
+    run_id = uuid4()
+    workflow_id = uuid4()
+    user = SimpleNamespace(id=uuid4()) if include_user else None
+    workflow_run = SimpleNamespace(id=run_id, workflow_id=workflow_id)
+    workflow = SimpleNamespace(id=workflow_id, team_id=team_id)
+    asset = SimpleNamespace(content_type="image/png")
+    asset_service = MagicMock()
+    asset_service.resolve_ref = AsyncMock(return_value=asset)
+    asset_service.read = AsyncMock(return_value=b"image-bytes")
+
+    with (
+        patch.object(WorkflowRun, "get_or_none", AsyncMock(return_value=workflow_run)),
+        patch.object(Workflow, "get_or_none", AsyncMock(return_value=workflow)),
+        patch(
+            "app.api.workflow_access.check_workflow_access", AsyncMock()
+        ) as check_workflow_access,
+        patch("app.services.asset.asset_service", asset_service),
+        patch(
+            "app.services.upload_storage.get_upload_storage_backend",
+            AsyncMock(return_value=object()),
+        ),
+    ):
+        images = await _resolve_generation_reference_refs(
+            refs=["a1b2"],
+            conversation_id=None,
+            agent=SimpleNamespace(team_id=team_id),
+            user=user,
+            workflow_run_id=run_id,
+        )
+
+    assert images is not None
+    assert images[0].base64 == base64.b64encode(b"image-bytes").decode()
+    asset_service.resolve_ref.assert_awaited_once_with(
+        scope_type=AssetScopeType.WORKFLOW_RUN,
+        scope_id=run_id,
+        ref="a1b2",
+        team_id=team_id,
+        user_id=user.id if user else None,
+    )
+    if user:
+        check_workflow_access.assert_awaited_once_with(workflow_id, user)
+    else:
+        check_workflow_access.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -481,7 +536,13 @@ async def test_generate_image_normalizes_inline_base64_to_backend_url():
 
 @pytest.mark.anyio
 async def test_generate_video_passes_selected_start_image_reference():
+    from app.models.asset import AssetScopeType
+
+    conversation_id = uuid4()
+    team_id = uuid4()
+    user = SimpleNamespace(id=uuid4())
     agent = SimpleNamespace(
+        team_id=team_id,
         enable_video_generation=True,
         video_generation_config={
             "default_model_ref": "siliconflow/Wan2.1-T2V-14B",
@@ -492,6 +553,10 @@ async def test_generate_video_passes_selected_start_image_reference():
             "poll_timeout_s": 1,
         },
     )
+    asset = SimpleNamespace(content_type="image/webp")
+    asset_service = MagicMock()
+    asset_service.resolve_ref = AsyncMock(return_value=asset)
+    asset_service.read = AsyncMock(return_value=b"second")
     response = VideoGenerationResponse(
         task_id="vid_123",
         status=TaskStatus.COMPLETED,
@@ -500,6 +565,11 @@ async def test_generate_video_passes_selected_start_image_reference():
     )
 
     with (
+        patch("app.services.asset.asset_service", asset_service),
+        patch(
+            "app.services.upload_storage.get_upload_storage_backend",
+            AsyncMock(return_value=object()),
+        ),
         patch(
             "app.llm.tools.builtin.media.model_manager.generate_video",
             AsyncMock(return_value=response),
@@ -514,26 +584,33 @@ async def test_generate_video_passes_selected_start_image_reference():
         ),
     ):
         result = await generate_video(
-            prompt="Animate the second upload",
-            start_image_index=2,
-            current_images=[
-                {"url": "data:image/png;base64,Zmlyc3Q="},
-                {"url": "data:image/webp;base64,c2Vjb25k"},
-            ],
+            prompt="Animate the selected image",
+            start_image_ref="a1b2",
             agent=agent,
+            user=user,
+            conversation_id=conversation_id,
         )
 
     request = mock_generate.await_args.args[0]
     assert result.display_result["success"] is True
     assert request.start_image is not None
-    assert request.start_image.base64 == "c2Vjb25k"
+    assert request.start_image.base64 == base64.b64encode(b"second").decode()
     assert request.start_image.format == "webp"
-    assert request.start_image.url is None
+    asset_service.resolve_ref.assert_awaited_once_with(
+        scope_type=AssetScopeType.CONVERSATION,
+        scope_id=conversation_id,
+        ref="a1b2",
+        team_id=team_id,
+        user_id=user.id,
+    )
 
 
 @pytest.mark.anyio
-async def test_generate_video_rejects_out_of_range_start_image_index():
+async def test_generate_video_rejects_unavailable_start_image_ref():
+    from app.schemas.response import BusinessError, ResponseCode
+
     agent = SimpleNamespace(
+        team_id=uuid4(),
         enable_video_generation=True,
         video_generation_config={
             "default_model_ref": "siliconflow/Wan2.1-T2V-14B",
@@ -544,21 +621,35 @@ async def test_generate_video_rejects_out_of_range_start_image_index():
             "poll_timeout_s": 1,
         },
     )
+    asset_service = MagicMock()
+    asset_service.resolve_ref = AsyncMock(
+        side_effect=BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="file_not_found",
+            status_code=404,
+        )
+    )
 
-    with patch(
-        "app.llm.tools.builtin.media.model_manager.generate_video",
-        AsyncMock(),
-    ) as mock_generate:
+    with (
+        patch("app.services.asset.asset_service", asset_service),
+        patch(
+            "app.services.upload_storage.get_upload_storage_backend",
+            AsyncMock(return_value=object()),
+        ),
+        patch(
+            "app.llm.tools.builtin.media.model_manager.generate_video", AsyncMock()
+        ) as mock_generate,
+    ):
         result = await generate_video(
-            prompt="Animate image 3",
-            start_image_index=3,
-            current_images=[{"url": "data:image/png;base64,cmVm"}],
+            prompt="Animate reference",
+            start_image_ref="a1b2",
             agent=agent,
+            user=SimpleNamespace(id=uuid4()),
+            conversation_id=uuid4(),
         )
 
     mock_generate.assert_not_awaited()
     assert result.display_result["success"] is False
-    assert "out of range" in result.display_result["error"]
 
 
 @pytest.mark.anyio
@@ -585,8 +676,7 @@ async def test_generate_video_reports_unsupported_start_image_reference():
     ) as mock_generate:
         result = await generate_video(
             prompt="Animate reference",
-            start_image_index=1,
-            current_images=[{"url": "data:image/png;base64,cmVm"}],
+            start_image_content=ImageContent(base64="cmVm", format="png"),
             agent=agent,
         )
 
@@ -602,7 +692,8 @@ def test_build_media_llm_summaries_are_compact():
             images=[
                 GeneratedImage(
                     image=ImageContent(
-                        url="/api/v1/upload/files/generated-images/2026/03/test.png"
+                        url="/api/v1/upload/files/generated-images/2026/03/test.png",
+                        asset_ref="a1b2",
                     )
                 )
             ],
@@ -623,10 +714,28 @@ def test_build_media_llm_summaries_are_compact():
     assert image_summary.startswith("Image generation succeeded")
     assert "already displayed by the interface" in image_summary
     assert "do not invent image urls" in image_summary.lower()
+    assert "Available generated image Asset refs: a1b2" in image_summary
     assert (
         video_summary
         == "Video generation started. Task vid_123 is processing. Prompt: A cinematic robot walking through rain"
     )
+
+
+def test_completed_video_summary_exposes_generated_asset_ref():
+    summary = build_video_llm_result(
+        "Animate this scene",
+        VideoGenerationResponse(
+            task_id="vid_456",
+            status=TaskStatus.COMPLETED,
+            model="runway/gen4.5",
+            video=VideoContent(
+                url="/api/v1/upload/files/generated-videos/out.mp4",
+                asset_ref="b2c3",
+            ),
+        ),
+    )
+
+    assert "Available generated video Asset ref: b2c3" in summary
 
 
 def test_media_tools_do_not_expose_model_override_parameter():
@@ -639,7 +748,7 @@ def test_media_tools_do_not_expose_model_override_parameter():
     assert all(param.name != "model_ref" for param in image_tool.parameters)
     schema = video_tool.to_openai_schema()
     properties = schema["function"]["parameters"]["properties"]
-    assert properties["start_image_index"]["type"] == "integer"
+    assert properties["start_image_ref"]["type"] == "string"
     assert all(param.name != "model_ref" for param in video_tool.parameters)
 
 

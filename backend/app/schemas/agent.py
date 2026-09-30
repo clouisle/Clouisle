@@ -766,6 +766,9 @@ class FileUrl(BaseModel):
     """Raw uploaded file with a durable Asset identity."""
 
     asset_id: UUID | None = Field(default=None, description="Durable Asset ID")
+    asset_ref: str | None = Field(
+        default=None, description="Conversation-scoped Asset ref"
+    )
     filename: str = Field(..., description="Original filename")
     url: str = Field(..., description="Legacy download URL")
     size: int = Field(..., ge=0, description="File size in bytes")
@@ -830,6 +833,13 @@ class HistoryMessage(BaseModel):
     )
 
 
+class WorkflowAssetRef(BaseModel):
+    """Asset ref scoped to a workflow run, imported into this chat conversation."""
+
+    workflow_run_id: UUID
+    ref: str = Field(..., min_length=4, max_length=4)
+
+
 class ChatRequest(BaseModel):
     """Chat request"""
 
@@ -842,7 +852,14 @@ class ChatRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_message_or_attachment(self) -> "ChatRequest":
-        if self.message.strip() or self.images or self.files or self.file_urls:
+        if (
+            self.message.strip()
+            or self.images
+            or self.files
+            or self.file_urls
+            or self.variable_asset_ids
+            or self.workflow_asset_refs
+        ):
             return self
         raise ValueError("message must not be empty unless an attachment is provided")
 
@@ -856,6 +873,14 @@ class ChatRequest(BaseModel):
     file_urls: list[FileUrl] = Field(
         default_factory=list,
         description="Raw uploaded Asset metadata; legacy URL-only entries remain supported.",
+    )
+    variable_asset_ids: list[UUID] = Field(
+        default_factory=list,
+        description="Uploaded Asset IDs used by Agent file variables.",
+    )
+    workflow_asset_refs: list[WorkflowAssetRef] = Field(
+        default_factory=list,
+        description="Workflow-run-scoped Asset refs to import into this conversation.",
     )
     conversation_id: UUID | None = Field(
         None, description="Continue existing conversation"

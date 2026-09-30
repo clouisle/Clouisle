@@ -20,7 +20,7 @@ from app.core.i18n import t
 from app.llm import model_manager
 from app.llm.adapters.media_utils import parse_image_data_url
 from app.models.model import ModelType
-from app.schemas.response import BusinessError
+from app.schemas.response import BusinessError, ResponseCode
 from app.services.error_messages import exception_to_user_message
 from app.llm.types import (
     GeneratedImage,
@@ -234,18 +234,49 @@ async def _resolve_generation_reference_refs(
     conversation_id: Any,
     agent: Any,
     user: Any,
+    workflow_run_id: Any = None,
 ) -> list[ImageContent] | None:
     from app.api.v1.endpoints.upload import UPLOAD_ROOT
     from app.models.asset import AssetScopeType
     from app.services.asset import asset_service
     from app.services.upload_storage import get_upload_storage_backend
 
-    if not conversation_id or not agent or not user:
+    if not agent:
         raise BusinessError(msg_key="validation_error")
-    try:
-        scope_id = UUID(str(conversation_id))
-    except (TypeError, ValueError, AttributeError) as exc:
-        raise BusinessError(msg_key="validation_error") from exc
+
+    if workflow_run_id is not None:
+        from app.api.workflow_access import check_workflow_access
+        from app.models.workflow import Workflow, WorkflowRun
+
+        try:
+            scope_id = UUID(str(workflow_run_id))
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise BusinessError(msg_key="validation_error") from exc
+        run = await WorkflowRun.get_or_none(id=scope_id)
+        if run is None or run.workflow_id is None:
+            raise BusinessError(
+                code=ResponseCode.NOT_FOUND,
+                msg_key="file_not_found",
+                status_code=404,
+            )
+        workflow = await Workflow.get_or_none(id=run.workflow_id)
+        if workflow is None or workflow.team_id != getattr(agent, "team_id", None):
+            raise BusinessError(
+                code=ResponseCode.PERMISSION_DENIED,
+                msg_key="access_denied",
+                status_code=403,
+            )
+        if user is not None:
+            await check_workflow_access(run.workflow_id, user)
+        scope_type = AssetScopeType.WORKFLOW_RUN
+    elif conversation_id is not None and user is not None:
+        try:
+            scope_id = UUID(str(conversation_id))
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise BusinessError(msg_key="validation_error") from exc
+        scope_type = AssetScopeType.CONVERSATION
+    else:
+        raise BusinessError(msg_key="validation_error")
 
     selected_refs = list(dict.fromkeys(refs))
     if not selected_refs:
@@ -255,11 +286,11 @@ async def _resolve_generation_reference_refs(
     resolved: list[ImageContent] = []
     for ref in selected_refs:
         asset = await asset_service.resolve_ref(
-            scope_type=AssetScopeType.CONVERSATION,
+            scope_type=scope_type,
             scope_id=scope_id,
             ref=ref,
             team_id=getattr(agent, "team_id", None),
-            user_id=user.id,
+            user_id=getattr(user, "id", None),
         )
         if not asset.content_type.lower().startswith("image/"):
             raise BusinessError(msg_key="unsupported_file_type")
@@ -273,17 +304,22 @@ async def _resolve_generation_reference_refs(
     return resolved
 
 
-def _resolve_start_image_reference(
+async def _resolve_start_image_reference(
     *,
-    start_image_index: Any,
-    current_images: Sequence[Any] | None,
+    start_image_ref: str | None,
+    conversation_id: Any,
+    agent: Any,
+    user: Any,
+    workflow_run_id: Any = None,
 ) -> ImageContent | None:
-    if start_image_index is None:
+    if start_image_ref is None:
         return None
-    reference_images = _resolve_generation_reference_images(
-        images=None,
-        reference_image_indexes=[start_image_index],
-        current_images=current_images,
+    reference_images = await _resolve_generation_reference_refs(
+        refs=[start_image_ref],
+        conversation_id=conversation_id,
+        agent=agent,
+        user=user,
+        workflow_run_id=workflow_run_id,
     )
     return reference_images[0] if reference_images else None
 
@@ -431,12 +467,20 @@ def build_image_llm_result(
     count = len(response.images) if response and response.images else 0
     model = response.model if response else None
     prompt_excerpt = prompt.strip().replace("\n", " ")[:120]
-    return t(
+    summary = t(
         "image_generation_succeeded",
         count=count,
         model=model or "-",
         prompt=prompt_excerpt,
     )
+    refs = [
+        generated.image.asset_ref
+        for generated in (response.images if response and response.images else [])
+        if generated.image.asset_ref
+    ]
+    if refs:
+        summary += " Available generated image Asset refs: " + ", ".join(refs)
+    return summary
 
 
 def build_video_llm_result(
@@ -463,11 +507,15 @@ def build_video_llm_result(
             prompt=prompt_excerpt,
         )
 
-    return t(
+    summary = t(
         "video_generation_succeeded",
         model=(response.model if response and response.model else "-"),
         prompt=prompt_excerpt,
     )
+    asset_ref = response.video.asset_ref if response and response.video else None
+    if asset_ref:
+        summary += f" Available generated video Asset ref: {asset_ref}"
+    return summary
 
 
 def build_media_tool_execution_result(
@@ -517,6 +565,7 @@ async def generate_image(
                 conversation_id=conversation_id,
                 agent=agent,
                 user=user,
+                workflow_run_id=workflow_run_id,
             )
         else:
             reference_images = _resolve_generation_reference_images(
@@ -608,10 +657,10 @@ async def generate_video(
     camera_motion: str | None = None,
     style: str | None = None,
     seed: int | None = None,
-    start_image_index: int | None = None,
+    start_image_ref: str | None = None,
+    start_image_content: ImageContent | None = None,
     extra_params: dict[str, Any] | None = None,
     agent: Any | None = None,
-    current_images: list[Any] | None = None,
     user: Any | None = None,
     conversation_id: Any = None,
     workflow_run_id: Any = None,
@@ -640,10 +689,21 @@ async def generate_video(
         poll_interval_ms = int(config.get("poll_interval_ms", 3000))
         poll_timeout_s = int(config.get("poll_timeout_s", 120))
 
-        start_image = _resolve_start_image_reference(
-            start_image_index=start_image_index,
-            current_images=current_images,
-        )
+        if start_image_content is not None:
+            if (
+                not isinstance(start_image_content, ImageContent)
+                or start_image_ref is not None
+            ):
+                raise BusinessError(msg_key="validation_error")
+            start_image = start_image_content
+        else:
+            start_image = await _resolve_start_image_reference(
+                start_image_ref=start_image_ref,
+                conversation_id=conversation_id,
+                agent=agent,
+                user=user,
+                workflow_run_id=workflow_run_id,
+            )
 
         request = VideoGenerationRequest(
             prompt=prompt,
@@ -809,8 +869,8 @@ def register_media_tools() -> None:
         description=(
             "Generate a short video clip from a prompt. Use this when the user asks "
             "for cinematic motion, animated scenes, or motion-based concept clips. "
-            "When the user asks to use an available conversation image as the video's "
-            "first frame, set start_image_index to its 1-based index. Current "
+            "When the user asks to use an available image Asset as the video's first "
+            "frame, set start_image_ref to its exact four-character Asset ref. Current "
             "video providers may reject image references explicitly if unsupported."
         ),
         parameters=[
@@ -851,10 +911,10 @@ def register_media_tools() -> None:
                 description="Optional random seed",
             ),
             ToolParameter(
-                name="start_image_index",
-                type="integer",
+                name="start_image_ref",
+                type="string",
                 description=(
-                    "1-based index of an available conversation image to use as the "
+                    "Exact four-character ref of an available conversation image to use as the "
                     "video's starting frame when the selected video model supports it."
                 ),
             ),

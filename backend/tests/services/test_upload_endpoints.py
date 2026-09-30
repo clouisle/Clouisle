@@ -50,6 +50,12 @@ def upload_test_client():
             app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def default_to_unscoped_assets(monkeypatch):
+    query = SimpleNamespace(first=AsyncMock(return_value=None))
+    monkeypatch.setattr(upload.Asset, "filter", lambda **_: query)
+
+
 def test_get_file_authorizes_protected_categories(upload_test_client):
     storage = SimpleNamespace(
         exists=AsyncMock(return_value=True),
@@ -92,6 +98,38 @@ def test_get_file_keeps_regular_upload_categories_public(upload_test_client):
 
     assert response.status_code == 200
     authorize.assert_not_awaited()
+
+
+def test_get_file_protects_scoped_asset_in_regular_category(
+    upload_test_client, monkeypatch
+):
+    asset = SimpleNamespace(id="asset-1")
+    asset_query = SimpleNamespace(first=AsyncMock(return_value=asset))
+    scope_query = SimpleNamespace(exists=AsyncMock(return_value=True))
+    monkeypatch.setattr(upload.Asset, "filter", lambda **_: asset_query)
+    monkeypatch.setattr(upload.AssetScopeRef, "filter", lambda **_: scope_query)
+    storage = SimpleNamespace(
+        exists=AsyncMock(return_value=True),
+        response=AsyncMock(return_value=JSONResponse({"content": "scoped"})),
+    )
+    authorize = AsyncMock()
+    with (
+        patch(
+            "app.api.v1.endpoints.upload._upload_storage",
+            new=AsyncMock(return_value=storage),
+        ),
+        patch("app.api.v1.endpoints.upload.authorize_protected_asset", new=authorize),
+    ):
+        response = upload_test_client.get(
+            "/api/v1/upload/files/documents/2026/09/scoped.pdf"
+        )
+
+    assert response.status_code == 200
+    asset_query.first.assert_awaited_once()
+    scope_query.exists.assert_awaited_once_with()
+    authorize.assert_awaited_once()
+    assert authorize.await_args.args == ("documents/2026/09/scoped.pdf",)
+    assert authorize.await_args.kwargs["authenticated"][0].id == "user-1"
 
 
 def test_upload_sandbox_artifact_returns_backend_metadata(upload_test_client):

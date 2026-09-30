@@ -35,6 +35,12 @@ finally:
 from app.schemas.response import BusinessError  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def default_to_unscoped_assets(monkeypatch):
+    query = SimpleNamespace(first=AsyncMock(return_value=None))
+    monkeypatch.setattr(upload.Asset, "filter", lambda **_: query)
+
+
 def file(
     name: str | None, content: bytes = b"content", content_type: str = "text/plain"
 ):

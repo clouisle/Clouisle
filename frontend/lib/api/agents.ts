@@ -492,6 +492,11 @@ export interface ConversationWithMessages extends Conversation {
 
 // ============ Chat Types ============
 
+export interface WorkflowAssetRef {
+  workflow_run_id: string
+  ref: string
+}
+
 export interface ChatImageContent {
   asset_id?: string | null
   asset_ref?: string | null
@@ -511,6 +516,7 @@ export interface ChatFileContent {
 /** File URL for backend file parsing and injection into {{fileContent}} */
 export interface ChatFileUrl {
   asset_id?: string | null
+  asset_ref?: string | null
   filename: string
   url: string
   size: number
@@ -545,6 +551,10 @@ export interface ChatRequest {
   files?: ChatFileContent[]
   /** File URLs for backend to parse and inject into {{fileContent}} */
   file_urls?: ChatFileUrl[]
+  /** Durable IDs uploaded through Agent file variables, separate from URL values. */
+  variable_asset_ids?: string[]
+  /** Asset refs from workflow runs, authorized and imported into this conversation. */
+  workflow_asset_refs?: WorkflowAssetRef[]
   conversation_id?: string | null
   variables?: Record<string, unknown>
   /** Override conversation history for version switching / regeneration */

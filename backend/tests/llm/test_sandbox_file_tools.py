@@ -715,6 +715,7 @@ async def test_artifact_tool_collects_paths_as_markdown_links():
         storage_path="sandbox-artifacts/2026/05/report.docx",
         url="/api/v1/upload/files/sandbox-artifacts/2026/05/report.docx",
         filename="report.docx",
+        asset_ref="a1b2",
     )
 
     with patch(
@@ -744,6 +745,7 @@ async def test_artifact_tool_collects_paths_as_markdown_links():
             "path": "/workspace/output/report.docx",
             "filename": "report.docx",
             "url": "/api/v1/upload/files/sandbox-artifacts/2026/05/report.docx",
+            "asset_ref": "a1b2",
             "size": 123,
             "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         }
@@ -755,6 +757,8 @@ async def test_artifact_tool_collects_paths_as_markdown_links():
         "[report.docx](/api/v1/upload/files/sandbox-artifacts/2026/05/report.docx)"
     ]
     assert llm_payload["files"][0]["filename"] == "report.docx"
+    assert llm_payload["files"][0]["asset_ref"] == "a1b2"
+    assert "asset_ref" in llm_payload["result"]
     job = mock_submit.await_args.args[0]
     assert job.cwd == "/workspace"
     assert job.artifacts[0].path == "/workspace/output/report.docx"

@@ -1,5 +1,6 @@
 import base64
 import importlib
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -172,6 +173,7 @@ async def test_normalize_video_registers_workflow_scoped_asset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workflow_run_id = uuid4()
+    conversation_id = uuid4()
     save_upload = AsyncMock(
         return_value={
             "url": "/api/v1/upload/files/generated-videos/2026/09/video.mp4",
@@ -189,6 +191,7 @@ async def test_normalize_video_registers_workflow_scoped_asset(
 
     normalized = await MediaAssetService().normalize_video(
         VideoContent(base64=base64.b64encode(b"video").decode(), format="mp4"),
+        conversation_id=conversation_id,
         workflow_run_id=workflow_run_id,
     )
 
@@ -199,3 +202,86 @@ async def test_normalize_video_registers_workflow_scoped_asset(
         scope_id=workflow_run_id,
         asset=asset,
     )
+
+
+@pytest.mark.asyncio
+async def test_generated_image_asset_ref_can_be_materialized_in_sandbox(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.v1.endpoints.chat_tools import _execute_asset_tool
+
+    asset_id = uuid4()
+    team_id = uuid4()
+    user_id = uuid4()
+    conversation_id = uuid4()
+    asset = SimpleNamespace(
+        id=asset_id,
+        size=5,
+        checksum="a" * 64,
+        content_type="image/png",
+        display_filename="generated.png",
+        original_filename="generated.png",
+    )
+    asset_service = SimpleNamespace(
+        register_bytes=AsyncMock(return_value=asset),
+        get_or_create_ref=AsyncMock(return_value=SimpleNamespace(ref="a1b2")),
+        resolve_ref=AsyncMock(return_value=asset),
+    )
+    save_upload = AsyncMock(
+        return_value={
+            "url": "/api/v1/upload/files/generated-images/2026/09/generated.png",
+            "storage_key": "generated-images/2026/09/generated.png",
+            "filename": "generated.png",
+        }
+    )
+    monkeypatch.setattr(media_module, "save_generated_upload", save_upload)
+    monkeypatch.setattr("app.services.asset.asset_service", asset_service)
+
+    generated = await MediaAssetService().normalize_image(
+        ImageContent(base64=base64.b64encode(b"image").decode(), format="png"),
+        team_id=team_id,
+        created_by_id=user_id,
+        conversation_id=conversation_id,
+    )
+    assert generated is not None
+    assert generated.asset_ref == "a1b2"
+
+    submit = AsyncMock(return_value=SimpleNamespace(success=True, error=None))
+    from app.services.asset import AssetScopeType
+
+    resolve_authorized = AsyncMock(return_value=asset)
+    monkeypatch.setattr(
+        "app.services.asset_access.resolve_authorized_asset_ref", resolve_authorized
+    )
+    monkeypatch.setattr(
+        "app.services.sandbox.gateway.sandbox_gateway.submit_and_wait", submit
+    )
+    result = await _execute_asset_tool(
+        "materialize_asset",
+        {"ref": generated.asset_ref, "path": "inputs/generated.png"},
+        agent=SimpleNamespace(id=uuid4(), team_id=team_id),
+        user=SimpleNamespace(id=user_id),
+        conversation_id=conversation_id,
+        session_id="session-1",
+    )
+
+    assert json.loads(result) == {
+        "ref": "a1b2",
+        "path": "/workspace/inputs/generated.png",
+        "filename": "generated.png",
+        "size": 5,
+    }
+    resolve_authorized.assert_awaited_once_with(
+        "a1b2",
+        scope_type=AssetScopeType.CONVERSATION,
+        scope_id=conversation_id,
+        user=SimpleNamespace(id=user_id),
+        expected_team_id=team_id,
+    )
+    job = submit.await_args.args[0]
+    assert job.input_files[0].asset_id == asset_id
+    assert job.input_files[0].expected_checksum == "a" * 64
+    assert job.input_files[0].expected_size == 5
+    assert job.input_files[0].asset_ref == "a1b2"
+    assert job.input_files[0].scope_type == AssetScopeType.CONVERSATION.value
+    assert job.input_files[0].scope_id == conversation_id

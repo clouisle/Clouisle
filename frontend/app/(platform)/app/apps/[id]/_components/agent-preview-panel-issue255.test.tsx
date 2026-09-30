@@ -249,7 +249,7 @@ describe('AgentPreviewPanel', () => {
     expect(uploadFile).toHaveBeenCalledWith(document.file, 'documents', expect.any(Function))
     expect(sendMessage).toHaveBeenCalledWith('Analyze', [
       { type: 'image_url', url: 'data:image/png;base64,aW1hZ2U=' },
-    ], [{ filename: 'notes.txt', url: '/uploaded.txt', size: 9, mime_type: 'text/plain' }])
+    ], [{ filename: 'notes.txt', url: '/uploaded.txt', size: 9, mime_type: 'text/plain' }], [])
     tree = render(agent)
     expect(find(tree, ChatInput)[0].props.files).toEqual([])
     expect(find(tree, ChatInput)[0].props.isUploading).toBe(false)
@@ -267,7 +267,7 @@ describe('AgentPreviewPanel', () => {
       console.error = originalError
     }
     expect(toastError).toHaveBeenCalledWith('common.invalidFileTypeWithAllowed:{"allowed":"pdf, txt"}')
-    expect(sendMessage).toHaveBeenCalledWith('Read', undefined, undefined)
+    expect(sendMessage).toHaveBeenCalledWith('Read', undefined, undefined, [])
   })
 
   test('localizes chat errors, dismisses them, and delegates reset controls', () => {

@@ -212,8 +212,7 @@ async def test_generate_video_dispatches_start_image_and_normalizes_success():
     ):
         result = await generate_video(
             prompt="animate",
-            start_image_index="1",
-            current_images=[{"base64": "data:image/jpeg;base64,c3RhcnQ="}],
+            start_image_content=ImageContent(base64="c3RhcnQ=", format="jpg"),
             agent=agent,
         )
 
