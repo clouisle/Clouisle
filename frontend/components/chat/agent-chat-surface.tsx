@@ -134,6 +134,7 @@ export interface AgentChatSurfaceProps {
 
   variables?: RunVariableDefinition[]
   variableValues?: Record<string, unknown>
+  onVariablesChange?: (values: Record<string, unknown>) => void
   onVariableAssetIdsChange?: (variableName: string, assetIds: string | string[] | null) => void
   variableFieldErrors?: Record<string, string>
   variablesOpen?: boolean

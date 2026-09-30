@@ -550,6 +550,7 @@ export default function PublicChatPage({
     setInput('')
     setFiles([])
     setSelectedImageRefs([])
+    setVariableAssetIds({})
     dismissPreview()
     setIsUploading(false)
     setLoadingConversation(false)

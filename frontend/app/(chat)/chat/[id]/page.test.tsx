@@ -54,6 +54,7 @@ let chatOptions: {
   onStreamEnd?: () => void
 } = {}
 let variableValues: Record<string, unknown> = {}
+let variableAssetIdsChange: ((name: string, assetIds: string | string[] | null) => void) | undefined
 let chatContainerProps: Record<string, unknown> = {}
 let chatInputProps: Record<string, unknown> = {}
 let pendingAskUserFormProps: Record<string, unknown> = {}
@@ -145,7 +146,13 @@ mock.module('@/components/chat', () => ({
     pendingAskUserFormProps = props
     return <div data-pending-ask-user-form />
   },
-  VariableForm: ({ onChange }: { onChange: (values: Record<string, unknown>) => void }) => <button data-variable-form onClick={() => onChange({ required: 'filled' })}>variables</button>,
+  VariableForm: ({ onChange, onAssetIdsChange }: {
+    onChange: (values: Record<string, unknown>) => void
+    onAssetIdsChange?: (name: string, assetIds: string | string[] | null) => void
+  }) => {
+    variableAssetIdsChange = onAssetIdsChange
+    return <button data-variable-form onClick={() => onChange({ required: 'filled' })}>variables</button>
+  },
   useVariableForm: () => ({ values: variableValues, setValues: (values: Record<string, unknown>) => { variableValues = values }, fieldErrors: {}, validate: validateVariables }),
 }))
 
@@ -198,6 +205,7 @@ beforeEach(() => {
     pendingAskUserToolCallId: null, submitAskUser: undefined,
   }
   variableValues = {}
+  variableAssetIdsChange = undefined
   chatContainerProps = {}
   chatInputProps = {}
   pendingAskUserFormProps = {}
@@ -698,6 +706,27 @@ describe('PublicChatPage', () => {
     await act(async () => (chatInputProps.onSubmit as (message: string, files?: unknown[]) => Promise<void>)('after switch', []))
 
     expect(sendMessage).toHaveBeenCalledWith('after switch', undefined, undefined, [])
+  })
+
+  test('clears variable asset refs when starting a new chat', async () => {
+    getPublicAgent.mockResolvedValueOnce({
+      ...agent,
+      variables: [{ name: 'document', type: 'file', required: false, hidden: false }],
+    })
+    render()
+    await flush()
+
+    expect(variableAssetIdsChange).toBeDefined()
+    act(() => variableAssetIdsChange!('document', 'asset-from-previous-chat'))
+    const newChat = renderer!.root.findAllByProps({ 'aria-label': 'newChat' })[0]
+    act(() => newChat.props.onClick())
+    await act(async () => {
+      await (chatInputProps.onSubmit as (message: string, files?: unknown[]) => Promise<void>)(
+        'new conversation',
+      )
+    })
+
+    expect(sendMessage).toHaveBeenCalledWith('new conversation', undefined, undefined, [])
   })
 
   test('shows the new-chat control when embed history is disabled', async () => {
