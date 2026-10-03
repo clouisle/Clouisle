@@ -113,6 +113,14 @@ SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://api:8000
 
 `sandbox-worker` uploads artifacts to `/api/v1/upload/sandbox-artifact`. Keep `SANDBOX_ARTIFACT_UPLOAD_BASE_URL` on an internal API address; do not point it at `localhost` inside containers.
 
+Sandbox sessions use worker affinity, not a shared filesystem. Each sandbox worker consumes `sandbox` plus its own dedicated queue; the first session job atomically claims that worker, and later jobs stay on its queue. Stateless jobs continue to use the shared `sandbox` queue. Workers that receive another worker's session job forward it before execution.
+
+Identity defaults to the container/host hostname. Each independent local filesystem must have a unique identity; leave `SANDBOX_WORKER_ID` unset for scalable Compose/Kubernetes replicas rather than assigning every replica the same value. Set a stable explicit ID only when a replacement retains the same persistent sandbox disk. The supplied ephemeral workspaces do not survive container/pod replacement. If a session's owner is absent, its jobs wait for that owner or reach the existing timeout; there is no automatic rebinding, failover, or workspace recovery. Scaling adds capacity for new sessions, not migration of existing sessions. `python main.py sandbox-worker --local-dev` forwards `SANDBOX_WORKER_ID` from the root `.env` or process environment, but its temporary container has no persistent workspace mount: do not reuse an ID to imply recovered sessions.
+
+Session metadata validation no longer reads the API/agent worker's local sandbox directory. Skill package files and session cleanup are dispatched to the owning sandbox worker. Keep `SANDBOX_WORKSPACE_ROOT` consistent across caller and sandbox worker configurations for logical path translation; it does not need to be a shared mount.
+
+Before enabling multiple sandbox replicas, drain sessions created by the old implementation while its original worker is still available. Old sessions contain no owner identity, so their previous filesystem location cannot be inferred safely. Upgrade all sandbox consumers before resuming session jobs; mixed old/new consumers cannot enforce affinity.
+
 ### Volumes
 
 | Volume | Purpose |

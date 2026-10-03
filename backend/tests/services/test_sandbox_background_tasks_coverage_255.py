@@ -1,10 +1,9 @@
 """Behavior coverage for sandbox Celery task boundaries."""
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from app.services.sandbox.gateway import SandboxGateway
 from app.services.sandbox.models import SandboxJob, SandboxTaskStatus
 from app.services.sandbox.policies import SandboxPolicyError
 from app.tasks import sandbox as tasks
@@ -18,31 +17,6 @@ def sandbox_job() -> SandboxJob:
             "command": ["python3", "-c", "print('ok')"],
         }
     )
-
-
-@pytest.mark.anyio
-async def test_submit_queues_valid_job_after_persisting_queued_result():
-    job = sandbox_job()
-    queued = AsyncMock()
-    dispatch = MagicMock()
-
-    with (
-        patch(
-            "app.services.sandbox.gateway.sandbox_policy_engine.validate"
-        ) as validate,
-        patch(
-            "app.services.sandbox.gateway.sandbox_result_store.create_queued_result",
-            new=queued,
-        ),
-        patch.object(tasks.run_sandbox_job_task, "delay", dispatch),
-    ):
-        result = await SandboxGateway().submit(job)
-
-    assert result == job.job_id
-    validate.assert_called_once_with(job)
-    queued.assert_awaited_once()
-    assert queued.await_args.args[0] == job.job_id
-    dispatch.assert_called_once_with(job.model_dump(mode="json"))
 
 
 def test_run_job_marks_invalid_payload_failed_without_retrying():

@@ -7,71 +7,8 @@ from main import (
     PROJECT_ROOT,
     build_sandbox_worker_image,
     main,
-    start_sandbox_worker,
     start_sandbox_worker_container,
-    start_worker,
 )
-
-
-def test_start_worker_consumes_agent_queue_by_default():
-    with patch("main.os.chdir") as mock_chdir, patch("main.subprocess.run") as mock_run:
-        start_worker()
-
-    mock_chdir.assert_called_once_with(str(PROJECT_ROOT) + "/backend")
-    mock_run.assert_called_once_with(
-        [
-            sys.executable,
-            "-m",
-            "celery",
-            "-A",
-            "app.core.celery:celery_app",
-            "worker",
-            "--loglevel=info",
-            "--concurrency=4",
-            "--queues=default,agent,knowledge,workflow",
-        ]
-    )
-
-
-def test_start_sandbox_worker_uses_solo_pool_by_default():
-    with patch("main.os.chdir") as mock_chdir, patch("main.subprocess.run") as mock_run:
-        start_sandbox_worker()
-
-    mock_chdir.assert_called_once_with(str(PROJECT_ROOT) + "/backend")
-    mock_run.assert_called_once_with(
-        [
-            str(PROJECT_ROOT) + "/backend/.venv/bin/python",
-            "-m",
-            "celery",
-            "-A",
-            "app.core.celery:celery_app",
-            "worker",
-            "--loglevel=info",
-            "--concurrency=1",
-            "--queues=sandbox",
-            "--pool=solo",
-        ]
-    )
-
-
-def test_start_sandbox_worker_keeps_prefork_for_higher_concurrency():
-    with patch("main.os.chdir") as mock_chdir, patch("main.subprocess.run") as mock_run:
-        start_sandbox_worker(concurrency=2)
-
-    mock_chdir.assert_called_once_with(str(PROJECT_ROOT) + "/backend")
-    mock_run.assert_called_once_with(
-        [
-            str(PROJECT_ROOT) + "/backend/.venv/bin/python",
-            "-m",
-            "celery",
-            "-A",
-            "app.core.celery:celery_app",
-            "worker",
-            "--loglevel=info",
-            "--concurrency=2",
-            "--queues=sandbox",
-        ]
-    )
 
 
 def test_build_sandbox_worker_image_uses_repo_context():
@@ -132,12 +69,14 @@ def test_start_sandbox_worker_container_reads_root_env(
     env_file.write_text(
         "REDIS_PASSWORD=secret\nPOSTGRES_USER=postgres\nREDIS_HOST=redis.local\n"
         "API_INTERNAL_BASE_URL=http://localhost:8000\nINTERNAL_API_TOKEN=token\n"
+        "SANDBOX_WORKER_ID=local-disk-a\n"
     )
     monkeypatch.setattr("main.PROJECT_ROOT", str(tmp_path))
     monkeypatch.delenv("REDIS_PASSWORD", raising=False)
     monkeypatch.delenv("POSTGRES_USER", raising=False)
     monkeypatch.delenv("REDIS_HOST", raising=False)
     monkeypatch.delenv("INTERNAL_API_TOKEN", raising=False)
+    monkeypatch.delenv("SANDBOX_WORKER_ID", raising=False)
 
     with (
         patch("main.build_sandbox_worker_image"),
@@ -151,6 +90,7 @@ def test_start_sandbox_worker_container_reads_root_env(
     assert "REDIS_HOST=redis.local" in cmd
     assert "API_INTERNAL_BASE_URL=http://host.docker.internal:8000" in cmd
     assert "INTERNAL_API_TOKEN=token" in cmd
+    assert "SANDBOX_WORKER_ID=local-disk-a" in cmd
 
 
 def test_start_sandbox_worker_container_maps_localhost_env_to_host_gateway(

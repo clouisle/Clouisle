@@ -17,6 +17,7 @@ from .models import (
 )
 from .policies import sandbox_policy_engine
 from .result_store import sandbox_result_store
+from .affinity import sandbox_worker_queue
 from .session_store import sandbox_session_store
 
 if TYPE_CHECKING:
@@ -50,20 +51,10 @@ class SandboxGateway:
                 and existing.team_id == team_id
                 and existing.user_id == user_id
             ):
-                workspace = self._get_workspace_manager().prepare_session(
-                    existing.session_id
-                )
-                await sandbox_session_store.touch(
-                    existing.session_id,
-                    disk_usage_bytes=self._get_workspace_manager().workspace_size_bytes(
-                        workspace
-                    ),
-                )
+                await sandbox_session_store.touch(existing.session_id)
                 return existing.session_id
 
         session_id = str(uuid4())
-        workspace_manager = self._get_workspace_manager()
-        workspace_manager.prepare_session(session_id)
         await sandbox_session_store.create(
             session_id=session_id,
             conversation_id=conversation_id,
@@ -91,29 +82,33 @@ class SandboxGateway:
             return None
         if user_id is not None and session.user_id != user_id:
             return None
-        workspace_manager = self._get_workspace_manager()
-        session_root = workspace_manager.get_session_root(session_id)
-        if not session_root.exists():
-            await sandbox_session_store.delete(session_id)
-            return None
-        workspace = workspace_manager.prepare_session(session_id)
-        await sandbox_session_store.touch(
-            session_id,
-            disk_usage_bytes=workspace_manager.workspace_size_bytes(workspace),
+        # A descriptor for worker-side paths, not caller-side filesystem access.
+        from .workspace import SandboxWorkspace
+
+        root = self._get_workspace_manager().get_session_root(session_id)
+        return SandboxWorkspace(
+            root=root,
+            input_dir=root / "input",
+            output_dir=root / "output",
+            tmp_dir=root / "tmp",
+            logs_dir=root / "logs",
         )
-        return workspace
 
     async def cleanup_session(self, session_id: str) -> None:
-        workspace_manager = self._get_workspace_manager()
-        workspace_manager.cleanup_session(session_id)
-        await sandbox_session_store.delete(session_id)
+        from app.tasks.sandbox import cleanup_sandbox_session_task
+
+        worker = await sandbox_session_store.get_worker(session_id)
+        if worker is None:
+            await sandbox_session_store.delete(session_id)
+            return
+        cleanup_sandbox_session_task.apply_async(
+            args=[session_id], queue=sandbox_worker_queue(worker)
+        )
 
     async def cleanup_expired_sessions(self) -> int:
-        workspace_manager = self._get_workspace_manager()
         session_ids = await sandbox_session_store.expired_session_ids()
         for session_id in session_ids:
-            workspace_manager.cleanup_session(session_id)
-            await sandbox_session_store.delete(session_id)
+            await self.cleanup_session(session_id)
         return len(session_ids)
 
     async def submit(
@@ -146,7 +141,11 @@ class SandboxGateway:
             job_data["session_id"] = session_id
             job_data["session_agent_id"] = agent_id
             job_data["session_team_id"] = team_id
-        run_sandbox_job_task.delay(job_data)
+        worker = (
+            await sandbox_session_store.get_worker(session_id) if session_id else None
+        )
+        queue = sandbox_worker_queue(worker) if worker is not None else "sandbox"
+        run_sandbox_job_task.apply_async(args=[job_data], queue=queue)
         return job.job_id
 
     def _advance_poll_interval(self, poll_interval: float) -> float:

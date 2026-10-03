@@ -27,6 +27,33 @@ class SandboxSessionStore:
     KEY_PREFIX = "sandbox:session:"
     CONVERSATION_KEY_PREFIX = "sandbox:conversation:"
     INDEX_KEY = "sandbox:sessions"
+    WORKER_KEY_PREFIX = "sandbox:session-worker:"
+
+    def _worker_key(self, session_id: str) -> str:
+        return f"{self.WORKER_KEY_PREFIX}{session_id}"
+
+    async def get_worker(self, session_id: str) -> str | None:
+        redis = await get_redis()
+        worker = await redis.get(self._worker_key(session_id))
+        return _redis_text(worker) if worker is not None else None
+
+    async def claim_worker(self, session_id: str, worker_id: str) -> str:
+        """First consumer wins; ownership survives metadata TTL until cleanup."""
+        redis = await get_redis()
+        worker = await redis.eval(
+            """
+            if redis.call('EXISTS', KEYS[1]) == 0 then return false end
+            redis.call('SET', KEYS[2], ARGV[1], 'NX')
+            return redis.call('GET', KEYS[2])
+            """,
+            2,
+            self._key(session_id),
+            self._worker_key(session_id),
+            worker_id,
+        )
+        if worker is None:
+            raise ValueError("Sandbox session not found or expired")
+        return _redis_text(worker)
 
     def _key(self, session_id: str) -> str:
         return f"{self.KEY_PREFIX}{session_id}"
@@ -79,7 +106,6 @@ class SandboxSessionStore:
         redis = await get_redis()
         payload = await redis.get(self._key(session_id))
         if not payload:
-            await redis.zrem(self.INDEX_KEY, session_id)
             return None
         return SandboxSession.model_validate_json(_redis_text(payload))
 
@@ -109,7 +135,7 @@ class SandboxSessionStore:
     async def delete(self, session_id: str) -> None:
         redis = await get_redis()
         session = await self.get(session_id)
-        await redis.delete(self._key(session_id))
+        await redis.delete(self._key(session_id), self._worker_key(session_id))
         await redis.zrem(self.INDEX_KEY, session_id)
         if session and session.conversation_id:
             await redis.delete(self._conversation_key(session.conversation_id))

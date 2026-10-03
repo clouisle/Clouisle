@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import re
 from pathlib import PurePosixPath
@@ -15,6 +14,9 @@ from app.services.sandbox.gateway import sandbox_gateway
 from app.services.sandbox.models import (
     SandboxArtifact,
     SandboxInputFileSpec,
+    SandboxJob,
+    SandboxJobSource,
+    SandboxResult,
     SandboxTaskStatus,
 )
 
@@ -200,12 +202,14 @@ class SkillExecutor:
 
         workspace_root = SkillExecutor.skill_workspace_root(skill)
         if session_id:
-            await SkillExecutor.stage_package_resources(
+            staging_result = await SkillExecutor.stage_package_resources(
                 skill=skill,
                 workspace_root=workspace_root,
                 tenant_id=tenant_id,
                 session_id=session_id,
             )
+            if staging_result is not None and not staging_result.success:
+                return SkillExecutor.from_sandbox_result(staging_result)
 
         return SkillExecutor.build_instruction_result(
             skill=skill,
@@ -303,29 +307,58 @@ class SkillExecutor:
         workspace_root: str,
         tenant_id: str | None,
         session_id: str,
-    ) -> None:
-        workspace = await sandbox_gateway.get_session_workspace(
-            session_id,
-            team_id=tenant_id,
-        )
-        if workspace is None:
-            return
-
-        workspace_manager = sandbox_gateway._get_workspace_manager()
-        for input_file in SkillExecutor.build_package_input_files(
+    ) -> SandboxResult | None:
+        input_files = SkillExecutor.build_package_input_files(
             skill=skill,
             workspace_root=workspace_root,
-        ):
-            target = workspace_manager.resolve_workspace_path(
-                workspace,
-                input_file.target_path,
+        )
+        if not input_files:
+            return None
+
+        job = SandboxJob(
+            tenant_id=tenant_id,
+            source=SandboxJobSource.SKILL,
+            language="python",
+        )
+        staging_root = f".skill-staging/{job.job_id}"
+        destinations = []
+        for index, input_file in enumerate(input_files):
+            staged_path = f"{staging_root}/{index}"
+            destinations.append(
+                (staged_path, input_file.target_path.removeprefix("/workspace/"))
             )
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(
-                base64.b64decode(input_file.content_base64, validate=True)
+            job.input_files.append(
+                input_file.model_copy(
+                    update={"target_path": f"/workspace/{staged_path}"}
+                )
             )
-            if input_file.mode is not None:
-                target.chmod(input_file.mode)
+        job.code = (
+            "import os\n"
+            "import shutil\n"
+            "from pathlib import Path\n"
+            f"destinations = {destinations!r}\n"
+            "root = Path.cwd().resolve()\n"
+            "try:\n"
+            "    for source, destination in destinations:\n"
+            "        target = root / destination\n"
+            "        if not target.resolve().is_relative_to(root):\n"
+            "            raise ValueError('Skill resource path escapes workspace')\n"
+            "        current = target\n"
+            "        while current != root:\n"
+            "            if current.is_symlink():\n"
+            "                raise ValueError('Skill resource path contains a symlink')\n"
+            "            current = current.parent\n"
+            "        target.parent.mkdir(parents=True, exist_ok=True)\n"
+            "        os.replace(source, target)\n"
+            "finally:\n"
+            f"    shutil.rmtree({staging_root!r})\n"
+            "return {'status': 'staged'}"
+        )
+        return await sandbox_gateway.submit_and_wait(
+            job,
+            session_id=session_id,
+            team_id=tenant_id,
+        )
 
     @staticmethod
     def from_sandbox_result(result) -> SkillExecutionResult:

@@ -17,6 +17,9 @@ from app.services.sandbox.models import (
     SandboxTaskStatus,
 )
 from app.services.sandbox.result_store import sandbox_result_store
+from app.services.sandbox.affinity import sandbox_worker_id, sandbox_worker_queue
+from app.services.sandbox.session_store import sandbox_session_store
+from app.services.sandbox.workspace import SandboxWorkspaceManager
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +44,28 @@ def _get_worker_loop() -> asyncio.AbstractEventLoop:
 @shared_task(bind=True, max_retries=0, ignore_result=True, queue="sandbox")
 def run_sandbox_job_task(self, job_payload: dict) -> dict:
     async def _run() -> dict:
-        session_id = job_payload.pop("session_id", None)
-        session_agent_id = job_payload.pop("session_agent_id", None)
-        session_team_id = job_payload.pop("session_team_id", None)
+        session_id = job_payload.get("session_id")
+        session_agent_id = job_payload.get("session_agent_id")
+        session_team_id = job_payload.get("session_team_id")
+
+        if session_id:
+            if (
+                await sandbox_gateway.get_session_workspace(
+                    session_id, agent_id=session_agent_id, team_id=session_team_id
+                )
+                is None
+            ):
+                raise ValueError("Sandbox session not found or expired")
+            owner = await sandbox_session_store.claim_worker(
+                session_id, sandbox_worker_id()
+            )
+            if owner != sandbox_worker_id():
+                self.apply_async(args=[job_payload], queue=sandbox_worker_queue(owner))
+                return {
+                    "job_id": job_payload["job_id"],
+                    "status": SandboxTaskStatus.QUEUED,
+                    "forwarded_to": owner,
+                }
 
         job = SandboxJob.model_validate(job_payload)
         manager = SandboxManager()
@@ -84,6 +106,21 @@ def run_sandbox_job_task(self, job_payload: dict) -> dict:
             )
         )
         raise
+
+
+@shared_task(bind=True, max_retries=0, ignore_result=True, queue="sandbox")
+def cleanup_sandbox_session_task(self, session_id: str) -> dict:
+    async def _run() -> dict:
+        owner = await sandbox_session_store.get_worker(session_id)
+        if owner is not None and owner != sandbox_worker_id():
+            self.apply_async(args=[session_id], queue=sandbox_worker_queue(owner))
+            return {"session_id": session_id, "forwarded_to": owner}
+        if owner is not None:
+            SandboxWorkspaceManager().cleanup_session(session_id)
+        await sandbox_session_store.delete(session_id)
+        return {"session_id": session_id, "cleaned": True}
+
+    return _get_worker_loop().run_until_complete(_run())
 
 
 @shared_task(

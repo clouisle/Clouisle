@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     SANDBOX_RUNTIME_ENABLED: bool = True
     SANDBOX_LEGACY_FALLBACK_ENABLED: bool = True
     SANDBOX_WORKSPACE_ROOT: str = "/tmp/clouisle-sandbox/jobs"
+    SANDBOX_WORKER_ID: str = ""
     SANDBOX_FILESYSTEM_ISOLATION_ENABLED: bool = False
     SANDBOX_FILESYSTEM_ISOLATION_BINARY: str = "bwrap"
     SANDBOX_MAX_DISK_MB: int = 8192

@@ -78,11 +78,12 @@ async def test_save_clamps_expired_session_ttl_and_skips_missing_conversation(
 
 
 @pytest.mark.asyncio
-async def test_get_returns_session_or_removes_missing_index_entry(store, redis):
+async def test_get_returns_session_without_discarding_expired_cleanup_entry(
+    store, redis
+):
     redis.get.return_value = None
 
     assert await store.get("missing") is None
-    redis.zrem.assert_awaited_once_with(store.INDEX_KEY, "missing")
 
     saved = SandboxSession(
         session_id="saved",
@@ -132,45 +133,6 @@ async def test_touch_updates_existing_session_and_returns_none_when_absent(store
     assert session.last_accessed_at == FROZEN_NOW
     assert session.disk_usage_bytes == 128
     store.save.assert_has_awaits([call(session), call(session)])
-
-
-@pytest.mark.asyncio
-async def test_delete_and_cleanup_remove_sessions_and_conversation_mapping(
-    store, redis
-):
-    store.get = AsyncMock(return_value=None)
-
-    await store.delete("missing")
-
-    redis.delete.assert_awaited_once_with("sandbox:session:missing")
-    redis.zrem.assert_awaited_once_with(store.INDEX_KEY, "missing")
-
-    session = SandboxSession(
-        session_id="session-1",
-        conversation_id="conversation-1",
-        expires_at=FROZEN_NOW + timedelta(hours=1),
-    )
-    store.get = AsyncMock(return_value=session)
-
-    await store.delete("session-1")
-
-    redis.delete.assert_has_awaits(
-        [
-            call("sandbox:session:missing"),
-            call("sandbox:session:session-1"),
-            call("sandbox:conversation:conversation-1"),
-        ]
-    )
-    redis.zrem.assert_has_awaits(
-        [call(store.INDEX_KEY, "missing"), call(store.INDEX_KEY, "session-1")]
-    )
-
-    store.expired_session_ids = AsyncMock(return_value=["old-1", "old-2"])
-    store.delete = AsyncMock()
-
-    assert await store.cleanup_expired(limit=3) == 2
-    store.expired_session_ids.assert_awaited_once_with(limit=3)
-    store.delete.assert_has_awaits([call("old-1"), call("old-2")])
 
 
 @pytest.mark.asyncio

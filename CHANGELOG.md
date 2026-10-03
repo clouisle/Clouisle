@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### Sandbox Sessions
+- Bound session jobs to the first sandbox worker that atomically claims them in Redis; later jobs and cleanup use its dedicated Celery queue, and misdelivered jobs are forwarded before filesystem access.
+- Moved Skill package staging to the owning sandbox worker and removed caller-side workspace existence checks. Worker replacement still requires retained local storage; automatic failover and snapshot recovery are not provided.
+
 #### Asset Access and Previews
 - Protected generated images, generated videos, and sandbox artifacts with scope-aware authorization and authenticated client downloads.
 - Preserved explicit too-large, unauthorized, permission-denied, unsupported, and parse-failure preview states without falling back to unprotected URLs.

@@ -605,10 +605,13 @@ TAVILY_API_KEY=tvly-xxxxxxxx
 | `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `false` | `true` for sandbox-worker | Launch executable payloads in a Bubblewrap mount namespace |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `bwrap` | `/usr/bin/bwrap` | Bubblewrap executable name or absolute path |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | `1` | Sandbox Celery worker concurrency |
+| `SANDBOX_WORKER_ID` | *(empty; hostname)* | Leave unset for scalable replicas | Optional worker identity; unique per independent sandbox filesystem |
 | `SANDBOX_WORKSPACE_ROOT` | `/tmp/clouisle-sandbox/jobs` | Same | Root directory for job and session workspaces |
 | `SANDBOX_MAX_DISK_MB` | `8192` | Same | Maximum workspace disk limit accepted by policy |
 | `SANDBOX_SESSION_TTL_HOURS` | `24` | Same | Session lifetime before cleanup |
 | `SANDBOX_RESULT_TTL_SECONDS` | `86400` | Same | Redis result retention period |
+
+Sandbox workers consume both the shared `sandbox` queue and their dedicated affinity queue. A session's first job atomically claims a worker; subsequent jobs remain on that worker. Stateless tasks continue to use the shared queue. Identity defaults to `socket.gethostname()` (the container/pod hostname in deployments). Never assign the same explicit `SANDBOX_WORKER_ID` to replicas with independent local disks. Use a stable ID across replacement only when retaining the same persistent sandbox disk; the supplied ephemeral workspace configuration does not recover sessions after replacement. If the owner is absent, session jobs wait or hit the existing timeout, with no automatic rebinding or failover. Local-dev Docker startup forwards this variable, but uses a temporary container without a persistent workspace mount.
 
 The generic application default leaves filesystem isolation disabled so unsupported host development environments can still start. The supplied sandbox-worker Docker image, Docker Compose service, and Helm deployment enable it explicitly:
 

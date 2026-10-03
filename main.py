@@ -46,6 +46,7 @@ SANDBOX_WORKER_ENV_KEYS = (
     "INTERNAL_API_TOKEN",
     "SANDBOX_LEGACY_FALLBACK_ENABLED",
     "SANDBOX_WORKSPACE_ROOT",
+    "SANDBOX_WORKER_ID",
     "SANDBOX_MAX_DISK_MB",
     "SANDBOX_SESSION_TTL_HOURS",
     "SANDBOX_SESSION_CLEANUP_BATCH_SIZE",
@@ -148,11 +149,19 @@ def start_worker(
 
 def start_sandbox_worker(concurrency: int = 1):
     """Start the dedicated sandbox worker."""
+    from app.services.sandbox.affinity import (
+        sandbox_worker_id,
+        sandbox_worker_queue,
+    )
+
+    worker_id = sandbox_worker_id()
+    dedicated_queue = sandbox_worker_queue(worker_id)
+    queues = f"sandbox,{dedicated_queue}"
     os.chdir(BACKEND_DIR)
     pool = "solo" if concurrency == 1 else None
 
     print(
-        f"🔧 Starting Celery worker (concurrency={concurrency}, queues=sandbox, pool={pool or 'prefork'})"
+        f"🔧 Starting Celery worker (concurrency={concurrency}, queues={queues}, pool={pool or 'prefork'})"
     )
     cmd = [
         os.path.join(BACKEND_DIR, ".venv", "bin", "python"),
@@ -163,7 +172,8 @@ def start_sandbox_worker(concurrency: int = 1):
         "worker",
         "--loglevel=info",
         f"--concurrency={concurrency}",
-        "--queues=sandbox",
+        f"--queues={queues}",
+        f"--hostname={dedicated_queue}-{os.getpid()}@%h",
     ]
     if pool:
         cmd.append(f"--pool={pool}")

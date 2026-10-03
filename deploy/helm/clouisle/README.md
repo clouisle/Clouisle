@@ -101,6 +101,8 @@ Existing PostgreSQL 16 volumes cannot be mounted directly by PostgreSQL 17. Migr
 
 Local upload storage needs a `ReadWriteMany` capable StorageClass, such as NFS, EFS, or CephFS, only when scaling `api` beyond one replica. With `ReadWriteOnce`, keep `api` at one replica; workers remain independently scalable.
 
+Sandbox sessions are bound to the worker that claims their first job. `python main.py sandbox-worker` consumes the shared `sandbox` queue and that worker's dedicated affinity queue; stateless jobs still use the shared queue. Identity defaults to the pod hostname, giving replicas distinct identities. Do not set one shared `SANDBOX_WORKER_ID` through `extraEnv` for scalable replicas: independent local filesystems require unique IDs. A stable explicit ID is safe only with the same retained persistent sandbox disk. This chart does not persist sandbox workspaces, so pod replacement does not recover existing sessions. An absent owner causes jobs to wait or reach the existing timeout; there is no automatic rebinding or failover. Scale-out serves new sessions, not relocation of existing ones.
+
 ## Beat Replica Safety
 
 `beat.replicas` must remain `1`. The chart fails rendering if this value is changed to avoid duplicate scheduled tasks.

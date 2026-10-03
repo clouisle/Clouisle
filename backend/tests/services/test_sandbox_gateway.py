@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -346,59 +346,6 @@ class TestSandboxGateway:
             await gateway.get_session_workspace("session-1", team_id="team-2") is None
         )
 
-    async def test_get_session_workspace_deletes_missing_workspace(self, monkeypatch):
-        store = SimpleNamespace(
-            get=AsyncMock(return_value=SimpleNamespace(agent_id=None, team_id=None)),
-            delete=AsyncMock(),
-        )
-        manager = MagicMock()
-        manager.get_session_root.return_value.exists.return_value = False
-        monkeypatch.setattr("app.services.sandbox.gateway.sandbox_session_store", store)
-        monkeypatch.setattr(SandboxGateway, "_workspace_manager", manager)
-
-        assert await SandboxGateway().get_session_workspace("session-1") is None
-        store.delete.assert_awaited_once_with("session-1")
-
-    async def test_get_session_workspace_prepares_and_touches(self, monkeypatch):
-        store = SimpleNamespace(
-            get=AsyncMock(return_value=SimpleNamespace(agent_id=None, team_id=None)),
-            touch=AsyncMock(),
-        )
-        workspace = object()
-        manager = MagicMock()
-        manager.get_session_root.return_value.exists.return_value = True
-        manager.prepare_session.return_value = workspace
-        manager.workspace_size_bytes.return_value = 42
-        monkeypatch.setattr("app.services.sandbox.gateway.sandbox_session_store", store)
-        monkeypatch.setattr(SandboxGateway, "_workspace_manager", manager)
-
-        assert await SandboxGateway().get_session_workspace("session-1") is workspace
-        store.touch.assert_awaited_once_with("session-1", disk_usage_bytes=42)
-
-    async def test_cleanup_session_and_expired_sessions(self, monkeypatch):
-        store = SimpleNamespace(
-            delete=AsyncMock(),
-            expired_session_ids=AsyncMock(return_value=["expired-1", "expired-2"]),
-        )
-        manager = MagicMock()
-        monkeypatch.setattr("app.services.sandbox.gateway.sandbox_session_store", store)
-        monkeypatch.setattr(SandboxGateway, "_workspace_manager", manager)
-        gateway = SandboxGateway()
-
-        await gateway.cleanup_session("session-1")
-        assert await gateway.cleanup_expired_sessions() == 2
-
-        assert manager.cleanup_session.call_args_list == [
-            (("session-1",),),
-            (("expired-1",),),
-            (("expired-2",),),
-        ]
-        assert store.delete.await_args_list == [
-            (("session-1",),),
-            (("expired-1",),),
-            (("expired-2",),),
-        ]
-
     async def test_submit_rejects_invalid_session_before_queueing(self, monkeypatch):
         gateway = SandboxGateway()
         monkeypatch.setattr(
@@ -414,41 +361,6 @@ class TestSandboxGateway:
             await gateway.submit(SandboxJob(command=["python3"]), session_id="missing")
 
         create_result.assert_not_awaited()
-
-    async def test_submit_queues_session_job(self, monkeypatch):
-        gateway = SandboxGateway()
-        monkeypatch.setattr(
-            gateway, "get_session_workspace", AsyncMock(return_value=object())
-        )
-        create_result = AsyncMock()
-        delay = MagicMock()
-        monkeypatch.setattr(
-            "app.services.sandbox.gateway.sandbox_result_store.create_queued_result",
-            create_result,
-        )
-        monkeypatch.setattr("app.tasks.sandbox.run_sandbox_job_task.delay", delay)
-        job = SandboxJob(command=["python3"])
-
-        assert (
-            await gateway.submit(
-                job,
-                session_id="session-1",
-                agent_id="agent-1",
-                team_id="team-1",
-            )
-            == job.job_id
-        )
-
-        create_result.assert_awaited_once()
-        assert (
-            delay.call_args.args[0]
-            | {
-                "session_id": "session-1",
-                "session_agent_id": "agent-1",
-                "session_team_id": "team-1",
-            }
-            == delay.call_args.args[0]
-        )
 
     async def test_submit_and_wait_uses_explicit_timeout(self, monkeypatch):
         gateway = SandboxGateway()

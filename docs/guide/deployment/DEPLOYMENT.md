@@ -78,6 +78,8 @@ The backend image is shared across three services, and sandbox execution uses a 
 
 > **Important**: The beat service must always run exactly 1 replica. Running multiple beat instances will cause duplicate scheduled tasks.
 
+Sandbox workers consume `sandbox` and their own dedicated affinity queue. The first session job claims a worker; subsequent jobs stay there, while stateless tasks still use the shared queue. Identity defaults to the host/container hostname. Each independent local filesystem must have a unique identity: do not configure one shared `SANDBOX_WORKER_ID` for scalable replicas. Reuse a stable explicit ID only with the same retained persistent sandbox disk. The supplied ephemeral sandbox workspaces are not recovered on replacement. An absent owner leaves jobs waiting or reaching the existing timeout, with no automatic rebinding or failover; scaling serves new sessions, not migration of existing sessions.
+
 ---
 
 ## Prerequisites

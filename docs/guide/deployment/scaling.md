@@ -658,7 +658,7 @@ celery_app.conf.task_routes = {
 
 # The supplied worker service consumes all four main queues:
 #   python main.py worker -c 4 -Q default,agent,knowledge,workflow
-# The sandbox-worker service consumes only the sandbox queue:
+# The sandbox-worker service consumes sandbox plus its own affinity queue:
 #   python main.py sandbox-worker -c ${SANDBOX_WORKER_CONCURRENCY:-1}
 ```
 
@@ -674,7 +674,7 @@ docker compose up -d --scale worker=3 --scale sandbox-worker=2
 
 For Docker Swarm, use a separate stack file with `deploy.replicas` and deploy it with `docker stack deploy`; ordinary `docker compose up` ignores those Swarm keys.
 
-Knowledge-base, agent, and workflow tasks use the `knowledge`, `agent`, and `workflow` queues on the worker service; sandbox jobs use the separate `sandbox-worker` queue. Scale the corresponding service when queue lag appears.
+Knowledge-base, agent, and workflow tasks use the `knowledge`, `agent`, and `workflow` queues on the worker service. Stateless sandbox jobs use the shared `sandbox` queue; session jobs use their owner's dedicated queue after the first job claims that worker. Scale the corresponding service when queue lag appears. Sandbox identity defaults to the worker hostname: keep identities unique per independent local filesystem and do not assign one shared `SANDBOX_WORKER_ID` to replicas. Reuse a stable ID only when retaining the same persistent sandbox disk. Scaling does not migrate sessions; when an owner is absent, its jobs wait or reach the existing timeout without automatic rebinding or failover. Ephemeral container/pod replacement loses that owner's local session workspace.
 
 ## Vector Database Scaling
 

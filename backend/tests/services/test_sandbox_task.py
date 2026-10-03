@@ -83,33 +83,6 @@ def test_run_sandbox_job_task_marks_result_failed_on_exception():
     assert kwargs["error"] == "boom"
 
 
-def test_run_sandbox_job_task_forwards_and_removes_session_context():
-    payload = {
-        "job_id": "job-session",
-        "source": "debug",
-        "command": ["python3", "-c", "print('ok')"],
-        "session_id": "session-123",
-        "session_agent_id": "agent-123",
-        "session_team_id": "team-123",
-    }
-    manager = DummyManager()
-
-    with patch("app.tasks.sandbox.SandboxManager", return_value=manager):
-        run_sandbox_job_task.run(payload)
-
-    assert payload == {
-        "job_id": "job-session",
-        "source": "debug",
-        "command": ["python3", "-c", "print('ok')"],
-    }
-    _, kwargs = manager.execute_args
-    assert kwargs == {
-        "session_id": "session-123",
-        "session_agent_id": "agent-123",
-        "session_team_id": "team-123",
-    }
-
-
 def test_cleanup_expired_sandbox_sessions_task_returns_cleaned_count():
     with patch(
         "app.tasks.sandbox.sandbox_gateway.cleanup_expired_sessions",
