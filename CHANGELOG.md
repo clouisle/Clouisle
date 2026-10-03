@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Sandbox Sessions
 - Bound session jobs to the first sandbox worker that atomically claims them in Redis; later jobs and cleanup use its dedicated Celery queue, and misdelivered jobs are forwarded before filesystem access.
 - Checkpointed AgentRun sandbox workspaces at round boundaries on their owning worker, evicting idle runtime directories and restoring them for the next task. Recovery after worker replacement requires retaining both local workspace and checkpoint storage; there is no cross-worker replication or automatic rebinding.
+- Used the platform's `ELOOP` errno constant when rejecting symlinked workspace paths.
 
 #### Asset Access and Previews
 - Protected generated images, generated videos, and sandbox artifacts with scope-aware authorization and authenticated client downloads.

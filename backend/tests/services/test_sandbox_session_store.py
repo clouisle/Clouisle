@@ -120,3 +120,91 @@ async def test_expired_session_ids_uses_explicit_limit(store, redis):
 def test_redis_text_decodes_bytes_and_passes_strings():
     assert session_store._redis_text(b"session-id") == "session-id"
     assert session_store._redis_text("session-id") == "session-id"
+
+
+@pytest.mark.asyncio
+async def test_begin_round_requires_live_session_and_finish_is_compare_and_delete(
+    store, redis
+):
+    session = SandboxSession(
+        session_id="active",
+        expires_at=FROZEN_NOW + timedelta(hours=1),
+    )
+    store.get = AsyncMock(side_effect=[None, session, session])
+    store.save = AsyncMock()
+
+    with pytest.raises(ValueError, match="not found or expired"):
+        await store.begin_round("missing", "round-1", 0.1)
+    redis.setex.assert_not_awaited()
+
+    await store.begin_round("active", "round-1", 0.1)
+    redis.setex.assert_awaited_once_with("sandbox:session-round:active", 1, "round-1")
+    store.save.assert_awaited_once_with(session)
+
+    redis.eval.side_effect = [0, 1]
+    assert await store.finish_round("active", "stale-round") is False
+    assert await store.finish_round("active", "round-1") is True
+
+
+@pytest.mark.asyncio
+async def test_worker_claim_rejects_missing_session_and_decodes_owner(store, redis):
+    redis.eval.side_effect = [None, b"worker-a"]
+
+    with pytest.raises(ValueError, match="not found or expired"):
+        await store.claim_worker("expired", "worker-b")
+
+    assert await store.claim_worker("active", "worker-a") == "worker-a"
+
+
+@pytest.mark.asyncio
+async def test_conversation_mapping_is_created_and_removed_only_when_present(
+    store, redis
+):
+    session = SandboxSession(
+        session_id="conversation-session",
+        conversation_id="conversation-1",
+        expires_at=FROZEN_NOW + timedelta(hours=1),
+    )
+    session_without_conversation = SandboxSession(
+        session_id="standalone",
+        expires_at=FROZEN_NOW + timedelta(hours=1),
+    )
+    await store.save(session_without_conversation)
+    assert not any(
+        "sandbox:conversation:" in call.args[0] for call in redis.setex.await_args_list
+    )
+
+    await store.save(session)
+    redis.setex.assert_any_await(
+        "sandbox:conversation:conversation-1",
+        int(timedelta(hours=1).total_seconds()),
+        "conversation-session",
+    )
+
+    store.get = AsyncMock(return_value=session)
+    await store.delete(session.session_id)
+    assert any(
+        call.args == ("sandbox:conversation:conversation-1",)
+        for call in redis.delete.await_args_list
+    )
+
+    redis.delete.reset_mock()
+    store.get.return_value = session_without_conversation
+    await store.delete(session_without_conversation.session_id)
+    assert len(redis.delete.await_args_list) == 1
+    assert all(
+        not any("sandbox:conversation:" in key for key in call.args)
+        for call in redis.delete.await_args_list
+    )
+
+
+@pytest.mark.asyncio
+async def test_expired_cleanup_handles_empty_and_populated_batches(store):
+    store.expired_session_ids = AsyncMock(side_effect=[[], ["expired"]])
+    store.delete = AsyncMock()
+
+    assert await store.cleanup_expired(limit=2) == 0
+    store.delete.assert_not_awaited()
+
+    assert await store.cleanup_expired(limit=2) == 1
+    store.delete.assert_awaited_once_with("expired")

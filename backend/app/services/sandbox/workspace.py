@@ -237,7 +237,7 @@ class SandboxWorkspaceManager:
                     fd = os.open(current, os.O_RDONLY | os.O_NOFOLLOW)
                     os.close(fd)
                 except OSError as e:
-                    if e.errno == 40:  # ELOOP
+                    if e.errno == errno.ELOOP:
                         raise ValueError(f"Path contains symlink: {current}") from e
             current = current.parent
 

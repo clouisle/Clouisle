@@ -24,6 +24,14 @@ class Sessions:
         self.active_rounds = {}
         self.workspace_rounds = {}
         self.evicted = set()
+        self.idle_sessions = []
+        self.expired_sessions = []
+
+    async def idle_session_ids(self, cutoff):
+        return list(self.idle_sessions)
+
+    async def expired_session_ids(self):
+        return list(self.expired_sessions)
 
     async def create(self, session_id, **kwargs):
         self.sessions[session_id] = SandboxSession(
@@ -95,6 +103,10 @@ class Results:
 
     async def update_status(self, job_id, status, **kwargs):
         self.results[job_id] = SandboxResult(job_id=job_id, status=status, **kwargs)
+
+    async def get_status(self, job_id):
+        result = self.results.get(job_id)
+        return result.status if result is not None else None
 
 
 @pytest.fixture
@@ -306,3 +318,366 @@ def test_failed_checkpoint_preserves_data_and_next_round_uses_committed_state(
     assert results.results[read.job_id].result == "committed"
     assert not (live / "escape").exists()
     assert outside.read_text() == "untouched"
+
+
+def test_checkpoint_forwarded_to_owner_commits_the_owner_workspace(
+    runtime, tmp_path, monkeypatch
+):
+    from app.services.sandbox.workspace import SandboxWorkspaceManager
+
+    loop, sessions, results, _messages = runtime
+    session_id = "checkpoint-affinity"
+    loop.run_until_complete(sessions.create(session_id))
+    select_worker("a", tmp_path / "a", monkeypatch)
+    loop.run_until_complete(sessions.begin_round(session_id, "round-a", 3600))
+    job = SandboxJob(
+        language="python",
+        code="from pathlib import Path\nPath('proof').write_text('owner-a')\nreturn 1",
+    )
+    tasks.run_sandbox_job_task.run(
+        job.model_dump(mode="json") | {"session_id": session_id}
+    )
+    owner_workspace = SandboxWorkspaceManager().get_session_root(session_id)
+    dispatched = []
+    monkeypatch.setattr(
+        tasks.checkpoint_sandbox_session_task,
+        "apply_async",
+        lambda args, queue: dispatched.append((queue, args)),
+    )
+
+    select_worker("b", tmp_path / "b", monkeypatch)
+    forwarded = tasks.checkpoint_sandbox_session_task.run(
+        session_id, "checkpoint-affinity-job", "round-a"
+    )
+    assert forwarded == {"job_id": "checkpoint-affinity-job", "forwarded_to": "a"}
+    assert not (tmp_path / "b").exists()
+
+    queue, args = dispatched.pop()
+    assert queue == sandbox_worker_queue("a")
+    select_worker("a", tmp_path / "a", monkeypatch)
+    completed = tasks.checkpoint_sandbox_session_task.run(*args)
+
+    assert completed == {"job_id": "checkpoint-affinity-job", "checkpointed": True}
+    assert results.results["checkpoint-affinity-job"].success
+    assert SandboxWorkspaceManager().checkpoints.checkpoint_path(session_id).is_file()
+    assert (owner_workspace / "proof").read_text() == "owner-a"
+    assert loop.run_until_complete(sessions.get_active_round(session_id)) is None
+
+
+def test_checkpoint_failure_does_not_clear_a_newer_round(
+    runtime, tmp_path, monkeypatch
+):
+    loop, sessions, results, _messages = runtime
+    session_id = "stale-checkpoint"
+    loop.run_until_complete(sessions.create(session_id))
+    sessions.owners[session_id] = "a"
+    sessions.active_rounds[session_id] = "new-round"
+    select_worker("a", tmp_path / "a", monkeypatch)
+
+    with pytest.raises(ValueError, match="superseded round"):
+        tasks.checkpoint_sandbox_session_task.run(
+            session_id, "old-checkpoint", "old-round"
+        )
+
+    assert results.results["old-checkpoint"].status == SandboxTaskStatus.FAILED
+    assert sessions.active_rounds[session_id] == "new-round"
+    assert not (tmp_path / "a" / "checkpoints" / f"{session_id}.tar").exists()
+
+
+def test_cleanup_preserves_active_and_refreshed_sessions_then_deletes_expired(
+    runtime, tmp_path, monkeypatch
+):
+    loop, sessions, _results, _messages = runtime
+    session_id = "cleanup-retention"
+    loop.run_until_complete(sessions.create(session_id))
+    sessions.owners[session_id] = "a"
+    select_worker("a", tmp_path / "a", monkeypatch)
+    root = tmp_path / "a" / "sessions" / session_id
+    root.mkdir(parents=True)
+    proof = root / "proof"
+    proof.write_text("retain while active")
+
+    sessions.active_rounds[session_id] = "running"
+    assert tasks.cleanup_sandbox_session_task.run(session_id, True) == {
+        "session_id": session_id,
+        "skipped": "active_round",
+    }
+    assert proof.read_text() == "retain while active"
+
+    sessions.active_rounds.pop(session_id)
+    assert tasks.cleanup_sandbox_session_task.run(session_id, True) == {
+        "session_id": session_id,
+        "skipped": "retention_refreshed",
+    }
+    assert proof.read_text() == "retain while active"
+    assert tasks.cleanup_sandbox_session_task.run(session_id) == {
+        "session_id": session_id,
+        "cleaned": True,
+    }
+    assert not root.exists()
+    assert session_id not in sessions.sessions
+
+
+def test_cleanup_without_owner_only_removes_session_metadata(
+    runtime, tmp_path, monkeypatch
+):
+    loop, sessions, _results, _messages = runtime
+    session_id = "owner-lost"
+    loop.run_until_complete(sessions.create(session_id))
+    select_worker("b", tmp_path / "b", monkeypatch)
+    unowned_data = tmp_path / "b" / "sessions" / session_id / "proof"
+    unowned_data.parent.mkdir(parents=True)
+    unowned_data.write_text("do not guess workspace ownership")
+
+    assert tasks.cleanup_sandbox_session_task.run(session_id) == {
+        "session_id": session_id,
+        "cleaned": True,
+    }
+
+    assert session_id not in sessions.sessions
+    assert unowned_data.read_text() == "do not guess workspace ownership"
+
+
+def test_eviction_restores_last_checkpoint_before_removing_interrupted_workspace(
+    runtime, tmp_path, monkeypatch
+):
+    from app.services.sandbox.workspace import SandboxWorkspaceManager
+
+    loop, sessions, _results, _messages = runtime
+    session_id = "evict-interrupted"
+    loop.run_until_complete(sessions.create(session_id))
+    select_worker("a", tmp_path / "a", monkeypatch)
+    loop.run_until_complete(sessions.begin_round(session_id, "committed", 3600))
+    write = SandboxJob(
+        language="python",
+        code="from pathlib import Path\nPath('proof').write_text('committed')\nreturn 1",
+    )
+    tasks.run_sandbox_job_task.run(
+        write.model_dump(mode="json") | {"session_id": session_id}
+    )
+    tasks.checkpoint_sandbox_session_task.run(session_id, "commit", "committed")
+    workspace = SandboxWorkspaceManager()
+    live = workspace.get_session_root(session_id)
+    (live / "proof").write_text("interrupted")
+    sessions.workspace_rounds[session_id] = "interrupted"
+    sessions.sessions[session_id].last_accessed_at = datetime.now(UTC) - timedelta(
+        hours=1
+    )
+
+    result = tasks.evict_sandbox_session_task.run(
+        session_id, datetime.now(UTC).timestamp()
+    )
+
+    assert result == {"session_id": session_id, "evicted": True}
+    assert not live.exists()
+    assert sessions.evicted == {session_id}
+    restored = workspace.restore_session(session_id, allow_empty=False)
+    assert (restored.root / "proof").read_text() == "committed"
+
+
+def test_checkpoint_task_rejects_missing_owner_and_expired_session(
+    runtime, tmp_path, monkeypatch
+):
+    loop, sessions, results, _messages = runtime
+    loop.run_until_complete(sessions.create("ownerless-checkpoint"))
+    select_worker("worker-a", tmp_path / "worker-a", monkeypatch)
+
+    with pytest.raises(ValueError, match="no owning worker"):
+        tasks.checkpoint_sandbox_session_task.run(
+            "ownerless-checkpoint", "ownerless-job", "round-1"
+        )
+    assert results.results["ownerless-job"].status == SandboxTaskStatus.FAILED
+
+    loop.run_until_complete(sessions.create("expired-checkpoint"))
+    sessions.owners["expired-checkpoint"] = "worker-a"
+    sessions.sessions.pop("expired-checkpoint")
+    with pytest.raises(ValueError, match="not found or expired"):
+        tasks.checkpoint_sandbox_session_task.run(
+            "expired-checkpoint", "expired-job", "round-1"
+        )
+    assert results.results["expired-job"].status == SandboxTaskStatus.FAILED
+
+
+def test_gateway_without_owner_releases_round_without_checkpoint(runtime):
+    loop, sessions, results, _messages = runtime
+    session_id = "unused-sandbox-round"
+    loop.run_until_complete(sessions.create(session_id))
+    sessions.active_rounds[session_id] = "round-1"
+    api = gateway.SandboxGateway()
+
+    loop.run_until_complete(api.finish_round(session_id, "round-1"))
+
+    assert loop.run_until_complete(sessions.get_active_round(session_id)) is None
+    assert results.results == {}
+
+
+def test_gateway_session_workspace_rejects_a_different_user(runtime):
+    loop, sessions, _results, _messages = runtime
+    session_id = "user-owned-session"
+    loop.run_until_complete(
+        sessions.create(session_id, user_id="user-a", team_id="team-a")
+    )
+
+    workspace = loop.run_until_complete(
+        gateway.SandboxGateway().get_session_workspace(session_id, user_id="user-b")
+    )
+
+    assert workspace is None
+
+
+def test_gateway_cleanup_retains_live_unowned_sessions_and_routes_expired_owned_ones(
+    runtime, monkeypatch
+):
+    loop, sessions, _results, _messages = runtime
+    api = gateway.SandboxGateway()
+    loop.run_until_complete(sessions.create("unowned-cleanup"))
+
+    loop.run_until_complete(api.cleanup_session("unowned-cleanup", expired_only=True))
+    assert "unowned-cleanup" in sessions.sessions
+    loop.run_until_complete(api.cleanup_session("unowned-cleanup"))
+    assert "unowned-cleanup" not in sessions.sessions
+
+    loop.run_until_complete(sessions.create("owned-expired"))
+    sessions.owners["owned-expired"] = "worker-a"
+    sessions.expired_sessions = ["owned-expired"]
+    dispatched = []
+    monkeypatch.setattr(
+        tasks.cleanup_sandbox_session_task,
+        "apply_async",
+        lambda args, queue: dispatched.append((queue, args)),
+    )
+    assert loop.run_until_complete(api.cleanup_expired_sessions()) == 1
+    assert dispatched == [(sandbox_worker_queue("worker-a"), ["owned-expired", True])]
+    sessions.expired_sessions = []
+    assert loop.run_until_complete(api.cleanup_expired_sessions()) == 0
+
+    loop.run_until_complete(sessions.create("unowned-round"))
+    sessions.active_rounds["unowned-round"] = "round-1"
+    loop.run_until_complete(api.finish_round("unowned-round", "round-1"))
+    assert loop.run_until_complete(sessions.get_active_round("unowned-round")) is None
+
+    loop.run_until_complete(sessions.create("private-user", user_id="user-a"))
+    assert (
+        loop.run_until_complete(
+            api.get_session_workspace("private-user", user_id="user-b")
+        )
+        is None
+    )
+
+
+def test_gateway_idle_eviction_skips_active_and_lost_sessions_and_targets_owner(
+    runtime, tmp_path, monkeypatch
+):
+    loop, sessions, _results, _messages = runtime
+    api = gateway.SandboxGateway()
+    for session_id in ("busy", "owner-lost", "owned-idle"):
+        loop.run_until_complete(sessions.create(session_id))
+        sessions.sessions[session_id].last_accessed_at = datetime.now(UTC) - timedelta(
+            hours=2
+        )
+    sessions.owners.update({"busy": "worker-a", "owned-idle": "worker-a"})
+    sessions.active_rounds["busy"] = "active"
+    sessions.idle_sessions = ["busy", "owner-lost", "owned-idle"]
+    dispatched = []
+    monkeypatch.setattr(
+        tasks.evict_sandbox_session_task,
+        "apply_async",
+        lambda args, queue: dispatched.append((queue, args)),
+    )
+
+    assert loop.run_until_complete(api.evict_idle_sessions()) == 1
+    assert sessions.evicted == {"owner-lost"}
+    assert len(dispatched) == 1
+    queue, args = dispatched.pop()
+    assert queue == sandbox_worker_queue("worker-a")
+    assert args[0] == "owned-idle"
+
+    select_worker("other-worker", tmp_path / "other", monkeypatch)
+    forwarded = tasks.evict_sandbox_session_task.run(*args)
+    assert forwarded == {"session_id": "owned-idle", "forwarded_to": "worker-a"}
+    queue, owner_args = dispatched.pop()
+    assert queue == sandbox_worker_queue("worker-a")
+    select_worker("worker-a", tmp_path / "worker-a", monkeypatch)
+    owner_lost = tasks.evict_sandbox_session_task.run(
+        "owner-lost", datetime.now(UTC).timestamp()
+    )
+    assert owner_lost == {"session_id": "owner-lost", "evicted": False}
+
+    sessions.sessions["owned-idle"].last_accessed_at = datetime.now(UTC)
+    not_idle = tasks.evict_sandbox_session_task.run(*owner_args)
+    assert not_idle == {"session_id": "owned-idle", "skipped": "not_idle"}
+    sessions.sessions["owned-idle"].last_accessed_at = datetime.now(UTC) - timedelta(
+        hours=2
+    )
+    evicted = tasks.evict_sandbox_session_task.run(*owner_args)
+    assert evicted == {"session_id": "owned-idle", "evicted": False}
+    assert sessions.evicted == {"owner-lost", "owned-idle"}
+
+
+@pytest.mark.parametrize("unsafe_workspace", [False, True])
+def test_gateway_finish_round_waits_for_owner_checkpoint_and_propagates_failure(
+    runtime, tmp_path, monkeypatch, unsafe_workspace
+):
+    import threading
+
+    from app.services.sandbox.workspace import SandboxWorkspaceManager
+
+    loop, sessions, results, _messages = runtime
+    session_id = "gateway-round-unsafe" if unsafe_workspace else "gateway-round"
+    loop.run_until_complete(sessions.create(session_id))
+    sessions.owners[session_id] = "worker-a"
+    sessions.active_rounds[session_id] = "round-1"
+    select_worker("worker-a", tmp_path / "worker-a", monkeypatch)
+    workspace = SandboxWorkspaceManager().prepare_session(session_id)
+    (workspace.root / "proof").write_text("checkpoint at round end")
+    outside = tmp_path / "outside-workspace"
+    if unsafe_workspace:
+        outside.write_text("must remain untouched")
+        (workspace.root / "escape").symlink_to(outside)
+
+    dispatches = []
+    worker_errors = []
+
+    def dispatch(args, queue):
+        dispatches.append((queue, args))
+
+        def execute():
+            worker_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(worker_loop)
+            monkeypatch.setattr(tasks, "_get_worker_loop", lambda: worker_loop)
+            try:
+                tasks.checkpoint_sandbox_session_task.run(*args)
+            except Exception as error:
+                worker_errors.append(error)
+            finally:
+                worker_loop.close()
+                asyncio.set_event_loop(None)
+
+        worker = threading.Thread(target=execute)
+        worker.start()
+        worker.join(timeout=10)
+        assert not worker.is_alive()
+
+    monkeypatch.setattr(tasks.checkpoint_sandbox_session_task, "apply_async", dispatch)
+    api = gateway.SandboxGateway()
+
+    if unsafe_workspace:
+        with pytest.raises(RuntimeError):
+            loop.run_until_complete(api.finish_round(session_id, "round-1"))
+        assert results.results[dispatches[0][1][1]].status == SandboxTaskStatus.FAILED
+        assert worker_errors
+        assert (
+            loop.run_until_complete(sessions.get_active_round(session_id)) == "round-1"
+        )
+        assert outside.read_text() == "must remain untouched"
+    else:
+        loop.run_until_complete(api.finish_round(session_id, "round-1"))
+        job_id = dispatches[0][1][1]
+        assert results.results[job_id].success
+        assert not worker_errors
+        assert loop.run_until_complete(sessions.get_active_round(session_id)) is None
+        assert (
+            SandboxWorkspaceManager().checkpoints.checkpoint_path(session_id).is_file()
+        )
+
+    assert dispatches[0][0] == sandbox_worker_queue("worker-a")
