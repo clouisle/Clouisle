@@ -29,10 +29,10 @@ from .models import (
 )
 from .node_env import NodeEnvironmentManager
 from .policies import sandbox_policy_engine
-from .process_launcher import SandboxProcessLauncher
+from .process_launcher import SandboxProcessLauncher, _session_lock_fd
 from .python_env import PythonEnvironmentManager
 from .result_store import sandbox_result_store
-from .session_store import sandbox_session_store
+from .session_store import STANDALONE_ROUND, sandbox_session_store
 from .workspace import SandboxWorkspace, SandboxWorkspaceManager
 
 BLOCKED_ENV = frozenset(
@@ -96,6 +96,28 @@ class SandboxManager:
         session_agent_id: str | None = None,
         session_team_id: str | None = None,
     ):
+        if session_id:
+            async with self.workspace_manager.session_lock(session_id) as lock_fd:
+                token = _session_lock_fd.set(lock_fd)
+                try:
+                    return await self._execute(
+                        job,
+                        session_id=session_id,
+                        session_agent_id=session_agent_id,
+                        session_team_id=session_team_id,
+                    )
+                finally:
+                    _session_lock_fd.reset(token)
+        return await self._execute(job)
+
+    async def _execute(
+        self,
+        job: SandboxJob,
+        session_id: str | None = None,
+        *,
+        session_agent_id: str | None = None,
+        session_team_id: str | None = None,
+    ):
         sandbox_policy_engine.validate(job)
         metadata = await self._load_or_create_metadata(job.job_id)
         now = datetime.now(UTC)
@@ -126,7 +148,17 @@ class SandboxManager:
             conversation_id = self._optional_uuid(
                 getattr(session, "conversation_id", None)
             )
-            workspace = self.workspace_manager.prepare_session(session_id)
+            round_id = (
+                await sandbox_session_store.get_active_round(session_id)
+                or STANDALONE_ROUND
+            )
+            previous_round = await sandbox_session_store.get_workspace_round(session_id)
+            workspace = self.workspace_manager.restore_session(
+                session_id,
+                allow_empty=session.disk_usage_bytes == 0,
+                force=previous_round is not None and previous_round != round_id,
+            )
+            await sandbox_session_store.mark_workspace_round(session_id, round_id)
             should_cleanup = False
         else:
             workspace = self.workspace_manager.prepare(job.job_id)

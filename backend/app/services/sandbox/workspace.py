@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
+import errno
+import fcntl
 import os
 import shutil
+import stat
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.config import settings
+from app.services.sandbox.checkpoint import (
+    WorkspaceCheckpointStore,
+    fsync_directory,
+    remove_session_temporary_trees,
+    remove_workspace_tree,
+    validate_session_id,
+)
 
 
 @dataclass
@@ -20,9 +32,27 @@ class SandboxWorkspace:
 
 
 class SandboxWorkspaceManager:
-    def __init__(self, root: str | None = None):
+    def __init__(self, root: str | None = None, *, checkpoint_root: str | None = None):
         self.root = Path(root or settings.SANDBOX_WORKSPACE_ROOT)
         self.sessions_root = self.root / "sessions"
+        self.checkpoint_root = Path(
+            checkpoint_root
+            or getattr(settings, "SANDBOX_CHECKPOINT_ROOT", "")
+            or self.root.parent / "checkpoints"
+        )
+        self.locks_root = self.root.parent / "session-locks"
+        runtime = self.root.resolve()
+        for external in (self.checkpoint_root, self.locks_root):
+            resolved = external.resolve()
+            if resolved == runtime or runtime in resolved.parents:
+                raise ValueError(
+                    "Sandbox checkpoints and locks must be outside the runtime root"
+                )
+        self.checkpoints = WorkspaceCheckpointStore(
+            self.checkpoint_root,
+            runtime_cache_root=self.cache_root,
+            runtime_python_paths=tuple(settings.SANDBOX_DEFAULT_PYTHON_BINARIES),
+        )
 
     @property
     def cache_root(self) -> Path:
@@ -32,31 +62,128 @@ class SandboxWorkspaceManager:
         return self.root / job_id
 
     def get_session_root(self, session_id: str) -> Path:
-        """获取会话工作空间根目录"""
+        """Return a confined session path without creating a workspace."""
+        validate_session_id(session_id)
         return self.sessions_root / session_id
 
-    def prepare_session(self, session_id: str) -> SandboxWorkspace:
-        """创建或复用会话工作空间"""
-        root = self.get_session_root(session_id)
-        input_dir = root / "input"
-        output_dir = root / "output"
-        tmp_dir = root / "tmp"
-        logs_dir = root / "logs"
+    @asynccontextmanager
+    async def session_lock(self, session_id: str):
+        """Serialize local lifecycle operations without blocking the event loop."""
+        validate_session_id(session_id)
+        self.locks_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if self.locks_root.is_symlink():
+            raise ValueError("Sandbox lock root must not be a symlink")
+        fd = os.open(
+            self.locks_root / f"{session_id}.lock",
+            os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK,
+            0o600,
+        )
+        acquired = False
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise ValueError("Sandbox session lock must be a regular file")
+            while not acquired:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    acquired = True
+                except OSError as exc:
+                    if exc.errno not in (errno.EACCES, errno.EAGAIN):
+                        raise
+                    await asyncio.sleep(0.05)
+            yield fd
+        finally:
+            try:
+                if acquired:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+            finally:
+                os.close(fd)
+        # Never unlink: other processes may still be waiting on this inode.
 
-        for path in (root, input_dir, output_dir, tmp_dir, logs_dir):
-            path.mkdir(parents=True, exist_ok=True)
-
+    @staticmethod
+    def _workspace(root: Path) -> SandboxWorkspace:
         return SandboxWorkspace(
             root=root,
-            input_dir=input_dir,
-            output_dir=output_dir,
-            tmp_dir=tmp_dir,
-            logs_dir=logs_dir,
+            input_dir=root / "input",
+            output_dir=root / "output",
+            tmp_dir=root / "tmp",
+            logs_dir=root / "logs",
         )
 
+    @staticmethod
+    def _disk_limit_bytes() -> int:
+        limit = settings.SANDBOX_MAX_DISK_MB * 1024 * 1024
+        if limit < 0:
+            raise ValueError("Sandbox disk limit must not be negative")
+        return limit
+
+    def prepare_session(self, session_id: str) -> SandboxWorkspace:
+        """Initialize a first-use workspace; lifecycle callers hold session_lock."""
+        root = self.get_session_root(session_id)
+        if root.is_symlink() or self.sessions_root.is_symlink():
+            raise ValueError("Sandbox session root must not be a symlink")
+        workspace = self._workspace(root)
+        for path in (
+            root,
+            workspace.input_dir,
+            workspace.output_dir,
+            workspace.tmp_dir,
+            workspace.logs_dir,
+        ):
+            path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        return workspace
+
+    def save_checkpoint(self, session_id: str) -> bool:
+        """Save existing runtime data, never creating a missing workspace."""
+        if self.sessions_root.is_symlink():
+            raise ValueError("Sandbox sessions root must not be a symlink")
+        return self.checkpoints.save(
+            session_id,
+            self.get_session_root(session_id),
+            max_bytes=self._disk_limit_bytes(),
+        )
+
+    def restore_session(
+        self, session_id: str, *, allow_empty: bool = True, force: bool = False
+    ) -> SandboxWorkspace:
+        """Reuse live data, restore a checkpoint, or initialize genuine first use."""
+        root = self.get_session_root(session_id)
+        if self.sessions_root.is_symlink():
+            raise ValueError("Sandbox sessions root must not be a symlink")
+        if not force and (root.exists() or root.is_symlink()):
+            if root.is_symlink() or not root.is_dir():
+                raise ValueError("Sandbox session root must be a directory")
+            return self._workspace(root)
+        if self.checkpoints.restore(
+            session_id, root, max_bytes=self._disk_limit_bytes(), force=force
+        ):
+            return self._workspace(root)
+        if force or not allow_empty:
+            raise FileNotFoundError(
+                f"Sandbox workspace and checkpoint are missing: {session_id}"
+            )
+        return self.prepare_session(session_id)
+
+    def evict_session(self, session_id: str) -> bool:
+        """Remove runtime data only after its complete checkpoint is durable."""
+        if not self.save_checkpoint(session_id):
+            return False
+        self.cleanup_session(session_id)
+        return True
+
+    def delete_session(self, session_id: str) -> None:
+        """Permanently delete both saved and live data under session_lock."""
+        self.checkpoints.delete(session_id)
+        self.cleanup_session(session_id)
+        remove_session_temporary_trees(session_id, self.sessions_root)
+
     def cleanup_session(self, session_id: str) -> None:
-        """清理会话工作空间"""
-        shutil.rmtree(self.get_session_root(session_id), ignore_errors=True)
+        """Internal runtime-only removal; checkpoint deletion is explicit."""
+        if self.sessions_root.is_symlink():
+            raise ValueError("Sandbox sessions root must not be a symlink")
+        root = self.get_session_root(session_id)
+        if root.exists() or root.is_symlink():
+            remove_workspace_tree(root)
+            fsync_directory(self.sessions_root)
 
     def prepare(self, job_id: str) -> SandboxWorkspace:
         root = self.job_root(job_id)

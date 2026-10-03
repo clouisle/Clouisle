@@ -116,6 +116,9 @@ class Settings(BaseSettings):
     SANDBOX_LEGACY_FALLBACK_ENABLED: bool = True
     SANDBOX_WORKSPACE_ROOT: str = "/tmp/clouisle-sandbox/jobs"
     SANDBOX_WORKER_ID: str = ""
+    SANDBOX_CHECKPOINT_ROOT: str = ""
+    SANDBOX_WORKSPACE_IDLE_SECONDS: int = Field(default=900, gt=0)
+    SANDBOX_CHECKPOINT_TIMEOUT_SECONDS: int = Field(default=120, gt=0)
     SANDBOX_FILESYSTEM_ISOLATION_ENABLED: bool = False
     SANDBOX_FILESYSTEM_ISOLATION_BINARY: str = "bwrap"
     SANDBOX_MAX_DISK_MB: int = 8192

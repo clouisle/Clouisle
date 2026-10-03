@@ -128,9 +128,13 @@ async def test_execute_skill_stages_and_replaces_resources_on_worker(
                 team_id=team_id,
                 user_id=None,
                 conversation_id=None,
+                disk_usage_bytes=0,
             )
         ),
         touch=AsyncMock(),
+        get_active_round=AsyncMock(return_value=None),
+        get_workspace_round=AsyncMock(return_value=None),
+        mark_workspace_round=AsyncMock(),
     )
     monkeypatch.setattr(
         "app.services.sandbox.manager.sandbox_session_store", session_store

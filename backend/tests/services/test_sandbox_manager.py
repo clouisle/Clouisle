@@ -613,9 +613,14 @@ class TestSandboxManager:
         )
         store = SimpleNamespace(
             get=AsyncMock(
-                return_value=SimpleNamespace(agent_id=None, team_id=None, user_id=None)
+                return_value=SimpleNamespace(
+                    agent_id=None, team_id=None, user_id=None, disk_usage_bytes=0
+                )
             ),
             touch=AsyncMock(),
+            get_active_round=AsyncMock(return_value=None),
+            get_workspace_round=AsyncMock(return_value=None),
+            mark_workspace_round=AsyncMock(),
         )
         cleanup = MagicMock(wraps=workspace_manager.cleanup)
         monkeypatch.setattr("app.services.sandbox.manager.sandbox_session_store", store)
@@ -668,9 +673,13 @@ class TestSandboxManager:
                     team_id=str(team_id),
                     user_id=str(user_id),
                     conversation_id=str(conversation_id),
+                    disk_usage_bytes=0,
                 )
             ),
             touch=AsyncMock(),
+            get_active_round=AsyncMock(return_value=None),
+            get_workspace_round=AsyncMock(return_value=None),
+            mark_workspace_round=AsyncMock(),
         )
         register = AsyncMock(return_value=SimpleNamespace(id=artifact_id))
         get_or_create_ref = AsyncMock(return_value=SimpleNamespace(ref="a1b2"))

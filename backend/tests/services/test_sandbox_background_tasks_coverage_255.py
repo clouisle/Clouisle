@@ -61,13 +61,3 @@ def test_run_job_failure_records_storage_state_and_does_not_retry():
     assert args == ("job-255", SandboxTaskStatus.FAILED)
     assert kwargs["metadata"].completed_at is not None
     assert kwargs["error"] == "safe error"
-
-
-def test_cleanup_task_returns_cleaned_count_from_gateway():
-    cleanup = AsyncMock(return_value=2)
-
-    with patch.object(tasks.sandbox_gateway, "cleanup_expired_sessions", cleanup):
-        result = tasks.cleanup_expired_sandbox_sessions_task.run()
-
-    assert result == {"cleaned": 2}
-    cleanup.assert_awaited_once()

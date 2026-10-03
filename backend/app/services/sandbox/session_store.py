@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from math import ceil
 from typing import cast
 
 from app.core.config import settings
@@ -10,6 +11,8 @@ from app.core.redis import get_redis
 from app.core.timezone import now
 
 from .models import SandboxSession
+
+STANDALONE_ROUND = "standalone"
 
 
 def _ttl_seconds(ttl_hours: int | None = None) -> int:
@@ -28,6 +31,74 @@ class SandboxSessionStore:
     CONVERSATION_KEY_PREFIX = "sandbox:conversation:"
     INDEX_KEY = "sandbox:sessions"
     WORKER_KEY_PREFIX = "sandbox:session-worker:"
+    IDLE_INDEX_KEY = "sandbox:session-idle"
+
+    def _active_round_key(self, session_id: str) -> str:
+        return f"sandbox:session-round:{session_id}"
+
+    def _workspace_round_key(self, session_id: str) -> str:
+        return f"sandbox:workspace-round:{session_id}"
+
+    async def get_workspace_round(self, session_id: str) -> str | None:
+        redis = await get_redis()
+        token = await redis.get(self._workspace_round_key(session_id))
+        return _redis_text(token) if token is not None else None
+
+    async def mark_workspace_round(self, session_id: str, round_id: str) -> None:
+        redis = await get_redis()
+        await redis.set(self._workspace_round_key(session_id), round_id)
+
+    async def clear_workspace_round(self, session_id: str) -> None:
+        redis = await get_redis()
+        await redis.delete(self._workspace_round_key(session_id))
+
+    async def begin_round(
+        self, session_id: str, round_id: str, ttl_seconds: float
+    ) -> None:
+        if await self.get(session_id) is None:
+            raise ValueError("Sandbox session not found or expired")
+        redis = await get_redis()
+        await redis.setex(
+            self._active_round_key(session_id), max(1, ceil(ttl_seconds)), round_id
+        )
+        await self.touch(session_id)
+
+    async def get_active_round(self, session_id: str) -> str | None:
+        redis = await get_redis()
+        token = await redis.get(self._active_round_key(session_id))
+        return _redis_text(token) if token is not None else None
+
+    async def finish_round(self, session_id: str, round_id: str) -> bool:
+        redis = await get_redis()
+        return bool(
+            await redis.eval(
+                """
+            if redis.call('GET', KEYS[1]) == ARGV[1] then
+                redis.call('DEL', KEYS[1])
+                return 1
+            end
+            return 0
+            """,
+                1,
+                self._active_round_key(session_id),
+                round_id,
+            )
+        )
+
+    async def idle_session_ids(self, cutoff: float) -> list[str]:
+        redis = await get_redis()
+        session_ids = await redis.zrangebyscore(
+            self.IDLE_INDEX_KEY,
+            min="-inf",
+            max=cutoff,
+            start=0,
+            num=settings.SANDBOX_SESSION_CLEANUP_BATCH_SIZE,
+        )
+        return [_redis_text(session_id) for session_id in session_ids]
+
+    async def mark_evicted(self, session_id: str) -> None:
+        redis = await get_redis()
+        await redis.zrem(self.IDLE_INDEX_KEY, session_id)
 
     def _worker_key(self, session_id: str) -> str:
         return f"{self.WORKER_KEY_PREFIX}{session_id}"
@@ -82,6 +153,7 @@ class SandboxSessionStore:
             created_at=created_at,
             expires_at=expires_at,
             last_accessed_at=created_at,
+            ttl_seconds=_ttl_seconds(ttl_hours),
         )
         await self.save(session, ttl_seconds=_ttl_seconds(ttl_hours))
         return session
@@ -94,6 +166,10 @@ class SandboxSessionStore:
         await redis.setex(self._key(session.session_id), ttl, session.model_dump_json())
         await redis.zadd(
             self.INDEX_KEY, {session.session_id: session.expires_at.timestamp()}
+        )
+        await redis.zadd(
+            self.IDLE_INDEX_KEY,
+            {session.session_id: session.last_accessed_at.timestamp()},
         )
         if session.conversation_id:
             await redis.setex(
@@ -127,6 +203,9 @@ class SandboxSessionStore:
         if session is None:
             return None
         session.last_accessed_at = now()
+        session.expires_at = session.last_accessed_at + timedelta(
+            seconds=session.ttl_seconds
+        )
         if disk_usage_bytes is not None:
             session.disk_usage_bytes = disk_usage_bytes
         await self.save(session)
@@ -135,8 +214,14 @@ class SandboxSessionStore:
     async def delete(self, session_id: str) -> None:
         redis = await get_redis()
         session = await self.get(session_id)
-        await redis.delete(self._key(session_id), self._worker_key(session_id))
+        await redis.delete(
+            self._key(session_id),
+            self._worker_key(session_id),
+            self._active_round_key(session_id),
+            self._workspace_round_key(session_id),
+        )
         await redis.zrem(self.INDEX_KEY, session_id)
+        await redis.zrem(self.IDLE_INDEX_KEY, session_id)
         if session and session.conversation_id:
             await redis.delete(self._conversation_key(session.conversation_id))
 

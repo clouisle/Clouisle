@@ -607,11 +607,16 @@ TAVILY_API_KEY=tvly-xxxxxxxx
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | `1` | Sandbox Celery worker concurrency |
 | `SANDBOX_WORKER_ID` | *(empty; hostname)* | Leave unset for scalable replicas | Optional worker identity; unique per independent sandbox filesystem |
 | `SANDBOX_WORKSPACE_ROOT` | `/tmp/clouisle-sandbox/jobs` | Same | Root directory for job and session workspaces |
+| `SANDBOX_CHECKPOINT_ROOT` | Empty | Empty | Local full-tree checkpoints; defaults to a `checkpoints` sibling of `SANDBOX_WORKSPACE_ROOT` |
+| `SANDBOX_WORKSPACE_IDLE_SECONDS` | `900` | `900` | Idle time before an inactive session workspace is checkpointed and evicted |
+| `SANDBOX_CHECKPOINT_TIMEOUT_SECONDS` | `120` | `120` | Maximum wait for an owning worker to acknowledge a round checkpoint |
 | `SANDBOX_MAX_DISK_MB` | `8192` | Same | Maximum workspace disk limit accepted by policy |
 | `SANDBOX_SESSION_TTL_HOURS` | `24` | Same | Session lifetime before cleanup |
 | `SANDBOX_RESULT_TTL_SECONDS` | `86400` | Same | Redis result retention period |
 
 Sandbox workers consume both the shared `sandbox` queue and their dedicated affinity queue. A session's first job atomically claims a worker; subsequent jobs remain on that worker. Stateless tasks continue to use the shared queue. Identity defaults to `socket.gethostname()` (the container/pod hostname in deployments). Never assign the same explicit `SANDBOX_WORKER_ID` to replicas with independent local disks. Use a stable ID across replacement only when retaining the same persistent sandbox disk; the supplied ephemeral workspace configuration does not recover sessions after replacement. If the owner is absent, session jobs wait or hit the existing timeout, with no automatic rebinding or failover. Local-dev Docker startup forwards this variable, but uses a temporary container without a persistent workspace mount.
+
+AgentRun sessions checkpoint their complete local workspace at every round boundary before the run is marked successful, waiting, or stopped. Idle runtime directories are removed after checkpointing and restored on the next task routed to the same worker. Checkpoints are local, not replicated: persist both `SANDBOX_WORKSPACE_ROOT` and `SANDBOX_CHECKPOINT_ROOT` and keep `SANDBOX_WORKER_ID` tied to that storage to recover after replacement. Lost worker-local checkpoints cannot restore a session. TTL cleanup removes session data when the owning worker can process the cleanup task.
 
 The generic application default leaves filesystem isolation disabled so unsupported host development environments can still start. The supplied sandbox-worker Docker image, Docker Compose service, and Helm deployment enable it explicitly:
 

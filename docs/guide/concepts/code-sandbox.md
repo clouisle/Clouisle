@@ -77,9 +77,14 @@ Chat uploads, generated media, and collected sandbox artifacts are durable `Asse
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `bwrap` | `/usr/bin/bwrap` | Bubblewrap executable name or absolute path |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | `1` | Number of concurrent sandbox worker slots |
 | `SANDBOX_WORKSPACE_ROOT` | `/tmp/clouisle-sandbox/jobs` | Same | Host-side root for job and session directories |
+| `SANDBOX_CHECKPOINT_ROOT` | Empty | Empty | Local full-tree checkpoints; defaults to a `checkpoints` sibling of `SANDBOX_WORKSPACE_ROOT` |
+| `SANDBOX_WORKSPACE_IDLE_SECONDS` | `900` | `900` | Idle time before an inactive session workspace is evicted to its checkpoint |
+| `SANDBOX_CHECKPOINT_TIMEOUT_SECONDS` | `120` | `120` | Maximum wait for an owning worker to acknowledge a round checkpoint |
 | `SANDBOX_MAX_DISK_MB` | `8192` | Same | Maximum requested workspace disk limit |
 | `SANDBOX_SESSION_TTL_HOURS` | `24` | Same | Session lifetime before cleanup |
 | `SANDBOX_RESULT_TTL_SECONDS` | `86400` | Same | Result retention period |
+
+AgentRun round boundaries are checkpointed on the session's owning sandbox worker before the run becomes completed, waiting for a user answer, or stopped. Inactive workspaces are evicted after the idle interval and restored on the next job; checkpoints and live workspaces are local to that worker. To recover across worker replacement, persist both roots and keep the worker identity tied to the same storage. A worker replacement that loses its local checkpoint cannot restore the session. Session TTL cleanup permanently deletes session data when its owning worker can process the cleanup task.
 
 The sandbox-worker image installs Bubblewrap and enables isolation. When isolation is enabled, a missing binary or missing workspace root fails the task instead of falling back to direct execution. Caller-side fallback is a separate switch: with `SANDBOX_LEGACY_FALLBACK_ENABLED` enabled (the default), a failed sandbox runtime task falls back to the in-process legacy runner; set it to `false` to return the failure instead.
 

@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from unittest.mock import AsyncMock, Mock
 from pathlib import Path
 
@@ -153,3 +154,62 @@ async def test_terminate_process_group_escalates_after_graceful_timeout(
 
     assert [call.args for call in killpg.call_args_list] == [(42, 15), (42, 9)]
     process.wait.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_cancellation_stops_writer_before_returning(tmp_path):
+    ready = tmp_path / "ready"
+    late_write = tmp_path / "late-write"
+    code = (
+        "import time\nfrom pathlib import Path\n"
+        f"Path({str(ready)!r}).write_text('ready')\n"
+        "time.sleep(0.5)\n"
+        f"Path({str(late_write)!r}).write_text('unsafe')\n"
+    )
+    launcher = SandboxProcessLauncher(filesystem_isolation_enabled=False)
+    task = asyncio.create_task(launcher.launch([sys.executable, "-c", code]))
+    try:
+        async with asyncio.timeout(5):
+            while not ready.exists():
+                await asyncio.sleep(0.01)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await asyncio.sleep(0.6)
+        assert not late_write.exists()
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_session_tool_cannot_leave_background_writer(tmp_path):
+    from app.services.sandbox.process_launcher import _session_lock_fd
+
+    ready = tmp_path / "ready"
+    late_write = tmp_path / "late-write"
+    child = (
+        "import time\nfrom pathlib import Path\n"
+        f"Path({str(ready)!r}).write_text('ready')\n"
+        "time.sleep(0.5)\n"
+        f"Path({str(late_write)!r}).write_text('unsafe')\n"
+    )
+    parent = (
+        "import subprocess,sys,time\nfrom pathlib import Path\n"
+        f"subprocess.Popen([sys.executable, '-c', {child!r}], "
+        "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+        f"while not Path({str(ready)!r}).exists(): time.sleep(0.01)\n"
+        "print('tool finished')\n"
+    )
+    with (tmp_path / "lease").open("w") as lease:
+        token = _session_lock_fd.set(lease.fileno())
+        try:
+            result = await SandboxProcessLauncher(
+                filesystem_isolation_enabled=False
+            ).launch([sys.executable, "-c", parent])
+        finally:
+            _session_lock_fd.reset(token)
+    assert result.stdout.strip() == "tool finished"
+    await asyncio.sleep(0.6)
+    assert not late_write.exists()

@@ -6,8 +6,13 @@ import asyncio
 import os
 import shutil
 import signal
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
+
+_session_lock_fd: ContextVar[int | None] = ContextVar(
+    "sandbox_session_lock_fd", default=None
+)
 
 
 @dataclass
@@ -73,6 +78,13 @@ class SandboxProcessLauncher:
                 cache_root=cache_root,
             )
 
+        lock_fd = _session_lock_fd.get()
+        # The isolated payload must not receive a host lock descriptor.
+        inherited = (
+            {"pass_fds": (lock_fd,)}
+            if lock_fd is not None and not self.filesystem_isolation_enabled
+            else {}
+        )
         process = await asyncio.create_subprocess_exec(
             *launch_command,
             cwd=launch_cwd,
@@ -80,6 +92,7 @@ class SandboxProcessLauncher:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
+            **inherited,
         )
 
         try:
@@ -87,6 +100,9 @@ class SandboxProcessLauncher:
                 process.communicate(),
                 timeout=timeout_seconds,
             )
+            if lock_fd is not None:
+                # A completed tool cannot leave background writers in the workspace.
+                self._kill_remaining_process_group(process)
             return ProcessLaunchResult(
                 exit_code=process.returncode or 0,
                 stdout=self._truncate_output(stdout, max_stdout_kb),
@@ -99,6 +115,9 @@ class SandboxProcessLauncher:
                 stderr=f"Execution timeout ({timeout_seconds}s)",
                 timed_out=True,
             )
+        except asyncio.CancelledError:
+            await self._terminate_process_group(process)
+            raise
 
     def _isolated_launch(
         self,
@@ -224,11 +243,18 @@ class SandboxProcessLauncher:
         try:
             await asyncio.wait_for(process.wait(), timeout=2.0)
         except asyncio.TimeoutError:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                return
-            await process.wait()
+            pass
+        finally:
+            self._kill_remaining_process_group(process)
+        await process.wait()
+
+    def _kill_remaining_process_group(
+        self, process: asyncio.subprocess.Process
+    ) -> None:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
     def _truncate_output(self, payload: bytes, max_kb: int) -> str:
         text = payload.decode("utf-8", errors="replace")

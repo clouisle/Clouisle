@@ -66,9 +66,14 @@ Agent 可以通过函数调用触发代码工具。LLM 根据任务需要决定�
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `bwrap` | `/usr/bin/bwrap` | Bubblewrap 命令名或绝对路径 |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | `1` | Sandbox Worker 并发槽位数 |
 | `SANDBOX_WORKSPACE_ROOT` | `/tmp/clouisle-sandbox/jobs` | 相同 | 任务和会话目录在 Worker 上的根路径 |
+| `SANDBOX_CHECKPOINT_ROOT` | 空 | 空 | 本地完整工作区检查点；默认位于 `SANDBOX_WORKSPACE_ROOT` 的同级 `checkpoints` 目录 |
+| `SANDBOX_WORKSPACE_IDLE_SECONDS` | `900` | `900` | 不活跃会话工作区被释放到检查点前的空闲时长 |
+| `SANDBOX_CHECKPOINT_TIMEOUT_SECONDS` | `120` | `120` | 等待所属 Worker 确认轮次检查点的最长时间 |
 | `SANDBOX_MAX_DISK_MB` | `8192` | 相同 | 允许请求的最大工作空间磁盘限制 |
 | `SANDBOX_SESSION_TTL_HOURS` | `24` | 相同 | 会话过期清理时间 |
 | `SANDBOX_RESULT_TTL_SECONDS` | `86400` | 相同 | 结果保留时间 |
+
+AgentRun 每轮结束时，系统会先在会话所属的 Sandbox Worker 上保存检查点，再将运行标记为完成、等待用户回答或停止。空闲工作区会在达到阈值后被释放，并在下次任务到来时恢复；检查点和运行目录都保存在该 Worker 本地。若要在 Worker 替换后恢复，必须持久化这两个目录，并确保 Worker 身份继续对应同一份存储。若替换 Worker 时本地检查点丢失，会话无法恢复。所属 Worker 能处理清理任务时，会话 TTL 清理会永久删除会话数据。
 
 Sandbox Worker 镜像会安装 Bubblewrap 并启用隔离。启用隔离后，如果找不到 `bwrap` 或任务没有工作空间根目录，任务会直接失败，不会降级为未隔离执行。调用侧的降级是另一个开关：`SANDBOX_LEGACY_FALLBACK_ENABLED` 默认开启，沙箱运行时任务失败时会降级为进程内的 legacy runner 执行；设为 `false` 则直接返回失败。
 

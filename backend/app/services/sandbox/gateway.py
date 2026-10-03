@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from app.core.i18n import t
+from app.core.config import settings
 
 from .models import (
     SandboxExecutionMetadata,
@@ -94,22 +95,70 @@ class SandboxGateway:
             logs_dir=root / "logs",
         )
 
-    async def cleanup_session(self, session_id: str) -> None:
+    async def cleanup_session(
+        self, session_id: str, *, expired_only: bool = False
+    ) -> None:
         from app.tasks.sandbox import cleanup_sandbox_session_task
 
         worker = await sandbox_session_store.get_worker(session_id)
         if worker is None:
+            if expired_only and await sandbox_session_store.get(session_id) is not None:
+                return
             await sandbox_session_store.delete(session_id)
             return
         cleanup_sandbox_session_task.apply_async(
-            args=[session_id], queue=sandbox_worker_queue(worker)
+            args=[session_id, expired_only], queue=sandbox_worker_queue(worker)
         )
 
     async def cleanup_expired_sessions(self) -> int:
         session_ids = await sandbox_session_store.expired_session_ids()
         for session_id in session_ids:
-            await self.cleanup_session(session_id)
+            await self.cleanup_session(session_id, expired_only=True)
         return len(session_ids)
+
+    async def begin_round(
+        self, session_id: str, round_id: str, *, ttl_seconds: float
+    ) -> None:
+        await sandbox_session_store.begin_round(session_id, round_id, ttl_seconds)
+
+    async def finish_round(self, session_id: str, round_id: str) -> None:
+        from app.tasks.sandbox import checkpoint_sandbox_session_task
+
+        worker = await sandbox_session_store.get_worker(session_id)
+        if worker is None:
+            await sandbox_session_store.finish_round(session_id, round_id)
+            return
+        job_id = str(uuid4())
+        await sandbox_result_store.create_queued_result(
+            job_id, metadata=SandboxExecutionMetadata(queued_at=datetime.now(UTC))
+        )
+        checkpoint_sandbox_session_task.apply_async(
+            args=[session_id, job_id, round_id], queue=sandbox_worker_queue(worker)
+        )
+        result = await self.await_result(
+            job_id, timeout_seconds=settings.SANDBOX_CHECKPOINT_TIMEOUT_SECONDS
+        )
+        if not result.success:
+            raise RuntimeError(result.error or "Sandbox checkpoint could not be saved")
+
+    async def evict_idle_sessions(self) -> int:
+        from app.tasks.sandbox import evict_sandbox_session_task
+
+        cutoff = datetime.now(UTC).timestamp() - settings.SANDBOX_WORKSPACE_IDLE_SECONDS
+        session_ids = await sandbox_session_store.idle_session_ids(cutoff)
+        scheduled = 0
+        for session_id in session_ids:
+            if await sandbox_session_store.get_active_round(session_id) is not None:
+                continue
+            worker = await sandbox_session_store.get_worker(session_id)
+            if worker is None:
+                await sandbox_session_store.mark_evicted(session_id)
+                continue
+            evict_sandbox_session_task.apply_async(
+                args=[session_id, cutoff], queue=sandbox_worker_queue(worker)
+            )
+            scheduled += 1
+        return scheduled
 
     async def submit(
         self,

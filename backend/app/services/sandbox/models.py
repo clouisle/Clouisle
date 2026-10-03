@@ -377,5 +377,8 @@ class SandboxSession(BaseModel):
     user_id: str | None = None
     created_at: datetime = Field(default_factory=datetime.now)
     expires_at: datetime
+    ttl_seconds: int = Field(
+        default_factory=lambda: settings.SANDBOX_SESSION_TTL_HOURS * 3600, gt=0
+    )
     disk_usage_bytes: int = 0
     last_accessed_at: datetime = Field(default_factory=datetime.now)

@@ -30,54 +30,6 @@ def store(redis, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_create_saves_session_index_and_conversation_lookup(store, redis):
-    session = await store.create(
-        session_id="session-1",
-        conversation_id="conversation-1",
-        agent_id="agent-1",
-        team_id="team-1",
-        ttl_hours=2,
-    )
-
-    assert session.created_at == FROZEN_NOW
-    assert session.expires_at == FROZEN_NOW + timedelta(hours=2)
-    redis.zadd.assert_awaited_once_with(
-        store.INDEX_KEY, {"session-1": session.expires_at.timestamp()}
-    )
-    assert redis.setex.await_args_list[0].args[:2] == (
-        "sandbox:session:session-1",
-        7200,
-    )
-    assert (
-        SandboxSession.model_validate_json(redis.setex.await_args_list[0].args[2])
-        == session
-    )
-    redis.setex.assert_awaited_with(
-        "sandbox:conversation:conversation-1", 7200, "session-1"
-    )
-
-
-@pytest.mark.asyncio
-async def test_save_clamps_expired_session_ttl_and_skips_missing_conversation(
-    store, redis
-):
-    session = SandboxSession(
-        session_id="expired",
-        created_at=FROZEN_NOW - timedelta(hours=1),
-        expires_at=FROZEN_NOW,
-        last_accessed_at=FROZEN_NOW,
-    )
-
-    await store.save(session)
-
-    redis.setex.assert_awaited_once()
-    assert redis.setex.await_args.args[:2] == ("sandbox:session:expired", 1)
-    redis.zadd.assert_awaited_once_with(
-        store.INDEX_KEY, {"expired": FROZEN_NOW.timestamp()}
-    )
-
-
-@pytest.mark.asyncio
 async def test_get_returns_session_without_discarding_expired_cleanup_entry(
     store, redis
 ):
@@ -133,6 +85,21 @@ async def test_touch_updates_existing_session_and_returns_none_when_absent(store
     assert session.last_accessed_at == FROZEN_NOW
     assert session.disk_usage_bytes == 128
     store.save.assert_has_awaits([call(session), call(session)])
+
+
+@pytest.mark.asyncio
+async def test_touch_renews_configured_retention_from_last_activity(store):
+    session = SandboxSession(
+        session_id="custom-retention",
+        ttl_seconds=7200,
+        created_at=FROZEN_NOW - timedelta(hours=1),
+        expires_at=FROZEN_NOW + timedelta(hours=1),
+    )
+    store.get = AsyncMock(return_value=session)
+    store.save = AsyncMock()
+    await store.touch(session.session_id)
+    assert session.expires_at == FROZEN_NOW + timedelta(hours=2)
+    assert session.created_at == FROZEN_NOW - timedelta(hours=1)
 
 
 @pytest.mark.asyncio

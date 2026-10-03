@@ -14,11 +14,12 @@ from app.services.sandbox.gateway import sandbox_gateway
 from app.services.sandbox.models import (
     SandboxExecutionMetadata,
     SandboxJob,
+    SandboxResult,
     SandboxTaskStatus,
 )
 from app.services.sandbox.result_store import sandbox_result_store
 from app.services.sandbox.affinity import sandbox_worker_id, sandbox_worker_queue
-from app.services.sandbox.session_store import sandbox_session_store
+from app.services.sandbox.session_store import STANDALONE_ROUND, sandbox_session_store
 from app.services.sandbox.workspace import SandboxWorkspaceManager
 
 logger = logging.getLogger(__name__)
@@ -109,16 +110,123 @@ def run_sandbox_job_task(self, job_payload: dict) -> dict:
 
 
 @shared_task(bind=True, max_retries=0, ignore_result=True, queue="sandbox")
-def cleanup_sandbox_session_task(self, session_id: str) -> dict:
+def cleanup_sandbox_session_task(
+    self, session_id: str, expired_only: bool = False
+) -> dict:
     async def _run() -> dict:
         owner = await sandbox_session_store.get_worker(session_id)
         if owner is not None and owner != sandbox_worker_id():
-            self.apply_async(args=[session_id], queue=sandbox_worker_queue(owner))
+            self.apply_async(
+                args=[session_id, expired_only], queue=sandbox_worker_queue(owner)
+            )
             return {"session_id": session_id, "forwarded_to": owner}
-        if owner is not None:
-            SandboxWorkspaceManager().cleanup_session(session_id)
-        await sandbox_session_store.delete(session_id)
+        workspace_manager = SandboxWorkspaceManager()
+        async with workspace_manager.session_lock(session_id):
+            if await sandbox_session_store.get_active_round(session_id) is not None:
+                return {"session_id": session_id, "skipped": "active_round"}
+            if expired_only and await sandbox_session_store.get(session_id) is not None:
+                return {"session_id": session_id, "skipped": "retention_refreshed"}
+            if owner is not None:
+                workspace_manager.delete_session(session_id)
+            await sandbox_session_store.delete(session_id)
         return {"session_id": session_id, "cleaned": True}
+
+    return _get_worker_loop().run_until_complete(_run())
+
+
+@shared_task(bind=True, max_retries=0, ignore_result=True, queue="sandbox")
+def checkpoint_sandbox_session_task(
+    self, session_id: str, job_id: str, round_id: str
+) -> dict:
+    async def _run() -> dict:
+        metadata = SandboxExecutionMetadata(queued_at=datetime.now(UTC))
+        metadata.mark_started(datetime.now(UTC))
+        try:
+            owner = await sandbox_session_store.get_worker(session_id)
+            if owner is None:
+                raise ValueError("Sandbox session has no owning worker")
+            if owner != sandbox_worker_id():
+                self.apply_async(
+                    args=[session_id, job_id, round_id],
+                    queue=sandbox_worker_queue(owner),
+                )
+                return {"job_id": job_id, "forwarded_to": owner}
+            workspace_manager = SandboxWorkspaceManager()
+            async with workspace_manager.session_lock(session_id):
+                session = await sandbox_session_store.get(session_id)
+                if session is None:
+                    raise ValueError("Sandbox session not found or expired")
+                active_round = await sandbox_session_store.get_active_round(session_id)
+                if active_round is not None and active_round != round_id:
+                    raise ValueError("Sandbox checkpoint belongs to a superseded round")
+                previous_round = await sandbox_session_store.get_workspace_round(
+                    session_id
+                )
+                interrupted = previous_round is not None and previous_round not in (
+                    round_id,
+                    STANDALONE_ROUND,
+                )
+                if interrupted or session.disk_usage_bytes > 0:
+                    workspace_manager.restore_session(
+                        session_id, allow_empty=False, force=interrupted
+                    )
+                saved = workspace_manager.save_checkpoint(session_id)
+                await sandbox_session_store.clear_workspace_round(session_id)
+                await sandbox_session_store.touch(session_id)
+                await sandbox_session_store.finish_round(session_id, round_id)
+                metadata.mark_completed(datetime.now(UTC))
+                await sandbox_result_store.save_result(
+                    SandboxResult(
+                        job_id=job_id,
+                        status=SandboxTaskStatus.COMPLETED,
+                        success=True,
+                        result={"checkpointed": saved},
+                        metadata=metadata,
+                    )
+                )
+                return {"job_id": job_id, "checkpointed": saved}
+        except Exception as exc:
+            metadata.mark_completed(datetime.now(UTC))
+            await sandbox_result_store.update_status(
+                job_id,
+                SandboxTaskStatus.FAILED,
+                metadata=metadata,
+                success=False,
+                error=str(exc),
+            )
+            raise
+
+    return _get_worker_loop().run_until_complete(_run())
+
+
+@shared_task(bind=True, max_retries=0, ignore_result=True, queue="sandbox")
+def evict_sandbox_session_task(self, session_id: str, cutoff: float) -> dict:
+    async def _run() -> dict:
+        owner = await sandbox_session_store.get_worker(session_id)
+        if owner is None:
+            await sandbox_session_store.mark_evicted(session_id)
+            return {"session_id": session_id, "evicted": False}
+        if owner != sandbox_worker_id():
+            self.apply_async(
+                args=[session_id, cutoff], queue=sandbox_worker_queue(owner)
+            )
+            return {"session_id": session_id, "forwarded_to": owner}
+        workspace_manager = SandboxWorkspaceManager()
+        async with workspace_manager.session_lock(session_id):
+            session = await sandbox_session_store.get(session_id)
+            if session is None or session.last_accessed_at.timestamp() > cutoff:
+                return {"session_id": session_id, "skipped": "not_idle"}
+            if await sandbox_session_store.get_active_round(session_id) is not None:
+                return {"session_id": session_id, "skipped": "active_round"}
+            previous_round = await sandbox_session_store.get_workspace_round(session_id)
+            if previous_round is not None and previous_round != STANDALONE_ROUND:
+                workspace_manager.restore_session(
+                    session_id, allow_empty=False, force=True
+                )
+            evicted = workspace_manager.evict_session(session_id)
+            await sandbox_session_store.clear_workspace_round(session_id)
+            await sandbox_session_store.mark_evicted(session_id)
+            return {"session_id": session_id, "evicted": evicted}
 
     return _get_worker_loop().run_until_complete(_run())
 
@@ -129,7 +237,8 @@ def cleanup_sandbox_session_task(self, session_id: str) -> dict:
 def cleanup_expired_sandbox_sessions_task() -> dict:
     async def _run() -> dict:
         cleaned = await sandbox_gateway.cleanup_expired_sessions()
-        return {"cleaned": cleaned}
+        evicted = await sandbox_gateway.evict_idle_sessions()
+        return {"cleaned": cleaned, "eviction_scheduled": evicted}
 
     loop = _get_worker_loop()
     try:

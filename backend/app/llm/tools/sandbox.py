@@ -331,6 +331,11 @@ async def execute_code(
     Returns:
         执行结果
     """
+    allow_legacy_fallback = (
+        session_id is None and settings.SANDBOX_LEGACY_FALLBACK_ENABLED
+    )
+    if session_id is not None and not settings.SANDBOX_RUNTIME_ENABLED:
+        return ExecutionResult(success=False, error=t("tool_execution_failed"))
     if settings.SANDBOX_RUNTIME_ENABLED:
         job = compile_legacy_code_job(
             language=language,
@@ -355,7 +360,7 @@ async def execute_code(
                     stdout=runtime_result.stdout,
                     stderr=runtime_result.stderr,
                 )
-            if not settings.SANDBOX_LEGACY_FALLBACK_ENABLED:
+            if not allow_legacy_fallback:
                 return ExecutionResult(
                     success=False,
                     result=runtime_result.result,
@@ -364,10 +369,8 @@ async def execute_code(
                     stderr=runtime_result.stderr,
                 )
         except Exception as e:
-            logger.warning(
-                "Sandbox runtime gateway failed, falling back to legacy runner: %s", e
-            )
-            if not settings.SANDBOX_LEGACY_FALLBACK_ENABLED:
+            logger.warning("Sandbox runtime gateway failed: %s", e)
+            if not allow_legacy_fallback:
                 return ExecutionResult(success=False, error=t("tool_execution_failed"))
 
     sandbox = CodeSandbox(timeout=timeout)

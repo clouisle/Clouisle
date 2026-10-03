@@ -15,6 +15,7 @@ from app.services.sandbox.models import (
     SandboxArtifactSpec,
     SandboxInputFileSpec,
     SandboxJob,
+    SandboxResult,
 )
 
 
@@ -282,3 +283,29 @@ async def test_subprocess_maps_malformed_and_failed_output(
 
     assert result.success is False
     assert result.stdout == expected_stdout
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure", ["disabled", "gateway", "execution"])
+async def test_session_failure_cannot_execute_on_caller(monkeypatch, tmp_path, failure):
+    marker = tmp_path / "caller-executed"
+    monkeypatch.setattr(
+        sandbox_module.settings, "SANDBOX_RUNTIME_ENABLED", failure != "disabled"
+    )
+    monkeypatch.setattr(
+        sandbox_module.settings, "SANDBOX_LEGACY_FALLBACK_ENABLED", True
+    )
+    submit = AsyncMock(
+        side_effect=RuntimeError("owner unavailable") if failure == "gateway" else None,
+        return_value=SandboxResult(
+            job_id="failed", success=False, error="execution failed"
+        ),
+    )
+    monkeypatch.setattr(sandbox_module.sandbox_gateway, "submit_and_wait", submit)
+    result = await execute_code(
+        "python",
+        f"from pathlib import Path\nPath({str(marker)!r}).write_text('unsafe')\nreturn 1",
+        session_id="bound-session",
+    )
+    assert result.success is False
+    assert not marker.exists()

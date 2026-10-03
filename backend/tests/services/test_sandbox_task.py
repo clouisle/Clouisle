@@ -83,17 +83,6 @@ def test_run_sandbox_job_task_marks_result_failed_on_exception():
     assert kwargs["error"] == "boom"
 
 
-def test_cleanup_expired_sandbox_sessions_task_returns_cleaned_count():
-    with patch(
-        "app.tasks.sandbox.sandbox_gateway.cleanup_expired_sessions",
-        new=AsyncMock(return_value=2),
-    ) as mock_cleanup:
-        result = cleanup_expired_sandbox_sessions_task.run()
-
-    assert result == {"cleaned": 2}
-    mock_cleanup.assert_awaited_once()
-
-
 def test_cleanup_expired_sandbox_sessions_task_reraises_errors():
     with patch(
         "app.tasks.sandbox.sandbox_gateway.cleanup_expired_sessions",

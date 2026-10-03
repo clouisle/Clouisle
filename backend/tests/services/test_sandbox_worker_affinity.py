@@ -21,6 +21,9 @@ class Sessions:
     def __init__(self):
         self.sessions = {}
         self.owners = {}
+        self.active_rounds = {}
+        self.workspace_rounds = {}
+        self.evicted = set()
 
     async def create(self, session_id, **kwargs):
         self.sessions[session_id] = SandboxSession(
@@ -40,12 +43,41 @@ class Sessions:
             raise ValueError("Sandbox session not found or expired")
         return self.owners.setdefault(session_id, worker_id)
 
+    async def get_active_round(self, session_id):
+        return self.active_rounds.get(session_id)
+
+    async def get_workspace_round(self, session_id):
+        return self.workspace_rounds.get(session_id)
+
+    async def mark_workspace_round(self, session_id, round_id):
+        self.workspace_rounds[session_id] = round_id
+
+    async def clear_workspace_round(self, session_id):
+        self.workspace_rounds.pop(session_id, None)
+
+    async def begin_round(self, session_id, round_id, ttl_seconds):
+        self.active_rounds[session_id] = round_id
+
+    async def finish_round(self, session_id, round_id):
+        if self.active_rounds.get(session_id) == round_id:
+            del self.active_rounds[session_id]
+
+    async def mark_evicted(self, session_id):
+        self.evicted.add(session_id)
+
     async def touch(self, session_id, **kwargs):
-        return self.sessions.get(session_id)
+        session = self.sessions.get(session_id)
+        if session is not None:
+            session.last_accessed_at = datetime.now(UTC)
+            if "disk_usage_bytes" in kwargs:
+                session.disk_usage_bytes = kwargs["disk_usage_bytes"]
+        return session
 
     async def delete(self, session_id):
         self.sessions.pop(session_id, None)
         self.owners.pop(session_id, None)
+        self.active_rounds.pop(session_id, None)
+        self.workspace_rounds.pop(session_id, None)
 
 
 class Results:
@@ -62,7 +94,7 @@ class Results:
         return self.results.get(job_id)
 
     async def update_status(self, job_id, status, **kwargs):
-        self.results[job_id] = status
+        self.results[job_id] = SandboxResult(job_id=job_id, status=status, **kwargs)
 
 
 @pytest.fixture
@@ -173,4 +205,104 @@ def test_unauthorized_first_delivery_cannot_claim_session(
         tasks.run_sandbox_job_task.run(payload)
     assert "private" not in sessions.owners
     assert not (tmp_path / "b").exists()
-    assert results.results[payload["job_id"]] == SandboxTaskStatus.FAILED
+    assert results.results[payload["job_id"]].status == SandboxTaskStatus.FAILED
+
+
+def test_checkpoint_idle_eviction_and_next_round_restore(
+    runtime, tmp_path, monkeypatch
+):
+    from app.services.sandbox.workspace import SandboxWorkspaceManager
+
+    loop, sessions, results, messages = runtime
+    session_id = "recoverable"
+    loop.run_until_complete(sessions.create(session_id))
+    select_worker("a", tmp_path / "a", monkeypatch)
+    loop.run_until_complete(sessions.begin_round(session_id, "round-1", 3600))
+    write = SandboxJob(
+        language="python",
+        code="from pathlib import Path\nPath('proof').write_text('saved')\nreturn 'written'",
+    )
+    tasks.run_sandbox_job_task.run(
+        write.model_dump(mode="json") | {"session_id": session_id}
+    )
+    workspace = SandboxWorkspaceManager()
+    live = workspace.get_session_root(session_id)
+    tasks.checkpoint_sandbox_session_task.run(session_id, "checkpoint-1", "round-1")
+    checkpoint = workspace.checkpoints.checkpoint_path(session_id)
+    assert live.exists() and checkpoint.exists()
+    assert results.results["checkpoint-1"].success
+    sessions.sessions[session_id].last_accessed_at = datetime.now(UTC) - timedelta(
+        hours=1
+    )
+    tasks.evict_sandbox_session_task.run(session_id, datetime.now(UTC).timestamp())
+    assert not live.exists()
+    assert checkpoint.exists()
+    assert sessions.owners[session_id] == "a"
+    loop.run_until_complete(sessions.begin_round(session_id, "round-2", 3600))
+    read = SandboxJob(
+        language="python",
+        code="from pathlib import Path\nreturn Path('proof').read_text()",
+    )
+    tasks.run_sandbox_job_task.run(
+        read.model_dump(mode="json") | {"session_id": session_id}
+    )
+    assert results.results[read.job_id].result == "saved"
+    assert (live / "proof").read_text() == "saved"
+
+
+def test_failed_checkpoint_preserves_data_and_next_round_uses_committed_state(
+    runtime, tmp_path, monkeypatch
+):
+    import hashlib
+    from app.services.sandbox.workspace import SandboxWorkspaceManager
+
+    loop, sessions, results, messages = runtime
+    session_id = "failed-save"
+    loop.run_until_complete(sessions.create(session_id))
+    select_worker("a", tmp_path / "a", monkeypatch)
+    loop.run_until_complete(sessions.begin_round(session_id, "committed", 3600))
+    write = SandboxJob(
+        language="python",
+        code="from pathlib import Path\nPath('proof').write_text('committed')\nreturn 1",
+    )
+    tasks.run_sandbox_job_task.run(
+        write.model_dump(mode="json") | {"session_id": session_id}
+    )
+    tasks.checkpoint_sandbox_session_task.run(session_id, "good-save", "committed")
+    workspace = SandboxWorkspaceManager()
+    checkpoint = workspace.checkpoints.checkpoint_path(session_id)
+    previous_hash = hashlib.sha256(checkpoint.read_bytes()).digest()
+    live = workspace.get_session_root(session_id)
+    loop.run_until_complete(sessions.begin_round(session_id, "interrupted", 3600))
+    overwrite = SandboxJob(
+        language="python",
+        code="from pathlib import Path\nPath('proof').write_text('partial')\nreturn 1",
+    )
+    tasks.run_sandbox_job_task.run(
+        overwrite.model_dump(mode="json") | {"session_id": session_id}
+    )
+    outside = tmp_path / "outside"
+    outside.write_text("untouched")
+    (live / "escape").symlink_to(outside)
+    with pytest.raises((ValueError, OSError)):
+        tasks.checkpoint_sandbox_session_task.run(session_id, "bad-save", "interrupted")
+    assert not results.results["bad-save"].success
+    assert (live / "proof").read_text() == "partial"
+    assert hashlib.sha256(checkpoint.read_bytes()).digest() == previous_hash
+    assert sessions.active_rounds[session_id] == "interrupted"
+    sessions.sessions[session_id].last_accessed_at = datetime.now(UTC) - timedelta(
+        hours=1
+    )
+    tasks.evict_sandbox_session_task.run(session_id, datetime.now(UTC).timestamp())
+    assert live.exists()
+    loop.run_until_complete(sessions.begin_round(session_id, "next-round", 3600))
+    read = SandboxJob(
+        language="python",
+        code="from pathlib import Path\nreturn Path('proof').read_text()",
+    )
+    tasks.run_sandbox_job_task.run(
+        read.model_dump(mode="json") | {"session_id": session_id}
+    )
+    assert results.results[read.job_id].result == "committed"
+    assert not (live / "escape").exists()
+    assert outside.read_text() == "untouched"
