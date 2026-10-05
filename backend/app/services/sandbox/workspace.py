@@ -8,6 +8,8 @@ import fcntl
 import os
 import shutil
 import stat
+import time
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -67,7 +69,13 @@ class SandboxWorkspaceManager:
         return self.sessions_root / session_id
 
     @asynccontextmanager
-    async def session_lock(self, session_id: str):
+    async def session_lock(
+        self,
+        session_id: str,
+        *,
+        deadline_at: float | None = None,
+        guard: Callable[[], Awaitable[object]] | None = None,
+    ):
         """Serialize local lifecycle operations without blocking the event loop."""
         validate_session_id(session_id)
         self.locks_root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -83,6 +91,10 @@ class SandboxWorkspaceManager:
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 raise ValueError("Sandbox session lock must be a regular file")
             while not acquired:
+                if deadline_at is not None and time.time() >= deadline_at:
+                    raise TimeoutError("Sandbox workspace lock deadline expired")
+                if guard is not None:
+                    await guard()
                 try:
                     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                     acquired = True

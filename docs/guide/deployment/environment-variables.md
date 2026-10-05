@@ -605,7 +605,16 @@ TAVILY_API_KEY=tvly-xxxxxxxx
 | `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `false` | `true` for sandbox-worker | Launch executable payloads in a Bubblewrap mount namespace |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `bwrap` | `/usr/bin/bwrap` | Bubblewrap executable name or absolute path |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | `1` | Sandbox Celery worker concurrency |
-| `SANDBOX_WORKER_ID` | *(empty; hostname)* | Leave unset for scalable replicas | Optional worker identity; unique per independent sandbox filesystem |
+| `SANDBOX_WORKER_ID` | Empty; generated and persisted on the worker disk | Leave unset for generated per-disk identity | Optional explicit identity; a retained disk keeps its worker/storage IDs, and an explicit value must match its on-disk sentinel |
+| `SANDBOX_NODE_ID` | Empty; hostname | Kubernetes sets `spec.nodeName`; Compose sets `compose-local` | Node identity used to prefer the original node during bounded recovery |
+| `SANDBOX_WORKER_INSTANCE_ID` | Empty; generated per process | Supervisor assigns a fresh ID per Celery child | Process incarnation; do not reuse across worker restarts |
+| `SANDBOX_WORKER_HEARTBEAT_SECONDS` | `5` | `5` | Interval for the independent sandbox-worker readiness heartbeat |
+| `SANDBOX_WORKER_HEARTBEAT_TTL_SECONDS` | `20` | `20` | Redis readiness lease lifetime; must exceed the heartbeat interval |
+| `SANDBOX_WORKER_RECOVERY_SECONDS` | `30` | `30` | Upper bound for a recovery attempt, further capped by the original job deadline |
+| `SANDBOX_RECOVERY_POLL_SECONDS` | `0.5` | `0.5` | Polling interval while waiting for a worker lease or physical preparation |
+| `SANDBOX_SESSION_MAX_RESETS` | `1` | `1` | Maximum fresh-workspace generation replacements per session |
+| `SANDBOX_SUPERVISOR_RESTART_SECONDS` | `1` | `1` | Delay before restarting an exited supervised Celery child on the retained disk |
+| `SANDBOX_SUPERVISOR_MAX_RESTARTS` | `3` | `3` | Maximum child-process restarts before the sandbox-worker container exits |
 | `SANDBOX_WORKSPACE_ROOT` | `/tmp/clouisle-sandbox/jobs` | Same | Root directory for job and session workspaces |
 | `SANDBOX_CHECKPOINT_ROOT` | Empty | Empty | Local full-tree checkpoints; defaults to a `checkpoints` sibling of `SANDBOX_WORKSPACE_ROOT` |
 | `SANDBOX_WORKSPACE_IDLE_SECONDS` | `900` | `900` | Idle time before an inactive session workspace is checkpointed and evicted |
@@ -614,9 +623,9 @@ TAVILY_API_KEY=tvly-xxxxxxxx
 | `SANDBOX_SESSION_TTL_HOURS` | `24` | Same | Session lifetime before cleanup |
 | `SANDBOX_RESULT_TTL_SECONDS` | `86400` | Same | Redis result retention period |
 
-Sandbox workers consume both the shared `sandbox` queue and their dedicated affinity queue. A session's first job atomically claims a worker; subsequent jobs remain on that worker. Stateless tasks continue to use the shared queue. Identity defaults to `socket.gethostname()` (the container/pod hostname in deployments). Never assign the same explicit `SANDBOX_WORKER_ID` to replicas with independent local disks. Use a stable ID across replacement only when retaining the same persistent sandbox disk; the supplied ephemeral workspace configuration does not recover sessions after replacement. If the owner is absent, session jobs wait or hit the existing timeout, with no automatic rebinding or failover. Local-dev Docker startup forwards this variable, but uses a temporary container without a persistent workspace mount.
+Each sandbox worker consumes the shared `sandbox` queue plus its own dedicated affinity queue. Redis records the session's worker, instance, node, storage and workspace generation; a session is marked ready only after that worker acknowledges physical workspace preparation. Deployments give API, Agent workers and sandbox workers the same virtual workspace/checkpoint paths, but **only sandbox workers mount the physical data volume**. Keep each worker's workspace, checkpoint, identity, lock and cache directories together on its own retained local disk; they are not replicated or shared across nodes.
 
-AgentRun sessions checkpoint their complete local workspace at every round boundary before the run is marked successful, waiting, or stopped. Idle runtime directories are removed after checkpointing and restored on the next task routed to the same worker. Checkpoints are local, not replicated: persist both `SANDBOX_WORKSPACE_ROOT` and `SANDBOX_CHECKPOINT_ROOT` and keep `SANDBOX_WORKER_ID` tied to that storage to recover after replacement. Lost worker-local checkpoints cannot restore a session. TTL cleanup removes session data when the owning worker can process the cleanup task.
+When a Celery child restarts on the same retained disk, it receives a new instance ID and the runtime can restore its session from that disk's checkpoint. If the original storage remains unavailable through the bounded recovery window, the runtime can prepare a fresh workspace on a healthy worker and atomically advance the session generation, subject to `SANDBOX_SESSION_MAX_RESETS`. AgentRun receives a `WORKSPACE_RESET` notice and must replan: old workspace paths, edit snapshots and process state are gone. Queued messages from an older generation are rejected. If a running command's completion is uncertain, it is reported as uncertain and is never automatically replayed. These settings do not protect against permanent loss of unreplicated files on the old node.
 
 The generic application default leaves filesystem isolation disabled so unsupported host development environments can still start. The supplied sandbox-worker Docker image, Docker Compose service, and Helm deployment enable it explicitly:
 

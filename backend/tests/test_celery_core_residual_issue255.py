@@ -8,7 +8,7 @@ import pytest
 
 
 class _Signal:
-    def connect(self, function):
+    def connect(self, function, **kwargs):
         return function
 
 
@@ -26,6 +26,9 @@ def _load_celery_module(monkeypatch, *, password=""):
     signals_module = ModuleType("celery.signals")
     signals_module.worker_process_init = _Signal()
     signals_module.worker_process_shutdown = _Signal()
+    signals_module.worker_ready = _Signal()
+    signals_module.worker_shutting_down = _Signal()
+    signals_module.worker_shutdown = _Signal()
     settings = SimpleNamespace(
         REDIS_PASSWORD=password,
         REDIS_HOST="redis.test",

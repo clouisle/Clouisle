@@ -6,11 +6,25 @@ import logging
 
 from celery import Celery
 from celery.schedules import crontab
-from celery.signals import worker_process_init, worker_process_shutdown
+from celery.signals import (
+    worker_process_init,
+    worker_process_shutdown,
+    worker_ready,
+    worker_shutting_down,
+    worker_shutdown,
+)
 
 from app.core.config import settings
+from app.services.sandbox.worker_heartbeat import (
+    start_worker_heartbeat,
+    stop_worker_heartbeat,
+)
 
 logger = logging.getLogger(__name__)
+
+worker_ready.connect(start_worker_heartbeat, weak=False)
+worker_shutting_down.connect(stop_worker_heartbeat, weak=False)
+worker_shutdown.connect(stop_worker_heartbeat, weak=False)
 
 # Redis URL for Celery broker and result backend
 if settings.REDIS_PASSWORD:

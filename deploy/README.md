@@ -113,13 +113,13 @@ SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://api:8000
 
 `sandbox-worker` uploads artifacts to `/api/v1/upload/sandbox-artifact`. Keep `SANDBOX_ARTIFACT_UPLOAD_BASE_URL` on an internal API address; do not point it at `localhost` inside containers.
 
-Sandbox sessions use worker affinity, not a shared filesystem. Each sandbox worker consumes `sandbox` plus its own dedicated queue; the first session job atomically claims that worker, and later jobs stay on its queue. Stateless jobs continue to use the shared `sandbox` queue. Workers that receive another worker's session job forward it before execution.
+Sandbox sessions use worker affinity, not a shared filesystem. Each sandbox worker consumes `sandbox` plus its dedicated queue. New sessions bind only to a registered ready worker; subsequent jobs carry its instance and binding generation. Obsolete queued jobs are rejected rather than forwarded or replayed. Stateless jobs continue to use the shared `sandbox` queue.
 
-Identity defaults to the container/host hostname. Each independent local filesystem must have a unique identity; leave `SANDBOX_WORKER_ID` unset for scalable Compose/Kubernetes replicas rather than assigning every replica the same value. Set a stable explicit ID only when a replacement retains the same persistent sandbox disk. The supplied ephemeral workspaces do not survive container/pod replacement. If a session's owner is absent, its jobs wait for that owner or reach the existing timeout; there is no automatic rebinding, failover, or workspace recovery. Scaling adds capacity for new sessions, not migration of existing sessions. `python main.py sandbox-worker --local-dev` forwards `SANDBOX_WORKER_ID` from the root `.env` or process environment, but its temporary container has no persistent workspace mount: do not reuse an ID to imply recovered sessions.
+Worker and storage identities are generated once on the retained sandbox disk, not from container/pod hostnames. Compose and local-dev Docker use isolated named volumes; Kubernetes/Helm use per-node DaemonSet host paths. Process/pod reconstruction on the same disk retains files; node/disk loss can produce an explicitly reported fresh-workspace reset after the bounded original-owner recovery window. See [Sandbox local persistence and recovery](#sandbox-local-persistence-and-recovery) for eligibility, isolation and data-loss tradeoffs.
 
-Session metadata validation no longer reads the API/agent worker's local sandbox directory. Skill package files and session cleanup are dispatched to the owning sandbox worker. Keep `SANDBOX_WORKSPACE_ROOT` consistent across caller and sandbox worker configurations for logical path translation; it does not need to be a shared mount.
+Session metadata validation does not read the API/Agent worker's local sandbox directory. Skill package files and session cleanup run on the owning sandbox worker. Supplied Compose and Kubernetes deployments give API, Agent workers and sandbox workers the same virtual `SANDBOX_WORKSPACE_ROOT=/var/lib/clouisle/sandbox/jobs` and checkpoint path; **only sandbox workers mount the retained physical data directory**. Compose explicitly overrides `.env` paths on all three services so callers cannot embed a different path into commands. Helm uses `config.SANDBOX_WORKSPACE_ROOT` as the single source for every service and the sandbox mount location; change it there, not in `extraEnv`. Local-dev Docker preserves the host caller's configured virtual root and mounts its parent as an isolated named volume. Matching paths do not require a shared disk.
 
-Before enabling multiple sandbox replicas, drain sessions created by the old implementation while its original worker is still available. Old sessions contain no owner identity, so their previous filesystem location cannot be inferred safely. Upgrade all sandbox consumers before resuming session jobs; mixed old/new consumers cannot enforce affinity.
+Drain sessions created by the old unversioned binding implementation while their original workers remain available. Their filesystem location and execution instance cannot be inferred safely. Upgrade all sandbox consumers before resuming session jobs; mixed old/new consumers cannot enforce recovery fencing.
 
 ### Volumes
 
@@ -129,6 +129,7 @@ Before enabling multiple sandbox replicas, drain sessions created by the old imp
 | `redis_data` | Redis persistence |
 | `qdrant_data` | Qdrant vector storage |
 | `uploads_data` | User uploads and sandbox artifacts |
+| `sandbox_data` | Worker disk identity, workspaces, checkpoints, locks and caches |
 
 ### Common Operations
 
@@ -145,7 +146,7 @@ docker compose restart api
 
 # Scale workers
 docker compose up -d --scale worker=4
-docker compose up -d --scale sandbox-worker=2
+# Add a separately named sandbox service + volume for additional sandbox capacity.
 
 # Stop everything
 docker compose down
@@ -251,7 +252,7 @@ kubectl -n clouisle wait --for=condition=ready pod -l app=qdrant --timeout=120s
 | 7 | Uploads | Shared `uploads-data` PVC |
 | 8 | API | Deployment + Service :8000 |
 | 9 | Worker | Deployment, no Service |
-| 10 | Sandbox Worker | Deployment, no Service |
+| 10 | Sandbox Worker | DaemonSet, one node-local worker per eligible node, no Service |
 | 11 | Beat | Deployment, 1 replica, Recreate |
 | 12 | Frontend | Deployment + Service :3000 |
 | 13 | Ingress | `/api` → `api`, `/` → `frontend` |
@@ -260,20 +261,40 @@ kubectl -n clouisle wait --for=condition=ready pod -l app=qdrant --timeout=120s
 
 ```bash
 kubectl -n clouisle scale deployment worker --replicas=4
-kubectl -n clouisle scale deployment sandbox-worker --replicas=2
 kubectl -n clouisle scale deployment api --replicas=3
 ```
 
 Keep `beat` at exactly one replica.
 
-`uploads-data` is mounted only by `api`; workers and sandbox-worker read authorized attachments/documents through the authenticated internal upload gateway, while sandbox artifacts are uploaded through the API. Local upload storage needs `ReadWriteMany` only when scaling `api` beyond one replica. With `ReadWriteOnce`, keep `api` at one replica; worker and sandbox-worker replicas remain independently scalable.
+`uploads-data` is mounted only by `api`; workers and sandbox-worker read authorized attachments/documents through the authenticated internal upload gateway, while sandbox artifacts are uploaded through the API. Local upload storage needs `ReadWriteMany` only when scaling `api` beyond one replica. With `ReadWriteOnce`, keep `api` at one replica; normal workers scale independently, while sandbox capacity scales with eligible DaemonSet nodes.
+
+### Sandbox local persistence and recovery
+
+Compose retains the entire sandbox data directory in the `sandbox_data` named volume. Do not use `docker compose --scale sandbox-worker=...`: that would share one worker disk. Add a separately named service and volume for each additional worker. Removing the named volume (including `docker compose down -v`) destroys its workspaces and disk identity.
+
+Kubernetes and Helm run one sandbox worker per eligible node using a **DaemonSet**, not a replicated Deployment. A pod replacement on the same node reopens its hostPath disk; the child supervisor restarts an exited Celery process without recreating the pod. A busy solo worker is not restarted merely because a task runs for a long time. Each Celery child gets a fresh instance ID; worker and storage IDs are retained in the disk sentinel, independently of pod names. `SANDBOX_NODE_ID` comes from `spec.nodeName`. Do not set one global `SANDBOX_WORKER_ID` for multiple worker disks.
+
+By default all schedulable nodes are eligible. For a single sandbox node, label only that node; for multi-node capacity, apply the label to each intended node:
+
+```bash
+kubectl label node <node-name> clouisle-sandbox=true
+helm upgrade --install clouisle deploy/helm/clouisle \
+  --namespace clouisle \
+  --set-string sandboxWorker.nodeSelector.clouisle-sandbox=true
+```
+
+For raw manifests, set `spec.template.spec.nodeSelector: {clouisle-sandbox: "true"}` on the sandbox-worker DaemonSet. Helm merges `sandboxWorker.nodeSelector` with the global selector and accepts additional `sandboxWorker.tolerations`. Existing Deployment installations must remove the old sandbox-worker Deployment before applying the DaemonSet; do not let both controllers mount the same disk.
+
+The raw manifest stores data under `/var/lib/clouisle/clouisle/sandbox` on each node. Helm defaults to `/var/lib/clouisle/<namespace>/<release>/sandbox`; override `sandboxWorker.localDataPath` only with an exclusive path for this worker installation. The complete parent of `SANDBOX_WORKSPACE_ROOT` is mounted, retaining workspaces, checkpoints, locks, caches and identities. Host paths must be writable by the configured worker UID (root by default); restricted Pod Security policies may reject hostPath, `SYS_ADMIN` or the unconfined seccomp profile needed by Bubblewrap. Grant those permissions only to trusted sandbox nodes and keep distinct installations on separate paths.
+
+This is **node-local storage, not shared or distributed storage**. Node/disk loss does not preserve old workspace contents. During a bounded recovery window, the runtime prefers a healthy instance with the original disk; afterward it can bind a prepared fresh workspace on a healthy worker and explicitly report workspace loss. A node replacement with an empty disk generates a different storage/worker identity and cannot masquerade as the old disk. Losing the only eligible node leaves no ready capacity until another eligible node is available. Redis outages do not authorize a reset.
 
 ### Logs
 
 ```bash
 kubectl -n clouisle logs -f deployment/api
 kubectl -n clouisle logs -f deployment/worker
-kubectl -n clouisle logs -f deployment/sandbox-worker
+kubectl -n clouisle logs -f daemonset/sandbox-worker
 kubectl -n clouisle logs -f deployment/beat
 kubectl -n clouisle logs -f deployment/frontend
 ```
@@ -299,7 +320,12 @@ kubectl -n clouisle logs -f deployment/frontend
 | `RETRIEVAL_HYBRID_KILL_SWITCH` | No | `false` | Emergency environment override that forces vector-only retrieval |
 | `RETRIEVAL_SHADOW_ENABLED` | No | `false` | Run hybrid retrieval in shadow for rollout-excluded teams; stores IDs, ranks, versions, and latency only |
 | `SANDBOX_WORKER_CONCURRENCY` | No | `1` | Sandbox worker concurrency |
-| `SANDBOX_WORKSPACE_ROOT` | No | `/tmp/clouisle-sandbox/jobs` | Sandbox workspace root |
+| `SANDBOX_WORKSPACE_ROOT` | No | `/var/lib/clouisle/sandbox/jobs` | Common virtual workspace root for API/Agent/sandbox; retained physical disk is mounted only by sandbox |
+| `SANDBOX_WORKER_HEARTBEAT_SECONDS` | No | `5` | Independent readiness refresh interval |
+| `SANDBOX_WORKER_HEARTBEAT_TTL_SECONDS` | No | `20` | Readiness lease TTL; must exceed refresh interval |
+| `SANDBOX_WORKER_RECOVERY_SECONDS` | No | `30` | Bounded original-disk recovery window |
+| `SANDBOX_SESSION_MAX_RESETS` | No | `1` | Maximum fresh-workspace replacements per logical session |
+| `SANDBOX_SUPERVISOR_MAX_RESTARTS` | No | `3` | Same-node child restart limit before container restart |
 | `NEXT_PUBLIC_API_URL` | Yes for frontend build | `/api/v1` | Browser-visible API base path |
 | `TAVILY_API_KEY` | No | empty | Tavily search API key |
 
@@ -317,7 +343,7 @@ kubectl -n clouisle logs -f deployment/frontend
 
 **Sandbox artifacts are not uploaded**
 - Verify `SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://api:8000` in containerized deployment.
-- Check `docker compose logs -f sandbox-worker` or `kubectl -n clouisle logs -f deployment/sandbox-worker`.
+- Check `docker compose logs -f sandbox-worker` or `kubectl -n clouisle logs -f daemonset/sandbox-worker`.
 - Ensure `SECRET_KEY` is the same for `api` and `sandbox-worker`, unless `SANDBOX_ARTIFACT_UPLOAD_API_KEY` is configured.
 
 **Worker not processing tasks**

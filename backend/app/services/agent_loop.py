@@ -46,6 +46,10 @@ from app.api.v1.endpoints.chat_tools import execute_tool_call
 from app.llm.tools.interaction import ToolInteractionRequest
 from app.llm.types import ChatStreamChunk, FinishReason, StopReason
 from app.services import agent_round
+from app.services.sandbox.recovery import (
+    capture_workspace_resets,
+    sandbox_execution_scope,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +185,18 @@ def _safe_arguments(arguments: str | dict | None) -> dict[str, Any]:
         return {}
 
 
+def _include_workspace_reset(result: str, notices: list[dict[str, Any]]) -> str:
+    """Keep recovery information in the persisted tool protocol, not just logs."""
+    try:
+        payload = json.loads(result)
+    except (TypeError, ValueError):
+        payload = result
+    if not isinstance(payload, dict):
+        payload = {"result": payload}
+    payload["workspace_reset"] = notices[-1]
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def _tool_call_changed(previous: Any, current: Any) -> bool:
     """Return whether a streamed call update changes visible metadata."""
     previous_name = getattr(previous.function, "name", None) or ""
@@ -245,6 +261,7 @@ class AgentLoop:
         self.result = AgentLoopResult()
         self._round_index = context.first_round_index
         self._consecutive_pause_turns = 0
+        self._deadline_at: float | None = None
         self._last_event_time = (
             context.initial_last_event_time
             if context.initial_last_event_time is not None
@@ -375,17 +392,24 @@ class AgentLoop:
 
         display_name = ctx.tool_display_names.get(tool_name, tool_name)
         tool_runner = ctx.execute_tool_call or execute_tool_call
+        reset_notices: list[dict[str, Any]] = []
         try:
-            tool_result = await tool_runner(
-                tool_name,
-                arguments,
-                agent=ctx.agent,
-                tool_timeouts=ctx.tool_timeouts,
-                user=ctx.user,
-                session_id=ctx.sandbox_session_id,
-                current_images=image_pool,
-                conversation_id=ctx.conversation.id,
-            )
+            with (
+                capture_workspace_resets() as reset_notices,
+                sandbox_execution_scope(
+                    deadline_at=self._deadline_at, stop_requested=ctx.stop_requested
+                ),
+            ):
+                tool_result = await tool_runner(
+                    tool_name,
+                    arguments,
+                    agent=ctx.agent,
+                    tool_timeouts=ctx.tool_timeouts,
+                    user=ctx.user,
+                    session_id=ctx.sandbox_session_id,
+                    current_images=image_pool,
+                    conversation_id=ctx.conversation.id,
+                )
             if isinstance(tool_result, ToolInteractionRequest):
                 if tool_result.tool_name != tool_name:
                     raise ValueError("tool interaction name mismatch")
@@ -424,6 +448,10 @@ class AgentLoop:
                 {"error": str(exc) or type(exc).__name__}, ensure_ascii=False
             )
             llm_result = display_result
+
+        if reset_notices:
+            display_result = _include_workspace_reset(display_result, reset_notices)
+            llm_result = _include_workspace_reset(llm_result, reset_notices)
 
         return (
             self._build_tool_call_sse(tc),
@@ -587,6 +615,8 @@ class AgentLoop:
 
     async def run(self) -> AsyncIterator[str | None]:
         start_time = time.time()
+        if self.context.deadline_seconds is not None:
+            self._deadline_at = start_time + self.context.deadline_seconds
         try:
             async for output in self._run(start_time):
                 yield output

@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -37,10 +38,12 @@ def test_build_sandbox_worker_image_supports_no_cache():
     assert "--no-cache" in mock_run.call_args.args[0]
 
 
-def test_start_sandbox_worker_container_runs_without_bind_mounts(
+def test_start_sandbox_worker_container_retains_named_volume_without_bind_mounts(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.setenv("REDIS_HOST", "redis.local")
+    monkeypatch.setenv("SANDBOX_WORKSPACE_ROOT", "/tmp/dev-sandbox/jobs")
+    monkeypatch.setenv("SANDBOX_CHECKPOINT_ROOT", "/tmp/dev-sandbox/checkpoints")
 
     with (
         patch("main.build_sandbox_worker_image") as mock_build,
@@ -54,7 +57,14 @@ def test_start_sandbox_worker_container_runs_without_bind_mounts(
     assert ["--add-host", "host.docker.internal:host-gateway"] == cmd[3:5]
     assert "-v" not in cmd
     assert "--volume" not in cmd
-    assert "--mount" not in cmd
+    mount = cmd[cmd.index("--mount") + 1]
+    assert mount.startswith("type=volume,source=clouisle-sandbox-dev-")
+    assert mount.endswith(f",target={Path('/tmp/dev-sandbox/jobs').resolve().parent}")
+    assert f"SANDBOX_WORKSPACE_ROOT={Path('/tmp/dev-sandbox/jobs').resolve()}" in cmd
+    assert (
+        f"SANDBOX_CHECKPOINT_ROOT={Path('/tmp/dev-sandbox/checkpoints').resolve()}"
+        in cmd
+    )
     assert ["python", "main.py", "sandbox-worker", "-c", "3"] == cmd[-5:]
     assert "-e" in cmd
     assert "REDIS_HOST=redis.local" in cmd

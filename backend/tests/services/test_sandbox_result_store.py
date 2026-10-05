@@ -1,96 +1,124 @@
-from unittest.mock import AsyncMock, call
+"""Atomic result publication is observable under real Redis concurrency."""
+
+import asyncio
+import time
 
 import pytest
 
-from app.services.sandbox import result_store
-from app.services.sandbox.models import (
-    SandboxExecutionMetadata,
-    SandboxResult,
-    SandboxTaskStatus,
-)
-from app.services.sandbox.result_store import SandboxResultStore
+from app.services.sandbox.models import SandboxResult, SandboxTaskStatus
+from app.services.sandbox.result_store import SandboxResultFenceError
 
 
-@pytest.fixture
-def redis():
-    return AsyncMock()
-
-
-@pytest.fixture
-def store(redis, monkeypatch):
-    monkeypatch.setattr(result_store, "get_redis", AsyncMock(return_value=redis))
-    return SandboxResultStore()
-
-
-@pytest.mark.asyncio
-async def test_save_and_load_result_with_explicit_ttl(store, redis):
+def test_save_and_load_result_with_explicit_ttl(sandbox_runtime):
+    r = sandbox_runtime
     result = SandboxResult(
-        job_id="job-1",
-        status=SandboxTaskStatus.COMPLETED,
-        metadata=SandboxExecutionMetadata(),
+        job_id="job", status=SandboxTaskStatus.COMPLETED, success=True
     )
+    stored = r.run(r.results.save_result(result, ttl_seconds=60))
+    assert stored == result
+    assert r.run(r.results.get_result("job")) == result
+    assert r.run(r.results.get_status("job")) == SandboxTaskStatus.COMPLETED
+    assert 0 < r.redis.ttl("sandbox:job:job") <= 60
+    assert 0 < r.redis.ttl("sandbox:job:job:status") <= 60
+    assert r.run(r.results.get_result("missing")) is None
 
-    await store.save_result(result, ttl_seconds=60)
 
-    assert result.metadata.status is SandboxTaskStatus.COMPLETED
-    redis.setex.assert_has_awaits(
-        [
-            call("sandbox:job:job-1", 60, result.model_dump_json()),
-            call("sandbox:job:job-1:status", 60, "completed"),
-        ]
+def test_terminal_results_are_immutable_under_racing_writers(sandbox_runtime):
+    r = sandbox_runtime
+    r.run(r.results.create_queued_result("job"))
+
+    async def race():
+        return await asyncio.gather(
+            r.results.update_status(
+                "job", SandboxTaskStatus.CANCELLED, error="cancelled"
+            ),
+            r.results.update_status(
+                "job", SandboxTaskStatus.COMPLETED, success=True, result="done"
+            ),
+            r.results.update_status("job", SandboxTaskStatus.FAILED, error="late"),
+        )
+
+    published = r.run(race())
+    winner = r.run(r.results.get_result("job"))
+    assert all(result == winner for result in published)
+    assert (
+        r.run(
+            r.results.save_result(
+                SandboxResult(job_id="job", status=SandboxTaskStatus.RUNNING)
+            )
+        )
+        == winner
     )
-
-    redis.get.return_value = result.model_dump_json()
-    assert await store.get_result("job-1") == result
-
-    redis.get.return_value = None
-    assert await store.get_result("missing") is None
+    assert r.run(r.results.get_status("job")) == winner.status
 
 
-@pytest.mark.asyncio
-async def test_status_lookup_and_delete(store, redis):
-    redis.get.side_effect = [None, "running"]
+def test_claim_execution_rejects_duplicates_and_terminal_messages(sandbox_runtime):
+    r = sandbox_runtime
+    r.run(r.results.create_queued_result("job"))
+    assert r.run(r.results.claim_execution("job"))
+    assert not r.run(r.results.claim_execution("job"))
+    r.run(r.results.update_status("job", SandboxTaskStatus.FAILED, error="lost"))
+    assert not r.run(r.results.claim_execution("job"))
+    r.run(r.results.delete("job"))
+    assert r.run(r.results.get_result("job")) is None
+    assert r.run(r.results.get_status("job")) is None
+    assert not r.redis.exists("sandbox:job:job:execution")
 
-    assert await store.get_status("missing") is None
-    assert await store.get_status("job-1") is SandboxTaskStatus.RUNNING
 
-    await store.delete("job-1")
-    redis.delete.assert_awaited_once_with(
-        "sandbox:job:job-1", "sandbox:job:job-1:status"
-    )
+def test_queued_republication_cannot_erase_started_execution(sandbox_runtime):
+    r = sandbox_runtime
+    running = SandboxResult(job_id="job", status=SandboxTaskStatus.RUNNING)
+    running.metadata.mark_started()
+    r.run(r.results.save_result(running))
+    republished = r.run(r.results.create_queued_result("job"))
+    assert republished.status == SandboxTaskStatus.RUNNING
+    assert republished.metadata.started_at == running.metadata.started_at
 
 
-@pytest.mark.asyncio
-async def test_create_and_update_results(store):
-    store.save_result = AsyncMock()
+def test_late_binding_and_deadline_writes_cannot_publish_success(sandbox_runtime):
+    r = sandbox_runtime
+    binding = r.bind_session()
+    r.run(r.results.create_queued_result("job", session_id="session", binding=binding))
+    owned = r.run(r.sessions.acquire_recovery("session", binding, "recovery", 1))
+    with pytest.raises(SandboxResultFenceError):
+        r.run(
+            r.results.save_result(
+                SandboxResult(
+                    job_id="job",
+                    status=SandboxTaskStatus.COMPLETED,
+                    success=True,
+                    session_id="session",
+                    binding=binding,
+                )
+            )
+        )
+    assert r.run(r.results.get_status("job")) == SandboxTaskStatus.QUEUED
+    with pytest.raises(SandboxResultFenceError) as error:
+        r.run(
+            r.results.save_result(
+                SandboxResult(
+                    job_id="expired",
+                    status=SandboxTaskStatus.COMPLETED,
+                    success=True,
+                    deadline_at=time.time() - 1,
+                )
+            )
+        )
+    assert error.value.code == "DEADLINE_EXCEEDED"
+    assert r.run(r.results.get_result("expired")) is None
+    assert owned.status == "RECOVERING"
 
-    queued = await store.create_queued_result("queued")
-    assert queued.status is SandboxTaskStatus.QUEUED
-    assert queued.metadata.status is SandboxTaskStatus.QUEUED
 
-    existing = SandboxResult(job_id="existing")
-    store.get_result = AsyncMock(side_effect=[existing, None])
+def test_short_result_ttl_cannot_allow_duplicate_before_original_deadline(
+    sandbox_runtime, monkeypatch
+):
+    from app.core.config import settings
 
-    updated = await store.update_status(
-        "existing",
-        SandboxTaskStatus.COMPLETED,
-        success=True,
-        result={"ok": True},
-    )
-    replacement_metadata = SandboxExecutionMetadata()
-    created = await store.update_status(
-        "new",
-        SandboxTaskStatus.FAILED,
-        metadata=replacement_metadata,
-        error="failed",
-    )
-
-    assert updated is existing
-    assert updated.success is True
-    assert updated.result == {"ok": True}
-    assert updated.metadata.status is SandboxTaskStatus.COMPLETED
-    assert created.status is SandboxTaskStatus.FAILED
-    assert created.metadata is replacement_metadata
-    assert replacement_metadata.status is SandboxTaskStatus.FAILED
-    assert created.error == "failed"
-    assert store.save_result.await_count == 3
+    r = sandbox_runtime
+    monkeypatch.setattr(settings, "SANDBOX_RESULT_TTL_SECONDS", 1)
+    deadline = time.time() + 5
+    r.run(r.results.create_queued_result("job", deadline_at=deadline))
+    assert r.run(r.results.claim_execution("job", deadline))
+    time.sleep(1.1)
+    assert r.run(r.results.get_result("job")) is not None
+    assert not r.run(r.results.claim_execution("job", deadline))

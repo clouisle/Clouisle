@@ -117,10 +117,25 @@ async def test_execute_skill_stages_and_replaces_resources_on_worker(
 ):
     from app.services.sandbox.manager import SandboxManager
     from app.services.sandbox.workspace import SandboxWorkspaceManager
+    from app.services.sandbox.models import SandboxBinding
+    from app.services.sandbox.worker_registry import WorkerPresence
 
     skill = make_skill()
     session_id = uuid4().hex
     team_id = str(uuid4())
+    binding = SandboxBinding(
+        worker_id="worker-a",
+        instance_id="instance-a",
+        node_id="node-a",
+        storage_id="storage-a",
+        workspace_id=session_id,
+    )
+    worker = WorkerPresence(
+        worker_id=binding.worker_id,
+        instance_id=binding.instance_id,
+        node_id=binding.node_id,
+        storage_id=binding.storage_id,
+    )
     session_store = SimpleNamespace(
         get=AsyncMock(
             return_value=SimpleNamespace(
@@ -136,8 +151,13 @@ async def test_execute_skill_stages_and_replaces_resources_on_worker(
         get_workspace_round=AsyncMock(return_value=None),
         mark_workspace_round=AsyncMock(),
     )
+    session_store.get_binding = AsyncMock(return_value=binding)
     monkeypatch.setattr(
         "app.services.sandbox.manager.sandbox_session_store", session_store
+    )
+    monkeypatch.setattr(
+        "app.services.sandbox.manager.sandbox_worker_registry",
+        SimpleNamespace(get=AsyncMock(return_value=worker)),
     )
     workspace_manager = SandboxWorkspaceManager(root=str(tmp_path / "worker"))
     manager = SandboxManager(
@@ -145,13 +165,15 @@ async def test_execute_skill_stages_and_replaces_resources_on_worker(
         cleanup_workspaces=False,
         result_store=SimpleNamespace(
             get_result=AsyncMock(return_value=None),
-            save_result=AsyncMock(),
+            save_result=AsyncMock(side_effect=lambda result: result),
         ),
     )
 
     async def run_on_worker(job, *, session_id, team_id):
         return await manager.execute(
-            job, session_id=session_id, session_team_id=team_id
+            job.model_copy(update={"binding": binding}),
+            session_id=session_id,
+            session_team_id=team_id,
         )
 
     monkeypatch.setattr(

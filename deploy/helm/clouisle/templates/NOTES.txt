@@ -9,7 +9,7 @@ Useful commands:
   kubectl -n {{ .Release.Namespace }} get svc
   kubectl -n {{ .Release.Namespace }} rollout status deployment/api
   kubectl -n {{ .Release.Namespace }} rollout status deployment/worker
-  kubectl -n {{ .Release.Namespace }} rollout status deployment/sandbox-worker
+  kubectl -n {{ .Release.Namespace }} rollout status daemonset/sandbox-worker
   kubectl -n {{ .Release.Namespace }} rollout status deployment/frontend
 
 Port-forward API:
@@ -17,3 +17,9 @@ Port-forward API:
 
 Port-forward frontend:
   kubectl -n {{ .Release.Namespace }} port-forward svc/frontend 3000:{{ .Values.frontend.service.port }}
+
+Sandbox workers run once per eligible node with isolated hostPath persistence.
+Restrict nodes with sandboxWorker.nodeSelector; add sandboxWorker.tolerations for
+dedicated tainted nodes. The default path is isolated by namespace/release.
+Host paths must be writable by the sandbox worker; node/disk loss does not
+preserve workspaces. Keep sandboxWorker.localDataPath exclusive to this install.

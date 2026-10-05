@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field, ValidationInfo, field_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -116,6 +116,31 @@ class Settings(BaseSettings):
     SANDBOX_LEGACY_FALLBACK_ENABLED: bool = True
     SANDBOX_WORKSPACE_ROOT: str = "/tmp/clouisle-sandbox/jobs"
     SANDBOX_WORKER_ID: str = ""
+    SANDBOX_NODE_ID: str = ""
+    SANDBOX_WORKER_INSTANCE_ID: str = ""
+    SANDBOX_WORKER_HEARTBEAT_SECONDS: float = Field(
+        default=5, gt=0, allow_inf_nan=False
+    )
+    SANDBOX_WORKER_HEARTBEAT_TTL_SECONDS: int = Field(default=20, gt=0)
+    SANDBOX_WORKER_RECOVERY_SECONDS: float = Field(
+        default=30, ge=0, allow_inf_nan=False
+    )
+    SANDBOX_RECOVERY_POLL_SECONDS: float = Field(default=0.5, gt=0, allow_inf_nan=False)
+    SANDBOX_SESSION_MAX_RESETS: int = Field(default=1, ge=0)
+    SANDBOX_SUPERVISOR_RESTART_SECONDS: float = Field(
+        default=1, ge=0, allow_inf_nan=False
+    )
+    SANDBOX_SUPERVISOR_MAX_RESTARTS: int = Field(default=3, ge=0)
+
+    @model_validator(mode="after")
+    def validate_sandbox_heartbeat(self) -> "Settings":
+        if (
+            self.SANDBOX_WORKER_HEARTBEAT_TTL_SECONDS
+            <= self.SANDBOX_WORKER_HEARTBEAT_SECONDS
+        ):
+            raise ValueError("Sandbox heartbeat TTL must exceed its refresh interval")
+        return self
+
     SANDBOX_CHECKPOINT_ROOT: str = ""
     SANDBOX_WORKSPACE_IDLE_SECONDS: int = Field(default=900, gt=0)
     SANDBOX_CHECKPOINT_TIMEOUT_SECONDS: int = Field(default=120, gt=0)

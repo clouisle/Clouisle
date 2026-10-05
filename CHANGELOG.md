@@ -39,8 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 #### Sandbox Sessions
-- Bound session jobs to the first sandbox worker that atomically claims them in Redis; later jobs and cleanup use its dedicated Celery queue, and misdelivered jobs are forwarded before filesystem access.
-- Checkpointed AgentRun sandbox workspaces at round boundaries on their owning worker, evicting idle runtime directories and restoring them for the next task. Recovery after worker replacement requires retaining both local workspace and checkpoint storage; there is no cross-worker replication or automatic rebinding.
+- Routed session jobs to per-worker Celery queues and persisted a fenced worker/storage binding. Stale-generation messages are rejected; a command with uncertain completion is never automatically replayed.
+- Added sandbox-worker readiness heartbeats, same-disk supervised restart and checkpoint recovery, plus bounded atomic rebinding to a fresh workspace generation when the original worker storage is unavailable. AgentRun receives `WORKSPACE_RESET` and replans instead of reusing stale paths or process state.
+- Kept each sandbox worker's workspace and checkpoints on worker-local storage (Compose named volume; Kubernetes node-local hostPath DaemonSet). Same-node process replacement can restore checkpointed data; permanent loss of the node or disk cannot.
 - Used the platform's `ELOOP` errno constant when rejecting symlinked workspace paths.
 
 #### Asset Access and Previews

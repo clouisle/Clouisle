@@ -43,7 +43,8 @@ config:
   SANDBOX_RUNTIME_ENABLED: "true"
   SANDBOX_LEGACY_FALLBACK_ENABLED: "true"
   SANDBOX_WORKER_CONCURRENCY: "1"
-  SANDBOX_WORKSPACE_ROOT: /tmp/clouisle-sandbox/jobs
+  # Shared virtual path in API, Agent workers and sandbox workers, not a shared disk.
+  SANDBOX_WORKSPACE_ROOT: /var/lib/clouisle/sandbox/jobs
   SANDBOX_FILESYSTEM_ISOLATION_ENABLED: "true"
   SANDBOX_FILESYSTEM_ISOLATION_BINARY: /usr/bin/bwrap
   SANDBOX_MAX_DISK_MB: "8192"
@@ -125,8 +126,13 @@ worker:
 
 sandboxWorker:
   enabled: true
-  replicas: 1
-  command: ["sh", "-c", "python main.py sandbox-worker -c \"${SANDBOX_WORKER_CONCURRENCY:-1}\""]
+  # One worker per eligible node; each owns a distinct node-local disk.
+  nodeSelector: {}
+  tolerations: []
+  # Empty selects /var/lib/clouisle/<namespace>/<release>/sandbox on each node.
+  # Never share this path between Helm releases or worker installations.
+  localDataPath: ""
+  command: ["sh", "-c", "exec python main.py sandbox-worker -c \"${SANDBOX_WORKER_CONCURRENCY:-1}\""]
   securityContext:
     # bwrap must create user/mount namespaces. The image USER is a non-root
     # account whose effective caps are always empty, so the worker runs as

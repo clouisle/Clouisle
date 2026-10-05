@@ -14,6 +14,12 @@ Agent/工作流 → API → Celery 队列 (sandbox) → 沙箱 Worker
                               /workspace → 当前任务/会话目录
 ```
 
+### 会话亲和与恢复
+
+Sandbox Worker 只有在工作区和检查点目录通过可写磁盘探测后，才会发布短时 Redis 就绪租约。每个会话绑定到具体 Worker 进程实例、节点、存储身份和工作区代次；会话任务及生命周期任务都进入该 Worker 的专属 Celery 队列。API 和普通 Agent Worker 不需要访问沙箱 Worker 的物理文件系统。
+
+同一份持久化本地磁盘上的 Celery 子进程重启后，会获得新的实例 ID，并可从本地检查点恢复会话。如果原存储在有界恢复时间内仍不可用，运行时可在其他就绪 Worker 上准备全新的工作区，再原子地推进会话代次。AgentRun 会收到 `WORKSPACE_RESET`，必须重新规划。旧代次的排队任务会被拒绝；执行结果不确定的运行中命令不会自动重放。这是节点本地持久化，不是共享存储或副本：原磁盘永久丢失时，未保存的数据无法恢复。
+
 核心特性：
 
 - **真实 `/workspace` 路径**：当前任务或会话目录以读写方式 bind mount 到 `/workspace`，Python、Node.js、原生库和子进程看到相同路径。
@@ -65,15 +71,25 @@ Agent 可以通过函数调用触发代码工具。LLM 根据任务需要决定�
 | `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `false` | `true` | 在 Bubblewrap 文件系统命名空间内启动可执行任务 |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `bwrap` | `/usr/bin/bwrap` | Bubblewrap 命令名或绝对路径 |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | `1` | Sandbox Worker 并发槽位数 |
-| `SANDBOX_WORKSPACE_ROOT` | `/tmp/clouisle-sandbox/jobs` | 相同 | 任务和会话目录在 Worker 上的根路径 |
-| `SANDBOX_CHECKPOINT_ROOT` | 空 | 空 | 本地完整工作区检查点；默认位于 `SANDBOX_WORKSPACE_ROOT` 的同级 `checkpoints` 目录 |
+| `SANDBOX_WORKER_ID` | 空；按磁盘生成并持久化 | 留空以使用每磁盘身份 | 可选显式 Worker 身份；保留磁盘会保留其 Worker/存储 ID |
+| `SANDBOX_NODE_ID` | 空；使用 hostname | Kubernetes 节点名或 `compose-local` | 恢复时用于优先选择原节点的身份 |
+| `SANDBOX_WORKER_INSTANCE_ID` | 空；按进程生成 | 监督器为每个进程分配新 ID | Worker 进程实例；重启后不可复用旧 ID |
+| `SANDBOX_WORKSPACE_ROOT` | `/tmp/clouisle-sandbox/jobs` | `/var/lib/clouisle/sandbox/jobs` | API、Agent Worker 与 Sandbox Worker 使用相同的虚拟根路径；仅 Sandbox Worker 挂载其物理父目录 |
+| `SANDBOX_CHECKPOINT_ROOT` | 空 | `/var/lib/clouisle/sandbox/checkpoints` | 本地完整工作区检查点；通用默认值是 `SANDBOX_WORKSPACE_ROOT` 的同级 `checkpoints` 目录 |
+| `SANDBOX_WORKER_HEARTBEAT_SECONDS` | `5` | `5` | 就绪心跳间隔 |
+| `SANDBOX_WORKER_HEARTBEAT_TTL_SECONDS` | `20` | `20` | Redis 就绪租约时长，必须大于心跳间隔 |
+| `SANDBOX_WORKER_RECOVERY_SECONDS` | `30` | `30` | 单次恢复时限，并受原任务截止时间约束 |
+| `SANDBOX_RECOVERY_POLL_SECONDS` | `0.5` | `0.5` | 等待 Worker 就绪及物理工作区准备确认时的轮询间隔 |
+| `SANDBOX_SESSION_MAX_RESETS` | `1` | `1` | 每个会话允许切换到全新工作区代次的最大次数 |
+| `SANDBOX_SUPERVISOR_RESTART_SECONDS` | `1` | `1` | 在保留的本地磁盘上重启已退出 Celery 子进程前的等待时间 |
+| `SANDBOX_SUPERVISOR_MAX_RESTARTS` | `3` | `3` | Sandbox Worker 容器退出前允许的子进程重启次数 |
 | `SANDBOX_WORKSPACE_IDLE_SECONDS` | `900` | `900` | 不活跃会话工作区被释放到检查点前的空闲时长 |
 | `SANDBOX_CHECKPOINT_TIMEOUT_SECONDS` | `120` | `120` | 等待所属 Worker 确认轮次检查点的最长时间 |
 | `SANDBOX_MAX_DISK_MB` | `8192` | 相同 | 允许请求的最大工作空间磁盘限制 |
 | `SANDBOX_SESSION_TTL_HOURS` | `24` | 相同 | 会话过期清理时间 |
 | `SANDBOX_RESULT_TTL_SECONDS` | `86400` | 相同 | 结果保留时间 |
 
-AgentRun 每轮结束时，系统会先在会话所属的 Sandbox Worker 上保存检查点，再将运行标记为完成、等待用户回答或停止。空闲工作区会在达到阈值后被释放，并在下次任务到来时恢复；检查点和运行目录都保存在该 Worker 本地。若要在 Worker 替换后恢复，必须持久化这两个目录，并确保 Worker 身份继续对应同一份存储。若替换 Worker 时本地检查点丢失，会话无法恢复。所属 Worker 能处理清理任务时，会话 TTL 清理会永久删除会话数据。
+AgentRun 每轮结束时，系统会先在会话所属的 Sandbox Worker 上保存检查点，再将运行标记为完成、等待用户回答或停止。空闲工作区会在达到阈值后被释放，并在下次任务到来时恢复。工作区、检查点、身份、锁和缓存目录应一起保存在同一份 Worker 本地磁盘上，不会跨节点复制。TTL 到期后，Worker 能处理清理任务时会永久删除会话数据；若节点不可访问，其他节点无法远程删除其本地文件。
 
 Sandbox Worker 镜像会安装 Bubblewrap 并启用隔离。启用隔离后，如果找不到 `bwrap` 或任务没有工作空间根目录，任务会直接失败，不会降级为未隔离执行。调用侧的降级是另一个开关：`SANDBOX_LEGACY_FALLBACK_ENABLED` 默认开启，沙箱运行时任务失败时会降级为进程内的 legacy runner 执行；设为 `false` 则直接返回失败。
 

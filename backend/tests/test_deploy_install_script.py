@@ -75,13 +75,14 @@ def test_k8s_installer_generates_a_secret_manifest_and_preserves_output(tmp_path
     assert template_secret["data"]["INTERNAL_API_TOKEN"] == ""
     assert template_secret["data"]["SANDBOX_ARTIFACT_UPLOAD_API_KEY"] == ""
 
-    deployments = {
+    workloads = {
         document["metadata"]["name"]: document
         for document in documents
-        if document["kind"] == "Deployment"
+        if document["kind"] in {"Deployment", "DaemonSet"}
     }
+    assert workloads["sandbox-worker"]["kind"] == "DaemonSet"
     for name in BACKEND_WORKLOADS:
-        pod_spec = deployments[name]["spec"]["template"]["spec"]
+        pod_spec = workloads[name]["spec"]["template"]["spec"]
         wait_container = next(
             container
             for container in pod_spec["initContainers"]

@@ -1,12 +1,11 @@
 {{- if .Values.sandboxWorker.enabled }}
 apiVersion: apps/v1
-kind: Deployment
+kind: DaemonSet
 metadata:
   name: sandbox-worker
   labels:
     {{- include "clouisle.componentLabels" (dict "root" . "component" "sandbox-worker") | nindent 4 }}
 spec:
-  replicas: {{ .Values.sandboxWorker.replicas }}
   selector:
     matchLabels:
       {{- include "clouisle.selectorLabels" (dict "root" . "component" "sandbox-worker") | nindent 6 }}
@@ -19,7 +18,11 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
-      {{- include "clouisle.podCommon" . | nindent 6 }}
+      {{- $podValues := deepCopy .Values }}
+      {{- $_ := set $podValues.global "nodeSelector" (mergeOverwrite (deepCopy .Values.global.nodeSelector) .Values.sandboxWorker.nodeSelector) }}
+      {{- $_ := set $podValues.global "tolerations" (concat .Values.global.tolerations .Values.sandboxWorker.tolerations) }}
+      {{- include "clouisle.podCommon" (dict "Values" $podValues "Release" .Release "Chart" .Chart) | nindent 6 }}
+      terminationGracePeriodSeconds: 35
       {{- $sandboxSecurityContext := mergeOverwrite (deepCopy (default (dict) .Values.global.securityContext)) (default (dict) .Values.sandboxWorker.securityContext) }}
       containers:
         - name: sandbox-worker
@@ -33,10 +36,18 @@ spec:
               value: "remote"
             - name: INTERNAL_API_TOKEN_FILE
               value: /var/run/secrets/clouisle/internal-api-token
+            - name: SANDBOX_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: SANDBOX_WORKER_ID
+              value: ""
           volumeMounts:
             - name: internal-api-token
               mountPath: /var/run/secrets/clouisle
               readOnly: true
+            - name: sandbox-data
+              mountPath: {{ dir .Values.config.SANDBOX_WORKSPACE_ROOT | quote }}
           {{- with $sandboxSecurityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
@@ -44,6 +55,10 @@ spec:
           resources:
             {{- toYaml .Values.sandboxWorker.resources | nindent 12 }}
       volumes:
+        - name: sandbox-data
+          hostPath:
+            path: {{ default (printf "/var/lib/clouisle/%s/%s/sandbox" .Release.Namespace .Release.Name) .Values.sandboxWorker.localDataPath | quote }}
+            type: DirectoryOrCreate
         - name: internal-api-token
           secret:
             secretName: {{ include "clouisle.secretName" . }}

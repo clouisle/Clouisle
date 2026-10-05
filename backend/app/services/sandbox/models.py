@@ -271,6 +271,46 @@ class SandboxExecutionMetadata(BaseModel):
         return value.astimezone(UTC)
 
 
+class SandboxBinding(BaseModel):
+    """Canonical logical-session placement; physical workspace changes on reset."""
+
+    worker_id: str
+    instance_id: str
+    node_id: str
+    storage_id: str
+    epoch: int = Field(default=1, ge=1)
+    generation: int = Field(default=0, ge=0)
+    workspace_id: str
+    status: Literal["READY", "RECOVERING", "RESETTING", "UNAVAILABLE"] = "READY"
+    reset_count: int = Field(default=0, ge=0)
+    recovery_id: str | None = None
+    recovery_started_at: float | None = None
+
+    def matches(self, other: "SandboxBinding | None", *, ready: bool = True) -> bool:
+        return (
+            other is not None
+            and (
+                self.epoch,
+                self.generation,
+                self.workspace_id,
+                self.worker_id,
+                self.instance_id,
+                self.node_id,
+                self.storage_id,
+            )
+            == (
+                other.epoch,
+                other.generation,
+                other.workspace_id,
+                other.worker_id,
+                other.instance_id,
+                other.node_id,
+                other.storage_id,
+            )
+            and (not ready or other.status == "READY")
+        )
+
+
 class SandboxJob(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -295,6 +335,9 @@ class SandboxJob(BaseModel):
     )
     limits: SandboxLimits = Field(default_factory=SandboxLimits)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    session_id: str | None = None
+    binding: SandboxBinding | None = None
+    deadline_at: float | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -342,6 +385,11 @@ class SandboxResult(BaseModel):
     status: SandboxTaskStatus = Field(default=SandboxTaskStatus.QUEUED)
     result: Any = None
     error: str | None = None
+    error_code: str | None = None
+    recovery: dict[str, Any] | None = None
+    session_id: str | None = None
+    binding: SandboxBinding | None = None
+    deadline_at: float | None = None
     stdout: str = ""
     stderr: str = ""
     artifacts: list[SandboxArtifact] = Field(default_factory=list)
@@ -371,6 +419,7 @@ class SandboxSession(BaseModel):
     """沙箱会话，用于对话级别的持久化工作空间"""
 
     session_id: str
+    revision: int = Field(default=0, ge=0)
     conversation_id: str | None = None
     agent_id: str | None = None
     team_id: str | None = None

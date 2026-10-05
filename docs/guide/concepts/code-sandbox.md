@@ -14,6 +14,12 @@ Agent/Workflow → API → Celery Queue (sandbox) → Sandbox Worker
                                   /workspace → current job/session directory
 ```
 
+### Session Affinity and Recovery
+
+Each ready sandbox worker advertises a short Redis lease only after its workspace and checkpoint roots pass writable-disk checks. A session binds to one worker, process instance, node, storage identity and workspace generation. Its jobs and lifecycle tasks use that worker's dedicated Celery queue; API and Agent workers do not need access to the worker's physical filesystem.
+
+A supervised Celery-process restart on the same retained disk gets a new instance ID and can restore the session checkpoint. If the original storage remains unavailable through the bounded recovery window, the runtime may prepare a fresh workspace on another ready worker and atomically advance the session generation. AgentRun receives `WORKSPACE_RESET` and must replan. Old-generation queued jobs are rejected, and a running command with uncertain completion is never replayed automatically. This is node-local persistence, not shared storage or replication: permanent loss of the original disk means its uncheckpointed files cannot be restored.
+
 ### Deep-Dive Bubblewrap Namespace & Mount Layout
 
 When filesystem isolation is enabled (`SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true`), the sandbox launcher wraps executions in a dedicated `bwrap` process configured with strict namespace isolation:
@@ -76,15 +82,25 @@ Chat uploads, generated media, and collected sandbox artifacts are durable `Asse
 | `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `false` | `true` | Launch executable payloads inside the Bubblewrap filesystem namespace |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `bwrap` | `/usr/bin/bwrap` | Bubblewrap executable name or absolute path |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | `1` | Number of concurrent sandbox worker slots |
-| `SANDBOX_WORKSPACE_ROOT` | `/tmp/clouisle-sandbox/jobs` | Same | Host-side root for job and session directories |
-| `SANDBOX_CHECKPOINT_ROOT` | Empty | Empty | Local full-tree checkpoints; defaults to a `checkpoints` sibling of `SANDBOX_WORKSPACE_ROOT` |
+| `SANDBOX_WORKER_ID` | Empty; generated and persisted per disk | Leave unset for per-disk identity | Optional explicit worker identity; a retained disk keeps its worker/storage IDs |
+| `SANDBOX_NODE_ID` | Empty; hostname | Kubernetes node name or `compose-local` | Node identity used to prefer the original storage location during recovery |
+| `SANDBOX_WORKER_INSTANCE_ID` | Empty; generated per process | Fresh ID per supervised process | Process incarnation; never reuse it across restarts |
+| `SANDBOX_WORKSPACE_ROOT` | `/tmp/clouisle-sandbox/jobs` | `/var/lib/clouisle/sandbox/jobs` | Common virtual root configured on API, Agent workers and sandbox workers; only sandbox workers mount its physical parent |
+| `SANDBOX_CHECKPOINT_ROOT` | Empty | `/var/lib/clouisle/sandbox/checkpoints` | Local full-tree checkpoints; generic default is a `checkpoints` sibling of `SANDBOX_WORKSPACE_ROOT` |
+| `SANDBOX_WORKER_HEARTBEAT_SECONDS` | `5` | `5` | Readiness heartbeat interval |
+| `SANDBOX_WORKER_HEARTBEAT_TTL_SECONDS` | `20` | `20` | Redis readiness lease lifetime; must exceed the heartbeat interval |
+| `SANDBOX_WORKER_RECOVERY_SECONDS` | `30` | `30` | Recovery-attempt bound, capped by the original job deadline |
+| `SANDBOX_RECOVERY_POLL_SECONDS` | `0.5` | `0.5` | Poll interval for worker availability and physical-preparation acknowledgement |
+| `SANDBOX_SESSION_MAX_RESETS` | `1` | `1` | Maximum fresh-workspace generation replacements per session |
+| `SANDBOX_SUPERVISOR_RESTART_SECONDS` | `1` | `1` | Delay before restarting an exited Celery child on the retained disk |
+| `SANDBOX_SUPERVISOR_MAX_RESTARTS` | `3` | `3` | Child restarts allowed before the sandbox-worker container exits |
 | `SANDBOX_WORKSPACE_IDLE_SECONDS` | `900` | `900` | Idle time before an inactive session workspace is evicted to its checkpoint |
 | `SANDBOX_CHECKPOINT_TIMEOUT_SECONDS` | `120` | `120` | Maximum wait for an owning worker to acknowledge a round checkpoint |
 | `SANDBOX_MAX_DISK_MB` | `8192` | Same | Maximum requested workspace disk limit |
 | `SANDBOX_SESSION_TTL_HOURS` | `24` | Same | Session lifetime before cleanup |
 | `SANDBOX_RESULT_TTL_SECONDS` | `86400` | Same | Result retention period |
 
-AgentRun round boundaries are checkpointed on the session's owning sandbox worker before the run becomes completed, waiting for a user answer, or stopped. Inactive workspaces are evicted after the idle interval and restored on the next job; checkpoints and live workspaces are local to that worker. To recover across worker replacement, persist both roots and keep the worker identity tied to the same storage. A worker replacement that loses its local checkpoint cannot restore the session. Session TTL cleanup permanently deletes session data when its owning worker can process the cleanup task.
+AgentRun round boundaries are checkpointed on the session's owning sandbox worker before the run becomes completed, waiting for a user answer, or stopped. Idle runtime directories are evicted after checkpointing and restored on the next task. Persist workspace, checkpoint, identity, lock and cache paths on the same worker-local disk. TTL cleanup permanently deletes session data when a worker can process the cleanup task; an unreachable node's local files cannot be deleted remotely.
 
 The sandbox-worker image installs Bubblewrap and enables isolation. When isolation is enabled, a missing binary or missing workspace root fails the task instead of falling back to direct execution. Caller-side fallback is a separate switch: with `SANDBOX_LEGACY_FALLBACK_ENABLED` enabled (the default), a failed sandbox runtime task falls back to the in-process legacy runner; set it to `false` to return the failure instead.
 

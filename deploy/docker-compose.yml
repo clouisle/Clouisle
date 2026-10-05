@@ -73,6 +73,9 @@ services:
       REDIS_HOST: redis
       QDRANT_URL: http://qdrant:6333
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
+      # Same virtual path as sandbox-worker; its physical data mount is not shared.
+      SANDBOX_WORKSPACE_ROOT: /var/lib/clouisle/sandbox/jobs
+      SANDBOX_CHECKPOINT_ROOT: /var/lib/clouisle/sandbox/checkpoints
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
       interval: 10s
@@ -104,6 +107,8 @@ services:
       UPLOAD_STORAGE_MODE: remote
       API_INTERNAL_BASE_URL: ${API_INTERNAL_BASE_URL:-http://api:8000}
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
+      SANDBOX_WORKSPACE_ROOT: /var/lib/clouisle/sandbox/jobs
+      SANDBOX_CHECKPOINT_ROOT: /var/lib/clouisle/sandbox/checkpoints
     depends_on:
       db:
         condition: service_healthy
@@ -118,6 +123,10 @@ services:
     image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest
     restart: unless-stopped
     command: ["python", "main.py", "sandbox-worker", "-c", "${SANDBOX_WORKER_CONCURRENCY:-1}"]
+    # One service owns this disk; do not scale it with a shared named volume.
+    stop_grace_period: 35s
+    volumes:
+      - sandbox_data:/var/lib/clouisle/sandbox
     env_file: .env
     # bwrap must create user/mount namespaces. The image USER is a non-root
     # account whose effective caps are always empty, so the worker runs as
@@ -139,6 +148,9 @@ services:
       UPLOAD_STORAGE_MODE: remote
       API_INTERNAL_BASE_URL: ${API_INTERNAL_BASE_URL:-http://api:8000}
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
+      SANDBOX_WORKSPACE_ROOT: /var/lib/clouisle/sandbox/jobs
+      SANDBOX_CHECKPOINT_ROOT: /var/lib/clouisle/sandbox/checkpoints
+      SANDBOX_NODE_ID: ${SANDBOX_NODE_ID:-compose-local}
     depends_on:
       db:
         condition: service_healthy
@@ -184,3 +196,4 @@ volumes:
   redis_data:
   qdrant_data:
   uploads_data:
+  sandbox_data:

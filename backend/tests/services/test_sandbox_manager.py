@@ -20,6 +20,7 @@ from app.services.sandbox.manager import (
 )
 from app.services.sandbox.models import (
     SandboxArtifact,
+    SandboxBinding,
     SandboxArtifactLimits,
     SandboxArtifactSpec,
     SandboxInputFileSpec,
@@ -32,6 +33,25 @@ from app.services.sandbox.models import (
 from app.services.sandbox.process_launcher import ProcessLaunchResult
 from app.services.sandbox.python_env import PythonEnvironmentManager
 from app.services.sandbox.workspace import SandboxWorkspaceManager
+from app.services.sandbox.worker_registry import WorkerPresence
+
+
+def bind_manager_session(monkeypatch, store):
+    presence = WorkerPresence(
+        worker_id="worker-a",
+        instance_id="instance-a",
+        node_id="node-a",
+        storage_id="storage-a",
+    )
+    binding = SandboxBinding(
+        **presence.model_dump(exclude={"ready", "pid"}), workspace_id="session-1"
+    )
+    store.get_binding = AsyncMock(return_value=binding)
+    monkeypatch.setattr(
+        "app.services.sandbox.manager.sandbox_worker_registry.get",
+        AsyncMock(return_value=presence),
+    )
+    return binding
 
 
 class InMemoryResultStore:
@@ -625,9 +645,10 @@ class TestSandboxManager:
         cleanup = MagicMock(wraps=workspace_manager.cleanup)
         monkeypatch.setattr("app.services.sandbox.manager.sandbox_session_store", store)
         monkeypatch.setattr(workspace_manager, "cleanup", cleanup)
+        binding = bind_manager_session(monkeypatch, store)
 
         result = await manager.execute(
-            SandboxJob(command=["python3"]), session_id="session-1"
+            SandboxJob(command=["python3"], binding=binding), session_id="session-1"
         )
 
         assert result.success is True
@@ -689,9 +710,11 @@ class TestSandboxManager:
         monkeypatch.setattr(
             "app.services.asset.asset_service.get_or_create_ref", get_or_create_ref
         )
+        binding = bind_manager_session(monkeypatch, store)
         result = await manager.execute(
             SandboxJob(
                 command=["python3"],
+                binding=binding,
                 artifacts=[SandboxArtifactSpec(path="/workspace/output/result.txt")],
                 metadata={
                     "workflow_run_id": str(workflow_run_id) if workflow_run_id else None
