@@ -21,6 +21,13 @@ def _ttl_seconds(ttl_hours: int | None = None) -> int:
     )
 
 
+def _binding_ttl_grace_ms() -> int:
+    return 2_000 * max(
+        settings.SANDBOX_RESULT_TTL_SECONDS,
+        settings.SANDBOX_CHECKPOINT_TIMEOUT_SECONDS,
+    )
+
+
 def _redis_text(value: bytes | str) -> str:
     return value.decode() if isinstance(value, bytes) else value
 
@@ -49,6 +56,8 @@ class SandboxSessionStore:
     CONVERSATION_KEY_PREFIX = "sandbox:conversation:"
     INDEX_KEY = "sandbox:sessions"
     IDLE_INDEX_KEY = "sandbox:session-idle"
+    PENDING_CLEANUP_INDEX_KEY = "sandbox:sessions-cleanup-pending"
+    PENDING_EVICTION_INDEX_KEY = "sandbox:sessions-eviction-pending"
 
     def _key(self, session_id: str) -> str:
         return f"{self.KEY_PREFIX}{session_id}"
@@ -77,6 +86,135 @@ class SandboxSessionStore:
         binding = await self.get_binding(session_id)
         return binding.worker_id if binding else None
 
+    async def _move_to_pending_index(
+        self,
+        session_id: str,
+        *,
+        source_key: str,
+        pending_key: str,
+        cutoff: float,
+        retry_at: float,
+        expected_binding: SandboxBinding | None,
+    ) -> bool:
+        redis = await get_redis()
+        return bool(
+            await redis.eval(
+                _BINDING_GUARD
+                + """
+            local score = redis.call('ZSCORE', KEYS[3], ARGV[2])
+            if not score or tonumber(score) > tonumber(ARGV[3]) then return 0 end
+            redis.call('ZREM', KEYS[3], ARGV[2])
+            redis.call('ZADD', KEYS[4], ARGV[4], ARGV[2])
+            return 1
+            """,
+                4,
+                self._key(session_id),
+                self._binding_key(session_id),
+                source_key,
+                pending_key,
+                expected_binding.model_dump_json() if expected_binding else "",
+                session_id,
+                cutoff,
+                retry_at,
+            )
+        )
+
+    async def _reschedule_pending_index(
+        self,
+        session_id: str,
+        *,
+        pending_key: str,
+        due_before: float,
+        retry_at: float,
+        expected_binding: SandboxBinding | None,
+    ) -> bool:
+        redis = await get_redis()
+        return bool(
+            await redis.eval(
+                _BINDING_GUARD
+                + """
+            local score = redis.call('ZSCORE', KEYS[3], ARGV[2])
+            if not score or tonumber(score) > tonumber(ARGV[3]) then return 0 end
+            redis.call('ZADD', KEYS[3], ARGV[4], ARGV[2])
+            return 1
+            """,
+                3,
+                self._key(session_id),
+                self._binding_key(session_id),
+                pending_key,
+                expected_binding.model_dump_json() if expected_binding else "",
+                session_id,
+                due_before,
+                retry_at,
+            )
+        )
+
+    async def defer_expired_cleanup(
+        self,
+        session_id: str,
+        *,
+        cutoff: float,
+        retry_at: float,
+        expected_binding: SandboxBinding | None,
+    ) -> bool:
+        return await self._move_to_pending_index(
+            session_id,
+            source_key=self.INDEX_KEY,
+            pending_key=self.PENDING_CLEANUP_INDEX_KEY,
+            cutoff=cutoff,
+            retry_at=retry_at,
+            expected_binding=expected_binding,
+        )
+
+    async def retry_expired_cleanup(
+        self,
+        session_id: str,
+        *,
+        due_before: float,
+        retry_at: float,
+        expected_binding: SandboxBinding | None,
+    ) -> bool:
+        return await self._reschedule_pending_index(
+            session_id,
+            pending_key=self.PENDING_CLEANUP_INDEX_KEY,
+            due_before=due_before,
+            retry_at=retry_at,
+            expected_binding=expected_binding,
+        )
+
+    async def defer_idle_eviction(
+        self,
+        session_id: str,
+        *,
+        cutoff: float,
+        retry_at: float,
+        expected_binding: SandboxBinding | None,
+    ) -> bool:
+        return await self._move_to_pending_index(
+            session_id,
+            source_key=self.IDLE_INDEX_KEY,
+            pending_key=self.PENDING_EVICTION_INDEX_KEY,
+            cutoff=cutoff,
+            retry_at=retry_at,
+            expected_binding=expected_binding,
+        )
+
+    async def retry_idle_eviction(
+        self,
+        session_id: str,
+        *,
+        due_before: float,
+        retry_at: float,
+        expected_binding: SandboxBinding | None,
+    ) -> bool:
+        return await self._reschedule_pending_index(
+            session_id,
+            pending_key=self.PENDING_EVICTION_INDEX_KEY,
+            due_before=due_before,
+            retry_at=retry_at,
+            expected_binding=expected_binding,
+        )
+
     async def acquire_recovery(
         self,
         session_id: str,
@@ -99,7 +237,11 @@ class SandboxSessionStore:
                 b.recovery_started_at = tonumber(ARGV[5])
             end
             local payload = cjson.encode(b)
-            redis.call('SET', KEYS[2], payload)
+            local session_ttl = redis.call('PTTL', KEYS[1])
+            redis.call(
+                'SET', KEYS[2], payload, 'PX',
+                math.max(1, session_ttl + tonumber(ARGV[6]))
+            )
             return payload
             """,
             3,
@@ -111,6 +253,7 @@ class SandboxSessionStore:
             max(1, ceil(ttl_seconds * 1000)),
             (expected or initial).model_dump_json(),
             time.time(),
+            _binding_ttl_grace_ms(),
         )
         return SandboxBinding.model_validate_json(result) if result else None
 
@@ -142,7 +285,11 @@ class SandboxSessionStore:
                 + """
             if redis.call('GET', KEYS[3]) ~= ARGV[2] then return 0 end
             if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
-            redis.call('SET', KEYS[2], ARGV[3])
+            local session_ttl = redis.call('PTTL', KEYS[1])
+            redis.call(
+                'SET', KEYS[2], ARGV[3], 'PX',
+                math.max(1, session_ttl + tonumber(ARGV[5]))
+            )
             redis.call('DEL', KEYS[3], KEYS[4])
             local s = cjson.decode(redis.call('GET', KEYS[1]))
             if ARGV[4] == '1' then s.disk_usage_bytes = 0 end
@@ -160,6 +307,7 @@ class SandboxSessionStore:
                 token,
                 replacement.model_dump_json(),
                 "1" if replacement.generation != expected.generation else "0",
+                _binding_ttl_grace_ms(),
             )
         )
 
@@ -173,7 +321,12 @@ class SandboxSessionStore:
             + """
             if redis.call('GET', KEYS[3]) ~= ARGV[2] then return 0 end
             if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
-            redis.call('SET', KEYS[2], ARGV[3]); return 1
+            local session_ttl = redis.call('PTTL', KEYS[1])
+            redis.call(
+                'SET', KEYS[2], ARGV[3], 'PX',
+                math.max(1, session_ttl + tonumber(ARGV[4]))
+            )
+            return 1
             """,
             3,
             self._key(session_id),
@@ -182,6 +335,7 @@ class SandboxSessionStore:
             expected.model_dump_json(),
             token,
             replacement.model_dump_json(),
+            _binding_ttl_grace_ms(),
         )
         return replacement if changed else None
 
@@ -264,17 +418,25 @@ class SandboxSessionStore:
                 if (s.revision or 0) ~= tonumber(ARGV[3]) then return 0 end
             end
             redis.call('SETEX', KEYS[1], ARGV[4], ARGV[5])
+            local binding_ttl_ms = tonumber(ARGV[4]) * 1000 + tonumber(ARGV[10])
+            if redis.call('EXISTS', KEYS[2]) == 1 then
+                redis.call('PEXPIRE', KEYS[2], math.max(1, binding_ttl_ms))
+            end
+            redis.call('ZREM', KEYS[6], ARGV[8])
+            redis.call('ZREM', KEYS[7], ARGV[8])
             redis.call('ZADD', KEYS[3], ARGV[6], ARGV[8])
             redis.call('ZADD', KEYS[4], ARGV[7], ARGV[8])
             if ARGV[9] ~= '' then redis.call('SETEX', KEYS[5], ARGV[4], ARGV[8]) end
             return 1
             """,
-            5,
+            7,
             self._key(session.session_id),
             self._binding_key(session.session_id),
             self.INDEX_KEY,
             self.IDLE_INDEX_KEY,
             self._conversation_key(session.conversation_id or ""),
+            self.PENDING_CLEANUP_INDEX_KEY,
+            self.PENDING_EVICTION_INDEX_KEY,
             binding.model_dump_json() if binding else "",
             "1" if create else "0",
             session.revision,
@@ -284,6 +446,7 @@ class SandboxSessionStore:
             session.last_accessed_at.timestamp(),
             session.session_id,
             session.conversation_id or "",
+            _binding_ttl_grace_ms(),
         )
         if saved:
             session.revision = updated.revision
@@ -424,10 +587,13 @@ class SandboxSessionStore:
         )
         return bool(
             await redis.eval(
-                _BINDING_GUARD + "redis.call('ZREM', KEYS[1], ARGV[2]); return 1",
-                2,
+                _BINDING_GUARD
+                + "redis.call('ZREM', KEYS[1], ARGV[2]); "
+                + "redis.call('ZREM', KEYS[3], ARGV[2]); return 1",
+                3,
                 self.IDLE_INDEX_KEY,
                 self._binding_key(session_id),
+                self.PENDING_EVICTION_INDEX_KEY,
                 binding.model_dump_json() if binding else "",
                 session_id,
             )
@@ -471,12 +637,15 @@ class SandboxSessionStore:
                     if redis.call('GET', k) == ARGV[5] then redis.call('DEL', k) end
                 end
             end
-            if ARGV[3] ~= '' then redis.call('SET', KEYS[2], ARGV[3]) end
+            if ARGV[3] ~= '' then
+                redis.call('SET', KEYS[2], ARGV[3], 'PX', ARGV[6])
+            end
             redis.call('DEL', KEYS[1], KEYS[3], KEYS[4], KEYS[7])
             redis.call('ZREM', KEYS[5], ARGV[5]); redis.call('ZREM', KEYS[6], ARGV[5])
+            redis.call('ZREM', KEYS[8], ARGV[5]); redis.call('ZREM', KEYS[9], ARGV[5])
             return 1
             """,
-                7,
+                9,
                 self._key(session_id),
                 self._binding_key(session_id),
                 self._active_round_key(session_id),
@@ -484,11 +653,14 @@ class SandboxSessionStore:
                 self.INDEX_KEY,
                 self.IDLE_INDEX_KEY,
                 self._recovery_key(session_id),
+                self.PENDING_CLEANUP_INDEX_KEY,
+                self.PENDING_EVICTION_INDEX_KEY,
                 binding.model_dump_json() if binding else "",
                 "1" if expired_only else "0",
                 tombstone.model_dump_json() if tombstone else "",
                 self.CONVERSATION_KEY_PREFIX,
                 session_id,
+                _binding_ttl_grace_ms(),
             )
         )
 
@@ -513,6 +685,31 @@ class SandboxSessionStore:
             num=settings.SANDBOX_SESSION_CLEANUP_BATCH_SIZE,
         )
         return [_redis_text(v) for v in values]
+
+    async def _due_pending_session_ids(
+        self, index_key: str, *, limit: int | None = None
+    ) -> list[str]:
+        redis = await get_redis()
+        values = await redis.zrangebyscore(
+            index_key,
+            min="-inf",
+            max=now().timestamp(),
+            start=0,
+            num=limit or settings.SANDBOX_SESSION_CLEANUP_BATCH_SIZE,
+        )
+        return [_redis_text(value) for value in values]
+
+    async def pending_expired_cleanup_ids(
+        self, *, limit: int | None = None
+    ) -> list[str]:
+        return await self._due_pending_session_ids(
+            self.PENDING_CLEANUP_INDEX_KEY, limit=limit
+        )
+
+    async def pending_idle_eviction_ids(self, *, limit: int | None = None) -> list[str]:
+        return await self._due_pending_session_ids(
+            self.PENDING_EVICTION_INDEX_KEY, limit=limit
+        )
 
     async def cleanup_expired(self, *, limit: int | None = None) -> int:
         ids = await self.expired_session_ids(limit=limit)

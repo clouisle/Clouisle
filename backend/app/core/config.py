@@ -123,7 +123,7 @@ class Settings(BaseSettings):
     )
     SANDBOX_WORKER_HEARTBEAT_TTL_SECONDS: int = Field(default=20, gt=0)
     SANDBOX_WORKER_RECOVERY_SECONDS: float = Field(
-        default=30, ge=0, allow_inf_nan=False
+        default=30, gt=0, allow_inf_nan=False
     )
     SANDBOX_RECOVERY_POLL_SECONDS: float = Field(default=0.5, gt=0, allow_inf_nan=False)
     SANDBOX_SESSION_MAX_RESETS: int = Field(default=1, ge=0)

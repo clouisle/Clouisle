@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import time
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
@@ -250,7 +251,7 @@ async def ensure_ready(
             continue
         initial = None
         if binding is None:
-            candidate = candidates[0]
+            candidate = random.choice(candidates)
             initial = SandboxBinding(
                 worker_id=candidate.worker_id,
                 instance_id=candidate.instance_id,

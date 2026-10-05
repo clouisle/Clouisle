@@ -29,6 +29,11 @@ def test_settings_rejects_unsupported_cors_input():
         Settings(_env_file=None, BACKEND_CORS_ORIGINS=123)
 
 
+def test_settings_rejects_zero_sandbox_worker_recovery_seconds():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, SANDBOX_WORKER_RECOVERY_SECONDS=0)
+
+
 def test_settings_preserves_explicit_database_url():
     settings = Settings(_env_file=None, DATABASE_URL="postgres://configured")
 

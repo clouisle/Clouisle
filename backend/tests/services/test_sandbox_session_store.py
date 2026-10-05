@@ -2,6 +2,7 @@
 
 import time
 from datetime import timedelta
+from app.core.config import settings
 
 from app.services.sandbox import recovery
 from app.services.sandbox.session_store import _redis_text
@@ -36,21 +37,50 @@ def test_get_worker_derives_from_single_canonical_binding(sandbox_runtime):
 def test_recovery_lock_coalesces_and_expired_holder_cannot_commit(sandbox_runtime):
     r = sandbox_runtime
     before = r.bind_session()
+    binding_key = r.sessions._binding_key("session")
+    session_key = r.sessions._key("session")
     owned = r.run(r.sessions.acquire_recovery("session", before, "one", 1))
     assert owned.status == "RECOVERING"
+    assert r.redis.pttl(binding_key) > r.redis.pttl(session_key)
     assert r.run(r.sessions.acquire_recovery("session", owned, "two", 1)) is None
     r.redis.delete("sandbox:session-recovery:session")
     replacement_owner = r.run(r.sessions.acquire_recovery("session", owned, "two", 1))
-    ready = replacement_owner.model_copy(
+    r.redis.pexpire(binding_key, 1000)
+    resetting = r.run(r.sessions.mark_resetting("session", replacement_owner, "two"))
+    assert resetting.status == "RESETTING"
+    assert r.redis.pttl(binding_key) > r.redis.pttl(session_key)
+    ready = resetting.model_copy(
         update={
-            "epoch": replacement_owner.epoch + 1,
+            "epoch": resetting.epoch + 1,
             "status": "READY",
             "recovery_id": None,
             "recovery_started_at": None,
         }
     )
     assert not r.run(r.sessions.commit_recovery("session", owned, "one", ready))
-    assert r.run(r.sessions.commit_recovery("session", replacement_owner, "two", ready))
+    assert r.run(r.sessions.commit_recovery("session", resetting, "two", ready))
+    assert r.redis.pttl(binding_key) > r.redis.pttl(session_key)
+
+
+def test_session_save_refreshes_binding_ttl_and_delete_bounds_tombstone(
+    sandbox_runtime,
+):
+    r = sandbox_runtime
+    binding = r.bind_session()
+    binding_key = r.sessions._binding_key("session")
+    session_key = r.sessions._key("session")
+    r.redis.pexpire(binding_key, 1000)
+
+    assert r.run(r.sessions.touch("session", expected_binding=binding)) is not None
+    assert r.redis.pttl(binding_key) > r.redis.pttl(session_key)
+    assert r.run(r.sessions.delete("session", expected_binding=binding))
+
+    tombstone_ttl = r.redis.pttl(binding_key)
+    ttl_grace_ms = 2_000 * max(
+        settings.SANDBOX_RESULT_TTL_SECONDS,
+        settings.SANDBOX_CHECKPOINT_TIMEOUT_SECONDS,
+    )
+    assert 0 < tombstone_ttl <= ttl_grace_ms
 
 
 def test_stale_metadata_and_round_writes_cannot_regress_rebound_session(

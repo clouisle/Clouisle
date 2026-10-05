@@ -11,6 +11,27 @@ from app.services.sandbox.workspace import SandboxWorkspaceManager
 from app.tasks import sandbox as tasks
 
 
+def test_first_binding_can_select_a_different_ready_worker(
+    monkeypatch, sandbox_runtime
+):
+    r = sandbox_runtime
+    r.register("a")
+    r.register("b", instance_id="instance-b", node_id="node-b", storage_id="storage-b")
+    monkeypatch.setattr(
+        recovery.random,
+        "choice",
+        lambda candidates: next(
+            candidate for candidate in candidates if candidate.worker_id == "b"
+        ),
+    )
+    r.run(r.sessions.create(session_id="session"))
+
+    binding = r.run(recovery.ensure_ready("session", time.time() + 2))
+
+    assert binding.worker_id == "b"
+    assert r.preparations[0][0] == sandbox_worker_queue("b")
+
+
 def test_first_submissions_are_prepared_and_addressed_to_one_ready_owner(
     sandbox_runtime,
 ):

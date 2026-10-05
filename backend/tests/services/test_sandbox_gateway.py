@@ -6,6 +6,7 @@ import time
 
 import pytest
 
+from app.core.config import settings
 from app.services.sandbox import recovery
 from app.services.sandbox.models import SandboxJob, SandboxTaskStatus
 from app.services.sandbox.models import SandboxResult
@@ -212,7 +213,113 @@ def test_idle_eviction_routes_only_inactive_bound_sessions(sandbox_runtime):
     assert len(r.messages) == 1
     assert r.messages[0][0] == sandbox_worker_queue(idle.worker_id)
     assert r.redis.zscore(r.sessions.IDLE_INDEX_KEY, "unbound") is None
-    assert r.redis.zscore(r.sessions.IDLE_INDEX_KEY, "active") == 0
+    assert r.redis.zscore(r.sessions.IDLE_INDEX_KEY, "idle") is None
+    assert r.redis.zscore(r.sessions.IDLE_INDEX_KEY, "active") is None
+    assert r.redis.zscore(r.sessions.PENDING_EVICTION_INDEX_KEY, "active") is not None
+    assert r.redis.zscore(r.sessions.PENDING_EVICTION_INDEX_KEY, "idle") is not None
+
+    r.redis.zadd(r.sessions.PENDING_EVICTION_INDEX_KEY, {"idle": time.time() - 1})
+    r.messages.clear()
+    assert r.run(r.gateway.retry_pending_idle_evictions()) == 1
+    assert r.messages[0][0] == sandbox_worker_queue(idle.worker_id)
+
+
+def test_expired_cleanup_pending_owner_does_not_starve_later_sessions(
+    monkeypatch, sandbox_runtime
+):
+    r = sandbox_runtime
+    first = r.bind_session(session_id="owner-a")
+    r.register("b", instance_id="instance-b", node_id="node-b", storage_id="storage-b")
+    monkeypatch.setattr(
+        recovery.random,
+        "choice",
+        lambda candidates: next(
+            candidate for candidate in candidates if candidate.worker_id == "b"
+        ),
+    )
+    later = r.bind_session(session_id="owner-b")
+    monkeypatch.setattr(settings, "SANDBOX_SESSION_CLEANUP_BATCH_SIZE", 1)
+    r.redis.zadd(
+        r.sessions.INDEX_KEY,
+        {"owner-a": time.time() - 2, "owner-b": time.time() - 1},
+    )
+    owner_a_available = False
+
+    def dispatch(args, queue, **_kwargs):
+        if queue == sandbox_worker_queue(first.worker_id) and not owner_a_available:
+            raise RuntimeError("owner queue unavailable")
+        r.messages.append((queue, args))
+
+    monkeypatch.setattr(tasks.cleanup_sandbox_session_task, "apply_async", dispatch)
+
+    assert r.run(r.gateway.cleanup_expired_sessions()) == 1
+    assert r.redis.zscore(r.sessions.INDEX_KEY, "owner-a") is None
+    assert r.redis.zscore(r.sessions.PENDING_CLEANUP_INDEX_KEY, "owner-a") is not None
+    assert r.redis.zscore(r.sessions.INDEX_KEY, "owner-b") is not None
+    assert not r.messages
+
+    assert r.run(r.gateway.cleanup_expired_sessions()) == 1
+    assert r.messages[0][0] == sandbox_worker_queue(later.worker_id)
+    assert r.redis.zscore(r.sessions.PENDING_CLEANUP_INDEX_KEY, "owner-b") is not None
+
+    owner_a_available = True
+    r.redis.zadd(r.sessions.PENDING_CLEANUP_INDEX_KEY, {"owner-a": time.time() - 1})
+    r.messages.clear()
+    assert r.run(r.gateway.retry_pending_expired_sessions()) == 1
+    assert r.messages[0][0] == sandbox_worker_queue(first.worker_id)
+
+
+def test_expired_cleanup_defers_unavailable_owner_sessions(
+    sandbox_runtime, monkeypatch
+):
+    r = sandbox_runtime
+    r.bind_session(session_id="expired-gone")
+    r.bind_session(session_id="expired-key")
+    r.bind_session(session_id="expired-active")
+    r.run(r.sessions.begin_round("expired-active", "active-round", ttl_seconds=60))
+    monkeypatch.setattr(settings, "SANDBOX_SESSION_CLEANUP_BATCH_SIZE", 3)
+    now = time.time()
+    r.redis.delete(r.sessions._key("expired-gone"))
+    r.redis.zadd(
+        r.sessions.INDEX_KEY,
+        {
+            "expired-gone": now - 3,
+            "expired-key": now - 2,
+            "expired-active": now - 1,
+        },
+    )
+    r.registry.remove(r.redis, r.workers["a"])
+
+    assert r.run(r.gateway.cleanup_expired_sessions()) == 3
+
+    assert r.run(r.sessions.get_binding("expired-gone")).status == "UNAVAILABLE"
+    assert r.redis.zscore(r.sessions.INDEX_KEY, "expired-gone") is None
+    assert r.redis.zscore(r.sessions.PENDING_CLEANUP_INDEX_KEY, "expired-gone") is None
+    for session_id in ("expired-key", "expired-active"):
+        assert r.redis.zscore(r.sessions.INDEX_KEY, session_id) is None
+        assert (
+            r.redis.zscore(r.sessions.PENDING_CLEANUP_INDEX_KEY, session_id) is not None
+        )
+    assert r.run(r.sessions.get("expired-key")) is not None
+    assert r.run(r.sessions.get_active_round("expired-active")) == "active-round"
+    assert not r.messages
+
+
+def test_idle_eviction_retries_when_unbound_eviction_marker_loses_cas(
+    sandbox_runtime, monkeypatch
+):
+    r = sandbox_runtime
+    r.run(r.sessions.create(session_id="unbound"))
+    r.redis.zadd(r.sessions.IDLE_INDEX_KEY, {"unbound": 0})
+
+    async def lose_cas(_session_id):
+        return False
+
+    monkeypatch.setattr(r.sessions, "mark_evicted", lose_cas)
+
+    assert r.run(r.gateway.evict_idle_sessions()) == 0
+    assert r.redis.zscore(r.sessions.IDLE_INDEX_KEY, "unbound") is None
+    assert r.redis.zscore(r.sessions.PENDING_EVICTION_INDEX_KEY, "unbound") is not None
 
 
 def test_unbound_round_finishes_without_worker_dispatch(sandbox_runtime):

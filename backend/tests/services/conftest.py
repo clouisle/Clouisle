@@ -203,12 +203,12 @@ def sandbox_runtime(tmp_path, monkeypatch):
     monkeypatch.setattr(
         tasks.cleanup_sandbox_session_task,
         "apply_async",
-        lambda args, queue: runtime.messages.append((queue, args)),
+        lambda args, queue, **_kwargs: runtime.messages.append((queue, args)),
     )
     monkeypatch.setattr(
         tasks.evict_sandbox_session_task,
         "apply_async",
-        lambda args, queue: runtime.messages.append((queue, args)),
+        lambda args, queue, **_kwargs: runtime.messages.append((queue, args)),
     )
     try:
         yield runtime

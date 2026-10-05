@@ -485,7 +485,9 @@ def cleanup_expired_sandbox_sessions_task() -> dict:
     async def _run() -> dict:
         return {
             "cleaned": await sandbox_gateway.cleanup_expired_sessions(),
+            "cleanup_retried": await sandbox_gateway.retry_pending_expired_sessions(),
             "eviction_scheduled": await sandbox_gateway.evict_idle_sessions(),
+            "eviction_retried": await sandbox_gateway.retry_pending_idle_evictions(),
         }
 
     return _get_worker_loop().run_until_complete(_run())

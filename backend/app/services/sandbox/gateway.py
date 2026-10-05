@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -34,6 +35,8 @@ from .recovery import (
 from .result_store import TERMINAL_STATUSES, sandbox_result_store
 from .session_store import sandbox_session_store
 from .worker_registry import sandbox_worker_registry
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from .workspace import SandboxWorkspace, SandboxWorkspaceManager
@@ -136,10 +139,85 @@ class SandboxGateway:
             queue=sandbox_worker_queue(binding.worker_id),
         )
 
+    async def _schedule_expired_cleanup(
+        self,
+        session_id: str,
+        *,
+        cutoff: float,
+        retry_pending: bool,
+    ) -> bool:
+        from app.tasks.sandbox import cleanup_sandbox_session_task
+
+        attempted_at = time.time()
+        binding = await sandbox_session_store.get_binding(session_id)
+        live = (
+            await sandbox_worker_registry.get(binding.worker_id)
+            if binding is not None
+            else None
+        )
+        ready = bool(
+            binding and binding.status == "READY" and presence_matches(binding, live)
+        )
+        active_round = await sandbox_session_store.get_active_round(session_id)
+        if not ready and active_round is None:
+            if await sandbox_session_store.delete(
+                session_id, expected_binding=binding, expired_only=True
+            ):
+                return False
+
+        deadline = attempted_at + settings.SANDBOX_CHECKPOINT_TIMEOUT_SECONDS
+        retry_at = deadline + 1
+        if retry_pending:
+            deferred = await sandbox_session_store.retry_expired_cleanup(
+                session_id,
+                due_before=attempted_at,
+                retry_at=retry_at,
+                expected_binding=binding,
+            )
+        else:
+            deferred = await sandbox_session_store.defer_expired_cleanup(
+                session_id,
+                cutoff=cutoff,
+                retry_at=retry_at,
+                expected_binding=binding,
+            )
+        if not deferred or not ready or active_round is not None:
+            return False
+
+        try:
+            cleanup_sandbox_session_task.apply_async(
+                args=[
+                    session_id,
+                    True,
+                    binding.model_dump(mode="json"),
+                    deadline,
+                ],
+                queue=sandbox_worker_queue(binding.worker_id),
+                expires=settings.SANDBOX_CHECKPOINT_TIMEOUT_SECONDS,
+            )
+        except Exception:
+            logger.exception(
+                "Could not enqueue expired sandbox cleanup for session %s", session_id
+            )
+            return False
+        return True
+
     async def cleanup_expired_sessions(self) -> int:
+        cutoff = time.time()
         ids = await sandbox_session_store.expired_session_ids()
         for session_id in ids:
-            await self.cleanup_session(session_id, expired_only=True)
+            await self._schedule_expired_cleanup(
+                session_id, cutoff=cutoff, retry_pending=False
+            )
+        return len(ids)
+
+    async def retry_pending_expired_sessions(self) -> int:
+        attempted_at = time.time()
+        ids = await sandbox_session_store.pending_expired_cleanup_ids()
+        for session_id in ids:
+            await self._schedule_expired_cleanup(
+                session_id, cutoff=attempted_at, retry_pending=True
+            )
         return len(ids)
 
     async def begin_round(
@@ -192,28 +270,76 @@ class SandboxGateway:
             return
         raise RuntimeError(result.error or "Sandbox checkpoint could not be saved")
 
-    async def evict_idle_sessions(self) -> int:
+    async def _schedule_idle_eviction(
+        self,
+        session_id: str,
+        *,
+        cutoff: float,
+        retry_pending: bool,
+    ) -> bool:
         from app.tasks.sandbox import evict_sandbox_session_task
 
+        binding = await sandbox_session_store.get_binding(session_id)
+        if binding is None and await sandbox_session_store.mark_evicted(session_id):
+            return False
+
+        attempted_at = time.time()
+        deadline = attempted_at + settings.SANDBOX_CHECKPOINT_TIMEOUT_SECONDS
+        retry_at = deadline + 1
+        if retry_pending:
+            deferred = await sandbox_session_store.retry_idle_eviction(
+                session_id,
+                due_before=attempted_at,
+                retry_at=retry_at,
+                expected_binding=binding,
+            )
+        else:
+            deferred = await sandbox_session_store.defer_idle_eviction(
+                session_id,
+                cutoff=cutoff,
+                retry_at=retry_at,
+                expected_binding=binding,
+            )
+        if not deferred or binding is None:
+            return False
+
+        live = await sandbox_worker_registry.get(binding.worker_id)
+        if (
+            binding.status != "READY"
+            or not presence_matches(binding, live)
+            or await sandbox_session_store.get_active_round(session_id) is not None
+        ):
+            return False
+
+        try:
+            evict_sandbox_session_task.apply_async(
+                args=[session_id, cutoff, binding.model_dump(mode="json"), deadline],
+                queue=sandbox_worker_queue(binding.worker_id),
+                expires=settings.SANDBOX_CHECKPOINT_TIMEOUT_SECONDS,
+            )
+        except Exception:
+            logger.exception(
+                "Could not enqueue sandbox eviction for session %s", session_id
+            )
+            return False
+        return True
+
+    async def evict_idle_sessions(self) -> int:
         cutoff = time.time() - settings.SANDBOX_WORKSPACE_IDLE_SECONDS
         scheduled = 0
         for session_id in await sandbox_session_store.idle_session_ids(cutoff):
-            if await sandbox_session_store.get_active_round(session_id) is not None:
-                continue
-            binding = await sandbox_session_store.get_binding(session_id)
-            if binding is None:
-                await sandbox_session_store.mark_evicted(session_id)
-                continue
-            evict_sandbox_session_task.apply_async(
-                args=[
-                    session_id,
-                    cutoff,
-                    binding.model_dump(mode="json"),
-                    time.time() + settings.SANDBOX_CHECKPOINT_TIMEOUT_SECONDS,
-                ],
-                queue=sandbox_worker_queue(binding.worker_id),
+            scheduled += await self._schedule_idle_eviction(
+                session_id, cutoff=cutoff, retry_pending=False
             )
-            scheduled += 1
+        return scheduled
+
+    async def retry_pending_idle_evictions(self) -> int:
+        cutoff = time.time() - settings.SANDBOX_WORKSPACE_IDLE_SECONDS
+        scheduled = 0
+        for session_id in await sandbox_session_store.pending_idle_eviction_ids():
+            scheduled += await self._schedule_idle_eviction(
+                session_id, cutoff=cutoff, retry_pending=True
+            )
         return scheduled
 
     async def submit(

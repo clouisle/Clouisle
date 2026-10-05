@@ -610,7 +610,7 @@ TAVILY_API_KEY=tvly-xxxxxxxx
 | `SANDBOX_WORKER_INSTANCE_ID` | Empty; generated per process | Supervisor assigns a fresh ID per Celery child | Process incarnation; do not reuse across worker restarts |
 | `SANDBOX_WORKER_HEARTBEAT_SECONDS` | `5` | `5` | Interval for the independent sandbox-worker readiness heartbeat |
 | `SANDBOX_WORKER_HEARTBEAT_TTL_SECONDS` | `20` | `20` | Redis readiness lease lifetime; must exceed the heartbeat interval |
-| `SANDBOX_WORKER_RECOVERY_SECONDS` | `30` | `30` | Upper bound for a recovery attempt, further capped by the original job deadline |
+| `SANDBOX_WORKER_RECOVERY_SECONDS` | `30` | `30` | Positive upper bound for a recovery attempt, further capped by the original job deadline; `0` is invalid |
 | `SANDBOX_RECOVERY_POLL_SECONDS` | `0.5` | `0.5` | Polling interval while waiting for a worker lease or physical preparation |
 | `SANDBOX_SESSION_MAX_RESETS` | `1` | `1` | Maximum fresh-workspace generation replacements per session |
 | `SANDBOX_SUPERVISOR_RESTART_SECONDS` | `1` | `1` | Delay before restarting an exited supervised Celery child on the retained disk |
