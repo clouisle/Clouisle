@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Dependencies and Tooling
 - Updated backend and frontend dependency manifests and lockfiles to current compatible releases.
 - Made the Python lint policy explicit for stable Ruff upgrades and audited the complete Bun production dependency closure.
+- Replaced the sandbox tests' Redis-server process with an in-process fake and removed the Redis server install from backend CI.
 - Added `MIT-0` to the approved permissive-license policy.
 
 ### Fixed

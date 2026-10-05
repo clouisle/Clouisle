@@ -1,19 +1,11 @@
-"""Opt-in real Redis and physical sandbox runtime for service regressions."""
+"""In-process Redis substitute and physical sandbox runtime for service regressions."""
 
 import asyncio
-import os
-import shutil
-import subprocess
 import time
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from redis import Redis
-from redis.asyncio import Redis as AsyncRedis
-from redis.exceptions import ConnectionError
 
 from app.core.config import settings
 from app.services.sandbox import (
@@ -28,60 +20,18 @@ from app.services.sandbox.result_store import SandboxResultStore
 from app.services.sandbox.session_store import SandboxSessionStore
 from app.services.sandbox.worker_registry import SandboxWorkerRegistry, WorkerPresence
 from app.tasks import sandbox as tasks
+from tests.services.fake_redis import AsyncFakeRedis, FakeRedis
 
 
 @pytest.fixture
-def sandbox_runtime(tmp_path, monkeypatch):
-    external_url = os.environ.get("SANDBOX_TEST_REDIS_URL")
-    process = None
-    temporary = None
-    if external_url:
-        # Point only at an isolated, disposable Docker Redis for this test run.
-        sync_client = Redis.from_url(external_url, decode_responses=True)
-        try:
-            sync_client.ping()
-            sync_client.flushdb()
-        except ConnectionError as exc:
-            sync_client.close()
-            pytest.fail(f"test Docker Redis is unavailable: {exc}")
-        client = AsyncRedis.from_url(external_url, decode_responses=True)
-    else:
-        binary = shutil.which("redis-server")
-        if binary is None:
-            pytest.skip(
-                "real Redis is required; set SANDBOX_TEST_REDIS_URL to an isolated Docker Redis"
-            )
-        temporary = TemporaryDirectory(prefix="sandbox-core-redis-", dir="/tmp")
-        socket_path = str(Path(temporary.name) / "redis.sock")
-        process = subprocess.Popen(
-            [
-                binary,
-                "--port",
-                "0",
-                "--unixsocket",
-                socket_path,
-                "--save",
-                "",
-                "--appendonly",
-                "no",
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        sync_client = Redis(unix_socket_path=socket_path, decode_responses=True)
-        ready_deadline = time.monotonic() + 5
-        while True:
-            try:
-                sync_client.ping()
-                break
-            except ConnectionError:
-                if process.poll() is not None or time.monotonic() >= ready_deadline:
-                    process.terminate()
-                    process.wait(timeout=5)
-                    temporary.cleanup()
-                    pytest.fail("test Redis did not start")
-                time.sleep(0.01)
-        client = AsyncRedis(unix_socket_path=socket_path, decode_responses=True)
+def sandbox_redis_clients():
+    sync_client = FakeRedis()
+    return sync_client, AsyncFakeRedis(sync_client)
+
+
+@pytest.fixture
+def sandbox_runtime(tmp_path, monkeypatch, sandbox_redis_clients):
+    sync_client, client = sandbox_redis_clients
     loop = asyncio.new_event_loop()
     sessions, results, registry = (
         SandboxSessionStore(),
@@ -225,8 +175,3 @@ def sandbox_runtime(tmp_path, monkeypatch):
         loop.run_until_complete(close())
         loop.close()
         sync_client.close()
-        if process is not None:
-            process.terminate()
-            process.wait(timeout=5)
-        if temporary is not None:
-            temporary.cleanup()

@@ -2,20 +2,14 @@
 
 import asyncio
 import os
-import shutil
 import signal
-import subprocess
 import sys
 import threading
 import time
 from types import SimpleNamespace
-from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from redis import Redis
-from redis.asyncio import Redis as AsyncRedis
-from redis.exceptions import ConnectionError
 
 from app.core.config import Settings, settings
 from app.services.sandbox import (
@@ -24,7 +18,10 @@ from app.services.sandbox import (
     worker_registry,
     worker_supervisor,
 )
-from app.services.sandbox.worker_registry import SandboxWorkerRegistry, WorkerPresence
+from app.services.sandbox.worker_registry import (
+    SandboxWorkerRegistry,
+    WorkerPresence,
+)
 
 
 @pytest.fixture
@@ -40,71 +37,8 @@ def local_disk(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def redis_server():
-    external_url = os.environ.get("SANDBOX_TEST_REDIS_URL")
-    if external_url:
-        client = Redis.from_url(external_url, decode_responses=True)
-        try:
-            client.ping()
-            client.flushdb()
-        except ConnectionError as exc:
-            client.close()
-            pytest.fail(f"test Docker Redis is unavailable: {exc}")
-        try:
-            yield client, external_url
-        finally:
-            client.close()
-        return
-
-    binary = shutil.which("redis-server")
-    if not binary:
-        pytest.skip(
-            "real Redis is required; set SANDBOX_TEST_REDIS_URL to an isolated Docker Redis"
-        )
-    socket_directory = TemporaryDirectory(prefix="sandbox-redis-", dir="/tmp")
-    socket_path = f"{socket_directory.name}/redis.sock"
-    process = subprocess.Popen(
-        [
-            binary,
-            "--port",
-            "0",
-            "--unixsocket",
-            socket_path,
-            "--save",
-            "",
-            "--appendonly",
-            "no",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    client = Redis(unix_socket_path=socket_path, decode_responses=True)
-    deadline = time.monotonic() + 5
-    try:
-        while True:
-            try:
-                client.ping()
-                break
-            except ConnectionError:
-                if process.poll() is not None or time.monotonic() >= deadline:
-                    pytest.fail("test Redis did not start")
-                time.sleep(0.02)
-        yield client, socket_path
-    finally:
-        client.close()
-        process.terminate()
-        process.wait(timeout=5)
-        socket_directory.cleanup()
-
-
-@pytest.fixture
-def registry_client(redis_server, monkeypatch):
-    client, socket_path = redis_server
-    async_client = (
-        AsyncRedis.from_url(socket_path, decode_responses=True)
-        if "://" in socket_path
-        else AsyncRedis(unix_socket_path=socket_path, decode_responses=True)
-    )
+def registry_client(sandbox_redis_clients, monkeypatch):
+    client, async_client = sandbox_redis_clients
     monkeypatch.setattr(
         worker_registry, "get_redis", AsyncMock(return_value=async_client)
     )
@@ -197,9 +131,9 @@ async def test_unready_workers_excluded_and_redis_outage_propagates(
 
 
 def test_busy_solo_worker_renews_lease_independently(
-    local_disk, redis_server, monkeypatch
+    local_disk, sandbox_redis_clients, monkeypatch
 ):
-    client, _ = redis_server
+    client, _ = sandbox_redis_clients
     monkeypatch.setattr(settings, "SANDBOX_WORKER_HEARTBEAT_SECONDS", 0.03)
     monkeypatch.setattr(settings, "SANDBOX_WORKER_HEARTBEAT_TTL_SECONDS", 1)
     conflict = Mock()
@@ -230,9 +164,9 @@ def test_busy_solo_worker_renews_lease_independently(
 
 
 def test_only_sandbox_consumers_advertise_writable_disk(
-    local_disk, redis_server, monkeypatch
+    local_disk, sandbox_redis_clients, monkeypatch
 ):
-    client, _ = redis_server
+    client, _ = sandbox_redis_clients
     monkeypatch.setattr(worker_heartbeat, "heartbeat_redis", lambda: client)
     monkeypatch.setattr(worker_heartbeat, "_heartbeat", None)
     worker_heartbeat.start_worker_heartbeat(
@@ -263,8 +197,10 @@ def test_only_sandbox_consumers_advertise_writable_disk(
     )
 
 
-def test_disk_failure_does_not_advertise_ready(local_disk, redis_server, monkeypatch):
-    client, _ = redis_server
+def test_disk_failure_does_not_advertise_ready(
+    local_disk, sandbox_redis_clients, monkeypatch
+):
+    client, _ = sandbox_redis_clients
     monkeypatch.setattr(worker_heartbeat, "_heartbeat", None)
     monkeypatch.setattr(
         worker_heartbeat, "worker_presence", Mock(side_effect=OSError("read-only disk"))
@@ -318,9 +254,9 @@ def test_supervisor_recreates_child_on_retained_disk_and_retires_old_lease(
 
 
 def test_supervisor_forwards_shutdown_and_does_not_restart(
-    local_disk, redis_server, monkeypatch
+    local_disk, sandbox_redis_clients, monkeypatch
 ):
-    client, _ = redis_server
+    client, _ = sandbox_redis_clients
     monkeypatch.setattr(worker_supervisor, "heartbeat_redis", lambda: client)
     handlers = {}
     monkeypatch.setattr(
@@ -507,9 +443,9 @@ def test_invalid_retained_identity_and_explicit_identity_fail_closed(
 
 
 def test_ready_registration_rejects_a_second_instance_for_the_same_disk(
-    local_disk, redis_server
+    local_disk, sandbox_redis_clients
 ):
-    client, _ = redis_server
+    client, _ = sandbox_redis_clients
     owner = worker_heartbeat.worker_presence()
     assert worker_registry.sandbox_worker_registry.refresh(client, owner, 20)
     conflict = Mock()

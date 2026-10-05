@@ -411,6 +411,10 @@ def test_checkpoint_failure_propagates_and_keeps_round_open(
             error="checkpoint failed",
         )
 
+    monkeypatch.setattr(
+        "app.tasks.sandbox.checkpoint_sandbox_session_task.apply_async",
+        lambda *args, **kwargs: None,
+    )
     monkeypatch.setattr(r.gateway, "await_result", failed)
     with pytest.raises(RuntimeError, match="checkpoint failed"):
         r.run(r.gateway.finish_round("session", "round"))
