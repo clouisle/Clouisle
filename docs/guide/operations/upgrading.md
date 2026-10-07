@@ -44,7 +44,9 @@ docker push "$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
 
 ## Kubernetes Upgrade
 
-The supplied Kubernetes deployment uses namespace `clouisle` and separate `api`, `worker`, `sandbox-worker`, `beat`, and `frontend` Deployments. Build from the repository root, publish immutable tags, update all application workloads, and watch each rollout:
+The supplied Kubernetes deployment uses namespace `clouisle`, with `api`, `worker`, `beat`, and `frontend` Deployments plus a `sandbox-worker` DaemonSet (one pod per eligible node). Build from the repository root, publish immutable tags, update application workloads, and watch each rollout:
+
+For an existing installation that still has the previous `sandbox-worker` Deployment, drain its work and remove that Deployment before applying the updated manifest; do not run both controllers against the same local sandbox path. Apply `deploy/k8s/clouisle.yaml` to create the DaemonSet, then run the image update commands below.
 
 ```bash
 # Generic registry/tag example: replace REGISTRY and IMAGE_TAG with real values.
@@ -59,13 +61,13 @@ docker push "$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
 
 kubectl -n clouisle set image deployment/api api="$REGISTRY/clouisle-backend:$IMAGE_TAG"
 kubectl -n clouisle set image deployment/worker worker="$REGISTRY/clouisle-backend:$IMAGE_TAG"
-kubectl -n clouisle set image deployment/sandbox-worker sandbox-worker="$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
+kubectl -n clouisle set image daemonset/sandbox-worker sandbox-worker="$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
 kubectl -n clouisle set image deployment/beat beat="$REGISTRY/clouisle-backend:$IMAGE_TAG"
 kubectl -n clouisle set image deployment/frontend frontend="$REGISTRY/clouisle-frontend:$IMAGE_TAG"
 
 kubectl -n clouisle rollout status deployment/api
 kubectl -n clouisle rollout status deployment/worker
-kubectl -n clouisle rollout status deployment/sandbox-worker
+kubectl -n clouisle rollout status daemonset/sandbox-worker
 kubectl -n clouisle rollout status deployment/beat
 kubectl -n clouisle rollout status deployment/frontend
 ```
@@ -82,7 +84,7 @@ docker compose up -d --force-recreate
 # Kubernetes: undo each application Deployment in the clouisle namespace.
 kubectl -n clouisle rollout undo deployment/api
 kubectl -n clouisle rollout undo deployment/worker
-kubectl -n clouisle rollout undo deployment/sandbox-worker
+kubectl -n clouisle rollout undo daemonset/sandbox-worker
 kubectl -n clouisle rollout undo deployment/beat
 kubectl -n clouisle rollout undo deployment/frontend
 ```

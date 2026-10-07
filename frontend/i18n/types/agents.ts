@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-23T17:20:52.209Z
+// GENERATED — 2026-10-07T17:03:38.837Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {
@@ -137,10 +137,10 @@ export type AgentsMessages = {
       }
       toolbar: {
         chat: string
-        embed: string
-        settings: string
         preview: string
         moreActions: string
+        embed: string
+        settings: string
         saving: string
         save: string
         published: string

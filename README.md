@@ -184,7 +184,7 @@ Supports 23 providers out of the box, plus any OpenAI-compatible endpoint.
 - **Built-in Tools**: Time/date, datetime formatting, calculator, unit conversion, web search (`auto`/Tavily/BoCha/DuckDuckGo), webpage fetch, RSS reader, file parsing (MarkItDown), image/video generation, artifacts, and sandboxed bash/read/write/edit
 - **Custom Tools**: Configurable HTTP API tools with authentication (API key, Bearer, Basic) and variable mapping
 - **MCP Integration**: Model Context Protocol for standardized tool capabilities and resource access
-- **Sandboxed Execution**: Secure, isolated Python/JavaScript code execution environment with resource limits — a dedicated sandbox worker runs each task inside a fresh Bubblewrap user and mount namespace (the worker itself needs `CAP_SYS_ADMIN` and an `Unconfined` seccomp profile)
+- **Sandboxed Execution**: Secure, isolated Python/JavaScript execution with resource limits — a dedicated worker runs tasks inside Bubblewrap user and mount namespaces; workers need `CAP_SYS_ADMIN`, `CAP_SETFCAP`, `CAP_NET_ADMIN`, and an unconfined seccomp profile.
 - **Tool Registry**: Centralized tool management with credential injection and lifecycle hooks
 ---
 

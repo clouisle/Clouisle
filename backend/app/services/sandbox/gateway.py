@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.i18n import t
 
 from .affinity import sandbox_worker_queue
+from .audit import log_sandbox_task_event
 from .models import (
     SandboxExecutionMetadata,
     SandboxJob,
@@ -376,7 +377,37 @@ class SandboxGateway:
                 is None
             ):
                 raise ValueError("Sandbox session not found or expired")
-            binding = await ensure_ready(session_id, deadline)
+            try:
+                binding = await ensure_ready(session_id, deadline)
+            except Exception as exc:
+                if before is not None:
+                    await log_sandbox_task_event(
+                        job_id=job.job_id,
+                        event="recovered",
+                        session_id=session_id,
+                        source=job.source.value,
+                        team_id=team_id or job.tenant_id,
+                        worker_id=before.worker_id,
+                        error_code=getattr(exc, "code", "RECOVERY_FAILED"),
+                        outcome="failed",
+                        recovery={"previous_generation": before.generation},
+                    )
+                raise
+            if before is not None and not before.matches(binding):
+                await log_sandbox_task_event(
+                    job_id=job.job_id,
+                    event="recovered",
+                    session_id=session_id,
+                    source=job.source.value,
+                    team_id=team_id or job.tenant_id,
+                    worker_id=binding.worker_id,
+                    recovery={
+                        "previous_worker_id": before.worker_id,
+                        "worker_id": binding.worker_id,
+                        "previous_generation": before.generation,
+                        "generation": binding.generation,
+                    },
+                )
             notice = report_reset(session_id, before, binding)
             if notice is not None:
                 raise WorkspaceReset(notice)
@@ -434,7 +465,40 @@ class SandboxGateway:
             )
         except (SandboxGuardLost, SandboxUnavailable) as exc:
             result.recovery = {"code": exc.code, "message": str(exc)}
+            await log_sandbox_task_event(
+                job_id=result.job_id,
+                event="recovered",
+                session_id=result.session_id,
+                worker_id=result.binding.worker_id,
+                error_code=exc.code,
+                outcome="failed",
+                recovery={"previous_generation": result.binding.generation},
+            )
             return
+        except Exception:
+            await log_sandbox_task_event(
+                job_id=result.job_id,
+                event="recovered",
+                session_id=result.session_id,
+                worker_id=result.binding.worker_id,
+                error_code="RECOVERY_FAILED",
+                outcome="failed",
+                recovery={"previous_generation": result.binding.generation},
+            )
+            raise
+        if not result.binding.matches(binding):
+            await log_sandbox_task_event(
+                job_id=result.job_id,
+                event="recovered",
+                session_id=result.session_id,
+                worker_id=binding.worker_id,
+                recovery={
+                    "previous_worker_id": result.binding.worker_id,
+                    "worker_id": binding.worker_id,
+                    "previous_generation": result.binding.generation,
+                    "generation": binding.generation,
+                },
+            )
         notice = report_reset(result.session_id, result.binding, binding)
         if notice:
             result.recovery = notice
@@ -506,13 +570,33 @@ class SandboxGateway:
                             if started
                             else "Sandbox queued job belongs to an obsolete worker binding and was not replayed.",
                         )
+                        if current.status not in TERMINAL_STATUSES and final.status in {
+                            SandboxTaskStatus.FAILED,
+                            SandboxTaskStatus.CANCELLED,
+                        }:
+                            await log_sandbox_task_event(
+                                job_id=job_id,
+                                event=(
+                                    "cancelled"
+                                    if final.status == SandboxTaskStatus.CANCELLED
+                                    else "failed"
+                                ),
+                                session_id=current.session_id,
+                                worker_id=(
+                                    current.binding.worker_id
+                                    if current.binding
+                                    else None
+                                ),
+                                error_code=final.error_code,
+                                duration_ms=final.metadata.total_ms,
+                            )
                         await self._recover_result_binding(final, deadline)
                         return final
             except SandboxGuardLost as exc:
                 existing = await sandbox_result_store.get_result(job_id)
                 metadata = existing.metadata if existing else SandboxExecutionMetadata()
                 metadata.mark_completed(datetime.now(UTC))
-                return await sandbox_result_store.update_status(
+                result = await sandbox_result_store.update_status(
                     job_id,
                     SandboxTaskStatus.CANCELLED
                     if exc.code == "CANCELLED"
@@ -524,6 +608,27 @@ class SandboxGateway:
                     if exc.code == "CANCELLED"
                     else "Sandbox job timed out while waiting for result",
                 )
+                if (
+                    existing is None or existing.status not in TERMINAL_STATUSES
+                ) and result.status in {
+                    SandboxTaskStatus.FAILED,
+                    SandboxTaskStatus.CANCELLED,
+                }:
+                    await log_sandbox_task_event(
+                        job_id=job_id,
+                        event="cancelled"
+                        if result.status == SandboxTaskStatus.CANCELLED
+                        else "failed",
+                        session_id=existing.session_id if existing else None,
+                        worker_id=(
+                            existing.binding.worker_id
+                            if existing and existing.binding
+                            else None
+                        ),
+                        error_code=result.error_code,
+                        duration_ms=result.metadata.total_ms,
+                    )
+                return result
             remaining = deadline - time.time()
             await asyncio.sleep(min(current_poll_interval, max(0, remaining)))
             current_poll_interval = self._advance_poll_interval(current_poll_interval)
@@ -558,7 +663,7 @@ class SandboxGateway:
         existing = await sandbox_result_store.get_result(job_id)
         metadata = existing.metadata if existing else SandboxExecutionMetadata()
         metadata.mark_completed(datetime.now(UTC))
-        return await sandbox_result_store.update_status(
+        result = await sandbox_result_store.update_status(
             job_id,
             SandboxTaskStatus.CANCELLED,
             metadata=metadata,
@@ -566,6 +671,22 @@ class SandboxGateway:
             error_code="CANCELLED",
             error=reason or t("workflow_run_cancelled"),
         )
+        if (
+            existing is None or existing.status not in TERMINAL_STATUSES
+        ) and result.status == SandboxTaskStatus.CANCELLED:
+            await log_sandbox_task_event(
+                job_id=job_id,
+                event="cancelled",
+                session_id=existing.session_id if existing else None,
+                worker_id=(
+                    existing.binding.worker_id
+                    if existing and existing.binding
+                    else None
+                ),
+                error_code=result.error_code,
+                duration_ms=result.metadata.total_ms,
+            )
+        return result
 
 
 sandbox_gateway = SandboxGateway()

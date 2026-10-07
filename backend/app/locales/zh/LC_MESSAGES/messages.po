@@ -1377,6 +1377,12 @@ msgstr "允许使用的模型端点 Origin"
 msgid "model_endpoint_allowlist_invalid"
 msgstr "请输入有效的 HTTP 或 HTTPS 模型端点 Origin 列表"
 
+msgid "sandbox_network_allowlist_description"
+msgstr "沙盒 HTTPS 出网允许访问的精确 DNS 主机名"
+
+msgid "sandbox_network_allowlist_invalid"
+msgstr "最多填写 200 个精确 DNS 主机名；不支持 IP 地址、通配符或无效主机名"
+
 msgid "ssrf_allowed_targets_description"
 msgstr "出站网络访问白名单（SSRF 豁免目标）"
 

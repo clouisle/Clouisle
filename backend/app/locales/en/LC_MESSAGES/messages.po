@@ -1378,6 +1378,12 @@ msgstr "Allowed model endpoint Origins"
 msgid "model_endpoint_allowlist_invalid"
 msgstr "Enter a valid list of HTTP or HTTPS model endpoint Origins"
 
+msgid "sandbox_network_allowlist_description"
+msgstr "Exact DNS hostnames permitted for sandbox HTTPS egress"
+
+msgid "sandbox_network_allowlist_invalid"
+msgstr "Use up to 200 exact DNS hostnames; IP addresses, wildcards, and invalid hostnames are not allowed"
+
 msgid "ssrf_allowed_targets_description"
 msgstr "Outbound network allowlist (SSRF exemption targets)"
 

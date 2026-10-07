@@ -41,6 +41,16 @@ class Query:
             ["10.0.0.0/16", "*.corp.internal"],
             ["not_a_valid_entry"],
         ),
+        (
+            "sandbox_network_allowlist",
+            [" PyPI.org. ", "REGISTRY.NPMjs.org"],
+            ["*.example.com"],
+        ),
+        (
+            "sandbox_network_allowlist",
+            ["pypi.org"],
+            "pypi.org",
+        ),
     ],
 )
 async def test_validate_setting_value_residual_admin_branches(
@@ -60,6 +70,8 @@ async def test_validate_setting_value_residual_admin_branches(
         expected_msg_key = "model_endpoint_allowlist_invalid"
     elif key == "ssrf_allowed_targets":
         expected_msg_key = "ssrf_allowlist_entry_invalid"
+    elif key == "sandbox_network_allowlist":
+        expected_msg_key = "sandbox_network_allowlist_invalid"
     else:
         expected_msg_key = "validation_error"
     assert exc_info.value.msg_key == expected_msg_key
@@ -76,6 +88,15 @@ async def test_endpoint_allowlist_validation_canonicalizes_in_place():
     await site_settings._validate_setting_value("model_endpoint_allowlist", value)
 
     assert value == ["https://api.example.com", "http://ollama:11434"]
+
+
+@pytest.mark.asyncio
+async def test_sandbox_network_allowlist_validation_canonicalizes_in_place():
+    value = [" PyPI.org. ", "REGISTRY.npmjs.org", "pypi.org"]
+
+    await site_settings._validate_setting_value("sandbox_network_allowlist", value)
+
+    assert value == ["pypi.org", "registry.npmjs.org"]
 
 
 @pytest.mark.asyncio

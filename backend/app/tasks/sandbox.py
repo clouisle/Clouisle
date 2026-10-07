@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from celery import shared_task
 
 from app.services.error_messages import resolve_user_visible_error
+from app.services.sandbox.audit import log_sandbox_task_event
 from app.services.sandbox.affinity import (
     sandbox_instance_id,
     sandbox_node_id,
@@ -60,8 +61,22 @@ def _local_identity(
     )
 
 
+def _audit_event_for_status(status: SandboxTaskStatus) -> str:
+    if status == SandboxTaskStatus.COMPLETED:
+        return "completed"
+    if status == SandboxTaskStatus.CANCELLED:
+        return "cancelled"
+    return "failed"
+
+
 async def _failure(
-    job_id: str, exc: Exception, *, code: str | None = None
+    job_id: str,
+    exc: Exception,
+    *,
+    code: str | None = None,
+    session_id: str | None = None,
+    source: str | None = None,
+    team_id: str | None = None,
 ) -> SandboxResult:
     existing = await sandbox_result_store.get_result(job_id)
     metadata = existing.metadata if existing else SandboxExecutionMetadata()
@@ -80,7 +95,7 @@ async def _failure(
     )
     if error_code == "EXECUTION_UNCERTAIN":
         error += " Execution may have occurred; do not blindly replay the command."
-    return await sandbox_result_store.update_status(
+    result = await sandbox_result_store.update_status(
         job_id,
         SandboxTaskStatus.CANCELLED
         if error_code == "CANCELLED"
@@ -90,12 +105,33 @@ async def _failure(
         error_code=error_code,
         error=error,
     )
+    if (
+        existing is None
+        or existing.status
+        not in {
+            SandboxTaskStatus.COMPLETED,
+            SandboxTaskStatus.FAILED,
+            SandboxTaskStatus.CANCELLED,
+        }
+    ) and result.status in {SandboxTaskStatus.FAILED, SandboxTaskStatus.CANCELLED}:
+        await log_sandbox_task_event(
+            job_id=job_id,
+            event=_audit_event_for_status(result.status),
+            session_id=session_id or (existing.session_id if existing else None),
+            source=source,
+            team_id=team_id,
+            worker_id=metadata.worker_id,
+            error_code=result.error_code,
+            duration_ms=result.metadata.total_ms,
+        )
+    return result
 
 
 @shared_task(bind=True, max_retries=0, ignore_result=True, queue="sandbox")
 def run_sandbox_job_task(self, job_payload: dict) -> dict:
     async def _run() -> dict:
         job_id = job_payload["job_id"]
+        job: SandboxJob | None = None
         try:
             job = SandboxJob.model_validate(job_payload)
             if job.deadline_at is None:
@@ -125,12 +161,34 @@ def run_sandbox_job_task(self, job_payload: dict) -> dict:
             await guard_job(job_id, job.session_id, job.binding, job.deadline_at)
             if not await sandbox_result_store.claim_execution(job_id, job.deadline_at):
                 return {"job_id": job_id, "skipped": "duplicate_or_terminal"}
+            await log_sandbox_task_event(
+                job_id=job_id,
+                event="started",
+                session_id=job.session_id,
+                source=job.source.value,
+                team_id=job.tenant_id,
+                worker_id=(
+                    job.binding.worker_id if job.binding else sandbox_worker_id()
+                ),
+            )
             manager = SandboxManager()
             result = await manager.execute(
                 job,
                 session_id=job.session_id,
                 session_agent_id=job_payload.get("session_agent_id"),
                 session_team_id=job_payload.get("session_team_id"),
+            )
+            await log_sandbox_task_event(
+                job_id=job_id,
+                event=_audit_event_for_status(result.status),
+                session_id=job.session_id,
+                source=job.source.value,
+                team_id=job.tenant_id,
+                worker_id=(
+                    job.binding.worker_id if job.binding else sandbox_worker_id()
+                ),
+                error_code=result.error_code,
+                duration_ms=result.metadata.total_ms,
             )
         except SandboxGuardLost as exc:
             existing = await sandbox_result_store.get_result(job_id)
@@ -140,10 +198,23 @@ def run_sandbox_job_task(self, job_payload: dict) -> dict:
                 existing is None or existing.metadata.started_at is None
             ):
                 code = "JOB_OBSOLETE"
-            result = await _failure(job_id, exc, code=code)
+            result = await _failure(
+                job_id,
+                exc,
+                code=code,
+                session_id=job.session_id if job else job_payload.get("session_id"),
+                source=job.source.value if job else job_payload.get("source"),
+                team_id=job.tenant_id if job else job_payload.get("tenant_id"),
+            )
         except Exception as exc:
             logger.exception("Sandbox job execution failed: %s", exc)
-            result = await _failure(job_id, exc)
+            result = await _failure(
+                job_id,
+                exc,
+                session_id=job.session_id if job else job_payload.get("session_id"),
+                source=job.source.value if job else job_payload.get("source"),
+                team_id=job.tenant_id if job else job_payload.get("tenant_id"),
+            )
         return {
             "job_id": result.job_id,
             "status": result.status,
@@ -229,6 +300,13 @@ async def prepare_workspace(
         await validate()
         if not await sandbox_result_store.claim_execution(job_id, deadline_at):
             return {"job_id": job_id, "skipped": "duplicate_or_terminal"}
+        await log_sandbox_task_event(
+            job_id=job_id,
+            event="started",
+            session_id=session_id,
+            source="workspace_prepare",
+            worker_id=candidate.worker_id,
+        )
         workspace_manager = SandboxWorkspaceManager()
         async with workspace_manager.session_lock(
             workspace_id, deadline_at=deadline_at, guard=validate
@@ -277,9 +355,19 @@ async def prepare_workspace(
                     deadline_at=deadline_at,
                 )
             )
+            await log_sandbox_task_event(
+                job_id=job_id,
+                event=_audit_event_for_status(result.status),
+                session_id=session_id,
+                source="workspace_prepare",
+                worker_id=candidate.worker_id,
+                duration_ms=result.metadata.total_ms,
+            )
             return {"job_id": job_id, "success": result.success}
     except Exception as exc:
-        result = await _failure(job_id, exc)
+        result = await _failure(
+            job_id, exc, session_id=session_id, source="workspace_prepare"
+        )
         return {"job_id": job_id, "success": result.success}
 
 
@@ -365,6 +453,13 @@ async def checkpoint_session(
         await guard_job(job_id, session_id, binding, deadline_at)
         if not await sandbox_result_store.claim_execution(job_id, deadline_at):
             return {"job_id": job_id, "skipped": "duplicate_or_terminal"}
+        await log_sandbox_task_event(
+            job_id=job_id,
+            event="started",
+            session_id=session_id,
+            source="checkpoint",
+            worker_id=binding.worker_id,
+        )
         workspace_manager = SandboxWorkspaceManager()
         async with workspace_manager.session_lock(
             binding.workspace_id,
@@ -410,9 +505,17 @@ async def checkpoint_session(
                     metadata=metadata,
                 )
             )
+            await log_sandbox_task_event(
+                job_id=job_id,
+                event=_audit_event_for_status(result.status),
+                session_id=session_id,
+                source="checkpoint",
+                worker_id=binding.worker_id,
+                duration_ms=result.metadata.total_ms,
+            )
             return {"job_id": job_id, "checkpointed": saved, "success": result.success}
     except Exception as exc:
-        result = await _failure(job_id, exc)
+        result = await _failure(job_id, exc, session_id=session_id, source="checkpoint")
         return {"job_id": job_id, "success": result.success}
 
 

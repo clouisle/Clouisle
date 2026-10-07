@@ -93,7 +93,7 @@ Compose pulls the published `latest` images listed above by default.
 | `frontend` | 3000 | Next.js standalone server |
 | `api` | 8000 | FastAPI API server |
 | `worker` | — | Celery worker for `default,agent,knowledge,workflow` queues |
-| `sandbox-worker` | — | Celery worker for sandbox queue and artifact upload |
+| `sandbox-worker` | — | Celery worker for stateless `sandbox` tasks and its own session-affinity queue |
 | `beat` | — | Celery beat scheduler; keep exactly one replica |
 | `db` | 5432 | ParadeDB PostgreSQL 17 with pg_search 0.24.3 |
 | `redis` | 6379 | Redis 7 |
@@ -285,7 +285,7 @@ helm upgrade --install clouisle deploy/helm/clouisle \
 
 For raw manifests, set `spec.template.spec.nodeSelector: {clouisle-sandbox: "true"}` on the sandbox-worker DaemonSet. Helm merges `sandboxWorker.nodeSelector` with the global selector and accepts additional `sandboxWorker.tolerations`. Existing Deployment installations must remove the old sandbox-worker Deployment before applying the DaemonSet; do not let both controllers mount the same disk.
 
-The raw manifest stores data under `/var/lib/clouisle/clouisle/sandbox` on each node. Helm defaults to `/var/lib/clouisle/<namespace>/<release>/sandbox`; override `sandboxWorker.localDataPath` only with an exclusive path for this worker installation. The complete parent of `SANDBOX_WORKSPACE_ROOT` is mounted, retaining workspaces, checkpoints, locks, caches and identities. Host paths must be writable by the configured worker UID (root by default); restricted Pod Security policies may reject hostPath, `SYS_ADMIN` or the unconfined seccomp profile needed by Bubblewrap. Grant those permissions only to trusted sandbox nodes and keep distinct installations on separate paths.
+The raw manifest stores data under `/var/lib/clouisle/clouisle/sandbox` on each node. Helm defaults to `/var/lib/clouisle/<namespace>/<release>/sandbox`; override `sandboxWorker.localDataPath` only with an exclusive path for this worker installation. The complete parent of `SANDBOX_WORKSPACE_ROOT` is mounted, retaining workspaces, checkpoints, locks, caches and identities. Host paths must be writable by the configured worker UID (root by default); restricted Pod Security policies may reject hostPath, `SYS_ADMIN`, `SETFCAP`, `NET_ADMIN` or the unconfined seccomp profile needed by Bubblewrap and the isolated egress bridge. Grant those permissions only to trusted sandbox nodes and keep distinct installations on separate paths.
 
 This is **node-local storage, not shared or distributed storage**. Node/disk loss does not preserve old workspace contents. During a bounded recovery window, the runtime prefers a healthy instance with the original disk; afterward it can bind a prepared fresh workspace on a healthy worker and explicitly report workspace loss. A node replacement with an empty disk generates a different storage/worker identity and cannot masquerade as the old disk. Losing the only eligible node leaves no ready capacity until another eligible node is available. Redis outages do not authorize a reset.
 

@@ -20,6 +20,10 @@ Sandbox Worker 只有在工作区和检查点目录通过可写磁盘探测后�
 
 同一份持久化本地磁盘上的 Celery 子进程重启后，会获得新的实例 ID，并可从本地检查点恢复会话。如果原存储在有界恢复时间内仍不可用，运行时可在其他就绪 Worker 上准备全新的工作区，再原子地推进会话代次。AgentRun 会收到 `WORKSPACE_RESET`，必须重新规划。旧代次的排队任务会被拒绝；执行结果不确定的运行中命令不会自动重放。这是节点本地持久化，不是共享存储或副本：原磁盘永久丢失时，未保存的数据无法恢复。
 
+### 沙箱任务审计事件
+
+管理员审计日志会记录可执行沙箱任务及其有结果记录的工作区准备/检查点任务的生命周期事件：开始、完成、失败、取消和恢复。日志包含任务/会话标识，以及可用的操作者、团队、来源、Worker、耗时、状态和错误码；不会记录代码、输入参数、标准输出/错误、结果负载或原始异常文本。可在 **管理后台 → 审计日志** 中按资源类型 `sandbox_task` 筛选。
+
 核心特性：
 
 - **真实 `/workspace` 路径**：当前任务或会话目录以读写方式 bind mount 到 `/workspace`，Python、Node.js、原生库和子进程看到相同路径。
@@ -67,8 +71,7 @@ Agent 可以通过函数调用触发代码工具。LLM 根据任务需要决定�
 | 变量 | 通用默认值 | Sandbox Worker 部署值 | 说明 |
 |---|---|---|---|
 | `SANDBOX_RUNTIME_ENABLED` | `true` | `true` | 启用沙箱运行时 |
-| `SANDBOX_LEGACY_FALLBACK_ENABLED` | `true` | `true` | 沙箱运行时任务失败时，改用进程内的 legacy runner 执行代码；设为 `false` 则直接失败（fail-closed） |
-| `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `false` | `true` | 在 Bubblewrap 文件系统命名空间内启动可执行任务 |
+| `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `true` | `true` | 在 Bubblewrap 文件系统命名空间内启动可执行任务 |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `bwrap` | `/usr/bin/bwrap` | Bubblewrap 命令名或绝对路径 |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | `1` | Sandbox Worker 并发槽位数 |
 | `SANDBOX_WORKER_ID` | 空；按磁盘生成并持久化 | 留空以使用每磁盘身份 | 可选显式 Worker 身份；保留磁盘会保留其 Worker/存储 ID |
@@ -86,26 +89,34 @@ Agent 可以通过函数调用触发代码工具。LLM 根据任务需要决定�
 | `SANDBOX_WORKSPACE_IDLE_SECONDS` | `900` | `900` | 不活跃会话工作区被释放到检查点前的空闲时长 |
 | `SANDBOX_CHECKPOINT_TIMEOUT_SECONDS` | `120` | `120` | 等待所属 Worker 确认轮次检查点的最长时间 |
 | `SANDBOX_MAX_DISK_MB` | `8192` | 相同 | 允许请求的最大工作空间磁盘限制 |
+| `SANDBOX_PACKAGE_INSTALL_TIMEOUT_SECONDS` | `300` | 相同 | Python/Node 依赖安装最长执行时间；超时后终止安装进程且不缓存未完成环境 |
+| `SANDBOX_TASK_MEMORY_MB` | `1024` | 相同 | `prlimit` 强制执行的单进程虚拟地址空间上限；Worker/容器资源限制仍负责限制进程树总量 |
+| `SANDBOX_TASK_MAX_FILE_SIZE_MB` | `1024` | 相同 | 沙箱进程可创建的单个普通文件最大尺寸；不是整个工作区的总容量配额 |
+| `SANDBOX_TASK_MAX_OPEN_FILES` | `256` | 相同 | 沙箱进程及其子进程可打开的文件描述符上限 |
+| `SANDBOX_TASK_MAX_CPU_SECONDS` | `600` | 相同 | 每次启动的 CPU 时间上限；任务超时可能设置更低的值 |
 | `SANDBOX_SESSION_TTL_HOURS` | `24` | 相同 | 会话过期清理时间 |
 | `SANDBOX_RESULT_TTL_SECONDS` | `86400` | 相同 | 结果保留时间 |
 
+沙箱出网策略在[设置 → 安全 → 沙箱出网白名单](../admin-guide/settings/system-settings.md#sandbox-egress-allowlist)中配置，不再通过环境变量设置。初始默认值允许 `pypi.org`、`files.pythonhosted.org`、`pypi.python.org` 和 `registry.npmjs.org`。每个任务都会读取当前已保存的精确主机名策略；空列表会阻止外部主机，自定义包索引必须使用 HTTPS。
+
 AgentRun 每轮结束时，系统会先在会话所属的 Sandbox Worker 上保存检查点，再将运行标记为完成、等待用户回答或停止。空闲工作区会在达到阈值后被释放，并在下次任务到来时恢复。工作区、检查点、身份、锁和缓存目录应一起保存在同一份 Worker 本地磁盘上，不会跨节点复制。TTL 到期后，Worker 能处理清理任务时会永久删除会话数据；若节点不可访问，其他节点无法远程删除其本地文件。
 
-Sandbox Worker 镜像会安装 Bubblewrap 并启用隔离。启用隔离后，如果找不到 `bwrap` 或任务没有工作空间根目录，任务会直接失败，不会降级为未隔离执行。调用侧的降级是另一个开关：`SANDBOX_LEGACY_FALLBACK_ENABLED` 默认开启，沙箱运行时任务失败时会降级为进程内的 legacy runner 执行；设为 `false` 则直接返回失败。
+调用侧采用 fail-closed：`SANDBOX_RUNTIME_ENABLED=false` 时，代码执行直接失败，不会在当前进程启用本地降级；沙箱任务失败也会返回失败。Sandbox Worker 镜像会安装 Bubblewrap 并启用隔离；若缺少 `bwrap` 或工作空间根目录，任务会失败，不会在未隔离的情况下启动负载。
 
 ## 安全模型
 
 - 任务负载在全新的 Bubblewrap **用户+挂载命名空间**内执行，绝不会运行在 Worker 自身的命名空间里。
-- 项目提供的部署让 Sandbox Worker 以 **root** 运行并在运行时默认 cap 集上**叠加 `CAP_SYS_ADMIN`**：镜像的非 root 用户 effective capabilities 恒为空，而特权 Worker 即使在宿主禁止非特权用户命名空间时也能创建用户命名空间。Worker 保持 `allowPrivilegeEscalation=false`，并仅对 sandbox-worker 使用 `seccomp=unconfined`。
-- Rootless Bubblewrap 需要 namespace/mount 系统调用。项目部署默认对 sandbox-worker 使用 `seccomp=unconfined`；禁止该设置的集群需要提供允许必要系统调用的 Localhost seccomp profile。
+- 项目部署以 root 运行 Worker，授予 `CAP_SYS_ADMIN`、`CAP_SETFCAP` 和 `CAP_NET_ADMIN`。`NET_ADMIN` 让可信的出网代理在隔离网络命名空间内启用 loopback；随后代理会设置 `no-new-privileges` 并清空自身 capability 集，再启动任务负载。无代理的任务则由 Bubblewrap 使用 `--cap-drop ALL` 启动。Worker 使用 `seccomp=unconfined`，因为实测 Docker 默认 seccomp 会导致 Bubblewrap 的 `pivot_root` 返回 `Operation not permitted`。
+- `prlimit` 为每个进程设置虚拟地址空间、CPU 时间、单文件大小和文件描述符上限，子进程继承这些限制。标准输出/错误只在内存中保留配置的字节数；Compose 还把 Worker 限制为最多 512 个进程和 2 GiB，Kubernetes 则依赖节点级 kubelet `podPidsLimit` 及 Pod CPU/内存限制。
 - 任务命名空间内只有当前工作空间及其临时目录可写。
 - 依赖缓存及必要运行时目录只读挂载。
 - 子进程只接收过滤后的环境变量，而不是 Worker 的完整进程环境。
+- 启用文件系统隔离时，每个沙箱进程都运行在新的网络命名空间中，只能通过该任务的出网代理访问外部主机。持久化的**沙箱出网白名单**按 DNS 主机名精确匹配；被拦截的主机名会写入执行诊断信息。
 - 会话过期后自动清理工作目录。
 
 ## 宿主内核要求
 
-Bubblewrap 通过 `unshare(CLONE_NEWUSER)` 创建新的用户命名空间。**项目提供的部署**让 Worker 以 root + `CAP_SYS_ADMIN` 运行，用户命名空间创建走特权路径，即使宿主限制非特权用户命名空间也能正常工作——**无需修改宿主 sysctl**。
+Bubblewrap 通过 `unshare(CLONE_NEWUSER)` 创建新的用户命名空间。项目部署以 root 运行 Worker：`CAP_SYS_ADMIN` 和 `CAP_SETFCAP` 用于命名空间/挂载设置，`CAP_NET_ADMIN` 供可信出网代理在隔离任务网络命名空间内启用 loopback。无需修改宿主 sysctl。Kubernetes 集群还需配置 kubelet `podPidsLimit`，以限制 Worker 进程总数。
 
 自定义部署若保持 Worker **非 root**，则依赖宿主内核允许非特权用户命名空间，否则所有沙箱任务都会失败，报错为：
 
@@ -141,11 +152,11 @@ sysctl --system
 
 ### 加固：收敛 Worker 的 `CAP_SYS_ADMIN`
 
-沙箱任务运行在全新的 Bubblewrap 用户+挂载命名空间内，无法直接触及 Worker 容器的 capabilities。但如果任务成功逃出 Bubblewrap，落点就是**容器内 root + `CAP_SYS_ADMIN`**。默认 Docker daemon 下容器与宿主共享初始用户命名空间，该 capability 是宿主 userns 级别的，经典逃逸链（cgroup `release_agent`、重挂 `/proc` 写入 `kernel.core_pattern`、sysctl 写入）在原理上可达。
+沙箱任务运行在全新的 Bubblewrap 用户+挂载命名空间内，无法直接触及 Worker 容器的 capabilities。但如果任务成功逃出 Bubblewrap，落点就是容器内 root，并拥有 `CAP_SYS_ADMIN`、`CAP_SETFCAP` 和 `CAP_NET_ADMIN`。默认 Docker daemon 下容器与宿主共享初始用户命名空间，`CAP_SYS_ADMIN` 属于宿主 userns 范围，经典逃逸链（cgroup `release_agent`、重挂 `/proc` 写入 `kernel.core_pattern`、sysctl 写入）在原理上可达。`CAP_NET_ADMIN` 仅作用于 Worker 容器的网络命名空间；它用于在每个隔离任务网络命名空间中启用 loopback。
 
-Docker Compose 部署建议启用 **daemon 用户命名空间重映射**（`/etc/docker/daemon.json` 中 `"userns-remap": "default"`），让每个容器进入嵌套用户命名空间——`CAP_SYS_ADMIN` 只作用于容器自身 userns，宿主逃逸链全部失效。沙箱 Worker 仍能在重映射后的命名空间内特权创建自己的 Bubblewrap userns，沙箱功能不受影响。配置、验证方法与卷属主影响见[部署指南 → 用户命名空间重映射](../deployment/DEPLOYMENT_zh-CN.md#用户命名空间重映射加固)。
+Docker Compose 部署建议启用 **daemon 用户命名空间重映射**（`/etc/docker/daemon.json` 中 `"userns-remap": "default"`），让每个容器进入嵌套用户命名空间——`CAP_SYS_ADMIN` 只作用于容器自身 userns，宿主逃逸链全部失效。`CAP_NET_ADMIN` 仍限制在 Worker 容器的网络命名空间内。沙箱 Worker 仍能在重映射后的命名空间内特权创建自己的 Bubblewrap userns，沙箱功能不受影响。配置、验证方法与卷属主影响见[部署指南 → 用户命名空间重映射](../deployment/DEPLOYMENT_zh-CN.md#用户命名空间重映射加固)。
 
-Kubernetes 不适用 daemon 级重映射：依赖 NetworkPolicy 限制沙箱出网、及时升级 Bubblewrap 并关注其 CVE，或在集群提供节点级用户命名空间支持时使用该能力。
+Kubernetes 中，通过安全设置里的**沙箱出网白名单**限制隔离沙箱进程经代理的出网。还应使用 NetworkPolicy 增加 Pod 级出网限制，并及时升级 Bubblewrap、关注其 CVE。
 
 ## 开发
 

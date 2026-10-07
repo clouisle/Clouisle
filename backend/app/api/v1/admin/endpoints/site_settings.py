@@ -37,6 +37,11 @@ from app.core.network_security import (
     SSRF_ALLOWED_TARGETS_SETTING,
     normalize_ssrf_allowlist,
 )
+from app.core.sandbox_network_policy import (
+    SANDBOX_NETWORK_ALLOWLIST_SETTING,
+    SandboxNetworkPolicyError,
+    normalize_sandbox_network_allowlist,
+)
 from app.services.audit_log import AuditLogService
 from app.tasks.audit_log import archive_old_audit_logs
 
@@ -161,6 +166,16 @@ async def _validate_setting_value(key: str, value: object) -> None:
         cast(list, value)[:] = normalized_allowlist
         return
 
+    if key == SANDBOX_NETWORK_ALLOWLIST_SETTING:
+        try:
+            normalized_allowlist = normalize_sandbox_network_allowlist(value)
+        except SandboxNetworkPolicyError as exc:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="sandbox_network_allowlist_invalid",
+            ) from exc
+        cast(list, value)[:] = normalized_allowlist
+        return
     if key == "default_team_role":
         if not isinstance(value, str) or value not in {"viewer", "member", "admin"}:
             raise_validation_error()

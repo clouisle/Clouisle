@@ -601,8 +601,7 @@ TAVILY_API_KEY=tvly-xxxxxxxx
 | Variable | Generic Default | Deployment Default | Description |
 |---|---|---|---|
 | `SANDBOX_RUNTIME_ENABLED` | `true` | `true` | Route code, Bash, skill, and workflow execution through the sandbox runtime |
-| `SANDBOX_LEGACY_FALLBACK_ENABLED` | `true` | `true` | Allow supported code paths to fall back to the legacy runner when the runtime is unavailable |
-| `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `false` | `true` for sandbox-worker | Launch executable payloads in a Bubblewrap mount namespace |
+| `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `true` | `true` | Launch executable payloads in a Bubblewrap mount namespace |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `bwrap` | `/usr/bin/bwrap` | Bubblewrap executable name or absolute path |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | `1` | Sandbox Celery worker concurrency |
 | `SANDBOX_WORKER_ID` | Empty; generated and persisted on the worker disk | Leave unset for generated per-disk identity | Optional explicit identity; a retained disk keeps its worker/storage IDs, and an explicit value must match its on-disk sentinel |
@@ -620,21 +619,28 @@ TAVILY_API_KEY=tvly-xxxxxxxx
 | `SANDBOX_WORKSPACE_IDLE_SECONDS` | `900` | `900` | Idle time before an inactive session workspace is checkpointed and evicted |
 | `SANDBOX_CHECKPOINT_TIMEOUT_SECONDS` | `120` | `120` | Maximum wait for an owning worker to acknowledge a round checkpoint |
 | `SANDBOX_MAX_DISK_MB` | `8192` | Same | Maximum workspace disk limit accepted by policy |
+| `SANDBOX_PACKAGE_INSTALL_TIMEOUT_SECONDS` | `300` | Same | Maximum time allowed for Python/Node dependency installation; timed-out installs are terminated and not cached |
+| `SANDBOX_TASK_MEMORY_MB` | `1024` | Same | Per-process address-space limit set by `prlimit`; aggregate memory remains bounded by worker container/Pod limits |
+| `SANDBOX_TASK_MAX_FILE_SIZE_MB` | `1024` | Same | Per-file size limit; does not impose a total workspace quota |
+| `SANDBOX_TASK_MAX_OPEN_FILES` | `256` | Same | File-descriptor limit inherited by sandbox child processes |
+| `SANDBOX_TASK_MAX_CPU_SECONDS` | `600` | Same | Maximum CPU seconds per process launch; the task timeout can lower this value |
 | `SANDBOX_SESSION_TTL_HOURS` | `24` | Same | Session lifetime before cleanup |
 | `SANDBOX_RESULT_TTL_SECONDS` | `86400` | Same | Redis result retention period |
 
-Each sandbox worker consumes the shared `sandbox` queue plus its own dedicated affinity queue. Redis records the session's worker, instance, node, storage and workspace generation; a session is marked ready only after that worker acknowledges physical workspace preparation. Deployments give API, Agent workers and sandbox workers the same virtual workspace/checkpoint paths, but **only sandbox workers mount the physical data volume**. Keep each worker's workspace, checkpoint, identity, lock and cache directories together on its own retained local disk; they are not replicated or shared across nodes.
+Each sandbox worker consumes the shared `sandbox` queue plus its own dedicated affinity queue. Redis records the session's worker, instance, node, storage and workspace generation; a session is marked ready only after that worker acknowledges physical workspace preparation. Deployments give API, Agent workers and sandbox workers the same virtual workspace/checkpoint paths, but **only sandbox workers mount the physical data volume**. Keep each worker's workspace, checkpoint, identity, lock and cache directories together on its own retained local disk; they are not replicated or shared across nodes. Compose caps the sandbox worker at 2 CPU, 2 GiB and 512 processes; Kubernetes caps CPU/memory in the Pod and requires the cluster's kubelet `podPidsLimit` setting to cap process count.
 
 When a Celery child restarts on the same retained disk, it receives a new instance ID and the runtime can restore its session from that disk's checkpoint. If the original storage remains unavailable through the bounded recovery window, the runtime can prepare a fresh workspace on a healthy worker and atomically advance the session generation, subject to `SANDBOX_SESSION_MAX_RESETS`. AgentRun receives a `WORKSPACE_RESET` notice and must replan: old workspace paths, edit snapshots and process state are gone. Queued messages from an older generation are rejected. If a running command's completion is uncertain, it is reported as uncertain and is never automatically replayed. These settings do not protect against permanent loss of unreplicated files on the old node.
 
-The generic application default leaves filesystem isolation disabled so unsupported host development environments can still start. The supplied sandbox-worker Docker image, Docker Compose service, and Helm deployment enable it explicitly:
+Sandbox external-host access is configured in [Settings → Security → Sandbox Egress Allowlist](../admin-guide/settings/system-settings.md#sandbox-egress-allowlist), not by an environment variable. The policy is reloaded for each sandbox job.
+
+The generic application and supplied sandbox-worker deployments enable filesystem isolation. The generic Bubblewrap binary name is `bwrap`; the supplied sandbox-worker image uses `/usr/bin/bwrap`:
 
 ```bash
 SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true
 SANDBOX_FILESYSTEM_ISOLATION_BINARY=/usr/bin/bwrap
 ```
 
-When enabled, Bubblewrap must be installed and usable. Rootless Bubblewrap needs namespace and mount syscalls, so the supplied Docker Compose and Helm configurations use an unconfined seccomp profile for this worker only. A cluster that prohibits `Unconfined` must provide an equivalent Localhost seccomp profile. The supplied deployments run the worker as root with `CAP_SYS_ADMIN` added to the runtime default cap set so it can create user/mount namespaces even on hosts that gate non-privileged user namespaces; privilege escalation stays disabled. Custom deployments that keep the worker non-root need the host kernel to permit unprivileged user namespaces — on restricted hosts (Ubuntu 23.10+ with `kernel.apparmor_restrict_unprivileged_userns=1`, Debian with `kernel.unprivileged_userns_clone=0`) every sandbox job fails with `bwrap: No permissions to create new namespace` (see [Code Sandbox → Host Kernel Requirements](../concepts/code-sandbox.md#host-kernel-requirements)).
+When enabled, Bubblewrap must be installed and usable. The supplied sandbox worker retains `no-new-privileges` but uses `seccomp=unconfined`: a Docker smoke run showed the default profile denies Bubblewrap's `pivot_root` with `Operation not permitted`. The worker runs as root with `CAP_SYS_ADMIN` and `CAP_SETFCAP` for namespace setup, plus `CAP_NET_ADMIN` so its trusted egress bridge can enable loopback in an isolated network namespace. The bridge sets `no-new-privileges` and clears its capability sets before starting the payload; direct payloads use Bubblewrap `--cap-drop ALL`. Custom deployments must permit the required namespace/mount syscalls and, if the worker is non-root, the host kernel must allow unprivileged user namespaces. Kubernetes clusters must also configure kubelet `podPidsLimit`; Pod resource limits cap aggregate CPU and memory.
 
 ### Sandbox Artifact Upload
 

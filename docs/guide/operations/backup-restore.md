@@ -94,7 +94,8 @@ docker compose exec -T db pg_restore -U "${POSTGRES_USER:-postgres}" -d "${POSTG
 For Kubernetes:
 
 ```bash
-kubectl -n clouisle scale deployment api worker sandbox-worker beat --replicas=0
+kubectl -n clouisle scale deployment api worker beat --replicas=0
+kubectl -n clouisle delete daemonset sandbox-worker
 kubectl -n clouisle exec -i statefulset/postgres -- pg_restore -U postgres -d clouisle --clean --if-exists < postgres.dump
 ```
 
@@ -116,7 +117,7 @@ curl --fail --request POST \
   --form "snapshot=@${SNAPSHOT_FILE}"
 ```
 
-After PostgreSQL and Qdrant are restored, start only API to restore the uploads archive, then restore the application workload replica counts. The supplied manifest uses `api=2`, `worker=2`, `sandbox-worker=1`, and `beat=1`; adjust these values if your deployment was scaled differently.
+After PostgreSQL and Qdrant are restored, start only API to restore the uploads archive, then reapply the manifest to recreate the sandbox-worker DaemonSet and restore the other application workloads. The supplied manifest uses `api=2`, `worker=2`, one sandbox worker per eligible node, and `beat=1`; adjust deployment settings if they differ.
 
 ```bash
 # Compose
@@ -128,9 +129,7 @@ docker compose start worker sandbox-worker beat
 kubectl -n clouisle scale deployment api --replicas=2
 kubectl -n clouisle rollout status deployment/api
 kubectl -n clouisle exec -i deployment/api -- tar -xzf - -C /app < uploads.tar.gz
-kubectl -n clouisle scale deployment worker --replicas=2
-kubectl -n clouisle scale deployment sandbox-worker --replicas=1
-kubectl -n clouisle scale deployment beat --replicas=1
+kubectl apply -f deploy/k8s/clouisle.yaml
 ```
 
 After restoring, verify `/api/v1/health`, login, a knowledge-base search, an upload, and a representative workflow. Redis queue state is optional; if it is not restored, re-submit jobs that were pending at the time of failure.

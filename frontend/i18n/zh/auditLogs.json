@@ -232,6 +232,11 @@
     "actionupload_file": "上传文件",
     "actionupload_image": "上传图片",
     "actionupload_sandbox_artifact": "上传沙箱产物",
+    "actionsandbox_task_cancelled": "沙箱任务已取消",
+    "actionsandbox_task_completed": "沙箱任务已完成",
+    "actionsandbox_task_failed": "沙箱任务失败",
+    "actionsandbox_task_recovered": "沙箱任务已恢复",
+    "actionsandbox_task_started": "沙箱任务已开始",
     "actioncreate_knowledge_base": "创建知识库",
     "actionupdate_knowledge_base": "更新知识库",
     "actiondelete_knowledge_base": "删除知识库",
@@ -241,6 +246,7 @@
     "resourceTypeWorkflowVersion": "工作流版本",
     "resourceTypeFile": "文件",
     "resourceTypeTeamModel": "团队模型",
+    "resourceTypeSandboxTask": "沙箱任务",
     "rowsPerPage": "每页显示",
     "pageInfo": "第 {page} 页，共 {total} 页"
   }

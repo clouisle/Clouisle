@@ -395,6 +395,22 @@ Metadata:
   reason: Policy violation
 ```
 
+### Sandbox Task Events
+
+Sandbox workers record task lifecycle events with these actions:
+
+| Action | Meaning |
+| --- | --- |
+| `sandbox_task_started` | A worker claimed execution. |
+| `sandbox_task_completed` | Execution or workspace preparation completed. |
+| `sandbox_task_failed` | Execution, preparation, or a terminal guard failed. |
+| `sandbox_task_cancelled` | The task was cancelled before or during execution. |
+| `sandbox_task_recovered` | A session binding or workspace recovery succeeded or failed. |
+
+These rows use resource type `sandbox_task` and include the job ID, session ID when available, task source, worker ID, safe error code, and duration when available. Actor and team are resolved from the sandbox session when possible; otherwise the submitting team may be recorded. Recovery entries may also include worker-placement and generation details. Failed recovery entries have status `failed`; successful recovery entries have status `success`.
+
+Audit metadata never includes submitted code, arguments, standard output/error, or raw exception text. Audit persistence errors are logged by the service and do not replace the sandbox result.
+
 ## Searching and Filtering
 
 ### Search Audit Logs

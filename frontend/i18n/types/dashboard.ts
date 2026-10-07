@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-23T17:20:52.213Z
+// GENERATED — 2026-10-07T17:03:38.840Z
 // Source: i18n/en/dashboard.json
 export type DashboardMessages = {
   dashboard: {
@@ -84,6 +84,7 @@ export type DashboardMessages = {
       teamRanking: string
       teamRankingDesc: string
       modelDetails: string
+      deletedModel: string
       topAgentsByTokens: string
     }
     analytics: {

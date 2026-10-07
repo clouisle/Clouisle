@@ -113,7 +113,6 @@ class Settings(BaseSettings):
 
     # Sandbox runtime flags
     SANDBOX_RUNTIME_ENABLED: bool = True
-    SANDBOX_LEGACY_FALLBACK_ENABLED: bool = True
     SANDBOX_WORKSPACE_ROOT: str = "/tmp/clouisle-sandbox/jobs"
     SANDBOX_WORKER_ID: str = ""
     SANDBOX_NODE_ID: str = ""
@@ -144,9 +143,14 @@ class Settings(BaseSettings):
     SANDBOX_CHECKPOINT_ROOT: str = ""
     SANDBOX_WORKSPACE_IDLE_SECONDS: int = Field(default=900, gt=0)
     SANDBOX_CHECKPOINT_TIMEOUT_SECONDS: int = Field(default=120, gt=0)
-    SANDBOX_FILESYSTEM_ISOLATION_ENABLED: bool = False
+    SANDBOX_FILESYSTEM_ISOLATION_ENABLED: bool = True
     SANDBOX_FILESYSTEM_ISOLATION_BINARY: str = "bwrap"
     SANDBOX_MAX_DISK_MB: int = 8192
+    SANDBOX_PACKAGE_INSTALL_TIMEOUT_SECONDS: int = Field(default=300, gt=0, le=3600)
+    SANDBOX_TASK_MEMORY_MB: int = Field(default=1024, gt=0, le=8192)
+    SANDBOX_TASK_MAX_FILE_SIZE_MB: int = Field(default=1024, gt=0, le=8192)
+    SANDBOX_TASK_MAX_OPEN_FILES: int = Field(default=256, ge=32, le=4096)
+    SANDBOX_TASK_MAX_CPU_SECONDS: int = Field(default=600, gt=0, le=3600)
     SANDBOX_SESSION_TTL_HOURS: int = 24
     SANDBOX_SESSION_CLEANUP_BATCH_SIZE: int = 100
     SANDBOX_RESULT_TTL_SECONDS: int = 86400

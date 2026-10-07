@@ -9,9 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Sandbox Security
+- Added a persisted Security setting for exact sandbox egress hostnames; updates apply to new jobs without restarting workers.
+
 #### Chat and File Previews
 - Added a unified artifact list with file counts, expandable results, authenticated downloads, and shared previews for common document, media, and code formats.
 - Added DOCX thumbnails, page synchronization, responsive fit-to-width, and zoom controls; added read-only PDF and spreadsheet preview controls.
+
+#### Sandbox Lifecycle Audit
+- Added audit events for sandbox task start, completion, failure, cancellation, and recovery. Entries capture available task/session/worker context and safe error codes without recording code, arguments, output, or raw exception text.
 
 #### Memory and RAG
 - Added optional background memory extraction controls in the admin `memory` site-settings category, including model selection, debounce cooldown, and pending-turn trigger limits.
@@ -46,6 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Used the platform's `ELOOP` errno constant when rejecting symlinked workspace paths.
 - Routed deferred cleanup and idle-eviction retries through separate Redis indexes so an unavailable owner queue cannot block later sessions; spread first-time session placement across ready workers and bounded binding/tombstone retention.
 - Rejected zero-valued sandbox worker recovery timeouts.
+- Routed isolated sandbox and dependency-install egress through a per-job HTTPS proxy with exact-host allowlisting; blocked hosts are reported in execution diagnostics.
+- Kept legacy code execution and workflow code nodes behind the sandbox gateway; disabled, unavailable, and failed runtimes fail closed without executing payloads on the caller.
+- Bounded Python and Node dependency installation to 300 seconds by default; timed-out install process groups are terminated and incomplete environments are discarded.
+- Bounded captured sandbox output in memory and applied per-process `prlimit` controls. Direct payloads drop all capabilities in Bubblewrap; the trusted egress bridge raises loopback in its isolated network namespace, then sets `no-new-privileges` and clears payload capabilities. Supplied workers receive `NET_ADMIN` for that setup and remain resource-capped.
 
 #### Asset Access and Previews
 - Protected generated images, generated videos, and sandbox artifacts with scope-aware authorization and authenticated client downloads.

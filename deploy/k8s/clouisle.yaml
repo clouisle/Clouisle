@@ -630,16 +630,17 @@ spec:
             - name: sandbox-data
               mountPath: /var/lib/clouisle/sandbox
           securityContext:
-            # bwrap must create user/mount namespaces. The image USER is a
-            # non-root account whose effective caps are always empty, so the
-            # worker runs as root (runAsUser 0 overrides the image USER) and
-            # adds CAP_SYS_ADMIN on top of the runtime default cap set. The
-            # task payload still executes inside a fresh Bubblewrap user+mount
-            # namespace.
+            # Bubblewrap needs SYS_ADMIN and SETFCAP for namespaces; NET_ADMIN
+            # lets the trusted proxy bridge enable isolated loopback, then
+            # drop all task capabilities before payload execution.
             allowPrivilegeEscalation: false
             capabilities:
+              drop:
+                - ALL
               add:
                 - SYS_ADMIN
+                - SETFCAP
+                - NET_ADMIN
             runAsUser: 0
             seccompProfile:
               type: Unconfined

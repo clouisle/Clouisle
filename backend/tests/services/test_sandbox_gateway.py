@@ -145,6 +145,11 @@ def test_cancel_is_immutable_and_absolute_deadline_survives_serialization(
         r.run(r.gateway.await_result(job.job_id)).status == SandboxTaskStatus.CANCELLED
     )
     assert r.run(r.results.get_result(job.job_id)) == cancelled
+    assert [
+        event["action"]
+        for event in r.audit_events
+        if event["metadata"]["job_id"] == job.job_id
+    ] == ["sandbox_task_cancelled"]
 
 
 def test_poll_backoff_caps_without_changing_zero_polling(sandbox_runtime):

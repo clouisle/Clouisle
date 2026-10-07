@@ -107,6 +107,13 @@ def test_reset_producing_submit_reports_notice_and_does_not_replay(sandbox_runti
     current = r.run(r.sessions.get_binding("session"))
     descriptor = r.run(r.gateway.get_session_workspace("session"))
     assert descriptor.root.name == current.workspace_id
+    recovery_events = [
+        event for event in r.audit_events if event["action"] == "sandbox_task_recovered"
+    ]
+    assert len(recovery_events) == 1
+    assert (
+        recovery_events[0]["metadata"]["recovery"]["generation"] == current.generation
+    )
 
 
 def test_redis_unknown_does_not_reset_or_publish_new_placement(
@@ -139,6 +146,8 @@ def test_lost_running_execution_is_uncertain_and_never_redispatched(sandbox_runt
     assert not r.messages
     assert notices and notices[0]["generation"] == binding.generation + 1
     assert r.run(r.results.get_result(job.job_id)).error_code == "EXECUTION_UNCERTAIN"
+    assert any(event["action"] == "sandbox_task_failed" for event in r.audit_events)
+    assert any(event["action"] == "sandbox_task_recovered" for event in r.audit_events)
 
 
 def test_original_deadline_and_cancellation_bound_recovery(sandbox_runtime):

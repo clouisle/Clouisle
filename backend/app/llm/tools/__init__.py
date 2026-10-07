@@ -10,9 +10,7 @@ from .registry import (
     NON_SELECTABLE_BUILTIN_TOOLS,
 )
 from .sandbox import (
-    code_sandbox,
     execute_code,
-    CodeSandbox,
     CodeLanguage,
     ExecutionResult,
 )
@@ -23,9 +21,7 @@ __all__ = [
     "ToolInfo",
     "NON_SELECTABLE_BUILTIN_TOOLS",
     "ToolParameter",
-    "code_sandbox",
     "execute_code",
-    "CodeSandbox",
     "CodeLanguage",
     "ExecutionResult",
 ]

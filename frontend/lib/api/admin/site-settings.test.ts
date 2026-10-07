@@ -92,6 +92,7 @@ describe('siteSettingsApi requests', () => {
     const get = spyOn(api, 'get').mockResolvedValue(response({
       model_endpoint_allowlist: [],
       ssrf_allowed_targets: ['10.0.0.0/16'],
+      sandbox_network_allowlist: ['pypi.org'],
     }))
     try {
       const security = await siteSettingsApi.getSecurity()
@@ -112,6 +113,7 @@ describe('siteSettingsApi requests', () => {
       expect(await siteSettingsApi.getSlack()).toEqual({ slack_enabled: false, slack_webhook_url: '' })
       expect(security).toHaveProperty('model_endpoint_allowlist', [])
       expect(security).toHaveProperty('ssrf_allowed_targets', ['10.0.0.0/16'])
+      expect(security).toHaveProperty('sandbox_network_allowlist', ['pypi.org'])
       expect(get.mock.calls.map(([route]) => route)).toEqual([
         '/admin/site-settings?category=security',
         '/admin/site-settings?category=sso',
@@ -139,6 +141,25 @@ describe('siteSettingsApi requests', () => {
       try {
         await expect(siteSettingsApi.getSecurity()).rejects.toThrow(
           'Invalid model endpoint allowlist response'
+        )
+      } finally {
+        get.mockRestore()
+      }
+    }
+  })
+
+  it('rejects missing or malformed sandbox egress allowlists', async () => {
+    for (const value of [undefined, 'invalid', ['pypi.org', 42]]) {
+      const securitySettings = value === undefined
+        ? { model_endpoint_allowlist: [] }
+        : { model_endpoint_allowlist: [], sandbox_network_allowlist: value }
+      const get = spyOn(api, 'get')
+        .mockResolvedValueOnce(response(securitySettings))
+        .mockResolvedValueOnce(response({}))
+
+      try {
+        await expect(siteSettingsApi.getSecurity()).rejects.toThrow(
+          'Invalid sandbox network allowlist response'
         )
       } finally {
         get.mockRestore()

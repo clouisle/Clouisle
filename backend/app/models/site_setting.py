@@ -2,6 +2,7 @@ from typing import Any, Optional, TypedDict
 
 from tortoise import fields, models
 from app.core.model_endpoint_policy import DEFAULT_MODEL_ENDPOINT_ALLOWLIST
+from app.core.sandbox_network_policy import DEFAULT_SANDBOX_NETWORK_ALLOWLIST
 
 
 class SiteSetting(models.Model):
@@ -537,6 +538,13 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "category": "security",
         "public": False,
         "desc": "ssrf_allowed_targets_description",
+    },
+    "sandbox_network_allowlist": {
+        "value": DEFAULT_SANDBOX_NETWORK_ALLOWLIST,
+        "type": "json",
+        "category": "security",
+        "public": False,
+        "desc": "sandbox_network_allowlist_description",
     },
     "min_password_length": {
         "value": 8,

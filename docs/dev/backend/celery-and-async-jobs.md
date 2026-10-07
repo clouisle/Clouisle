@@ -97,7 +97,7 @@ The frontend should keep polling until a task reaches `completed` or `failed`, r
 
 ## Sandbox worker
 
-Sandbox jobs run on the dedicated `sandbox` Celery queue.
+Stateless sandbox jobs use the shared `sandbox` Celery queue. Session jobs, workspace preparation, and lifecycle tasks use the owning worker's `sandbox.worker.<sha256(worker_id)>` queue; each sandbox worker consumes the shared queue plus its own affinity queue. A session is dispatched only after a ready worker registers its local disk and prepares the workspace. Worker-side binding checks reject stale or misrouted messages instead of forwarding them.
 
 Start the worker directly when running everything on the host:
 
@@ -117,7 +117,7 @@ The container sets `UPLOAD_STORAGE_MODE=remote`: it reads authorized attachments
 
 The container image installs Bubblewrap and enables `SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true` with `SANDBOX_FILESYSTEM_ISOLATION_BINARY=/usr/bin/bwrap`. Each executable task receives its current workspace as a real `/workspace` bind mount. Direct host execution keeps isolation disabled unless both variables are set explicitly on a Linux host with working unprivileged user namespaces.
 
-Docker and Kubernetes must allow the namespace and mount syscalls used by rootless Bubblewrap. The supplied Compose and Helm configurations run the worker as root with `CAP_SYS_ADMIN` added to the runtime default cap set so it can create user/mount namespaces even on hosts that gate non-privileged user namespaces, keep privilege escalation disabled, and use a worker-specific unconfined seccomp profile. Use an equivalent Localhost profile when cluster policy prohibits `Unconfined`.
+Docker and Kubernetes must allow the namespace and mount syscalls used by Bubblewrap. Supplied deployments run the worker as root with `CAP_SYS_ADMIN` and `CAP_SETFCAP` for namespace setup, plus `CAP_NET_ADMIN` so the trusted egress bridge can enable loopback inside each isolated network namespace. The bridge sets `no-new-privileges` and clears its capabilities before launching task payloads; direct tasks use Bubblewrap `--cap-drop ALL`. Keep privilege escalation disabled and use a worker-specific unconfined seccomp profile. Use an equivalent Localhost profile when cluster policy prohibits `Unconfined`.
 
 Production compose includes a `sandbox-worker` service. Set `SANDBOX_WORKER_CONCURRENCY` to tune its Celery concurrency.
 

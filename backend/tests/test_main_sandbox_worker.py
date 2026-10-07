@@ -159,14 +159,17 @@ def test_start_sandbox_worker_container_defaults_host_service_env(
     assert "QDRANT_URL=http://host.docker.internal:6333" in cmd
     assert "API_INTERNAL_BASE_URL=http://host.docker.internal:8000" in cmd
     # Rootless bwrap needs namespace/mount syscalls the default seccomp
-    # profile blocks; the local-dev container must mirror the sandbox-worker
-    # security options used by Docker Compose and Helm.
+    # profile blocks; local dev mirrors the deployed worker security options.
     assert cmd[cmd.index("seccomp=unconfined") - 1] == "--security-opt"
     assert "no-new-privileges:true" in cmd
-    # The image USER is non-root with empty effective caps; the worker must
-    # run as root and add CAP_SYS_ADMIN (compose parity).
     assert cmd[cmd.index("--user") + 1] == "0"
-    assert cmd[cmd.index("--cap-add") + 1] == "SYS_ADMIN"
+    assert cmd[cmd.index("--cap-drop") + 1] == "ALL"
+    capabilities = [
+        cmd[index + 1]
+        for index, argument in enumerate(cmd[:-1])
+        if argument == "--cap-add"
+    ]
+    assert capabilities == ["SYS_ADMIN", "SETFCAP", "NET_ADMIN"]
 
 
 def test_sandbox_worker_local_dev_cli_dispatches_container_mode(
@@ -195,3 +198,21 @@ def test_sandbox_worker_local_dev_cli_dispatches_container_mode(
         no_cache=True,
         image_tag="sandbox:test",
     )
+
+
+def test_start_sandbox_worker_consumes_its_affinity_queue(monkeypatch):
+    from app.services.sandbox import affinity, worker_supervisor
+    from main import start_sandbox_worker
+
+    monkeypatch.setattr(affinity, "sandbox_worker_id", lambda: "disk-a")
+    expected_queue = affinity.sandbox_worker_queue("disk-a")
+    with patch.object(
+        worker_supervisor, "supervise_sandbox_worker", return_value=0
+    ) as supervise:
+        with pytest.raises(SystemExit) as exc:
+            start_sandbox_worker(concurrency=1)
+
+    assert exc.value.code == 0
+    command = supervise.call_args.args[0]
+    assert f"--queues=sandbox,{expected_queue}" in command
+    assert "--pool=solo" in command

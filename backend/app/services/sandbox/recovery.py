@@ -13,6 +13,7 @@ from uuid import uuid4
 from app.core.config import settings
 
 from .affinity import sandbox_worker_queue
+from .audit import log_sandbox_task_event
 from .models import SandboxBinding, SandboxTaskStatus
 from .result_store import TERMINAL_STATUSES, sandbox_result_store
 from .session_store import sandbox_session_store
@@ -191,12 +192,24 @@ async def _prepare(
                 return bool(result and result.success)
             live = await sandbox_worker_registry.get(candidate.worker_id)
             if not live or live.instance_id != candidate.instance_id or not live.ready:
-                await sandbox_result_store.update_status(
+                existing = await sandbox_result_store.get_result(job_id)
+                result = await sandbox_result_store.update_status(
                     job_id,
                     SandboxTaskStatus.FAILED,
                     error="Workspace preparation worker lost",
                     error_code="SANDBOX_UNAVAILABLE",
                 )
+                if (
+                    existing is None or existing.status not in TERMINAL_STATUSES
+                ) and result.status == SandboxTaskStatus.FAILED:
+                    await log_sandbox_task_event(
+                        job_id=job_id,
+                        event="failed",
+                        session_id=session_id,
+                        source="workspace_prepare",
+                        worker_id=candidate.worker_id,
+                        error_code=result.error_code,
+                    )
                 return False
             await asyncio.sleep(
                 min(
@@ -205,9 +218,22 @@ async def _prepare(
                 )
             )
     except BaseException:
-        await sandbox_result_store.update_status(
-            job_id, SandboxTaskStatus.CANCELLED, error="Workspace preparation cancelled"
+        existing = await sandbox_result_store.get_result(job_id)
+        result = await sandbox_result_store.update_status(
+            job_id,
+            SandboxTaskStatus.CANCELLED,
+            error="Workspace preparation cancelled",
         )
+        if (
+            existing is None or existing.status not in TERMINAL_STATUSES
+        ) and result.status == SandboxTaskStatus.CANCELLED:
+            await log_sandbox_task_event(
+                job_id=job_id,
+                event="cancelled",
+                session_id=session_id,
+                source="workspace_prepare",
+                error_code=result.error_code,
+            )
         raise
 
 

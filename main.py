@@ -316,18 +316,21 @@ def start_sandbox_worker_container(
         "host.docker.internal:host-gateway",
         "--name",
         f"clouisle-sandbox-worker-dev-{os.getpid()}",
-        # Mirror the sandbox-worker security options from deploy/docker-compose.yml:
-        # rootless bwrap needs namespace/mount syscalls that the default seccomp
-        # profile blocks, so the container must run with seccomp unconfined.
-        # The worker runs as root (effective caps of the image's non-root USER
-        # are always empty) and adds CAP_SYS_ADMIN on top of the runtime
-        # default cap set.
+        # Match the sandbox-worker deployment: Bubblewrap needs SYS_ADMIN and
+        # SETFCAP for namespace setup; the trusted bridge uses NET_ADMIN to
+        # enable isolated loopback, then drops task capabilities.
         "--security-opt",
         "seccomp=unconfined",
         "--security-opt",
         "no-new-privileges:true",
+        "--cap-drop",
+        "ALL",
         "--cap-add",
         "SYS_ADMIN",
+        "--cap-add",
+        "SETFCAP",
+        "--cap-add",
+        "NET_ADMIN",
         "--user",
         "0",
         "--mount",

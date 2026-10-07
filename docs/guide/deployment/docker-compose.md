@@ -291,8 +291,12 @@ services:
     security_opt:
       - no-new-privileges:true
       - seccomp=unconfined
+    cap_drop:
+      - ALL
     cap_add:
       - SYS_ADMIN
+      - SETFCAP
+      - NET_ADMIN
     environment:
       UPLOAD_STORAGE_MODE: remote
       API_INTERNAL_BASE_URL: ${API_INTERNAL_BASE_URL:-http://api:8000}
@@ -487,8 +491,9 @@ docker compose up -d --scale worker=4
 # Then scale API replicas:
 docker compose up -d --scale api=2
 
-# Scale sandbox workers
-docker compose up -d --scale sandbox-worker=2
+# The supplied sandbox-worker uses one named local volume; do not scale it
+# because Compose would mount that same disk into every replica.
+# To add independent workers, give each its own volume and unique worker/node ID.
 
 # NEVER scale beat beyond 1
 # docker compose up -d --scale beat=2  ← DO NOT DO THIS

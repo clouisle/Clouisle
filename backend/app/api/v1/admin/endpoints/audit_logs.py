@@ -729,6 +729,31 @@ AUDIT_ACTION_OPTIONS: list[AuditLogActionOption] = [
         translation_key="auditLogs.actiondelete_knowledge_base",
         fallback_label="Delete Knowledge Base",
     ),
+    AuditLogActionOption(
+        value="sandbox_task_cancelled",
+        translation_key="auditLogs.actionsandbox_task_cancelled",
+        fallback_label="Sandbox Task Cancelled",
+    ),
+    AuditLogActionOption(
+        value="sandbox_task_completed",
+        translation_key="auditLogs.actionsandbox_task_completed",
+        fallback_label="Sandbox Task Completed",
+    ),
+    AuditLogActionOption(
+        value="sandbox_task_failed",
+        translation_key="auditLogs.actionsandbox_task_failed",
+        fallback_label="Sandbox Task Failed",
+    ),
+    AuditLogActionOption(
+        value="sandbox_task_recovered",
+        translation_key="auditLogs.actionsandbox_task_recovered",
+        fallback_label="Sandbox Task Recovered",
+    ),
+    AuditLogActionOption(
+        value="sandbox_task_started",
+        translation_key="auditLogs.actionsandbox_task_started",
+        fallback_label="Sandbox Task Started",
+    ),
 ]
 
 

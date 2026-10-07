@@ -1,11 +1,17 @@
 import json
+import sys
+import subprocess
 from pathlib import Path
 
 import pytest
+from app.core.config import settings
 
 from app.services.sandbox.manager import SandboxManager
 from app.services.sandbox.models import SandboxJob, SandboxJobSource
-from app.services.sandbox.process_launcher import ProcessLaunchResult
+from app.services.sandbox.process_launcher import (
+    ProcessLaunchResult,
+    SandboxProcessLauncher,
+)
 from app.services.sandbox.workspace import SandboxWorkspaceManager
 
 
@@ -14,7 +20,9 @@ class FakePythonEnvManager:
         self.env_dir = env_dir
         self.calls = []
 
-    def ensure_environment(self, *, packages, runtime_profile, package_index_url=None):
+    async def ensure_environment(
+        self, *, packages, runtime_profile, package_index_url=None, **kwargs
+    ):
         self.calls.append((packages, runtime_profile, package_index_url))
         return self.env_dir, True
 
@@ -121,3 +129,77 @@ class TestSandboxSnippetRuntime:
             "utf8",
         ]
         assert launcher.calls[0][0][3].endswith("snippet.py")
+
+    async def test_package_install_failure_returns_blocked_host_diagnostic(
+        self, tmp_path: Path
+    ):
+        workspace_manager = SandboxWorkspaceManager(root=str(tmp_path / "jobs"))
+        python_env_manager = FakePythonEnvManager(tmp_path / "cache" / "py-env")
+
+        async def fail_install(**kwargs):
+            raise subprocess.CalledProcessError(
+                1,
+                ["pip", "install"],
+                stderr=(
+                    "[sandbox-network] blocked host=evil.example "
+                    "port=443 reason=not_allowlisted"
+                ),
+            )
+
+        python_env_manager.ensure_environment = fail_install
+        launcher = FakeProcessLauncher(stdout="must not execute")
+        manager = SandboxManager(
+            workspace_manager=workspace_manager,
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+            python_env_manager=python_env_manager,
+            process_launcher=launcher,
+        )
+        job = SandboxJob(
+            source=SandboxJobSource.LEGACY_SNIPPET,
+            language="python",
+            code="return 1",
+            command=["python"],
+            python_packages=["requests==2.32.3"],
+        )
+
+        result = await manager.execute(job)
+
+        assert result.success is False
+        assert "blocked host=evil.example" in result.stderr
+        assert launcher.calls == []
+
+    async def test_python_snippet_preserves_boolean_parameters(
+        self, tmp_path: Path, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "SANDBOX_FILESYSTEM_ISOLATION_ENABLED", False)
+        monkeypatch.setattr(
+            settings, "SANDBOX_DEFAULT_PYTHON_BINARIES", [sys.executable]
+        )
+
+        class LocalProcessLauncher(SandboxProcessLauncher):
+            async def launch(self, command, **kwargs):
+                kwargs.pop("network_proxy", None)
+                return await super().launch(command, **kwargs)
+
+        manager = SandboxManager(
+            workspace_manager=SandboxWorkspaceManager(root=str(tmp_path / "jobs")),
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+            python_env_manager=FakePythonEnvManager(tmp_path / "cache" / "py-env"),
+            process_launcher=LocalProcessLauncher(),
+        )
+        job = SandboxJob(
+            source=SandboxJobSource.LEGACY_SNIPPET,
+            language="python",
+            code=(
+                "return {'flag': params['rules']['success'], "
+                "'status_code': params['rules']['status_code']}"
+            ),
+            metadata={"params": {"rules": {"success": True, "status_code": 200}}},
+        )
+
+        result = await manager.execute(job)
+
+        assert result.success is True
+        assert result.result == {"flag": True, "status_code": 200}

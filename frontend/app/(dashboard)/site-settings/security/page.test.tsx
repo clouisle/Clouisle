@@ -8,6 +8,7 @@ const updateSecurity = mock(() => Promise.resolve({}))
 const getRoles = mock(() => Promise.resolve({ items: roles }))
 const getTeams = mock(() => Promise.resolve({ items: teams }))
 const success = mock(() => {})
+const failure = mock(() => {})
 let canUpdate = true
 
 const roles = [{ id: 'role-1', name: 'Member', description: null, is_system_role: false, permissions: [] }]
@@ -44,10 +45,11 @@ const settings = {
   require_totp: false,
   model_endpoint_allowlist: ['https://api.openai.com'],
   ssrf_allowed_targets: ['10.0.0.0/16'],
+  sandbox_network_allowlist: ['pypi.org', 'files.pythonhosted.org'],
 }
 
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
-mock.module('sonner', () => ({ toast: { success } }))
+mock.module('sonner', () => ({ toast: { success, error: failure } }))
 mock.module('lucide-react', () => ({ Loader2: () => null }))
 mock.module('@/components/ui/card', () => ({
   Card: ({ children }: React.PropsWithChildren) => <section>{children}</section>,
@@ -170,6 +172,7 @@ describe('SiteSettingsSecurityPage', () => {
         '10.0.0.0/16',
         '*.corp.internal',
       ],
+      sandbox_network_allowlist: ['registry.npmjs.org', 'files.pythonhosted.org'],
     })
     const renderer = await render()
 
@@ -211,6 +214,11 @@ describe('SiteSettingsSecurityPage', () => {
         value: '10.0.0.0/16\n\n*.corp.internal',
       },
     }))
+    act(() => renderer.root.findByProps({ id: 'sandboxNetworkAllowlist' }).props.onChange({
+      target: {
+        value: ' Registry.NPMjs.org. \n\npypi.org\nregistry.npmjs.org',
+      },
+    }))
 
     await act(async () => saveButton(renderer).props.onClick())
 
@@ -231,12 +239,16 @@ describe('SiteSettingsSecurityPage', () => {
         '10.0.0.0/16',
         '*.corp.internal',
       ],
+      sandbox_network_allowlist: ['Registry.NPMjs.org.', 'pypi.org', 'registry.npmjs.org'],
     }))
     expect(renderer.root.findByProps({ id: 'modelEndpointAllowlist' }).props.value).toBe(
       'https://api.example.com\nhttp://ollama:11434'
     )
     expect(renderer.root.findByProps({ id: 'ssrfAllowedTargets' }).props.value).toBe(
       '10.0.0.0/16\n*.corp.internal'
+    )
+    expect(renderer.root.findByProps({ id: 'sandboxNetworkAllowlist' }).props.value).toBe(
+      'registry.npmjs.org\nfiles.pythonhosted.org'
     )
   })
 
@@ -291,6 +303,22 @@ describe('SiteSettingsSecurityPage', () => {
 
     expect(updateSecurity).toHaveBeenCalledTimes(2)
     expect(success).toHaveBeenCalledWith('saveSuccess')
+    console.error = originalConsoleError
+  })
+
+  test('shows localized validation feedback when the server rejects a sandbox hostname', async () => {
+    const message = 'Use up to 200 exact DNS hostnames; IP addresses, wildcards, and invalid hostnames are not allowed'
+    const originalConsoleError = console.error
+    console.error = mock(() => {})
+    updateSecurity.mockRejectedValueOnce(new ApiError(1001, message))
+    const renderer = await render()
+
+    act(() => renderer.root.findByProps({ id: 'sandboxNetworkAllowlist' }).props.onChange({
+      target: { value: '*.example.com' },
+    }))
+    await act(async () => saveButton(renderer).props.onClick())
+
+    expect(failure).toHaveBeenCalledWith(message)
     console.error = originalConsoleError
   })
 

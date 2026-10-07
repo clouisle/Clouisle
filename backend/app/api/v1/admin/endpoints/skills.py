@@ -375,6 +375,7 @@ async def test_skill(
 
     session_id = await sandbox_gateway.create_session(
         team_id=str(skill.team_id) if skill.team_id else None,
+        user_id=str(current_user.id),
     )
     try:
         result = await SkillExecutor.execute(

@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import time
 from contextvars import ContextVar
 from datetime import UTC, datetime
@@ -16,12 +17,17 @@ from typing import Any
 from uuid import UUID
 
 from app.core.config import settings
+from app.core.sandbox_network_policy import (
+    SandboxNetworkPolicyError,
+    get_sandbox_network_allowlist,
+)
 from app.schemas.response import BusinessError, ResponseCode
 from app.core.i18n import t
 from app.llm.tools.sandbox import ExecutionResult as LegacyExecutionResult
 from app.services.error_messages import resolve_user_visible_error
 from app.services import upload_gateway
 
+from .egress_proxy import SandboxEgressProxy
 from .artifacts import SandboxArtifactStore
 from .models import (
     SandboxExecutionMetadata,
@@ -55,6 +61,17 @@ BLOCKED_ENV = frozenset(
         "RUBYOPT",
         "PERL5LIB",
         "PYTHONPATH",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy",
+        "npm_config_proxy",
+        "npm_config_https_proxy",
+        "npm_config_noproxy",
     }
 )
 
@@ -310,7 +327,44 @@ class SandboxManager:
         workspace: SandboxWorkspace,
         metadata: SandboxExecutionMetadata,
     ) -> LegacyExecutionResult:
-        env = self._build_command_env(job, workspace, metadata)
+        async with SandboxEgressProxy(
+            job_id=job.job_id,
+            allowed_hosts=await get_sandbox_network_allowlist(),
+        ) as network_proxy:
+            return await self._run_job_with_proxy(
+                job,
+                workspace,
+                metadata,
+                network_proxy,
+            )
+
+    async def _run_job_with_proxy(
+        self,
+        job: SandboxJob,
+        workspace: SandboxWorkspace,
+        metadata: SandboxExecutionMetadata,
+        network_proxy: SandboxEgressProxy,
+    ) -> LegacyExecutionResult:
+        try:
+            env = await self._build_command_env(
+                job,
+                workspace,
+                metadata,
+                network_proxy,
+            )
+        except SandboxNetworkPolicyError as exc:
+            return LegacyExecutionResult(
+                success=False,
+                error=str(exc),
+                stderr=str(exc),
+            )
+        except subprocess.CalledProcessError as exc:
+            return LegacyExecutionResult(
+                success=False,
+                error=t("tool_execution_failed"),
+                stdout=exc.output or "",
+                stderr=exc.stderr or "",
+            )
 
         metadata.mark_execute_started(datetime.now(UTC))
         await self._save_result_snapshot(
@@ -337,6 +391,7 @@ class SandboxManager:
                 max_stderr_kb=job.limits.max_stderr_kb,
                 workspace_root=str(workspace.root),
                 cache_root=str(self.workspace_manager.cache_root),
+                network_proxy=network_proxy,
             )
             metadata.mark_execute_completed(datetime.now(UTC))
             return self._parse_snippet_result(process_result, script_path)
@@ -357,6 +412,7 @@ class SandboxManager:
                 max_stderr_kb=job.limits.max_stderr_kb,
                 workspace_root=str(workspace.root),
                 cache_root=str(self.workspace_manager.cache_root),
+                network_proxy=network_proxy,
             )
             metadata.mark_execute_completed(datetime.now(UTC))
             success = process_result.exit_code == 0 and not process_result.timed_out
@@ -719,11 +775,12 @@ async function __execute__() {{
             stderr=stderr,
         )
 
-    def _build_command_env(
+    async def _build_command_env(
         self,
         job: SandboxJob,
         workspace: SandboxWorkspace,
         metadata: SandboxExecutionMetadata,
+        network_proxy: SandboxEgressProxy,
     ) -> dict[str, str]:
         env = {
             "HOME": str(workspace.root),
@@ -749,12 +806,15 @@ async function __execute__() {{
             metadata.mark_install_started(datetime.now(UTC))
             try:
                 if job.python_packages:
-                    python_env_dir, cache_hit = (
-                        self.python_env_manager.ensure_environment(
-                            packages=job.python_packages,
-                            runtime_profile=job.runtime_profile,
-                            package_index_url=job.python_package_index_url,
-                        )
+                    (
+                        python_env_dir,
+                        cache_hit,
+                    ) = await self.python_env_manager.ensure_environment(
+                        packages=job.python_packages,
+                        runtime_profile=job.runtime_profile,
+                        process_launcher=self.process_launcher,
+                        network_proxy=network_proxy,
+                        package_index_url=job.python_package_index_url,
                     )
                     metadata.cache_hit_python = cache_hit
                     if python_env_dir is not None:
@@ -763,9 +823,14 @@ async function __execute__() {{
                         )
 
                 if job.js_packages:
-                    node_env_dir, cache_hit = self.node_env_manager.ensure_environment(
+                    (
+                        node_env_dir,
+                        cache_hit,
+                    ) = await self.node_env_manager.ensure_environment(
                         packages=job.js_packages,
                         runtime_profile=job.runtime_profile,
+                        process_launcher=self.process_launcher,
+                        network_proxy=network_proxy,
                         registry_url=job.node_package_registry_url,
                     )
                     metadata.cache_hit_node = cache_hit

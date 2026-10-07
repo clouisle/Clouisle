@@ -274,7 +274,7 @@ Trigger Event / User Input ──► FastAPI (POST /workflows/{id}/runs) ──�
 └─────────────────────────────────────────────────────────────┘
 ```
 
-The worker consumes the `default`, `agent`, `knowledge`, and `workflow` queues; durable AgentRun tasks are routed to the dedicated `agent` queue, and sandbox execution uses the dedicated sandbox-worker process/queue (`sandbox`) when enabled.
+The worker consumes the `default`, `agent`, `knowledge`, and `workflow` queues; durable AgentRun tasks use the dedicated `agent` queue. Stateless sandbox jobs use the shared `sandbox` queue, while session jobs use a worker-specific affinity queue selected after a ready worker prepares the session workspace.
 
 ### Kubernetes (Large Production)
 

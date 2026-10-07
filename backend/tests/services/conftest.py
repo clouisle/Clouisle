@@ -9,6 +9,7 @@ import pytest
 
 from app.core.config import settings
 from app.services.sandbox import (
+    audit,
     gateway,
     manager,
     recovery,
@@ -19,6 +20,7 @@ from app.services.sandbox import (
 from app.services.sandbox.result_store import SandboxResultStore
 from app.services.sandbox.session_store import SandboxSessionStore
 from app.services.sandbox.worker_registry import SandboxWorkerRegistry, WorkerPresence
+from app.services.sandbox.process_launcher import SandboxProcessLauncher
 from app.tasks import sandbox as tasks
 from tests.services.fake_redis import AsyncFakeRedis, FakeRedis
 
@@ -50,11 +52,19 @@ def sandbox_runtime(tmp_path, monkeypatch, sandbox_redis_clients):
         workers={},
         roots={},
         messages=[],
+        audit_events=[],
         checkpoints=[],
         preparations=[],
         pending=[],
         prepare_gate=None,
     )
+
+    async def capture_audit(**event):
+        runtime.audit_events.append(event)
+        return SimpleNamespace(**event)
+
+    monkeypatch.setattr(audit, "sandbox_session_store", sessions)
+    monkeypatch.setattr(audit.AuditLog, "create", capture_audit)
     for module in (session_store, result_store, worker_registry):
         monkeypatch.setattr(module, "get_redis", AsyncMock(return_value=client))
     for module in (gateway, manager, recovery, tasks):
@@ -65,6 +75,18 @@ def sandbox_runtime(tmp_path, monkeypatch, sandbox_redis_clients):
     # These tests exercise worker mechanics; command-policy behavior has separate contract tests.
     monkeypatch.setattr(manager.sandbox_policy_engine, "validate", lambda job: None)
     monkeypatch.setattr(settings, "SANDBOX_FILESYSTEM_ISOLATION_ENABLED", False)
+
+    # These unit tests exercise job mechanics without Linux namespaces. Dedicated
+    # process-launcher and proxy tests cover network isolation and blocked hosts.
+    class LocalProcessLauncher:
+        def __init__(self, *args, **kwargs):
+            self.delegate = SandboxProcessLauncher(filesystem_isolation_enabled=False)
+
+        async def launch(self, command, **kwargs):
+            kwargs.pop("network_proxy", None)
+            return await self.delegate.launch(command, **kwargs)
+
+    monkeypatch.setattr(manager, "SandboxProcessLauncher", LocalProcessLauncher)
     monkeypatch.setattr(settings, "SANDBOX_CHECKPOINT_ROOT", "")
     monkeypatch.setattr(settings, "SANDBOX_WORKER_RECOVERY_SECONDS", 0.3)
     monkeypatch.setattr(settings, "SANDBOX_RECOVERY_POLL_SECONDS", 0.005)
@@ -73,7 +95,11 @@ def sandbox_runtime(tmp_path, monkeypatch, sandbox_redis_clients):
     )
     monkeypatch.setattr(gateway.SandboxGateway, "_workspace_manager", None)
     monkeypatch.setattr(tasks, "_get_worker_loop", lambda: loop)
-    monkeypatch.setattr(tasks, "sandbox_worker_id", lambda: runtime.current.worker_id)
+    monkeypatch.setattr(
+        tasks,
+        "sandbox_worker_id",
+        lambda: runtime.current.worker_id if runtime.current else "stateless-worker",
+    )
     monkeypatch.setattr(
         tasks, "sandbox_instance_id", lambda: runtime.current.instance_id
     )

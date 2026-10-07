@@ -159,6 +159,17 @@ Before saving or testing a model with a new API endpoint:
 
 Matching is exact. URL paths are ignored, but the scheme, hostname, and port must all match. Removing an Origin blocks subsequent model discovery, connection tests, and runtime requests without restarting the service.
 
+### Sandbox Egress Allowlist
+
+The sandbox egress proxy restricts isolated sandbox jobs to approved exact DNS hostnames. This policy is separate from the outbound SSRF exception list used by HTTP tools and URL imports.
+
+1. Navigate to **Settings** → **Security**.
+2. Locate **Sandbox Egress Allowlist**.
+3. Enter one exact DNS hostname per line. The initial defaults are `pypi.org`, `files.pythonhosted.org`, `pypi.python.org`, and `registry.npmjs.org`.
+4. Save the Security settings.
+
+Wildcards and IP addresses are rejected. An empty list blocks all external hosts through the sandbox proxy. Custom package-index URLs must use HTTPS and their hostname must be listed. Each sandbox job reads the current saved policy, so changes apply to the next job without restarting workers.
+
 ### Outbound Network Allowlist (SSRF Exemption)
 
 Clouisle protects against Server-Side Request Forgery (SSRF) across custom HTTP tools, workflow HTTP request nodes, knowledge base URL imports, and database tool connection tests. By default, requests to loopback addresses (`127.0.0.1`, `localhost`), link-local/cloud metadata services (`169.254.169.254`), and private networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) are blocked.

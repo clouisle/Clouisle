@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 from uuid import uuid4
 
 import pytest
+
 from app.models.asset import AssetScopeType
 from app.core.config import settings
 from app.core.i18n import t
@@ -30,10 +31,29 @@ from app.services.sandbox.models import (
     SandboxResult,
     SandboxTaskStatus,
 )
-from app.services.sandbox.process_launcher import ProcessLaunchResult
+from app.services.sandbox.process_launcher import (
+    ProcessLaunchResult,
+    SandboxProcessLauncher,
+)
 from app.services.sandbox.python_env import PythonEnvironmentManager
 from app.services.sandbox.workspace import SandboxWorkspaceManager
 from app.services.sandbox.worker_registry import WorkerPresence
+
+
+@pytest.fixture(autouse=True)
+def use_local_process_launcher(monkeypatch):
+    class LocalProcessLauncher:
+        def __init__(self, *args, **kwargs):
+            self.delegate = SandboxProcessLauncher(filesystem_isolation_enabled=False)
+
+        async def launch(self, command, **kwargs):
+            kwargs.pop("network_proxy", None)
+            return await self.delegate.launch(command, **kwargs)
+
+    monkeypatch.setattr(
+        "app.services.sandbox.manager.SandboxProcessLauncher",
+        LocalProcessLauncher,
+    )
 
 
 def bind_manager_session(monkeypatch, store):
@@ -86,7 +106,9 @@ class FakePythonEnvManager:
         self.calls = []
         self.workspace_env_calls = []
 
-    def ensure_environment(self, *, packages, runtime_profile, package_index_url=None):
+    async def ensure_environment(
+        self, *, packages, runtime_profile, package_index_url=None, **kwargs
+    ):
         self.calls.append((packages, runtime_profile, package_index_url))
         return None, False
 

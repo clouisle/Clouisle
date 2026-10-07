@@ -5,11 +5,19 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import asyncio
 from pathlib import Path
 
 from app.core.config import settings
+from app.services.sandbox.egress_proxy import SandboxEgressProxy
+from app.services.sandbox.process_launcher import SandboxProcessLauncher
 
-from .cache import acquire_cache_lock, build_cache_key, normalize_package_source_url
+from .cache import (
+    acquire_async_cache_lock,
+    build_cache_key,
+    normalize_package_source_url,
+)
+from app.core.sandbox_network_policy import normalize_sandbox_package_source
 
 
 class PythonEnvironmentManager:
@@ -34,17 +42,24 @@ class PythonEnvironmentManager:
             normalized_package_index_url,
         )
 
-    def ensure_environment(
+    async def ensure_environment(
         self,
         *,
         packages: list[str],
         runtime_profile: str,
+        process_launcher: SandboxProcessLauncher,
+        network_proxy: SandboxEgressProxy,
         package_index_url: str | None = None,
     ) -> tuple[Path | None, bool]:
         if not packages:
             return None, False
 
         normalized_package_index_url = normalize_package_source_url(package_index_url)
+        if normalized_package_index_url is not None:
+            normalized_package_index_url = normalize_sandbox_package_source(
+                normalized_package_index_url,
+                tuple(network_proxy.allowed_hosts),
+            )
         env_key = self.build_env_key(
             self.python_version(),
             packages,
@@ -57,7 +72,7 @@ class PythonEnvironmentManager:
         if ready_flag.exists() and env_dir.exists():
             return env_dir, True
 
-        with acquire_cache_lock("python-env", env_key):
+        async with acquire_async_cache_lock("python-env", env_key):
             if ready_flag.exists() and env_dir.exists():
                 return env_dir, True
 
@@ -65,7 +80,8 @@ class PythonEnvironmentManager:
                 shutil.rmtree(env_root, ignore_errors=True)
             env_root.mkdir(parents=True, exist_ok=True)
             try:
-                subprocess.run(
+                await asyncio.to_thread(
+                    subprocess.run,
                     [self.python_binary(), "-m", "venv", str(env_dir)],
                     check=True,
                     stdout=subprocess.DEVNULL,
@@ -75,7 +91,32 @@ class PythonEnvironmentManager:
                 if normalized_package_index_url:
                     pip_cmd.extend(["--index-url", normalized_package_index_url])
                 pip_cmd.extend(packages)
-                subprocess.run(pip_cmd, check=True)
+
+                tmp_dir = env_root / "tmp"
+                pip_cache_dir = tmp_dir / "pip-cache"
+                pip_cache_dir.mkdir(parents=True, exist_ok=True)
+                result = await process_launcher.launch(
+                    pip_cmd,
+                    cwd=str(env_root),
+                    env={
+                        "HOME": str(env_root),
+                        "TMPDIR": str(tmp_dir),
+                        "PIP_CACHE_DIR": str(pip_cache_dir),
+                        "LANG": "C.UTF-8",
+                        "LC_ALL": "C.UTF-8",
+                        "PATH": f"{env_dir / 'bin'}{os.pathsep}{self.runtime_path()}",
+                    },
+                    timeout_seconds=settings.SANDBOX_PACKAGE_INSTALL_TIMEOUT_SECONDS,
+                    workspace_root=str(env_root),
+                    network_proxy=network_proxy,
+                )
+                if result.exit_code != 0:
+                    raise subprocess.CalledProcessError(
+                        result.exit_code,
+                        pip_cmd,
+                        output=result.stdout,
+                        stderr=result.stderr,
+                    )
                 ready_flag.write_text("ready", encoding="utf-8")
                 return env_dir, False
             except Exception:
