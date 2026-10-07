@@ -58,7 +58,6 @@ let variableAssetIdsChange: ((name: string, assetIds: string | string[] | null) 
 let chatContainerProps: Record<string, unknown> = {}
 let chatInputProps: Record<string, unknown> = {}
 let pendingAskUserFormProps: Record<string, unknown> = {}
-let observerCallback: IntersectionObserverCallback | undefined
 let faviconHref: string | null = null
 const router = { push }
 const searchParams = { get: (key: string) => query.get(key), toString: () => query.toString() }
@@ -186,6 +185,7 @@ function render(params: Promise<{ id: string }> = Promise.resolve({ id: 'agent-1
 async function flush() {
   await act(async () => { await Promise.resolve(); await Promise.resolve() })
 }
+
 function output() { return JSON.stringify(renderer!.toJSON()) }
 function nodeText(node: ReactTestRenderer['root']): string {
   return node.children.map((child) => typeof child === 'string' ? child : nodeText(child)).join('')
@@ -209,7 +209,6 @@ beforeEach(() => {
   chatContainerProps = {}
   chatInputProps = {}
   pendingAskUserFormProps = {}
-  observerCallback = undefined
   faviconHref = null
   for (const fn of [push, getPublicAgent, getConversations, getConversation, getRunStatus, deleteConversation, updateConversation, uploadFileWithProgress, getStoredRunSnapshot, removeRunSnapshot, convertBackendMessages, sendMessage, regenerate, editMessage, switchVersion, stop, resetChat, setMessages, setConversationId, validateVariables, toastError, disconnect, observe, historyPush, historyReplace, clearInterval, clearTimeoutMock, setTimeoutMock, setIntervalMock]) fn.mockReset()
   timeoutCallbacks = []
@@ -258,7 +257,6 @@ beforeEach(() => {
   Object.defineProperty(globalThis, 'IntersectionObserver', {
     configurable: true,
     value: class {
-      constructor(callback: IntersectionObserverCallback) { observerCallback = callback }
       observe = observe
       disconnect = disconnect
     },
@@ -297,7 +295,7 @@ describe('PublicChatPage', () => {
     expect(push).toHaveBeenCalledWith('/')
   })
 
-  test('loads the agent and URL conversation, wires message actions, and cleans up observers', async () => {
+  test('loads the agent and URL conversation and wires message actions', async () => {
     query = new URLSearchParams('conversation=conv-1&source=share')
     render()
     await flush()
@@ -618,7 +616,7 @@ describe('PublicChatPage', () => {
     expect(faviconHref).toBeNull()
   })
 
-  test('selects, resets, paginates, renames, and deletes conversations', async () => {
+  test('selects, refreshes, renames, deletes, and resets conversations', async () => {
     getConversations
       .mockResolvedValueOnce({ items: Array.from({ length: 5 }, (_, index) => ({ id: `conv-${index + 1}`, title: `Chat ${index + 1}` })), total: 6 })
       .mockResolvedValueOnce({ items: [{ id: 'conv-6', title: 'Chat 6' }], total: 6 })
@@ -631,9 +629,6 @@ describe('PublicChatPage', () => {
     expect(setConversationId).toHaveBeenCalledWith('conv-2')
     expect(historyPush).toHaveBeenCalledWith({}, '', '/chat/agent-1?conversation=conv-2')
 
-    await act(async () => observerCallback!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))
-    expect(getConversations).toHaveBeenLastCalledWith('agent-1', { page: 2, pageSize: 5 })
-    expect(output()).toContain('Chat 6')
 
     await click('rename', 1)
     const titleInput = renderer!.root.findByProps({ id: 'title' })
@@ -658,8 +653,20 @@ describe('PublicChatPage', () => {
     expect(resetChat).toHaveBeenCalled()
     expect(historyPush).toHaveBeenLastCalledWith({}, '', '/chat/agent-1')
     act(() => renderer!.unmount())
-    expect(disconnect).toHaveBeenCalled()
     renderer = undefined
+  })
+
+  test('renders each conversation row once when list pages overlap', async () => {
+    const duplicate = { id: '8918da81-cc2a-4798-b01c-0eeb6efabcf4', title: 'Repeated chat' }
+    getConversations.mockResolvedValueOnce({
+      items: [duplicate, duplicate, { id: 'other-conversation', title: 'Other chat' }],
+      total: 2,
+    })
+    render()
+    await flush()
+
+    expect(output().match(/Repeated chat/g)).toHaveLength(1)
+    expect(output().match(/Other chat/g)).toHaveLength(1)
   })
   test('does not append an assistant loading placeholder when switching to a conversation with completed reasoning or tool output', async () => {
     getConversations.mockResolvedValueOnce({

@@ -57,6 +57,7 @@ import {
 } from '@/components/chat'
 import { getStoredRunSnapshot, removeRunSnapshot, useChat, type ChatImageContent } from '@/hooks/use-chat'
 import { defaultChatAdapter, type ChatPageAdapter } from '@/lib/chat/chat-adapter'
+import { mergeConversationItems } from '@/lib/chat/conversation-list'
 import {Alert, AlertDescription, AlertTitle} from "@/components/ui/alert";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { CodePreviewCanvas } from '@/components/chat/code-preview-canvas'
@@ -117,6 +118,15 @@ export default function PublicChatPage({
     return true
   })
   const [conversations, setConversations] = React.useState<ConversationListItem[]>([])
+  const conversationsRef = React.useRef<ConversationListItem[]>([])
+  const updateConversations = React.useCallback((
+    update: (previous: ConversationListItem[]) => ConversationListItem[],
+  ) => {
+    const next = update(conversationsRef.current)
+    conversationsRef.current = next
+    setConversations(next)
+    return next
+  }, [])
   const [runningConversationIds, setRunningConversationIds] = React.useState<Set<string>>(() => new Set())
   const runStatusPollGenerationRef = React.useRef(0)
   const pendingConversationTitleRefreshRef = React.useRef<string | null>(null)
@@ -199,27 +209,12 @@ export default function PublicChatPage({
     if (!resolvedParams) return
     try {
       const convData = await adapter.getConversations(resolvedParams.id, { page: 1, pageSize: 5 })
-      setConversations((prev) => {
-        const incomingIds = new Set(convData.items.map((item) => item.id))
-        const remainingPrev = prev.filter((item) => !incomingIds.has(item.id))
-        let merged = [...convData.items, ...remainingPrev]
-        if (typeof convData.total === 'number' && convData.total >= 0 && merged.length > convData.total) {
-          merged = merged.slice(0, convData.total)
-        }
-        if (
-          prev.length === merged.length &&
-          prev.every((item, idx) => item.id === merged[idx]?.id && item.title === merged[idx]?.title)
-        ) {
-          return prev
-        }
-        return merged
-      })
-      setConversationPage(1)
-      setHasMoreConversations(convData.items.length >= 5 && convData.total > convData.items.length)
+      const merged = updateConversations((previous) => mergeConversationItems(convData.items, previous, convData.total))
+      setHasMoreConversations(merged.length < convData.total)
     } catch {
       // Ignore errors
     }
-  }, [resolvedParams, adapter])
+  }, [resolvedParams, adapter, updateConversations])
 
   // Greeting messages for embed bubble mode
   const greetingMessages = React.useMemo(() => {
@@ -361,9 +356,9 @@ export default function PublicChatPage({
         setLoadingConversations(true)
         try {
           const convData = await adapter.getConversations(resolvedParams.id, { page: 1, pageSize: 5 })
-          setConversations(convData.items)
+          const initialConversations = updateConversations(() => mergeConversationItems(convData.items))
           setConversationPage(1)
-          setHasMoreConversations(convData.items.length >= 5 && convData.total > convData.items.length)
+          setHasMoreConversations(initialConversations.length < convData.total)
         } catch {
           // Ignore conversation loading errors
         } finally {
@@ -378,7 +373,7 @@ export default function PublicChatPage({
     }
 
     fetchData()
-  }, [resolvedParams, isLoggedIn, t, adapter])
+  }, [resolvedParams, isLoggedIn, t, adapter, updateConversations])
 
   // Refresh active durable run statuses so background conversations stay identifiable.
   React.useEffect(() => {
@@ -515,15 +510,15 @@ export default function PublicChatPage({
     try {
       const nextPage = conversationPage + 1
       const convData = await adapter.getConversations(resolvedParams.id, { page: nextPage, pageSize: 5 })
-      setConversations(prev => [...prev, ...convData.items])
+      const merged = updateConversations((previous) => mergeConversationItems(previous, convData.items, convData.total))
       setConversationPage(nextPage)
-      setHasMoreConversations(convData.items.length >= 5 && (conversations.length + convData.items.length) < convData.total)
+      setHasMoreConversations(merged.length < convData.total)
     } catch {
       // Ignore errors
     } finally {
       setLoadingMore(false)
     }
-  }, [resolvedParams, conversationPage, loadingMore, hasMoreConversations, conversations.length, adapter])
+  }, [resolvedParams, conversationPage, loadingMore, hasMoreConversations, adapter, updateConversations])
 
   // Use IntersectionObserver to detect when sentinel element is visible
   React.useEffect(() => {
@@ -617,7 +612,7 @@ export default function PublicChatPage({
 
     try {
       await adapter.deleteConversation(conversationPendingDelete.id)
-      setConversations(prev => prev.filter(c => c.id !== conversationPendingDelete.id))
+      updateConversations((previous) => previous.filter((conversation) => conversation.id !== conversationPendingDelete.id))
 
       // If deleting current conversation, start new chat and clear URL
       if (conversationPendingDelete.id === conversationId) {
@@ -646,9 +641,9 @@ export default function PublicChatPage({
       await adapter.updateConversation(renamingConversation.id, { title: newTitle.trim() })
 
       // Update local state
-      setConversations(prev =>
-        prev.map(c => c.id === renamingConversation.id ? { ...c, title: newTitle.trim() } : c)
-      )
+      updateConversations((previous) => previous.map((conversation) => (
+        conversation.id === renamingConversation.id ? { ...conversation, title: newTitle.trim() } : conversation
+      )))
 
       setRenameDialogOpen(false)
       setRenamingConversation(null)

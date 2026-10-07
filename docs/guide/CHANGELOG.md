@@ -46,6 +46,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 - Preserved explicit too-large, unauthorized, permission-denied, unsupported, and parse-failure preview states without falling back to unprotected URLs.
 
+#### Chat Experience
+- Deduplicated overlapping Agent conversation pages and preserved the loaded pagination position when refreshing the chat sidebar.
+
 #### Database Tools
 - Replaced regex and keyword-based SQL checks with bounded, dialect-aware AST validation; safely quote database-discovered table names before sampling.
 

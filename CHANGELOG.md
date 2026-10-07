@@ -63,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Chat Experience
 - Kept agent conversations pinned to the latest message as soon as a send begins, before streaming starts.
+- Deduplicated overlapping Agent conversation pages and preserved the loaded pagination position when refreshing the chat sidebar.
 
 #### Dependency Compatibility
 - Adapted Redis, MCP, SMTP, sandbox session, React, Radix, TypeScript, and ICU message-format integrations to their refreshed APIs while preserving exception tracebacks.
