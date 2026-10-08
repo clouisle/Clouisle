@@ -174,6 +174,7 @@ async def test_lifespan_mocks_initializers_and_external_boundaries(
         "init_skills_table",
         "init_clouisle_import_sessions_table",
         "drop_obsolete_retrieval_evaluation_tables",
+        "init_observability_run_error_index",
     ]
     side_effect = RuntimeError("expected") if fail_initializers else None
     initializers = {
@@ -196,6 +197,19 @@ async def test_lifespan_mocks_initializers_and_external_boundaries(
         "init_agent_hide_artifact_list_field",
         artifact_list_migration,
     )
+    agent_run_fields_migration = AsyncMock()
+    monkeypatch.setattr(
+        init_data_module, "init_agent_run_fields", agent_run_fields_migration
+    )
+    startup_order: list[str] = []
+    observability_run_fields_migration = AsyncMock(
+        side_effect=lambda: startup_order.append("observability_run_fields")
+    )
+    monkeypatch.setattr(
+        init_data_module,
+        "init_observability_run_fields",
+        observability_run_fields_migration,
+    )
 
     init_postgres_lexical_search = AsyncMock()
     monkeypatch.setattr(
@@ -204,7 +218,9 @@ async def test_lifespan_mocks_initializers_and_external_boundaries(
         init_postgres_lexical_search,
     )
     init = AsyncMock()
-    generate_schemas = AsyncMock()
+    generate_schemas = AsyncMock(
+        side_effect=lambda: startup_order.append("generate_schemas")
+    )
     close_connections = AsyncMock()
     validate_upload = AsyncMock()
     close_redis = AsyncMock()
@@ -249,6 +265,11 @@ async def test_lifespan_mocks_initializers_and_external_boundaries(
     async with lifespan(SimpleNamespace()):
         generate_schemas.assert_awaited_once()
         validate_upload.assert_awaited_once()
+        agent_run_fields_migration.assert_awaited_once()
+        observability_run_fields_migration.assert_awaited_once()
+    assert startup_order.index("observability_run_fields") < startup_order.index(
+        "generate_schemas"
+    )
 
     assert init.await_args.kwargs["db_url"] == "postgres://user:pass@db:5432/clouisle"
     assert all(mock.await_count == 1 for mock in initializers.values())

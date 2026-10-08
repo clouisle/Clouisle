@@ -53,6 +53,7 @@ from app.models.agent_run import (
     AgentRunStatus,
 )
 from app.services import agent_run_store
+from app.services.observability_v2 import record_dependency_metrics
 from app.services.agent_loop import (
     AgentLoop,
     AgentLoopContext,
@@ -475,6 +476,7 @@ async def _rebuild_context(
         max_iterations=None,
         iteration_offset=int(payload.get("iteration_offset", 0)),
         streaming=is_streaming,
+        collect_dependency_metrics=True,
         execute_tool_call=__import__(
             "app.api.v1.endpoints.chat_tools", fromlist=["execute_tool_call"]
         ).execute_tool_call,
@@ -704,6 +706,22 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             checkpoint_attempted = True
             await sandbox_gateway.finish_round(sandbox_session_id, sandbox_round_id)
 
+    loop: AgentLoop | None = None
+    persisted_dependency_metrics = 0
+
+    async def _persist_dependency_metrics() -> None:
+        nonlocal persisted_dependency_metrics
+        if loop is None:
+            return
+        metrics = loop.result.dependency_metrics
+        pending = metrics[persisted_dependency_metrics:]
+        await record_dependency_metrics(
+            run.id,
+            pending,
+            truncated=loop.result.dependency_metrics_truncated,
+        )
+        persisted_dependency_metrics = len(metrics)
+
     try:
         # The queued claim above owns RUNNING before publication. Keep this
         # inside the protected lifecycle so stream errors still release locks.
@@ -754,6 +772,13 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
                 "rag_context",
                 {"contexts": rag_contexts, "query": user_msg.content},
             )
+        if run.message_started_at is None:
+            run.message_started_at = now_utc()
+            await run.save(update_fields=["message_started_at"])
+        agent_run_store.record_observability_progress(
+            run.id,
+            message_started_at=run.message_started_at,
+        )
         await stream.publish(
             "message_start",
             {
@@ -898,6 +923,14 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             pass
         await finish_sandbox_round()
         result = loop.result
+        await _persist_dependency_metrics()
+        if run.first_token_ms is None and result.first_token_ms is not None:
+            run.first_token_ms = result.first_token_ms
+            await run.save(update_fields=["first_token_ms"])
+        agent_run_store.record_observability_progress(
+            run.id,
+            first_token_ms=run.first_token_ms,
+        )
         if result.waiting_for_user:
             if pending_interaction is None:
                 raise RuntimeError("AgentRun is waiting without a pending tool call")
@@ -1042,6 +1075,7 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             "message_id": str(canonical.id),
         }
     except Exception as exc:
+        await _persist_dependency_metrics()
         try:
             await finish_sandbox_round()
         except Exception:

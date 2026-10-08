@@ -77,7 +77,11 @@ def test_run_workflow_task_localizes_missing_final_run():
 
 
 def test_run_workflow_task_persists_public_failure():
-    run = MagicMock()
+    run = MagicMock(
+        id=UUID(RUN_ID),
+        workflow_id=UUID(WORKFLOW_ID),
+        total_token_usage={},
+    )
     run.save = AsyncMock()
     orchestrator = MagicMock()
     orchestrator.run_with_run_id = AsyncMock(
@@ -90,6 +94,11 @@ def test_run_workflow_task_persists_public_failure():
             "app.tasks.workflow.WorkflowRun.filter",
             return_value=workflow_run_query(run),
         ),
+        patch(
+            "app.tasks.workflow.Workflow.filter",
+            return_value=workflow_run_query(None),
+        ),
+        patch("app.services.observability_v2.record_run", new=AsyncMock()),
         patch(
             "app.tasks.workflow.translate_public_workflow_error",
             return_value="workflow_execution_error",

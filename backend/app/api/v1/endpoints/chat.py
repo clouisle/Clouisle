@@ -1956,6 +1956,8 @@ async def _enqueue_existing_message_run(
         conversation_id=conversation.id,
         user_id=current_user.id,
         mode=mode,
+        resource_name=agent.name,
+        team_id=str(agent.team_id) if agent.team_id else None,
         source_message_id=source_message_id,
     )
     run.active_round_id = round_id
@@ -2160,6 +2162,8 @@ async def _enqueue_durable_chat_run(
         conversation_id=conversation.id,
         user_id=current_user.id,
         mode=mode,
+        resource_name=agent.name,
+        team_id=str(agent.team_id) if agent.team_id else None,
         source_message_id=user_msg.id,
     )
     run.active_round_id = round_id

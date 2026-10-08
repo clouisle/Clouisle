@@ -2,12 +2,13 @@
 Celery tasks for workflow execution.
 """
 
+from datetime import datetime, timezone
 import logging
 from uuid import UUID
 
 from celery import shared_task
 
-from app.models.workflow import WorkflowRun, RunStatus
+from app.models.workflow import Workflow, WorkflowRun, RunStatus
 from app.core.i18n import t, get_default_language
 from app.services.workflow.errors import translate_public_workflow_error
 
@@ -43,6 +44,9 @@ def run_workflow_task(
 
     async def _run():
         from app.services.workflow import WorkflowOrchestrator
+        from app.services.workflow.orchestrator import (
+            _persist_observability_summary,
+        )
 
         run_uuid = UUID(run_id)
         workflow_uuid = UUID(workflow_id)
@@ -90,8 +94,14 @@ def run_workflow_task(
             if run:
                 run.status = RunStatus.FAILED
                 run.error_message = public_error
+                run.finished_at = run.finished_at or datetime.now(timezone.utc)
                 await run.save()
-
+                workflow = (
+                    await Workflow.filter(id=run.workflow_id).first()
+                    if run.workflow_id
+                    else None
+                )
+                await _persist_observability_summary(run, workflow, "failed")
             return {"status": "error", "message": public_error}
 
     # Run the async function
@@ -121,6 +131,10 @@ def resume_workflow_task(self, run_id: str) -> dict:
 
     async def _resume():
         from app.services.workflow import WorkflowOrchestrator
+        from app.services.workflow.orchestrator import (
+            _persist_observability_progress,
+            _persist_observability_summary,
+        )
 
         run_uuid = UUID(run_id)
 
@@ -151,6 +165,7 @@ def resume_workflow_task(self, run_id: str) -> dict:
                     "message": t("workflow_run_not_waiting", lang=default_lang),
                 }
             run.status = RunStatus.RUNNING
+            await _persist_observability_progress(run, RunStatus.WAITING.value)
             orchestrator = WorkflowOrchestrator()
             result_run_id = await orchestrator.run_with_run_id(
                 run_id=run_uuid,
@@ -185,12 +200,17 @@ def resume_workflow_task(self, run_id: str) -> dict:
             logger.exception(f"Workflow resume error: {e}")
             public_error = translate_public_workflow_error(e)
 
-            run = await WorkflowRun.filter(id=run_uuid).first()
             if run and run.status == RunStatus.RUNNING:
                 run.status = RunStatus.FAILED
                 run.error_message = public_error
+                run.finished_at = run.finished_at or datetime.now(timezone.utc)
                 await run.save()
-
+                workflow = (
+                    await Workflow.filter(id=run.workflow_id).first()
+                    if run.workflow_id
+                    else None
+                )
+                await _persist_observability_summary(run, workflow, "failed")
             return {"status": "error", "message": public_error}
 
     # Run the async function

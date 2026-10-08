@@ -526,6 +526,9 @@ async def embed_run_workflow(
         status=RunStatus.PENDING,
         inputs=inputs,
     )
+    from app.services.observability_v2 import record_workflow_submission
+
+    await record_workflow_submission(run, workflow)
 
     run_workflow_task.delay(
         run_id=str(run.id),

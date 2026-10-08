@@ -49,6 +49,70 @@ try:  # pragma: no cover - import guard for old redis clients
 except Exception:  # pragma: no cover
     _Redis = Any  # type: ignore
 
+_OBSERVABILITY_PROGRESS_TASKS: set[asyncio.Task[Any]] = set()
+
+
+async def _record_terminal_observability(run: AgentRun) -> None:
+    if run.status not in {
+        AgentRunStatus.COMPLETED,
+        AgentRunStatus.STOPPED,
+        AgentRunStatus.FAILED,
+        AgentRunStatus.INTERRUPTED,
+    }:
+        return
+    try:
+        from app.models.agent import Agent
+        from app.services.observability_v2 import agent_terminal_summary, record_run
+
+        async def persist_summary() -> None:
+            details, messages = await asyncio.gather(
+                Agent.filter(id=run.agent_id)
+                .limit(1)
+                .values("name", "team_id", "team__name"),
+                Message.filter(id=run.canonical_message_id)
+                .limit(1)
+                .values("model_used", "token_usage")
+                if run.canonical_message_id
+                else asyncio.sleep(0, result=[]),
+            )
+            await record_run(
+                **agent_terminal_summary(
+                    run,
+                    details[0] if details else {},
+                    messages[0] if messages else {},
+                )
+            )
+
+        await asyncio.wait_for(persist_summary(), timeout=0.15)
+    except Exception:
+        logger.debug("AgentRun telemetry write dropped for %s", run.id, exc_info=True)
+
+
+def record_observability_progress(
+    run_id: UUID,
+    *,
+    status: str | None = None,
+    expected_status: str | None = None,
+    started_at: datetime | None = None,
+    message_started_at: datetime | None = None,
+    first_token_ms: int | None = None,
+) -> None:
+    from app.services.observability_v2 import update_run_progress
+
+    task = asyncio.create_task(
+        update_run_progress(
+            run_id,
+            source="agent",
+            status=status,
+            expected_status=expected_status,
+            started_at=started_at,
+            message_started_at=message_started_at,
+            first_token_ms=first_token_ms,
+        )
+    )
+    _OBSERVABILITY_PROGRESS_TASKS.add(task)
+    task.add_done_callback(_OBSERVABILITY_PROGRESS_TASKS.discard)
+
 
 async def create_run(
     *,
@@ -56,6 +120,8 @@ async def create_run(
     conversation_id: UUID,
     user_id: UUID,
     mode: AgentRunMode,
+    resource_name: str | None = None,
+    team_id: str | None = None,
     source_message_id: UUID | None = None,
     celery_task_id: str | None = None,
 ) -> AgentRun:
@@ -70,7 +136,32 @@ async def create_run(
         celery_task_id=celery_task_id,
         status=AgentRunStatus.QUEUED,
         started_at=None,
+        submitted_at=now_utc(),
     )
+    try:
+        from app.services.observability_v2 import record_run
+
+        await asyncio.wait_for(
+            record_run(
+                run_id=run.id,
+                source="agent",
+                resource_id=str(agent_id),
+                resource_name=resource_name,
+                team_id=team_id,
+                team_name=None,
+                status=AgentRunStatus.QUEUED.value,
+                submitted_at=run.submitted_at,
+                started_at=None,
+                message_started_at=None,
+                finished_at=None,
+                total_duration_ms=None,
+            ),
+            timeout=0.05,
+        )
+    except Exception:
+        logger.debug(
+            "AgentRun submission telemetry dropped for %s", run.id, exc_info=True
+        )
     await _write_state_cache(run_id, AgentRunStatus.QUEUED)
     return run
 
@@ -100,6 +191,8 @@ def _transition_updates(
         AgentRunStatus.INTERRUPTED,
     ):
         updates["finished_at"] = updated_at
+        updates["message_started_at"] = run.message_started_at
+        updates["first_token_ms"] = run.first_token_ms
     if error_code is not None:
         updates["error_code"] = error_code
     if error_message is not None:
@@ -137,6 +230,21 @@ async def transition_run_if_status(
         return None
     _apply_transition_updates(run, updates)
     await _write_state_cache(run.id, status)
+    if status not in {
+        AgentRunStatus.COMPLETED,
+        AgentRunStatus.STOPPED,
+        AgentRunStatus.FAILED,
+        AgentRunStatus.INTERRUPTED,
+    }:
+        record_observability_progress(
+            run.id,
+            status=status.value,
+            expected_status=expected_status.value,
+            started_at=run.started_at,
+            message_started_at=run.message_started_at,
+            first_token_ms=run.first_token_ms,
+        )
+    await _record_terminal_observability(run)
     return run
 
 
@@ -160,6 +268,12 @@ async def claim_queued_run(run_id: UUID) -> AgentRun | None:
             update_fields.append("started_at")
         await run.save(using_db=conn, update_fields=update_fields)
     await _write_state_cache(run_id, AgentRunStatus.RUNNING)
+    record_observability_progress(
+        run.id,
+        status=AgentRunStatus.RUNNING.value,
+        expected_status=AgentRunStatus.QUEUED.value,
+        started_at=run.started_at,
+    )
     return run
 
 
@@ -170,6 +284,7 @@ async def transition_run(
     error_code: str | None = None,
     error_message: str | None = None,
 ) -> AgentRun:
+    expected_status = run.status.value
     updated_at = now_utc()
     updates = _transition_updates(
         run,
@@ -181,6 +296,21 @@ async def transition_run(
     _apply_transition_updates(run, updates)
     await run.save(update_fields=list(updates))
     await _write_state_cache(run.id, status)
+    if status not in {
+        AgentRunStatus.COMPLETED,
+        AgentRunStatus.STOPPED,
+        AgentRunStatus.FAILED,
+        AgentRunStatus.INTERRUPTED,
+    }:
+        record_observability_progress(
+            run.id,
+            status=status.value,
+            expected_status=expected_status,
+            started_at=run.started_at,
+            message_started_at=run.message_started_at,
+            first_token_ms=run.first_token_ms,
+        )
+    await _record_terminal_observability(run)
     return run
 
 
@@ -206,6 +336,8 @@ async def park_run_waiting(
         "pending_tool_round_index": round_index,
         "pending_tool_iteration_index": iteration_index,
         "updated_at": updated_at,
+        "message_started_at": run.message_started_at,
+        "first_token_ms": run.first_token_ms,
     }
     if worker_payload is not None:
         updates["worker_payload"] = worker_payload
@@ -226,6 +358,14 @@ async def park_run_waiting(
     if worker_payload is not None:
         run.worker_payload = worker_payload
     await _write_state_cache(run.id, AgentRunStatus.WAITING)
+    record_observability_progress(
+        run.id,
+        status=AgentRunStatus.WAITING.value,
+        expected_status=AgentRunStatus.RUNNING.value,
+        started_at=run.started_at,
+        message_started_at=run.message_started_at,
+        first_token_ms=run.first_token_ms,
+    )
     return run
 
 
@@ -440,6 +580,7 @@ async def stop_waiting_run(run_id: UUID) -> AgentRun | None:
             ],
         )
     await _write_state_cache(run_id, AgentRunStatus.STOPPED)
+    await _record_terminal_observability(run)
     return run
 
 
@@ -460,6 +601,7 @@ async def stop_queued_run(run_id: UUID) -> AgentRun | None:
             update_fields=["status", "finished_at", "updated_at"],
         )
     await _write_state_cache(run_id, AgentRunStatus.STOPPED)
+    await _record_terminal_observability(run)
     return run
 
 

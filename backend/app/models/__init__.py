@@ -97,6 +97,11 @@ from .agent_run import (
     AgentRunInputKind,
     AgentRunInputStatus,
 )
+from .observability import (
+    ObservabilityRun,
+    ObservabilityAlertRule,
+    ObservabilityAlertEvent,
+)
 
 __all__ = [
     "Asset",
@@ -193,4 +198,7 @@ __all__ = [
     "AgentRunMode",
     "AgentRunInputKind",
     "AgentRunInputStatus",
+    "ObservabilityRun",
+    "ObservabilityAlertRule",
+    "ObservabilityAlertEvent",
 ]

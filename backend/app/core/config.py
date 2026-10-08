@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     # aggregate request, and a negative one raises ValueError at import time.
     DB_AGGREGATE_CONCURRENCY: int = Field(default=4, gt=0)
 
+    # API container/Pod identity shared by its Gunicorn processes.
+    # Defaults to hostname; override when multiple deployments share a hostname.
+    OBSERVABILITY_INSTANCE_ID: str = ""
+    OBSERVABILITY_INSTANCE_NAME: str = ""
+
     # Redis
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379

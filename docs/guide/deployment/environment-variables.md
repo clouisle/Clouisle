@@ -670,6 +670,15 @@ Runtime environment variables for the frontend container:
 | `BACKEND_INTERNAL_URL` | `http://localhost:8000` | Backend URL the Next.js server uses for SSR and its `/api/*` rewrites (Compose sets `http://api:8000`) |
 | `DEV_ALLOWED_ORIGINS` | *(empty)* | Comma-separated extra origins allowed for dev-server LAN access (`allowedDevOrigins`); production builds ignore it |
 
+## API Instance Observability
+
+| Variable | Default | Description |
+|---|---|---|
+| `OBSERVABILITY_INSTANCE_ID` | Empty; uses hostname | Raw API container/Pod identity, hashed for its registry ID. All Gunicorn processes in one instance share it; different instances must not reuse it. |
+| `OBSERVABILITY_INSTANCE_NAME` | Empty; uses hostname | Readable instance-card name. It does not change identity or lease ownership. |
+
+API instances sharing the deployment Redis publish current host-resource samples every ten seconds. Hostname defaults normally distinguish Compose containers and Kubernetes Pods; override the ID per instance when deployments share a hostname. Do not assign one fixed ID to every replica through a shared environment file or Helm `extraEnv`. Restart API processes to apply changes. See [Infrastructure observability](../admin-guide/settings/roles-security-observability.md#2-system-observability-dashboardobservability) for metric scope and freshness/retention behavior.
+
 ## Advanced & Resilience Settings
 
 The following settings configure concurrency limits, streaming timeouts, and sandbox execution parameters:

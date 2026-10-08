@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-07T17:03:38.840Z
+// GENERATED — 2026-10-08T18:56:50.219Z
 // Source: i18n/en/dashboard.json
 export type DashboardMessages = {
   dashboard: {
@@ -161,33 +161,56 @@ export type DashboardMessages = {
     observability: {
       title: string
       description: string
+      consoleDescription: string
       tabs: {
         overview: string
-        health: string
-        agents: string
-        workflows: string
-        timeouts: string
-        throughput: string
-        tokens: string
-        workers: string
-        "slow-queries": string
+        runs: string
+        dependencies: string
+        queues: string
+        infrastructure: string
+        alerts: string
       }
       actions: {
         refresh: string
         retry: string
-        viewDetails: string
-        closeDetails: string
+        apply: string
+        openIssue: string
+        loadMore: string
+        save: string
+      }
+      filters: {
+        team: string
+        teamId: string
+        period: string
+        source: string
+        allSources: string
+        status: string
+        allStatuses: string
+        errorCategory: string
+        runId: string
+        alertStatus: string
+      }
+      periods: {
+        "15m": string
+        "1h": string
+        "24h": string
+        "7d": string
       }
       states: {
         loading: string
-        refreshing: string
-        emptyTitle: string
-        emptyDescription: string
-        errorTitle: string
         errorDescription: string
         lastUpdated: string
-        cacheTtl: string
-        autoRefreshHint: string
+        noSamples: string
+        unavailableDetail: string
+      }
+      quality: {
+        fresh: string
+        partial: string
+        stale: string
+        unavailable: string
+        no_data: string
+        window: string
+        lastSample: string
       }
       status: {
         healthy: string
@@ -196,224 +219,165 @@ export type DashboardMessages = {
         unhealthy: string
         unknown: string
         success: string
+        completed: string
+        completing: string
         failed: string
+        interrupted: string
         running: string
+        stopping: string
+        stopped: string
+        waiting: string
         pending: string
+        queued: string
         cancelled: string
         timeout: string
         error: string
+        degraded: string
+        unavailable: string
+        stale: string
+        offline: string
       }
       sources: {
         agent: string
         workflow: string
-        system: string
-        other: string
-        unknown: string
       }
-      risk: {
-        healthy: string
-        warning: string
+      severity: {
         critical: string
+        warning: string
+        info: string
+      }
+      issues: {
+        affected: string
+        none: string
       }
       metrics: {
-        totalRequests: string
-        agentWorkflowBreakdown: string
-        p95Latency: string
-        p95Ttft: string
-        firstTokenLatency: string
-        timeoutRate: string
-        successRate: string
-        successRateValue: string
-        currentQps: string
-        currentTps: string
-        peakHourly: string
-        totalTokens: string
-        selectedRange: string
-      }
-      alerts: {
-        reliability: string
-        latency: string
-        ttft: string
-        load: string
-        latencyHint: string
-        ttftHint: string
-        loadHint: string
-      }
-      overview: {
-        operationalStatus: string
-        operationalStatusDesc: string
-        trafficMix: string
-        latencyPercentiles: string
-        requestsBySource: string
-        agentRequests: string
-        workflowRuns: string
-        healthSummaryHealthy: string
-        healthSummaryWarning: string
-        healthSummaryCritical: string
+        agentSubmitted: string
+        agentSuccessRate: string
+        agentP95: string
+        firstTokenP95: string
+        agentTokens: string
+        workflowSubmitted: string
+        workflowSuccessRate: string
+        workflowP95: string
+        workflowTokens: string
+        completedFailed: string
       }
       charts: {
-        requestTrend: string
-        requestTrendDesc: string
-        systemTrend: string
-        systemTrendDesc: string
-        throughputTrend: string
-        throughputTrendDesc: string
+        runTrend: string
+        runTrendDesc: string
+        completed: string
+        failed: string
+        submitted: string
+        latencyTrend: string
+        latencyTrendDesc: string
+        p95: string
+        firstTokenP95: string
+        tokenTrend: string
+        tokenTrendDesc: string
+        tokens: string
+        sampleCoverage: string
       }
-      health: {
-        memory: string
-        disk: string
-        database: string
-        resourceUsage: string
-        dependencies: string
-        workerQueues: string
-        workerQueuesDesc: string
-        activeTasks: string
-        reservedTasks: string
-        scheduledTasks: string
-        pending: string
-        queue: string
-        slowQueries: string
-        slowQueriesDesc: string
-        query: string
-        calls: string
-        meanTime: string
-        totalTime: string
-        workerError: string
-        noSlowQueries: string
-        slowQueriesUnavailable: string
-        slowQueriesSetupHint: string
-        reason: string
-        actions: {
-          cpuAction: string
-          memoryAction: string
-          diskAction: string
-          databaseAction: string
-          redisAction: string
-          workerAction: string
+      runs: {
+        title: string
+        description: string
+        columns: {
+          source: string
+          name: string
+          team: string
+          status: string
+          submitted: string
+          queue: string
+          duration: string
+          tokens: string
+          error: string
+          trace: string
         }
       }
-      tables: {
-        name: string
-        team: string
+      dependencies: {
+        models: string
+        tools: string
+        retrieval: string
+        description: string
         requests: string
-        runs: string
-        errors: string
-        timeouts: string
+        samples: string
         successRate: string
-        timeoutRate: string
-        ttftP95: string
+        completedFailed: string
+        p50: string
+        p95: string
+        firstTokenP95: string
         tokens: string
-        avgTokens: string
-        failedNodes: string
-        source: string
-        type: string
-        status: string
-        model: string
-        duration: string
-        time: string
+      }
+      queues: {
+        workers: string
+        workersDescription: string
+        workerQueues: string
+        lastHeartbeat: string
+        scheduled: string
+        queues: string
+        queuesDescription: string
+        active: string
+        reserved: string
+        pending: string
+        consumers: string
+        oldestWait: string
+        observedAt: string
+        pendingTrend: string
+      }
+      infrastructure: {
+        instances: string
+        dependencies: string
+        latency: string
+        slowQueries: string
+        safeQueryNotice: string
+        queryReset: string
+        calls: string
+        mean: string
+        max: string
+        total: string
+        roles: {
+          api: string
+        }
+        metric: {
+          cpu_percent: string
+          memory_percent: string
+        }
+        scope: {
+          host: string
+        }
+        retainedSample: string
+        lastObservedAt: string
+      }
+      alerts: {
+        events: string
+        eventsDescription: string
+        active: string
+        resolved: string
+        all: string
+        acknowledge: string
+        silence: string
+        silenceDuration: string
+        seconds: string
+        started: string
+        silencedUntil: string
+        noEvents: string
+        rules: string
+        rulesDescription: string
+        enabled: string
+        threshold: string
+        evaluationWindow: string
+        recoveryWindow: string
       }
       details: {
-        agentTitle: string
-        workflowTitle: string
-        id: string
-        team: string
-        performanceTrend: string
-        percentiles: string
-        nodeBreakdown: string
-        noAgent: string
-        noWorkflow: string
-        failedRate: string
-        avgTokens: string
-        avgNodes: string
-        nodeType: string
-        executionCount: string
-        failedCount: string
-        avgDuration: string
-      }
-      common: {
-        count: string
-      }
-      timeouts: {
-        limitedTitle: string
-        limitedDescription: string
-        distribution: string
-        distributionDesc: string
-        recentEvents: string
-        totalEvents: string
-        mostFrequentType: string
-        typeAvailable: string
-        note: string
-      }
-      timeoutTypes: {
-        unknown: string
-        idle: string
-        global: string
-        workflow: string
-        agent: string
-      }
-      throughput: {
-        currentLoad: string
-        runningWorkflows: string
-        requestVolume: string
-        tokenBySource: string
-        tokenByModel: string
-        model: string
-        tokens: string
-        share: string
-        noTokenData: string
-      }
-      tokens: {
-        costDriver: string
-        topModel: string
-        modelCount: string
-        sourceDesc: string
-        modelDesc: string
-      }
-      workers: {
-        count: string
-        inFlight: string
-        pendingQueues: string
-        taskBacklog: string
-        taskBacklogDesc: string
-        tasks: {
-          runAgentTask: string
-          sendNotification: string
-          createAuditLog: string
-          backfillLexicalIndex: string
-          embedDocumentChunks: string
-          indexDocumentLexically: string
-          processDocument: string
-          processUrlDocument: string
-          rechunkDocument: string
-          reprocessDocument: string
-          retryFailedChunk: string
-          retryFailedChunks: string
-          runSandboxJob: string
-          extractSessionMemory: string
-          cancelWorkflow: string
-          resumeWorkflow: string
-          runWorkflow: string
-          sendDingTalkNotification: string
-          sendEmailNotification: string
-          sendFeishuNotification: string
-          sendSlackNotification: string
-          sendWebhookNotification: string
-          sendWeChatNotification: string
-          archiveAuditLogs: string
-          checkApiKeyExpiration: string
-          checkPasswordExpiration: string
-          cleanupSandboxSessions: string
-          resetDailyUsage: string
-          resetMonthlyUsage: string
-          unrecognized: string
-        }
-      }
-      slowQueries: {
-        threshold: string
-        thresholdDesc: string
-        topMeanTime: string
-        setupDesc: string
-        setupSteps: string
+        runTitle: string
+        traceDescription: string
+        traceStatus: string
+        complete: string
+        incomplete: string
+        traceExpired: string
+        traceTruncated: string
+        waterfall: string
+        traceUnavailable: string
+        errorCategory: string
       }
     }
   }

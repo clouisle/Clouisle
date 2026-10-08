@@ -94,6 +94,8 @@ async def lifespan(app: FastAPI):
         init_conversation_memory_watermark_column,
         init_assets_tables,
         init_agent_run_fields,
+        init_observability_run_error_index,
+        init_observability_run_fields,
         init_agent_user_input_request,
         init_agent_hide_tool_calls_field,
         init_agent_hide_message_actions_reasoning_fields,
@@ -209,8 +211,11 @@ async def lifespan(app: FastAPI):
 
     try:
         await init_agent_run_fields()
-    except Exception as e:
-        logger.warning(f"AgentRun fields migration failed: {e}")
+    except Exception:
+        logger.exception(
+            "AgentRun fields migration failed; refusing to start with an incompatible schema"
+        )
+        raise
 
     try:
         await init_agent_user_input_request()
@@ -331,8 +336,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Retrieval evaluation table cleanup failed: {e}")
 
+    await init_observability_run_fields()
     # Generate schemas
     await Tortoise.generate_schemas()
+    try:
+        await init_observability_run_error_index()
+    except Exception as e:
+        logger.warning(f"Observability run index migration failed: {e}")
     try:
         await init_workflow_pause_requests_table()
     except Exception as e:
@@ -353,9 +363,22 @@ async def lifespan(app: FastAPI):
 
     await validate_upload_storage_config()
 
-    cleanup_task = asyncio.create_task(cleanup_expired_clouisle_import_sessions_loop())
+    from app.services.observability_maintenance import observability_maintenance_loop
+    from app.services.observability_instances import ApiInstanceReporter
 
-    yield
+    observability_task = asyncio.create_task(observability_maintenance_loop())
+    cleanup_task = asyncio.create_task(cleanup_expired_clouisle_import_sessions_loop())
+    instance_task = asyncio.create_task(ApiInstanceReporter().run())
+
+    try:
+        yield
+    finally:
+        instance_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await instance_task
+    observability_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await observability_task
 
     cleanup_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):

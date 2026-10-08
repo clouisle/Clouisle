@@ -37,6 +37,8 @@ def _run(status=AgentRunStatus.QUEUED, **values):
         canonical_message_id=None,
         active_round_id=None,
         started_at=None,
+        message_started_at=None,
+        first_token_ms=None,
         finished_at=None,
         error_code=None,
         error_message=None,
@@ -1150,6 +1152,17 @@ def _round_result(**values):
         "max_iterations_reached": False,
         "full_content": "answer",
         "full_reasoning": None,
+        "aggregate_input_tokens": 0,
+        "aggregate_output_tokens": 0,
+        "aggregate_cache_read_tokens": 0,
+        "aggregate_cache_creation_tokens": 0,
+        "aggregate_total_input_tokens": 0,
+        "duration_ms": 0,
+        "first_token_ms": None,
+        "dependency_metrics": [],
+        "dependency_metrics_truncated": False,
+        "created_message_count": 2,
+        "final_round_index": 1,
     }
     defaults.update(values)
     return SimpleNamespace(**defaults)

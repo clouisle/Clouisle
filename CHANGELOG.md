@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Admin Observability
+
+- Rebuilt the admin observability console with six focused views for run outcomes, on-demand traces, model/tool/retrieval dependencies, queues, infrastructure, and alerts.
+- Added bounded tool and knowledge retrieval spans to durable AgentRun details, plus tool and retrieval success-rate and latency aggregates in the Dependencies view.
+- Agent dependency traces retain at most 128 spans per run and display when the cap truncates a trace; historical runs are not backfilled.
+- Added translations for every persisted AgentRun lifecycle status in both locales and a raw-status fallback for future values.
+- Added bounded PostgreSQL, Redis, Celery worker, and Qdrant connectivity probes for infrastructure dependencies, including measured latency and explicit unhealthy/unconfigured states.
+- Added single-leader terminal AgentRun summary reconciliation every minute, repairing stale status, timing, model, and token fields in bounded batches without replaying runs; fixed the ORM query that dropped terminal summaries.
+- Model dependency cards now resolve existing telemetry UUIDs to configured model names and provider labels, including custom gateway names, while keeping same-named models separate.
+- Reduced queue snapshot latency by collecting active tasks, reserved tasks, scheduled tasks, and active queues concurrently with independent Celery inspectors; preserved existing cache and failure behavior.
+- Reduced infrastructure snapshot latency by collecting health probes and slow-query statistics concurrently and shortening Celery reply collection to 0.5 seconds; retained existing probe deadlines, failure behavior, and caching.
+- Added Redis-backed API instance discovery with per-instance reporter leases, host-scoped resource samples, readable names, and stale/offline aging; infrastructure now lists retained instances across backends rather than only the serving process.
+
+
 #### Sandbox Security
 - Added a persisted Security setting for exact sandbox egress hostnames; updates apply to new jobs without restarting workers.
 
@@ -29,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### Admin Observability
+
+- Aligned console tabs and filters with the shared dashboard Tabs, Select, and Input components; standardized control heights.
+
 #### Assets and Media
 - Persisted generated images and videos as scoped Assets and exposed conversation/workflow-scoped media references for model use.
 - Updated CSV handling for GBK/GB18030 content and removed duplicate spreadsheet viewer downloads.
@@ -44,6 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `MIT-0` to the approved permissive-license policy.
 
 ### Fixed
+
+#### Admin Observability
+- Kept the Dependencies view available when tool and retrieval spans have no token counts; those rows now report unavailable token usage instead of failing the response.
+- Migrated `model_name` and `message_started_at` on existing PostgreSQL `observability_runs` tables before Tortoise schema and index generation, preventing API startup and summary-query failures on older databases.
 
 #### Sandbox Sessions
 - Routed session jobs to per-worker Celery queues and persisted a fenced worker/storage binding. Stale-generation messages are rejected; a command with uncertain completion is never automatically replayed.

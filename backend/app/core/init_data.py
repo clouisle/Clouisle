@@ -453,52 +453,6 @@ async def init_workflow_pause_requests_table():
     logger.info("Workflow pause requests table ready")
 
 
-async def init_observability_indexes():
-    """Create time-range indexes for raw observability queries."""
-    conn = Tortoise.get_connection("default")
-    dialect = getattr(getattr(conn, "capabilities", None), "dialect", "")
-    if dialect != "postgres":
-        logger.info("Skipping observability indexes for non-PostgreSQL database")
-        return
-
-    indexes = (
-        (
-            "idx_messages_observability_created_at_btree",
-            "idx_messages_observability_created_at",
-            """
-            CREATE INDEX IF NOT EXISTS idx_messages_observability_created_at_btree
-            ON messages (created_at)
-            WHERE round_role = 'assistant_final' AND is_round_canonical = TRUE
-            """,
-        ),
-        (
-            "idx_workflow_runs_observability_created_at_btree",
-            "idx_workflow_runs_observability_created_at",
-            """
-            CREATE INDEX IF NOT EXISTS idx_workflow_runs_observability_created_at_btree
-            ON workflow_runs (created_at)
-            """,
-        ),
-    )
-    for index_name, legacy_index_name, query in indexes:
-        try:
-            await conn.execute_query(f"DROP INDEX IF EXISTS {legacy_index_name}")
-        except Exception as exc:
-            logger.warning(
-                "Could not remove legacy observability index %s: %s",
-                legacy_index_name,
-                exc,
-            )
-        try:
-            await conn.execute_query(query)
-        except Exception as exc:
-            logger.warning(
-                "Could not create observability index %s: %s", index_name, exc
-            )
-        else:
-            logger.info("Created observability index %s", index_name)
-
-
 async def migrate_team_admin_roles(member_role: Role, team_admin_role: Role) -> None:
     """Make legacy team administrators explicit Team Admin users."""
     memberships = await TeamMember.filter(role__in=["owner", "admin"]).prefetch_related(
@@ -1444,7 +1398,67 @@ async def init_agent_run_fields():
             ADD COLUMN IF NOT EXISTS pending_tool_input JSONB,
             ADD COLUMN IF NOT EXISTS pending_tool_round_id UUID,
             ADD COLUMN IF NOT EXISTS pending_tool_round_index INTEGER,
-            ADD COLUMN IF NOT EXISTS pending_tool_iteration_index INTEGER
+            ADD COLUMN IF NOT EXISTS pending_tool_iteration_index INTEGER,
+            ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS message_started_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS first_token_ms INTEGER
+        """,
+    )
+
+
+async def init_observability_run_fields():
+    """Add diagnostics fields required by existing run-summary tables."""
+    conn = Tortoise.get_connection("default")
+    if conn.capabilities.dialect != "postgres":
+        return
+    _, tables = await conn.execute_query(
+        """
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'observability_runs' AND table_schema = 'public'
+        """
+    )
+    if not tables:
+        return
+    await execute_startup_migration_query(
+        conn,
+        """
+        ALTER TABLE observability_runs
+            ADD COLUMN IF NOT EXISTS model_name VARCHAR(200),
+            ADD COLUMN IF NOT EXISTS message_started_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS dependency_metrics JSONB NOT NULL DEFAULT '[]'::jsonb,
+            ADD COLUMN IF NOT EXISTS dependency_metrics_truncated BOOLEAN NOT NULL DEFAULT FALSE
+        """,
+    )
+
+
+async def init_observability_run_error_index():
+    """Add the diagnostics error filter index on existing observability tables."""
+    conn = Tortoise.get_connection("default")
+    if conn.capabilities.dialect != "postgres":
+        return
+    _, tables = await conn.execute_query(
+        """
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'observability_runs' AND table_schema = 'public'
+        """
+    )
+    if not tables:
+        return
+    _, indexes = await conn.execute_query(
+        """
+        SELECT indexname FROM pg_indexes
+        WHERE schemaname = 'public' AND tablename = 'observability_runs'
+          AND indexdef LIKE '%(error_category, submitted_at, id)%'
+        LIMIT 1
+        """
+    )
+    if indexes:
+        return
+    await execute_startup_migration_query(
+        conn,
+        """
+        CREATE INDEX IF NOT EXISTS idx_observability_runs_error_category_submitted
+        ON observability_runs (error_category, submitted_at, id)
         """,
     )
 
@@ -3459,7 +3473,6 @@ async def init_db():
 
     # 4. Initialize workflow tables
     await init_workflow_tables()
-    await init_observability_indexes()
 
     # 5. Initialize notification tables
     await init_notification_tables()

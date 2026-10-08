@@ -30,8 +30,9 @@ import logging
 import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.api.v1.endpoints.chat_helpers import (
     get_tool_execution_payloads,
@@ -66,6 +67,8 @@ COMPRESSION_START = "compression_start"
 COMPRESSION_END = "compression_end"
 OUTPUT_TRUNCATED = "output_truncated"
 ITERATION_CAP_REACHED = "iteration_cap_reached"
+
+MAX_DEPENDENCY_METRICS_PER_PASS = 64
 
 
 @dataclass(slots=True)
@@ -146,6 +149,7 @@ class AgentLoopContext:
     formatter: Callable[[str, dict[str, Any]], str | None] | None = None
     # persistence granularity
     persist_step_per_tool: bool = False
+    collect_dependency_metrics: bool = False
     step_branch_parent_id: UUID | None = None
     first_round_index: int = 1
     created_message_count: int = 2
@@ -170,6 +174,8 @@ class AgentLoopResult:
     aggregate_total_input_tokens: int = 0
     duration_ms: int = 0
     first_token_ms: int | None = None
+    dependency_metrics: list[dict[str, Any]] = field(default_factory=list)
+    dependency_metrics_truncated: bool = False
     created_message_count: int = 2
     final_round_index: int = 1
 
@@ -393,6 +399,13 @@ class AgentLoop:
         display_name = ctx.tool_display_names.get(tool_name, tool_name)
         tool_runner = ctx.execute_tool_call or execute_tool_call
         reset_notices: list[dict[str, Any]] = []
+        collect_dependency_metric = (
+            ctx.collect_dependency_metrics and tool_name != "ask_user"
+        )
+        tool_started_at = time.time() if collect_dependency_metric else None
+        tool_started_clock = time.monotonic() if collect_dependency_metric else 0.0
+        metric_status = "in_progress"
+        metric_error_category: str | None = None
         try:
             with (
                 capture_workspace_resets() as reset_notices,
@@ -413,6 +426,7 @@ class AgentLoop:
             if isinstance(tool_result, ToolInteractionRequest):
                 if tool_result.tool_name != tool_name:
                     raise ValueError("tool interaction name mismatch")
+                metric_status = "waiting"
                 call_sse = build_tool_call_sse_event(
                     tool_call_id=tc.id,
                     tool_name=tool_name,
@@ -435,9 +449,23 @@ class AgentLoop:
                 )
 
             display_result, llm_result = get_tool_execution_payloads(tool_result)
+            metric_status = "completed"
+            if tool_started_at is not None:
+                try:
+                    parsed_result = json.loads(display_result)
+                except (TypeError, ValueError):
+                    parsed_result = None
+                if (
+                    isinstance(parsed_result, dict)
+                    and parsed_result.get("error") is not None
+                ):
+                    metric_status = "failed"
+                    metric_error_category = "tool_error"
             if ctx.append_generated_images is not None:
                 ctx.append_generated_images(image_pool, image_inventory, display_result)
         except Exception as exc:
+            metric_error_category = type(exc).__name__[:32]
+            metric_status = "failed"
             logger.warning(
                 "Tool %s failed in AgentLoop: %s",
                 tool_name,
@@ -448,6 +476,35 @@ class AgentLoop:
                 {"error": str(exc) or type(exc).__name__}, ensure_ascii=False
             )
             llm_result = display_result
+        finally:
+            if tool_started_at is not None:
+                if (
+                    len(self.result.dependency_metrics)
+                    >= MAX_DEPENDENCY_METRICS_PER_PASS
+                ):
+                    self.result.dependency_metrics_truncated = True
+                else:
+                    finished_at = time.time()
+                    self.result.dependency_metrics.append(
+                        {
+                            "span_id": str(uuid4()),
+                            "kind": "retrieval"
+                            if tool_name == "knowledge_search"
+                            else "tool",
+                            "name": tool_name[:100],
+                            "status": metric_status,
+                            "started_at": datetime.fromtimestamp(
+                                tool_started_at, timezone.utc
+                            ).isoformat(),
+                            "finished_at": datetime.fromtimestamp(
+                                finished_at, timezone.utc
+                            ).isoformat(),
+                            "duration_ms": max(
+                                0, int((time.monotonic() - tool_started_clock) * 1000)
+                            ),
+                            "error_category": metric_error_category,
+                        }
+                    )
 
         if reset_notices:
             display_result = _include_workspace_reset(display_result, reset_notices)

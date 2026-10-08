@@ -26,6 +26,7 @@ class SystemPermissions:
 
     # ============ Admin Dashboard ============
     ADMIN_DASHBOARD_ACCESS = "admin:dashboard:access"
+    ADMIN_OBSERVABILITY_MANAGE = "admin:observability:manage"
 
     # ============ Admin User Management ============
     ADMIN_USER_READ = "admin:user:read"
@@ -179,6 +180,11 @@ class SystemPermissions:
                 "code": cls.ADMIN_DASHBOARD_ACCESS,
                 "scope": "admin",
                 "description": "Access admin dashboard and view system statistics",
+            },
+            {
+                "code": cls.ADMIN_OBSERVABILITY_MANAGE,
+                "scope": "admin",
+                "description": "Manage observability alerts and thresholds",
             },
             # Admin User Management
             {
