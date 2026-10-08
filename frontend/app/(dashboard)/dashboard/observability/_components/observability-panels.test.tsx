@@ -191,9 +191,12 @@ test('renders throughput chart data and its empty chart boundary', () => {
   unmount(empty)
 })
 
-test('renders token source/model data and both empty-list boundaries', () => {
-  const populated = render(<panels.TokensPanel tokens={{ total_tokens: 3000, by_source: [{ source: 'workflow', tokens: 1500 }, { source: 'agent', tokens: 1000 }, { source: 'other', tokens: 500 }], by_model: [{ model: 'model-a', tokens: 3000 }] }} />)
+test('renders token source/model data and deleted-model labels consistently with the dashboard', () => {
+  const deletedModelId = '7fe039c4-2211-48a1-9616-0a3a5a9ef399'
+  const populated = render(<panels.TokensPanel tokens={{ total_tokens: 3000, by_source: [{ source: 'workflow', tokens: 1500 }, { source: 'agent', tokens: 1000 }, { source: 'other', tokens: 500 }], by_model: [{ model: deletedModelId, tokens: 2000 }, { model: 'model-a', tokens: 1000 }] }} />)
+  expect(text(populated)).toContain('models.deletedModel · 7fe039c4')
   expect(text(populated)).toContain('model-a')
+  expect(text(populated)).not.toContain(deletedModelId)
   expect(text(populated)).toContain('sources.other')
   expect(text(populated)).toContain('3K')
   const empty = render(<panels.TokensPanel tokens={{ total_tokens: 0, by_source: [], by_model: [] }} />)

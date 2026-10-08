@@ -499,18 +499,28 @@ export function ThroughputPanel({ throughput }: { throughput: ThroughputResponse
 
 export function TokensPanel({ tokens }: { tokens: TokenResponse | null }) {
   const t = useTranslations('dashboard.observability')
+  const dashboardT = useTranslations('dashboard')
   if (!tokens) return <ObservabilityEmpty />
+
+  const getModelLabel = (model: string) => {
+    const value = model.trim()
+    if (!value) return dashboardT('common.unknown')
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+      return `${dashboardT('models.deletedModel')} · ${value.slice(0, 8)}`
+    }
+    return value
+  }
 
   const totalTokens = tokens.total_tokens
   const sourceItems = tokens.by_source.map((item) => ({ label: sourceLabel(item.source, t), value: item.tokens, tone: item.source === 'workflow' ? 'success' as Tone : 'info' as Tone }))
-  const modelItems = tokens.by_model.slice(0, 10).map((item) => ({ label: item.model, value: item.tokens, tone: 'neutral' as Tone }))
+  const modelItems = tokens.by_model.slice(0, 10).map((item) => ({ label: getModelLabel(item.model), value: item.tokens, tone: 'neutral' as Tone }))
   const topModel = tokens.by_model[0]
 
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-3">
         <ConsoleMetric label={t('metrics.totalTokens')} value={formatCompactNumber(totalTokens)} description={t('tokens.costDriver')} />
-        <ConsoleMetric label={t('tokens.topModel')} value={topModel?.model ?? '-'} description={topModel ? formatCompactNumber(topModel.tokens) : t('throughput.noTokenData')} />
+        <ConsoleMetric label={t('tokens.topModel')} value={topModel ? getModelLabel(topModel.model) : '-'} description={topModel ? formatCompactNumber(topModel.tokens) : t('throughput.noTokenData')} />
         <ConsoleMetric label={t('tokens.modelCount')} value={formatNumber(tokens.by_model.length)} description={t('metrics.selectedRange')} />
       </div>
       <div className="grid gap-6 lg:grid-cols-12">
