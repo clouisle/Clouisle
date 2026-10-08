@@ -24,6 +24,9 @@ const Icon = (props: React.ComponentProps<'svg'>) => <svg {...props} />
 const openLightbox = mock(() => {})
 const codeToTokens = mock(async () => ({ tokens: [] }))
 let lastStreamdownProps: Record<string, unknown> = {}
+type MarkdownLinkRenderer = React.ComponentType<React.ComponentProps<'a'>>
+let lastMarkdownLinkRenderer: MarkdownLinkRenderer | undefined
+let lastLinkCheck: ((url: string) => boolean) | undefined
 let lastDialogProps: Record<string, unknown> = {}
 let rendersCodeActions = true
 
@@ -124,8 +127,12 @@ mock.module('streamdown', () => ({
       shouldParseIncompleteMarkdown: boolean
       isIncomplete: boolean
     }>
+    components?: { a?: MarkdownLinkRenderer }
+    linkSafety?: { onLinkCheck?: (url: string) => boolean }
   }) => {
     lastStreamdownProps = props as unknown as Record<string, unknown>
+    lastMarkdownLinkRenderer = props.components?.a
+    lastLinkCheck = props.linkSafety?.onLinkCheck
     const content = String(props.children)
     const isCodeFence = /^ {0,3}(?:`{3,}|~{3,})/.test(content)
     const hasClosingFence = /(?:^|\n) {0,3}(?:`{3,}|~{3,})[ \t]*$/.test(content)
@@ -144,6 +151,8 @@ afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount())
   document.body.replaceChildren()
   openLightbox.mockClear()
+  lastMarkdownLinkRenderer = undefined
+  lastLinkCheck = undefined
   rendersCodeActions = true
 })
 
@@ -1271,6 +1280,60 @@ describe('message behavior', () => {
       }}
     />)
     expect(lastStreamdownProps.children).toBe('Still writing')
+  })
+
+  test('opens sandbox artifact Markdown links in the authenticated file preview', () => {
+    const onOpenCodePreview = mock(() => {})
+    render(<Message
+      message={{ id: 'artifact-link', role: 'assistant', parts: [{ type: 'text', text: 'Open artifact' }] }}
+      onOpenCodePreview={onOpenCodePreview}
+    />)
+    const MarkdownLink = lastMarkdownLinkRenderer!
+    const artifactUrl = '/api/v1/upload/files/sandbox-artifacts/2026/09/report%20final.txt?download=1'
+    const artifactLink = render(<MarkdownLink href={artifactUrl} target="_blank">Open report</MarkdownLink>)
+    expect(artifactLink.querySelector('a')?.target).toBe('_blank')
+    const click = new window.MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
+    act(() => artifactLink.querySelector('a')!.dispatchEvent(click))
+
+    expect(click.defaultPrevented).toBe(true)
+    expect(onOpenCodePreview).toHaveBeenCalledWith({
+      id: `artifact:${artifactUrl}`,
+      kind: 'artifact',
+      file: {
+        type: 'file',
+        filename: 'report final.txt',
+        url: artifactUrl,
+      },
+    })
+    expect(lastLinkCheck!(artifactUrl)).toBe(false)
+  })
+
+  test('preserves normal navigation for external, non-artifact, and modified artifact links', () => {
+    const onOpenCodePreview = mock(() => {})
+    render(<Message
+      message={{ id: 'ordinary-links', role: 'assistant', parts: [{ type: 'text', text: 'Open links' }] }}
+      onOpenCodePreview={onOpenCodePreview}
+    />)
+    const MarkdownLink = lastMarkdownLinkRenderer!
+    const links = [
+      { href: 'https://example.test/report.txt', ctrlKey: false },
+      { href: '/api/v1/upload/files/documents/2026/09/report.txt', ctrlKey: false },
+      { href: '/api/v1/upload/files/sandbox-artifacts/2026/09/report.txt', ctrlKey: true },
+    ]
+
+    for (const { href, ctrlKey } of links) {
+      const linkContainer = render(<MarkdownLink href={href}>Open link</MarkdownLink>)
+      const click = new window.MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        ctrlKey,
+      })
+      act(() => linkContainer.querySelector('a')!.dispatchEvent(click))
+      expect(click.defaultPrevented).toBe(false)
+    }
+
+    expect(onOpenCodePreview).not.toHaveBeenCalled()
   })
 
   test('copies full message text and reports clipboard failures', async () => {

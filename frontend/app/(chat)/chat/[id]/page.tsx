@@ -78,6 +78,8 @@ export interface PublicChatPageProps {
   onClose?: () => void
 }
 
+const CHAT_PANEL_MIN_WIDTH = 400
+
 function showUploadValidationError(error: unknown, tCommon: ReturnType<typeof useTranslations>) {
   if (error instanceof ApiError && error.code === 1001) {
     const payload = error.data as { allowed?: string[] } | undefined
@@ -109,6 +111,7 @@ export default function PublicChatPage({
   const [isLoading, setIsLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [isLoggedIn, setIsLoggedIn] = React.useState<boolean | null>(null)
+  const showHistory = !embedMode || ((agent?.embed_config as Record<string, unknown> | undefined)?.show_history !== false)
 
   // Sidebar state - collapsed by default on mobile
   const [sidebarOpen, setSidebarOpen] = React.useState(() => {
@@ -165,6 +168,18 @@ export default function PublicChatPage({
   // Pauses heavy preview rendering (HTML iframes) while the user drags the
   // resize handle, so continuous relayouts can't stall the page.
   const [isPreviewResizing, setIsPreviewResizing] = React.useState(false)
+  const handlePreviewResizeStart = React.useCallback(() => {
+    setIsPreviewResizing(true)
+  }, [])
+  const handlePreviewResizeEnd = React.useCallback(() => {
+    setIsPreviewResizing(false)
+  }, [])
+  const handleConversationPanelResize = React.useCallback((panelSize: { inPixels: number }) => {
+    if (!activePreview || !showHistory || !sidebarOpen) return
+    if (panelSize.inPixels <= CHAT_PANEL_MIN_WIDTH) setSidebarOpen(false)
+  }, [activePreview, showHistory, sidebarOpen])
+
+
 
   const dismissPreview = React.useCallback(() => {
     setActivePreview(null)
@@ -809,8 +824,8 @@ export default function PublicChatPage({
   // Embed config gating
   const embedCfg = (agent.embed_config ?? {}) as Record<string, unknown>
   const showHeader = !embedMode || embedCfg.show_header !== false
-  const showHistory = !embedMode || embedCfg.show_history !== false
   const allowNew = !embedMode || embedCfg.allow_new !== false
+
 
   const hasPendingAskUser = Boolean(pendingAskUserToolCallId)
   const pendingAskUserPanel = (
@@ -939,7 +954,8 @@ export default function PublicChatPage({
       {showHistory && (
       <div
         className={cn(
-          "flex flex-col bg-background transition-all duration-300 ease-in-out border-r shrink-0 overflow-hidden",
+          "flex flex-col bg-background border-r shrink-0 overflow-hidden",
+          isPreviewResizing ? "transition-none" : "transition-all duration-300 ease-in-out",
           sidebarOpen ? "w-64" : "w-0"
         )}
       >
@@ -1084,7 +1100,7 @@ export default function PublicChatPage({
       {/* Main Content */}
       <div className="flex-1 min-w-0 min-h-0">
         <ResizablePanelGroup orientation="horizontal" className="h-full">
-        <ResizablePanel defaultSize={activePreview ? '62%' : '100%'} minSize={400}>
+        <ResizablePanel defaultSize={activePreview ? '62%' : '100%'} minSize={CHAT_PANEL_MIN_WIDTH} onResize={handleConversationPanelResize}>
         <div className="relative flex h-full min-w-0 flex-1 flex-col">
         {/* Header - floating over the message area, no bar background */}
         {showHeader && (
@@ -1328,9 +1344,9 @@ export default function PublicChatPage({
             <ResizableHandle
               withHandle
               className="max-md:hidden"
-              onPointerDown={() => setIsPreviewResizing(true)}
-              onPointerUp={() => setIsPreviewResizing(false)}
-              onPointerCancel={() => setIsPreviewResizing(false)}
+              onPointerDown={handlePreviewResizeStart}
+              onPointerUp={handlePreviewResizeEnd}
+              onPointerCancel={handlePreviewResizeEnd}
             />
             <ResizablePanel data-chat-preview-panel defaultSize="38%" minSize={400} className="max-md:!fixed max-md:!inset-0 max-md:!z-50 max-md:!h-dvh max-md:!w-screen max-md:!min-w-0 max-md:!max-w-none md:!relative md:!inset-auto md:!z-auto md:!h-auto md:!w-auto">
               <CodePreviewCanvas

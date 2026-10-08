@@ -8,7 +8,12 @@ from app.api.conversation_access import can_access_conversation
 from app.api.deps import check_api_key_agent_access, check_api_key_workflow_access
 from app.models.agent import Conversation
 from app.models.api_key import APIKey
-from app.models.asset import Asset, AssetScopeRef, AssetScopeType, AssetStatus
+from app.models.asset import (
+    Asset,
+    AssetScopeRef,
+    AssetScopeType,
+    AssetStatus,
+)
 from app.models.user import User
 from app.models.workflow import WorkflowRun
 from app.schemas.response import BusinessError, ResponseCode

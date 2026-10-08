@@ -57,6 +57,8 @@ let variableValues: Record<string, unknown> = {}
 let variableAssetIdsChange: ((name: string, assetIds: string | string[] | null) => void) | undefined
 let chatContainerProps: Record<string, unknown> = {}
 let chatInputProps: Record<string, unknown> = {}
+let previewCanvasIsResizing = false
+let conversationPanelResizeHandler: ((panelSize: { inPixels: number }) => void) | undefined
 let pendingAskUserFormProps: Record<string, unknown> = {}
 let faviconHref: string | null = null
 const router = { push }
@@ -111,6 +113,13 @@ function element(tag: keyof React.JSX.IntrinsicElements) {
   }
 }
 const passthrough = ({ children }: React.PropsWithChildren) => <>{children}</>
+function mockResizablePanel({ children, onResize }: React.PropsWithChildren<Record<string, unknown>>) {
+  if (typeof onResize === 'function') {
+    conversationPanelResizeHandler = onResize as (panelSize: { inPixels: number }) => void
+  }
+  return <>{children}</>
+}
+
 const conditional = ({ children, open = true }: React.PropsWithChildren<{ open?: boolean }>) => open ? <>{children}</> : null
 mock.module('lucide-react', () => ({
   Loader2: element('i'), LogIn: element('i'), ArrowLeft: element('i'), AlertCircle: element('i'),
@@ -129,9 +138,14 @@ mock.module('@/components/ui/dialog', () => ({
 mock.module('@/components/ui/dropdown-menu', () => ({
   DropdownMenu: passthrough, DropdownMenuContent: passthrough, DropdownMenuItem: element('button'), DropdownMenuTrigger: element('button'),
 }))
-mock.module('@/components/ui/resizable', () => ({ ResizableHandle: element('div'), ResizablePanel: passthrough, ResizablePanelGroup: passthrough }))
+mock.module('@/components/ui/resizable', () => ({ ResizableHandle: element('div'), ResizablePanel: mockResizablePanel, ResizablePanelGroup: passthrough }))
 mock.module('@/components/ui/collapsible', () => ({ Collapsible: passthrough, CollapsibleContent: passthrough, CollapsibleTrigger: element('button') }))
-mock.module('@/components/chat/code-preview-canvas', () => ({ CodePreviewCanvas: ({ onClose }: { onClose: () => void }) => <button data-preview onClick={onClose}>preview</button> }))
+mock.module('@/components/chat/code-preview-canvas', () => ({
+  CodePreviewCanvas: ({ onClose, isResizing }: { onClose: () => void; isResizing?: boolean }) => {
+    previewCanvasIsResizing = Boolean(isResizing)
+    return <button data-preview data-resizing={String(Boolean(isResizing))} onClick={onClose}>preview</button>
+  },
+}))
 mock.module('@/components/chat', () => ({
   ChatContainer: (props: Record<string, unknown>) => {
     chatContainerProps = props
@@ -209,6 +223,8 @@ beforeEach(() => {
   chatContainerProps = {}
   chatInputProps = {}
   pendingAskUserFormProps = {}
+  previewCanvasIsResizing = false
+  conversationPanelResizeHandler = undefined
   faviconHref = null
   for (const fn of [push, getPublicAgent, getConversations, getConversation, getRunStatus, deleteConversation, updateConversation, uploadFileWithProgress, getStoredRunSnapshot, removeRunSnapshot, convertBackendMessages, sendMessage, regenerate, editMessage, switchVersion, stop, resetChat, setMessages, setConversationId, validateVariables, toastError, disconnect, observe, historyPush, historyReplace, clearInterval, clearTimeoutMock, setTimeoutMock, setIntervalMock]) fn.mockReset()
   timeoutCallbacks = []
@@ -965,6 +981,54 @@ describe('PublicChatPage', () => {
     await click('preview')
     expect(output()).not.toContain('data-preview')
   })
+  test('hides chat history only when the conversation panel reaches its minimum width', async () => {
+    const minimumPanelWidth = 400
+    render()
+    await flush()
+
+    act(() => (chatContainerProps.onOpenCodePreview as (payload: unknown) => void)({ id: 'preview-1', language: 'python', code: 'print(1)', kind: 'source' }))
+    expect(previewCanvasIsResizing).toBe(false)
+    expect(output()).toContain('data-preview')
+
+    const openSidebar = renderer!.root.findAllByType('div').find((node) => {
+      const className = String(node.props.className)
+      return className.includes('border-r') && className.includes('w-64')
+    })
+    expect(openSidebar).toBeDefined()
+    expect(conversationPanelResizeHandler).toBeDefined()
+
+    const resizeHandle = renderer!.root.findAllByType('div').find((node) => typeof node.props.onPointerDown === 'function')
+    expect(resizeHandle).toBeDefined()
+    act(() => resizeHandle!.props.onPointerDown())
+
+    expect(previewCanvasIsResizing).toBe(true)
+    expect(output()).toContain('data-preview')
+    const sidebarDuringDrag = renderer!.root.findAllByType('div').find((node) => {
+      const className = String(node.props.className)
+      return className.includes('border-r') && className.includes('w-64')
+    })
+    expect(sidebarDuringDrag).toBeDefined()
+    expect(String(sidebarDuringDrag?.props.className)).toContain('transition-none')
+
+    act(() => conversationPanelResizeHandler?.({ inPixels: minimumPanelWidth + 1 }))
+    const sidebarAboveMin = renderer!.root.findAllByType('div').find((node) => {
+      const className = String(node.props.className)
+      return className.includes('border-r') && className.includes('w-64')
+    })
+    expect(sidebarAboveMin).toBeDefined()
+
+    act(() => conversationPanelResizeHandler?.({ inPixels: minimumPanelWidth }))
+    const collapsedSidebar = renderer!.root.findAllByType('div').find((node) => {
+      const className = String(node.props.className)
+      return className.includes('border-r') && className.includes('w-0')
+    })
+    expect(collapsedSidebar).toBeDefined()
+
+    act(() => resizeHandle!.props.onPointerUp())
+    expect(previewCanvasIsResizing).toBe(false)
+    expect(output()).toContain('data-preview')
+  })
+
 
   test('clears the active preview when navigating back/forward to a different conversation', async () => {
     const params = Promise.resolve({ id: 'agent-1' })
