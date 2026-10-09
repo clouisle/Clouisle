@@ -6,7 +6,8 @@ const component = (name: string) => (props: Record<string, unknown>) => jsx(name
 
 let state: unknown[] = []
 let stateIndex = 0
-let runEffects = true
+let effectIndex = 0
+const effectDependencies: (readonly unknown[] | undefined)[] = []
 const useState = (initial: unknown) => {
   const index = stateIndex++
   if (!(index in state)) state[index] = typeof initial === 'function' ? initial() : initial
@@ -14,10 +15,24 @@ const useState = (initial: unknown) => {
     state[index] = typeof value === 'function' ? (value as (previous: unknown) => unknown)(state[index]) : value
   }]
 }
+const useEffect = (
+  effect: () => void | (() => void),
+  dependencies?: readonly unknown[],
+) => {
+  const index = effectIndex++
+  const previous = effectDependencies[index]
+  const changed =
+    dependencies === undefined ||
+    previous === undefined ||
+    dependencies.length !== previous.length ||
+    dependencies.some((value, dependencyIndex) => !Object.is(value, previous[dependencyIndex]))
+  if (changed) effect()
+  effectDependencies[index] = dependencies
+}
 
 mock.module('react', () => ({
   useState,
-  useEffect: (effect: () => void | (() => void)) => { if (runEffects) effect() },
+  useEffect,
   useCallback: (callback: unknown) => callback,
 }))
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
@@ -141,34 +156,26 @@ const baseNode = (type: string, data: Record<string, unknown> = {}, extra: Recor
   id: `${type}-current`, type, data: { label: 'Current', ...data }, position: { x: 0, y: 0 }, ...extra,
 })
 
-function render(
-  node: ReturnType<typeof baseNode> | null,
-  overrides: Record<string, unknown> = {},
-  effectsEnabled = true,
-) {
+function render(node: ReturnType<typeof baseNode> | null, overrides: Record<string, unknown> = {}) {
   stateIndex = 0
-  const previousRunEffects = runEffects
-  runEffects = effectsEnabled
-  try {
-    return NodeConfigDrawer({
-      node: node as never,
-      allNodes: node ? [node] as never : [],
-      allEdges: [],
-      open: true,
-      onClose: mock(() => undefined),
-      onUpdate: mock(() => undefined),
-      readOnly: true,
-      ...overrides,
-    }) as TreeNode | null
-  } finally {
-    runEffects = previousRunEffects
-  }
+  effectIndex = 0
+  return NodeConfigDrawer({
+    node: node as never,
+    allNodes: node ? [node] as never : [],
+    allEdges: [],
+    open: true,
+    onClose: mock(() => undefined),
+    onUpdate: mock(() => undefined),
+    readOnly: true,
+    ...overrides,
+  }) as TreeNode | null
 }
 
 beforeEach(() => {
   state = []
   stateIndex = 0
-  runEffects = true
+  effectIndex = 0
+  effectDependencies.length = 0
   renderNodeOutput.mockClear()
 })
 
@@ -453,14 +460,17 @@ describe('NodeConfigDrawer', () => {
   test('updates the node name and description from the visible fields', () => {
     const node = baseNode('llm', { label: 'Draft', description: 'Before' })
     const props = { readOnly: false }
+    render(node, props)
     const nodes = descendants(render(node, props))
     const nameInput = nodes.find(item => item.type === 'Input' && item.props.id === 'node-label')!
     const descriptionInput = nodes.find(item => item.type === 'Textarea' && item.props.id === 'node-description')!
 
+    expect(nameInput.props.value).toBe('Draft')
+    expect(descriptionInput.props.value).toBe('Before')
     ;(nameInput.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'Updated' } })
     ;(descriptionInput.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'After' } })
 
-    const updated = descendants(render(node, props, false))
+    const updated = descendants(render(node, props))
     expect(updated.find(item => item.type === 'Input' && item.props.id === 'node-label')?.props.value).toBe('Updated')
     expect(updated.find(item => item.type === 'Textarea' && item.props.id === 'node-description')?.props.value).toBe('After')
   })
