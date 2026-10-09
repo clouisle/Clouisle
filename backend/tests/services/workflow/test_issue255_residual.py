@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import workflows
-from app.models.workflow import WorkflowStatus, TriggerType
+from app.models.workflow import RunStatus, WorkflowStatus, TriggerType
 from app.schemas.response import BusinessError, ResponseCode
 from app.services.workflow.benchmark import (
     BenchmarkConfig,
@@ -28,6 +28,7 @@ async def test_webhook_rejects_restricted_api_key_without_workflow_access():
     api_key = SimpleNamespace(workflows=SimpleNamespace(all=AsyncMock(return_value=[])))
     workflow = SimpleNamespace(
         id=workflow_id,
+        name="Flow",
         webhook_token="token",
         status=WorkflowStatus.PUBLISHED,
         trigger_type=TriggerType.WEBHOOK,
@@ -37,7 +38,15 @@ async def test_webhook_rejects_restricted_api_key_without_workflow_access():
     query = MagicMock()
     query.prefetch_related.return_value.all = AsyncMock(return_value=[workflow])
 
-    run = SimpleNamespace(id=uuid4())
+    run = SimpleNamespace(
+        id=uuid4(),
+        workflow_id=workflow_id,
+        status=RunStatus.PENDING,
+        created_at=datetime.now(timezone.utc),
+        started_at=None,
+        finished_at=None,
+        total_duration_ms=None,
+    )
     task = SimpleNamespace(delay=MagicMock())
 
     with (

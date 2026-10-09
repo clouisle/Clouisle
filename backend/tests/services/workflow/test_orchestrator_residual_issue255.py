@@ -1,10 +1,11 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
-from app.models.workflow import NodeStatus
+from app.models.workflow import NodeStatus, RunStatus
 from app.services.workflow.errors import (
     ExecutionCancelledError,
     ExecutionTimeoutError,
@@ -32,7 +33,12 @@ async def test_definition_cache_miss_without_updated_at_and_run_creation():
     service = WorkflowOrchestrator(enable_cache=False, enable_metrics=False)
     service._cache = cache
     workflow = SimpleNamespace(
-        id=uuid4(), definition={"nodes": []}, updated_at=None, trigger_type="manual"
+        id=uuid4(),
+        name="Workflow",
+        team_id=None,
+        definition={"nodes": []},
+        updated_at=None,
+        trigger_type="manual",
     )
 
     assert await service._get_workflow_definition(workflow) == workflow.definition
@@ -43,7 +49,15 @@ async def test_definition_cache_miss_without_updated_at_and_run_creation():
     with patch(
         "app.services.workflow.orchestrator.WorkflowRun.create", new=AsyncMock()
     ) as create:
-        create.return_value = SimpleNamespace(id=uuid4())
+        create.return_value = SimpleNamespace(
+            id=uuid4(),
+            workflow_id=workflow.id,
+            status=RunStatus.PENDING,
+            created_at=datetime.now(timezone.utc),
+            started_at=None,
+            finished_at=None,
+            total_duration_ms=None,
+        )
         await service._create_run(workflow, {"x": 1}, uuid4(), uuid4())
     assert create.await_args.kwargs["workflow_id"] == workflow.id
 

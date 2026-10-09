@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
@@ -203,6 +204,7 @@ async def test_webhook_success_with_unrestricted_api_key_and_plain_header(monkey
     workflow_id, user_id, run_id = uuid4(), uuid4(), uuid4()
     workflow = SimpleNamespace(
         id=workflow_id,
+        name="Flow",
         team_id=None,
         webhook_token="token",
         status=WorkflowStatus.PUBLISHED,
@@ -220,7 +222,17 @@ async def test_webhook_success_with_unrestricted_api_key_and_plain_header(monkey
     monkeypatch.setattr(
         workflows.WorkflowRun,
         "create",
-        AsyncMock(return_value=SimpleNamespace(id=run_id)),
+        AsyncMock(
+            return_value=SimpleNamespace(
+                id=run_id,
+                workflow_id=workflow_id,
+                status=RunStatus.PENDING,
+                created_at=datetime.now(timezone.utc),
+                started_at=None,
+                finished_at=None,
+                total_duration_ms=None,
+            )
+        ),
     )
     delay = Mock()
     monkeypatch.setattr(run_workflow_task, "delay", delay)

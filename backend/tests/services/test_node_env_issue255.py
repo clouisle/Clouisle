@@ -7,7 +7,10 @@ from unittest.mock import call
 import pytest
 
 from app.core.config import settings
-from app.core.sandbox_network_policy import SandboxNetworkPolicyError
+from app.core.sandbox_network_policy import (
+    DEFAULT_SANDBOX_NETWORK_ALLOWLIST,
+    SandboxNetworkPolicyError,
+)
 from app.services.sandbox.node_env import NodeEnvironmentManager
 from app.services.sandbox.process_launcher import ProcessLaunchResult
 
@@ -26,6 +29,7 @@ class FakeProcessLauncher:
 
 
 class FakeNetworkProxy:
+    allowed_hosts = frozenset(DEFAULT_SANDBOX_NETWORK_ALLOWLIST)
     blocked_diagnostics: list[str] = []
 
 

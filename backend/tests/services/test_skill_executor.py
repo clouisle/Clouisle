@@ -14,6 +14,7 @@ from app.services.sandbox.models import (
     SandboxResult,
     SandboxTaskStatus,
 )
+from app.services.sandbox.process_launcher import SandboxProcessLauncher
 from app.services.skill_executor import SkillExecutionResult, SkillExecutor
 
 
@@ -162,12 +163,23 @@ async def test_execute_skill_stages_and_replaces_resources_on_worker(
     workspace_manager = SandboxWorkspaceManager(root=str(tmp_path / "worker"))
     manager = SandboxManager(
         workspace_manager=workspace_manager,
+        process_launcher=SandboxProcessLauncher(filesystem_isolation_enabled=False),
         cleanup_workspaces=False,
         result_store=SimpleNamespace(
             get_result=AsyncMock(return_value=None),
             save_result=AsyncMock(side_effect=lambda result: result),
         ),
     )
+
+    # This test covers worker-side resource staging, not the isolation boundary.
+    # Run its local staging script without Linux-only bwrap; process-launcher tests
+    # cover the real isolation path and fail-closed behavior.
+    async def run_without_proxy(job, workspace, metadata):
+        return await manager._run_job_with_proxy(
+            job, workspace, metadata, network_proxy=None
+        )
+
+    monkeypatch.setattr(manager, "_run_job", run_without_proxy)
 
     async def run_on_worker(job, *, session_id, team_id):
         return await manager.execute(

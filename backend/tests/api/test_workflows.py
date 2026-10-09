@@ -6,7 +6,12 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints import workflows
-from app.models.workflow import TriggerType, WorkflowStatus, WorkflowVisibility
+from app.models.workflow import (
+    RunStatus,
+    TriggerType,
+    WorkflowStatus,
+    WorkflowVisibility,
+)
 from app.schemas.response import BusinessError, ResponseCode
 from app.schemas.workflow import (
     WorkflowCreate,
@@ -311,7 +316,15 @@ async def test_regenerate_webhook_token_checks_permission_before_persisting():
 async def test_run_workflow_dispatches_mocked_runtime_and_records_audit():
     user = SimpleNamespace(id=uuid4())
     workflow = _workflow(status=WorkflowStatus.PUBLISHED)
-    run = SimpleNamespace(id=uuid4())
+    run = SimpleNamespace(
+        id=uuid4(),
+        workflow_id=workflow.id,
+        status=RunStatus.PENDING,
+        created_at=datetime.now(UTC),
+        started_at=None,
+        finished_at=None,
+        total_duration_ms=None,
+    )
     task = MagicMock()
 
     with (

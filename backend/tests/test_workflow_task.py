@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
@@ -55,20 +56,24 @@ def test_resume_workflow_task_replays_waiting_run():
     orchestrator = MagicMock()
     orchestrator.run_with_run_id = AsyncMock(return_value=UUID(RUN_ID))
     run = SimpleNamespace(
+        id=UUID(RUN_ID),
         status=RunStatus.WAITING,
         workflow_id=UUID(WORKFLOW_ID),
         inputs={"question": "hello"},
         triggered_by_id=UUID(USER_ID),
         is_debug=False,
         outputs={"answer": "done"},
+        finished_at=None,
     )
     completed_run = SimpleNamespace(
+        id=UUID(RUN_ID),
         status=RunStatus.SUCCESS,
         workflow_id=UUID(WORKFLOW_ID),
         inputs={"question": "hello"},
         triggered_by_id=UUID(USER_ID),
         is_debug=False,
         outputs={"answer": "done"},
+        finished_at=None,
     )
 
     with (
@@ -103,20 +108,24 @@ def test_resume_workflow_task_reports_waiting_when_run_parks_again():
     orchestrator = MagicMock()
     orchestrator.run_with_run_id = AsyncMock(return_value=UUID(RUN_ID))
     run = SimpleNamespace(
+        id=UUID(RUN_ID),
         status=RunStatus.WAITING,
         workflow_id=UUID(WORKFLOW_ID),
         inputs={},
         triggered_by_id=UUID(USER_ID),
         is_debug=False,
         outputs=None,
+        finished_at=None,
     )
     parked_again = SimpleNamespace(
+        id=UUID(RUN_ID),
         status=RunStatus.WAITING,
         workflow_id=UUID(WORKFLOW_ID),
         inputs={},
         triggered_by_id=UUID(USER_ID),
         is_debug=False,
         outputs=None,
+        finished_at=None,
     )
 
     with (
@@ -157,17 +166,31 @@ def test_run_workflow_task_reports_missing_final_run():
 def test_run_workflow_task_marks_run_failed_on_execution_error():
     orchestrator = MagicMock()
     orchestrator.run_with_run_id = AsyncMock(side_effect=RuntimeError("internal"))
-    run = SimpleNamespace(status=None, error_message=None, save=AsyncMock())
+    run = SimpleNamespace(
+        id=UUID(RUN_ID),
+        workflow_id=UUID(WORKFLOW_ID),
+        status=RunStatus.RUNNING,
+        error_message=None,
+        created_at=datetime.now(timezone.utc),
+        started_at=None,
+        finished_at=None,
+        total_duration_ms=None,
+        total_token_usage={},
+        save=AsyncMock(),
+    )
+    workflow = SimpleNamespace(id=UUID(WORKFLOW_ID), name="Flow", team_id=None)
 
     with (
         patch("app.services.workflow.WorkflowOrchestrator", return_value=orchestrator),
         patch("app.tasks.workflow.WorkflowRun") as workflow_run,
+        patch("app.tasks.workflow.Workflow.filter") as workflow_filter,
         patch(
             "app.tasks.workflow.translate_public_workflow_error",
             return_value="safe error",
         ),
     ):
         workflow_run.filter.return_value.first = AsyncMock(return_value=run)
+        workflow_filter.return_value.first = AsyncMock(return_value=workflow)
         result = run_workflow_task.run(RUN_ID, WORKFLOW_ID, {}, None)
 
     assert result == {"status": "error", "message": "safe error"}
@@ -297,6 +320,7 @@ def test_resume_workflow_task_marks_run_failed_on_execution_error():
     orchestrator = MagicMock()
     orchestrator.run_with_run_id = AsyncMock(side_effect=RuntimeError("internal"))
     run = SimpleNamespace(
+        id=UUID(RUN_ID),
         status=RunStatus.WAITING,
         workflow_id=UUID(WORKFLOW_ID),
         inputs={},
@@ -304,12 +328,19 @@ def test_resume_workflow_task_marks_run_failed_on_execution_error():
         is_debug=False,
         outputs=None,
         error_message=None,
+        created_at=datetime.now(timezone.utc),
+        started_at=None,
+        finished_at=None,
+        total_duration_ms=None,
+        total_token_usage={},
         save=AsyncMock(),
     )
+    workflow = SimpleNamespace(id=UUID(WORKFLOW_ID), name="Flow", team_id=None)
 
     with (
         patch("app.services.workflow.WorkflowOrchestrator", return_value=orchestrator),
         patch("app.tasks.workflow.WorkflowRun") as workflow_run,
+        patch("app.tasks.workflow.Workflow.filter") as workflow_filter,
         patch(
             "app.tasks.workflow.translate_public_workflow_error",
             return_value="safe error",
@@ -317,6 +348,7 @@ def test_resume_workflow_task_marks_run_failed_on_execution_error():
     ):
         workflow_run.filter.return_value.first = AsyncMock(return_value=run)
         workflow_run.filter.return_value.update = AsyncMock(return_value=1)
+        workflow_filter.return_value.first = AsyncMock(return_value=workflow)
         result = resume_workflow_task.run(RUN_ID)
 
     assert result == {"status": "error", "message": "safe error"}
