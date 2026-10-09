@@ -2,6 +2,7 @@ import hashlib
 import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -282,3 +283,82 @@ def test_failed_host_metric_preserves_other_measurement(monkeypatch, failed_metr
     )
     expected = (None, 50) if failed_metric == "cpu" else (25, None)
     assert service._sample_host_metrics() == expected
+
+
+@pytest.mark.asyncio
+async def test_reporter_skips_closed_and_unowned_instances():
+    closed_redis = SimpleNamespace(eval=AsyncMock(return_value=1))
+    closed = service.ApiInstanceReporter(redis=closed_redis)
+    closed._closed.set()
+    assert await closed.refresh_once() is False
+    closed_redis.eval.assert_not_awaited()
+
+    unowned_redis = SimpleNamespace(eval=AsyncMock(return_value=0))
+    unowned = service.ApiInstanceReporter(redis=unowned_redis)
+    assert await unowned.refresh_once() is False
+    unowned_redis.eval.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_reporter_publishes_fresh_host_sample_after_election(monkeypatch):
+    redis = SimpleNamespace(eval=AsyncMock(side_effect=[1, 1]))
+    monkeypatch.setattr(service, "_sample_host_metrics", lambda: (25, 50))
+    reporter = service.ApiInstanceReporter(
+        identity="service-a", name="API A", redis=redis
+    )
+
+    assert await reporter.refresh_once() is True
+
+    publish = redis.eval.await_args_list[1]
+    sample = json.loads(publish.args[6])
+    assert sample["instance_id"] == reporter.instance_id
+    assert sample["name"] == "API A"
+    assert sample["cpu_percent"] == 25
+    assert sample["memory_percent"] == 50
+
+
+@pytest.mark.asyncio
+async def test_reporter_does_not_publish_after_close_during_sampling(monkeypatch):
+    redis = SimpleNamespace(eval=AsyncMock(return_value=1))
+    reporter = service.ApiInstanceReporter(redis=redis)
+
+    async def close_during_sampling(*_args):
+        reporter._closed.set()
+        return 25, 50
+
+    monkeypatch.setattr(service.asyncio, "to_thread", close_during_sampling)
+
+    assert await reporter.refresh_once() is False
+    assert redis.eval.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_reporter_run_exits_cleanly_when_closed(monkeypatch):
+    redis = SimpleNamespace(eval=AsyncMock(return_value=1))
+    reporter = service.ApiInstanceReporter(redis=redis)
+
+    async def stop_after_refresh():
+        reporter._closed.set()
+        return False
+
+    monkeypatch.setattr(reporter, "refresh_once", stop_after_refresh)
+
+    await reporter.run()
+
+    redis.eval.assert_awaited_once_with(
+        service._RELEASE_SCRIPT, 1, reporter._lease_key, reporter.owner_id
+    )
+
+
+@pytest.mark.parametrize(
+    ("reply", "available"),
+    [([str(OBSERVED_MS), []], True), ([str(OBSERVED_MS), None], False)],
+)
+@pytest.mark.asyncio
+async def test_list_instances_validates_registry_reply(reply, available):
+    redis = SimpleNamespace(eval=AsyncMock(return_value=reply))
+
+    result = await service.list_api_instances(redis=redis)
+
+    assert result["available"] is available
+    assert result["instances"] == []

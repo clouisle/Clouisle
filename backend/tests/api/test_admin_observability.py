@@ -302,3 +302,118 @@ def test_preset_rejects_explicit_bounds(observability_client, endpoint, period, 
         )
     assert response.status_code == 422
     query.assert_not_called()
+
+
+def test_run_detail_returns_loaded_trace(observability_client):
+    client, user = observability_client
+    user.roles = [_Role("admin:dashboard:access")]
+    run_id = uuid4()
+    payload = {
+        "run": {
+            "run_id": str(run_id),
+            "source": "agent",
+            "status": "completed",
+            "total_tokens": 3,
+            "trace_available": True,
+            "trace_complete": True,
+        },
+        "spans": [],
+        "trace": {"complete": True, "expired": False, "recorded_count": 0},
+        "meta": {
+            "window_start": "2026-10-08T12:00:00Z",
+            "window_end": "2026-10-08T13:00:00Z",
+            "sampled_at": "2026-10-08T13:00:00Z",
+            "period": "1h",
+            "state": "fresh",
+            "sample_count": 1,
+        },
+    }
+    with patch(
+        "app.api.v1.admin.endpoints.observability.service.run_detail",
+        new=AsyncMock(return_value=payload),
+    ):
+        response = client.get(f"/api/v1/admin/observability/runs/agent/{run_id}")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["run"]["total_tokens"] == 3
+
+
+def test_acknowledge_missing_alert_returns_not_found(observability_client):
+    client, user = observability_client
+    user.roles = [_Role("admin:observability:manage")]
+    with patch(
+        "app.api.v1.admin.endpoints.observability.service.acknowledge_alert",
+        new=AsyncMock(return_value=None),
+    ):
+        response = client.post(
+            f"/api/v1/admin/observability/alerts/{uuid4()}/acknowledge"
+        )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Active alert not found"
+
+
+def test_silence_alert_handles_missing_and_active_events(observability_client):
+    client, user = observability_client
+    user.roles = [_Role("admin:observability:manage")]
+    alert_id = uuid4()
+    route = f"/api/v1/admin/observability/alerts/{alert_id}/silence"
+    with patch(
+        "app.api.v1.admin.endpoints.observability.service.silence_alert",
+        new=AsyncMock(return_value=None),
+    ):
+        missing = client.post(route, params={"duration_seconds": 60})
+    assert missing.status_code == 404
+
+    event = {
+        "id": str(alert_id),
+        "rule_id": "agent-failure-rate",
+        "kind": "agent-failure-rate",
+        "severity": "warning",
+        "title": "Failure rate",
+        "detail": "Threshold exceeded",
+        "affected_count": 2,
+        "status": "active",
+        "opened_at": "2026-10-08T12:00:00Z",
+        "resolved_at": None,
+        "acknowledged_at": None,
+        "silenced_until": "2026-10-08T13:00:00Z",
+    }
+    with patch(
+        "app.api.v1.admin.endpoints.observability.service.silence_alert",
+        new=AsyncMock(return_value=event),
+    ):
+        silenced = client.post(route, params={"duration_seconds": 60})
+
+    assert silenced.status_code == 200
+    assert silenced.json()["data"]["silenced_until"] is not None
+
+
+def test_alert_rule_update_handles_missing_and_existing_rules(observability_client):
+    client, user = observability_client
+    user.roles = [_Role("admin:observability:manage")]
+    route = "/api/v1/admin/observability/alerts/rules/agent-failure-rate"
+    with patch(
+        "app.api.v1.admin.endpoints.observability.service.update_rule",
+        new=AsyncMock(return_value=None),
+    ):
+        missing = client.put(route, json={"threshold": 0.75})
+    assert missing.status_code == 404
+
+    rule = {
+        "id": "agent-failure-rate",
+        "name": "Agent failure rate",
+        "threshold": 0.75,
+        "enabled": True,
+        "evaluation_window_seconds": 300,
+        "recovery_window_seconds": 60,
+        "updated_at": "2026-10-08T13:00:00Z",
+    }
+    with patch(
+        "app.api.v1.admin.endpoints.observability.service.update_rule",
+        new=AsyncMock(return_value=rule),
+    ):
+        updated = client.put(route, json={"threshold": 0.75})
+
+    assert updated.status_code == 200
+    assert updated.json()["data"]["threshold"] == 0.75

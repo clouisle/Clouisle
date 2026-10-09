@@ -613,3 +613,147 @@ async def test_database_health_execute_helpers_and_row_decoration():
 )
 def test_status_for_percent_boundaries(value, expected):
     assert admin_observability._status_for_percent(value, 70, 90) == expected
+
+
+@pytest.mark.asyncio
+async def test_cached_payload_computes_on_an_empty_cache_entry():
+    redis = AsyncMock()
+    redis.get.return_value = None
+    producer = AsyncMock(return_value={"fresh": True})
+
+    with patch("app.services.admin_observability.get_redis", return_value=redis):
+        result = await admin_observability.cached_payload("overview", {}, producer)
+
+    assert result == {"fresh": True}
+    producer.assert_awaited_once()
+    redis.setex.assert_awaited_once()
+
+
+@pytest.mark.parametrize("source", ["workflow", "agent"])
+@pytest.mark.asyncio
+async def test_timeout_source_queries_only_its_own_events(monkeypatch, source):
+    timestamp = datetime(2026, 10, 8, tzinfo=timezone.utc)
+    monkeypatch.setattr(
+        admin_observability,
+        "normalize_time_range",
+        lambda _value: (None, timestamp),
+    )
+    workflow_rows = AsyncMock(
+        return_value=[
+            {
+                "workflow_id": "workflow-1",
+                "workflow_name": "Flow",
+                "created_at": timestamp,
+                "duration_ms": 10,
+                "status": "timeout",
+            }
+        ]
+    )
+    agent_rows = AsyncMock(
+        return_value=[
+            {
+                "agent_id": "agent-1",
+                "agent_name": "Agent",
+                "model_used": "model-a",
+                "created_at": timestamp,
+                "duration_ms": 20,
+                "round_status": "error",
+            }
+        ]
+    )
+    monkeypatch.setattr(admin_observability, "_workflow_timeout_rows", workflow_rows)
+    monkeypatch.setattr(admin_observability, "_agent_timeout_like_rows", agent_rows)
+
+    result = await admin_observability.get_timeouts("30d", source, 1, 10)
+
+    if source == "workflow":
+        workflow_rows.assert_awaited_once_with(None, timestamp)
+        agent_rows.assert_not_awaited()
+        assert result["distribution"] == {"workflow": 1}
+    else:
+        workflow_rows.assert_not_awaited()
+        agent_rows.assert_awaited_once_with(None, timestamp)
+        assert result["distribution"] == {"agent": 1}
+
+
+@pytest.mark.asyncio
+async def test_tokens_do_not_attribute_unlabeled_tracked_usage(monkeypatch):
+    async def passthrough(awaitable):
+        return await awaitable
+
+    monkeypatch.setattr(admin_observability, "run_bounded", passthrough)
+    monkeypatch.setattr(
+        admin_observability, "_agent_model_token_rows", AsyncMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        admin_observability, "_workflow_token_total", AsyncMock(return_value=0)
+    )
+    monkeypatch.setattr(
+        admin_observability,
+        "_tracked_model_token_rows",
+        AsyncMock(return_value=[{"model_used": None, "tokens": 8}]),
+    )
+
+    result = await admin_observability.get_tokens("30d")
+
+    assert result["total_tokens"] == 0
+    assert result["by_model"] == []
+
+
+@pytest.mark.asyncio
+async def test_bucket_count_query_without_extra_filter(monkeypatch):
+    timestamp = datetime(2026, 10, 8, tzinfo=timezone.utc)
+    execute = AsyncMock(return_value=(1, [{"bucket": timestamp, "count": 2}]))
+    monkeypatch.setattr(admin_observability, "_execute", execute)
+
+    rows = await admin_observability._bucket_count_rows(
+        "workflow_runs", "created_at", None, timestamp, "hour"
+    )
+
+    query, params = execute.await_args.args
+    assert "created_at < $2" in query
+    assert " AND " not in query
+    assert params == ["hour", timestamp]
+    assert rows == [{"bucket": timestamp.isoformat(), "count": 2}]
+
+
+def test_time_filter_and_datetime_coercion_boundaries():
+    start = datetime(2026, 10, 8, tzinfo=timezone.utc)
+    end = datetime(2026, 10, 9, tzinfo=timezone.utc)
+
+    where, params = admin_observability._time_where(
+        "created_at", start, end, start_index=2
+    )
+
+    assert where == "created_at >= $2 AND created_at < $3"
+    assert params == [start, end]
+    assert admin_observability._coerce_datetime(start) is start
+    assert admin_observability._coerce_datetime("2026-10-08T00:00:00+00:00") == start
+    assert admin_observability._coerce_datetime(1).tzinfo is not None
+
+
+@pytest.mark.asyncio
+async def test_pending_task_rows_report_unrecognized_messages(monkeypatch):
+    task = "send_notification_email"
+    redis = SimpleNamespace(lrange=AsyncMock(return_value=[b"not-json"]))
+    monkeypatch.setattr(admin_observability, "get_redis", AsyncMock(return_value=redis))
+    monkeypatch.setattr(
+        admin_observability, "_worker_task_catalog", lambda: ((task, "default"),)
+    )
+
+    rows = await admin_observability._pending_task_rows(
+        [{"queue": "default", "pending": 1}]
+    )
+
+    assert rows == [
+        {"task": "unrecognized:default", "queue": "default", "pending": 1},
+        {"task": task, "queue": "default", "pending": 0},
+    ]
+
+
+def test_queued_task_name_rejects_non_mapping_payloads():
+    assert admin_observability._queued_task_name(b"[]") is None
+    assert (
+        admin_observability._queued_task_name(json.dumps({"headers": []}).encode())
+        is None
+    )

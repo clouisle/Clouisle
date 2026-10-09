@@ -2,7 +2,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from threading import Barrier
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
 from uuid import uuid4
 
 import pytest
@@ -2162,3 +2162,279 @@ async def test_custom_trend_bucket_size_uses_actual_span(monkeypatch, span, expe
     )
     assert len(result["trend"]) == expected
     assert sum(bucket["submitted"] for bucket in result["trend"]) == 2
+
+
+def test_window_rejects_unknown_preset_period():
+    with pytest.raises(ValueError, match="Invalid period"):
+        observability_v2.window("2h")
+
+
+@pytest.mark.asyncio
+async def test_cancelled_snapshot_waiter_leaves_shared_producer_available(monkeypatch):
+    key = ("cancelled-waiter",)
+    monkeypatch.setattr(observability_v2, "_SNAPSHOT_CACHE", {})
+    monkeypatch.setattr(observability_v2, "_SNAPSHOT_INFLIGHT", {})
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def producer():
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+        return {"ready": True}
+
+    waiter = asyncio.create_task(observability_v2._cached_snapshot(key, producer))
+    await started.wait()
+    waiter.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+
+    shared = observability_v2._SNAPSHOT_INFLIGHT[key]
+    assert not shared.done()
+    release.set()
+    result = await observability_v2._cached_snapshot(key, producer)
+
+    assert result == {"ready": True}
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_snapshot_does_not_remove_replacement_inflight_task(monkeypatch):
+    key = ("replaced-producer",)
+    monkeypatch.setattr(observability_v2, "_SNAPSHOT_CACHE", {})
+    monkeypatch.setattr(observability_v2, "_SNAPSHOT_INFLIGHT", {})
+    replacement = None
+
+    async def pending_replacement():
+        await asyncio.Event().wait()
+
+    async def fail_after_replacement():
+        nonlocal replacement
+        replacement = asyncio.create_task(pending_replacement())
+        observability_v2._SNAPSHOT_INFLIGHT[key] = replacement
+        raise RuntimeError("snapshot failed")
+
+    with pytest.raises(RuntimeError, match="snapshot failed"):
+        await observability_v2._cached_snapshot(key, fail_after_replacement)
+
+    assert observability_v2._SNAPSHOT_INFLIGHT[key] is replacement
+    replacement.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await replacement
+
+
+class _ReconciliationQuery:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def using_db(self, *_args):
+        return self
+
+    def only(self, *_args):
+        return self
+
+    def values(self, *_args):
+        return self
+
+    def __await__(self):
+        async def resolve():
+            return self.rows
+
+        return resolve().__await__()
+
+
+@pytest.mark.asyncio
+async def test_terminal_reconciliation_skips_empty_candidate_batch():
+    connection = SimpleNamespace(execute_query=AsyncMock(return_value=(0, [])))
+
+    repaired = await observability_v2.reconcile_agent_terminal_summaries(connection)
+
+    assert repaired == 0
+    connection.execute_query.assert_awaited_once()
+
+
+@pytest.mark.parametrize("saved", [True, False])
+@pytest.mark.asyncio
+async def test_terminal_reconciliation_counts_or_rejects_unsaved_summaries(
+    monkeypatch, saved
+):
+    run_id, agent_id = uuid4(), uuid4()
+    submitted_at = datetime.now(UTC) - timedelta(minutes=5)
+    run = SimpleNamespace(
+        id=run_id,
+        agent_id=agent_id,
+        canonical_message_id=None,
+        status=SimpleNamespace(value="completed"),
+        submitted_at=submitted_at,
+        started_at=submitted_at,
+        message_started_at=None,
+        finished_at=submitted_at + timedelta(seconds=2),
+        first_token_ms=None,
+        error_code=None,
+    )
+    monkeypatch.setattr(
+        observability_v2.AgentRun,
+        "filter",
+        lambda **_kwargs: _ReconciliationQuery([run]),
+    )
+    monkeypatch.setattr(
+        observability_v2.Agent,
+        "filter",
+        lambda **_kwargs: _ReconciliationQuery(
+            [{"id": agent_id, "name": "Agent", "team_id": None, "team__name": None}]
+        ),
+    )
+    record = AsyncMock(return_value=saved)
+    monkeypatch.setattr(observability_v2, "record_run", record)
+    connection = SimpleNamespace(
+        execute_query=AsyncMock(return_value=(1, [{"id": run_id}]))
+    )
+
+    if saved:
+        assert (
+            await observability_v2.reconcile_agent_terminal_summaries(connection) == 1
+        )
+        assert record.await_args.kwargs["resource_name"] == "Agent"
+    else:
+        with pytest.raises(RuntimeError, match="reconciliation failed"):
+            await observability_v2.reconcile_agent_terminal_summaries(connection)
+
+
+@pytest.mark.asyncio
+async def test_progress_without_status_does_not_add_an_active_status_filter(
+    monkeypatch,
+):
+    query = SimpleNamespace(update=AsyncMock(return_value=1), filter=Mock())
+    filter_run = Mock(return_value=query)
+    monkeypatch.setattr(observability_v2.ObservabilityRun, "filter", filter_run)
+    started_at = datetime.now(UTC)
+    run_id = uuid4()
+
+    await observability_v2.update_run_progress(
+        run_id, source="agent", started_at=started_at
+    )
+
+    filter_run.assert_called_once_with(id=run_id, source="agent")
+    query.filter.assert_not_called()
+    query.update.assert_awaited_once_with(started_at=started_at)
+
+
+def _install_queue_snapshot_dependencies(monkeypatch, active_queues):
+    from app.core import celery as celery_core
+    from app.core import redis as redis_core
+
+    class Inspector:
+        def active(self):
+            return {}
+
+        def reserved(self):
+            return {}
+
+        def scheduled(self):
+            return {}
+
+        def active_queues(self):
+            return active_queues
+
+    monkeypatch.setattr(
+        celery_core,
+        "celery_app",
+        SimpleNamespace(control=SimpleNamespace(inspect=lambda **_kwargs: Inspector())),
+    )
+    redis = SimpleNamespace(llen=AsyncMock(return_value=0))
+    monkeypatch.setattr(redis_core, "get_redis", AsyncMock(return_value=redis))
+
+
+@pytest.mark.asyncio
+async def test_queue_snapshot_handles_absent_active_queues(monkeypatch):
+    _install_queue_snapshot_dependencies(monkeypatch, {})
+
+    result = await observability_v2._queues_snapshot()
+
+    assert result["meta"]["state"] == "partial"
+    assert result["workers"] == []
+    assert all(row["pending"] == 0 for row in result["queues"])
+
+
+@pytest.mark.asyncio
+async def test_retention_continues_after_full_batch_then_stops_on_empty(monkeypatch):
+    class Query:
+        def __init__(self, batches, deletions):
+            self.batches = iter(batches)
+            self.deletions = iter(deletions)
+
+        def filter(self, **_kwargs):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def limit(self, *_args):
+            return self
+
+        async def values_list(self, *_args, **_kwargs):
+            return next(self.batches)
+
+        async def delete(self):
+            return next(self.deletions)
+
+    run_query = Query([[]], [])
+    alert_query = Query([[str(index) for index in range(500)], []], [500])
+    monkeypatch.setattr(
+        observability_v2.ObservabilityRun, "filter", lambda **_kwargs: run_query
+    )
+    monkeypatch.setattr(
+        observability_v2.ObservabilityAlertEvent,
+        "filter",
+        lambda **_kwargs: alert_query,
+    )
+
+    deleted = await observability_v2.retain()
+
+    assert deleted == 500
+
+
+@pytest.mark.asyncio
+async def test_retention_stops_after_batch_limit_when_all_batches_are_full(
+    monkeypatch,
+):
+    batch_size = observability_v2.RETENTION_BATCH_SIZE
+
+    class Query:
+        def __init__(self):
+            self.batch_reads = 0
+            self.deleted_batches = 0
+
+        def filter(self, **_kwargs):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def limit(self, *_args):
+            return self
+
+        async def values_list(self, *_args, **_kwargs):
+            self.batch_reads += 1
+            return list(range(batch_size)) if self.batch_reads <= 2 else []
+
+        async def delete(self):
+            self.deleted_batches += 1
+            return batch_size
+
+    run_query, alert_query = Query(), Query()
+    monkeypatch.setattr(observability_v2, "RETENTION_BATCHES_PER_CYCLE", 2)
+    monkeypatch.setattr(
+        observability_v2.ObservabilityRun, "filter", lambda **_kwargs: run_query
+    )
+    monkeypatch.setattr(
+        observability_v2.ObservabilityAlertEvent,
+        "filter",
+        lambda **_kwargs: alert_query,
+    )
+
+    assert await observability_v2.retain() == 4 * batch_size
+    assert (run_query.batch_reads, run_query.deleted_batches) == (2, 2)
+    assert (alert_query.batch_reads, alert_query.deleted_batches) == (2, 2)

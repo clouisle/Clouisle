@@ -82,3 +82,32 @@ async def test_maintenance_loop_survives_cycle_errors_and_propagates_shutdown(
         await observability_maintenance.observability_maintenance_loop()
 
     assert cycle.await_count == 2
+
+
+@pytest.mark.parametrize("repaired", [0, 3])
+@pytest.mark.asyncio
+async def test_maintenance_runs_alerts_after_acquiring_leader_lock(
+    monkeypatch, repaired
+):
+    connection = _connection("postgres", acquired=True)
+    monkeypatch.setattr(
+        observability_maintenance, "in_transaction", lambda: _Transaction(connection)
+    )
+    reconcile = AsyncMock(return_value=repaired)
+    alert_rules = AsyncMock()
+    evaluate = AsyncMock()
+    retain = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.observability_v2.reconcile_agent_terminal_summaries", reconcile
+    )
+    monkeypatch.setattr("app.services.observability_v2.alert_rules", alert_rules)
+    monkeypatch.setattr("app.services.observability_v2.evaluate_alert_rules", evaluate)
+    monkeypatch.setattr("app.services.observability_v2.retain", retain)
+
+    acquired = await observability_maintenance.run_maintenance_cycle()
+
+    assert acquired is True
+    reconcile.assert_awaited_once_with(connection)
+    alert_rules.assert_awaited_once_with()
+    evaluate.assert_awaited_once_with()
+    retain.assert_awaited_once_with()
