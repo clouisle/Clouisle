@@ -93,6 +93,43 @@ describe('dashboardApi requests', () => {
     ])
   })
 
+  it('serializes custom bounds for every interval endpoint without losing offsets or microseconds', async () => {
+    const get = spyOn(api, 'get').mockResolvedValue([])
+    const range = { start_time: '2026-10-08T10:00:00.123456+02:00', end_time: '2026-10-09T11:00:00.999999+02:00' }
+    await dashboardApi.getTrends(range)
+    await dashboardApi.getTopAgents({ limit: 4, metric: 'message_count', time_range: range })
+    await dashboardApi.getTeamTokenUsage({ limit: 2, time_range: range })
+    await dashboardApi.getWorkflowSummary({ time_range: range })
+    await dashboardApi.getModelDistribution({ time_range: range })
+
+    const paths = [
+      '/admin/dashboard/stats/trends',
+      '/admin/dashboard/stats/agents/top',
+      '/admin/dashboard/stats/teams/token-usage',
+      '/admin/dashboard/stats/workflows/summary',
+      '/admin/dashboard/stats/models/distribution',
+    ]
+    for (const [index, [url]] of get.mock.calls.entries()) {
+      const [path, query] = String(url).split('?')
+      const params = new URLSearchParams(query)
+      expect(path).toBe(paths[index])
+      expect(params.get(index === 0 ? 'period' : 'time_range')).toBe('custom')
+      expect(params.get('start_time')).toBe(range.start_time)
+      expect(params.get('end_time')).toBe(range.end_time)
+    }
+    expect(new URLSearchParams(String(get.mock.calls[1][0]).split('?')[1]).get('metric')).toBe('message_count')
+    expect(new URLSearchParams(String(get.mock.calls[1][0]).split('?')[1]).get('limit')).toBe('4')
+    expect(new URLSearchParams(String(get.mock.calls[2][0]).split('?')[1]).get('limit')).toBe('2')
+  })
+
+  it('sends an exact one-microsecond interval rather than rounding it to an empty window', async () => {
+    const get = spyOn(api, 'get').mockResolvedValue({})
+    await dashboardApi.getTrends({ start_time: '2026-10-08T10:00:00.123456Z', end_time: '2026-10-08T10:00:00.123457Z' })
+    const params = new URLSearchParams(String(get.mock.calls[0][0]).split('?')[1])
+    expect(params.get('start_time')).toBe('2026-10-08T10:00:00.123456Z')
+    expect(params.get('end_time')).toBe('2026-10-08T10:00:00.123457Z')
+  })
+
   it('preserves a meaningful request failure', async () => {
     const failure = new Error('dashboard stats request failed')
     spyOn(api, 'get').mockRejectedValue(failure)

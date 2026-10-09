@@ -35,7 +35,14 @@
       "30d": "最近30天",
       "90d": "最近90天",
       "all": "全部时间",
-      "custom": "自定义"
+      "custom": "自定义",
+      "label": "时间范围",
+      "pickDate": "选择日期范围",
+      "description": "所选日期按浏览器本地时区覆盖整天。",
+      "invalid": "请选择完整、有效的日期范围。URL 中的时间必须包含时区，且小数秒最多六位。",
+      "apply": "应用",
+      "cancel": "取消",
+      "presets": "快捷区间"
     },
     "actions": {
       "refresh": "刷新",
@@ -163,7 +170,8 @@
       "tabs": { "overview": "概览", "runs": "运行诊断", "dependencies": "模型与工具", "queues": "队列", "infrastructure": "基础设施", "alerts": "告警" },
       "actions": { "refresh": "刷新", "retry": "重试", "apply": "应用", "openIssue": "打开问题", "loadMore": "加载更多", "save": "保存" },
       "filters": { "team": "团队", "teamId": "团队 ID", "period": "时间范围", "source": "来源", "allSources": "所有来源", "status": "状态", "allStatuses": "所有状态", "errorCategory": "错误类别", "runId": "运行 ID", "alertStatus": "告警状态" },
-      "periods": { "15m": "最近 15 分钟", "1h": "最近 1 小时", "24h": "最近 24 小时", "7d": "最近 7 天" },
+      "periods": { "15m": "最近 15 分钟", "1h": "最近 1 小时", "24h": "最近 24 小时", "7d": "最近 7 天", "custom": "自定义时间区间" },
+      "customRange": { "pickDate": "选择日期范围", "presets": "快捷区间", "description": "所选日期按浏览器本地时区覆盖整天。遥测数据保留 30 天。", "invalid": "请选择完整、有效的日期范围。URL 中的时间必须包含时区。", "cancel": "取消" },
       "states": { "loading": "正在加载可观测性数据", "errorDescription": "请检查服务健康状态后重试。", "lastUpdated": "最后更新 {time}", "noSamples": "此视图中没有可用样本。", "unavailableDetail": "此数据源不可用；不会将缺失值伪装为零。" },
       "quality": { "fresh": "新鲜样本 · {samples} 次运行", "partial": "数据覆盖不完整 · {samples} 次运行", "stale": "数据已过期 · 最近样本包含 {samples} 次运行", "unavailable": "可观测性数据不可用", "no_data": "此时间范围内没有样本", "window": "时间范围 {start} – {end}", "lastSample": "最近样本 {time}" },
       "status": {"healthy": "健康", "warning": "警告", "danger": "严重", "unhealthy": "不健康", "unknown": "未知", "success": "成功", "completed": "已完成", "completing": "正在收尾", "failed": "失败", "interrupted": "已中断", "running": "运行中", "stopping": "正在停止", "stopped": "已停止", "waiting": "等待中", "pending": "等待中", "queued": "排队中", "cancelled": "已取消", "timeout": "超时", "error": "错误", "degraded": "降级", "unavailable": "不可用", "stale": "已过期", "offline": "离线"},

@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reduced queue snapshot latency by collecting active tasks, reserved tasks, scheduled tasks, and active queues concurrently with independent Celery inspectors; preserved existing cache and failure behavior.
 - Reduced infrastructure snapshot latency by collecting health probes and slow-query statistics concurrently and shortening Celery reply collection to 0.5 seconds; retained existing probe deadlines, failure behavior, and caching.
 - Added Redis-backed API instance discovery with per-instance reporter leases, host-scoped resource samples, readable names, and stale/offline aging; infrastructure now lists retained instances across backends rather than only the serving process.
+- Added a two-month calendar range picker to observability, with rolling presets at the bottom of its popover, inclusive local-day selection, URL persistence, and consistent UTC filtering for overview, runs, and dependency statistics.
+- Added the same calendar range picker to the dashboard with 7/30/90-day and all-time shortcuts; custom dates consistently filter trends, rankings, model usage, and workflow summaries while fixed cumulative indicators retain their definitions.
 
 
 #### Sandbox Security

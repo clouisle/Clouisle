@@ -51,7 +51,24 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def window(period: str) -> tuple[datetime, datetime]:
+def window(
+    period: str,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+) -> tuple[datetime, datetime]:
+    if period == "custom":
+        if start_time is None or end_time is None:
+            raise ValueError("Custom period requires start_time and end_time")
+        if start_time.utcoffset() is None or end_time.utcoffset() is None:
+            raise ValueError("Custom timestamps must include a timezone")
+        start, end = start_time.astimezone(UTC), end_time.astimezone(UTC)
+        if start >= end:
+            raise ValueError("start_time must be before end_time")
+        return start, end
+    if start_time is not None or end_time is not None:
+        raise ValueError("Explicit timestamps require period=custom")
+    if period not in PERIODS:
+        raise ValueError("Invalid period")
     end = utcnow()
     return end - timedelta(seconds=PERIODS[period]), end
 
@@ -465,8 +482,10 @@ async def list_runs(
     run_id: str | None,
     cursor: str | None,
     limit: int,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
 ) -> dict[str, Any]:
-    start, end = window(period)
+    start, end = window(period, start_time, end_time)
     query = ObservabilityRun.filter(submitted_at__gte=start, submitted_at__lte=end)
     if team_id:
         query = query.filter(team_id=team_id)
@@ -488,7 +507,7 @@ async def list_runs(
         else None
     )
     items = rows[:limit]
-    page_meta = _meta_for(start, end, len(items))
+    page_meta = _meta_for(start, end, len(items), period=period)
     if items:
         page_meta["state"] = "partial"
     return {
@@ -498,9 +517,11 @@ async def list_runs(
     }
 
 
-def _meta_for(start: datetime, end: datetime, count: int) -> dict[str, Any]:
+def _meta_for(
+    start: datetime, end: datetime, count: int, *, period: str | None = None
+) -> dict[str, Any]:
     value = meta(start, end, count)
-    value["period"] = next(
+    value["period"] = period or next(
         (
             key
             for key, seconds in PERIODS.items()
@@ -511,8 +532,13 @@ def _meta_for(start: datetime, end: datetime, count: int) -> dict[str, Any]:
     return value
 
 
-async def _summary_snapshot(period: str, team_id: str | None) -> dict[str, Any]:
-    start, end = window(period)
+async def _summary_snapshot(
+    period: str,
+    team_id: str | None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+) -> dict[str, Any]:
+    start, end = window(period, start_time, end_time)
     query = ObservabilityRun.filter(submitted_at__gte=start, submitted_at__lte=end)
     if team_id:
         query = query.filter(team_id=team_id)
@@ -552,7 +578,7 @@ async def _summary_snapshot(period: str, team_id: str | None) -> dict[str, Any]:
         return result
 
     trend_map: dict[str, list[ObservabilityRun]] = {}
-    seconds = PERIODS[period]
+    seconds = (end - start).total_seconds()
     bucket_s = 60 if seconds <= 3600 else (900 if seconds <= 86400 else 3600)
     for record in records:
         stamp = record.submitted_at.timestamp()
@@ -574,7 +600,7 @@ async def _summary_snapshot(period: str, team_id: str | None) -> dict[str, Any]:
         )
     # Best-effort terminal collection and lack of legacy backfill make samples partial.
     state = "partial" if records else "no_data"
-    metadata = _meta_for(start, end, len(records))
+    metadata = _meta_for(start, end, len(records), period=period)
     metadata["state"] = state
     return {
         "meta": metadata,
@@ -585,9 +611,23 @@ async def _summary_snapshot(period: str, team_id: str | None) -> dict[str, Any]:
     }
 
 
-async def summary(period: str, team_id: str | None) -> dict[str, Any]:
+async def summary(
+    period: str,
+    team_id: str | None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+) -> dict[str, Any]:
+    start, end = window(period, start_time, end_time)
+    bounds = (start, end) if period == "custom" else (None, None)
     return await _cached_snapshot(
-        ("summary", period, team_id), lambda: _summary_snapshot(period, team_id)
+        ("summary", period, team_id, *bounds)
+        if period == "custom"
+        else ("summary", period, team_id),
+        lambda: (
+            _summary_snapshot(period, team_id, *bounds)
+            if period == "custom"
+            else _summary_snapshot(period, team_id)
+        ),
     )
 
 
@@ -741,8 +781,13 @@ async def run_detail(source: str, run_id: UUID) -> dict[str, Any] | None:
     }
 
 
-async def _dependencies_snapshot(period: str, team_id: str | None) -> dict[str, Any]:
-    start, end = window(period)
+async def _dependencies_snapshot(
+    period: str,
+    team_id: str | None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+) -> dict[str, Any]:
+    start, end = window(period, start_time, end_time)
     query = ObservabilityRun.filter(
         submitted_at__gte=start, submitted_at__lte=end
     ).exclude(model_name__isnull=True)
@@ -893,7 +938,7 @@ async def _dependencies_snapshot(period: str, team_id: str | None) -> dict[str, 
             )
         return result
 
-    metadata = _meta_for(start, end, len(rows))
+    metadata = _meta_for(start, end, len(rows), period=period)
     tools = summarize_dependencies(tool_groups)
     retrieval = summarize_dependencies(retrieval_groups)
     metadata["state"] = (
@@ -909,10 +954,23 @@ async def _dependencies_snapshot(period: str, team_id: str | None) -> dict[str, 
     }
 
 
-async def dependencies(period: str, team_id: str | None) -> dict[str, Any]:
+async def dependencies(
+    period: str,
+    team_id: str | None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+) -> dict[str, Any]:
+    start, end = window(period, start_time, end_time)
+    bounds = (start, end) if period == "custom" else (None, None)
     return await _cached_snapshot(
-        ("dependencies", period, team_id),
-        lambda: _dependencies_snapshot(period, team_id),
+        ("dependencies", period, team_id, *bounds)
+        if period == "custom"
+        else ("dependencies", period, team_id),
+        lambda: (
+            _dependencies_snapshot(period, team_id, *bounds)
+            if period == "custom"
+            else _dependencies_snapshot(period, team_id)
+        ),
     )
 
 

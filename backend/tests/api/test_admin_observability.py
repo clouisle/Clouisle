@@ -208,3 +208,97 @@ def test_dependency_read_accepts_unavailable_token_counts(observability_client):
 
     assert response.status_code == 200
     assert response.json()["data"]["tools"][0]["tokens"] is None
+
+
+@pytest.mark.parametrize("endpoint", ["summary", "runs", "dependencies"])
+@pytest.mark.parametrize(
+    "bounds",
+    [
+        {},
+        {"start_time": "2026-10-08T12:00:00Z"},
+        {"end_time": "2026-10-08T13:00:00Z"},
+        {"start_time": "2026-10-08T12:00:00Z", "end_time": "2026-10-08T12:00:00Z"},
+        {"start_time": "2026-10-08T13:00:00Z", "end_time": "2026-10-08T12:00:00Z"},
+        {"start_time": "2026-10-08T12:00:00", "end_time": "2026-10-08T13:00:00Z"},
+        {"start_time": "2026-10-08T12:00:00Z", "end_time": "2026-10-08T13:00:00"},
+    ],
+)
+def test_invalid_custom_window_returns_422(observability_client, endpoint, bounds):
+    client, user = observability_client
+    user.roles = [_Role("admin:dashboard:access")]
+    with patch.object(observability.service.ObservabilityRun, "filter") as query:
+        response = client.get(
+            f"/api/v1/admin/observability/{endpoint}",
+            params={"period": "custom", **bounds},
+        )
+    assert response.status_code == 422
+    query.assert_not_called()
+
+
+@pytest.mark.parametrize("endpoint", ["summary", "runs", "dependencies"])
+def test_custom_window_uses_real_service_and_utc_metadata(
+    observability_client, monkeypatch, endpoint
+):
+    from datetime import UTC, datetime
+
+    client, user = observability_client
+    user.roles = [_Role("admin:dashboard:access")]
+    service = observability.service
+    monkeypatch.setattr(service, "_SNAPSHOT_CACHE", {})
+    monkeypatch.setattr(service, "_SNAPSHOT_INFLIGHT", {})
+
+    class EmptyQuery:
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: self
+
+        def __await__(self):
+            async def resolve():
+                return []
+
+            return resolve().__await__()
+
+    with patch.object(
+        service.ObservabilityRun, "filter", return_value=EmptyQuery()
+    ) as query:
+        response = client.get(
+            f"/api/v1/admin/observability/{endpoint}",
+            params={
+                "period": "custom",
+                "start_time": "2026-10-08T14:00:00+02:00",
+                "end_time": "2026-10-08T15:00:00+02:00",
+            },
+        )
+    assert response.status_code == 200
+    meta = response.json()["data"]["meta"]
+    assert meta["period"] == "custom"
+    assert datetime.fromisoformat(meta["window_start"]) == datetime(
+        2026, 10, 8, 12, tzinfo=UTC
+    )
+    assert datetime.fromisoformat(meta["window_end"]) == datetime(
+        2026, 10, 8, 13, tzinfo=UTC
+    )
+    for invocation in query.call_args_list:
+        assert invocation.kwargs["submitted_at__gte"] == datetime(
+            2026, 10, 8, 12, tzinfo=UTC
+        )
+        assert invocation.kwargs["submitted_at__lte"] == datetime(
+            2026, 10, 8, 13, tzinfo=UTC
+        )
+
+
+@pytest.mark.parametrize("endpoint", ["summary", "runs", "dependencies"])
+@pytest.mark.parametrize("period", ["15m", "1h", "24h", "7d"])
+@pytest.mark.parametrize("bound", ["start_time", "end_time"])
+def test_preset_rejects_explicit_bounds(observability_client, endpoint, period, bound):
+    client, user = observability_client
+    user.roles = [_Role("admin:dashboard:access")]
+    with patch.object(observability.service.ObservabilityRun, "filter") as query:
+        response = client.get(
+            f"/api/v1/admin/observability/{endpoint}",
+            params={
+                "period": period,
+                bound: "2026-10-08T12:00:00Z",
+            },
+        )
+    assert response.status_code == 422
+    query.assert_not_called()

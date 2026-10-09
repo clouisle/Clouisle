@@ -3,15 +3,21 @@
 import * as React from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Activity, AlertTriangle, Bell, Boxes, Check, ChevronDown, ChevronRight, Clock3, Database, ExternalLink, Gauge, RefreshCw, Server, Workflow } from 'lucide-react'
+import { Activity, AlertTriangle, Bell, Boxes, CalendarIcon, Check, ChevronDown, ChevronRight, Clock3, Database, ExternalLink, Gauge, RefreshCw, Server, Workflow } from 'lucide-react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { endOfDay, format, startOfDay } from 'date-fns'
+import { enUS, zhCN } from 'date-fns/locale'
+import type { DateRange } from 'react-day-picker'
 
 import { RoutePermissionGuard } from '@/components/auth/permission-guard'
 import { Header } from '@/components/layout/header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Calendar } from '@/components/ui/calendar'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Field, FieldLabel } from '@/components/ui/field'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Select,
   SelectContent,
@@ -27,18 +33,45 @@ import { observabilityApi, type AlertEvent, type AlertRule, type DependenciesRes
 
 const VIEWS = ['overview', 'runs', 'dependencies', 'queues', 'infrastructure', 'alerts'] as const
 type View = typeof VIEWS[number]
-const PERIODS: ObservabilityPeriod[] = ['15m', '1h', '24h', '7d']
+const PRESETS = ['15m', '1h', '24h'] as const
+
+function customBounds(start: string | null, end: string | null) {
+  const aware = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/i
+  if (!start || !end || !aware.test(start) || !aware.test(end)) return null
+  for (const value of [start, end]) {
+    const calendarDate = value.slice(0, 10)
+    if (new Date(`${calendarDate}T00:00:00Z`).toISOString().slice(0, 10) !== calendarDate) return null
+  }
+  const from = new Date(start), to = new Date(end)
+  if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime())) return null
+  const normalize = (value: string, date: Date) => {
+    const fraction = value.match(/\.(\d+)/)?.[1]
+    return fraction && fraction.length > 3 ? date.toISOString().replace(/\.\d{3}Z$/, `.${fraction}Z`) : date.toISOString()
+  }
+  const start_time = normalize(start, from), end_time = normalize(end, to)
+  const precision = Math.max(start_time.length, end_time.length)
+  const ordered = from < to || (from.getTime() === to.getTime() && start_time.slice(0, -1).padEnd(precision, '0') < end_time.slice(0, -1).padEnd(precision, '0'))
+  return ordered ? { start_time, end_time } : null
+}
 type PageData = SummaryResponse | { runs: RunSummary[]; next_cursor: string | null; meta: ObservabilityMeta } | DependenciesResponse | QueuesResponse | InfrastructureResponse | { alerts: AlertEvent[]; next_cursor: string | null; meta: ObservabilityMeta; rules: AlertRule[] }
 
 export default function ObservabilityPage() {
   const t = useTranslations('dashboard.observability')
   const locale = useLocale()
+  const calendarLocale = locale.startsWith('zh') ? zhCN : enUS
   const router = useRouter()
   const pathname = usePathname()
   const search = useSearchParams()
   const searchString = search.toString()
   const view = (VIEWS as readonly string[]).includes(search.get('tab') ?? '') ? search.get('tab') as View : 'overview'
-  const period = (PERIODS as readonly string[]).includes(search.get('period') ?? '') ? search.get('period') as ObservabilityPeriod : '1h'
+  const period = [...PRESETS, '7d', 'custom'].includes(search.get('period') ?? '') ? search.get('period') as ObservabilityPeriod : '1h'
+  const bounds = period === 'custom' ? customBounds(search.get('start_time'), search.get('end_time')) : null
+  const startTime = bounds?.start_time
+  const endTime = bounds?.end_time
+  const invalidRange = period === 'custom' && !bounds
+  const [rangeOpen, setRangeOpen] = React.useState(false)
+  const [rangeDraft, setRangeDraft] = React.useState<DateRange | undefined>()
+  const validDraft = Boolean(rangeDraft?.from && rangeDraft.to && Number.isFinite(rangeDraft.from.getTime()) && Number.isFinite(rangeDraft.to.getTime()) && startOfDay(rangeDraft.from) <= startOfDay(rangeDraft.to))
   const teamId = search.get('team_id') ?? ''
   const [teamDraft, setTeamDraft] = React.useState(teamId)
   const [data, setData] = React.useState<PageData | null>(null)
@@ -78,7 +111,22 @@ export default function ObservabilityPage() {
   }, [pathname, router, searchString])
   React.useEffect(() => setTeamDraft(teamId), [teamId])
 
+  const openRange = () => {
+    const meta = data && 'meta' in data ? data.meta : null
+    const end = bounds ? new Date(bounds.end_time) : meta ? new Date(meta.window_end) : new Date()
+    const duration = period === '15m' ? 900000 : period === '24h' ? 86400000 : period === '7d' ? 604800000 : 3600000
+    const start = bounds ? new Date(bounds.start_time) : meta ? new Date(meta.window_start) : new Date(end.getTime() - duration)
+    setRangeDraft(invalidRange ? undefined : { from: start, to: end })
+    setRangeOpen(true)
+  }
+  const applyRange = () => {
+    if (!validDraft || !rangeDraft?.from || !rangeDraft.to) return
+    updateQuery({ period: 'custom', start_time: startOfDay(rangeDraft.from).toISOString(), end_time: endOfDay(rangeDraft.to).toISOString().replace('.999Z', '.999999Z') })
+    setRangeOpen(false)
+  }
+
   const load = React.useCallback(async (manual = false) => {
+    if (invalidRange && (view === 'overview' || view === 'runs' || view === 'dependencies')) { setLoading(false); return }
     if (busy.current) { pendingLoad.current = true; return }
     if (document.visibilityState === 'hidden' && !manual) return
     busy.current = true
@@ -87,11 +135,11 @@ export default function ObservabilityPage() {
     setError(false)
     try {
       let result: PageData
-      if (view === 'overview') result = await observabilityApi.getSummary({ period, team_id: teamId || undefined })
+      if (view === 'overview') result = await observabilityApi.getSummary({ period, ...(startTime && endTime ? { start_time: startTime, end_time: endTime } : {}), team_id: teamId || undefined })
       else if (view === 'runs') {
-        const response = await observabilityApi.getRuns({ period, team_id: teamId || undefined, source: runFilter.source as 'all' | 'agent' | 'workflow', status: runFilter.status || undefined, error_category: runFilter.error_category || undefined, run_id: runFilter.run_id || undefined, cursor: cursorRef.current, limit: 25 })
+        const response = await observabilityApi.getRuns({ period, ...(startTime && endTime ? { start_time: startTime, end_time: endTime } : {}), team_id: teamId || undefined, source: runFilter.source as 'all' | 'agent' | 'workflow', status: runFilter.status || undefined, error_category: runFilter.error_category || undefined, run_id: runFilter.run_id || undefined, cursor: cursorRef.current, limit: 25 })
         result = { runs: response.items, next_cursor: response.next_cursor, meta: response.meta }
-      } else if (view === 'dependencies') result = await observabilityApi.getDependencies({ period, team_id: teamId || undefined })
+      } else if (view === 'dependencies') result = await observabilityApi.getDependencies({ period, ...(startTime && endTime ? { start_time: startTime, end_time: endTime } : {}), team_id: teamId || undefined })
       else if (view === 'queues') result = await observabilityApi.getQueues()
       else if (view === 'infrastructure') result = await observabilityApi.getInfrastructure()
       else {
@@ -110,7 +158,7 @@ export default function ObservabilityPage() {
       busy.current = false
       if (pendingLoad.current) { pendingLoad.current = false; window.setTimeout(() => loadRef.current?.(), 0) }
     }
-  }, [alertStatus, period, runFilter, teamId, view])
+  }, [alertStatus, period, startTime, endTime, invalidRange, runFilter, teamId, view])
 
   const refresh = React.useCallback((manual = false) => {
     requestId.current++
@@ -195,10 +243,29 @@ export default function ObservabilityPage() {
           <div><label className="sr-only" htmlFor="obs-team">{t('filters.team')}</label><Input id="obs-team" value={teamDraft} onChange={(event) => setTeamDraft(event.target.value)} placeholder={t('filters.teamId')} className="w-48"/></div>
           <Button variant="outline" type="submit" disabled={loading || teamDraft.trim() === teamId}>{t('actions.apply')}</Button>
         </form>
-        <Select value={period} onValueChange={(value) => value && updateQuery({ period: value })}>
-          <SelectTrigger aria-label={t('filters.period')} className="w-36"><SelectValue>{t(`periods.${period}`)}</SelectValue></SelectTrigger>
-          <SelectContent>{PERIODS.map((value) => <SelectItem key={value} value={value}>{t(`periods.${value}`)}</SelectItem>)}</SelectContent>
-        </Select>
+        <Field className="w-auto gap-1.5">
+          <FieldLabel htmlFor="obs-range" className="sr-only">{t('filters.period')}</FieldLabel>
+          <Popover open={rangeOpen} onOpenChange={(open) => { if (open) openRange(); else setRangeOpen(false) }}>
+            <PopoverTrigger render={<Button id="obs-range" variant="outline" className="w-auto justify-start font-normal" aria-invalid={invalidRange} />}>
+              <CalendarIcon className="mr-2 h-4 w-4" />
+              {bounds ? `${format(new Date(bounds.start_time), 'PPP', { locale: calendarLocale })} – ${format(new Date(bounds.end_time), 'PPP', { locale: calendarLocale })}` : period === 'custom' ? t('customRange.pickDate') : t(`periods.${period}`)}
+            </PopoverTrigger>
+            <PopoverContent className="w-auto max-w-[calc(100vw-2rem)] overflow-x-auto p-0" align="end" aria-describedby="obs-range-description">
+              <p id="obs-range-description" className="px-4 pt-4 text-sm text-muted-foreground">{t('customRange.description')}</p>
+              <Calendar mode="range" selected={rangeDraft} onSelect={setRangeDraft} defaultMonth={rangeDraft?.from} numberOfMonths={2} locale={calendarLocale} />
+              {rangeDraft?.from && !validDraft && <p role="alert" className="px-4 text-sm text-destructive">{t('customRange.invalid')}</p>}
+              <div className="flex justify-end gap-2 px-4 pb-4">
+                <Button type="button" variant="outline" onClick={() => setRangeOpen(false)}>{t('customRange.cancel')}</Button>
+                <Button type="button" onClick={applyRange} disabled={!validDraft}>{t('actions.apply')}</Button>
+              </div>
+              <div className="space-y-2 border-t p-4">
+                <p className="text-xs font-medium text-muted-foreground">{t('customRange.presets')}</p>
+                <div className="flex flex-wrap gap-2">{PRESETS.map((value) => <Button key={value} type="button" variant={period === value ? 'secondary' : 'outline'} size="sm" onClick={() => { updateQuery({ period: value, start_time: null, end_time: null }); setRangeOpen(false) }}>{t(`periods.${value}`)}</Button>)}</div>
+              </div>
+            </PopoverContent>
+          </Popover>
+          {invalidRange && <p role="alert" className="text-sm text-destructive">{t('customRange.invalid')}</p>}
+        </Field>
         <Button variant="outline" onClick={() => void refresh(true)} disabled={loading}><RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />{t('actions.refresh')}</Button>
       </div>
     </header>

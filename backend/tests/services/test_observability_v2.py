@@ -607,7 +607,9 @@ async def test_run_page_fetches_only_one_extra_row_and_encodes_next_cursor(monke
     query.limit.return_value = query
     bounded = AsyncMock(return_value=rows)
     monkeypatch.setattr(
-        observability_v2, "window", lambda _period: (start, submitted_at)
+        observability_v2,
+        "window",
+        lambda _period, _start=None, _end=None: (start, submitted_at),
     )
     monkeypatch.setattr(
         observability_v2.ObservabilityRun,
@@ -642,7 +644,9 @@ async def test_summary_caps_database_sample_and_marks_partial(monkeypatch):
     query.order_by.return_value = query
     query.limit.return_value = query
     monkeypatch.setattr(observability_v2, "DB_QUERY_LIMIT", 2)
-    monkeypatch.setattr(observability_v2, "window", lambda _period: (start, end))
+    monkeypatch.setattr(
+        observability_v2, "window", lambda _period, _start=None, _end=None: (start, end)
+    )
     monkeypatch.setattr(
         observability_v2.ObservabilityRun,
         "filter",
@@ -978,7 +982,9 @@ async def test_run_page_applies_all_filters_and_keyset_cursor(monkeypatch):
     query.limit.return_value = query
     run_bounded = AsyncMock(return_value=[])
     cursor = _encode_cursor(start, "run-0")
-    monkeypatch.setattr(observability_v2, "window", lambda _period: (start, end))
+    monkeypatch.setattr(
+        observability_v2, "window", lambda _period, _start=None, _end=None: (start, end)
+    )
     monkeypatch.setattr(
         observability_v2.ObservabilityRun, "filter", MagicMock(return_value=query)
     )
@@ -1053,7 +1059,7 @@ async def test_dependencies_snapshot_filters_team_and_ignores_malformed_rows(
     monkeypatch.setattr(
         observability_v2,
         "window",
-        lambda _period: (
+        lambda _period, _start=None, _end=None: (
             datetime(2026, 10, 8, tzinfo=UTC),
             datetime(2026, 10, 9, tzinfo=UTC),
         ),
@@ -1588,7 +1594,9 @@ async def test_summary_snapshot_applies_team_filter_before_aggregation(monkeypat
     end = start + timedelta(hours=1)
     query = _AwaitableQuery([])
     run_bounded = AsyncMock(return_value=[])
-    monkeypatch.setattr(observability_v2, "window", lambda _period: (start, end))
+    monkeypatch.setattr(
+        observability_v2, "window", lambda _period, _start=None, _end=None: (start, end)
+    )
     monkeypatch.setattr(
         observability_v2.ObservabilityRun, "filter", MagicMock(return_value=query)
     )
@@ -1997,3 +2005,160 @@ async def test_queue_snapshot_collects_overlapping_replies_without_mixing_worker
     assert worker["scheduled_tasks"] == 1
     consumers = {row["name"]: row["consumers"] for row in result["queues"]}
     assert consumers["agent"] == consumers["sandbox.worker.parallel"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["summary", "dependencies", "list_runs"])
+async def test_custom_windows_filter_boundaries_and_cache_by_utc(
+    monkeypatch, operation
+):
+    start = datetime(2026, 10, 8, 12, tzinfo=UTC)
+    end = start + timedelta(hours=1)
+    timestamps = [
+        start - timedelta(microseconds=1),
+        start,
+        end,
+        end + timedelta(microseconds=1),
+    ]
+    rows = [
+        SimpleNamespace(
+            id=uuid4(),
+            source="agent",
+            resource_id=None,
+            resource_name=None,
+            team_id=None,
+            team_name=None,
+            status="completed",
+            submitted_at=stamp,
+            started_at=None,
+            message_started_at=None,
+            finished_at=None,
+            queue_duration_ms=None,
+            execution_duration_ms=10,
+            total_duration_ms=10,
+            first_token_ms=2,
+            total_tokens=5,
+            error_category=None,
+            error_code=None,
+            trace_available=False,
+            trace_complete=False,
+            model_name="provider/model",
+            dependency_metrics=[
+                {
+                    "kind": "tool",
+                    "name": "http",
+                    "status": "completed",
+                    "duration_ms": 1,
+                }
+            ],
+        )
+        for stamp in timestamps
+    ]
+
+    class Query(_AwaitableQuery):
+        def exclude(self, **kwargs):
+            return self
+
+        def values(self, *fields):
+            self.rows = [
+                {field: getattr(row, field) for field in fields} for row in self.rows
+            ]
+            return self
+
+    calls = []
+
+    def filtered(**kwargs):
+        calls.append(kwargs)
+        selected = [
+            row
+            for row in rows
+            if kwargs["submitted_at__gte"]
+            <= row.submitted_at
+            <= kwargs["submitted_at__lte"]
+        ]
+        if "source" in kwargs:
+            selected = [row for row in selected if row.source == kwargs["source"]]
+        return Query(sorted(selected, key=lambda row: row.submitted_at, reverse=True))
+
+    monkeypatch.setattr(observability_v2.ObservabilityRun, "filter", filtered)
+    monkeypatch.setattr(observability_v2, "_SNAPSHOT_CACHE", {})
+    monkeypatch.setattr(observability_v2, "_SNAPSHOT_INFLIGHT", {})
+
+    async def invoke(left, right):
+        kwargs = {
+            "period": "custom",
+            "team_id": None,
+            "start_time": left,
+            "end_time": right,
+        }
+        if operation == "list_runs":
+            kwargs.update(
+                source="all",
+                status=None,
+                error_category=None,
+                run_id=None,
+                cursor=None,
+                limit=25,
+            )
+        return await getattr(observability_v2, operation)(**kwargs)
+
+    result = await invoke(start, end)
+    assert result["meta"]["period"] == "custom"
+    assert result["meta"]["window_start"] == start.isoformat()
+    assert result["meta"]["window_end"] == end.isoformat()
+    assert result["meta"]["sample_count"] == 2
+    if operation == "summary":
+        assert result["agents"]["submitted"] == 2
+        assert result["agents"]["tokens"] == 10
+        assert len(result["trend"]) == 2
+    elif operation == "dependencies":
+        assert result["models"][0]["requests"] == 2
+        assert result["tools"][0]["requests"] == 2
+    else:
+        assert {item["submitted_at"] for item in result["items"]} == {
+            start.isoformat(),
+            end.isoformat(),
+        }
+    from datetime import timezone
+
+    offset = timezone(timedelta(hours=2))
+    count = len(calls)
+    equivalent = await invoke(start.astimezone(offset), end.astimezone(offset))
+    assert equivalent["meta"]["sample_count"] == 2
+    if operation != "list_runs":
+        assert len(calls) == count
+        assert len(observability_v2._SNAPSHOT_CACHE) == 1
+    other = await invoke(end + timedelta(microseconds=1), end + timedelta(hours=1))
+    assert other["meta"]["sample_count"] == 1
+    if operation != "list_runs":
+        assert len(observability_v2._SNAPSHOT_CACHE) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "span,expected",
+    [(timedelta(hours=1), 2), (timedelta(days=1), 1), (timedelta(days=2), 1)],
+)
+async def test_custom_trend_bucket_size_uses_actual_span(monkeypatch, span, expected):
+    start = datetime(2026, 10, 8, 12, tzinfo=UTC)
+    rows = [
+        SimpleNamespace(
+            submitted_at=start + timedelta(minutes=minute),
+            source="agent",
+            status="completed",
+            total_duration_ms=10,
+            first_token_ms=1,
+            total_tokens=2,
+        )
+        for minute in (3, 4)
+    ]
+    monkeypatch.setattr(
+        observability_v2.ObservabilityRun,
+        "filter",
+        lambda **kwargs: _AwaitableQuery(rows),
+    )
+    result = await observability_v2._summary_snapshot(
+        "custom", None, start, start + span
+    )
+    assert len(result["trend"]) == expected
+    assert sum(bucket["submitted"] for bucket in result["trend"]) == 2

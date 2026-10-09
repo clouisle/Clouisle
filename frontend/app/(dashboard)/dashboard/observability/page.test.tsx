@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
 import React from 'react'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
+import { format } from 'date-fns'
+import { enUS, zhCN } from 'date-fns/locale'
+import type { DateRange } from 'react-day-picker'
 import type { DependenciesResponse, InfrastructureResponse, RunDetailResponse } from '@/lib/api/admin/observability'
 import enDashboard from '@/i18n/en/dashboard.json'
 import zhDashboard from '@/i18n/zh/dashboard.json'
 const agentRunStatuses = ['queued', 'running', 'stopping', 'completing', 'completed', 'stopped', 'failed', 'interrupted', 'waiting'] as const
 let instanceLocale: 'en' | 'zh' | null = null
 const translate = Object.assign((key: string) => {
-  if (instanceLocale && (key.startsWith('infrastructure.') || key === 'status.stale' || key === 'status.offline' || key === 'status.healthy')) {
+  if (instanceLocale && (key.startsWith('infrastructure.') || key.startsWith('periods.') || key.startsWith('customRange.') || key === 'status.stale' || key === 'status.offline' || key === 'status.healthy')) {
     const messages = instanceLocale === 'en' ? enDashboard : zhDashboard
     return key.split('.').reduce<unknown>((value, part) => (value as Record<string, unknown>)[part], messages.dashboard.observability) as string
   }
@@ -36,7 +39,7 @@ const getAlertRules = mock(async () => ([{ id: 'rule-1', name: 'Failure rate', t
 const acknowledgeAlert = mock(async () => alert)
 const silenceAlert = mock(async () => alert)
 const updateAlertRule = mock(async () => ({ id: 'rule-1', name: 'Failure rate', threshold: 0.7, enabled: true, evaluation_window_seconds: 300, recovery_window_seconds: 600, updated_at: null }))
-const replace = mock(() => {})
+const replace = mock<(url: string, options: { scroll: boolean }) => void>(() => {})
 let params = new URLSearchParams('tab=overview&keep=retained')
 
 Object.assign(globalThis, {
@@ -44,11 +47,11 @@ Object.assign(globalThis, {
   document: { visibilityState: 'visible', addEventListener: () => {}, removeEventListener: () => {} },
 })
 
-mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => translate }))
+mock.module('next-intl', () => ({ useLocale: () => instanceLocale ?? 'en', useTranslations: () => translate }))
 mock.module('next/navigation', () => ({ usePathname: () => '/dashboard/observability', useRouter: () => ({ replace }), useSearchParams: () => params }))
 mock.module('lucide-react', () => {
   const Icon = () => null
-  return { Activity: Icon, AlertTriangle: Icon, Bell: Icon, Boxes: Icon, Check: Icon, ChevronDown: Icon, ChevronRight: Icon, Clock3: Icon, Database: Icon, ExternalLink: Icon, Gauge: Icon, RefreshCw: Icon, Server: Icon, Workflow: Icon }
+  return { Activity: Icon, AlertTriangle: Icon, Bell: Icon, Boxes: Icon, CalendarIcon: Icon, Check: Icon, ChevronDown: Icon, ChevronRight: Icon, Clock3: Icon, Database: Icon, ExternalLink: Icon, Gauge: Icon, RefreshCw: Icon, Server: Icon, Workflow: Icon }
 })
 mock.module('recharts', () => {
   const Chart = ({ children }: React.PropsWithChildren) => <div>{children}</div>
@@ -61,14 +64,29 @@ mock.module('@/components/ui/badge', () => ({ Badge: ({ children }: React.PropsW
 mock.module('@/components/ui/button', () => ({ Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button> }))
 mock.module('@/components/ui/card', () => ({ Card: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>, CardContent: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>, CardDescription: ({ children }: React.PropsWithChildren) => <p>{children}</p>, CardHeader: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>, CardTitle: ({ children }: React.PropsWithChildren) => <h2>{children}</h2> }))
 mock.module('@/components/ui/sheet', () => ({ Sheet: ({ open, children, onOpenChange }: React.PropsWithChildren<{ open: boolean; onOpenChange: (open: boolean) => void }>) => open ? <div><button aria-label="close-run-detail" onClick={() => onOpenChange(false)}/>{children}</div> : null, SheetContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>, SheetDescription: ({ children }: React.PropsWithChildren) => <p>{children}</p>, SheetHeader: ({ children }: React.PropsWithChildren) => <div>{children}</div>, SheetTitle: ({ children }: React.PropsWithChildren) => <h2>{children}</h2> }))
+mock.module('@/components/ui/field', () => ({ Field: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>, FieldLabel: ({ children, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) => <label {...props}>{children}</label> }))
+const RangePopoverContext = React.createContext<{ open: boolean; onOpenChange: (open: boolean) => void }>({ open: false, onOpenChange: () => {} })
+mock.module('@/components/ui/popover', () => ({
+  Popover: ({ children, open, onOpenChange }: React.PropsWithChildren<{ open: boolean; onOpenChange: (open: boolean) => void }>) => <RangePopoverContext.Provider value={{ open, onOpenChange }}>{children}</RangePopoverContext.Provider>,
+  PopoverTrigger: ({ children, render }: React.PropsWithChildren<{ render: React.ReactElement<React.ButtonHTMLAttributes<HTMLButtonElement>> }>) => {
+    const { open, onOpenChange } = React.useContext(RangePopoverContext)
+    return React.cloneElement(render, { onClick: () => onOpenChange(!open) }, children)
+  },
+  PopoverContent: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => {
+    const { open, onOpenChange } = React.useContext(RangePopoverContext)
+    return open ? <div data-range-popover {...props}><button aria-label="dismiss-range" onClick={() => onOpenChange(false)} />{children}</div> : null
+  },
+}))
+const MockCalendar: React.FC<{ selected?: DateRange; onSelect: (range?: DateRange) => void; defaultMonth?: Date; numberOfMonths: number; locale: { code?: string } }> = () => <div data-calendar-range />
+mock.module('@/components/ui/calendar', () => ({ Calendar: MockCalendar }))
 mock.module('@/components/ui/tabs', () => ({ Tabs: ({ children }: React.PropsWithChildren) => <div>{children}</div>, TabsList: ({ children }: React.PropsWithChildren) => <div>{children}</div>, TabsTrigger: ({ children }: React.PropsWithChildren<{ value: string }>) => <button>{children}</button> }))
 
 mock.module('@/components/ui/input', () => ({
   Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
 }))
 mock.module('@/components/ui/select', () => ({
-  Select: ({ children, value }: React.PropsWithChildren<{ value?: string | number | null }>) => (
-    <div data-select-root data-selected-value={value == null ? '' : String(value)}>{children}</div>
+  Select: ({ children, value, onValueChange }: React.PropsWithChildren<{ value?: string | number | null; onValueChange?: (value: string) => void }>) => (
+    <div data-select-root data-selected-value={value == null ? '' : String(value)} onValueChange={onValueChange}>{children}</div>
   ),
   SelectTrigger: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
     <button data-slot="select-trigger" {...props}>{children}</button>
@@ -77,8 +95,8 @@ mock.module('@/components/ui/select', () => ({
     <span data-slot="select-value">{children}</span>
   ),
   SelectContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
-  SelectItem: ({ children, value }: React.PropsWithChildren<{ value: string }>) => (
-    <div role="option" aria-selected={false} data-value={value}>{children}</div>
+  SelectItem: ({ children, value, onClick }: React.PropsWithChildren<{ value: string; onClick?: () => void }>) => (
+    <div role="option" aria-selected={false} data-value={value} onClick={onClick}>{children}</div>
   ),
 }))
 mock.module('@/lib/chart-theme', () => ({ CHART_AXIS_COLOR: '#666', CHART_COLOR_ORDER: ['#123', '#456'], CHART_GRID_COLOR: '#ddd', CHART_HOVER_CURSOR: {}, CHART_TOOLTIP_STYLE: {} }))
@@ -126,15 +144,21 @@ test('renders the completing label and falls back safely for an unknown status',
 })
 
 
-test('shows the translated period label in both the select trigger and options', async () => {
+test('opens the labeled range field with current window dates and only three footer presets', async () => {
   const renderer = await render()
-  const periodSelect = renderer.root.findAllByProps({ 'data-select-root': true }).find(
-    (select) => select.props['data-selected-value'] === '1h',
-  )
-  expect(periodSelect).toBeDefined()
-  const trigger = periodSelect!.findByProps({ 'aria-label': 'filters.period' })
-  expect(trigger.findByProps({ 'data-slot': 'select-value' }).children).toContain('periods.1h')
-  expect(periodSelect!.findByProps({ role: 'option', 'data-value': '1h' }).children).toContain('periods.1h')
+  expect(renderer.root.findAllByType('label').find((node) => node.props.htmlFor === 'obs-range')!.children).toContain('filters.period')
+  expect(rangeTrigger(renderer).children).toContain('periods.1h')
+  expect(renderer.root.findAllByProps({ 'aria-label': 'filters.period' })).toHaveLength(0)
+  openRange(renderer)
+  expect(calendar(renderer).props.selected.from.toISOString()).toBe(new Date(meta.window_start).toISOString())
+  expect(calendar(renderer).props.selected.to.toISOString()).toBe(new Date(meta.window_end).toISOString())
+  expect(calendar(renderer).props.defaultMonth.toISOString()).toBe(new Date(meta.window_start).toISOString())
+  expect(calendar(renderer).props.numberOfMonths).toBe(2)
+  expect(calendar(renderer).props.mode).toBe('range')
+  const footer = rangePopover(renderer).findAllByType('div').find((node) => node.props.className === 'space-y-2 border-t p-4')!
+  expect(footer.findAllByType('button').map((node) => node.children.join(''))).toEqual(['periods.15m', 'periods.1h', 'periods.24h'])
+  expect(getSummary).toHaveBeenCalledTimes(1)
+  expect(replace).not.toHaveBeenCalled()
   act(() => renderer.unmount())
 })
 
@@ -326,6 +350,250 @@ for (const locale of ['en', 'zh'] as const) {
       expect(paragraphs.includes(messages.infrastructure.retainedSample)).toBe(state !== 'healthy')
       expect(card.findAllByType('span').some((node) => node.children.join('').includes(`${27.5 + index}%`))).toBe(true)
     }
+    act(() => renderer.unmount())
+  })
+}
+
+function rangeTrigger(renderer: ReactTestRenderer) {
+  return renderer.root.findAllByType('button').find((node) => node.props.id === 'obs-range')!
+}
+
+function rangePopover(renderer: ReactTestRenderer) {
+  return renderer.root.findByProps({ 'data-range-popover': true })
+}
+
+function calendar(renderer: ReactTestRenderer) {
+  return renderer.root.findByType(MockCalendar)
+}
+
+function openRange(renderer: ReactTestRenderer) {
+  act(() => rangeTrigger(renderer).props.onClick())
+}
+
+function selectRange(renderer: ReactTestRenderer, selected?: DateRange) {
+  act(() => calendar(renderer).props.onSelect(selected))
+}
+
+function rangeButton(renderer: ReactTestRenderer, label: string) {
+  return rangePopover(renderer).findAllByType('button').find((node) => node.children.includes(label))!
+}
+
+function appliedQuery() {
+  return new URLSearchParams(String(replace.mock.calls.at(-1)![0]).split('?')[1])
+}
+
+async function navigate(renderer: ReactTestRenderer, query: URLSearchParams) {
+  params = query
+  await act(async () => { renderer.update(<ObservabilityPage />); await Promise.resolve() })
+}
+
+test('partial and invalid drafts block apply; cancel and dismiss preserve applied queries and reopen current dates', async () => {
+  const renderer = await render()
+  openRange(renderer)
+  const from = new Date(2026, 9, 8), to = new Date(2026, 9, 10)
+  for (const draft of [undefined, { from }, { from: new Date(NaN), to }, { from: to, to: from }]) {
+    selectRange(renderer, draft)
+    expect(rangeButton(renderer, 'actions.apply').props.disabled).toBe(true)
+    act(() => rangeButton(renderer, 'actions.apply').props.onClick())
+    expect(replace).not.toHaveBeenCalled()
+  }
+  selectRange(renderer, { from, to })
+  expect(rangeButton(renderer, 'actions.apply').props.disabled).toBe(false)
+  expect(getSummary).toHaveBeenCalledTimes(1)
+  expect(replace).not.toHaveBeenCalled()
+  act(() => rangeButton(renderer, 'customRange.cancel').props.onClick())
+  expect(renderer.root.findAllByProps({ 'data-range-popover': true })).toHaveLength(0)
+  openRange(renderer)
+  expect(calendar(renderer).props.selected.from.toISOString()).toBe(new Date(meta.window_start).toISOString())
+  expect(calendar(renderer).props.selected.to.toISOString()).toBe(new Date(meta.window_end).toISOString())
+  selectRange(renderer, { from, to })
+  act(() => renderer.root.findByProps({ 'aria-label': 'dismiss-range' }).props.onClick())
+  expect(getSummary).toHaveBeenCalledTimes(1)
+  expect(replace).not.toHaveBeenCalled()
+  expect(params.toString()).toBe('tab=overview&keep=retained')
+  openRange(renderer)
+  expect(calendar(renderer).props.selected.from.toISOString()).toBe(new Date(meta.window_start).toISOString())
+  act(() => renderer.unmount())
+})
+
+test('applies inclusive whole local days only after Apply and reopens the actual persisted bounds', async () => {
+  const renderer = await render()
+  openRange(renderer)
+  selectRange(renderer, { from: new Date(2026, 9, 8, 14, 30), to: new Date(2026, 9, 10, 8, 45) })
+  expect(getSummary).toHaveBeenCalledTimes(1)
+  expect(replace).not.toHaveBeenCalled()
+  act(() => rangeButton(renderer, 'actions.apply').props.onClick())
+  expect(renderer.root.findAllByProps({ 'data-range-popover': true })).toHaveLength(0)
+  const applied = appliedQuery()
+  const expected = { period: 'custom', start_time: new Date(2026, 9, 8).toISOString(), end_time: new Date(2026, 9, 10, 23, 59, 59, 999).toISOString().replace('.999Z', '.999999Z'), team_id: undefined }
+  expect(applied.get('keep')).toBe('retained')
+  expect(applied.get('tab')).toBe('overview')
+  expect(applied.get('start_time')).toBe(expected.start_time)
+  expect(applied.get('end_time')).toBe(expected.end_time)
+  expect(getSummary).toHaveBeenCalledTimes(1)
+  await navigate(renderer, applied)
+  expect(getSummary).toHaveBeenLastCalledWith(expected)
+  openRange(renderer)
+  expect(calendar(renderer).props.selected.from.toISOString()).toBe(expected.start_time)
+  expect(calendar(renderer).props.selected.to.toISOString()).toBe(new Date(expected.end_time).toISOString())
+  selectRange(renderer, { from: new Date(2026, 9, 1), to: new Date(2026, 9, 2) })
+  act(() => rangeButton(renderer, 'customRange.cancel').props.onClick())
+  expect(getSummary).toHaveBeenCalledTimes(2)
+  expect(params.get('end_time')).toBe(expected.end_time)
+  act(() => renderer.unmount())
+})
+
+for (const scenario of [
+  { month: 2, day: 8, hours: 23, start: '2026-03-08T05:00:00.000Z', end: '2026-03-09T03:59:59.999999Z' },
+  { month: 10, day: 1, hours: 25, start: '2026-11-01T04:00:00.000Z', end: '2026-11-02T04:59:59.999999Z' },
+  { month: 9, day: 8, hours: 24, start: '2026-10-08T04:00:00.000Z', end: '2026-10-09T03:59:59.999999Z' },
+]) {
+  test(`same-day selection includes every microsecond across a ${scenario.hours}-hour local day`, async () => {
+    const originalTimezone = process.env.TZ
+    process.env.TZ = 'America/New_York'
+    let renderer: ReactTestRenderer | undefined
+    try {
+      renderer = await render()
+      openRange(renderer)
+      const day = new Date(2026, scenario.month, scenario.day, 12)
+      selectRange(renderer, { from: day, to: day })
+      expect(rangeButton(renderer, 'actions.apply').props.disabled).toBe(false)
+      act(() => rangeButton(renderer!, 'actions.apply').props.onClick())
+      const query = appliedQuery()
+      expect(query.get('start_time')).toBe(scenario.start)
+      expect(query.get('end_time')).toBe(scenario.end)
+      expect((new Date(scenario.end).getTime() + 1 - new Date(scenario.start).getTime()) / 3600000).toBe(scenario.hours)
+      await navigate(renderer, query)
+      expect(getSummary).toHaveBeenLastCalledWith({ period: 'custom', start_time: scenario.start, end_time: scenario.end, team_id: undefined })
+    } finally {
+      if (renderer) act(() => renderer!.unmount())
+      if (originalTimezone === undefined) delete process.env.TZ
+      else process.env.TZ = originalTimezone
+    }
+  })
+}
+
+test('restored custom bounds survive tabs, paging and refresh; calendar apply resets paging; preset removes bounds', async () => {
+  params = new URLSearchParams('period=custom&start_time=2026-10-08T10:00:00%2B02:00&end_time=2026-10-08T11:00:00%2B02:00&team_id=team-1&keep=retained')
+  const expected = { period: 'custom', start_time: '2026-10-08T08:00:00.000Z', end_time: '2026-10-08T09:00:00.000Z', team_id: 'team-1' }
+  const renderer = await render()
+  expect(getSummary).toHaveBeenLastCalledWith(expected)
+  const query = new URLSearchParams(params)
+  query.set('tab', 'dependencies')
+  await navigate(renderer, new URLSearchParams(query))
+  expect(getDependencies).toHaveBeenLastCalledWith(expected)
+  query.set('tab', 'runs')
+  await navigate(renderer, new URLSearchParams(query))
+  expect(getRuns).toHaveBeenLastCalledWith(expect.objectContaining({ ...expected, cursor: undefined }))
+  getRuns.mockResolvedValueOnce({ items: [{ ...run, run_id: 'older-run', resource_name: 'Older run' }], next_cursor: 'tail-cursor', meta })
+  await act(async () => { renderer.root.findAllByType('button').find((node) => node.children.includes('actions.loadMore'))!.props.onClick(); await Promise.resolve() })
+  expect(getRuns).toHaveBeenLastCalledWith(expect.objectContaining({ ...expected, cursor: 'opaque-cursor' }))
+  expect(renderer.root.findAllByType('tr')).toHaveLength(3)
+  await act(async () => { renderer.root.findAllByType('button').find((node) => node.children.includes('actions.refresh'))!.props.onClick(); await Promise.resolve() })
+  expect(getRuns).toHaveBeenLastCalledWith(expect.objectContaining({ ...expected, cursor: undefined }))
+  expect(renderer.root.findAllByType('tr')).toHaveLength(2)
+  getRuns.mockResolvedValueOnce({ items: [{ ...run, run_id: 'older-run', resource_name: 'Older run' }], next_cursor: 'tail-cursor', meta })
+  await act(async () => { renderer.root.findAllByType('button').find((node) => node.children.includes('actions.loadMore'))!.props.onClick(); await Promise.resolve() })
+  expect(getRuns).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: 'opaque-cursor' }))
+  const requests = getRuns.mock.calls.length
+  openRange(renderer)
+  selectRange(renderer, { from: new Date(2026, 9, 7), to: new Date(2026, 9, 8) })
+  expect(getRuns).toHaveBeenCalledTimes(requests)
+  expect(renderer.root.findAllByType('tr')).toHaveLength(3)
+  act(() => rangeButton(renderer, 'actions.apply').props.onClick())
+  const custom = appliedQuery()
+  await navigate(renderer, custom)
+  expect(getRuns).toHaveBeenLastCalledWith(expect.objectContaining({ period: 'custom', start_time: custom.get('start_time'), end_time: custom.get('end_time'), team_id: 'team-1', cursor: undefined }))
+  expect(renderer.root.findAllByType('tr')).toHaveLength(2)
+  expect(renderer.root.findAllByType('td').some((node) => node.children.includes('Older run'))).toBe(false)
+  openRange(renderer)
+  act(() => rangeButton(renderer, 'periods.24h').props.onClick())
+  const preset = appliedQuery()
+  expect(preset.get('period')).toBe('24h')
+  expect(preset.has('start_time')).toBe(false)
+  expect(preset.has('end_time')).toBe(false)
+  expect(preset.get('team_id')).toBe('team-1')
+  expect(preset.get('tab')).toBe('runs')
+  expect(preset.get('keep')).toBe('retained')
+  expect(renderer.root.findAllByProps({ 'data-range-popover': true })).toHaveLength(0)
+  await navigate(renderer, preset)
+  expect(getRuns).toHaveBeenLastCalledWith(expect.objectContaining({ period: '24h', cursor: undefined, team_id: 'team-1' }))
+  const lastRequest = (getRuns.mock.calls as unknown as [Record<string, unknown>][]).at(-1)![0]
+  expect(lastRequest.start_time).toBeUndefined()
+  expect(lastRequest.end_time).toBeUndefined()
+  act(() => renderer.unmount())
+})
+
+test('legacy URLs preserve timezone-aware microseconds without rounding or rewriting their interval', async () => {
+  params = new URLSearchParams({ period: 'custom', start_time: '2026-10-08T10:00:00.123456+02:00', end_time: '2026-10-08T11:00:00.999999+02:00' })
+  const renderer = await render()
+  expect(getSummary).toHaveBeenLastCalledWith({ period: 'custom', start_time: '2026-10-08T08:00:00.123456Z', end_time: '2026-10-08T09:00:00.999999Z', team_id: undefined })
+  openRange(renderer)
+  expect(calendar(renderer).props.selected.from.toISOString()).toBe('2026-10-08T08:00:00.123Z')
+  expect(calendar(renderer).props.selected.to.toISOString()).toBe('2026-10-08T09:00:00.999Z')
+  act(() => rangeButton(renderer, 'customRange.cancel').props.onClick())
+  expect(params.get('end_time')).toBe('2026-10-08T11:00:00.999999+02:00')
+  expect(replace).not.toHaveBeenCalled()
+  act(() => renderer.unmount())
+})
+
+test('an exact sub-millisecond restored interval remains valid', async () => {
+  params = new URLSearchParams({ period: 'custom', start_time: '2026-10-08T08:00:00.123456Z', end_time: '2026-10-08T08:00:00.123457Z' })
+  const renderer = await render()
+  expect(getSummary).toHaveBeenLastCalledWith({ period: 'custom', start_time: '2026-10-08T08:00:00.123456Z', end_time: '2026-10-08T08:00:00.123457Z', team_id: undefined })
+  expect(renderer.root.findAllByProps({ role: 'alert' })).toHaveLength(0)
+  act(() => renderer.unmount())
+})
+
+test('invalid restored custom URL remains correctable without silently requesting a preset window', async () => {
+  params = new URLSearchParams('period=custom&start_time=2026-10-08T10:00&end_time=2026-10-08T11:00')
+  const renderer = await render()
+  expect(getSummary).not.toHaveBeenCalled()
+  expect(rangeTrigger(renderer).props['aria-invalid']).toBe(true)
+  expect(rangeTrigger(renderer).children).toContain('customRange.pickDate')
+  expect(renderer.root.findByProps({ role: 'alert' }).children).toContain('customRange.invalid')
+  openRange(renderer)
+  expect(calendar(renderer).props.selected).toBeUndefined()
+  expect(rangeButton(renderer, 'actions.apply').props.disabled).toBe(true)
+  selectRange(renderer, { from: new Date(2026, 9, 8), to: new Date(2026, 9, 9) })
+  expect(getSummary).not.toHaveBeenCalled()
+  act(() => rangeButton(renderer, 'actions.apply').props.onClick())
+  await navigate(renderer, appliedQuery())
+  expect(getSummary).toHaveBeenCalledTimes(1)
+  expect(renderer.root.findAllByProps({ role: 'alert' })).toHaveLength(0)
+  act(() => renderer.unmount())
+})
+
+test('retains the legacy 7d URL while footer presets are limited to 15m, 1h and 24h', async () => {
+  params = new URLSearchParams('period=7d&tab=dependencies&team_id=team-1')
+  const renderer = await render()
+  expect(getDependencies).toHaveBeenLastCalledWith({ period: '7d', team_id: 'team-1' })
+  expect(rangeTrigger(renderer).children).toContain('periods.7d')
+  openRange(renderer)
+  expect(rangePopover(renderer).findAllByType('button').some((node) => node.children.includes('periods.7d'))).toBe(false)
+  act(() => rangeButton(renderer, 'periods.15m').props.onClick())
+  await navigate(renderer, appliedQuery())
+  expect(getDependencies).toHaveBeenLastCalledWith({ period: '15m', team_id: 'team-1' })
+  expect(params.get('tab')).toBe('dependencies')
+  act(() => renderer.unmount())
+})
+
+for (const locale of ['en', 'zh'] as const) {
+  test(`formats applied dates and preset buttons in ${locale} and passes the matching calendar locale`, async () => {
+    instanceLocale = locale
+    params = new URLSearchParams('period=custom&start_time=2026-10-08T08:00:00Z&end_time=2026-10-10T09:00:00Z')
+    const renderer = await render()
+    const dateLocale = locale === 'zh' ? zhCN : enUS
+    const messages = (locale === 'en' ? enDashboard : zhDashboard).dashboard.observability
+    const label = `${format(new Date(params.get('start_time')!), 'PPP', { locale: dateLocale })} – ${format(new Date(params.get('end_time')!), 'PPP', { locale: dateLocale })}`
+    expect(rangeTrigger(renderer).children).toContain(label)
+    openRange(renderer)
+    expect(calendar(renderer).props.locale.code).toBe(dateLocale.code)
+    expect(rangePopover(renderer).findAllByType('button').some((node) => node.children.includes(messages.periods['24h']))).toBe(true)
+    act(() => rangeButton(renderer, messages.periods['24h']).props.onClick())
+    await navigate(renderer, appliedQuery())
+    expect(rangeTrigger(renderer).children).toContain(messages.periods['24h'])
+    expect(getSummary).toHaveBeenLastCalledWith({ period: '24h', team_id: undefined })
     act(() => renderer.unmount())
   })
 }

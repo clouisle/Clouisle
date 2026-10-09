@@ -19,7 +19,7 @@ from app.schemas.response import Response, success
 from app.services import observability_v2 as service
 
 router = APIRouter()
-Period = Literal["15m", "1h", "24h", "7d"]
+Period = Literal["15m", "1h", "24h", "7d", "custom"]
 
 
 class ObservabilityMeta(BaseModel):
@@ -277,15 +277,23 @@ MANAGE = "admin:observability:manage"
 async def get_summary(
     period: Period = "1h",
     team_id: str | None = None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
     current_user: User = Depends(PermissionChecker(READ)),
 ) -> Any:
-    return success(data=await service.summary(period, team_id))
+    try:
+        data = await service.summary(period, team_id, start_time, end_time)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return success(data=data)
 
 
 @router.get("/runs", response_model=Response[RunPage])
 async def get_runs(
     period: Period = "1h",
     team_id: str | None = None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
     source: Literal["all", "agent", "workflow"] = "all",
     status: str | None = None,
     error_category: str | None = None,
@@ -297,6 +305,8 @@ async def get_runs(
     try:
         data = await service.list_runs(
             period=period,
+            start_time=start_time,
+            end_time=end_time,
             team_id=team_id,
             source=source,
             status=status,
@@ -327,9 +337,15 @@ async def get_run(
 async def get_dependencies(
     period: Period = "1h",
     team_id: str | None = None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
     current_user: User = Depends(PermissionChecker(READ)),
 ) -> Any:
-    return success(data=await service.dependencies(period, team_id))
+    try:
+        data = await service.dependencies(period, team_id, start_time, end_time)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return success(data=data)
 
 
 @router.get("/queues", response_model=Response[QueuePayload])

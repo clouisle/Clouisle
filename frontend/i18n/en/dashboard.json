@@ -35,7 +35,14 @@
       "30d": "Last 30 Days",
       "90d": "Last 90 Days",
       "all": "All Time",
-      "custom": "Custom"
+      "custom": "Custom",
+      "label": "Time range",
+      "pickDate": "Pick a date range",
+      "description": "Selected dates include the whole day in your browser's local time zone.",
+      "invalid": "Choose a complete, valid date range. URL timestamps must include a time zone and up to six fractional digits.",
+      "apply": "Apply",
+      "cancel": "Cancel",
+      "presets": "Quick ranges"
     },
     "actions": {
       "refresh": "Refresh",
@@ -163,7 +170,8 @@
       "tabs": { "overview": "Overview", "runs": "Run diagnostics", "dependencies": "Models & tools", "queues": "Queues", "infrastructure": "Infrastructure", "alerts": "Alerts" },
       "actions": { "refresh": "Refresh", "retry": "Retry", "apply": "Apply", "openIssue": "Open issue", "loadMore": "Load more", "save": "Save" },
       "filters": { "team": "Team", "teamId": "Team ID", "period": "Time range", "source": "Source", "allSources": "All sources", "status": "Status", "allStatuses": "All statuses", "errorCategory": "Error category", "runId": "Run ID", "alertStatus": "Alert status" },
-      "periods": { "15m": "Last 15 minutes", "1h": "Last hour", "24h": "Last 24 hours", "7d": "Last 7 days" },
+      "periods": { "15m": "Last 15 minutes", "1h": "Last hour", "24h": "Last 24 hours", "7d": "Last 7 days", "custom": "Custom time range" },
+      "customRange": { "pickDate": "Pick a date range", "presets": "Quick ranges", "description": "Selected dates include the whole day in your browser's local time zone. Telemetry is retained for 30 days.", "invalid": "Choose a complete, valid date range. URL timestamps must include a time zone.", "cancel": "Cancel" },
       "states": { "loading": "Loading observability data", "errorDescription": "Check service health and try again.", "lastUpdated": "Last updated {time}", "noSamples": "No samples are available in this view.", "unavailableDetail": "This data source is unavailable. Values are not reported as zero." },
       "quality": { "fresh": "Fresh sample · {samples} runs", "partial": "Partial coverage · {samples} runs", "stale": "Data is stale · last sample includes {samples} runs", "unavailable": "Observability data unavailable", "no_data": "No samples in this window", "window": "Window {start} – {end}", "lastSample": "Last sample {time}" },
       "status": {"healthy": "Healthy", "warning": "Warning", "danger": "Critical", "unhealthy": "Unhealthy", "unknown": "Unknown", "success": "Success", "completed": "Completed", "completing": "Completing", "failed": "Failed", "interrupted": "Interrupted", "running": "Running", "stopping": "Stopping", "stopped": "Stopped", "waiting": "Waiting", "pending": "Pending", "queued": "Queued", "cancelled": "Cancelled", "timeout": "Timeout", "error": "Error", "degraded": "Degraded", "unavailable": "Unavailable", "stale": "Stale", "offline": "Offline"},

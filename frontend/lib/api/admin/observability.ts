@@ -1,6 +1,6 @@
 import { api } from '../client'
 
-export type ObservabilityPeriod = '15m' | '1h' | '24h' | '7d'
+export type ObservabilityPeriod = '15m' | '1h' | '24h' | '7d' | 'custom'
 export type ObservabilityState = 'fresh' | 'partial' | 'stale' | 'unavailable' | 'no_data'
 export type ObservabilitySource = 'agent' | 'workflow'
 
@@ -216,13 +216,13 @@ function withParams(path: string, params: Record<string, string | number | undef
 }
 
 export const observabilityApi = {
-  getSummary: (params: { period?: ObservabilityPeriod; team_id?: string } = {}): Promise<SummaryResponse> =>
+  getSummary: (params: { period?: ObservabilityPeriod; start_time?: string; end_time?: string; team_id?: string } = {}): Promise<SummaryResponse> =>
     api.get<SummaryResponse>(withParams('/admin/observability/summary', params)),
-  getRuns: (params: { period?: ObservabilityPeriod; team_id?: string; source?: 'all' | ObservabilitySource; status?: string; error_category?: string; run_id?: string; cursor?: string; limit?: number } = {}): Promise<RunsResponse> =>
+  getRuns: (params: { period?: ObservabilityPeriod; start_time?: string; end_time?: string; team_id?: string; source?: 'all' | ObservabilitySource; status?: string; error_category?: string; run_id?: string; cursor?: string; limit?: number } = {}): Promise<RunsResponse> =>
     api.get<RunsResponse>(withParams('/admin/observability/runs', params)),
   getRun: (source: ObservabilitySource, runId: string): Promise<RunDetailResponse> =>
     api.get<RunDetailResponse>(`/admin/observability/runs/${source}/${encodeURIComponent(runId)}`),
-  getDependencies: (params: { period?: ObservabilityPeriod; team_id?: string } = {}): Promise<DependenciesResponse> =>
+  getDependencies: (params: { period?: ObservabilityPeriod; start_time?: string; end_time?: string; team_id?: string } = {}): Promise<DependenciesResponse> =>
     api.get<DependenciesResponse>(withParams('/admin/observability/dependencies', params)),
   getQueues: (): Promise<QueuesResponse> => api.get<QueuesResponse>('/admin/observability/queues'),
   getInfrastructure: (): Promise<InfrastructureResponse> => api.get<InfrastructureResponse>('/admin/observability/infrastructure'),

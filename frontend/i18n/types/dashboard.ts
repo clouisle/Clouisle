@@ -38,6 +38,13 @@ export type DashboardMessages = {
       "90d": string
       all: string
       custom: string
+      label: string
+      pickDate: string
+      description: string
+      invalid: string
+      apply: string
+      cancel: string
+      presets: string
     }
     actions: {
       refresh: string
@@ -195,6 +202,14 @@ export type DashboardMessages = {
         "1h": string
         "24h": string
         "7d": string
+        custom: string
+      }
+      customRange: {
+        pickDate: string
+        presets: string
+        description: string
+        invalid: string
+        cancel: string
       }
       states: {
         loading: string
