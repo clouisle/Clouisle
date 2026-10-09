@@ -141,18 +141,28 @@ const baseNode = (type: string, data: Record<string, unknown> = {}, extra: Recor
   id: `${type}-current`, type, data: { label: 'Current', ...data }, position: { x: 0, y: 0 }, ...extra,
 })
 
-function render(node: ReturnType<typeof baseNode> | null, overrides: Record<string, unknown> = {}) {
+function render(
+  node: ReturnType<typeof baseNode> | null,
+  overrides: Record<string, unknown> = {},
+  effectsEnabled = true,
+) {
   stateIndex = 0
-  return NodeConfigDrawer({
-    node: node as never,
-    allNodes: node ? [node] as never : [],
-    allEdges: [],
-    open: true,
-    onClose: mock(() => undefined),
-    onUpdate: mock(() => undefined),
-    readOnly: true,
-    ...overrides,
-  }) as TreeNode | null
+  const previousRunEffects = runEffects
+  runEffects = effectsEnabled
+  try {
+    return NodeConfigDrawer({
+      node: node as never,
+      allNodes: node ? [node] as never : [],
+      allEdges: [],
+      open: true,
+      onClose: mock(() => undefined),
+      onUpdate: mock(() => undefined),
+      readOnly: true,
+      ...overrides,
+    }) as TreeNode | null
+  } finally {
+    runEffects = previousRunEffects
+  }
 }
 
 beforeEach(() => {
@@ -449,9 +459,8 @@ describe('NodeConfigDrawer', () => {
 
     ;(nameInput.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'Updated' } })
     ;(descriptionInput.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'After' } })
-    runEffects = false
 
-    const updated = descendants(render(node, props))
+    const updated = descendants(render(node, props, false))
     expect(updated.find(item => item.type === 'Input' && item.props.id === 'node-label')?.props.value).toBe('Updated')
     expect(updated.find(item => item.type === 'Textarea' && item.props.id === 'node-description')?.props.value).toBe('After')
   })
