@@ -50,15 +50,11 @@ const render = (workflowData: unknown, topAgentsData: unknown[] = []) => {
   act(() => {
     renderer = create(
       <AnalyticsTab
-        stats={
-          {
-            overview: {
-              total_messages: 2000,
-              total_conversations: 4,
-              total_tokens: 3000000,
-            },
-          } as never
-        }
+        activitySummary={{
+          conversations: 4,
+          messages: 2000,
+          tokens: 3000000,
+        }}
         workflowData={workflowData as never}
         topAgentsData={topAgentsData as never}
         isLoading={false}

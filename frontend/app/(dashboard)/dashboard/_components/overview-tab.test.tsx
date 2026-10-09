@@ -72,6 +72,7 @@ const render = (totpStats: unknown, passwordExpiration: unknown = null) => {
             password_expiration: passwordExpiration,
           } as never
         }
+        activitySummary={{ conversations: 4, messages: 4, tokens: 3000000 }}
         trendsData={[
           {
             date: "2026-01-01",
@@ -103,6 +104,10 @@ test("renders dashboard trends and two-factor adoption when the statistics are a
   expect(
     renderer.root.findAllByType("p").map((node) => node.children.join("")),
   ).toContain("1.5K");
+
+  expect(
+    renderer.root.findAllByType("p").map((node) => node.children.join("")),
+  ).toContain("3.0M");
   expect(
     renderer.root.findAllByType("p").map((node) => node.children.join("")),
   ).toContain("50.0% stats.adoptionRate");
