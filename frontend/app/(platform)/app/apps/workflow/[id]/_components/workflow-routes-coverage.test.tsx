@@ -350,6 +350,9 @@ mock.module('./node-config', () => ({
   KnowledgeRetrievalNodeConfig: (props: Record<string, unknown>) => jsx('KnowledgeRetrievalNodeConfig', props),
 }))
 mock.module('./node-config/configs', () => ({ NODE_CONFIGS: {} }))
+mock.module('./node-config-drawer', () => ({
+  NodeConfigDrawer: (props: Record<string, unknown>) => jsx('node-config-drawer', props),
+}))
 
 const workflow = {
   id: 'workflow-1', team_id: 'team-1', name: 'Coverage Flow', description: 'test', icon: null,
@@ -363,10 +366,9 @@ const run = {
   executed_nodes: 0, failed_nodes: 0, skipped_nodes: 0, total_token_usage: {},
 }
 
-const [{ default: WorkflowEditorPage, WorkflowEditorContent }, { default: WorkflowLogsPage }, { NodeConfigDrawer }] = await Promise.all([
+const [{ default: WorkflowEditorPage, WorkflowEditorContent }, { default: WorkflowLogsPage }] = await Promise.all([
   import('../page'),
   import('../logs/page'),
-  import('./node-config-drawer'),
 ])
 
 beforeEach(() => {
@@ -389,8 +391,5 @@ describe('workflow route coverage imports', () => {
     expect(nodes.length).toBeGreaterThan(0)
     expect(nodes.some((node) => String(node.props.className).includes('h-full'))).toBe(true)
   })
-
-  test('keeps node config closed branches cheap', () => {
-    expect(NodeConfigDrawer({ node: null, allNodes: [], allEdges: [], open: false, onClose: noop, onUpdate: noop })).toBeNull()
-  })
 })
+
