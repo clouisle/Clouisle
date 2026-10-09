@@ -40,6 +40,13 @@ export interface DashboardTrends {
   }>
 }
 
+export interface DashboardActivitySummary {
+  conversations: number
+  messages: number
+  tokens: number
+}
+
+
 export interface TopAgent {
   agent_id: string
   name: string

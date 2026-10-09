@@ -80,10 +80,8 @@
       "tokenUsage": "Token 消耗"
     },
     "models": {
-      "totalTokens": "总 Token 消耗",
       "avgTokensPerMessage": "平均 Token/消息",
       "mostUsedModel": "最常用模型",
-      "totalMessages": "总消息数",
       "tokenTrend": "Token 使用趋势",
       "tokenTrendDesc": "每日 Token 消耗趋势",
       "teamRanking": "团队 Token 排行",
@@ -124,9 +122,6 @@
         "totalAgents": "总 Agent 数",
         "totalWorkflows": "总工作流数",
         "totalKnowledgeBases": "知识库数量",
-        "totalConversations": "总对话数",
-        "totalMessages": "总消息数",
-        "totalTokens": "总 Token 消耗",
         "dau": "日活用户",
         "dauDesc": "今日活跃用户",
         "wau": "周活用户",
@@ -137,6 +132,7 @@
         "activeUsers": "活跃用户",
         "conversations": "对话数",
         "tokens": "Token 消耗",
+        "messages": "消息数",
         "teams": "团队",
         "teamsDesc": "总团队数",
         "agents": "Agent",

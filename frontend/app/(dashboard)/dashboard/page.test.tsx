@@ -2,13 +2,15 @@ import { afterEach, expect, mock, test } from 'bun:test'
 import React from 'react'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 import type { TimeRange } from '@/components/dashboard/time-range-selector'
+import type { DashboardTrends } from '@/lib/api/admin/dashboard'
 
-type Trend = { date: string; tokens: number }
+type Trend = DashboardTrends['data'][number]
+const trend = (date: string, tokens: number, new_conversations = 0, messages = 0): Trend => ({ date, new_users: 0, active_users: 0, new_conversations, messages, tokens })
 type Agent = { agent_id: string; name: string }
 type Workflow = { total_runs: number }
 const stats = { total_users: 1 }
 const getStats = mock<() => Promise<typeof stats>>(() => Promise.resolve(stats))
-const getTrends = mock<(range?: TimeRange) => Promise<{ data: Trend[] }>>(() => Promise.resolve({ data: [{ date: '2026-01-01', tokens: 2 }] }))
+const getTrends = mock<(range?: TimeRange) => Promise<{ data: Trend[] }>>(() => Promise.resolve({ data: [trend('2026-01-01', 2)] }))
 const getModelDistribution = mock<(params: { time_range: TimeRange }) => Promise<object[]>>(() => Promise.resolve([]))
 const getTeamTokenUsage = mock<(params: { limit: number; time_range: TimeRange }) => Promise<object[]>>(() => Promise.resolve([]))
 const getTopAgents = mock<(params: { limit: number; metric: string; time_range: TimeRange }) => Promise<Agent[]>>(() => Promise.resolve([]))
@@ -77,7 +79,7 @@ afterEach(() => {
   renderer = undefined
   mock.clearAllMocks()
   getStats.mockResolvedValue(stats)
-  getTrends.mockResolvedValue({ data: [{ date: '2026-01-01', tokens: 2 }] })
+  getTrends.mockResolvedValue({ data: [trend('2026-01-01', 2)] })
   getModelDistribution.mockResolvedValue([])
   getTeamTokenUsage.mockResolvedValue([])
   getTopAgents.mockResolvedValue([])
@@ -108,6 +110,14 @@ test('keeps the loading fallback when common statistics fail', async () => {
   getStats.mockRejectedValueOnce(new Error('offline'))
   await render()
   expect(renderer!.root.findByProps({ 'data-icon': 'loader' })).toBeDefined()
+})
+
+test('derives conversation, message, and token summaries from all trend buckets in the selected range', async () => {
+  params = new URLSearchParams('tab=analytics&time_range=7d')
+  getTrends.mockResolvedValueOnce({ data: [trend('first', 12, 2, 4), trend('last', 30, 5, 7)] })
+  await render()
+  expect(getTrends).toHaveBeenCalledWith('7d')
+  expect(renderer!.root.findByProps({ 'data-tab': 'analytics' }).props.activitySummary).toEqual({ conversations: 7, messages: 11, tokens: 42 })
 })
 
 test('restores a models URL immediately and handles each independent models failure', async () => {
@@ -212,9 +222,9 @@ test('refreshes a previously fetched tab and invalidates inactive tab caches', a
   await tab('models')
   await tab('analytics')
   await tab('overview')
-  expect(getTrends).toHaveBeenCalledTimes(2)
-  await refresh()
   expect(getTrends).toHaveBeenCalledTimes(3)
+  await refresh()
+  expect(getTrends).toHaveBeenCalledTimes(4)
   await tab('models')
   expect(getModelDistribution).toHaveBeenCalledTimes(2)
   await tab('analytics')
@@ -229,19 +239,19 @@ test('invalidates every cached tab when changing a range, including when returni
   await range('7d')
   await range('30d')
   await tab('overview')
-  expect(getTrends).toHaveBeenCalledTimes(3)
+  expect(getTrends).toHaveBeenCalledTimes(6)
   await tab('models')
   expect(getModelDistribution).toHaveBeenCalledTimes(2)
-  expect(getTrends).toHaveBeenCalledTimes(4)
+  expect(getTrends).toHaveBeenCalledTimes(7)
 })
 
 test('keeps separate overview and model trends when returning to a cached tab', async () => {
-  getTrends.mockResolvedValueOnce({ data: [{ date: 'overview', tokens: 10 }] }).mockResolvedValueOnce({ data: [{ date: 'models', tokens: 20 }] })
+  getTrends.mockResolvedValueOnce({ data: [trend('overview', 10)] }).mockResolvedValueOnce({ data: [trend('models', 20)] })
   await render()
   await tab('models')
-  expect(renderer!.root.findByProps({ 'data-tab': 'models' }).props.trendsData).toEqual([{ date: 'models', tokens: 20 }])
+  expect(renderer!.root.findByProps({ 'data-tab': 'models' }).props.trendsData).toEqual([trend('models', 20)])
   await tab('overview')
-  expect(renderer!.root.findByProps({ 'data-tab': 'overview' }).props.trendsData).toEqual([{ date: 'overview', tokens: 10 }])
+  expect(renderer!.root.findByProps({ 'data-tab': 'overview' }).props.trendsData).toEqual([trend('overview', 10)])
 })
 
 test('rejects older overview range responses and retains the newest loading state', async () => {
@@ -249,10 +259,10 @@ test('rejects older overview range responses and retains the newest loading stat
   getTrends.mockReturnValueOnce(old.promise).mockReturnValueOnce(latest.promise)
   await render()
   await range('7d')
-  await act(async () => old.resolve({ data: [{ date: 'old', tokens: 99 }] }))
+  await act(async () => old.resolve({ data: [trend('old', 99)] }))
   expect(renderer!.root.findByProps({ 'data-tab': 'overview' }).props).toMatchObject({ trendsData: [], isLoading: true })
-  await act(async () => latest.resolve({ data: [{ date: 'latest', tokens: 7 }] }))
-  expect(renderer!.root.findByProps({ 'data-tab': 'overview' }).props).toMatchObject({ trendsData: [{ date: 'latest', tokens: 7 }], isLoading: false })
+  await act(async () => latest.resolve({ data: [trend('latest', 7)] }))
+  expect(renderer!.root.findByProps({ 'data-tab': 'overview' }).props).toMatchObject({ trendsData: [trend('latest', 7)], isLoading: false })
 })
 
 test('ignores models responses after leaving the tab and after applying a newer range', async () => {
@@ -271,9 +281,9 @@ test('ignores models responses after leaving the tab and after applying a newer 
     oldModels.resolve([{ model: 'old', count: 99 }])
     oldTeams.resolve([{ name: 'old', total_tokens: 99 }])
     oldAgents.resolve([{ agent_id: 'old', name: 'old' }])
-    oldTrends.resolve({ data: [{ date: 'old', tokens: 99 }] })
+    oldTrends.resolve({ data: [trend('old', 99)] })
   })
-  expect(renderer!.root.findByProps({ 'data-tab': 'models' }).props).toMatchObject({ modelData: [], teamTokenData: [], topAgentsData: [], trendsData: [{ date: '2026-01-01', tokens: 2 }], isLoading: false })
+  expect(renderer!.root.findByProps({ 'data-tab': 'models' }).props).toMatchObject({ modelData: [], teamTokenData: [], topAgentsData: [], trendsData: [trend('2026-01-01', 2)], isLoading: false })
   await tab('overview')
   await tab('models')
   expect(getModelDistribution).not.toHaveBeenCalled()
@@ -281,14 +291,14 @@ test('ignores models responses after leaving the tab and after applying a newer 
 
 test('a pending request from a previous tab does not populate its cache or replace another tab trends', async () => {
   const old = deferred<{ data: Trend[] }>()
-  getTrends.mockReturnValueOnce(old.promise).mockResolvedValueOnce({ data: [{ date: 'models', tokens: 20 }] }).mockResolvedValueOnce({ data: [{ date: 'fresh', tokens: 30 }] })
+  getTrends.mockReturnValueOnce(old.promise).mockResolvedValueOnce({ data: [trend('models', 20)] }).mockResolvedValueOnce({ data: [trend('fresh', 30)] })
   await render()
   await tab('models')
-  await act(async () => old.resolve({ data: [{ date: 'stale', tokens: 99 }] }))
-  expect(renderer!.root.findByProps({ 'data-tab': 'models' }).props.trendsData).toEqual([{ date: 'models', tokens: 20 }])
+  await act(async () => old.resolve({ data: [trend('stale', 99)] }))
+  expect(renderer!.root.findByProps({ 'data-tab': 'models' }).props.trendsData).toEqual([trend('models', 20)])
   await tab('overview')
   expect(getTrends).toHaveBeenCalledTimes(3)
-  expect(renderer!.root.findByProps({ 'data-tab': 'overview' }).props.trendsData).toEqual([{ date: 'fresh', tokens: 30 }])
+  expect(renderer!.root.findByProps({ 'data-tab': 'overview' }).props.trendsData).toEqual([trend('fresh', 30)])
 })
 
 test('protects workflow and agent results across analytics range and metric transitions', async () => {
@@ -345,9 +355,9 @@ test('manual refresh invalidates pending common and interval requests', async ()
   getTrends.mockReturnValueOnce(oldTrends.promise).mockReturnValueOnce(latestTrends.promise)
   await refresh()
   await refresh()
-  await act(async () => { latestStats.resolve({ total_users: 7 }); latestTrends.resolve({ data: [{ date: 'fresh', tokens: 7 }] }) })
-  await act(async () => { oldStats.resolve({ total_users: 99 }); oldTrends.resolve({ data: [{ date: 'stale', tokens: 99 }] }) })
-  expect(renderer!.root.findByProps({ 'data-tab': 'overview' }).props).toMatchObject({ stats: { total_users: 7 }, trendsData: [{ date: 'fresh', tokens: 7 }], isLoading: false })
+  await act(async () => { latestStats.resolve({ total_users: 7 }); latestTrends.resolve({ data: [trend('fresh', 7)] }) })
+  await act(async () => { oldStats.resolve({ total_users: 99 }); oldTrends.resolve({ data: [trend('stale', 99)] }) })
+  expect(renderer!.root.findByProps({ 'data-tab': 'overview' }).props).toMatchObject({ stats: { total_users: 7 }, trendsData: [trend('fresh', 7)], isLoading: false })
 })
 
 test('refetches a metric after a failed replacement instead of reusing its obsolete fetched flag', async () => {
@@ -366,7 +376,7 @@ test('invalid URL navigation cancels an in-flight valid range and clears its dis
   getTrends.mockReturnValueOnce(pending.promise)
   await render()
   await navigate(new URLSearchParams('time_range=custom&start_time=invalid&end_time=invalid'))
-  await act(async () => pending.resolve({ data: [{ date: 'stale', tokens: 99 }] }))
+  await act(async () => pending.resolve({ data: [trend('stale', 99)] }))
   expect(renderer!.root.findByType(MockTimeRangeSelector).props.invalid).toBe(true)
   expect(renderer!.root.findByProps({ 'data-tab': 'overview' }).props).toMatchObject({ trendsData: [], isLoading: false })
   expect(getTrends).toHaveBeenCalledTimes(1)

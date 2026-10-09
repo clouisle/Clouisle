@@ -9,17 +9,14 @@ import { TeamTokenUsageChart } from '@/components/dashboard/team-token-usage-cha
 import { TokenTrendChart } from '@/components/dashboard/token-trend-chart'
 import { ModelDetailsCard } from '@/components/dashboard/model-details-card'
 import { TopAgentsChart } from '@/components/dashboard/top-agents-chart'
-import type { DashboardStats, ModelDistribution, TeamTokenUsage, TopAgent } from '@/lib/api/admin/dashboard'
+import type { DashboardActivitySummary, DashboardTrends, ModelDistribution, TeamTokenUsage, TopAgent } from '@/lib/api/admin/dashboard'
 
 interface ModelsTabProps {
-  stats: DashboardStats
+  activitySummary: DashboardActivitySummary
   modelData: ModelDistribution[]
   teamTokenData: TeamTokenUsage[]
   topAgentsData: TopAgent[]
-  trendsData: Array<{
-    date: string
-    tokens: number
-  }>
+  trendsData: DashboardTrends['data']
   isLoading: boolean
 }
 
@@ -115,11 +112,11 @@ function StatCard({
   )
 }
 
-export function ModelsTab({ stats, modelData, teamTokenData, topAgentsData, trendsData, isLoading }: ModelsTabProps) {
+export function ModelsTab({ activitySummary, modelData, teamTokenData, topAgentsData, trendsData, isLoading }: ModelsTabProps) {
   const t = useTranslations('dashboard')
 
-  const avgTokensPerMessage = stats.overview.total_messages > 0
-    ? Math.round(stats.overview.total_tokens / stats.overview.total_messages)
+  const avgTokensPerMessage = activitySummary.messages > 0
+    ? Math.round(activitySummary.tokens / activitySummary.messages)
     : 0
 
   const hasTopAgentsData = topAgentsData.some((agent) => agent.value > 0)
@@ -132,8 +129,8 @@ export function ModelsTab({ stats, modelData, teamTokenData, topAgentsData, tren
       {/* Top Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard
-          title={t('models.totalTokens')}
-          value={stats.overview.total_tokens}
+          title={t('home.stats.tokens')}
+          value={activitySummary.tokens}
           icon={Coins}
           isLoading={isLoading}
           color="orange"
@@ -146,8 +143,8 @@ export function ModelsTab({ stats, modelData, teamTokenData, topAgentsData, tren
           color="blue"
         />
         <StatCard
-          title={t('models.totalMessages')}
-          value={stats.overview.total_messages}
+          title={t('home.stats.messages')}
+          value={activitySummary.messages}
           icon={MessageSquare}
           isLoading={isLoading}
           color="green"

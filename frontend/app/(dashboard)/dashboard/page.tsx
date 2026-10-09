@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2, RefreshCw } from 'lucide-react'
-import { dashboardApi, type DashboardStats, type DashboardTrends, type ModelDistribution, type TeamTokenUsage, type TopAgent, type WorkflowSummary } from '@/lib/api/admin/dashboard'
+import { dashboardApi, type DashboardActivitySummary, type DashboardStats, type DashboardTrends, type ModelDistribution, type TeamTokenUsage, type TopAgent, type WorkflowSummary } from '@/lib/api/admin/dashboard'
 import { adminTOTPApi, type TOTPStatsResponse } from '@/lib/api/admin/users'
 import { RoutePermissionGuard } from '@/components/auth/permission-guard'
 import { Button } from '@/components/ui/button'
@@ -38,6 +38,16 @@ function readTimeRange(period: string | null, start: string | null, end: string 
   return ordered ? { value: { start_time: start, end_time: end }, invalid: false } : invalid
 }
 
+function summarizeDashboardActivity(data: DashboardTrends['data']): DashboardActivitySummary {
+  const summary: DashboardActivitySummary = { conversations: 0, messages: 0, tokens: 0 }
+  for (const point of data) {
+    summary.conversations += point.new_conversations
+    summary.messages += point.messages
+    summary.tokens += point.tokens
+  }
+  return summary
+}
+
 export default function DashboardPage() {
   const t = useTranslations('dashboard')
   const tHome = useTranslations('dashboard.home')
@@ -62,6 +72,7 @@ export default function DashboardPage() {
   const [totpStats, setTotpStats] = React.useState<TOTPStatsResponse | null>(null)
   const [trendsData, setTrendsData] = React.useState<DashboardTrends['data']>([])
   const [modelTrendsData, setModelTrendsData] = React.useState<DashboardTrends['data']>([])
+  const [analyticsTrendsData, setAnalyticsTrendsData] = React.useState<DashboardTrends['data']>([])
   const [isLoadingOverview, setIsLoadingOverview] = React.useState(false)
   const [modelDistribution, setModelDistribution] = React.useState<ModelDistribution[]>([])
   const [teamTokenUsage, setTeamTokenUsage] = React.useState<TeamTokenUsage[]>([])
@@ -72,6 +83,8 @@ export default function DashboardPage() {
   const [analyticsMetric, setAnalyticsMetric] = React.useState<AnalyticsMetric>('conversation_count')
   const [isLoadingAnalytics, setIsLoadingAnalytics] = React.useState(false)
   const [isLoadingAnalyticsAgents, setIsLoadingAnalyticsAgents] = React.useState(false)
+  const activityTrendsData = activeTab === 'overview' ? trendsData : activeTab === 'models' ? modelTrendsData : analyticsTrendsData
+  const activitySummary: DashboardActivitySummary = React.useMemo(() => summarizeDashboardActivity(activityTrendsData), [activityTrendsData])
 
   React.useEffect(() => {
     let current = true
@@ -107,6 +120,7 @@ export default function DashboardPage() {
       setModelDistribution([])
       setTeamTokenUsage([])
       setTopAgentsByTokens([])
+      setAnalyticsTrendsData([])
       setWorkflowSummary(null)
       return
     }
@@ -150,13 +164,18 @@ export default function DashboardPage() {
       })
     } else {
       setWorkflowSummary(null)
+      setAnalyticsTrendsData([])
       setIsLoadingAnalytics(true)
-      void dashboardApi.getWorkflowSummary({ time_range: timeRange }).then((response) => {
+      void Promise.allSettled([
+        dashboardApi.getWorkflowSummary({ time_range: timeRange }),
+        dashboardApi.getTrends(timeRange),
+      ]).then(([workflow, trends]) => {
         if (!current) return
-        setWorkflowSummary(response)
+        setWorkflowSummary(workflow.status === 'fulfilled' ? workflow.value : null)
+        setAnalyticsTrendsData(trends.status === 'fulfilled' ? trends.value.data : [])
         fetched.current.analytics = scopeKey
-      }).catch((error) => {
-        if (current) console.error('Failed to fetch analytics data:', error)
+        if (workflow.status === 'rejected') console.error('[Dashboard] Failed to fetch analytics data:', workflow.reason)
+        if (trends.status === 'rejected') console.error('[Dashboard] Failed to fetch analytics activity data:', trends.reason)
       }).finally(() => {
         if (current) setIsLoadingAnalytics(false)
       })
@@ -263,6 +282,7 @@ export default function DashboardPage() {
             {/* Tab Content */}
             {activeTab === 'overview' && (
               <OverviewTab
+                activitySummary={activitySummary}
                 stats={stats}
                 trendsData={trendsData}
                 isLoading={isLoadingOverview}
@@ -272,18 +292,18 @@ export default function DashboardPage() {
 
             {activeTab === 'models' && (
               <ModelsTab
-                stats={stats}
                 modelData={modelDistribution}
                 teamTokenData={teamTokenUsage}
                 topAgentsData={topAgentsByTokens}
-                trendsData={modelTrendsData.map(d => ({ date: d.date, tokens: d.tokens }))}
+                trendsData={modelTrendsData}
+                activitySummary={activitySummary}
                 isLoading={isLoadingModels}
               />
             )}
 
             {activeTab === 'analytics' && (
               <AnalyticsTab
-                stats={stats}
+                activitySummary={activitySummary}
                 workflowData={workflowSummary}
                 topAgentsData={topAgentsByConversations}
                 isLoading={isLoadingAnalytics}

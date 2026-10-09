@@ -80,10 +80,8 @@
       "tokenUsage": "Token Usage"
     },
     "models": {
-      "totalTokens": "Total Tokens",
       "avgTokensPerMessage": "Avg Tokens/Message",
       "mostUsedModel": "Most Used Model",
-      "totalMessages": "Total Messages",
       "tokenTrend": "Token Usage Trend",
       "tokenTrendDesc": "Daily token consumption over time",
       "teamRanking": "Team Token Ranking",
@@ -124,9 +122,6 @@
         "totalAgents": "Total Agents",
         "totalWorkflows": "Total Workflows",
         "totalKnowledgeBases": "Knowledge Bases",
-        "totalConversations": "Total Conversations",
-        "totalMessages": "Total Messages",
-        "totalTokens": "Total Tokens",
         "dau": "Daily Active Users",
         "dauDesc": "Users active today",
         "wau": "Weekly Active Users",
@@ -137,6 +132,7 @@
         "activeUsers": "Active Users",
         "conversations": "Conversations",
         "tokens": "Tokens",
+        "messages": "Messages",
         "teams": "Teams",
         "teamsDesc": "Total teams",
         "agents": "Agents",

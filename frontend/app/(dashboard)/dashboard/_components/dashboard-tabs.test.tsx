@@ -110,16 +110,20 @@ const stats = (overrides: Partial<DashboardStats['overview']> = {}): DashboardSt
   growth: { new_users_30d: 7, new_conversations_30d: 8 },
 })
 
+const activitySummary = { conversations: 6, messages: 10, tokens: 16 }
+
 const text = (renderer: ReactTestRenderer) => JSON.stringify(renderer.toJSON())
+const paragraphTexts = (renderer: ReactTestRenderer) => renderer.root.findAllByType('p').map((node) => node.children.map(String).join(''))
+const spanTexts = (renderer: ReactTestRenderer) => renderer.root.findAllByType('span').map((node) => node.children.map(String).join(''))
 const chartProps = (renderer: ReactTestRenderer, name: string) => JSON.parse(
   renderer.root.find((node) => node.props['data-chart'] === name).props['data-props'],
 )
 
 describe('dashboard tabs', () => {
-  test('AnalyticsTab renders summaries and forwards metric changes', () => {
+  test('AnalyticsTab uses selected-range activity for messages and averages', () => {
     const changes: string[] = []
     const renderer = render(<AnalyticsTab
-      stats={stats()}
+      activitySummary={activitySummary}
       workflowData={{
         total_runs: 1_200,
         success_rate: 98.25,
@@ -135,6 +139,11 @@ describe('dashboard tabs', () => {
       onMetricChange={(metric) => changes.push(metric)}
     />)
 
+    expect(spanTexts(renderer)).toContain('10')
+    expect(spanTexts(renderer)).toContain('1.7')
+    expect(spanTexts(renderer)).toContain('2')
+    expect(text(renderer)).toContain('dashboard.home.stats.messages')
+    expect(text(renderer)).not.toContain('dashboard.home.stats.totalMessages')
     expect(text(renderer)).toContain('1.2K')
     expect(text(renderer)).toContain('98.3%')
     expect(text(renderer)).toContain('1.0m')
@@ -144,9 +153,9 @@ describe('dashboard tabs', () => {
     expect(changes).toEqual(['total_tokens'])
   })
 
-  test('AnalyticsTab renders null-data and zero-denominator defaults', () => {
+  test('AnalyticsTab keeps zero-denominator defaults', () => {
     const renderer = render(<AnalyticsTab
-      stats={stats({ total_conversations: 0, total_messages: 0, total_tokens: 0 })}
+      activitySummary={{ conversations: 0, messages: 0, tokens: 0 }}
       workflowData={null}
       topAgentsData={[]}
       isLoading={false}
@@ -161,13 +170,13 @@ describe('dashboard tabs', () => {
     expect(chartProps(renderer, 'top-workflows').data).toEqual([])
   })
 
-  test('ModelsTab forwards chart data and only shows meaningful top-agent data', () => {
+  test('ModelsTab uses selected-range tokens and messages for cards and average', () => {
     const modelData = [{ model: 'opus', count: 4, percentage: 100 }]
     const teamTokenData = [{ team_id: 't1', name: 'Team', total_tokens: 20, conversations: 2, messages: 4 }]
-    const trendsData = [{ date: '2026-07-22', tokens: 20 }]
+    const trendsData = [{ date: '2026-07-22', new_users: 0, active_users: 0, new_conversations: 2, messages: 4, tokens: 20 }]
     const topAgentsData = [{ agent_id: 'a1', name: 'Agent', icon: null, value: 5, team_name: 'Team' }]
     const renderer = render(<ModelsTab
-      stats={stats()}
+      activitySummary={{ conversations: 2, messages: 4, tokens: 20 }}
       modelData={modelData}
       teamTokenData={teamTokenData}
       topAgentsData={topAgentsData}
@@ -175,15 +184,20 @@ describe('dashboard tabs', () => {
       isLoading={false}
     />)
 
-    expect(text(renderer)).toContain('3.0M')
-    expect(text(renderer)).toContain('1.5K')
+    expect(paragraphTexts(renderer)).toContain('20')
+    expect(paragraphTexts(renderer)).toContain('4')
+    expect(paragraphTexts(renderer)).toContain('5')
+    expect(text(renderer)).toContain('dashboard.home.stats.tokens')
+    expect(text(renderer)).toContain('dashboard.home.stats.messages')
+    expect(text(renderer)).not.toContain('dashboard.models.totalTokens')
+    expect(text(renderer)).not.toContain('dashboard.models.totalMessages')
     expect(chartProps(renderer, 'models').data).toEqual(modelData)
     expect(chartProps(renderer, 'teams').data).toEqual(teamTokenData)
     expect(chartProps(renderer, 'token-trend').data).toEqual(trendsData)
     expect(chartProps(renderer, 'top-agents')).toMatchObject({ data: topAgentsData, metric: 'total_tokens', isLoading: false })
 
     const empty = render(<ModelsTab
-      stats={stats({ total_messages: 0 })}
+      activitySummary={{ conversations: 0, messages: 0, tokens: 0 }}
       modelData={[]}
       teamTokenData={[]}
       topAgentsData={[{ ...topAgentsData[0], value: 0 }]}
@@ -195,7 +209,7 @@ describe('dashboard tabs', () => {
 
   test('ModelsTab keeps the top-agent skeleton while loading', () => {
     const renderer = render(<ModelsTab
-      stats={stats()}
+      activitySummary={{ conversations: 0, messages: 0, tokens: 0 }}
       modelData={[]}
       teamTokenData={[]}
       topAgentsData={[]}
@@ -206,16 +220,21 @@ describe('dashboard tabs', () => {
     expect(text(renderer)).toContain('animate-pulse')
   })
 
-  test('OverviewTab renders tooltip, 2FA, and password-expiration branches', () => {
+  test('OverviewTab renders time-range conversation and token counts', () => {
     const dashboardStats = stats()
     dashboardStats.password_expiration = { expired_count: 2, expiring_soon_count: 3, force_change_count: 4 }
     const renderer = render(<OverviewTab
       stats={dashboardStats}
+      activitySummary={{ conversations: 3, messages: 4, tokens: 5 }}
       trendsData={[{ date: '2026-07-22', new_users: 1, active_users: 2, new_conversations: 3, messages: 4, tokens: 5 }]}
       isLoading={false}
       totpStats={{ total_users: 20, totp_enabled: 10, adoption_rate: 50.05 }}
     />)
 
+    expect(paragraphTexts(renderer)).toContain('3')
+    expect(paragraphTexts(renderer)).toContain('5')
+    expect(text(renderer)).toContain('dashboard.home.stats.conversations')
+    expect(text(renderer)).not.toContain('dashboard.home.stats.totalConversations')
     expect(text(renderer)).toContain('1.5M')
     expect(text(renderer)).toContain('ready')
     expect(text(renderer)).toContain('50.0')
@@ -225,9 +244,10 @@ describe('dashboard tabs', () => {
 
     const allGoodStats = stats()
     allGoodStats.password_expiration = { expired_count: 0, expiring_soon_count: 0, force_change_count: 0 }
-    const allGood = render(<OverviewTab stats={allGoodStats} trendsData={[]} isLoading totpStats={null} />)
+    const allGood = render(<OverviewTab stats={allGoodStats} activitySummary={{ conversations: 0, messages: 0, tokens: 0 }} trendsData={[]} isLoading totpStats={null} />)
     expect(text(allGood)).toContain('dashboard.home.passwordExpiration.allGood')
     expect(text(allGood)).toContain('animate-pulse')
     expect(text(allGood)).not.toContain('dashboard.home.stats.twoFactorAuth')
   })
+
 })
