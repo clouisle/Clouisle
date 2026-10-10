@@ -1,4 +1,4 @@
-// GENERATED — 2026-09-23T17:20:52.211Z
+// GENERATED — 2026-10-07T17:03:38.838Z
 // Source: i18n/en/auditLogs.json
 export type AuditLogsMessages = {
   auditLogs: {
@@ -232,6 +232,11 @@ export type AuditLogsMessages = {
     actionupload_file: string
     actionupload_image: string
     actionupload_sandbox_artifact: string
+    actionsandbox_task_cancelled: string
+    actionsandbox_task_completed: string
+    actionsandbox_task_failed: string
+    actionsandbox_task_recovered: string
+    actionsandbox_task_started: string
     actioncreate_knowledge_base: string
     actionupdate_knowledge_base: string
     actiondelete_knowledge_base: string
@@ -241,6 +246,7 @@ export type AuditLogsMessages = {
     resourceTypeWorkflowVersion: string
     resourceTypeFile: string
     resourceTypeTeamModel: string
+    resourceTypeSandboxTask: string
     rowsPerPage: string
     pageInfo: string
   }

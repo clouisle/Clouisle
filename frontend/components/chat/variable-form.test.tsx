@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { ReactNode } from 'react'
 
-const uploadFile = mock(() => Promise.resolve({ url: '/uploads/new.txt' }))
+const hookState: unknown[] = []
+let hookIndex = 0
+
+const uploadFile = mock(() => Promise.resolve({ url: '/uploads/new.txt', asset_id: 'asset-single' }))
 
 const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props })
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: 'fragment' }))
@@ -11,8 +14,13 @@ mock.module('react', () => ({
   useEffect: (effect: () => void) => effect(),
   useMemo: <T,>(factory: () => T) => factory(),
   useRef: <T,>(initial: T) => ({ current: initial }),
-  useState: <T,>(initial: T) => [initial, mock()] as const,
+  useState: <T,>(initial: T) => {
+    const index = hookIndex++
+    if (!(index in hookState)) hookState[index] = initial
+    return [hookState[index] as T, (value: T) => { hookState[index] = value }] as const
+  },
 }))
+
 mock.module('next-intl', () => ({
   useTranslations: () => (key: string, values?: Record<string, unknown>) =>
     values ? `${key}:${Object.values(values).join(',')}` : key,
@@ -48,8 +56,10 @@ mock.module('@/components/ui/select', () => ({
   SelectValue: element('value'),
 }))
 mock.module('lucide-react', () => ({ Upload: element('svg'), X: element('svg'), FileIcon: element('svg'), ImageIcon: element('svg') }))
+mock.module('./authenticated-media', () => ({ AuthenticatedImage: element('authenticated-image') }))
 
-const { VariableForm } = await import('./variable-form')
+// Configure module mocks before loading the component under test.
+const { VariableForm, MultiFileUploadInput } = await import('./variable-form')
 type Variable = Parameters<typeof VariableForm>[0]['variables'][number]
 type Tree = { type: unknown; props: Record<string, unknown> }
 
@@ -71,12 +81,21 @@ function findAll(node: ReactNode, predicate: (tree: Tree) => boolean): Tree[] {
 }
 
 const variable = (name: string, type: Variable['type'], extra: Partial<Variable> = {}): Variable => ({ name, type, required: false, ...extra })
-const render = (variables: Variable[], values: Record<string, unknown>, onChange = mock(), onSubmit?: () => void, fieldErrors?: Record<string, string>) =>
-  VariableForm({ variables, values, onChange, onSubmit, fieldErrors })
+const render = (variables: Variable[], values: Record<string, unknown>, onChange = mock(), onSubmit?: () => void, fieldErrors?: Record<string, string>, onAssetIdsChange = mock()) => {
+  hookState.length = 0
+  hookIndex = 0
+  return VariableForm({ variables, values, onChange, onAssetIdsChange, onSubmit, fieldErrors })
+}
+const renderMulti = (value: unknown, onChange: (value: unknown) => void, onAssetIdsChange: (assetIds: string[]) => void, reset = false) => {
+  if (reset) hookState.length = 0
+  hookIndex = 0
+  return MultiFileUploadInput({ variable: variable('images', 'images'), value, onChange, onAssetIdsChange })
+}
+
 
 beforeEach(() => {
   uploadFile.mockReset()
-  uploadFile.mockResolvedValue({ url: '/uploads/new.txt' })
+  uploadFile.mockResolvedValue({ url: '/uploads/new.txt', asset_id: 'asset-single' })
 })
 
 describe('VariableForm', () => {
@@ -124,13 +143,14 @@ describe('VariableForm', () => {
 
   test('handles file limits, mocked uploads, removals, and field errors', async () => {
     const onChange = mock()
-    const single = render([variable('file', 'file', { fileConfig: { accept: ['text/plain'], maxSize: 1 } })], {}, onChange, undefined, { file: 'server error' })
+    const onAssetIdsChange = mock()
+    const single = render([variable('file', 'file', { fileConfig: { accept: ['text/plain'], maxSize: 1 } })], {}, onChange, undefined, { file: 'server error' }, onAssetIdsChange)
     const singleInput = findAll(single, (node) => node.type === 'input' && node.props.type === 'file')[0]
     expect(singleInput.props.accept).toBe('text/plain')
     await (singleInput.props.onChange as (event: { target: { files: File[] } }) => Promise<void>)({ target: { files: [new File(['ok'], 'new.txt')] } })
     expect(uploadFile).toHaveBeenCalledWith(expect.any(File), 'workflow-input')
     expect(onChange).toHaveBeenCalledWith({ file: '/uploads/new.txt' })
-    expect(findAll(single, (node) => node.type === 'alert').some((node) => node.props.children === 'server error')).toBe(true)
+    expect(onAssetIdsChange).toHaveBeenCalledWith('file', 'asset-single')
 
     const existing = render([variable('file', 'file')], { file: '/uploads/old.txt' }, onChange)
     ;(findAll(existing, (node) => node.type === 'button')[0].props.onClick as () => void)()
@@ -162,16 +182,18 @@ describe('VariableForm', () => {
     expect(uploadFile).toHaveBeenCalledWith(expect.any(File), 'workflow-input')
     expect(onChange).toHaveBeenCalledWith({ doc: '/uploads/new.txt' })
 
-    // 图片单文件：渲染 <img> 缩略图预览
-    const image = render([variable('photo', 'image')], { photo: '/uploads/p.png' }, onChange)
-    const preview = findAll(image, (node) => node.type === 'img')[0]
-    expect(preview.props.src).toBe('/uploads/p.png')
+    // Both variable previews use the authenticated asset renderer.
+    const image = render([variable('photo', 'image')], { photo: '/api/v1/upload/files/p.png' }, onChange)
+    const preview = findAll(image, (node) => node.type === 'authenticated-image')[0]
+    expect(preview.props.src).toBe('/api/v1/upload/files/p.png')
+
 
     // 多图：缩略图网格预览 + 移除按钮
     const onChangeMulti = mock()
     const images = render([variable('shots', 'images')], { shots: ['/uploads/a.png', '/uploads/b.png'] }, onChangeMulti)
-    const thumbs = findAll(images, (node) => node.type === 'img')
+    const thumbs = findAll(images, (node) => node.type === 'authenticated-image')
     expect(thumbs.map((node) => node.props.src)).toEqual(['/uploads/a.png', '/uploads/b.png'])
+
     ;(findAll(images, (node) => node.type === 'button' && typeof node.props.onClick === 'function').at(-1)?.props.onClick as () => void)()
     expect(onChangeMulti).toHaveBeenCalledWith({ shots: ['/uploads/a.png'] })
 
@@ -192,5 +214,32 @@ describe('VariableForm', () => {
     // 非图片多文件保持文件芯片列表（无 img 预览）
     const docs = render([variable('docs', 'files')], { docs: ['/uploads/a.pdf'] }, onChangeMulti)
     expect(findAll(docs, (node) => node.type === 'img')).toHaveLength(0)
+  })
+  test('prunes uploaded asset IDs when the controlled value resets before another upload', async () => {
+    const onChange = mock()
+    const onAssetIdsChange = mock()
+    uploadFile.mockResolvedValueOnce({ url: '/api/v1/upload/files/first.png', asset_id: 'asset-first' })
+      .mockResolvedValueOnce({ url: '/api/v1/upload/files/second.png', asset_id: 'asset-second' })
+
+    const first = renderMulti([], onChange, onAssetIdsChange, true)
+    const firstInput = findAll(first, (node) => node.type === 'input' && node.props.multiple === true)[0]
+    await (firstInput.props.onChange as (event: { target: { files: File[] } }) => Promise<void>)({
+      target: { files: [new File(['x'], 'first.png')] },
+    })
+    expect(onAssetIdsChange).toHaveBeenLastCalledWith(['asset-first'])
+
+    const reset = renderMulti([], onChange, onAssetIdsChange)
+    expect(onAssetIdsChange).toHaveBeenLastCalledWith([])
+    const secondInput = findAll(reset, (node) => node.type === 'input' && node.props.multiple === true)[0]
+    await (secondInput.props.onChange as (event: { target: { files: File[] } }) => Promise<void>)({
+      target: { files: [new File(['y'], 'second.png')] },
+    })
+    expect(onAssetIdsChange).toHaveBeenLastCalledWith(['asset-second'])
+
+    const second = renderMulti(['/api/v1/upload/files/second.png'], onChange, onAssetIdsChange)
+    const remove = findAll(second, (node) => node.type === 'button' && node.props['aria-label'] === 'removeImage')[0]
+    ;(remove.props.onClick as () => void)()
+    expect(onAssetIdsChange).toHaveBeenLastCalledWith([])
+    expect(onChange).toHaveBeenLastCalledWith(null)
   })
 })

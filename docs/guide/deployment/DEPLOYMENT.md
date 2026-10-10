@@ -78,6 +78,8 @@ The backend image is shared across three services, and sandbox execution uses a 
 
 > **Important**: The beat service must always run exactly 1 replica. Running multiple beat instances will cause duplicate scheduled tasks.
 
+Sandbox workers consume the shared `sandbox` queue plus a dedicated affinity queue per worker. The first session job waits for a ready worker, prepares its workspace there, and persists the worker/instance/node/storage/workspace binding in Redis; later session jobs return to that worker's queue. Stateless jobs stay on the shared queue. `SANDBOX_WORKER_ID` is generated and persisted on each worker disk when unset; `SANDBOX_NODE_ID` defaults to the hostname. Give every independent local filesystem a unique disk identity and every host a unique node ID; never share one worker ID or physical workspace between replicas. Keep workspaces, checkpoints, identity, locks, and caches on the same retained local disk. A supervised restart on that disk can restore the last committed checkpoint. If the original disk remains unavailable through bounded recovery, the runtime can reset the session onto a prepared workspace on another ready worker and return `WORKSPACE_RESET`; uncheckpointed state is lost, and stale jobs are not automatically replayed. Adding workers increases capacity for new sessions; it does not ordinarily migrate existing sessions.
+
 ---
 
 ## Prerequisites
@@ -205,15 +207,15 @@ SANDBOX_FILESYSTEM_ISOLATION_BINARY=/usr/bin/bwrap
 
 Keep these values enabled for production. Each task receives its current job/session directory at `/workspace`; sibling workspaces and `/app/uploads` are not mounted into the task namespace.
 
-Rootless Bubblewrap needs namespace and mount syscalls. The supplied Compose service sets `seccomp=unconfined` for sandbox-worker only, runs the worker as root with `CAP_SYS_ADMIN` added to the runtime default cap set, and keeps `no-new-privileges` enabled. Do not remove the seccomp setting unless you replace it with a Localhost profile that permits the required syscalls.
+Bubblewrap needs namespace and mount syscalls. The supplied sandbox worker runs as root with `CAP_SYS_ADMIN` and `CAP_SETFCAP` for namespace setup, plus `CAP_NET_ADMIN` so the trusted egress bridge can enable loopback in each isolated task network namespace. Compose and Helm drop the runtime's default capabilities, keep `no-new-privileges` enabled, and use a worker-specific `seccomp=unconfined` profile. Do not remove the seccomp setting unless you replace it with a Localhost profile that permits the required syscalls.
 
 The privileged worker creates the Bubblewrap user namespace directly, so the supplied deployments work even on hosts that gate non-privileged user namespaces (e.g. Ubuntu 23.10+ via `kernel.apparmor_restrict_unprivileged_userns=1`, Debian via `kernel.unprivileged_userns_clone=0`) — no host sysctl changes are required. Custom deployments that keep the worker non-root need the host to permit unprivileged user namespaces at the node level (see [Code Sandbox → Host Kernel Requirements](../concepts/code-sandbox.md#host-kernel-requirements)); otherwise every sandbox job fails with `bwrap: No permissions to create new namespace, likely because the kernel does not allow non-privileged user namespaces.`
 
 ### User Namespace Remapping (Hardening)
 
-The sandbox task runs in a fresh Bubblewrap user + mount namespace, so it cannot directly reach the worker container's capabilities. However, if a task ever escapes Bubblewrap (a bwrap or kernel vulnerability), it lands inside the worker container **as root with `CAP_SYS_ADMIN`**. In a default Docker daemon the container shares the host's initial user namespace, so that capability is host-user-namespace-scoped and well-known escape chains (cgroup `release_agent`, remounting `/proc` to write `kernel.core_pattern`, sysctl writes) become reachable in principle.
+The sandbox task runs in a fresh Bubblewrap user + mount namespace, so it cannot directly reach the worker container's capabilities. If a task escapes Bubblewrap, it lands inside the worker container as root with `CAP_SYS_ADMIN`, `CAP_SETFCAP`, and `CAP_NET_ADMIN`. On a default Docker daemon, `CAP_SYS_ADMIN` is scoped to the host's initial user namespace and exposes known escape chains (cgroup `release_agent`, remounting `/proc` to write `kernel.core_pattern`, sysctl writes) in principle. `CAP_NET_ADMIN` is scoped to the worker's container network namespace.
 
-**Docker daemon user namespace remapping** contains this: every container is placed in a nested user namespace, so `CAP_SYS_ADMIN` only applies to the container's own user namespace and the host-escape chains above no longer work. The sandbox worker still creates its Bubblewrap user namespace (privileged inside the remapped namespace), so sandbox functionality is unaffected.
+**Docker daemon user namespace remapping** contains the host-user-namespace risk: `CAP_SYS_ADMIN` then applies only to the container's nested user namespace, so the host escape chains above no longer work. `CAP_NET_ADMIN` remains scoped to the worker container's network namespace. The sandbox worker still creates its Bubblewrap user namespace, so sandbox functionality is unaffected.
 
 Enable it in `/etc/docker/daemon.json` on the Docker host and restart the daemon:
 
@@ -461,7 +463,7 @@ The manifest contains 13 resource sections. It does **not** use YAML anchors —
 | 7 | Uploads | PVC | `uploads-data` 10Gi, ReadWriteMany |
 | 8 | API | Deployment + Service | 2 replicas, port 8000 |
 | 9 | Worker | Deployment | 2 replicas, no Service |
-| 10 | Sandbox Worker | Deployment | 1 replica, no Service |
+| 10 | Sandbox Worker | DaemonSet | One pod per eligible node, node-local hostPath, no Service |
 | 11 | Beat | Deployment | 1 replica, `Recreate` strategy |
 | 12 | Frontend | Deployment + Service | 2 replicas, port 3000 |
 | 13 | Ingress | Ingress | `/api` → api:8000, `/` → frontend:3000 |
@@ -668,7 +670,7 @@ kubectl -n clouisle top pods
 | `QDRANT_DISTANCE` | `Cosine` | Vector distance metric |
 | `TAVILY_API_KEY` | *(empty)* | Tavily web search API key (for agent web search capability) |
 | `SANDBOX_RUNTIME_ENABLED` | `true` | Route executable tasks through the sandbox runtime. |
-| `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `true` in sandbox-worker deployments | Enable the Bubblewrap mount namespace. Generic application default is `false`. |
+| `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `true` | Enable the Bubblewrap mount namespace; the generic application default is `true`. |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `/usr/bin/bwrap` in sandbox-worker deployments | Bubblewrap executable path. Generic application default is `bwrap`. |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | Sandbox Celery worker concurrency. |
 | `SANDBOX_WORKSPACE_ROOT` | `/tmp/clouisle-sandbox/jobs` | Host-side root for sandbox job and session directories. |
@@ -807,13 +809,13 @@ docker push "$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
 
 kubectl -n clouisle set image deployment/api api="$REGISTRY/clouisle-backend:$IMAGE_TAG"
 kubectl -n clouisle set image deployment/worker worker="$REGISTRY/clouisle-backend:$IMAGE_TAG"
-kubectl -n clouisle set image deployment/sandbox-worker sandbox-worker="$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
+kubectl -n clouisle set image daemonset/sandbox-worker sandbox-worker="$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
 kubectl -n clouisle set image deployment/beat beat="$REGISTRY/clouisle-backend:$IMAGE_TAG"
 kubectl -n clouisle set image deployment/frontend frontend="$REGISTRY/clouisle-frontend:$IMAGE_TAG"
 
 kubectl -n clouisle rollout status deployment/api
 kubectl -n clouisle rollout status deployment/worker
-kubectl -n clouisle rollout status deployment/sandbox-worker
+kubectl -n clouisle rollout status daemonset/sandbox-worker
 kubectl -n clouisle rollout status deployment/beat
 kubectl -n clouisle rollout status deployment/frontend
 ```
@@ -832,7 +834,7 @@ The backend initializes/updates the schema at startup through Tortoise ORM (`ini
 - [ ] **Network isolation** — In Docker Compose, infrastructure services (db, redis, qdrant) should not be accessible from outside. In K8s, they use ClusterIP services (no external access by default).
 - [ ] **Regular backups** — Set up automated PostgreSQL and Qdrant backups
 - [ ] **Resource limits** — Review and adjust CPU/memory limits in K8s manifests based on actual usage
-- [ ] **Verify sandbox isolation** — Keep `SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true`, ensure `/usr/bin/bwrap` exists in the sandbox-worker image, retain the worker-specific seccomp configuration, and confirm the worker runs as root with `CAP_SYS_ADMIN` (`grep CapEff /proc/self/status` non-zero in the container) — or, for non-root worker setups, that the host permits unprivileged user namespaces (`unshare -U true`)
+- [ ] **Verify sandbox isolation** — Keep `SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true`, ensure `/usr/bin/bwrap` exists in the sandbox-worker image, retain the worker-specific seccomp configuration, and confirm the worker runs as root with `CAP_SYS_ADMIN`, `CAP_SETFCAP`, and `CAP_NET_ADMIN` (`grep CapEff /proc/self/status` non-zero in the container) — or, for non-root worker setups, that the host permits unprivileged user namespaces (`unshare -U true`)
 - [ ] **Docker daemon hardening (Compose)** — Consider enabling user namespace remapping (`userns-remap` in `/etc/docker/daemon.json`) so the worker's `CAP_SYS_ADMIN` is contained in a nested user namespace (see [User Namespace Remapping](#user-namespace-remapping-hardening)); re-chown pre-existing volumes after enabling
 - [ ] **Image scanning** — Scan Docker images for vulnerabilities before deploying
 
@@ -894,7 +896,7 @@ Common causes:
 bwrap: No permissions to create new namespace, likely because the kernel does not allow non-privileged user namespaces.
 ```
 
-With the supplied deployments this means the worker is not actually running as root with `CAP_SYS_ADMIN` (the image's non-root user has empty effective capabilities, so `cap_add` alone does nothing — the deployment must set `user: "0"` / `runAsUser: 0`). Verify inside the container: `grep CapEff /proc/self/status` must be non-zero.
+With the supplied deployments, this error means the worker is not running as root with `CAP_SYS_ADMIN` (the image's non-root user has empty effective capabilities, so `cap_add` alone does nothing; the deployment must set `user: "0"` / `runAsUser: 0`). `CAP_SETFCAP` is also required for namespace setup, and `CAP_NET_ADMIN` is required by the trusted egress bridge. Verify the effective capability set inside the container.
 
 For custom deployments that keep the worker non-root, the host kernel must permit unprivileged user namespaces — fix at the **node level** (`seccomp=unconfined` does not help): on Ubuntu 23.10+ run `sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`; on Debian run `sysctl -w kernel.unprivileged_userns_clone=1`, then persist via `/etc/sysctl.d/` and verify with `unshare -U true`. See [Code Sandbox → Host Kernel Requirements](../concepts/code-sandbox.md#host-kernel-requirements). In Kubernetes apply the sysctl to every node; it cannot be set per pod.
 

@@ -22,6 +22,7 @@ async def _execute_asset_tool(
     agent: "Agent | None",
     user: Any,
     conversation_id: Any,
+    workflow_run_id: Any = None,
     session_id: str | None = None,
 ) -> str:
     from uuid import UUID
@@ -32,32 +33,44 @@ async def _execute_asset_tool(
     from app.services.file_parser import FileParseConfig, file_parser_service
     from app.services.upload_storage import get_upload_storage_backend
     from app.api.v1.endpoints.upload import UPLOAD_ROOT
-
     from app.core.i18n import t
 
-    if not agent or not user:
+    if not agent or (not user and workflow_run_id is None):
         return json.dumps({"error": t("agent_context_required")}, ensure_ascii=False)
     ref = arguments.get("ref")
     if not isinstance(ref, str):
         return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
-    if not conversation_id:
-        return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
+
+    if workflow_run_id is not None:
+        try:
+            scope_id = UUID(str(workflow_run_id))
+        except (ValueError, AttributeError):
+            return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
+        scope_type = AssetScopeType.WORKFLOW_RUN
+    else:
+        if not conversation_id:
+            return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
+        try:
+            scope_id = UUID(str(conversation_id))
+        except (ValueError, AttributeError):
+            return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
+        scope_type = AssetScopeType.CONVERSATION
+
     try:
-        scope_id = UUID(str(conversation_id))
-    except (ValueError, AttributeError):
-        return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
-    try:
-        asset = await asset_service.resolve_ref(
-            scope_type=AssetScopeType.CONVERSATION,
+        from app.services.asset_access import resolve_authorized_asset_ref
+
+        asset = await resolve_authorized_asset_ref(
+            ref,
+            scope_type=scope_type,
             scope_id=scope_id,
-            ref=ref,
-            team_id=getattr(agent, "team_id", None),
-            user_id=user.id,
+            user=user,
+            expected_team_id=getattr(agent, "team_id", None),
         )
     except BusinessError as exc:
         if exc.status_code == 403:
             return json.dumps({"error": t("access_denied")}, ensure_ascii=False)
         return json.dumps({"error": t("file_not_found")}, ensure_ascii=False)
+
     try:
         if tool_name == "materialize_asset":
             path = arguments.get("path")
@@ -86,10 +99,22 @@ async def _execute_asset_tool(
                 code="return {'materialized': True}",
                 cwd="/workspace",
                 limits=SandboxLimits(timeout_seconds=30, disk_mb=512),
+                metadata={
+                    "team_id": str(agent.team_id) if agent.team_id else None,
+                    "user_id": str(user.id) if user is not None else None,
+                    "workflow_run_id": (
+                        str(scope_id)
+                        if scope_type == AssetScopeType.WORKFLOW_RUN
+                        else None
+                    ),
+                },
                 input_files=[
                     SandboxInputFileSpec(
                         target_path=safe_path,
                         asset_id=asset.id,
+                        asset_ref=ref,
+                        scope_type=scope_type.value,
+                        scope_id=scope_id,
                         expected_checksum=asset.checksum,
                         expected_size=asset.size,
                     )
@@ -203,6 +228,7 @@ async def execute_tool_call(
             agent=agent,
             user=user,
             conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
             session_id=session_id,
         )
 

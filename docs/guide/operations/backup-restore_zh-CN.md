@@ -93,7 +93,8 @@ docker compose exec -T db pg_restore -U "${POSTGRES_USER:-postgres}" -d "${POSTG
 Kubernetes 示例：
 
 ```bash
-kubectl -n clouisle scale deployment api worker sandbox-worker beat --replicas=0
+kubectl -n clouisle scale deployment api worker beat --replicas=0
+kubectl -n clouisle delete daemonset sandbox-worker
 kubectl -n clouisle exec -i statefulset/postgres -- pg_restore -U postgres -d clouisle --clean --if-exists < postgres.dump
 ```
 
@@ -115,7 +116,7 @@ curl --fail --request POST \
   --form "snapshot=@${SNAPSHOT_FILE}"
 ```
 
-PostgreSQL 和 Qdrant 恢复完成后，只启动 API 恢复 uploads 压缩包，再将应用工作负载恢复为原有副本数。提供的 manifest 使用 `api=2`、`worker=2`、`sandbox-worker=1` 和 `beat=1`；如果部署曾扩容，请按实际副本数调整。
+PostgreSQL 和 Qdrant 恢复完成后，只启动 API 恢复 uploads 压缩包，再重新应用 manifest 以创建 sandbox-worker DaemonSet 并恢复其他应用工作负载。提供的 manifest 使用 `api=2`、`worker=2`、每个符合条件的节点一个 Sandbox Worker、`beat=1`；若实际部署不同，请相应调整配置。
 
 ```bash
 # Compose
@@ -127,9 +128,7 @@ docker compose start worker sandbox-worker beat
 kubectl -n clouisle scale deployment api --replicas=2
 kubectl -n clouisle rollout status deployment/api
 kubectl -n clouisle exec -i deployment/api -- tar -xzf - -C /app < uploads.tar.gz
-kubectl -n clouisle scale deployment worker --replicas=2
-kubectl -n clouisle scale deployment sandbox-worker --replicas=1
-kubectl -n clouisle scale deployment beat --replicas=1
+kubectl apply -f deploy/k8s/clouisle.yaml
 ```
 
 恢复后验证 `/api/v1/health`、登录、知识库检索、文件上传和一个代表性工作流。Redis 队列状态是可选的；不恢复时，请重新提交故障时处于排队状态的任务。

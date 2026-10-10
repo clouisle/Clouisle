@@ -16,7 +16,7 @@ import type { BundledLanguage, BundledTheme } from 'shiki'
 import { createMathPlugin } from '@streamdown/math'
 import { ImageLightbox, useLightbox } from './image-lightbox'
 import { AuthenticatedImage, AuthenticatedVideo } from './authenticated-media'
-import { useAuthenticatedAssetUrl } from './authenticated-asset'
+import { getAuthenticatedApiAssetUrl, useAuthenticatedAssetUrl } from './authenticated-asset'
 import {
   Popover,
   PopoverTrigger,
@@ -1975,6 +1975,32 @@ function isSameOriginChatLink(url: string) {
   }
 }
 
+function getSandboxArtifactPreviewFile(src: string): FilePart | null {
+  const authenticatedUrl = getAuthenticatedApiAssetUrl(src)
+  if (!authenticatedUrl) return null
+
+  try {
+    const parsedUrl = new URL(
+      authenticatedUrl,
+      typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+    )
+    if (!/^\/api\/v1\/upload\/files\/sandbox-artifacts\/\d{4}\/\d{2}\/[^/]+$/.test(parsedUrl.pathname)) {
+      return null
+    }
+
+    const filename = decodeURIComponent(parsedUrl.pathname.slice(parsedUrl.pathname.lastIndexOf('/') + 1))
+    if (!filename || filename.includes('/') || filename.includes('\\')) return null
+
+    return {
+      type: 'file',
+      filename,
+      url: `${parsedUrl.pathname}${parsedUrl.search}`,
+    }
+  } catch {
+    return null
+  }
+}
+
 function LinkSafetyModal({
   url,
   isOpen,
@@ -2358,7 +2384,30 @@ export const TextWithCitations = React.memo(function TextWithCitations({
   const components = React.useMemo(() => ({
     a: ({ href, children, ...props }: React.ComponentProps<'a'>) => {
       if (!href?.startsWith(CITATION_HREF_PREFIX)) {
-        return <a href={href} {...props}>{children}</a>
+        const artifactFile = href ? getSandboxArtifactPreviewFile(href) : null
+        const onClick = artifactFile && onOpenCodePreview
+          ? (event: React.MouseEvent<HTMLAnchorElement>) => {
+              props.onClick?.(event)
+              if (
+                event.defaultPrevented
+                || event.button !== 0
+                || event.metaKey
+                || event.ctrlKey
+                || event.shiftKey
+                || event.altKey
+                || props.download != null
+              ) {
+                return
+              }
+              event.preventDefault()
+              onOpenCodePreview({
+                id: `artifact:${artifactFile.url}`,
+                kind: 'artifact',
+                file: artifactFile,
+              })
+            }
+          : props.onClick
+        return <a href={href} {...props} onClick={onClick}>{children}</a>
       }
       const encodedSourceId = href.slice(CITATION_HREF_PREFIX.length)
       const source = sources.find((candidate) => (
@@ -2414,7 +2463,7 @@ export const TextWithCitations = React.memo(function TextWithCitations({
       }
       return <p {...props}>{children}</p>
     },
-  }), [onOpenImage, sources])
+  }), [onOpenCodePreview, onOpenImage, sources])
 
   const renderMarkdownBlock = React.useCallback((props: React.ComponentProps<typeof Block>) => (
     <PreviewableMarkdownBlock
@@ -2449,7 +2498,10 @@ export const TextWithCitations = React.memo(function TextWithCitations({
         plugins={isStreaming ? undefined : chatStreamdownPlugins}
         linkSafety={{
           enabled: true,
-          onLinkCheck: (url) => isSameOriginChatLink(url),
+          onLinkCheck: (url) => (
+            isSameOriginChatLink(url)
+            && !(onOpenCodePreview && getSandboxArtifactPreviewFile(url))
+          ),
           renderModal: (props) => <LinkSafetyModal {...props} />,
         }}
         BlockComponent={renderMarkdownBlock}

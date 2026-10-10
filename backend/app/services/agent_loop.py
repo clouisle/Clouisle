@@ -30,8 +30,9 @@ import logging
 import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.api.v1.endpoints.chat_helpers import (
     get_tool_execution_payloads,
@@ -46,6 +47,10 @@ from app.api.v1.endpoints.chat_tools import execute_tool_call
 from app.llm.tools.interaction import ToolInteractionRequest
 from app.llm.types import ChatStreamChunk, FinishReason, StopReason
 from app.services import agent_round
+from app.services.sandbox.recovery import (
+    capture_workspace_resets,
+    sandbox_execution_scope,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +67,8 @@ COMPRESSION_START = "compression_start"
 COMPRESSION_END = "compression_end"
 OUTPUT_TRUNCATED = "output_truncated"
 ITERATION_CAP_REACHED = "iteration_cap_reached"
+
+MAX_DEPENDENCY_METRICS_PER_PASS = 64
 
 
 @dataclass(slots=True)
@@ -142,6 +149,7 @@ class AgentLoopContext:
     formatter: Callable[[str, dict[str, Any]], str | None] | None = None
     # persistence granularity
     persist_step_per_tool: bool = False
+    collect_dependency_metrics: bool = False
     step_branch_parent_id: UUID | None = None
     first_round_index: int = 1
     created_message_count: int = 2
@@ -166,6 +174,8 @@ class AgentLoopResult:
     aggregate_total_input_tokens: int = 0
     duration_ms: int = 0
     first_token_ms: int | None = None
+    dependency_metrics: list[dict[str, Any]] = field(default_factory=list)
+    dependency_metrics_truncated: bool = False
     created_message_count: int = 2
     final_round_index: int = 1
 
@@ -179,6 +189,18 @@ def _safe_arguments(arguments: str | dict | None) -> dict[str, Any]:
         return json.loads(arguments)
     except (json.JSONDecodeError, TypeError):
         return {}
+
+
+def _include_workspace_reset(result: str, notices: list[dict[str, Any]]) -> str:
+    """Keep recovery information in the persisted tool protocol, not just logs."""
+    try:
+        payload = json.loads(result)
+    except (TypeError, ValueError):
+        payload = result
+    if not isinstance(payload, dict):
+        payload = {"result": payload}
+    payload["workspace_reset"] = notices[-1]
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def _tool_call_changed(previous: Any, current: Any) -> bool:
@@ -245,6 +267,7 @@ class AgentLoop:
         self.result = AgentLoopResult()
         self._round_index = context.first_round_index
         self._consecutive_pause_turns = 0
+        self._deadline_at: float | None = None
         self._last_event_time = (
             context.initial_last_event_time
             if context.initial_last_event_time is not None
@@ -375,20 +398,35 @@ class AgentLoop:
 
         display_name = ctx.tool_display_names.get(tool_name, tool_name)
         tool_runner = ctx.execute_tool_call or execute_tool_call
+        reset_notices: list[dict[str, Any]] = []
+        collect_dependency_metric = (
+            ctx.collect_dependency_metrics and tool_name != "ask_user"
+        )
+        tool_started_at = time.time() if collect_dependency_metric else None
+        tool_started_clock = time.monotonic() if collect_dependency_metric else 0.0
+        metric_status = "in_progress"
+        metric_error_category: str | None = None
         try:
-            tool_result = await tool_runner(
-                tool_name,
-                arguments,
-                agent=ctx.agent,
-                tool_timeouts=ctx.tool_timeouts,
-                user=ctx.user,
-                session_id=ctx.sandbox_session_id,
-                current_images=image_pool,
-                conversation_id=ctx.conversation.id,
-            )
+            with (
+                capture_workspace_resets() as reset_notices,
+                sandbox_execution_scope(
+                    deadline_at=self._deadline_at, stop_requested=ctx.stop_requested
+                ),
+            ):
+                tool_result = await tool_runner(
+                    tool_name,
+                    arguments,
+                    agent=ctx.agent,
+                    tool_timeouts=ctx.tool_timeouts,
+                    user=ctx.user,
+                    session_id=ctx.sandbox_session_id,
+                    current_images=image_pool,
+                    conversation_id=ctx.conversation.id,
+                )
             if isinstance(tool_result, ToolInteractionRequest):
                 if tool_result.tool_name != tool_name:
                     raise ValueError("tool interaction name mismatch")
+                metric_status = "waiting"
                 call_sse = build_tool_call_sse_event(
                     tool_call_id=tc.id,
                     tool_name=tool_name,
@@ -411,9 +449,23 @@ class AgentLoop:
                 )
 
             display_result, llm_result = get_tool_execution_payloads(tool_result)
+            metric_status = "completed"
+            if tool_started_at is not None:
+                try:
+                    parsed_result = json.loads(display_result)
+                except (TypeError, ValueError):
+                    parsed_result = None
+                if (
+                    isinstance(parsed_result, dict)
+                    and parsed_result.get("error") is not None
+                ):
+                    metric_status = "failed"
+                    metric_error_category = "tool_error"
             if ctx.append_generated_images is not None:
                 ctx.append_generated_images(image_pool, image_inventory, display_result)
         except Exception as exc:
+            metric_error_category = type(exc).__name__[:32]
+            metric_status = "failed"
             logger.warning(
                 "Tool %s failed in AgentLoop: %s",
                 tool_name,
@@ -424,6 +476,39 @@ class AgentLoop:
                 {"error": str(exc) or type(exc).__name__}, ensure_ascii=False
             )
             llm_result = display_result
+        finally:
+            if tool_started_at is not None:
+                if (
+                    len(self.result.dependency_metrics)
+                    >= MAX_DEPENDENCY_METRICS_PER_PASS
+                ):
+                    self.result.dependency_metrics_truncated = True
+                else:
+                    finished_at = time.time()
+                    self.result.dependency_metrics.append(
+                        {
+                            "span_id": str(uuid4()),
+                            "kind": "retrieval"
+                            if tool_name == "knowledge_search"
+                            else "tool",
+                            "name": tool_name[:100],
+                            "status": metric_status,
+                            "started_at": datetime.fromtimestamp(
+                                tool_started_at, timezone.utc
+                            ).isoformat(),
+                            "finished_at": datetime.fromtimestamp(
+                                finished_at, timezone.utc
+                            ).isoformat(),
+                            "duration_ms": max(
+                                0, int((time.monotonic() - tool_started_clock) * 1000)
+                            ),
+                            "error_category": metric_error_category,
+                        }
+                    )
+
+        if reset_notices:
+            display_result = _include_workspace_reset(display_result, reset_notices)
+            llm_result = _include_workspace_reset(llm_result, reset_notices)
 
         return (
             self._build_tool_call_sse(tc),
@@ -587,6 +672,8 @@ class AgentLoop:
 
     async def run(self) -> AsyncIterator[str | None]:
         start_time = time.time()
+        if self.context.deadline_seconds is not None:
+            self._deadline_at = start_time + self.context.deadline_seconds
         try:
             async for output in self._run(start_time):
                 yield output

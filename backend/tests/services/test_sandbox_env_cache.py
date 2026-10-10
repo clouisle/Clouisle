@@ -1,10 +1,10 @@
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
 from app.services.sandbox.cache import (
-    acquire_cache_lock,
     build_cache_key,
     normalize_package_source_url,
 )
@@ -30,7 +30,9 @@ class FakePythonEnvManager:
         self.cache_hit = cache_hit
         self.calls = []
 
-    def ensure_environment(self, *, packages, runtime_profile, package_index_url=None):
+    async def ensure_environment(
+        self, *, packages, runtime_profile, package_index_url=None, **kwargs
+    ):
         self.calls.append((packages, runtime_profile, package_index_url))
         return self.env_dir, self.cache_hit
 
@@ -53,7 +55,9 @@ class FakeNodeEnvManager:
         self.cache_hit = cache_hit
         self.calls = []
 
-    def ensure_environment(self, *, packages, runtime_profile, registry_url=None):
+    async def ensure_environment(
+        self, *, packages, runtime_profile, registry_url=None, **kwargs
+    ):
         self.calls.append((packages, runtime_profile, registry_url))
         return self.env_dir, self.cache_hit
 
@@ -68,7 +72,7 @@ class FakeNodeEnvManager:
         }
 
 
-def test_sandbox_cache_helpers_normalize_urls_and_release_locks():
+def test_sandbox_cache_helpers_normalize_urls():
     key = build_cache_key({"packages": ["requests"]}, "standard")
 
     assert key == build_cache_key({"packages": ["requests"]}, "standard")
@@ -81,11 +85,6 @@ def test_sandbox_cache_helpers_normalize_urls_and_release_locks():
         )
         == "https://registry.example.test/npm?a=1#latest"
     )
-
-    with acquire_cache_lock("python", key):
-        pass
-    with acquire_cache_lock("python", key):
-        pass
 
 
 @pytest.mark.anyio
@@ -112,7 +111,9 @@ class TestSandboxEnvironmentCache:
         from app.services.sandbox.models import SandboxExecutionMetadata
 
         execution_metadata = SandboxExecutionMetadata()
-        env = manager._build_command_env(job, workspace, execution_metadata)
+        env = await manager._build_command_env(
+            job, workspace, execution_metadata, SimpleNamespace()
+        )
 
         assert env["VIRTUAL_ENV"] == str(python_env)
         assert str(python_env / "bin") in env["PATH"]
@@ -144,7 +145,9 @@ class TestSandboxEnvironmentCache:
         from app.services.sandbox.models import SandboxExecutionMetadata
 
         execution_metadata = SandboxExecutionMetadata()
-        env = manager._build_command_env(job, workspace, execution_metadata)
+        env = await manager._build_command_env(
+            job, workspace, execution_metadata, SimpleNamespace()
+        )
 
         assert env["NODE_PATH"] == str(node_env / "node_modules")
         assert str(node_env / "node_modules" / ".bin") in env["PATH"]
@@ -175,7 +178,9 @@ class TestSandboxEnvironmentCache:
         from app.services.sandbox.models import SandboxExecutionMetadata
 
         execution_metadata = SandboxExecutionMetadata()
-        env = manager._build_command_env(job, workspace, execution_metadata)
+        env = await manager._build_command_env(
+            job, workspace, execution_metadata, SimpleNamespace()
+        )
 
         assert "/backend/.venv/bin" not in env["PATH"]
         assert env["SANDBOX_NODE_BINARY"] == "/usr/bin/node"

@@ -12,6 +12,7 @@ import asyncio
 import logging
 import time
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 from uuid import UUID, uuid4
 
 if TYPE_CHECKING:
@@ -42,6 +43,8 @@ from app.models.agent import (
 from app.schemas.agent import (
     ChatRequest,
     ChatResponse,
+    FileUrl,
+    ImageContent,
     MessageOut,
     MessageVersion,
     SwitchVersionRequest,
@@ -54,6 +57,7 @@ from app.schemas.agent import (
     RunEventOut,
     RunInputCreate,
     RunAnswerCreate,
+    WorkflowAssetRef,
 )
 from app.models.agent_run import AgentRun as _AgentRunModel
 
@@ -184,35 +188,180 @@ async def _resolve_message_assets(
     agent: Agent,
     user: User,
     conversation_id: UUID | None = None,
+    api_key: Any = None,
 ) -> list[tuple[Any, str, int]]:
-    """Authorize attachment references before creating their message."""
+    """Authorize attachments and bind each Asset to this conversation."""
     from app.models.asset import AssetScopeType
+    from app.services.asset import asset_service
+    from app.services.asset_access import (
+        authorize_asset_for_scope,
+        resolve_authorized_asset_ref,
+    )
 
     team_id = UUID(str(agent.team_id)) if agent.team_id else None
+    scope_type = AssetScopeType.CONVERSATION
     resolved_assets: list[tuple[Any, str, int]] = []
     for position, attachment in enumerate(attachments):
-        asset_id = getattr(attachment, "asset_id", None)
-        asset_ref = getattr(attachment, "asset_ref", None)
-        if asset_id is not None:
-            asset = await asset_service.get_authorized(
-                asset_id,
-                team_id=team_id,
-                user_id=user.id,
+        asset_id = (
+            attachment
+            if isinstance(attachment, UUID)
+            else (
+                attachment.get("asset_id")
+                if isinstance(attachment, dict)
+                else getattr(attachment, "asset_id", None)
             )
-        elif asset_ref and conversation_id is not None:
-            asset = await asset_service.resolve_ref(
-                scope_type=AssetScopeType.CONVERSATION,
-                scope_id=conversation_id,
-                ref=asset_ref,
-                team_id=team_id,
-                user_id=user.id,
-            )
-        else:
+        )
+        asset_ref = (
+            attachment.get("asset_ref")
+            if isinstance(attachment, dict)
+            else getattr(attachment, "asset_ref", None)
+        )
+        if asset_id is None and not asset_ref:
             continue
+        if conversation_id is None:
+            raise BusinessError(
+                code=ResponseCode.PERMISSION_DENIED,
+                msg_key="access_denied",
+                status_code=403,
+            )
+
+        if asset_ref:
+            asset = await resolve_authorized_asset_ref(
+                asset_ref,
+                scope_type=scope_type,
+                scope_id=conversation_id,
+                user=user,
+                api_key=api_key,
+                expected_team_id=team_id,
+            )
+            if asset_id is not None and asset.id != asset_id:
+                raise BusinessError(
+                    code=ResponseCode.PERMISSION_DENIED,
+                    msg_key="access_denied",
+                    status_code=403,
+                )
+        else:
+            asset = await authorize_asset_for_scope(
+                asset_id,
+                scope_type=scope_type,
+                scope_id=conversation_id,
+                user=user,
+                api_key=api_key,
+                expected_team_id=team_id,
+            )
+            binding = await asset_service.get_or_create_ref(
+                scope_type=scope_type,
+                scope_id=conversation_id,
+                asset=asset,
+            )
+            if isinstance(attachment, dict):
+                attachment["asset_ref"] = binding.ref
+            elif not isinstance(attachment, UUID) and hasattr(attachment, "asset_ref"):
+                attachment.asset_ref = binding.ref
+
         resolved_assets.append(
             (asset, "selected_reference" if asset_ref else "attachment", position)
         )
     return resolved_assets
+
+
+async def _resolve_workflow_asset_refs(
+    *,
+    references: list[WorkflowAssetRef],
+    agent: Agent,
+    user: User,
+    api_key: Any,
+) -> list[Any]:
+    """Authorize source-run refs before importing Assets into this chat."""
+    from app.models.asset import AssetScopeType
+    from app.services.asset_access import resolve_authorized_asset_ref
+
+    team_id = UUID(str(agent.team_id)) if agent.team_id else None
+    assets: list[Any] = []
+    seen_refs: set[tuple[UUID, str]] = set()
+    seen_assets: set[UUID] = set()
+
+    for reference in references:
+        key = (reference.workflow_run_id, reference.ref)
+        if key in seen_refs:
+            continue
+        seen_refs.add(key)
+        asset = await resolve_authorized_asset_ref(
+            reference.ref,
+            scope_type=AssetScopeType.WORKFLOW_RUN,
+            scope_id=reference.workflow_run_id,
+            user=user,
+            api_key=api_key,
+            expected_team_id=team_id,
+        )
+        if asset.id not in seen_assets:
+            assets.append(asset)
+            seen_assets.add(asset.id)
+
+    return assets
+
+
+async def _bind_workflow_assets_to_conversation(
+    *,
+    assets: list[Any],
+    conversation_id: UUID,
+    existing_asset_ids: set[UUID],
+    first_position: int,
+    user: User,
+    api_key: Any,
+    expected_team_id: UUID | None,
+) -> tuple[list[ImageContent], list[FileUrl], list[tuple[Any, str, int]]]:
+    """Create conversation refs and chat payloads for authorized workflow Assets."""
+    from app.models.asset import AssetScopeType
+    from app.services.asset_access import authorize_asset_for_scope
+
+    images: list[ImageContent] = []
+    files: list[FileUrl] = []
+    links: list[tuple[Any, str, int]] = []
+    position = first_position
+    seen = set(existing_asset_ids)
+
+    for asset in assets:
+        if asset.id in seen:
+            continue
+        seen.add(asset.id)
+        asset = await authorize_asset_for_scope(
+            asset.id,
+            scope_type=AssetScopeType.CONVERSATION,
+            scope_id=conversation_id,
+            user=user,
+            api_key=api_key,
+            expected_team_id=expected_team_id,
+        )
+        binding = await asset_service.get_or_create_ref(
+            scope_type=AssetScopeType.CONVERSATION,
+            scope_id=conversation_id,
+            asset=asset,
+        )
+        asset_url = f"/api/v1/upload/files/{quote(asset.storage_key, safe='/')}"
+        if asset.content_type.lower().startswith("image/"):
+            images.append(
+                ImageContent(
+                    asset_id=asset.id,
+                    asset_ref=binding.ref,
+                    url=asset_url,
+                )
+            )
+        else:
+            files.append(
+                FileUrl(
+                    asset_id=asset.id,
+                    asset_ref=binding.ref,
+                    filename=asset.display_filename,
+                    url=asset_url,
+                    size=asset.size,
+                    mime_type=asset.content_type,
+                )
+            )
+        links.append((asset, "selected_reference", position))
+        position += 1
+
+    return images, files, links
 
 
 @asynccontextmanager
@@ -1807,6 +1956,8 @@ async def _enqueue_existing_message_run(
         conversation_id=conversation.id,
         user_id=current_user.id,
         mode=mode,
+        resource_name=agent.name,
+        team_id=str(agent.team_id) if agent.team_id else None,
         source_message_id=source_message_id,
     )
     run.active_round_id = round_id
@@ -1911,16 +2062,61 @@ async def _enqueue_durable_chat_run(
             )
         )
 
+    workflow_assets = (
+        await _resolve_workflow_asset_refs(
+            references=chat_in.workflow_asset_refs,
+            agent=agent,
+            user=current_user,
+            api_key=api_key,
+        )
+        if chat_in.workflow_asset_refs
+        else []
+    )
+
     message_assets = await _resolve_message_assets(
         attachments=[*chat_in.images, *chat_in.file_urls],
         agent=agent,
         user=current_user,
         conversation_id=conversation.id,
+        api_key=api_key,
     )
+    if chat_in.variable_asset_ids:
+        variable_assets = await _resolve_message_assets(
+            attachments=chat_in.variable_asset_ids,
+            agent=agent,
+            user=current_user,
+            conversation_id=conversation.id,
+            api_key=api_key,
+        )
+        message_assets.extend(
+            (asset, "variable", index)
+            for index, (asset, _, _) in enumerate(variable_assets)
+        )
     round_id = uuid4()
     user_branch_parent_id = await get_next_user_branch_parent_id(conversation)
 
-    async with _message_asset_transaction(bool(message_assets)):
+    async with _message_asset_transaction(bool(message_assets or workflow_assets)):
+        if workflow_assets:
+            existing_asset_ids = {asset.id for asset, _, _ in message_assets}
+            first_position = (
+                max((position for _, _, position in message_assets), default=-1) + 1
+            )
+            (
+                imported_images,
+                imported_files,
+                imported_links,
+            ) = await _bind_workflow_assets_to_conversation(
+                assets=workflow_assets,
+                conversation_id=conversation.id,
+                existing_asset_ids=existing_asset_ids,
+                first_position=first_position,
+                user=current_user,
+                api_key=api_key,
+                expected_team_id=UUID(str(agent.team_id)) if agent.team_id else None,
+            )
+            chat_in.images.extend(imported_images)
+            chat_in.file_urls.extend(imported_files)
+            message_assets.extend(imported_links)
         user_msg = await Message.create(
             conversation=conversation,
             role=MessageRole.USER,
@@ -1966,6 +2162,8 @@ async def _enqueue_durable_chat_run(
         conversation_id=conversation.id,
         user_id=current_user.id,
         mode=mode,
+        resource_name=agent.name,
+        team_id=str(agent.team_id) if agent.team_id else None,
         source_message_id=user_msg.id,
     )
     run.active_round_id = round_id

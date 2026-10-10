@@ -211,6 +211,19 @@ def test_model_endpoint_allowlist_default_uses_localized_description():
     )
 
 
+def test_sandbox_network_allowlist_default_is_seeded_in_security_settings():
+    setting = site_setting.DEFAULT_SETTINGS["sandbox_network_allowlist"]
+
+    assert setting["value"] == [
+        "pypi.org",
+        "files.pythonhosted.org",
+        "pypi.python.org",
+        "registry.npmjs.org",
+    ]
+    assert setting["category"] == "security"
+    assert setting["desc"] == "sandbox_network_allowlist_description"
+
+
 def test_string_representation():
     setting = SiteSetting(key="theme", value="dark")
     assert str(setting) == "theme=dark"

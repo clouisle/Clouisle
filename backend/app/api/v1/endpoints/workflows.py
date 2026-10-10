@@ -1065,6 +1065,9 @@ async def trigger_workflow_webhook(
             status=RunStatus.PENDING,
             inputs=normalized_inputs,
         )
+        from app.services.observability_v2 import record_workflow_submission
+
+        await record_workflow_submission(run, matched_workflow)
 
         # Submit to Celery for background execution
         run_workflow_task.delay(
@@ -1129,6 +1132,9 @@ async def run_workflow(
             status=RunStatus.PENDING,
             inputs=run_request.inputs,
         )
+        from app.services.observability_v2 import record_workflow_submission
+
+        await record_workflow_submission(run, workflow)
 
         # Submit to Celery for background execution
         run_workflow_task.delay(
@@ -1196,6 +1202,9 @@ async def debug_workflow(
             status=RunStatus.PENDING,
             inputs=run_request.inputs,
         )
+        from app.services.observability_v2 import record_workflow_submission
+
+        await record_workflow_submission(run, workflow)
 
         # Submit to Celery for background execution
         run_workflow_task.delay(

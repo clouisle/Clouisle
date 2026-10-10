@@ -309,53 +309,87 @@ async def test_workflow_tables_create_all_tables_and_indexes(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("dialect, expected_calls", [("postgres", 4), ("sqlite", 0)])
-async def test_observability_indexes_use_btree_for_postgres(
-    monkeypatch: pytest.MonkeyPatch, dialect: str, expected_calls: int
+@pytest.mark.parametrize(
+    ("dialect", "table_rows", "expected_queries"),
+    [
+        ("postgres", [], 1),
+        ("postgres", [{"table_name": "observability_runs"}], 1),
+        ("sqlite", [{"table_name": "observability_runs"}], 0),
+    ],
+)
+async def test_observability_run_fields_migration_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+    dialect: str,
+    table_rows: list[dict[str, str]],
+    expected_queries: int,
 ) -> None:
     conn = SimpleNamespace(
         capabilities=SimpleNamespace(dialect=dialect),
-        execute_query=AsyncMock(return_value=(0, [])),
+        execute_query=AsyncMock(return_value=(0, table_rows)),
     )
+    migration = AsyncMock()
     monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", migration)
 
-    await init_data.init_observability_indexes()
+    await init_data.init_observability_run_fields()
 
-    assert conn.execute_query.await_count == expected_calls
-    if expected_calls:
-        queries = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
-        assert (
-            queries[0] == "DROP INDEX IF EXISTS idx_messages_observability_created_at"
-        )
-        assert "ON messages (created_at)" in queries[1]
-        assert "round_role = 'assistant_final'" in queries[1]
-        assert queries[2] == (
-            "DROP INDEX IF EXISTS idx_workflow_runs_observability_created_at"
-        )
-        assert "ON workflow_runs (created_at)" in queries[3]
-        assert all("USING BRIN" not in query for query in queries)
+    assert conn.execute_query.await_count == expected_queries
+    expected_migrations = int(dialect == "postgres" and bool(table_rows))
+    assert migration.await_count == expected_migrations
+    if expected_migrations:
+        query = migration.await_args.args[1]
+        assert "ADD COLUMN IF NOT EXISTS dependency_metrics JSONB" in query
+        assert "ADD COLUMN IF NOT EXISTS model_name VARCHAR(200)" in query
+        assert "ADD COLUMN IF NOT EXISTS message_started_at TIMESTAMPTZ" in query
+        assert "ADD COLUMN IF NOT EXISTS dependency_metrics_truncated BOOLEAN" in query
 
 
 @pytest.mark.asyncio
-async def test_observability_index_creation_failures_are_isolated(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+@pytest.mark.parametrize(
+    ("dialect", "table_rows", "index_rows", "expected_queries", "expected_migrations"),
+    [
+        ("postgres", [], [], 1, 0),
+        ("postgres", [{"table_name": "observability_runs"}], [], 2, 1),
+        (
+            "postgres",
+            [{"table_name": "observability_runs"}],
+            [{"indexname": "idx_observability_runs_error_category_submitted"}],
+            2,
+            0,
+        ),
+        ("sqlite", [{"table_name": "observability_runs"}], [], 0, 0),
+    ],
+)
+async def test_observability_run_error_index_migration_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+    dialect: str,
+    table_rows: list[dict[str, str]],
+    index_rows: list[dict[str, str]],
+    expected_queries: int,
+    expected_migrations: int,
 ) -> None:
-    async def execute(query: str):
-        if "CREATE INDEX" in query:
-            raise RuntimeError("index unavailable")
-        return 0, []
-
+    query_results = [(0, table_rows)]
+    if dialect == "postgres" and table_rows:
+        query_results.append((0, index_rows))
     conn = SimpleNamespace(
-        capabilities=SimpleNamespace(dialect="postgres"),
-        execute_query=AsyncMock(side_effect=execute),
+        capabilities=SimpleNamespace(dialect=dialect),
+        execute_query=AsyncMock(side_effect=query_results),
     )
+    migration = AsyncMock()
     monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", migration)
 
-    await init_data.init_observability_indexes()
+    await init_data.init_observability_run_error_index()
 
-    queries = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
-    assert len([query for query in queries if "CREATE INDEX" in query]) == 2
-    assert caplog.text.count("Could not create observability index") == 2
+    assert conn.execute_query.await_count == expected_queries
+    assert migration.await_count == expected_migrations
+    if expected_migrations:
+        query = migration.await_args.args[1]
+        assert (
+            "CREATE INDEX IF NOT EXISTS idx_observability_runs_error_category_submitted"
+            in query
+        )
+        assert "ON observability_runs (error_category, submitted_at, id)" in query
 
 
 @pytest.mark.asyncio
@@ -387,10 +421,13 @@ async def test_init_db_initializes_roles_settings_and_tables(
         "init_user_locale_field",
         "init_agent_attachment_fields",
         "init_agent_tools_credentials",
+        "init_agent_powered_by_text",
+        "init_message_history_index",
         "init_permission_is_system_field",
         "drop_model_provider_uniqueness",
         "init_model_provider_display_name",
         "init_kb_rerank_fields",
+        "init_kb_visibility_fields",
         "init_clouisle_import_sessions_table",
         "drop_obsolete_retrieval_evaluation_tables",
         "migrate_team_admin_roles",
@@ -400,7 +437,6 @@ async def test_init_db_initializes_roles_settings_and_tables(
         "migrate_registration_settings_category",
         "migrate_storage_settings_category",
         "init_workflow_tables",
-        "init_observability_indexes",
         "init_notification_tables",
         "init_tool_shares_table",
         "init_knowledge_base_shares_table",
@@ -410,8 +446,8 @@ async def test_init_db_initializes_roles_settings_and_tables(
         "init_memory_tables",
         "init_agent_hide_tool_calls_field",
         "init_agent_hide_message_actions_reasoning_fields",
-        "init_agent_memory_fields",
         "init_agent_hide_artifact_list_field",
+        "init_agent_memory_fields",
         "init_agent_media_generation_fields",
     ]
     migrations = {name: AsyncMock() for name in migration_names}
@@ -489,9 +525,12 @@ async def test_init_db_continues_after_optional_migration_failures(
         "init_user_locale_field",
         "init_agent_attachment_fields",
         "init_agent_tools_credentials",
+        "init_agent_powered_by_text",
+        "init_message_history_index",
         "init_permission_is_system_field",
         "drop_model_provider_uniqueness",
         "init_kb_rerank_fields",
+        "init_kb_visibility_fields",
         "init_clouisle_import_sessions_table",
         "drop_obsolete_retrieval_evaluation_tables",
     ]

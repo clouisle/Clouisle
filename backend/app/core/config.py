@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field, ValidationInfo, field_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     # gt=0 is load-bearing: a semaphore built with 0 permits deadlocks every
     # aggregate request, and a negative one raises ValueError at import time.
     DB_AGGREGATE_CONCURRENCY: int = Field(default=4, gt=0)
+
+    # API container/Pod identity shared by its Gunicorn processes.
+    # Defaults to hostname; override when multiple deployments share a hostname.
+    OBSERVABILITY_INSTANCE_ID: str = ""
+    OBSERVABILITY_INSTANCE_NAME: str = ""
 
     # Redis
     REDIS_HOST: str = "localhost"
@@ -113,11 +118,44 @@ class Settings(BaseSettings):
 
     # Sandbox runtime flags
     SANDBOX_RUNTIME_ENABLED: bool = True
-    SANDBOX_LEGACY_FALLBACK_ENABLED: bool = True
     SANDBOX_WORKSPACE_ROOT: str = "/tmp/clouisle-sandbox/jobs"
-    SANDBOX_FILESYSTEM_ISOLATION_ENABLED: bool = False
+    SANDBOX_WORKER_ID: str = ""
+    SANDBOX_NODE_ID: str = ""
+    SANDBOX_WORKER_INSTANCE_ID: str = ""
+    SANDBOX_WORKER_HEARTBEAT_SECONDS: float = Field(
+        default=5, gt=0, allow_inf_nan=False
+    )
+    SANDBOX_WORKER_HEARTBEAT_TTL_SECONDS: int = Field(default=20, gt=0)
+    SANDBOX_WORKER_RECOVERY_SECONDS: float = Field(
+        default=30, gt=0, allow_inf_nan=False
+    )
+    SANDBOX_RECOVERY_POLL_SECONDS: float = Field(default=0.5, gt=0, allow_inf_nan=False)
+    SANDBOX_SESSION_MAX_RESETS: int = Field(default=1, ge=0)
+    SANDBOX_SUPERVISOR_RESTART_SECONDS: float = Field(
+        default=1, ge=0, allow_inf_nan=False
+    )
+    SANDBOX_SUPERVISOR_MAX_RESTARTS: int = Field(default=3, ge=0)
+
+    @model_validator(mode="after")
+    def validate_sandbox_heartbeat(self) -> "Settings":
+        if (
+            self.SANDBOX_WORKER_HEARTBEAT_TTL_SECONDS
+            <= self.SANDBOX_WORKER_HEARTBEAT_SECONDS
+        ):
+            raise ValueError("Sandbox heartbeat TTL must exceed its refresh interval")
+        return self
+
+    SANDBOX_CHECKPOINT_ROOT: str = ""
+    SANDBOX_WORKSPACE_IDLE_SECONDS: int = Field(default=900, gt=0)
+    SANDBOX_CHECKPOINT_TIMEOUT_SECONDS: int = Field(default=120, gt=0)
+    SANDBOX_FILESYSTEM_ISOLATION_ENABLED: bool = True
     SANDBOX_FILESYSTEM_ISOLATION_BINARY: str = "bwrap"
     SANDBOX_MAX_DISK_MB: int = 8192
+    SANDBOX_PACKAGE_INSTALL_TIMEOUT_SECONDS: int = Field(default=300, gt=0, le=3600)
+    SANDBOX_TASK_MEMORY_MB: int = Field(default=1024, gt=0, le=8192)
+    SANDBOX_TASK_MAX_FILE_SIZE_MB: int = Field(default=1024, gt=0, le=8192)
+    SANDBOX_TASK_MAX_OPEN_FILES: int = Field(default=256, ge=32, le=4096)
+    SANDBOX_TASK_MAX_CPU_SECONDS: int = Field(default=600, gt=0, le=3600)
     SANDBOX_SESSION_TTL_HOURS: int = 24
     SANDBOX_SESSION_CLEANUP_BATCH_SIZE: int = 100
     SANDBOX_RESULT_TTL_SECONDS: int = 86400

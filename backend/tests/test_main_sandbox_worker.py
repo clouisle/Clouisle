@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -7,71 +8,8 @@ from main import (
     PROJECT_ROOT,
     build_sandbox_worker_image,
     main,
-    start_sandbox_worker,
     start_sandbox_worker_container,
-    start_worker,
 )
-
-
-def test_start_worker_consumes_agent_queue_by_default():
-    with patch("main.os.chdir") as mock_chdir, patch("main.subprocess.run") as mock_run:
-        start_worker()
-
-    mock_chdir.assert_called_once_with(str(PROJECT_ROOT) + "/backend")
-    mock_run.assert_called_once_with(
-        [
-            sys.executable,
-            "-m",
-            "celery",
-            "-A",
-            "app.core.celery:celery_app",
-            "worker",
-            "--loglevel=info",
-            "--concurrency=4",
-            "--queues=default,agent,knowledge,workflow",
-        ]
-    )
-
-
-def test_start_sandbox_worker_uses_solo_pool_by_default():
-    with patch("main.os.chdir") as mock_chdir, patch("main.subprocess.run") as mock_run:
-        start_sandbox_worker()
-
-    mock_chdir.assert_called_once_with(str(PROJECT_ROOT) + "/backend")
-    mock_run.assert_called_once_with(
-        [
-            str(PROJECT_ROOT) + "/backend/.venv/bin/python",
-            "-m",
-            "celery",
-            "-A",
-            "app.core.celery:celery_app",
-            "worker",
-            "--loglevel=info",
-            "--concurrency=1",
-            "--queues=sandbox",
-            "--pool=solo",
-        ]
-    )
-
-
-def test_start_sandbox_worker_keeps_prefork_for_higher_concurrency():
-    with patch("main.os.chdir") as mock_chdir, patch("main.subprocess.run") as mock_run:
-        start_sandbox_worker(concurrency=2)
-
-    mock_chdir.assert_called_once_with(str(PROJECT_ROOT) + "/backend")
-    mock_run.assert_called_once_with(
-        [
-            str(PROJECT_ROOT) + "/backend/.venv/bin/python",
-            "-m",
-            "celery",
-            "-A",
-            "app.core.celery:celery_app",
-            "worker",
-            "--loglevel=info",
-            "--concurrency=2",
-            "--queues=sandbox",
-        ]
-    )
 
 
 def test_build_sandbox_worker_image_uses_repo_context():
@@ -100,10 +38,12 @@ def test_build_sandbox_worker_image_supports_no_cache():
     assert "--no-cache" in mock_run.call_args.args[0]
 
 
-def test_start_sandbox_worker_container_runs_without_bind_mounts(
+def test_start_sandbox_worker_container_retains_named_volume_without_bind_mounts(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.setenv("REDIS_HOST", "redis.local")
+    monkeypatch.setenv("SANDBOX_WORKSPACE_ROOT", "/tmp/dev-sandbox/jobs")
+    monkeypatch.setenv("SANDBOX_CHECKPOINT_ROOT", "/tmp/dev-sandbox/checkpoints")
 
     with (
         patch("main.build_sandbox_worker_image") as mock_build,
@@ -117,7 +57,14 @@ def test_start_sandbox_worker_container_runs_without_bind_mounts(
     assert ["--add-host", "host.docker.internal:host-gateway"] == cmd[3:5]
     assert "-v" not in cmd
     assert "--volume" not in cmd
-    assert "--mount" not in cmd
+    mount = cmd[cmd.index("--mount") + 1]
+    assert mount.startswith("type=volume,source=clouisle-sandbox-dev-")
+    assert mount.endswith(f",target={Path('/tmp/dev-sandbox/jobs').resolve().parent}")
+    assert f"SANDBOX_WORKSPACE_ROOT={Path('/tmp/dev-sandbox/jobs').resolve()}" in cmd
+    assert (
+        f"SANDBOX_CHECKPOINT_ROOT={Path('/tmp/dev-sandbox/checkpoints').resolve()}"
+        in cmd
+    )
     assert ["python", "main.py", "sandbox-worker", "-c", "3"] == cmd[-5:]
     assert "-e" in cmd
     assert "REDIS_HOST=redis.local" in cmd
@@ -132,12 +79,14 @@ def test_start_sandbox_worker_container_reads_root_env(
     env_file.write_text(
         "REDIS_PASSWORD=secret\nPOSTGRES_USER=postgres\nREDIS_HOST=redis.local\n"
         "API_INTERNAL_BASE_URL=http://localhost:8000\nINTERNAL_API_TOKEN=token\n"
+        "SANDBOX_WORKER_ID=local-disk-a\n"
     )
     monkeypatch.setattr("main.PROJECT_ROOT", str(tmp_path))
     monkeypatch.delenv("REDIS_PASSWORD", raising=False)
     monkeypatch.delenv("POSTGRES_USER", raising=False)
     monkeypatch.delenv("REDIS_HOST", raising=False)
     monkeypatch.delenv("INTERNAL_API_TOKEN", raising=False)
+    monkeypatch.delenv("SANDBOX_WORKER_ID", raising=False)
 
     with (
         patch("main.build_sandbox_worker_image"),
@@ -151,6 +100,7 @@ def test_start_sandbox_worker_container_reads_root_env(
     assert "REDIS_HOST=redis.local" in cmd
     assert "API_INTERNAL_BASE_URL=http://host.docker.internal:8000" in cmd
     assert "INTERNAL_API_TOKEN=token" in cmd
+    assert "SANDBOX_WORKER_ID=local-disk-a" in cmd
 
 
 def test_start_sandbox_worker_container_maps_localhost_env_to_host_gateway(
@@ -209,14 +159,17 @@ def test_start_sandbox_worker_container_defaults_host_service_env(
     assert "QDRANT_URL=http://host.docker.internal:6333" in cmd
     assert "API_INTERNAL_BASE_URL=http://host.docker.internal:8000" in cmd
     # Rootless bwrap needs namespace/mount syscalls the default seccomp
-    # profile blocks; the local-dev container must mirror the sandbox-worker
-    # security options used by Docker Compose and Helm.
+    # profile blocks; local dev mirrors the deployed worker security options.
     assert cmd[cmd.index("seccomp=unconfined") - 1] == "--security-opt"
     assert "no-new-privileges:true" in cmd
-    # The image USER is non-root with empty effective caps; the worker must
-    # run as root and add CAP_SYS_ADMIN (compose parity).
     assert cmd[cmd.index("--user") + 1] == "0"
-    assert cmd[cmd.index("--cap-add") + 1] == "SYS_ADMIN"
+    assert cmd[cmd.index("--cap-drop") + 1] == "ALL"
+    capabilities = [
+        cmd[index + 1]
+        for index, argument in enumerate(cmd[:-1])
+        if argument == "--cap-add"
+    ]
+    assert capabilities == ["SYS_ADMIN", "SETFCAP", "NET_ADMIN"]
 
 
 def test_sandbox_worker_local_dev_cli_dispatches_container_mode(
@@ -245,3 +198,21 @@ def test_sandbox_worker_local_dev_cli_dispatches_container_mode(
         no_cache=True,
         image_tag="sandbox:test",
     )
+
+
+def test_start_sandbox_worker_consumes_its_affinity_queue(monkeypatch):
+    from app.services.sandbox import affinity, worker_supervisor
+    from main import start_sandbox_worker
+
+    monkeypatch.setattr(affinity, "sandbox_worker_id", lambda: "disk-a")
+    expected_queue = affinity.sandbox_worker_queue("disk-a")
+    with patch.object(
+        worker_supervisor, "supervise_sandbox_worker", return_value=0
+    ) as supervise:
+        with pytest.raises(SystemExit) as exc:
+            start_sandbox_worker(concurrency=1)
+
+    assert exc.value.code == 0
+    command = supervise.call_args.args[0]
+    assert f"--queues=sandbox,{expected_queue}" in command
+    assert "--pool=solo" in command

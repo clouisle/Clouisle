@@ -41,9 +41,9 @@ config:
   RETRIEVAL_HYBRID_KILL_SWITCH: "false"
   RETRIEVAL_SHADOW_ENABLED: "false"
   SANDBOX_RUNTIME_ENABLED: "true"
-  SANDBOX_LEGACY_FALLBACK_ENABLED: "true"
   SANDBOX_WORKER_CONCURRENCY: "1"
-  SANDBOX_WORKSPACE_ROOT: /tmp/clouisle-sandbox/jobs
+  # Shared virtual path in API, Agent workers and sandbox workers, not a shared disk.
+  SANDBOX_WORKSPACE_ROOT: /var/lib/clouisle/sandbox/jobs
   SANDBOX_FILESYSTEM_ISOLATION_ENABLED: "true"
   SANDBOX_FILESYSTEM_ISOLATION_BINARY: /usr/bin/bwrap
   SANDBOX_MAX_DISK_MB: "8192"
@@ -125,18 +125,24 @@ worker:
 
 sandboxWorker:
   enabled: true
-  replicas: 1
-  command: ["sh", "-c", "python main.py sandbox-worker -c \"${SANDBOX_WORKER_CONCURRENCY:-1}\""]
+  # One worker per eligible node; each owns a distinct node-local disk.
+  nodeSelector: {}
+  tolerations: []
+  # Empty selects /var/lib/clouisle/<namespace>/<release>/sandbox on each node.
+  # Never share this path between Helm releases or worker installations.
+  localDataPath: ""
+  command: ["sh", "-c", "exec python main.py sandbox-worker -c \"${SANDBOX_WORKER_CONCURRENCY:-1}\""]
   securityContext:
-    # bwrap must create user/mount namespaces. The image USER is a non-root
-    # account whose effective caps are always empty, so the worker runs as
-    # root (runAsUser 0 overrides the image USER) and adds CAP_SYS_ADMIN on
-    # top of the runtime default cap set. The task payload still executes
-    # inside a fresh Bubblewrap user+mount namespace.
+    # Bubblewrap needs SYS_ADMIN and SETFCAP for namespaces; NET_ADMIN lets
+    # the trusted proxy bridge enable isolated loopback before dropping task caps.
     allowPrivilegeEscalation: false
     capabilities:
+      drop:
+        - ALL
       add:
         - SYS_ADMIN
+        - SETFCAP
+        - NET_ADMIN
     runAsUser: 0
     seccompProfile:
       type: Unconfined

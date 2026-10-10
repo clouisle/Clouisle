@@ -13,9 +13,10 @@ Lifecycle:
 
 1. worker marks run ``running`` and acquires the conversation lock,
 2. rebuilds the ``AgentLoopContext`` from the payload,
-3. runs the loop with a run-stream formatter (events persisted then
-   broadcast),
-4. finalizes the canonical assistant + branch + stats exactly like the
+3. marks its sandbox round active and runs the loop with a run-stream
+   formatter (events persisted then broadcast),
+4. checkpoints the sandbox before pause/terminal publication and finalizes
+   the canonical assistant + branch + stats exactly like the
    pre-extraction route paths,
 5. transitions to a terminal state and releases the lock.
 
@@ -32,8 +33,9 @@ import logging
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
+from app.core.config import settings
 from app.core.timezone import now_utc
 from app.models.agent import (
     Agent,
@@ -51,6 +53,7 @@ from app.models.agent_run import (
     AgentRunStatus,
 )
 from app.services import agent_run_store
+from app.services.observability_v2 import record_dependency_metrics
 from app.services.agent_loop import (
     AgentLoop,
     AgentLoopContext,
@@ -58,6 +61,7 @@ from app.services.agent_loop import (
     ContextTurn,
 )
 from app.services.agent_run_stream import AgentRunStream
+from app.services.sandbox.gateway import sandbox_gateway
 
 logger = logging.getLogger(__name__)
 
@@ -472,6 +476,7 @@ async def _rebuild_context(
         max_iterations=None,
         iteration_offset=int(payload.get("iteration_offset", 0)),
         streaming=is_streaming,
+        collect_dependency_metrics=True,
         execute_tool_call=__import__(
             "app.api.v1.endpoints.chat_tools", fromlist=["execute_tool_call"]
         ).execute_tool_call,
@@ -671,12 +676,12 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
         agent_run_store.heartbeat_run_lock(run.id, conversation.id, lease_stop)
     )
 
-    # The queued claim above owns the RUNNING transition before publication.
-    await stream.publish("run_start", {"status": "running", "run_id": str(run.id)})
-
     event_queue: asyncio.Queue[tuple[str, dict[str, Any]] | None] = asyncio.Queue()
     publisher_task: asyncio.Task[None] | None = None
     canonical_message_id: UUID | None = None
+    sandbox_session_id: str | None = None
+    sandbox_round_id: str | None = None
+    checkpoint_attempted = False
 
     collector = MicroBatchingCollector(
         event_queue=event_queue,
@@ -693,13 +698,54 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             await event_queue.join()
             await collector.flush()
 
+    async def finish_sandbox_round() -> None:
+        nonlocal checkpoint_attempted
+        if sandbox_session_id and sandbox_round_id and not checkpoint_attempted:
+            # A failed save is not retried by the failure handler: it must not
+            # turn a checkpoint error into a successful terminal outcome.
+            checkpoint_attempted = True
+            await sandbox_gateway.finish_round(sandbox_session_id, sandbox_round_id)
+
+    loop: AgentLoop | None = None
+    persisted_dependency_metrics = 0
+
+    async def _persist_dependency_metrics() -> None:
+        nonlocal persisted_dependency_metrics
+        if loop is None:
+            return
+        metrics = loop.result.dependency_metrics
+        pending = metrics[persisted_dependency_metrics:]
+        await record_dependency_metrics(
+            run.id,
+            pending,
+            truncated=loop.result.dependency_metrics_truncated,
+        )
+        persisted_dependency_metrics = len(metrics)
+
     try:
+        # The queued claim above owns RUNNING before publication. Keep this
+        # inside the protected lifecycle so stream errors still release locks.
+        await stream.publish("run_start", {"status": "running", "run_id": str(run.id)})
         loop_context, user_msg, loop = await _rebuild_context(
             payload,
             agent=agent,
             conversation=conversation,
             event_queue=event_queue,
         )
+        sandbox_session_id = getattr(loop_context, "sandbox_session_id", None)
+        if sandbox_session_id:
+            sandbox_round_id = (
+                f"{run.id}:{run.active_round_id or loop_context.round_id}:{uuid4()}"
+            )
+            deadline_seconds = loop_context.deadline_seconds
+            if deadline_seconds is None:
+                deadline_seconds = loop_context.global_timeout
+            await sandbox_gateway.begin_round(
+                sandbox_session_id,
+                sandbox_round_id,
+                ttl_seconds=deadline_seconds
+                + settings.SANDBOX_CHECKPOINT_TIMEOUT_SECONDS,
+            )
         if run.canonical_message_id:
             canonical = await Message.get_or_none(id=run.canonical_message_id)
         else:
@@ -726,6 +772,13 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
                 "rag_context",
                 {"contexts": rag_contexts, "query": user_msg.content},
             )
+        if run.message_started_at is None:
+            run.message_started_at = now_utc()
+            await run.save(update_fields=["message_started_at"])
+        agent_run_store.record_observability_progress(
+            run.id,
+            message_started_at=run.message_started_at,
+        )
         await stream.publish(
             "message_start",
             {
@@ -837,14 +890,10 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
         loop_context.input_consumed = _input_consumed
         loop_context.stop_requested = _stop_requested
         loop_context.is_disconnected = _stop_requested
-        waiting_tool_call_id: str | None = None
+        pending_interaction: dict[str, Any] | None = None
 
         async def _pause_for_user(**interaction: Any) -> None:
-            nonlocal waiting_tool_call_id
-            tool_call_id = str(interaction["tool_call_id"])
-            tool_name = str(interaction["tool_name"])
-            tool_input = interaction["arguments"]
-            waiting_tool_call_id = tool_call_id
+            nonlocal pending_interaction
             resume_payload = dict(payload)
             # The current round's protocol entries are held in the in-memory
             # history override until the model turn completes. Carry them
@@ -856,30 +905,41 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             resume_payload["first_round_index"] = int(interaction["round_index"]) + 1
             resume_payload["created_message_count"] = loop_context.created_message_count
             resume_payload["iteration_offset"] = int(interaction["iteration_index"])
-            await agent_run_store.park_run_waiting(
-                run,
-                tool_call_id=tool_call_id,
-                tool_name=tool_name,
-                tool_input=tool_input,
-                round_id=interaction["round_id"],
-                round_index=int(interaction["round_index"]),
-                iteration_index=int(interaction["iteration_index"]),
-                worker_payload=resume_payload,
-            )
+            # Park only once the stable workspace has been checkpointed. The
+            # pause hook runs before AgentLoop has returned to this boundary.
+            pending_interaction = {
+                "tool_call_id": str(interaction["tool_call_id"]),
+                "tool_name": str(interaction["tool_name"]),
+                "tool_input": interaction["arguments"],
+                "round_id": interaction["round_id"],
+                "round_index": int(interaction["round_index"]),
+                "iteration_index": int(interaction["iteration_index"]),
+                "worker_payload": resume_payload,
+            }
 
         loop_context.pause_for_user = _pause_for_user
 
         async for _chunk in loop.run():
             pass
+        await finish_sandbox_round()
         result = loop.result
+        await _persist_dependency_metrics()
+        if run.first_token_ms is None and result.first_token_ms is not None:
+            run.first_token_ms = result.first_token_ms
+            await run.save(update_fields=["first_token_ms"])
+        agent_run_store.record_observability_progress(
+            run.id,
+            first_token_ms=run.first_token_ms,
+        )
         if result.waiting_for_user:
+            if pending_interaction is None:
+                raise RuntimeError("AgentRun is waiting without a pending tool call")
+            await agent_run_store.park_run_waiting(run, **pending_interaction)
             # The tool-call event is queued by AgentLoop after the pause hook;
             # drain it before publishing the waiting status so replay order is
             # tool_call -> run_status.
             await flush_queued_events()
-            pending_tool_call_id = waiting_tool_call_id or run.pending_tool_call_id
-            if not pending_tool_call_id:
-                raise RuntimeError("AgentRun is waiting without a pending tool call")
+            pending_tool_call_id = run.pending_tool_call_id
             await stream.publish(
                 "run_status",
                 {
@@ -1015,6 +1075,12 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             "message_id": str(canonical.id),
         }
     except Exception as exc:
+        await _persist_dependency_metrics()
+        try:
+            await finish_sandbox_round()
+        except Exception:
+            # Preserve the execution error when both execution and saving fail.
+            logger.exception("Failed to checkpoint sandbox for agent run %s", run.id)
         await flush_queued_events()
         logger.exception("Agent run %s failed", run.id)
         failed, transitioned = await _transition_active_run(
@@ -1043,11 +1109,15 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
         return {"status": AgentRunStatus.FAILED.value, "error": str(exc)}
     finally:
         lease_stop.set()
-        await heartbeat_task
-        if publisher_task is not None:
-            await event_queue.put(None)
-            await publisher_task
-        await agent_run_store.release_run_lock(run.id, conversation.id)
+        try:
+            await heartbeat_task
+        finally:
+            try:
+                if publisher_task is not None:
+                    await event_queue.put(None)
+                    await publisher_task
+            finally:
+                await agent_run_store.release_run_lock(run.id, conversation.id)
 
 
 async def _create_placeholder(

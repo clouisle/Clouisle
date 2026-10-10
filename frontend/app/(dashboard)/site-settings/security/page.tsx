@@ -71,6 +71,7 @@ export default function SiteSettingsSecurityPage() {
     require_totp: false,
     model_endpoint_allowlist: [],
     ssrf_allowed_targets: [],
+    sandbox_network_allowlist: [],
   })
 
   const errorPathMap = React.useMemo(
@@ -98,6 +99,7 @@ export default function SiteSettingsSecurityPage() {
       'lockout_duration_minutes',
       'model_endpoint_allowlist',
       'ssrf_allowed_targets',
+      'sandbox_network_allowlist',
     ]),
     [fieldErrors]
   )
@@ -145,6 +147,7 @@ export default function SiteSettingsSecurityPage() {
         require_totp: data.require_totp ?? false,
         model_endpoint_allowlist: data.model_endpoint_allowlist,
         ssrf_allowed_targets: data.ssrf_allowed_targets ?? [],
+        sandbox_network_allowlist: data.sandbox_network_allowlist,
       })
       setSettingsLoaded(true)
     } catch (error) {
@@ -205,10 +208,14 @@ export default function SiteSettingsSecurityPage() {
       const ssrfAllowedTargets = Array.from(new Set(
         settings.ssrf_allowed_targets.map((entry) => entry.trim()).filter(Boolean)
       ))
+      const sandboxNetworkAllowlist = Array.from(new Set(
+        settings.sandbox_network_allowlist.map((entry) => entry.trim()).filter(Boolean)
+      ))
       const updatedSettings = await siteSettingsApi.updateSecurity({
         ...settings,
         model_endpoint_allowlist: modelEndpointAllowlist,
         ssrf_allowed_targets: ssrfAllowedTargets,
+        sandbox_network_allowlist: sandboxNetworkAllowlist,
       })
       const persistedAllowlist = Array.isArray(updatedSettings.model_endpoint_allowlist)
         ? updatedSettings.model_endpoint_allowlist.filter(
@@ -220,16 +227,24 @@ export default function SiteSettingsSecurityPage() {
             (entry): entry is string => typeof entry === 'string'
           )
         : ssrfAllowedTargets
+      const persistedSandboxNetworkAllowlist = Array.isArray(updatedSettings.sandbox_network_allowlist)
+        ? updatedSettings.sandbox_network_allowlist.filter(
+            (entry): entry is string => typeof entry === 'string'
+          )
+        : sandboxNetworkAllowlist
       setSettings((current) => ({
         ...current,
         model_endpoint_allowlist: persistedAllowlist,
         ssrf_allowed_targets: persistedSsrfTargets,
+        sandbox_network_allowlist: persistedSandboxNetworkAllowlist,
       }))
       toast.success(t('saveSuccess'))
     } catch (error: unknown) {
       const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)
+      } else {
+        toast.error(error instanceof Error && error.message ? error.message : t('saveError'))
       }
       console.error('Failed to save settings:', error)
     } finally {
@@ -626,6 +641,31 @@ export default function SiteSettingsSecurityPage() {
             {t('modelEndpointAllowlistHint')}
           </p>
           <FieldError>{fieldErrors.model_endpoint_allowlist}</FieldError>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('sandboxNetworkAllowlist')}</CardTitle>
+          <CardDescription>{t('sandboxNetworkAllowlistDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Label htmlFor="sandboxNetworkAllowlist">{t('sandboxNetworkAllowlistEntries')}</Label>
+          <Textarea
+            id="sandboxNetworkAllowlist"
+            value={settings.sandbox_network_allowlist.join('\n')}
+            onChange={(event) => updateSetting(
+              'sandbox_network_allowlist',
+              event.target.value.split('\n')
+            )}
+            placeholder={t('sandboxNetworkAllowlistPlaceholder')}
+            rows={6}
+            disabled={!canUpdate}
+            aria-invalid={!!fieldErrors.sandbox_network_allowlist}
+          />
+          <p className="text-sm text-muted-foreground">
+            {t('sandboxNetworkAllowlistHint')}
+          </p>
+          <FieldError>{fieldErrors.sandbox_network_allowlist}</FieldError>
         </CardContent>
       </Card>
       <Card>

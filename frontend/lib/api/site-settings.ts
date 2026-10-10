@@ -156,6 +156,7 @@ export interface SecuritySettings {
   require_totp: boolean
   model_endpoint_allowlist: string[]
   ssrf_allowed_targets: string[]
+  sandbox_network_allowlist: string[]
 }
 
 export interface EmailSettings {

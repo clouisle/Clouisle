@@ -1,3 +1,4 @@
+import type { TimeRange } from '@/components/dashboard/time-range-selector'
 import { api } from '../client'
 
 export interface DashboardStats {
@@ -38,6 +39,13 @@ export interface DashboardTrends {
     tokens: number
   }>
 }
+
+export interface DashboardActivitySummary {
+  conversations: number
+  messages: number
+  tokens: number
+}
+
 
 export interface TopAgent {
   agent_id: string
@@ -101,52 +109,61 @@ function normalizeModelDistribution(data: unknown): ModelDistribution[] {
     .filter((item) => item.count > 0)
 }
 
+function appendTimeRange(query: URLSearchParams, key: 'period' | 'time_range', range: TimeRange) {
+  query.set(key, typeof range === 'string' ? range : 'custom')
+  if (typeof range === 'object') {
+    query.set('start_time', range.start_time)
+    query.set('end_time', range.end_time)
+  }
+}
+
 export const dashboardApi = {
   getStats: async (): Promise<DashboardStats> =>
     api.get<DashboardStats>('/admin/dashboard/stats'),
 
-  getTrends: async (period: '7d' | '30d' | '90d' | 'all' = '30d'): Promise<DashboardTrends> =>
-    api.get<DashboardTrends>(`/admin/dashboard/stats/trends?period=${period}`),
+  getTrends: async (period: TimeRange = '30d'): Promise<DashboardTrends> => {
+    const queryParams = new URLSearchParams()
+    appendTimeRange(queryParams, 'period', period)
+    return api.get<DashboardTrends>(`/admin/dashboard/stats/trends?${queryParams}`)
+  },
 
   getTopAgents: async (params: {
     limit?: number
     metric?: 'conversation_count' | 'message_count' | 'total_tokens'
-    time_range?: '7d' | '30d' | '90d' | 'all'
+    time_range?: TimeRange
   } = {}): Promise<TopAgent[]> => {
     const queryParams = new URLSearchParams({
       limit: String(params.limit || 10),
       metric: params.metric || 'conversation_count',
-      time_range: params.time_range || '30d',
     })
+    appendTimeRange(queryParams, 'time_range', params.time_range ?? '30d')
     return api.get<TopAgent[]>(`/admin/dashboard/stats/agents/top?${queryParams}`)
   },
 
   getTeamTokenUsage: async (params: {
     limit?: number
-    time_range?: '7d' | '30d' | '90d' | 'all'
+    time_range?: TimeRange
   } = {}): Promise<TeamTokenUsage[]> => {
     const queryParams = new URLSearchParams({
       limit: String(params.limit || 10),
-      time_range: params.time_range || '30d',
     })
+    appendTimeRange(queryParams, 'time_range', params.time_range ?? '30d')
     return api.get<TeamTokenUsage[]>(`/admin/dashboard/stats/teams/token-usage?${queryParams}`)
   },
 
   getWorkflowSummary: async (params: {
-    time_range?: '7d' | '30d' | '90d' | 'all'
+    time_range?: TimeRange
   } = {}): Promise<WorkflowSummary> => {
-    const queryParams = new URLSearchParams({
-      time_range: params.time_range || '30d',
-    })
+    const queryParams = new URLSearchParams()
+    appendTimeRange(queryParams, 'time_range', params.time_range ?? '30d')
     return api.get<WorkflowSummary>(`/admin/dashboard/stats/workflows/summary?${queryParams}`)
   },
 
   getModelDistribution: async (params: {
-    time_range?: '7d' | '30d' | '90d' | 'all'
+    time_range?: TimeRange
   } = {}): Promise<ModelDistribution[]> => {
-    const queryParams = new URLSearchParams({
-      time_range: params.time_range || '30d',
-    })
+    const queryParams = new URLSearchParams()
+    appendTimeRange(queryParams, 'time_range', params.time_range ?? '30d')
     const data = await api.get<unknown>(`/admin/dashboard/stats/models/distribution?${queryParams}`)
     return normalizeModelDistribution(data)
   },

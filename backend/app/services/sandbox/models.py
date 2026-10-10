@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -73,6 +73,13 @@ class SandboxInputFileSpec(BaseModel):
     asset_id: UUID | None = Field(
         default=None, description="Durable Asset ID resolved server-side"
     )
+    asset_ref: str | None = Field(
+        default=None, min_length=4, max_length=4, description="Scope-local Asset ref"
+    )
+    scope_type: Literal["conversation", "workflow_run"] | None = Field(
+        default=None, description="Execution scope for the Asset reference"
+    )
+    scope_id: UUID | None = Field(default=None)
     expected_checksum: str | None = Field(default=None, min_length=64, max_length=64)
     expected_size: int | None = Field(default=None, ge=0)
     mode: int | None = Field(
@@ -83,6 +90,14 @@ class SandboxInputFileSpec(BaseModel):
     def validate_source(self) -> "SandboxInputFileSpec":
         if (self.content_base64 is None) == (self.asset_id is None):
             raise ValueError("Exactly one Sandbox input source is required")
+        if self.asset_ref is not None and (
+            self.asset_id is None or self.scope_type is None or self.scope_id is None
+        ):
+            raise ValueError("Scoped Asset inputs require an ID and scope")
+        if self.asset_ref is None and (
+            self.scope_type is not None or self.scope_id is not None
+        ):
+            raise ValueError("Sandbox input scope requires an Asset ref")
         return self
 
 
@@ -99,9 +114,14 @@ class SandboxArtifact(BaseModel):
     )
     content_type: str | None = Field(default=None, description="Detected content type")
     storage_path: str = Field(..., description="Persisted storage path")
-    url: str = Field(..., description="Backend file URL")
+    url: str | None = Field(
+        default=None, description="Download URL for the persisted artifact"
+    )
     filename: str = Field(..., description="Persisted filename")
     asset_id: UUID | None = Field(default=None, description="Durable Asset ID")
+    asset_ref: str | None = Field(
+        default=None, description="Conversation- or workflow-run-scoped Asset ref"
+    )
 
 
 class SandboxLimits(BaseModel):
@@ -251,6 +271,46 @@ class SandboxExecutionMetadata(BaseModel):
         return value.astimezone(UTC)
 
 
+class SandboxBinding(BaseModel):
+    """Canonical logical-session placement; physical workspace changes on reset."""
+
+    worker_id: str
+    instance_id: str
+    node_id: str
+    storage_id: str
+    epoch: int = Field(default=1, ge=1)
+    generation: int = Field(default=0, ge=0)
+    workspace_id: str
+    status: Literal["READY", "RECOVERING", "RESETTING", "UNAVAILABLE"] = "READY"
+    reset_count: int = Field(default=0, ge=0)
+    recovery_id: str | None = None
+    recovery_started_at: float | None = None
+
+    def matches(self, other: "SandboxBinding | None", *, ready: bool = True) -> bool:
+        return (
+            other is not None
+            and (
+                self.epoch,
+                self.generation,
+                self.workspace_id,
+                self.worker_id,
+                self.instance_id,
+                self.node_id,
+                self.storage_id,
+            )
+            == (
+                other.epoch,
+                other.generation,
+                other.workspace_id,
+                other.worker_id,
+                other.instance_id,
+                other.node_id,
+                other.storage_id,
+            )
+            and (not ready or other.status == "READY")
+        )
+
+
 class SandboxJob(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -275,6 +335,9 @@ class SandboxJob(BaseModel):
     )
     limits: SandboxLimits = Field(default_factory=SandboxLimits)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    session_id: str | None = None
+    binding: SandboxBinding | None = None
+    deadline_at: float | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -322,6 +385,11 @@ class SandboxResult(BaseModel):
     status: SandboxTaskStatus = Field(default=SandboxTaskStatus.QUEUED)
     result: Any = None
     error: str | None = None
+    error_code: str | None = None
+    recovery: dict[str, Any] | None = None
+    session_id: str | None = None
+    binding: SandboxBinding | None = None
+    deadline_at: float | None = None
     stdout: str = ""
     stderr: str = ""
     artifacts: list[SandboxArtifact] = Field(default_factory=list)
@@ -351,11 +419,15 @@ class SandboxSession(BaseModel):
     """沙箱会话，用于对话级别的持久化工作空间"""
 
     session_id: str
+    revision: int = Field(default=0, ge=0)
     conversation_id: str | None = None
     agent_id: str | None = None
     team_id: str | None = None
     user_id: str | None = None
     created_at: datetime = Field(default_factory=datetime.now)
     expires_at: datetime
+    ttl_seconds: int = Field(
+        default_factory=lambda: settings.SANDBOX_SESSION_TTL_HOURS * 3600, gt=0
+    )
     disk_usage_bytes: int = 0
     last_accessed_at: datetime = Field(default_factory=datetime.now)

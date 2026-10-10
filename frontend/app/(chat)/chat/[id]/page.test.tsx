@@ -54,10 +54,12 @@ let chatOptions: {
   onStreamEnd?: () => void
 } = {}
 let variableValues: Record<string, unknown> = {}
+let variableAssetIdsChange: ((name: string, assetIds: string | string[] | null) => void) | undefined
 let chatContainerProps: Record<string, unknown> = {}
 let chatInputProps: Record<string, unknown> = {}
+let previewCanvasIsResizing = false
+let conversationPanelResizeHandler: ((panelSize: { inPixels: number }) => void) | undefined
 let pendingAskUserFormProps: Record<string, unknown> = {}
-let observerCallback: IntersectionObserverCallback | undefined
 let faviconHref: string | null = null
 const router = { push }
 const searchParams = { get: (key: string) => query.get(key), toString: () => query.toString() }
@@ -111,6 +113,13 @@ function element(tag: keyof React.JSX.IntrinsicElements) {
   }
 }
 const passthrough = ({ children }: React.PropsWithChildren) => <>{children}</>
+function mockResizablePanel({ children, onResize }: React.PropsWithChildren<Record<string, unknown>>) {
+  if (typeof onResize === 'function') {
+    conversationPanelResizeHandler = onResize as (panelSize: { inPixels: number }) => void
+  }
+  return <>{children}</>
+}
+
 const conditional = ({ children, open = true }: React.PropsWithChildren<{ open?: boolean }>) => open ? <>{children}</> : null
 mock.module('lucide-react', () => ({
   Loader2: element('i'), LogIn: element('i'), ArrowLeft: element('i'), AlertCircle: element('i'),
@@ -129,9 +138,14 @@ mock.module('@/components/ui/dialog', () => ({
 mock.module('@/components/ui/dropdown-menu', () => ({
   DropdownMenu: passthrough, DropdownMenuContent: passthrough, DropdownMenuItem: element('button'), DropdownMenuTrigger: element('button'),
 }))
-mock.module('@/components/ui/resizable', () => ({ ResizableHandle: element('div'), ResizablePanel: passthrough, ResizablePanelGroup: passthrough }))
+mock.module('@/components/ui/resizable', () => ({ ResizableHandle: element('div'), ResizablePanel: mockResizablePanel, ResizablePanelGroup: passthrough }))
 mock.module('@/components/ui/collapsible', () => ({ Collapsible: passthrough, CollapsibleContent: passthrough, CollapsibleTrigger: element('button') }))
-mock.module('@/components/chat/code-preview-canvas', () => ({ CodePreviewCanvas: ({ onClose }: { onClose: () => void }) => <button data-preview onClick={onClose}>preview</button> }))
+mock.module('@/components/chat/code-preview-canvas', () => ({
+  CodePreviewCanvas: ({ onClose, isResizing }: { onClose: () => void; isResizing?: boolean }) => {
+    previewCanvasIsResizing = Boolean(isResizing)
+    return <button data-preview data-resizing={String(Boolean(isResizing))} onClick={onClose}>preview</button>
+  },
+}))
 mock.module('@/components/chat', () => ({
   ChatContainer: (props: Record<string, unknown>) => {
     chatContainerProps = props
@@ -145,7 +159,13 @@ mock.module('@/components/chat', () => ({
     pendingAskUserFormProps = props
     return <div data-pending-ask-user-form />
   },
-  VariableForm: ({ onChange }: { onChange: (values: Record<string, unknown>) => void }) => <button data-variable-form onClick={() => onChange({ required: 'filled' })}>variables</button>,
+  VariableForm: ({ onChange, onAssetIdsChange }: {
+    onChange: (values: Record<string, unknown>) => void
+    onAssetIdsChange?: (name: string, assetIds: string | string[] | null) => void
+  }) => {
+    variableAssetIdsChange = onAssetIdsChange
+    return <button data-variable-form onClick={() => onChange({ required: 'filled' })}>variables</button>
+  },
   useVariableForm: () => ({ values: variableValues, setValues: (values: Record<string, unknown>) => { variableValues = values }, fieldErrors: {}, validate: validateVariables }),
 }))
 
@@ -179,6 +199,7 @@ function render(params: Promise<{ id: string }> = Promise.resolve({ id: 'agent-1
 async function flush() {
   await act(async () => { await Promise.resolve(); await Promise.resolve() })
 }
+
 function output() { return JSON.stringify(renderer!.toJSON()) }
 function nodeText(node: ReactTestRenderer['root']): string {
   return node.children.map((child) => typeof child === 'string' ? child : nodeText(child)).join('')
@@ -198,10 +219,12 @@ beforeEach(() => {
     pendingAskUserToolCallId: null, submitAskUser: undefined,
   }
   variableValues = {}
+  variableAssetIdsChange = undefined
   chatContainerProps = {}
   chatInputProps = {}
   pendingAskUserFormProps = {}
-  observerCallback = undefined
+  previewCanvasIsResizing = false
+  conversationPanelResizeHandler = undefined
   faviconHref = null
   for (const fn of [push, getPublicAgent, getConversations, getConversation, getRunStatus, deleteConversation, updateConversation, uploadFileWithProgress, getStoredRunSnapshot, removeRunSnapshot, convertBackendMessages, sendMessage, regenerate, editMessage, switchVersion, stop, resetChat, setMessages, setConversationId, validateVariables, toastError, disconnect, observe, historyPush, historyReplace, clearInterval, clearTimeoutMock, setTimeoutMock, setIntervalMock]) fn.mockReset()
   timeoutCallbacks = []
@@ -250,7 +273,6 @@ beforeEach(() => {
   Object.defineProperty(globalThis, 'IntersectionObserver', {
     configurable: true,
     value: class {
-      constructor(callback: IntersectionObserverCallback) { observerCallback = callback }
       observe = observe
       disconnect = disconnect
     },
@@ -289,7 +311,7 @@ describe('PublicChatPage', () => {
     expect(push).toHaveBeenCalledWith('/')
   })
 
-  test('loads the agent and URL conversation, wires message actions, and cleans up observers', async () => {
+  test('loads the agent and URL conversation and wires message actions', async () => {
     query = new URLSearchParams('conversation=conv-1&source=share')
     render()
     await flush()
@@ -610,7 +632,7 @@ describe('PublicChatPage', () => {
     expect(faviconHref).toBeNull()
   })
 
-  test('selects, resets, paginates, renames, and deletes conversations', async () => {
+  test('selects, refreshes, renames, deletes, and resets conversations', async () => {
     getConversations
       .mockResolvedValueOnce({ items: Array.from({ length: 5 }, (_, index) => ({ id: `conv-${index + 1}`, title: `Chat ${index + 1}` })), total: 6 })
       .mockResolvedValueOnce({ items: [{ id: 'conv-6', title: 'Chat 6' }], total: 6 })
@@ -623,9 +645,6 @@ describe('PublicChatPage', () => {
     expect(setConversationId).toHaveBeenCalledWith('conv-2')
     expect(historyPush).toHaveBeenCalledWith({}, '', '/chat/agent-1?conversation=conv-2')
 
-    await act(async () => observerCallback!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))
-    expect(getConversations).toHaveBeenLastCalledWith('agent-1', { page: 2, pageSize: 5 })
-    expect(output()).toContain('Chat 6')
 
     await click('rename', 1)
     const titleInput = renderer!.root.findByProps({ id: 'title' })
@@ -650,8 +669,20 @@ describe('PublicChatPage', () => {
     expect(resetChat).toHaveBeenCalled()
     expect(historyPush).toHaveBeenLastCalledWith({}, '', '/chat/agent-1')
     act(() => renderer!.unmount())
-    expect(disconnect).toHaveBeenCalled()
     renderer = undefined
+  })
+
+  test('renders each conversation row once when list pages overlap', async () => {
+    const duplicate = { id: '8918da81-cc2a-4798-b01c-0eeb6efabcf4', title: 'Repeated chat' }
+    getConversations.mockResolvedValueOnce({
+      items: [duplicate, duplicate, { id: 'other-conversation', title: 'Other chat' }],
+      total: 2,
+    })
+    render()
+    await flush()
+
+    expect(output().match(/Repeated chat/g)).toHaveLength(1)
+    expect(output().match(/Other chat/g)).toHaveLength(1)
   })
   test('does not append an assistant loading placeholder when switching to a conversation with completed reasoning or tool output', async () => {
     getConversations.mockResolvedValueOnce({
@@ -697,7 +728,44 @@ describe('PublicChatPage', () => {
     act(() => newChat.props.onClick())
     await act(async () => (chatInputProps.onSubmit as (message: string, files?: unknown[]) => Promise<void>)('after switch', []))
 
-    expect(sendMessage).toHaveBeenCalledWith('after switch', undefined, undefined)
+    expect(sendMessage).toHaveBeenCalledWith('after switch', undefined, undefined, [])
+  })
+
+  test('clears variable asset refs when starting a new chat', async () => {
+    getPublicAgent.mockResolvedValueOnce({
+      ...agent,
+      variables: [{ name: 'document', type: 'file', required: false, hidden: false }],
+    })
+    render()
+    await flush()
+
+    expect(variableAssetIdsChange).toBeDefined()
+    act(() => variableAssetIdsChange!('document', 'asset-from-previous-chat'))
+    const newChat = renderer!.root.findAllByProps({ 'aria-label': 'newChat' })[0]
+    act(() => newChat.props.onClick())
+    await act(async () => {
+      await (chatInputProps.onSubmit as (message: string, files?: unknown[]) => Promise<void>)(
+        'new conversation',
+      )
+    })
+
+    expect(sendMessage).toHaveBeenCalledWith('new conversation', undefined, undefined, [])
+  })
+
+  test('forwards current variable asset refs when submitting a chat', async () => {
+    getPublicAgent.mockResolvedValueOnce({
+      ...agent,
+      variables: [{ name: 'documents', type: 'file', required: false, hidden: false }],
+    })
+    render()
+    await flush()
+
+    act(() => variableAssetIdsChange!('documents', ['asset-one', 'asset-two']))
+    await act(async () => {
+      await (chatInputProps.onSubmit as (message: string, files?: unknown[]) => Promise<void>)('summarize these')
+    })
+
+    expect(sendMessage).toHaveBeenCalledWith('summarize these', undefined, undefined, ['asset-one', 'asset-two'])
   })
 
   test('shows the new-chat control when embed history is disabled', async () => {
@@ -811,6 +879,7 @@ describe('PublicChatPage', () => {
       'with files',
       [{ asset_id: 'image-asset', type: 'image_url', url: 'https://files.example.test/safe.png' }],
       [{ asset_id: 'document-asset', filename: 'safe.pdf', url: 'https://files.example.test/safe.pdf', size: 4, mime_type: 'application/pdf' }],
+      [],
     )
   })
 
@@ -912,6 +981,54 @@ describe('PublicChatPage', () => {
     await click('preview')
     expect(output()).not.toContain('data-preview')
   })
+  test('hides chat history only when the conversation panel reaches its minimum width', async () => {
+    const minimumPanelWidth = 400
+    render()
+    await flush()
+
+    act(() => (chatContainerProps.onOpenCodePreview as (payload: unknown) => void)({ id: 'preview-1', language: 'python', code: 'print(1)', kind: 'source' }))
+    expect(previewCanvasIsResizing).toBe(false)
+    expect(output()).toContain('data-preview')
+
+    const openSidebar = renderer!.root.findAllByType('div').find((node) => {
+      const className = String(node.props.className)
+      return className.includes('border-r') && className.includes('w-64')
+    })
+    expect(openSidebar).toBeDefined()
+    expect(conversationPanelResizeHandler).toBeDefined()
+
+    const resizeHandle = renderer!.root.findAllByType('div').find((node) => typeof node.props.onPointerDown === 'function')
+    expect(resizeHandle).toBeDefined()
+    act(() => resizeHandle!.props.onPointerDown())
+
+    expect(previewCanvasIsResizing).toBe(true)
+    expect(output()).toContain('data-preview')
+    const sidebarDuringDrag = renderer!.root.findAllByType('div').find((node) => {
+      const className = String(node.props.className)
+      return className.includes('border-r') && className.includes('w-64')
+    })
+    expect(sidebarDuringDrag).toBeDefined()
+    expect(String(sidebarDuringDrag?.props.className)).toContain('transition-none')
+
+    act(() => conversationPanelResizeHandler?.({ inPixels: minimumPanelWidth + 1 }))
+    const sidebarAboveMin = renderer!.root.findAllByType('div').find((node) => {
+      const className = String(node.props.className)
+      return className.includes('border-r') && className.includes('w-64')
+    })
+    expect(sidebarAboveMin).toBeDefined()
+
+    act(() => conversationPanelResizeHandler?.({ inPixels: minimumPanelWidth }))
+    const collapsedSidebar = renderer!.root.findAllByType('div').find((node) => {
+      const className = String(node.props.className)
+      return className.includes('border-r') && className.includes('w-0')
+    })
+    expect(collapsedSidebar).toBeDefined()
+
+    act(() => resizeHandle!.props.onPointerUp())
+    expect(previewCanvasIsResizing).toBe(false)
+    expect(output()).toContain('data-preview')
+  })
+
 
   test('clears the active preview when navigating back/forward to a different conversation', async () => {
     const params = Promise.resolve({ id: 'agent-1' })

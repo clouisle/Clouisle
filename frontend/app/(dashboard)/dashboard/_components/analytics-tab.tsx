@@ -8,10 +8,10 @@ import { WorkflowStatusChart } from '@/components/dashboard/workflow-status-char
 import { WorkflowTriggerChart } from '@/components/dashboard/workflow-trigger-chart'
 import { TopWorkflowsCard } from '@/components/dashboard/top-workflows-card'
 import { AgentPerformanceChart } from '@/components/dashboard/agent-performance-chart'
-import type { DashboardStats, WorkflowSummary, TopAgent } from '@/lib/api/admin/dashboard'
+import type { DashboardActivitySummary, WorkflowSummary, TopAgent } from '@/lib/api/admin/dashboard'
 
 interface AnalyticsTabProps {
-  stats: DashboardStats
+  activitySummary: DashboardActivitySummary
   workflowData: WorkflowSummary | null
   topAgentsData: TopAgent[]
   isLoading: boolean
@@ -120,7 +120,7 @@ function StatCard({
   )
 }
 
-function AnalyticsTabComponent({ stats, workflowData, topAgentsData, isLoading, isLoadingAgents, onMetricChange, currentMetric }: AnalyticsTabProps) {
+function AnalyticsTabComponent({ activitySummary, workflowData, topAgentsData, isLoading, isLoadingAgents, onMetricChange, currentMetric }: AnalyticsTabProps) {
   const t = useTranslations('dashboard')
 
   const topAgent = topAgentsData.length > 0 ? topAgentsData[0].name : 'N/A'
@@ -204,22 +204,22 @@ function AnalyticsTabComponent({ stats, workflowData, topAgentsData, isLoading, 
                     <h3 className="mb-2 text-sm font-medium">{t('home.systemStats')}</h3>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">{t('home.stats.totalMessages')}</span>
-                    <span className="text-base font-semibold">{formatNumber(stats.overview.total_messages)}</span>
+                    <span className="text-sm text-muted-foreground">{t('home.stats.messages')}</span>
+                    <span className="text-base font-semibold">{formatNumber(activitySummary.messages)}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">{t('home.stats.avgMessagesPerConv')}</span>
                     <span className="text-base font-semibold">
-                      {stats.overview.total_conversations > 0
-                        ? (stats.overview.total_messages / stats.overview.total_conversations).toFixed(1)
+                      {activitySummary.conversations > 0
+                        ? (activitySummary.messages / activitySummary.conversations).toFixed(1)
                         : '0'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">{t('home.stats.avgTokensPerMessage')}</span>
                     <span className="text-base font-semibold">
-                      {stats.overview.total_messages > 0
-                        ? formatNumber(Math.round(stats.overview.total_tokens / stats.overview.total_messages))
+                      {activitySummary.messages > 0
+                        ? formatNumber(Math.round(activitySummary.tokens / activitySummary.messages))
                         : '0'}
                     </span>
                   </div>

@@ -233,6 +233,54 @@ test('renders video preview for video files', async () => {
   expect(container.querySelector('video')).toBeTruthy()
 })
 
+test('keeps a loaded HTML artifact mounted during preview resizing', async () => {
+  const originalCreateObjectURL = URL.createObjectURL
+  const originalRevokeObjectURL = URL.revokeObjectURL
+  const createObjectURL = mock(() => 'blob:artifact-preview')
+  const revokeObjectURL = mock(() => {})
+  Object.assign(URL, { createObjectURL, revokeObjectURL })
+
+  const file = { filename: 'artifact.html', mimeType: 'text/html' }
+  const loadFile = mock(async () => new Blob(['<h1>Loaded artifact</h1>'], { type: 'text/html' }))
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+
+  try {
+    act(() => root.render(<FilePreviewPanel file={file} loadFile={loadFile} isResizing={false} />))
+    await flush()
+
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement
+    expect(iframe).toBeTruthy()
+    expect(iframe.getAttribute('src')).toBe('blob:artifact-preview')
+    expect(loadFile).toHaveBeenCalledTimes(1)
+    let measuredWidth = 640
+    iframe.getBoundingClientRect = () => ({ width: measuredWidth } as DOMRect)
+    act(() => root.render(<FilePreviewPanel file={file} loadFile={loadFile} isResizing />))
+    expect(container.querySelector('iframe')).toBe(iframe)
+    expect(container.querySelector('[data-preview-resize-placeholder]')).toBeNull()
+    expect(iframe.className).toContain('pointer-events-none')
+    expect(iframe.tabIndex).toBe(-1)
+    expect(iframe.style.width).toBe('640px')
+    expect(container.textContent).not.toContain('Loading preview')
+    expect(loadFile).toHaveBeenCalledTimes(1)
+
+    measuredWidth = 320
+    act(() => root.render(<FilePreviewPanel file={file} loadFile={loadFile} isResizing />))
+    expect(iframe.style.width).toBe('640px')
+    expect(loadFile).toHaveBeenCalledTimes(1)
+
+    act(() => root.render(<FilePreviewPanel file={file} loadFile={loadFile} isResizing={false} />))
+    expect(container.querySelector('iframe')).toBe(iframe)
+    expect(iframe.tabIndex).not.toBe(-1)
+    expect(iframe.style.width).toBe('')
+    expect(iframe.style.maxWidth).toBe('')
+    expect(loadFile).toHaveBeenCalledTimes(1)
+  } finally {
+    act(() => root.unmount())
+    Object.assign(URL, { createObjectURL: originalCreateObjectURL, revokeObjectURL: originalRevokeObjectURL })
+  }
+})
+
 test('renders audio preview for audio files', async () => {
   const loadFile = mock(async () => new Blob(['fake audio'], { type: 'audio/mp3' }))
   const container = render(

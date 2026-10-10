@@ -15,7 +15,7 @@ RUN uv sync --frozen --no-dev --no-editable
 FROM python:3.13-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash bubblewrap ca-certificates curl git gnupg locales \
+    bash bubblewrap ca-certificates curl git gnupg locales util-linux \
     coreutils findutils file zip unzip \
     libpq5 libxml2 libxmlsec1 libxmlsec1-openssl \
     fontconfig fonts-wqy-zenhei fonts-wqy-microhei \
@@ -43,7 +43,9 @@ RUN mkdir -p /app/uploads /tmp/clouisle-sandbox \
     && find /app -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true \
     && python -m compileall -b --invalidation-mode=checked-hash -q /app/backend/app \
     && find /app/backend/app -type f -name '*.py' -delete \
-    && chown -R clouisle:clouisle /app /tmp/clouisle-sandbox
+    && chown -R clouisle:clouisle /app /tmp/clouisle-sandbox \
+    && chown root:clouisle /app/uploads \
+    && chmod 1770 /app/uploads
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -53,11 +55,11 @@ ENV PYTHONUNBUFFERED=1 \
     SANDBOX_FILESYSTEM_ISOLATION_BINARY=/usr/bin/bwrap \
     PATH="/app/backend/.venv/bin:$PATH"
 
-# Safe image default. Supplied deployments (Docker Compose, Helm, plain K8s,
-# and main.py --local-dev) run this container as root (user "0" / runAsUser: 0)
-# with CAP_SYS_ADMIN added so bwrap can create user/mount namespaces even on
-# hosts that gate unprivileged user namespaces; the task payload still
-# executes inside a fresh Bubblewrap user+mount namespace.
+# Supplied deployments run this worker as root with SYS_ADMIN and SETFCAP for
+# namespace setup, plus NET_ADMIN to enable isolated loopback for the egress
+# bridge. The bridge drops its payload capability sets before execution.
+# Direct payloads run under Bubblewrap --cap-drop ALL.
+# util-linux provides prlimit for per-process resource limits.
 USER clouisle
 
 CMD ["python", "main.py", "sandbox-worker"]

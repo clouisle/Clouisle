@@ -262,3 +262,40 @@ async def test_helpers_timer_connection_cache_and_singleton_boundaries(redis):
             metrics_module.get_metrics_collector()
             is metrics_module.get_metrics_collector()
         )
+
+
+@pytest.mark.asyncio
+async def test_completion_without_error_does_not_create_error_bucket(redis, collector):
+    await collector.record_workflow_complete(
+        "run-1", "workflow-1", duration_ms=25, status="failed", error=None
+    )
+
+    redis.incr.assert_any_await("test:workflow:workflow-1:failed")
+    redis.hincrby.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_successful_node_execution_without_retries_skips_optional_counters(
+    redis, collector
+):
+    await collector.record_node_execution(
+        "run-1", "node-1", "llm", 12, success=True, retries=0, error=None
+    )
+
+    redis.incr.assert_any_await("test:node:llm:success")
+    redis.incrby.assert_not_awaited()
+    redis.hincrby.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_node_metrics_without_runs_keeps_zeroed_aggregates(redis, collector):
+    redis.get.return_value = None
+    redis.zrange.return_value = []
+
+    result = await collector.get_node_metrics("missing")
+
+    assert result.total_executions == 0
+    assert result.avg_duration_ms == 0
+    assert result.min_duration_ms == float("inf")
+    assert result.total_retries == 0
+    assert result.avg_retries == 0

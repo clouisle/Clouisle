@@ -255,7 +255,7 @@ Agent 使用 `off`、`auto` 或 `agentic` 选择 RAG 行为。知识库检索另
 └─────────────────────────────────────────────────────────────┘
 ```
 
-Worker 消费 `default`、`agent`、`knowledge` 和 `workflow` 队列；持久化 AgentRun 任务路由到专用的 `agent` 队列；启用沙箱时，沙箱执行使用专用 sandbox-worker 进程/队列（`sandbox`）。
+Worker 消费 `default`、`agent`、`knowledge` 和 `workflow` 队列；持久化 AgentRun 任务使用专用 `agent` 队列。无状态沙箱任务使用共享 `sandbox` 队列；会话工作区由就绪 Worker 准备后，会话任务改投该 Worker 的专属 affinity 队列。
 
 ### Kubernetes（大型生产）
 

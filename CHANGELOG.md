@@ -9,9 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Admin Observability
+
+- Rebuilt the admin observability console with six focused views for run outcomes, on-demand traces, model/tool/retrieval dependencies, queues, infrastructure, and alerts.
+- Added bounded tool and knowledge retrieval spans to durable AgentRun details, plus tool and retrieval success-rate and latency aggregates in the Dependencies view.
+- Agent dependency traces retain at most 128 spans per run and display when the cap truncates a trace; historical runs are not backfilled.
+- Added translations for every persisted AgentRun lifecycle status in both locales and a raw-status fallback for future values.
+- Added bounded PostgreSQL, Redis, Celery worker, and Qdrant connectivity probes for infrastructure dependencies, including measured latency and explicit unhealthy/unconfigured states.
+- Added single-leader terminal AgentRun summary reconciliation every minute, repairing stale status, timing, model, and token fields in bounded batches without replaying runs; fixed the ORM query that dropped terminal summaries.
+- Model dependency cards now resolve existing telemetry UUIDs to configured model names and provider labels, including custom gateway names, while keeping same-named models separate.
+- Reduced queue snapshot latency by collecting active tasks, reserved tasks, scheduled tasks, and active queues concurrently with independent Celery inspectors; preserved existing cache and failure behavior.
+- Reduced infrastructure snapshot latency by collecting health probes and slow-query statistics concurrently and shortening Celery reply collection to 0.5 seconds; retained existing probe deadlines, failure behavior, and caching.
+- Added Redis-backed API instance discovery with per-instance reporter leases, host-scoped resource samples, readable names, and stale/offline aging; infrastructure now lists retained instances across backends rather than only the serving process.
+- Added a two-month calendar range picker to observability, with rolling presets at the bottom of its popover, inclusive local-day selection, URL persistence, and consistent UTC filtering for overview, runs, and dependency statistics.
+- Added the same calendar range picker to the dashboard with 7/30/90-day and all-time shortcuts; custom dates consistently filter trends, rankings, model usage, workflow summaries, and conversation/message/token summaries and averages, while unrelated cumulative indicators retain their definitions.
+
+
+#### Sandbox Security
+- Added a persisted Security setting for exact sandbox egress hostnames; updates apply to new jobs without restarting workers.
+
 #### Chat and File Previews
 - Added a unified artifact list with file counts, expandable results, authenticated downloads, and shared previews for common document, media, and code formats.
 - Added DOCX thumbnails, page synchronization, responsive fit-to-width, and zoom controls; added read-only PDF and spreadsheet preview controls.
+
+#### Sandbox Lifecycle Audit
+- Added audit events for sandbox task start, completion, failure, cancellation, and recovery. Entries capture available task/session/worker context and safe error codes without recording code, arguments, output, or raw exception text.
 
 #### Memory and RAG
 - Added optional background memory extraction controls in the admin `memory` site-settings category, including model selection, debounce cooldown, and pending-turn trigger limits.
@@ -22,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the Decision workflow node: it asks one typed question, routes on the returned answer (or the highest-probability score level), and supports a fallback branch plus an optional confidence threshold.
 
 ### Changed
+
+#### Admin Observability
+
+- Aligned console tabs and filters with the shared dashboard Tabs, Select, and Input components; standardized control heights.
 
 #### Assets and Media
 - Persisted generated images and videos as scoped Assets and exposed conversation/workflow-scoped media references for model use.
@@ -34,9 +60,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Dependencies and Tooling
 - Updated backend and frontend dependency manifests and lockfiles to current compatible releases.
 - Made the Python lint policy explicit for stable Ruff upgrades and audited the complete Bun production dependency closure.
+- Replaced the sandbox tests' Redis-server process with an in-process fake and removed the Redis server install from backend CI.
 - Added `MIT-0` to the approved permissive-license policy.
 
 ### Fixed
+
+#### Admin Observability
+- Kept the Dependencies view available when tool and retrieval spans have no token counts; those rows now report unavailable token usage instead of failing the response.
+- Migrated `model_name` and `message_started_at` on existing PostgreSQL `observability_runs` tables before Tortoise schema and index generation, preventing API startup and summary-query failures on older databases.
+
+#### Sandbox Sessions
+- Routed session jobs to per-worker Celery queues and persisted a fenced worker/storage binding. Stale-generation messages are rejected; a command with uncertain completion is never automatically replayed.
+- Added sandbox-worker readiness heartbeats, same-disk supervised restart and checkpoint recovery, plus bounded atomic rebinding to a fresh workspace generation when the original worker storage is unavailable. AgentRun receives `WORKSPACE_RESET` and replans instead of reusing stale paths or process state.
+- Kept each sandbox worker's workspace and checkpoints on worker-local storage (Compose named volume; Kubernetes node-local hostPath DaemonSet). Same-node process replacement can restore checkpointed data; permanent loss of the node or disk cannot.
+- Used the platform's `ELOOP` errno constant when rejecting symlinked workspace paths.
+- Routed deferred cleanup and idle-eviction retries through separate Redis indexes so an unavailable owner queue cannot block later sessions; spread first-time session placement across ready workers and bounded binding/tombstone retention.
+- Rejected zero-valued sandbox worker recovery timeouts.
+- Routed isolated sandbox and dependency-install egress through a per-job HTTPS proxy with exact-host allowlisting; blocked hosts are reported in execution diagnostics.
+- Kept legacy code execution and workflow code nodes behind the sandbox gateway; disabled, unavailable, and failed runtimes fail closed without executing payloads on the caller.
+- Bounded Python and Node dependency installation to 300 seconds by default; timed-out install process groups are terminated and incomplete environments are discarded.
+- Bounded captured sandbox output in memory and applied per-process `prlimit` controls. Direct payloads drop all capabilities in Bubblewrap; the trusted egress bridge raises loopback in its isolated network namespace, then sets `no-new-privileges` and clears payload capabilities. Supplied workers receive `NET_ADMIN` for that setup and remain resource-capped.
 
 #### Asset Access and Previews
 - Protected generated images, generated videos, and sandbox artifacts with scope-aware authorization and authenticated client downloads.
@@ -44,6 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Chat Experience
 - Kept agent conversations pinned to the latest message as soon as a send begins, before streaming starts.
+- Deduplicated overlapping Agent conversation pages and preserved the loaded pagination position when refreshing the chat sidebar.
 
 #### Dependency Compatibility
 - Adapted Redis, MCP, SMTP, sandbox session, React, Radix, TypeScript, and ICU message-format integrations to their refreshed APIs while preserving exception tracebacks.

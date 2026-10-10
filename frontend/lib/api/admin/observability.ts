@@ -1,252 +1,237 @@
 import { api } from '../client'
 
-export type ObservabilityTimeRange = '7d' | '30d' | '90d' | 'all'
-export type ObservabilitySortOrder = 'asc' | 'desc'
+export type ObservabilityPeriod = '15m' | '1h' | '24h' | '7d' | 'custom'
+export type ObservabilityState = 'fresh' | 'partial' | 'stale' | 'unavailable' | 'no_data'
+export type ObservabilitySource = 'agent' | 'workflow'
 
-export interface ObservabilityPercentiles {
-  p50_ms: number | null
-  p90_ms: number | null
-  p95_ms: number | null
-  p99_ms?: number | null
+export interface ObservabilityMeta {
+  window_start: string
+  window_end: string
+  sampled_at: string
+  period: ObservabilityPeriod | string
+  state: ObservabilityState
+  sample_count: number
 }
 
-export interface ObservabilityOverview {
-  time_range: ObservabilityTimeRange
-  generated_at: string
-  cache_ttl_seconds: number
-  totals: {
-    agent_requests: number
-    workflow_runs: number
-    total_requests: number
-    total_tokens: number
-  }
-  rates: {
-    agent_success_rate: number
-    workflow_success_rate: number
-    overall_success_rate: number
-    timeout_rate: number
-  }
-  latency: ObservabilityPercentiles
-  ttft?: ObservabilityPercentiles
-  throughput: {
-    current_qps: number
-    peak_hourly_requests: number
-  }
-}
-
-export interface ObservabilityPage<T> {
-  items: T[]
-  total: number
-  page: number
-  page_size: number
-  time_range?: ObservabilityTimeRange
-}
-
-export interface AgentPerformanceRow extends ObservabilityPercentiles {
-  agent_id: string
-  agent_name: string | null
-  team_name: string | null
-  request_count: number
-  success_count: number
-  error_count: number
-  timeout_count: number
-  total_tokens: number
-  ttft_p50_ms?: number | null
-  ttft_p90_ms?: number | null
-  ttft_p95_ms?: number | null
-  ttft_p99_ms?: number | null
-  success_rate: number
-  timeout_rate: number
-  avg_tokens: number
-}
-
-export interface WorkflowPerformanceRow extends ObservabilityPercentiles {
-  workflow_id: string
-  workflow_name: string | null
-  team_name: string | null
-  run_count: number
-  success_count: number
-  error_count: number
-  timeout_count: number
-  failed_nodes: number
-  avg_nodes: number | null
-  total_tokens: number
-  success_rate: number
-  timeout_rate: number
-  avg_tokens: number
-}
-
-export interface ObservabilityTrendPoint {
+export interface TrendPoint {
   bucket: string
-  request_count?: number
-  run_count?: number
-  p50_ms?: number | null
-  p90_ms?: number | null
-  p95_ms?: number | null
-  ttft_p95_ms?: number | null
-  success_rate?: number
-  timeout_count?: number
-  failed_nodes?: number
+  submitted: number
+  completed: number
+  failed: number
+  tokens: number
+  p95_ms: number | null
+  first_token_p95_ms: number | null
 }
 
-export interface AgentDetailResponse {
-  time_range: ObservabilityTimeRange
-  agent: AgentPerformanceRow | null
-  trend: ObservabilityTrendPoint[]
+export interface ObservabilityIssue {
+  kind: string
+  severity: 'critical' | 'warning' | 'info'
+  title: string
+  detail: string
+  affected_count: number
+  href: string
 }
 
-export interface WorkflowDetailResponse {
-  time_range: ObservabilityTimeRange
-  workflow: WorkflowPerformanceRow | null
-  trend: ObservabilityTrendPoint[]
-  nodes: Array<{
-    node_type: string
-    execution_count: number
-    failed_count: number
-    avg_duration_ms: number | null
-  }>
+export interface SummaryResponse {
+  meta: ObservabilityMeta
+  agents: { submitted: number; completed: number; failed: number; success_rate: number | null; p50_ms: number | null; p95_ms: number | null; first_token_p95_ms: number | null; tokens: number }
+  workflows: { submitted: number; completed: number; failed: number; success_rate: number | null; p50_ms: number | null; p95_ms: number | null; tokens: number }
+  trend: TrendPoint[]
+  issues: ObservabilityIssue[]
 }
 
-export interface TimeoutEvent {
-  source: 'agent' | 'workflow'
-  entity_id: string | null
-  entity_name: string
-  model: string | null
-  timeout_type: string
-  created_at: string | null
-  duration_ms: number | null
-  status: string | null
-}
-
-export interface TimeoutResponse extends ObservabilityPage<TimeoutEvent> {
-  distribution: Record<string, number>
-  agent_timeout_type_available: boolean
-  note: string
-}
-
-export interface ThroughputResponse {
-  time_range: ObservabilityTimeRange
-  granularity: string
-  current: {
-    qps: number
-    tps: number
-    running_workflows: number
-  }
-  buckets: Array<{
-    bucket: string
-    agent_requests: number
-    workflow_runs: number
-    total_requests: number
-  }>
-}
-
-export interface TokenResponse {
-  time_range: ObservabilityTimeRange
-  total_tokens: number
-  by_source: Array<{ source: string; tokens: number }>
-  by_model: Array<{ model: string; tokens: number }>
-}
-
-export interface SystemHealthResponse {
-  generated_at: string
-  cache_ttl_seconds: number
-  cpu: Record<string, unknown>
-  memory: Record<string, unknown>
-  disk: Record<string, unknown>
-  database: Record<string, unknown>
-  redis: Record<string, unknown>
-  workers: WorkerResponse
-}
-
-export interface SystemTrendResponse {
-  items: Array<Record<string, unknown>>
-}
-
-export interface SlowQueriesResponse {
-  available: boolean
-  reason: string | null
-  items: Array<Record<string, unknown>>
-  total: number
-  page: number
-  page_size: number
-}
-
-export interface WorkerResponse {
+export interface RunSummary {
+  run_id: string
+  source: ObservabilitySource
+  resource_id: string
+  resource_name: string
+  team_id: string | null
+  team_name: string | null
   status: string
-  worker_count: number
-  active_tasks: number
-  reserved_tasks: number
-  scheduled_tasks: number
-  queues: Array<{ queue: string; pending: number }>
-  tasks: Array<{ task: string; queue: string; pending: number }>
-  error?: string
+  submitted_at: string | null
+  started_at: string | null
+  message_started_at: string | null
+  worker_bootstrap_ms: number | null
+  finished_at: string | null
+  queue_duration_ms: number | null
+  execution_duration_ms: number | null
+  total_duration_ms: number | null
+  first_token_ms: number | null
+  total_tokens: number | null
+  error_category: string | null
+  error_code: string | null
+  trace_available: boolean
+  trace_complete: boolean
 }
+
+export interface TraceSpan {
+  span_id: string
+  parent_span_id: string | null
+  kind: string
+  name: string
+  status: string
+  started_at: string | null
+  finished_at: string | null
+  duration_ms: number | null
+  attempt: number | null
+  model: string | null
+  tool: string | null
+  error_category: string | null
+  token_usage: Record<string, number> | null
+  metadata: Record<string, unknown>
+}
+
+export interface RunDetailResponse {
+  run: RunSummary
+  spans: TraceSpan[]
+  trace: { complete: boolean; expired: boolean; truncated: boolean; recorded_count: number }
+  meta: ObservabilityMeta
+}
+
+export interface RunsResponse {
+  items: RunSummary[]
+  next_cursor: string | null
+  meta: ObservabilityMeta
+}
+
+export interface DependencyRow {
+  name: string
+  requests: number
+  completed: number
+  failed: number
+  success_rate: number | null
+  p50_ms: number | null
+  p95_ms: number | null
+  first_token_p95_ms: number | null
+  tokens: number | null
+  sample_count: number
+}
+
+export interface ModelDependencyRow extends DependencyRow {
+  id: string
+  provider: string | null
+  provider_display_name: string | null
+}
+
+export interface DependenciesResponse {
+  meta: ObservabilityMeta
+  models: ModelDependencyRow[]
+  tools: DependencyRow[]
+  retrieval: DependencyRow[]
+}
+
+export interface WorkerRow {
+  worker_id: string
+  status: string
+  queues: string[]
+  last_heartbeat: string | null
+  active_tasks: number | null
+  reserved_tasks: number | null
+  scheduled_tasks: number | null
+}
+
+export interface QueueTrendPoint { bucket: string; pending: number | null }
+
+export interface QueueRow {
+  name: string
+  consumers: number | null
+  pending: number | null
+  oldest_wait_ms: number | null
+  observed_at: string | null
+  state: 'healthy' | 'warning' | 'unavailable' | 'unknown'
+  trend: QueueTrendPoint[]
+}
+
+export interface QueuesResponse { meta: ObservabilityMeta; workers: WorkerRow[]; queues: QueueRow[] }
+
+export interface InstanceRow {
+  instance_id: string
+  name: string
+  role: 'api'
+  metric_scope: 'host'
+  cpu_percent: number | null
+  memory_percent: number | null
+  observed_at: string | null
+  state: 'healthy' | 'warning' | 'unavailable' | 'stale' | 'offline'
+}
+
+export interface InfrastructureDependency {
+  name: string
+  status: 'healthy' | 'degraded' | 'unhealthy' | 'unknown'
+  observed_at: string | null
+  latency_ms: number | null
+  detail: string | null
+}
+
+export interface SlowQuery {
+  query_id: string
+  query: string
+  calls: number
+  mean_ms: number
+  max_ms: number
+  total_ms: number
+}
+
+export interface InfrastructureResponse {
+  meta: ObservabilityMeta
+  instances: InstanceRow[]
+  dependencies: InfrastructureDependency[]
+  slow_queries: { available: boolean; reset_at: string | null; items: SlowQuery[] }
+}
+
+export interface AlertEvent {
+  id: string
+  rule_id: string
+  kind: string
+  severity: 'critical' | 'warning' | 'info'
+  title: string
+  detail: string
+  affected_count: number
+  status: 'active' | 'resolved'
+  opened_at: string
+  resolved_at: string | null
+  acknowledged_at: string | null
+  silenced_until: string | null
+}
+
+export interface AlertRule {
+  id: string
+  name: string
+  threshold: number
+  enabled: boolean
+  evaluation_window_seconds: number
+  recovery_window_seconds: number
+  updated_at: string | null
+}
+
+export interface AlertsResponse { items: AlertEvent[]; next_cursor: string | null; meta: ObservabilityMeta }
 
 function withParams(path: string, params: Record<string, string | number | undefined>) {
   const query = new URLSearchParams()
   Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined) {
-      query.set(key, String(value))
-    }
+    if (value !== undefined && value !== '') query.set(key, String(value))
   })
   const serialized = query.toString()
   return serialized ? `${path}?${serialized}` : path
 }
 
 export const observabilityApi = {
-  getOverview: (timeRange: ObservabilityTimeRange = '30d'): Promise<ObservabilityOverview> =>
-    api.get<ObservabilityOverview>(withParams('/admin/observability/overview', { time_range: timeRange })),
-
-  getAgents: (params: {
-    time_range?: ObservabilityTimeRange
-    page?: number
-    page_size?: number
-    sort_by?: string
-    sort_order?: ObservabilitySortOrder
-  } = {}): Promise<ObservabilityPage<AgentPerformanceRow>> =>
-    api.get<ObservabilityPage<AgentPerformanceRow>>(withParams('/admin/observability/agents', params)),
-
-  getAgentDetail: (agentId: string, timeRange: ObservabilityTimeRange = '30d'): Promise<AgentDetailResponse> =>
-    api.get<AgentDetailResponse>(withParams(`/admin/observability/agent/${agentId}`, { time_range: timeRange })),
-
-  getWorkflows: (params: {
-    time_range?: ObservabilityTimeRange
-    page?: number
-    page_size?: number
-    sort_by?: string
-    sort_order?: ObservabilitySortOrder
-  } = {}): Promise<ObservabilityPage<WorkflowPerformanceRow>> =>
-    api.get<ObservabilityPage<WorkflowPerformanceRow>>(withParams('/admin/observability/workflows', params)),
-
-  getWorkflowDetail: (workflowId: string, timeRange: ObservabilityTimeRange = '30d'): Promise<WorkflowDetailResponse> =>
-    api.get<WorkflowDetailResponse>(withParams(`/admin/observability/workflow/${workflowId}`, { time_range: timeRange })),
-
-  getTimeouts: (params: {
-    time_range?: ObservabilityTimeRange
-    source?: 'all' | 'agent' | 'workflow'
-    page?: number
-    page_size?: number
-  } = {}): Promise<TimeoutResponse> =>
-    api.get<TimeoutResponse>(withParams('/admin/observability/timeouts', params)),
-
-  getThroughput: (params: {
-    time_range?: ObservabilityTimeRange
-    granularity?: 'hour' | 'day'
-  } = {}): Promise<ThroughputResponse> =>
-    api.get<ThroughputResponse>(withParams('/admin/observability/throughput', params)),
-
-  getTokens: (timeRange: ObservabilityTimeRange = '30d'): Promise<TokenResponse> =>
-    api.get<TokenResponse>(withParams('/admin/observability/tokens', { time_range: timeRange })),
-
-  getSystemHealth: (): Promise<SystemHealthResponse> =>
-    api.get<SystemHealthResponse>('/admin/observability/system/health'),
-
-  getSystemTrend: (): Promise<SystemTrendResponse> =>
-    api.get<SystemTrendResponse>('/admin/observability/system/trend'),
-
-  getSlowQueries: (params: { threshold_ms?: number; page?: number; page_size?: number } = {}): Promise<SlowQueriesResponse> =>
-    api.get<SlowQueriesResponse>(withParams('/admin/observability/system/slow-queries', params)),
-
-  getWorkers: (): Promise<WorkerResponse> =>
-    api.get<WorkerResponse>('/admin/observability/system/workers'),
+  getSummary: (params: { period?: ObservabilityPeriod; start_time?: string; end_time?: string; team_id?: string } = {}): Promise<SummaryResponse> =>
+    api.get<SummaryResponse>(withParams('/admin/observability/summary', params)),
+  getRuns: (params: { period?: ObservabilityPeriod; start_time?: string; end_time?: string; team_id?: string; source?: 'all' | ObservabilitySource; status?: string; error_category?: string; run_id?: string; cursor?: string; limit?: number } = {}): Promise<RunsResponse> =>
+    api.get<RunsResponse>(withParams('/admin/observability/runs', params)),
+  getRun: (source: ObservabilitySource, runId: string): Promise<RunDetailResponse> =>
+    api.get<RunDetailResponse>(`/admin/observability/runs/${source}/${encodeURIComponent(runId)}`),
+  getDependencies: (params: { period?: ObservabilityPeriod; start_time?: string; end_time?: string; team_id?: string } = {}): Promise<DependenciesResponse> =>
+    api.get<DependenciesResponse>(withParams('/admin/observability/dependencies', params)),
+  getQueues: (): Promise<QueuesResponse> => api.get<QueuesResponse>('/admin/observability/queues'),
+  getInfrastructure: (): Promise<InfrastructureResponse> => api.get<InfrastructureResponse>('/admin/observability/infrastructure'),
+  getAlerts: (params: { status?: 'active' | 'resolved' | 'all'; cursor?: string; limit?: number } = {}): Promise<AlertsResponse> =>
+    api.get<AlertsResponse>(withParams('/admin/observability/alerts', params)),
+  getAlertRules: (): Promise<AlertRule[]> => api.get<AlertRule[]>('/admin/observability/alerts/rules'),
+  acknowledgeAlert: (id: string): Promise<AlertEvent> => api.post<AlertEvent>(`/admin/observability/alerts/${encodeURIComponent(id)}/acknowledge`, {}),
+  silenceAlert: (id: string, duration_seconds: number): Promise<AlertEvent> =>
+    api.post<AlertEvent>(withParams(`/admin/observability/alerts/${encodeURIComponent(id)}/silence`, { duration_seconds }), {}),
+  updateAlertRule: (id: string, rule: Pick<AlertRule, 'threshold' | 'enabled' | 'evaluation_window_seconds' | 'recovery_window_seconds'>): Promise<AlertRule> =>
+    api.put<AlertRule>(`/admin/observability/alerts/rules/${encodeURIComponent(id)}`, rule),
 }

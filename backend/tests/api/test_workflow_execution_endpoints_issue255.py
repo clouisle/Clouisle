@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, Mock
@@ -172,6 +173,7 @@ async def test_webhook_creates_run_and_dispatches_normalized_inputs(monkeypatch)
     workflow_id, team_id, user_id, run_id = (uuid4() for _ in range(4))
     workflow = SimpleNamespace(
         id=workflow_id,
+        name="Flow",
         team_id=team_id,
         webhook_token="token",
         status=WorkflowStatus.PUBLISHED,
@@ -185,7 +187,17 @@ async def test_webhook_creates_run_and_dispatches_normalized_inputs(monkeypatch)
     monkeypatch.setattr(
         workflows.Workflow, "filter", lambda **_kwargs: Query(items=[workflow])
     )
-    create = AsyncMock(return_value=SimpleNamespace(id=run_id))
+    create = AsyncMock(
+        return_value=SimpleNamespace(
+            id=run_id,
+            workflow_id=workflow_id,
+            status=RunStatus.PENDING,
+            created_at=datetime.now(timezone.utc),
+            started_at=None,
+            finished_at=None,
+            total_duration_ms=None,
+        )
+    )
     monkeypatch.setattr(workflows.WorkflowRun, "create", create)
     delay = Mock()
     monkeypatch.setattr(run_workflow_task, "delay", delay)
@@ -275,7 +287,17 @@ async def test_run_endpoints_create_dispatch_and_audit(
     )
     access = AsyncMock(return_value=workflow)
     monkeypatch.setattr(workflows, "check_workflow_access", access)
-    create = AsyncMock(return_value=SimpleNamespace(id=run_id))
+    create = AsyncMock(
+        return_value=SimpleNamespace(
+            id=run_id,
+            workflow_id=workflow_id,
+            status=RunStatus.PENDING,
+            created_at=datetime.now(timezone.utc),
+            started_at=None,
+            finished_at=None,
+            total_duration_ms=None,
+        )
+    )
     monkeypatch.setattr(workflows.WorkflowRun, "create", create)
     delay = Mock()
     monkeypatch.setattr(run_workflow_task, "delay", delay)

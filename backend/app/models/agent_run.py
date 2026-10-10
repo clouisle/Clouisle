@@ -111,6 +111,11 @@ class AgentRun(models.Model):
     pending_tool_round_index = fields.IntField(null=True)
     pending_tool_iteration_index = fields.IntField(null=True)
 
+    submitted_at = fields.DatetimeField(
+        null=True, description="API acceptance time for observability"
+    )
+    message_started_at = fields.DatetimeField(null=True)
+    first_token_ms = fields.IntField(null=True)
     # Lifecycle
     status = fields.CharEnumField(
         AgentRunStatus, default=AgentRunStatus.QUEUED, description="Run status"

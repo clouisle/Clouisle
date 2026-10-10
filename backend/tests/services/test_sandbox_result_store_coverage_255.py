@@ -1,112 +1,49 @@
+"""Stored-result decoding and cancellation boundaries, not Redis wiring copies."""
+
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
-from app.services.sandbox import result_store as result_store_module
-from app.services.sandbox.models import (
-    SandboxExecutionMetadata,
-    SandboxResult,
-    SandboxTaskStatus,
-)
-from app.services.sandbox.result_store import SandboxResultStore
+from app.services.sandbox import result_store
+from app.services.sandbox.models import SandboxTaskStatus
 
 
-@pytest.fixture
-def redis(monkeypatch):
-    client = AsyncMock()
-    monkeypatch.setattr(
-        result_store_module, "get_redis", AsyncMock(return_value=client)
-    )
-    return client
+def test_status_decodes_raw_redis_bytes(sandbox_runtime, monkeypatch):
+    r = sandbox_runtime
+    redis = SimpleNamespace(get=AsyncMock(return_value=b"queued"))
+    monkeypatch.setattr(result_store, "get_redis", AsyncMock(return_value=redis))
+
+    assert r.run(r.results.get_status("job")) == SandboxTaskStatus.QUEUED
 
 
-@pytest.mark.asyncio
-async def test_save_and_load_result_with_explicit_ttl(redis):
-    store = SandboxResultStore()
-    result = SandboxResult(job_id="job-1", status=SandboxTaskStatus.COMPLETED)
-
-    await store.save_result(result, ttl_seconds=30)
-    payload = redis.setex.await_args_list[0].args[2]
-    redis.get.return_value = payload
-
-    assert (await store.get_result("job-1")).status is SandboxTaskStatus.COMPLETED
-    assert result.metadata.status is SandboxTaskStatus.COMPLETED
-    assert [call.args[:2] for call in redis.setex.await_args_list] == [
-        ("sandbox:job:job-1", 30),
-        ("sandbox:job:job-1:status", 30),
-    ]
-
-
-@pytest.mark.asyncio
-async def test_missing_and_invalid_stored_values(redis):
-    store = SandboxResultStore()
-    redis.get.return_value = None
-
-    assert await store.get_result("missing") is None
-    assert await store.get_status("missing") is None
-
-    redis.get.return_value = "unknown"
+def test_missing_and_invalid_stored_values(sandbox_runtime):
+    r = sandbox_runtime
+    assert r.run(r.results.get_result("missing")) is None
+    assert r.run(r.results.get_status("missing")) is None
+    r.redis.set("sandbox:job:invalid:status", "unknown")
     with pytest.raises(ValueError):
-        await store.get_status("job-1")
+        r.run(r.results.get_status("invalid"))
 
 
-@pytest.mark.asyncio
-async def test_create_and_update_results(monkeypatch):
-    store = SandboxResultStore()
-    save = AsyncMock()
-    monkeypatch.setattr(store, "save_result", save)
-
-    queued = await store.create_queued_result("job-1")
-    assert queued.status is SandboxTaskStatus.QUEUED
-
-    metadata = SandboxExecutionMetadata()
-    monkeypatch.setattr(store, "get_result", AsyncMock(return_value=queued))
-    completed = await store.update_status(
-        "job-1",
-        SandboxTaskStatus.COMPLETED,
-        metadata=metadata,
-        success=True,
-        result={"value": 1},
-    )
-    assert completed.success is True
-    assert completed.result == {"value": 1}
-    assert completed.metadata is metadata
-    assert metadata.status is SandboxTaskStatus.COMPLETED
-
-    monkeypatch.setattr(store, "get_result", AsyncMock(return_value=None))
-    failed = await store.update_status(
-        "job-2", SandboxTaskStatus.FAILED, error="failed"
+def test_failure_can_be_published_without_preexisting_result(sandbox_runtime):
+    r = sandbox_runtime
+    failed = r.run(
+        r.results.update_status("job", SandboxTaskStatus.FAILED, error="failed")
     )
     assert failed.error == "failed"
-    assert failed.metadata.status is SandboxTaskStatus.FAILED
-
-    without_metadata = SandboxResult.model_construct(job_id="job-3", metadata=None)
-    monkeypatch.setattr(store, "get_result", AsyncMock(return_value=without_metadata))
-    running = await store.update_status("job-3", SandboxTaskStatus.RUNNING)
-    assert running.metadata is None
-    assert save.await_count == 4
+    assert failed.metadata.status == SandboxTaskStatus.FAILED
+    cancelled = r.run(r.gateway.cancel("job", "late cancellation"))
+    assert cancelled.status == SandboxTaskStatus.FAILED
+    assert cancelled.error == "failed"
 
 
-@pytest.mark.asyncio
-async def test_status_lookup_and_delete(redis):
-    store = SandboxResultStore()
-    redis.get.return_value = "running"
-
-    assert await store.get_status("job-1") is SandboxTaskStatus.RUNNING
-    await store.delete("job-1")
-
-    redis.delete.assert_awaited_once_with(
-        "sandbox:job:job-1", "sandbox:job:job-1:status"
-    )
-
-
-@pytest.mark.asyncio
-async def test_save_result_skips_metadata_status_when_metadata_is_none(redis):
-    store = SandboxResultStore()
-    result = SandboxResult(job_id="job-none", status=SandboxTaskStatus.COMPLETED)
-    result.metadata = None
-
-    await store.save_result(result, ttl_seconds=30)
-
-    assert redis.setex.await_count == 2
-    assert result.metadata is None
+def test_cancelled_result_keeps_its_completed_timing(sandbox_runtime):
+    r = sandbox_runtime
+    r.run(r.results.create_queued_result("job"))
+    cancelled = r.run(r.gateway.cancel("job", "cancelled"))
+    assert cancelled.status == SandboxTaskStatus.CANCELLED
+    assert cancelled.metadata.completed_at is not None
+    assert cancelled.metadata.total_ms is not None
+    r.run(r.results.update_status("job", SandboxTaskStatus.RUNNING, success=True))
+    assert r.run(r.results.get_result("job")) == cancelled

@@ -692,6 +692,9 @@ POST /api/v1/agents/{agent_id}/chat
       "mime_type": "application/pdf"
     }
   ],
+  "workflow_asset_refs": [
+    {"workflow_run_id": "run-123", "ref": "a1b2"}
+  ],
   "variables": {
     "customer_tier": "premium"
   }
@@ -708,9 +711,10 @@ POST /api/v1/agents/{agent_id}/chat
 | `file_urls` | array | No | Uploaded Asset metadata: `asset_id`, `filename`, `url`, `size`, and `mime_type` |
 | `conversation_id` | string | No | Conversation UUID (creates new if not provided) |
 | `variables` | object | No | Variable values for the chat input form |
+| `workflow_asset_refs` | array | No | Workflow-run Asset refs (`workflow_run_id`, `ref`) to import into this chat |
 | `history_override` | array | No | Override conversation history (used for version switching/regeneration) |
 
-The upload response names the MIME field `content_type`, while `ChatRequest.file_urls` requires `mime_type`; map `content_type` to `mime_type` before reusing the metadata. Preserve the returned `asset_id`, `url`, `filename`, and `size`; the URL already includes the category, date path, and generated storage filename. Do not build `/upload/files/{asset_id}` URLs. For generated media, an `asset_ref` is scoped to a conversation or workflow run and is only valid in that scope.
+The upload response names the MIME field `content_type`, while `ChatRequest.file_urls` requires `mime_type`; map `content_type` to `mime_type` before reusing metadata. Preserve the returned `asset_id`, `url`, `filename`, and `size`; the URL already includes the category, date path, and generated storage filename. For workflow assets, submit `{workflow_run_id, ref}`; the backend checks access to the source workflow run and creates a separate conversation-scoped ref. Each ref is valid only in its own scope.
 
 ### Request Example
 

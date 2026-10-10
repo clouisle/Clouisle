@@ -109,6 +109,17 @@ async def test_actions_and_route_permissions_are_exposed():
     response = await audit_logs.get_audit_log_actions(current_user=MagicMock())
 
     assert response["data"] is audit_logs.AUDIT_ACTION_OPTIONS
+    assert {
+        option.value
+        for option in response["data"]
+        if option.value.startswith("sandbox_task_")
+    } == {
+        "sandbox_task_started",
+        "sandbox_task_completed",
+        "sandbox_task_failed",
+        "sandbox_task_cancelled",
+        "sandbox_task_recovered",
+    }
     permissions = {
         route.path: {
             dependency.call.required_permission

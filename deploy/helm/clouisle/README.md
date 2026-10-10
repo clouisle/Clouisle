@@ -88,6 +88,9 @@ helm upgrade --install clouisle deploy/helm/clouisle \
 | `postgresql.external.host` | empty | External PG17+ host with pg_search 0.24.3 preloaded when built-in mode is disabled |
 | `redis.enabled` | `true` | Deploy built-in Redis |
 | `qdrant.enabled` | `true` | Deploy built-in Qdrant 1.18.3 |
+| `sandboxWorker.nodeSelector` | `{}` | Eligible sandbox nodes; one DaemonSet worker per node |
+| `sandboxWorker.tolerations` | `[]` | Additional tolerations for dedicated sandbox nodes |
+| `sandboxWorker.localDataPath` | empty | Exclusive node-local data path; defaults to `/var/lib/clouisle/<namespace>/<release>/sandbox` |
 
 ## PostgreSQL Upgrade and Licensing
 
@@ -100,6 +103,12 @@ Existing PostgreSQL 16 volumes cannot be mounted directly by PostgreSQL 17. Migr
 `api` alone mounts the `uploads` PVC at `/app/uploads`. `worker` and `sandbox-worker` read authorized documents/attachments through the authenticated internal upload gateway, and `sandbox-worker` uploads artifacts through the API.
 
 Local upload storage needs a `ReadWriteMany` capable StorageClass, such as NFS, EFS, or CephFS, only when scaling `api` beyond one replica. With `ReadWriteOnce`, keep `api` at one replica; workers remain independently scalable.
+
+Sandbox workers run as a DaemonSet with one isolated hostPath disk per eligible node. Worker/storage IDs are generated once on the disk sentinel; each supervised Celery child gets a fresh instance ID. Do not share `sandboxWorker.localDataPath` across installations or set a single global worker ID. Pod reconstruction on the same node and child-process restarts retain workspaces, checkpoints and caches. Restrict eligibility using `sandboxWorker.nodeSelector` (merged with the global selector), and use `sandboxWorker.tolerations` for dedicated tainted nodes. Label one node for single-node capacity, or several for multi-node capacity; `sandboxWorker.replicas` is no longer used.
+
+The hostPath must be writable by the configured worker UID. Restricted Pod Security admission may reject hostPath, `SYS_ADMIN`, `SETFCAP`, `NET_ADMIN` or the unconfined seccomp profile; run sandbox capacity only on trusted nodes with the required permissions. Node/disk loss does not preserve files: after bounded original-disk recovery, sessions may move to a prepared fresh workspace with an explicit workspace-loss notice. No distributed sandbox storage is introduced. An unavailable sole eligible node means no ready sandbox capacity. See [deployment recovery guidance](../../README.md#sandbox-local-persistence-and-recovery).
+
+`config.SANDBOX_WORKSPACE_ROOT` is the common virtual path for API, Agent workers and sandbox workers. Its default is `/var/lib/clouisle/sandbox/jobs`; checkpoints and the sandbox data mount derive from the same parent. Only the sandbox DaemonSet mounts retained physical data. Change the path in `config`, not `extraEnv`, so caller-generated commands and worker paths stay aligned without sharing any physical disk.
 
 ## Beat Replica Safety
 

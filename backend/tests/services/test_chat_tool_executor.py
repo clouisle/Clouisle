@@ -66,12 +66,17 @@ class TestChatToolExecutor:
             source=SimpleNamespace(value="upload"),
         )
         svc = MagicMock()
-        svc.resolve_ref = AsyncMock(return_value=asset)
         svc.capabilities = MagicMock(return_value=["inspect", "read", "sandbox"])
         agent = SimpleNamespace(id=uuid4(), team_id=None, attachment_config={})
         user = SimpleNamespace(id=uuid4())
 
-        with patch("app.services.asset.asset_service", svc):
+        with (
+            patch(
+                "app.services.asset_access.resolve_authorized_asset_ref",
+                new=AsyncMock(return_value=asset),
+            ),
+            patch("app.services.asset.asset_service", svc),
+        ):
             result = await execute_tool_call(
                 "inspect_asset",
                 {"ref": "abcd"},
@@ -80,7 +85,14 @@ class TestChatToolExecutor:
                 conversation_id=str(uuid4()),
             )
 
-        assert json.loads(result)["ref"] == "abcd"
+        assert json.loads(result) == {
+            "ref": "abcd",
+            "filename": "file.txt",
+            "content_type": "text/plain",
+            "size": 4,
+            "source": "upload",
+            "capabilities": ["inspect", "read", "sandbox"],
+        }
 
     @pytest.mark.anyio
     async def test_execute_skill_tool_uses_normal_tool_contract(self):

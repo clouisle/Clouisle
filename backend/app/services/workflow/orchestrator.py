@@ -11,7 +11,7 @@ from uuid import UUID
 import logging
 import time
 
-
+import asyncio
 from app.models.workflow import (
     Workflow,
     WorkflowRun,
@@ -49,6 +49,62 @@ from .metrics import get_metrics_collector
 from .profiler import ExecutionProfiler
 
 logger = logging.getLogger(__name__)
+
+
+async def _persist_observability_summary(run, workflow, status: str) -> None:
+    try:
+        from app.services.observability_v2 import record_run
+
+        usage = run.total_token_usage or {}
+        total_tokens = max(0, int(usage.get("prompt", 0) or 0)) + max(
+            0, int(usage.get("completion", 0) or 0)
+        )
+
+        async def persist_summary() -> None:
+            expected_nodes = int(run.total_nodes or 0)
+            trace_complete = False
+            if expected_nodes <= 100:
+                recorded_nodes = await NodeExecution.filter(run_id=run.id).count()
+                trace_complete = recorded_nodes == expected_nodes
+            await record_run(
+                run_id=run.id,
+                source="workflow",
+                resource_id=str(run.workflow_id) if run.workflow_id else None,
+                resource_name=workflow.name if workflow else None,
+                team_id=str(workflow.team_id)
+                if workflow and workflow.team_id
+                else None,
+                team_name=None,
+                status=status,
+                submitted_at=run.created_at,
+                started_at=run.started_at,
+                finished_at=run.finished_at,
+                total_duration_ms=run.total_duration_ms,
+                total_tokens=total_tokens,
+                trace_complete=trace_complete,
+            )
+
+        await asyncio.wait_for(persist_summary(), timeout=0.15)
+    except Exception:
+        logger.debug("Workflow telemetry write dropped for %s", run.id, exc_info=True)
+
+
+async def _persist_observability_progress(run, expected_status: str) -> None:
+    try:
+        from app.services.observability_v2 import update_run_progress
+
+        await update_run_progress(
+            run.id,
+            source="workflow",
+            status=run.status.value,
+            expected_status=expected_status,
+            started_at=run.started_at,
+        )
+    except Exception:
+        logger.debug(
+            "Workflow progress telemetry dropped for %s", run.id, exc_info=True
+        )
+
 
 # Default node labels by type (for nodes without label in data)
 NODE_TYPE_KEYS = {
@@ -273,9 +329,11 @@ class WorkflowOrchestrator:
 
         except NodeWaitingError as e:
             duration_ms = int((time.time() - start_time) * 1000)
+            expected_status = run.status.value
             run.status = RunStatus.WAITING
             run.total_duration_ms = duration_ms
             await run.save()
+            await _persist_observability_progress(run, expected_status)
             if stream_manager:
                 await stream_manager.publish_workflow_waiting(e.node_id)
             await context.set_ttl()
@@ -386,12 +444,14 @@ class WorkflowOrchestrator:
             run.context_snapshot = context_snapshot
 
         # Update run status to running
+        expected_status = run.status.value
         run.status = RunStatus.RUNNING
         if not resume:
             # Keep the original start time across resume passes so the run
             # history shows the true start, not the resume moment.
             run.started_at = datetime.now(timezone.utc)
         await run.save()
+        await _persist_observability_progress(run, expected_status)
 
         # Record metrics - workflow start
         if self._metrics:
@@ -499,9 +559,11 @@ class WorkflowOrchestrator:
             duration_ms = int((time.time() - start_time) * 1000)
             if resume:
                 duration_ms += run.total_duration_ms or 0
+            expected_status = run.status.value
             run.status = RunStatus.WAITING
             run.total_duration_ms = duration_ms
             await run.save()
+            await _persist_observability_progress(run, expected_status)
             if stream_manager:
                 await stream_manager.publish_workflow_waiting(e.node_id)
             await context.set_ttl()
@@ -639,6 +701,9 @@ class WorkflowOrchestrator:
             inputs=inputs,
             status=RunStatus.RUNNING,
         )
+        from app.services.observability_v2 import record_workflow_submission
+
+        await record_workflow_submission(run, workflow)
         logger.info(f"Created workflow run {run.id}")
         return run
 
@@ -683,6 +748,7 @@ class WorkflowOrchestrator:
 
         # Update workflow statistics
         workflow = await Workflow.filter(id=run.workflow_id).first()
+        await _persist_observability_summary(run, workflow, "completed")
         if workflow:
             # Calculate total tokens from run
             total_tokens = 0
@@ -791,6 +857,7 @@ class WorkflowOrchestrator:
 
         # Update workflow statistics
         workflow = await Workflow.filter(id=run.workflow_id).first()
+        await _persist_observability_summary(run, workflow, "failed")
         if workflow:
             # Calculate total tokens from run (even if failed, tokens were consumed)
             total_tokens = 0
@@ -1490,6 +1557,7 @@ class WorkflowOrchestrator:
         run.status = RunStatus.CANCELLED
         run.finished_at = datetime.now(timezone.utc)
         await run.save()
+        await _persist_observability_summary(run, None, "cancelled")
 
         # Close out any pending pause requests so the approval trail is not
         # left mid-flight (submit already 409s on non-WAITING runs).

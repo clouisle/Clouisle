@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 from uuid import uuid4
 
 import pytest
+
 from app.models.asset import AssetScopeType
 from app.core.config import settings
 from app.core.i18n import t
@@ -20,6 +21,7 @@ from app.services.sandbox.manager import (
 )
 from app.services.sandbox.models import (
     SandboxArtifact,
+    SandboxBinding,
     SandboxArtifactLimits,
     SandboxArtifactSpec,
     SandboxInputFileSpec,
@@ -29,9 +31,47 @@ from app.services.sandbox.models import (
     SandboxResult,
     SandboxTaskStatus,
 )
-from app.services.sandbox.process_launcher import ProcessLaunchResult
+from app.services.sandbox.process_launcher import (
+    ProcessLaunchResult,
+    SandboxProcessLauncher,
+)
 from app.services.sandbox.python_env import PythonEnvironmentManager
 from app.services.sandbox.workspace import SandboxWorkspaceManager
+from app.services.sandbox.worker_registry import WorkerPresence
+
+
+@pytest.fixture(autouse=True)
+def use_local_process_launcher(monkeypatch):
+    class LocalProcessLauncher:
+        def __init__(self, *args, **kwargs):
+            self.delegate = SandboxProcessLauncher(filesystem_isolation_enabled=False)
+
+        async def launch(self, command, **kwargs):
+            kwargs.pop("network_proxy", None)
+            return await self.delegate.launch(command, **kwargs)
+
+    monkeypatch.setattr(
+        "app.services.sandbox.manager.SandboxProcessLauncher",
+        LocalProcessLauncher,
+    )
+
+
+def bind_manager_session(monkeypatch, store):
+    presence = WorkerPresence(
+        worker_id="worker-a",
+        instance_id="instance-a",
+        node_id="node-a",
+        storage_id="storage-a",
+    )
+    binding = SandboxBinding(
+        **presence.model_dump(exclude={"ready", "pid"}), workspace_id="session-1"
+    )
+    store.get_binding = AsyncMock(return_value=binding)
+    monkeypatch.setattr(
+        "app.services.sandbox.manager.sandbox_worker_registry.get",
+        AsyncMock(return_value=presence),
+    )
+    return binding
 
 
 class InMemoryResultStore:
@@ -66,7 +106,9 @@ class FakePythonEnvManager:
         self.calls = []
         self.workspace_env_calls = []
 
-    def ensure_environment(self, *, packages, runtime_profile, package_index_url=None):
+    async def ensure_environment(
+        self, *, packages, runtime_profile, package_index_url=None, **kwargs
+    ):
         self.calls.append((packages, runtime_profile, package_index_url))
         return None, False
 
@@ -613,24 +655,31 @@ class TestSandboxManager:
         )
         store = SimpleNamespace(
             get=AsyncMock(
-                return_value=SimpleNamespace(agent_id=None, team_id=None, user_id=None)
+                return_value=SimpleNamespace(
+                    agent_id=None, team_id=None, user_id=None, disk_usage_bytes=0
+                )
             ),
             touch=AsyncMock(),
+            get_active_round=AsyncMock(return_value=None),
+            get_workspace_round=AsyncMock(return_value=None),
+            mark_workspace_round=AsyncMock(),
         )
         cleanup = MagicMock(wraps=workspace_manager.cleanup)
         monkeypatch.setattr("app.services.sandbox.manager.sandbox_session_store", store)
         monkeypatch.setattr(workspace_manager, "cleanup", cleanup)
+        binding = bind_manager_session(monkeypatch, store)
 
         result = await manager.execute(
-            SandboxJob(command=["python3"]), session_id="session-1"
+            SandboxJob(command=["python3"], binding=binding), session_id="session-1"
         )
 
         assert result.success is True
         store.touch.assert_awaited_once()
         cleanup.assert_not_called()
 
-    async def test_session_artifact_is_registered_without_asset_inputs(
-        self, tmp_path: Path, monkeypatch
+    @pytest.mark.parametrize("workflow_scoped", [False, True])
+    async def test_session_artifact_is_registered_in_active_asset_scope(
+        self, tmp_path: Path, monkeypatch, workflow_scoped: bool
     ):
         team_id, user_id, conversation_id, artifact_id = (
             uuid4(),
@@ -638,6 +687,7 @@ class TestSandboxManager:
             uuid4(),
             uuid4(),
         )
+        workflow_run_id = uuid4() if workflow_scoped else None
         artifact_store = FakeArtifactStore(
             artifacts=[
                 SandboxArtifact(
@@ -666,9 +716,13 @@ class TestSandboxManager:
                     team_id=str(team_id),
                     user_id=str(user_id),
                     conversation_id=str(conversation_id),
+                    disk_usage_bytes=0,
                 )
             ),
             touch=AsyncMock(),
+            get_active_round=AsyncMock(return_value=None),
+            get_workspace_round=AsyncMock(return_value=None),
+            mark_workspace_round=AsyncMock(),
         )
         register = AsyncMock(return_value=SimpleNamespace(id=artifact_id))
         get_or_create_ref = AsyncMock(return_value=SimpleNamespace(ref="a1b2"))
@@ -678,20 +732,30 @@ class TestSandboxManager:
         monkeypatch.setattr(
             "app.services.asset.asset_service.get_or_create_ref", get_or_create_ref
         )
+        binding = bind_manager_session(monkeypatch, store)
         result = await manager.execute(
             SandboxJob(
                 command=["python3"],
+                binding=binding,
                 artifacts=[SandboxArtifactSpec(path="/workspace/output/result.txt")],
+                metadata={
+                    "workflow_run_id": str(workflow_run_id) if workflow_run_id else None
+                },
             ),
             session_id="session-1",
         )
 
         assert result.artifacts[0].asset_id == artifact_id
+        assert result.artifacts[0].asset_ref == "a1b2"
         assert register.await_args.kwargs["team_id"] == team_id
         assert register.await_args.kwargs["created_by_id"] == user_id
         get_or_create_ref.assert_awaited_once_with(
-            scope_type=AssetScopeType.CONVERSATION,
-            scope_id=conversation_id,
+            scope_type=(
+                AssetScopeType.WORKFLOW_RUN
+                if workflow_scoped
+                else AssetScopeType.CONVERSATION
+            ),
+            scope_id=workflow_run_id or conversation_id,
             asset=register.return_value,
         )
 
@@ -809,6 +873,199 @@ class TestSandboxManager:
         assert exc_info.value.code == ResponseCode.VALIDATION_ERROR
         assert exc_info.value.msg_key == "sandbox_input_size_mismatch"
         assert not (workspace.root / "input/.data.bin.partial").exists()
+
+    @pytest.mark.anyio
+    async def test_stage_scoped_asset_resolves_ref_and_stages_content(
+        self, tmp_path: Path, monkeypatch
+    ):
+        from app.models.user import User
+
+        manager = SandboxManager(
+            workspace_manager=SandboxWorkspaceManager(root=str(tmp_path)),
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+        workspace = manager.workspace_manager.prepare("scoped-input")
+        team_id, user_id, conversation_id, asset_id = (
+            uuid4(),
+            uuid4(),
+            uuid4(),
+            uuid4(),
+        )
+        user = SimpleNamespace(id=user_id, roles=[])
+        first = SimpleNamespace(first=AsyncMock(return_value=user))
+        user_query = SimpleNamespace(prefetch_related=Mock(return_value=first))
+        monkeypatch.setattr(User, "filter", lambda **_: user_query)
+        content = b"generated image bytes"
+        asset = SimpleNamespace(
+            id=asset_id,
+            storage_key="generated-images/2026/09/image.png",
+            size=len(content),
+            checksum=hashlib.sha256(content).hexdigest(),
+        )
+        resolve_ref = AsyncMock(return_value=asset)
+        read = AsyncMock(return_value=content)
+        storage = object()
+        monkeypatch.setattr(
+            "app.services.asset_access.resolve_authorized_asset_ref", resolve_ref
+        )
+        monkeypatch.setattr("app.services.asset.asset_service.read", read)
+        monkeypatch.setattr(settings, "UPLOAD_STORAGE_MODE", "local")
+        monkeypatch.setattr(
+            "app.services.upload_storage.get_upload_storage_backend",
+            AsyncMock(return_value=storage),
+        )
+        job = SandboxJob(
+            command=["python3"],
+            input_files=[
+                SandboxInputFileSpec(
+                    target_path="/workspace/input/image.png",
+                    asset_id=asset_id,
+                    asset_ref="a1b2",
+                    scope_type=AssetScopeType.CONVERSATION.value,
+                    scope_id=conversation_id,
+                    expected_size=len(content),
+                    expected_checksum=hashlib.sha256(content).hexdigest(),
+                )
+            ],
+        )
+
+        await manager._stage_input_files(
+            job,
+            workspace,
+            team_id=team_id,
+            user_id=user_id,
+            conversation_id=conversation_id,
+        )
+
+        assert (workspace.root / "input/image.png").read_bytes() == content
+        resolve_ref.assert_awaited_once_with(
+            "a1b2",
+            scope_type=AssetScopeType.CONVERSATION,
+            scope_id=conversation_id,
+            user=user,
+            expected_team_id=team_id,
+        )
+        read.assert_awaited_once_with(asset, storage=storage)
+
+    @pytest.mark.anyio
+    async def test_stage_scoped_asset_rejects_mismatched_asset_id(
+        self, tmp_path: Path, monkeypatch
+    ):
+        from app.models.user import User
+
+        manager = SandboxManager(
+            workspace_manager=SandboxWorkspaceManager(root=str(tmp_path)),
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+        workspace = manager.workspace_manager.prepare("wrong-scoped-input")
+        user_id, conversation_id, asset_id = uuid4(), uuid4(), uuid4()
+        user = SimpleNamespace(id=user_id, roles=[])
+        first = SimpleNamespace(first=AsyncMock(return_value=user))
+        monkeypatch.setattr(
+            User,
+            "filter",
+            lambda **_: SimpleNamespace(prefetch_related=Mock(return_value=first)),
+        )
+        resolve_ref = AsyncMock(return_value=SimpleNamespace(id=uuid4()))
+        read = AsyncMock()
+        monkeypatch.setattr(
+            "app.services.asset_access.resolve_authorized_asset_ref", resolve_ref
+        )
+        monkeypatch.setattr("app.services.asset.asset_service.read", read)
+        job = SandboxJob(
+            input_files=[
+                SandboxInputFileSpec(
+                    target_path="/workspace/input/file.txt",
+                    asset_id=asset_id,
+                    asset_ref="a1b2",
+                    scope_type=AssetScopeType.CONVERSATION.value,
+                    scope_id=conversation_id,
+                )
+            ]
+        )
+
+        with pytest.raises(BusinessError) as error_info:
+            await manager._stage_input_files(
+                job,
+                workspace,
+                user_id=user_id,
+                conversation_id=conversation_id,
+            )
+
+        assert error_info.value.status_code == 403
+        read.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_stage_scoped_asset_rejects_foreign_conversation_ref(
+        self, tmp_path: Path, monkeypatch
+    ):
+        manager = SandboxManager(
+            workspace_manager=SandboxWorkspaceManager(root=str(tmp_path)),
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+        workspace = manager.workspace_manager.prepare("foreign-scope-input")
+        conversation_id, foreign_scope_id, asset_id = uuid4(), uuid4(), uuid4()
+        resolve_ref = AsyncMock()
+        monkeypatch.setattr(
+            "app.services.asset_access.resolve_authorized_asset_ref", resolve_ref
+        )
+        job = SandboxJob(
+            input_files=[
+                SandboxInputFileSpec(
+                    target_path="/workspace/input/file.txt",
+                    asset_id=asset_id,
+                    asset_ref="a1b2",
+                    scope_type=AssetScopeType.CONVERSATION.value,
+                    scope_id=foreign_scope_id,
+                )
+            ]
+        )
+
+        with pytest.raises(BusinessError) as error_info:
+            await manager._stage_input_files(
+                job,
+                workspace,
+                conversation_id=conversation_id,
+            )
+
+        assert error_info.value.status_code == 403
+        resolve_ref.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_stage_rejects_unscoped_asset_id_for_conversation_job(
+        self, tmp_path: Path, monkeypatch
+    ):
+        manager = SandboxManager(
+            workspace_manager=SandboxWorkspaceManager(root=str(tmp_path)),
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+        workspace = manager.workspace_manager.prepare("unscoped-conversation-input")
+        get_authorized = AsyncMock()
+        monkeypatch.setattr(
+            "app.services.asset.asset_service.get_authorized", get_authorized
+        )
+        job = SandboxJob(
+            input_files=[
+                SandboxInputFileSpec(
+                    target_path="/workspace/input/file.txt",
+                    asset_id=uuid4(),
+                )
+            ]
+        )
+
+        with pytest.raises(BusinessError) as error_info:
+            await manager._stage_input_files(
+                job,
+                workspace,
+                conversation_id=uuid4(),
+            )
+
+        assert error_info.value.status_code == 403
+        get_authorized.assert_not_awaited()
 
     @pytest.mark.anyio
     async def test_stage_asset_input_reads_through_internal_gateway(

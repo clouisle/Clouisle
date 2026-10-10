@@ -231,241 +231,39 @@ MCP stdio 模式需要以下运行时环境：
 
 ## 代码沙箱
 
-代码沙箱是工具系统的核心组件，提供安全的代码执行环境。
+代码工具通过 Sandbox Runtime 提交执行任务；API/Agent 进程不再直接运行用户代码，也不提供进程内 legacy 执行回退。
 
-### 文件位置
+### 实现位置
 
-`backend/app/llm/tools/sandbox.py`
+- `backend/app/llm/tools/sandbox.py`：代码工具入口，将 Python/JavaScript snippet 编译成 `SandboxJob`。
+- `backend/app/services/sandbox/gateway.py`：结果轮询、session 绑定及 Celery 队列路由。
+- `backend/app/tasks/sandbox.py`：worker 侧任务检查与状态持久化。
+- `backend/app/services/sandbox/manager.py`：工作区、依赖环境、进程执行和结果收集。
+- `backend/app/services/sandbox/process_launcher.py`、`egress_proxy.py`：隔离进程启动和受控出网。
 
-### 执行流程
+### 任务路由与执行流程
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    CodeSandbox.execute()                     │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-              ┌───────────────┴───────────────┐
-              ▼                               ▼
-┌─────────────────────────┐     ┌─────────────────────────────┐
-│  JavaScript Execution    │     │    Python Execution         │
-│  (_execute_javascript)   │     │    (_execute_python)        │
-└────────────┬────────────┘     └────────────┬────────────────┘
-             │                               │
-             ▼                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  Wrapper Code Generation                     │
-│  1. 注入 params 变量                                         │
-│  2. 捕获 console.log / print 输出                           │
-│  3. 包装为异步函数                                           │
-│  4. 捕获异常                                                 │
-│  5. 输出结果标记 (__RESULT__....__END__)                    │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  _run_subprocess()                           │
-│  1. 创建子进程 (node -e / python -c)                        │
-│  2. 限制环境变量 (PATH, HOME, LANG)                         │
-│  3. 设置超时 (默认 30s)                                      │
-│  4. 捕获 stdout/stderr                                       │
-│  5. 解析结果 JSON                                            │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  ExecutionResult                             │
-│  {                                                           │
-│    success: bool,                                            │
-│    result: Any,        // 代码返回值                         │
-│    error: str | null,  // 错误信息                          │
-│    stdout: str,        // 日志输出                          │
-│    stderr: str         // 错误输出                          │
-│  }                                                           │
-└─────────────────────────────────────────────────────────────┘
-```
+1. `execute_code()` 检查 `SANDBOX_RUNTIME_ENABLED`，编译 snippet 并调用 `SandboxGateway`；运行时关闭或任务失败时直接返回失败，不在调用进程执行代码。
+2. Gateway 先写入 queued result，再派发 Celery 任务。无 session 的任务使用共享 `sandbox` 队列；session 任务先等待一个已就绪 worker 并确认其物理工作区已创建，然后路由到 `sandbox.worker.<sha256(worker_id)>`。
+3. Redis binding 记录 session 的 worker、process instance、node、storage、workspace 和 generation。后续 session 任务都投递到该 worker 的专属队列，并携带 binding。
+4. Worker 在执行前校验当前身份、Redis lease 和 binding。过期 generation 或错误 worker 上的消息以 obsolete 失败结束，不转发，也不自动重放。
+5. `SandboxManager` 准备独立工作区、按需构建 Python/Node 依赖环境、运行包装后的脚本并解析结果标记；标准输出、错误输出和被代理拦截的主机诊断会写入执行结果。
 
-### JavaScript 包装代码
+### 进程隔离与出网
 
-```javascript
-const params = {/* 传入的参数 */};
+- 提供的 sandbox-worker 部署启用 Bubblewrap。每个 payload 在新的 user/mount/network namespace 内运行；只有当前工作区和临时目录可写，依赖缓存及必要运行时目录只读，子进程收到过滤后的环境变量。
+- sandbox-worker 使用 `no-new-privileges`、`SYS_ADMIN`/`SETFCAP` 进行 Bubblewrap 命名空间设置，并授予 `NET_ADMIN` 供可信 egress bridge 启用隔离网络命名空间内的 loopback；Docker 默认 seccomp 会阻止 `pivot_root`，因此部署保留 `seccomp=unconfined`。Worker 容器/Pod 仍需限制 CPU、内存和进程数。
+- 无代理 payload 由 Bubblewrap 使用 `--cap-drop ALL` 启动；代理路径由可信 bridge 先启用 loopback，再设置 `no-new-privileges` 并清空其 capability 集后启动 payload。`prlimit` 为每个进程及其子进程设置虚拟地址空间、CPU 时间、单文件大小和文件描述符上限。
+- 隔离进程没有直接外网路由。每个任务使用独立 egress proxy socket；代理仅接受 `SANDBOX_NETWORK_ALLOWLIST` 中的精确 HTTPS 主机名，不支持通配符或 IP 字面量。默认主机为 `pypi.org`、`files.pythonhosted.org`、`pypi.python.org` 和 `registry.npmjs.org`。
+- Python/Node 依赖安装使用同一任务代理和过滤后的环境，并受 `SANDBOX_PACKAGE_INSTALL_TIMEOUT_SECONDS`（默认 300 秒）限制；npm lifecycle scripts 保持禁用。stdout/stderr 只保留配置上限内的字节，避免大量输出占满 Worker 内存。自定义 index/registry URL 必须使用 HTTPS 且主机在 allowlist 内；拦截的主机名会作为执行诊断返回。
+- `SANDBOX_FILESYSTEM_ISOLATION_ENABLED=false` 仅适用于受控的本地开发环境；生产 sandbox-worker 应启用隔离。隔离启动条件不满足时任务失败，不降级为未隔离执行。
 
-// 捕获 console.log 输出
-const logs = [];
-const originalLog = console.log;
-console.log = (...args) => {
-    logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));
-};
+### Session 工作区持久化与恢复
 
-// 执行用户代码
-async function __execute__() {
-    // 用户代码插入这里
-    // 必须 return 结果
-}
-
-// 运行并输出结果
-(async () => {
-    try {
-        const result = await __execute__();
-        console.log = originalLog;
-        const output = { success: true, result: result, logs: logs };
-        process.stdout.write('__RESULT__' + JSON.stringify(output) + '__END__');
-    } catch (e) {
-        console.log = originalLog;
-        const output = { success: false, error: e.message || String(e), logs: logs };
-        process.stdout.write('__RESULT__' + JSON.stringify(output) + '__END__');
-    }
-})();
-```
-
-### Python 包装代码
-
-```python
-import json
-import sys
-from io import StringIO
-
-params = {# 传入的参数 #}
-
-# 捕获 print 输出
-_logs = []
-_original_stdout = sys.stdout
-sys.stdout = StringIO()
-
-def __execute__():
-    # 用户代码插入这里（带缩进）
-    # 必须 return 结果
-
-try:
-    result = __execute__()
-    _captured = sys.stdout.getvalue()
-    sys.stdout = _original_stdout
-    if _captured:
-        _logs.extend(_captured.strip().split("\n"))
-    output = { "success": True, "result": result, "logs": _logs }
-    print("__RESULT__" + json.dumps(output, default=str) + "__END__")
-except Exception as e:
-    sys.stdout = _original_stdout
-    output = { "success": False, "error": str(e), "logs": _logs }
-    print("__RESULT__" + json.dumps(output, default=str) + "__END__")
-```
-
-### 代码编写规范
-
-#### JavaScript
-
-```javascript
-// ✅ 正确：使用 return 返回结果
-const result = params.a + params.b;
-return result;
-
-// ✅ 正确：支持 async/await
-const response = await fetch('https://api.example.com');
-const data = await response.json();
-return data;
-
-// ✅ 正确：使用 console.log 输出日志
-console.log('Processing:', params.query);
-return { processed: true };
-
-// ❌ 错误：不要使用 module.exports
-module.exports = result;  // 不支持
-
-// ❌ 错误：不要使用 require（无 Node 模块系统）
-const fs = require('fs');  // 不支持
-```
-
-#### Python
-
-```python
-# ✅ 正确：使用 return 返回结果
-result = params['a'] + params['b']
-return result
-
-# ✅ 正确：使用 print 输出日志
-print(f"Processing: {params['query']}")
-return {"processed": True}
-
-# ✅ 正确：可以使用标准库
-import json
-import datetime
-return json.dumps({"time": str(datetime.datetime.now())})
-
-# ❌ 错误：不要使用需要安装的第三方库
-import requests  # 可能不可用
-```
-
-### 安全限制
-
-1. **环境隔离**：子进程仅继承最小环境变量 (PATH, HOME, LANG)
-2. **超时控制**：默认 30 秒，最大 60 秒
-3. **无文件系统访问**：代码在临时环境执行，无持久化能力
-4. **无网络限制**：JavaScript 可使用 fetch，Python 需依赖标准库
-
-### 可用模块
-
-#### Python 标准库
-
-沙箱中可使用所有 Python 标准库模块：
-
-| 模块 | 用途 |
-|------|------|
-| `json` | JSON 解析/序列化 |
-| `re` | 正则表达式 |
-| `math` | 数学运算 |
-| `datetime` | 日期时间处理 |
-| `collections` | 数据结构（Counter, defaultdict 等） |
-| `itertools` | 迭代器工具 |
-| `functools` | 函数工具 |
-| `random` | 随机数 |
-| `string` | 字符串常量和模板 |
-| `base64` | Base64 编解码 |
-| `hashlib` | 哈希算法 |
-| `urllib.parse` | URL 解析 |
-| `csv` | CSV 处理 |
-| `io` | IO 流 |
-| `os.path` | 路径操作 |
-| `statistics` | 统计计算 |
-| `decimal` | 精确小数运算 |
-| `fractions` | 分数运算 |
-| `uuid` | UUID 生成 |
-| `html` | HTML 转义 |
-| `textwrap` | 文本换行 |
-| `difflib` | 差异比较 |
-
-**不可用：** `requests`, `numpy`, `pandas`, `httpx` 等第三方包
-
-#### JavaScript/Node.js
-
-沙箱中可使用 JavaScript 内置对象和 Node.js 核心模块：
-
-**内置对象（无需 require）：**
-
-| 对象 | 用途 |
-|------|------|
-| `JSON` | JSON 解析/序列化 |
-| `Math` | 数学运算 |
-| `Date` | 日期时间 |
-| `Array` | 数组方法 |
-| `Object` | 对象方法 |
-| `String` | 字符串方法 |
-| `Number` | 数字方法 |
-| `RegExp` | 正则表达式 |
-| `Promise` | 异步处理 |
-| `Map/Set` | 集合数据结构 |
-| `Buffer` | 二进制数据 |
-
-**Node.js 核心模块（需 require）：**
-
-| 模块 | 用途 |
-|------|------|
-| `crypto` | 加密算法 |
-| `url` | URL 解析 |
-| `path` | 路径操作 |
-| `querystring` | 查询字符串 |
-| `util` | 工具函数 |
-| `http`/`https` | HTTP 请求（内置） |
-
-**不可用：** `axios`, `lodash`, `moment`, `dayjs` 等 npm 包
+- session 的首次任务绑定到一个已就绪 worker；后续 session 任务通过专属 Celery 队列回到同一逻辑 worker。Stateless 任务仍可由共享队列的任一 worker 执行。
+- 工作区、检查点、身份、锁和依赖缓存存放在 worker 自己的持久化本地磁盘。不得让不同独立磁盘共用 `SANDBOX_WORKER_ID`，也不得把多节点工作区当作共享文件系统。
+- 同一磁盘上的 Celery 进程替换会保留 worker/storage identity，但使用新的 instance ID；运行时先尝试在原存储上恢复。原节点/磁盘持续不可用时，有限恢复窗口后可按 reset 上限绑定新 workspace generation，并向 AgentRun 发出 `WORKSPACE_RESET`，要求其重新规划。
+- 检查点只保存已提交轮次；worker/磁盘永久丢失时，尚未检查点的数据无法恢复。命令完成状态不确定时返回不确定结果，禁止自动重放。
 
 ### 示例代码
 
@@ -754,11 +552,10 @@ export const toolsApi = {
 
 ### 代码执行安全
 
-1. **进程隔离**：代码在独立子进程中执行
-2. **环境限制**：仅传递最小环境变量
-3. **超时保护**：强制超时终止
-4. **无持久化**：不能读写文件系统
-5. **日志审计**：记录所有执行日志
+1. **命名空间隔离**：提供的 sandbox-worker 部署使用 Bubblewrap 的 user、mount、network namespace；任务仅能写当前工作区和临时目录。
+2. **文件与进程限制**：运行时及依赖缓存只读挂载，子进程使用过滤后的环境，并受超时、输出和磁盘限制。
+3. **出网控制**：隔离任务只能通过逐任务代理访问外部 HTTPS 主机；代理按 `SANDBOX_NETWORK_ALLOWLIST` 精确匹配 DNS 主机名并返回拦截诊断。
+4. **持久化边界**：session 工作区和已提交检查点保存在所属 worker 的本地磁盘；TTL 到期后清理。磁盘永久丢失时，未检查点数据不可恢复。
 
 ### HTTP 工具安全
 
@@ -777,7 +574,6 @@ export const toolsApi = {
 
 ### 短期
 
-- [ ] Python 第三方库支持（预安装常用库）
 - [ ] 代码执行日志持久化
 - [ ] HTTP 工具 SSRF 防护
 
@@ -789,6 +585,5 @@ export const toolsApi = {
 
 ### 长期
 
-- [ ] Docker 容器化沙箱
 - [ ] 自定义运行时环境
 - [ ] 分布式工具执行

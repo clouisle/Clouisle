@@ -250,10 +250,10 @@ class MediaAssetService:
 
         normalized = self._build_url_only_content(content, upload_info["url"])
         scope: tuple[AssetScopeType, UUID] | None = None
-        if conversation_id is not None:
-            scope = (AssetScopeType.CONVERSATION, conversation_id)
-        elif workflow_run_id is not None:
+        if workflow_run_id is not None:
             scope = (AssetScopeType.WORKFLOW_RUN, workflow_run_id)
+        elif conversation_id is not None:
+            scope = (AssetScopeType.CONVERSATION, conversation_id)
         if scope is None:
             return normalized
 

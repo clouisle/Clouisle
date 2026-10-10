@@ -658,7 +658,7 @@ celery_app.conf.task_routes = {
 
 # The supplied worker service consumes all four main queues:
 #   python main.py worker -c 4 -Q default,agent,knowledge,workflow
-# The sandbox-worker service consumes only the sandbox queue:
+# The sandbox-worker service consumes sandbox plus its own affinity queue:
 #   python main.py sandbox-worker -c ${SANDBOX_WORKER_CONCURRENCY:-1}
 ```
 
@@ -666,15 +666,15 @@ celery_app.conf.task_routes = {
 
 **Multiple Compose workers:**
 
-The supplied Compose services can be scaled directly; worker and sandbox-worker have no published host ports:
+The supplied Compose `sandbox-worker` uses one named local volume; do not scale it because Compose would mount the same disk into every replica. Scale the ordinary Celery workers directly:
 
 ```bash
-docker compose up -d --scale worker=3 --scale sandbox-worker=2
+docker compose up -d --scale worker=3
 ```
 
-For Docker Swarm, use a separate stack file with `deploy.replicas` and deploy it with `docker stack deploy`; ordinary `docker compose up` ignores those Swarm keys.
+For additional sandbox workers, provision a separate local volume and identity for each worker (or run one Compose project per host with a unique `SANDBOX_NODE_ID` and project-scoped volume), and connect them to the same broker. Never share one worker disk/identity across replicas. For Docker Swarm, use a separate stack file with per-task storage and deploy it with `docker stack deploy`; ordinary `docker compose up` ignores Swarm `deploy.replicas` keys.
 
-Knowledge-base, agent, and workflow tasks use the `knowledge`, `agent`, and `workflow` queues on the worker service; sandbox jobs use the separate `sandbox-worker` queue. Scale the corresponding service when queue lag appears.
+Knowledge-base, agent, and workflow tasks use the `knowledge`, `agent`, and `workflow` queues on the worker service. Stateless sandbox jobs use the shared `sandbox` queue; session jobs use their owner's dedicated queue after the first job claims that worker. Each disk gets a persisted worker identity; `SANDBOX_NODE_ID` defaults to hostname and should be unique per host. A same-disk supervised Celery restart can restore the last committed checkpoint. If the original storage remains unavailable through bounded recovery, the runtime may bind a prepared fresh workspace on another ready worker and report `WORKSPACE_RESET`; uncheckpointed state is lost and old jobs are not automatically replayed. Adding workers increases capacity for new sessions, not ordinary migration of existing sessions.
 
 ## Vector Database Scaling
 

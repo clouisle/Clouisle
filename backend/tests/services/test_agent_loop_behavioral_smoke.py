@@ -132,6 +132,8 @@ async def test_behavioral_smoke_two_tool_turns_steering_and_final(monkeypatch):
         )
 
     async def _tool_runner(tool_name, arguments, **kwargs):
+        if tool_name == "read_a":
+            return {"error": "dependency unavailable"}
         return {"result": f"{tool_name}-ok"}
 
     async def build_turn(**kwargs):
@@ -158,6 +160,7 @@ async def test_behavioral_smoke_two_tool_turns_steering_and_final(monkeypatch):
         consume_inputs=_consume_inputs,
         input_consumed=_input_consumed,
         formatter=None,
+        collect_dependency_metrics=True,
     )
 
     async def _stop():
@@ -176,6 +179,18 @@ async def test_behavioral_smoke_two_tool_turns_steering_and_final(monkeypatch):
     # Both tool turns produced persisted tool results, in model order.
     tool_results = [p for p in persisted if p[0] == "result"]
     assert [p[2] for p in tool_results] == ["c1", "c2"]
+    assert [metric["name"] for metric in result.dependency_metrics] == [
+        "read_a",
+        "read_b",
+    ]
+    assert [metric["status"] for metric in result.dependency_metrics] == [
+        "failed",
+        "completed",
+    ]
+    assert result.dependency_metrics[0]["error_category"] == "tool_error"
+    assert all(metric["duration_ms"] >= 0 for metric in result.dependency_metrics)
+    assert len({metric["span_id"] for metric in result.dependency_metrics}) == 2
+    assert result.dependency_metrics_truncated is False
     # Steering was consumed and appears as a user message in working history.
     assert steering["applied"] is True
     user_msgs = [

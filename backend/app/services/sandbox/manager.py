@@ -2,24 +2,32 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
 import os
 import shutil
+import subprocess
 import time
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from app.core.config import settings
+from app.core.sandbox_network_policy import (
+    SandboxNetworkPolicyError,
+    get_sandbox_network_allowlist,
+)
 from app.schemas.response import BusinessError, ResponseCode
 from app.core.i18n import t
 from app.llm.tools.sandbox import ExecutionResult as LegacyExecutionResult
 from app.services.error_messages import resolve_user_visible_error
 from app.services import upload_gateway
 
+from .egress_proxy import SandboxEgressProxy
 from .artifacts import SandboxArtifactStore
 from .models import (
     SandboxExecutionMetadata,
@@ -29,11 +37,18 @@ from .models import (
 )
 from .node_env import NodeEnvironmentManager
 from .policies import sandbox_policy_engine
-from .process_launcher import SandboxProcessLauncher
+from .process_launcher import SandboxProcessLauncher, _session_lock_fd
 from .python_env import PythonEnvironmentManager
 from .result_store import sandbox_result_store
-from .session_store import sandbox_session_store
+from .session_store import STANDALONE_ROUND, sandbox_session_store
 from .workspace import SandboxWorkspace, SandboxWorkspaceManager
+from .recovery import SandboxGuardLost, presence_matches
+from .worker_registry import sandbox_worker_registry
+from .result_store import TERMINAL_STATUSES
+
+_executing_job: ContextVar[SandboxJob | None] = ContextVar(
+    "sandbox_manager_job", default=None
+)
 
 BLOCKED_ENV = frozenset(
     {
@@ -46,6 +61,17 @@ BLOCKED_ENV = frozenset(
         "RUBYOPT",
         "PERL5LIB",
         "PYTHONPATH",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy",
+        "npm_config_proxy",
+        "npm_config_https_proxy",
+        "npm_config_noproxy",
     }
 )
 
@@ -96,6 +122,93 @@ class SandboxManager:
         session_agent_id: str | None = None,
         session_team_id: str | None = None,
     ):
+        session_id = session_id or job.session_id
+        if session_id:
+            session = await sandbox_session_store.get(session_id)
+            if (
+                session is None
+                or (
+                    session_agent_id is not None
+                    and session.agent_id != session_agent_id
+                )
+                or (session_team_id is not None and session.team_id != session_team_id)
+            ):
+                raise ValueError("Sandbox session not found or expired")
+        job = job.model_copy(
+            update={
+                "session_id": session_id,
+                "deadline_at": job.deadline_at
+                if job.deadline_at is not None
+                else time.time() + job.limits.timeout_seconds + 5,
+            }
+        )
+        token = _executing_job.set(job)
+
+        async def run():
+            if session_id:
+                if job.binding is None:
+                    raise SandboxGuardLost(
+                        "Session jobs require a canonical binding", "JOB_OBSOLETE"
+                    )
+                async with self.workspace_manager.session_lock(
+                    job.binding.workspace_id,
+                    deadline_at=job.deadline_at,
+                    guard=lambda: self._guard(job),
+                ) as lock_fd:
+                    await self._guard(job)
+                    lock_token = _session_lock_fd.set(lock_fd)
+                    try:
+                        return await self._execute(
+                            job,
+                            session_id=session_id,
+                            session_agent_id=session_agent_id,
+                            session_team_id=session_team_id,
+                        )
+                    finally:
+                        _session_lock_fd.reset(lock_token)
+            return await self._execute(job)
+
+        task = None
+        try:
+            await self._guard(job)
+            task = asyncio.create_task(run())
+            while not task.done():
+                done, _ = await asyncio.wait({task}, timeout=0.1)
+                if not done:
+                    await self._guard(job)
+            return await task
+        finally:
+            if task is not None and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, SandboxGuardLost):
+                    pass
+            _executing_job.reset(token)
+
+    async def _guard(self, job: SandboxJob) -> None:
+        if job.deadline_at is not None and time.time() >= job.deadline_at:
+            raise SandboxGuardLost("Sandbox job deadline expired", "DEADLINE_EXCEEDED")
+        get_status = getattr(self.result_store, "get_status", None)
+        if get_status is not None and await get_status(job.job_id) in TERMINAL_STATUSES:
+            raise SandboxGuardLost("Sandbox job is already terminal", "CANCELLED")
+        if job.session_id:
+            binding = await sandbox_session_store.get_binding(job.session_id)
+            if job.binding is None or not job.binding.matches(binding):
+                raise SandboxGuardLost("Sandbox execution lost its session binding")
+            if not presence_matches(
+                job.binding, await sandbox_worker_registry.get(job.binding.worker_id)
+            ):
+                raise SandboxGuardLost("Sandbox execution lost its worker lease")
+
+    async def _execute(
+        self,
+        job: SandboxJob,
+        session_id: str | None = None,
+        *,
+        session_agent_id: str | None = None,
+        session_team_id: str | None = None,
+    ):
         sandbox_policy_engine.validate(job)
         metadata = await self._load_or_create_metadata(job.job_id)
         now = datetime.now(UTC)
@@ -126,7 +239,23 @@ class SandboxManager:
             conversation_id = self._optional_uuid(
                 getattr(session, "conversation_id", None)
             )
-            workspace = self.workspace_manager.prepare_session(session_id)
+            round_id = (
+                await sandbox_session_store.get_active_round(session_id)
+                or STANDALONE_ROUND
+            )
+            previous_round = await sandbox_session_store.get_workspace_round(session_id)
+            if job.binding is None:
+                raise SandboxGuardLost("Session job has no binding", "JOB_OBSOLETE")
+            await self._guard(job)
+            workspace = self.workspace_manager.restore_session(
+                job.binding.workspace_id,
+                allow_empty=session.disk_usage_bytes == 0,
+                force=previous_round is not None and previous_round != round_id,
+            )
+            if not await sandbox_session_store.mark_workspace_round(
+                session_id, round_id, expected_binding=job.binding
+            ):
+                raise SandboxGuardLost("Sandbox round binding changed")
             should_cleanup = False
         else:
             workspace = self.workspace_manager.prepare(job.job_id)
@@ -137,12 +266,16 @@ class SandboxManager:
             workspace,
             team_id=asset_team_id,
             user_id=asset_user_id,
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
         )
+        await self._guard(job)
         self._enforce_disk_limit(job, workspace, stage="prepare")
         metadata.mark_prepare_completed(datetime.now(UTC))
 
         try:
             result = await self._run_job(job, workspace, metadata)
+            await self._guard(job)
             self._enforce_disk_limit(job, workspace, stage="execution")
             artifacts = await self._collect_artifacts(
                 job,
@@ -155,12 +288,18 @@ class SandboxManager:
             )
         finally:
             if session_id:
-                await sandbox_session_store.touch(
-                    session_id,
-                    disk_usage_bytes=self.workspace_manager.workspace_size_bytes(
-                        workspace
-                    ),
-                )
+                try:
+                    await self._guard(job)
+                except SandboxGuardLost:
+                    pass
+                else:
+                    await sandbox_session_store.touch(
+                        session_id,
+                        expected_binding=job.binding,
+                        disk_usage_bytes=self.workspace_manager.workspace_size_bytes(
+                            workspace
+                        ),
+                    )
             if should_cleanup:
                 self.workspace_manager.cleanup(job.job_id)
 
@@ -180,8 +319,7 @@ class SandboxManager:
             artifacts=artifacts,
             metadata=metadata,
         )
-        await self._save_result_snapshot(final_result)
-        return final_result
+        return await self._save_result_snapshot(final_result)
 
     async def _run_job(
         self,
@@ -189,7 +327,44 @@ class SandboxManager:
         workspace: SandboxWorkspace,
         metadata: SandboxExecutionMetadata,
     ) -> LegacyExecutionResult:
-        env = self._build_command_env(job, workspace, metadata)
+        async with SandboxEgressProxy(
+            job_id=job.job_id,
+            allowed_hosts=await get_sandbox_network_allowlist(),
+        ) as network_proxy:
+            return await self._run_job_with_proxy(
+                job,
+                workspace,
+                metadata,
+                network_proxy,
+            )
+
+    async def _run_job_with_proxy(
+        self,
+        job: SandboxJob,
+        workspace: SandboxWorkspace,
+        metadata: SandboxExecutionMetadata,
+        network_proxy: SandboxEgressProxy,
+    ) -> LegacyExecutionResult:
+        try:
+            env = await self._build_command_env(
+                job,
+                workspace,
+                metadata,
+                network_proxy,
+            )
+        except SandboxNetworkPolicyError as exc:
+            return LegacyExecutionResult(
+                success=False,
+                error=str(exc),
+                stderr=str(exc),
+            )
+        except subprocess.CalledProcessError as exc:
+            return LegacyExecutionResult(
+                success=False,
+                error=t("tool_execution_failed"),
+                stdout=exc.output or "",
+                stderr=exc.stderr or "",
+            )
 
         metadata.mark_execute_started(datetime.now(UTC))
         await self._save_result_snapshot(
@@ -206,11 +381,17 @@ class SandboxManager:
                 command,
                 cwd=str(workspace.root),
                 env=env,
-                timeout_seconds=job.limits.timeout_seconds,
+                timeout_seconds=min(
+                    job.limits.timeout_seconds,
+                    max(0.001, job.deadline_at - time.time()),
+                )
+                if job.deadline_at is not None
+                else job.limits.timeout_seconds,
                 max_stdout_kb=job.limits.max_stdout_kb,
                 max_stderr_kb=job.limits.max_stderr_kb,
                 workspace_root=str(workspace.root),
                 cache_root=str(self.workspace_manager.cache_root),
+                network_proxy=network_proxy,
             )
             metadata.mark_execute_completed(datetime.now(UTC))
             return self._parse_snippet_result(process_result, script_path)
@@ -221,11 +402,17 @@ class SandboxManager:
                 self._resolve_command(job.command, env),
                 cwd=str(cwd),
                 env=env,
-                timeout_seconds=job.limits.timeout_seconds,
+                timeout_seconds=min(
+                    job.limits.timeout_seconds,
+                    max(0.001, job.deadline_at - time.time()),
+                )
+                if job.deadline_at is not None
+                else job.limits.timeout_seconds,
                 max_stdout_kb=job.limits.max_stdout_kb,
                 max_stderr_kb=job.limits.max_stderr_kb,
                 workspace_root=str(workspace.root),
                 cache_root=str(self.workspace_manager.cache_root),
+                network_proxy=network_proxy,
             )
             metadata.mark_execute_completed(datetime.now(UTC))
             success = process_result.exit_code == 0 and not process_result.timed_out
@@ -259,8 +446,13 @@ class SandboxManager:
         *,
         team_id: UUID | None = None,
         user_id: UUID | None = None,
+        conversation_id: UUID | None = None,
+        workflow_run_id: UUID | None = None,
     ) -> None:
         for input_file in job.input_files:
+            active = _executing_job.get()
+            if active is not None:
+                await self._guard(active)
             target = self.workspace_manager.resolve_workspace_path(
                 workspace, input_file.target_path
             )
@@ -271,11 +463,59 @@ class SandboxManager:
             if input_file.asset_id is not None:
                 from app.services.asset import asset_service
 
-                asset = await asset_service.get_authorized(
-                    input_file.asset_id,
-                    team_id=team_id,
-                    user_id=user_id,
-                )
+                if input_file.asset_ref is not None:
+                    from app.models.asset import AssetScopeType
+                    from app.models.user import User
+                    from app.services.asset_access import resolve_authorized_asset_ref
+
+                    scope_type = AssetScopeType(input_file.scope_type)
+                    expected_scope_id = (
+                        conversation_id
+                        if scope_type == AssetScopeType.CONVERSATION
+                        else workflow_run_id
+                    )
+                    if (
+                        expected_scope_id is None
+                        or input_file.scope_id != expected_scope_id
+                    ):
+                        raise BusinessError(
+                            code=ResponseCode.PERMISSION_DENIED,
+                            msg_key="access_denied",
+                            status_code=403,
+                        )
+                    user = (
+                        await User.filter(id=user_id)
+                        .prefetch_related("roles__permissions")
+                        .first()
+                        if user_id is not None
+                        else None
+                    )
+                    asset = await resolve_authorized_asset_ref(
+                        input_file.asset_ref,
+                        scope_type=scope_type,
+                        scope_id=input_file.scope_id,
+                        user=user,
+                        expected_team_id=team_id,
+                    )
+                    if asset.id != input_file.asset_id:
+                        raise BusinessError(
+                            code=ResponseCode.PERMISSION_DENIED,
+                            msg_key="access_denied",
+                            status_code=403,
+                        )
+                else:
+                    if conversation_id is not None or workflow_run_id is not None:
+                        raise BusinessError(
+                            code=ResponseCode.PERMISSION_DENIED,
+                            msg_key="access_denied",
+                            status_code=403,
+                        )
+                    asset = await asset_service.get_authorized(
+                        input_file.asset_id,
+                        team_id=team_id,
+                        user_id=user_id,
+                    )
+
                 if settings.UPLOAD_STORAGE_MODE == "remote":
                     content = await upload_gateway.read(asset.storage_key)
                     if (
@@ -535,11 +775,12 @@ async function __execute__() {{
             stderr=stderr,
         )
 
-    def _build_command_env(
+    async def _build_command_env(
         self,
         job: SandboxJob,
         workspace: SandboxWorkspace,
         metadata: SandboxExecutionMetadata,
+        network_proxy: SandboxEgressProxy,
     ) -> dict[str, str]:
         env = {
             "HOME": str(workspace.root),
@@ -565,12 +806,15 @@ async function __execute__() {{
             metadata.mark_install_started(datetime.now(UTC))
             try:
                 if job.python_packages:
-                    python_env_dir, cache_hit = (
-                        self.python_env_manager.ensure_environment(
-                            packages=job.python_packages,
-                            runtime_profile=job.runtime_profile,
-                            package_index_url=job.python_package_index_url,
-                        )
+                    (
+                        python_env_dir,
+                        cache_hit,
+                    ) = await self.python_env_manager.ensure_environment(
+                        packages=job.python_packages,
+                        runtime_profile=job.runtime_profile,
+                        process_launcher=self.process_launcher,
+                        network_proxy=network_proxy,
+                        package_index_url=job.python_package_index_url,
                     )
                     metadata.cache_hit_python = cache_hit
                     if python_env_dir is not None:
@@ -579,9 +823,14 @@ async function __execute__() {{
                         )
 
                 if job.js_packages:
-                    node_env_dir, cache_hit = self.node_env_manager.ensure_environment(
+                    (
+                        node_env_dir,
+                        cache_hit,
+                    ) = await self.node_env_manager.ensure_environment(
                         packages=job.js_packages,
                         runtime_profile=job.runtime_profile,
+                        process_launcher=self.process_launcher,
+                        network_proxy=network_proxy,
                         registry_url=job.node_package_registry_url,
                     )
                     metadata.cache_hit_node = cache_hit
@@ -645,6 +894,9 @@ async function __execute__() {{
             workspace=workspace,
             artifact_limits=job.artifact_limits,
         )
+        active = _executing_job.get()
+        if active is not None:
+            await self._guard(active)
         await self._register_artifact_assets(
             artifacts,
             job=job,
@@ -670,13 +922,16 @@ async function __execute__() {{
         from app.services.asset import asset_service
 
         scope: tuple[AssetScopeType, UUID] | None = None
-        if conversation_id is not None:
-            scope = (AssetScopeType.CONVERSATION, conversation_id)
-        elif workflow_run_id is not None:
+        if workflow_run_id is not None:
             scope = (AssetScopeType.WORKFLOW_RUN, workflow_run_id)
+        elif conversation_id is not None:
+            scope = (AssetScopeType.CONVERSATION, conversation_id)
         if scope is None:
             return
         for artifact in artifacts:
+            active = _executing_job.get()
+            if active is not None:
+                await self._guard(active)
             storage_key = self._artifact_storage_key(artifact.url)
             if storage_key is None or not artifact.checksum:
                 continue
@@ -694,12 +949,17 @@ async function __execute__() {{
                     "workspace_path": artifact.path,
                 },
             )
-            await asset_service.get_or_create_ref(
+            if active is not None:
+                await self._guard(active)
+            binding = await asset_service.get_or_create_ref(
                 scope_type=scope[0],
                 scope_id=scope[1],
                 asset=asset,
             )
+            if active is not None:
+                await self._guard(active)
             artifact.asset_id = asset.id
+            artifact.asset_ref = binding.ref
 
     @staticmethod
     def _optional_uuid(value: Any) -> UUID | None:
@@ -711,9 +971,9 @@ async function __execute__() {{
             return None
 
     @staticmethod
-    def _artifact_storage_key(url: str) -> str | None:
+    def _artifact_storage_key(url: str | None) -> str | None:
         marker = "/api/v1/upload/files/"
-        if marker not in url:
+        if not url or marker not in url:
             return None
         return url.split(marker, 1)[1]
 
@@ -724,22 +984,29 @@ async function __execute__() {{
         current = await get_result(job_id)
         return current.metadata if current is not None else SandboxExecutionMetadata()
 
-    async def _save_result_snapshot(self, result: SandboxResult) -> None:
+    async def _save_result_snapshot(self, result: SandboxResult) -> SandboxResult:
+        job = _executing_job.get()
+        if job is not None:
+            await self._guard(job)
+            result.session_id = job.session_id
+            result.binding = job.binding
+            result.deadline_at = job.deadline_at
         save_result = getattr(self.result_store, "save_result", None)
         if save_result is not None:
-            await save_result(result)
-            return
-
-        await self.result_store.update_status(
-            result.job_id,
-            result.status,
-            metadata=result.metadata,
-            success=result.success,
-            result=result.result,
-            error=result.error,
-            stdout=result.stdout,
-            stderr=result.stderr,
-            artifacts=result.artifacts,
+            return await save_result(result) or result
+        return (
+            await self.result_store.update_status(
+                result.job_id,
+                result.status,
+                metadata=result.metadata,
+                success=result.success,
+                result=result.result,
+                error=result.error,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                artifacts=result.artifacts,
+            )
+            or result
         )
 
     def _enforce_disk_limit(

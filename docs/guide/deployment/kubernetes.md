@@ -138,7 +138,7 @@ helm version
 └────────────────┘      └────────────────────┘    └──────────────────┘
 ```
 
-Additional workloads not shown: `worker` (Deployment, 2 replicas), `sandbox-worker` (Deployment, 1 replica), `beat` (Deployment, exactly 1 replica, `Recreate` strategy), and the `uploads-data` PVC (10Gi, `ReadWriteMany`, mounted only by `api`).
+Additional workloads not shown: `worker` (Deployment, 2 replicas), `sandbox-worker` (DaemonSet, one pod per eligible node with node-local storage), `beat` (Deployment, exactly 1 replica, `Recreate` strategy), and the `uploads-data` PVC (10Gi, `ReadWriteMany`, mounted only by `api`).
 
 ## Single-File Manifest
 
@@ -177,7 +177,7 @@ The manifest contains 13 resource sections. It does **not** use YAML anchors —
 | 7 | Uploads | PVC | `uploads-data` 10Gi, ReadWriteMany |
 | 8 | API | Deployment + Service | 2 replicas, port 8000 |
 | 9 | Worker | Deployment | 2 replicas, no Service |
-| 10 | Sandbox Worker | Deployment | 1 replica, no Service |
+| 10 | Sandbox Worker | DaemonSet | One pod per eligible node, retained node-local hostPath |
 | 11 | Beat | Deployment | 1 replica, `Recreate` strategy |
 | 12 | Frontend | Deployment + Service | 2 replicas, port 3000 |
 | 13 | Ingress | Ingress | `/api` → api:8000, `/` → frontend:3000 |
@@ -702,16 +702,17 @@ spec:
 
 ### Sandbox Worker Deployment
 
-Runs 1 replica of the `clouisle-sandbox-worker` image. Because the image's non-root user has empty effective capabilities, the deployment runs it as root (`runAsUser: 0`) with `CAP_SYS_ADMIN` added, `allowPrivilegeEscalation: false`, and an unconfined seccomp profile so Bubblewrap can create user/mount namespaces:
+The supplied raw manifest uses a DaemonSet, placing one sandbox worker on each eligible node. Each pod retains an exclusive node-local hostPath at `/var/lib/clouisle/clouisle/sandbox`; the disk identity and Redis binding keep a session's jobs on that worker/storage. This is local persistence, not replication. Do not share the path between nodes or Helm releases. Restrict eligible nodes with the DaemonSet's `nodeSelector`; the example label below must be applied to eligible nodes, or remove the selector to schedule on all eligible nodes. Helm exposes `sandboxWorker.nodeSelector` and `sandboxWorker.localDataPath`.
+
+The ConfigMap/Secret environment imports and PostgreSQL wait init container are omitted below; the token-file Secret mount is shown. See `deploy/k8s/clouisle.yaml` for the full manifest.
 
 ```yaml
 apiVersion: apps/v1
-kind: Deployment
+kind: DaemonSet
 metadata:
   name: sandbox-worker
   namespace: clouisle
 spec:
-  replicas: 1
   selector:
     matchLabels:
       app: sandbox-worker
@@ -720,36 +721,51 @@ spec:
       labels:
         app: sandbox-worker
     spec:
-      initContainers:
-        - name: wait-for-postgres
-          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
-          command: ["sh", "-ec", "until pg_isready -h \"$POSTGRES_SERVER\" -p \"$POSTGRES_PORT\" -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"; do sleep 2; done"]
-          env: # POSTGRES_* from clouisle-config
+      nodeSelector:
+        clouisle-sandbox: "true"
+      terminationGracePeriodSeconds: 35
       containers:
         - name: sandbox-worker
           image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest
-          command: ["sh", "-c", "python main.py sandbox-worker -c \"${SANDBOX_WORKER_CONCURRENCY:-1}\""]
-          envFrom:
-            - configMapRef: { name: clouisle-config }
-            - secretRef: { name: clouisle-secret }
+          command:
+            - sh
+            - -c
+            - exec python main.py sandbox-worker -c "${SANDBOX_WORKER_CONCURRENCY:-1}"
           env:
-            - name: UPLOAD_STORAGE_MODE
-              value: "remote"
+            - name: SANDBOX_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: SANDBOX_WORKER_ID
+              value: ""
             - name: INTERNAL_API_TOKEN_FILE
               value: /var/run/secrets/clouisle/internal-api-token
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
-              add:
-                - SYS_ADMIN
+              drop: [ALL]
+              add: [SYS_ADMIN, SETFCAP, NET_ADMIN]
             runAsUser: 0
             seccompProfile:
               type: Unconfined
           volumeMounts:
+            - name: sandbox-data
+              mountPath: /var/lib/clouisle/sandbox
             - name: internal-api-token
               mountPath: /var/run/secrets/clouisle
               readOnly: true
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
       volumes:
+        - name: sandbox-data
+          hostPath:
+            path: /var/lib/clouisle/clouisle/sandbox
+            type: DirectoryOrCreate
         - name: internal-api-token
           secret:
             secretName: clouisle-secret
@@ -758,7 +774,7 @@ spec:
                 path: internal-api-token
 ```
 
-> **Note**: The task payload still executes inside a fresh Bubblewrap user+mount namespace. See [Code Sandbox → Host Kernel Requirements](../concepts/code-sandbox.md#host-kernel-requirements) and the deployment guide's sandbox section for details and hardening (user namespace remapping).
+See [Code Sandbox → Host Kernel Requirements](../concepts/code-sandbox.md#host-kernel-requirements) and the deployment guide's sandbox section for details and hardening.
 
 ### Beat Deployment
 
@@ -894,7 +910,7 @@ kubectl wait --for=condition=ready pod -l app=qdrant -n clouisle --timeout=300s
 # Watch application rollout
 kubectl -n clouisle rollout status deployment/api
 kubectl -n clouisle rollout status deployment/worker
-kubectl -n clouisle rollout status deployment/sandbox-worker
+kubectl -n clouisle rollout status daemonset/sandbox-worker
 kubectl -n clouisle rollout status deployment/beat
 kubectl -n clouisle rollout status deployment/frontend
 ```

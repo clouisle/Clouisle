@@ -4,18 +4,20 @@ Clouisle 的监控设置。
 
 ## 健康检查端点
 
-- `/api/v1/health` - 基础健康检查（无需认证；用于容器健康检查）
-- `/api/v1/admin/observability/system/health` - 详细系统健康状态：CPU、内存、磁盘、数据库、Redis 和 Celery Workers（需要 `admin:dashboard:access` 权限）
+- `/api/v1/health` — 基础健康检查（无需认证；用于容器健康检查）。
+- `/api/v1/admin/observability/infrastructure` — 有界基础设施快照、依赖健康状态和安全显示的 `pg_stat_statements` 查询（需要 `admin:dashboard:access`）。缺失的探针显示为 `unknown`；不可用的统计不会伪装成零。
 
 ## 管理端可观测性
 
-> **Note:** Clouisle 没有 Prometheus 风格的 `/metrics` 端点。可观测性数据由 `/api/v1/admin/observability/*` 管理端 API 和前端可观测性仪表盘（`/dashboard/observability`）提供。所有端点都需要 `admin:dashboard:access` 权限。用量类端点（`/overview`、`/agents`、`/agent/{agent_id}`、`/workflows`、`/workflow/{workflow_id}`、`/timeouts`、`/throughput`、`/tokens`）接受 `7d`、`30d`、`90d` 或 `all` 的 `time_range` 参数；`/system/*` 端点为当前快照，不接受 `time_range`（其中 `/system/slow-queries` 接受 `threshold_ms`、`page` 和 `page_size`）。
+可观测性 API 根路径为 `/api/v1/admin/observability`。读取端点需要 `admin:dashboard:access`；确认告警、静默告警和更新规则需要 `admin:observability:manage`。
 
-- `/overview` - 所选时间范围内的汇总统计
-- `/agents`、`/agent/{agent_id}` - Agent 请求数、延迟百分位（p50/p95）、成功率、Token 用量
-- `/workflows`、`/workflow/{workflow_id}` - 工作流运行统计、失败率、Token 用量
-- `/timeouts`、`/throughput`、`/tokens` - 超时事件、请求吞吐量、按模型统计的 Token 消耗
-- `/system/health`、`/system/trend`、`/system/slow-queries`、`/system/workers` - 系统健康快照、Celery 队列长度与 Worker 统计、慢数据库查询
+- `GET /summary?period=15m|1h|24h|7d&team_id=...` — 紧凑的运行汇总与趋势。样本不足时，百分位数和成功率为 `null`。
+- `GET /runs` — 仅返回摘要的游标分页运行列表（`limit` 为 1–50）；单次运行详情通过 `GET /runs/{agent|workflow}/{run_id}` 单独获取。
+- `GET /dependencies` — 在已记录遥测支持时返回模型、工具和检索聚合。
+- `GET /queues` 和 `GET /infrastructure` — 有界的当前队列与基础设施快照。
+- `GET /alerts`、`GET /alerts/rules`；`POST /alerts/{id}/acknowledge`、`POST /alerts/{id}/silence?duration_seconds=...`；`PUT /alerts/rules/{id}`。
+
+运行摘要保存在紧凑索引记录中，保留 30 天。仅记录白名单中的时序、状态、模型名称、Token 数量、资源/团队标识符和错误代码；不会保存提示词、消息正文、工具参数/结果、凭据或 traceback。没有提交时间的历史运行不会回填。新的 Agent 记录包含模型聚合和安全的运行根 span；不会采集工具/检索子 span 及其聚合，API 会将这些数据标记为不可用，不会推断数值。告警规则在读取告警时评估，因此评估依赖 API 可用；定时清理任务使用现有的 `default` Celery 队列。
 
 ## 日志
 

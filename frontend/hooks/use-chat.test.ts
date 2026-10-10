@@ -1226,7 +1226,7 @@ describe('useChat', () => {
     await sending
   })
 
-  it('constructs requests with conversation context and variables', async () => {
+  it('constructs requests with conversation context and variable and workflow assets', async () => {
     options = { agentId: 'agent-1', conversationId: 'conversation-1', variables: { locale: 'en' } }
     renderHookHarness()
     result.setConversationId('conversation-1')
@@ -1234,14 +1234,17 @@ describe('useChat', () => {
     streamEvents = [{ event: 'message_end', data: {} }]
     chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
 
-    await result.sendMessage('  contextual question  ')
+    const workflowAssetRefs = [{ workflow_run_id: 'workflow-run-1', ref: 'a1b2' }]
+    await result.sendMessage('  contextual question  ', undefined, undefined, ['asset-variable-1'], workflowAssetRefs)
 
     expect(chatStream).toHaveBeenCalledWith('agent-1', {
       message: 'contextual question',
       images: undefined,
       file_urls: undefined,
       conversation_id: 'conversation-1',
+      variable_asset_ids: ['asset-variable-1'],
       variables: { locale: 'en' },
+      workflow_asset_refs: workflowAssetRefs,
     })
   })
 

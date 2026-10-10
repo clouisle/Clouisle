@@ -1596,6 +1596,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Enter a valid list of HTTP or HTTPS model endpoint Origins",
         "zh": "请输入有效的 HTTP 或 HTTPS 模型端点 Origin 列表",
     },
+    "sandbox_network_allowlist_description": {
+        "en": "Exact DNS hostnames permitted for sandbox HTTPS egress",
+        "zh": "沙盒 HTTPS 出网允许访问的精确 DNS 主机名",
+    },
+    "sandbox_network_allowlist_invalid": {
+        "en": "Use up to 200 exact DNS hostnames; IP addresses, wildcards, and invalid hostnames are not allowed",
+        "zh": "最多填写 200 个精确 DNS 主机名；不支持 IP 地址、通配符或无效主机名",
+    },
     "model_endpoint_base_url_invalid": {
         "en": "Enter a valid HTTP or HTTPS model Base URL",
         "zh": "请输入有效的 HTTP 或 HTTPS 模型 Base URL",

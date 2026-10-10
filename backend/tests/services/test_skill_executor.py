@@ -9,7 +9,12 @@ import pytest
 from app.models.skill import Skill, SkillCategory
 from app.schemas.response import BusinessError
 from app.services.skill import SkillService
-from app.services.sandbox.models import SandboxArtifact, SandboxTaskStatus
+from app.services.sandbox.models import (
+    SandboxArtifact,
+    SandboxResult,
+    SandboxTaskStatus,
+)
+from app.services.sandbox.process_launcher import SandboxProcessLauncher
 from app.services.skill_executor import SkillExecutionResult, SkillExecutor
 
 
@@ -108,54 +113,143 @@ async def test_execute_skill_returns_instructions_without_sandbox():
 
 
 @pytest.mark.anyio
-async def test_execute_skill_stages_package_resources_when_session_exists():
-    package_content = base64.b64encode(b"print('ok')\n").decode("ascii")
-    skill = make_skill(
-        skill_spec={
+async def test_execute_skill_stages_and_replaces_resources_on_worker(
+    tmp_path, monkeypatch
+):
+    from app.services.sandbox.manager import SandboxManager
+    from app.services.sandbox.workspace import SandboxWorkspaceManager
+    from app.services.sandbox.models import SandboxBinding
+    from app.services.sandbox.worker_registry import WorkerPresence
+
+    skill = make_skill()
+    session_id = uuid4().hex
+    team_id = str(uuid4())
+    binding = SandboxBinding(
+        worker_id="worker-a",
+        instance_id="instance-a",
+        node_id="node-a",
+        storage_id="storage-a",
+        workspace_id=session_id,
+    )
+    worker = WorkerPresence(
+        worker_id=binding.worker_id,
+        instance_id=binding.instance_id,
+        node_id=binding.node_id,
+        storage_id=binding.storage_id,
+    )
+    session_store = SimpleNamespace(
+        get=AsyncMock(
+            return_value=SimpleNamespace(
+                agent_id=None,
+                team_id=team_id,
+                user_id=None,
+                conversation_id=None,
+                disk_usage_bytes=0,
+            )
+        ),
+        touch=AsyncMock(),
+        get_active_round=AsyncMock(return_value=None),
+        get_workspace_round=AsyncMock(return_value=None),
+        mark_workspace_round=AsyncMock(),
+    )
+    session_store.get_binding = AsyncMock(return_value=binding)
+    monkeypatch.setattr(
+        "app.services.sandbox.manager.sandbox_session_store", session_store
+    )
+    monkeypatch.setattr(
+        "app.services.sandbox.manager.sandbox_worker_registry",
+        SimpleNamespace(get=AsyncMock(return_value=worker)),
+    )
+    workspace_manager = SandboxWorkspaceManager(root=str(tmp_path / "worker"))
+    manager = SandboxManager(
+        workspace_manager=workspace_manager,
+        process_launcher=SandboxProcessLauncher(filesystem_isolation_enabled=False),
+        cleanup_workspaces=False,
+        result_store=SimpleNamespace(
+            get_result=AsyncMock(return_value=None),
+            save_result=AsyncMock(side_effect=lambda result: result),
+        ),
+    )
+
+    # This test covers worker-side resource staging, not the isolation boundary.
+    # Run its local staging script without Linux-only bwrap; process-launcher tests
+    # cover the real isolation path and fail-closed behavior.
+    async def run_without_proxy(job, workspace, metadata):
+        return await manager._run_job_with_proxy(
+            job, workspace, metadata, network_proxy=None
+        )
+
+    monkeypatch.setattr(manager, "_run_job", run_without_proxy)
+
+    async def run_on_worker(job, *, session_id, team_id):
+        return await manager.execute(
+            job.model_copy(update={"binding": binding}),
+            session_id=session_id,
+            session_team_id=team_id,
+        )
+
+    monkeypatch.setattr(
+        "app.services.skill_executor.sandbox_gateway.submit_and_wait",
+        run_on_worker,
+    )
+    for content, mode in [(b"original", 0o644), (b"replacement", 0o755)]:
+        skill.skill_spec = {
             "package_files": [
                 {
                     "path": "scripts/run.py",
-                    "content_base64": package_content,
-                    "mode": 0o644,
+                    "content_base64": base64.b64encode(content).decode("ascii"),
+                    "mode": mode,
                 }
             ]
-        },
-    )
-    workspace_root = uuid4().hex
-
-    class FakeWorkspace:
-        def __init__(self):
-            from pathlib import Path
-            import tempfile
-
-            self.root = Path(tempfile.mkdtemp(prefix="skill-workspace-"))
-
-    workspace = FakeWorkspace()
-
-    class FakeWorkspaceManager:
-        def resolve_workspace_path(self, workspace, path):
-            return workspace.root / path.removeprefix("/workspace/")
-
-    with (
-        patch(
-            "app.services.skill_executor.sandbox_gateway.get_session_workspace",
-            new=AsyncMock(return_value=workspace),
-        ),
-        patch(
-            "app.services.skill_executor.sandbox_gateway._get_workspace_manager",
-            return_value=FakeWorkspaceManager(),
-        ),
-    ):
+        }
         result = await SkillExecutor.execute(
             skill=skill,
             arguments={"text": "hello"},
-            session_id=workspace_root,
-            tenant_id="team-1",
+            session_id=session_id,
+            tenant_id=team_id,
         )
+        assert result.success is True, result.error
+        assert result.result["workspace_root"] == "/workspace/skill/echo_skill"
+        worker_root = workspace_manager.get_session_root(session_id)
+        staged = worker_root / "skill/echo_skill/scripts/run.py"
+        assert staged.read_bytes() == content
+        assert staged.stat().st_mode & 0o777 == mode
+        assert list((worker_root / ".skill-staging").iterdir()) == []
 
-    assert result.success is True
-    staged = workspace.root / "skill" / "echo_skill" / "scripts" / "run.py"
-    assert staged.read_text() == "print('ok')\n"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_file = outside / "run.py"
+    outside_file.write_bytes(b"untouched")
+    staged.unlink()
+    staged.parent.rmdir()
+    for destination in (outside, tmp_path / "missing-outside"):
+        staged.parent.symlink_to(destination, target_is_directory=True)
+        result = await SkillExecutor.execute(
+            skill=skill,
+            arguments={"text": "hello"},
+            session_id=session_id,
+            tenant_id=team_id,
+        )
+        assert result.success is False
+        assert outside_file.read_bytes() == b"untouched"
+        assert not (tmp_path / "missing-outside").exists()
+        assert list((worker_root / ".skill-staging").iterdir()) == []
+        staged.parent.unlink()
+
+    staged.parent.mkdir()
+    for destination in (outside_file, staged.parent / "missing-target"):
+        staged.symlink_to(destination)
+        result = await SkillExecutor.execute(
+            skill=skill,
+            arguments={"text": "hello"},
+            session_id=session_id,
+            tenant_id=team_id,
+        )
+        assert result.success is False
+        assert outside_file.read_bytes() == b"untouched"
+        assert not (staged.parent / "missing-target").exists()
+        assert list((worker_root / ".skill-staging").iterdir()) == []
+        staged.unlink()
 
 
 @pytest.mark.anyio
@@ -291,24 +385,56 @@ def test_skill_workspace_root_falls_back_to_id():
 
 
 @pytest.mark.anyio
-async def test_stage_package_resources_returns_when_workspace_is_missing():
-    with (
-        patch(
-            "app.services.skill_executor.sandbox_gateway.get_session_workspace",
-            new=AsyncMock(return_value=None),
-        ),
-        patch(
-            "app.services.skill_executor.sandbox_gateway._get_workspace_manager"
-        ) as manager,
+async def test_execute_skill_propagates_failed_package_staging():
+    skill = make_skill(
+        skill_spec={
+            "package_files": [
+                {
+                    "path": "resource.txt",
+                    "content_base64": base64.b64encode(b"resource").decode("ascii"),
+                }
+            ]
+        },
+    )
+    failure = SandboxResult(
+        job_id="staging-job",
+        success=False,
+        status=SandboxTaskStatus.FAILED,
+        error="Sandbox worker unavailable",
+        stderr="staging failed",
+    )
+    with patch(
+        "app.services.skill_executor.sandbox_gateway.submit_and_wait",
+        new=AsyncMock(return_value=failure),
     ):
-        await SkillExecutor.stage_package_resources(
+        result = await SkillExecutor.execute(
+            skill=skill,
+            arguments={"text": "hello"},
+            session_id="session-1",
+            tenant_id="team-1",
+        )
+
+    assert result.success is False
+    assert result.status == SandboxTaskStatus.FAILED
+    assert result.error == failure.error
+    assert result.stderr == failure.stderr
+    assert result.result is None
+
+
+@pytest.mark.anyio
+async def test_execute_skill_without_resources_does_not_submit_staging_job():
+    with patch(
+        "app.services.skill_executor.sandbox_gateway.submit_and_wait",
+        new=AsyncMock(),
+    ) as submit:
+        result = await SkillExecutor.execute(
             skill=make_skill(),
-            workspace_root="/workspace/skill/test",
-            tenant_id=None,
+            arguments={"text": "hello"},
             session_id="session-1",
         )
 
-    manager.assert_not_called()
+    assert result.success is True
+    submit.assert_not_awaited()
 
 
 def test_from_sandbox_result_copies_fields():

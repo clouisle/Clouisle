@@ -29,6 +29,30 @@ def test_settings_rejects_unsupported_cors_input():
         Settings(_env_file=None, BACKEND_CORS_ORIGINS=123)
 
 
+def test_settings_rejects_zero_sandbox_worker_recovery_seconds():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, SANDBOX_WORKER_RECOVERY_SECONDS=0)
+
+
+def test_settings_rejects_zero_sandbox_package_install_timeout():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, SANDBOX_PACKAGE_INSTALL_TIMEOUT_SECONDS=0)
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("SANDBOX_TASK_MEMORY_MB", 0),
+        ("SANDBOX_TASK_MAX_FILE_SIZE_MB", 0),
+        ("SANDBOX_TASK_MAX_OPEN_FILES", 31),
+        ("SANDBOX_TASK_MAX_CPU_SECONDS", 0),
+    ],
+)
+def test_settings_reject_invalid_sandbox_task_limits(name, value):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **{name: value})
+
+
 def test_settings_preserves_explicit_database_url():
     settings = Settings(_env_file=None, DATABASE_URL="postgres://configured")
 

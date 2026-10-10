@@ -1,193 +1,154 @@
-from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, call
+"""Consumer-visible logical metadata and canonical binding CAS behavior."""
 
-import pytest
+import time
+from datetime import timedelta
+from app.core.config import settings
 
-from app.services.sandbox import session_store
-from app.services.sandbox.models import SandboxSession
-from app.services.sandbox.session_store import SandboxSessionStore
-
-FROZEN_NOW = datetime(2026, 7, 20, 12, tzinfo=UTC)
+from app.services.sandbox import recovery
+from app.services.sandbox.session_store import _redis_text
 
 
-@pytest.fixture
-def redis():
-    client = AsyncMock()
-    client.setex = AsyncMock()
-    client.zadd = AsyncMock()
-    client.get = AsyncMock()
-    client.zrem = AsyncMock()
-    client.delete = AsyncMock()
-    client.zrangebyscore = AsyncMock()
-    return client
-
-
-@pytest.fixture
-def store(redis, monkeypatch):
-    monkeypatch.setattr(session_store, "get_redis", AsyncMock(return_value=redis))
-    monkeypatch.setattr(session_store, "now", lambda: FROZEN_NOW)
-    return SandboxSessionStore()
-
-
-@pytest.mark.asyncio
-async def test_create_saves_session_index_and_conversation_lookup(store, redis):
-    session = await store.create(
-        session_id="session-1",
-        conversation_id="conversation-1",
-        agent_id="agent-1",
-        team_id="team-1",
-        ttl_hours=2,
+def test_session_create_conversation_and_configured_touch_retention(sandbox_runtime):
+    r = sandbox_runtime
+    session = r.run(
+        r.sessions.create(
+            session_id="session", conversation_id="conversation", ttl_hours=2
+        )
     )
+    found = r.run(r.sessions.get_by_conversation("conversation"))
+    assert found.session_id == session.session_id
+    original_creation = session.created_at
+    touched = r.run(r.sessions.touch("session", disk_usage_bytes=128))
+    assert touched.created_at == original_creation
+    assert touched.expires_at == touched.last_accessed_at + timedelta(hours=2)
+    assert touched.disk_usage_bytes == 128
+    assert r.run(r.sessions.touch("missing")) is None
 
-    assert session.created_at == FROZEN_NOW
-    assert session.expires_at == FROZEN_NOW + timedelta(hours=2)
-    redis.zadd.assert_awaited_once_with(
-        store.INDEX_KEY, {"session-1": session.expires_at.timestamp()}
+
+def test_get_worker_derives_from_single_canonical_binding(sandbox_runtime):
+    r = sandbox_runtime
+    before = r.bind_session()
+    # A record left by pre-versioned releases cannot override canonical placement.
+    r.redis.set("sandbox:session-worker:session", "wrong-worker")
+    assert r.run(r.sessions.get_worker("session")) == before.worker_id
+    assert r.run(r.sessions.get_binding("missing")) is None
+
+
+def test_recovery_lock_coalesces_and_expired_holder_cannot_commit(sandbox_runtime):
+    r = sandbox_runtime
+    before = r.bind_session()
+    binding_key = r.sessions._binding_key("session")
+    session_key = r.sessions._key("session")
+    owned = r.run(r.sessions.acquire_recovery("session", before, "one", 1))
+    assert owned.status == "RECOVERING"
+    assert r.redis.pttl(binding_key) > r.redis.pttl(session_key)
+    assert r.run(r.sessions.acquire_recovery("session", owned, "two", 1)) is None
+    r.redis.delete("sandbox:session-recovery:session")
+    replacement_owner = r.run(r.sessions.acquire_recovery("session", owned, "two", 1))
+    r.redis.pexpire(binding_key, 1000)
+    resetting = r.run(r.sessions.mark_resetting("session", replacement_owner, "two"))
+    assert resetting.status == "RESETTING"
+    assert r.redis.pttl(binding_key) > r.redis.pttl(session_key)
+    ready = resetting.model_copy(
+        update={
+            "epoch": resetting.epoch + 1,
+            "status": "READY",
+            "recovery_id": None,
+            "recovery_started_at": None,
+        }
     )
-    assert redis.setex.await_args_list[0].args[:2] == (
-        "sandbox:session:session-1",
-        7200,
+    assert not r.run(r.sessions.commit_recovery("session", owned, "one", ready))
+    assert r.run(r.sessions.commit_recovery("session", resetting, "two", ready))
+    assert r.redis.pttl(binding_key) > r.redis.pttl(session_key)
+
+
+def test_session_save_refreshes_binding_ttl_and_delete_bounds_tombstone(
+    sandbox_runtime,
+):
+    r = sandbox_runtime
+    binding = r.bind_session()
+    binding_key = r.sessions._binding_key("session")
+    session_key = r.sessions._key("session")
+    r.redis.pexpire(binding_key, 1000)
+
+    assert r.run(r.sessions.touch("session", expected_binding=binding)) is not None
+    assert r.redis.pttl(binding_key) > r.redis.pttl(session_key)
+    assert r.run(r.sessions.delete("session", expected_binding=binding))
+
+    tombstone_ttl = r.redis.pttl(binding_key)
+    ttl_grace_ms = 2_000 * max(
+        settings.SANDBOX_RESULT_TTL_SECONDS,
+        settings.SANDBOX_CHECKPOINT_TIMEOUT_SECONDS,
     )
+    assert 0 < tombstone_ttl <= ttl_grace_ms
+
+
+def test_stale_metadata_and_round_writes_cannot_regress_rebound_session(
+    sandbox_runtime,
+):
+    r = sandbox_runtime
+    before = r.bind_session()
+    stale_metadata = r.run(r.sessions.get("session"))
+    r.run(r.sessions.begin_round("session", "round", 60))
+    r.run(r.sessions.mark_workspace_round("session", "round", expected_binding=before))
+    r.registry.remove(r.redis, r.workers["a"])
+    r.register(instance_id="new-instance")
+    after = r.run(recovery.ensure_ready("session", time.time() + 2))
+    stale_metadata.disk_usage_bytes = 999
+    assert not r.run(r.sessions.save(stale_metadata))
     assert (
-        SandboxSession.model_validate_json(redis.setex.await_args_list[0].args[2])
-        == session
+        r.run(
+            r.sessions.touch("session", disk_usage_bytes=999, expected_binding=before)
+        )
+        is None
     )
-    redis.setex.assert_awaited_with(
-        "sandbox:conversation:conversation-1", 7200, "session-1"
+    assert not r.run(
+        r.sessions.mark_workspace_round("session", "stale", expected_binding=before)
     )
-
-
-@pytest.mark.asyncio
-async def test_save_clamps_expired_session_ttl_and_skips_missing_conversation(
-    store, redis
-):
-    session = SandboxSession(
-        session_id="expired",
-        created_at=FROZEN_NOW - timedelta(hours=1),
-        expires_at=FROZEN_NOW,
-        last_accessed_at=FROZEN_NOW,
+    assert not r.run(
+        r.sessions.finish_round("session", "round", expected_binding=before)
     )
-
-    await store.save(session)
-
-    redis.setex.assert_awaited_once()
-    assert redis.setex.await_args.args[:2] == ("sandbox:session:expired", 1)
-    redis.zadd.assert_awaited_once_with(
-        store.INDEX_KEY, {"expired": FROZEN_NOW.timestamp()}
+    assert r.run(r.sessions.get_active_round("session")) == "round"
+    assert (
+        r.run(
+            r.sessions.touch("session", disk_usage_bytes=5, expected_binding=after)
+        ).disk_usage_bytes
+        == 5
     )
+    assert r.run(r.sessions.finish_round("session", "round", expected_binding=after))
+    assert r.run(r.sessions.get("session")).disk_usage_bytes == 5
 
 
-@pytest.mark.asyncio
-async def test_get_returns_session_or_removes_missing_index_entry(store, redis):
-    redis.get.return_value = None
+def test_expired_cleanup_keeps_epoch_tombstone_and_removes_indexes(sandbox_runtime):
+    r = sandbox_runtime
+    before = r.bind_session()
+    r.redis.delete("sandbox:session:session")
+    r.redis.zadd(r.sessions.INDEX_KEY, {"session": time.time() - 1})
+    assert r.run(r.sessions.expired_session_ids(limit=1)) == ["session"]
+    assert r.run(r.sessions.cleanup_expired(limit=1)) == 1
+    tombstone = r.run(r.sessions.get_binding("session"))
+    assert tombstone.status == "UNAVAILABLE" and tombstone.epoch > before.epoch
+    assert r.run(r.sessions.expired_session_ids()) == []
+    assert not r.run(r.sessions.delete("session", expected_binding=before))
+    assert not before.matches(tombstone)
 
-    assert await store.get("missing") is None
-    redis.zrem.assert_awaited_once_with(store.INDEX_KEY, "missing")
 
-    saved = SandboxSession(
-        session_id="saved",
-        expires_at=FROZEN_NOW + timedelta(hours=1),
+def test_expired_only_cleanup_cannot_delete_refreshed_retention(sandbox_runtime):
+    r = sandbox_runtime
+    before = r.bind_session()
+    assert not r.run(
+        r.sessions.delete("session", expected_binding=before, expired_only=True)
     )
-    redis.get.return_value = saved.model_dump_json()
-
-    assert await store.get("saved") == saved
-
-
-@pytest.mark.asyncio
-async def test_conversation_lookup_handles_missing_and_stale_mappings(store, redis):
-    redis.get.return_value = None
-    assert await store.get_by_conversation("missing") is None
-
-    redis.get.return_value = "stale-session"
-    store.get = AsyncMock(return_value=None)
-
-    assert await store.get_by_conversation("stale") is None
-    redis.delete.assert_awaited_once_with("sandbox:conversation:stale")
-
-    redis.get.return_value = "active-session"
-    active = SandboxSession(
-        session_id="active-session",
-        expires_at=FROZEN_NOW + timedelta(hours=1),
-    )
-    store.get = AsyncMock(return_value=active)
-
-    assert await store.get_by_conversation("active") == active
+    assert r.run(r.sessions.get("session")) is not None
+    assert r.run(r.sessions.get_binding("session")) == before
 
 
-@pytest.mark.asyncio
-async def test_touch_updates_existing_session_and_returns_none_when_absent(store):
-    session = SandboxSession(
-        session_id="session-1",
-        expires_at=FROZEN_NOW + timedelta(hours=1),
-    )
-    store.get = AsyncMock(side_effect=[None, session, session])
-    store.save = AsyncMock()
-
-    assert await store.touch("missing") is None
-    touched = await store.touch("session-1", disk_usage_bytes=128)
-    untouched = await store.touch("session-1")
-
-    assert touched is session
-    assert untouched is session
-    assert session.last_accessed_at == FROZEN_NOW
-    assert session.disk_usage_bytes == 128
-    store.save.assert_has_awaits([call(session), call(session)])
-
-
-@pytest.mark.asyncio
-async def test_delete_and_cleanup_remove_sessions_and_conversation_mapping(
-    store, redis
-):
-    store.get = AsyncMock(return_value=None)
-
-    await store.delete("missing")
-
-    redis.delete.assert_awaited_once_with("sandbox:session:missing")
-    redis.zrem.assert_awaited_once_with(store.INDEX_KEY, "missing")
-
-    session = SandboxSession(
-        session_id="session-1",
-        conversation_id="conversation-1",
-        expires_at=FROZEN_NOW + timedelta(hours=1),
-    )
-    store.get = AsyncMock(return_value=session)
-
-    await store.delete("session-1")
-
-    redis.delete.assert_has_awaits(
-        [
-            call("sandbox:session:missing"),
-            call("sandbox:session:session-1"),
-            call("sandbox:conversation:conversation-1"),
-        ]
-    )
-    redis.zrem.assert_has_awaits(
-        [call(store.INDEX_KEY, "missing"), call(store.INDEX_KEY, "session-1")]
-    )
-
-    store.expired_session_ids = AsyncMock(return_value=["old-1", "old-2"])
-    store.delete = AsyncMock()
-
-    assert await store.cleanup_expired(limit=3) == 2
-    store.expired_session_ids.assert_awaited_once_with(limit=3)
-    store.delete.assert_has_awaits([call("old-1"), call("old-2")])
-
-
-@pytest.mark.asyncio
-async def test_expired_session_ids_uses_explicit_limit(store, redis):
-    redis.zrangebyscore.return_value = ["expired"]
-
-    assert await store.expired_session_ids(limit=4) == ["expired"]
-
-    redis.zrangebyscore.assert_awaited_once_with(
-        store.INDEX_KEY,
-        min="-inf",
-        max=FROZEN_NOW.timestamp(),
-        start=0,
-        num=4,
-    )
-
-
-def test_redis_text_decodes_bytes_and_passes_strings():
-    assert session_store._redis_text(b"session-id") == "session-id"
-    assert session_store._redis_text("session-id") == "session-id"
+def test_round_finish_is_compare_and_delete(sandbox_runtime):
+    r = sandbox_runtime
+    r.bind_session()
+    r.run(r.sessions.begin_round("session", "round", 60))
+    assert not r.run(r.sessions.finish_round("session", "stale"))
+    assert r.run(r.sessions.get_active_round("session")) == "round"
+    assert r.run(r.sessions.finish_round("session", "round"))
+    assert r.run(r.sessions.get_active_round("session")) is None
+    assert _redis_text(b"session") == _redis_text("session")

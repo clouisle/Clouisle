@@ -16,6 +16,7 @@ import pytest
 from app.models.agent import MessageRoundStatus, RAGMode
 from app.models.agent_run import AgentRunStatus
 from app.services import agent_run_store
+from app.services.agent_loop import AgentLoopContext
 from app.services.agent_run_worker import (
     _finalize_stopped,
     _tools_definitions,
@@ -36,6 +37,8 @@ def _run(status=AgentRunStatus.QUEUED, **values):
         canonical_message_id=None,
         active_round_id=None,
         started_at=None,
+        message_started_at=None,
+        first_token_ms=None,
         finished_at=None,
         error_code=None,
         error_message=None,
@@ -578,6 +581,12 @@ async def test_submit_user_answers_skips_canonical_exclusion_and_round_index(
 ):
     run = _waiting_run()
     message_create = AsyncMock()
+    progress_updates = []
+    monkeypatch.setattr(
+        agent_run_store,
+        "record_observability_progress",
+        lambda *args, **kwargs: progress_updates.append((args, kwargs)),
+    )
     monkeypatch.setattr(agent_run_store, "in_transaction", _Transaction())
     monkeypatch.setattr(
         agent_run_store.AgentRun,
@@ -595,6 +604,18 @@ async def test_submit_user_answers_skips_canonical_exclusion_and_round_index(
     assert run.worker_payload["exclude_message_ids"] == [str(run.canonical_message_id)]
     assert run.worker_payload["first_round_index"] == 5
     assert run.status == AgentRunStatus.QUEUED
+    assert progress_updates == [
+        (
+            (run.id,),
+            {
+                "status": AgentRunStatus.QUEUED.value,
+                "expected_status": AgentRunStatus.WAITING.value,
+                "started_at": run.started_at,
+                "message_started_at": run.message_started_at,
+                "first_token_ms": run.first_token_ms,
+            },
+        )
+    ]
 
 
 @pytest.mark.asyncio
@@ -1005,14 +1026,19 @@ def _prepare_full_round(
     rebuild=None,
     rag_mode=None,
     rag_context=None,
+    loop_error=None,
+    loop_callback=None,
+    deadline_seconds=120.0,
+    global_timeout=240.0,
+    with_sandbox=True,
 ):
     from app.services import agent_run_worker as worker
 
     run = _run(status=AgentRunStatus.RUNNING)
     run.active_round_id = uuid4()
-    run.pending_tool_call_id = "call-1"
-    run.pending_tool_name = "ask_user"
-    run.pending_tool_input = {"questions": []}
+    run.pending_tool_call_id = None
+    run.pending_tool_name = None
+    run.pending_tool_input = None
     agent = SimpleNamespace(
         id=run.agent_id, rag_mode=rag_mode or SimpleNamespace(value="off")
     )
@@ -1022,10 +1048,20 @@ def _prepare_full_round(
         content="question",
         rag_context=rag_context,
     )
-    context = SimpleNamespace(
+    context = AgentLoopContext(
+        agent=agent,
+        conversation=conversation,
+        user=SimpleNamespace(id=run.user_id),
+        model_id="model",
+        tokenizer_model_id=None,
+        model_provider=None,
+        model_context_limit=None,
+        model_max_output_tokens=None,
         model_used="model",
-        created_message_count=2,
-        working_history_override=None,
+        sandbox_session_id=str(uuid4()) if with_sandbox else None,
+        round_id=run.active_round_id,
+        deadline_seconds=deadline_seconds,
+        global_timeout=global_timeout,
     )
     canonical = SimpleNamespace(
         id=uuid4(),
@@ -1039,16 +1075,48 @@ def _prepare_full_round(
             self.result = result
 
         async def run(self):
+            if loop_callback is not None:
+                await loop_callback(context)
+            if loop_error is not None:
+                raise loop_error
+            if result.waiting_for_user:
+                arguments = {
+                    "questions": [
+                        {"id": "target", "question": "Where?", "required": True}
+                    ]
+                }
+                context.working_history_override = [
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {"id": "call-1", "name": "ask_user", "arguments": arguments}
+                        ],
+                    }
+                ]
+                await context.pause_for_user(
+                    tool_call_id="call-1",
+                    tool_name="ask_user",
+                    arguments=arguments,
+                    round_id=context.round_id,
+                    round_index=3,
+                    iteration_index=2,
+                )
+                self.event_queue.put_nowait(
+                    ("tool_call", {"id": "call-1", "name": "ask_user"})
+                )
             if False:
                 yield None
 
     async def _heartbeat(_run_id, _conversation_id, stop):
         await stop.wait()
 
-    async def _rebuild(*_args, **_kwargs):
+    async def _rebuild(*_args, **kwargs):
         if rebuild is not None:
             raise rebuild
-        return context, user_message, Loop()
+        loop = Loop()
+        loop.event_queue = kwargs["event_queue"]
+        return context, user_message, loop
 
     if get_run is None:
         get_run = AsyncMock(return_value=run)
@@ -1078,6 +1146,19 @@ def _prepare_full_round(
     monkeypatch.setattr(worker, "_finalize_completed", AsyncMock())
     monkeypatch.setattr(worker, "_finalize_stopped", AsyncMock())
     monkeypatch.setattr(worker.agent_run_store, "transition_run_if_status", transition)
+    monkeypatch.setattr(
+        worker,
+        "sandbox_gateway",
+        SimpleNamespace(begin_round=AsyncMock(), finish_round=AsyncMock()),
+    )
+    monkeypatch.setattr(
+        worker.agent_run_store.AgentRun,
+        "filter",
+        lambda **_kwargs: SimpleNamespace(update=AsyncMock(return_value=1)),
+    )
+    monkeypatch.setattr(
+        worker.agent_run_store, "get_redis", _get_redis_fixture(FakeRedis())
+    )
     return run, stream, canonical
 
 
@@ -1089,6 +1170,17 @@ def _round_result(**values):
         "max_iterations_reached": False,
         "full_content": "answer",
         "full_reasoning": None,
+        "aggregate_input_tokens": 0,
+        "aggregate_output_tokens": 0,
+        "aggregate_cache_read_tokens": 0,
+        "aggregate_cache_creation_tokens": 0,
+        "aggregate_total_input_tokens": 0,
+        "duration_ms": 0,
+        "first_token_ms": None,
+        "dependency_metrics": [],
+        "dependency_metrics_truncated": False,
+        "created_message_count": 2,
+        "final_round_index": 1,
     }
     defaults.update(values)
     return SimpleNamespace(**defaults)
@@ -1165,9 +1257,14 @@ async def test_run_agent_round_waiting_publishes_pending_status(monkeypatch):
     output = await run_agent_round(_round_payload(run))
 
     assert output == {"status": AgentRunStatus.WAITING.value, "tool_call_id": "call-1"}
-    assert any(
-        event.args[0] == "run_status" for event in stream.publish.await_args_list
-    )
+    assert run.status == AgentRunStatus.WAITING
+    assert run.worker_payload["first_round_index"] == 4
+    assert run.worker_payload["iteration_offset"] == 2
+    assert run.worker_payload["created_message_count"] == 2
+    assert run.worker_payload["history_override"][0]["tool_calls"][0]["id"] == "call-1"
+    event_names = [event.args[0] for event in stream.publish.await_args_list]
+    assert event_names.index("tool_call") < event_names.index("run_status")
+    assert "run_end" not in event_names
 
 
 @pytest.mark.asyncio
@@ -1240,6 +1337,261 @@ async def test_run_agent_round_completion_claim_publishes_end(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("result_values", "expected_status", "deadline_seconds"),
+    [
+        ({}, AgentRunStatus.COMPLETED, 120.0),
+        ({}, AgentRunStatus.COMPLETED, None),
+        ({"waiting_for_user": True}, AgentRunStatus.WAITING, 120.0),
+        ({"deadline_exceeded": True}, AgentRunStatus.STOPPED, 120.0),
+        ({"manually_stopped": True}, AgentRunStatus.STOPPED, 120.0),
+    ],
+    ids=["completed", "global-timeout", "pause", "deadline", "manual-stop"],
+)
+async def test_run_agent_round_checkpoint_gates_lifecycle_boundary(
+    monkeypatch, result_values, expected_status, deadline_seconds
+):
+    from app.services import agent_run_worker as worker
+
+    checkpoint_started = asyncio.Event()
+    checkpoint_saved = asyncio.Event()
+    loop_entered = False
+
+    async def _transition(run, expected, status, **_kwargs):
+        assert run.status == expected
+        assert checkpoint_saved.is_set()
+        run.status = status
+        return run
+
+    async def _in_loop(context):
+        nonlocal loop_entered
+        loop_entered = True
+        begin = worker.sandbox_gateway.begin_round.await_args
+        assert begin.args[0] == context.sandbox_session_id
+        assert begin.args[1].startswith(f"{run.id}:{run.active_round_id}:")
+        ttl = deadline_seconds if deadline_seconds is not None else 240.0
+        assert begin.kwargs["ttl_seconds"] == (
+            ttl + worker.settings.SANDBOX_CHECKPOINT_TIMEOUT_SECONDS
+        )
+
+    async def _checkpoint(_session_id, _round_id):
+        assert loop_entered
+        checkpoint_started.set()
+        await checkpoint_saved.wait()
+
+    run, stream, _ = _prepare_full_round(
+        monkeypatch,
+        result=_round_result(**result_values),
+        transition=_transition,
+        loop_callback=_in_loop,
+        deadline_seconds=deadline_seconds,
+    )
+    worker.sandbox_gateway.finish_round.side_effect = _checkpoint
+    execution = asyncio.create_task(run_agent_round(_round_payload(run)))
+    try:
+        await asyncio.wait_for(checkpoint_started.wait(), timeout=1)
+        assert not execution.done()
+        assert run.status == AgentRunStatus.RUNNING
+        assert run.pending_tool_call_id is None
+        worker._finalize_completed.assert_not_awaited()
+        worker._finalize_stopped.assert_not_awaited()
+        worker.agent_run_store.release_run_lock.assert_not_awaited()
+        assert not any(
+            event.args[0] in {"run_status", "message_end", "run_end"}
+            for event in stream.publish.await_args_list
+        )
+    finally:
+        checkpoint_saved.set()
+        output = await execution
+
+    assert output["status"] == expected_status.value
+    worker.sandbox_gateway.finish_round.assert_awaited_once_with(
+        *worker.sandbox_gateway.begin_round.await_args.args
+    )
+    worker.agent_run_store.release_run_lock.assert_awaited_once_with(
+        run.id, run.conversation_id
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "result_values",
+    [
+        {},
+        {"waiting_for_user": True},
+        {"deadline_exceeded": True},
+        {"manually_stopped": True},
+    ],
+    ids=["completed", "pause", "deadline", "manual-stop"],
+)
+async def test_run_agent_round_checkpoint_failure_prevents_success_or_pause(
+    monkeypatch, result_values
+):
+    from app.services import agent_run_worker as worker
+
+    transitions = []
+
+    async def _transition(run, expected, status, **values):
+        assert run.status == expected
+        transitions.append(status)
+        run.status = status
+        run.error_code = values.get("error_code")
+        run.error_message = values.get("error_message")
+        return run
+
+    run, stream, _ = _prepare_full_round(
+        monkeypatch,
+        result=_round_result(**result_values),
+        transition=_transition,
+    )
+    worker.sandbox_gateway.finish_round.side_effect = OSError("checkpoint failed")
+
+    output = await run_agent_round(_round_payload(run))
+
+    assert output == {
+        "status": AgentRunStatus.FAILED.value,
+        "error": "checkpoint failed",
+    }
+    assert transitions == [AgentRunStatus.FAILED]
+    assert run.error_code == "OSError"
+    assert run.error_message == "checkpoint failed"
+    assert run.pending_tool_call_id is None
+    worker.sandbox_gateway.finish_round.assert_awaited_once()
+    worker._finalize_completed.assert_not_awaited()
+    worker._finalize_stopped.assert_not_awaited()
+    event_names = [event.args[0] for event in stream.publish.await_args_list]
+    assert "run_status" not in event_names
+    assert "message_end" not in event_names
+    assert [
+        event.args[1]["status"]
+        for event in stream.publish.await_args_list
+        if event.args[0] == "run_end"
+    ] == [AgentRunStatus.FAILED.value]
+    worker.agent_run_store.release_run_lock.assert_awaited_once_with(
+        run.id, run.conversation_id
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("checkpoint_fails", [False, True])
+async def test_run_agent_round_execution_failure_checkpoints_before_failed_outcome(
+    monkeypatch, checkpoint_fails
+):
+    from app.services import agent_run_worker as worker
+
+    checkpoint_started = asyncio.Event()
+    checkpoint_saved = asyncio.Event()
+
+    async def _transition(run, expected, status, **values):
+        assert run.status == expected
+        assert checkpoint_saved.is_set()
+        run.status = status
+        run.error_code = values.get("error_code")
+        run.error_message = values.get("error_message")
+        return run
+
+    async def _checkpoint(_session_id, _round_id):
+        checkpoint_started.set()
+        await checkpoint_saved.wait()
+        if checkpoint_fails:
+            raise OSError("checkpoint failed")
+
+    run, stream, _ = _prepare_full_round(
+        monkeypatch,
+        result=_round_result(),
+        transition=_transition,
+        loop_error=ValueError("model failed"),
+    )
+    worker.sandbox_gateway.finish_round.side_effect = _checkpoint
+    execution = asyncio.create_task(run_agent_round(_round_payload(run)))
+    try:
+        await asyncio.wait_for(checkpoint_started.wait(), timeout=1)
+        assert not execution.done()
+        assert run.status == AgentRunStatus.RUNNING
+        assert not any(
+            event.args[0] in {"error", "run_end"}
+            for event in stream.publish.await_args_list
+        )
+    finally:
+        checkpoint_saved.set()
+        output = await execution
+
+    assert output == {"status": AgentRunStatus.FAILED.value, "error": "model failed"}
+    assert run.error_code == "ValueError"
+    assert run.error_message == "model failed"
+    worker.sandbox_gateway.finish_round.assert_awaited_once()
+    worker._finalize_completed.assert_not_awaited()
+    worker._finalize_stopped.assert_not_awaited()
+    worker.agent_run_store.release_run_lock.assert_awaited_once_with(
+        run.id, run.conversation_id
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_agent_round_without_sandbox_preserves_completion(monkeypatch):
+    from app.services import agent_run_worker as worker
+
+    async def _transition(run, expected, status, **_kwargs):
+        assert run.status == expected
+        run.status = status
+        return run
+
+    run, stream, canonical = _prepare_full_round(
+        monkeypatch,
+        result=_round_result(),
+        transition=_transition,
+        with_sandbox=False,
+    )
+
+    output = await run_agent_round(_round_payload(run))
+
+    assert output == {
+        "status": AgentRunStatus.COMPLETED.value,
+        "message_id": str(canonical.id),
+    }
+    assert ("run_end", {"status": "completed", "message_id": str(canonical.id)}) in [
+        (event.args[0], event.args[1]) for event in stream.publish.await_args_list
+    ]
+    worker.sandbox_gateway.begin_round.assert_not_awaited()
+    worker.sandbox_gateway.finish_round.assert_not_awaited()
+    worker.agent_run_store.release_run_lock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_agent_round_heartbeat_failure_still_releases_run_lock(monkeypatch):
+    from app.services import agent_run_worker as worker
+
+    async def _transition(run, expected, status, **_kwargs):
+        assert run.status == expected
+        run.status = status
+        return run
+
+    async def _heartbeat(_run_id, _conversation_id, stop):
+        await stop.wait()
+        raise RuntimeError("heartbeat failed")
+
+    run, stream, _ = _prepare_full_round(
+        monkeypatch,
+        result=_round_result(),
+        transition=_transition,
+        loop_error=ValueError("model failed"),
+    )
+    monkeypatch.setattr(worker.agent_run_store, "heartbeat_run_lock", _heartbeat)
+
+    with pytest.raises(RuntimeError, match="heartbeat failed"):
+        await run_agent_round(_round_payload(run))
+
+    assert run.status == AgentRunStatus.FAILED
+    assert any(
+        event.args[0] == "run_end" and event.args[1]["status"] == "failed"
+        for event in stream.publish.await_args_list
+    )
+    worker.agent_run_store.release_run_lock.assert_awaited_once_with(
+        run.id, run.conversation_id
+    )
+
+
+@pytest.mark.asyncio
 async def test_run_agent_round_emits_batched_deltas_in_loop(monkeypatch):
     async def _transition(run, expected, status, **_kwargs):
         if run.status != expected:
@@ -1266,10 +1618,19 @@ async def test_run_agent_round_emits_batched_deltas_in_loop(monkeypatch):
 
     async def _rebuild(_payload, agent, conversation, event_queue):
         loop_instance.event_queue = event_queue
-        context = SimpleNamespace(
-            created_message_count=2,
-            working_history_override=None,
+        context = AgentLoopContext(
+            agent=agent,
+            conversation=conversation,
+            user=SimpleNamespace(id=uuid4()),
+            model_id="test-model",
+            tokenizer_model_id=None,
+            model_provider=None,
+            model_context_limit=None,
+            model_max_output_tokens=None,
             model_used="test-model",
+            sandbox_session_id=str(uuid4()),
+            round_id=uuid4(),
+            deadline_seconds=120.0,
         )
         user_message = SimpleNamespace(
             id=uuid4(),
@@ -1754,3 +2115,21 @@ async def test_run_agent_round_completion_returns_reloaded_status_without_claim(
         "status": AgentRunStatus.COMPLETED.value,
         "message_id": str(canonical.id),
     }
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_run_lock_stops_after_refresh_signals_stop(monkeypatch):
+    stop = asyncio.Event()
+    run_id, conversation_id = uuid4(), uuid4()
+
+    async def refresh_and_stop(*_args):
+        stop.set()
+
+    refresh = AsyncMock(side_effect=refresh_and_stop)
+    monkeypatch.setattr(agent_run_store, "refresh_run_lock", refresh)
+
+    await asyncio.wait_for(
+        agent_run_store.heartbeat_run_lock(run_id, conversation_id, stop), timeout=1
+    )
+
+    refresh.assert_awaited_once_with(run_id, conversation_id)

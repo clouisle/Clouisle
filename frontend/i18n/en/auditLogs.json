@@ -232,6 +232,11 @@
     "actionupload_file": "Upload File",
     "actionupload_image": "Upload Image",
     "actionupload_sandbox_artifact": "Upload Sandbox Artifact",
+    "actionsandbox_task_cancelled": "Sandbox Task Cancelled",
+    "actionsandbox_task_completed": "Sandbox Task Completed",
+    "actionsandbox_task_failed": "Sandbox Task Failed",
+    "actionsandbox_task_recovered": "Sandbox Task Recovered",
+    "actionsandbox_task_started": "Sandbox Task Started",
     "actioncreate_knowledge_base": "Create Knowledge Base",
     "actionupdate_knowledge_base": "Update Knowledge Base",
     "actiondelete_knowledge_base": "Delete Knowledge Base",
@@ -241,6 +246,7 @@
     "resourceTypeWorkflowVersion": "Workflow Version",
     "resourceTypeFile": "File",
     "resourceTypeTeamModel": "Team Model",
+    "resourceTypeSandboxTask": "Sandbox Task",
     "rowsPerPage": "rows per page",
     "pageInfo": "Page {page} of {total}"
   }

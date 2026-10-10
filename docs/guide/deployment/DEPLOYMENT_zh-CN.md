@@ -78,6 +78,8 @@ frontend 容器直接运行 Next.js standalone 服务（`node server.js`，端�
 
 > **重要**：beat 服务必须始终保持 1 个副本。运行多个 beat 会导致定时任务重复执行。
 
+Sandbox Worker 消费共享 `sandbox` 队列及每个 Worker 的专属会话队列。首个会话任务会等待就绪 Worker、在其上准备工作区，并将 worker/instance/node/storage/workspace 绑定持久化到 Redis；后续会话任务继续投递到该 Worker 的队列；无状态任务仍使用共享队列。未设置时，`SANDBOX_WORKER_ID` 会在每块 Worker 磁盘上生成并持久化，`SANDBOX_NODE_ID` 默认取 hostname。每个独立本地文件系统都必须有唯一磁盘身份，每台主机都应设置唯一 node ID；不要让副本共用 Worker ID 或物理工作区。工作区、检查点、身份、锁和缓存应保存在同一块持久化本地磁盘上。同盘上的受监督进程重启后可恢复最近一次已提交检查点。若原磁盘在有界恢复期内仍不可用，运行时可将会话重置到另一个就绪 Worker 上已准备好的工作区，并返回 `WORKSPACE_RESET`；未检查点状态会丢失，过时代次任务不会自动重放。增加 Worker 会提升新会话容量，但通常不会迁移已有会话。
+
 ---
 
 ## 前置要求
@@ -217,15 +219,15 @@ SANDBOX_FILESYSTEM_ISOLATION_BINARY=/usr/bin/bwrap
 
 生产环境应保持这两个配置。每个任务只会将当前任务/会话目录挂载到 `/workspace`，不会向任务命名空间挂载其他会话或 `/app/uploads`。
 
-Rootless Bubblewrap 需要 namespace/mount 系统调用。项目提供的 Compose 服务仅对 sandbox-worker 设置 `seccomp=unconfined`，Worker 以 root 运行并在运行时默认 cap 集上叠加 `CAP_SYS_ADMIN`，并保持 `no-new-privileges`。除非替换为允许必要系统调用的 Localhost seccomp profile，否则不要删除该 seccomp 配置。
+Bubblewrap 需要 namespace/mount 系统调用。项目提供的 sandbox-worker 以 root 运行：`CAP_SYS_ADMIN` 和 `CAP_SETFCAP` 用于命名空间设置，`CAP_NET_ADMIN` 供可信出网代理在每个隔离任务网络命名空间内启用 loopback。Compose 和 Helm 会丢弃运行时默认 capabilities，保持 `no-new-privileges`，并只对 worker 设置 `seccomp=unconfined`。除非替换为允许必要系统调用的 Localhost seccomp profile，否则不要删除该配置。
 
 特权 Worker 直接创建 Bubblewrap 用户命名空间，因此项目提供的部署即使宿主限制非特权用户命名空间（如 Ubuntu 23.10+ 的 `kernel.apparmor_restrict_unprivileged_userns=1`、Debian 的 `kernel.unprivileged_userns_clone=0`）也能正常工作——**无需修改宿主 sysctl**。自定义部署若保持 Worker 非 root，则需要在节点级别允许非特权用户命名空间（见 [代码沙箱 → 宿主内核要求](../concepts/code-sandbox_zh-CN.md#宿主内核要求)）；否则所有沙箱任务都会失败，报错为 `bwrap: No permissions to create new namespace, likely because the kernel does not allow non-privileged user namespaces.`
 
 ### 用户命名空间重映射（加固）
 
-沙箱任务运行在全新的 Bubblewrap 用户+挂载命名空间内，无法直接触及 Worker 容器的 capabilities。但如果任务成功逃出 Bubblewrap（bwrap 或内核漏洞），落点就是**容器内 root + `CAP_SYS_ADMIN`**。默认 Docker daemon 下容器与宿主共享初始用户命名空间，该 capability 是宿主 userns 级别的，经典逃逸链（cgroup `release_agent`、重挂 `/proc` 写入 `kernel.core_pattern`、sysctl 写入）在原理上可达。
+沙箱任务运行在全新的 Bubblewrap 用户+挂载命名空间内，无法直接触及 Worker 容器的 capabilities。但如果任务成功逃出 Bubblewrap（bwrap 或内核漏洞），落点就是容器内 root，并拥有 `CAP_SYS_ADMIN`、`CAP_SETFCAP` 和 `CAP_NET_ADMIN`。默认 Docker daemon 下，`CAP_SYS_ADMIN` 属于宿主初始用户命名空间，经典逃逸链（cgroup `release_agent`、重挂 `/proc` 写入 `kernel.core_pattern`、sysctl 写入）在原理上可达；`CAP_NET_ADMIN` 则限制在 Worker 容器的网络命名空间。
 
-**Docker daemon 用户命名空间重映射**可以收敛此风险：每个容器被放入嵌套用户命名空间，`CAP_SYS_ADMIN` 只作用于容器自身的 userns，上述宿主逃逸链全部失效。沙箱 Worker 仍能在重映射后的命名空间内特权创建自己的 Bubblewrap userns，沙箱功能不受影响。
+**Docker daemon 用户命名空间重映射**可以收敛宿主 userns 风险：`CAP_SYS_ADMIN` 只作用于容器的嵌套 userns，上述宿主逃逸链不再可用。`CAP_NET_ADMIN` 仍限制在 Worker 容器的网络命名空间内。沙箱 Worker 仍能在重映射后的命名空间内创建 Bubblewrap userns，沙箱功能不受影响。
 
 在 Docker 宿主的 `/etc/docker/daemon.json` 启用并重启 daemon：
 
@@ -471,7 +473,7 @@ kubectl -n clouisle get pods
 | 7 | Uploads | PVC | `uploads-data` 10Gi，ReadWriteMany |
 | 8 | API | Deployment + Service | 2 副本，端口 8000 |
 | 9 | Worker | Deployment | 2 副本，无 Service |
-| 10 | Sandbox Worker | Deployment | 1 副本，无 Service |
+| 10 | Sandbox Worker | DaemonSet | 每个符合条件的节点一个 Pod，使用节点本地 hostPath，无 Service |
 | 11 | Beat | Deployment | 1 副本，`Recreate` 策略 |
 | 12 | Frontend | Deployment + Service | 2 副本，端口 3000 |
 | 13 | Ingress | Ingress | `/api` → api:8000，`/` → frontend:3000 |
@@ -679,7 +681,7 @@ kubectl -n clouisle top pods
 | `QDRANT_DISTANCE` | `Cosine` | 向量距离度量 |
 | `TAVILY_API_KEY` | *(empty)* | Tavily 网页搜索 API Key（用于 Agent 网页搜索能力） |
 | `SANDBOX_RUNTIME_ENABLED` | `true` | 将可执行任务路由到沙箱运行时。 |
-| `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | Sandbox Worker 部署中为 `true` | 启用 Bubblewrap 挂载命名空间；通用应用默认值为 `false`。 |
+| `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `true` | 启用 Bubblewrap 挂载命名空间；通用应用默认值为 `true`。 |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | Sandbox Worker 部署中为 `/usr/bin/bwrap` | Bubblewrap 可执行文件路径；通用应用默认值为 `bwrap`。 |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | Sandbox Celery Worker 并发数。 |
 | `SANDBOX_WORKSPACE_ROOT` | `/tmp/clouisle-sandbox/jobs` | 沙箱任务和会话目录在 Worker 上的根路径。 |
@@ -816,13 +818,13 @@ docker push "$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
 
 kubectl -n clouisle set image deployment/api api="$REGISTRY/clouisle-backend:$IMAGE_TAG"
 kubectl -n clouisle set image deployment/worker worker="$REGISTRY/clouisle-backend:$IMAGE_TAG"
-kubectl -n clouisle set image deployment/sandbox-worker sandbox-worker="$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
+kubectl -n clouisle set image daemonset/sandbox-worker sandbox-worker="$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
 kubectl -n clouisle set image deployment/beat beat="$REGISTRY/clouisle-backend:$IMAGE_TAG"
 kubectl -n clouisle set image deployment/frontend frontend="$REGISTRY/clouisle-frontend:$IMAGE_TAG"
 
 kubectl -n clouisle rollout status deployment/api
 kubectl -n clouisle rollout status deployment/worker
-kubectl -n clouisle rollout status deployment/sandbox-worker
+kubectl -n clouisle rollout status daemonset/sandbox-worker
 kubectl -n clouisle rollout status deployment/beat
 kubectl -n clouisle rollout status deployment/frontend
 ```
@@ -841,7 +843,7 @@ kubectl -n clouisle rollout status deployment/frontend
 - [ ] **网络隔离**：Compose 下基础设施服务（db、redis、qdrant）不应对外访问；K8s 下默认使用 ClusterIP（不对外）
 - [ ] **定期备份**：配置 PostgreSQL 与 Qdrant 自动备份
 - [ ] **资源限制**：按实际负载调整 K8s 清单中的 CPU/内存 limits
-- [ ] **验证沙箱隔离**：保持 `SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true`，确认 Sandbox Worker 镜像存在 `/usr/bin/bwrap`，保留 Worker 专用 seccomp 配置，并确认 Worker 以 root + `CAP_SYS_ADMIN` 运行（容器内 `grep CapEff /proc/self/status` 非零）——若为非 root Worker 配置，则需确认宿主允许非特权用户命名空间（`unshare -U true`）
+- [ ] **验证沙箱隔离**：保持 `SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true`，确认 Sandbox Worker 镜像存在 `/usr/bin/bwrap`，保留 Worker 专用 seccomp 配置，并确认 Worker 以 root + `CAP_SYS_ADMIN`、`CAP_SETFCAP`、`CAP_NET_ADMIN` 运行（容器内 `grep CapEff /proc/self/status` 非零）——若为非 root Worker 配置，则需确认宿主允许非特权用户命名空间（`unshare -U true`）
 - [ ] **Docker daemon 加固（Compose）**：考虑启用用户命名空间重映射（`/etc/docker/daemon.json` 的 `userns-remap`），让 Worker 的 `CAP_SYS_ADMIN` 被限制在嵌套 userns 内（见[用户命名空间重映射（加固）](#用户命名空间重映射加固)）；启用后需重设既有卷属主
 - [ ] **镜像扫描**：部署前对 Docker 镜像进行漏洞扫描
 
@@ -903,7 +905,7 @@ docker compose exec worker python -c "import redis; r = redis.Redis(host='redis'
 bwrap: No permissions to create new namespace, likely because the kernel does not allow non-privileged user namespaces.
 ```
 
-使用项目提供的部署时出现该报错，说明 Worker 实际并未以 root + `CAP_SYS_ADMIN` 运行（镜像的非 root 用户 effective capabilities 恒为空，仅加 `cap_add` 无效——部署必须设置 `user: "0"` / `runAsUser: 0`）。在容器内验证：`grep CapEff /proc/self/status` 应为非零。
+使用项目提供的部署时出现该报错，说明 Worker 未以 root + `CAP_SYS_ADMIN` 运行（镜像的非 root 用户 effective capabilities 恒为空，仅加 `cap_add` 无效——部署必须设置 `user: "0"` / `runAsUser: 0`）。`CAP_SETFCAP` 用于命名空间设置，`CAP_NET_ADMIN` 供出网代理启用隔离的 loopback；请在容器内检查 effective capability set。
 
 自定义部署若保持 Worker 非 root，则宿主内核必须允许非特权用户命名空间，需要在**节点级别**修复（`seccomp=unconfined` 无效）：Ubuntu 23.10+ 执行 `sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`；Debian 执行 `sysctl -w kernel.unprivileged_userns_clone=1`，并通过 `/etc/sysctl.d/` 持久化，最后用 `unshare -U true` 验证。详见 [代码沙箱 → 宿主内核要求](../concepts/code-sandbox_zh-CN.md#宿主内核要求)。在 Kubernetes 中需对每个节点生效，无法按 Pod 设置。
 

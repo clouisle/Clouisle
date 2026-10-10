@@ -113,6 +113,28 @@ def test_artifact_result_serializes_download_payload_and_error_output():
     }
 
 
+def test_artifact_result_handles_legacy_payload_without_download_url():
+    result = SandboxArtifactTool()._result(
+        success=True,
+        files=[
+            {
+                "path": "/workspace/old.txt",
+                "filename": "old.txt",
+                "url": None,
+                "asset_ref": None,
+            }
+        ],
+    )
+
+    llm_payload = json.loads(result.llm_result)
+    assert result.display_result["count"] == 0
+    assert llm_payload["markdown_links"] == []
+    assert (
+        llm_payload["result"]
+        == "No downloadable links are available for these artifacts."
+    )
+
+
 @pytest.mark.anyio
 async def test_file_tools_return_errors_without_submitting_unsafe_or_oversized_payloads():
     missing_session = await SandboxReadTool().execute("report.txt")

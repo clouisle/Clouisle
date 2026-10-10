@@ -46,6 +46,16 @@ SANDBOX_WORKER_ENV_KEYS = (
     "INTERNAL_API_TOKEN",
     "SANDBOX_LEGACY_FALLBACK_ENABLED",
     "SANDBOX_WORKSPACE_ROOT",
+    "SANDBOX_WORKER_ID",
+    "SANDBOX_NODE_ID",
+    "SANDBOX_WORKER_HEARTBEAT_SECONDS",
+    "SANDBOX_WORKER_HEARTBEAT_TTL_SECONDS",
+    "SANDBOX_WORKER_RECOVERY_SECONDS",
+    "SANDBOX_RECOVERY_POLL_SECONDS",
+    "SANDBOX_SESSION_MAX_RESETS",
+    "SANDBOX_SUPERVISOR_RESTART_SECONDS",
+    "SANDBOX_SUPERVISOR_MAX_RESTARTS",
+    "SANDBOX_CHECKPOINT_ROOT",
     "SANDBOX_MAX_DISK_MB",
     "SANDBOX_SESSION_TTL_HOURS",
     "SANDBOX_SESSION_CLEANUP_BATCH_SIZE",
@@ -147,12 +157,21 @@ def start_worker(
 
 
 def start_sandbox_worker(concurrency: int = 1):
-    """Start the dedicated sandbox worker."""
-    os.chdir(BACKEND_DIR)
+    """Supervise the dedicated worker on its retained node-local disk."""
+    from app.services.sandbox.affinity import (
+        sandbox_worker_id,
+        sandbox_worker_queue,
+    )
+    from app.services.sandbox.worker_supervisor import supervise_sandbox_worker
+
+    worker_id = sandbox_worker_id()
+    dedicated_queue = sandbox_worker_queue(worker_id)
+    queues = f"sandbox,{dedicated_queue}"
+    # Keep the supervisor's current directory stable; pass cwd to its child.
     pool = "solo" if concurrency == 1 else None
 
     print(
-        f"🔧 Starting Celery worker (concurrency={concurrency}, queues=sandbox, pool={pool or 'prefork'})"
+        f"🔧 Starting Celery worker (concurrency={concurrency}, queues={queues}, pool={pool or 'prefork'})"
     )
     cmd = [
         os.path.join(BACKEND_DIR, ".venv", "bin", "python"),
@@ -163,11 +182,12 @@ def start_sandbox_worker(concurrency: int = 1):
         "worker",
         "--loglevel=info",
         f"--concurrency={concurrency}",
-        "--queues=sandbox",
+        f"--queues={queues}",
+        f"--hostname={dedicated_queue}-{os.getpid()}@%h",
     ]
     if pool:
         cmd.append(f"--pool={pool}")
-    subprocess.run(cmd)
+    raise SystemExit(supervise_sandbox_worker(cmd, cwd=BACKEND_DIR))
 
 
 def build_sandbox_worker_image(
@@ -271,8 +291,23 @@ def start_sandbox_worker_container(
     no_cache: bool = False,
     image_tag: str = SANDBOX_WORKER_IMAGE_TAG,
 ):
-    """Build and run a temporary local-dev sandbox worker container."""
+    """Build and run a local-dev worker with retained isolated Docker storage."""
     build_sandbox_worker_image(no_cache=no_cache, image_tag=image_tag)
+    env = _sandbox_worker_container_env()
+    worker_name = env.get("SANDBOX_WORKER_ID", "default")
+    import hashlib
+    from app.core.config import settings
+
+    workspace_root = Path(env.get("SANDBOX_WORKSPACE_ROOT", settings.SANDBOX_WORKSPACE_ROOT)).resolve()
+    data_root = workspace_root.parent
+    volume_identity = f"{PROJECT_ROOT}:{worker_name}:{workspace_root}"
+    volume_name = "clouisle-sandbox-dev-" + hashlib.sha256(volume_identity.encode()).hexdigest()[:16]
+    env["SANDBOX_WORKSPACE_ROOT"] = str(workspace_root)
+    checkpoint_root = Path(
+        env.get("SANDBOX_CHECKPOINT_ROOT", str(data_root / "checkpoints"))
+    ).resolve()
+    env["SANDBOX_CHECKPOINT_ROOT"] = str(checkpoint_root)
+    env.setdefault("SANDBOX_NODE_ID", "docker-local")
     cmd = [
         "docker",
         "run",
@@ -281,22 +316,27 @@ def start_sandbox_worker_container(
         "host.docker.internal:host-gateway",
         "--name",
         f"clouisle-sandbox-worker-dev-{os.getpid()}",
-        # Mirror the sandbox-worker security options from deploy/docker-compose.yml:
-        # rootless bwrap needs namespace/mount syscalls that the default seccomp
-        # profile blocks, so the container must run with seccomp unconfined.
-        # The worker runs as root (effective caps of the image's non-root USER
-        # are always empty) and adds CAP_SYS_ADMIN on top of the runtime
-        # default cap set.
+        # Match the sandbox-worker deployment: Bubblewrap needs SYS_ADMIN and
+        # SETFCAP for namespace setup; the trusted bridge uses NET_ADMIN to
+        # enable isolated loopback, then drops task capabilities.
         "--security-opt",
         "seccomp=unconfined",
         "--security-opt",
         "no-new-privileges:true",
+        "--cap-drop",
+        "ALL",
         "--cap-add",
         "SYS_ADMIN",
+        "--cap-add",
+        "SETFCAP",
+        "--cap-add",
+        "NET_ADMIN",
         "--user",
         "0",
+        "--mount",
+        f"type=volume,source={volume_name},target={data_root}",
     ]
-    for key, value in _sandbox_worker_container_env().items():
+    for key, value in env.items():
         cmd.extend(["-e", f"{key}={value}"])
     cmd.extend(
         [

@@ -26,7 +26,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts'
-import type { DashboardStats } from '@/lib/api/admin/dashboard'
+import type { DashboardActivitySummary, DashboardStats } from '@/lib/api/admin/dashboard'
 import type { TOTPStatsResponse } from '@/lib/api/admin/users'
 import { CHART_AXIS_COLOR, CHART_COLOR_ORDER, CHART_GRID_COLOR, CHART_HOVER_CURSOR } from '@/lib/chart-theme'
 
@@ -41,6 +41,7 @@ interface TrendData {
 
 interface OverviewTabProps {
   stats: DashboardStats
+  activitySummary: DashboardActivitySummary
   trendsData: TrendData[]
   isLoading: boolean
   totpStats: TOTPStatsResponse | null
@@ -178,7 +179,7 @@ function StatCard({
   )
 }
 
-export function OverviewTab({ stats, trendsData, isLoading, totpStats }: OverviewTabProps) {
+export function OverviewTab({ stats, activitySummary, trendsData, isLoading, totpStats }: OverviewTabProps) {
   const t = useTranslations('dashboard.home')
   const passwordExpiration = stats.password_expiration
 
@@ -201,15 +202,15 @@ export function OverviewTab({ stats, trendsData, isLoading, totpStats }: Overvie
           color="green"
         />
         <StatCard
-          title={t('stats.totalConversations')}
-          value={stats.overview.total_conversations}
+          title={t('stats.conversations')}
+          value={activitySummary.conversations}
           icon={MessageSquare}
           isLoading={isLoading}
           color="purple"
         />
         <StatCard
-          title={t('stats.totalTokens')}
-          value={stats.overview.total_tokens}
+          title={t('stats.tokens')}
+          value={activitySummary.tokens}
           icon={Coins}
           isLoading={isLoading}
           color="orange"

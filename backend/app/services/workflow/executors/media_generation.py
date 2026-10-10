@@ -10,7 +10,11 @@ import logging
 import re
 
 from app.core.i18n import t
-from app.llm.tools.builtin.media import generate_image, generate_video
+from app.llm.tools.builtin.media import (
+    _resolve_generation_reference_images,
+    generate_image,
+    generate_video,
+)
 
 from ..errors import translate_public_workflow_error
 from ..executor import ExecutionResult, NodeExecutor, NodeExecutorRegistry
@@ -122,7 +126,11 @@ class MediaGenerationNodeExecutor(NodeExecutor):
             context,
             config.get("startImageVariable") or config.get("startImageVariableRef"),
         )
-        current_images = start_images[:1] if start_images else None
+        start_image_content = _resolve_generation_reference_images(
+            images=None,
+            reference_image_indexes=[1] if start_images else None,
+            current_images=start_images,
+        )
         asset_context: dict[str, Any] = {}
         if run is not None:
             asset_context["workflow_run_id"] = getattr(run, "id", None)
@@ -142,12 +150,11 @@ class MediaGenerationNodeExecutor(NodeExecutor):
             or None,
             style=config.get("style") or None,
             seed=_optional_int(config.get("seed")),
-            start_image_index=1 if current_images else None,
+            start_image_content=start_image_content[0] if start_image_content else None,
             extra_params=config.get("extraParams")
             or config.get("extra_params")
             or None,
             agent=self._media_agent(model_id, config),
-            current_images=current_images,
             **asset_context,
         )
 

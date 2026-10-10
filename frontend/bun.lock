@@ -43,6 +43,7 @@
         "next-themes": "^0.4.6",
         "qrcode.react": "^4.2.0",
         "react": "19.3.0",
+        "react-day-picker": "^10.0.1",
         "react-dom": "19.3.0",
         "react-hook-form": "^7.87.0",
         "react-joyride": "^3.2.0",
@@ -178,6 +179,8 @@
     "@chevrotain/types": ["@chevrotain/types@11.1.2", "", {}, "sha512-U+HFai5+zmJCkK86QsaJtoITlboZHBqrVketcO2ROv865xfCMSFpELQoz1GkX5GzME8pTa+3kbKrZHQtI0gdbw=="],
 
     "@chevrotain/utils": ["@chevrotain/utils@11.1.2", "", {}, "sha512-4mudFAQ6H+MqBTfqLmU7G1ZwRzCLfJEooL/fsF6rCX5eePMbGhoy5n4g+G4vlh2muDcsCTJtL+uKbOzWxs5LHA=="],
+
+    "@date-fns/tz": ["@date-fns/tz@1.5.0", "", {}, "sha512-lwYN/vDPeNRULcepoE/LO2Pgx+7/RV+S9ARfbc9lr2DtGkOD7pAiruHvbR1RX3Qyf6ja47EWJDMsNK5vK08DJg=="],
 
     "@dotenvx/dotenvx": ["@dotenvx/dotenvx@1.51.2", "", { "dependencies": { "commander": "^11.1.0", "dotenv": "^17.2.1", "eciesjs": "^0.4.10", "execa": "^5.1.1", "fdir": "^6.2.0", "ignore": "^5.3.0", "object-treeify": "1.1.33", "picomatch": "^4.0.2", "which": "^4.0.0" }, "bin": { "dotenvx": "src/cli/dotenvx.js" } }, "sha512-+693mNflujDZxudSEqSNGpn92QgFhJlBn9q2mDQ9yGWyHuz3hZ8B5g3EXCwdAz4DMJAI+OFCIbfEFZS+YRdrEA=="],
 
@@ -2006,6 +2009,8 @@
     "raw-body": ["raw-body@3.0.2", "", { "dependencies": { "bytes": "~3.1.2", "http-errors": "~2.0.1", "iconv-lite": "~0.7.0", "unpipe": "~1.0.0" } }, "sha512-K5zQjDllxWkf7Z5xJdV0/B0WTNqx6vxG70zJE4N0kBs4LovmEYWJzQGxC9bS9RAKu3bgM40lrd5zoLJ12MQ5BA=="],
 
     "react": ["react@19.3.0", "", {}, "sha512-E8LUcbtBWt20bbl2YoHfx4ZDBdxVTfOKtCZn9cDSJ4l6/nuoApcpIBcj47t2wZoVX8g2ZHuMHbiShgCR1T5Sog=="],
+
+    "react-day-picker": ["react-day-picker@10.0.2", "", { "dependencies": { "@date-fns/tz": "^1.4.1", "date-fns": "^4.1.0" }, "peerDependencies": { "@types/react": ">=16.8.0", "react": ">=16.8.0" }, "optionalPeers": ["@types/react"] }, "sha512-QetiKtZWE9Uaw/pM/SYNv6WPYOTRnSJ2puL0GgwkmUFMIwiY0dtjH1W4B7DOVXVNQM0ZOClGpH/heOfBSzWeiA=="],
 
     "react-dom": ["react-dom@19.3.0", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.0" } }, "sha512-JDk8dgif51OjFoDE70+OT9ICyYr+69HlmihNwp1+Nsfbna3t5sIiCa9ZJktDmQ4/1b/rn26hIAR2uYXDMr5r0Q=="],
 

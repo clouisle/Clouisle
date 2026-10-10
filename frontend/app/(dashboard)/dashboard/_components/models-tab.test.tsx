@@ -46,7 +46,7 @@ const { ModelsTab } = await import("./models-tab");
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const props = {
-  stats: { overview: { total_tokens: 2500, total_messages: 2 } },
+  activitySummary: { conversations: 4, messages: 2, tokens: 2500 },
   modelData: [],
   teamTokenData: [],
   topAgentsData: [],

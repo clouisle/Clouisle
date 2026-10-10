@@ -44,7 +44,9 @@ docker push "$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
 
 ## Kubernetes 升级
 
-提供的 Kubernetes 部署使用 `clouisle` 命名空间，并分别运行 `api`、`worker`、`sandbox-worker`、`beat` 和 `frontend` Deployment。从仓库根目录构建并发布不可变 tag，更新所有应用工作负载，再逐一观察 rollout：
+提供的 Kubernetes 部署使用 `clouisle` 命名空间，其中 `api`、`worker`、`beat` 和 `frontend` 为 Deployment，`sandbox-worker` 为 DaemonSet（每个符合条件的节点一个 Pod）。从仓库根目录构建并发布不可变 tag，更新应用工作负载，再逐一观察 rollout：
+
+若现有安装仍运行旧版 `sandbox-worker` Deployment，请先排空其任务并删除该 Deployment，再应用更新后的 manifest；不要让两个 controller 同时挂载同一沙箱本地路径。应用 `deploy/k8s/clouisle.yaml` 创建 DaemonSet 后，再执行下方镜像更新命令。
 
 ```bash
 # 通用 registry/tag 示例：替换为实际值。
@@ -59,13 +61,13 @@ docker push "$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
 
 kubectl -n clouisle set image deployment/api api="$REGISTRY/clouisle-backend:$IMAGE_TAG"
 kubectl -n clouisle set image deployment/worker worker="$REGISTRY/clouisle-backend:$IMAGE_TAG"
-kubectl -n clouisle set image deployment/sandbox-worker sandbox-worker="$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
+kubectl -n clouisle set image daemonset/sandbox-worker sandbox-worker="$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
 kubectl -n clouisle set image deployment/beat beat="$REGISTRY/clouisle-backend:$IMAGE_TAG"
 kubectl -n clouisle set image deployment/frontend frontend="$REGISTRY/clouisle-frontend:$IMAGE_TAG"
 
 kubectl -n clouisle rollout status deployment/api
 kubectl -n clouisle rollout status deployment/worker
-kubectl -n clouisle rollout status deployment/sandbox-worker
+kubectl -n clouisle rollout status daemonset/sandbox-worker
 kubectl -n clouisle rollout status deployment/beat
 kubectl -n clouisle rollout status deployment/frontend
 ```
@@ -82,7 +84,7 @@ docker compose up -d --force-recreate
 # Kubernetes：在 clouisle 命名空间回滚每个应用 Deployment。
 kubectl -n clouisle rollout undo deployment/api
 kubectl -n clouisle rollout undo deployment/worker
-kubectl -n clouisle rollout undo deployment/sandbox-worker
+kubectl -n clouisle rollout undo daemonset/sandbox-worker
 kubectl -n clouisle rollout undo deployment/beat
 kubectl -n clouisle rollout undo deployment/frontend
 ```

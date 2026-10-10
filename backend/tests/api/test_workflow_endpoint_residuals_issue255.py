@@ -286,13 +286,22 @@ async def test_webhook_matching_skips_empty_token_before_constant_time_match(
     team_id = uuid4()
     matching = SimpleNamespace(
         id=workflow_id,
+        name="Flow",
         webhook_token="target",
         status=WorkflowStatus.PUBLISHED,
         trigger_type=TriggerType.WEBHOOK,
         team_id=team_id,
     )
     candidates = [SimpleNamespace(webhook_token=None), matching]
-    run = SimpleNamespace(id=uuid4())
+    run = SimpleNamespace(
+        id=uuid4(),
+        workflow_id=workflow_id,
+        status=RunStatus.PENDING,
+        created_at=datetime.now(timezone.utc),
+        started_at=None,
+        finished_at=None,
+        total_duration_ms=None,
+    )
     user = SimpleNamespace(id=uuid4())
     delay = Mock()
 

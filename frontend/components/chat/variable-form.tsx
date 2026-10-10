@@ -22,6 +22,7 @@ import { clearValidationError, getValidationSummaryEntries,
   formatValidationSummaryMessage
 } from '@/lib/validation'
 import { Upload, X, FileIcon } from 'lucide-react'
+import { AuthenticatedImage } from './authenticated-media'
 import { uploadApi } from '@/lib/api/upload'
 import { GENERAL_UPLOAD_MAX_FILE_SIZE_MB, BYTES_PER_MB } from '@/lib/constants'
 
@@ -32,6 +33,7 @@ interface VariableFormProps {
   variables: VariableDefinition[]
   values: Record<string, unknown>
   onChange: (values: Record<string, unknown>) => void
+  onAssetIdsChange?: (variableName: string, assetIds: string | string[] | null) => void
   onSubmit?: () => void
   submitLabel?: string
   className?: string
@@ -164,6 +166,7 @@ export function VariableForm({
   variables,
   values,
   onChange,
+  onAssetIdsChange,
   onSubmit,
   submitLabel,
   className,
@@ -220,6 +223,7 @@ export function VariableForm({
           value={values[variable.name]}
           error={effectiveFieldErrors[variable.name]}
           onChange={(value) => updateValue(variable.name, value)}
+          onAssetIdsChange={(ids) => onAssetIdsChange?.(variable.name, ids)}
           compact={compact}
           disabled={disabled}
           onUploadingChange={onUploadingChange}
@@ -240,6 +244,7 @@ interface VariableFieldProps {
   value: unknown
   error?: string
   onChange: (value: unknown) => void
+  onAssetIdsChange?: (assetIds: string | string[] | null) => void
   compact?: boolean
   disabled?: boolean
   onUploadingChange?: (uploading: boolean) => void
@@ -253,6 +258,7 @@ function VariableField({
   compact = false,
   disabled = false,
   onUploadingChange,
+  onAssetIdsChange,
 }: VariableFieldProps) {
   const t = useTranslations('chat.variables')
   const tCommon = useTranslations('common')
@@ -305,10 +311,10 @@ function VariableField({
         return <Textarea value={typeof value === 'object' && value !== null ? JSON.stringify(value, null, 2) : (value as string) ?? ''} onChange={(e) => { const text = e.target.value; try { const parsed = JSON.parse(text); onChange(typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed : text) } catch { onChange(text) } }} placeholder={variable.description || t('objectPlaceholder')} rows={compact ? 3 : 4} className={compact ? 'text-xs min-h-16 font-mono' : 'font-mono'} aria-invalid={!!error} disabled={disabled} />
       case 'file':
       case 'image':
-        return <FileUploadInput variable={variable} value={value} error={error} onChange={onChange} compact={compact} disabled={disabled} onUploadingChange={onUploadingChange} />
+        return <FileUploadInput variable={variable} value={value} error={error} onChange={onChange} onAssetIdsChange={onAssetIdsChange} compact={compact} disabled={disabled} onUploadingChange={onUploadingChange} />
       case 'files':
       case 'images':
-        return <MultiFileUploadInput variable={variable} value={value} error={error} onChange={onChange} compact={compact} disabled={disabled} onUploadingChange={onUploadingChange} />
+        return <MultiFileUploadInput variable={variable} value={value} error={error} onChange={onChange} onAssetIdsChange={onAssetIdsChange} compact={compact} disabled={disabled} onUploadingChange={onUploadingChange} />
       default:
         return null
     }
@@ -449,12 +455,13 @@ export interface FileUploadInputProps {
   value: unknown
   error?: string
   onChange: (value: unknown) => void
+  onAssetIdsChange?: (assetIds: string | null) => void
   compact?: boolean
   disabled?: boolean
   onUploadingChange?: (uploading: boolean) => void
 }
 
-export function FileUploadInput({ variable, value, error, onChange, compact, disabled, onUploadingChange }: FileUploadInputProps) {
+export function FileUploadInput({ variable, value, error, onChange, onAssetIdsChange, compact, disabled, onUploadingChange }: FileUploadInputProps) {
   const t = useTranslations('chat.variables')
   const tCommon = useTranslations('common')
   const [uploading, setUploading] = React.useState(false)
@@ -495,6 +502,7 @@ export function FileUploadInput({ variable, value, error, onChange, compact, dis
       const result = await uploadApi.uploadFile(file, 'workflow-input')
       setUploadError(null)
       onChange(result.url)
+      onAssetIdsChange?.(result.asset_id ?? null)
     } catch (error) {
       console.error('File upload failed:', error)
       setUploadError(getUploadValidationMessage(error, t('fileUploadFailed'), tCommon))
@@ -516,6 +524,7 @@ export function FileUploadInput({ variable, value, error, onChange, compact, dis
   const handleRemove = () => {
     setUploadError(null)
     onChange(null)
+    onAssetIdsChange?.(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -566,7 +575,7 @@ export function FileUploadInput({ variable, value, error, onChange, compact, dis
             compact && "p-1.5 text-xs"
           )}>
             {isImage ? (
-              <img
+              <AuthenticatedImage
                 src={fileUrl}
                 alt=""
                 className={cn("rounded-md border object-cover", compact ? "h-8 w-8" : "h-12 w-12")}
@@ -602,12 +611,13 @@ export interface MultiFileUploadInputProps {
   value: unknown
   error?: string
   onChange: (value: unknown) => void
+  onAssetIdsChange?: (assetIds: string[]) => void
   compact?: boolean
   disabled?: boolean
   onUploadingChange?: (uploading: boolean) => void
 }
 
-export function MultiFileUploadInput({ variable, value, error, onChange, compact, disabled, onUploadingChange }: MultiFileUploadInputProps) {
+export function MultiFileUploadInput({ variable, value, error, onChange, onAssetIdsChange, compact, disabled, onUploadingChange }: MultiFileUploadInputProps) {
   const t = useTranslations('chat.variables')
   const tCommon = useTranslations('common')
   const [uploading, setUploading] = React.useState(false)
@@ -628,8 +638,23 @@ export function MultiFileUploadInput({ variable, value, error, onChange, compact
   const maxSizeBytes = (variable.fileConfig?.maxSize || GENERAL_UPLOAD_MAX_FILE_SIZE_MB) * BYTES_PER_MB
   const maxFiles = variable.fileConfig?.maxFiles || 5
 
-  const fileUrls = Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
+  const fileUrls = React.useMemo(
+    () => Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [],
+    [value],
+  )
+  const [uploadedAssets, setUploadedAssets] = React.useState<Array<{ url: string; assetId: string }>>([])
+  const currentUploadedAssets = React.useMemo(
+    () => uploadedAssets.filter((asset) => fileUrls.includes(asset.url)),
+    [uploadedAssets, fileUrls],
+  )
 
+  // Keep asset ownership references aligned when the controlled value is reset externally.
+  React.useEffect(() => {
+    if (currentUploadedAssets.length !== uploadedAssets.length) {
+      setUploadedAssets(currentUploadedAssets)
+      onAssetIdsChange?.(currentUploadedAssets.map((asset) => asset.assetId))
+    }
+  }, [fileUrls, uploadedAssets, currentUploadedAssets, onAssetIdsChange])
   const handleFiles = async (files: File[]) => {
     if (files.length === 0) return
 
@@ -659,7 +684,15 @@ export function MultiFileUploadInput({ variable, value, error, onChange, compact
     try {
       const uploadPromises = files.map(file => uploadApi.uploadFile(file, 'workflow-input'))
       const results = await Promise.all(uploadPromises)
-      const newUrls = results.map(r => r.url)
+      const newUrls = results.map((result) => result.url)
+      const nextAssets = [
+        ...currentUploadedAssets,
+        ...results.flatMap((result) =>
+          result.asset_id ? [{ url: result.url, assetId: result.asset_id }] : [],
+        ),
+      ]
+      setUploadedAssets(nextAssets)
+      onAssetIdsChange?.(nextAssets.map((asset) => asset.assetId))
       setUploadError(null)
       onChange([...fileUrls, ...newUrls])
     } catch (error) {
@@ -682,8 +715,12 @@ export function MultiFileUploadInput({ variable, value, error, onChange, compact
 
   const handleRemove = (index: number) => {
     setUploadError(null)
-    const newUrls = fileUrls.filter((_, i) => i !== index)
-    onChange(newUrls.length > 0 ? newUrls : null)
+    const nextUrls = fileUrls.filter((_, currentIndex) => currentIndex !== index)
+    const removedUrl = fileUrls[index]
+    const nextAssets = currentUploadedAssets.filter((asset) => asset.url !== removedUrl)
+    setUploadedAssets(nextAssets)
+    onAssetIdsChange?.(nextAssets.map((asset) => asset.assetId))
+    onChange(nextUrls.length > 0 ? nextUrls : null)
   }
 
   return (
@@ -729,7 +766,7 @@ export function MultiFileUploadInput({ variable, value, error, onChange, compact
           <div className={cn("flex flex-wrap gap-2 pt-2", compact && "gap-1.5 pt-1.5")}>
             {fileUrls.map((url, index) => (
               <div key={index} className="relative">
-                <img
+                <AuthenticatedImage
                   src={url}
                   alt=""
                   className={cn(

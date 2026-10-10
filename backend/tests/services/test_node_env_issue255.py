@@ -1,55 +1,86 @@
-import json
+import asyncio
 import os
 import subprocess
-from unittest.mock import MagicMock, call
+from pathlib import Path
+from unittest.mock import call
 
 import pytest
 
+from app.core.config import settings
+from app.core.sandbox_network_policy import (
+    DEFAULT_SANDBOX_NETWORK_ALLOWLIST,
+    SandboxNetworkPolicyError,
+)
 from app.services.sandbox.node_env import NodeEnvironmentManager
+from app.services.sandbox.process_launcher import ProcessLaunchResult
 
 
-def test_ensure_environment_builds_and_reuses_cache(tmp_path, monkeypatch):
+class FakeProcessLauncher:
+    def __init__(self, exit_code: int = 0):
+        self.exit_code = exit_code
+        self.calls = []
+
+    async def launch(self, command, **kwargs):
+        self.calls.append((command, kwargs))
+        return ProcessLaunchResult(
+            exit_code=self.exit_code,
+            stderr="install failed" if self.exit_code else "",
+        )
+
+
+class FakeNetworkProxy:
+    allowed_hosts = frozenset(DEFAULT_SANDBOX_NETWORK_ALLOWLIST)
+    blocked_diagnostics: list[str] = []
+
+
+@pytest.mark.anyio
+async def test_ensure_environment_builds_and_reuses_cache(tmp_path, monkeypatch):
     manager = NodeEnvironmentManager(tmp_path)
     monkeypatch.setattr(manager, "_node_version", lambda: "v22")
-    run = MagicMock()
-    monkeypatch.setattr(subprocess, "run", run)
+    launcher = FakeProcessLauncher()
+    proxy = FakeNetworkProxy()
 
     packages = ["eslint@9", "@scope/pkg@2", "plain"]
-    env_root, cache_hit = manager.ensure_environment(
+    env_root, cache_hit = await manager.ensure_environment(
         packages=packages,
         runtime_profile="standard",
-        registry_url=" https://registry.example/npm/ ",
+        process_launcher=launcher,
+        network_proxy=proxy,
+        registry_url=" https://registry.npmjs.org/npm/ ",
     )
 
     assert cache_hit is False
     assert env_root is not None
-    assert json.loads((env_root / "package.json").read_text()) == {
+    assert __import__("json").loads((env_root / "package.json").read_text()) == {
         "name": "clouisle-sandbox-job",
         "private": True,
         "dependencies": {"eslint": "9", "@scope/pkg": "2", "plain": "latest"},
     }
     assert (env_root / "READY").read_text() == "ready"
-    run.assert_called_once_with(
-        [
-            "npm",
-            "install",
-            "--ignore-scripts",
-            "--registry",
-            "https://registry.example/npm",
-        ],
-        cwd=env_root.parent / f".building-{env_root.name}",
-        check=True,
-    )
+    assert launcher.calls[0][0][1:] == [
+        "install",
+        "--ignore-scripts",
+        "--registry",
+        "https://registry.npmjs.org/npm",
+    ]
 
+    assert (
+        launcher.calls[0][1]["timeout_seconds"]
+        == settings.SANDBOX_PACKAGE_INSTALL_TIMEOUT_SECONDS
+    )
     (env_root / "node_modules" / ".bin").mkdir(parents=True)
-    assert manager.ensure_environment(
+    assert await manager.ensure_environment(
         packages=packages,
         runtime_profile="standard",
-        registry_url="https://registry.example/npm",
+        process_launcher=launcher,
+        network_proxy=proxy,
+        registry_url="https://registry.npmjs.org/npm",
     ) == (env_root, True)
+    assert len(launcher.calls) == 1
 
 
-def test_ensure_environment_replaces_stale_cache_and_cleans_failed_build(
+@pytest.mark.anyio
+async def test_ensure_environment_replaces_stale_cache_and_cleans_failed_build(
     tmp_path, monkeypatch
 ):
     manager = NodeEnvironmentManager(tmp_path)
@@ -62,50 +93,75 @@ def test_ensure_environment_replaces_stale_cache_and_cleans_failed_build(
     stale_build.mkdir()
     (stale_build / "stale").write_text("old")
 
-    def fail(*args, **kwargs):
-        raise subprocess.CalledProcessError(1, args[0])
-
-    monkeypatch.setattr(subprocess, "run", fail)
-
     with pytest.raises(subprocess.CalledProcessError):
-        manager.ensure_environment(packages=["pkg"], runtime_profile="standard")
+        await manager.ensure_environment(
+            packages=["pkg"],
+            runtime_profile="standard",
+            process_launcher=FakeProcessLauncher(exit_code=1),
+            network_proxy=FakeNetworkProxy(),
+        )
 
     assert not stale_build.exists()
     assert (env_root / "stale").read_text() == "old"
 
-    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: None)
-    built, cache_hit = manager.ensure_environment(
-        packages=["pkg"], runtime_profile="standard"
+    built, cache_hit = await manager.ensure_environment(
+        packages=["pkg"],
+        runtime_profile="standard",
+        process_launcher=FakeProcessLauncher(),
+        network_proxy=FakeNetworkProxy(),
     )
     assert (built, cache_hit) == (env_root, False)
     assert not (env_root / "stale").exists()
 
 
-def test_cache_created_while_waiting_for_lock(tmp_path, monkeypatch):
+@pytest.mark.anyio
+async def test_cache_created_while_waiting_for_lock(tmp_path, monkeypatch):
     manager = NodeEnvironmentManager(tmp_path)
     monkeypatch.setattr(manager, "_node_version", lambda: "v22")
     key = manager.build_env_key("v22", ["pkg"], "standard")
     env_root = manager.cache_root / key
 
     class Lock:
-        def __enter__(self):
+        async def __aenter__(self):
             (env_root / "node_modules" / ".bin").mkdir(parents=True)
             (env_root / "READY").write_text("ready")
 
-        def __exit__(self, *args):
+        async def __aexit__(self, *args):
             pass
 
     monkeypatch.setattr(
-        "app.services.sandbox.node_env.acquire_cache_lock", lambda *args: Lock()
+        "app.services.sandbox.node_env.acquire_async_cache_lock",
+        lambda *args: Lock(),
     )
 
-    assert manager.ensure_environment(packages=["pkg"], runtime_profile="standard") == (
-        env_root,
-        True,
-    )
+    assert await manager.ensure_environment(
+        packages=["pkg"],
+        runtime_profile="standard",
+        process_launcher=FakeProcessLauncher(),
+        network_proxy=FakeNetworkProxy(),
+    ) == (env_root, True)
 
 
-def test_empty_packages_probes_and_environment_variables(tmp_path, monkeypatch):
+@pytest.mark.anyio
+async def test_disallowed_registry_is_rejected_before_install(tmp_path, monkeypatch):
+    manager = NodeEnvironmentManager(tmp_path)
+    monkeypatch.setattr(manager, "_node_version", lambda: "v22")
+    launcher = FakeProcessLauncher()
+
+    with pytest.raises(SandboxNetworkPolicyError, match="blocked package source"):
+        await manager.ensure_environment(
+            packages=["pkg"],
+            runtime_profile="standard",
+            process_launcher=launcher,
+            network_proxy=FakeNetworkProxy(),
+            registry_url="https://attacker.example/npm",
+        )
+
+    assert launcher.calls == []
+
+
+@pytest.mark.anyio
+async def test_empty_packages_probes_and_environment_variables(tmp_path, monkeypatch):
     manager = NodeEnvironmentManager(tmp_path)
     probes = []
 
@@ -116,10 +172,12 @@ def test_empty_packages_probes_and_environment_variables(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "check_output", check_output)
     monkeypatch.setenv("PATH", "/usr/bin")
 
-    assert manager.ensure_environment(packages=[], runtime_profile="standard") == (
-        None,
-        False,
-    )
+    assert await manager.ensure_environment(
+        packages=[],
+        runtime_profile="standard",
+        process_launcher=FakeProcessLauncher(),
+        network_proxy=FakeNetworkProxy(),
+    ) == (None, False)
     assert manager._node_version() == "v22.1.0"
     assert manager._node_version() == "v22.1.0"
     env = manager.build_env_vars(tmp_path / "env")
@@ -139,3 +197,42 @@ def test_empty_packages_probes_and_environment_variables(tmp_path, monkeypatch):
         call(["node", "--version"], text=True),
         call(["node", "-p", "process.execPath"], text=True),
     ]
+
+
+@pytest.mark.anyio
+async def test_concurrent_environment_requests_install_once(tmp_path, monkeypatch):
+    manager = NodeEnvironmentManager(tmp_path)
+    monkeypatch.setattr(manager, "_node_version", lambda: "v22")
+
+    class BlockingLauncher(FakeProcessLauncher):
+        def __init__(self):
+            super().__init__()
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def launch(self, command, **kwargs):
+            self.calls.append((command, kwargs))
+            building_root = Path(kwargs["cwd"])
+            (building_root / "node_modules" / ".bin").mkdir(parents=True)
+            self.started.set()
+            await self.release.wait()
+            return ProcessLaunchResult(exit_code=0)
+
+    launcher = BlockingLauncher()
+    kwargs = {
+        "packages": ["pkg"],
+        "runtime_profile": "standard",
+        "process_launcher": launcher,
+        "network_proxy": FakeNetworkProxy(),
+    }
+    first = asyncio.create_task(manager.ensure_environment(**kwargs))
+    await launcher.started.wait()
+    second = asyncio.create_task(manager.ensure_environment(**kwargs))
+    await asyncio.sleep(0)
+    launcher.release.set()
+
+    results = await asyncio.gather(first, second)
+
+    assert results[0][1] is False
+    assert results[1][1] is True
+    assert len(launcher.calls) == 1

@@ -7,8 +7,16 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from app.core.config import settings
+from app.core.sandbox_network_policy import normalize_sandbox_package_source
+from app.services.sandbox.egress_proxy import SandboxEgressProxy
+from app.services.sandbox.process_launcher import SandboxProcessLauncher
 
-from .cache import acquire_cache_lock, build_cache_key, normalize_package_source_url
+from .cache import (
+    acquire_async_cache_lock,
+    build_cache_key,
+    normalize_package_source_url,
+)
 
 
 class NodeEnvironmentManager:
@@ -34,17 +42,24 @@ class NodeEnvironmentManager:
             normalized_registry_url,
         )
 
-    def ensure_environment(
+    async def ensure_environment(
         self,
         *,
         packages: list[str],
         runtime_profile: str,
+        process_launcher: SandboxProcessLauncher,
+        network_proxy: SandboxEgressProxy,
         registry_url: str | None = None,
     ) -> tuple[Path | None, bool]:
         if not packages:
             return None, False
 
         normalized_registry_url = normalize_package_source_url(registry_url)
+        if normalized_registry_url is not None:
+            normalized_registry_url = normalize_sandbox_package_source(
+                normalized_registry_url,
+                tuple(network_proxy.allowed_hosts),
+            )
         node_version = self._node_version()
         env_key = self.build_env_key(
             node_version,
@@ -58,7 +73,7 @@ class NodeEnvironmentManager:
         if ready_flag.exists() and node_modules_bin.exists():
             return env_root, True
 
-        with acquire_cache_lock("node-env", env_key):
+        async with acquire_async_cache_lock("node-env", env_key):
             if ready_flag.exists() and node_modules_bin.exists():
                 return env_root, True
 
@@ -83,10 +98,41 @@ class NodeEnvironmentManager:
                 encoding="utf-8",
             )
             try:
-                npm_cmd = ["npm", "install", "--ignore-scripts"]
+                npm_binary = shutil.which("npm") or "npm"
+                npm_cmd = [npm_binary, "install", "--ignore-scripts"]
                 if normalized_registry_url:
                     npm_cmd.extend(["--registry", normalized_registry_url])
-                subprocess.run(npm_cmd, cwd=building_root, check=True)
+                tmp_dir = building_root / "tmp"
+                tmp_dir.mkdir()
+                npm_bin_dir = str(Path(npm_binary).parent)
+                node_binary = shutil.which("node")
+                node_bin_dir = (
+                    str(Path(node_binary).parent) if node_binary else "/usr/bin"
+                )
+                path_entries = dict.fromkeys(
+                    [npm_bin_dir, node_bin_dir, "/usr/bin", "/bin"]
+                )
+                result = await process_launcher.launch(
+                    npm_cmd,
+                    cwd=str(building_root),
+                    env={
+                        "HOME": str(building_root),
+                        "TMPDIR": str(tmp_dir),
+                        "LANG": "C.UTF-8",
+                        "LC_ALL": "C.UTF-8",
+                        "PATH": os.pathsep.join(path_entries),
+                    },
+                    timeout_seconds=settings.SANDBOX_PACKAGE_INSTALL_TIMEOUT_SECONDS,
+                    workspace_root=str(building_root),
+                    network_proxy=network_proxy,
+                )
+                if result.exit_code != 0:
+                    raise subprocess.CalledProcessError(
+                        result.exit_code,
+                        npm_cmd,
+                        output=result.stdout,
+                        stderr=result.stderr,
+                    )
 
                 if env_root.exists():
                     shutil.rmtree(env_root, ignore_errors=True)

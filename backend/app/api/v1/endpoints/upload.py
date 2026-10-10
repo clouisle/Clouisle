@@ -19,7 +19,8 @@ from app.api import deps
 from app.core.config import settings
 from app.core.i18n import t
 from app.models.api_key import APIKey
-from app.models.asset import AssetSource
+from app.models.asset import Asset, AssetScopeRef, AssetSource
+
 from app.models.user import User
 from app.schemas.response import Response, ResponseCode, BusinessError, success
 from app.services.file_parser import (
@@ -557,7 +558,13 @@ async def get_file(
     month = _validate_path_segment(month, "month")
     filename = _validate_path_segment(filename, "filename")
     storage_key = f"{category}/{year}/{month}/{filename}"
-    if category in PROTECTED_FILE_CATEGORIES:
+    is_protected = category in PROTECTED_FILE_CATEGORIES
+    if not is_protected:
+        asset = await Asset.filter(storage_key=storage_key).first()
+        is_protected = bool(
+            asset and await AssetScopeRef.filter(asset_id=asset.id).exists()
+        )
+    if is_protected:
         await authorize_protected_asset(storage_key, authenticated=authenticated)
     storage = await _upload_storage()
 

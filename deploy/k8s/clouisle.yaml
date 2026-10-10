@@ -34,6 +34,9 @@ data:
   API_INTERNAL_BASE_URL: "http://api:8000"
   SANDBOX_ARTIFACT_UPLOAD_BASE_URL: "http://api:8000"
   SANDBOX_WORKER_CONCURRENCY: "1"
+  # Shared virtual paths; only sandbox-worker mounts physical node-local data.
+  SANDBOX_WORKSPACE_ROOT: "/var/lib/clouisle/sandbox/jobs"
+  SANDBOX_CHECKPOINT_ROOT: "/var/lib/clouisle/sandbox/checkpoints"
   SANDBOX_FILESYSTEM_ISOLATION_ENABLED: "true"
   SANDBOX_FILESYSTEM_ISOLATION_BINARY: "/usr/bin/bwrap"
   FRONTEND_URL: "http://frontend:3000"
@@ -544,16 +547,15 @@ spec:
                 path: internal-api-token
 
 # ===========================================================================
-# 10. Sandbox Worker — Deployment (no Service)
+# 10. Sandbox Worker — DaemonSet (one isolated local disk per eligible node)
 # ===========================================================================
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: DaemonSet
 metadata:
   name: sandbox-worker
   namespace: clouisle
 spec:
-  replicas: 1
   selector:
     matchLabels:
       app: sandbox-worker
@@ -562,6 +564,8 @@ spec:
       labels:
         app: sandbox-worker
     spec:
+      terminationGracePeriodSeconds: 35
+      # Set nodeSelector here to restrict sandbox capacity to labeled nodes.
       initContainers:
         - name: wait-for-postgres
           image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1
@@ -602,7 +606,7 @@ spec:
           command:
             - sh
             - -c
-            - python main.py sandbox-worker -c "${SANDBOX_WORKER_CONCURRENCY:-1}"
+            - exec python main.py sandbox-worker -c "${SANDBOX_WORKER_CONCURRENCY:-1}"
           envFrom:
             - configMapRef:
                 name: clouisle-config
@@ -613,21 +617,30 @@ spec:
               value: "remote"
             - name: INTERNAL_API_TOKEN_FILE
               value: /var/run/secrets/clouisle/internal-api-token
+            - name: SANDBOX_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: SANDBOX_WORKER_ID
+              value: ""
           volumeMounts:
             - name: internal-api-token
               mountPath: /var/run/secrets/clouisle
               readOnly: true
+            - name: sandbox-data
+              mountPath: /var/lib/clouisle/sandbox
           securityContext:
-            # bwrap must create user/mount namespaces. The image USER is a
-            # non-root account whose effective caps are always empty, so the
-            # worker runs as root (runAsUser 0 overrides the image USER) and
-            # adds CAP_SYS_ADMIN on top of the runtime default cap set. The
-            # task payload still executes inside a fresh Bubblewrap user+mount
-            # namespace.
+            # Bubblewrap needs SYS_ADMIN and SETFCAP for namespaces; NET_ADMIN
+            # lets the trusted proxy bridge enable isolated loopback, then
+            # drop all task capabilities before payload execution.
             allowPrivilegeEscalation: false
             capabilities:
+              drop:
+                - ALL
               add:
                 - SYS_ADMIN
+                - SETFCAP
+                - NET_ADMIN
             runAsUser: 0
             seccompProfile:
               type: Unconfined
@@ -639,6 +652,10 @@ spec:
               cpu: "2"
               memory: 2Gi
       volumes:
+        - name: sandbox-data
+          hostPath:
+            path: /var/lib/clouisle/clouisle/sandbox
+            type: DirectoryOrCreate
         - name: internal-api-token
           secret:
             secretName: clouisle-secret

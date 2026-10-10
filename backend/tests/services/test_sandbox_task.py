@@ -1,140 +1,106 @@
 import asyncio
-from unittest.mock import AsyncMock, patch
+import sys
+import time
+from uuid import uuid4
 
-import pytest
-
-from app.tasks.sandbox import (
-    _get_worker_loop,
-    cleanup_expired_sandbox_sessions_task,
-    run_sandbox_job_task,
-)
+from app.services.sandbox.models import SandboxJob, SandboxTaskStatus
+from app.tasks import sandbox as tasks
 
 
-class DummyResult:
-    job_id = "job-123"
-    status = "completed"
-    success = True
-    result = {"large": "payload"}
-    stdout = "logs"
-    stderr = ""
-    artifacts = [{"path": "/workspace/output.txt"}]
-
-
-class DummyManager:
-    def __init__(self):
-        self.execute_args = None
-
-    async def execute(self, job, **kwargs):
-        self.execute_args = (job, kwargs)
-        return DummyResult()
-
-
-def test_run_sandbox_job_task_returns_lightweight_ack():
-    payload = {
-        "job_id": "job-123",
-        "source": "debug",
-        "command": ["python3", "-c", "print('ok')"],
-    }
-
-    with patch("app.tasks.sandbox.SandboxManager", return_value=DummyManager()):
-        result = run_sandbox_job_task.run(payload)
-
+def test_run_sandbox_job_task_returns_lightweight_real_execution_ack(sandbox_runtime):
+    r = sandbox_runtime
+    job = SandboxJob(
+        command=[sys.executable, "-c", "print('ok')"], deadline_at=time.time() + 5
+    )
+    payload = job.model_dump(mode="json")
+    r.run(r.results.create_queued_result(job.job_id, deadline_at=job.deadline_at))
+    result = tasks.run_sandbox_job_task.run(payload)
     assert result == {
-        "job_id": "job-123",
-        "status": "completed",
+        "job_id": job.job_id,
+        "status": SandboxTaskStatus.COMPLETED,
         "success": True,
     }
-    assert payload == {
-        "job_id": "job-123",
-        "source": "debug",
-        "command": ["python3", "-c", "print('ok')"],
-    }
+    assert r.run(r.results.get_result(job.job_id)).result == "ok"
+    assert "stdout" not in result and "artifacts" not in result
+    assert [event["action"] for event in r.audit_events] == [
+        "sandbox_task_started",
+        "sandbox_task_completed",
+    ]
+    assert all(event["resource_type"] == "sandbox_task" for event in r.audit_events)
+    assert all(
+        set(event["metadata"])
+        == {"job_id", "session_id", "source", "worker_id", "error_code", "duration_ms"}
+        for event in r.audit_events
+    )
+    assert "print('ok')" not in repr(r.audit_events)
+    assert payload == job.model_dump(mode="json")
+    duplicate = tasks.run_sandbox_job_task.run(payload)
+    assert duplicate["success"]
+    assert [event["action"] for event in r.audit_events] == [
+        "sandbox_task_started",
+        "sandbox_task_completed",
+    ]
 
 
-def test_run_sandbox_job_task_marks_result_failed_on_exception():
-    payload = {
-        "job_id": "job-456",
-        "source": "debug",
-        "command": ["python3", "-c", "print('ok')"],
-    }
+def test_session_task_audit_attributes_actor_and_team(sandbox_runtime):
+    r = sandbox_runtime
+    user_id, team_id = str(uuid4()), str(uuid4())
+    r.bind_session(user_id=user_id, team_id=team_id)
+    job = SandboxJob(command=[sys.executable, "-c", "print('session task')"])
+    payload = r.submit_payload(job, team_id=team_id)
 
-    class FailingManager:
-        async def execute(self, job, **kwargs):
-            raise RuntimeError("boom")
+    tasks.run_sandbox_job_task.run(payload)
 
-    with (
-        patch("app.tasks.sandbox.SandboxManager", return_value=FailingManager()),
-        patch(
-            "app.tasks.sandbox.sandbox_result_store.get_result",
-            new=AsyncMock(return_value=None),
-        ) as mock_get,
-        patch(
-            "app.tasks.sandbox.sandbox_result_store.update_status", new=AsyncMock()
-        ) as mock_update,
-    ):
-        with pytest.raises(RuntimeError, match="boom"):
-            run_sandbox_job_task.run(payload)
-
-    mock_get.assert_awaited_once_with("job-456")
-    mock_update.assert_awaited_once()
-    args, kwargs = mock_update.await_args
-    assert args[0] == "job-456"
-    assert args[1] == "failed"
-    assert kwargs["error"] == "boom"
+    events = [
+        event for event in r.audit_events if event["metadata"]["job_id"] == job.job_id
+    ]
+    assert [event["action"] for event in events] == [
+        "sandbox_task_started",
+        "sandbox_task_completed",
+    ]
+    assert all(str(event["user_id"]) == user_id for event in events)
+    assert all(str(event["team_id"]) == team_id for event in events)
 
 
-def test_run_sandbox_job_task_forwards_and_removes_session_context():
-    payload = {
-        "job_id": "job-session",
-        "source": "debug",
-        "command": ["python3", "-c", "print('ok')"],
-        "session_id": "session-123",
-        "session_agent_id": "agent-123",
-        "session_team_id": "team-123",
-    }
-    manager = DummyManager()
-
-    with patch("app.tasks.sandbox.SandboxManager", return_value=manager):
-        run_sandbox_job_task.run(payload)
-
-    assert payload == {
-        "job_id": "job-session",
-        "source": "debug",
-        "command": ["python3", "-c", "print('ok')"],
-    }
-    _, kwargs = manager.execute_args
-    assert kwargs == {
-        "session_id": "session-123",
-        "session_agent_id": "agent-123",
-        "session_team_id": "team-123",
-    }
+def test_run_sandbox_job_task_records_process_failure(sandbox_runtime):
+    r = sandbox_runtime
+    job = SandboxJob(
+        command=[
+            sys.executable,
+            "-c",
+            "import sys; sys.stderr.write('boom'); sys.exit(1)",
+        ],
+        deadline_at=time.time() + 5,
+    )
+    r.run(r.results.create_queued_result(job.job_id, deadline_at=job.deadline_at))
+    ack = tasks.run_sandbox_job_task.run(job.model_dump(mode="json"))
+    assert not ack["success"]
+    result = r.run(r.results.get_result(job.job_id))
+    assert result.status == SandboxTaskStatus.FAILED
+    assert result.stderr == "boom"
+    assert result.metadata.completed_at is not None
+    assert [event["action"] for event in r.audit_events] == [
+        "sandbox_task_started",
+        "sandbox_task_failed",
+    ]
+    assert r.audit_events[-1]["status"] == "failed"
+    assert "boom" not in repr(r.audit_events)
 
 
-def test_cleanup_expired_sandbox_sessions_task_returns_cleaned_count():
-    with patch(
-        "app.tasks.sandbox.sandbox_gateway.cleanup_expired_sessions",
-        new=AsyncMock(return_value=2),
-    ) as mock_cleanup:
-        result = cleanup_expired_sandbox_sessions_task.run()
-
-    assert result == {"cleaned": 2}
-    mock_cleanup.assert_awaited_once()
-
-
-def test_cleanup_expired_sandbox_sessions_task_reraises_errors():
-    with patch(
-        "app.tasks.sandbox.sandbox_gateway.cleanup_expired_sessions",
-        new=AsyncMock(side_effect=RuntimeError("cleanup failed")),
-    ):
-        with pytest.raises(RuntimeError, match="cleanup failed"):
-            cleanup_expired_sandbox_sessions_task.run()
+def test_old_message_without_absolute_deadline_cannot_execute(sandbox_runtime):
+    r = sandbox_runtime
+    job = SandboxJob(command=[sys.executable, "-c", "print('must not run')"])
+    ack = tasks.run_sandbox_job_task.run(job.model_dump(mode="json"))
+    assert not ack["success"]
+    assert r.run(r.results.get_result(job.job_id)).error_code == "DEADLINE_EXCEEDED"
+    assert [event["action"] for event in r.audit_events] == ["sandbox_task_failed"]
 
 
 def test_get_worker_loop_reuses_current_event_loop():
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
-        assert _get_worker_loop() is loop
+        assert tasks._get_worker_loop() is loop
     finally:
         loop.close()
         asyncio.set_event_loop(None)
@@ -143,11 +109,12 @@ def test_get_worker_loop_reuses_current_event_loop():
 def test_get_worker_loop_replaces_closed_event_loop():
     closed_loop = asyncio.new_event_loop()
     closed_loop.close()
+    loop = None
     try:
         asyncio.set_event_loop(closed_loop)
-        loop = _get_worker_loop()
-        assert loop is not closed_loop
-        assert not loop.is_closed()
+        loop = tasks._get_worker_loop()
+        assert loop is not closed_loop and not loop.is_closed()
     finally:
-        loop.close()
+        if loop is not None:
+            loop.close()
         asyncio.set_event_loop(None)

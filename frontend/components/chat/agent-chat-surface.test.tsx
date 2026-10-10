@@ -2,7 +2,8 @@
 import { describe, expect, mock, test } from 'bun:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { ChatMessage } from './types'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
+import type { ChatMessage, ChatPreviewPayload } from './types'
 
 const chatContainerProps: Array<Record<string, unknown>> = []
 const chatInputProps: Array<Record<string, unknown>> = []
@@ -53,11 +54,20 @@ mock.module('./variable-form', () => ({
   },
 }))
 
+mock.module('./code-preview-canvas', () => ({
+  CodePreviewCanvas: ({ preview, onClose }: { preview: ChatPreviewPayload; onClose: () => void }) => (
+    <div data-preview-id={preview.id}>
+      <button type="button" data-preview-close onClick={onClose}>close preview</button>
+    </div>
+  ),
+}))
+
 const { AgentChatEmptyState, AgentChatSurface } = await import('./agent-chat-surface')
 
 const messages: ChatMessage[] = [{ id: 'assistant-1', role: 'assistant', parts: [] }]
 const onSubmit = mock(() => Promise.resolve())
 const onVariablesChange = mock(() => {})
+const onVariableAssetIdsChange = mock(() => {})
 
 function renderSurface(overrides: Record<string, unknown> = {}) {
   chatContainerProps.length = 0
@@ -73,6 +83,7 @@ function renderSurface(overrides: Record<string, unknown> = {}) {
       variables={[{ name: 'query', type: 'string', required: true, hidden: false }] as never}
       variableValues={{ query: 'value' }}
       onVariablesChange={onVariablesChange}
+      onVariableAssetIdsChange={onVariableAssetIdsChange}
       {...overrides}
     />,
   )
@@ -87,6 +98,9 @@ describe('AgentChatSurface', () => {
     expect(chatInputProps[0].value).toBe('draft')
     expect(chatInputProps[0].onSubmit).toBe(onSubmit)
     expect(variableFormProps[0].onChange).toBe(onVariablesChange)
+    expect(variableFormProps[0].onAssetIdsChange).toBe(onVariableAssetIdsChange)
+    ;(variableFormProps[0].onAssetIdsChange as (name: string, ids: string[]) => void)('documents', ['asset-one'])
+    expect(onVariableAssetIdsChange).toHaveBeenCalledWith('documents', ['asset-one'])
     expect(html).toContain('max-w-3xl')
     expect(html).toContain('w-full')
     expect(html).toContain('w-[70%]')
@@ -109,6 +123,37 @@ describe('AgentChatSurface', () => {
     })
     expect(variableFormProps).toHaveLength(0)
   })
+  test('opens and closes a requested code preview', async () => {
+    const onOpenCodePreview = mock(() => {})
+    const preview: ChatPreviewPayload = { id: 'preview-1', kind: 'html', language: 'html', code: '<h1>Preview</h1>' }
+    let renderer!: ReactTestRenderer
+    chatContainerProps.length = 0
+
+    await act(async () => {
+      renderer = create(
+        <AgentChatSurface
+          messages={messages}
+          inputValue="draft"
+          onInputChange={mock(() => {})}
+          onSubmit={onSubmit}
+          onOpenCodePreview={onOpenCodePreview}
+        />,
+      )
+    })
+
+    await act(async () => {
+      ;(chatContainerProps[0].onOpenCodePreview as (value: ChatPreviewPayload) => void)(preview)
+      const { promise, resolve } = Promise.withResolvers<void>()
+      setTimeout(resolve, 50)
+      await promise
+    })
+
+    expect(onOpenCodePreview).toHaveBeenCalledWith(preview)
+    expect(renderer.root.findByProps({ 'data-preview-id': preview.id })).toBeDefined()
+    await act(() => renderer.root.findByProps({ 'data-preview-close': true }).props.onClick())
+    expect(renderer.root.findAllByProps({ 'data-preview-id': preview.id })).toHaveLength(0)
+    await act(() => renderer.unmount())
+  })
 })
 
 describe('AgentChatEmptyState', () => {
@@ -129,5 +174,26 @@ describe('AgentChatEmptyState', () => {
     expect(html).toContain('Welcome')
     expect(html).toContain('Four')
     expect(html).not.toContain('Five')
+  })
+  test('invokes the selected suggested question', async () => {
+    const onSuggestedQuestion = mock(() => {})
+    let renderer!: ReactTestRenderer
+
+    await act(async () => {
+      renderer = create(
+        <AgentChatEmptyState
+          agentName="Support"
+          icon="/agent.png"
+          openingMessage="Welcome"
+          fallbackMessage="Fallback"
+          suggestedQuestions={['One']}
+          onSuggestedQuestion={onSuggestedQuestion}
+        />,
+      )
+    })
+    await act(() => renderer.root.findByType('button').props.onClick())
+
+    expect(onSuggestedQuestion).toHaveBeenCalledWith('One')
+    await act(() => renderer.unmount())
   })
 })

@@ -6,7 +6,7 @@ import { useChat } from './use-chat'
 import { useWorkflowRun } from './use-workflow-run'
 import type { ChatMessage, ExecutionNode, ExecutionState } from '@/components/chat/types'
 import type { ChatImageContent, ChatFileUrl } from '@/lib/api'
-import type { AgentRunAnswerPayload, AgentRunStatus } from '@/lib/api/agents'
+import type { AgentRunAnswerPayload, AgentRunStatus, WorkflowAssetRef } from '@/lib/api/agents'
 
 export type RunType = 'agent' | 'workflow'
 
@@ -37,7 +37,9 @@ export interface UseRunReturn {
   sendMessage: (
     text: string,
     images?: ChatImageContent[],
-    files?: ChatFileUrl[]
+    files?: ChatFileUrl[],
+    variableAssetIds?: string[],
+    workflowAssetRefs?: WorkflowAssetRef[]
   ) => Promise<void>
   start?: (inputs: Record<string, unknown>) => Promise<void>
   stop: () => void

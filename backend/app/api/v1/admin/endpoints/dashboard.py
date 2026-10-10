@@ -5,10 +5,12 @@ Provides system-wide statistics and metrics.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from typing import Any
+import re
+from datetime import date, datetime, timedelta
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from tortoise import Tortoise
 from tortoise.functions import Count, Sum, Avg
 
 from app.api.deps import PermissionChecker
@@ -22,6 +24,115 @@ from app.models.knowledge_base import KnowledgeBase
 from app.schemas.response import Response, success
 
 router = APIRouter()
+
+
+def _time_bounds(
+    time_range: str, start_time: str | None, end_time: str | None
+) -> tuple[datetime | None, datetime | None]:
+    """Resolve inclusive UTC bounds without discarding timestamp precision."""
+    if time_range == "custom":
+        if not start_time or not end_time:
+            raise HTTPException(422, "Custom ranges require start_time and end_time")
+        bounds = []
+        for value in (start_time, end_time):
+            fraction = re.search(r"[.,](\d+)", value)
+            if fraction and len(fraction.group(1)) > 6:
+                raise HTTPException(
+                    422, "Timestamps support at most six fractional digits"
+                )
+            try:
+                bound = datetime.fromisoformat(value)
+            except ValueError as exc:
+                raise HTTPException(422, "Invalid ISO timestamp") from exc
+            if bound.tzinfo is None or bound.utcoffset() is None:
+                raise HTTPException(422, "Timestamps must include a timezone")
+            bounds.append(to_utc(bound))
+        if bounds[0] >= bounds[1]:
+            raise HTTPException(422, "start_time must precede end_time")
+        return bounds[0], bounds[1]
+    if start_time is not None or end_time is not None:
+        raise HTTPException(422, "Explicit bounds require a custom range")
+    if time_range == "all":
+        return None, None
+    days = {"7d": 7, "30d": 30, "90d": 90}.get(time_range, 30)
+    end = now()
+    return to_utc(end - timedelta(days=days)), to_utc(end)
+
+
+async def _bounded_usage_rankings(
+    owner: str,
+    start_time: datetime,
+    end_time: datetime,
+    metric: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Rank the bounded-period usage in SQL, including zero-usage owners."""
+    if owner == "agent":
+        owner_id = "c.agent_id"
+        owner_join = ""
+        owner_table = "agents"
+        owner_joins = "LEFT JOIN teams owner_team ON owner_team.id = entity.team_id"
+        owner_filter = ""
+    elif owner == "team":
+        owner_id = "a.team_id"
+        owner_join = "JOIN agents a ON a.id = c.agent_id"
+        owner_table = "teams"
+        owner_joins = ""
+        owner_filter = "WHERE entity.is_deleted = FALSE"
+    else:
+        raise ValueError("Unsupported usage owner")
+
+    owner_fields = (
+        ", entity.icon AS icon, owner_team.name AS team_name"
+        if owner == "agent"
+        else ""
+    )
+    rows = await Tortoise.get_connection("default").execute_query_dict(
+        f"""
+        WITH usage AS (
+            SELECT owner_id,
+                   SUM(conversation_count) AS conversation_count,
+                   SUM(message_count) AS message_count,
+                   SUM(total_tokens) AS total_tokens
+            FROM (
+                SELECT {owner_id} AS owner_id, COUNT(*) AS conversation_count,
+                       0 AS message_count, 0 AS total_tokens
+                FROM conversations c {owner_join}
+                WHERE c.created_at >= $1 AND c.created_at <= $2
+                  AND {owner_id} IS NOT NULL
+                GROUP BY {owner_id}
+                UNION ALL
+                SELECT {owner_id} AS owner_id, 0 AS conversation_count,
+                       COUNT(*) AS message_count,
+                       COALESCE(SUM(
+                           CASE WHEN jsonb_typeof(m.token_usage -> 'prompt') = 'number'
+                                THEN (m.token_usage ->> 'prompt')::bigint ELSE 0 END
+                           + CASE WHEN jsonb_typeof(m.token_usage -> 'completion') = 'number'
+                                  THEN (m.token_usage ->> 'completion')::bigint ELSE 0 END
+                       ), 0) AS total_tokens
+                FROM messages m JOIN conversations c ON c.id = m.conversation_id
+                {owner_join}
+                WHERE m.created_at >= $1 AND m.created_at <= $2
+                  AND {owner_id} IS NOT NULL
+                GROUP BY {owner_id}
+            ) event_usage
+            GROUP BY owner_id
+        )
+        SELECT entity.id AS owner_id,
+               entity.name AS name,
+               COALESCE(usage.conversation_count, 0) AS conversation_count,
+               COALESCE(usage.message_count, 0) AS message_count,
+               COALESCE(usage.total_tokens, 0) AS total_tokens{owner_fields}
+        FROM {owner_table} entity
+        {owner_joins}
+        LEFT JOIN usage ON usage.owner_id = entity.id
+        {owner_filter}
+        ORDER BY COALESCE(usage.{metric}, 0) DESC
+        LIMIT $3
+        """,
+        [start_time, end_time, limit],
+    )
+    return rows
 
 
 @router.get("/stats", response_model=Response[dict])
@@ -115,8 +226,10 @@ async def get_dashboard_stats(
 
 @router.get("/stats/trends", response_model=Response[dict])
 async def get_dashboard_trends(
-    period: str = Query("30d", description="Time period: 7d, 30d"),
+    period: str = Query("30d", description="Time period: 7d, 30d, 90d, all, custom"),
     current_user: User = Depends(PermissionChecker("admin:dashboard:access")),
+    start_time: Annotated[str | None, Query()] = None,
+    end_time: Annotated[str | None, Query()] = None,
 ) -> Any:
     """
     Get system-wide trends for dashboard charts (requires dashboard:access permission).
@@ -128,81 +241,94 @@ async def get_dashboard_trends(
     - Messages
     - Token usage
     """
+    start, end = _time_bounds(period, start_time, end_time)
     now_local = now()
-
-    # Determine time range
-    if period == "7d":
-        start_time = now_local - timedelta(days=7)
-        num_points = 7
-    else:  # Default to 30d
-        start_time = now_local - timedelta(days=30)
-        num_points = 30
-
-    start_time_utc = to_utc(start_time)
-
-    # Get all data in the period
-    users = await User.filter(created_at__gte=start_time_utc).values("created_at")
-    conversations = await Conversation.filter(created_at__gte=start_time_utc).values(
-        "created_at", "user_id"
+    if period != "custom" and start is not None:
+        days = {"7d": 7, "30d": 30, "90d": 90}.get(period, 30)
+        first_date = now_local.date() - timedelta(days=days - 1)
+        start = to_utc(
+            datetime.combine(first_date, datetime.min.time(), now_local.tzinfo)
+        )
+    end = end or to_utc(now_local)
+    timezone_name = getattr(now_local.tzinfo, "key", "UTC")
+    rows = await Tortoise.get_connection("default").execute_query_dict(
+        """
+        SELECT day,
+               SUM(new_users) AS new_users,
+               SUM(active_users) AS active_users,
+               SUM(new_conversations) AS new_conversations,
+               SUM(messages) AS messages,
+               SUM(tokens) AS tokens
+        FROM (
+            SELECT DATE(timezone($1, u.created_at)) AS day,
+                   COUNT(*) AS new_users, 0 AS active_users,
+                   0 AS new_conversations, 0 AS messages, 0 AS tokens
+            FROM users u
+            WHERE ($2 IS NULL OR u.created_at >= $2) AND u.created_at <= $3
+            GROUP BY DATE(timezone($1, u.created_at))
+            UNION ALL
+            SELECT DATE(timezone($1, c.created_at)) AS day,
+                   0 AS new_users, COUNT(DISTINCT c.user_id) AS active_users,
+                   COUNT(*) AS new_conversations, 0 AS messages, 0 AS tokens
+            FROM conversations c
+            WHERE ($2 IS NULL OR c.created_at >= $2) AND c.created_at <= $3
+            GROUP BY DATE(timezone($1, c.created_at))
+            UNION ALL
+            SELECT DATE(timezone($1, m.created_at)) AS day,
+                   0 AS new_users, 0 AS active_users,
+                   0 AS new_conversations, COUNT(*) AS messages,
+                   COALESCE(SUM(
+                       CASE WHEN jsonb_typeof(m.token_usage -> 'prompt') = 'number'
+                            THEN (m.token_usage ->> 'prompt')::bigint ELSE 0 END
+                       + CASE WHEN jsonb_typeof(m.token_usage -> 'completion') = 'number'
+                              THEN (m.token_usage ->> 'completion')::bigint ELSE 0 END
+                   ), 0) AS tokens
+            FROM messages m
+            WHERE ($2 IS NULL OR m.created_at >= $2) AND m.created_at <= $3
+            GROUP BY DATE(timezone($1, m.created_at))
+        ) daily_events
+        GROUP BY day
+        ORDER BY day
+        """,
+        [timezone_name, start, end],
     )
-    messages = await Message.filter(created_at__gte=start_time_utc).values(
-        "created_at", "token_usage"
-    )
 
-    # Build time series data
+    buckets: dict[date, dict[str, int]] = {}
+    for row in rows:
+        day = row["day"]
+        if isinstance(day, datetime):
+            day = day.date()
+        elif not isinstance(day, date):
+            day = date.fromisoformat(str(day))
+        buckets[day] = {
+            key: int(row[key] or 0)
+            for key in (
+                "new_users",
+                "active_users",
+                "new_conversations",
+                "messages",
+                "tokens",
+            )
+        }
+
+    first_date = (
+        to_local(start).date() if start is not None else min(buckets, default=None)
+    )
+    last_date = to_local(end).date()
     data_points = []
-    for i in range(num_points):
-        point_date = (now_local - timedelta(days=num_points - i - 1)).date()
-        point_start = datetime.combine(point_date, datetime.min.time()).replace(
-            tzinfo=now_local.tzinfo
-        )
-        point_end = point_start + timedelta(days=1)
-
-        # New users
-        new_users = sum(
-            1 for u in users if point_start <= to_local(u["created_at"]) < point_end
-        )
-
-        # Active users (users who created conversations)
-        active_user_ids = set(
-            c["user_id"]
-            for c in conversations
-            if point_start <= to_local(c["created_at"]) < point_end and c["user_id"]
-        )
-        active_users = len(active_user_ids)
-
-        # New conversations
-        new_conversations = sum(
-            1
-            for c in conversations
-            if point_start <= to_local(c["created_at"]) < point_end
-        )
-
-        # Messages and tokens
-        msgs_in_period = [
-            m for m in messages if point_start <= to_local(m["created_at"]) < point_end
-        ]
-        msg_count = len(msgs_in_period)
-
-        tokens = 0
-        for m in msgs_in_period:
-            if m["token_usage"]:
-                tokens += m["token_usage"].get("prompt", 0) or 0
-                tokens += m["token_usage"].get("completion", 0) or 0
-
-        label = point_date.strftime("%m/%d")
-
+    while first_date is not None and first_date <= last_date:
+        bucket = buckets.get(first_date, {})
         data_points.append(
             {
-                "date": label,
-                "new_users": new_users,
-                "active_users": active_users,
-                "new_conversations": new_conversations,
-                "messages": msg_count,
-                "tokens": tokens,
+                "date": first_date.strftime("%m/%d"),
+                "new_users": bucket.get("new_users", 0),
+                "active_users": bucket.get("active_users", 0),
+                "new_conversations": bucket.get("new_conversations", 0),
+                "messages": bucket.get("messages", 0),
+                "tokens": bucket.get("tokens", 0),
             }
         )
-
+        first_date += timedelta(days=1)
     return success(
         data={
             "period": period,
@@ -218,8 +344,10 @@ async def get_top_agents(
         "conversation_count",
         description="Metric to sort by: conversation_count, message_count, total_tokens",
     ),
-    time_range: str = Query("30d", description="Time range: 7d, 30d, 90d, all"),
+    time_range: str = Query("30d", description="Time range: 7d, 30d, 90d, all, custom"),
     current_user: User = Depends(PermissionChecker("admin:dashboard:access")),
+    start_time: Annotated[str | None, Query()] = None,
+    end_time: Annotated[str | None, Query()] = None,
 ) -> Any:
     """
     Get top agents by usage metrics (requires dashboard:access permission).
@@ -236,48 +364,46 @@ async def get_top_agents(
     if metric not in valid_metrics:
         metric = "conversation_count"
 
-    # Build query
-    query = Agent.all().prefetch_related("team")
+    start, end = _time_bounds(time_range, start_time, end_time)
+    if start is not None and end is not None:
+        rows = await _bounded_usage_rankings("agent", start, end, metric, limit)
+        return success(
+            data=[
+                {
+                    "agent_id": str(row["owner_id"]),
+                    "name": row["name"],
+                    "icon": row["icon"],
+                    "value": int(row[metric] or 0),
+                    "team_name": row["team_name"] or t("unknown"),
+                }
+                for row in rows
+            ]
+        )
 
-    # Apply time range filter if not "all"
-    if time_range != "all":
-        now_local = now()
-        if time_range == "7d":
-            start_time = now_local - timedelta(days=7)
-        elif time_range == "90d":
-            start_time = now_local - timedelta(days=90)
-        else:  # Default to 30d
-            start_time = now_local - timedelta(days=30)
-
-        # Note: For cumulative fields, we can't filter by time range directly
-        # We'll use all-time data for now
-        _ = to_utc(start_time)  # Reserved for future time-based filtering
-
-    # Get agents sorted by metric
-    agents = await query.order_by(f"-{metric}").limit(limit)
-
-    # Build response
-    result = []
-    for agent in agents:
-        value = getattr(agent, metric, 0)
-        result.append(
+    agents = (
+        await Agent.all().prefetch_related("team").order_by(f"-{metric}").limit(limit)
+    )
+    return success(
+        data=[
             {
                 "agent_id": str(agent.id),
                 "name": agent.name,
                 "icon": agent.icon,
-                "value": value,
+                "value": getattr(agent, metric, 0),
                 "team_name": agent.team.name if agent.team else t("unknown"),
             }
-        )
-
-    return success(data=result)
+            for agent in agents
+        ]
+    )
 
 
 @router.get("/stats/teams/token-usage", response_model=Response[list[dict]])
 async def get_team_token_usage(
     limit: int = Query(10, ge=1, le=50, description="Number of top teams to return"),
-    time_range: str = Query("30d", description="Time range: 7d, 30d, 90d, all"),
+    time_range: str = Query("30d", description="Time range: 7d, 30d, 90d, all, custom"),
     current_user: User = Depends(PermissionChecker("admin:dashboard:access")),
+    start_time: Annotated[str | None, Query()] = None,
+    end_time: Annotated[str | None, Query()] = None,
 ) -> Any:
     """
     Get top teams by token usage (requires dashboard:access permission).
@@ -289,16 +415,25 @@ async def get_team_token_usage(
     - conversations: Total conversations
     - messages: Total messages
     """
-    # Build query
-    query = Team.filter(is_deleted=False)
+    start, end = _time_bounds(time_range, start_time, end_time)
+    if start is not None and end is not None:
+        rows = await _bounded_usage_rankings("team", start, end, "total_tokens", limit)
+        return success(
+            data=[
+                {
+                    "team_id": str(row["owner_id"]),
+                    "name": row["name"],
+                    "total_tokens": int(row["total_tokens"] or 0),
+                    "conversations": int(row["conversation_count"] or 0),
+                    "messages": int(row["message_count"] or 0),
+                }
+                for row in rows
+            ]
+        )
 
-    # Get teams sorted by total_tokens
-    teams = await query.order_by("-total_tokens").limit(limit)
-
-    # Build response
-    result = []
-    for team in teams:
-        result.append(
+    teams = await Team.filter(is_deleted=False).order_by("-total_tokens").limit(limit)
+    return success(
+        data=[
             {
                 "team_id": str(team.id),
                 "name": team.name,
@@ -306,15 +441,17 @@ async def get_team_token_usage(
                 "conversations": team.total_conversations,
                 "messages": team.total_messages,
             }
-        )
-
-    return success(data=result)
+            for team in teams
+        ]
+    )
 
 
 @router.get("/stats/models/distribution", response_model=Response[list[dict]])
 async def get_models_distribution(
-    time_range: str = Query("30d", description="Time range: 7d, 30d, 90d, all"),
+    time_range: str = Query("30d", description="Time range: 7d, 30d, 90d, all, custom"),
     current_user: User = Depends(PermissionChecker("admin:dashboard:access")),
+    start_time: Annotated[str | None, Query()] = None,
+    end_time: Annotated[str | None, Query()] = None,
 ) -> Any:
     """
     Get model usage distribution (requires dashboard:access permission).
@@ -324,26 +461,14 @@ async def get_models_distribution(
     - count: Number of tracked model requests
     - percentage: Percentage of total usage
     """
-    # Calculate time range
+    start, end = _time_bounds(time_range, start_time, end_time)
     now_local = now()
-    if time_range not in {"7d", "30d", "90d", "all"}:
+    if time_range not in {"7d", "30d", "90d", "all", "custom"}:
         time_range = "30d"
-    if time_range == "7d":
-        start_time = now_local - timedelta(days=7)
-    elif time_range == "90d":
-        start_time = now_local - timedelta(days=90)
-    elif time_range == "all":
-        start_time = None
-    else:  # Default to 30d
-        start_time = now_local - timedelta(days=30)
-
-    start_time_utc = to_utc(start_time) if start_time else None
-    if start_time_utc:
-        messages_query = Message.filter(
-            created_at__gte=start_time_utc, model_used__isnull=False
-        )
-    else:
-        messages_query = Message.filter(model_used__isnull=False)
+    filters: dict[str, Any] = {"model_used__isnull": False}
+    if start is not None:
+        filters.update(created_at__gte=start, created_at__lte=end)
+    messages_query = Message.filter(**filters)
 
     # Messages provide exact historical attribution for agent conversations.
     message_stats = (
@@ -411,8 +536,10 @@ async def get_models_distribution(
 
 @router.get("/stats/workflows/summary", response_model=Response[dict])
 async def get_workflow_summary(
-    time_range: str = Query("30d", description="Time range: 7d, 30d, 90d, all"),
+    time_range: str = Query("30d", description="Time range: 7d, 30d, 90d, all, custom"),
     current_user: User = Depends(PermissionChecker("admin:dashboard:access")),
+    start_time: Annotated[str | None, Query()] = None,
+    end_time: Annotated[str | None, Query()] = None,
 ) -> Any:
     """
     Get workflow statistics summary (requires dashboard:access permission).
@@ -425,21 +552,9 @@ async def get_workflow_summary(
     - status_distribution: Distribution by status
     - top_workflows: Top workflows by run count
     """
-    # Calculate time range
-    now_local = now()
-    if time_range == "7d":
-        start_time = now_local - timedelta(days=7)
-    elif time_range == "90d":
-        start_time = now_local - timedelta(days=90)
-    elif time_range == "all":
-        start_time = None
-    else:  # Default to 30d
-        start_time = now_local - timedelta(days=30)
-
-    # Build query
-    if start_time:
-        start_time_utc = to_utc(start_time)
-        runs_query = WorkflowRun.filter(created_at__gte=start_time_utc)
+    start, end = _time_bounds(time_range, start_time, end_time)
+    if start is not None:
+        runs_query = WorkflowRun.filter(created_at__gte=start, created_at__lte=end)
     else:
         runs_query = WorkflowRun.all()
 

@@ -242,6 +242,21 @@ export function FilePreviewPanel({
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null)
   const [textContent, setTextContent] = React.useState('')
   const [parseFailed, setParseFailed] = React.useState(false)
+  const htmlPreviewIframeRef = React.useRef<HTMLIFrameElement>(null)
+
+  React.useLayoutEffect(() => {
+    const iframe = htmlPreviewIframeRef.current
+    if (!iframe) return
+
+    if (isResizing) {
+      iframe.style.width = `${iframe.getBoundingClientRect().width}px`
+      iframe.style.maxWidth = 'none'
+    } else {
+      iframe.style.removeProperty('width')
+      iframe.style.removeProperty('max-width')
+    }
+  }, [isResizing, mode, previewUrl])
+
   const handleDocxError = React.useCallback(() => setParseFailed(true), [])
   const handlePptxError = React.useCallback(() => setParseFailed(true), [])
 
@@ -429,15 +444,16 @@ export function FilePreviewPanel({
   } else if (mode === 'pdf' && blob) {
     body = <PdfPreview blob={blob} locale={locale} onError={handleDocxError} />
   } else if (mode === 'html' && previewUrl) {
-    body = isResizing
-      ? <div data-preview-resize-placeholder className="flex h-full items-center justify-center text-sm text-muted-foreground">{resolvedLabels.loading}</div>
-      : <iframe
-        title={file.filename}
-        src={previewUrl}
-        sandbox="allow-scripts"
-        {...IFRAME_PROCESS_ISOLATION}
-        className="h-full w-full border-0 bg-white"
-      />
+    // Keep the blob-backed document mounted while resizing; remounting reloads its embedded resources.
+    body = <iframe
+      title={file.filename}
+      src={previewUrl}
+      sandbox="allow-scripts"
+      ref={htmlPreviewIframeRef}
+      {...IFRAME_PROCESS_ISOLATION}
+      className={isResizing ? 'h-full w-full border-0 bg-white pointer-events-none' : 'h-full w-full border-0 bg-white'}
+      tabIndex={isResizing ? -1 : undefined}
+    />
   } else if (mode === 'docx' && blob) {
     body = (
       <DocxPreview
