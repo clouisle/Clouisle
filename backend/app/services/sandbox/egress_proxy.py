@@ -99,11 +99,18 @@ class SandboxEgressProxy:
 
             method, target, _version = parts
             if method.upper() != "CONNECT":
-                host = urlsplit(target).hostname or "unknown"
+                try:
+                    host = urlsplit(target).hostname or "unknown"
+                except ValueError:
+                    host = "unknown"
                 await self._deny(client_writer, host, 80, "https_required")
                 return
 
-            host, port = self._parse_authority(target)
+            try:
+                host, port = self._parse_authority(target)
+            except ValueError:
+                await self._deny(client_writer, "unknown", 0, "invalid_destination")
+                return
             if port != 443:
                 await self._deny(client_writer, host, port, "port_not_allowed")
                 return

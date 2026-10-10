@@ -22,6 +22,7 @@ import { clearValidationError, getValidationSummaryEntries,
   formatValidationSummaryMessage
 } from '@/lib/validation'
 import { Upload, X, FileIcon } from 'lucide-react'
+import { AuthenticatedImage } from './authenticated-media'
 import { uploadApi } from '@/lib/api/upload'
 import { GENERAL_UPLOAD_MAX_FILE_SIZE_MB, BYTES_PER_MB } from '@/lib/constants'
 
@@ -574,7 +575,7 @@ export function FileUploadInput({ variable, value, error, onChange, onAssetIdsCh
             compact && "p-1.5 text-xs"
           )}>
             {isImage ? (
-              <img
+              <AuthenticatedImage
                 src={fileUrl}
                 alt=""
                 className={cn("rounded-md border object-cover", compact ? "h-8 w-8" : "h-12 w-12")}
@@ -637,8 +638,23 @@ export function MultiFileUploadInput({ variable, value, error, onChange, onAsset
   const maxSizeBytes = (variable.fileConfig?.maxSize || GENERAL_UPLOAD_MAX_FILE_SIZE_MB) * BYTES_PER_MB
   const maxFiles = variable.fileConfig?.maxFiles || 5
 
-  const fileUrls = Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
+  const fileUrls = React.useMemo(
+    () => Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [],
+    [value],
+  )
   const [uploadedAssets, setUploadedAssets] = React.useState<Array<{ url: string; assetId: string }>>([])
+  const currentUploadedAssets = React.useMemo(
+    () => uploadedAssets.filter((asset) => fileUrls.includes(asset.url)),
+    [uploadedAssets, fileUrls],
+  )
+
+  // Keep asset ownership references aligned when the controlled value is reset externally.
+  React.useEffect(() => {
+    if (currentUploadedAssets.length !== uploadedAssets.length) {
+      setUploadedAssets(currentUploadedAssets)
+      onAssetIdsChange?.(currentUploadedAssets.map((asset) => asset.assetId))
+    }
+  }, [fileUrls, uploadedAssets, currentUploadedAssets, onAssetIdsChange])
   const handleFiles = async (files: File[]) => {
     if (files.length === 0) return
 
@@ -670,7 +686,7 @@ export function MultiFileUploadInput({ variable, value, error, onChange, onAsset
       const results = await Promise.all(uploadPromises)
       const newUrls = results.map((result) => result.url)
       const nextAssets = [
-        ...uploadedAssets,
+        ...currentUploadedAssets,
         ...results.flatMap((result) =>
           result.asset_id ? [{ url: result.url, assetId: result.asset_id }] : [],
         ),
@@ -701,7 +717,7 @@ export function MultiFileUploadInput({ variable, value, error, onChange, onAsset
     setUploadError(null)
     const nextUrls = fileUrls.filter((_, currentIndex) => currentIndex !== index)
     const removedUrl = fileUrls[index]
-    const nextAssets = uploadedAssets.filter((asset) => asset.url !== removedUrl)
+    const nextAssets = currentUploadedAssets.filter((asset) => asset.url !== removedUrl)
     setUploadedAssets(nextAssets)
     onAssetIdsChange?.(nextAssets.map((asset) => asset.assetId))
     onChange(nextUrls.length > 0 ? nextUrls : null)
@@ -750,7 +766,7 @@ export function MultiFileUploadInput({ variable, value, error, onChange, onAsset
           <div className={cn("flex flex-wrap gap-2 pt-2", compact && "gap-1.5 pt-1.5")}>
             {fileUrls.map((url, index) => (
               <div key={index} className="relative">
-                <img
+                <AuthenticatedImage
                   src={url}
                   alt=""
                   className={cn(

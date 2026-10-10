@@ -59,57 +59,80 @@ def _time_bounds(
     return to_utc(end - timedelta(days=days)), to_utc(end)
 
 
-async def _bounded_usage(
-    owner: str, start_time: datetime, end_time: datetime
-) -> dict[str, dict[str, int]]:
-    """Aggregate event history separately to avoid multiplying joined rows."""
+async def _bounded_usage_rankings(
+    owner: str,
+    start_time: datetime,
+    end_time: datetime,
+    metric: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Rank the bounded-period usage in SQL, including zero-usage owners."""
     if owner == "agent":
         owner_id = "c.agent_id"
         owner_join = ""
+        owner_table = "agents"
+        owner_joins = "LEFT JOIN teams owner_team ON owner_team.id = entity.team_id"
+        owner_filter = ""
     elif owner == "team":
         owner_id = "a.team_id"
         owner_join = "JOIN agents a ON a.id = c.agent_id"
+        owner_table = "teams"
+        owner_joins = ""
+        owner_filter = "WHERE entity.is_deleted = FALSE"
     else:
         raise ValueError("Unsupported usage owner")
+
+    owner_fields = (
+        ", entity.icon AS icon, owner_team.name AS team_name"
+        if owner == "agent"
+        else ""
+    )
     rows = await Tortoise.get_connection("default").execute_query_dict(
         f"""
-        SELECT owner_id,
-               SUM(conversation_count) AS conversation_count,
-               SUM(message_count) AS message_count,
-               SUM(total_tokens) AS total_tokens
-        FROM (
-            SELECT {owner_id} AS owner_id, COUNT(*) AS conversation_count,
-                   0 AS message_count, 0 AS total_tokens
-            FROM conversations c {owner_join}
-            WHERE c.created_at >= $1 AND c.created_at <= $2
-              AND {owner_id} IS NOT NULL
-            GROUP BY {owner_id}
-            UNION ALL
-            SELECT {owner_id} AS owner_id, 0 AS conversation_count,
-                   COUNT(*) AS message_count,
-                   COALESCE(SUM(
-                       CASE WHEN jsonb_typeof(m.token_usage -> 'prompt') = 'number'
-                            THEN (m.token_usage ->> 'prompt')::bigint ELSE 0 END
-                       + CASE WHEN jsonb_typeof(m.token_usage -> 'completion') = 'number'
-                              THEN (m.token_usage ->> 'completion')::bigint ELSE 0 END
-                   ), 0) AS total_tokens
-            FROM messages m JOIN conversations c ON c.id = m.conversation_id
-            {owner_join}
-            WHERE m.created_at >= $1 AND m.created_at <= $2
-              AND {owner_id} IS NOT NULL
-            GROUP BY {owner_id}
-        ) usage
-        GROUP BY owner_id
+        WITH usage AS (
+            SELECT owner_id,
+                   SUM(conversation_count) AS conversation_count,
+                   SUM(message_count) AS message_count,
+                   SUM(total_tokens) AS total_tokens
+            FROM (
+                SELECT {owner_id} AS owner_id, COUNT(*) AS conversation_count,
+                       0 AS message_count, 0 AS total_tokens
+                FROM conversations c {owner_join}
+                WHERE c.created_at >= $1 AND c.created_at <= $2
+                  AND {owner_id} IS NOT NULL
+                GROUP BY {owner_id}
+                UNION ALL
+                SELECT {owner_id} AS owner_id, 0 AS conversation_count,
+                       COUNT(*) AS message_count,
+                       COALESCE(SUM(
+                           CASE WHEN jsonb_typeof(m.token_usage -> 'prompt') = 'number'
+                                THEN (m.token_usage ->> 'prompt')::bigint ELSE 0 END
+                           + CASE WHEN jsonb_typeof(m.token_usage -> 'completion') = 'number'
+                                  THEN (m.token_usage ->> 'completion')::bigint ELSE 0 END
+                       ), 0) AS total_tokens
+                FROM messages m JOIN conversations c ON c.id = m.conversation_id
+                {owner_join}
+                WHERE m.created_at >= $1 AND m.created_at <= $2
+                  AND {owner_id} IS NOT NULL
+                GROUP BY {owner_id}
+            ) event_usage
+            GROUP BY owner_id
+        )
+        SELECT entity.id AS owner_id,
+               entity.name AS name,
+               COALESCE(usage.conversation_count, 0) AS conversation_count,
+               COALESCE(usage.message_count, 0) AS message_count,
+               COALESCE(usage.total_tokens, 0) AS total_tokens{owner_fields}
+        FROM {owner_table} entity
+        {owner_joins}
+        LEFT JOIN usage ON usage.owner_id = entity.id
+        {owner_filter}
+        ORDER BY COALESCE(usage.{metric}, 0) DESC
+        LIMIT $3
         """,
-        [start_time, end_time],
+        [start_time, end_time, limit],
     )
-    return {
-        str(row["owner_id"]): {
-            key: int(row[key] or 0)
-            for key in ("conversation_count", "message_count", "total_tokens")
-        }
-        for row in rows
-    }
+    return rows
 
 
 @router.get("/stats", response_model=Response[dict])
@@ -227,43 +250,66 @@ async def get_dashboard_trends(
             datetime.combine(first_date, datetime.min.time(), now_local.tzinfo)
         )
     end = end or to_utc(now_local)
-    filters = {"created_at__lte": end}
-    if start is not None:
-        filters["created_at__gte"] = start
-    users = await User.filter(**filters).values("created_at")
-    conversations = await Conversation.filter(**filters).values("created_at", "user_id")
-    messages = await Message.filter(**filters).values("created_at", "token_usage")
+    timezone_name = getattr(now_local.tzinfo, "key", "UTC")
+    rows = await Tortoise.get_connection("default").execute_query_dict(
+        """
+        SELECT day,
+               SUM(new_users) AS new_users,
+               SUM(active_users) AS active_users,
+               SUM(new_conversations) AS new_conversations,
+               SUM(messages) AS messages,
+               SUM(tokens) AS tokens
+        FROM (
+            SELECT DATE(timezone($1, u.created_at)) AS day,
+                   COUNT(*) AS new_users, 0 AS active_users,
+                   0 AS new_conversations, 0 AS messages, 0 AS tokens
+            FROM users u
+            WHERE ($2 IS NULL OR u.created_at >= $2) AND u.created_at <= $3
+            GROUP BY DATE(timezone($1, u.created_at))
+            UNION ALL
+            SELECT DATE(timezone($1, c.created_at)) AS day,
+                   0 AS new_users, COUNT(DISTINCT c.user_id) AS active_users,
+                   COUNT(*) AS new_conversations, 0 AS messages, 0 AS tokens
+            FROM conversations c
+            WHERE ($2 IS NULL OR c.created_at >= $2) AND c.created_at <= $3
+            GROUP BY DATE(timezone($1, c.created_at))
+            UNION ALL
+            SELECT DATE(timezone($1, m.created_at)) AS day,
+                   0 AS new_users, 0 AS active_users,
+                   0 AS new_conversations, COUNT(*) AS messages,
+                   COALESCE(SUM(
+                       CASE WHEN jsonb_typeof(m.token_usage -> 'prompt') = 'number'
+                            THEN (m.token_usage ->> 'prompt')::bigint ELSE 0 END
+                       + CASE WHEN jsonb_typeof(m.token_usage -> 'completion') = 'number'
+                              THEN (m.token_usage ->> 'completion')::bigint ELSE 0 END
+                   ), 0) AS tokens
+            FROM messages m
+            WHERE ($2 IS NULL OR m.created_at >= $2) AND m.created_at <= $3
+            GROUP BY DATE(timezone($1, m.created_at))
+        ) daily_events
+        GROUP BY day
+        ORDER BY day
+        """,
+        [timezone_name, start, end],
+    )
 
-    # Bucket each event once, retaining the configured server-day labels.
-    buckets: dict[date, dict[str, Any]] = {}
-    for kind, records in (
-        ("new_users", users),
-        ("new_conversations", conversations),
-        ("messages", messages),
-    ):
-        for record in records:
-            timestamp = record["created_at"]
-            if (start is not None and timestamp < start) or timestamp > end:
-                continue
-            day = to_local(timestamp).date()
-            bucket = buckets.setdefault(
-                day,
-                {
-                    "new_users": 0,
-                    "new_conversations": 0,
-                    "messages": 0,
-                    "tokens": 0,
-                    "user_ids": set(),
-                },
+    buckets: dict[date, dict[str, int]] = {}
+    for row in rows:
+        day = row["day"]
+        if isinstance(day, datetime):
+            day = day.date()
+        elif not isinstance(day, date):
+            day = date.fromisoformat(str(day))
+        buckets[day] = {
+            key: int(row[key] or 0)
+            for key in (
+                "new_users",
+                "active_users",
+                "new_conversations",
+                "messages",
+                "tokens",
             )
-            bucket[kind] += 1
-            if kind == "new_conversations" and record["user_id"]:
-                bucket["user_ids"].add(record["user_id"])
-            elif kind == "messages":
-                usage = record["token_usage"] or {}
-                bucket["tokens"] += (usage.get("prompt", 0) or 0) + (
-                    usage.get("completion", 0) or 0
-                )
+        }
 
     first_date = (
         to_local(start).date() if start is not None else min(buckets, default=None)
@@ -276,14 +322,13 @@ async def get_dashboard_trends(
             {
                 "date": first_date.strftime("%m/%d"),
                 "new_users": bucket.get("new_users", 0),
-                "active_users": len(bucket.get("user_ids", ())),
+                "active_users": bucket.get("active_users", 0),
                 "new_conversations": bucket.get("new_conversations", 0),
                 "messages": bucket.get("messages", 0),
                 "tokens": bucket.get("tokens", 0),
             }
         )
         first_date += timedelta(days=1)
-
     return success(
         data={
             "period": period,
@@ -320,37 +365,36 @@ async def get_top_agents(
         metric = "conversation_count"
 
     start, end = _time_bounds(time_range, start_time, end_time)
-    query = Agent.all().prefetch_related("team")
-    usage = None
     if start is not None and end is not None:
-        usage = await _bounded_usage("agent", start, end)
-        agents = sorted(
-            await query,
-            key=lambda agent: usage.get(str(agent.id), {}).get(metric, 0),
-            reverse=True,
-        )[:limit]
-    else:
-        agents = await query.order_by(f"-{metric}").limit(limit)
-
-    # Build response
-    result = []
-    for agent in agents:
-        value = (
-            usage.get(str(agent.id), {}).get(metric, 0)
-            if usage is not None
-            else getattr(agent, metric, 0)
+        rows = await _bounded_usage_rankings("agent", start, end, metric, limit)
+        return success(
+            data=[
+                {
+                    "agent_id": str(row["owner_id"]),
+                    "name": row["name"],
+                    "icon": row["icon"],
+                    "value": int(row[metric] or 0),
+                    "team_name": row["team_name"] or t("unknown"),
+                }
+                for row in rows
+            ]
         )
-        result.append(
+
+    agents = (
+        await Agent.all().prefetch_related("team").order_by(f"-{metric}").limit(limit)
+    )
+    return success(
+        data=[
             {
                 "agent_id": str(agent.id),
                 "name": agent.name,
                 "icon": agent.icon,
-                "value": value,
+                "value": getattr(agent, metric, 0),
                 "team_name": agent.team.name if agent.team else t("unknown"),
             }
-        )
-
-    return success(data=result)
+            for agent in agents
+        ]
+    )
 
 
 @router.get("/stats/teams/token-usage", response_model=Response[list[dict]])
@@ -372,45 +416,34 @@ async def get_team_token_usage(
     - messages: Total messages
     """
     start, end = _time_bounds(time_range, start_time, end_time)
-    query = Team.filter(is_deleted=False)
-    usage = None
     if start is not None and end is not None:
-        usage = await _bounded_usage("team", start, end)
-        teams = sorted(
-            await query,
-            key=lambda team: usage.get(str(team.id), {}).get("total_tokens", 0),
-            reverse=True,
-        )[:limit]
-    else:
-        teams = await query.order_by("-total_tokens").limit(limit)
+        rows = await _bounded_usage_rankings("team", start, end, "total_tokens", limit)
+        return success(
+            data=[
+                {
+                    "team_id": str(row["owner_id"]),
+                    "name": row["name"],
+                    "total_tokens": int(row["total_tokens"] or 0),
+                    "conversations": int(row["conversation_count"] or 0),
+                    "messages": int(row["message_count"] or 0),
+                }
+                for row in rows
+            ]
+        )
 
-    # Build response
-    result = []
-    for team in teams:
-        team_usage = usage.get(str(team.id), {}) if usage is not None else None
-        result.append(
+    teams = await Team.filter(is_deleted=False).order_by("-total_tokens").limit(limit)
+    return success(
+        data=[
             {
                 "team_id": str(team.id),
                 "name": team.name,
-                "total_tokens": (
-                    team_usage.get("total_tokens", 0)
-                    if team_usage is not None
-                    else team.total_tokens
-                ),
-                "conversations": (
-                    team_usage.get("conversation_count", 0)
-                    if team_usage is not None
-                    else team.total_conversations
-                ),
-                "messages": (
-                    team_usage.get("message_count", 0)
-                    if team_usage is not None
-                    else team.total_messages
-                ),
+                "total_tokens": team.total_tokens,
+                "conversations": team.total_conversations,
+                "messages": team.total_messages,
             }
-        )
-
-    return success(data=result)
+            for team in teams
+        ]
+    )
 
 
 @router.get("/stats/models/distribution", response_model=Response[list[dict]])

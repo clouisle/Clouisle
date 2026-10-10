@@ -88,6 +88,8 @@ async def _failure(
         error_code = "WORKSPACE_UNAVAILABLE"
     if isinstance(exc, TimeoutError):
         error_code = "DEADLINE_EXCEEDED"
+    if error_code is not None:
+        error_code = str(getattr(error_code, "value", error_code))
     error = (
         str(exc)
         if error_code

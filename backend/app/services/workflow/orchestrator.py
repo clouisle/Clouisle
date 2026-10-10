@@ -59,8 +59,14 @@ async def _persist_observability_summary(run, workflow, status: str) -> None:
         total_tokens = max(0, int(usage.get("prompt", 0) or 0)) + max(
             0, int(usage.get("completion", 0) or 0)
         )
-        await asyncio.wait_for(
-            record_run(
+
+        async def persist_summary() -> None:
+            expected_nodes = int(run.total_nodes or 0)
+            trace_complete = False
+            if expected_nodes <= 100:
+                recorded_nodes = await NodeExecution.filter(run_id=run.id).count()
+                trace_complete = recorded_nodes == expected_nodes
+            await record_run(
                 run_id=run.id,
                 source="workflow",
                 resource_id=str(run.workflow_id) if run.workflow_id else None,
@@ -75,9 +81,10 @@ async def _persist_observability_summary(run, workflow, status: str) -> None:
                 finished_at=run.finished_at,
                 total_duration_ms=run.total_duration_ms,
                 total_tokens=total_tokens,
-            ),
-            timeout=0.15,
-        )
+                trace_complete=trace_complete,
+            )
+
+        await asyncio.wait_for(persist_summary(), timeout=0.15)
     except Exception:
         logger.debug("Workflow telemetry write dropped for %s", run.id, exc_info=True)
 

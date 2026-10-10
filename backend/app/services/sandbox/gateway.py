@@ -125,10 +125,8 @@ class SandboxGateway:
             return
         live = await sandbox_worker_registry.get(binding.worker_id)
         if binding.status != "READY" or not presence_matches(binding, live):
-            if await sandbox_session_store.get_active_round(session_id) is None:
-                await sandbox_session_store.delete(
-                    session_id, expected_binding=binding, expired_only=expired_only
-                )
+            # The owner may return with the only copy of this workspace. Keep its
+            # binding so recovery and a later cleanup can still find that data.
             return
         cleanup_sandbox_session_task.apply_async(
             args=[
@@ -160,9 +158,10 @@ class SandboxGateway:
             binding and binding.status == "READY" and presence_matches(binding, live)
         )
         active_round = await sandbox_session_store.get_active_round(session_id)
-        if not ready and active_round is None:
+
+        if binding is None and active_round is None:
             if await sandbox_session_store.delete(
-                session_id, expected_binding=binding, expired_only=True
+                session_id, expected_binding=None, expired_only=True
             ):
                 return False
 

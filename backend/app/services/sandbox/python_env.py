@@ -87,7 +87,7 @@ class PythonEnvironmentManager:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-                pip_cmd = [str(env_dir / "bin" / "pip"), "install"]
+                pip_cmd = [str(env_dir / "bin" / "python"), "-m", "pip", "install"]
                 if normalized_package_index_url:
                     pip_cmd.extend(["--index-url", normalized_package_index_url])
                 pip_cmd.extend(packages)

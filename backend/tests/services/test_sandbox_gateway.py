@@ -278,10 +278,19 @@ def test_expired_cleanup_defers_unavailable_owner_sessions(
     sandbox_runtime, monkeypatch
 ):
     r = sandbox_runtime
-    r.bind_session(session_id="expired-gone")
+    expired_gone_binding = r.bind_session(session_id="expired-gone")
     r.bind_session(session_id="expired-key")
     r.bind_session(session_id="expired-active")
     r.run(r.sessions.begin_round("expired-active", "active-round", ttl_seconds=60))
+    workspace = (
+        r.roots[expired_gone_binding.worker_id]
+        / "sessions"
+        / expired_gone_binding.workspace_id
+    )
+    workspace.mkdir(parents=True, exist_ok=True)
+    retained_file = workspace / "retained.txt"
+    retained_file.write_text("physical workspace")
+
     monkeypatch.setattr(settings, "SANDBOX_SESSION_CLEANUP_BATCH_SIZE", 3)
     now = time.time()
     r.redis.delete(r.sessions._key("expired-gone"))
@@ -297,9 +306,13 @@ def test_expired_cleanup_defers_unavailable_owner_sessions(
 
     assert r.run(r.gateway.cleanup_expired_sessions()) == 3
 
-    assert r.run(r.sessions.get_binding("expired-gone")).status == "UNAVAILABLE"
+    assert r.run(r.sessions.get_binding("expired-gone")) == expired_gone_binding
     assert r.redis.zscore(r.sessions.INDEX_KEY, "expired-gone") is None
-    assert r.redis.zscore(r.sessions.PENDING_CLEANUP_INDEX_KEY, "expired-gone") is None
+    assert (
+        r.redis.zscore(r.sessions.PENDING_CLEANUP_INDEX_KEY, "expired-gone") is not None
+    )
+    assert r.run(r.sessions.get("expired-gone")) is None
+    assert retained_file.read_text() == "physical workspace"
     for session_id in ("expired-key", "expired-active"):
         assert r.redis.zscore(r.sessions.INDEX_KEY, session_id) is None
         assert (
@@ -338,16 +351,25 @@ def test_unbound_round_finishes_without_worker_dispatch(sandbox_runtime):
     assert not r.checkpoints
 
 
-def test_cleanup_deletes_unbound_and_stale_inactive_sessions(sandbox_runtime):
+def test_cleanup_deletes_unbound_but_preserves_stale_binding_and_workspace(
+    sandbox_runtime,
+):
     r = sandbox_runtime
     r.run(r.sessions.create(session_id="unbound"))
     r.run(r.gateway.cleanup_session("unbound"))
     assert r.run(r.sessions.get("unbound")) is None
 
     binding = r.bind_session(session_id="stale")
+    workspace = r.roots[binding.worker_id] / "sessions" / binding.workspace_id
+    workspace.mkdir(parents=True, exist_ok=True)
+    retained_file = workspace / "retained.txt"
+    retained_file.write_text("physical workspace")
     r.registry.remove(r.redis, r.workers[binding.worker_id])
     r.run(r.gateway.cleanup_session("stale"))
-    assert r.run(r.sessions.get("stale")) is None
+
+    assert r.run(r.sessions.get("stale")) is not None
+    assert r.run(r.sessions.get_binding("stale")) == binding
+    assert retained_file.read_text() == "physical workspace"
     assert not r.messages
 
 

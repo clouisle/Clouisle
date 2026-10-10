@@ -138,6 +138,7 @@ def resume_workflow_task(self, run_id: str) -> dict:
 
         run_uuid = UUID(run_id)
 
+        run = None
         try:
             run = await WorkflowRun.filter(id=run_uuid).first()
             if not run:
@@ -200,17 +201,27 @@ def resume_workflow_task(self, run_id: str) -> dict:
             logger.exception(f"Workflow resume error: {e}")
             public_error = translate_public_workflow_error(e)
 
-            if run and run.status == RunStatus.RUNNING:
-                run.status = RunStatus.FAILED
-                run.error_message = public_error
-                run.finished_at = run.finished_at or datetime.now(timezone.utc)
-                await run.save()
-                workflow = (
-                    await Workflow.filter(id=run.workflow_id).first()
-                    if run.workflow_id
-                    else None
+            if run:
+                failed_at = datetime.now(timezone.utc)
+                changed = await WorkflowRun.filter(
+                    id=run_uuid,
+                    status=RunStatus.RUNNING,
+                ).update(
+                    status=RunStatus.FAILED,
+                    error_message=public_error,
+                    finished_at=failed_at,
                 )
-                await _persist_observability_summary(run, workflow, "failed")
+                if changed == 1:
+                    failed_run = await WorkflowRun.filter(id=run_uuid).first()
+                    if failed_run:
+                        workflow = (
+                            await Workflow.filter(id=failed_run.workflow_id).first()
+                            if failed_run.workflow_id
+                            else None
+                        )
+                        await _persist_observability_summary(
+                            failed_run, workflow, "failed"
+                        )
             return {"status": "error", "message": public_error}
 
     # Run the async function

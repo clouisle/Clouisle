@@ -1,6 +1,6 @@
 import json
 import sqlite3
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -157,43 +157,33 @@ async def test_dashboard_stats_summarizes_activity_and_empty_tokens(monkeypatch)
 @pytest.mark.anyio
 async def test_dashboard_trends_observes_day_boundaries_and_serializes(monkeypatch):
     monkeypatch.setattr(dashboard, "now", lambda: FIXED_NOW)
+    database = _sqlite_dashboard_database(monkeypatch)
     first_day = FIXED_NOW.date() - timedelta(days=6)
     start = datetime.combine(first_day, datetime.min.time(), tzinfo=UTC)
     next_day = start + timedelta(days=1)
-    user_id = uuid4()
-
-    user_calls = model(
-        monkeypatch,
-        "User",
-        filter_results=({"result": [{"created_at": start}, {"created_at": next_day}]},),
+    user_id = str(uuid4())
+    database.executemany(
+        "INSERT INTO users VALUES (?, ?)",
+        [(str(uuid4()), start.isoformat()), (str(uuid4()), next_day.isoformat())],
     )
-    model(
-        monkeypatch,
-        "Conversation",
-        filter_results=(
-            {
-                "result": [
-                    {"created_at": start, "user_id": user_id},
-                    {"created_at": start + timedelta(hours=1), "user_id": user_id},
-                    {"created_at": next_day, "user_id": None},
-                ]
-            },
-        ),
+    database.executemany(
+        "INSERT INTO conversations VALUES (?, ?, ?, ?)",
+        [
+            (str(uuid4()), None, start.isoformat(), user_id),
+            (str(uuid4()), None, (start + timedelta(hours=1)).isoformat(), user_id),
+            (str(uuid4()), None, next_day.isoformat(), None),
+        ],
     )
-    model(
-        monkeypatch,
-        "Message",
-        filter_results=(
-            {
-                "result": [
-                    {
-                        "created_at": start,
-                        "token_usage": {"prompt": 2, "completion": 3},
-                    },
-                    {"created_at": next_day, "token_usage": None},
-                ]
-            },
-        ),
+    database.executemany(
+        "INSERT INTO messages VALUES (?, ?, ?)",
+        [
+            (
+                str(uuid4()),
+                start.isoformat(),
+                json.dumps({"prompt": 2, "completion": 3}),
+            ),
+            (str(uuid4()), next_day.isoformat(), None),
+        ],
     )
 
     response = await dashboard.get_dashboard_trends("7d", SimpleNamespace())
@@ -218,11 +208,7 @@ async def test_dashboard_trends_observes_day_boundaries_and_serializes(monkeypat
             "tokens": 0,
         },
     ]
-    assert (
-        "model_filter",
-        (),
-        {"created_at__gte": start, "created_at__lte": FIXED_NOW},
-    ) in user_calls
+    database.close()
 
 
 @pytest.mark.anyio
@@ -445,6 +431,72 @@ async def test_workflow_summary_aggregates_and_handles_missing_workflow(monkeypa
     )
 
 
+def _sqlite_dashboard_database(monkeypatch):
+    from zoneinfo import ZoneInfo
+
+    database = sqlite3.connect(":memory:")
+    database.row_factory = sqlite3.Row
+
+    def jsonb_typeof(value):
+        if value is None:
+            return None
+        parsed = json.loads(value) if isinstance(value, str) else value
+        if type(parsed) in (int, float):
+            return "number"
+        if parsed is None:
+            return "null"
+        if isinstance(parsed, bool):
+            return "boolean"
+        return "object" if isinstance(parsed, dict) else "array"
+
+    def timezone_value(zone, value):
+        if value is None:
+            return None
+        timestamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=UTC)
+        return (
+            timestamp.astimezone(ZoneInfo(zone)).replace(tzinfo=None).isoformat(sep=" ")
+        )
+
+    database.create_function("jsonb_typeof", 1, jsonb_typeof)
+    database.create_function("timezone", 2, timezone_value)
+    database.executescript(
+        """
+        CREATE TABLE users (id TEXT, created_at TEXT);
+        CREATE TABLE agents (id TEXT, name TEXT, icon TEXT, team_id TEXT);
+        CREATE TABLE teams (
+            id TEXT, name TEXT, is_deleted BOOLEAN, total_tokens INTEGER,
+            total_conversations INTEGER, total_messages INTEGER
+        );
+        CREATE TABLE conversations (
+            id TEXT, agent_id TEXT, created_at TEXT, user_id TEXT
+        );
+        CREATE TABLE messages (conversation_id TEXT, created_at TEXT, token_usage TEXT);
+        """
+    )
+
+    class Connection:
+        async def execute_query_dict(self, sql, params):
+            for key in ("prompt", "completion"):
+                sql = sql.replace(
+                    f"(m.token_usage ->> '{key}')::bigint",
+                    f"CAST((m.token_usage ->> '{key}') AS INTEGER)",
+                )
+            values = {
+                str(index): value.isoformat() if isinstance(value, datetime) else value
+                for index, value in enumerate(params, 1)
+            }
+            return [dict(row) for row in database.execute(sql, values)]
+
+    monkeypatch.setattr(
+        dashboard.Tortoise,
+        "get_connection",
+        lambda _name: Connection(),
+    )
+    return database
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     ("endpoint", "period", "days"),
@@ -465,8 +517,7 @@ async def test_dashboard_period_filters_use_expected_boundaries(
     counter_calls = []
 
     if endpoint is dashboard.get_dashboard_trends:
-        for name in ("User", "Conversation", "Message"):
-            model(monkeypatch, name, filter_results=({"result": []},))
+        database = _sqlite_dashboard_database(monkeypatch)
     elif endpoint is dashboard.get_models_distribution:
         calls = model(monkeypatch, "Message", filter_results=({"result": []},))
         counter_calls = model(
@@ -484,6 +535,7 @@ async def test_dashboard_period_filters_use_expected_boundaries(
 
     if endpoint is dashboard.get_dashboard_trends:
         assert len(response["data"]["data"]) == 30
+        database.close()
     else:
         assert calls[0] == (
             "model_filter",
@@ -677,6 +729,7 @@ async def test_custom_consumers_clip_events_and_preserve_inclusive_microseconds(
         end + timedelta(microseconds=1),
     ]
     monkeypatch.setattr(dashboard, "now", lambda: FIXED_NOW)
+    database = _sqlite_dashboard_database(monkeypatch)
     users = [{"created_at": value} for value in timestamps]
     conversations = [
         {"created_at": value, "user_id": "same-user"} for value in timestamps
@@ -689,6 +742,28 @@ async def test_custom_consumers_clip_events_and_preserve_inclusive_microseconds(
         }
         for value, token in zip(timestamps, [999, 10, 20, 999], strict=True)
     ]
+    database.executemany(
+        "INSERT INTO users VALUES (?, ?)",
+        [(str(uuid4()), value.isoformat()) for value in timestamps],
+    )
+    database.executemany(
+        "INSERT INTO conversations VALUES (?, ?, ?, ?)",
+        [
+            (str(uuid4()), None, row["created_at"].isoformat(), row["user_id"])
+            for row in conversations
+        ],
+    )
+    database.executemany(
+        "INSERT INTO messages VALUES (?, ?, ?)",
+        [
+            (
+                str(uuid4()),
+                row["created_at"].isoformat(),
+                json.dumps(row["token_usage"]),
+            )
+            for row in messages
+        ],
+    )
     runs = [
         {
             "created_at": value,
@@ -747,6 +822,7 @@ async def test_custom_consumers_clip_events_and_preserve_inclusive_microseconds(
             "/stats/workflows/summary", params={"time_range": "custom", **bounds}
         )
     assert trends.status_code == models.status_code == workflows.status_code == 200
+    database.close()
     assert trends.json()["data"]["data"] == [
         {
             "date": "07/21",
@@ -770,20 +846,7 @@ async def test_custom_consumers_clip_events_and_preserve_inclusive_microseconds(
 
 @pytest.mark.anyio
 async def test_bounded_rankings_execute_aggregate_sql_over_event_rows(monkeypatch):
-    database = sqlite3.connect(":memory:")
-    database.row_factory = sqlite3.Row
-    database.create_function(
-        "jsonb_typeof",
-        1,
-        lambda value: (
-            "number"
-            if value is not None and isinstance(json.loads(value), (int, float))
-            else None
-        ),
-    )
-    database.executescript(
-        "CREATE TABLE agents (id TEXT, team_id TEXT); CREATE TABLE conversations (id TEXT, agent_id TEXT, created_at TEXT); CREATE TABLE messages (conversation_id TEXT, created_at TEXT, token_usage TEXT);"
-    )
+    database = _sqlite_dashboard_database(monkeypatch)
     start = FIXED_NOW.replace(hour=0)
     end = start + timedelta(days=1) - timedelta(microseconds=1)
     timestamps = [
@@ -793,15 +856,28 @@ async def test_bounded_rankings_execute_aggregate_sql_over_event_rows(monkeypatc
         end + timedelta(microseconds=1),
     ]
     database.executemany(
-        "INSERT INTO agents VALUES (?, ?)",
-        [("active", "team-active"), ("stale", "team-stale")],
+        "INSERT INTO teams VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            ("team-active", "team-active", False, 0, 0, 0),
+            ("team-stale", "team-stale", False, 0, 0, 0),
+            ("team-zero", "team-zero", False, 0, 0, 0),
+            ("team-deleted", "team-deleted", True, 0, 0, 0),
+        ],
     )
     database.executemany(
-        "INSERT INTO conversations VALUES (?, ?, ?)",
+        "INSERT INTO agents VALUES (?, ?, ?, ?)",
         [
-            ("old", "active", timestamps[0].isoformat()),
-            ("new", "active", start.isoformat()),
-            ("stale", "stale", timestamps[0].isoformat()),
+            ("active", "active", None, "team-active"),
+            ("stale", "stale", None, "team-stale"),
+            ("quiet", "quiet", None, "team-zero"),
+        ],
+    )
+    database.executemany(
+        "INSERT INTO conversations VALUES (?, ?, ?, ?)",
+        [
+            ("old", "active", timestamps[0].isoformat(), "active-user"),
+            ("new", "active", start.isoformat(), "active-user"),
+            ("stale", "stale", timestamps[0].isoformat(), "stale-user"),
         ],
     )
     database.executemany(
@@ -815,56 +891,17 @@ async def test_bounded_rankings_execute_aggregate_sql_over_event_rows(monkeypatc
             for value, token in zip(timestamps, [999, 10, 20, 999], strict=True)
         ],
     )
-
-    class Connection:
-        async def execute_query_dict(self, sql, params):
-            # SQLite's JSON operators match PostgreSQL here; only cast syntax differs.
-            for key in ("prompt", "completion"):
-                sql = sql.replace(
-                    f"(m.token_usage ->> '{key}')::bigint",
-                    f"CAST((m.token_usage ->> '{key}') AS INTEGER)",
-                )
-            return [
-                dict(row)
-                for row in database.execute(
-                    sql,
-                    {
-                        str(index): value.isoformat()
-                        for index, value in enumerate(params, 1)
-                    },
-                )
-            ]
-
     monkeypatch.setattr(
-        dashboard.Tortoise, "get_connection", lambda _name: Connection()
-    )
-    agents = [
-        SimpleNamespace(
-            id=agent_id,
-            name=agent_id,
-            icon=None,
-            team=SimpleNamespace(name=team_id),
-            conversation_count=999,
-            message_count=999,
-            total_tokens=999,
-        )
-        for agent_id, team_id in [("stale", "team-stale"), ("active", "team-active")]
-    ]
-    teams = [
-        SimpleNamespace(
-            id=team_id,
-            name=team_id,
-            total_tokens=999,
-            total_conversations=999,
-            total_messages=999,
-        )
-        for team_id in ("team-stale", "team-active")
-    ]
-    monkeypatch.setattr(
-        dashboard, "Agent", SimpleNamespace(all=lambda: Query(result=agents))
+        dashboard,
+        "Agent",
+        SimpleNamespace(all=lambda: pytest.fail("bounded ranking loaded agents")),
     )
     monkeypatch.setattr(
-        dashboard, "Team", SimpleNamespace(filter=lambda **_kwargs: Query(result=teams))
+        dashboard,
+        "Team",
+        SimpleNamespace(
+            filter=lambda **_kwargs: pytest.fail("bounded ranking loaded teams")
+        ),
     )
     monkeypatch.setattr(dashboard, "now", lambda: FIXED_NOW)
     bounds = {"start_time": start.isoformat(), "end_time": end.isoformat()}
@@ -909,7 +946,26 @@ async def test_bounded_rankings_execute_aggregate_sql_over_event_rows(monkeypatc
                     "messages": 2,
                 }
             ]
-        # The same measured-row aggregation applies to the existing bounded presets.
+            zero_agents = await client.get(
+                "/stats/agents/top",
+                params={"limit": 10, "time_range": "custom", **bounds},
+            )
+            zero_teams = await client.get(
+                "/stats/teams/token-usage",
+                params={"limit": 10, "time_range": "custom", **bounds},
+            )
+            assert len(zero_agents.json()["data"]) == 3
+            assert sorted(item["value"] for item in zero_agents.json()["data"]) == [
+                0,
+                0,
+                1,
+            ]
+            assert {item["team_id"] for item in zero_teams.json()["data"]} == {
+                "team-active",
+                "team-stale",
+                "team-zero",
+            }
+        # The same measured-row aggregation applies to the bounded presets.
         response = await dashboard.get_top_agents(
             limit=1,
             metric="total_tokens",
@@ -927,67 +983,121 @@ async def test_trends_long_ranges_span_actual_history(
     monkeypatch, period, expected_days
 ):
     monkeypatch.setattr(dashboard, "now", lambda: FIXED_NOW)
+    database = _sqlite_dashboard_database(monkeypatch)
     old = FIXED_NOW - timedelta(days=120)
-    for name, rows in (
-        ("User", [{"created_at": old}]),
-        ("Conversation", []),
-        ("Message", [{"created_at": FIXED_NOW, "token_usage": {"completion": 7}}]),
-    ):
-        monkeypatch.setattr(
-            dashboard,
-            name,
-            SimpleNamespace(
-                filter=lambda rows=rows, **filters: EventQuery(rows).filter(**filters)
-            ),
-        )
+    database.execute("INSERT INTO users VALUES (?, ?)", (str(uuid4()), old.isoformat()))
+    database.execute(
+        "INSERT INTO messages VALUES (?, ?, ?)",
+        (str(uuid4()), FIXED_NOW.isoformat(), json.dumps({"completion": 7})),
+    )
     response = await dashboard.get_dashboard_trends(period, SimpleNamespace())
     points = response["data"]["data"]
     assert len(points) == expected_days
     assert sum(point["new_users"] for point in points) == (1 if period == "all" else 0)
     assert sum(point["tokens"] for point in points) == 7
+    database.close()
 
 
 @pytest.mark.anyio
 async def test_all_trends_without_events_invents_no_history(monkeypatch):
-    for name in ("User", "Conversation", "Message"):
-        monkeypatch.setattr(
-            dashboard, name, SimpleNamespace(filter=lambda **_filters: EventQuery([]))
-        )
+    database = _sqlite_dashboard_database(monkeypatch)
     response = await dashboard.get_dashboard_trends("all", SimpleNamespace())
     assert response["data"]["data"] == []
+    database.close()
 
 
 @pytest.mark.anyio
 async def test_custom_trends_clip_partial_days_with_server_timezone_labels(monkeypatch):
     from zoneinfo import ZoneInfo
 
+    timezone = ZoneInfo("Asia/Shanghai")
+    monkeypatch.setattr(dashboard, "to_local", lambda value: value.astimezone(timezone))
     monkeypatch.setattr(
-        dashboard, "to_local", lambda value: value.astimezone(ZoneInfo("Asia/Shanghai"))
+        dashboard, "now", lambda: datetime(2026, 7, 22, 12, tzinfo=timezone)
     )
+    database = _sqlite_dashboard_database(monkeypatch)
     start = datetime(2026, 7, 21, 15, 59, 59, 999999, tzinfo=UTC)
     end = start + timedelta(microseconds=1)
-    rows = [
-        {"created_at": value, "token_usage": None}
-        for value in (
-            start - timedelta(microseconds=1),
-            start,
-            end,
-            end + timedelta(microseconds=1),
-        )
-    ]
-    for name, events in (("User", []), ("Conversation", []), ("Message", rows)):
-        monkeypatch.setattr(
-            dashboard,
-            name,
-            SimpleNamespace(
-                filter=lambda events=events, **filters: EventQuery(events).filter(
-                    **filters
-                )
-            ),
-        )
+    timestamps = (
+        start - timedelta(microseconds=1),
+        start,
+        end,
+        end + timedelta(microseconds=1),
+    )
+    database.executemany(
+        "INSERT INTO messages VALUES (?, ?, ?)",
+        [(str(uuid4()), value.isoformat(), None) for value in timestamps],
+    )
     response = await dashboard.get_dashboard_trends(
         "custom", SimpleNamespace(), start.isoformat(), end.isoformat()
     )
     assert [
         (point["date"], point["messages"]) for point in response["data"]["data"]
     ] == [("07/21", 1), ("07/22", 1)]
+    database.close()
+
+
+@pytest.mark.anyio
+async def test_bounded_rankings_reject_unsupported_owner_before_sql(monkeypatch):
+    monkeypatch.setattr(
+        dashboard.Tortoise,
+        "get_connection",
+        lambda *_args: pytest.fail("unsupported owners must not reach SQL"),
+    )
+
+    with pytest.raises(ValueError, match="Unsupported usage owner"):
+        await dashboard._bounded_usage_rankings(
+            "unsupported",
+            FIXED_NOW - timedelta(days=1),
+            FIXED_NOW,
+            "total_tokens",
+            5,
+        )
+
+
+@pytest.mark.anyio
+async def test_dashboard_trends_normalize_database_date_types(monkeypatch):
+    rows = [
+        {
+            "day": datetime(2026, 7, 21, tzinfo=UTC),
+            "new_users": 0,
+            "active_users": 0,
+            "new_conversations": 0,
+            "messages": 1,
+            "tokens": 10,
+        },
+        {
+            "day": date(2026, 7, 22),
+            "new_users": 0,
+            "active_users": 0,
+            "new_conversations": 0,
+            "messages": 2,
+            "tokens": 20,
+        },
+        {
+            "day": "2026-07-23",
+            "new_users": 0,
+            "active_users": 0,
+            "new_conversations": 0,
+            "messages": 3,
+            "tokens": 30,
+        },
+    ]
+
+    class Connection:
+        async def execute_query_dict(self, *_args):
+            return rows
+
+    monkeypatch.setattr(
+        dashboard.Tortoise, "get_connection", lambda *_args: Connection()
+    )
+    start = datetime(2026, 7, 21, tzinfo=UTC)
+    end = datetime(2026, 7, 23, 23, 59, 59, tzinfo=UTC)
+
+    response = await dashboard.get_dashboard_trends(
+        "custom", SimpleNamespace(), start.isoformat(), end.isoformat()
+    )
+
+    assert [
+        (point["date"], point["messages"]) for point in response["data"]["data"]
+    ] == [("07/21", 1), ("07/22", 2), ("07/23", 3)]

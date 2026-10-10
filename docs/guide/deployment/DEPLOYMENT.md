@@ -670,7 +670,7 @@ kubectl -n clouisle top pods
 | `QDRANT_DISTANCE` | `Cosine` | Vector distance metric |
 | `TAVILY_API_KEY` | *(empty)* | Tavily web search API key (for agent web search capability) |
 | `SANDBOX_RUNTIME_ENABLED` | `true` | Route executable tasks through the sandbox runtime. |
-| `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `true` in sandbox-worker deployments | Enable the Bubblewrap mount namespace. Generic application default is `false`. |
+| `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `true` | Enable the Bubblewrap mount namespace; the generic application default is `true`. |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `/usr/bin/bwrap` in sandbox-worker deployments | Bubblewrap executable path. Generic application default is `bwrap`. |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | Sandbox Celery worker concurrency. |
 | `SANDBOX_WORKSPACE_ROOT` | `/tmp/clouisle-sandbox/jobs` | Host-side root for sandbox job and session directories. |

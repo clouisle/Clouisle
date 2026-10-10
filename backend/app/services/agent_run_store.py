@@ -544,6 +544,14 @@ async def submit_user_answers(
         )
 
     await _write_state_cache(run_id, AgentRunStatus.QUEUED)
+    record_observability_progress(
+        run_id,
+        status=AgentRunStatus.QUEUED.value,
+        expected_status=AgentRunStatus.WAITING.value,
+        started_at=run.started_at,
+        message_started_at=run.message_started_at,
+        first_token_ms=run.first_token_ms,
+    )
     return run
 
 

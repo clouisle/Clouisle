@@ -472,6 +472,7 @@ async def test_workflow_detail_uses_persisted_execution_names(monkeypatch):
     node_query.limit.return_value = node_query
     node_query.values.return_value = node_query
     node_rows = [_workflow_node_row(uuid4(), 1, "Name saved when this run executed")]
+    node_rows[0]["status"] = SimpleNamespace(value="completed")
 
     monkeypatch.setattr(
         observability_v2.ObservabilityRun,
@@ -491,6 +492,7 @@ async def test_workflow_detail_uses_persisted_execution_names(monkeypatch):
     detail = await observability_v2.run_detail("workflow", run_id)
 
     assert detail["spans"][1]["name"] == "Name saved when this run executed"
+    assert detail["spans"][1]["status"] == "completed"
     assert detail["spans"][1]["metadata"]["node_type"] == "tool"
     assert detail["trace"] == {
         "complete": True,
@@ -848,6 +850,7 @@ async def test_record_run_creates_normalized_summary_when_upsert_has_no_match(
     assert values["total_tokens"] == 0
     assert values["error_category"] == "timeout"
     assert values["trace_available"] is True
+    assert values["trace_complete"] is False
 
 
 @pytest.mark.asyncio
@@ -1664,7 +1667,10 @@ async def test_queue_snapshot_caps_discovered_sandbox_queues(monkeypatch):
         active=lambda: {},
         reserved=lambda: {},
         scheduled=lambda: {},
-        active_queues=lambda: {"agent-worker": entries},
+        active_queues=lambda: {
+            "agent-worker": entries,
+            "second-worker": [{"name": "sandbox.worker.after-limit"}],
+        },
     )
     monkeypatch.setattr(
         celery_core,
@@ -1683,6 +1689,7 @@ async def test_queue_snapshot_caps_discovered_sandbox_queues(monkeypatch):
     assert "default" in names
     assert "sandbox.worker.58" in names
     assert "sandbox.worker.59" not in names
+    assert "sandbox.worker.after-limit" not in names
 
 
 @pytest.mark.asyncio

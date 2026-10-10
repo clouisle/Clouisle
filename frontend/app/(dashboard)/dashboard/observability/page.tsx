@@ -29,6 +29,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CHART_AXIS_COLOR, CHART_COLOR_ORDER, CHART_GRID_COLOR, CHART_HOVER_CURSOR, CHART_TOOLTIP_STYLE } from '@/lib/chart-theme'
 import { formatTime } from '@/lib/utils'
+import { usePermissions } from '@/hooks/use-permissions'
 import { observabilityApi, type AlertEvent, type AlertRule, type DependenciesResponse, type InfrastructureResponse, type ObservabilityMeta, type ObservabilityPeriod, type QueueRow, type QueuesResponse, type RunDetailResponse, type RunSummary, type SummaryResponse } from '@/lib/api/admin/observability'
 
 const VIEWS = ['overview', 'runs', 'dependencies', 'queues', 'infrastructure', 'alerts'] as const
@@ -57,6 +58,8 @@ type PageData = SummaryResponse | { runs: RunSummary[]; next_cursor: string | nu
 
 export default function ObservabilityPage() {
   const t = useTranslations('dashboard.observability')
+  const { hasPermission } = usePermissions()
+  const canManageObservability = hasPermission('admin:observability:manage')
   const locale = useLocale()
   const calendarLocale = locale.startsWith('zh') ? zhCN : enUS
   const router = useRouter()
@@ -278,7 +281,7 @@ export default function ObservabilityPage() {
       {view === 'dependencies' && dependencyData && <Dependencies data={dependencyData} />}
       {view === 'queues' && queueData && <Queues data={queueData} />}
       {view === 'infrastructure' && infrastructureData && <Infrastructure data={infrastructureData} />}
-      {view === 'alerts' && alertData && <Alerts data={alertData} status={alertStatus} setStatus={(status) => { setAlertStatus(status); cursorRef.current = undefined; setCursor(undefined); setAlertPages([]) }} pages={alertPages} nextCursor={alertPages.at(-1)?.next_cursor ?? null} onNext={(next) => { cursorRef.current = next; setCursor(next) }} onMutate={mutateAlert} onSaveRule={saveRule} busy={mutationBusy} silenceDuration={silenceDuration} setSilenceDuration={setSilenceDuration} />}
+      {view === 'alerts' && alertData && <Alerts canManage={canManageObservability} data={alertData} status={alertStatus} setStatus={(status) => { setAlertStatus(status); cursorRef.current = undefined; setCursor(undefined); setAlertPages([]) }} pages={alertPages} nextCursor={alertPages.at(-1)?.next_cursor ?? null} onNext={(next) => { cursorRef.current = next; setCursor(next) }} onMutate={mutateAlert} onSaveRule={saveRule} busy={mutationBusy} silenceDuration={silenceDuration} setSilenceDuration={setSilenceDuration} />}
     </>}
   </div></main><RunDetail detail={detail} loading={detailLoading} error={detailError} onClose={() => setDetail(null)} expanded={expandedSpans} setExpanded={setExpandedSpans} /></div></RoutePermissionGuard>
 }
@@ -534,7 +537,7 @@ function Infrastructure({ data }: { data: InfrastructureResponse }) {
   })}</div>{!data.instances.length && <Empty text={t('states.unavailableDetail')}/>}</CardContent></Card><Card><CardHeader><CardTitle>{t('infrastructure.dependencies')}</CardTitle></CardHeader><CardContent><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{data.dependencies.map((dep) => <div key={dep.name} className="rounded-lg border p-4"><div className="flex items-center justify-between"><strong>{dep.name}</strong><Badge variant={dep.status === 'unhealthy' ? 'destructive' : 'outline'}>{t(`status.${dep.status}`)}</Badge></div><p className="mt-2 text-sm text-muted-foreground">{t('infrastructure.latency')}: {duration(dep.latency_ms)}</p>{dep.detail && <p className="mt-2 text-xs text-muted-foreground">{dep.detail}</p>}</div>)}</div>{!data.dependencies.length && <Empty text={t('states.unavailableDetail')}/>}</CardContent></Card><Card><CardHeader><CardTitle>{t('infrastructure.slowQueries')}</CardTitle><CardDescription>{data.slow_queries.reset_at ? t('infrastructure.queryReset', { time: new Date(data.slow_queries.reset_at).toLocaleString() }) : t('infrastructure.safeQueryNotice')}</CardDescription></CardHeader><CardContent>{data.slow_queries.available && data.slow_queries.items.length ? <div className="space-y-3">{data.slow_queries.items.map((query) => <div key={query.query_id} className="rounded-lg border p-3"><code className="block max-h-20 overflow-auto whitespace-pre-wrap break-all text-xs">{query.query}</code><div className="mt-2 flex flex-wrap gap-x-4 text-xs text-muted-foreground"><span>{t('infrastructure.calls')}: {number(query.calls)}</span><span>{t('infrastructure.mean')}: {duration(query.mean_ms)}</span><span>{t('infrastructure.max')}: {duration(query.max_ms)}</span><span>{t('infrastructure.total')}: {duration(query.total_ms)}</span></div></div>)}</div> : <Empty text={t(data.slow_queries.available ? 'states.noSamples' : 'states.unavailableDetail')}/>}</CardContent></Card></div>
 }
 
-function Alerts({ data, status, setStatus, pages, nextCursor, onNext, onMutate, onSaveRule, busy, silenceDuration, setSilenceDuration }: { data: { alerts: AlertEvent[]; rules: AlertRule[] }; status: 'active' | 'resolved' | 'all'; setStatus: (status: 'active' | 'resolved' | 'all') => void; pages: Array<{ items: AlertEvent[]; next_cursor: string | null }>; nextCursor: string | null; onNext: (cursor: string) => void; onMutate: (alert: AlertEvent, action: 'acknowledge' | 'silence') => void; onSaveRule: (rule: AlertRule, patch: Partial<Pick<AlertRule, 'threshold' | 'enabled' | 'evaluation_window_seconds' | 'recovery_window_seconds'>>) => void; busy: string | null; silenceDuration: number; setSilenceDuration: (value: number) => void }) {
+function Alerts({ data, canManage, status, setStatus, pages, nextCursor, onNext, onMutate, onSaveRule, busy, silenceDuration, setSilenceDuration }: { data: { alerts: AlertEvent[]; rules: AlertRule[] }; canManage: boolean; status: 'active' | 'resolved' | 'all'; setStatus: (status: 'active' | 'resolved' | 'all') => void; pages: Array<{ items: AlertEvent[]; next_cursor: string | null }>; nextCursor: string | null; onNext: (cursor: string) => void; onMutate: (alert: AlertEvent, action: 'acknowledge' | 'silence') => void; onSaveRule: (rule: AlertRule, patch: Partial<Pick<AlertRule, 'threshold' | 'enabled' | 'evaluation_window_seconds' | 'recovery_window_seconds'>>) => void; busy: string | null; silenceDuration: number; setSilenceDuration: (value: number) => void }) {
   const t = useTranslations('dashboard.observability')
   const alerts = pages.flatMap((page) => page.items)
   const alertStatusOptions = (['active', 'resolved', 'all'] as const).map((value) => ({
@@ -576,7 +579,7 @@ function Alerts({ data, status, setStatus, pages, nextCursor, onNext, onMutate, 
                 ))}
               </SelectContent>
             </Select>
-            <Select
+            {canManage && <Select
               value={selectedSilenceDuration}
               onValueChange={(value) => value && setSilenceDuration(Number(value))}
             >
@@ -590,7 +593,7 @@ function Alerts({ data, status, setStatus, pages, nextCursor, onNext, onMutate, 
                   </SelectItem>
                 ))}
               </SelectContent>
-            </Select>
+            </Select>}
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -618,7 +621,7 @@ function Alerts({ data, status, setStatus, pages, nextCursor, onNext, onMutate, 
                   )}
                 </div>
                 <div className="flex shrink-0 gap-2">
-                  {alert.status === 'active' && !alert.acknowledged_at && (
+                  {canManage && alert.status === 'active' && !alert.acknowledged_at && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -629,7 +632,7 @@ function Alerts({ data, status, setStatus, pages, nextCursor, onNext, onMutate, 
                       {t('alerts.acknowledge')}
                     </Button>
                   )}
-                  {alert.status === 'active' && (
+                  {canManage && alert.status === 'active' && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -662,7 +665,7 @@ function Alerts({ data, status, setStatus, pages, nextCursor, onNext, onMutate, 
           <CardDescription>{t('alerts.rulesDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
-          {data.rules.map((rule) => (
+          {canManage && data.rules.map((rule) => (
             <RuleEditor key={rule.id} rule={rule} busy={busy === rule.id} onSave={onSaveRule} />
           ))}
         </CardContent>
@@ -694,6 +697,7 @@ function RuleEditor({ rule, busy, onSave }: { rule: AlertRule; busy: boolean; on
         <Input
           type="number"
           min="0"
+          max="1"
           step="any"
           value={threshold}
           onChange={(event) => setThreshold(event.target.value)}
@@ -705,7 +709,8 @@ function RuleEditor({ rule, busy, onSave }: { rule: AlertRule; busy: boolean; on
         <Input
           aria-label={t('alerts.evaluationWindow', { count: Number(evaluationWindow) || rule.evaluation_window_seconds })}
           type="number"
-          min="1"
+          min="60"
+          max="604800"
           step="1"
           value={evaluationWindow}
           onChange={(event) => setEvaluationWindow(event.target.value)}
@@ -717,7 +722,8 @@ function RuleEditor({ rule, busy, onSave }: { rule: AlertRule; busy: boolean; on
         <Input
           aria-label={t('alerts.recoveryWindow', { count: Number(recoveryWindow) || rule.recovery_window_seconds })}
           type="number"
-          min="1"
+          min="60"
+          max="604800"
           step="1"
           value={recoveryWindow}
           onChange={(event) => setRecoveryWindow(event.target.value)}
@@ -725,7 +731,7 @@ function RuleEditor({ rule, busy, onSave }: { rule: AlertRule; busy: boolean; on
         />
       </label>
       <Button
-        disabled={busy || !threshold || !evaluationWindow || !recoveryWindow || !changed}
+        disabled={busy || !threshold || !evaluationWindow || !recoveryWindow || Number(threshold) < 0 || Number(threshold) > 1 || Number(evaluationWindow) < 60 || Number(evaluationWindow) > 604800 || Number(recoveryWindow) < 60 || Number(recoveryWindow) > 604800 || !changed}
         onClick={() => onSave(rule, { threshold: Number(threshold), evaluation_window_seconds: Number(evaluationWindow), recovery_window_seconds: Number(recoveryWindow) })}
       >
         {t('actions.save')}

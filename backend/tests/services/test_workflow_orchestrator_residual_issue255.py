@@ -455,3 +455,43 @@ async def test_run_failure_without_stream_skips_stream_manager(monkeypatch):
             user_id=uuid4(),
             stream=False,
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("total_nodes", "recorded_nodes", "expected_complete"),
+    [(2, 2, True), (2, 1, False), (101, 101, False)],
+)
+async def test_persist_observability_summary_checks_persisted_node_count(
+    total_nodes, recorded_nodes, expected_complete
+):
+    from app.services.workflow.orchestrator import _persist_observability_summary
+
+    run = SimpleNamespace(
+        id=uuid4(),
+        workflow_id=uuid4(),
+        total_token_usage={},
+        total_nodes=total_nodes,
+        created_at=None,
+        started_at=None,
+        finished_at=None,
+        total_duration_ms=None,
+    )
+    workflow = SimpleNamespace(name="Flow", team_id=None)
+    node_query = MagicMock()
+    node_query.count = AsyncMock(return_value=recorded_nodes)
+
+    with (
+        patch("app.services.workflow.orchestrator.NodeExecution") as node_execution,
+        patch(
+            "app.services.observability_v2.record_run", new_callable=AsyncMock
+        ) as record_run,
+    ):
+        node_execution.filter.return_value = node_query
+        await _persist_observability_summary(run, workflow, "completed")
+
+    assert record_run.await_args.kwargs["trace_complete"] is expected_complete
+    if total_nodes <= 100:
+        node_execution.filter.assert_called_once_with(run_id=run.id)
+    else:
+        node_execution.filter.assert_not_called()

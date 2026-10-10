@@ -59,15 +59,26 @@ async def test_python_environment_builds_with_index_and_cleans_failed_cache(
         )
     ]
     assert launcher.calls[0][0] == [
-        str(env_dir / "bin" / "pip"),
+        str(env_dir / "bin" / "python"),
+        "-m",
+        "pip",
         "install",
         "--index-url",
         "https://pypi.org/simple",
         "requests==2.32.3",
     ]
+    launch_kwargs = launcher.calls[0][1]
+    assert launch_kwargs["workspace_root"] == str(env_dir.parent)
+    assert launch_kwargs["network_proxy"] is proxy
+    assert launch_kwargs["env"]["HOME"] == str(env_dir.parent)
+    assert launch_kwargs["env"]["TMPDIR"] == str(env_dir.parent / "tmp")
+    assert launch_kwargs["env"]["PIP_CACHE_DIR"] == str(
+        env_dir.parent / "tmp" / "pip-cache"
+    )
+    assert launch_kwargs["env"]["PATH"].startswith(str(env_dir / "bin"))
 
     assert (
-        launcher.calls[0][1]["timeout_seconds"]
+        launch_kwargs["timeout_seconds"]
         == settings.SANDBOX_PACKAGE_INSTALL_TIMEOUT_SECONDS
     )
 

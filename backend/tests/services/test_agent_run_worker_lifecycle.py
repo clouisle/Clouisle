@@ -581,6 +581,12 @@ async def test_submit_user_answers_skips_canonical_exclusion_and_round_index(
 ):
     run = _waiting_run()
     message_create = AsyncMock()
+    progress_updates = []
+    monkeypatch.setattr(
+        agent_run_store,
+        "record_observability_progress",
+        lambda *args, **kwargs: progress_updates.append((args, kwargs)),
+    )
     monkeypatch.setattr(agent_run_store, "in_transaction", _Transaction())
     monkeypatch.setattr(
         agent_run_store.AgentRun,
@@ -598,6 +604,18 @@ async def test_submit_user_answers_skips_canonical_exclusion_and_round_index(
     assert run.worker_payload["exclude_message_ids"] == [str(run.canonical_message_id)]
     assert run.worker_payload["first_round_index"] == 5
     assert run.status == AgentRunStatus.QUEUED
+    assert progress_updates == [
+        (
+            (run.id,),
+            {
+                "status": AgentRunStatus.QUEUED.value,
+                "expected_status": AgentRunStatus.WAITING.value,
+                "started_at": run.started_at,
+                "message_started_at": run.message_started_at,
+                "first_token_ms": run.first_token_ms,
+            },
+        )
+    ]
 
 
 @pytest.mark.asyncio
@@ -2097,3 +2115,21 @@ async def test_run_agent_round_completion_returns_reloaded_status_without_claim(
         "status": AgentRunStatus.COMPLETED.value,
         "message_id": str(canonical.id),
     }
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_run_lock_stops_after_refresh_signals_stop(monkeypatch):
+    stop = asyncio.Event()
+    run_id, conversation_id = uuid4(), uuid4()
+
+    async def refresh_and_stop(*_args):
+        stop.set()
+
+    refresh = AsyncMock(side_effect=refresh_and_stop)
+    monkeypatch.setattr(agent_run_store, "refresh_run_lock", refresh)
+
+    await asyncio.wait_for(
+        agent_run_store.heartbeat_run_lock(run_id, conversation_id, stop), timeout=1
+    )
+
+    refresh.assert_awaited_once_with(run_id, conversation_id)

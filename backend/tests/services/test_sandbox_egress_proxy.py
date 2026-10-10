@@ -97,6 +97,25 @@ async def test_proxy_blocks_unlisted_host_and_reports_diagnostic():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("authority", ["[::1", "pypi.org:not-a-port"])
+async def test_proxy_denies_malformed_connect_authorities(authority: str):
+    proxy = SandboxEgressProxy(job_id="job-malformed", allowed_hosts=["pypi.org"])
+
+    async with proxy:
+        reader, writer = await asyncio.open_unix_connection(str(proxy.socket_path))
+        writer.write(f"CONNECT {authority} HTTP/1.1\r\n\r\n".encode())
+        await writer.drain()
+        response = await reader.read()
+        writer.close()
+        await writer.wait_closed()
+
+        assert response.startswith(b"HTTP/1.1 403 Forbidden\r\n")
+        assert proxy.blocked_diagnostics == [
+            "[sandbox-network] blocked host=unknown port=0 reason=invalid_destination"
+        ]
+
+
+@pytest.mark.asyncio
 async def test_proxy_connects_allowlisted_host_only_via_configured_upstream(
     monkeypatch,
 ):

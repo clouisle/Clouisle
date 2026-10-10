@@ -681,7 +681,7 @@ kubectl -n clouisle top pods
 | `QDRANT_DISTANCE` | `Cosine` | 向量距离度量 |
 | `TAVILY_API_KEY` | *(empty)* | Tavily 网页搜索 API Key（用于 Agent 网页搜索能力） |
 | `SANDBOX_RUNTIME_ENABLED` | `true` | 将可执行任务路由到沙箱运行时。 |
-| `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | Sandbox Worker 部署中为 `true` | 启用 Bubblewrap 挂载命名空间；通用应用默认值为 `false`。 |
+| `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `true` | 启用 Bubblewrap 挂载命名空间；通用应用默认值为 `true`。 |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | Sandbox Worker 部署中为 `/usr/bin/bwrap` | Bubblewrap 可执行文件路径；通用应用默认值为 `bwrap`。 |
 | `SANDBOX_WORKER_CONCURRENCY` | `1` | Sandbox Celery Worker 并发数。 |
 | `SANDBOX_WORKSPACE_ROOT` | `/tmp/clouisle-sandbox/jobs` | 沙箱任务和会话目录在 Worker 上的根路径。 |

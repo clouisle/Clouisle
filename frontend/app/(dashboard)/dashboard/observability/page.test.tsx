@@ -9,6 +9,7 @@ import enDashboard from '@/i18n/en/dashboard.json'
 import zhDashboard from '@/i18n/zh/dashboard.json'
 const agentRunStatuses = ['queued', 'running', 'stopping', 'completing', 'completed', 'stopped', 'failed', 'interrupted', 'waiting'] as const
 let instanceLocale: 'en' | 'zh' | null = null
+let canManageObservability = true
 const translate = Object.assign((key: string) => {
   if (instanceLocale && (key.startsWith('infrastructure.') || key.startsWith('periods.') || key.startsWith('customRange.') || key === 'status.stale' || key === 'status.offline' || key === 'status.healthy')) {
     const messages = instanceLocale === 'en' ? enDashboard : zhDashboard
@@ -59,6 +60,7 @@ mock.module('recharts', () => {
   return { Area: Leaf, AreaChart: Chart, Bar: Leaf, BarChart: Chart, CartesianGrid: Leaf, Line: Leaf, LineChart: Chart, ResponsiveContainer: Chart, Tooltip: Leaf, XAxis: Leaf, YAxis: Leaf }
 })
 mock.module('@/components/auth/permission-guard', () => ({ RoutePermissionGuard: ({ children }: React.PropsWithChildren) => <>{children}</> }))
+mock.module('@/hooks/use-permissions', () => ({ usePermissions: () => ({ hasPermission: (permission: string) => permission === 'admin:observability:manage' && canManageObservability }) }))
 mock.module('@/components/layout/header', () => ({ Header: () => <header /> }))
 mock.module('@/components/ui/badge', () => ({ Badge: ({ children }: React.PropsWithChildren) => <span>{children}</span> }))
 mock.module('@/components/ui/button', () => ({ Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button> }))
@@ -116,6 +118,7 @@ async function render() {
 beforeEach(() => {
   params = new URLSearchParams('tab=overview&keep=retained')
   instanceLocale = null
+  canManageObservability = true
 })
 
 afterEach(() => {
@@ -270,11 +273,27 @@ test('silences incidents and saves threshold plus evaluation and recovery window
 
   const evaluation = renderer.root.findByProps({ 'aria-label': 'alerts.evaluationWindow' })
   const recovery = renderer.root.findByProps({ 'aria-label': 'alerts.recoveryWindow' })
+  const threshold = renderer.root.findAllByType('input').find((input) => input.props.type === 'number' && input.props.min === '0')
+  expect(threshold?.props.max).toBe('1')
+  expect(evaluation.props.min).toBe('60')
+  expect(evaluation.props.max).toBe('604800')
+  expect(recovery.props.min).toBe('60')
+  expect(recovery.props.max).toBe('604800')
   act(() => { evaluation.props.onChange({ target: { value: '600' } }); recovery.props.onChange({ target: { value: '900' } }) })
   const save = renderer.root.findAllByType('button').find((button) => button.children.includes('actions.save'))
   expect(save).toBeDefined()
   await act(async () => { save!.props.onClick(); await Promise.resolve(); await Promise.resolve() })
   expect(updateAlertRule).toHaveBeenCalledWith('rule-1', { threshold: 0.5, enabled: true, evaluation_window_seconds: 600, recovery_window_seconds: 900 })
+  act(() => renderer.unmount())
+})
+test('hides alert mutation controls for read-only observers', async () => {
+  params = new URLSearchParams('tab=alerts')
+  canManageObservability = false
+  const renderer = await render()
+  expect(renderer.root.findAllByType('button').some((button) => button.children.includes('alerts.acknowledge'))).toBe(false)
+  expect(renderer.root.findAllByType('button').some((button) => button.children.includes('alerts.silence'))).toBe(false)
+  expect(renderer.root.findAllByProps({ 'aria-label': 'alerts.silenceDuration' })).toHaveLength(0)
+  expect(renderer.root.findAllByProps({ 'aria-label': 'alerts.evaluationWindow' })).toHaveLength(0)
   act(() => renderer.unmount())
 })
 

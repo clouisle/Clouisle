@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 
+from app.schemas.response import BusinessError, ResponseCode
 from app.services.sandbox.models import SandboxJob, SandboxTaskStatus
 from app.tasks import sandbox as tasks
 
@@ -25,6 +26,21 @@ def test_invalid_payload_records_terminal_failure_without_execution(sandbox_runt
     assert result.status == SandboxTaskStatus.FAILED
     assert result.metadata.completed_at is not None
     assert result.metadata.started_at is None
+
+
+def test_failure_persists_business_error_enum_code_as_string(sandbox_runtime):
+    r = sandbox_runtime
+    result = r.run(
+        tasks._failure(
+            "business-error",
+            BusinessError(code=ResponseCode.UNKNOWN_ERROR, msg="business failure"),
+        )
+    )
+
+    persisted = r.run(r.results.get_result("business-error"))
+    assert persisted == result
+    assert persisted.status == SandboxTaskStatus.FAILED
+    assert persisted.error_code == str(ResponseCode.UNKNOWN_ERROR.value)
 
 
 def test_failed_command_is_not_replayed_on_redelivery(sandbox_runtime):

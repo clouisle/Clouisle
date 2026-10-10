@@ -322,6 +322,7 @@ async def record_run(
     total_tokens: int = 0,
     model_name: str | None = None,
     error_code: str | None = None,
+    trace_complete: bool = False,
 ) -> bool:
     """Best-effort summary upsert; never let telemetry failure affect execution."""
     try:
@@ -357,14 +358,10 @@ async def record_run(
             if "timeout" in (error_code or "").lower()
             else ("execution" if status in {"failed", "interrupted"} else None),
             "trace_available": True,
-            "trace_complete": False,
+            "trace_complete": trace_complete,
         }
         existing = await ObservabilityRun.filter(id=run_id, source=source).update(
-            **{
-                key: value
-                for key, value in values.items()
-                if value is not None and key != "trace_complete"
-            }
+            **{key: value for key, value in values.items() if value is not None}
         )
         if not existing:
             await ObservabilityRun.create(id=run_id, source=source, **values)
@@ -683,7 +680,10 @@ async def run_detail(source: str, run_id: UUID) -> dict[str, Any] | None:
                     "parent_span_id": str(run_id),
                     "kind": str(kind),
                     "name": str(name),
-                    "status": str(metric.get("status") or "unknown"),
+                    "status": str(
+                        getattr(metric.get("status"), "value", metric.get("status"))
+                        or "unknown"
+                    ),
                     "started_at": metric.get("started_at"),
                     "finished_at": metric.get("finished_at"),
                     "duration_ms": metric.get("duration_ms"),
@@ -746,7 +746,7 @@ async def run_detail(source: str, run_id: UUID) -> dict[str, Any] | None:
                         "parent_span_id": str(run_id),
                         "kind": "workflow_node",
                         "name": str(node["node_name"]),
-                        "status": str(node["status"]),
+                        "status": str(getattr(node["status"], "value", node["status"])),
                         "started_at": node["started_at"].isoformat()
                         if node["started_at"]
                         else None,
