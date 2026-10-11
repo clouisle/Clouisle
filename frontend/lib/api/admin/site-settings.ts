@@ -23,6 +23,8 @@ export type {
   StorageSettings,
   AutoNotificationConfig,
   MemorySiteSettings,
+  ThemeBrandingDisplay,
+  ThemeMode,
 }
 
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
@@ -234,7 +236,6 @@ export const siteSettingsApi = {
   async sendTestWebhook(): Promise<void> {
     await api.post<null>('/admin/site-settings/test-webhook', null)
   },
-
 
   async archiveAuditLogs(): Promise<{ task_id: string; status: string }> {
     return api.post<{ task_id: string; status: string }>('/admin/site-settings/archive-audit-logs', null)

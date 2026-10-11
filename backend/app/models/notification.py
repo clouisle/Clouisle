@@ -41,14 +41,10 @@ class NotificationAuditAction(str, Enum):
 
 
 class NotificationChannel(str, Enum):
-    """通知渠道"""
+    """Notification delivery channels."""
 
     EMAIL = "email"
-    DINGTALK = "dingtalk"  # Historical delivery rows remain readable.
-    WECHAT = "wechat"
-    FEISHU = "feishu"
     WEBHOOK = "webhook"
-    SLACK = "slack"  # Historical delivery rows remain readable.
 
 
 class AutoNotificationType(str, Enum):

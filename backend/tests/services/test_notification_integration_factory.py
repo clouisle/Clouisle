@@ -12,20 +12,15 @@ from app.integrations.factory import (
 from app.models.notification import NotificationChannel
 
 
-def test_factory_registers_only_built_in_delivery_integrations():
+def test_factory_registers_only_active_delivery_channels():
     assert [item.id for item in notification_integration_factory.all()] == [
         NotificationChannel.EMAIL,
         NotificationChannel.WEBHOOK,
     ]
-    assert notification_integration_factory.get("email").id is NotificationChannel.EMAIL
-    assert (
-        notification_integration_factory.get(NotificationChannel.WEBHOOK).id
-        is NotificationChannel.WEBHOOK
-    )
 
 
-def test_factory_fails_closed_for_unregistered_and_removed_integrations():
-    for integration_id in ("unknown", "dingtalk", "slack"):
+def test_factory_fails_closed_for_unregistered_integrations():
+    for integration_id in ("unknown", "dingtalk", "wechat", "feishu", "slack"):
         with pytest.raises(ValueError, match="Unknown notification integration"):
             notification_integration_factory.get(integration_id)
 

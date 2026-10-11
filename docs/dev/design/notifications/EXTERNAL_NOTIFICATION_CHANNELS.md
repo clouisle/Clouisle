@@ -1,4 +1,4 @@
-# Deprecated historical plan. The current built-in integration factory direction is documented in [Notification Design](README.md). This document records the superseded provider-by-provider implementation plan; do not use its channel list or priorities as current project scope.
+# Historical design proposal. The provider list below is superseded; the implemented outbound notification channels are email and generic Webhook.
 
 # 外部通知渠道扩展实现计划
 

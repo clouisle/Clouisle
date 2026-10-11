@@ -180,7 +180,6 @@ export interface WebhookSettings {
   webhook_secret: string
 }
 
-
 export interface StorageSettings {
   audit_log_retention_days: number
   audit_log_archive_path: string

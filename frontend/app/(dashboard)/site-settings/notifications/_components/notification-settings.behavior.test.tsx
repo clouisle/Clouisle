@@ -70,7 +70,7 @@ afterEach(() => {
 })
 
 describe('AutoNotificationsSettingsTab', () => {
-  test('loads config, exposes only enabled providers, and saves user changes', async () => {
+  test('loads config, exposes only supported providers, and saves user changes', async () => {
     spyOn(siteSettingsApi, 'getAutoNotifications').mockResolvedValue({
       channels: ['email', 'dingtalk', 'wechat', 'feishu', 'slack'],
       enabled_types: ['team.member_added'],

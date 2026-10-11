@@ -514,7 +514,7 @@ async def test_auto_notification_update_rejects_removed_channels(monkeypatch):
         await site_settings.update_auto_notification_config(
             request=MagicMock(),
             data=AutoNotificationConfigUpdate(
-                channels=["dingtalk", "slack"], enabled_types=[]
+                channels=["dingtalk", "wechat", "feishu", "slack"], enabled_types=[]
             ),
             current_user=SimpleNamespace(id=uuid4()),
         )

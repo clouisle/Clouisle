@@ -245,20 +245,10 @@ CHANNEL_FAILURES = [
 ]
 
 
-@pytest.mark.anyio
 @pytest.mark.parametrize("channel", ["dingtalk", "wechat", "feishu", "slack"])
-async def test_admin_create_rejects_removed_notification_channels(monkeypatch, channel):
-    create = AsyncMock()
-    monkeypatch.setattr(notifications.Notification, "create", create)
-
-    with pytest.raises(BusinessError) as exc_info:
-        await notifications.admin_create_notification(
-            payload(notify_channels=[channel]), user(superuser=True)
-        )
-
-    assert exc_info.value.code == ResponseCode.BAD_REQUEST
-    assert exc_info.value.msg_key == "invalid_notification_channels"
-    create.assert_not_awaited()
+def test_admin_create_rejects_removed_notification_channels(channel):
+    with pytest.raises(ValueError, match="Input should be 'email' or 'webhook'"):
+        payload(notify_channels=[channel])
 
 
 @pytest.mark.anyio

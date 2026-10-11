@@ -395,15 +395,6 @@
 | `siteSettingsApi.getEmail()` | GET `/site-settings?category=email` | 获取邮件设置 |
 | `siteSettingsApi.updateEmail()` | PUT `/site-settings` | 更新邮件设置 |
 | `siteSettingsApi.sendTestEmail()` | POST `/site-settings/test-email` | 测试邮件 |
-| `siteSettingsApi.getDingTalk()` | GET `/site-settings?category=dingtalk` | 获取钉钉设置 |
-| `siteSettingsApi.updateDingTalk()` | PUT `/site-settings` | 更新钉钉设置 |
-| `siteSettingsApi.sendTestDingTalk()` | POST `/site-settings/test-dingtalk` | 测试钉钉 |
-| `siteSettingsApi.getWeChat()` | GET `/site-settings?category=wechat` | 获取微信设置 |
-| `siteSettingsApi.updateWeChat()` | PUT `/site-settings` | 更新微信设置 |
-| `siteSettingsApi.sendTestWeChat()` | POST `/site-settings/test-wechat` | 测试微信 |
-| `siteSettingsApi.getFeishu()` | GET `/site-settings?category=feishu` | 获取飞书设置 |
-| `siteSettingsApi.updateFeishu()` | PUT `/site-settings` | 更新飞书设置 |
-| `siteSettingsApi.sendTestFeishu()` | POST `/site-settings/test-feishu` | 测试飞书 |
 | `siteSettingsApi.getWebhook()` | GET `/site-settings?category=webhook` | 获取 Webhook 设置 |
 | `siteSettingsApi.updateWebhook()` | PUT `/site-settings` | 更新 Webhook 设置 |
 | `siteSettingsApi.sendTestWebhook()` | POST `/site-settings/test-webhook` | 测试 Webhook |

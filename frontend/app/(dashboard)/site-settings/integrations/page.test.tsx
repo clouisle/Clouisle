@@ -40,7 +40,7 @@ afterEach(() => {
   canUpdate = true
 })
 
-test('loads both integrations and renders each in its own card', async () => {
+test('loads email and webhook settings', async () => {
   const renderer = await render()
   expect(getEmail).toHaveBeenCalledTimes(1)
   expect(getWebhook).toHaveBeenCalledTimes(1)
@@ -50,7 +50,7 @@ test('loads both integrations and renders each in its own card', async () => {
   act(() => renderer.unmount())
 })
 
-test('passes read-only access to email and webhook forms', async () => {
+test('passes read-only access to all integration forms', async () => {
   canUpdate = false
   const renderer = await render()
   expect(renderer.root.findByProps({ 'data-email-editable': 'false' })).toBeDefined()

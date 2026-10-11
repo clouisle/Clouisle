@@ -20,7 +20,7 @@ class NotificationMessage:
 
 
 class NotificationIntegration(Protocol):
-    """Contract implemented by each built-in notification integration."""
+    """Contract implemented by active notification delivery integrations."""
 
     id: NotificationChannel
     not_enabled_message_key: str
@@ -36,7 +36,7 @@ class NotificationIntegration(Protocol):
 
 
 class NotificationIntegrationFactory:
-    """Explicit registry for built-in integrations and their task dispatch."""
+    """Explicit registry for notification integrations and their task dispatch."""
 
     def __init__(self, integrations: tuple[NotificationIntegration, ...]):
         registry: dict[NotificationChannel, NotificationIntegration] = {}
