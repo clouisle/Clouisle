@@ -479,20 +479,25 @@ def _sqlite_dashboard_database(monkeypatch):
     class Connection:
         async def execute_query_dict(self, sql, params):
             assert "$2 IS NULL" not in sql
-            assert isinstance(params["date_filter"], str)
-            values = params["values"]
-            assert all(value is not None for value in values)
+            assert isinstance(params, list)
+            assert all(value is not None for value in params)
             for key in ("prompt", "completion"):
                 sql = sql.replace(
                     f"(m.token_usage ->> '{key}')::bigint",
                     f"CAST((m.token_usage ->> '{key}') AS INTEGER)",
                 )
-            sql = sql.format(date_filter=params["date_filter"])
-            bindings = {
+            sql = sql.format(
+                date_filter=(
+                    "created_at >= $2 AND created_at <= $3"
+                    if len(params) == 3
+                    else "created_at <= $2"
+                )
+            )
+            values = {
                 str(index): value.isoformat() if isinstance(value, datetime) else value
-                for index, value in enumerate(values, 1)
+                for index, value in enumerate(params, 1)
             }
-            return [dict(row) for row in database.execute(sql, bindings)]
+            return [dict(row) for row in database.execute(sql, values)]
 
     monkeypatch.setattr(
         dashboard.Tortoise,

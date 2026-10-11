@@ -260,8 +260,7 @@ async def get_dashboard_trends(
     if start is not None:
         query_params.append(start)
     query_params.append(end)
-    rows = await Tortoise.get_connection("default").execute_query_dict(
-        f"""
+    query = f"""
         SELECT day,
                SUM(new_users) AS new_users,
                SUM(active_users) AS active_users,
@@ -298,8 +297,9 @@ async def get_dashboard_trends(
         ) daily_events
         GROUP BY day
         ORDER BY day
-        """,
-        {"date_filter": date_filter, "values": query_params},
+        """
+    rows = await Tortoise.get_connection("default").execute_query_dict(
+        query, query_params
     )
 
     buckets: dict[date, dict[str, int]] = {}
