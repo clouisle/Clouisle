@@ -9,10 +9,12 @@ from uuid import UUID
 import markdown  # type: ignore[import-untyped]
 
 from app.core.celery import celery_app
-from app.core.email import send_email
-from app.core.webhook import send_webhook_notification
-from app.core.timezone import now_utc
 from app.core.i18n import t
+from app.core.timezone import now_utc
+from app.integrations.factory import (
+    NotificationMessage,
+    notification_integration_factory,
+)
 from app.models.notification import (
     Notification,
     NotificationScope,
@@ -360,7 +362,16 @@ async def _send_notification_email(notification_id: UUID):
         # 发送给该语言组的所有收件人
         for email in emails:
             try:
-                result = await send_email(email, subject, body_text, body_html)
+                result = await notification_integration_factory.get(
+                    NotificationChannel.EMAIL
+                ).send(
+                    NotificationMessage(
+                        title=subject,
+                        content=body_text,
+                        recipient=email,
+                        html_content=body_html,
+                    )
+                )
                 if result:
                     success_count += 1
                 else:
@@ -436,10 +447,14 @@ async def _send_notification_webhook(notification_id: UUID) -> bool:
     # Webhook 使用英文（通用）
     title, content = _build_notification_message(ctx, "en")
 
-    result = await send_webhook_notification(
-        title=title,
-        content=content,
-        link_url=ctx.notification.link_url,
+    result = await notification_integration_factory.get(
+        NotificationChannel.WEBHOOK
+    ).send(
+        NotificationMessage(
+            title=title,
+            content=content,
+            link_url=ctx.notification.link_url,
+        )
     )
 
     if result:

@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.integrations.factory import NotificationMessage
 from app.models.notification import (
     NotificationChannel,
     NotificationDeliveryStatus,
@@ -74,7 +75,6 @@ async def test_update_delivery_status_ignores_missing_delivery():
         await tasks._update_delivery_status(
             uuid4(), NotificationChannel.EMAIL, NotificationDeliveryStatus.FAILED
         )
-
     orm.first.assert_awaited_once()
 
 
@@ -125,7 +125,6 @@ async def test_recipients_handle_incomplete_scope_configuration_safely():
             )
             == []
         )
-
     user_filter.assert_not_called()
     member_filter.assert_not_called()
 
@@ -149,11 +148,15 @@ async def test_email_delivery_marks_sending_then_success_for_all_recipients():
                 return_value=[("en@example.test", "en"), ("zh@example.test", "zh")]
             ),
         ),
-        patch.object(tasks, "send_email", new=send_email),
+        patch.object(
+            tasks.notification_integration_factory.get(NotificationChannel.EMAIL),
+            "send",
+            new=send_email,
+        ),
     ):
         await tasks._send_notification_email(item.id)
 
-    assert [email.args[0] for email in send_email.await_args_list] == [
+    assert [call.args[0].recipient for call in send_email.await_args_list] == [
         "en@example.test",
         "zh@example.test",
     ]
@@ -181,10 +184,13 @@ async def test_email_delivery_without_recipients_is_safe_success():
         patch.object(
             tasks, "_get_notification_recipients", new=AsyncMock(return_value=[])
         ),
-        patch.object(tasks, "send_email", new=AsyncMock()) as send_email,
+        patch.object(
+            tasks.notification_integration_factory.get(NotificationChannel.EMAIL),
+            "send",
+            new=AsyncMock(),
+        ) as send_email,
     ):
         await tasks._send_notification_email(item.id)
-
     send_email.assert_not_awaited()
     assert updates.await_args_list[-1] == call(
         item.id, NotificationChannel.EMAIL, NotificationDeliveryStatus.SUCCESS
@@ -216,11 +222,14 @@ async def test_email_delivery_records_partial_success_without_raising():
                 ]
             ),
         ),
-        patch.object(tasks, "send_email", new=AsyncMock(side_effect=[True, False])),
+        patch.object(
+            tasks.notification_integration_factory.get(NotificationChannel.EMAIL),
+            "send",
+            new=AsyncMock(side_effect=[True, False]),
+        ),
         patch.object(tasks, "t", return_value="1/2 delivered"),
     ):
         await tasks._send_notification_email(item.id)
-
     assert updates.await_args_list[-1] == call(
         item.id,
         NotificationChannel.EMAIL,
@@ -230,20 +239,7 @@ async def test_email_delivery_records_partial_success_without_raising():
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("function_name", "sender_name", "channel", "locale"),
-    [
-        (
-            "_send_notification_webhook",
-            "send_webhook_notification",
-            NotificationChannel.WEBHOOK,
-            "en",
-        ),
-    ],
-)
-async def test_external_delivery_marks_success_with_mocked_channel(
-    function_name, sender_name, channel, locale
-):
+async def test_external_delivery_marks_success_with_mocked_integration():
     item = notification()
     context = tasks.NotificationContext(notification=item, site_name="Clouisle")
     updates = AsyncMock()
@@ -253,19 +249,22 @@ async def test_external_delivery_marks_success_with_mocked_channel(
         patch.object(
             tasks, "_load_notification_context", new=AsyncMock(return_value=context)
         ),
-        patch.object(tasks, sender_name, new=sender),
+        patch.object(
+            tasks.notification_integration_factory.get(NotificationChannel.WEBHOOK),
+            "send",
+            new=sender,
+        ),
         patch.object(
             tasks, "_build_notification_message", return_value=("title", "content")
         ) as message,
     ):
-        assert await getattr(tasks, function_name)(item.id) is True
-
-    message.assert_called_once_with(context, locale)
+        assert await tasks._send_notification_webhook(item.id) is True
+    message.assert_called_once_with(context, "en")
     sender.assert_awaited_once_with(
-        title="title", content="content", link_url=item.link_url
+        NotificationMessage(title="title", content="content", link_url=item.link_url)
     )
     assert updates.await_args_list[-1] == call(
-        item.id, channel, NotificationDeliveryStatus.SUCCESS
+        item.id, NotificationChannel.WEBHOOK, NotificationDeliveryStatus.SUCCESS
     )
 
 
@@ -282,22 +281,22 @@ def test_email_task_marks_failed_and_retries_after_channel_exception():
         patch.object(
             tasks,
             "_send_notification_email",
-            new=AsyncMock(side_effect=RuntimeError("channel down")),
+            new=AsyncMock(side_effect=OSError("SMTP unavailable")),
         ),
-        patch.object(tasks, "_update_delivery_status", new=AsyncMock()) as update,
+        patch.object(
+            tasks, "_update_delivery_status", new=AsyncMock()
+        ) as update_status,
+        patch.object(tasks.send_notification_email_task, "retry", retry),
+        patch.object(tasks.send_notification_email_task.request, "retries", 2),
+        pytest.raises(RuntimeError, match="retry scheduled"),
     ):
-        tasks.send_notification_email_task.request.retries = 2
-        tasks.send_notification_email_task.retry = retry
-        with pytest.raises(RuntimeError, match="retry scheduled"):
-            tasks.send_notification_email_task.run(notification_id)
+        tasks.send_notification_email_task.run(notification_id)
 
-    assert update.await_args_list == [
-        call(
-            UUID(notification_id),
-            NotificationChannel.EMAIL,
-            NotificationDeliveryStatus.FAILED,
-            "notification_delivery_failed",
-        )
-    ]
+    update_status.assert_awaited_once_with(
+        UUID(notification_id),
+        NotificationChannel.EMAIL,
+        NotificationDeliveryStatus.FAILED,
+        "notification_delivery_failed",
+    )
     retry.assert_called_once()
     assert retry.call_args.kwargs["countdown"] == 180

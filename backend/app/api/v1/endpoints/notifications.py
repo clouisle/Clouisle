@@ -14,7 +14,6 @@ from app.models.notification import (
     NotificationAuditAction,
     NotificationScope,
     NotificationDelivery,
-    NotificationChannel,
     NotificationDeliveryStatus,
 )
 from app.models.user import Team, TeamMember, User
@@ -491,53 +490,24 @@ async def admin_create_notification(
         )
 
     if payload.notify_channels:
-        supported_channels = {NotificationChannel.EMAIL, NotificationChannel.WEBHOOK}
-        unsupported_channels = set(payload.notify_channels) - supported_channels
-        if unsupported_channels:
-            raise BusinessError(
-                code=ResponseCode.BAD_REQUEST,
-                msg_key="invalid_notification_channels",
-                channels=", ".join(
-                    sorted(channel.value for channel in unsupported_channels)
-                ),
-                status_code=400,
-            )
-        if NotificationChannel.EMAIL in payload.notify_channels:
-            from app.core.email import get_smtp_config
+        from app.integrations.factory import notification_integration_factory
 
-            smtp_config = await get_smtp_config()
-
-            if not smtp_config["enabled"]:
+        for channel in payload.notify_channels:
+            try:
+                integration = notification_integration_factory.get(channel)
+            except ValueError:
                 raise BusinessError(
                     code=ResponseCode.BAD_REQUEST,
-                    msg_key="smtp_not_enabled",
+                    msg_key="invalid_notification_channels",
+                    channels=channel.value,
                     status_code=400,
                 )
 
-            if not smtp_config["host"] or not smtp_config["from_address"]:
+            configuration_error = await integration.validate_configuration()
+            if configuration_error:
                 raise BusinessError(
                     code=ResponseCode.BAD_REQUEST,
-                    msg_key="smtp_not_configured",
-                    status_code=400,
-                )
-
-        # 校验通用 Webhook 渠道
-        if NotificationChannel.WEBHOOK in payload.notify_channels:
-            from app.core.webhook import get_webhook_config
-
-            webhook_config = await get_webhook_config()
-
-            if not webhook_config["enabled"]:
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="webhook_not_enabled",
-                    status_code=400,
-                )
-
-            if not webhook_config["url"]:
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="webhook_not_configured",
+                    msg_key=configuration_error,
                     status_code=400,
                 )
 
@@ -564,31 +534,20 @@ async def admin_create_notification(
     if payload.notify_channels:
         logger.info(f"Sending notifications to channels: {payload.notify_channels}")
 
-        if NotificationChannel.EMAIL in payload.notify_channels:
-            from app.tasks.notification import send_notification_email_task
+        from app.integrations.factory import notification_integration_factory
 
-            # 创建发送记录
+        for channel in payload.notify_channels:
             delivery = await NotificationDelivery.create(
                 notification_id=notification.id,
-                channel=NotificationChannel.EMAIL,
+                channel=channel,
                 status=NotificationDeliveryStatus.PENDING,
             )
-            logger.info(f"Triggering email notification task for {notification.id}")
-            task_result = send_notification_email_task.delay(str(notification.id))
-            delivery.task_id = task_result.id
-            await delivery.save()
-            deliveries.append(delivery)
-
-        if NotificationChannel.WEBHOOK in payload.notify_channels:
-            from app.tasks.notification import send_notification_webhook_task
-
-            delivery = await NotificationDelivery.create(
-                notification_id=notification.id,
-                channel=NotificationChannel.WEBHOOK,
-                status=NotificationDeliveryStatus.PENDING,
+            logger.info(
+                f"Triggering {channel.value} notification task for {notification.id}"
             )
-            logger.info(f"Triggering webhook notification task for {notification.id}")
-            task_result = send_notification_webhook_task.delay(str(notification.id))
+            task_result = notification_integration_factory.dispatch_task(
+                channel, str(notification.id)
+            )
             delivery.task_id = task_result.id
             await delivery.save()
             deliveries.append(delivery)
