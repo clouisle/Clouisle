@@ -39,10 +39,7 @@
     "viewNotification": "View",
     "channel": {
       "email": "Email",
-      "dingtalk": "DingTalk",
-      "webhook": "Webhook",
-      "slack": "Slack",
-      "wechat": "WeChat"
+      "webhook": "Webhook"
     },
     "deliveryStatus": {
       "title": "Delivery Status",
@@ -126,10 +123,7 @@
       "selectTeam": "Select team",
       "selectScope": "Select scope",
       "notifyChannels": "External Notification Channels",
-      "channelEmail": "Email",
-      "channelSlack": "Slack",
-      "channelDingtalk": "DingTalk",
-      "channelWechat": "WeChat Work"
+      "channelEmail": "Email"
     }
   }
 }

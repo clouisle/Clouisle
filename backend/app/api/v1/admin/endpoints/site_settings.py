@@ -68,18 +68,9 @@ def _setting_stored_str(value: Any, value_type: str) -> Optional[str]:
 
 
 SENSITIVE_SETTING_KEYS = {
-    "dingtalk_app_secret",
-    "dingtalk_secret",
-    "dingtalk_webhook_url",
-    "feishu_app_secret",
-    "feishu_secret",
-    "feishu_webhook_url",
     "object_storage_access_key",
     "object_storage_secret_key",
-    "slack_webhook_url",
     "smtp_password",
-    "wechat_secret",
-    "wechat_webhook_url",
     "webhook_secret",
     "webhook_url",
 }
@@ -366,6 +357,15 @@ async def update_auto_notification_config(
                 msg_key="invalid_notification_type",
                 type_key=type_key,
             )
+
+    valid_channels = {"email", "webhook"}
+    invalid_channels = set(data.channels) - valid_channels
+    if invalid_channels:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="invalid_notification_channels",
+            channels=", ".join(sorted(invalid_channels)),
+        )
 
     new_config = {
         "channels": data.channels,
@@ -674,135 +674,6 @@ async def send_test_email(
     return success(msg_key="test_email_sent")
 
 
-@router.post("/test-dingtalk", response_model=Response[None])
-async def send_test_dingtalk(
-    current_user: User = Depends(PermissionChecker("admin:settings:update")),
-):
-    from app.core.dingtalk import get_dingtalk_config, send_dingtalk_notification
-
-    config = await get_dingtalk_config()
-
-    if not config["enabled"]:
-        raise BusinessError(
-            code=ResponseCode.BAD_REQUEST,
-            msg_key="dingtalk_not_enabled",
-        )
-
-    if config["notification_type"] == "webhook":
-        if not config["webhook_url"]:
-            raise BusinessError(
-                code=ResponseCode.BAD_REQUEST,
-                msg_key="dingtalk_not_configured",
-            )
-    elif config["notification_type"] == "app":
-        if not config["app_key"] or not config["app_secret"] or not config["agent_id"]:
-            raise BusinessError(
-                code=ResponseCode.BAD_REQUEST,
-                msg_key="dingtalk_not_configured",
-            )
-
-    site_name = await SiteSetting.get_value("site_name", "Clouisle")
-
-    result = await send_dingtalk_notification(
-        title=t("test_notification_title", site_name=site_name),
-        content=t("test_dingtalk_content"),
-    )
-
-    if not result:
-        raise BusinessError(
-            code=ResponseCode.INTERNAL_ERROR,
-            msg_key="dingtalk_send_failed",
-        )
-
-    return success(msg_key="test_dingtalk_sent")
-
-
-@router.post("/test-wechat", response_model=Response[None])
-async def send_test_wechat(
-    current_user: User = Depends(PermissionChecker("admin:settings:update")),
-):
-    from app.core.wechat import get_wechat_config, send_wechat_notification
-
-    config = await get_wechat_config()
-
-    if not config["enabled"]:
-        raise BusinessError(
-            code=ResponseCode.BAD_REQUEST,
-            msg_key="wechat_not_enabled",
-        )
-
-    if config["notification_type"] == "webhook":
-        if not config["webhook_url"]:
-            raise BusinessError(
-                code=ResponseCode.BAD_REQUEST,
-                msg_key="wechat_not_configured",
-            )
-    elif config["notification_type"] == "app":
-        if not config["corp_id"] or not config["secret"] or not config["agent_id"]:
-            raise BusinessError(
-                code=ResponseCode.BAD_REQUEST,
-                msg_key="wechat_not_configured",
-            )
-
-    site_name = await SiteSetting.get_value("site_name", "Clouisle")
-
-    result = await send_wechat_notification(
-        title=t("test_notification_title", site_name=site_name),
-        content=t("test_wechat_content"),
-    )
-
-    if not result:
-        raise BusinessError(
-            code=ResponseCode.INTERNAL_ERROR,
-            msg_key="wechat_send_failed",
-        )
-
-    return success(msg_key="test_wechat_sent")
-
-
-@router.post("/test-feishu", response_model=Response[None])
-async def send_test_feishu(
-    current_user: User = Depends(PermissionChecker("admin:settings:update")),
-):
-    from app.core.feishu import get_feishu_config, send_feishu_notification
-
-    config = await get_feishu_config()
-
-    if not config["enabled"]:
-        raise BusinessError(
-            code=ResponseCode.BAD_REQUEST,
-            msg_key="feishu_not_enabled",
-        )
-
-    if config["notification_type"] == "webhook":
-        if not config["webhook_url"]:
-            raise BusinessError(
-                code=ResponseCode.BAD_REQUEST,
-                msg_key="feishu_not_configured",
-            )
-    elif config["notification_type"] == "app":
-        if not config["app_id"] or not config["app_secret"]:
-            raise BusinessError(
-                code=ResponseCode.BAD_REQUEST,
-                msg_key="feishu_not_configured",
-            )
-
-    site_name = await SiteSetting.get_value("site_name", "Clouisle")
-
-    result = await send_feishu_notification(
-        title=t("test_notification_title", site_name=site_name),
-        content=t("test_feishu_content"),
-    )
-
-    if not result:
-        raise BusinessError(
-            code=ResponseCode.INTERNAL_ERROR,
-            msg_key="feishu_send_failed",
-        )
-
-    return success(msg_key="test_feishu_sent")
-
-
 @router.post("/test-webhook", response_model=Response[None])
 async def send_test_webhook(
     current_user: User = Depends(PermissionChecker("admin:settings:update")),
@@ -837,42 +708,6 @@ async def send_test_webhook(
         )
 
     return success(msg_key="test_webhook_sent")
-
-
-@router.post("/test-slack", response_model=Response[None])
-async def send_test_slack(
-    current_user: User = Depends(PermissionChecker("admin:settings:update")),
-):
-    from app.core.slack import get_slack_config, send_slack_notification
-
-    config = await get_slack_config()
-
-    if not config["enabled"]:
-        raise BusinessError(
-            code=ResponseCode.BAD_REQUEST,
-            msg_key="slack_not_enabled",
-        )
-
-    if not config["webhook_url"]:
-        raise BusinessError(
-            code=ResponseCode.BAD_REQUEST,
-            msg_key="slack_not_configured",
-        )
-
-    site_name = await SiteSetting.get_value("site_name", "Clouisle")
-
-    result = await send_slack_notification(
-        title=t("test_notification_title", site_name=site_name),
-        content=t("test_slack_content"),
-    )
-
-    if not result:
-        raise BusinessError(
-            code=ResponseCode.INTERNAL_ERROR,
-            msg_key="slack_send_failed",
-        )
-
-    return success(msg_key="test_slack_sent")
 
 
 @router.post("/archive-audit-logs", response_model=Response[dict])

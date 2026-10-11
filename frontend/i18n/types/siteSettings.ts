@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-07T17:03:38.846Z
+// GENERATED — 2026-10-11T09:26:12.489Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
@@ -12,11 +12,13 @@ export type SiteSettingsMessages = {
       title: string
       description: string
       email: string
-      dingtalk: string
-      wechat: string
-      feishu: string
       webhook: string
-      slack: string
+    }
+    integrations: {
+      title: string
+      description: string
+      email: string
+      webhook: string
     }
     autoNotifications: {
       tab: string
@@ -114,91 +116,6 @@ export type SiteSettingsMessages = {
     }
     storage: string
     memory: string
-    dingtalk: {
-      basicSettings: string
-      basicSettingsDesc: string
-      enabled: string
-      enabledDesc: string
-      notificationType: string
-      notificationTypeDesc: string
-      typeWebhook: string
-      typeApp: string
-      webhookSettings: string
-      webhookSettingsDesc: string
-      webhookUrl: string
-      webhookUrlDesc: string
-      secret: string
-      secretPlaceholder: string
-      secretDesc: string
-      appSettings: string
-      appSettingsDesc: string
-      appKey: string
-      appKeyPlaceholder: string
-      appSecret: string
-      appSecretPlaceholder: string
-      agentId: string
-      agentIdPlaceholder: string
-      viewDocs: string
-      testMessage: string
-      testMessageDesc: string
-      sendTest: string
-      testSent: string
-    }
-    wechat: {
-      basicSettings: string
-      basicSettingsDesc: string
-      enabled: string
-      enabledDesc: string
-      notificationType: string
-      notificationTypeDesc: string
-      typeWebhook: string
-      typeApp: string
-      webhookSettings: string
-      webhookSettingsDesc: string
-      webhookUrl: string
-      webhookUrlDesc: string
-      appSettings: string
-      appSettingsDesc: string
-      corpId: string
-      corpIdPlaceholder: string
-      agentId: string
-      agentIdPlaceholder: string
-      secret: string
-      secretPlaceholder: string
-      viewDocs: string
-      testMessage: string
-      testMessageDesc: string
-      sendTest: string
-      testSent: string
-    }
-    feishu: {
-      basicSettings: string
-      basicSettingsDesc: string
-      enabled: string
-      enabledDesc: string
-      notificationType: string
-      notificationTypeDesc: string
-      typeWebhook: string
-      typeApp: string
-      webhookSettings: string
-      webhookSettingsDesc: string
-      webhookUrl: string
-      webhookUrlDesc: string
-      secret: string
-      secretPlaceholder: string
-      secretDesc: string
-      appSettings: string
-      appSettingsDesc: string
-      appId: string
-      appIdPlaceholder: string
-      appSecret: string
-      appSecretPlaceholder: string
-      viewDocs: string
-      testMessage: string
-      testMessageDesc: string
-      sendTest: string
-      testSent: string
-    }
     webhook: {
       basicSettings: string
       basicSettingsDesc: string
@@ -222,21 +139,6 @@ export type SiteSettingsMessages = {
       placeholderTitle: string
       placeholderContent: string
       placeholderLinkUrl: string
-      testMessage: string
-      testMessageDesc: string
-      sendTest: string
-      testSent: string
-    }
-    slack: {
-      basicSettings: string
-      basicSettingsDesc: string
-      enabled: string
-      enabledDesc: string
-      webhookSettings: string
-      webhookSettingsDesc: string
-      webhookUrl: string
-      webhookUrlDesc: string
-      viewDocs: string
       testMessage: string
       testMessageDesc: string
       sendTest: string
@@ -420,16 +322,16 @@ export type SiteSettingsMessages = {
     modelEndpointAllowlistOrigins: string
     modelEndpointAllowlistPlaceholder: string
     modelEndpointAllowlistHint: string
-    ssrfAllowedTargets: string
-    ssrfAllowedTargetsDescription: string
-    ssrfAllowedTargetsEntries: string
-    ssrfAllowedTargetsPlaceholder: string
-    ssrfAllowedTargetsHint: string
     sandboxNetworkAllowlist: string
     sandboxNetworkAllowlistDescription: string
     sandboxNetworkAllowlistEntries: string
     sandboxNetworkAllowlistPlaceholder: string
     sandboxNetworkAllowlistHint: string
+    ssrfAllowedTargets: string
+    ssrfAllowedTargetsDescription: string
+    ssrfAllowedTargetsEntries: string
+    ssrfAllowedTargetsPlaceholder: string
+    ssrfAllowedTargetsHint: string
     loginSecurity: string
     loginSecurityDescription: string
     maxLoginAttempts: string

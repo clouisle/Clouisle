@@ -462,44 +462,9 @@ CHANNEL_CASES = [
         {"enabled": True, "host": "smtp", "from_address": "from@example.com"},
     ),
     (
-        NotificationChannel.DINGTALK,
-        "app.core.dingtalk.get_dingtalk_config",
-        {
-            "enabled": True,
-            "notification_type": "webhook",
-            "webhook_url": "https://example.test",
-        },
-    ),
-    (
-        NotificationChannel.WECHAT,
-        "app.core.wechat.get_wechat_config",
-        {
-            "enabled": True,
-            "notification_type": "app",
-            "corp_id": "corp",
-            "secret": "secret",
-            "agent_id": "agent",
-        },
-    ),
-    (
-        NotificationChannel.FEISHU,
-        "app.core.feishu.get_feishu_config",
-        {
-            "enabled": True,
-            "notification_type": "app",
-            "app_id": "app",
-            "app_secret": "secret",
-        },
-    ),
-    (
         NotificationChannel.WEBHOOK,
         "app.core.webhook.get_webhook_config",
         {"enabled": True, "url": "https://example.test"},
-    ),
-    (
-        NotificationChannel.SLACK,
-        "app.core.slack.get_slack_config",
-        {"enabled": True, "webhook_url": "https://example.test"},
     ),
 ]
 
@@ -527,11 +492,7 @@ async def test_admin_create_routes_each_channel_without_external_delivery(
     )
     task_name = {
         NotificationChannel.EMAIL: "send_notification_email_task",
-        NotificationChannel.DINGTALK: "send_notification_dingtalk_task",
-        NotificationChannel.WECHAT: "send_notification_wechat_task",
-        NotificationChannel.FEISHU: "send_notification_feishu_task",
         NotificationChannel.WEBHOOK: "send_notification_webhook_task",
-        NotificationChannel.SLACK: "send_notification_slack_task",
     }[channel]
 
     with (
@@ -569,42 +530,6 @@ async def test_admin_create_routes_each_channel_without_external_delivery(
             "smtp_not_configured",
         ),
         (
-            NotificationChannel.DINGTALK,
-            "app.core.dingtalk.get_dingtalk_config",
-            {"enabled": False},
-            "dingtalk_not_enabled",
-        ),
-        (
-            NotificationChannel.DINGTALK,
-            "app.core.dingtalk.get_dingtalk_config",
-            {"enabled": True, "notification_type": "webhook", "webhook_url": ""},
-            "dingtalk_not_configured",
-        ),
-        (
-            NotificationChannel.WECHAT,
-            "app.core.wechat.get_wechat_config",
-            {"enabled": False},
-            "wechat_not_enabled",
-        ),
-        (
-            NotificationChannel.WECHAT,
-            "app.core.wechat.get_wechat_config",
-            {"enabled": True, "notification_type": "webhook", "webhook_url": ""},
-            "wechat_not_configured",
-        ),
-        (
-            NotificationChannel.FEISHU,
-            "app.core.feishu.get_feishu_config",
-            {"enabled": False},
-            "feishu_not_enabled",
-        ),
-        (
-            NotificationChannel.FEISHU,
-            "app.core.feishu.get_feishu_config",
-            {"enabled": True, "notification_type": "webhook", "webhook_url": ""},
-            "feishu_not_configured",
-        ),
-        (
             NotificationChannel.WEBHOOK,
             "app.core.webhook.get_webhook_config",
             {"enabled": False},
@@ -615,18 +540,6 @@ async def test_admin_create_routes_each_channel_without_external_delivery(
             "app.core.webhook.get_webhook_config",
             {"enabled": True, "url": ""},
             "webhook_not_configured",
-        ),
-        (
-            NotificationChannel.SLACK,
-            "app.core.slack.get_slack_config",
-            {"enabled": False},
-            "slack_not_enabled",
-        ),
-        (
-            NotificationChannel.SLACK,
-            "app.core.slack.get_slack_config",
-            {"enabled": True, "webhook_url": ""},
-            "slack_not_configured",
         ),
     ],
 )
@@ -844,55 +757,6 @@ async def test_admin_create_team_single_user_batch_and_invalid_scope():
     with pytest.raises(BusinessError) as exc_info:
         await endpoint.admin_create_notification(invalid, current_user)
     assert_error(exc_info, ResponseCode.BAD_REQUEST, "invalid_notification_scope")
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("channel", "config_path", "config"),
-    [
-        (
-            NotificationChannel.DINGTALK,
-            "app.core.dingtalk.get_dingtalk_config",
-            {
-                "enabled": True,
-                "notification_type": "app",
-                "app_key": "",
-                "app_secret": "",
-                "agent_id": "",
-            },
-        ),
-        (
-            NotificationChannel.WECHAT,
-            "app.core.wechat.get_wechat_config",
-            {
-                "enabled": True,
-                "notification_type": "app",
-                "corp_id": "",
-                "secret": "",
-                "agent_id": "",
-            },
-        ),
-        (
-            NotificationChannel.FEISHU,
-            "app.core.feishu.get_feishu_config",
-            {
-                "enabled": True,
-                "notification_type": "app",
-                "app_id": "",
-                "app_secret": "",
-            },
-        ),
-    ],
-)
-async def test_admin_create_rejects_incomplete_app_channel_config(
-    channel, config_path, config
-):
-    with patch(config_path, new=AsyncMock(return_value=config)):
-        with pytest.raises(BusinessError) as exc_info:
-            await endpoint.admin_create_notification(
-                payload(notify_channels=[channel]), user(superuser=True)
-            )
-    assert_error(exc_info, ResponseCode.BAD_REQUEST, f"{channel.value}_not_configured")
 
 
 @pytest.mark.asyncio

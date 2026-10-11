@@ -42,13 +42,13 @@ async def test_config_and_enabled_rules(config, expected):
 
 @pytest.mark.asyncio
 async def test_get_channels_ignores_unknown_values(caplog):
-    config = {"channels": ["email", "unknown", "slack"]}
+    config = {"channels": ["email", "unknown", "webhook"]}
     with patch.object(
         AutoNotificationService, "get_config", new=AsyncMock(return_value=config)
     ):
         channels = await AutoNotificationService.get_channels()
 
-    assert channels == [NotificationChannel.EMAIL, NotificationChannel.SLACK]
+    assert channels == [NotificationChannel.EMAIL, NotificationChannel.WEBHOOK]
     assert "Unknown notification channel: unknown" in caplog.text
 
 
@@ -169,14 +169,14 @@ async def test_trigger_external_channels_handles_disabled_success_and_error():
             new=AsyncMock(side_effect=[successful_delivery, failed_delivery]),
         ) as create_delivery,
         patch("app.tasks.notification.send_notification_email_task", task),
-        patch("app.tasks.notification.send_notification_slack_task", task),
+        patch("app.tasks.notification.send_notification_webhook_task", task),
     ):
         await AutoNotificationService._trigger_external_channels(
             notification,
             [
                 NotificationChannel.WEBHOOK,
                 NotificationChannel.EMAIL,
-                NotificationChannel.SLACK,
+                NotificationChannel.WEBHOOK,
             ],
         )
 
@@ -193,7 +193,7 @@ async def test_trigger_external_channels_handles_disabled_success_and_error():
     ("channel", "setting", "value", "expected"),
     [
         (NotificationChannel.EMAIL, "smtp_enabled", True, True),
-        (NotificationChannel.SLACK, "slack_enabled", False, False),
+        (NotificationChannel.WEBHOOK, "webhook_enabled", False, False),
     ],
 )
 async def test_channel_enabled_uses_channel_setting(channel, setting, value, expected):

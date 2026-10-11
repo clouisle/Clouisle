@@ -74,10 +74,8 @@ def test_configures_celery_with_and_without_redis_password(monkeypatch):
     assert app.conf.task_default_queue == "default"
     assert app.conf.task_routes["app.tasks.agent.*"] == {"queue": "agent"}
     for task_name in (
-        "send_notification_wechat",
-        "send_notification_feishu",
+        "send_notification_email",
         "send_notification_webhook",
-        "send_notification_slack",
     ):
         assert app.conf.task_routes[task_name] == {"queue": "default"}
     assert app.conf.beat_schedule["cleanup-expired-sandbox-sessions"]["options"] == {

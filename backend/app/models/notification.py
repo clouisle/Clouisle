@@ -44,11 +44,11 @@ class NotificationChannel(str, Enum):
     """通知渠道"""
 
     EMAIL = "email"
-    DINGTALK = "dingtalk"
+    DINGTALK = "dingtalk"  # Historical delivery rows remain readable.
     WECHAT = "wechat"
     FEISHU = "feishu"
     WEBHOOK = "webhook"
-    SLACK = "slack"
+    SLACK = "slack"  # Historical delivery rows remain readable.
 
 
 class AutoNotificationType(str, Enum):

@@ -241,7 +241,7 @@ First public release of Clouisle - an enterprise-grade knowledge base and AI Age
 - **General**: Site name, description, URL, icon
 - **Default Language**: Configurable default language for system messages
 - **Security**: Registration, password policy, session, login security
-- **Notifications**: Email (SMTP), DingTalk, WeChat Work, Feishu, Slack, Webhook
+- **Notifications**: Email (SMTP) and generic Webhook delivery, plus in-app notifications
 - **Auto Notifications**: Configurable system event notifications
 - **SSO**: OIDC, SAML, CAS provider configuration
 - **Storage**: Audit log retention and archiving

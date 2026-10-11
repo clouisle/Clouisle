@@ -57,11 +57,7 @@ class AutoNotificationService:
         """检查渠道是否已配置并启用"""
         channel_enabled_keys = {
             NotificationChannel.EMAIL: "smtp_enabled",
-            NotificationChannel.DINGTALK: "dingtalk_enabled",
-            NotificationChannel.WECHAT: "wechat_enabled",
-            NotificationChannel.FEISHU: "feishu_enabled",
             NotificationChannel.WEBHOOK: "webhook_enabled",
-            NotificationChannel.SLACK: "slack_enabled",
         }
         key = channel_enabled_keys.get(channel)
         if not key:
@@ -144,21 +140,13 @@ class AutoNotificationService:
     ) -> None:
         """触发外部渠道发送"""
         from app.tasks.notification import (
-            send_notification_dingtalk_task,
             send_notification_email_task,
-            send_notification_feishu_task,
-            send_notification_slack_task,
-            send_notification_wechat_task,
             send_notification_webhook_task,
         )
 
         channel_tasks = {
             NotificationChannel.EMAIL: send_notification_email_task,
-            NotificationChannel.DINGTALK: send_notification_dingtalk_task,
-            NotificationChannel.WECHAT: send_notification_wechat_task,
-            NotificationChannel.FEISHU: send_notification_feishu_task,
             NotificationChannel.WEBHOOK: send_notification_webhook_task,
-            NotificationChannel.SLACK: send_notification_slack_task,
         }
 
         for channel in channels:

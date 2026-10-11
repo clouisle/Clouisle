@@ -31,23 +31,13 @@ const NOTIFICATION_CATEGORIES = {
 } as const
 
 // Available channels
-const CHANNELS = ['email', 'dingtalk', 'wechat', 'feishu', 'webhook', 'slack'] as const
-
-interface EnabledChannels {
-  email: boolean
-  dingtalk: boolean
-  wechat: boolean
-  feishu: boolean
-  webhook: boolean
-  slack: boolean
-}
+const CHANNELS = ['email', 'webhook'] as const
 
 interface AutoNotificationsSettingsTabProps {
-  enabledChannels: EnabledChannels
   canUpdate: boolean
 }
 
-export function AutoNotificationsSettingsTab({ enabledChannels, canUpdate }: AutoNotificationsSettingsTabProps) {
+export function AutoNotificationsSettingsTab({ canUpdate }: AutoNotificationsSettingsTabProps) {
   const t = useTranslations('siteSettings')
 
   const getNotificationChannelLabel = (channel: string) => {
@@ -94,7 +84,10 @@ export function AutoNotificationsSettingsTab({ enabledChannels, canUpdate }: Aut
     try {
       setLoading(true)
       const data = await siteSettingsApi.getAutoNotifications()
-      setConfig(data)
+      setConfig({
+        ...data,
+        channels: data.channels.filter((channel) => CHANNELS.some((supported) => supported === channel)),
+      })
     } catch (error) {
       console.error('Failed to load auto notification config:', error)
     } finally {
@@ -145,8 +138,8 @@ export function AutoNotificationsSettingsTab({ enabledChannels, canUpdate }: Aut
     }
   }
 
-  // Get available channels (only show enabled ones)
-  const availableChannels = CHANNELS.filter((channel) => enabledChannels[channel])
+  // Email and Webhook are the only externally supported channels.
+  const availableChannels = [...CHANNELS]
 
   if (loading) {
     return (

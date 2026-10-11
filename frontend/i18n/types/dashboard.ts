@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-08T18:56:50.219Z
+// GENERATED — 2026-10-11T09:26:12.484Z
 // Source: i18n/en/dashboard.json
 export type DashboardMessages = {
   dashboard: {
@@ -82,10 +82,8 @@ export type DashboardMessages = {
       tokenUsage: string
     }
     models: {
-      totalTokens: string
       avgTokensPerMessage: string
       mostUsedModel: string
-      totalMessages: string
       tokenTrend: string
       tokenTrendDesc: string
       teamRanking: string
@@ -126,9 +124,6 @@ export type DashboardMessages = {
         totalAgents: string
         totalWorkflows: string
         totalKnowledgeBases: string
-        totalConversations: string
-        totalMessages: string
-        totalTokens: string
         dau: string
         dauDesc: string
         wau: string
@@ -139,6 +134,7 @@ export type DashboardMessages = {
         activeUsers: string
         conversations: string
         tokens: string
+        messages: string
         teams: string
         teamsDesc: string
         agents: string

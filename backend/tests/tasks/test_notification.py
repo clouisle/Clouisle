@@ -19,67 +19,22 @@ DELIVERY_TASKS = [
         NotificationChannel.EMAIL,
     ),
     (
-        tasks.send_notification_dingtalk_task,
-        "_send_notification_dingtalk",
-        NotificationChannel.DINGTALK,
-    ),
-    (
-        tasks.send_notification_wechat_task,
-        "_send_notification_wechat",
-        NotificationChannel.WECHAT,
-    ),
-    (
-        tasks.send_notification_feishu_task,
-        "_send_notification_feishu",
-        NotificationChannel.FEISHU,
-    ),
-    (
         tasks.send_notification_webhook_task,
         "_send_notification_webhook",
         NotificationChannel.WEBHOOK,
     ),
-    (
-        tasks.send_notification_slack_task,
-        "_send_notification_slack",
-        NotificationChannel.SLACK,
-    ),
 ]
 
 CHANNEL_SENDERS = [
-    (
-        tasks._send_notification_dingtalk,
-        "send_dingtalk_notification",
-        NotificationChannel.DINGTALK,
-        "zh",
-    ),
-    (
-        tasks._send_notification_wechat,
-        "send_wechat_notification",
-        NotificationChannel.WECHAT,
-        "zh",
-    ),
-    (
-        tasks._send_notification_feishu,
-        "send_feishu_notification",
-        NotificationChannel.FEISHU,
-        "zh",
-    ),
     (
         tasks._send_notification_webhook,
         "send_webhook_notification",
         NotificationChannel.WEBHOOK,
         "en",
     ),
-    (
-        tasks._send_notification_slack,
-        "send_slack_notification",
-        NotificationChannel.SLACK,
-        "en",
-    ),
 ]
 
 
-@pytest.mark.parametrize(("task", "worker_name", "channel"), DELIVERY_TASKS)
 def test_delivery_task_runs_worker(task, worker_name, channel):
     notification_id = uuid4()
 
@@ -272,7 +227,7 @@ async def test_channel_delivery_success(worker, sender_name, channel, locale):
 
 
 @pytest.mark.asyncio
-async def test_channel_delivery_raises_when_sender_returns_false():
+async def test_webhook_delivery_raises_when_sender_returns_false():
     notification_id = uuid4()
     ctx = SimpleNamespace(notification=SimpleNamespace(link_url=None))
 
@@ -285,11 +240,11 @@ async def test_channel_delivery_raises_when_sender_returns_false():
             tasks, "_build_notification_message", return_value=("Title", "Body")
         ),
         patch.object(
-            tasks, "send_slack_notification", new=AsyncMock(return_value=False)
+            tasks, "send_webhook_notification", new=AsyncMock(return_value=False)
         ),
-        pytest.raises(RuntimeError, match="slack_send_failed"),
+        pytest.raises(RuntimeError, match="webhook_send_failed"),
     ):
-        await tasks._send_notification_slack(notification_id)
+        await tasks._send_notification_webhook(notification_id)
 
 
 @pytest.mark.asyncio

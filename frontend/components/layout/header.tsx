@@ -21,6 +21,9 @@ import {
   UsersRound,
   Wrench,
   Bot,
+  Globe,
+  Mail,
+  Plug,
 } from 'lucide-react'
 
 import { SidebarTrigger } from '@/components/ui/sidebar'
@@ -89,12 +92,9 @@ const SEARCHABLE_DASHBOARD_ROUTES: SearchRouteItem[] = [
   { titleKey: 'siteSettings:ssoSettings', url: '/site-settings/security', icon: Shield, parentKey: 'siteSettings:security', keywords: ['single sign on'] },
   { titleKey: 'siteSettings:notifications.title', url: '/site-settings/notifications', icon: Bell, parentKey: 'nav:siteSettings' },
   { titleKey: 'siteSettings:autoNotifications.tab', url: '/site-settings/notifications', icon: Bell, parentKey: 'siteSettings:notifications.title' },
-  { titleKey: 'siteSettings:notifications.email', url: '/site-settings/notifications', icon: Bell, parentKey: 'siteSettings:notifications.title' },
-  { titleKey: 'siteSettings:notifications.dingtalk', url: '/site-settings/notifications', icon: Bell, parentKey: 'siteSettings:notifications.title' },
-  { titleKey: 'siteSettings:notifications.wechat', url: '/site-settings/notifications', icon: Bell, parentKey: 'siteSettings:notifications.title' },
-  { titleKey: 'siteSettings:notifications.feishu', url: '/site-settings/notifications', icon: Bell, parentKey: 'siteSettings:notifications.title' },
-  { titleKey: 'siteSettings:notifications.webhook', url: '/site-settings/notifications', icon: Bell, parentKey: 'siteSettings:notifications.title' },
-  { titleKey: 'siteSettings:notifications.slack', url: '/site-settings/notifications', icon: Bell, parentKey: 'siteSettings:notifications.title' },
+  { titleKey: 'siteSettings:integrations.title', url: '/site-settings/integrations', icon: Plug, parentKey: 'nav:siteSettings' },
+  { titleKey: 'siteSettings:integrations.email', url: '/site-settings/integrations', icon: Mail, parentKey: 'siteSettings:integrations.title' },
+  { titleKey: 'siteSettings:integrations.webhook', url: '/site-settings/integrations', icon: Globe, parentKey: 'siteSettings:integrations.title' },
   { titleKey: 'siteSettings:storage', url: '/site-settings/storage', icon: Database, parentKey: 'nav:siteSettings' },
   { titleKey: 'siteSettings:auditLogStorage', url: '/site-settings/storage', icon: Database, parentKey: 'siteSettings:storage' },
   { titleKey: 'siteSettings:manualArchive', url: '/site-settings/storage', icon: Database, parentKey: 'siteSettings:storage' },

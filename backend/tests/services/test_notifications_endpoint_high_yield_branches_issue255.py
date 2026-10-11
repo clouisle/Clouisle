@@ -7,7 +7,6 @@ import pytest
 
 from app.api.v1.endpoints import notifications as endpoint
 from app.models.notification import (
-    NotificationChannel,
     NotificationLevel,
     NotificationScope,
     NotificationSource,
@@ -184,60 +183,6 @@ async def test_admin_create_non_superuser_single_user_continues_to_create():
         )
 
     assert result["data"].user_id == target_user_id
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("channel", "config_target", "config"),
-    [
-        (
-            NotificationChannel.DINGTALK,
-            "app.core.dingtalk.get_dingtalk_config",
-            {
-                "enabled": True,
-                "notification_type": "app",
-                "app_key": "",
-                "app_secret": "secret",
-                "agent_id": "agent",
-            },
-        ),
-        (
-            NotificationChannel.WECHAT,
-            "app.core.wechat.get_wechat_config",
-            {
-                "enabled": True,
-                "notification_type": "app",
-                "corp_id": "",
-                "secret": "secret",
-                "agent_id": "agent",
-            },
-        ),
-        (
-            NotificationChannel.FEISHU,
-            "app.core.feishu.get_feishu_config",
-            {
-                "enabled": True,
-                "notification_type": "app",
-                "app_id": "",
-                "app_secret": "secret",
-            },
-        ),
-    ],
-)
-async def test_admin_create_rejects_incomplete_external_app_config(
-    channel, config_target, config
-):
-    with (
-        patch(config_target, new=AsyncMock(return_value=config)),
-        pytest.raises(BusinessError) as exc_info,
-    ):
-        await endpoint.admin_create_notification(
-            payload(notify_channels=[channel]), user(superuser=True)
-        )
-
-    assert_business_error(
-        exc_info, ResponseCode.BAD_REQUEST, f"{channel.value}_not_configured"
-    )
 
 
 @pytest.mark.asyncio

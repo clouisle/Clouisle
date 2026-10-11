@@ -981,15 +981,6 @@ msgstr "Could not validate credentials"
 msgid "current_password_incorrect"
 msgstr "Current password is incorrect"
 
-msgid "dingtalk_not_configured"
-msgstr "DingTalk service is not configured"
-
-msgid "dingtalk_not_enabled"
-msgstr "DingTalk service is not enabled"
-
-msgid "dingtalk_send_failed"
-msgstr "Failed to send DingTalk message"
-
 msgid "document_created"
 msgstr "Document created successfully"
 
@@ -1158,14 +1149,6 @@ msgstr "This domain is not allowed to embed this resource"
 msgid "embed_not_enabled"
 msgstr "Embedding is not enabled for this resource"
 
-msgid "feishu_not_configured"
-msgstr "Feishu service is not configured"
-
-msgid "feishu_not_enabled"
-msgstr "Feishu service is not enabled"
-
-msgid "feishu_send_failed"
-msgstr "Failed to send Feishu message"
 
 msgid "file_deleted"
 msgstr "File deleted successfully"
@@ -1202,6 +1185,9 @@ msgstr "File too large"
 
 msgid "file_uploaded"
 msgstr "File uploaded successfully"
+msgid "invalid_notification_channels"
+msgstr "Unsupported notification channel(s): {channels}"
+
 
 msgid "files_parsed"
 msgstr "Files parsed successfully"
@@ -2186,14 +2172,6 @@ msgstr "Your session has expired due to a new login from another device"
 msgid "setting_not_found"
 msgstr "Setting '{key}' not found"
 
-msgid "slack_not_configured"
-msgstr "Slack service is not configured"
-
-msgid "slack_not_enabled"
-msgstr "Slack service is not enabled"
-
-msgid "slack_send_failed"
-msgstr "Failed to send Slack message"
 
 msgid "smtp_not_configured"
 msgstr "Email service is not configured"
@@ -2330,11 +2308,6 @@ msgstr "Team owner permission required"
 msgid "team_updated"
 msgstr "Team updated successfully"
 
-msgid "test_dingtalk_content"
-msgstr "This is a test message. If you received this, your DingTalk configuration is working correctly."
-
-msgid "test_dingtalk_sent"
-msgstr "Test DingTalk message sent successfully"
 
 msgid "test_email_body_html"
 msgstr "\n<!DOCTYPE html>\n<html>\n<head>\n    <meta charset=\"utf-8\">\n</head>\n<body style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\">\n    <h2 style=\"color: #333;\">✅ SMTP Configuration Test Successful</h2>\n    <p>This is a test email from <strong>{site_name}</strong>.</p>\n    <p style=\"color: #666;\">If you received this email, your SMTP configuration is working correctly.</p>\n</body>\n</html>\n"
@@ -2348,20 +2321,10 @@ msgstr "Test email sent successfully"
 msgid "test_email_subject"
 msgstr "【{site_name}】Test Email"
 
-msgid "test_feishu_content"
-msgstr "This is a test message. If you received this, your Feishu configuration is working correctly."
-
-msgid "test_feishu_sent"
-msgstr "Test Feishu message sent successfully"
 
 msgid "test_notification_title"
 msgstr "【{site_name}】Test Message"
 
-msgid "test_slack_content"
-msgstr "This is a test message. If you received this, your Slack configuration is working correctly."
-
-msgid "test_slack_sent"
-msgstr "Test Slack message sent successfully"
 
 msgid "test_webhook_content"
 msgstr "This is a test message. If you received this, your Webhook configuration is working correctly."
@@ -2369,11 +2332,6 @@ msgstr "This is a test message. If you received this, your Webhook configuration
 msgid "test_webhook_sent"
 msgstr "Test Webhook notification sent successfully"
 
-msgid "test_wechat_content"
-msgstr "This is a test message. If you received this, your WeChat Work configuration is working correctly."
-
-msgid "test_wechat_sent"
-msgstr "Test WeChat Work message sent successfully"
 
 msgid "token_expired"
 msgstr "Token expired"
@@ -2773,14 +2731,6 @@ msgstr "Webhook token regenerated successfully"
 msgid "webhook_trigger_disabled"
 msgstr "Webhook trigger is not enabled for this workflow"
 
-msgid "wechat_not_configured"
-msgstr "WeChat Work service is not configured"
-
-msgid "wechat_not_enabled"
-msgstr "WeChat Work service is not enabled"
-
-msgid "wechat_send_failed"
-msgstr "Failed to send WeChat Work message"
 
 msgid "welcome_message"
 msgstr "Welcome to Clouisle API"

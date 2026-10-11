@@ -5,7 +5,7 @@ The auto notification feature allows administrators to configure automatic notif
 ## Overview
 
 - **In-app Notifications**: All enabled auto notifications create in-app notifications
-- **External Channels**: Can be configured to send via email, DingTalk, WeChat Work, Feishu, Slack, Webhook
+- **External Channels**: Can be configured to send via email or Webhook
 - **Global Configuration**: External channels are globally configured and apply to all enabled notification types
 
 ## Notification Types
@@ -92,10 +92,10 @@ These are valid notification types, but the default seeded `enabled_types` list 
 
 1. Go to **Site Settings** → **Notification Settings** → **Auto Notifications** tab
 2. Check notification types to enable
-3. Select external notification channels (must be enabled in respective channel settings first)
+3. Select email and/or Webhook channels after enabling them in their settings
 4. Save configuration
 
-The endpoint is `GET/PUT /api/v1/admin/site-settings/auto-notifications`. It accepts the notification types listed above and the channels `email`, `dingtalk`, `wechat`, `feishu`, `webhook`, and `slack`. The default configuration has no external channels enabled; its seeded enabled types include `workflow.pause_pending` but not the password-expiration types.
+The endpoint is `GET/PUT /api/v1/admin/site-settings/auto-notifications`. It accepts the notification types listed above and the channels `email` and `webhook`. The default configuration has no external channels enabled; its seeded enabled types include `workflow.pause_pending` but not the password-expiration types.
 
 ### API Configuration
 
@@ -116,7 +116,7 @@ Response example:
       "user.activated",
       "security.login_anomaly"
     ],
-    "channels": ["email", "dingtalk"]
+    "channels": ["email", "webhook"]
   },
   "msg": "success"
 }
@@ -146,13 +146,9 @@ Auto notifications support the following external channels:
 | Channel | Configuration | Description |
 |---------|---------------|-------------|
 | `email` | SMTP settings | Email notifications |
-| `dingtalk` | DingTalk robot Webhook | DingTalk group notifications |
-| `wechat` | WeChat Work robot Webhook | WeChat Work group notifications |
-| `feishu` | Feishu robot Webhook | Feishu group notifications |
-| `slack` | Slack Webhook | Slack channel notifications |
 | `webhook` | Custom Webhook URL | Generic HTTP callback |
 
-**Note**: External channels must be configured and enabled in their respective settings pages before they can be used in auto notifications.
+**Note**: Email and Webhook must be configured and enabled in Site Settings before they can be used in auto notifications.
 
 ## Notification Content
 
@@ -199,7 +195,7 @@ Business Module → AutoNotificationService → In-app Notification
                                          ↓
                                   External Channel Task (Celery)
                                          ↓
-                           Email/DingTalk/WeChat/Feishu/Slack/Webhook
+                           Email/Webhook
 ```
 
 ### Core Components

@@ -374,7 +374,7 @@ PUT /api/v1/admin/site-settings/auto-notifications
 
 ```json
 {
-  "channels": ["email", "dingtalk", "wechat", "feishu", "webhook", "slack"]
+  "channels": ["email", "webhook"]
 }
 ```
 
@@ -386,7 +386,7 @@ PUT /api/v1/admin/site-settings/auto-notifications
 {
   "code": 0,
   "data": {
-    "channels": ["email", "dingtalk", "wechat"]
+    "channels": ["email", "webhook"]
   },
   "msg": "success"
 }
@@ -394,17 +394,13 @@ PUT /api/v1/admin/site-settings/auto-notifications
 
 ## Test Notification Channels (admin)
 
-Send test notifications through the configured channels.
+Send test notifications through the configured email or generic Webhook integrations.
 
 ### Endpoints
 
 ```
 POST /api/v1/admin/site-settings/test-email
-POST /api/v1/admin/site-settings/test-dingtalk
-POST /api/v1/admin/site-settings/test-wechat
-POST /api/v1/admin/site-settings/test-feishu
 POST /api/v1/admin/site-settings/test-webhook
-POST /api/v1/admin/site-settings/test-slack
 ```
 
 `test-email` accepts a body with the target recipient:

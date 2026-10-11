@@ -170,33 +170,6 @@ export interface EmailSettings {
   email_from_address: string
 }
 
-export interface DingTalkSettings {
-  dingtalk_enabled: boolean
-  dingtalk_notification_type: 'webhook' | 'app'
-  dingtalk_webhook_url: string
-  dingtalk_secret: string
-  dingtalk_app_key: string
-  dingtalk_app_secret: string
-  dingtalk_agent_id: string
-}
-
-export interface WeChatSettings {
-  wechat_enabled: boolean
-  wechat_notification_type: 'webhook' | 'app'
-  wechat_webhook_url: string
-  wechat_corp_id: string
-  wechat_agent_id: string
-  wechat_secret: string
-}
-
-export interface FeishuSettings {
-  feishu_enabled: boolean
-  feishu_notification_type: 'webhook' | 'app'
-  feishu_webhook_url: string
-  feishu_secret: string
-  feishu_app_id: string
-  feishu_app_secret: string
-}
 
 export interface WebhookSettings {
   webhook_enabled: boolean
@@ -207,10 +180,6 @@ export interface WebhookSettings {
   webhook_secret: string
 }
 
-export interface SlackSettings {
-  slack_enabled: boolean
-  slack_webhook_url: string
-}
 
 export interface StorageSettings {
   audit_log_retention_days: number

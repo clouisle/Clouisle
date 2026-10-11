@@ -8,8 +8,8 @@ As an administrator, you can configure:
 
 - **General**: Site name, URL, description, default language, theming
 - **Security**: Registration, password policy, sessions, model endpoint allowlist
-- **Notifications**: SMTP/email, DingTalk, WeChat Work, Feishu, Slack, webhook, auto notifications
-- **Storage**: Upload storage backend (local or S3-compatible object storage), KB upload size, audit log retention and archive path
+- **Notifications**: Notification rules and automatic notification preferences
+- **Integrations**: Outbound email and Webhook delivery configuration
 - **SSO**: SSO providers and global SSO behavior
 
 ## Accessing System Settings
@@ -25,6 +25,7 @@ As an administrator, you can configure:
 - **General** (`/site-settings`)
 - **Security** (`/site-settings/security`)
 - **Notifications** (`/site-settings/notifications`)
+- **Integrations** (`/site-settings/integrations`)
 - **Storage** (`/site-settings/storage`)
 - **Memory** (`/site-settings/memory`)
 - **SSO** (`/site-settings/sso`)
@@ -200,7 +201,7 @@ Requests resolving to the transparent proxy benchmark pool `198.18.0.0/15` (comm
 
 ## Notification Settings
 
-### SMTP (Email)
+### Email (SMTP)
 
 **Configuration:**
 ```yaml
@@ -215,7 +216,7 @@ email_from_address: noreply@your-domain.com
 ```
 
 **Update SMTP Settings:**
-1. Navigate to **Settings** → **Notifications**
+1. Navigate to **Settings** → **Integrations** → **Email** (`/site-settings/integrations`)
 2. Enter SMTP details
 3. Set sender name and address
 4. Click **Test** (POST `/api/v1/admin/site-settings/test-email`)
@@ -223,14 +224,11 @@ email_from_address: noreply@your-domain.com
 
 ### External Notification Channels
 
-The following channels can be enabled and configured (each with its own settings page section and a test endpoint):
+Email and generic Webhook are the only supported external notification integrations. Configure them under **Settings** → **Integrations** (`/site-settings/integrations`). Notification delivery settings are separate from the event/channel preferences on **Notifications** (`/site-settings/notifications`).
 
 | Channel | Key settings | Test endpoint |
 |---------|--------------|---------------|
-| DingTalk | `dingtalk_enabled`, type (`webhook` or `app`), webhook URL/secret or app key/secret/agent ID | `/test-dingtalk` |
-| WeChat Work | `wechat_enabled`, type (`webhook` or `app`), webhook URL or corp ID/agent ID/app secret | `/test-wechat` |
-| Feishu | `feishu_enabled`, type (`webhook` or `app`), webhook URL/secret or app ID/secret | `/test-feishu` |
-| Slack | `slack_enabled`, incoming webhook URL | `/test-slack` |
+| Email | SMTP server, sender, credentials | `/test-email` |
 | Webhook | `webhook_enabled`, URL, method, custom headers, body template, HMAC secret | `/test-webhook` |
 
 ### Auto Notifications
@@ -330,8 +328,6 @@ SSO providers are managed in **Settings** → **SSO**. Providers are created gen
 > - CORS configuration
 > - IP whitelisting
 > - API rate limiting
-> - Webhook configuration as a general system feature
-> - Third-party integrations (Salesforce, HubSpot, Slack apps, analytics like Google Analytics/Mixpanel)
 > - Maintenance mode
 > - Database pool / cache settings
 > - Settings export/import and reset-to-defaults workflows

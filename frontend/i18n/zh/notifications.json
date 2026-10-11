@@ -39,10 +39,7 @@
     "viewNotification": "查看",
     "channel": {
       "email": "邮件",
-      "dingtalk": "钉钉",
-      "webhook": "Webhook",
-      "slack": "Slack",
-      "wechat": "企业微信"
+      "webhook": "Webhook"
     },
     "deliveryStatus": {
       "title": "发送状态",
@@ -126,10 +123,7 @@
       "selectTeam": "选择团队",
       "selectScope": "选择范围",
       "notifyChannels": "外部通知渠道",
-      "channelEmail": "邮件",
-      "channelSlack": "Slack",
-      "channelDingtalk": "钉钉",
-      "channelWechat": "企业微信"
+      "channelEmail": "邮件"
     }
   }
 }

@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations, useLocale } from 'next-intl'
-import { Mail, MessageSquare, CheckCircle2, XCircle, Loader2, Clock } from 'lucide-react'
+import { Mail, CheckCircle2, XCircle, Loader2, Clock } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import type { NotificationItem } from '@/lib/api/admin/notifications'
 import type { NotificationDelivery } from '@/lib/api/notifications'
@@ -32,8 +32,6 @@ function DeliveryStatusIcon({ delivery }: { delivery: NotificationDelivery }) {
 
   const channelIcon = delivery.channel === 'email' ? (
     <Mail className="h-3.5 w-3.5" />
-  ) : delivery.channel === 'dingtalk' ? (
-    <MessageSquare className="h-3.5 w-3.5" />
   ) : null
 
   const statusIcon = delivery.status === 'success' ? (

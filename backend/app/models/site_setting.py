@@ -716,56 +716,6 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "public": False,
         "desc": "Email sender address",
     },
-    # DingTalk
-    "dingtalk_enabled": {
-        "value": False,
-        "type": "bool",
-        "category": "dingtalk",
-        "public": False,
-        "desc": "Enable DingTalk notifications",
-    },
-    "dingtalk_notification_type": {
-        "value": "webhook",
-        "type": "string",
-        "category": "dingtalk",
-        "public": False,
-        "desc": "DingTalk notification type (webhook or app)",
-    },
-    "dingtalk_webhook_url": {
-        "value": "",
-        "type": "string",
-        "category": "dingtalk",
-        "public": False,
-        "desc": "DingTalk webhook URL",
-    },
-    "dingtalk_secret": {
-        "value": "",
-        "type": "string",
-        "category": "dingtalk",
-        "public": False,
-        "desc": "DingTalk webhook secret",
-    },
-    "dingtalk_app_key": {
-        "value": "",
-        "type": "string",
-        "category": "dingtalk",
-        "public": False,
-        "desc": "DingTalk app key",
-    },
-    "dingtalk_app_secret": {
-        "value": "",
-        "type": "string",
-        "category": "dingtalk",
-        "public": False,
-        "desc": "DingTalk app secret",
-    },
-    "dingtalk_agent_id": {
-        "value": "",
-        "type": "string",
-        "category": "dingtalk",
-        "public": False,
-        "desc": "DingTalk agent ID",
-    },
     # Storage
     "audit_log_retention_days": {
         "value": 365,
@@ -880,92 +830,6 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "public": False,
         "desc": "Bulk deletion threshold for alert",
     },
-    # WeChat Work (企业微信)
-    "wechat_enabled": {
-        "value": False,
-        "type": "bool",
-        "category": "wechat",
-        "public": False,
-        "desc": "Enable WeChat Work notifications",
-    },
-    "wechat_notification_type": {
-        "value": "webhook",
-        "type": "string",
-        "category": "wechat",
-        "public": False,
-        "desc": "WeChat Work notification type (webhook or app)",
-    },
-    "wechat_webhook_url": {
-        "value": "",
-        "type": "string",
-        "category": "wechat",
-        "public": False,
-        "desc": "WeChat Work webhook URL",
-    },
-    "wechat_corp_id": {
-        "value": "",
-        "type": "string",
-        "category": "wechat",
-        "public": False,
-        "desc": "WeChat Work corp ID",
-    },
-    "wechat_agent_id": {
-        "value": "",
-        "type": "string",
-        "category": "wechat",
-        "public": False,
-        "desc": "WeChat Work agent ID",
-    },
-    "wechat_secret": {
-        "value": "",
-        "type": "string",
-        "category": "wechat",
-        "public": False,
-        "desc": "WeChat Work app secret",
-    },
-    # Feishu (飞书)
-    "feishu_enabled": {
-        "value": False,
-        "type": "bool",
-        "category": "feishu",
-        "public": False,
-        "desc": "Enable Feishu notifications",
-    },
-    "feishu_notification_type": {
-        "value": "webhook",
-        "type": "string",
-        "category": "feishu",
-        "public": False,
-        "desc": "Feishu notification type (webhook or app)",
-    },
-    "feishu_webhook_url": {
-        "value": "",
-        "type": "string",
-        "category": "feishu",
-        "public": False,
-        "desc": "Feishu webhook URL",
-    },
-    "feishu_secret": {
-        "value": "",
-        "type": "string",
-        "category": "feishu",
-        "public": False,
-        "desc": "Feishu webhook secret for signature",
-    },
-    "feishu_app_id": {
-        "value": "",
-        "type": "string",
-        "category": "feishu",
-        "public": False,
-        "desc": "Feishu app ID",
-    },
-    "feishu_app_secret": {
-        "value": "",
-        "type": "string",
-        "category": "feishu",
-        "public": False,
-        "desc": "Feishu app secret",
-    },
     # Generic Webhook
     "webhook_enabled": {
         "value": False,
@@ -1008,21 +872,6 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "category": "webhook",
         "public": False,
         "desc": "Secret for HMAC signature",
-    },
-    # Slack
-    "slack_enabled": {
-        "value": False,
-        "type": "bool",
-        "category": "slack",
-        "public": False,
-        "desc": "Enable Slack notifications",
-    },
-    "slack_webhook_url": {
-        "value": "",
-        "type": "string",
-        "category": "slack",
-        "public": False,
-        "desc": "Slack incoming webhook URL",
     },
     # SSO Settings
     "sso_enabled": {

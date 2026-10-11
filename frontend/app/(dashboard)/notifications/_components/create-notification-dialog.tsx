@@ -461,26 +461,6 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
                     {t('admin.channelEmail')}
                   </label>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="channel-dingtalk"
-                    checked={notifyChannels.includes('dingtalk')}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        setNotifyChannels([...notifyChannels, 'dingtalk'])
-                      } else {
-                        setNotifyChannels(notifyChannels.filter(c => c !== 'dingtalk'))
-                      }
-                      setFieldErrors((prev) => clearValidationError(prev, 'notify_channels'))
-                    }}
-                  />
-                  <label
-                    htmlFor="channel-dingtalk"
-                    className="text-sm leading-none cursor-pointer"
-                  >
-                    {t('admin.channelDingtalk')}
-                  </label>
-                </div>
               </div>
             </div>
 

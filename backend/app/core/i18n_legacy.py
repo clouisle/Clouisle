@@ -849,18 +849,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Database host is not allowed",
         "zh": "不允许访问该数据库主机",
     },
-    "dingtalk_not_configured": {
-        "en": "DingTalk service is not configured",
-        "zh": "钉钉服务未配置",
-    },
-    "dingtalk_not_enabled": {
-        "en": "DingTalk service is not enabled",
-        "zh": "钉钉服务未启用",
-    },
-    "dingtalk_send_failed": {
-        "en": "Failed to send DingTalk message",
-        "zh": "钉钉消息发送失败",
-    },
     "document_created": {"en": "Document created successfully", "zh": "文档创建成功"},
     "document_deleted": {"en": "Document deleted successfully", "zh": "文档删除成功"},
     "document_is_processing": {
@@ -1061,18 +1049,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "embedding_model_locked_after_kb_creation": {
         "en": "Embedding model cannot be changed after knowledge base creation",
         "zh": "知识库创建后不可修改嵌入模型",
-    },
-    "feishu_not_configured": {
-        "en": "Feishu service is not configured",
-        "zh": "飞书服务未配置",
-    },
-    "feishu_not_enabled": {
-        "en": "Feishu service is not enabled",
-        "zh": "飞书服务未启用",
-    },
-    "feishu_send_failed": {
-        "en": "Failed to send Feishu message",
-        "zh": "飞书消息发送失败",
     },
     "fetch_webpage_http_error": {
         "en": "HTTP error: {status_code}",
@@ -2511,18 +2487,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Skipped must be a boolean",
         "zh": "跳过标识必须是布尔值",
     },
-    "slack_not_configured": {
-        "en": "Slack service is not configured",
-        "zh": "Slack 服务未配置",
-    },
-    "slack_not_enabled": {
-        "en": "Slack service is not enabled",
-        "zh": "Slack 服务未启用",
-    },
-    "slack_send_failed": {
-        "en": "Failed to send Slack message",
-        "zh": "Slack 消息发送失败",
-    },
     "smtp_not_configured": {
         "en": "Email service is not configured",
         "zh": "邮件服务未配置",
@@ -2699,14 +2663,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Please agree to the terms and privacy policy before registering",
         "zh": "请先同意用户协议和隐私政策再注册",
     },
-    "test_dingtalk_content": {
-        "en": "This is a test message. If you received this, your DingTalk configuration is working correctly.",
-        "zh": "这是一条测试消息，如果您收到此消息，说明钉钉通知配置正确。",
-    },
-    "test_dingtalk_sent": {
-        "en": "Test DingTalk message sent successfully",
-        "zh": "测试钉钉消息发送成功",
-    },
     "test_email_body_html": {
         "en": '\n<!DOCTYPE html>\n<html>\n<head>\n    <meta charset="utf-8">\n</head>\n<body style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">\n    <h2 style="color: #333;">✅ SMTP Configuration Test Successful</h2>\n    <p>This is a test email from <strong>{site_name}</strong>.</p>\n    <p style="color: #666;">If you received this email, your SMTP configuration is working correctly.</p>\n</body>\n</html>\n',
         "zh": '\n<!DOCTYPE html>\n<html>\n<head>\n    <meta charset="utf-8">\n</head>\n<body style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">\n    <h2 style="color: #333;">✅ SMTP 配置测试成功</h2>\n    <p>这是一封来自 <strong>{site_name}</strong> 的测试邮件。</p>\n    <p style="color: #666;">如果您收到了这封邮件，说明 SMTP 配置正确。</p>\n</body>\n</html>\n',
@@ -2720,25 +2676,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "【{site_name}】Test Email",
         "zh": "【{site_name}】测试邮件",
     },
-    "test_feishu_content": {
-        "en": "This is a test message. If you received this, your Feishu configuration is working correctly.",
-        "zh": "这是一条测试消息，如果您收到此消息，说明飞书通知配置正确。",
-    },
-    "test_feishu_sent": {
-        "en": "Test Feishu message sent successfully",
-        "zh": "测试飞书消息发送成功",
-    },
     "test_notification_title": {
         "en": "【{site_name}】Test Message",
         "zh": "【{site_name}】测试消息",
-    },
-    "test_slack_content": {
-        "en": "This is a test message. If you received this, your Slack configuration is working correctly.",
-        "zh": "这是一条测试消息，如果您收到此消息，说明 Slack 通知配置正确。",
-    },
-    "test_slack_sent": {
-        "en": "Test Slack message sent successfully",
-        "zh": "测试 Slack 消息发送成功",
     },
     "test_webhook_content": {
         "en": "This is a test message. If you received this, your Webhook configuration is working correctly.",
@@ -2747,14 +2687,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "test_webhook_sent": {
         "en": "Test Webhook notification sent successfully",
         "zh": "测试 Webhook 通知发送成功",
-    },
-    "test_wechat_content": {
-        "en": "This is a test message. If you received this, your WeChat Work configuration is working correctly.",
-        "zh": "这是一条测试消息，如果您收到此消息，说明企业微信通知配置正确。",
-    },
-    "test_wechat_sent": {
-        "en": "Test WeChat Work message sent successfully",
-        "zh": "测试企业微信消息发送成功",
     },
     "token_expired": {"en": "Token expired", "zh": "令牌已过期"},
     "token_revoked": {"en": "Token has been revoked", "zh": "令牌已被撤销"},
@@ -3044,18 +2976,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "webhook_trigger_disabled": {
         "en": "Webhook trigger is not enabled for this workflow",
         "zh": "此工作流未启用 Webhook 触发",
-    },
-    "wechat_not_configured": {
-        "en": "WeChat Work service is not configured",
-        "zh": "企业微信服务未配置",
-    },
-    "wechat_not_enabled": {
-        "en": "WeChat Work service is not enabled",
-        "zh": "企业微信服务未启用",
-    },
-    "wechat_send_failed": {
-        "en": "Failed to send WeChat Work message",
-        "zh": "企业微信消息发送失败",
     },
     "welcome_message": {"en": "Welcome to Clouisle API", "zh": "欢迎使用 Clouisle API"},
     "workflow_access_denied": {

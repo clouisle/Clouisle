@@ -982,15 +982,6 @@ msgstr "无法验证凭证"
 msgid "current_password_incorrect"
 msgstr "当前密码不正确"
 
-msgid "dingtalk_not_configured"
-msgstr "钉钉服务未配置"
-
-msgid "dingtalk_not_enabled"
-msgstr "钉钉服务未启用"
-
-msgid "dingtalk_send_failed"
-msgstr "钉钉消息发送失败"
-
 msgid "document_created"
 msgstr "文档创建成功"
 
@@ -1159,14 +1150,6 @@ msgstr "此域名不允许嵌入此资源"
 msgid "embed_not_enabled"
 msgstr "此资源未启用嵌入功能"
 
-msgid "feishu_not_configured"
-msgstr "飞书服务未配置"
-
-msgid "feishu_not_enabled"
-msgstr "飞书服务未启用"
-
-msgid "feishu_send_failed"
-msgstr "飞书消息发送失败"
 
 msgid "file_deleted"
 msgstr "文件删除成功"
@@ -1203,6 +1186,9 @@ msgstr "文件过大"
 
 msgid "file_uploaded"
 msgstr "文件上传成功"
+msgid "invalid_notification_channels"
+msgstr "不支持的通知渠道：{channels}"
+
 
 msgid "files_parsed"
 msgstr "文件批量解析成功"
@@ -2186,14 +2172,6 @@ msgstr "由于在其他设备登录，您的会话已过期"
 msgid "setting_not_found"
 msgstr "设置 '{key}' 未找到"
 
-msgid "slack_not_configured"
-msgstr "Slack 服务未配置"
-
-msgid "slack_not_enabled"
-msgstr "Slack 服务未启用"
-
-msgid "slack_send_failed"
-msgstr "Slack 消息发送失败"
 
 msgid "smtp_not_configured"
 msgstr "邮件服务未配置"
@@ -2330,11 +2308,6 @@ msgstr "需要团队所有者权限"
 msgid "team_updated"
 msgstr "团队更新成功"
 
-msgid "test_dingtalk_content"
-msgstr "这是一条测试消息，如果您收到此消息，说明钉钉通知配置正确。"
-
-msgid "test_dingtalk_sent"
-msgstr "测试钉钉消息发送成功"
 
 msgid "test_email_body_html"
 msgstr "\n<!DOCTYPE html>\n<html>\n<head>\n    <meta charset=\"utf-8\">\n</head>\n<body style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\">\n    <h2 style=\"color: #333;\">✅ SMTP 配置测试成功</h2>\n    <p>这是一封来自 <strong>{site_name}</strong> 的测试邮件。</p>\n    <p style=\"color: #666;\">如果您收到了这封邮件，说明 SMTP 配置正确。</p>\n</body>\n</html>\n"
@@ -2348,20 +2321,10 @@ msgstr "测试邮件发送成功"
 msgid "test_email_subject"
 msgstr "【{site_name}】测试邮件"
 
-msgid "test_feishu_content"
-msgstr "这是一条测试消息，如果您收到此消息，说明飞书通知配置正确。"
-
-msgid "test_feishu_sent"
-msgstr "测试飞书消息发送成功"
 
 msgid "test_notification_title"
 msgstr "【{site_name}】测试消息"
 
-msgid "test_slack_content"
-msgstr "这是一条测试消息，如果您收到此消息，说明 Slack 通知配置正确。"
-
-msgid "test_slack_sent"
-msgstr "测试 Slack 消息发送成功"
 
 msgid "test_webhook_content"
 msgstr "这是一条测试消息，如果您收到此消息，说明 Webhook 通知配置正确。"
@@ -2369,11 +2332,6 @@ msgstr "这是一条测试消息，如果您收到此消息，说明 Webhook 通
 msgid "test_webhook_sent"
 msgstr "测试 Webhook 通知发送成功"
 
-msgid "test_wechat_content"
-msgstr "这是一条测试消息，如果您收到此消息，说明企业微信通知配置正确。"
-
-msgid "test_wechat_sent"
-msgstr "测试企业微信消息发送成功"
 
 msgid "token_expired"
 msgstr "令牌已过期"
@@ -2773,14 +2731,6 @@ msgstr "Webhook 令牌重新生成成功"
 msgid "webhook_trigger_disabled"
 msgstr "此工作流未启用 Webhook 触发"
 
-msgid "wechat_not_configured"
-msgstr "企业微信服务未配置"
-
-msgid "wechat_not_enabled"
-msgstr "企业微信服务未启用"
-
-msgid "wechat_send_failed"
-msgstr "企业微信消息发送失败"
 
 msgid "welcome_message"
 msgstr "欢迎使用 Clouisle API"

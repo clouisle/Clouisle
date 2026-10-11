@@ -124,8 +124,8 @@ async def test_external_channels_skip_disabled_and_record_dispatch_results():
     delivery_create = AsyncMock(side_effect=[successful, failed])
     email_task = MagicMock()
     email_task.delay.return_value = SimpleNamespace(id="task-1")
-    slack_task = MagicMock()
-    slack_task.delay.side_effect = RuntimeError("broker unavailable")
+    webhook_task = MagicMock()
+    webhook_task.delay.side_effect = RuntimeError("broker unavailable")
 
     with (
         patch.object(
@@ -138,14 +138,16 @@ async def test_external_channels_skip_disabled_and_record_dispatch_results():
             new=delivery_create,
         ),
         patch.object(notification_tasks, "send_notification_email_task", email_task),
-        patch.object(notification_tasks, "send_notification_slack_task", slack_task),
+        patch.object(
+            notification_tasks, "send_notification_webhook_task", webhook_task
+        ),
     ):
         await AutoNotificationService._trigger_external_channels(
             notification,
             [
                 NotificationChannel.WEBHOOK,
                 NotificationChannel.EMAIL,
-                NotificationChannel.SLACK,
+                NotificationChannel.WEBHOOK,
             ],
         )
 

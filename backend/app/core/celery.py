@@ -99,12 +99,8 @@ celery_app.conf.task_routes = {
     "tasks.check_password_expiration": {"queue": "default"},
     "tasks.reset_daily_usage": {"queue": "default"},
     "tasks.reset_monthly_usage": {"queue": "default"},
-    "send_notification_dingtalk": {"queue": "default"},
     "send_notification_email": {"queue": "default"},
-    "send_notification_wechat": {"queue": "default"},
-    "send_notification_feishu": {"queue": "default"},
     "send_notification_webhook": {"queue": "default"},
-    "send_notification_slack": {"queue": "default"},
 }
 
 # Beat schedule for periodic tasks

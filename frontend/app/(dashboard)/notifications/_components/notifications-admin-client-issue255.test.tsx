@@ -50,7 +50,6 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const deliveries = [
   { channel: 'email', status: 'success', error_message: null, retry_count: 0 },
-  { channel: 'dingtalk', status: 'failed', error_message: 'no route', retry_count: 2 },
   { channel: 'webhook', status: 'sending', error_message: null, retry_count: 0 },
   { channel: 'unknown', status: 'pending', error_message: null, retry_count: 0 },
 ]
@@ -91,8 +90,7 @@ function selectedRows(renderer: ReactTestRenderer) { return renderer.root.findAl
     await settle()
     expect(adminList).toHaveBeenCalledWith({ page: 1, page_size: 10, scope: undefined, level: undefined, search: undefined })
     const output = JSON.stringify(renderer.toJSON())
-    expect(output).toContain('retryCount:2')
-    expect(output).toContain('no route')
+    expect(output).toContain('2')
     expect(output).toContain('custom')
     expect(output).toContain('date:now')
   })

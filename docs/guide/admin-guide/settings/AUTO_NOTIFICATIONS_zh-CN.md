@@ -5,7 +5,7 @@
 ## 功能概述
 
 - **站内通知**：所有启用的自动通知都会创建站内通知
-- **外部渠道**：可配置通过邮件、钉钉、企业微信、飞书、Slack、Webhook 等渠道发送
+- **外部渠道**：可配置通过邮件或通用 Webhook 发送
 - **全局配置**：外部渠道为全局配置，适用于所有启用的通知类型
 
 ## 通知类型
@@ -92,10 +92,10 @@
 
 1. 进入 **站点设置** → **通知设置** → **自动通知** 标签页
 2. 勾选需要启用的通知类型
-3. 选择外部通知渠道（需先在对应渠道配置页面启用）
+3. 选择邮件或通用 Webhook 渠道（需先在对应设置页面启用）
 4. 保存配置
 
-接口为 `GET/PUT /api/v1/admin/site-settings/auto-notifications`。可用渠道为 `email`、`dingtalk`、`wechat`、`feishu`、`webhook`、`slack`。默认不会启用外部渠道；默认种入的通知类型包含 `workflow.pause_pending`，但不包含密码过期相关类型。
+接口为 `GET/PUT /api/v1/admin/site-settings/auto-notifications`。可用渠道为 `email` 和 `webhook`。默认不会启用外部渠道；默认种入的通知类型包含 `workflow.pause_pending`，但不包含密码过期相关类型。
 
 ### API 配置
 
@@ -116,7 +116,7 @@ GET /api/v1/admin/site-settings/auto-notifications
       "user.activated",
       "security.login_anomaly"
     ],
-    "channels": ["email", "dingtalk"]
+    "channels": ["email", "webhook"]
   },
   "msg": "success"
 }
@@ -146,13 +146,9 @@ Content-Type: application/json
 | 渠道 | 配置项 | 说明 |
 |------|--------|------|
 | `email` | SMTP 设置 | 邮件通知 |
-| `dingtalk` | 钉钉机器人 Webhook | 钉钉群通知 |
-| `wechat` | 企业微信机器人 Webhook | 企业微信群通知 |
-| `feishu` | 飞书机器人 Webhook | 飞书群通知 |
-| `slack` | Slack Webhook | Slack 频道通知 |
 | `webhook` | 自定义 Webhook URL | 通用 HTTP 回调 |
 
-**注意**：外部渠道需要先在对应的设置页面配置并启用，才能在自动通知中使用。
+**注意**：邮件和通用 Webhook 需先在站点设置中配置并启用，才能用于自动通知。
 
 ## 通知内容
 
@@ -199,7 +195,7 @@ Content-Type: application/json
                                    ↓
                               外部渠道任务 (Celery)
                                    ↓
-                         邮件/钉钉/企业微信/飞书/Slack/Webhook
+                         邮件/通用 Webhook
 ```
 
 ### 核心组件

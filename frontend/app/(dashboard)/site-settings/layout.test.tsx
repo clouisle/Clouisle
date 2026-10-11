@@ -25,7 +25,7 @@ mock.module('@/lib/route-permissions', () => ({
       translationKey: 'security',
       descriptionKey: 'securityDescription',
     },
-    { path: '/site-settings/sso', translationKey: 'sso', descriptionKey: 'ssoDescription' },
+    { path: '/site-settings/integrations', translationKey: 'integrations.title', descriptionKey: 'integrations.description' },
     {
       path: '/site-settings/root',
       translationKey: 'root',

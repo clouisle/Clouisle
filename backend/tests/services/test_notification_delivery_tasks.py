@@ -72,7 +72,7 @@ async def test_update_delivery_status_ignores_missing_delivery():
     orm = query(first=None)
     with patch.object(tasks.NotificationDelivery, "filter", return_value=orm):
         await tasks._update_delivery_status(
-            uuid4(), NotificationChannel.SLACK, NotificationDeliveryStatus.FAILED
+            uuid4(), NotificationChannel.EMAIL, NotificationDeliveryStatus.FAILED
         )
 
     orm.first.assert_awaited_once()
@@ -234,21 +234,9 @@ async def test_email_delivery_records_partial_success_without_raising():
     ("function_name", "sender_name", "channel", "locale"),
     [
         (
-            "_send_notification_dingtalk",
-            "send_dingtalk_notification",
-            NotificationChannel.DINGTALK,
-            "zh",
-        ),
-        (
             "_send_notification_webhook",
             "send_webhook_notification",
             NotificationChannel.WEBHOOK,
-            "en",
-        ),
-        (
-            "_send_notification_slack",
-            "send_slack_notification",
-            NotificationChannel.SLACK,
             "en",
         ),
     ],
@@ -279,24 +267,6 @@ async def test_external_delivery_marks_success_with_mocked_channel(
     assert updates.await_args_list[-1] == call(
         item.id, channel, NotificationDeliveryStatus.SUCCESS
     )
-
-
-@pytest.mark.anyio
-async def test_external_delivery_failure_raises_after_sending_transition():
-    item = notification()
-    updates = AsyncMock()
-    with (
-        patch.object(tasks, "_update_delivery_status", new=updates),
-        patch.object(
-            tasks, "_load_notification_context", new=AsyncMock(return_value=None)
-        ),
-    ):
-        with pytest.raises(ValueError, match="notification_not_found"):
-            await tasks._send_notification_slack(item.id)
-
-    assert updates.await_args_list == [
-        call(item.id, NotificationChannel.SLACK, NotificationDeliveryStatus.SENDING)
-    ]
 
 
 def test_email_task_marks_failed_and_retries_after_channel_exception():

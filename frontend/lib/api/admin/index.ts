@@ -25,11 +25,7 @@ export type {
   GeneralSettings,
   SecuritySettings,
   EmailSettings,
-  DingTalkSettings,
-  WeChatSettings,
-  FeishuSettings,
   WebhookSettings,
-  SlackSettings,
   AutoNotificationConfig,
 } from './site-settings'
 

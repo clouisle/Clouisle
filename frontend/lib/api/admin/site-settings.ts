@@ -5,11 +5,7 @@ import type {
   GeneralSettings,
   SecuritySettings,
   EmailSettings,
-  DingTalkSettings,
-  WeChatSettings,
-  FeishuSettings,
   WebhookSettings,
-  SlackSettings,
   StorageSettings,
   AutoNotificationConfig,
   MemorySiteSettings,
@@ -23,11 +19,7 @@ export type {
   GeneralSettings,
   SecuritySettings,
   EmailSettings,
-  DingTalkSettings,
-  WeChatSettings,
-  FeishuSettings,
   WebhookSettings,
-  SlackSettings,
   StorageSettings,
   AutoNotificationConfig,
   MemorySiteSettings,
@@ -223,67 +215,6 @@ export const siteSettingsApi = {
     await api.post<null>('/admin/site-settings/test-email', { email })
   },
 
-  async getDingTalk(): Promise<DingTalkSettings> {
-    const settings = await this.getAll('dingtalk')
-    return {
-      dingtalk_enabled: (settings.dingtalk_enabled as boolean) ?? false,
-      dingtalk_notification_type: (settings.dingtalk_notification_type as 'webhook' | 'app') ?? 'webhook',
-      dingtalk_webhook_url: (settings.dingtalk_webhook_url as string) ?? '',
-      dingtalk_secret: (settings.dingtalk_secret as string) ?? '',
-      dingtalk_app_key: (settings.dingtalk_app_key as string) ?? '',
-      dingtalk_app_secret: (settings.dingtalk_app_secret as string) ?? '',
-      dingtalk_agent_id: (settings.dingtalk_agent_id as string) ?? '',
-    }
-  },
-
-  async updateDingTalk(data: Partial<DingTalkSettings>): Promise<Record<string, unknown>> {
-    return this.bulkUpdate(data)
-  },
-
-  async sendTestDingTalk(): Promise<void> {
-    await api.post<null>('/admin/site-settings/test-dingtalk', null)
-  },
-
-  async getWeChat(): Promise<WeChatSettings> {
-    const settings = await this.getAll('wechat')
-    return {
-      wechat_enabled: (settings.wechat_enabled as boolean) ?? false,
-      wechat_notification_type: (settings.wechat_notification_type as 'webhook' | 'app') ?? 'webhook',
-      wechat_webhook_url: (settings.wechat_webhook_url as string) ?? '',
-      wechat_corp_id: (settings.wechat_corp_id as string) ?? '',
-      wechat_agent_id: (settings.wechat_agent_id as string) ?? '',
-      wechat_secret: (settings.wechat_secret as string) ?? '',
-    }
-  },
-
-  async updateWeChat(data: Partial<WeChatSettings>): Promise<Record<string, unknown>> {
-    return this.bulkUpdate(data)
-  },
-
-  async sendTestWeChat(): Promise<void> {
-    await api.post<null>('/admin/site-settings/test-wechat', null)
-  },
-
-  async getFeishu(): Promise<FeishuSettings> {
-    const settings = await this.getAll('feishu')
-    return {
-      feishu_enabled: (settings.feishu_enabled as boolean) ?? false,
-      feishu_notification_type: (settings.feishu_notification_type as 'webhook' | 'app') ?? 'webhook',
-      feishu_webhook_url: (settings.feishu_webhook_url as string) ?? '',
-      feishu_secret: (settings.feishu_secret as string) ?? '',
-      feishu_app_id: (settings.feishu_app_id as string) ?? '',
-      feishu_app_secret: (settings.feishu_app_secret as string) ?? '',
-    }
-  },
-
-  async updateFeishu(data: Partial<FeishuSettings>): Promise<Record<string, unknown>> {
-    return this.bulkUpdate(data)
-  },
-
-  async sendTestFeishu(): Promise<void> {
-    await api.post<null>('/admin/site-settings/test-feishu', null)
-  },
-
   async getWebhook(): Promise<WebhookSettings> {
     const settings = await this.getAll('webhook')
     return {
@@ -304,21 +235,6 @@ export const siteSettingsApi = {
     await api.post<null>('/admin/site-settings/test-webhook', null)
   },
 
-  async getSlack(): Promise<SlackSettings> {
-    const settings = await this.getAll('slack')
-    return {
-      slack_enabled: (settings.slack_enabled as boolean) ?? false,
-      slack_webhook_url: (settings.slack_webhook_url as string) ?? '',
-    }
-  },
-
-  async updateSlack(data: Partial<SlackSettings>): Promise<Record<string, unknown>> {
-    return this.bulkUpdate(data)
-  },
-
-  async sendTestSlack(): Promise<void> {
-    await api.post<null>('/admin/site-settings/test-slack', null)
-  },
 
   async archiveAuditLogs(): Promise<{ task_id: string; status: string }> {
     return api.post<{ task_id: string; status: string }>('/admin/site-settings/archive-audit-logs', null)
