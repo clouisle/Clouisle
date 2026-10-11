@@ -35,6 +35,7 @@ CHANNEL_SENDERS = [
 ]
 
 
+@pytest.mark.parametrize(("task", "worker_name", "channel"), DELIVERY_TASKS)
 def test_delivery_task_runs_worker(task, worker_name, channel):
     notification_id = uuid4()
 
