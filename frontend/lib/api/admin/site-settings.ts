@@ -27,6 +27,19 @@ export type {
   ThemeMode,
 }
 
+export interface FeishuDepartment {
+  department_id: string
+  name: string
+  parent_department_id: string | null
+  children: FeishuDepartment[]
+}
+
+export interface FeishuConfig {
+  app_id: string
+  app_secret_configured: boolean
+  department_ids: string[]
+}
+
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
 const THEME_COLOR_KEYS = [
   'theme_primary_color',
@@ -175,24 +188,28 @@ export const siteSettingsApi = {
       sso_auto_create_users: (ssoSettings.sso_auto_create_users as boolean) ?? true,
       sso_require_approval: (ssoSettings.sso_require_approval as boolean) ?? false,
       sso_match_by_email: (ssoSettings.sso_match_by_email as boolean) ?? true,
-      // Password expiration
       password_expiration_enabled: (settings.password_expiration_enabled as boolean) ?? false,
       password_expiration_days: (settings.password_expiration_days as number) ?? 90,
       password_expiration_warning_days: (settings.password_expiration_warning_days as number) ?? 7,
       password_history_count: (settings.password_history_count as number) ?? 5,
       password_min_age_days: (settings.password_min_age_days as number) ?? 0,
       force_password_change_first_login: (settings.force_password_change_first_login as boolean) ?? false,
-      // TOTP
       require_totp: (settings.require_totp as boolean) ?? false,
-      model_endpoint_allowlist: modelEndpointAllowlist,
+      model_endpoint_allowlist: modelEndpointAllowlist as string[],
       ssrf_allowed_targets: safeSsrfAllowedTargets,
-      sandbox_network_allowlist: sandboxNetworkAllowlist,
+      sandbox_network_allowlist: sandboxNetworkAllowlist as string[],
     }
   },
 
   async updateSecurity(data: Partial<SecuritySettings>): Promise<Record<string, unknown>> {
-    const res = await api.put<SiteSettings>('/admin/site-settings', { settings: data })
-    return res.settings
+    const { sso_enabled, sso_allow_password_login, sso_auto_create_users, sso_require_approval, sso_match_by_email, ...siteSettings } = data
+    const settings: Record<string, unknown> = { ...siteSettings }
+    if (sso_enabled !== undefined) settings.sso_enabled = sso_enabled
+    if (sso_allow_password_login !== undefined) settings.sso_allow_password_login = sso_allow_password_login
+    if (sso_auto_create_users !== undefined) settings.sso_auto_create_users = sso_auto_create_users
+    if (sso_require_approval !== undefined) settings.sso_require_approval = sso_require_approval
+    if (sso_match_by_email !== undefined) settings.sso_match_by_email = sso_match_by_email
+    return this.bulkUpdate(settings)
   },
 
   async getEmail(): Promise<EmailSettings> {
@@ -211,6 +228,26 @@ export const siteSettingsApi = {
 
   async updateEmail(data: Partial<EmailSettings>): Promise<Record<string, unknown>> {
     return this.bulkUpdate(data)
+  },
+
+  async getFeishuConfig(): Promise<FeishuConfig> {
+    return api.get<FeishuConfig>('/admin/feishu/config')
+  },
+
+  async updateFeishuConfig(data: { app_id: string; app_secret?: string }): Promise<Omit<FeishuConfig, 'department_ids'>> {
+    return api.put('/admin/feishu/config', data)
+  },
+
+  async getFeishuDepartments(): Promise<FeishuDepartment[]> {
+    return api.get('/admin/feishu/departments')
+  },
+
+  async updateFeishuDepartmentScope(department_ids: string[]): Promise<{ department_ids: string[] }> {
+    return api.put('/admin/feishu/department-scope', { department_ids })
+  },
+
+  async syncFeishuContacts(): Promise<{ created: number; updated: number; skipped: number; teams_created: number }> {
+    return api.post('/admin/feishu/sync', null, { timeout: 120000 })
   },
 
   async sendTestEmail(email: string): Promise<void> {
@@ -241,18 +278,7 @@ export const siteSettingsApi = {
     return api.post<{ task_id: string; status: string }>('/admin/site-settings/archive-audit-logs', null)
   },
 
-  async getArchiveTaskStatus(taskId: string): Promise<{
-    task_id: string
-    status: string
-    message?: string
-    result?: {
-   status: string
-      archived_count?: number
-      retention_days?: number
-    cutoff_date?: string
-    }
-    error?: string
-  }> {
+  async getArchiveTaskStatus(taskId: string): Promise<{ task_id: string; status: string; message?: string; result?: { status: string; archived_count?: number; retention_days?: number; cutoff_date?: string }; error?: string }> {
     return api.get(`/admin/site-settings/archive-audit-logs/${taskId}`)
   },
 

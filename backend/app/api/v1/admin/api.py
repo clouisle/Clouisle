@@ -21,6 +21,7 @@ from app.api.v1.admin.endpoints import (
     workflows,
     totp,
     packages,
+    feishu,
 )
 
 from app.api.v1.endpoints import knowledge_bases as platform_knowledge_bases
@@ -52,6 +53,7 @@ admin_router.include_router(sso.router, prefix="/sso", tags=["admin-sso"])
 admin_router.include_router(
     notifications.router, prefix="/notifications", tags=["admin-notifications"]
 )
+admin_router.include_router(feishu.router, prefix="/feishu", tags=["admin-feishu"])
 admin_router.include_router(teams.router, prefix="/teams", tags=["admin-teams"])
 admin_router.include_router(
     memories.router, prefix="/memories", tags=["admin-memories"]

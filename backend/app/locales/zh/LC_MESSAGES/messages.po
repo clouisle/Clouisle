@@ -1193,6 +1193,12 @@ msgstr "不支持的通知渠道：{channels}"
 msgid "files_parsed"
 msgstr "文件批量解析成功"
 
+msgid "feishu_api_error"
+msgstr "飞书拒绝了该请求：{error}"
+
+msgid "feishu_secret_undecryptable"
+msgstr "已保存的飞书应用密钥无法解密，请重新保存应用密钥。"
+
 msgid "force_password_change_required"
 msgstr "您需要先修改密码才能继续。"
 

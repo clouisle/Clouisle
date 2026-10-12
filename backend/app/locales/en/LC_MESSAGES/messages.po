@@ -1192,6 +1192,12 @@ msgstr "Unsupported notification channel(s): {channels}"
 msgid "files_parsed"
 msgstr "Files parsed successfully"
 
+msgid "feishu_api_error"
+msgstr "Feishu rejected the request: {error}"
+
+msgid "feishu_secret_undecryptable"
+msgstr "The stored Feishu app secret cannot be decrypted. Save the app secret again."
+
 msgid "force_password_change_required"
 msgstr "You are required to change your password before continuing."
 

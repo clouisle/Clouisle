@@ -187,6 +187,24 @@ describe('API response behavior', () => {
     expect(technical.message).toBe('Request failed')
   })
 
+  test('surfaces actionable integration errors but not oversized backend messages', async () => {
+    const feishuMessage = 'Feishu rejected the request: Feishu API HTTP 400 (code 41050): no user authority error'
+    const messages: unknown[] = [feishuMessage, `Feishu rejected the request: ${'x'.repeat(300)}`]
+    axiosInstance.defaults.adapter = async (config) => ({
+      config,
+      data: { code: 1002, data: null, msg: messages.shift() },
+      headers: {},
+      status: 200,
+      statusText: 'OK',
+    })
+
+    const actionable = await api.get('/sync', { silent: true }).catch(value => value)
+    const oversized = await api.get('/oversized', { silent: true }).catch(value => value)
+
+    expect(actionable.message).toBe(feishuMessage)
+    expect(oversized.message).toBe('Request failed')
+  })
+
   test('maps timeout and plain HTTP failures to stable ApiError messages', async () => {
     axiosInstance.defaults.adapter = async (config) => {
       throw new AxiosError('timeout', 'ECONNABORTED', config)

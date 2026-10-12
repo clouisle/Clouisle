@@ -9,7 +9,7 @@ As an administrator, you can configure:
 - **General**: Site name, URL, description, default language, theming
 - **Security**: Registration, password policy, sessions, model endpoint allowlist
 - **Notifications**: Notification rules and automatic notification preferences
-- **Integrations**: Outbound email and Webhook delivery configuration
+- **Integrations**: Outbound email, Webhook delivery, and manual Feishu directory synchronization
 - **SSO**: SSO providers and global SSO behavior
 
 ## Accessing System Settings
@@ -31,7 +31,6 @@ As an administrator, you can configure:
 - **SSO** (`/site-settings/sso`)
 
 > **Note:** Settings are stored as key-value site settings and exposed through `GET /api/v1/admin/site-settings` (single key: `GET/PUT /api/v1/admin/site-settings/{key}`, bulk update: `PUT /api/v1/admin/site-settings`). Viewing requires `admin:settings:read`; updating requires `admin:settings:update`.
-
 
 ## General Settings
 
@@ -197,8 +196,6 @@ For platform and cloud host integrity, the following targets **cannot be allowli
 
 #### Transparent Proxy / TUN Mode Support
 
-Requests resolving to the transparent proxy benchmark pool `198.18.0.0/15` (commonly used by Clash/Surge/Mihomo Fake-IP TUN mode) are automatically permitted so developer tools and local development environments do not trigger false-positive SSRF blocks on public domains.
-
 ## Notification Settings
 
 ### Email (SMTP)
@@ -222,14 +219,40 @@ email_from_address: noreply@your-domain.com
 4. Click **Test** (POST `/api/v1/admin/site-settings/test-email`)
 5. Click **Save Changes**
 
-### External Notification Channels
-
-Email and generic Webhook are the only supported external notification integrations. Configure them under **Settings** → **Integrations** (`/site-settings/integrations`). Notification delivery settings are separate from the event/channel preferences on **Notifications** (`/site-settings/notifications`).
+Email and generic Webhook are the only external notification channels. Configure them under **Settings** → **Integrations** (`/site-settings/integrations`). Notification delivery settings are separate from the event/channel preferences on **Notifications** (`/site-settings/notifications`).
 
 | Channel | Key settings | Test endpoint |
 |---------|--------------|---------------|
 | Email | SMTP server, sender, credentials | `/test-email` |
 | Webhook | `webhook_enabled`, URL, method, custom headers, body template, HMAC secret | `/test-webhook` |
+
+### Feishu Directory Sync
+
+Administrators can manually create or update Clouisle accounts from selected Feishu departments. This is a one-way sync: Clouisle does not update Feishu, and Feishu user departures or deactivations do not disable Clouisle accounts.
+
+1. Create a Feishu custom app and grant it contact API access and data scope that includes the departments you need to browse. Reading the root department requires the app's contact scope to include all members.
+2. Grant the app `tenant:tenant:readonly` to read the official company name, plus the directory fields needed by sync: user ID (`contact:user.employee_id:readonly`), user name/basic profile (`contact:user.base:readonly` or the applicable contact read scope), and email (`contact:user.email:readonly`) if you want to use real email addresses. Without email field access, users receive internal placeholder addresses.
+3. In Clouisle, open **Settings** → **Integrations** → **Feishu directory sync**. Save the app ID and app secret. The secret is encrypted at rest; a blank secret field preserves the saved secret.
+4. Browse the department tree, select departments, and save the scope. The top-level **Company** node represents Feishu's root department (ID `0`); selecting it selects the whole organization. Selecting any other department selects only that department and its descendants. The tree only shows departments visible to the Feishu app.
+5. Select **Sync selected department members** to import accounts and create/update the corresponding Clouisle teams, including the company team when the root department is selected. The result reports created, updated, skipped accounts, and new teams.
+
+New accounts have no local password, receive the configured default role and default team membership/role, and use a deterministic `@accounts.clouisle.example` email if Feishu does not return an email. The `.example` TLD is reserved (RFC 6761) and is never deliverable, and the local part is derived from the Feishu user ID, so repeat syncs always produce the same address. Existing local accounts are never linked by email alone. Repeated syncs match by the stored Feishu user ID and update that account; email conflicts are skipped. Every selected Feishu department has a corresponding Clouisle team, and synchronized users are added to each selected department they belong to; users may belong to multiple department teams. Repeated syncs do not duplicate teams or memberships. Unselected department memberships are not changed.
+
+> **Upgrading:** placeholder addresses created by earlier releases used the `.invalid` domain, which response validation rejects. On startup Clouisle rewrites Feishu-synced accounts from `@accounts.clouisle.invalid` to `@accounts.clouisle.example`; no manual data fix is required.
+
+**App permissions and data scope.** The Feishu app needs the contact read scope plus a **contact data scope (通讯录权限范围)** that contains the departments *and* their members. Browsing the department tree can succeed while the sync still fails because the individual users are outside that scope.
+
+**When the sync fails.** Clouisle returns Feishu's own rejection reason (error code and message) and logs the full response, so check the error shown in **Settings → Integrations** first. Common cases:
+
+| Feishu error | Meaning | Fix |
+|--------------|---------|-----|
+| HTTP 400, code `41050` (no user authority) | A member is outside the app's contact data scope | Add the user (or the whole department) to the app's contact data scope in the Feishu developer console, then sync again |
+| HTTP 403, code `40004` (no dept authority) | The department is outside the app's contact data scope | Add the department to the app's contact data scope |
+| HTTP 400, code `40011` / `40012` | Invalid pagination parameters | Retry; report the error if it repeats |
+| `Feishu returned users without user_id` | The app cannot read user IDs | Grant `contact:user.employee_id:readonly` (see step 2) |
+| `Stored Feishu app secret cannot be decrypted` | The backend `SECRET_KEY` changed after the secret was saved | Re-save the app secret |
+
+The relevant administrator APIs are `GET/PUT /api/v1/admin/feishu/config`, `GET /api/v1/admin/feishu/departments`, `PUT /api/v1/admin/feishu/department-scope`, and `POST /api/v1/admin/feishu/sync`. They require `admin:settings:read` or `admin:settings:update` as appropriate.
 
 ### Auto Notifications
 
@@ -258,7 +281,7 @@ The extraction model falls back to the explicitly configured enabled model, the 
 
 **Configuration:**
 ```yaml
-upload_storage_backend: local   # local or object (S3-compatible)
+upload_storage_backend: local   # local or object
 kb_document_max_upload_size_mb: (1-1024)
 ```
 
@@ -288,60 +311,6 @@ object_storage_secure: true
 **Configure Object Storage:**
 1. Navigate to **Settings** → **Storage**
 2. Enter the endpoint, bucket, region, access key, and secret key
-3. Configure path-style URLs and HTTPS options
-4. Click **Save Changes**
+3. Save Changes
 
-### Audit Log Retention
-
-```yaml
-audit_log_retention_days: 365     # 30-3650
-audit_log_archive_path: /var/log/clouisle/audit_archives
-```
-
-Logs older than the retention period are archived (manually triggered) to monthly JSON files under the archive path and then deleted. See [Audit Log Management](../audit-logs/audit-log-management.md) for details.
-
-## SSO Settings
-
-### Global SSO Behavior
-
-Configured in **Settings** → **Security** (SSO section) or **Settings** → **SSO**:
-
-```yaml
-sso_enabled: false
-sso_allow_password_login: true
-sso_auto_create_users: true
-sso_require_approval: false
-sso_match_by_email: true
-```
-
-### SSO Providers
-
-SSO providers are managed in **Settings** → **SSO**. Providers are created generically with a name and protocol — there is no preset picker (Google, GitHub, Azure AD, etc.); each provider's configuration and attribute mapping are entered manually. See [SSO Configuration](./SSO.md) for the full guide.
-
-## Feature Flags and Other Settings
-
-> **Note:** Not implemented / Roadmap. The following are **not** configurable system settings:
->
-> - Feature flags (enabling/disabling agents, workflows, KBs, etc.)
-> - Email templates
-> - Security headers (HSTS, CSP, X-Frame-Options)
-> - CORS configuration
-> - IP whitelisting
-> - API rate limiting
-> - Maintenance mode
-> - Database pool / cache settings
-> - Settings export/import and reset-to-defaults workflows
->
-> Model endpoints are restricted via the **Model Endpoint Allowlist** (Security) instead of a global integration registry.
-
-## Related Documentation
-
-- [Environment Variables](../../deployment/environment-variables.md) - Environment config
-- [Security Checklist](../../operations/security-checklist.md) - Security guidance
-- [Auto Notifications](./AUTO_NOTIFICATIONS.md) - Notification types and channels
-- [SSO Configuration](./SSO.md) - Single sign-on setup
-- [User Management](../users/user-management.md) - User admin
-
----
-
-**Last Updated**: 2026-09-09
+**Last Updated**: 2026-10-12

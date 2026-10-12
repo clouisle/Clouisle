@@ -3143,6 +3143,61 @@ async def drop_obsolete_retrieval_evaluation_tables():
     )
 
 
+FEISHU_PLACEHOLDER_EMAIL_UPDATE_SQL = """
+UPDATE users
+SET email = REPLACE(email, '{legacy}', '{current}')
+WHERE auth_source = 'feishu'
+  AND email LIKE '%{legacy}'
+"""
+
+
+async def init_feishu_placeholder_emails() -> None:
+    """
+    Rewrite Feishu placeholder addresses that used the RFC 2606 `.invalid` domain.
+
+    `.invalid` is rejected by pydantic's ``EmailStr``, so any endpoint serializing such a
+    user (for example the admin user list) failed with a ResponseValidationError. The
+    rewrite keeps the deterministic local part and only swaps the reserved domain.
+    Idempotent; safe on every startup.
+    """
+    from app.services.feishu_directory import (
+        LEGACY_PLACEHOLDER_EMAIL_DOMAIN,
+        PLACEHOLDER_EMAIL_DOMAIN,
+    )
+
+    conn = Tortoise.get_connection("default")
+    dialect = getattr(getattr(conn, "capabilities", None), "dialect", "")
+    is_sqlite = dialect == "sqlite" or "sqlite" in conn.__class__.__name__.lower()
+
+    if is_sqlite:
+        _, tables = await conn.execute_query(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'"
+        )
+    else:
+        _, tables = await conn.execute_query(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_name = 'users' AND table_schema = 'public'"
+        )
+    if not tables:
+        logger.info(
+            "Users table does not exist yet, skipping Feishu placeholder migration"
+        )
+        return
+
+    result = await conn.execute_query(
+        feishu_placeholder_email_update_sql(
+            LEGACY_PLACEHOLDER_EMAIL_DOMAIN, PLACEHOLDER_EMAIL_DOMAIN
+        )
+    )
+    logger.info("Feishu placeholder email migration complete: %s", result)
+
+
+def feishu_placeholder_email_update_sql(legacy_domain: str, current_domain: str) -> str:
+    return FEISHU_PLACEHOLDER_EMAIL_UPDATE_SQL.format(
+        legacy=legacy_domain, current=current_domain
+    )
+
+
 async def init_db():
     """
     Initialize database with default permissions and roles.

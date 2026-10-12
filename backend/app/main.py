@@ -90,6 +90,7 @@ async def lifespan(app: FastAPI):
         init_message_round_fields,
         init_message_branch_parent_field,
         init_message_history_index,
+        init_feishu_placeholder_emails,
         init_conversation_context_summary_columns,
         init_conversation_memory_watermark_column,
         init_assets_tables,
@@ -134,7 +135,6 @@ async def lifespan(app: FastAPI):
         await init_agent_attachment_fields()
     except Exception as e:
         logger.warning(f"Agent attachment migration failed: {e}")
-
     try:
         await init_agent_tools_credentials()
     except Exception as e:
@@ -193,6 +193,11 @@ async def lifespan(app: FastAPI):
         await init_message_branch_parent_field()
     except Exception as e:
         logger.warning(f"Message branch parent migration failed: {e}")
+
+    try:
+        await init_feishu_placeholder_emails()
+    except Exception as e:
+        logger.warning(f"Feishu placeholder email migration failed: {e}")
 
     try:
         await init_message_history_index()

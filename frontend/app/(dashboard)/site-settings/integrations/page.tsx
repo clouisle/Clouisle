@@ -4,17 +4,19 @@ import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Mail, Globe } from 'lucide-react'
+import { Globe, Mail, MessageSquareText } from 'lucide-react'
 import { siteSettingsApi } from '@/lib/api/admin/site-settings'
 import type { EmailSettings, WebhookSettings } from '@/lib/api/site-settings'
-import { EmailSettingsTab, WebhookSettingsTab } from './_components'
+import { EmailSettingsTab, FeishuIntegrationTab, WebhookSettingsTab } from './_components'
 import { useCanPerform } from '@/components/permission-guard'
+
 
 export default function SiteSettingsIntegrationsPage() {
   const t = useTranslations('siteSettings')
   const { canPerform } = useCanPerform()
   const canUpdate = canPerform('admin:settings:update')
   const [loading, setLoading] = React.useState(true)
+  const [feishuConfig, setFeishuConfig] = React.useState({ app_id: '', app_secret_configured: false, department_ids: [] as string[] })
   const [emailSettings, setEmailSettings] = React.useState<EmailSettings>({
     smtp_enabled: false,
     smtp_host: '',
@@ -37,12 +39,14 @@ export default function SiteSettingsIntegrationsPage() {
   const loadSettings = React.useCallback(async () => {
     try {
       setLoading(true)
-      const [emailData, webhookData] = await Promise.all([
+      const [emailData, webhookData, feishuData] = await Promise.all([
         siteSettingsApi.getEmail(),
         siteSettingsApi.getWebhook(),
+        siteSettingsApi.getFeishuConfig(),
       ])
       setEmailSettings(emailData)
       setWebhookSettings(webhookData)
+      setFeishuConfig(feishuData)
     } catch (error) {
       console.error('Failed to load integration settings:', error)
     } finally {
@@ -57,7 +61,7 @@ export default function SiteSettingsIntegrationsPage() {
   if (loading) {
     return (
       <div className="grid gap-6 xl:grid-cols-2">
-        {[1, 2].map((index) => (
+        {[1, 2, 3].map((index) => (
           <Card key={index}>
             <CardHeader>
               <Skeleton className="h-6 w-32" />
@@ -105,6 +109,18 @@ export default function SiteSettingsIntegrationsPage() {
             onSettingsChange={setWebhookSettings}
             canUpdate={canUpdate}
           />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <MessageSquareText className="h-4 w-4" />
+            <CardTitle>{t('integrations.feishu')}</CardTitle>
+          </div>
+          <CardDescription>{t('integrations.feishuDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FeishuIntegrationTab config={feishuConfig} onConfigChange={setFeishuConfig} canUpdate={canUpdate} />
         </CardContent>
       </Card>
     </div>

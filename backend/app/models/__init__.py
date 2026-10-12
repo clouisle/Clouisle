@@ -87,6 +87,8 @@ from .notification import (
 from .sso_provider import SSOProvider
 from .user_sso_connection import UserSSOConnection
 from .sso_session import SSOSession
+from .feishu_department import FeishuDepartment
+from .feishu_user import FeishuUser
 from .memory import MemoryEntity, MemoryRelation, EntityType, RelationType
 from .password_history import PasswordHistory
 from .agent_run import (
@@ -113,6 +115,8 @@ __all__ = [
     "User",
     "Role",
     "Permission",
+    "FeishuDepartment",
+    "FeishuUser",
     "Team",
     "TeamMember",
     "ScopedRoleAssignment",

@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-11T09:26:12.489Z
+// GENERATED — 2026-10-12T06:41:02.943Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
@@ -19,6 +19,26 @@ export type SiteSettingsMessages = {
       description: string
       email: string
       webhook: string
+      feishu: string
+      feishuDescription: string
+      feishuAppId: string
+      feishuAppSecret: string
+      feishuAppSecretDesc: string
+      feishuSecretConfigured: string
+      feishuCompany: string
+      feishuDepartments: string
+      feishuDepartmentsDesc: string
+      feishuNoDepartments: string
+      feishuLoadingDepartments: string
+      feishuRefreshDepartments: string
+      feishuDepartmentsFailed: string
+      feishuSaveFailed: string
+      feishuSaveScope: string
+      feishuScopeSaved: string
+      feishuScopeSaveFailed: string
+      feishuSync: string
+      feishuSyncFailed: string
+      feishuSyncResult: string
     }
     autoNotifications: {
       tab: string
