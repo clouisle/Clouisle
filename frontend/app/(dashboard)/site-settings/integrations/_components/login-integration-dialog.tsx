@@ -24,16 +24,18 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ssoApi, type SSOProviderAdmin, type SSOProviderCreate } from '@/lib/api/admin/sso'
+import { integrationsApi, type Integration, type IntegrationCreate, type IntegrationType } from '@/lib/api/admin/integrations'
+import type { IntegrationProviderType } from '@/lib/api/integrations'
 import { clearValidationError, clearValidationErrorsByPrefix, getValidationSummaryEntries, mapValidationErrors, normalizeValidationErrors,
   formatValidationSummaryMessage
 } from '@/lib/validation'
 import { useCanPerform } from '@/components/permission-guard'
 import { FieldError } from '@/components/ui/field'
 
-interface ProviderDialogProps {
+interface LoginIntegrationDialogProps {
   open: boolean
-  provider: SSOProviderAdmin | null
+  provider: Integration | null
+  types: IntegrationType[]
   onClose: (success?: boolean) => void
 }
 
@@ -44,22 +46,26 @@ const PROVIDER_ERROR_PATH_MAP = {
   display_name: 'display_name',
   icon_url: 'icon_url',
   button_text: 'button_text',
+  credentials: 'credentials',
+  'login_config.default_role_id': 'default_role_id',
 } as const
-export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps) {
+export function LoginIntegrationDialog({ open, provider, types, onClose }: LoginIntegrationDialogProps) {
   const t = useTranslations('sso')
   const { canPerform } = useCanPerform()
-  const canUpdate = canPerform('admin:sso:update')
+  const canUpdate = canPerform('admin:integrations:login:update')
   const [loading, setLoading] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [formData, setFormData] = useState({
     name: '',
-    protocol: 'oidc',
+    provider_type: 'oidc' as IntegrationProviderType,
     display_name: '',
     icon_url: '',
     button_text: '',
     is_enabled: true,
     allow_signup: true,
     require_approval: false,
+    default_role_id: '',
+    credentials: '{}',
     config: '{}',
     attribute_mapping: '{}',
   })
@@ -69,38 +75,43 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
     if (provider) {
       setFormData({
         name: provider.name,
-        protocol: provider.protocol,
+        provider_type: provider.provider_type,
         display_name: provider.display_name,
         icon_url: provider.icon_url || '',
         button_text: provider.button_text || '',
         is_enabled: provider.is_enabled,
-        allow_signup: provider.allow_signup,
-        require_approval: provider.require_approval,
+        allow_signup: provider.login_config.allow_signup,
+        require_approval: provider.login_config.require_approval,
+        default_role_id: provider.login_config.default_role_id || '',
+        credentials: '{}',
         config: JSON.stringify(provider.config, null, 2),
         attribute_mapping: JSON.stringify(provider.attribute_mapping, null, 2),
       })
     } else {
+      const providerType = types.find((type) => type.provider_type === 'oidc')?.provider_type || types[0]?.provider_type || 'oidc'
       setFormData({
         name: '',
-        protocol: 'oidc',
+        provider_type: providerType,
         display_name: '',
         icon_url: '',
         button_text: '',
         is_enabled: true,
         allow_signup: true,
         require_approval: false,
-        config: JSON.stringify(getDefaultConfig('oidc'), null, 2),
+        default_role_id: '',
+        credentials: '{}',
+        config: JSON.stringify(getDefaultConfig(providerType), null, 2),
         attribute_mapping: JSON.stringify(getDefaultAttributeMapping(), null, 2),
       })
     }
-  }, [provider, open])
+  }, [provider, open, types])
 
-  const getDefaultConfig = (protocol: string) => {
-    switch (protocol) {
+  const getDefaultConfig = (provider_type: string) => {
+    switch (provider_type) {
+      case 'oauth2':
       case 'oidc':
         return {
           client_id: '',
-          client_secret: '',
           authorization_url: '',
           token_url: '',
           userinfo_url: '',
@@ -134,22 +145,23 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
     }
   }
 
-  const handleProtocolChange = (protocol: string | null) => {
-    if (!protocol) return
+  const handleProtocolChange = (provider_type: string | null) => {
+    if (!provider_type || !types.some((type) => type.provider_type === provider_type)) return
     setFormData({
       ...formData,
-      protocol,
-      config: JSON.stringify(getDefaultConfig(protocol), null, 2),
+      provider_type: provider_type as IntegrationProviderType,
+      config: JSON.stringify(getDefaultConfig(provider_type), null, 2),
     })
   }
 
   const summaryEntries = getValidationSummaryEntries(
     fieldErrors,
-    ['name', 'display_name', 'icon_url', 'button_text', 'config', 'attribute_mapping']
+    ['name', 'display_name', 'icon_url', 'button_text', 'config', 'credentials', 'attribute_mapping', 'default_role_id']
   )
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!canUpdate) return
     setFieldErrors({})
 
     // Validate provider name format
@@ -190,25 +202,38 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
         setLoading(false)
         return
       }
+      let credentials: Record<string, string>
+      try {
+        credentials = JSON.parse(formData.credentials)
+        if (!credentials || Array.isArray(credentials) || typeof credentials !== 'object' || Object.values(credentials).some((value) => typeof value !== 'string')) throw new Error('Invalid credentials')
+      } catch {
+        setFieldErrors({ credentials: t('invalidCredentialsJson') })
+        return
+      }
 
-      const data: SSOProviderCreate = {
+      const data: IntegrationCreate = {
         name: formData.name,
-        protocol: formData.protocol,
+        provider_type: formData.provider_type,
         display_name: formData.display_name,
         icon_url: formData.icon_url || null,
         button_text: formData.button_text || null,
         is_enabled: formData.is_enabled,
-        allow_signup: formData.allow_signup,
-        require_approval: formData.require_approval,
+        enabled_capabilities: ['user_login'],
+        credentials,
+        login_config: {
+          allow_signup: formData.allow_signup,
+          require_approval: formData.require_approval,
+          default_role_id: formData.default_role_id || null,
+        },
         config,
         attribute_mapping,
       }
 
       if (provider) {
-        await ssoApi.updateProvider(provider.id, data)
+        await integrationsApi.update(provider.id, data)
         toast.success(t('updateSuccess'))
       } else {
-        await ssoApi.createProvider(data)
+        await integrationsApi.create(data)
         toast.success(t('createSuccess'))
       }
 
@@ -280,19 +305,17 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="protocol">{t('protocol')} *</Label>
+                  <Label htmlFor="provider_type">{t('protocol')} *</Label>
                   <Select
-                    value={formData.protocol}
+                    value={formData.provider_type}
                     onValueChange={handleProtocolChange}
                     disabled={!!provider || !canUpdate}
                   >
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue>{types.find((type) => type.provider_type === formData.provider_type)?.display_name || provider?.provider_type || t('protocol')}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="oidc">OAuth2/OIDC</SelectItem>
-                      <SelectItem value="saml2">SAML 2.0</SelectItem>
-                      <SelectItem value="cas">CAS</SelectItem>
+                      {types.map((type) => <SelectItem key={type.provider_type} value={type.provider_type}>{type.display_name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -395,6 +418,11 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                     disabled={!canUpdate}
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="default_role_id">{t('defaultRole')}</Label>
+                  <Input id="default_role_id" value={formData.default_role_id} disabled={!canUpdate} onChange={(event) => setFormData({ ...formData, default_role_id: event.target.value })} aria-invalid={!!fieldErrors.default_role_id} />
+                  <FieldError>{fieldErrors.default_role_id}</FieldError>
+                </div>
               </div>
             </TabsContent>
 
@@ -419,6 +447,12 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                 <p className="text-xs text-muted-foreground">
                   {t('configurationHint')}
                 </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="credentials">{t('credentialsJson')}</Label>
+                <Textarea id="credentials" value={formData.credentials} rows={5} className="font-mono text-sm" disabled={!canUpdate} aria-invalid={!!fieldErrors.credentials} onChange={(event) => { setFormData({ ...formData, credentials: event.target.value }); setFieldErrors((current) => clearValidationErrorsByPrefix(current, 'credentials')) }} />
+                <FieldError>{fieldErrors.credentials}</FieldError>
+                <p className="text-xs text-muted-foreground">{t('credentialsHint')}{provider?.credentials_configured.length ? ` (${provider.credentials_configured.join(', ')})` : ''}</p>
               </div>
             </TabsContent>
 

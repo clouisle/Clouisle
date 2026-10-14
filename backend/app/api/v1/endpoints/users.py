@@ -37,7 +37,7 @@ async def serialize_user_with_sso(user: User) -> dict:
     from app.models.user_sso_connection import UserSSOConnection
 
     sso_connections = await UserSSOConnection.filter(user=user).prefetch_related(
-        "provider"
+        "integration"
     )
 
     user_dict: dict[str, Any] = {
@@ -78,10 +78,10 @@ async def serialize_user_with_sso(user: User) -> dict:
         user_dict["sso_connections"].append(
             UserSSOConnectionSchema(
                 id=conn.id,
-                provider_id=conn.provider.id,
-                provider_name=conn.provider.name,
-                provider_display_name=conn.provider.display_name,
-                provider_icon_url=conn.provider.icon_url,
+                integration_id=conn.integration.id,
+                integration_name=conn.integration.name,
+                integration_display_name=conn.integration.display_name,
+                integration_icon_url=conn.integration.icon_url,
                 provider_user_id=conn.provider_user_id,
                 provider_username=conn.provider_username,
                 provider_email=conn.provider_email,
@@ -101,7 +101,7 @@ async def read_user_me(
     Get current user.
     """
     user = await User.get(id=current_user.id).prefetch_related(
-        "roles__permissions", "sso_connections__provider"
+        "roles__permissions", "sso_connections__integration"
     )
     return success(data=await serialize_user_with_sso(user))
 

@@ -18,7 +18,9 @@ class Provider(BaseSSOProvider):
 
 def provider(mapping: dict[str, str]) -> Provider:
     return Provider(
-        SimpleNamespace(config={"client_id": "test"}, attribute_mapping=mapping)
+        SimpleNamespace(
+            config={"client_id": "test"}, credentials={}, attribute_mapping=mapping
+        )
     )
 
 

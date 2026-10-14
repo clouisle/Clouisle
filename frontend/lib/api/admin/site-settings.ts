@@ -4,8 +4,6 @@ import type {
   SiteSettings,
   GeneralSettings,
   SecuritySettings,
-  EmailSettings,
-  WebhookSettings,
   StorageSettings,
   AutoNotificationConfig,
   MemorySiteSettings,
@@ -18,8 +16,6 @@ export type {
   SiteSettings,
   GeneralSettings,
   SecuritySettings,
-  EmailSettings,
-  WebhookSettings,
   StorageSettings,
   AutoNotificationConfig,
   MemorySiteSettings,
@@ -27,18 +23,6 @@ export type {
   ThemeMode,
 }
 
-export interface FeishuDepartment {
-  department_id: string
-  name: string
-  parent_department_id: string | null
-  children: FeishuDepartment[]
-}
-
-export interface FeishuConfig {
-  app_id: string
-  app_secret_configured: boolean
-  department_ids: string[]
-}
 
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
 const THEME_COLOR_KEYS = [
@@ -146,7 +130,6 @@ export const siteSettingsApi = {
 
   async getSecurity(): Promise<SecuritySettings> {
     const settings = await this.getAll('security')
-    const ssoSettings = await this.getAll('sso')
     const modelEndpointAllowlist = settings.model_endpoint_allowlist
     if (
       !Array.isArray(modelEndpointAllowlist)
@@ -183,11 +166,6 @@ export const siteSettingsApi = {
       max_login_attempts: (settings.max_login_attempts as number) ?? 5,
       lockout_duration_minutes: (settings.lockout_duration_minutes as number) ?? 15,
       enable_captcha: (settings.enable_captcha as boolean) ?? false,
-      sso_enabled: (ssoSettings.sso_enabled as boolean) ?? false,
-      sso_allow_password_login: (ssoSettings.sso_allow_password_login as boolean) ?? true,
-      sso_auto_create_users: (ssoSettings.sso_auto_create_users as boolean) ?? true,
-      sso_require_approval: (ssoSettings.sso_require_approval as boolean) ?? false,
-      sso_match_by_email: (ssoSettings.sso_match_by_email as boolean) ?? true,
       password_expiration_enabled: (settings.password_expiration_enabled as boolean) ?? false,
       password_expiration_days: (settings.password_expiration_days as number) ?? 90,
       password_expiration_warning_days: (settings.password_expiration_warning_days as number) ?? 7,
@@ -202,77 +180,9 @@ export const siteSettingsApi = {
   },
 
   async updateSecurity(data: Partial<SecuritySettings>): Promise<Record<string, unknown>> {
-    const { sso_enabled, sso_allow_password_login, sso_auto_create_users, sso_require_approval, sso_match_by_email, ...siteSettings } = data
-    const settings: Record<string, unknown> = { ...siteSettings }
-    if (sso_enabled !== undefined) settings.sso_enabled = sso_enabled
-    if (sso_allow_password_login !== undefined) settings.sso_allow_password_login = sso_allow_password_login
-    if (sso_auto_create_users !== undefined) settings.sso_auto_create_users = sso_auto_create_users
-    if (sso_require_approval !== undefined) settings.sso_require_approval = sso_require_approval
-    if (sso_match_by_email !== undefined) settings.sso_match_by_email = sso_match_by_email
-    return this.bulkUpdate(settings)
-  },
-
-  async getEmail(): Promise<EmailSettings> {
-    const settings = await this.getAll('email')
-    return {
-      smtp_enabled: (settings.smtp_enabled as boolean) ?? false,
-      smtp_host: (settings.smtp_host as string) ?? '',
-      smtp_port: (settings.smtp_port as number) ?? 587,
-      smtp_encryption: (settings.smtp_encryption as 'none' | 'ssl' | 'tls') ?? 'tls',
-      smtp_username: (settings.smtp_username as string) ?? '',
-      smtp_password: (settings.smtp_password as string) ?? '',
-      email_from_name: (settings.email_from_name as string) ?? 'Clouisle',
-      email_from_address: (settings.email_from_address as string) ?? '',
-    }
-  },
-
-  async updateEmail(data: Partial<EmailSettings>): Promise<Record<string, unknown>> {
     return this.bulkUpdate(data)
   },
 
-  async getFeishuConfig(): Promise<FeishuConfig> {
-    return api.get<FeishuConfig>('/admin/feishu/config')
-  },
-
-  async updateFeishuConfig(data: { app_id: string; app_secret?: string }): Promise<Omit<FeishuConfig, 'department_ids'>> {
-    return api.put('/admin/feishu/config', data)
-  },
-
-  async getFeishuDepartments(): Promise<FeishuDepartment[]> {
-    return api.get('/admin/feishu/departments')
-  },
-
-  async updateFeishuDepartmentScope(department_ids: string[]): Promise<{ department_ids: string[] }> {
-    return api.put('/admin/feishu/department-scope', { department_ids })
-  },
-
-  async syncFeishuContacts(): Promise<{ created: number; updated: number; skipped: number; teams_created: number }> {
-    return api.post('/admin/feishu/sync', null, { timeout: 120000 })
-  },
-
-  async sendTestEmail(email: string): Promise<void> {
-    await api.post<null>('/admin/site-settings/test-email', { email })
-  },
-
-  async getWebhook(): Promise<WebhookSettings> {
-    const settings = await this.getAll('webhook')
-    return {
-      webhook_enabled: (settings.webhook_enabled as boolean) ?? false,
-      webhook_url: (settings.webhook_url as string) ?? '',
-      webhook_method: (settings.webhook_method as 'POST' | 'GET') ?? 'POST',
-      webhook_headers: (settings.webhook_headers as Record<string, string>) ?? {},
-      webhook_body_template: (settings.webhook_body_template as string) ?? '{"title": "{{title}}", "content": "{{content}}", "link_url": "{{link_url}}"}',
-      webhook_secret: (settings.webhook_secret as string) ?? '',
-    }
-  },
-
-  async updateWebhook(data: Partial<WebhookSettings>): Promise<Record<string, unknown>> {
-    return this.bulkUpdate(data)
-  },
-
-  async sendTestWebhook(): Promise<void> {
-    await api.post<null>('/admin/site-settings/test-webhook', null)
-  },
 
   async archiveAuditLogs(): Promise<{ task_id: string; status: string }> {
     return api.post<{ task_id: string; status: string }>('/admin/site-settings/archive-audit-logs', null)

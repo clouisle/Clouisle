@@ -140,11 +140,6 @@ export interface SecuritySettings {
   max_login_attempts: number
   lockout_duration_minutes: number
   enable_captcha: boolean
-  sso_enabled: boolean
-  sso_allow_password_login: boolean
-  sso_auto_create_users: boolean
-  sso_require_approval: boolean
-  sso_match_by_email: boolean
   // Password expiration
   password_expiration_enabled: boolean
   password_expiration_days: number

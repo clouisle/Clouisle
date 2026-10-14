@@ -104,13 +104,13 @@ Global roles and team roles are assigned after creation from the corresponding e
 
 **Automatic user creation via SSO:**
 
-1. Configure SSO provider
-2. Enable `sso_auto_create_users` in the SSO settings
+1. Configure a login integration under **Site Settings → Integrations**
+2. Enable `sso_auto_create_users` in global login settings
 3. Users log in via SSO
 4. Accounts created automatically
 5. Assigned to the default role and default team (if configured)
 
-**Auto-provisioning settings (Site Settings → Security/SSO):**
+**Auto-provisioning settings (Site Settings → Integrations):**
 ```
 ┌─────────────────────────────────────────┐
 │ SSO Auto-Provisioning                   │

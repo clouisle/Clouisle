@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-12T06:41:02.945Z
+// GENERATED — 2026-10-14T05:40:40.659Z
 // Source: i18n/en/sso.json
 export type SsoMessages = {
   sso: {
@@ -55,6 +55,9 @@ export type SsoMessages = {
     enabledHint: string
     allowSignupHint: string
     requireApprovalHint: string
+    credentialsJson: string
+    credentialsHint: string
+    invalidCredentialsJson: string
     configurationJson: string
     configurationHint: string
     attributeMappingJson: string

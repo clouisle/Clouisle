@@ -163,7 +163,7 @@ async def test_trigger_external_channels_uses_factory_and_handles_dispatch_failu
             NotificationDelivery, "create", new=AsyncMock(side_effect=deliveries)
         ) as create,
         patch(
-            "app.services.auto_notification.notification_integration_factory.dispatch_task",
+            "app.services.auto_notification.dispatch_notification_task",
             dispatch,
         ),
     ):

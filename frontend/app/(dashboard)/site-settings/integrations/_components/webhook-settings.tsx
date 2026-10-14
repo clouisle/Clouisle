@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { FieldError } from '@/components/ui/field'
-import { siteSettingsApi, type WebhookSettings } from '@/lib/api/admin/site-settings'
+import { integrationsApi, type WebhookSettings } from '@/lib/api/admin/integrations'
 import {
   clearValidationError,
   getValidationSummaryEntries,
@@ -31,15 +31,17 @@ interface WebhookSettingsTabProps {
   settings: WebhookSettings
   onSettingsChange: (settings: WebhookSettings) => void
   canUpdate: boolean
+  credentialsConfigured?: string[]
 }
 
-export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate }: WebhookSettingsTabProps) {
+export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate, credentialsConfigured = [] }: WebhookSettingsTabProps) {
   const t = useTranslations('siteSettings')
   const tCommon = useTranslations('common')
+  const tLogin = useTranslations('sso')
   const [saving, setSaving] = React.useState(false)
   const [sendingTest, setSendingTest] = React.useState(false)
   const [headersText, setHeadersText] = React.useState(
-    JSON.stringify(settings.webhook_headers || {}, null, 2)
+    credentialsConfigured.includes('webhook_headers') && Object.keys(settings.webhook_headers).length === 0 ? '' : JSON.stringify(settings.webhook_headers || {}, null, 2)
   )
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
 
@@ -75,7 +77,7 @@ export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate }: We
     setHeadersText(text)
     setFieldErrors((prev) => clearValidationError(prev, 'webhook_headers'))
     try {
-      const parsed = JSON.parse(text)
+      const parsed = text.trim() ? JSON.parse(text) : {}
       updateSetting('webhook_headers', parsed)
     } catch {
       // Invalid JSON, don't update
@@ -94,7 +96,7 @@ export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate }: We
     }
 
     try {
-      JSON.parse(headersText)
+      if (headersText.trim()) JSON.parse(headersText)
     } catch {
       nextErrors.webhook_headers = tCommon('invalidJSON')
     }
@@ -103,6 +105,7 @@ export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate }: We
   }
 
   const handleSave = async () => {
+    if (!canUpdate) return
     const nextErrors = validateSettings()
     if (Object.keys(nextErrors).length > 0) {
       setFieldErrors(nextErrors)
@@ -112,7 +115,7 @@ export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate }: We
     setFieldErrors({})
     try {
       setSaving(true)
-      await siteSettingsApi.updateWebhook(settings)
+      await integrationsApi.updateWebhook(settings)
       toast.success(t('saveSuccess'))
     } catch (error) {
       const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
@@ -126,6 +129,7 @@ export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate }: We
   }
 
   const handleSendTest = async () => {
+    if (!canUpdate) return
     const nextErrors = validateSettings()
     if (Object.keys(nextErrors).length > 0) {
       setFieldErrors(nextErrors)
@@ -135,7 +139,7 @@ export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate }: We
     setFieldErrors({})
     try {
       setSendingTest(true)
-      await siteSettingsApi.sendTestWebhook()
+      await integrationsApi.sendTestWebhook()
       toast.success(t('webhook.testSent'))
     } catch (error) {
       const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
@@ -228,6 +232,7 @@ export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate }: We
               disabled={!canUpdate}
             />
             <p className="text-sm text-muted-foreground">{t('webhook.secretDesc')}</p>
+            <p className="text-xs text-muted-foreground">{tLogin('credentialsHint')}{credentialsConfigured.includes('webhook_secret') ? ` (${t('integrations.secretConfigured')})` : ''}</p>
           </div>
         </CardContent>
       </Card>
@@ -253,6 +258,7 @@ export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate }: We
             />
             <FieldError>{fieldErrors.webhook_headers}</FieldError>
             <p className="text-sm text-muted-foreground">{t('webhook.headersDesc')}</p>
+            <p className="text-xs text-muted-foreground">{tLogin('credentialsHint')}{credentialsConfigured.includes('webhook_headers') ? ` (${t('integrations.secretConfigured')})` : ''}</p>
           </div>
 
           <div className="space-y-2">

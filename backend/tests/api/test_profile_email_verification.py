@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from fastapi import BackgroundTasks
 import pytest
 from starlette.requests import Request
@@ -200,13 +202,16 @@ async def test_profile_email_change_stays_verified_when_verification_disabled(
 async def test_profile_email_send_verification_respects_backend_cooldown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_get_value(key: str, default: object = None) -> object:
-        return {"smtp_enabled": True}.get(key, default)
+    async def fake_get_integration(provider_type: str) -> object:
+        assert provider_type == "email"
+        return SimpleNamespace(is_enabled=True)
 
     async def fake_check_email_cooldown(_email: str, _purpose: str) -> tuple[bool, int]:
         return False, 42
 
-    monkeypatch.setattr(login_endpoints.SiteSetting, "get_value", fake_get_value)
+    monkeypatch.setattr(
+        login_endpoints, "get_builtin_integration", fake_get_integration
+    )
     monkeypatch.setattr(
         login_endpoints, "check_email_cooldown", fake_check_email_cooldown
     )

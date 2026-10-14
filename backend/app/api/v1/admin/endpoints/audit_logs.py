@@ -310,6 +310,26 @@ AUDIT_ACTION_OPTIONS: list[AuditLogActionOption] = [
         fallback_label="Delete SSO Provider",
     ),
     AuditLogActionOption(
+        value="create_integration",
+        translation_key="auditLogs.actioncreate_integration",
+        fallback_label="Create Integration",
+    ),
+    AuditLogActionOption(
+        value="update_integration",
+        translation_key="auditLogs.actionupdate_integration",
+        fallback_label="Update Integration",
+    ),
+    AuditLogActionOption(
+        value="delete_integration",
+        translation_key="auditLogs.actiondelete_integration",
+        fallback_label="Delete Integration",
+    ),
+    AuditLogActionOption(
+        value="test_integration_failed",
+        translation_key="auditLogs.actiontest_integration_failed",
+        fallback_label="Integration Configuration Check Failed",
+    ),
+    AuditLogActionOption(
         value="update_auto_notification_config",
         translation_key="auditLogs.actionupdate_auto_notification_config",
         fallback_label="Update Auto Notification Config",

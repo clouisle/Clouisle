@@ -31,12 +31,14 @@ describe('route permissions', () => {
   })
 
   test('uses the most specific configured route', () => {
-    expect(getRequiredPermissionForPath('/site-settings/sso')).toBe('admin:sso:read')
-    expect(getRequiredPermissionForPath('/site-settings/integrations')).toBe('admin:settings:read')
+    expect(getRequiredPermissionForPath('/site-settings/integrations')).toBe('admin:integrations:login:read')
+    expect(getRoutePermissionConfig('/site-settings/integrations')?.permissionMode).toBe('any')
   })
 
-  test('protects integrations settings with the site settings read permission', () => {
-    expect(canAccessRoute('/site-settings/integrations', (permission) => permission === 'admin:settings:read')).toBe(true)
+  test('allows either integration read domain without requiring general settings access', () => {
+    expect(canAccessRoute('/site-settings/integrations', (permission) => permission === 'admin:integrations:login:read')).toBe(true)
+    expect(canAccessRoute('/site-settings/integrations', (permission) => permission === 'admin:integrations:settings:read')).toBe(true)
+    expect(canAccessRoute('/site-settings/integrations', (permission) => permission === 'admin:settings:read')).toBe(false)
     expect(canAccessRoute('/site-settings/integrations', () => false)).toBe(false)
   })
 

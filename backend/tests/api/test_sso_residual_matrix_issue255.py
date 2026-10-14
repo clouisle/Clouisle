@@ -44,7 +44,9 @@ class Request:
 
 
 def provider(protocol="oidc"):
-    return SimpleNamespace(name="company", protocol=protocol)
+    return SimpleNamespace(
+        name="company", provider_type=protocol, enabled_capabilities=["user_login"]
+    )
 
 
 def session(**overrides):
@@ -73,7 +75,7 @@ def site_settings(monkeypatch):
 @pytest.mark.asyncio
 async def test_public_provider_matrix(monkeypatch):
     monkeypatch.setattr(sso.SiteSetting, "get_value", AsyncMock(return_value=False))
-    assert (await sso.list_public_providers())["data"] == []
+    assert (await sso.list_public_integrations())["data"] == []
 
     item = SimpleNamespace(
         id=uuid4(),
@@ -81,13 +83,14 @@ async def test_public_provider_matrix(monkeypatch):
         display_name="Company",
         icon_url=None,
         button_text=None,
-        protocol="oidc",
+        provider_type="oidc",
+        enabled_capabilities=["user_login"],
     )
     monkeypatch.setattr(sso.SiteSetting, "get_value", AsyncMock(return_value=True))
     filter_mock = MagicMock(return_value=ListQuery([item]))
-    monkeypatch.setattr(sso.SSOProvider, "filter", filter_mock)
+    monkeypatch.setattr(sso.Integration, "filter", filter_mock)
 
-    result = await sso.list_public_providers()
+    result = await sso.list_public_integrations()
 
     assert result["data"][0].name == "company"
     filter_mock.assert_called_once_with(is_enabled=True)
@@ -98,6 +101,11 @@ async def test_public_provider_matrix(monkeypatch):
     [
         (
             "oidc",
+            ("https://idp.example/auth", "pkce", "nonce"),
+            {"code_verifier": "pkce", "nonce": "nonce"},
+        ),
+        (
+            "oauth2",
             ("https://idp.example/auth", "pkce", "nonce"),
             {"code_verifier": "pkce", "nonce": "nonce"},
         ),
@@ -114,7 +122,7 @@ async def test_login_protocol_matrix(
         get_authorization_url=AsyncMock(return_value=authorization_result)
     )
     monkeypatch.setattr(
-        sso.SSOProvider, "get_or_none", AsyncMock(return_value=configured)
+        sso.Integration, "get_or_none", AsyncMock(return_value=configured)
     )
     monkeypatch.setattr(
         sso.SSOService, "get_provider_instance", MagicMock(return_value=instance)
@@ -151,7 +159,7 @@ async def test_login_configuration_failures_redirect(
         get_authorization_url=AsyncMock(return_value=authorization_result)
     )
     monkeypatch.setattr(
-        sso.SSOProvider, "get_or_none", AsyncMock(return_value=provider(protocol))
+        sso.Integration, "get_or_none", AsyncMock(return_value=provider(protocol))
     )
     monkeypatch.setattr(
         sso.SSOService, "get_provider_instance", MagicMock(return_value=instance)
@@ -163,8 +171,10 @@ async def test_login_configuration_failures_redirect(
     )
 
     assert redirect_query(response) == {
-        "error": ["sso_login_failed"],
-        "redirect": ["/dashboard"],
+        "error": [
+            "sso_provider_not_found" if protocol == "unknown" else "sso_login_failed"
+        ],
+        "redirect": ["/app"],
     }
 
 
@@ -172,6 +182,7 @@ async def test_login_configuration_failures_redirect(
     ("protocol", "query_params", "state", "ticket", "expected_data"),
     [
         ("oidc", {}, "state-1", None, {"code": "code-1"}),
+        ("oauth2", {}, "state-1", None, {"code": "code-1"}),
         ("cas", {"state": "state-1"}, None, "ticket-1", {"ticket": "ticket-1"}),
         ("saml2", {"RelayState": "state-1"}, None, None, {"SAMLResponse": None}),
     ],
@@ -192,7 +203,7 @@ async def test_callback_protocol_success_matrix(
         map_user_attributes=MagicMock(return_value={"username": "alice"}),
     )
     monkeypatch.setattr(
-        sso.SSOProvider, "get_or_none", AsyncMock(return_value=configured)
+        sso.Integration, "get_or_none", AsyncMock(return_value=configured)
     )
     monkeypatch.setattr(
         sso.SSOSession, "get_or_none", AsyncMock(return_value=current_session)
@@ -217,6 +228,10 @@ async def test_callback_protocol_success_matrix(
 
     assert redirect_query(response) == {"token": ["token"], "redirect": ["/agents"]}
     assert instance.handle_callback.await_args.kwargs["callback_data"] == expected_data
+    sso.SSOSession.get_or_none.assert_awaited_once_with(
+        session_id="state-1", integration=configured
+    )
+    assert find_user.await_args.kwargs["provider"] is configured
     assert find_user.await_args.kwargs["user_info"] == {
         "username": "alice",
         "provider_user_id": "subject",
@@ -239,7 +254,7 @@ async def test_callback_inactive_user_redirects_and_deletes_session(
     )
     user = SimpleNamespace(is_active=False, approval_status=approval_status)
     monkeypatch.setattr(
-        sso.SSOProvider, "get_or_none", AsyncMock(return_value=configured)
+        sso.Integration, "get_or_none", AsyncMock(return_value=configured)
     )
     monkeypatch.setattr(
         sso.SSOSession, "get_or_none", AsyncMock(return_value=current_session)
@@ -255,7 +270,7 @@ async def test_callback_inactive_user_redirects_and_deletes_session(
 
     assert redirect_query(response) == {
         "error": ["pending_approval" if approval_status == "pending" else "inactive"],
-        "redirect": ["/dashboard"],
+        "redirect": ["/app"],
     }
     current_session.delete.assert_awaited_once()
 
@@ -269,7 +284,7 @@ async def test_callback_rejects_missing_or_expired_session(
     monkeypatch, current_session
 ):
     monkeypatch.setattr(
-        sso.SSOProvider, "get_or_none", AsyncMock(return_value=provider())
+        sso.Integration, "get_or_none", AsyncMock(return_value=provider())
     )
     monkeypatch.setattr(
         sso.SSOSession, "get_or_none", AsyncMock(return_value=current_session)
@@ -291,7 +306,7 @@ async def test_callback_rejects_missing_provider_identity(
         handle_callback=AsyncMock(return_value={"provider_user_id": provider_user_id})
     )
     monkeypatch.setattr(
-        sso.SSOProvider, "get_or_none", AsyncMock(return_value=configured)
+        sso.Integration, "get_or_none", AsyncMock(return_value=configured)
     )
     monkeypatch.setattr(
         sso.SSOSession, "get_or_none", AsyncMock(return_value=current_session)
@@ -310,7 +325,7 @@ async def test_callback_generic_failure_is_audited(monkeypatch):
     configured = provider()
     current_session = session()
     monkeypatch.setattr(
-        sso.SSOProvider, "get_or_none", AsyncMock(return_value=configured)
+        sso.Integration, "get_or_none", AsyncMock(return_value=configured)
     )
     monkeypatch.setattr(
         sso.SSOSession, "get_or_none", AsyncMock(return_value=current_session)
@@ -326,7 +341,7 @@ async def test_callback_generic_failure_is_audited(monkeypatch):
     response = await sso.sso_callback("company", Request(), state="state")
 
     assert redirect_query(response)["error"] == ["sso_login_failed"]
-    assert audit.await_args.kwargs["error_message"] == "offline"
+    assert audit.await_args.kwargs["error_message"] == "sso_login_failed"
 
 
 @pytest.mark.asyncio
@@ -336,7 +351,7 @@ async def test_disconnect_matrix(monkeypatch):
     connection_id = uuid4()
     user = SimpleNamespace(id=uuid4(), hashed_password="hash")
     connection = SimpleNamespace(
-        provider=SimpleNamespace(name="company"), delete=AsyncMock()
+        integration=SimpleNamespace(name="company"), delete=AsyncMock()
     )
     monkeypatch.setattr(
         UserSSOConnection,
@@ -365,7 +380,7 @@ async def test_disconnect_preserves_only_passwordless_auth_method(monkeypatch):
     from app.models.user_sso_connection import UserSSOConnection
 
     user = SimpleNamespace(id=uuid4(), hashed_password="")
-    connection = SimpleNamespace(provider=SimpleNamespace(name="company"))
+    connection = SimpleNamespace(integration=SimpleNamespace(name="company"))
     monkeypatch.setattr(
         UserSSOConnection,
         "get_or_none",
@@ -380,3 +395,84 @@ async def test_disconnect_preserves_only_passwordless_auth_method(monkeypatch):
         await sso.disconnect_sso(uuid4(), Request(), user)
 
     assert caught.value.code == ResponseCode.FORBIDDEN
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "provider_type,capabilities",
+    [
+        ("oidc", []),
+        # Feishu is login-capable, but only once an administrator opts in.
+        ("feishu", ["directory_sync"]),
+        ("email", ["user_login"]),
+        ("unknown", ["user_login"]),
+    ],
+)
+async def test_login_rejects_inactive_or_unsupported_login_capabilities(
+    monkeypatch, provider_type, capabilities
+):
+    configured = SimpleNamespace(
+        name="company", provider_type=provider_type, enabled_capabilities=capabilities
+    )
+    monkeypatch.setattr(
+        sso.Integration, "get_or_none", AsyncMock(return_value=configured)
+    )
+    factory = MagicMock()
+    monkeypatch.setattr(sso.SSOService, "get_provider_instance", factory)
+    response = await sso.sso_login("company", Request(), redirect="/agents")
+    assert redirect_query(response)["error"] == ["sso_provider_not_found"]
+    factory.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_public_integrations_excludes_builtin_and_disabled_login_capabilities(
+    monkeypatch,
+):
+    login = SimpleNamespace(
+        id=uuid4(),
+        name="company",
+        display_name="Company",
+        icon_url=None,
+        button_text=None,
+        provider_type="oidc",
+        enabled_capabilities=["user_login"],
+    )
+    builtin = SimpleNamespace(
+        provider_type="feishu", enabled_capabilities=["directory_sync"]
+    )
+    disabled = SimpleNamespace(provider_type="oidc", enabled_capabilities=[])
+    monkeypatch.setattr(sso.SiteSetting, "get_value", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        sso.Integration,
+        "filter",
+        MagicMock(return_value=ListQuery([login, builtin, disabled])),
+    )
+    result = await sso.list_public_integrations()
+    assert [item.name for item in result["data"]] == ["company"]
+    assert set(result["data"][0].model_dump()) == {
+        "id",
+        "name",
+        "display_name",
+        "icon_url",
+        "button_text",
+        "provider_type",
+    }
+
+
+@pytest.mark.asyncio
+async def test_callback_rejects_revoked_login_capability_before_session_lookup(
+    monkeypatch,
+):
+    configured = SimpleNamespace(
+        name="company", provider_type="oidc", enabled_capabilities=[]
+    )
+    monkeypatch.setattr(
+        sso.Integration, "get_or_none", AsyncMock(return_value=configured)
+    )
+    get_session = AsyncMock()
+    monkeypatch.setattr(sso.SSOSession, "get_or_none", get_session)
+    response = await sso.sso_callback(
+        "company", Request(), code="code", state="pending-state"
+    )
+    assert redirect_query(response)["error"] == ["sso_provider_not_found"]
+    get_session.assert_not_awaited()

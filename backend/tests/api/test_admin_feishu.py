@@ -9,8 +9,8 @@ from app.core.i18n import t as translate
 from app.integrations.feishu import (
     FeishuAPIError,
     FeishuDirectoryUser,
-    FeishuSecretError,
 )
+from app.integrations.credentials import IntegrationSecretError
 from app.schemas.response import BusinessError, ResponseCode
 
 
@@ -26,9 +26,9 @@ async def test_sync_reports_feishu_rejection_reason_without_internal_details(
     monkeypatch,
 ):
     monkeypatch.setattr(
-        feishu.SiteSetting,
-        "get_value",
-        AsyncMock(return_value=["dept-a"]),
+        feishu,
+        "get_builtin_integration",
+        AsyncMock(return_value=SimpleNamespace(config={"department_ids": ["dept-a"]})),
     )
     monkeypatch.setattr(
         feishu,
@@ -65,13 +65,15 @@ async def test_sync_reports_undecryptable_secret_as_actionable_config_error(
     monkeypatch,
 ):
     monkeypatch.setattr(
-        feishu.SiteSetting, "get_value", AsyncMock(return_value=["dept-a"])
+        feishu,
+        "get_builtin_integration",
+        AsyncMock(return_value=SimpleNamespace(config={"department_ids": ["dept-a"]})),
     )
     monkeypatch.setattr(
         feishu,
         "_configured_client",
         AsyncMock(
-            side_effect=FeishuSecretError(
+            side_effect=IntegrationSecretError(
                 "Stored Feishu app secret cannot be decrypted"
             )
         ),
@@ -90,7 +92,9 @@ async def test_sync_reports_undecryptable_secret_as_actionable_config_error(
 @pytest.mark.asyncio
 async def test_sync_keeps_unexpected_failures_generic(monkeypatch):
     monkeypatch.setattr(
-        feishu.SiteSetting, "get_value", AsyncMock(return_value=["dept-a"])
+        feishu,
+        "get_builtin_integration",
+        AsyncMock(return_value=SimpleNamespace(config={"department_ids": ["dept-a"]})),
     )
     monkeypatch.setattr(
         feishu,
@@ -125,7 +129,9 @@ async def test_sync_returns_synced_counts(monkeypatch):
         )
     ]
     monkeypatch.setattr(
-        feishu.SiteSetting, "get_value", AsyncMock(return_value=["dept-a"])
+        feishu,
+        "get_builtin_integration",
+        AsyncMock(return_value=SimpleNamespace(config={"department_ids": ["dept-a"]})),
     )
     monkeypatch.setattr(
         feishu,
@@ -187,7 +193,11 @@ async def test_company_department_scope_syncs_company_and_descendant_teams(monke
         list_users=AsyncMock(return_value=members),
         list_departments=AsyncMock(return_value=[company]),
     )
-    monkeypatch.setattr(feishu.SiteSetting, "get_value", AsyncMock(return_value=["0"]))
+    monkeypatch.setattr(
+        feishu,
+        "get_builtin_integration",
+        AsyncMock(return_value=SimpleNamespace(config={"department_ids": ["0"]})),
+    )
     monkeypatch.setattr(feishu, "_configured_client", AsyncMock(return_value=client))
     monkeypatch.setattr(
         feishu,
@@ -217,7 +227,11 @@ async def test_department_scope_accepts_company_root_id(monkeypatch):
         )
     )
     monkeypatch.setattr(feishu, "_configured_client", AsyncMock(return_value=client))
-    monkeypatch.setattr(feishu.SiteSetting, "set_value", AsyncMock())
+    monkeypatch.setattr(
+        feishu,
+        "update_builtin_config",
+        AsyncMock(return_value=SimpleNamespace(id=uuid4())),
+    )
     monkeypatch.setattr(feishu.AuditLogService, "log", AsyncMock())
 
     response = await feishu.update_department_scope(
@@ -227,3 +241,117 @@ async def test_department_scope_accepts_company_root_id(monkeypatch):
     )
 
     assert response["data"] == {"department_ids": ["0"]}
+
+
+@pytest.mark.asyncio
+async def test_feishu_config_reads_unified_non_secret_fields(monkeypatch):
+    integration = SimpleNamespace(
+        config={"app_id": "cli-test", "department_ids": ["0"]},
+        credentials={"app_secret": "encrypted"},
+        is_enabled=True,
+    )
+    monkeypatch.setattr(
+        feishu, "get_builtin_integration", AsyncMock(return_value=integration)
+    )
+    response = await feishu.get_config(current_user=SimpleNamespace(id=uuid4()))
+    assert response["data"] == {
+        "app_id": "cli-test",
+        "department_ids": ["0"],
+        "app_secret_configured": True,
+        "is_enabled": True,
+    }
+    assert "encrypted" not in str(response)
+
+
+@pytest.mark.asyncio
+async def test_feishu_config_updates_shared_credentials_and_enabled_state(monkeypatch):
+    integration = SimpleNamespace(
+        id=uuid4(),
+        config={"department_ids": ["0"]},
+        credentials={"app_secret": "encrypted"},
+        is_enabled=True,
+    )
+    update = AsyncMock(return_value=integration)
+    monkeypatch.setattr(feishu, "update_builtin_config", update)
+    monkeypatch.setattr(feishu.AuditLogService, "log", AsyncMock())
+    response = await feishu.update_config(
+        request=MagicMock(),
+        data=feishu.FeishuConfigUpdate(
+            app_id=" cli-test ", app_secret=" new-secret ", is_enabled=True
+        ),
+        current_user=SimpleNamespace(id=uuid4()),
+    )
+    update.assert_awaited_once_with(
+        "feishu", {"app_id": "cli-test"}, {"app_secret": "new-secret"}, enabled=True
+    )
+    assert response["data"]["app_secret_configured"]
+    assert "new-secret" not in str(response)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "integration,expected_key",
+    [
+        # Missing app ID or app secret: the administrator must save credentials first.
+        (
+            SimpleNamespace(
+                config={"app_id": "", "department_ids": []},
+                credentials={"app_secret": "encrypted"},
+                is_enabled=True,
+                enabled_capabilities=["directory_sync"],
+            ),
+            "feishu_not_configured",
+        ),
+        (
+            SimpleNamespace(
+                config={"app_id": "cli-test"},
+                credentials={},
+                is_enabled=True,
+                enabled_capabilities=["directory_sync"],
+            ),
+            "feishu_not_configured",
+        ),
+        # Saved credentials but the directory capability is off.
+        (
+            SimpleNamespace(
+                config={"app_id": "cli-test"},
+                credentials={"app_secret": "encrypted"},
+                is_enabled=False,
+                enabled_capabilities=["directory_sync"],
+            ),
+            "feishu_directory_sync_disabled",
+        ),
+        (
+            SimpleNamespace(
+                config={"app_id": "cli-test"},
+                credentials={"app_secret": "encrypted"},
+                is_enabled=True,
+                enabled_capabilities=["user_login"],
+            ),
+            "feishu_directory_sync_disabled",
+        ),
+    ],
+)
+async def test_configured_client_reports_actionable_errors(
+    monkeypatch, integration, expected_key
+):
+    monkeypatch.setattr(
+        feishu, "get_builtin_integration", AsyncMock(return_value=integration)
+    )
+
+    with pytest.raises(BusinessError) as exc:
+        await feishu._configured_client()
+
+    assert exc.value.code == ResponseCode.BAD_REQUEST
+    assert exc.value.msg_key == expected_key
+
+
+@pytest.mark.parametrize(
+    "key", ["feishu_not_configured", "feishu_directory_sync_disabled"]
+)
+def test_feishu_error_messages_are_translated(key):
+    from app.core.i18n import has_translation, t
+
+    assert has_translation(key, "en")
+    assert has_translation(key, "zh")
+    assert t(key, lang="zh") != t(key, lang="en")

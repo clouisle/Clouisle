@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { FieldError } from '@/components/ui/field'
 import { Label } from '@/components/ui/label'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
-import { authApi, usersApi, siteSettingsApi, ssoApi, ApiError, type CaptchaPointerPoint, type CaptchaResponse, type SSOProvider } from '@/lib/api'
+import { authApi, usersApi, siteSettingsApi, ssoApi, ApiError, type CaptchaPointerPoint, type CaptchaResponse, type IntegrationLoginPublic } from '@/lib/api'
 import { clearValidationError, formatValidationSummaryMessage, getValidationSummaryEntries } from '@/lib/validation'
 import { Loader2, Mail, ArrowLeft, ChevronDown } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
@@ -54,7 +54,7 @@ export function LoginForm() {
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [loading, setLoading] = React.useState(false)
   const [captchaLoading, setCaptchaLoading] = React.useState(false)
-  const [ssoProviders, setSsoProviders] = React.useState<SSOProvider[]>([])
+  const [ssoProviders, setSsoProviders] = React.useState<IntegrationLoginPublic[]>([])
   const [ssoEnabled, setSsoEnabled] = React.useState(false)
   const [passwordLoginAllowed, setPasswordLoginAllowed] = React.useState(true)
   const [unverifiedEmail, setUnverifiedEmail] = React.useState('')
@@ -141,7 +141,7 @@ export function LoginForm() {
 
         // 加载 SSO 提供商
         if (settings.sso_enabled) {
-          const providers = await ssoApi.getPublicProviders()
+          const providers = await ssoApi.getPublicIntegrations()
           setSsoProviders(providers)
         }
       } catch {

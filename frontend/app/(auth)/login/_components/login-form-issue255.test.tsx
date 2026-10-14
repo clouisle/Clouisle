@@ -52,7 +52,7 @@ mock.module('@/lib/api', () => ({
   authApi: { login, getCurrentUser, getCaptcha, completeCaptchaClick, sendVerification: mock(async () => {}), verifyEmail: mock(async () => {}), verifyTOTP: mock(async () => ({ access_token: 'totp-token' })) },
   usersApi: { updateProfile: mock(async () => {}) },
   siteSettingsApi: { getPublic },
-  ssoApi: { getPublicProviders: mock(async () => []), initiateLogin },
+  ssoApi: { getPublicIntegrations: mock(async () => []), initiateLogin },
   ApiError: class ApiError extends Error {},
 }))
 mock.module('@/lib/validation', () => ({

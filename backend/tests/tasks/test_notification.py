@@ -93,7 +93,7 @@ async def test_send_email_skips_delivery_when_there_are_no_recipients():
             tasks, "_get_notification_recipients", new=AsyncMock(return_value=[])
         ),
         patch.object(
-            tasks.notification_integration_factory.get(NotificationChannel.EMAIL),
+            tasks.get_notification_integration(NotificationChannel.EMAIL),
             "send",
             new=AsyncMock(),
         ) as send_email,
@@ -145,7 +145,7 @@ async def test_send_email_records_partial_success():
             ),
         ),
         patch.object(
-            tasks.notification_integration_factory.get(NotificationChannel.EMAIL),
+            tasks.get_notification_integration(NotificationChannel.EMAIL),
             "send",
             new=AsyncMock(side_effect=[True, False]),
         ) as send_email,
@@ -193,7 +193,7 @@ async def test_send_email_raises_when_every_delivery_fails():
             new=AsyncMock(return_value=[("bad@example.com", "en")]),
         ),
         patch.object(
-            tasks.notification_integration_factory.get(NotificationChannel.EMAIL),
+            tasks.get_notification_integration(NotificationChannel.EMAIL),
             "send",
             new=AsyncMock(side_effect=OSError("smtp down")),
         ),
@@ -227,7 +227,7 @@ async def test_channel_delivery_success(worker, channel, locale):
             tasks, "_build_notification_message", return_value=("Title", "Body")
         ) as build,
         patch.object(
-            tasks.notification_integration_factory.get(channel),
+            tasks.get_notification_integration(channel),
             "send",
             new=AsyncMock(return_value=True),
         ) as sender,
@@ -262,7 +262,7 @@ async def test_webhook_delivery_raises_when_sender_returns_false():
             tasks, "_build_notification_message", return_value=("Title", "Body")
         ),
         patch.object(
-            tasks.notification_integration_factory.get(NotificationChannel.WEBHOOK),
+            tasks.get_notification_integration(NotificationChannel.WEBHOOK),
             "send",
             new=AsyncMock(return_value=False),
         ),

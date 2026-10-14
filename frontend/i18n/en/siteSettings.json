@@ -14,12 +14,18 @@
     },
     "integrations": {
       "title": "Integrations",
-      "description": "Configure email, Webhook, and Feishu directory sync",
+      "description": "Manage login, email, Webhook, and Feishu directory integrations",
+      "capabilities": {
+        "user_login": "User login",
+        "directory_sync": "Directory sync",
+        "notification": "Notifications"
+      },
       "email": "Email",
       "webhook": "Webhook",
       "feishu": "Feishu",
-      "feishuDescription": "Configure Feishu integration and directory sync.",
+      "feishuDescription": "Configure the Feishu app, directory sync, and sign-in.",
       "configure": "Configure",
+      "secretConfigured": "Secret configured",
       "enabled": "Enabled",
       "disabled": "Disabled",
       "feishuAppId": "App ID",
@@ -39,7 +45,14 @@
       "feishuScopeSaveFailed": "Failed to save Feishu department scope.",
       "feishuSync": "Sync selected department members",
       "feishuSyncFailed": "Failed to sync Feishu directory. Check app credentials and contact permissions.",
-      "feishuSyncResult": "Sync complete: {created} accounts created, {updated} updated, {skipped} skipped; {teams_created} teams created."
+      "feishuSyncResult": "Sync complete: {created} accounts created, {updated} updated, {skipped} skipped; {teams_created} teams created.",
+      "feishuLogin": "Feishu sign-in",
+      "feishuDirectorySyncDescription": "Import and sync members from selected Feishu departments.",
+      "feishuLoginDescription": "Let members sign in with their Feishu account. Requires the Feishu integration to be enabled.",
+      "feishuButtonText": "Login button text",
+      "feishuButtonTextDesc": "Text shown on the Feishu login button. Leave empty to use the default.",
+      "callbackUrl": "Redirect URL",
+      "callbackUrlDesc": "Register this URL as the redirect URI of the sign-in provider. The provider rejects sign-in callbacks until it is allowlisted there."
     },
     "autoNotifications": {
       "tab": "Auto",
@@ -165,8 +178,6 @@
       "sendTest": "Send Test",
       "testSent": "Test webhook notification sent successfully"
     },
-    "sso": "SSO",
-    "ssoDescription": "Single sign-on provider configuration",
     "saveChanges": "Save Changes",
     "save": "Save",
     "saveSuccess": "Settings saved successfully",
@@ -423,7 +434,7 @@
     "ssoSettings": "SSO Settings",
     "ssoSettingsDescription": "Configure single sign-on authentication options",
     "enableSSO": "Enable SSO",
-    "enableSSODescription": "Allow users to sign in using SSO providers",
+    "enableSSODescription": "Allow users to sign in using login integrations",
     "allowPasswordLogin": "Allow Password Login",
     "allowPasswordLoginDescription": "Allow users to sign in with username and password when SSO is enabled",
     "autoCreateUsers": "Auto Create Users",

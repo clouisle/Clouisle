@@ -100,21 +100,14 @@ describe('siteSettingsApi requests', () => {
         allow_registration: true,
         require_approval: false,
         min_password_length: 8,
-        sso_enabled: false,
-        sso_allow_password_login: true,
         password_expiration_days: 90,
         require_totp: false,
       })
-      expect(await siteSettingsApi.getEmail()).toMatchObject({ smtp_enabled: false, smtp_port: 587, smtp_encryption: 'tls' })
-      expect(await siteSettingsApi.getWebhook()).toMatchObject({ webhook_enabled: false, webhook_method: 'POST', webhook_headers: {} })
       expect(security).toHaveProperty('model_endpoint_allowlist', [])
       expect(security).toHaveProperty('ssrf_allowed_targets', ['10.0.0.0/16'])
       expect(security).toHaveProperty('sandbox_network_allowlist', ['pypi.org'])
       expect(get.mock.calls.map(([route]) => route)).toEqual([
         '/admin/site-settings?category=security',
-        '/admin/site-settings?category=sso',
-        '/admin/site-settings?category=email',
-        '/admin/site-settings?category=webhook',
       ])
     } finally {
       get.mockRestore()
@@ -161,8 +154,6 @@ describe('siteSettingsApi requests', () => {
 
   it('uses exact action, archive, and auto-notification requests', async () => {
     const post = spyOn(api, 'post')
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ task_id: 'task-1', status: 'queued' })
     const get = spyOn(api, 'get')
       .mockResolvedValueOnce({ task_id: 'task-1', status: 'done' })
@@ -170,16 +161,12 @@ describe('siteSettingsApi requests', () => {
     const put = spyOn(api, 'put').mockResolvedValue({ enabled: false, events: [] })
 
     try {
-      expect(await siteSettingsApi.sendTestEmail('admin@example.com')).toBeUndefined()
-      await siteSettingsApi.sendTestWebhook()
       expect(await siteSettingsApi.archiveAuditLogs()).toEqual({ task_id: 'task-1', status: 'queued' })
       expect(await siteSettingsApi.getArchiveTaskStatus('task-1')).toEqual({ task_id: 'task-1', status: 'done' })
       expect(await siteSettingsApi.getAutoNotifications()).toEqual({ enabled: true, events: [] })
       expect(await siteSettingsApi.updateAutoNotifications({ enabled: false, events: [] })).toEqual({ enabled: false, events: [] })
 
       expect(post.mock.calls).toEqual([
-        ['/admin/site-settings/test-email', { email: 'admin@example.com' }],
-        ['/admin/site-settings/test-webhook', null],
         ['/admin/site-settings/archive-audit-logs', null],
       ])
       expect(get).toHaveBeenNthCalledWith(1, '/admin/site-settings/archive-audit-logs/task-1')
@@ -196,16 +183,12 @@ describe('siteSettingsApi requests', () => {
     const put = spyOn(api, 'put').mockResolvedValue(response({ saved: true }))
     const updates = [
       () => siteSettingsApi.updateGeneral({ site_name: 'New' }),
-      () => siteSettingsApi.updateEmail({ smtp_enabled: true }),
-      () => siteSettingsApi.updateWebhook({ webhook_enabled: true }),
     ]
 
     try {
       for (const update of updates) expect(await update()).toEqual({ saved: true })
       expect(put.mock.calls).toEqual([
         ['/admin/site-settings', { settings: { site_name: 'New' } }],
-        ['/admin/site-settings', { settings: { smtp_enabled: true } }],
-        ['/admin/site-settings', { settings: { webhook_enabled: true } }],
       ])
     } finally {
       put.mockRestore()

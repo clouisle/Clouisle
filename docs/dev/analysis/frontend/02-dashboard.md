@@ -379,28 +379,16 @@
 |-----|------|------|
 | `siteSettingsApi.getSecurity()` | GET `/site-settings?category=security` | 获取安全设置 |
 | `siteSettingsApi.updateSecurity()` | PUT `/site-settings` | 更新安全设置 |
+| `integrationsApi.getLoginSettings()` | GET `/admin/integrations/login-settings` | 获取全局 SSO 策略（`admin:integrations:login:read`） |
+| `integrationsApi.updateLoginSettings()` | PUT `/admin/integrations/login-settings` | 保存全局 SSO 策略（`admin:integrations:login:update`） |
+
+全局 SSO 策略卡片（总开关、密码登录、自动创建用户、审批、邮箱匹配）在本页展示，但授权仍属 login 权限域，不是 `admin:settings:read/update`；无 login read 权限时不发起该请求，也不渲染卡片。
 
 ---
 
-## /site-settings/notifications - 通知渠道设置
+## /site-settings/notifications - 通知规则与偏好
 
-**文件位置**: `frontend/app/(dashboard)/site-settings/notifications/page.tsx`
-
-**页面作用**: 配置通知渠道
-
-**使用的 API**:
-
-| API | 方法 | 说明 |
-|-----|------|------|
-| `siteSettingsApi.getEmail()` | GET `/site-settings?category=email` | 获取邮件设置 |
-| `siteSettingsApi.updateEmail()` | PUT `/site-settings` | 更新邮件设置 |
-| `siteSettingsApi.sendTestEmail()` | POST `/site-settings/test-email` | 测试邮件 |
-| `siteSettingsApi.getWebhook()` | GET `/site-settings?category=webhook` | 获取 Webhook 设置 |
-| `siteSettingsApi.updateWebhook()` | PUT `/site-settings` | 更新 Webhook 设置 |
-| `siteSettingsApi.sendTestWebhook()` | POST `/site-settings/test-webhook` | 测试 Webhook |
-| `siteSettingsApi.getSlack()` | GET `/site-settings?category=slack` | 获取 Slack 设置 |
-| `siteSettingsApi.updateSlack()` | PUT `/site-settings` | 更新 Slack 设置 |
-| `siteSettingsApi.sendTestSlack()` | POST `/site-settings/test-slack` | 测试 Slack |
+通知规则和自动通知渠道偏好仍在此页；邮件/Webhook 凭据与服务配置移至统一集成页，不支持 Slack 配置。
 
 ---
 
@@ -420,21 +408,17 @@
 
 ---
 
-## /site-settings/sso - SSO 设置
+## /site-settings/integrations - 统一集成管理
 
-**文件位置**: `frontend/app/(dashboard)/site-settings/sso/page.tsx`
+**文件位置**：`frontend/app/(dashboard)/site-settings/integrations/page.tsx`
 
-**页面作用**: SSO 提供商管理
+登录身份源、邮件、Webhook、飞书通讯录使用统一 Integration 模型。任一 `admin:integrations:login:read` 或 `admin:integrations:settings:read` 可进入；列表按域过滤，编辑分别使用对应 update 权限。旧独立 SSO 管理页移除。
 
-**使用的 API**:
+管理基地址为 `/api/v1/admin/integrations`：`GET /types`、`GET/POST` 基地址、`PUT/DELETE /{id}`、`POST /{id}/test` 管理登录集成；`GET/PUT /login-settings` 保存原全局 SSO wire keys（界面入口在安全设置页）。内置配置与测试使用 `/email`、`/webhook`、`/email/test`、`/webhook/test`。飞书使用 `/feishu/config`、`/feishu/departments`、`/feishu/department-scope`、`/feishu/sync`（settings 域），负责 app_id、app_secret、部门范围与目录同步；同一飞书集成还声明 `user_login`。飞书卡片顶部的能力区域提供两个开关（通讯录同步、飞书登录）与登录按钮文案，一次保存经通用 `PUT /{id}` 写入 `enabled_capabilities`；部门区域仅在集成已启用、已保存密钥且通讯录同步已开启时渲染并请求 `/feishu/departments`。
 
-| API | 方法 | 说明 |
-|-----|------|------|
-| `ssoApi.listProviders()` | GET `/sso/admin/providers` | 获取提供商列表 |
-| `ssoApi.createProvider()` | POST `/sso/admin/providers` | 创建提供商 |
-| `ssoApi.updateProvider()` | PUT `/sso/admin/providers/{id}` | 更新提供商 |
-| `ssoApi.deleteProvider()` | DELETE `/sso/admin/providers/{id}` | 删除提供商 |
-| `ssoApi.testConnection()` | POST `/sso/admin/providers/{id}/test` | 测试连接 |
+通用 `PUT /{id}` 的授权按字段判定：`enabled_capabilities` 与 `is_enabled` 计入所涉能力所属域（`user_login` → login，`directory_sync` → settings），内置集成的 `config`/`credentials` 计入 settings；类型支持登录时，`button_text`、`display_name`、`icon_url`、`login_config`、`attribute_mapping` 计入 login。飞书同时满足内置与可登录两项，因此同一卡片可能同时要求两个域。
+
+响应只暴露 `credentials_configured`，不返回凭据；连接展示字段为 `integration_*`，外部身份 `provider_user_id` 保留。登录列表为 `/api/v1/sso/integrations`，登录和回调地址保持原 `/sso/login/{name}` 与 `/sso/callback/{name}`。迁移/回滚参见[操作指南](../../../guide/admin-guide/settings/SSO.md#upgrading-existing-installations)。
 
 ---
 

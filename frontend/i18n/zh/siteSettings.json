@@ -14,12 +14,18 @@
     },
     "integrations": {
       "title": "集成",
-      "description": "配置邮件、Webhook 和飞书通讯录同步",
+      "description": "管理登录、邮件、Webhook 和飞书通讯录集成",
+      "capabilities": {
+        "user_login": "用户登录",
+        "directory_sync": "通讯录同步",
+        "notification": "通知"
+      },
       "email": "邮件",
       "webhook": "Webhook",
       "feishu": "飞书",
-      "feishuDescription": "配置飞书集成和通讯录同步。",
+      "feishuDescription": "配置飞书应用、通讯录同步与登录。",
       "configure": "配置",
+      "secretConfigured": "密钥已配置",
       "enabled": "已启用",
       "disabled": "未启用",
       "feishuAppId": "应用 App ID",
@@ -39,7 +45,14 @@
       "feishuScopeSaveFailed": "保存飞书部门范围失败。",
       "feishuSync": "同步所选部门成员",
       "feishuSyncFailed": "同步飞书通讯录失败，请检查应用凭证和通讯录权限。",
-      "feishuSyncResult": "同步完成：新增账号 {created}，更新 {updated}，跳过 {skipped}；新建团队 {teams_created}。"
+      "feishuSyncResult": "同步完成：新增账号 {created}，更新 {updated}，跳过 {skipped}；新建团队 {teams_created}。",
+      "feishuLogin": "飞书登录",
+      "feishuDirectorySyncDescription": "从所选飞书部门导入并同步成员。",
+      "feishuLoginDescription": "允许成员使用飞书账号登录，需先启用飞书集成。",
+      "feishuButtonText": "登录按钮文案",
+      "feishuButtonTextDesc": "显示在飞书登录按钮上的文案，留空则使用默认文案。",
+      "callbackUrl": "重定向地址",
+      "callbackUrlDesc": "请把该地址登记为身份源的重定向地址；未在身份源侧允许前，登录回调会被拒绝。"
     },
     "autoNotifications": {
       "tab": "自动通知",
@@ -165,8 +178,6 @@
       "sendTest": "发送测试",
       "testSent": "测试 Webhook 通知发送成功"
     },
-    "sso": "SSO",
-    "ssoDescription": "单点登录提供商配置",
     "saveChanges": "保存更改",
     "save": "保存",
     "saveSuccess": "设置保存成功",
@@ -423,7 +434,7 @@
     "ssoSettings": "SSO 设置",
     "ssoSettingsDescription": "配置单点登录认证选项",
     "enableSSO": "启用 SSO",
-    "enableSSODescription": "允许用户使用 SSO 提供商登录",
+    "enableSSODescription": "允许用户使用登录集成登录",
     "allowPasswordLogin": "允许密码登录",
     "allowPasswordLoginDescription": "启用 SSO 后仍允许用户使用用户名和密码登录",
     "autoCreateUsers": "自动创建用户",

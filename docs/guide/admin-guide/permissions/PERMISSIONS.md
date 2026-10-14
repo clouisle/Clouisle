@@ -34,8 +34,8 @@ These permissions are for dashboard management functions, typically only admin r
 | `admin:knowledge-base:read/test/create/update/delete` | Knowledge base management from admin |
 | `admin:settings:read` | View site settings |
 | `admin:settings:update` | Modify site settings |
-| `admin:sso:read` | View SSO providers and configuration |
-| `admin:sso:update` | Manage SSO providers and user SSO connections |
+| `admin:integrations:login:read/update` | View/manage login integrations and policy |
+| `admin:integrations:settings:read/update` | View/manage builtin email, Webhook and Feishu integrations |
 | `audit:read` | View audit logs |
 | `audit:export` | Export audit logs |
 
@@ -85,8 +85,10 @@ These permissions are for managing business resources. All users may have them, 
 | `admin:notification:create/delete` | ✓ | ✓ | | | |
 | `admin:settings:read` | ✓ | ✓ | | | |
 | `admin:settings:update` | ✓ | | | | |
-| `admin:sso:read` | ✓ | ✓ | | | |
-| `admin:sso:update` | ✓ | | | | |
+| `admin:integrations:login:read` | ✓ | ✓ | | | |
+| `admin:integrations:login:update` | ✓ | | | | |
+| `admin:integrations:settings:read` | ✓ | ✓ | | | |
+| `admin:integrations:settings:update` | ✓ | | | | |
 | `audit:read` | ✓ | ✓ | | | |
 | `audit:export` | ✓ | ✓ | | | |
 | `team:read` | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -166,9 +168,9 @@ A Member or Viewer without `admin:dashboard:access` can use platform routes only
 
 An Admin with `admin:dashboard:access` can use each system-wide dashboard API for which it has the required `admin:*` or `audit:*` permission. Do not describe the result as limited to the Admin's teams unless that specific endpoint documents a team filter.
 
-### 4.3 Site settings and SSO
+### 4.3 Site settings and integrations
 
-`admin:settings:read`/`admin:settings:update` and `admin:sso:read`/`admin:sso:update` remain separate permissions. The current role matrix grants update permissions to Super Admin; Admin is read-only for these settings unless an explicit custom role changes that assignment.
+Unrelated site settings retain `admin:settings:read/update`. Integration management separates login and builtin settings domains: `admin:integrations:login:read/update` and `admin:integrations:settings:read/update`. Either read domain permits the unified page/catalog; lists filter unauthorized domains and changes require the matching update grant. Migration maps old `admin:sso:*` grants to the login domain and additionally grants the builtin domain to roles with matching existing settings grants. No cross-domain privilege is implied.
 
 ### 4.4 Audit log archiving
 

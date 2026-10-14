@@ -94,6 +94,13 @@ def patch_settings(monkeypatch, **values):
         return values.get(key, default)
 
     monkeypatch.setattr(login.SiteSetting, "get_value", get_value)
+    monkeypatch.setattr(
+        login,
+        "get_builtin_integration",
+        AsyncMock(
+            return_value=SimpleNamespace(is_enabled=values.get("smtp_enabled", False))
+        ),
+    )
 
 
 def patch_user_lookup(monkeypatch, user):

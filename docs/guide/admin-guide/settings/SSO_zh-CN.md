@@ -1,407 +1,93 @@
-# SSO 配置指南
+# 集成与 SSO 配置指南
 
-本指南介绍如何在 Clouisle 中配置单点登录（SSO），并以 GitHub 为例进行详细说明。
+在 **站点设置 → 集成**（`/site-settings/integrations`）统一管理登录身份源、邮件、Webhook 和飞书通讯录。它们使用同一 Integration 模型，但功能与权限并不混用。
 
----
+## 支持范围
 
-## 目录
+| 类型 | 静态能力 | 管理权限域 |
+|---|---|---|
+| `oauth2`、`oidc`、`saml2`、`cas` | `user_login` | login |
+| `email`、`webhook` | `notification` | settings |
+| `feishu` | `directory_sync`、`user_login` | settings（app_id、app_secret、部门范围、目录同步）与 login（登录开关、按钮文案、登录的启用/停用） |
 
-- [概述](#概述)
-- [支持的协议](#支持的协议)
-- [前置条件](#前置条件)
-- [第一步：启用 SSO](#第一步启用-sso)
-- [第二步：创建 SSO 提供商](#第二步创建-sso-提供商)
-  - [示例：GitHub OAuth](#示例github-oauth)
-- [第三步：测试连接](#第三步测试连接)
-- [第四步：验证登录](#第四步验证登录)
-- [提供商配置参考](#提供商配置参考)
-  - [OAuth2 / OIDC](#oauth2--oidc)
-  - [SAML 2.0](#saml-20)
-  - [CAS](#cas)
-- [属性映射](#属性映射)
-  - [点号路径](#点号路径)
-  - [JSONPath](#jsonpath)
-- [站点设置](#站点设置)
-- [API 参考](#api-参考)
-- [常见问题](#常见问题)
+能力由后端注册表静态声明，不能通过配置添加尚未实现的功能。邮件、Webhook 和飞书为单实例集成，使用专用表单配置。**本次实现中飞书不提供 Agent 消息。**
 
----
+飞书是由同一套飞书应用凭据（app_id、app_secret）构成的单个集成，同时声明 `directory_sync` 和 `user_login`。启用飞书集成本身不会授予登录能力，网页登录需要在同一集成上显式开启；关闭集成会同时停用目录同步与登录，但保留这项选择。飞书仍是手动、单向通讯录同步，详见[系统设置](system-settings.md)。
 
-## 概述
+## 权限
 
-Clouisle 支持 SSO 认证，允许用户通过 GitHub、Google、Azure AD、Okta 等外部身份提供商登录。SSO 可以与密码登录并存，也可以作为唯一的登录方式。
+- `admin:integrations:login:read/update`：查看或管理登录集成，以及 **站点设置 → 安全** 中的全局 SSO 策略。
+- `admin:integrations:settings:read/update`：查看或管理邮件、Webhook、飞书的配置、凭据、测试和同步。
+- 任一域的 read 权限可进入集成页面和读取类型目录；实例列表按授权域过滤，编辑控件分别授权。后端权限检查为最终依据。
+- 通用 `PUT /api/v1/admin/integrations/{id}` 的更新授权按字段判定：`enabled_capabilities` 与 `is_enabled` 计入所涉及能力所属的域（`user_login` → login，`directory_sync` → settings）；内置集成的 `config`、`credentials` 计入 settings；只要集成的类型支持登录，`button_text`、`display_name`、`icon_url`、`login_config`、`attribute_mapping` 计入 login。飞书既是内置集成又支持登录，因此同一张卡片上的不同字段可能分别要求不同的域。
+- `admin:settings:read/update` 继续管理其他站点设置，不替代集成权限。
 
-登录流程如下：
+## 配置 GitHub 登录
 
-1. 用户在登录页面点击 SSO 提供商按钮
-2. 浏览器跳转到提供商的授权页面
-3. 用户在提供商处完成认证
-4. 提供商携带授权码回调到 Clouisle
-5. Clouisle 用授权码换取用户信息
-6. 用户登录成功（或自动创建新账号）
+1. 确保外部可访问 Clouisle，配置正确的 `FRONTEND_URL`，并保留可用的管理员登录方式。
+2. 在 **站点设置 → 安全** 配置全局 SSO 策略：SSO 总开关、密码登录、自动创建用户、审批和邮箱匹配。原有 `sso_*` 键与认证行为保持不变。
+3. 在 GitHub 的 **Settings → Developer settings → OAuth Apps** 创建 OAuth 应用，将回调填写为 `https://your-domain.com/api/v1/sso/callback/github`。
+4. 创建名称为 `github` 的 `oauth2` 登录集成，启用 `user_login`，填写显示名称、按钮文本、图标及该集成自己的 `login_config`（注册、审批、默认角色）。
+5. 非敏感配置填写 client ID、授权 URL、token URL、userinfo URL 和 `read:user user:email` scopes。独立的 `attribute_mapping` 字段使用 `{"email":"email","username":"login","avatar_url":"avatar_url"}`。
+6. 在凭据字段填写 client secret（API 为 `credentials.client_secret`），不要放入 `config`。保存并测试配置后，用独立浏览器会话完成实际登录；配置测试不代表完整登录已通过。
 
-## 支持的协议
+**原有登录与回调地址不变：** `/api/v1/sso/login/{name}`、`/api/v1/sso/callback/{name}`；前端结果页仍为 `/sso-callback`。回调使用外部可达的后端域名；若前端代理 `/api/*`，则使用前端公开域名。`API_BASE_URL` 是内部服务地址，不决定回调域名。集成名称是已登记的 URL 标识，请保持稳定。
 
-| 协议 | 适用场景 | 示例 |
-|------|----------|------|
-| OAuth2 / OIDC | 大多数现代提供商 | GitHub、Google、Azure AD、Okta、Auth0 |
-| SAML 2.0 | 企业身份提供商 | Azure AD、Okta、OneLogin、ADFS |
-| CAS | 高校 / 机构 SSO | Apereo CAS |
+OAuth2/OIDC、SAML2 和 CAS 保留原协议配置。SAML ACS 地址仍使用上述 callback 地址。属性映射支持 `profile.name` 等点路径和 `$.emails[0].value` 等 JSONPath，多个匹配时取第一个值。
 
-## 前置条件
+登录集成的 `allow_signup`、`require_approval`、`default_role_id` 位于 `login_config`，不再是顶层字段。注册、审批与邮箱匹配规则不变。关闭密码登录仍要求至少一个超级管理员已绑定身份连接。
 
-- Clouisle 已部署并可通过公网 URL 访问（SSO 需要提供商能够回调到你的服务）
-- `API_BASE_URL` 和 `FRONTEND_URL` 环境变量已设置为实际域名（如 `https://example.com`）
-- 拥有超级管理员权限的账号
+## 配置飞书登录
 
----
+飞书网页登录是飞书集成上的一项可选能力，与通讯录同步共用同一套 app_id、app_secret，无需再创建一个身份源。
 
-## 第一步：启用 SSO
+1. 在飞书开发者后台把卡片中显示的 **重定向地址**（`https://<backend-host>/api/v1/sso/callback/<integration-name>`，例如 `…/api/v1/sso/callback/feishu`）加入应用的重定向 URL 白名单；该地址在飞书卡片中直接可见并可一键复制。`<backend-host>` 是外部可达的后端（或代理）域名，与所有身份源的回调域名一致。
+2. 为应用授予登录所需 scope：`contact:user.base:readonly contact:user.email:readonly`。身份来自登录用户资料本身，无需 scope；邮箱字段需要 `contact:user.email:readonly`。
+3. 在 **站点设置 → 集成 → 飞书** 卡片的“能力”区域打开 **飞书登录** 开关，并按需填写按钮文案。两个能力开关（通讯录同步与飞书登录）一起通过通用 `PUT /api/v1/admin/integrations/{id}` 以 `enabled_capabilities` 保存：打开该卡片需要 settings 域 read 权限，修改登录开关需要 `admin:integrations:login:update`，因此启用它的角色需同时具备两个域（超级管理员始终可以）。
+4. 如果尚未配置应用凭据，在同一张卡片上填写。凭据与通讯录同步共用，密钥留空表示保留原值。保持集成处于启用状态。
 
-1. 以管理员身份登录，进入 **站点设置** -> **安全**
-2. 在 **SSO 设置** 区域，开启 **启用 SSO**
-3. 配置全局 SSO 行为：
+只有在全局 SSO 已启用、集成已启用、且 `user_login` 位于其已启用能力中时，登录页才会展示飞书登录按钮。未开启该选项时，飞书只提供通讯录同步，不出现登录按钮。关闭集成会同时停用两项能力，但保留该选项。
 
-| 设置 | 默认值 | 说明 |
-|------|--------|------|
-| 允许密码登录 | 开启 | SSO 启用后仍保留密码登录 |
-| 自动创建用户 | 开启 | 首次 SSO 登录时自动创建账号 |
-| 需要审批 | 关闭 | 新 SSO 用户需要管理员审批 |
-| 邮箱匹配 | 开启 | 通过邮箱将 SSO 账号关联到已有用户 |
+登录身份以资料中的 `union_id` 作为外部身份 `provider_user_id` 存储；缺少 `union_id` 时回退为 `open_id`，因此在同一开发者账号内更换应用不会导致已绑定账号失效。
 
-4. 点击 **保存**
+通讯录中没有任何邮箱的飞书账号，会使用与目录同步相同的确定性占位邮箱 `feishu-<sha256(user_id)>@accounts.clouisle.example`，使登录与同步汇聚到同一个本地账号而不是各建一个。推导该地址需要飞书 `user_id`，因此需要 `contact:user.employee_id:readonly`；缺少该 scope 时这类账号没有 `user_id`，其首次登录会被拒绝，而不会创建占位身份。
 
-**注意**：如果关闭 **允许密码登录**，至少需要一个超级管理员已绑定 SSO 账号，以防止所有管理员被锁定在系统外。
+## 管理 API 与凭据
 
----
+统一管理基地址为 `/api/v1/admin/integrations`：
 
-## 第二步：创建 SSO 提供商
+- `GET /types`：静态类型与能力目录；`GET` 基地址：按权限过滤实例。
+- `POST` 基地址、`PUT/DELETE /{id}`、`POST /{id}/test`：非单实例登录集成的创建、更新、删除与测试。
+- `GET/PUT /login-settings`：全局登录设置，保留 SSOSettings 原有 wire keys。
+- `GET/PUT /email`、`/webhook`，以及 `POST /email/test`、`/webhook/test`：通知集成配置与测试。
+- `GET/PUT /feishu/config`、`GET /feishu/departments`、`PUT /feishu/department-scope`、`POST /feishu/sync`：飞书配置和手动同步。登录开关与按钮文案/图标通过通用 `PUT /{id}`（login 域）写入，`/feishu/*` 仍属 settings 域，只负责 app_id、app_secret、部门范围与同步。
 
-### 示例：GitHub OAuth
+公开登录列表改为 `GET /api/v1/sso/integrations`；旧 `/sso/providers` 无兼容别名。用户解除自己的身份连接仍使用 `DELETE /api/v1/sso/connections/{id}`。详见[SSO 与集成 API](../../api-reference/endpoints/sso.md)。
 
-#### 2.1 在 GitHub 注册 OAuth 应用
+凭据使用 Fernet 加密存储，仅运行时解密。**管理响应不返回明文或密文凭据**，只返回 `credentials_configured` 字段名称与 `supported_capabilities`。空凭据值保留原密钥。脱敏 API 响应不是完整备份。
 
-1. 进入 GitHub：**Settings** -> **Developer settings** -> **OAuth Apps** -> **New OAuth App**
-2. 填写表单：
+## 现有部署升级
 
-| 字段 | 值 |
-|------|-----|
-| Application name | `Clouisle`（或任意名称） |
-| Homepage URL | `https://your-domain.com` |
-| Authorization callback URL | `https://your-domain.com/api/v1/sso/callback/github` |
+**部署前备份数据库，并保留对应的后端 `SECRET_KEY`。** 切换前停止所有旧版 API 与 worker；完成迁移后，再启动使用同一新版本的 API 和 worker。**不支持新旧版本混用的滚动部署**：新旧表和列名不同，事务与 advisory lock 保护不意味着旧程序可以访问新 schema。
 
-> 回调 URL 使用后端可从外部访问的 origin：`{BACKEND_ORIGIN}/api/v1/sso/callback/{provider_name}`。如果前端代理 `/api/*`，使用前端公网 origin；否则使用后端公网 origin。后端根据入站请求和反向代理 Header 推导该地址；`API_BASE_URL` 是内部服务地址，不决定回调 origin。
+建表前执行幂等迁移：`sso_providers` 改名为 `integrations`，`protocol` 改为 `provider_type`，注册策略移入 `login_config`，增加 `user_login`，将配置中的敏感字段分离并加密。会话与身份连接的 `provider_id` 列改为 `integration_id`，原认证表名及外部身份字段 `provider_user_id` 保留。
 
-3. 点击 **Register application**
-4. 复制 **Client ID**
-5. 点击 **Generate a new client secret** 并复制 **Client Secret**
+**原集成 UUID、用户身份连接、外部身份 ID 和外键关系保留**，无需重新绑定账号或修改身份提供方回调。连接响应改用 `integration_id`、`integration_name`、`integration_display_name`、`integration_icon_url`；读取旧 `provider_*` 字段的客户端须同步更新。
 
-#### 2.2 在 Clouisle 中添加提供商
+邮件、Webhook 和飞书的旧 SiteSetting 配置仅导入一次，成功持久化后删除相应旧键；运行时不再回退读取旧配置。全局 `sso_*` 登录策略保留，分类改为 integration。
 
-1. 进入 **站点设置** -> **SSO**
-2. 点击 **添加提供商**
-3. 在 **基本信息** 标签页中填写：
-
-| 字段 | 值 |
-|------|-----|
-| 提供商名称 | `github` |
-| 协议 | `OAuth2/OIDC` |
-| 显示名称 | `GitHub` |
-| 按钮文本 | `使用 GitHub 登录` |
-| 图标 URL | `https://github.githubassets.com/favicons/favicon-dark.svg` |
-| 启用 | 开启 |
-| 允许注册 | 开启 |
+角色授权从 `admin:sso:read/update` 迁移为 `admin:integrations:login:read/update`。原 `admin:settings:read/update` 授权额外获得对应 settings 域集成权限，并保留其他站点设置权限；不会把登录域与内置配置域的权限混在一起。
 
-4. 切换到 **配置** 标签页，输入：
+权限授权只迁移一次，完成标记避免重启后恢复管理员刻意撤销的新权限。内置集成的通用 `PUT /{id}` 同样需要 settings 域 update 权限；单实例集成禁止删除。
 
-```json
-{
-  "client_id": "你的-github-client-id",
-  "client_secret": "你的-github-client-secret",
-  "authorization_url": "https://github.com/login/oauth/authorize",
-  "token_url": "https://github.com/login/oauth/access_token",
-  "userinfo_url": "https://api.github.com/user",
-  "scopes": "read:user user:email"
-}
-```
+**回滚必须同时恢复切换前数据库、匹配的应用版本和加密密钥。** 不要直接用旧程序访问新 schema、随意更换 `SECRET_KEY`，或尝试从脱敏响应恢复凭据。迁移失败时先解决启动错误，不要删除身份关系或手动创建重复集成。
 
-5. 切换到 **属性映射** 标签页，输入：
+## 排障
 
-```json
-{
-  "email": "email",
-  "username": "login",
-  "avatar_url": "avatar_url"
-}
-```
-
-> GitHub 使用 `login` 作为用户名字段，`avatar_url` 作为头像字段。默认映射使用的 `name` 和 `picture`（OIDC 标准声明）不适用于 GitHub 的响应格式。
-
-6. 点击 **保存**
-
----
-
-## 第三步：测试连接
-
-1. 在 **SSO** 设置页面，找到 GitHub 提供商
-2. 点击 **测试连接** 按钮（烧瓶图标）
-3. 显示成功消息表示配置有效
-
-测试会验证 Clouisle 能否使用提供的配置构建有效的授权 URL，但不会执行完整的登录流程。
-
----
-
-## 第四步：验证登录
-
-1. 打开新的浏览器或无痕窗口
-2. 访问登录页面
-3. 密码表单下方应出现 **使用 GitHub 登录** 按钮
-4. 点击按钮并完成 GitHub 授权
-5. 授权完成后自动跳转回 Clouisle 并登录成功
-
-如果启用了 **自动创建用户**，首次登录时会自动创建新账号。如果启用了 **邮箱匹配** 且已有相同邮箱的用户，SSO 账号会自动关联到已有用户。
-
----
-
-## 提供商配置参考
-
-### OAuth2 / OIDC
-
-| 字段 | 必填 | 说明 |
-|------|------|------|
-| `client_id` | 是 | 提供商的 OAuth2 Client ID |
-| `client_secret` | 是 | 提供商的 OAuth2 Client Secret |
-| `authorization_url` | 是 | 提供商的授权端点 |
-| `token_url` | 是 | 提供商的令牌交换端点 |
-| `userinfo_url` | 是 | 提供商的用户信息端点 |
-| `scopes` | 否 | 空格分隔的权限范围（默认：`openid email profile`） |
-
-**常见提供商 URL：**
-
-| 提供商 | authorization_url | token_url | userinfo_url |
-|--------|-------------------|-----------|--------------|
-| GitHub | `https://github.com/login/oauth/authorize` | `https://github.com/login/oauth/access_token` | `https://api.github.com/user` |
-| Google | `https://accounts.google.com/o/oauth2/v2/auth` | `https://oauth2.googleapis.com/token` | `https://openidconnect.googleapis.com/v1/userinfo` |
-| GitLab | `https://gitlab.com/oauth/authorize` | `https://gitlab.com/oauth/token` | `https://gitlab.com/api/v4/user` |
-
-### SAML 2.0
-
-| 字段 | 必填 | 说明 |
-|------|------|------|
-| `sp_entity_id` | 是 | 服务提供商实体 ID（你的 Clouisle 实例标识） |
-| `idp_entity_id` | 是 | 身份提供商实体 ID |
-| `sso_url` | 是 | IdP 单点登录 URL |
-| `x509_cert` | 是 | IdP X.509 证书（PEM 格式，不含头尾标记） |
-| `acs_url` | 是 | 断言消费服务 URL（`{BACKEND_ORIGIN}/api/v1/sso/callback/{provider_name}`） |
-| `slo_url` | 否 | SP 单点登出 URL |
-| `idp_slo_url` | 否 | IdP 单点登出 URL |
-| `name_id_format` | 否 | NameID 格式（默认：`urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified`） |
-
-### CAS
-
-| 字段 | 必填 | 说明 |
-|------|------|------|
-| `server_url` | 是 | CAS 服务器基础 URL |
-| `service_url` | 是 | CAS 验证的服务 URL |
-| `version` | 否 | CAS 协议版本：`1`、`2` 或 `3`（默认：`3`） |
-
----
-
-## 属性映射
-
-属性映射定义了提供商用户数据字段如何映射到 Clouisle 用户字段。支持的 Clouisle 字段：
-
-| Clouisle 字段 | 说明 |
-|---------------|------|
-| `email` | 用户邮箱 |
-| `username` | 用户名 |
-| `avatar_url` | 头像 URL |
-
-### 点号路径
-
-对于简单的嵌套对象，使用点号分隔的路径：
-
-```json
-{
-  "email": "email",
-  "username": "profile.name",
-  "avatar_url": "profile.picture"
-}
-```
-
-这会从提供商响应中提取 `data["profile"]["name"]`。
-
-### JSONPath
-
-对于复杂的数据结构（数组、嵌套），使用以 `$` 开头的 JSONPath 表达式：
-
-```json
-{
-  "email": "$.emails[0].value",
-  "username": "$.name.givenName",
-  "avatar_url": "$.photos[0].value"
-}
-```
-
-当提供商返回如下结构的数据时，JSONPath 非常有用：
-
-```json
-{
-  "emails": [
-    {"value": "user@example.com", "primary": true},
-    {"value": "alias@example.com", "primary": false}
-  ],
-  "name": {"givenName": "John", "familyName": "Doe"},
-  "photos": [{"value": "https://example.com/photo.jpg"}]
-}
-```
-
-当 JSONPath 表达式匹配到多个值时，取第一个匹配结果。
-
-**注意**：不以 `$` 开头的路径按点号路径处理，完全向后兼容。已有的映射如 `{"email": "email"}` 无需修改。
-
----
-
-## 站点设置
-
-以下全局设置控制所有提供商的 SSO 行为，在 **站点设置** -> **安全** 中配置。
-
-| 设置 | 默认值 | 说明 |
-|------|--------|------|
-| `sso_enabled` | `false` | SSO 总开关。关闭时登录页面不显示 SSO 按钮。 |
-| `sso_allow_password_login` | `true` | SSO 启用后是否允许密码登录。关闭后 SSO 成为唯一登录方式。 |
-| `sso_auto_create_users` | `true` | 首次 SSO 登录时是否自动创建用户账号。 |
-| `sso_require_approval` | `false` | 新 SSO 用户是否需要管理员审批。 |
-| `sso_match_by_email` | `true` | 是否通过邮箱将 SSO 用户匹配到已有账号。 |
-
-每个提供商还有独立的 **允许注册** 和 **需要审批** 设置，可以覆盖全局默认值。
-
----
-
-## API 参考
-
-### 公开接口
-
-```http
-GET /api/v1/sso/providers
-```
-
-返回已启用的 SSO 提供商列表（用于渲染登录按钮）。
-
-```http
-GET /api/v1/sso/login/{provider_name}?redirect=/dashboard
-```
-
-发起 SSO 登录流程，浏览器跳转到提供商的授权页面。
-
-```http
-GET /api/v1/sso/callback/{provider_name}
-```
-
-处理提供商回调。此 URL 在提供商注册应用时用作回调地址。
-
-### 管理接口
-
-管理接口通过权限检查保护，而非强制超级管理员：查看提供商列表需要 `admin:sso:read`；创建、更新、删除、测试提供商以及解除用户 SSO 连接需要 `admin:sso:update`。`Admin` 角色拥有 `admin:sso:read`；`admin:sso:update` 仅限 Super Admin。
-
-```http
-GET    /api/v1/admin/sso/providers
-POST   /api/v1/admin/sso/providers
-PUT    /api/v1/admin/sso/providers/{provider_id}
-DELETE /api/v1/admin/sso/providers/{provider_id}
-POST   /api/v1/admin/sso/providers/{provider_id}/test
-```
-
-### 创建提供商示例
-
-```http
-POST /api/v1/admin/sso/providers
-Content-Type: application/json
-
-{
-  "name": "github",
-  "protocol": "oidc",
-  "display_name": "GitHub",
-  "button_text": "使用 GitHub 登录",
-  "icon_url": "https://github.githubassets.com/favicons/favicon-dark.svg",
-  "config": {
-    "client_id": "your-client-id",
-    "client_secret": "your-client-secret",
-    "authorization_url": "https://github.com/login/oauth/authorize",
-    "token_url": "https://github.com/login/oauth/access_token",
-    "userinfo_url": "https://api.github.com/user",
-    "scopes": "read:user user:email"
-  },
-  "attribute_mapping": {
-    "email": "email",
-    "username": "login",
-    "avatar_url": "avatar_url"
-  },
-  "is_enabled": true,
-  "allow_signup": true,
-  "require_approval": false
-}
-```
-
-响应：
-
-```json
-{
-  "code": 0,
-  "data": {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "name": "github",
-    "protocol": "oidc",
-    "display_name": "GitHub",
-    "is_enabled": true,
-    "created_at": "2026/02/09 10:00"
-  },
-  "msg": "success"
-}
-```
-
----
-
-## 常见问题
-
-### 登录页面没有出现 SSO 按钮
-
-- 确认 **站点设置** -> **安全** 中已开启 **启用 SSO**
-- 确认提供商的 **启用** 开关已打开
-- 检查 `FRONTEND_URL` 和反向代理转发的 host/proto Header；`API_BASE_URL` 不决定公网回调 origin
-
-### 回调 URL 不匹配错误
-
-在提供商处注册的回调 URL 必须与以下格式完全一致：
-
-```
-{BACKEND_ORIGIN}/api/v1/sso/callback/{provider_name}
-```
-
-- `{BACKEND_ORIGIN}` 是后端回调路由可从外部访问的 origin。前端代理 `/api/*` 时使用前端公网 origin；否则使用后端公网 origin。
-- `provider_name` 是创建提供商时设置的名称（例如 `github`）
-
-### SSO 登录后跳转到错误页面
-
-查看后端日志获取详细信息：
-
-```bash
-# Docker Compose
-docker compose logs api | grep sso
-
-# Kubernetes
-kubectl -n clouisle logs deployment/api | grep sso
-```
-
-常见原因：
-- **SSO 会话过期**：用户在 10 分钟内未完成认证，请重试。
-- **Client Secret 错误**：提供商配置中的 `client_secret` 不正确。
-- **权限范围未授权**：请求的 scopes 未在提供商的 OAuth 应用设置中启用。
-
-### 用户创建成功但邮箱为空
-
-提供商可能未在预期字段中返回邮箱。请查阅提供商的 API 文档并更新属性映射。对于 GitHub，确保 scopes 中包含 `read:user user:email`，并注意如果用户将邮箱设为私密，GitHub 可能返回 `null`。
-
-### "无法解除唯一的认证方式"
-
-通过 SSO 登录且未设置密码的用户无法解除 SSO 关联，否则将无法登录。请先通过管理面板为用户设置密码，再解除 SSO 关联。
+- 登录按钮缺失：检查全局开关、集成启用状态和 `user_login` 能力。飞书需要显式开启，因此集成已启用但 `enabled_capabilities` 不含 `user_login` 时不会显示按钮。
+- 飞书回调被拒或未创建账号：确认应用已登记 `https://<backend-host>/api/v1/sso/callback/<integration-name>`，登录 scope 包含 `contact:user.email:readonly`；对于通讯录中没有邮箱的账号还需 `contact:user.employee_id:readonly`，否则没有可据以推导占位邮箱的 `user_id`，首次登录会被拒绝。
+- 回调不匹配：检查名称、公开域名和代理头；不要登记新的 integrations callback 地址。
+- 无配置或编辑控件：检查对应 login/settings 权限域。
+- 飞书部门浏览或同步提示集成未启用：先保存 App ID 和 App Secret，再启用飞书集成并在卡片中打开 **通讯录同步** 开关。部门区域仅在集成已启用且通讯录同步已保存开启时显示，否则接口会返回同样的提示。
+- 凭据无法解密：恢复匹配的 `SECRET_KEY`，或通过对应表单重新保存凭据。
+- 无法解除唯一身份连接：无密码账号必须先建立另一种可用认证方式。

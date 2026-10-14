@@ -102,7 +102,7 @@ async def test_serialize_user_uses_prefetched_roles_and_sso_connections(monkeypa
     )
     connection = SimpleNamespace(
         id=uuid4(),
-        provider=provider,
+        integration=provider,
         provider_user_id="external-user",
         provider_username="external-alice",
         provider_email="external@example.com",
@@ -134,9 +134,9 @@ async def test_serialize_user_uses_prefetched_roles_and_sso_connections(monkeypa
             ],
         }
     ]
-    assert result["sso_connections"][0]["provider_name"] == "oidc"
+    assert result["sso_connections"][0]["integration_name"] == "oidc"
     connection_model.filter.assert_called_once_with(user=current_user)
-    assert connection_query.prefetch_calls == [("provider",)]
+    assert connection_query.prefetch_calls == [("integration",)]
 
 
 @pytest.mark.asyncio
@@ -173,7 +173,9 @@ async def test_read_user_me_prefetches_and_serializes(monkeypatch):
 
     assert result["data"] == {"username": "loaded"}
     model.get.assert_called_once_with(id="user-id")
-    assert query.prefetch_calls == [("roles__permissions", "sso_connections__provider")]
+    assert query.prefetch_calls == [
+        ("roles__permissions", "sso_connections__integration")
+    ]
     serialize.assert_awaited_once_with(loaded_user)
 
 

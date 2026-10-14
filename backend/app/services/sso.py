@@ -2,26 +2,32 @@ from typing import Dict, Any, Tuple
 
 from app.core.timezone import now_utc
 from app.models.site_setting import SiteSetting
-from app.models.sso_provider import SSOProvider
+from app.models.integration import Integration
 from app.models.user import User, Role
 from app.models.user_sso_connection import UserSSOConnection
 from app.schemas.response import BusinessError, ResponseCode
+from app.integrations.registry import IntegrationCapability, integration_registry
 from app.sso.providers.base import BaseSSOProvider
 from app.sso.providers.cas import CASProvider
+from app.sso.providers.feishu import FeishuProvider
 from app.sso.providers.oidc import OIDCProvider
 from app.sso.providers.saml import SAMLProvider
+
+# Provider types whose authorization step issues a PKCE verifier the callback
+# must replay.
+PKCE_PROVIDER_TYPES = ("oauth2", "oidc", "feishu")
 
 
 class SSOService:
     """SSO business logic service"""
 
     @staticmethod
-    def get_provider_instance(provider: SSOProvider) -> BaseSSOProvider:
+    def get_provider_instance(provider: Integration) -> BaseSSOProvider:
         """
         Factory method to get provider instance
 
         Args:
-            provider: SSOProvider model instance
+            provider: Integration model instance
 
         Returns:
             Provider implementation instance
@@ -29,20 +35,25 @@ class SSOService:
         Raises:
             ValueError: If protocol is not supported
         """
-        protocol = provider.protocol.lower()
+        protocol = provider.provider_type.lower()
+        definition = integration_registry.get(protocol)
+        if IntegrationCapability.USER_LOGIN not in definition.capabilities:
+            raise ValueError(f"Integration does not support login: {protocol}")
 
         if protocol in ["oauth2", "oidc"]:
             return OIDCProvider(provider)
+        elif protocol == "feishu":
+            return FeishuProvider(provider)
         elif protocol == "saml2":
             return SAMLProvider(provider)
         elif protocol == "cas":
             return CASProvider(provider)
         else:
-            raise ValueError(f"Unsupported protocol: {provider.protocol}")
+            raise ValueError(f"Unsupported protocol: {provider.provider_type}")
 
     @staticmethod
     async def find_or_create_user(
-        provider: SSOProvider,
+        provider: Integration,
         provider_user_id: str,
         user_info: Dict[str, Any],
     ) -> Tuple[User, bool]:
@@ -63,7 +74,7 @@ class SSOService:
         # Check if SSO connection already exists
         connection = (
             await UserSSOConnection.filter(
-                provider=provider, provider_user_id=provider_user_id
+                integration=provider, provider_user_id=provider_user_id
             )
             .prefetch_related("user")
             .first()
@@ -92,7 +103,7 @@ class SSOService:
 
             await UserSSOConnection.create(
                 user=existing_user,
-                provider=provider,
+                integration=provider,
                 provider_user_id=provider_user_id,
                 provider_username=user_info.get("username"),
                 provider_email=email,
@@ -102,14 +113,14 @@ class SSOService:
 
         # Create new user
         auto_create = await SiteSetting.get_value("sso_auto_create_users", True)
-        if not auto_create and not provider.allow_signup:
+        if not auto_create and not provider.login_config.get("allow_signup", True):
             raise BusinessError(
                 code=ResponseCode.SSO_REGISTRATION_DISABLED,
                 msg_key="sso_registration_disabled",
             )
 
         require_approval = await SiteSetting.get_value("sso_require_approval", False)
-        if provider.require_approval:
+        if provider.login_config.get("require_approval", False):
             require_approval = True
 
         # Generate username if not provided
@@ -148,8 +159,10 @@ class SSOService:
         )
 
         # Assign default role if configured
-        if provider.default_role_id:
-            role = await Role.get_or_none(id=provider.default_role_id)
+        if provider.login_config.get("default_role_id"):
+            role = await Role.get_or_none(
+                id=provider.login_config.get("default_role_id")
+            )
             if role:
                 await new_user.roles.add(role)
         else:
@@ -165,7 +178,7 @@ class SSOService:
         # Create SSO connection
         await UserSSOConnection.create(
             user=new_user,
-            provider=provider,
+            integration=provider,
             provider_user_id=provider_user_id,
             provider_username=user_info.get("username"),
             provider_email=email,

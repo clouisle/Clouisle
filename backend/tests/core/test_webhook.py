@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.core import webhook
+from app.integrations.credentials import encrypt_secret
 
 
 class AsyncClient:
@@ -43,9 +44,23 @@ def install(monkeypatch, settings, client):
 
 
 @pytest.mark.asyncio
-async def test_get_webhook_config_reads_all_settings(monkeypatch):
-    get_value = AsyncMock(side_effect=[True, "url", "put", {"X": "1"}, "body", "key"])
-    monkeypatch.setattr(webhook.SiteSetting, "get_value", get_value)
+async def test_get_webhook_config_reads_encrypted_integration_credentials(monkeypatch):
+    integration = SimpleNamespace(
+        config={
+            "webhook_url": "url",
+            "webhook_method": "put",
+            "webhook_body_template": "body",
+        },
+        credentials={
+            "webhook_headers": encrypt_secret('{"X": "1"}'),
+            "webhook_secret": encrypt_secret("key"),
+        },
+        is_enabled=True,
+        enabled_capabilities=["notification"],
+    )
+    monkeypatch.setattr(
+        webhook, "get_builtin_integration", AsyncMock(return_value=integration)
+    )
 
     assert await webhook.get_webhook_config() == {
         "enabled": True,
@@ -55,7 +70,6 @@ async def test_get_webhook_config_reads_all_settings(monkeypatch):
         "body_template": "body",
         "secret": "key",
     }
-    assert get_value.await_count == 6
 
 
 def test_template_rendering_and_signature_cover_value_boundaries():

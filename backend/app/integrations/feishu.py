@@ -2,39 +2,25 @@
 
 from __future__ import annotations
 
-import base64
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote
 
 import httpx
-from cryptography.fernet import Fernet, InvalidToken
 
-from app.core.config import settings
+from app.integrations.credentials import decrypt_secret
 
 API_BASE = "https://open.feishu.cn/open-apis"
 TIMEOUT = httpx.Timeout(20.0, connect=5.0)
 PAGE_SIZE = 50
 
-
-def _fernet() -> Fernet:
-    key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode()[:32].ljust(32, b"0"))
-    return Fernet(key)
-
-
-def encrypt_app_secret(secret: str) -> str:
-    return _fernet().encrypt(secret.encode()).decode()
-
-
-class FeishuSecretError(ValueError):
-    """The stored Feishu app secret cannot be decrypted with the current SECRET_KEY."""
-
-
-def decrypt_app_secret(secret: str) -> str:
-    try:
-        return _fernet().decrypt(secret.encode()).decode()
-    except InvalidToken as exc:
-        raise FeishuSecretError("Stored Feishu app secret cannot be decrypted") from exc
+# User-authorized (web login) endpoints. Overridable per integration so a
+# deployment can point at a Lark tenant or a test double.
+DEFAULT_AUTHORIZATION_URL = "https://accounts.feishu.cn/open-apis/authen/v1/authorize"
+DEFAULT_TOKEN_URL = "https://accounts.feishu.cn/oauth/v3/token"
+DEFAULT_USERINFO_URL = "https://open.feishu.cn/open-apis/authen/v1/user_info"
+# `user_info` needs no scope for identity, but the email field requires this one.
+DEFAULT_LOGIN_SCOPES = "contact:user.base:readonly contact:user.email:readonly"
 
 
 @dataclass
@@ -105,7 +91,7 @@ def _error_message(response: httpx.Response) -> tuple[str, str]:
 class FeishuClient:
     def __init__(self, app_id: str, encrypted_app_secret: str):
         self.app_id = app_id.strip()
-        self.app_secret = decrypt_app_secret(encrypted_app_secret)
+        self.app_secret = decrypt_secret(encrypted_app_secret)
 
     async def _request(
         self, client: httpx.AsyncClient, method: str, path: str, **kwargs: Any
@@ -322,3 +308,118 @@ class FeishuClient:
                     if not payload.get("has_more") or not page_token:
                         break
             return list(users.values())
+
+
+# --- User-authorized web login ------------------------------------------------
+
+
+def build_authorization_url(
+    *,
+    app_id: str,
+    redirect_uri: str,
+    state: str,
+    code_challenge: str,
+    scopes: str = DEFAULT_LOGIN_SCOPES,
+    authorization_url: str = DEFAULT_AUTHORIZATION_URL,
+) -> str:
+    """Authorization page the browser is redirected to; Feishu returns `code`."""
+    query = httpx.QueryParams(
+        {
+            "client_id": app_id,
+            "response_type": "code",
+            "redirect_uri": redirect_uri,
+            "scope": scopes,
+            "state": state,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+        }
+    )
+    return f"{authorization_url}?{query}"
+
+
+def _login_body(response: httpx.Response, operation: str) -> dict[str, Any]:
+    if response.status_code >= 400:
+        message, detail = _error_message(response)
+        raise FeishuAPIError(f"{operation} failed: {message}", detail=detail)
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise FeishuAPIError(
+            f"Feishu {operation} returned a non-JSON body",
+            detail=response.text[:1024],
+        ) from exc
+    if not isinstance(body, dict):
+        raise FeishuAPIError(
+            f"Feishu {operation} returned an unexpected body", detail=str(body)[:1024]
+        )
+    code = body.get("code")
+    if code not in (0, None):
+        reason = (
+            body.get("error_description") or body.get("msg") or body.get("error") or ""
+        )
+        raise FeishuAPIError(
+            f"Feishu {operation} error {code}: {_short(reason)}",
+            detail=str(body)[:1024],
+        )
+    return body
+
+
+async def exchange_user_access_token(
+    *,
+    token_url: str,
+    app_id: str,
+    app_secret: str,
+    code: str,
+    redirect_uri: str,
+    code_verifier: str,
+) -> str:
+    """Trade the authorization code for a `user_access_token`."""
+    async with httpx.AsyncClient(
+        timeout=TIMEOUT, follow_redirects=False, trust_env=False
+    ) as client:
+        response = await client.post(
+            token_url,
+            data={
+                "grant_type": "authorization_code",
+                "client_id": app_id,
+                "client_secret": app_secret,
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "code_verifier": code_verifier,
+            },
+            headers={"Accept": "application/json"},
+        )
+
+    body = _login_body(response, "token exchange")
+    # `accounts.feishu.cn/oauth/v3/token` returns `access_token` at the top level;
+    # the older `authen/v1/access_token` nests the token under `data`.
+    candidates = [body.get("access_token")]
+    nested = body.get("data")
+    if isinstance(nested, dict):
+        candidates += [nested.get("access_token"), nested.get("user_access_token")]
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate:
+            return candidate
+    raise FeishuAPIError(
+        "Feishu did not return a user access token", detail=str(body)[:1024]
+    )
+
+
+async def fetch_user_info(
+    *, userinfo_url: str, user_access_token: str
+) -> dict[str, Any]:
+    """User profile authorized by `user_access_token`."""
+    async with httpx.AsyncClient(
+        timeout=TIMEOUT, follow_redirects=False, trust_env=False
+    ) as client:
+        response = await client.get(
+            userinfo_url,
+            headers={
+                "Authorization": f"Bearer {user_access_token}",
+                "Accept": "application/json",
+            },
+        )
+
+    body = _login_body(response, "user info")
+    data = body.get("data")
+    return data if isinstance(data, dict) else body

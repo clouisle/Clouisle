@@ -9,8 +9,7 @@ As an administrator, you can configure:
 - **General**: Site name, URL, description, default language, theming
 - **Security**: Registration, password policy, sessions, model endpoint allowlist
 - **Notifications**: Notification rules and automatic notification preferences
-- **Integrations**: Outbound email, Webhook delivery, and manual Feishu directory synchronization
-- **SSO**: SSO providers and global SSO behavior
+- **Integrations**: SSO login, outbound email, Webhook delivery, and Feishu (manual directory synchronization plus opt-in web sign-in)
 
 ## Accessing System Settings
 
@@ -28,9 +27,8 @@ As an administrator, you can configure:
 - **Integrations** (`/site-settings/integrations`)
 - **Storage** (`/site-settings/storage`)
 - **Memory** (`/site-settings/memory`)
-- **SSO** (`/site-settings/sso`)
 
-> **Note:** Settings are stored as key-value site settings and exposed through `GET /api/v1/admin/site-settings` (single key: `GET/PUT /api/v1/admin/site-settings/{key}`, bulk update: `PUT /api/v1/admin/site-settings`). Viewing requires `admin:settings:read`; updating requires `admin:settings:update`.
+> General settings remain key-value SiteSettings, exposed through `/api/v1/admin/site-settings` with `admin:settings:read/update`. External services now use Integration records and `/api/v1/admin/integrations`. Login management requires `admin:integrations:login:read/update`; builtin configuration requires `admin:integrations:settings:read/update`. Feishu is one singleton integration declaring both `directory_sync` and `user_login`: its app ID, app secret, department scope, and directory sync are settings-domain, while the sign-in opt-in, button text, and sign-in enable/disable are login-domain. Update authorization on the generic `PUT /api/v1/admin/integrations/{id}` is decided per field, so a single card can require both domains. The global SSO policy (enable SSO, password login, auto-create users, approval, email matching) lives on **Security** but is authorized by the login domain. See [Integrations and SSO](SSO.md) for setup, domain permissions, credential handling, and migration/rollback cautions.
 
 ## General Settings
 
@@ -202,12 +200,12 @@ For platform and cloud host integrity, the following targets **cannot be allowli
 
 **Configuration:**
 ```yaml
-smtp_enabled: true
+# Enable the email Integration; SMTP settings below are its config.
 smtp_host: smtp.gmail.com
 smtp_port: 587
 smtp_encryption: tls       # none, ssl, or tls
 smtp_username: noreply@your-domain.com
-smtp_password: ********
+# smtp_password is supplied separately as a credential, never returned.
 email_from_name: Clouisle
 email_from_address: noreply@your-domain.com
 ```
@@ -216,15 +214,15 @@ email_from_address: noreply@your-domain.com
 1. Navigate to **Settings** → **Integrations** → **Email** (`/site-settings/integrations`)
 2. Enter SMTP details
 3. Set sender name and address
-4. Click **Test** (POST `/api/v1/admin/site-settings/test-email`)
+4. Click **Test** (POST `/api/v1/admin/integrations/email/test`)
 5. Click **Save Changes**
 
 Email and generic Webhook are the only external notification channels. Configure them under **Settings** → **Integrations** (`/site-settings/integrations`). Notification delivery settings are separate from the event/channel preferences on **Notifications** (`/site-settings/notifications`).
 
 | Channel | Key settings | Test endpoint |
 |---------|--------------|---------------|
-| Email | SMTP server, sender, credentials | `/test-email` |
-| Webhook | `webhook_enabled`, URL, method, custom headers, body template, HMAC secret | `/test-webhook` |
+| Email | SMTP server, sender, separate password credential | `/api/v1/admin/integrations/email/test` |
+| Webhook | URL, method, body template; separate headers and HMAC credentials | `/api/v1/admin/integrations/webhook/test` |
 
 ### Feishu Directory Sync
 
@@ -232,7 +230,7 @@ Administrators can manually create or update Clouisle accounts from selected Fei
 
 1. Create a Feishu custom app and grant it contact API access and data scope that includes the departments you need to browse. Reading the root department requires the app's contact scope to include all members.
 2. Grant the app `tenant:tenant:readonly` to read the official company name, plus the directory fields needed by sync: user ID (`contact:user.employee_id:readonly`), user name/basic profile (`contact:user.base:readonly` or the applicable contact read scope), and email (`contact:user.email:readonly`) if you want to use real email addresses. Without email field access, users receive internal placeholder addresses.
-3. In Clouisle, open **Settings** → **Integrations** → **Feishu directory sync**. Save the app ID and app secret. The secret is encrypted at rest; a blank secret field preserves the saved secret.
+3. In Clouisle, open **Settings** → **Integrations**, enable the Feishu integration, then open its card. Turn on the **Directory sync** switch and save the app ID and app secret there. The secret is encrypted at rest; a blank secret field preserves the saved secret. The capability switches are disabled until the integration itself is enabled.
 4. Browse the department tree, select departments, and save the scope. The top-level **Company** node represents Feishu's root department (ID `0`); selecting it selects the whole organization. Selecting any other department selects only that department and its descendants. The tree only shows departments visible to the Feishu app.
 5. Select **Sync selected department members** to import accounts and create/update the corresponding Clouisle teams, including the company team when the root department is selected. The result reports created, updated, skipped accounts, and new teams.
 
@@ -252,7 +250,18 @@ New accounts have no local password, receive the configured default role and def
 | `Feishu returned users without user_id` | The app cannot read user IDs | Grant `contact:user.employee_id:readonly` (see step 2) |
 | `Stored Feishu app secret cannot be decrypted` | The backend `SECRET_KEY` changed after the secret was saved | Re-save the app secret |
 
-The relevant administrator APIs are `GET/PUT /api/v1/admin/feishu/config`, `GET /api/v1/admin/feishu/departments`, `PUT /api/v1/admin/feishu/department-scope`, and `POST /api/v1/admin/feishu/sync`. They require `admin:settings:read` or `admin:settings:update` as appropriate.
+The relevant administrator APIs are `GET/PUT /api/v1/admin/integrations/feishu/config`, `GET /api/v1/admin/integrations/feishu/departments`, `PUT /api/v1/admin/integrations/feishu/department-scope`, and `POST /api/v1/admin/integrations/feishu/sync`. They require `admin:integrations:settings:read/update` as appropriate. Feishu does not provide Agent messaging.
+
+### Feishu Sign-In
+
+The Feishu integration also declares the `user_login` capability, so the same app that synchronizes the directory can sign users in — with the same app ID and app secret, without creating a second provider.
+
+1. In the Feishu developer console, add the **Redirect URL** shown on the Feishu card — `https://<backend-host>/api/v1/sso/callback/<integration-name>`, for example `https://api.example.com/api/v1/sso/callback/feishu` — to the app's redirect-URI allowlist. The card displays the exact value with a copy button.
+2. Grant the app the login scopes `contact:user.base:readonly contact:user.email:readonly`, in addition to the directory scopes above.
+3. On the **Settings** → **Integrations** → **Feishu** card, turn on **Feishu sign-in** in the capability section and optionally set the button text; both switches are saved together. This writes `user_login` into the integration's `enabled_capabilities` through the generic `PUT /api/v1/admin/integrations/{id}` and requires `admin:integrations:login:update`.
+4. Keep global SSO enabled on **Security**. The login page shows the Feishu button only when global SSO is enabled, the integration is enabled, and `user_login` is one of its enabled capabilities. Enabling the integration alone never starts sign-in, and disabling the integration stops both capabilities while preserving the opt-in. App credentials, the department scope, and directory sync stay on the settings domain.
+
+The Feishu subject is the profile `union_id`, falling back to `open_id`, stored as the external identity key, so replacing the app inside the same developer account keeps existing connections. A Feishu account whose directory record carries no email gets the same deterministic placeholder address the directory sync uses (`feishu-<sha256(user_id)>@accounts.clouisle.example`), so sign-in and sync resolve to one local account instead of two; deriving that address needs the Feishu `user_id` (`contact:user.employee_id:readonly`), and without that scope the first sign-in of such an account is rejected.
 
 ### Auto Notifications
 
@@ -313,4 +322,4 @@ object_storage_secure: true
 2. Enter the endpoint, bucket, region, access key, and secret key
 3. Save Changes
 
-**Last Updated**: 2026-10-12
+**Last Updated**: 2026-10-14

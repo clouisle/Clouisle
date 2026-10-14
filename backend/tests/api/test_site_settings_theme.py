@@ -1,11 +1,10 @@
-from importlib import import_module
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 
-from app.api.v1.admin.endpoints import site_settings
+from app.api.v1.admin.endpoints import site_settings, integration_settings
 from app.api.v1.admin.endpoints.site_settings import _validate_setting_value
 from app.api.v1.endpoints.site_settings import _normalize_enum, _normalize_hex_color
 from app.schemas.response import BusinessError, ResponseCode
@@ -402,36 +401,23 @@ async def test_bulk_update_handles_existing_default_and_unknown_keys(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_bulk_update_masks_sensitive_keys_in_changes(monkeypatch):
-    monkeypatch.setattr(
-        site_settings.SiteSetting, "filter", lambda **kwargs: Query(None)
-    )
+async def test_bulk_update_rejects_legacy_integration_settings(monkeypatch):
     set_value = AsyncMock()
     monkeypatch.setattr(site_settings.SiteSetting, "set_value", set_value)
-    monkeypatch.setattr(
-        site_settings.SiteSetting,
-        "get_all_by_category",
-        AsyncMock(return_value={}),
-    )
-    audit = AsyncMock()
-    monkeypatch.setattr(site_settings.AuditLogService, "log", audit)
-
-    await site_settings.bulk_update_settings(
-        request=MagicMock(),
-        data=SiteSettingBulkUpdate(settings={"smtp_password": "super-secret-value"}),
-        current_user=SimpleNamespace(id=uuid4()),
-    )
-
-    changes = audit.await_args.kwargs["changes"]
-    assert changes["before"]["values"]["smtp_password"] == "***"
-    assert changes["after"]["values"]["smtp_password"] == "***"
-    assert "super-secret" not in str(changes)
+    with pytest.raises(BusinessError) as exc_info:
+        await site_settings.bulk_update_settings(
+            request=MagicMock(),
+            data=SiteSettingBulkUpdate(settings={"smtp_password": "secret"}),
+            current_user=SimpleNamespace(id=uuid4()),
+        )
+    assert exc_info.value.code == ResponseCode.NOT_FOUND
+    set_value.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_password_login_cannot_be_disabled_without_superadmin_sso(monkeypatch):
     monkeypatch.setattr(
-        site_settings.UserSSOConnection,
+        integration_settings.UserSSOConnection,
         "filter",
         lambda **_kwargs: Query(count=0),
     )
@@ -439,9 +425,9 @@ async def test_password_login_cannot_be_disabled_without_superadmin_sso(monkeypa
     monkeypatch.setattr(site_settings.SiteSetting, "set_value", set_value)
 
     with pytest.raises(BusinessError) as exc_info:
-        await site_settings.bulk_update_settings(
+        await integration_settings.update_login_settings(
             request=MagicMock(),
-            data=SiteSettingBulkUpdate(settings={"sso_allow_password_login": False}),
+            data=integration_settings.SSOSettings(sso_allow_password_login=False),
             current_user=SimpleNamespace(id=uuid4()),
         )
     assert exc_info.value.code == ResponseCode.FORBIDDEN
@@ -567,41 +553,39 @@ async def test_reset_category_and_audit(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_email_provider_boundaries_are_mocked(monkeypatch):
+    integration = SimpleNamespace(is_enabled=False)
     monkeypatch.setattr(
-        site_settings.SiteSetting, "get_value", AsyncMock(return_value=False)
+        integration_settings,
+        "get_builtin_integration",
+        AsyncMock(return_value=integration),
+    )
+    monkeypatch.setattr(
+        integration_settings.SiteSetting,
+        "get_value",
+        AsyncMock(return_value="Test Site"),
     )
     send = AsyncMock()
-    monkeypatch.setattr(site_settings, "send_email", send)
-
+    monkeypatch.setattr(integration_settings, "send_email", send)
     with pytest.raises(BusinessError) as exc_info:
-        await site_settings.send_test_email(
-            data=site_settings.TestEmailRequest(email="admin@example.com")
+        await integration_settings.send_test_email(
+            data=integration_settings.TestEmailRequest(email="admin@example.com")
         )
     assert exc_info.value.msg_key == "smtp_not_configured"
     send.assert_not_awaited()
 
-    monkeypatch.setattr(
-        site_settings.SiteSetting,
-        "get_value",
-        AsyncMock(side_effect=[True, "Test Site"]),
-    )
+    integration.is_enabled = True
     send.return_value = False
     with pytest.raises(BusinessError) as exc_info:
-        await site_settings.send_test_email(
-            data=site_settings.TestEmailRequest(email="admin@example.com")
+        await integration_settings.send_test_email(
+            data=integration_settings.TestEmailRequest(email="admin@example.com")
         )
     assert exc_info.value.msg_key == "email_send_failed"
     send.assert_awaited_once()
 
-    monkeypatch.setattr(
-        site_settings.SiteSetting,
-        "get_value",
-        AsyncMock(side_effect=[True, "Test Site"]),
-    )
     send.reset_mock()
     send.return_value = True
-    await site_settings.send_test_email(
-        data=site_settings.TestEmailRequest(email="admin@example.com")
+    await integration_settings.send_test_email(
+        data=integration_settings.TestEmailRequest(email="admin@example.com")
     )
     send.assert_awaited_once()
 
@@ -610,13 +594,13 @@ async def test_email_provider_boundaries_are_mocked(monkeypatch):
 @pytest.mark.parametrize(
     ("provider", "endpoint", "config_key"),
     [
-        ("webhook", site_settings.send_test_webhook, "url"),
+        ("webhook", integration_settings.send_test_webhook, "url"),
     ],
 )
 async def test_webhook_notification_provider_boundaries_are_mocked(
     monkeypatch, provider, endpoint, config_key
 ):
-    module = import_module(f"app.core.{provider}")
+    module = integration_settings
     get_config = AsyncMock()
     send = AsyncMock()
     monkeypatch.setattr(module, f"get_{provider}_config", get_config)
@@ -690,3 +674,137 @@ async def test_archive_status_boundaries(
     response = await site_settings.get_archive_task_status("task-123")
 
     assert response["data"][expected_key] == expected_value
+
+
+@pytest.mark.asyncio
+async def test_email_settings_store_password_separately_and_never_return_it(
+    monkeypatch,
+):
+    integration = SimpleNamespace(
+        id=uuid4(),
+        name="email",
+        is_enabled=True,
+        config={"smtp_host": "smtp.example.com"},
+        credentials={"smtp_password": "encrypted"},
+    )
+    update = AsyncMock(return_value=integration)
+    monkeypatch.setattr(integration_settings, "update_builtin_config", update)
+    monkeypatch.setattr(
+        integration_settings,
+        "get_builtin_integration",
+        AsyncMock(return_value=integration),
+    )
+    monkeypatch.setattr(integration_settings.AuditLogService, "log", AsyncMock())
+    response = await integration_settings.update_email_settings(
+        request=MagicMock(),
+        data=integration_settings.EmailSettings(
+            smtp_password="new-secret", smtp_enabled=True
+        ),
+        current_user=SimpleNamespace(id=uuid4()),
+    )
+    update.assert_awaited_once_with("email", {}, {"smtp_password": "new-secret"}, True)
+    assert response["data"].smtp_password == ""
+    assert response["data"].smtp_host == "smtp.example.com"
+
+
+@pytest.mark.asyncio
+async def test_webhook_settings_encrypt_headers_and_preserve_blank_secrets(monkeypatch):
+    integration = SimpleNamespace(
+        id=uuid4(),
+        name="webhook",
+        is_enabled=True,
+        config={"webhook_url": "https://example.com/hook"},
+        credentials={"webhook_secret": "encrypted"},
+    )
+    update = AsyncMock(return_value=integration)
+    monkeypatch.setattr(integration_settings, "update_builtin_config", update)
+    monkeypatch.setattr(
+        integration_settings,
+        "get_builtin_integration",
+        AsyncMock(return_value=integration),
+    )
+    monkeypatch.setattr(integration_settings.AuditLogService, "log", AsyncMock())
+    response = await integration_settings.update_webhook_settings(
+        request=MagicMock(),
+        data=integration_settings.WebhookSettings(
+            webhook_headers={"Authorization": "Bearer secret"}, webhook_secret=""
+        ),
+        current_user=SimpleNamespace(id=uuid4()),
+    )
+    update.assert_awaited_once_with(
+        "webhook",
+        {},
+        {"webhook_secret": "", "webhook_headers": '{"Authorization": "Bearer secret"}'},
+        None,
+    )
+    assert response["data"].webhook_headers == {}
+    assert response["data"].webhook_secret == ""
+    assert response["data"].webhook_url == "https://example.com/hook"
+
+
+@pytest.mark.asyncio
+async def test_saved_login_policy_remains_visible_to_public_login_page(monkeypatch):
+    from app.api.v1.endpoints import site_settings as public_settings
+
+    stored = {}
+
+    async def set_value(key, value, **metadata):
+        stored[key] = (value, metadata["is_public"])
+
+    async def get_value(key, default=None):
+        return stored.get(key, (default, False))[0]
+
+    async def get_all_by_category(**filters):
+        return {
+            key: value
+            for key, (value, is_public) in stored.items()
+            if not filters.get("public_only") or is_public
+        }
+
+    monkeypatch.setattr(integration_settings.SiteSetting, "set_value", set_value)
+    monkeypatch.setattr(integration_settings.SiteSetting, "get_value", get_value)
+    monkeypatch.setattr(
+        integration_settings.SiteSetting, "get_all_by_category", get_all_by_category
+    )
+    monkeypatch.setattr(
+        integration_settings.UserSSOConnection,
+        "filter",
+        lambda **kwargs: Query(count=1),
+    )
+    monkeypatch.setattr(integration_settings.AuditLogService, "log", AsyncMock())
+    await integration_settings.update_login_settings(
+        request=MagicMock(),
+        data=integration_settings.SSOSettings(
+            sso_enabled=True,
+            sso_allow_password_login=False,
+            sso_auto_create_users=False,
+        ),
+        current_user=SimpleNamespace(id=uuid4()),
+    )
+    response = await public_settings.get_public_settings()
+    assert response["data"].sso_enabled is True
+    assert response["data"].sso_allow_password_login is False
+    assert stored["sso_auto_create_users"][1] is False
+
+
+@pytest.mark.asyncio
+async def test_private_permission_migration_marker_is_not_manageable(monkeypatch):
+    key = "integration_permission_migration_completed"
+    monkeypatch.setattr(
+        site_settings.SiteSetting,
+        "get_all_by_category",
+        AsyncMock(return_value={key: True, "site_name": "Visible"}),
+    )
+    response = await site_settings.get_all_settings(
+        current_user=SimpleNamespace(id=uuid4())
+    )
+    assert response["data"].settings == {"site_name": "Visible"}
+    with pytest.raises(BusinessError):
+        await site_settings.get_setting(key, current_user=SimpleNamespace(id=uuid4()))
+    with pytest.raises(BusinessError):
+        await site_settings.bulk_update_settings(
+            request=MagicMock(),
+            data=SiteSettingBulkUpdate(settings={key: False}),
+            current_user=SimpleNamespace(id=uuid4()),
+        )
+    assert site_settings._is_integration_setting(key)

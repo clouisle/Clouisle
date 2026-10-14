@@ -137,14 +137,16 @@
 
 ## 测试接口
 
-### POST /test-email
+邮件/Webhook/飞书已从 SiteSetting 迁移为单实例 Integration；配置和凭据使用 `/api/v1/admin/integrations` 专用端点，运行时无旧配置回退。全局 SSO 策略保留键名，通过 `/integrations/login-settings` 管理。飞书为单实例集成，同时声明 `directory_sync` 与 `user_login`：启用集成本身不会开启登录，网页登录需显式选择；通用 `PUT /api/v1/admin/integrations/{id}` 按字段判定权限域——`enabled_capabilities`/`is_enabled` 计入所涉能力所属域（`user_login` → login，`directory_sync` → settings），内置集成的 `config`/`credentials` 计入 settings，登录相关字段计入 login。凭据加密保存且不在管理响应中返回，迁移保留登录 UUID 与身份连接；升级前备份数据库和 `SECRET_KEY`，回滚需恢复匹配数据库与程序版本。详见[集成指南](../../../guide/admin-guide/settings/SSO_zh-CN.md)。
+
+### POST /api/v1/admin/integrations/email/test
 
 测试邮件配置
 
 | 属性 | 值 |
 |------|-----|
 | 认证 | Bearer Token |
-| 权限 | 超级管理员 |
+| 权限 | `admin:integrations:settings:update` |
 | 说明 | 发送测试邮件验证 SMTP 配置 |
 
 **请求体**:
@@ -157,14 +159,14 @@
 ---
 
 
-### POST /test-webhook
+### POST /api/v1/admin/integrations/webhook/test
 
 测试 Webhook 配置
 
 | 属性 | 值 |
 |------|-----|
 | 认证 | Bearer Token |
-| 权限 | 超级管理员 |
+| 权限 | `admin:integrations:settings:update` |
 | 说明 | 发送测试请求验证 Webhook 配置 |
 
 ---

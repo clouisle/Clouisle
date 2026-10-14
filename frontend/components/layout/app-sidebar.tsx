@@ -218,9 +218,9 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
   const settingsItems = [
     {
       title: t('siteSettings'),
-      url: '/site-settings',
+      url: canAccessRoute('/site-settings', hasPermission, isSuperuser) ? '/site-settings' : '/site-settings/integrations',
       icon: Settings,
-      permission: ROUTE_PERMISSION_MAP['/site-settings'],
+      permission: canAccessRoute('/site-settings', hasPermission, isSuperuser) ? ROUTE_PERMISSION_MAP['/site-settings'] : ROUTE_PERMISSION_MAP['/site-settings/integrations'],
     },
     {
       title: t('helpCenter'),

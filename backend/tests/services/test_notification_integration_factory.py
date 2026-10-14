@@ -4,31 +4,20 @@ import pytest
 
 from app.integrations.factory import (
     EmailNotificationIntegration,
-    NotificationIntegrationFactory,
     NotificationMessage,
     WebhookNotificationIntegration,
-    notification_integration_factory,
+    get_notification_integration,
+    dispatch_notification_task,
 )
 from app.models.notification import NotificationChannel
 
 
-def test_factory_registers_only_active_delivery_channels():
-    assert [item.id for item in notification_integration_factory.all()] == [
-        NotificationChannel.EMAIL,
-        NotificationChannel.WEBHOOK,
-    ]
-
-
-def test_factory_fails_closed_for_unregistered_integrations():
-    for integration_id in ("unknown", "dingtalk", "wechat", "feishu", "slack"):
-        with pytest.raises(ValueError, match="Unknown notification integration"):
-            notification_integration_factory.get(integration_id)
-
-
-def test_factory_rejects_duplicate_ids():
-    integration = EmailNotificationIntegration()
-    with pytest.raises(ValueError, match="Duplicate integration"):
-        NotificationIntegrationFactory((integration, integration))
+def test_notification_resolution_requires_catalog_capability():
+    assert get_notification_integration("email").id == NotificationChannel.EMAIL
+    assert get_notification_integration("webhook").id == NotificationChannel.WEBHOOK
+    for integration_id in ("unknown", "dingtalk", "wechat", "feishu", "slack", "oidc"):
+        with pytest.raises(ValueError):
+            get_notification_integration(integration_id)
 
 
 @pytest.mark.asyncio
@@ -103,13 +92,11 @@ def test_factory_dispatches_email_and_webhook_tasks_independently(monkeypatch):
     monkeypatch.setattr(tasks.send_notification_webhook_task, "delay", webhook_delay)
 
     assert (
-        notification_integration_factory.dispatch_task(
-            NotificationChannel.EMAIL, "notification-email"
-        ).id
+        dispatch_notification_task(NotificationChannel.EMAIL, "notification-email").id
         == "email-id"
     )
     assert (
-        notification_integration_factory.dispatch_task(
+        dispatch_notification_task(
             NotificationChannel.WEBHOOK, "notification-webhook"
         ).id
         == "webhook-id"

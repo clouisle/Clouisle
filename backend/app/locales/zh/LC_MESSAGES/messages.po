@@ -1196,6 +1196,12 @@ msgstr "文件批量解析成功"
 msgid "feishu_api_error"
 msgstr "飞书拒绝了该请求：{error}"
 
+msgid "feishu_directory_sync_disabled"
+msgstr "请先启用飞书集成及其通讯录同步能力，再浏览或同步部门。"
+
+msgid "feishu_not_configured"
+msgstr "请先保存飞书 App ID 和 App Secret，再浏览或同步部门。"
+
 msgid "feishu_secret_undecryptable"
 msgstr "已保存的飞书应用密钥无法解密，请重新保存应用密钥。"
 
@@ -3049,4 +3055,34 @@ msgstr "{question_id} 的回答为必填项"
 
 msgid "answer_must_be_string"
 msgstr "{question_id} 的回答必须为非空字符串"
+
+msgid "integration_not_found"
+msgstr "集成未找到"
+
+msgid "integration_name_exists"
+msgstr "集成名称已存在"
+
+msgid "integration_invalid_configuration"
+msgstr "集成配置或能力无效"
+
+msgid "integration_builtin_cannot_delete"
+msgstr "内置集成不能删除"
+
+msgid "integration_config_valid"
+msgstr "集成配置有效"
+
+msgid "integration_config_error_generic"
+msgstr "集成配置检查失败"
+
+msgid "audit_log_create_integration"
+msgstr "创建集成"
+
+msgid "audit_log_update_integration"
+msgstr "更新集成"
+
+msgid "audit_log_delete_integration"
+msgstr "删除集成"
+
+msgid "audit_log_test_integration_failed"
+msgstr "集成配置检查失败"
 

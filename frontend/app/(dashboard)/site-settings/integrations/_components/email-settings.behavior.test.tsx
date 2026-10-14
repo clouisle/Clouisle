@@ -37,7 +37,7 @@ mock.module('@/components/ui/select', () => ({
 }))
 mock.module('@/components/ui/field', () => ({ FieldError: ({ children }: React.PropsWithChildren) => children ? <p role="alert">{children}</p> : null }))
 
-import { siteSettingsApi, type EmailSettings } from '@/lib/api/admin/site-settings'
+import { integrationsApi, type EmailSettings } from '@/lib/api/admin/integrations'
 import { EmailSettingsTab } from './email-settings'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
@@ -86,7 +86,7 @@ describe('EmailSettingsTab', () => {
   })
 
   test('blocks invalid SMTP saves and identifies the invalid fields accessibly', async () => {
-    const updateEmail = spyOn(siteSettingsApi, 'updateEmail')
+    const updateEmail = spyOn(integrationsApi, 'updateEmail')
     const { renderer } = render({ settings: { ...settings, smtp_host: '', email_from_address: '' } })
 
     await act(async () => button(renderer, 'save').props.onClick())
@@ -98,8 +98,8 @@ describe('EmailSettingsTab', () => {
   })
 
   test('sends test emails and saves valid settings with their expected API payloads', async () => {
-    const sendTestEmail = spyOn(siteSettingsApi, 'sendTestEmail').mockResolvedValue()
-    const updateEmail = spyOn(siteSettingsApi, 'updateEmail').mockResolvedValue({})
+    const sendTestEmail = spyOn(integrationsApi, 'sendTestEmail').mockResolvedValue()
+    const updateEmail = spyOn(integrationsApi, 'updateEmail').mockResolvedValue(settings)
     const { renderer } = render()
     const testEmail = renderer.root.findByProps({ placeholder: 'email.testEmailPlaceholder' })
 

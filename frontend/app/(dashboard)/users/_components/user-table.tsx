@@ -128,10 +128,10 @@ function UserTableRow({ user, onEdit, onDelete, onStatusChange }: UserTableRowPr
                     {user.sso_connections.map((conn) => (
                       <Tooltip key={conn.id}>
                         <TooltipTrigger>
-                          {conn.provider_icon_url ? (
+                          {conn.integration_icon_url ? (
                             <img
-                              src={conn.provider_icon_url}
-                              alt={conn.provider_display_name}
+                              src={conn.integration_icon_url}
+                              alt={conn.integration_display_name}
                               className="h-4 w-4 rounded"
                             />
                           ) : (
@@ -140,7 +140,7 @@ function UserTableRow({ user, onEdit, onDelete, onStatusChange }: UserTableRowPr
                         </TooltipTrigger>
                         <TooltipContent>
                           <div className="text-xs">
-                            <p className="font-medium">{conn.provider_display_name}</p>
+                            <p className="font-medium">{conn.integration_display_name}</p>
                             {conn.provider_email && (
                               <p className="text-muted-foreground">{conn.provider_email}</p>
                             )}

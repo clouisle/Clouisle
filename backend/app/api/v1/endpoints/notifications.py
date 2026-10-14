@@ -490,11 +490,11 @@ async def admin_create_notification(
         )
 
     if payload.notify_channels:
-        from app.integrations.factory import notification_integration_factory
+        from app.integrations.factory import get_notification_integration
 
         for channel in payload.notify_channels:
             try:
-                integration = notification_integration_factory.get(channel)
+                integration = get_notification_integration(channel)
             except ValueError:
                 raise BusinessError(
                     code=ResponseCode.BAD_REQUEST,
@@ -534,7 +534,7 @@ async def admin_create_notification(
     if payload.notify_channels:
         logger.info(f"Sending notifications to channels: {payload.notify_channels}")
 
-        from app.integrations.factory import notification_integration_factory
+        from app.integrations.factory import dispatch_notification_task
 
         for channel in payload.notify_channels:
             delivery = await NotificationDelivery.create(
@@ -545,9 +545,7 @@ async def admin_create_notification(
             logger.info(
                 f"Triggering {channel.value} notification task for {notification.id}"
             )
-            task_result = notification_integration_factory.dispatch_task(
-                channel, str(notification.id)
-            )
+            task_result = dispatch_notification_task(channel, str(notification.id))
             delivery.task_id = task_result.id
             await delivery.save()
             deliveries.append(delivery)

@@ -5,6 +5,9 @@ import { defaultLocale, locales, type Locale } from './config'
 // 静态导入全部翻译模块。动态 `await import(expr)` 在 Turbopack 开发模式下会
 // 缓存旧的 JSON 模块（新增键后不刷新即 MISSING_MESSAGE），静态导入随构建/HMR
 // 一起更新，并让构建期校验所有 JSON 存在。
+// 注意：长时间运行的 dev server 在新增 key 后仍可能短暂沿用旧的 JSON 模块，
+// 表现为 MISSING_MESSAGE 且只有部分新键报错。刷新页面即可；仍报错则重启
+// `next dev`（必要时先删 `.next`）。生产构建在构建期读取 JSON，不受影响。
 import enCommon from './en/common.json'
 import enNav from './en/nav.json'
 import enAuth from './en/auth.json'

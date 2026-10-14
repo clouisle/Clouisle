@@ -69,6 +69,11 @@ def patch_settings(monkeypatch, **overrides):
     values.update(overrides)
     getter = AsyncMock(side_effect=lambda key, default=None: values.get(key, default))
     monkeypatch.setattr(login.SiteSetting, "get_value", getter)
+    monkeypatch.setattr(
+        login,
+        "get_builtin_integration",
+        AsyncMock(return_value=SimpleNamespace(is_enabled=values["smtp_enabled"])),
+    )
     return getter
 
 

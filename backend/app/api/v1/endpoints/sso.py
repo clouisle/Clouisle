@@ -12,17 +12,29 @@ from app.api import deps
 from app.core import security
 from app.core.timezone import now_utc
 from app.models.site_setting import SiteSetting
-from app.models.sso_provider import SSOProvider
+from app.models.integration import Integration
 from app.models.sso_session import SSOSession
 from app.models.user import User
 from app.schemas.response import BusinessError, Response, ResponseCode, success
-from app.schemas.sso import SSOProviderPublic
+from app.schemas.integration import IntegrationLoginPublic
+from app.integrations.registry import IntegrationCapability, integration_registry
 from app.services.audit_log import AuditLogService
-from app.services.sso import SSOService
+from app.services.sso import PKCE_PROVIDER_TYPES, SSOService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _supports_login(integration: Integration) -> bool:
+    try:
+        definition = integration_registry.get(integration.provider_type)
+    except ValueError:
+        return False
+    return (
+        IntegrationCapability.USER_LOGIN in definition.capabilities
+        and IntegrationCapability.USER_LOGIN in integration.enabled_capabilities
+    )
 
 
 async def _frontend_url() -> str:
@@ -46,6 +58,7 @@ def _backend_url(request: Request) -> str:
 
 
 def _safe_sso_redirect(redirect_url: Optional[str]) -> str:
+    """Sanitized post-login path; every role lands on the same default."""
     final_redirect = redirect_url.strip() if isinstance(redirect_url, str) else ""
     parsed = urlsplit(final_redirect)
     if (
@@ -56,7 +69,7 @@ def _safe_sso_redirect(redirect_url: Optional[str]) -> str:
         or parsed.netloc
         or "\\" in final_redirect
     ):
-        return "/dashboard"
+        return "/app"
     return final_redirect
 
 
@@ -72,25 +85,26 @@ async def _sso_error_redirect(
 # Public endpoints (no auth required)
 
 
-@router.get("/providers", response_model=Response[list[SSOProviderPublic]])
-async def list_public_providers():
-    """List enabled SSO providers (public endpoint for login page)"""
+@router.get("/integrations", response_model=Response[list[IntegrationLoginPublic]])
+async def list_public_integrations():
+    """List enabled login integrations without configuration or credentials."""
     sso_enabled = await SiteSetting.get_value("sso_enabled", False)
     if not sso_enabled:
         return success(data=[])
 
-    providers = await SSOProvider.filter(is_enabled=True).all()
+    providers = await Integration.filter(is_enabled=True).all()
     return success(
         data=[
-            SSOProviderPublic(
+            IntegrationLoginPublic(
                 id=p.id,
                 name=p.name,
                 display_name=p.display_name,
                 icon_url=p.icon_url,
                 button_text=p.button_text,
-                protocol=p.protocol,
+                provider_type=p.provider_type,
             )
             for p in providers
+            if _supports_login(p)
         ]
     )
 
@@ -102,8 +116,8 @@ async def sso_login(
     redirect: Optional[str] = Query(None),
 ):
     """Initiate SSO login flow"""
-    provider = await SSOProvider.get_or_none(name=provider_name, is_enabled=True)
-    if not provider:
+    provider = await Integration.get_or_none(name=provider_name, is_enabled=True)
+    if not provider or not _supports_login(provider):
         return await _sso_error_redirect("sso_provider_not_found")
 
     session_id = secrets.token_urlsafe(32)
@@ -116,7 +130,7 @@ async def sso_login(
         # Build callback URL from backend/API origin for IdP redirects.
         callback_url = f"{_backend_url(request)}/api/v1/sso/callback/{provider.name}"
 
-        if provider.protocol in ["oauth2", "oidc"]:
+        if provider.provider_type in PKCE_PROVIDER_TYPES:
             auth_result = await provider_instance.get_authorization_url(
                 state=session_id, redirect_uri=callback_url
             )
@@ -129,14 +143,14 @@ async def sso_login(
 
             await SSOSession.create(
                 session_id=session_id,
-                provider=provider,
+                integration=provider,
                 code_verifier=code_verifier,
                 nonce=nonce,
                 redirect_url=safe_redirect,
                 expires_at=expires_at,
             )
 
-        elif provider.protocol == "saml2":
+        elif provider.provider_type == "saml2":
             auth_result = await provider_instance.get_authorization_url(
                 state=session_id, redirect_uri=callback_url
             )
@@ -144,12 +158,12 @@ async def sso_login(
 
             await SSOSession.create(
                 session_id=session_id,
-                provider=provider,
+                integration=provider,
                 redirect_url=safe_redirect,
                 expires_at=expires_at,
             )
 
-        elif provider.protocol == "cas":
+        elif provider.provider_type == "cas":
             auth_result = await provider_instance.get_authorization_url(
                 state=session_id, redirect_uri=callback_url
             )
@@ -157,7 +171,7 @@ async def sso_login(
 
             await SSOSession.create(
                 session_id=session_id,
-                provider=provider,
+                integration=provider,
                 redirect_url=safe_redirect,
                 expires_at=expires_at,
             )
@@ -186,13 +200,13 @@ async def sso_callback(
     ticket: Optional[str] = Query(None),
 ):
     """Handle SSO callback"""
-    provider = await SSOProvider.get_or_none(name=provider_name)
-    if not provider:
+    provider = await Integration.get_or_none(name=provider_name)
+    if not provider or not _supports_login(provider):
         return await _sso_error_redirect("sso_provider_not_found")
 
-    if provider.protocol in ["oauth2", "oidc"]:
+    if provider.provider_type in PKCE_PROVIDER_TYPES:
         session_id = state
-    elif provider.protocol == "cas":
+    elif provider.provider_type == "cas":
         session_id = request.query_params.get("state") or ticket
     else:
         session_id = request.query_params.get("RelayState")
@@ -200,7 +214,7 @@ async def sso_callback(
     if not session_id:
         return await _sso_error_redirect("sso_session_expired")
 
-    session = await SSOSession.get_or_none(session_id=session_id, provider=provider)
+    session = await SSOSession.get_or_none(session_id=session_id, integration=provider)
     if not session or session.expires_at < now_utc():
         return await _sso_error_redirect("sso_session_expired")
 
@@ -210,19 +224,19 @@ async def sso_callback(
         # Build callback URL from backend/API origin for IdP redirects.
         callback_url = f"{_backend_url(request)}/api/v1/sso/callback/{provider.name}"
 
-        if provider.protocol in ["oauth2", "oidc"]:
+        if provider.provider_type in PKCE_PROVIDER_TYPES:
             callback_data = {"code": code}
             user_info = await provider_instance.handle_callback(
                 callback_data=callback_data,
                 redirect_uri=callback_url,
                 code_verifier=session.code_verifier,
             )
-        elif provider.protocol == "cas":
+        elif provider.provider_type == "cas":
             callback_data = {"ticket": ticket}
             user_info = await provider_instance.handle_callback(
                 callback_data=callback_data, redirect_uri=callback_url
             )
-        elif provider.protocol == "saml2":
+        elif provider.provider_type == "saml2":
             form_data = await request.form()
             saml_value = form_data.get("SAMLResponse")
             saml_response = saml_value if isinstance(saml_value, str) else None
@@ -309,7 +323,7 @@ async def sso_callback(
             metadata={"provider": provider.name},
         )
         return await _sso_error_redirect("sso_login_failed", session.redirect_url)
-    except Exception as e:
+    except Exception:
         await AuditLogService.log(
             user=None,
             action="sso_login_failed",
@@ -319,7 +333,7 @@ async def sso_callback(
             operation="read",
             status="failed",
             request=request,
-            error_message=str(e),
+            error_message="sso_login_failed",
             metadata={"provider": provider.name},
         )
         return await _sso_error_redirect("sso_login_failed", session.redirect_url)
@@ -336,7 +350,7 @@ async def disconnect_sso(
 
     connection = await UserSSOConnection.get_or_none(
         id=connection_id, user=current_user
-    ).prefetch_related("provider")
+    ).prefetch_related("integration")
 
     if not connection:
         raise BusinessError(
@@ -351,7 +365,7 @@ async def disconnect_sso(
                 msg_key="cannot_disconnect_only_auth_method",
             )
 
-    provider_name = connection.provider.name
+    provider_name = connection.integration.name
     audit_before = AuditLogService.snapshot(connection, "sso_connection")
 
     await connection.delete()

@@ -141,7 +141,12 @@ def is_placeholder_email(email: str) -> bool:
     return email.endswith(PLACEHOLDER_EMAIL_DOMAINS)
 
 
-def _placeholder_email(feishu_user_id: str) -> str:
+def placeholder_email(feishu_user_id: str) -> str:
+    """Deterministic address for a Feishu account whose directory has no email.
+
+    Both directory sync and Feishu login derive it from the Feishu `user_id`, so
+    the two paths converge on one local identity instead of creating two.
+    """
     digest = hashlib.sha256(feishu_user_id.encode()).hexdigest()[:32]
     return f"feishu-{digest}{PLACEHOLDER_EMAIL_DOMAIN}"
 
@@ -166,7 +171,7 @@ async def sync_directory_users(
         if not feishu_user_id:
             skipped += 1
             continue
-        email = member.email or _placeholder_email(feishu_user_id)
+        email = member.email or placeholder_email(feishu_user_id)
         try:
             async with in_transaction() as connection:
                 binding = (

@@ -1195,6 +1195,12 @@ msgstr "Files parsed successfully"
 msgid "feishu_api_error"
 msgstr "Feishu rejected the request: {error}"
 
+msgid "feishu_directory_sync_disabled"
+msgstr "Enable the Feishu integration and its directory sync capability before browsing or syncing departments."
+
+msgid "feishu_not_configured"
+msgstr "Save the Feishu app ID and app secret before browsing or syncing departments."
+
 msgid "feishu_secret_undecryptable"
 msgstr "The stored Feishu app secret cannot be decrypted. Save the app secret again."
 
@@ -3049,4 +3055,34 @@ msgstr "Answer required for {question_id}"
 
 msgid "answer_must_be_string"
 msgstr "Answer must be a non-empty string for {question_id}"
+
+msgid "integration_not_found"
+msgstr "Integration not found"
+
+msgid "integration_name_exists"
+msgstr "Integration name already exists"
+
+msgid "integration_invalid_configuration"
+msgstr "Invalid integration configuration or capability"
+
+msgid "integration_builtin_cannot_delete"
+msgstr "Builtin integrations cannot be deleted"
+
+msgid "integration_config_valid"
+msgstr "Integration configuration is valid"
+
+msgid "integration_config_error_generic"
+msgstr "Integration configuration check failed"
+
+msgid "audit_log_create_integration"
+msgstr "Create integration"
+
+msgid "audit_log_update_integration"
+msgstr "Update integration"
+
+msgid "audit_log_delete_integration"
+msgstr "Delete integration"
+
+msgid "audit_log_test_integration_failed"
+msgstr "Integration configuration check failed"
 

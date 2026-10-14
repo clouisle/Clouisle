@@ -55,10 +55,12 @@ const routePermissionMap: Record<string, string | string[]> = {
   '/notifications': 'notifications:read',
   '/audit-logs': 'audit_logs:read',
   '/site-settings': 'settings:read',
+  '/site-settings/integrations': ['admin:integrations:login:read', 'admin:integrations:settings:read'],
 }
 
 const canAccessRoute = (url: string, hasPermission: (permission: string) => boolean) => {
   const required = routePermissionMap[url]
+  if (url === '/site-settings/integrations' && Array.isArray(required)) return required.some(hasPermission)
   return !required || (Array.isArray(required) ? required.every(hasPermission) : hasPermission(required))
 }
 
@@ -156,6 +158,15 @@ afterEach(() => {
 })
 
 describe('AppSidebar', () => {
+  test('routes login-only admins directly to their accessible integration management page', async () => {
+    allowedPermissions.clear()
+    allowedPermissions.add('admin:integrations:login:read')
+    pathname = '/site-settings/integrations'
+    const renderer = await renderSidebar()
+    expect(renderer.root.findByProps({ href: '/site-settings/integrations' })).toBeDefined()
+    expect(renderer.root.findAllByProps({ href: '/site-settings' })).toHaveLength(0)
+  })
+
   test('shows permitted navigation and marks the current nested route active', async () => {
     const renderer = await renderSidebar()
     const output = JSON.stringify(renderer.toJSON())

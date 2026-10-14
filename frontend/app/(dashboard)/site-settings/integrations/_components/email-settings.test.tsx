@@ -8,7 +8,7 @@ const toastSuccess = mock(() => {})
 
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess } }))
-mock.module('@/lib/api/admin/site-settings', () => ({ siteSettingsApi: { updateEmail, sendTestEmail } }))
+mock.module('@/lib/api/admin/integrations', () => ({ integrationsApi: { updateEmail, sendTestEmail } }))
 mock.module('lucide-react', () => ({ Loader2: () => <span>loading</span> }))
 mock.module('@/components/ui/card', () => ({
   Card: ({ children }: React.PropsWithChildren) => <section>{children}</section>,

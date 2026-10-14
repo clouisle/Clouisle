@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from tortoise import fields, models
 
 if TYPE_CHECKING:
-    from app.models.sso_provider import SSOProvider
+    from app.models.integration import Integration
 
 
 class SSOSession(models.Model):
@@ -15,8 +15,8 @@ class SSOSession(models.Model):
     session_id = fields.CharField(
         max_length=255, unique=True, description="Random state/RelayState"
     )
-    provider: fields.ForeignKeyRelation["SSOProvider"] = fields.ForeignKeyField(
-        "models.SSOProvider", related_name="sessions", on_delete=fields.CASCADE
+    integration: fields.ForeignKeyRelation["Integration"] = fields.ForeignKeyField(
+        "models.Integration", related_name="sessions", on_delete=fields.CASCADE
     )
 
     # OAuth2/OIDC specific

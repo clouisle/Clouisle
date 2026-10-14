@@ -633,16 +633,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         className="flex items-center justify-between rounded-lg border p-3"
                       >
                         <div className="flex items-center gap-3">
-                          {connection.provider_icon_url && (
+                          {connection.integration_icon_url && (
                             <img
-                              src={connection.provider_icon_url}
-                              alt={connection.provider_display_name}
+                              src={connection.integration_icon_url}
+                              alt={connection.integration_display_name}
                               className="h-8 w-8 rounded"
                             />
                           )}
                           <div>
                             <div className="flex items-center gap-2">
-                              <p className="text-sm font-medium">{connection.provider_display_name}</p>
+                              <p className="text-sm font-medium">{connection.integration_display_name}</p>
                               <LinkIcon className="h-3 w-3 text-muted-foreground" />
                             </div>
                             <p className="text-xs text-muted-foreground">

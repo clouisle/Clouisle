@@ -2000,103 +2000,6 @@ async def fix_cascade_delete_policies():
         await conn.execute_query("RESET lock_timeout")
 
 
-async def init_sso_tables():
-    """
-    Initialize SSO (Single Sign-On) related tables if they don't exist.
-    This handles the migration for the SSO feature.
-    """
-    logger.info("Initializing SSO tables...")
-
-    conn = Tortoise.get_connection("default")
-
-    # Check if sso_providers table exists
-    _, rows = await conn.execute_query("""
-        SELECT table_name FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'sso_providers'
-    """)
-
-    if rows:
-        logger.info("SSO tables already exist, skipping creation")
-        return
-
-    logger.info("Creating SSO tables...")
-
-    # Create sso_providers table
-    await conn.execute_query("""
-        CREATE TABLE IF NOT EXISTS sso_providers (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            name VARCHAR(100) UNIQUE NOT NULL,
-            protocol VARCHAR(20) NOT NULL,
-            display_name VARCHAR(100) NOT NULL,
-            icon_url VARCHAR(512),
-            button_text VARCHAR(50),
-            config JSONB NOT NULL,
-            attribute_mapping JSONB NOT NULL DEFAULT '{}',
-            is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-            allow_signup BOOLEAN NOT NULL DEFAULT TRUE,
-            require_approval BOOLEAN NOT NULL DEFAULT FALSE,
-            default_role_id UUID,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            created_by_id UUID REFERENCES users(id) ON DELETE SET NULL
-        )
-    """)
-    logger.info("Created sso_providers table")
-
-    # Create user_sso_connections table
-    await conn.execute_query("""
-        CREATE TABLE IF NOT EXISTS user_sso_connections (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            provider_id UUID NOT NULL REFERENCES sso_providers(id) ON DELETE CASCADE,
-            provider_user_id VARCHAR(255) NOT NULL,
-            provider_username VARCHAR(255),
-            provider_email VARCHAR(255),
-            provider_data JSONB NOT NULL DEFAULT '{}',
-            first_login TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            last_login TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            UNIQUE (provider_id, provider_user_id)
-        )
-    """)
-    logger.info("Created user_sso_connections table")
-
-    # Create sso_sessions table
-    await conn.execute_query("""
-        CREATE TABLE IF NOT EXISTS sso_sessions (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            session_id VARCHAR(255) UNIQUE NOT NULL,
-            provider_id UUID NOT NULL REFERENCES sso_providers(id) ON DELETE CASCADE,
-            code_verifier VARCHAR(255),
-            nonce VARCHAR(255),
-            redirect_url VARCHAR(512),
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            expires_at TIMESTAMPTZ NOT NULL
-        )
-    """)
-    logger.info("Created sso_sessions table")
-
-    # Create indexes for better performance
-    await conn.execute_query("""
-        CREATE INDEX IF NOT EXISTS idx_user_sso_connections_user_id
-        ON user_sso_connections(user_id)
-    """)
-    await conn.execute_query("""
-        CREATE INDEX IF NOT EXISTS idx_user_sso_connections_provider_id
-        ON user_sso_connections(provider_id)
-    """)
-    await conn.execute_query("""
-        CREATE INDEX IF NOT EXISTS idx_sso_sessions_session_id
-        ON sso_sessions(session_id)
-    """)
-    await conn.execute_query("""
-        CREATE INDEX IF NOT EXISTS idx_sso_sessions_expires_at
-        ON sso_sessions(expires_at)
-    """)
-    logger.info("Created SSO indexes")
-
-    logger.info("SSO tables initialization complete")
-
-
 async def migrate_registration_settings_category():
     """
     Migrate registration settings from 'general' category to 'security' category.
@@ -3285,6 +3188,9 @@ async def init_db():
                 "is_system": True,
             },
         )
+    from app.core.integration_migration import migrate_integration_permissions
+
+    await migrate_integration_permissions()
 
     # 2. Initialize System Roles
     logger.info("Initializing roles...")
@@ -3336,7 +3242,8 @@ async def init_db():
         "admin:knowledge-base:update",
         "admin:knowledge-base:delete",
         "admin:settings:read",
-        "admin:sso:read",
+        "admin:integrations:login:read",
+        "admin:integrations:settings:read",
         "audit:read",
         "audit:export",
         "admin:conversation:read",
@@ -3545,9 +3452,6 @@ async def init_db():
 
     # 8. Fix CASCADE delete policies
     await fix_cascade_delete_policies()
-
-    # 9. Initialize SSO tables
-    await init_sso_tables()
 
     # 10. Initialize memory tables
     await init_memory_tables()

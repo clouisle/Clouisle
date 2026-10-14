@@ -4,7 +4,6 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, EmailStr
 
 from app.api.deps import PermissionChecker
 from app.models import (
@@ -16,7 +15,6 @@ from app.models import (
     KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB,
 )
 from app.models.notification import AutoNotificationType
-from app.models.user_sso_connection import UserSSOConnection
 from app.schemas.site_setting import (
     SiteSettingResponse,
     SiteSettingUpdate,
@@ -26,8 +24,7 @@ from app.schemas.site_setting import (
     AutoNotificationConfigUpdate,
 )
 from app.schemas.response import Response, ResponseCode, BusinessError, success
-from app.core.email import send_email
-from app.core.i18n import t
+from app.integrations.registry import IntegrationCapability, integration_registry
 from app.core.model_endpoint_policy import (
     MODEL_ENDPOINT_ALLOWLIST_SETTING,
     ModelEndpointPolicyError,
@@ -70,10 +67,25 @@ def _setting_stored_str(value: Any, value_type: str) -> Optional[str]:
 SENSITIVE_SETTING_KEYS = {
     "object_storage_access_key",
     "object_storage_secret_key",
-    "smtp_password",
-    "webhook_secret",
-    "webhook_url",
 }
+
+
+INTEGRATION_SETTING_PREFIXES = ("sso_", "smtp_", "email_from_", "webhook_", "feishu_")
+
+PRIVATE_INTERNAL_SETTING_KEYS = {"integration_permission_migration_completed"}
+
+
+def _is_integration_setting(key: str) -> bool:
+    return key in PRIVATE_INTERNAL_SETTING_KEYS or key.startswith(
+        INTEGRATION_SETTING_PREFIXES
+    )
+
+
+def _reject_integration_setting(key: str) -> None:
+    if _is_integration_setting(key):
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND, msg_key="setting_not_found", key=key
+        )
 
 
 async def _validate_setting_value(key: str, value: object) -> None:
@@ -302,25 +314,17 @@ async def _validate_storage_settings_update(settings: dict[str, Any]) -> None:
         )
 
 
-async def _ensure_superadmin_sso_bound() -> None:
-    count = await UserSSOConnection.filter(user__is_superuser=True).count()
-    if count == 0:
-        raise BusinessError(
-            code=ResponseCode.FORBIDDEN,
-            msg_key="require_superadmin_sso",
-        )
-
-
-class TestEmailRequest(BaseModel):
-    email: EmailStr
-
-
 @router.get("", response_model=Response[SiteSettingsResponse])
 async def get_all_settings(
     category: Optional[str] = None,
     current_user: User = Depends(PermissionChecker("admin:settings:read")),
 ):
     settings = await SiteSetting.get_all_by_category(category=category)
+    settings = {
+        key: value
+        for key, value in settings.items()
+        if not _is_integration_setting(key)
+    }
     return success(data=SiteSettingsResponse(settings=settings))
 
 
@@ -358,7 +362,11 @@ async def update_auto_notification_config(
                 type_key=type_key,
             )
 
-    valid_channels = {"email", "webhook"}
+    valid_channels = {
+        definition.provider_type
+        for definition in integration_registry.all()
+        if IntegrationCapability.NOTIFICATION in definition.capabilities
+    }
     invalid_channels = set(data.channels) - valid_channels
     if invalid_channels:
         raise BusinessError(
@@ -409,6 +417,7 @@ async def get_setting(
     key: str,
     current_user: User = Depends(PermissionChecker("admin:settings:read")),
 ):
+    _reject_integration_setting(key)
     setting = await SiteSetting.filter(key=key).first()
     if not setting:
         raise BusinessError(
@@ -442,8 +451,7 @@ async def update_setting(
             old_setting.value, old_setting.value_type
         )
 
-    if key == "sso_allow_password_login" and data.value is False:
-        await _ensure_superadmin_sso_bound()
+    _reject_integration_setting(key)
     await _validate_setting_value(key, data.value)
     await _validate_storage_settings_update({key: data.value})
 
@@ -511,8 +519,8 @@ async def bulk_update_settings(
     data: SiteSettingBulkUpdate,
     current_user: User = Depends(PermissionChecker("admin:settings:update")),
 ):
-    if data.settings.get("sso_allow_password_login") is False:
-        await _ensure_superadmin_sso_bound()
+    for key in data.settings:
+        _reject_integration_setting(key)
     for key, value in data.settings.items():
         await _validate_setting_value(key, value)
     await _validate_storage_settings_update(data.settings)
@@ -579,6 +587,11 @@ async def bulk_update_settings(
     )
 
     settings = await SiteSetting.get_all_by_category()
+    settings = {
+        key: value
+        for key, value in settings.items()
+        if not _is_integration_setting(key)
+    }
     return success(data=SiteSettingsResponse(settings=settings))
 
 
@@ -593,6 +606,8 @@ async def reset_settings(
     after_values: dict[str, object] = {}
     for key, config in DEFAULT_SETTINGS.items():
         if category and config["category"] != category:
+            continue
+        if _is_integration_setting(key):
             continue
         old_setting = await SiteSetting.filter(key=key).first()
         old_value = (
@@ -642,72 +657,12 @@ async def reset_settings(
     )
 
     settings = await SiteSetting.get_all_by_category(category=category)
+    settings = {
+        key: value
+        for key, value in settings.items()
+        if not _is_integration_setting(key)
+    }
     return success(data=SiteSettingsResponse(settings=settings))
-
-
-@router.post("/test-email", response_model=Response[None])
-async def send_test_email(
-    data: TestEmailRequest,
-    current_user: User = Depends(PermissionChecker("admin:settings:update")),
-):
-    smtp_enabled = await SiteSetting.get_value("smtp_enabled", False)
-    if not smtp_enabled:
-        raise BusinessError(
-            code=ResponseCode.EMAIL_SEND_FAILED,
-            msg_key="smtp_not_configured",
-        )
-
-    site_name = await SiteSetting.get_value("site_name", "Clouisle")
-
-    subject = t("test_email_subject", site_name=site_name)
-    body_text = t("test_email_body_text", site_name=site_name)
-    body_html = t("test_email_body_html", site_name=site_name)
-
-    result = await send_email(data.email, subject, body_text, body_html)
-
-    if not result:
-        raise BusinessError(
-            code=ResponseCode.EMAIL_SEND_FAILED,
-            msg_key="email_send_failed",
-        )
-
-    return success(msg_key="test_email_sent")
-
-
-@router.post("/test-webhook", response_model=Response[None])
-async def send_test_webhook(
-    current_user: User = Depends(PermissionChecker("admin:settings:update")),
-):
-    from app.core.webhook import get_webhook_config, send_webhook_notification
-
-    config = await get_webhook_config()
-
-    if not config["enabled"]:
-        raise BusinessError(
-            code=ResponseCode.BAD_REQUEST,
-            msg_key="webhook_not_enabled",
-        )
-
-    if not config["url"]:
-        raise BusinessError(
-            code=ResponseCode.BAD_REQUEST,
-            msg_key="webhook_not_configured",
-        )
-
-    site_name = await SiteSetting.get_value("site_name", "Clouisle")
-
-    result = await send_webhook_notification(
-        title=t("test_notification_title", site_name=site_name),
-        content=t("test_webhook_content"),
-    )
-
-    if not result:
-        raise BusinessError(
-            code=ResponseCode.INTERNAL_ERROR,
-            msg_key="webhook_send_failed",
-        )
-
-    return success(msg_key="test_webhook_sent")
 
 
 @router.post("/archive-audit-logs", response_model=Response[dict])

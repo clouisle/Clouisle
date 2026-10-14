@@ -8,28 +8,6 @@ from app.api.v1.admin.endpoints import site_settings
 from app.schemas.response import BusinessError, ResponseCode
 
 
-class _Query:
-    def __init__(self, *, count=0):
-        self.count_value = count
-
-    async def count(self):
-        return self.count_value
-
-
-@pytest.mark.anyio
-async def test_superadmin_sso_guard_accepts_bound_and_rejects_unbound():
-    with patch.object(
-        site_settings.UserSSOConnection,
-        "filter",
-        side_effect=[_Query(count=1), _Query(count=0)],
-    ):
-        await site_settings._ensure_superadmin_sso_bound()
-        with pytest.raises(BusinessError) as exc:
-            await site_settings._ensure_superadmin_sso_bound()
-
-    assert exc.value.code == ResponseCode.FORBIDDEN
-
-
 @pytest.mark.anyio
 async def test_storage_validation_skips_non_storage_and_local_updates():
     get_settings = AsyncMock(return_value={"upload_storage_backend": "local"})

@@ -12,8 +12,12 @@ let stateCursor = 0
 let effectCursor = 0
 let effects: Array<() => void> = []
 let effectDeps: unknown[][] = []
-let lastProps: Parameters<typeof ProviderDialog>[0]
+let lastProps: Parameters<typeof LoginIntegrationDialog>[0]
 let tree: Node
+const types = [
+  { provider_type: 'oidc' as const, display_name: 'OpenID Connect', supported_capabilities: ['user_login' as const], singleton: false },
+  { provider_type: 'saml2' as const, display_name: 'SAML 2.0', supported_capabilities: ['user_login' as const], singleton: false },
+]
 
 function node(type: string, props: Record<string, unknown> = {}) {
   return { type, props }
@@ -32,18 +36,18 @@ function resetHooks() {
   effects = []
 }
 
-function rerender(props = lastProps) {
-  lastProps = props
+function rerender(props: Omit<Parameters<typeof LoginIntegrationDialog>[0], 'types'> = lastProps) {
+  lastProps = { ...props, types }
   stateCursor = 0
   effectCursor = 0
   effects = []
-  tree = ProviderDialog(props) as Node
+  tree = LoginIntegrationDialog(lastProps) as Node
   const pending = effects
   effects = []
   pending.forEach((effect) => effect())
   stateCursor = 0
   effectCursor = 0
-  tree = ProviderDialog(props) as Node
+  tree = LoginIntegrationDialog(lastProps) as Node
   return tree
 }
 
@@ -119,8 +123,8 @@ mock.module('sonner', () => ({ toast: { success: toastSuccess } }))
 mock.module('@/components/permission-guard', () => ({
   useCanPerform: () => ({ canPerform: () => canUpdate }),
 }))
-mock.module('@/lib/api/admin/sso', () => ({
-  ssoApi: { createProvider, updateProvider },
+mock.module('@/lib/api/admin/integrations', () => ({
+  integrationsApi: { create: createProvider, update: updateProvider },
 }))
 mock.module('@/lib/validation', () => ({
   clearValidationError: (errors: Record<string, string>, field: string) => {
@@ -151,9 +155,9 @@ for (const [path, exports] of Object.entries({
   mock.module(path, () => Object.fromEntries((exports as string[]).map((name) => [name, (props: Record<string, unknown>) => node(name, props)])))
 }
 
-const { ProviderDialog } = await import('./provider-dialog')
+const { LoginIntegrationDialog } = await import('./login-integration-dialog')
 
-describe('ProviderDialog', () => {
+describe('LoginIntegrationDialog', () => {
   beforeEach(() => {
     createProvider.mockClear()
     updateProvider.mockClear()
@@ -172,6 +176,8 @@ describe('ProviderDialog', () => {
     expect(byId('name').props.value).toBe('')
     expect(byId('config').props.value).toContain('authorization_url')
     expect(byId('attribute_mapping').props.value).toContain('avatar_url')
+    expect(textContent(byType('SelectValue')[0])).toBe('OpenID Connect')
+    expect(byType('SelectItem').some((item) => textContent(item) === 'OpenID Connect')).toBe(true)
 
     change('name', 'google')
     expect(byId('name').props.value).toBe('google')
@@ -195,6 +201,7 @@ describe('ProviderDialog', () => {
     change('icon_url', 'https://example.com/google.svg')
     change('config', '{"client_id":"id"}')
     change('attribute_mapping', '{"email":"mail"}')
+    change('credentials', '{"client_secret":"secret"}')
     byType('Switch')[0].props.onCheckedChange(false)
     rerender()
     byType('Switch')[2].props.onCheckedChange(true)
@@ -205,13 +212,14 @@ describe('ProviderDialog', () => {
 
     expect(createProvider).toHaveBeenCalledWith({
       name: 'google_sso',
-      protocol: 'oidc',
+      provider_type: 'oidc',
       display_name: 'Google SSO',
       icon_url: 'https://example.com/google.svg',
       button_text: 'Use Google',
       is_enabled: false,
-      allow_signup: true,
-      require_approval: true,
+      enabled_capabilities: ['user_login'],
+      credentials: { client_secret: 'secret' },
+      login_config: { allow_signup: true, require_approval: true, default_role_id: null },
       config: { client_id: 'id' },
       attribute_mapping: { email: 'mail' },
     })
@@ -227,13 +235,17 @@ describe('ProviderDialog', () => {
       provider: {
         id: 'provider-1',
         name: 'okta',
-        protocol: 'saml2',
+        provider_type: 'saml2',
         display_name: 'Okta',
         icon_url: null,
         button_text: null,
         is_enabled: false,
-        allow_signup: false,
-        require_approval: true,
+        login_config: { allow_signup: false, require_approval: true, default_role_id: 'role-1' },
+        credentials_configured: ['client_secret'],
+        enabled_capabilities: ['user_login'],
+        supported_capabilities: ['user_login'],
+        created_at: '',
+        updated_at: '',
         config: { idp_entity_id: 'idp' },
         attribute_mapping: { email: 'mail' },
       },
@@ -250,12 +262,14 @@ describe('ProviderDialog', () => {
 
     expect(updateProvider).toHaveBeenCalledWith('provider-1', expect.objectContaining({
       name: 'okta',
-      protocol: 'saml2',
+      provider_type: 'saml2',
       display_name: 'Okta Workforce',
       icon_url: null,
       button_text: null,
       config: { idp_entity_id: 'idp' },
       attribute_mapping: { email: 'mail' },
+      credentials: {},
+      login_config: { allow_signup: false, require_approval: true, default_role_id: 'role-1' },
     }))
     expect(toastSuccess).toHaveBeenCalledWith('updateSuccess')
     expect(onClose).toHaveBeenCalledWith(true)
@@ -305,6 +319,18 @@ describe('ProviderDialog', () => {
     expect(byType('Button')[0].props.disabled).toBe(false)
     expect(byType('Button')[1].props.children).toBe('save')
   })
+
+  test('rejects non-string credential values instead of sending them as provider config', async () => {
+    rerender({ open: true, provider: null, onClose: mock(() => {}) })
+    change('name', 'company')
+    change('credentials', '{"client_secret":42}')
+    await submit()
+    rerender()
+    expect(createProvider).not.toHaveBeenCalled()
+    expect(textContent(tree)).toContain('credentials: invalidCredentialsJson')
+    expect(byType('Button')[1].props.disabled).toBe(false)
+  })
+
 
   test('disables editing, cancel boundaries, and submit when permission is absent', () => {
     canUpdate = false

@@ -142,9 +142,9 @@ describe('LoginForm', () => {
 
   test('enforces SSO-only mode and forwards the requested redirect', async () => {
     settings({ sso_enabled: true, sso_allow_password_login: false })
-    spyOn(ssoApi, 'getPublicProviders').mockResolvedValue([{
-      id: 'sso-1', name: 'oidc', display_name: 'Company SSO', button_text: 'Use Company SSO', icon_url: null,
-    }] as Awaited<ReturnType<typeof ssoApi.getPublicProviders>>)
+    spyOn(ssoApi, 'getPublicIntegrations').mockResolvedValue([{
+      id: 'sso-1', name: 'oidc', provider_type: 'oidc', display_name: 'Company SSO', button_text: 'Use Company SSO', icon_url: null,
+    }] as Awaited<ReturnType<typeof ssoApi.getPublicIntegrations>>)
     const initiateLogin = spyOn(ssoApi, 'initiateLogin').mockImplementation(() => {})
     const renderer = render('redirect=/app/admin')
     await act(async () => Promise.resolve())

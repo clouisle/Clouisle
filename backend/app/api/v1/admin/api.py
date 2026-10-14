@@ -11,7 +11,8 @@ from app.api.v1.admin.endpoints import (
     permissions,
     site_settings,
     models,
-    sso,
+    integrations,
+    integration_settings,
     notifications,
     teams,
     memories,
@@ -49,11 +50,18 @@ admin_router.include_router(
     site_settings.router, prefix="/site-settings", tags=["admin-site-settings"]
 )
 admin_router.include_router(models.router, prefix="/models", tags=["admin-models"])
-admin_router.include_router(sso.router, prefix="/sso", tags=["admin-sso"])
+admin_router.include_router(
+    integration_settings.router, prefix="/integrations", tags=["admin-integrations"]
+)
+admin_router.include_router(
+    feishu.router, prefix="/integrations/feishu", tags=["admin-integrations"]
+)
+admin_router.include_router(
+    integrations.router, prefix="/integrations", tags=["admin-integrations"]
+)
 admin_router.include_router(
     notifications.router, prefix="/notifications", tags=["admin-notifications"]
 )
-admin_router.include_router(feishu.router, prefix="/feishu", tags=["admin-feishu"])
 admin_router.include_router(teams.router, prefix="/teams", tags=["admin-teams"])
 admin_router.include_router(
     memories.router, prefix="/memories", tags=["admin-memories"]

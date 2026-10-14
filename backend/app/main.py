@@ -73,6 +73,14 @@ async def lifespan(app: FastAPI):
         modules={"models": ["app.models"]},
         _enable_global_fallback=True,  # Enable global state for compatibility
     )
+    from app.core.integration_migration import (
+        initialize_integrations,
+        migrate_integration_schema,
+    )
+
+    # Authentication configuration must be migrated before ORM schema generation.
+    # Fail startup on a failed cutover rather than serving split configuration.
+    await migrate_integration_schema()
 
     # Run migrations BEFORE generating schemas
     from app.core.init_data import (
@@ -344,6 +352,7 @@ async def lifespan(app: FastAPI):
     await init_observability_run_fields()
     # Generate schemas
     await Tortoise.generate_schemas()
+    await initialize_integrations()
     try:
         await init_observability_run_error_index()
     except Exception as e:

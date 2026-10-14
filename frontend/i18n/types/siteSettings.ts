@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-12T06:41:02.943Z
+// GENERATED — 2026-10-14T05:40:40.654Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
@@ -17,16 +17,25 @@ export type SiteSettingsMessages = {
     integrations: {
       title: string
       description: string
+      capabilities: {
+        user_login: string
+        directory_sync: string
+        notification: string
+      }
       email: string
       webhook: string
       feishu: string
       feishuDescription: string
+      configure: string
+      secretConfigured: string
+      enabled: string
+      disabled: string
       feishuAppId: string
       feishuAppSecret: string
       feishuAppSecretDesc: string
       feishuSecretConfigured: string
-      feishuCompany: string
       feishuDepartments: string
+      feishuCompany: string
       feishuDepartmentsDesc: string
       feishuNoDepartments: string
       feishuLoadingDepartments: string
@@ -39,6 +48,13 @@ export type SiteSettingsMessages = {
       feishuSync: string
       feishuSyncFailed: string
       feishuSyncResult: string
+      feishuLogin: string
+      feishuDirectorySyncDescription: string
+      feishuLoginDescription: string
+      feishuButtonText: string
+      feishuButtonTextDesc: string
+      callbackUrl: string
+      callbackUrlDesc: string
     }
     autoNotifications: {
       tab: string
@@ -164,8 +180,6 @@ export type SiteSettingsMessages = {
       sendTest: string
       testSent: string
     }
-    sso: string
-    ssoDescription: string
     saveChanges: string
     save: string
     saveSuccess: string

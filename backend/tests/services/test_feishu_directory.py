@@ -199,14 +199,14 @@ async def test_sync_updates_only_existing_feishu_identity(monkeypatch):
 
 
 def test_placeholder_email_satisfies_the_api_response_email_contract():
-    email = feishu_directory._placeholder_email("ou_1")
+    email = feishu_directory.placeholder_email("ou_1")
     assert email.endswith(feishu_directory.PLACEHOLDER_EMAIL_DOMAIN)
     assert feishu_directory.is_placeholder_email(email)
     assert feishu_directory.is_placeholder_email(
         "feishu-legacy@accounts.clouisle.invalid"
     )
     assert not feishu_directory.is_placeholder_email("ada@example.org")
-    assert feishu_directory._placeholder_email("ou_1") == email
+    assert feishu_directory.placeholder_email("ou_1") == email
     user = UserSchema(
         id=uuid4(),
         username="feishu_ada",

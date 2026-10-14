@@ -7,7 +7,10 @@ from typing import Optional
 from uuid import UUID
 
 from app.core.timezone import now_utc
-from app.integrations.factory import notification_integration_factory
+from app.integrations.factory import (
+    get_notification_integration,
+    dispatch_notification_task,
+)
 from app.models.site_setting import SiteSetting
 from app.models.notification import (
     AutoNotificationType,
@@ -47,7 +50,7 @@ class AutoNotificationService:
         channels = []
         for name in config.get("channels", []):
             try:
-                integration = notification_integration_factory.get(name)
+                integration = get_notification_integration(name)
             except ValueError:
                 logger.warning(f"Unknown notification channel: {name}")
                 continue
@@ -57,7 +60,7 @@ class AutoNotificationService:
     @classmethod
     async def _is_channel_enabled(cls, channel: NotificationChannel) -> bool:
         try:
-            integration = notification_integration_factory.get(channel)
+            integration = get_notification_integration(channel)
         except ValueError:
             return False
         return await integration.is_enabled()
@@ -153,9 +156,7 @@ class AutoNotificationService:
                 updated_at=now_utc(),
             )
             try:
-                result = notification_integration_factory.dispatch_task(
-                    channel, str(notification.id)
-                )
+                result = dispatch_notification_task(channel, str(notification.id))
                 delivery.task_id = result.id
                 await delivery.save()
                 logger.info(

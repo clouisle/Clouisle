@@ -3,16 +3,18 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { ChevronDown, ChevronRight, Loader2, MessageSquareText, RefreshCw, Save } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Copy, Loader2, MessageSquareText, RefreshCw, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { siteSettingsApi } from '@/lib/api/admin/site-settings'
-import type { FeishuConfig, FeishuDepartment } from '@/lib/api/admin/site-settings'
+import { Switch } from '@/components/ui/switch'
+import { integrationsApi } from '@/lib/api/admin/integrations'
+import type { FeishuConfig, FeishuDepartment, Integration } from '@/lib/api/admin/integrations'
 import { ApiError } from '@/lib/api/client'
+import { API_BASE_URL } from '@/lib/constants'
 
 /**
  * The axios interceptor already toasts backend messages, so only fill the gap it leaves:
@@ -32,11 +34,13 @@ function DepartmentRow({
   depth,
   selectedIds,
   onToggle,
+  canUpdate,
 }: {
   department: FeishuDepartment
   depth: number
   selectedIds: Record<string, true>
   onToggle: (department: FeishuDepartment, checked: boolean) => void
+  canUpdate: boolean
 }) {
   const [expanded, setExpanded] = React.useState(true)
   const childIds = department.children.flatMap(collectDepartmentIds)
@@ -62,6 +66,7 @@ function DepartmentRow({
         ) : <span className="w-7 shrink-0" />}
         <Checkbox
           checked={checked || indeterminate}
+          disabled={!canUpdate}
           aria-label={department.name}
           onCheckedChange={(value) => onToggle(department, value === true)}
         />
@@ -76,6 +81,7 @@ function DepartmentRow({
               depth={depth + 1}
               selectedIds={selectedIds}
               onToggle={onToggle}
+              canUpdate={canUpdate}
             />
           ))}
         </div>
@@ -88,10 +94,16 @@ export function FeishuIntegrationTab({
   config,
   onConfigChange,
   canUpdate,
+  integration,
+  canUpdateLogin,
+  onIntegrationChange,
 }: {
   config: FeishuConfig
   onConfigChange: (config: FeishuConfig) => void
   canUpdate: boolean
+  integration: Integration | null
+  canUpdateLogin: boolean
+  onIntegrationChange: (integration: Integration) => void
 }) {
   const t = useTranslations('siteSettings')
   const [appId, setAppId] = React.useState(config.app_id)
@@ -103,29 +115,89 @@ export function FeishuIntegrationTab({
   const [savingScope, setSavingScope] = React.useState(false)
   const [syncing, setSyncing] = React.useState(false)
 
+  const enabledCapabilities = integration?.enabled_capabilities
+  const savedButtonText = integration?.button_text ?? ''
+  const savedDirectorySync = Boolean(integration?.enabled_capabilities.includes('directory_sync'))
+  const savedLoginEnabled = Boolean(integration?.enabled_capabilities.includes('user_login'))
+  const [directorySyncEnabled, setDirectorySyncEnabled] = React.useState(savedDirectorySync)
+  const [loginEnabled, setLoginEnabled] = React.useState(savedLoginEnabled)
+  const [buttonText, setButtonText] = React.useState(savedButtonText)
+  const [savingCapabilities, setSavingCapabilities] = React.useState(false)
+  const [copiedRedirect, setCopiedRedirect] = React.useState(false)
+  const copyTimeoutRef = React.useRef<number | undefined>(undefined)
+
   React.useEffect(() => {
     setAppId(config.app_id)
     setSelectedIds(Object.fromEntries(config.department_ids.map((id) => [id, true])) as Record<string, true>)
   }, [config.app_id, config.department_ids])
 
+  React.useEffect(() => {
+    setDirectorySyncEnabled(savedDirectorySync)
+    setLoginEnabled(savedLoginEnabled)
+    setButtonText(savedButtonText)
+  }, [enabledCapabilities, savedDirectorySync, savedLoginEnabled, savedButtonText])
+
+  // Both capabilities are opt-in and only run while the integration itself is enabled.
+  const capabilitiesReadOnly = !integration || !config.is_enabled
+  const canEditDirectorySync = canUpdate && !capabilitiesReadOnly
+  const canEditLogin = canUpdateLogin && !capabilitiesReadOnly
+  const nextCapabilities = integration
+    ? integration.supported_capabilities.filter((capability) => capability === 'directory_sync'
+      ? directorySyncEnabled
+      : capability === 'user_login' ? loginEnabled : false)
+    : []
+  const capabilitiesChanged = integration
+    ? nextCapabilities.join() !== integration.enabled_capabilities.join()
+    : false
+  const canSaveCapabilities = Boolean(integration) && !capabilitiesReadOnly
+    && (canEditDirectorySync || canEditLogin)
+    && (capabilitiesChanged || (canEditLogin && buttonText.trim() !== savedButtonText.trim()))
+  // Departments can only be browsed once the app credentials are saved and the
+  // integration actually serves directory sync; requesting them earlier is rejected.
+  const departmentsAvailable = config.app_secret_configured && config.is_enabled && savedDirectorySync
+
+  // The Feishu app must allowlist this exact URL before sign-in callbacks work.
+  const redirectUrl = React.useMemo(() => {
+    if (!integration || typeof window === 'undefined') return ''
+    try {
+      const base = new URL(API_BASE_URL, window.location.origin)
+      return `${base.origin}${base.pathname.replace(/\/$/, '')}/sso/callback/${integration.name}`
+    } catch {
+      return ''
+    }
+  }, [integration])
+
+  React.useEffect(() => () => {
+    window.clearTimeout(copyTimeoutRef.current)
+  }, [])
+
+  const copyRedirectUrl = async () => {
+    if (!redirectUrl) return
+    await navigator.clipboard.writeText(redirectUrl)
+    setCopiedRedirect(true)
+    window.clearTimeout(copyTimeoutRef.current)
+    copyTimeoutRef.current = window.setTimeout(() => setCopiedRedirect(false), 2000)
+  }
+
   const loadDepartments = React.useCallback(async () => {
-    if (!config.app_secret_configured) return
+    if (!departmentsAvailable) return
     setLoadingDepartments(true)
     try {
-      setDepartments(await siteSettingsApi.getFeishuDepartments())
+      setDepartments(await integrationsApi.getFeishuDepartments())
     } catch (error) {
       console.error('Failed to load Feishu departments:', error)
       toastFallback(error, t('integrations.feishuDepartmentsFailed'))
     } finally {
       setLoadingDepartments(false)
     }
-  }, [config.app_secret_configured, t])
+  }, [departmentsAvailable, t])
 
   React.useEffect(() => {
     loadDepartments()
   }, [loadDepartments])
 
   const toggleDepartment = (department: FeishuDepartment, checked: boolean) => {
+    if (!canUpdate) return
     setSelectedIds((current) => {
       const next = { ...current }
       for (const id of collectDepartmentIds(department)) {
@@ -136,11 +208,31 @@ export function FeishuIntegrationTab({
     })
   }
 
+  const saveCapabilities = async () => {
+    if (!integration || !canSaveCapabilities) return
+    setSavingCapabilities(true)
+    try {
+      const updated = await integrationsApi.update(integration.id, {
+        enabled_capabilities: nextCapabilities,
+        // `button_text` belongs to the login domain, so a settings-only editor must not send it.
+        ...(canEditLogin ? { button_text: buttonText.trim() || null } : {}),
+      })
+      onIntegrationChange(updated)
+      toast.success(t('saveSuccess'))
+    } catch (error) {
+      console.error('Failed to save Feishu capabilities:', error)
+      toastFallback(error, t('saveError'))
+    } finally {
+      setSavingCapabilities(false)
+    }
+  }
+
   const saveConfig = async () => {
+    if (!canUpdate) return
     if (!appId.trim()) return
     setSaving(true)
     try {
-      const result = await siteSettingsApi.updateFeishuConfig({
+      const result = await integrationsApi.updateFeishuConfig({
         app_id: appId.trim(),
         app_secret: appSecret.trim() || undefined,
       })
@@ -156,9 +248,10 @@ export function FeishuIntegrationTab({
   }
 
   const saveScope = async () => {
+    if (!canUpdate) return
     setSavingScope(true)
     try {
-      const result = await siteSettingsApi.updateFeishuDepartmentScope(Object.keys(selectedIds))
+      const result = await integrationsApi.updateFeishuDepartmentScope(Object.keys(selectedIds))
       setSelectedIds(Object.fromEntries(result.department_ids.map((id) => [id, true])) as Record<string, true>)
       onConfigChange({ ...config, department_ids: result.department_ids })
       toast.success(t('integrations.feishuScopeSaved'))
@@ -171,9 +264,10 @@ export function FeishuIntegrationTab({
   }
 
   const sync = async () => {
+    if (!canUpdate || !config.is_enabled) return
     setSyncing(true)
     try {
-      const result = await siteSettingsApi.syncFeishuContacts()
+      const result = await integrationsApi.syncFeishuContacts()
       toast.success(t('integrations.feishuSyncResult', { ...result, teams_created: result.teams_created }))
     } catch (error) {
       console.error('Failed to sync Feishu directory:', error)
@@ -193,6 +287,71 @@ export function FeishuIntegrationTab({
         <CardDescription>{t('integrations.feishuDescription')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
+        <section data-testid="feishu-capabilities" className="space-y-4 border-b pb-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-medium">{t('integrations.capabilities.directory_sync')}</h3>
+              <p className="text-xs text-muted-foreground">{t('integrations.feishuDirectorySyncDescription')}</p>
+            </div>
+            <Switch
+              aria-label={t('integrations.capabilities.directory_sync')}
+              checked={directorySyncEnabled}
+              disabled={!canEditDirectorySync || savingCapabilities}
+              onCheckedChange={setDirectorySyncEnabled}
+            />
+          </div>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-medium">{t('integrations.feishuLogin')}</h3>
+              <p className="text-xs text-muted-foreground">{t('integrations.feishuLoginDescription')}</p>
+            </div>
+            <Switch
+              aria-label={t('integrations.feishuLogin')}
+              checked={loginEnabled}
+              disabled={!canEditLogin || savingCapabilities}
+              onCheckedChange={setLoginEnabled}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="feishu-button-text">{t('integrations.feishuButtonText')}</Label>
+            <Input
+              id="feishu-button-text"
+              value={buttonText}
+              onChange={(event) => setButtonText(event.target.value)}
+              disabled={!canEditLogin || savingCapabilities}
+            />
+            <p className="text-xs text-muted-foreground">{t('integrations.feishuButtonTextDesc')}</p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="feishu-redirect-url">{t('integrations.callbackUrl')}</Label>
+            <div className="flex items-center gap-2">
+              <code
+                id="feishu-redirect-url"
+                className="min-w-0 flex-1 overflow-x-auto rounded-md bg-muted px-3 py-2 font-mono text-xs"
+              >
+                {redirectUrl}
+              </code>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                aria-label={t('integrations.callbackUrl')}
+                onClick={copyRedirectUrl}
+              >
+                {copiedRedirect ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">{t('integrations.callbackUrlDesc')}</p>
+          </div>
+          {(canEditDirectorySync || canEditLogin) && (
+            <div className="flex justify-end">
+              <Button type="button" data-testid="feishu-capability-save" variant="outline" onClick={saveCapabilities} disabled={!canSaveCapabilities || savingCapabilities}>
+                {savingCapabilities ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                {t('save')}
+              </Button>
+            </div>
+          )}
+        </section>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="feishu-app-id">{t('integrations.feishuAppId')}</Label>
@@ -220,7 +379,7 @@ export function FeishuIntegrationTab({
             </Button>
           </div>
         )}
-        {config.app_secret_configured && (
+        {departmentsAvailable && (
           <section className="space-y-3 border-t pt-4" aria-labelledby="feishu-departments-title">
             <div>
               <h3 id="feishu-departments-title" className="text-sm font-medium">{t('integrations.feishuDepartments')}</h3>
@@ -232,7 +391,7 @@ export function FeishuIntegrationTab({
               <ScrollArea className="max-h-72 rounded-md border p-2">
                 <div role="tree" aria-label={t('integrations.feishuDepartments')}>
                   {departments.map((department) => (
-                    <DepartmentRow key={department.department_id} department={department} depth={0} selectedIds={selectedIds} onToggle={toggleDepartment} />
+                    <DepartmentRow key={department.department_id} department={department} depth={0} selectedIds={selectedIds} onToggle={toggleDepartment} canUpdate={canUpdate} />
                   ))}
                 </div>
               </ScrollArea>
@@ -249,7 +408,7 @@ export function FeishuIntegrationTab({
                   {savingScope && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   {t('integrations.feishuSaveScope')}
                 </Button>
-                <Button type="button" onClick={sync} disabled={syncing || config.department_ids.length === 0}>
+                <Button type="button" onClick={sync} disabled={syncing || !config.is_enabled || config.department_ids.length === 0}>
                   {syncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                   {t('integrations.feishuSync')}
                 </Button>

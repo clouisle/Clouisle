@@ -55,6 +55,7 @@ from app.schemas.response import Response, ResponseCode, BusinessError, success
 from app.services.audit_log import AuditLogService
 from app.services.auto_notification import AutoNotificationService
 from app.services.password_expiration import PasswordExpirationService
+from app.services.integration_config import get_builtin_integration
 from app.models.notification import AutoNotificationType, NotificationLevel
 from app.core import totp_security
 from app.services import totp as totp_service
@@ -891,7 +892,7 @@ async def send_verification(
     Send verification email
     """
     # Check SMTP is enabled
-    smtp_enabled = await SiteSetting.get_value("smtp_enabled", False)
+    smtp_enabled = (await get_builtin_integration("email")).is_enabled
     if not smtp_enabled:
         raise BusinessError(
             code=ResponseCode.EMAIL_SEND_FAILED,
@@ -1002,7 +1003,7 @@ async def resend_verification(
     Resend verification email for registration
     """
     # Check SMTP is enabled
-    smtp_enabled = await SiteSetting.get_value("smtp_enabled", False)
+    smtp_enabled = (await get_builtin_integration("email")).is_enabled
     if not smtp_enabled:
         raise BusinessError(
             code=ResponseCode.EMAIL_SEND_FAILED,
@@ -1054,7 +1055,7 @@ async def forgot_password(
     Send password reset email
     """
     # Check SMTP is enabled
-    smtp_enabled = await SiteSetting.get_value("smtp_enabled", False)
+    smtp_enabled = (await get_builtin_integration("email")).is_enabled
     if not smtp_enabled:
         raise BusinessError(
             code=ResponseCode.EMAIL_SEND_FAILED,

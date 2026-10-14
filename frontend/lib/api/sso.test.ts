@@ -20,10 +20,10 @@ afterEach(() => {
 
 describe('ssoApi', () => {
   test('constructs provider and connection requests', async () => {
-    await ssoApi.getPublicProviders()
+    await ssoApi.getPublicIntegrations()
     await ssoApi.disconnectConnection('connection-1')
 
-    expect(get).toHaveBeenCalledWith('/sso/providers')
+    expect(get).toHaveBeenCalledWith('/sso/integrations')
     expect(remove).toHaveBeenCalledWith('/sso/connections/connection-1')
   })
 
@@ -58,7 +58,7 @@ describe('ssoApi', () => {
     get.mockRejectedValueOnce(providerError)
     remove.mockRejectedValueOnce(disconnectError)
 
-    await expect(ssoApi.getPublicProviders()).rejects.toBe(providerError)
+    await expect(ssoApi.getPublicIntegrations()).rejects.toBe(providerError)
     await expect(ssoApi.disconnectConnection('connection-1')).rejects.toBe(disconnectError)
   })
 })

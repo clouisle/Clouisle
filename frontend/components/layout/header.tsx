@@ -89,7 +89,7 @@ const SEARCHABLE_DASHBOARD_ROUTES: SearchRouteItem[] = [
   { titleKey: 'siteSettings:sessionSettings', url: '/site-settings/security', icon: Shield, parentKey: 'siteSettings:security' },
   { titleKey: 'siteSettings:loginSecurity', url: '/site-settings/security', icon: Shield, parentKey: 'siteSettings:security' },
   { titleKey: 'siteSettings:twoFactorAuthentication', url: '/site-settings/security', icon: Shield, parentKey: 'siteSettings:security', keywords: ['2fa', 'totp', 'mfa'] },
-  { titleKey: 'siteSettings:ssoSettings', url: '/site-settings/security', icon: Shield, parentKey: 'siteSettings:security', keywords: ['single sign on'] },
+  { titleKey: 'siteSettings:ssoSettings', url: '/site-settings/integrations', icon: Shield, parentKey: 'siteSettings:integrations.title', keywords: ['single sign on'] },
   { titleKey: 'siteSettings:notifications.title', url: '/site-settings/notifications', icon: Bell, parentKey: 'nav:siteSettings' },
   { titleKey: 'siteSettings:autoNotifications.tab', url: '/site-settings/notifications', icon: Bell, parentKey: 'siteSettings:notifications.title' },
   { titleKey: 'siteSettings:integrations.title', url: '/site-settings/integrations', icon: Plug, parentKey: 'nav:siteSettings' },
@@ -100,9 +100,8 @@ const SEARCHABLE_DASHBOARD_ROUTES: SearchRouteItem[] = [
   { titleKey: 'siteSettings:manualArchive', url: '/site-settings/storage', icon: Database, parentKey: 'siteSettings:storage' },
   { titleKey: 'siteSettings:memory', url: '/site-settings/memory', icon: Brain, parentKey: 'nav:siteSettings' },
   { titleKey: 'siteSettings:memorySettings.title', url: '/site-settings/memory', icon: Brain, parentKey: 'siteSettings:memory' },
-  { titleKey: 'siteSettings:sso', url: '/site-settings/sso', icon: Shield, parentKey: 'nav:siteSettings' },
-  { titleKey: 'sso:addProvider', url: '/site-settings/sso', icon: Shield, parentKey: 'siteSettings:sso' },
-  { titleKey: 'sso:testConnection', url: '/site-settings/sso', icon: Shield, parentKey: 'siteSettings:sso' },
+  { titleKey: 'sso:addProvider', url: '/site-settings/integrations', icon: Shield, parentKey: 'siteSettings:integrations.title' },
+  { titleKey: 'sso:testConnection', url: '/site-settings/integrations', icon: Shield, parentKey: 'siteSettings:integrations.title' },
 ]
 
 export function Header() {

@@ -13,7 +13,7 @@ from app.core.i18n import t
 from app.core.timezone import now_utc
 from app.integrations.factory import (
     NotificationMessage,
-    notification_integration_factory,
+    get_notification_integration,
 )
 from app.models.notification import (
     Notification,
@@ -362,7 +362,7 @@ async def _send_notification_email(notification_id: UUID):
         # 发送给该语言组的所有收件人
         for email in emails:
             try:
-                result = await notification_integration_factory.get(
+                result = await get_notification_integration(
                     NotificationChannel.EMAIL
                 ).send(
                     NotificationMessage(
@@ -447,9 +447,7 @@ async def _send_notification_webhook(notification_id: UUID) -> bool:
     # Webhook 使用英文（通用）
     title, content = _build_notification_message(ctx, "en")
 
-    result = await notification_integration_factory.get(
-        NotificationChannel.WEBHOOK
-    ).send(
+    result = await get_notification_integration(NotificationChannel.WEBHOOK).send(
         NotificationMessage(
             title=title,
             content=content,

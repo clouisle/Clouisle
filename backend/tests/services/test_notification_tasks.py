@@ -138,7 +138,7 @@ async def test_send_notification_email_marks_no_recipient_as_success():
             tasks, "_get_notification_recipients", new=AsyncMock(return_value=[])
         ),
         patch.object(
-            tasks.notification_integration_factory.get(IntegrationChannel.EMAIL),
+            tasks.get_notification_integration(IntegrationChannel.EMAIL),
             "send",
             new=AsyncMock(),
         ) as send_email,
@@ -180,7 +180,7 @@ async def test_send_notification_email_groups_locales_and_records_partial_succes
         patch.object(tasks, "_build_email_text", return_value="text"),
         patch.object(tasks, "_build_email_html", return_value="html"),
         patch.object(
-            tasks.notification_integration_factory.get(IntegrationChannel.EMAIL),
+            tasks.get_notification_integration(IntegrationChannel.EMAIL),
             "send",
             new=send_email,
         ),
@@ -241,7 +241,7 @@ async def test_send_notification_email_raises_when_every_send_fails():
         patch.object(tasks, "_build_email_text", return_value="text"),
         patch.object(tasks, "_build_email_html", return_value="html"),
         patch.object(
-            tasks.notification_integration_factory.get(IntegrationChannel.EMAIL),
+            tasks.get_notification_integration(IntegrationChannel.EMAIL),
             "send",
             new=AsyncMock(return_value=False),
         ),

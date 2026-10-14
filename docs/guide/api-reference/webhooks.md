@@ -6,41 +6,41 @@ This document explains the webhook capabilities in Clouisle.
 
 Clouisle has **two** webhook mechanisms:
 
-1. **Outbound notifications (generic webhook)** — when a notification is sent with the `webhook` channel enabled, Clouisle POSTs a customizable payload to a single URL configured in site settings. There is no webhook-subscription CRUD API and no per-event-type subscriptions.
+1. **Outbound notifications (generic webhook)** — notifications with the `webhook` channel use the singleton Webhook Integration configured at **Site Settings → Integrations**. There is no webhook-subscription CRUD API or per-event subscription.
 2. **Inbound workflow trigger** — `POST /api/v1/workflows/webhook/{webhook_token}` starts a published workflow whose trigger type is `webhook`.
 
 ## Outbound Notifications (Generic Webhook)
 
 ### How it Works
 
-1. An administrator configures a single webhook URL in **site settings** (fields `webhook_enabled`, `webhook_url`, `webhook_method`, `webhook_headers`, `webhook_body_template`, `webhook_secret`)
+1. An administrator configures the singleton Webhook Integration via `GET/PUT /api/v1/admin/integrations/webhook`. URL, method and body template are config; headers (JSON-serialized) and HMAC secret are encrypted credentials, never returned in admin output.
 2. When a notification (system/team notification, auto-notification, security alert, ...) is created with the `webhook` delivery channel enabled, Clouisle schedules an async task
 3. The task renders the body template with the notification's variables and sends the HTTP request
 4. The delivery status is recorded in the `notification_deliveries` table
 
-### Configuration (Site Settings)
+### Configuration (Webhook Integration)
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `webhook_enabled` | bool | `false` | Enable generic webhook notifications |
+| `is_enabled` | bool | `false` | Enable the singleton notification integration |
 | `webhook_url` | string | `""` | Target URL |
 | `webhook_method` | string | `"POST"` | HTTP method (`POST` or `GET`) |
-| `webhook_headers` | json | `{}` | Custom request headers |
+| `webhook_headers` | credential | `{}` | Encrypted JSON-serialized custom headers |
 | `webhook_body_template` | string | `{"title": "{{title}}", "content": "{{content}}", "link_url": "{{link_url}}"}` | Body template with `{{title}}`, `{{content}}`, `{{link_url}}` placeholders |
-| `webhook_secret` | string | `""` | Secret for HMAC signature |
+| `webhook_secret` | credential | `""` | Encrypted HMAC signing secret |
 
 If the body template renders to valid JSON it is sent as JSON; otherwise it is sent as plain text. For `GET`, the variables are sent as query parameters.
 
 ### Test the Webhook
 
-**Endpoint:** `POST /api/v1/admin/site-settings/test-webhook`
+**Endpoint:** `POST /api/v1/admin/integrations/webhook/test`
 
-**Authorization:** `admin:settings:update`
+**Authorization:** `admin:integrations:settings:update`
 
 Sends a test notification (title/content with the site name) through the configured webhook:
 
 ```bash
-curl -X POST "https://your-domain.com/api/v1/admin/site-settings/test-webhook" \
+curl -X POST "https://your-domain.com/api/v1/admin/integrations/webhook/test" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
 ```
 
@@ -255,9 +255,9 @@ app.post(
 ### No Notifications Received
 
 **Solutions:**
-1. Check `webhook_enabled` is `true` and `webhook_url` is set in site settings
+1. Check the Webhook Integration is enabled and its `webhook_url` is configured
 2. Verify the notification was created with the `webhook` delivery channel
-3. Test with `POST /api/v1/admin/site-settings/test-webhook`
+3. Test with `POST /api/v1/admin/integrations/webhook/test`
 4. Check the `notification_deliveries` table for the delivery status/error
 
 ### Signature Verification Failing

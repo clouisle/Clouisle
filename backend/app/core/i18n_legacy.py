@@ -3169,4 +3169,32 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Workflow version restored successfully",
         "zh": "工作流版本恢复成功",
     },
+    "integration_not_found": {"en": "Integration not found", "zh": "集成未找到"},
+    "integration_name_exists": {
+        "en": "Integration name already exists",
+        "zh": "集成名称已存在",
+    },
+    "integration_invalid_configuration": {
+        "en": "Invalid integration configuration or capability",
+        "zh": "集成配置或能力无效",
+    },
+    "integration_builtin_cannot_delete": {
+        "en": "Builtin integrations cannot be deleted",
+        "zh": "内置集成不能删除",
+    },
+    "integration_config_valid": {
+        "en": "Integration configuration is valid",
+        "zh": "集成配置有效",
+    },
+    "integration_config_error_generic": {
+        "en": "Integration configuration check failed",
+        "zh": "集成配置检查失败",
+    },
+    "audit_log_create_integration": {"en": "Create integration", "zh": "创建集成"},
+    "audit_log_update_integration": {"en": "Update integration", "zh": "更新集成"},
+    "audit_log_delete_integration": {"en": "Delete integration", "zh": "删除集成"},
+    "audit_log_test_integration_failed": {
+        "en": "Integration configuration check failed",
+        "zh": "集成配置检查失败",
+    },
 }

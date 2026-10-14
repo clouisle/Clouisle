@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from tortoise import fields, models
 
 if TYPE_CHECKING:
-    from app.models.sso_provider import SSOProvider
+    from app.models.integration import Integration
     from app.models.user import User
 
 
@@ -16,8 +16,8 @@ class UserSSOConnection(models.Model):
     user: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
         "models.User", related_name="sso_connections", on_delete=fields.CASCADE
     )
-    provider: fields.ForeignKeyRelation["SSOProvider"] = fields.ForeignKeyField(
-        "models.SSOProvider", related_name="user_connections", on_delete=fields.CASCADE
+    integration: fields.ForeignKeyRelation["Integration"] = fields.ForeignKeyField(
+        "models.Integration", related_name="user_connections", on_delete=fields.CASCADE
     )
 
     # Provider-specific user identifier
@@ -38,7 +38,7 @@ class UserSSOConnection(models.Model):
 
     class Meta:
         table = "user_sso_connections"
-        unique_together = (("provider", "provider_user_id"),)
+        unique_together = (("integration", "provider_user_id"),)
 
     def __str__(self):
-        return f"{self.user} - {self.provider}"
+        return f"{self.user} - {self.integration}"

@@ -10,10 +10,13 @@ from app.api.deps import PermissionChecker
 from app.integrations.feishu import (
     FeishuAPIError,
     FeishuClient,
-    FeishuSecretError,
-    encrypt_app_secret,
 )
-from app.models import SiteSetting, User
+from app.integrations.credentials import IntegrationSecretError
+from app.models import User
+from app.services.integration_config import (
+    get_builtin_integration,
+    update_builtin_config,
+)
 from app.schemas.response import BusinessError, Response, ResponseCode, success
 from app.services.audit_log import AuditLogService
 from app.services.feishu_directory import sync_department_teams, sync_directory_users
@@ -21,14 +24,12 @@ from app.services.feishu_directory import sync_department_teams, sync_directory_
 router = APIRouter()
 logger = logging.getLogger(__name__)
 FEISHU_COMPANY_DEPARTMENT_ID = "0"
-APP_ID_KEY = "feishu_app_id"
-APP_SECRET_KEY = "feishu_app_secret_encrypted"
-DEPARTMENT_SCOPE_KEY = "feishu_department_scope"
 
 
 class FeishuConfigUpdate(BaseModel):
     app_id: str = Field(min_length=1, max_length=255)
     app_secret: str | None = Field(default=None, max_length=4096)
+    is_enabled: bool | None = None
 
 
 class FeishuDepartmentScopeUpdate(BaseModel):
@@ -40,11 +41,24 @@ def _new_client(app_id: str, encrypted_secret: str) -> FeishuClient:
 
 
 async def _configured_client() -> FeishuClient:
-    app_id = await SiteSetting.get_value(APP_ID_KEY, "")
-    encrypted_secret = await SiteSetting.get_value(APP_SECRET_KEY, "")
+    """Client for the saved Feishu app, or an actionable administrator error.
+
+    `BAD_REQUEST` (not a field validation code) so the administrator sees the
+    backend message instead of a bare "validation error".
+    """
+    integration = await get_builtin_integration("feishu")
+    app_id = integration.config.get("app_id", "")
+    encrypted_secret = integration.credentials.get("app_secret", "")
     if not app_id or not encrypted_secret:
         raise BusinessError(
-            code=ResponseCode.VALIDATION_ERROR, msg_key="validation_error"
+            code=ResponseCode.BAD_REQUEST, msg_key="feishu_not_configured"
+        )
+    if (
+        not integration.is_enabled
+        or "directory_sync" not in integration.enabled_capabilities
+    ):
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST, msg_key="feishu_directory_sync_disabled"
         )
     return _new_client(app_id, encrypted_secret)
 
@@ -64,7 +78,7 @@ def _feishu_failure(exc: Exception, context: str) -> BusinessError:
             msg_key="feishu_api_error",
             error=str(exc),
         )
-    if isinstance(exc, FeishuSecretError):
+    if isinstance(exc, IntegrationSecretError):
         logger.error("%s failed: %s", context, exc)
         return BusinessError(
             code=ResponseCode.BAD_REQUEST,
@@ -86,15 +100,15 @@ def _flatten_department_ids(departments) -> set[str]:
 
 @router.get("/config", response_model=Response[dict[str, Any]])
 async def get_config(
-    current_user: User = Depends(PermissionChecker("admin:settings:read")),
+    current_user: User = Depends(PermissionChecker("admin:integrations:settings:read")),
 ):
+    integration = await get_builtin_integration("feishu")
     return success(
         data={
-            "app_id": await SiteSetting.get_value(APP_ID_KEY, ""),
-            "app_secret_configured": bool(
-                await SiteSetting.get_value(APP_SECRET_KEY, "")
-            ),
-            "department_ids": await SiteSetting.get_value(DEPARTMENT_SCOPE_KEY, []),
+            "app_id": integration.config.get("app_id", ""),
+            "app_secret_configured": bool(integration.credentials.get("app_secret")),
+            "department_ids": integration.config.get("department_ids", []),
+            "is_enabled": integration.is_enabled,
         }
     )
 
@@ -103,39 +117,48 @@ async def get_config(
 async def update_config(
     request: Request,
     data: FeishuConfigUpdate,
-    current_user: User = Depends(PermissionChecker("admin:settings:update")),
+    current_user: User = Depends(
+        PermissionChecker("admin:integrations:settings:update")
+    ),
 ):
     app_id = data.app_id.strip()
     if not app_id:
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR, msg_key="validation_error"
         )
-    await SiteSetting.set_value(
-        APP_ID_KEY, app_id, category="integration", is_public=False
+    integration = await update_builtin_config(
+        "feishu",
+        {"app_id": app_id},
+        {"app_secret": data.app_secret.strip()}
+        if data.app_secret and data.app_secret.strip()
+        else None,
+        enabled=data.is_enabled,
     )
-    if data.app_secret and data.app_secret.strip():
-        encrypted_secret = encrypt_app_secret(data.app_secret.strip())
-        await SiteSetting.set_value(
-            APP_SECRET_KEY, encrypted_secret, category="integration", is_public=False
-        )
-    configured = bool(await SiteSetting.get_value(APP_SECRET_KEY, ""))
+    configured = bool(integration.credentials.get("app_secret"))
     await AuditLogService.log(
         user=current_user,
         action="update_feishu_integration_config",
-        resource_type="site_setting",
-        resource_id=None,
+        resource_type="integration",
+        resource_id=integration.id,
         resource_name="feishu_integration",
         operation="update",
         status="success",
         request=request,
         changes={"after": {"app_id": app_id, "app_secret_configured": configured}},
     )
-    return success(data={"app_id": app_id, "app_secret_configured": configured})
+    return success(
+        data={
+            "app_id": app_id,
+            "app_secret_configured": configured,
+            "is_enabled": integration.is_enabled,
+            "department_ids": integration.config.get("department_ids", []),
+        }
+    )
 
 
 @router.get("/departments", response_model=Response[list[dict[str, Any]]])
 async def list_departments(
-    current_user: User = Depends(PermissionChecker("admin:settings:read")),
+    current_user: User = Depends(PermissionChecker("admin:integrations:settings:read")),
 ):
     try:
         departments = await (await _configured_client()).list_departments()
@@ -150,7 +173,9 @@ async def list_departments(
 async def update_department_scope(
     request: Request,
     data: FeishuDepartmentScopeUpdate,
-    current_user: User = Depends(PermissionChecker("admin:settings:update")),
+    current_user: User = Depends(
+        PermissionChecker("admin:integrations:settings:update")
+    ),
 ):
     client = await _configured_client()
     try:
@@ -167,18 +192,14 @@ async def update_department_scope(
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR, msg_key="validation_error"
         )
-    await SiteSetting.set_value(
-        DEPARTMENT_SCOPE_KEY,
-        department_ids,
-        value_type="json",
-        category="integration",
-        is_public=False,
+    integration = await update_builtin_config(
+        "feishu", {"department_ids": department_ids}
     )
     await AuditLogService.log(
         user=current_user,
         action="update_feishu_department_scope",
-        resource_type="site_setting",
-        resource_id=None,
+        resource_type="integration",
+        resource_id=integration.id,
         resource_name="feishu_department_scope",
         operation="update",
         status="success",
@@ -191,9 +212,13 @@ async def update_department_scope(
 @router.post("/sync", response_model=Response[dict[str, int]])
 async def sync_contacts(
     request: Request,
-    current_user: User = Depends(PermissionChecker("admin:settings:update")),
+    current_user: User = Depends(
+        PermissionChecker("admin:integrations:settings:update")
+    ),
 ):
-    department_ids = await SiteSetting.get_value(DEPARTMENT_SCOPE_KEY, [])
+    department_ids = (await get_builtin_integration("feishu")).config.get(
+        "department_ids", []
+    )
     if not isinstance(department_ids, list) or not department_ids:
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR, msg_key="validation_error"

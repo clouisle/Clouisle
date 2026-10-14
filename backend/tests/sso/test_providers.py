@@ -23,8 +23,18 @@ class StubProvider(BaseSSOProvider):
 
 
 def provider(config=None, attribute_mapping=None):
+    from app.integrations.credentials import encrypt_secret
+
+    runtime_config = dict(config or {})
+    credentials = {}
+    if "client_secret" in runtime_config:
+        credentials["client_secret"] = encrypt_secret(
+            runtime_config.pop("client_secret")
+        )
     return SimpleNamespace(
-        config=config or {}, attribute_mapping=attribute_mapping or {}
+        config=runtime_config,
+        credentials=credentials,
+        attribute_mapping=attribute_mapping or {},
     )
 
 

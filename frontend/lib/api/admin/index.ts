@@ -24,13 +24,11 @@ export type {
   SiteSetting,
   GeneralSettings,
   SecuritySettings,
-  EmailSettings,
-  WebhookSettings,
   AutoNotificationConfig,
 } from './site-settings'
 
-export { ssoApi } from './sso'
-export type { SSOProviderAdmin, SSOProviderCreate, SSOProviderUpdate } from './sso'
+export { integrationsApi } from './integrations'
+export type { Integration, IntegrationCreate, IntegrationUpdate, IntegrationType, LoginSettings, FeishuConfig, FeishuDepartment, EmailSettings, WebhookSettings } from './integrations'
 
 export { conversationsApi } from './conversations'
 export type { AdminConversationListItem, AdminConversationWithMessages, ConversationStats, ConversationTrends, AdminConversationQueryParams } from './conversations'

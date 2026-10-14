@@ -84,7 +84,7 @@ from .notification import (
     NotificationChannel,
     NotificationDeliveryStatus,
 )
-from .sso_provider import SSOProvider
+from .integration import Integration
 from .user_sso_connection import UserSSOConnection
 from .sso_session import SSOSession
 from .feishu_department import FeishuDepartment
@@ -188,7 +188,7 @@ __all__ = [
     "NotificationAuditAction",
     "NotificationChannel",
     "NotificationDeliveryStatus",
-    "SSOProvider",
+    "Integration",
     "UserSSOConnection",
     "SSOSession",
     "MemoryEntity",

@@ -127,7 +127,7 @@ async def test_external_channels_dispatch_through_integration_factory():
             new=AsyncMock(return_value=delivery),
         ) as create_delivery,
         patch(
-            "app.services.auto_notification.notification_integration_factory.dispatch_task",
+            "app.services.auto_notification.dispatch_notification_task",
             dispatch,
         ),
     ):

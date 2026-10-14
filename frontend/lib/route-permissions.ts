@@ -5,6 +5,7 @@ export interface RoutePermissionConfig {
   path: string
   permission: PermissionRequirement | null
   requiresSuperuser?: boolean
+  permissionMode?: 'all' | 'any'
   matchMode?: RouteMatchMode
   children?: RoutePermissionConfig[]
 }
@@ -41,9 +42,8 @@ export const ROUTE_PERMISSION_CONFIG: RoutePermissionConfig[] = [
       { path: '/site-settings', permission: 'admin:settings:read' },
       { path: '/site-settings/security', permission: 'admin:settings:read' },
       { path: '/site-settings/notifications', permission: 'admin:settings:read' },
-      { path: '/site-settings/integrations', permission: 'admin:settings:read' },
+      { path: '/site-settings/integrations', permission: ['admin:integrations:login:read', 'admin:integrations:settings:read'], permissionMode: 'any' },
       { path: '/site-settings/memory', permission: 'admin:settings:read' },
-      { path: '/site-settings/sso', permission: 'admin:sso:read' },
     ],
   },
 ]
@@ -78,11 +78,6 @@ export const SITE_SETTINGS_NAV_ITEMS: SiteSettingsNavItem[] = [
     path: '/site-settings/memory',
     translationKey: 'memory',
     descriptionKey: 'memoryDescription',
-  },
-  {
-    path: '/site-settings/sso',
-    translationKey: 'sso',
-    descriptionKey: 'ssoDescription',
   },
 ]
 
@@ -158,6 +153,7 @@ export function canAccessRoute(
     return true
   }
   if (Array.isArray(config.permission)) {
+    if (config.permissionMode === 'any') return config.permission.some((permission) => hasPermission(permission))
     return config.permission.every((permission) => hasPermission(permission))
   }
   return hasPermission(config.permission)

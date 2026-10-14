@@ -793,7 +793,7 @@ async def test_serialize_user_includes_roles_permissions_and_sso(roles_fetched):
     )
     connection = SimpleNamespace(
         id=uuid4(),
-        provider=provider,
+        integration=provider,
         provider_user_id="external-1",
         provider_username="external-user",
         provider_email="external@example.com",
@@ -814,7 +814,7 @@ async def test_serialize_user_includes_roles_permissions_and_sso(roles_fetched):
 
     assert serialized["status"] == "active"
     assert serialized["roles"][0]["permissions"][0]["code"] == "admin:user:read"
-    assert serialized["sso_connections"][0]["provider_name"] == "oidc"
+    assert serialized["sso_connections"][0]["integration_name"] == "oidc"
     if not roles_fetched:
         assert ("prefetch_related", ("permissions",), {}) in role_query.calls
 
@@ -834,7 +834,9 @@ async def test_send_email_rejects_configuration_rate_and_recipient_boundaries(
 ):
     with (
         patch.object(
-            users.SiteSetting, "get_value", AsyncMock(return_value=smtp_enabled)
+            users,
+            "get_builtin_integration",
+            AsyncMock(return_value=SimpleNamespace(is_enabled=smtp_enabled)),
         ),
         patch.object(users, "check_bulk_email_rate", AsyncMock(return_value=bulk_rate)),
         patch.object(users.User, "filter", return_value=_Query(found_users)),
@@ -861,7 +863,11 @@ async def test_send_email_queues_eligible_users_and_persists_rate_counts(admin):
     increment_bulk = AsyncMock()
 
     with (
-        patch.object(users.SiteSetting, "get_value", AsyncMock(return_value=True)),
+        patch.object(
+            users,
+            "get_builtin_integration",
+            AsyncMock(return_value=SimpleNamespace(is_enabled=True)),
+        ),
         patch.object(
             users, "check_bulk_email_rate", AsyncMock(return_value=(True, 4, 96))
         ),

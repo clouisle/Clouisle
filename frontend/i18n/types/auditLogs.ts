@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-12T06:41:02.950Z
+// GENERATED — 2026-10-14T05:40:40.647Z
 // Source: i18n/en/auditLogs.json
 export type AuditLogsMessages = {
   auditLogs: {
@@ -147,6 +147,10 @@ export type AuditLogsMessages = {
     actionregenerate_backup_codes: string
     actionadmin_disable_totp: string
     actionsso_login_failed: string
+    actioncreate_integration: string
+    actionupdate_integration: string
+    actiondelete_integration: string
+    actiontest_integration_failed: string
     actioncreate_sso_provider: string
     actionupdate_sso_provider: string
     actiondelete_sso_provider: string

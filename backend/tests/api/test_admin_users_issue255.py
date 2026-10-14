@@ -175,9 +175,9 @@ async def test_send_email_guards(
     expected_code: ResponseCode,
 ) -> None:
     monkeypatch.setattr(
-        users_endpoints.SiteSetting,
-        "get_value",
-        AsyncMock(return_value=smtp_enabled),
+        users_endpoints,
+        "get_builtin_integration",
+        AsyncMock(return_value=SimpleNamespace(is_enabled=smtp_enabled)),
     )
     monkeypatch.setattr(
         users_endpoints, "check_bulk_email_rate", AsyncMock(return_value=rate_result)
@@ -211,7 +211,9 @@ async def test_send_email_queues_allowed_recipients_and_skips_limited_ones(
     model.filter.return_value = query_returning(all=recipients)
     monkeypatch.setattr(users_endpoints, "User", model)
     monkeypatch.setattr(
-        users_endpoints.SiteSetting, "get_value", AsyncMock(return_value=True)
+        users_endpoints,
+        "get_builtin_integration",
+        AsyncMock(return_value=SimpleNamespace(is_enabled=True)),
     )
     monkeypatch.setattr(
         users_endpoints,

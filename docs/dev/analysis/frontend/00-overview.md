@@ -52,7 +52,7 @@
 | `site-settings.ts` | `/admin/site-settings` | 站点配置全量读写 |
 | `models.ts` | `/admin/models` | 模型 CRUD、测试、设为默认 |
 | `teams.ts` | `/admin/teams` | 全量团队列表、创建、删除 |
-| `sso.ts` | `/admin/sso` | SSO 提供商 CRUD、断开任意用户连接 |
+| `integrations.ts` | `/admin/integrations` | 统一集成管理（login/settings 分域授权） |
 | `notifications.ts` | `/admin/notifications` | 创建、删除、全量通知列表 |
 | `index.ts` | — | 统一 re-export |
 

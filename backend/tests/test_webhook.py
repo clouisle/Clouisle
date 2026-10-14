@@ -1,4 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
+from app.integrations.credentials import encrypt_secret
 
 import pytest
 
@@ -27,19 +29,28 @@ def _http_client(response: _Response):
 
 
 @pytest.mark.asyncio
-async def test_get_webhook_config_reads_all_settings():
+async def test_get_webhook_config_reads_encrypted_integration_credentials():
     values = {
-        "webhook_enabled": True,
         "webhook_url": "https://hooks.example.com",
         "webhook_method": "PUT",
-        "webhook_headers": {"X-Test": "yes"},
+        "webhook_headers": '{"X-Test": "yes"}',
         "webhook_body_template": "body",
         "webhook_secret": "secret",
     }
 
+    credentials = {
+        key: encrypt_secret(values.pop(key))
+        for key in ("webhook_headers", "webhook_secret")
+    }
+    integration = SimpleNamespace(
+        config=values,
+        credentials=credentials,
+        is_enabled=True,
+        enabled_capabilities=["notification"],
+    )
     with patch(
-        "app.core.webhook.SiteSetting.get_value",
-        new=AsyncMock(side_effect=lambda key, default: values.get(key, default)),
+        "app.core.webhook.get_builtin_integration",
+        new=AsyncMock(return_value=integration),
     ):
         config = await get_webhook_config()
 

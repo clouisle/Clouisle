@@ -41,14 +41,19 @@ def make_request() -> Request:
 def test_get_provider_instance_selects_supported_protocol(
     protocol: str, provider_type: type[object]
 ) -> None:
-    provider = SimpleNamespace(protocol=protocol, config={})
+    provider = SimpleNamespace(
+        provider_type=protocol,
+        credentials={},
+        enabled_capabilities=["user_login"],
+        config={},
+    )
 
     assert isinstance(SSOService.get_provider_instance(provider), provider_type)
 
 
 def test_get_provider_instance_rejects_unsupported_protocol() -> None:
-    with pytest.raises(ValueError, match="Unsupported protocol: ldap"):
-        SSOService.get_provider_instance(SimpleNamespace(protocol="ldap"))
+    with pytest.raises(ValueError, match="Unknown integration type: ldap"):
+        SSOService.get_provider_instance(SimpleNamespace(provider_type="ldap"))
 
 
 @pytest.mark.asyncio
@@ -72,7 +77,9 @@ async def test_cleanup_expired_sessions_deletes_persisted_expired_rows(
 async def test_login_persists_oidc_state_and_pkce_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    provider = SimpleNamespace(name="oidc", protocol="oidc")
+    provider = SimpleNamespace(
+        name="oidc", provider_type="oidc", enabled_capabilities=["user_login"]
+    )
     provider_instance = SimpleNamespace(
         get_authorization_url=AsyncMock(
             return_value=("https://idp.example/authorize", "verifier", "nonce")
@@ -81,7 +88,7 @@ async def test_login_persists_oidc_state_and_pkce_values(
     create_session = AsyncMock()
 
     monkeypatch.setattr(
-        sso_endpoints.SSOProvider, "get_or_none", AsyncMock(return_value=provider)
+        sso_endpoints.Integration, "get_or_none", AsyncMock(return_value=provider)
     )
     monkeypatch.setattr(
         sso_endpoints.SSOService,
@@ -94,7 +101,7 @@ async def test_login_persists_oidc_state_and_pkce_values(
 
     assert response.headers["location"] == "https://idp.example/authorize"
     session_values = create_session.await_args.kwargs
-    assert session_values["provider"] is provider
+    assert session_values["integration"] is provider
     assert session_values["code_verifier"] == "verifier"
     assert session_values["nonce"] == "nonce"
     assert session_values["redirect_url"] == "/work"
@@ -105,13 +112,15 @@ async def test_login_persists_oidc_state_and_pkce_values(
 async def test_callback_expired_session_returns_safe_default_redirect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    provider = SimpleNamespace(name="oidc", protocol="oidc")
+    provider = SimpleNamespace(
+        name="oidc", provider_type="oidc", enabled_capabilities=["user_login"]
+    )
     session = SimpleNamespace(
         redirect_url="https://evil.example", expires_at=now_utc() - timedelta(seconds=1)
     )
 
     monkeypatch.setattr(
-        sso_endpoints.SSOProvider, "get_or_none", AsyncMock(return_value=provider)
+        sso_endpoints.Integration, "get_or_none", AsyncMock(return_value=provider)
     )
     monkeypatch.setattr(
         sso_endpoints.SSOSession, "get_or_none", AsyncMock(return_value=session)
@@ -127,7 +136,7 @@ async def test_callback_expired_session_returns_safe_default_redirect(
     )
 
     assert response.headers["location"] == (
-        "https://app.example/sso-callback?error=sso_session_expired&redirect=/dashboard"
+        "https://app.example/sso-callback?error=sso_session_expired&redirect=/app"
     )
 
 
@@ -135,7 +144,9 @@ async def test_callback_expired_session_returns_safe_default_redirect(
 async def test_callback_success_sanitizes_stored_redirect_and_deletes_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    provider = SimpleNamespace(name="oidc", protocol="oidc")
+    provider = SimpleNamespace(
+        name="oidc", provider_type="oidc", enabled_capabilities=["user_login"]
+    )
     session = SimpleNamespace(
         code_verifier="verifier",
         redirect_url="https://evil.example",
@@ -165,7 +176,7 @@ async def test_callback_success_sanitizes_stored_redirect_and_deletes_session(
             key, default
         )
 
-    monkeypatch.setattr(sso_endpoints.SSOProvider, "get_or_none", get_provider)
+    monkeypatch.setattr(sso_endpoints.Integration, "get_or_none", get_provider)
     monkeypatch.setattr(sso_endpoints.SSOSession, "get_or_none", get_session)
     monkeypatch.setattr(
         sso_endpoints.SSOService,
@@ -188,7 +199,7 @@ async def test_callback_success_sanitizes_stored_redirect_and_deletes_session(
     )
 
     assert response.headers["location"] == (
-        "https://app.example/sso-callback?token=token&redirect=/dashboard"
+        "https://app.example/sso-callback?token=token&redirect=/app"
     )
     provider_instance.handle_callback.assert_awaited_once()
     user.save.assert_awaited_once()

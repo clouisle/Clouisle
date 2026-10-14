@@ -59,7 +59,7 @@ async def test_find_or_create_user_assigns_default_team_to_email_matched_user(
         call.assign_default_team(existing_user),
         call.create_connection(
             user=existing_user,
-            provider=provider,
+            integration=provider,
             provider_user_id="provider-user-id",
             provider_username="alice",
             provider_email="alice@example.com",
@@ -122,9 +122,11 @@ async def test_find_or_create_user_assigns_default_team_to_new_user(
 
     provider = SimpleNamespace(
         name="oidc",
-        allow_signup=True,
-        require_approval=False,
-        default_role_id=None,
+        login_config={
+            "allow_signup": True,
+            "require_approval": False,
+            "default_role_id": None,
+        },
     )
     user, is_new = await sso_service.SSOService.find_or_create_user(
         provider=provider,
@@ -138,7 +140,7 @@ async def test_find_or_create_user_assigns_default_team_to_new_user(
         call.assign_default_team(new_user),
         call.create_connection(
             user=new_user,
-            provider=provider,
+            integration=provider,
             provider_user_id="provider-user-id",
             provider_username="alice",
             provider_email="alice@example.com",
@@ -160,7 +162,12 @@ def test_get_provider_instance_dispatches_supported_protocols(
     protocol: str,
     provider_cls: type,
 ) -> None:
-    provider = SimpleNamespace(protocol=protocol, config={})
+    provider = SimpleNamespace(
+        provider_type=protocol,
+        credentials={},
+        enabled_capabilities=["user_login"],
+        config={},
+    )
 
     result = sso_service.SSOService.get_provider_instance(provider)  # type: ignore[arg-type]
 
@@ -168,9 +175,9 @@ def test_get_provider_instance_dispatches_supported_protocols(
 
 
 def test_get_provider_instance_rejects_unsupported_protocol() -> None:
-    provider = SimpleNamespace(protocol="ldap")
+    provider = SimpleNamespace(provider_type="ldap")
 
-    with pytest.raises(ValueError, match="Unsupported protocol: ldap"):
+    with pytest.raises(ValueError, match="Unknown integration type: ldap"):
         sso_service.SSOService.get_provider_instance(provider)  # type: ignore[arg-type]
 
 
@@ -193,20 +200,21 @@ async def test_find_or_create_user_updates_existing_connection(
         async def first(self) -> object:
             return connection
 
-    monkeypatch.setattr(
-        sso_service.UserSSOConnection,
-        "filter",
-        lambda **_kwargs: ConnectionQuery(),
-    )
+    filter_connections = Mock(return_value=ConnectionQuery())
+    monkeypatch.setattr(sso_service.UserSSOConnection, "filter", filter_connections)
+    integration = SimpleNamespace(name="oidc")
 
     user, is_new = await sso_service.SSOService.find_or_create_user(
-        provider=SimpleNamespace(name="oidc"),
+        provider=integration,
         provider_user_id="provider-user-id",
         user_info={"email": "alice@example.com"},
     )
 
     assert user is existing_user
     assert is_new is False
+    filter_connections.assert_called_once_with(
+        integration=integration, provider_user_id="provider-user-id"
+    )
     assert connection.provider_data == {"email": "alice@example.com"}
     assert connection.last_login is not None
     connection.save.assert_awaited_once()
@@ -231,7 +239,7 @@ async def test_find_or_create_user_rejects_disabled_signup(
 
     with pytest.raises(sso_service.BusinessError) as exc_info:
         await sso_service.SSOService.find_or_create_user(
-            provider=SimpleNamespace(name="oidc", allow_signup=False),
+            provider=SimpleNamespace(name="oidc", login_config={"allow_signup": False}),
             provider_user_id="provider-user-id",
             user_info={"email": "alice@example.com"},
         )
@@ -261,8 +269,7 @@ async def test_find_or_create_user_requires_email_before_creating_user(
         await sso_service.SSOService.find_or_create_user(
             provider=SimpleNamespace(
                 name="oidc",
-                allow_signup=True,
-                require_approval=False,
+                login_config={"allow_signup": True, "require_approval": False},
             ),
             provider_user_id="provider-user-id",
             user_info={},
@@ -323,9 +330,11 @@ async def test_find_or_create_user_makes_username_unique_and_applies_provider_ro
     user, is_new = await sso_service.SSOService.find_or_create_user(
         provider=SimpleNamespace(
             name="oidc",
-            allow_signup=True,
-            require_approval=True,
-            default_role_id="role-id",
+            login_config={
+                "allow_signup": True,
+                "require_approval": True,
+                "default_role_id": "role-id",
+            },
         ),
         provider_user_id="provider-user-id",
         user_info={"email": "alice@example.com"},
@@ -360,11 +369,13 @@ async def test_find_or_create_user_makes_username_unique_and_applies_provider_ro
         call.assign_default_team(new_user),
         call.create_connection(
             user=new_user,
-            provider=SimpleNamespace(
+            integration=SimpleNamespace(
                 name="oidc",
-                allow_signup=True,
-                require_approval=True,
-                default_role_id="role-id",
+                login_config={
+                    "allow_signup": True,
+                    "require_approval": True,
+                    "default_role_id": "role-id",
+                },
             ),
             provider_user_id="provider-user-id",
             provider_username=None,
@@ -372,3 +383,42 @@ async def test_find_or_create_user_makes_username_unique_and_applies_provider_ro
             provider_data={"email": "alice@example.com"},
         ),
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("auto_create,allow_signup", [(True, False), (False, True)])
+async def test_signup_policy_preserves_existing_global_or_integration_semantics(
+    monkeypatch, auto_create, allow_signup
+):
+    new_user = SimpleNamespace(id="new-user", roles=SimpleNamespace(add=AsyncMock()))
+    integration = SimpleNamespace(
+        name="company", login_config={"allow_signup": allow_signup}
+    )
+
+    async def get_setting(key, default=None):
+        return {"sso_match_by_email": False, "sso_auto_create_users": auto_create}.get(
+            key, default
+        )
+
+    monkeypatch.setattr(sso_service.SiteSetting, "get_value", get_setting)
+    monkeypatch.setattr(
+        sso_service.UserSSOConnection, "filter", lambda **kwargs: _ConnectionQuery()
+    )
+    monkeypatch.setattr(
+        sso_service.User,
+        "filter",
+        lambda **kwargs: SimpleNamespace(exists=AsyncMock(return_value=False)),
+    )
+    monkeypatch.setattr(sso_service.User, "create", AsyncMock(return_value=new_user))
+    create_connection = AsyncMock()
+    monkeypatch.setattr(sso_service.UserSSOConnection, "create", create_connection)
+    monkeypatch.setattr(team_role_sync, "assign_default_role", AsyncMock())
+    monkeypatch.setattr(team_role_sync, "assign_default_team", AsyncMock())
+
+    actual, is_new = await sso_service.SSOService.find_or_create_user(
+        provider=integration,
+        provider_user_id="subject",
+        user_info={"email": "alice@example.com"},
+    )
+    assert actual is new_user and is_new
+    assert create_connection.await_args.kwargs["integration"] is integration

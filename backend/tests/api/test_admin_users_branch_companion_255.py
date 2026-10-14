@@ -39,7 +39,9 @@ def test_issue255_get_user_status_branches(active, approval, expected):
 @pytest.mark.asyncio
 async def test_issue255_send_email_requires_smtp(monkeypatch):
     monkeypatch.setattr(
-        endpoint.SiteSetting, "get_value", AsyncMock(return_value=False)
+        endpoint,
+        "get_builtin_integration",
+        AsyncMock(return_value=SimpleNamespace(is_enabled=False)),
     )
 
     with pytest.raises(BusinessError) as caught:
@@ -56,7 +58,11 @@ async def test_issue255_send_email_requires_smtp(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_issue255_send_email_rate_and_recipient_branches(monkeypatch):
-    monkeypatch.setattr(endpoint.SiteSetting, "get_value", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        endpoint,
+        "get_builtin_integration",
+        AsyncMock(return_value=SimpleNamespace(is_enabled=True)),
+    )
     monkeypatch.setattr(
         endpoint, "check_bulk_email_rate", AsyncMock(return_value=(True, 0, 3))
     )
@@ -108,7 +114,11 @@ async def test_issue255_send_email_rate_and_recipient_branches(monkeypatch):
 async def test_issue255_send_email_failure_branches(
     monkeypatch, can_send, remaining, rows, message
 ):
-    monkeypatch.setattr(endpoint.SiteSetting, "get_value", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        endpoint,
+        "get_builtin_integration",
+        AsyncMock(return_value=SimpleNamespace(is_enabled=True)),
+    )
     monkeypatch.setattr(
         endpoint,
         "check_bulk_email_rate",

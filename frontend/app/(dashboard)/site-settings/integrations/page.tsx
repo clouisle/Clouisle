@@ -2,108 +2,159 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
+import { toast } from 'sonner'
+import { Globe, Mail, Plus, Settings2, Shield, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Globe, Mail, Settings2 } from 'lucide-react'
-import { siteSettingsApi } from '@/lib/api/admin/site-settings'
-import type { EmailSettings, WebhookSettings } from '@/lib/api/site-settings'
-import { EmailSettingsTab, FeishuIntegrationTab, WebhookSettingsTab } from './_components'
-import { useCanPerform } from '@/components/permission-guard'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { useCanPerform } from '@/components/permission-guard'
+import { integrationsApi, type Integration, type IntegrationType, type FeishuConfig } from '@/lib/api/admin/integrations'
+import type { EmailSettings, WebhookSettings } from '@/lib/api/site-settings'
+import { EmailSettingsTab, FeishuIntegrationTab, WebhookSettingsTab } from './_components'
+import { LoginIntegrationDialog } from './_components/login-integration-dialog'
 
-type IntegrationId = 'email' | 'webhook' | 'feishu'
+type BuiltinType = 'email' | 'webhook' | 'feishu'
 
+const BUILTIN_TYPES: readonly BuiltinType[] = ['email', 'webhook', 'feishu']
+/** Builtins are configured through their own endpoints, even when they also support `user_login`. */
+const isBuiltinType = (providerType: Integration['provider_type']): providerType is BuiltinType => (BUILTIN_TYPES as readonly string[]).includes(providerType)
 
 export default function SiteSettingsIntegrationsPage() {
   const t = useTranslations('siteSettings')
+  const tLogin = useTranslations('sso')
   const { canPerform } = useCanPerform()
-  const canUpdate = canPerform('admin:settings:update')
-  const [activeIntegration, setActiveIntegration] = React.useState<IntegrationId | null>(null)
+  const canReadLogin = canPerform('admin:integrations:login:read')
+  const canReadSettings = canPerform('admin:integrations:settings:read')
+  const canUpdateLogin = canPerform('admin:integrations:login:update')
+  const canUpdateSettings = canPerform('admin:integrations:settings:update')
+  const [instances, setInstances] = React.useState<Integration[]>([])
+  const [types, setTypes] = React.useState<IntegrationType[]>([])
   const [loading, setLoading] = React.useState(true)
-  const [feishuConfig, setFeishuConfig] = React.useState({ app_id: '', app_secret_configured: false, department_ids: [] as string[] })
-  const [emailSettings, setEmailSettings] = React.useState<EmailSettings>({
-    smtp_enabled: false,
-    smtp_host: '',
-    smtp_port: 587,
-    smtp_encryption: 'tls',
-    smtp_username: '',
-    smtp_password: '',
-    email_from_name: 'Clouisle',
-    email_from_address: '',
-  })
-  const [webhookSettings, setWebhookSettings] = React.useState<WebhookSettings>({
-    webhook_enabled: false,
-    webhook_url: '',
-    webhook_method: 'POST',
-    webhook_headers: {},
-    webhook_body_template: '{"title": "{{title}}", "content": "{{content}}", "link_url": "{{link_url}}"}',
-    webhook_secret: '',
-  })
+  const [activeBuiltin, setActiveBuiltin] = React.useState<BuiltinType | null>(null)
+  const [editIntegration, setEditIntegration] = React.useState<Integration | null>(null)
+  const [showLoginDialog, setShowLoginDialog] = React.useState(false)
+  const [deleteIntegration, setDeleteIntegration] = React.useState<Integration | null>(null)
+  const [emailSettings, setEmailSettings] = React.useState<EmailSettings | null>(null)
+  const [webhookSettings, setWebhookSettings] = React.useState<WebhookSettings | null>(null)
+  const [feishuConfig, setFeishuConfig] = React.useState<FeishuConfig | null>(null)
 
-  const loadSettings = React.useCallback(async () => {
+  const load = React.useCallback(async () => {
+    setLoading(true)
     try {
-      setLoading(true)
-      const [emailData, webhookData, feishuData] = await Promise.all([
-        siteSettingsApi.getEmail(),
-        siteSettingsApi.getWebhook(),
-        siteSettingsApi.getFeishuConfig(),
+      const [data, catalog, email, webhook, feishu] = await Promise.all([
+        integrationsApi.list(), integrationsApi.types(),
+        canReadSettings ? integrationsApi.getEmail() : null,
+        canReadSettings ? integrationsApi.getWebhook() : null,
+        canReadSettings ? integrationsApi.getFeishuConfig() : null,
       ])
-      setEmailSettings(emailData)
-      setWebhookSettings(webhookData)
-      setFeishuConfig(feishuData)
-    } catch (error) {
-      console.error('Failed to load integration settings:', error)
+      setInstances(data)
+      setTypes(catalog.filter((type) => !type.singleton && type.supported_capabilities.includes('user_login')))
+      setEmailSettings(email)
+      setWebhookSettings(webhook)
+      setFeishuConfig(feishu)
+    } catch {
+      // API interceptor handles backend errors.
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [canReadSettings])
 
-  React.useEffect(() => {
-    loadSettings()
-  }, [loadSettings])
-  const handleEmailToggle = async (checked: boolean) => {
+  React.useEffect(() => { load() }, [load])
+
+  const toggle = async (integration: Integration, checked: boolean) => {
+    const builtin = isBuiltinType(integration.provider_type)
+    if (builtin ? !canUpdateSettings : !canUpdateLogin) return
     try {
-      await siteSettingsApi.updateEmail({ smtp_enabled: checked })
-      setEmailSettings((current) => ({ ...current, smtp_enabled: checked }))
-    } catch (error) {
-      console.error('Failed to update email integration:', error)
+      if (integration.provider_type === 'email') {
+        setEmailSettings(await integrationsApi.updateEmail({ smtp_enabled: checked }))
+      } else if (integration.provider_type === 'webhook') {
+        setWebhookSettings(await integrationsApi.updateWebhook({ webhook_enabled: checked }))
+      } else if (integration.provider_type === 'feishu') {
+        setFeishuConfig(await integrationsApi.updateFeishuConfig({ is_enabled: checked }))
+      } else {
+        await integrationsApi.update(integration.id, { is_enabled: checked })
+      }
+      setInstances((current) => current.map((item) => {
+        if (item.id !== integration.id) return item
+        // The builtin switch grants its non-login capabilities and preserves the
+        // login opt-in, which is configured separately — same as the backend.
+        const enabledCapabilities = builtin
+          ? item.supported_capabilities.filter((capability) => capability === 'user_login'
+            ? item.enabled_capabilities.includes('user_login')
+            : checked)
+          : item.enabled_capabilities
+        return { ...item, is_enabled: checked, enabled_capabilities: enabledCapabilities }
+      }))
+    } catch {
+      // API interceptor handles backend errors.
     }
   }
 
-  const handleWebhookToggle = async (checked: boolean) => {
+  const testConnection = async (integration: Integration) => {
+    if (!canUpdateLogin) return
     try {
-      await siteSettingsApi.updateWebhook({ webhook_enabled: checked })
-      setWebhookSettings((current) => ({ ...current, webhook_enabled: checked }))
-    } catch (error) {
-      console.error('Failed to update webhook integration:', error)
+      const result = await integrationsApi.testConnection(integration.id)
+      if (result.status === 'success') toast.success(result.message)
+      else toast.error(result.message)
+    } catch {
+      // API interceptor handles backend errors.
     }
   }
-  const handleFeishuToggle = () => setActiveIntegration('feishu')
 
-  if (loading) {
-    return (
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {[1, 2, 3].map((index) => <Card key={index}><CardHeader><Skeleton className="h-6 w-32" /><Skeleton className="h-4 w-48" /></CardHeader><CardContent><Skeleton className="h-9 w-28" /></CardContent></Card>)}
-      </div>
-    )
+  const remove = async () => {
+    if (!deleteIntegration || !canUpdateLogin) return
+    try {
+      await integrationsApi.delete(deleteIntegration.id)
+      setInstances((current) => current.filter((item) => item.id !== deleteIntegration.id))
+      toast.success(tLogin('deleteSuccess'))
+      setDeleteIntegration(null)
+    } catch {
+      // API interceptor handles backend errors.
+    }
   }
+
+  if (loading) return <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{[1, 2, 3].map((index) => <Card key={index}><CardHeader><Skeleton className="h-6 w-32" /></CardHeader><CardContent><Skeleton className="h-9 w-28" /></CardContent></Card>)}</div>
+
+  const visibleInstances = instances.filter((integration) => isBuiltinType(integration.provider_type) ? canReadSettings : canReadLogin)
 
   return (
-    <>
+    <div className="space-y-6">
+      {canReadLogin && <div className="flex justify-end"><Button disabled={!canUpdateLogin || types.length === 0} onClick={() => { setEditIntegration(null); setShowLoginDialog(true) }}><Plus className="mr-2 h-4 w-4" />{tLogin('addProvider')}</Button></div>}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-        <Card size="sm" className="group relative cursor-pointer !gap-0 !py-0" role="button" tabIndex={0} onClick={() => setActiveIntegration('email')} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveIntegration('email') } }}><div className="grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-2 px-3 py-3"><div className="flex items-center justify-center"><Mail className="h-7 w-7 text-muted-foreground" /></div><div className="min-w-0"><CardTitle>{t('integrations.email')}</CardTitle><CardDescription className="text-xs">{t('email.basicSettingsDesc')}</CardDescription></div><div className="flex h-full items-center justify-end gap-1"><Button type="button" variant="ghost" size="icon-sm" aria-label={t('integrations.configure')} className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100" onClick={(event) => { event.stopPropagation(); setActiveIntegration('email') }}><Settings2 className="h-5 w-5" /></Button><Switch checked={emailSettings.smtp_enabled} disabled={!canUpdate} aria-label={t('email.smtpEnabled')} onClick={(event) => event.stopPropagation()} onCheckedChange={handleEmailToggle} /></div></div></Card>
-        <Card size="sm" className="group relative cursor-pointer !gap-0 !py-0" role="button" tabIndex={0} onClick={() => setActiveIntegration('webhook')} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveIntegration('webhook') } }}><div className="grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-2 px-3 py-3"><div className="flex items-center justify-center"><Globe className="h-7 w-7 text-muted-foreground" /></div><div className="min-w-0"><CardTitle>{t('integrations.webhook')}</CardTitle><CardDescription className="text-xs">{t('webhook.basicSettingsDesc')}</CardDescription></div><div className="flex h-full items-center justify-end gap-1"><Button type="button" variant="ghost" size="icon-sm" aria-label={t('integrations.configure')} className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100" onClick={(event) => { event.stopPropagation(); setActiveIntegration('webhook') }}><Settings2 className="h-4 w-4" /></Button><Switch checked={webhookSettings.webhook_enabled} disabled={!canUpdate} aria-label={t('webhook.enabled')} onClick={(event) => event.stopPropagation()} onCheckedChange={handleWebhookToggle} /></div></div></Card>
-        <Card size="sm" className="group relative cursor-pointer !gap-0 !py-0" role="button" tabIndex={0} onClick={() => setActiveIntegration('feishu')} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveIntegration('feishu') } }}><div className="grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-2 px-3 py-3"><div className="flex items-center justify-center"><img src="/integrations/feishu.png" alt="" className="h-7 w-7 object-contain" /></div><div className="min-w-0"><CardTitle>{t('integrations.feishu')}</CardTitle><CardDescription className="text-xs">{t('integrations.feishuDescription')}</CardDescription></div><div className="flex h-full items-center justify-end gap-1"><Button type="button" variant="ghost" size="icon-sm" aria-label={t('integrations.configure')} className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100" onClick={(event) => { event.stopPropagation(); setActiveIntegration('feishu') }}><Settings2 className="h-4 w-4" /></Button><Switch checked={feishuConfig.app_secret_configured} disabled={!canUpdate} aria-label={t('integrations.feishu')} onClick={(event) => event.stopPropagation()} onCheckedChange={handleFeishuToggle} /></div></div></Card>
+        {visibleInstances.map((integration) => {
+          const builtin = isBuiltinType(integration.provider_type) ? integration.provider_type : null
+          const editable = builtin ? canUpdateSettings : canUpdateLogin
+          const enabled = builtin === 'email' ? emailSettings?.smtp_enabled : builtin === 'webhook' ? webhookSettings?.webhook_enabled : builtin === 'feishu' ? feishuConfig?.is_enabled : integration.is_enabled
+          const open = () => {
+            if (builtin) setActiveBuiltin(builtin)
+            else { setEditIntegration(integration); setShowLoginDialog(true) }
+          }
+          return <Card key={integration.id} size="sm" className="!gap-0 !py-0" data-integration-id={integration.id}>
+            <div className="flex items-center gap-3 px-3 py-3">
+              <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" aria-label={builtin ? t(`integrations.${builtin}`) : integration.display_name} onClick={open}>
+                {integration.icon_url ? <img src={integration.icon_url} alt="" className="h-7 w-7 object-contain" /> : builtin === 'email' ? <Mail className="h-7 w-7 shrink-0 text-muted-foreground" /> : builtin === 'webhook' ? <Globe className="h-7 w-7 shrink-0 text-muted-foreground" /> : builtin === 'feishu' ? <img src="/integrations/feishu.png" alt="" className="h-7 w-7 object-contain" /> : <Shield className="h-7 w-7 shrink-0 text-muted-foreground" />}
+                <div className="min-w-0"><CardTitle>{builtin ? t(`integrations.${builtin}`) : integration.display_name}</CardTitle><CardDescription className="text-xs">{builtin ? builtin === 'email' ? t('email.basicSettingsDesc') : builtin === 'webhook' ? t('webhook.basicSettingsDesc') : t('integrations.feishuDescription') : integration.provider_type.toUpperCase()}</CardDescription></div>
+              </button>
+              <Button type="button" variant="ghost" size="icon-sm" aria-label={t('integrations.configure')} onClick={open}><Settings2 className="h-4 w-4" /></Button>
+              <Switch aria-label={builtin ? builtin === 'email' ? t('email.smtpEnabled') : builtin === 'webhook' ? t('webhook.enabled') : t('integrations.feishu') : `${integration.display_name}: ${tLogin('enabled')}`} checked={Boolean(enabled)} disabled={!editable} onCheckedChange={(checked) => toggle(integration, checked)} />
+            </div>
+            <div className="flex flex-wrap items-center gap-2 px-3 pb-3">{integration.supported_capabilities.map((capability) => <Badge key={capability} variant={integration.is_enabled && integration.enabled_capabilities.includes(capability) ? 'secondary' : 'outline'}>{t(`integrations.capabilities.${capability}`)}: {integration.is_enabled && integration.enabled_capabilities.includes(capability) ? t('integrations.enabled') : t('integrations.disabled')}</Badge>)}{!builtin && <><Button variant="outline" size="sm" disabled={!editable} onClick={() => testConnection(integration)}>{tLogin('testConnection')}</Button><Button variant="ghost" size="icon-sm" aria-label={`${tLogin('deleteProvider')}: ${integration.display_name}`} disabled={!editable} onClick={() => setDeleteIntegration(integration)}><Trash2 className="h-4 w-4" /></Button></>}</div>
+          </Card>
+        })}
       </div>
-      <Dialog open={activeIntegration !== null} onOpenChange={(open) => { if (!open) setActiveIntegration(null) }}>
-        <DialogContent className="!w-[64vw] !max-w-[64vw] max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>{activeIntegration ? t(`integrations.${activeIntegration}`) : ''}</DialogTitle><DialogDescription>{activeIntegration === 'feishu' ? t('integrations.feishuDescription') : activeIntegration === 'email' ? t('email.basicSettingsDesc') : t('webhook.basicSettingsDesc')}</DialogDescription></DialogHeader>
-          {activeIntegration === 'email' && <EmailSettingsTab settings={emailSettings} onSettingsChange={setEmailSettings} canUpdate={canUpdate} />}
-          {activeIntegration === 'webhook' && <WebhookSettingsTab settings={webhookSettings} onSettingsChange={setWebhookSettings} canUpdate={canUpdate} />}
-          {activeIntegration === 'feishu' && <FeishuIntegrationTab config={feishuConfig} onConfigChange={setFeishuConfig} canUpdate={canUpdate} />}
+      <Dialog open={activeBuiltin !== null} onOpenChange={(open) => { if (!open) { setActiveBuiltin(null); load() } }}>
+        <DialogContent className="!w-[64vw] !max-w-[64vw] max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>{activeBuiltin ? t(`integrations.${activeBuiltin}`) : ''}</DialogTitle><DialogDescription>{activeBuiltin === 'feishu' ? t('integrations.feishuDescription') : activeBuiltin === 'email' ? t('email.basicSettingsDesc') : t('webhook.basicSettingsDesc')}</DialogDescription></DialogHeader>
+          {activeBuiltin === 'email' && emailSettings && <EmailSettingsTab settings={emailSettings} onSettingsChange={setEmailSettings} canUpdate={canUpdateSettings} credentialsConfigured={instances.find((instance) => instance.provider_type === 'email')?.credentials_configured} />}
+          {activeBuiltin === 'webhook' && webhookSettings && <WebhookSettingsTab settings={webhookSettings} onSettingsChange={setWebhookSettings} canUpdate={canUpdateSettings} credentialsConfigured={instances.find((instance) => instance.provider_type === 'webhook')?.credentials_configured} />}
+          {activeBuiltin === 'feishu' && feishuConfig && <FeishuIntegrationTab config={feishuConfig} onConfigChange={setFeishuConfig} canUpdate={canUpdateSettings} integration={instances.find((instance) => instance.provider_type === 'feishu') ?? null} canUpdateLogin={canUpdateLogin} onIntegrationChange={(updated) => setInstances((current) => current.map((instance) => instance.id === updated.id ? updated : instance))} />}
         </DialogContent>
       </Dialog>
-    </>
+      {canReadLogin && <LoginIntegrationDialog open={showLoginDialog} provider={editIntegration} types={types} onClose={(success) => { setShowLoginDialog(false); setEditIntegration(null); if (success) load() }} />}
+      <AlertDialog open={deleteIntegration !== null} onOpenChange={(open) => { if (!open) setDeleteIntegration(null) }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{tLogin('deleteProvider')}</AlertDialogTitle><AlertDialogDescription>{tLogin('deleteConfirm')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{tLogin('cancel')}</AlertDialogCancel><AlertDialogAction disabled={!canUpdateLogin} onClick={remove}>{tLogin('delete')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+    </div>
   )
 }

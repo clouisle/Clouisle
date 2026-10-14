@@ -1,68 +1,18 @@
 import { api } from './client'
 import { API_BASE_URL } from '@/lib/constants'
 
-export interface SSOProvider {
-  id: string
-  name: string
-  display_name: string
-  icon_url: string | null
-  button_text: string | null
-  protocol: string
-}
-
-export interface SSOProviderAdmin {
-  id: string
-  name: string
-  protocol: string
-  display_name: string
-  icon_url: string | null
-  button_text: string | null
-  config: Record<string, unknown>
-  attribute_mapping: Record<string, string>
-  is_enabled: boolean
-  allow_signup: boolean
-  require_approval: boolean
-  default_role_id: string | null
-  created_at: string
-  updated_at: string
-}
-
-export interface SSOProviderCreate {
-  name: string
-  protocol: string
-  display_name: string
-  icon_url?: string | null
-  button_text?: string | null
-  config: Record<string, unknown>
-  attribute_mapping?: Record<string, string>
-  is_enabled?: boolean
-  allow_signup?: boolean
-  require_approval?: boolean
-  default_role_id?: string | null
-}
-
-export interface SSOProviderUpdate {
-  name?: string
-  protocol?: string
-  display_name?: string
-  icon_url?: string | null
-  button_text?: string | null
-  config?: Record<string, unknown>
-  attribute_mapping?: Record<string, string>
-  is_enabled?: boolean
-  allow_signup?: boolean
-  require_approval?: boolean
-  default_role_id?: string | null
-}
+import type { IntegrationLoginPublic } from './integrations'
 
 export const ssoApi = {
   // Public endpoints
-  getPublicProviders: async (): Promise<SSOProvider[]> => {
-    return api.get<SSOProvider[]>('/sso/providers')
+  getPublicIntegrations: async (): Promise<IntegrationLoginPublic[]> => {
+    return api.get<IntegrationLoginPublic[]>('/sso/integrations')
   },
 
   initiateLogin: (providerName: string, redirect?: string) => {
     const params = redirect ? `?redirect=${encodeURIComponent(redirect)}` : ''
+    // External backend SSO entrypoint (absolute API_BASE_URL), not an internal route.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
     window.location.href = `${API_BASE_URL}/sso/login/${providerName}${params}`
   },
 

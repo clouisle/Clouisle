@@ -157,7 +157,7 @@ async def test_external_channel_dispatches_and_marks_success(
     monkeypatch.setattr(tasks, "_update_delivery_status", update_status)
     build_message = Mock(return_value=("Rendered title", "Rendered content"))
     monkeypatch.setattr(tasks, "_build_notification_message", build_message)
-    integration = tasks.notification_integration_factory.get(channel)
+    integration = tasks.get_notification_integration(channel)
     send = AsyncMock(return_value=True)
     monkeypatch.setattr(integration, "send", send)
 
@@ -193,7 +193,7 @@ async def test_external_channel_stops_before_integration_without_context(monkeyp
     monkeypatch.setattr(tasks, "_update_delivery_status", update_status)
     send = AsyncMock()
     monkeypatch.setattr(
-        tasks.notification_integration_factory.get(NotificationChannel.WEBHOOK),
+        tasks.get_notification_integration(NotificationChannel.WEBHOOK),
         "send",
         send,
     )

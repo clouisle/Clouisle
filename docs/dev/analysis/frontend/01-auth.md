@@ -15,7 +15,7 @@
 | `authApi.login()` | POST `/login/access-token` | 用户名密码登录 |
 | `authApi.getCaptcha()` | GET `/login/captcha` | 获取验证码（如启用） |
 | `siteSettingsApi.getPublic()` | GET `/site-settings/public` | 获取公开站点设置 |
-| `ssoApi.getPublicProviders()` | GET `/sso/providers` | 获取 SSO 提供商列表 |
+| 登录集成列表 | GET `/sso/integrations` | 获取已启用的登录集成；登录/回调 URL 保持不变 |
 
 **主要组件**:
 - `LoginForm` - 登录表单组件

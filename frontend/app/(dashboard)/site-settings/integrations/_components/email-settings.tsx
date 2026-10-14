@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { FieldError } from '@/components/ui/field'
-import { siteSettingsApi, type EmailSettings } from '@/lib/api/admin/site-settings'
+import { integrationsApi, type EmailSettings } from '@/lib/api/admin/integrations'
 import {
   clearValidationError,
   getValidationSummaryEntries,
@@ -30,10 +30,12 @@ interface EmailSettingsTabProps {
   settings: EmailSettings
   onSettingsChange: (settings: EmailSettings) => void
   canUpdate: boolean
+  credentialsConfigured?: string[]
 }
 
-export function EmailSettingsTab({ settings, onSettingsChange, canUpdate }: EmailSettingsTabProps) {
+export function EmailSettingsTab({ settings, onSettingsChange, canUpdate, credentialsConfigured = [] }: EmailSettingsTabProps) {
   const t = useTranslations('siteSettings')
+  const tLogin = useTranslations('sso')
   const [saving, setSaving] = React.useState(false)
   const [testEmail, setTestEmail] = React.useState('')
   const [sendingTest, setSendingTest] = React.useState(false)
@@ -60,6 +62,7 @@ export function EmailSettingsTab({ settings, onSettingsChange, canUpdate }: Emai
   }
 
   const handleSave = async () => {
+    if (!canUpdate) return
     const nextErrors: Record<string, string> = {}
 
     if (settings.smtp_enabled) {
@@ -75,7 +78,7 @@ export function EmailSettingsTab({ settings, onSettingsChange, canUpdate }: Emai
     setFieldErrors({})
     try {
       setSaving(true)
-      await siteSettingsApi.updateEmail(settings)
+      await integrationsApi.updateEmail(settings)
       toast.success(t('saveSuccess'))
     } catch (error) {
       const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
@@ -89,6 +92,7 @@ export function EmailSettingsTab({ settings, onSettingsChange, canUpdate }: Emai
   }
 
   const handleSendTest = async () => {
+    if (!canUpdate) return
     if (!testEmail.trim()) {
       setFieldErrors((prev) => ({ ...clearValidationError(prev, 'testEmail'), testEmail: t('testEmailRequired') }))
       return
@@ -97,7 +101,7 @@ export function EmailSettingsTab({ settings, onSettingsChange, canUpdate }: Emai
     setFieldErrors((prev) => clearValidationError(prev, 'testEmail'))
     try {
       setSendingTest(true)
-      await siteSettingsApi.sendTestEmail(testEmail)
+      await integrationsApi.sendTestEmail(testEmail)
       toast.success(t('testEmailSent'))
     } catch (error) {
       const errors = mapValidationErrors(normalizeValidationErrors(error), { email: 'testEmail' })
@@ -217,6 +221,7 @@ export function EmailSettingsTab({ settings, onSettingsChange, canUpdate }: Emai
                 onChange={(e) => updateSetting('smtp_password', e.target.value)}
                 disabled={!canUpdate}
               />
+              <p className="text-xs text-muted-foreground">{tLogin('credentialsHint')}{credentialsConfigured.includes('smtp_password') ? ` (${t('integrations.secretConfigured')})` : ''}</p>
             </div>
           </div>
         </CardContent>

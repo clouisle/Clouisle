@@ -36,7 +36,7 @@ mock.module('@/components/ui/select', () => ({
 }))
 mock.module('@/components/ui/field', () => ({ FieldError: ({ children }: React.PropsWithChildren) => children ? <p role="alert">{children}</p> : null }))
 
-import { siteSettingsApi, type WebhookSettings } from '@/lib/api/admin/site-settings'
+import { integrationsApi, type WebhookSettings } from '@/lib/api/admin/integrations'
 import { WebhookSettingsTab } from './webhook-settings'
 
 const settings: WebhookSettings = {
@@ -71,9 +71,19 @@ afterEach(() => {
 })
 
 describe('WebhookSettingsTab', () => {
+  test('keeps configured encrypted headers hidden and preserves them on an unchanged save', async () => {
+    const hiddenSettings = { ...settings, webhook_headers: {}, webhook_secret: '' }
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook').mockResolvedValue(hiddenSettings)
+    const { renderer } = render({ settings: hiddenSettings, credentialsConfigured: ['webhook_headers', 'webhook_secret'] })
+    expect(renderer.root.findByProps({ id: 'webhook-headers' }).props.value).toBe('')
+    expect(JSON.stringify(renderer.toJSON())).toContain('integrations.secretConfigured')
+    await act(async () => button(renderer, 'save').props.onClick())
+    expect(updateWebhook).toHaveBeenCalledWith(hiddenSettings)
+  })
+
   test('updates endpoint fields and saves or sends tests', async () => {
-    const updateWebhook = spyOn(siteSettingsApi, 'updateWebhook').mockResolvedValue({})
-    const sendTestWebhook = spyOn(siteSettingsApi, 'sendTestWebhook').mockResolvedValue()
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook').mockResolvedValue(settings)
+    const sendTestWebhook = spyOn(integrationsApi, 'sendTestWebhook').mockResolvedValue()
     const { renderer, onSettingsChange } = render()
 
     act(() => renderer.root.findByProps({ id: 'webhook-url' }).props.onChange({ target: { value: 'https://example.com/next' } }))
@@ -92,7 +102,7 @@ describe('WebhookSettingsTab', () => {
   })
 
   test('validates required URL and invalid header JSON', async () => {
-    const updateWebhook = spyOn(siteSettingsApi, 'updateWebhook')
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook')
     const { renderer } = render({ settings: { ...settings, webhook_url: '' } })
 
     act(() => renderer.root.findByProps({ id: 'webhook-headers' }).props.onChange({ target: { value: '{bad' } }))

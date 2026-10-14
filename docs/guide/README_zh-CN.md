@@ -99,7 +99,7 @@
 - [权限](admin-guide/permissions/PERMISSIONS_zh-CN.md)
 - [权限管理](admin-guide/permissions/permission-management.md)
 - [系统设置](admin-guide/settings/system-settings.md)
-- [SSO 设置](admin-guide/settings/SSO_zh-CN.md)
+- [集成与 SSO 设置](admin-guide/settings/SSO_zh-CN.md)
 - [自动通知](admin-guide/settings/AUTO_NOTIFICATIONS_zh-CN.md)
 - [角色权限、安全与系统可观测性](admin-guide/settings/roles-security-observability.md)
 - [审计日志](admin-guide/audit-logs/audit-log-management.md)
@@ -129,7 +129,7 @@
 - [智能 Prompt 生成 API](api-reference/endpoints/prompts.md)
 - [设置 API](api-reference/endpoints/settings.md)
 - [技能 API](api-reference/endpoints/skills.md)
-- [SSO API](api-reference/endpoints/sso.md)
+- [SSO 与集成 API](api-reference/endpoints/sso.md)
 - [团队模型 API](api-reference/endpoints/team-models.md)
 - [团队 API](api-reference/endpoints/teams.md)
 - [工具 API](api-reference/endpoints/tools.md)
@@ -375,7 +375,7 @@ curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/insta
 - **安全**：密码策略、会话超时、登录限制
 - **注册**：启用/禁用、需要审批、邮箱验证
 - **邮件**：通知的 SMTP 配置
-- **SSO**：配置身份提供商
+- **集成**：配置登录身份源、邮件、Webhook 与飞书通讯录同步
 - **通知**：自动通知规则和渠道
 
 ---

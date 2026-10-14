@@ -149,7 +149,7 @@ async def test_email_delivery_marks_sending_then_success_for_all_recipients():
             ),
         ),
         patch.object(
-            tasks.notification_integration_factory.get(NotificationChannel.EMAIL),
+            tasks.get_notification_integration(NotificationChannel.EMAIL),
             "send",
             new=send_email,
         ),
@@ -185,7 +185,7 @@ async def test_email_delivery_without_recipients_is_safe_success():
             tasks, "_get_notification_recipients", new=AsyncMock(return_value=[])
         ),
         patch.object(
-            tasks.notification_integration_factory.get(NotificationChannel.EMAIL),
+            tasks.get_notification_integration(NotificationChannel.EMAIL),
             "send",
             new=AsyncMock(),
         ) as send_email,
@@ -223,7 +223,7 @@ async def test_email_delivery_records_partial_success_without_raising():
             ),
         ),
         patch.object(
-            tasks.notification_integration_factory.get(NotificationChannel.EMAIL),
+            tasks.get_notification_integration(NotificationChannel.EMAIL),
             "send",
             new=AsyncMock(side_effect=[True, False]),
         ),
@@ -250,7 +250,7 @@ async def test_external_delivery_marks_success_with_mocked_integration():
             tasks, "_load_notification_context", new=AsyncMock(return_value=context)
         ),
         patch.object(
-            tasks.notification_integration_factory.get(NotificationChannel.WEBHOOK),
+            tasks.get_notification_integration(NotificationChannel.WEBHOOK),
             "send",
             new=sender,
         ),

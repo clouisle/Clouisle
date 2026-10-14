@@ -1,4 +1,4 @@
-"""Static registry for built-in notification integrations."""
+"""Notification behavior handlers resolved through the unified capability catalog."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.models.notification import NotificationChannel
+from app.integrations.registry import IntegrationCapability, integration_registry
 
 
 @dataclass(frozen=True)
@@ -33,35 +34,6 @@ class NotificationIntegration(Protocol):
     async def send(self, message: NotificationMessage) -> bool: ...
 
     def dispatch_task(self, notification_id: str) -> object: ...
-
-
-class NotificationIntegrationFactory:
-    """Explicit registry for notification integrations and their task dispatch."""
-
-    def __init__(self, integrations: tuple[NotificationIntegration, ...]):
-        registry: dict[NotificationChannel, NotificationIntegration] = {}
-        for integration in integrations:
-            if integration.id in registry:
-                raise ValueError(f"Duplicate integration: {integration.id.value}")
-            registry[integration.id] = integration
-        self._integrations = registry
-
-    def get(self, integration_id: NotificationChannel | str) -> NotificationIntegration:
-        try:
-            key = NotificationChannel(integration_id)
-        except ValueError as exc:
-            raise ValueError(
-                f"Unknown notification integration: {integration_id}"
-            ) from exc
-        if key not in self._integrations:
-            raise ValueError(f"Unknown notification integration: {key.value}")
-        return self._integrations[key]
-
-    def all(self) -> tuple[NotificationIntegration, ...]:
-        return tuple(self._integrations.values())
-
-    def dispatch_task(self, integration_id: NotificationChannel, notification_id: str):
-        return self.get(integration_id).dispatch_task(notification_id)
 
 
 class EmailNotificationIntegration:
@@ -135,6 +107,24 @@ class WebhookNotificationIntegration:
         return send_notification_webhook_task.delay(notification_id)
 
 
-notification_integration_factory = NotificationIntegrationFactory(
-    (EmailNotificationIntegration(), WebhookNotificationIntegration())
-)
+_email_handler = EmailNotificationIntegration()
+_webhook_handler = WebhookNotificationIntegration()
+
+
+def get_notification_integration(
+    provider_type: NotificationChannel | str,
+) -> NotificationIntegration:
+    definition = integration_registry.get(provider_type)
+    if IntegrationCapability.NOTIFICATION not in definition.capabilities:
+        raise ValueError(f"Integration does not support notifications: {provider_type}")
+    if definition.provider_type == "email":
+        return _email_handler
+    if definition.provider_type == "webhook":
+        return _webhook_handler
+    raise ValueError(f"No notification handler for integration: {provider_type}")
+
+
+def dispatch_notification_task(
+    provider_type: NotificationChannel | str, notification_id: str
+):
+    return get_notification_integration(provider_type).dispatch_task(notification_id)
