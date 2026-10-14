@@ -789,6 +789,7 @@ async def test_serialize_user_includes_roles_permissions_and_sso(roles_fetched):
         id=uuid4(),
         name="oidc",
         display_name="Company SSO",
+        provider_type="oidc",
         icon_url="https://example.com/icon.png",
     )
     connection = SimpleNamespace(
@@ -815,6 +816,7 @@ async def test_serialize_user_includes_roles_permissions_and_sso(roles_fetched):
     assert serialized["status"] == "active"
     assert serialized["roles"][0]["permissions"][0]["code"] == "admin:user:read"
     assert serialized["sso_connections"][0]["integration_name"] == "oidc"
+    assert serialized["sso_connections"][0]["integration_provider_type"] == "oidc"
     if not roles_fetched:
         assert ("prefetch_related", ("permissions",), {}) in role_query.calls
 

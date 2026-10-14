@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { usersApi, type UserCreateData, type UserUpdateData, type User } from '@/lib/api/admin/users'
 import { integrationsApi } from '@/lib/api/admin/integrations'
 import type { SSOConnection } from '@/lib/api/auth'
+import { getIntegrationIconUrl } from '@/lib/api/integrations'
 import { rolesApi, type Role } from '@/lib/api/admin/roles'
 import {
   clearValidationError,
@@ -328,9 +329,9 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
                     className="flex items-center justify-between rounded-md border px-3 py-2"
                   >
                     <div className="flex items-center gap-3">
-                      {connection.integration_icon_url ? (
+                      {getIntegrationIconUrl(connection.integration_provider_type, connection.integration_icon_url) ? (
                         <img
-                          src={connection.integration_icon_url}
+                          src={getIntegrationIconUrl(connection.integration_provider_type, connection.integration_icon_url)!}
                           alt={connection.integration_display_name}
                           className="h-6 w-6 rounded"
                         />

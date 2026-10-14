@@ -12,6 +12,7 @@ class UserSSOConnectionSchema(BaseModel):
     integration_id: UUID
     integration_name: str
     integration_display_name: str
+    integration_provider_type: str
     integration_icon_url: Optional[str]
     provider_user_id: str
     provider_username: Optional[str]

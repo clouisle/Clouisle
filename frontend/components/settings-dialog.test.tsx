@@ -43,7 +43,7 @@ let user = {
     id: 'connection-1',
     integration_id: 'github',
     integration_name: 'github',
-    integration_display_name: 'GitHub',
+    integration_provider_type: 'oauth2',
     integration_icon_url: null,
     provider_user_id: '42',
     provider_username: 'alice',
@@ -169,6 +169,25 @@ async function enterById(id: string, value: string) {
 }
 
 beforeEach(() => {
+  user = {
+    id: 'user-1',
+    username: 'alice',
+    email: 'alice@example.com',
+    avatar_url: null,
+    auth_source: 'github',
+    sso_connections: [{
+      id: 'connection-1',
+      integration_id: 'github',
+      integration_name: 'github',
+      integration_provider_type: 'oauth2',
+      integration_display_name: 'GitHub',
+      provider_user_id: '42',
+      provider_username: 'alice',
+      provider_email: 'alice@example.com',
+      first_login: '2026-01-01T00:00:00Z',
+      last_login: '2026-01-02T00:00:00Z',
+    }],
+  }
   siteSettings = { allow_account_deletion: false, email_verification: false }
   getCurrentUser.mockReset()
   getCurrentUser.mockImplementation(() => Promise.resolve(user))
@@ -227,6 +246,23 @@ describe('SettingsDialog', () => {
 
     expect(updateProfile).not.toHaveBeenCalled()
     expect(warningToast).toHaveBeenCalledWith('emailVerificationRequired')
+  })
+
+  test('shows the bundled Feishu icon for a connected account without a custom icon', async () => {
+    user = {
+      ...user,
+      sso_connections: [{
+        ...user.sso_connections[0],
+        integration_provider_type: 'feishu',
+        integration_display_name: 'Feishu',
+        integration_icon_url: null,
+      }],
+    }
+    await render()
+    await click('account')
+
+    const icon = container.querySelector('img[alt="Feishu"]')
+    expect(icon?.getAttribute('src')).toBe('/integrations/feishu.png')
   })
 
   test('switches to account options appropriate for an SSO user and site policy', async () => {

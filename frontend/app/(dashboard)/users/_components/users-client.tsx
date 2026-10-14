@@ -30,6 +30,7 @@ import {
 import { toast } from 'sonner'
 import { usersApi, type User, type PageData, type UserStats } from '@/lib/api/admin/users'
 import { siteSettingsApi, type PublicSiteSettings } from '@/lib/api'
+import { getIntegrationIconUrl } from '@/lib/api/integrations'
 import { rolesApi } from '@/lib/api/admin/roles'
 import { formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -688,9 +689,9 @@ export function UsersClient() {
                         {user.sso_connections.map((conn) => (
                           <Tooltip key={conn.id}>
                             <TooltipTrigger>
-                              {conn.integration_icon_url ? (
+                              {getIntegrationIconUrl(conn.integration_provider_type, conn.integration_icon_url) ? (
                                 <img
-                                  src={conn.integration_icon_url}
+                                  src={getIntegrationIconUrl(conn.integration_provider_type, conn.integration_icon_url)!}
                                   alt={conn.integration_display_name}
                                   className="h-4 w-4 rounded"
                                 />

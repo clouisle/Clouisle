@@ -46,7 +46,7 @@ let user = {
     id: 'connection-1',
     integration_id: 'github',
     integration_name: 'github',
-    integration_display_name: 'GitHub',
+    integration_provider_type: 'oauth2',
     integration_icon_url: null,
     provider_user_id: '42',
     provider_username: 'alice',

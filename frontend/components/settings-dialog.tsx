@@ -32,6 +32,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { usersApi, authApi, ssoApi, totpApi, type User as UserType, type SSOConnection, type PasswordStatus, type TOTPStatusResponse } from '@/lib/api'
+import { getIntegrationIconUrl } from '@/lib/api/integrations'
 import { useSiteSettings } from '@/contexts/site-settings-context'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { AlertCircle, Clock } from 'lucide-react'
@@ -633,9 +634,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         className="flex items-center justify-between rounded-lg border p-3"
                       >
                         <div className="flex items-center gap-3">
-                          {connection.integration_icon_url && (
+                          {getIntegrationIconUrl(connection.integration_provider_type, connection.integration_icon_url) && (
                             <img
-                              src={connection.integration_icon_url}
+                              src={getIntegrationIconUrl(connection.integration_provider_type, connection.integration_icon_url)!}
                               alt={connection.integration_display_name}
                               className="h-8 w-8 rounded"
                             />

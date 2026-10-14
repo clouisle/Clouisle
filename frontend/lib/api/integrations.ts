@@ -16,6 +16,13 @@ export interface IntegrationLoginPublic {
   provider_type: IntegrationProviderType
 }
 
+export function getIntegrationIconUrl(
+  providerType: IntegrationProviderType,
+  iconUrl: string | null,
+): string | null {
+  return iconUrl || (providerType === 'feishu' ? '/integrations/feishu.png' : null)
+}
+
 export interface Integration extends IntegrationLoginPublic {
   is_enabled: boolean
   enabled_capabilities: IntegrationCapability[]

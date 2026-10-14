@@ -171,7 +171,7 @@ test('disconnects an SSO account and refreshes the user', async () => {
   const connectedUser = {
     ...user,
     sso_connections: [{
-      id: 'connection-1', integration_display_name: 'Corporate', provider_email: 'ada@example.test',
+      id: 'connection-1', integration_provider_type: 'oidc', integration_display_name: 'Corporate', provider_email: 'ada@example.test',
       integration_icon_url: null,
     }],
   }

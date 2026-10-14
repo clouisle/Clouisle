@@ -81,6 +81,7 @@ async def serialize_user_with_sso(user: User) -> dict:
                 integration_id=conn.integration.id,
                 integration_name=conn.integration.name,
                 integration_display_name=conn.integration.display_name,
+                integration_provider_type=conn.integration.provider_type,
                 integration_icon_url=conn.integration.icon_url,
                 provider_user_id=conn.provider_user_id,
                 provider_username=conn.provider_username,

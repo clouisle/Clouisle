@@ -97,6 +97,7 @@ async def test_serialize_user_uses_prefetched_roles_and_sso_connections(monkeypa
     provider = SimpleNamespace(
         id=uuid4(),
         name="oidc",
+        provider_type="oidc",
         display_name="OIDC",
         icon_url=None,
     )
@@ -135,6 +136,7 @@ async def test_serialize_user_uses_prefetched_roles_and_sso_connections(monkeypa
         }
     ]
     assert result["sso_connections"][0]["integration_name"] == "oidc"
+    assert result["sso_connections"][0]["integration_provider_type"] == "oidc"
     connection_model.filter.assert_called_once_with(user=current_user)
     assert connection_query.prefetch_calls == [("integration",)]
 

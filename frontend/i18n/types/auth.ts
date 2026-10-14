@@ -85,6 +85,7 @@ export type AuthMessages = {
     passwordResetComplete: string
     passwordResetSuccessMessage: string
     orContinueWith: string
+    signInWithProvider: string
     ssoOnlyMode: string
     ssoCallbackInactiveTitle: string
     ssoCallbackInactiveDescription: string

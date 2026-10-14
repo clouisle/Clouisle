@@ -266,7 +266,7 @@ export {
 } from './workflows'
 
 export { ssoApi } from './sso'
-export type { Integration, IntegrationLoginPublic, IntegrationCreate, IntegrationUpdate, IntegrationType, IntegrationCapability, IntegrationProviderType, LoginSettings } from './integrations'
+export { getIntegrationIconUrl, type Integration, type IntegrationLoginPublic, type IntegrationCreate, type IntegrationUpdate, type IntegrationType, type IntegrationCapability, type IntegrationProviderType, type LoginSettings } from './integrations'
 
 export {
   notificationsApi,

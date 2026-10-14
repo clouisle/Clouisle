@@ -6,6 +6,7 @@ import { MoreHorizontal, Pencil, Trash2, UserCheck, UserX, Link as LinkIcon } fr
 import { toast } from 'sonner'
 import { usersApi, type User } from '@/lib/api/admin/users'
 import { formatDateTime } from '@/lib/utils'
+import { getIntegrationIconUrl } from '@/lib/api/integrations'
 import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
@@ -128,9 +129,9 @@ function UserTableRow({ user, onEdit, onDelete, onStatusChange }: UserTableRowPr
                     {user.sso_connections.map((conn) => (
                       <Tooltip key={conn.id}>
                         <TooltipTrigger>
-                          {conn.integration_icon_url ? (
+                          {getIntegrationIconUrl(conn.integration_provider_type, conn.integration_icon_url) ? (
                             <img
-                              src={conn.integration_icon_url}
+                              src={getIntegrationIconUrl(conn.integration_provider_type, conn.integration_icon_url)!}
                               alt={conn.integration_display_name}
                               className="h-4 w-4 rounded"
                             />
