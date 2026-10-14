@@ -90,10 +90,10 @@ async def create_item(
 
 ### 4. 超级管理员
 
-使用 `deps.get_current_active_superuser` 依赖（主要用于 admin 路由组中的 SSO 管理接口）：
+使用 `deps.get_current_active_superuser` 依赖（例如初始化引导、部分仅超管可见的运维接口）：
 ```python
-@router.get("/providers")
-async def list_providers(
+@router.get("/bootstrap-status")
+async def bootstrap_status(
     current_user: User = Depends(deps.get_current_active_superuser)
 ):
     ...

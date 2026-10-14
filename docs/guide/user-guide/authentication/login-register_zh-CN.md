@@ -64,6 +64,7 @@ Clouisle 支持自助注册（由管理员启用）。
 - OAuth2/OIDC（Google、GitHub、GitLab 等）
 - SAML 2.0（Azure AD、Okta、OneLogin）
 - CAS（大学系统）
+- 飞书（仅当管理员开启了飞书登录时显示）
 
 有关 SSO 配置，请参阅 [SSO 用户指南](./sso-user-guide.md)。
 
