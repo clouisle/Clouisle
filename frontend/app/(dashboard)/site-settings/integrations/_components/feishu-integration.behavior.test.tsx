@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import React from 'react'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
@@ -32,6 +32,7 @@ mock.module('@/components/ui/card', () => ({
   CardHeader: ({ children }: React.PropsWithChildren) => <header>{children}</header>,
   CardTitle: ({ children }: React.PropsWithChildren) => <h2>{children}</h2>,
 }))
+mock.module('@/components/ui/textarea', () => ({ Textarea: (props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...props} /> }))
 mock.module('@/components/ui/input', () => ({ Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} /> }))
 mock.module('@/components/ui/label', () => ({ Label: ({ children, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) => <label {...props}>{children}</label> }))
 mock.module('@/components/ui/button', () => ({ Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button> }))
@@ -47,6 +48,13 @@ mock.module('@/components/ui/checkbox', () => ({
 }))
 mock.module('@/components/ui/scroll-area', () => ({ ScrollArea: ({ children }: React.PropsWithChildren) => <div>{children}</div> }))
 mock.module('@/components/ui/switch', () => ({ Switch: (props: { checked: boolean; onCheckedChange: (checked: boolean) => void; disabled?: boolean; 'aria-label': string }) => <button {...props} /> }))
+mock.module('@/components/ui/select', () => ({
+  Select: ({ children, value, onValueChange }: React.PropsWithChildren<{ value: string; onValueChange: (value: string) => void }>) => <div data-select-value={value} data-on-value-change={onValueChange}>{children}</div>,
+  SelectTrigger: ({ children, ...props }: React.PropsWithChildren<React.ButtonHTMLAttributes<HTMLButtonElement>>) => <button {...props}>{children}</button>,
+  SelectValue: ({ children, placeholder }: React.PropsWithChildren<{ placeholder?: string }>) => <span>{children || placeholder}</span>,
+  SelectContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  SelectItem: ({ children, value }: React.PropsWithChildren<{ value: string }>) => <div data-select-item={value}>{children}</div>,
+}))
 
 import { integrationsApi, type FeishuConfig, type Integration } from '@/lib/api/admin/integrations'
 import { ApiError } from '@/lib/api/client'
@@ -59,7 +67,7 @@ const config: FeishuConfig = { app_id: 'cli_1', app_secret_configured: true, dep
 const integration: Integration = {
   id: 'feishu-1', name: 'feishu', display_name: 'Feishu', provider_type: 'feishu',
   icon_url: null, button_text: null, is_enabled: true,
-  enabled_capabilities: ['directory_sync'], supported_capabilities: ['directory_sync', 'user_login'],
+  enabled_capabilities: ['directory_sync'], supported_capabilities: ['directory_sync', 'user_login', 'notification'],
   config: {}, attribute_mapping: {}, credentials_configured: [],
   login_config: { allow_signup: true, require_approval: false, default_role_id: null }, created_at: '', updated_at: '',
 }
@@ -90,7 +98,13 @@ const button = (renderer: ReactTestRenderer, label: string) => renderer.root.fin
 
 const loginSwitch = (renderer: ReactTestRenderer) => renderer.root.findByProps({ 'aria-label': 'integrations.feishuLogin' })
 const directorySwitch = (renderer: ReactTestRenderer) => renderer.root.findByProps({ 'aria-label': 'integrations.capabilities.directory_sync' })
+const notificationSwitch = (renderer: ReactTestRenderer) => renderer.root.findByProps({ 'aria-label': 'integrations.capabilities.notification' })
 const capabilitySave = (renderer: ReactTestRenderer) => renderer.root.findByProps({ 'data-testid': 'feishu-capability-save' })
+
+beforeEach(() => {
+  spyOn(integrationsApi, 'getFeishuTestRecipients').mockResolvedValue([])
+  spyOn(integrationsApi, 'getFeishuDepartments').mockResolvedValue([])
+})
 
 afterEach(() => {
   for (const renderer of renderers) act(() => renderer.unmount())
@@ -264,4 +278,55 @@ describe('FeishuIntegrationTab', () => {
     expect(renderer.root.findAllByProps({ 'data-testid': 'feishu-capability-save' })).toHaveLength(0)
   })
 
+  test('checks Feishu app authentication without requiring directory sync capability', async () => {
+    const check = spyOn(integrationsApi, 'checkFeishuConnection').mockResolvedValue({ status: 'ok' })
+    const { renderer } = render({ integration: { ...integration, enabled_capabilities: [] } })
+
+    await act(async () => button(renderer, 'integrations.feishuConnectionCheck').props.onClick())
+
+    expect(check).toHaveBeenCalledTimes(1)
+    expect(success).toHaveBeenCalledWith('integrations.feishuConnectionCheckSuccess')
+  })
+
+  test('sends test messages only to explicitly selected linked users', async () => {
+    const recipients = [
+      { id: 'user-1', username: 'ada', email: 'ada@example.com' },
+      { id: 'user-2', username: 'grace', email: 'grace@example.com' },
+    ]
+    spyOn(integrationsApi, 'getFeishuTestRecipients').mockResolvedValue(recipients)
+    const send = spyOn(integrationsApi, 'sendFeishuTestMessage').mockResolvedValue({ status: 'sent' })
+    const { renderer } = render({ integration: { ...integration, enabled_capabilities: ['notification'] } })
+    await act(async () => {})
+    const recipientTrigger = renderer.root.findByProps({ id: 'feishu-test-recipient-trigger' })
+    const recipientSelect = recipientTrigger.parent
+    await act(async () => recipientSelect.props['data-on-value-change']('user-2'))
+    await act(async () => button(renderer, 'integrations.feishuTestSend').props.onClick())
+
+    const selectedLabel = recipientTrigger.findByType('span').children.join('')
+    const optionLabel = renderer.root.findByProps({ 'data-select-item': 'user-2' }).children.join('')
+    expect(selectedLabel).toBe('grace')
+    expect(optionLabel).toBe(selectedLabel)
+    expect(send).toHaveBeenCalledWith('user-2', 'Clouisle Feishu test', 'This is a test message from Clouisle.')
+    expect(success).toHaveBeenCalledWith('integrations.feishuTestSent')
+  })
+  test('allows an authorized admin to enable Feishu notifications', async () => {
+    const { renderer, onIntegrationChange } = render()
+    const update = spyOn(integrationsApi, 'update').mockResolvedValue({
+      ...integration,
+      enabled_capabilities: ['directory_sync', 'notification'],
+    })
+    expect(notificationSwitch(renderer).props.checked).toBe(false)
+    await act(async () => notificationSwitch(renderer).props.onCheckedChange(true))
+    expect(capabilitySave(renderer).props.disabled).toBe(false)
+    await act(async () => capabilitySave(renderer).props.onClick())
+    expect(update).toHaveBeenCalledWith('feishu-1', {
+      enabled_capabilities: ['directory_sync', 'notification'],
+      button_text: null,
+    })
+    expect(onIntegrationChange).toHaveBeenCalledWith(expect.objectContaining({
+      enabled_capabilities: ['directory_sync', 'notification'],
+    }))
+  })
 })
+
+

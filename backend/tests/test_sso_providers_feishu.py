@@ -1,5 +1,6 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, call
+
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -49,7 +50,7 @@ def install_client(monkeypatch: pytest.MonkeyPatch, result: Mock) -> AsyncClient
     return client
 
 
-def test_registry_declares_both_feishu_capabilities() -> None:
+def test_registry_declares_feishu_capabilities_without_implicit_notification():
     from app.integrations.registry import (
         IntegrationCapability,
         implicit_builtin_capabilities,
@@ -60,10 +61,10 @@ def test_registry_declares_both_feishu_capabilities() -> None:
     assert definition.capabilities == (
         IntegrationCapability.DIRECTORY_SYNC,
         IntegrationCapability.USER_LOGIN,
+        IntegrationCapability.NOTIFICATION,
     )
-    # Enabling the builtin must never hand out a new sign-in path on its own.
     assert implicit_builtin_capabilities(definition) == [
-        IntegrationCapability.DIRECTORY_SYNC
+        IntegrationCapability.DIRECTORY_SYNC,
     ]
 
 
@@ -424,3 +425,45 @@ async def test_user_info_tolerates_top_level_fields_and_rejects_errors(
         await feishu_module.fetch_user_info(
             userinfo_url=feishu_module.DEFAULT_USERINFO_URL, user_access_token="expired"
         )
+
+
+@pytest.mark.asyncio
+async def test_send_user_message_posts_text_message_with_user_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+
+    token_response = response(json_body={"code": 0, "tenant_access_token": "t-token"})
+    message_response = response(json_body={"code": 0, "data": {"message_id": "om_1"}})
+    client = AsyncClient(message_response)
+    client.request = AsyncMock(side_effect=[token_response, message_response])
+    monkeypatch.setattr(feishu_module.httpx, "AsyncClient", lambda **_kwargs: client)
+    instance = feishu_module.FeishuClient("cli_test", encrypt_secret("secret"))
+    await instance.send_user_message(
+        "ou_1", "Deployment complete", "All checks passed", "https://example.test/run"
+    )
+
+    client.request.assert_has_awaits(
+        [
+            call(
+                "POST",
+                "/auth/v3/tenant_access_token/internal",
+                json={"app_id": "cli_test", "app_secret": "secret"},
+            ),
+            call(
+                "POST",
+                "/im/v1/messages",
+                params={"receive_id_type": "user_id"},
+                headers={"Authorization": "Bearer t-token"},
+                json={
+                    "receive_id": "ou_1",
+                    "msg_type": "text",
+                    "content": json.dumps(
+                        {
+                            "text": "Deployment complete\n\nAll checks passed\n\nhttps://example.test/run"
+                        }
+                    ),
+                },
+            ),
+        ]
+    )

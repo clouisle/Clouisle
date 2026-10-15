@@ -5,8 +5,10 @@ The auto notification feature allows administrators to configure automatic notif
 ## Overview
 
 - **In-app Notifications**: All enabled auto notifications create in-app notifications
-- **External Channels**: Can be configured to send via email or Webhook
+- **External Channels**: Configure email, Webhook, and Feishu direct messages
 - **Global Configuration**: External channels are globally configured and apply to all enabled notification types
+
+Feishu delivery uses the configured Feishu integration and sends direct messages only to active users linked through Feishu directory sync. Unlinked users are skipped; delivery status is visible in notification details.
 
 ## Notification Types
 
@@ -310,4 +312,4 @@ The following notification types are enabled by default:
 - `security.account_locked`
 - `security.password_changed`
 
-External channels are not enabled by default and require manual configuration by administrators.
+External channels are not enabled by default and require manual configuration by administrators. For Feishu, enable the **Notifications** capability on the Feishu integration and include Feishu in the manual or automatic notification channel selection.

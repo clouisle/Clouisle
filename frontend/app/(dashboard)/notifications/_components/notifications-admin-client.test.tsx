@@ -126,7 +126,7 @@ mock.module('@/components/ui/checkbox', () => ({ Checkbox: passthrough('input') 
 mock.module('lucide-react', () => ({
   Plus: passthrough('i'), Trash2: passthrough('i'), ChevronLeft: passthrough('i'), ChevronRight: passthrough('i'),
   ChevronsLeft: passthrough('i'), ChevronsRight: passthrough('i'), Search: passthrough('i'), X: passthrough('i'),
-  Mail: passthrough('i'), MessageSquare: passthrough('i'), CheckCircle2: passthrough('i'), XCircle: passthrough('i'),
+  Mail: passthrough('i'), MessageSquare: passthrough('i'), MessageSquareText: passthrough('i'), CheckCircle2: passthrough('i'), XCircle: passthrough('i'),
   Loader2: passthrough('i'), Clock: passthrough('i'), Eye: passthrough('i'), MoreHorizontal: passthrough('i'),
 }))
 

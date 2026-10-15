@@ -55,6 +55,7 @@ describe('admin integrationsApi requests', () => {
       await integrationsApi.getWebhook()
       await integrationsApi.getFeishuConfig()
       await integrationsApi.getFeishuDepartments()
+      await integrationsApi.getFeishuTestRecipients('ada user')
       await integrationsApi.getLoginSettings()
       await integrationsApi.updateEmail({ smtp_enabled: false })
       await integrationsApi.updateWebhook({ webhook_enabled: true })
@@ -63,10 +64,13 @@ describe('admin integrationsApi requests', () => {
       await integrationsApi.updateLoginSettings({ sso_enabled: false })
       await integrationsApi.sendTestEmail('admin@example.com')
       await integrationsApi.sendTestWebhook()
+      await integrationsApi.checkFeishuConnection()
+      await integrationsApi.sendFeishuTestMessage('user-1', 'Test', 'Message')
       await integrationsApi.syncFeishuContacts()
       expect(get.mock.calls.map(([url]) => url)).toEqual([
         '/admin/integrations/types', '/admin/integrations/email', '/admin/integrations/webhook',
-        '/admin/integrations/feishu/config', '/admin/integrations/feishu/departments', '/admin/integrations/login-settings',
+        '/admin/integrations/feishu/config', '/admin/integrations/feishu/departments',
+        '/admin/integrations/feishu/test-recipients?search=ada%20user', '/admin/integrations/login-settings',
       ])
       expect(put.mock.calls).toEqual([
         ['/admin/integrations/email', { smtp_enabled: false }],
@@ -78,6 +82,8 @@ describe('admin integrationsApi requests', () => {
       expect(post.mock.calls).toEqual([
         ['/admin/integrations/email/test', { email: 'admin@example.com' }],
         ['/admin/integrations/webhook/test', null],
+        ['/admin/integrations/feishu/connection-check', null],
+        ['/admin/integrations/feishu/test-message', { user_id: 'user-1', title: 'Test', content: 'Message' }],
         ['/admin/integrations/feishu/sync', null, { timeout: 120000 }],
       ])
     } finally {

@@ -76,20 +76,20 @@ describe('AutoNotificationsSettingsTab', () => {
       enabled_types: ['team.member_added'],
     })
     const update = spyOn(siteSettingsApi, 'updateAutoNotifications').mockResolvedValue({
-      channels: ['email', 'webhook'], enabled_types: [],
+      channels: ['email', 'webhook', 'feishu'], enabled_types: [],
     })
     const renderer = await renderAuto()
 
     expect(renderer.root.findByProps({ id: 'global-email' }).props.checked).toBe(true)
     expect(renderer.root.findByProps({ id: 'global-webhook' }).props.checked).toBe(false)
-    expect(renderer.root.findAll((node) => typeof node.props.id === 'string' && node.props.id.startsWith('global-')).map((node) => node.props.id)).toEqual(['global-email', 'global-email', 'global-webhook', 'global-webhook'])
+    expect(renderer.root.findAll((node) => typeof node.props.id === 'string' && node.props.id.startsWith('global-')).map((node) => node.props.id)).toEqual(['global-email', 'global-email', 'global-webhook', 'global-webhook', 'global-feishu', 'global-feishu'])
 
     act(() => renderer.root.findByProps({ id: 'global-webhook' }).props.onCheckedChange())
     const firstType = renderer.root.findAll((node) => node.props.checked === true && node.props.onCheckedChange && !node.props.id)[0]
     act(() => firstType.props.onCheckedChange(false))
     await act(async () => button(renderer, 'save').props.onClick())
 
-    expect(update).toHaveBeenCalledWith({ channels: ['email', 'webhook'], enabled_types: [] })
+    expect(update).toHaveBeenCalledWith({ channels: ['email', 'feishu', 'webhook'], enabled_types: [] })
     expect(success).toHaveBeenCalledWith('saveSuccess')
   })
 

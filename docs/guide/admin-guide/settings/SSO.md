@@ -8,11 +8,11 @@ Manage external services in **Site Settings → Integrations** (`/site-settings/
 |---|---|---|
 | `oauth2`, `oidc`, `saml2`, `cas` | `user_login` | Login |
 | `email`, `webhook` | `notification` | Settings |
-| `feishu` | `directory_sync`, `user_login` | Settings (app ID/app secret, department scope, directory sync) and Login (sign-in opt-in, button text, sign-in enable/disable) |
+| `feishu` | `directory_sync`, `user_login`, `notification` | Settings (app ID/app secret, department scope, directory sync, notification capability) and Login (sign-in opt-in, button text, sign-in enable/disable) |
 
-Capabilities are statically declared by the backend registry. Enabling an integration does not grant it additional capabilities. Email, Webhook, and Feishu are singleton integrations configured through their specialized forms. **Feishu does not provide Agent messaging in this implementation.**
+Capabilities are statically declared by the backend registry. Enabling an integration does not grant it additional capabilities. Email, Webhook, and Feishu are singleton integrations configured through their specialized forms. Feishu sends notification direct messages to users linked by directory sync; it does not provide Agent messaging.
 
-Feishu is a single integration built from one Feishu app (app ID and app secret) that declares both `directory_sync` and `user_login`. Enabling the Feishu integration never grants sign-in by itself: web login is an explicit opt-in on the same integration. Turning the integration off stops both directory sync and sign-in while preserving the opt-in. See [System settings](system-settings.md) for its directory synchronization behavior.
+Feishu is a single integration built from one Feishu app (app ID and app secret) that declares `directory_sync`, `user_login`, and `notification`. Enabling the Feishu integration never grants sign-in by itself: web login is an explicit opt-in on the same integration. Turning the integration off stops directory sync, sign-in, and notifications while preserving the sign-in opt-in. See [System settings](system-settings.md) for its directory synchronization behavior.
 
 ## Permissions
 
@@ -89,8 +89,13 @@ Management uses `/api/v1/admin/integrations`:
 | GET | `/feishu/departments` | Browse visible departments |
 | PUT | `/feishu/department-scope` | Save selected departments |
 | POST | `/feishu/sync` | Run manual directory sync |
+| POST | `/feishu/connection-check` | Validate saved app credentials by requesting a tenant token; no directory scope required |
+| GET | `/feishu/test-recipients` | List up to 20 active local accounts linked to Feishu |
+| POST | `/feishu/test-message` | Send a custom message to one explicitly selected linked account; requires Notifications capability |
 
-See [SSO and Integrations API](../../api-reference/endpoints/sso.md) for request shapes. Both Feishu capability switches are saved through the generic `PUT /{id}` as `enabled_capabilities`, charged per capability that actually changes (sign-in on the login domain, directory sync on the settings domain), and the sign-in button text is a login-domain field. The `/feishu/*` endpoints stay on the settings domain and only carry app ID, app secret, department scope, and sync. Admin responses **never return credentials**, decrypted or encrypted. They expose only `credentials_configured` field names and `supported_capabilities`; do not treat a redacted response as a complete backup. Empty credential values preserve saved secrets. Secrets are Fernet-encrypted at rest and decrypted only for runtime consumers.
+See [SSO and Integrations API](../../api-reference/endpoints/sso.md) for request shapes. Both Feishu capability switches are saved through the generic `PUT /{id}` as `enabled_capabilities`, charged per capability that actually changes (sign-in on the login domain, directory sync on the settings domain), and the sign-in button text is a login-domain field. The `/feishu/*` endpoints stay on the settings domain and handle app credentials, department scope, directory sync, connection checks, and explicit single-recipient notification tests. Admin responses **never return credentials**, decrypted or encrypted. They expose only `credentials_configured` field names and `supported_capabilities`; do not treat a redacted response as a complete backup. Empty credential values preserve saved secrets. Secrets are Fernet-encrypted at rest.
+
+The Feishu card exposes a connection check and a manual test-message form. A test message is sent only to the selected active account's existing Feishu binding; it does not broadcast and does not create a notification record.
 
 ## Upgrading existing installations
 

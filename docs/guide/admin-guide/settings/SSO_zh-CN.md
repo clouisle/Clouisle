@@ -8,11 +8,11 @@
 |---|---|---|
 | `oauth2`、`oidc`、`saml2`、`cas` | `user_login` | login |
 | `email`、`webhook` | `notification` | settings |
-| `feishu` | `directory_sync`、`user_login` | settings（app_id、app_secret、部门范围、目录同步）与 login（登录开关、按钮文案、登录的启用/停用） |
+| `feishu` | `directory_sync`、`user_login`、`notification` | settings（app_id、app_secret、部门范围、通讯录同步、通知能力）与 login（登录开关、按钮文案、登录的启用/停用） |
 
-能力由后端注册表静态声明，不能通过配置添加尚未实现的功能。邮件、Webhook 和飞书为单实例集成，使用专用表单配置。**本次实现中飞书不提供 Agent 消息。**
+能力由后端注册表静态声明，不能通过配置添加尚未实现的功能。邮件、Webhook 和飞书为单实例集成，使用专用表单配置。飞书通知会向通过通讯录同步绑定的用户发送私聊；不提供 Agent 消息。
 
-飞书是由同一套飞书应用凭据（app_id、app_secret）构成的单个集成，同时声明 `directory_sync` 和 `user_login`。启用飞书集成本身不会授予登录能力，网页登录需要在同一集成上显式开启；关闭集成会同时停用目录同步与登录，但保留这项选择。飞书仍是手动、单向通讯录同步，详见[系统设置](system-settings.md)。
+飞书是由同一套飞书应用凭据（app_id、app_secret）构成的单个集成，同时声明 `directory_sync`、`user_login` 和 `notification`。启用飞书集成本身不会授予登录能力，网页登录需要在同一集成上显式开启；关闭集成会同时停用通讯录同步、登录与通知，但保留登录选项。飞书仍是手动、单向通讯录同步，详见[系统设置](system-settings.md)。
 
 ## 权限
 
@@ -60,7 +60,7 @@ OAuth2/OIDC、SAML2 和 CAS 保留原协议配置。SAML ACS 地址仍使用上�
 - `POST` 基地址、`PUT/DELETE /{id}`、`POST /{id}/test`：非单实例登录集成的创建、更新、删除与测试。
 - `GET/PUT /login-settings`：全局登录设置，保留 SSOSettings 原有 wire keys。
 - `GET/PUT /email`、`/webhook`，以及 `POST /email/test`、`/webhook/test`：通知集成配置与测试。
-- `GET/PUT /feishu/config`、`GET /feishu/departments`、`PUT /feishu/department-scope`、`POST /feishu/sync`：飞书配置和手动同步。登录开关与按钮文案/图标通过通用 `PUT /{id}`（login 域）写入，`/feishu/*` 仍属 settings 域，只负责 app_id、app_secret、部门范围与同步。
+`GET/PUT /feishu/config`、`GET /feishu/departments`、`PUT /feishu/department-scope`、`POST /feishu/sync`：飞书配置和手动同步；`POST /feishu/connection-check` 通过获取 tenant token 验证应用凭据（不要求通讯录同步范围）；`GET /feishu/test-recipients` 列出最多 20 个已绑定飞书身份的启用本地用户；`POST /feishu/test-message` 向管理员明确选择的一名已绑定用户发送自定义测试消息，要求启用“通知”能力。飞书卡片提供连接检查和手动测试消息表单；测试消息不会群发，也不会创建通知记录。登录开关与按钮文案/图标通过通用 `PUT /{id}`（login 域）写入，`/feishu/*` 仍属 settings 域，只负责应用配置、目录、测试和同步。
 
 公开登录列表改为 `GET /api/v1/sso/integrations`；旧 `/sso/providers` 无兼容别名。用户解除自己的身份连接仍使用 `DELETE /api/v1/sso/connections/{id}`。详见[SSO 与集成 API](../../api-reference/endpoints/sso.md)。
 

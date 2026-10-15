@@ -126,6 +126,8 @@ export type NotificationsMessages = {
       selectScope: string
       notifyChannels: string
       channelEmail: string
+      channelWebhook: string
+      channelFeishu: string
     }
   }
 }

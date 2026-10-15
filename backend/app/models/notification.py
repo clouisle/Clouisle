@@ -45,6 +45,7 @@ class NotificationChannel(str, Enum):
 
     EMAIL = "email"
     WEBHOOK = "webhook"
+    FEISHU = "feishu"
 
 
 class AutoNotificationType(str, Enum):
@@ -99,6 +100,7 @@ class NotificationDeliveryStatus(str, Enum):
     SENDING = "sending"  # 发送中
     SUCCESS = "success"  # 发送成功
     FAILED = "failed"  # 发送失败
+    SKIPPED = "skipped"  # 无符合条件的接收人
 
 
 class Notification(models.Model):

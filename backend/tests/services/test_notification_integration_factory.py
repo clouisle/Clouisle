@@ -4,6 +4,7 @@ import pytest
 
 from app.integrations.factory import (
     EmailNotificationIntegration,
+    FeishuNotificationIntegration,
     NotificationMessage,
     WebhookNotificationIntegration,
     get_notification_integration,
@@ -15,7 +16,8 @@ from app.models.notification import NotificationChannel
 def test_notification_resolution_requires_catalog_capability():
     assert get_notification_integration("email").id == NotificationChannel.EMAIL
     assert get_notification_integration("webhook").id == NotificationChannel.WEBHOOK
-    for integration_id in ("unknown", "dingtalk", "wechat", "feishu", "slack", "oidc"):
+    assert get_notification_integration("feishu").id == NotificationChannel.FEISHU
+    for integration_id in ("unknown", "dingtalk", "wechat", "slack", "oidc"):
         with pytest.raises(ValueError):
             get_notification_integration(integration_id)
 
@@ -103,3 +105,48 @@ def test_factory_dispatches_email_and_webhook_tasks_independently(monkeypatch):
     )
     email_delay.assert_called_once_with("notification-email")
     webhook_delay.assert_called_once_with("notification-webhook")
+
+
+@pytest.mark.asyncio
+async def test_feishu_notification_requires_enabled_capability_and_credentials(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from app.integrations.registry import IntegrationCapability
+    from app.services import integration_config
+
+    integration = SimpleNamespace(
+        is_enabled=True,
+        enabled_capabilities=[IntegrationCapability.NOTIFICATION],
+        config={"app_id": "cli_test"},
+        credentials={"app_secret": "encrypted"},
+    )
+    monkeypatch.setattr(
+        integration_config,
+        "get_builtin_integration",
+        AsyncMock(return_value=integration),
+    )
+    handler = FeishuNotificationIntegration()
+    assert await handler.is_enabled()
+    assert await handler.validate_configuration() is None
+
+    integration.enabled_capabilities = []
+    assert await handler.validate_configuration() == "feishu_notification_not_enabled"
+    integration.enabled_capabilities = [IntegrationCapability.NOTIFICATION]
+    integration.credentials = {}
+    assert (
+        await handler.validate_configuration() == "feishu_notification_not_configured"
+    )
+
+
+def test_factory_dispatches_feishu_notification_task(monkeypatch):
+    from app.tasks import notification as tasks
+
+    delay = Mock(return_value=type("TaskResult", (), {"id": "feishu-id"})())
+    monkeypatch.setattr(tasks.send_notification_feishu_task, "delay", delay)
+    assert (
+        dispatch_notification_task(NotificationChannel.FEISHU, "notification-feishu").id
+        == "feishu-id"
+    )
+    delay.assert_called_once_with("notification-feishu")

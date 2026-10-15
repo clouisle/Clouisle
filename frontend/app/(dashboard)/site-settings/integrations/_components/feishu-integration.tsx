@@ -11,8 +11,16 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { integrationsApi } from '@/lib/api/admin/integrations'
-import type { FeishuConfig, FeishuDepartment, Integration } from '@/lib/api/admin/integrations'
+import type { FeishuConfig, FeishuDepartment, FeishuTestRecipient, Integration } from '@/lib/api/admin/integrations'
 import { ApiError } from '@/lib/api/client'
 import { API_BASE_URL } from '@/lib/constants'
 
@@ -114,13 +122,21 @@ export function FeishuIntegrationTab({
   const [saving, setSaving] = React.useState(false)
   const [savingScope, setSavingScope] = React.useState(false)
   const [syncing, setSyncing] = React.useState(false)
+  const [checkingConnection, setCheckingConnection] = React.useState(false)
+  const [testRecipients, setTestRecipients] = React.useState<FeishuTestRecipient[]>([])
+  const [testRecipientId, setTestRecipientId] = React.useState('')
+  const [testTitle, setTestTitle] = React.useState('Clouisle Feishu test')
+  const [testContent, setTestContent] = React.useState('This is a test message from Clouisle.')
+  const [sendingTest, setSendingTest] = React.useState(false)
 
   const enabledCapabilities = integration?.enabled_capabilities
   const savedButtonText = integration?.button_text ?? ''
   const savedDirectorySync = Boolean(integration?.enabled_capabilities.includes('directory_sync'))
   const savedLoginEnabled = Boolean(integration?.enabled_capabilities.includes('user_login'))
+  const savedNotificationEnabled = Boolean(integration?.enabled_capabilities.includes('notification'))
   const [directorySyncEnabled, setDirectorySyncEnabled] = React.useState(savedDirectorySync)
   const [loginEnabled, setLoginEnabled] = React.useState(savedLoginEnabled)
+  const [notificationEnabled, setNotificationEnabled] = React.useState(savedNotificationEnabled)
   const [buttonText, setButtonText] = React.useState(savedButtonText)
   const [savingCapabilities, setSavingCapabilities] = React.useState(false)
   const [copiedRedirect, setCopiedRedirect] = React.useState(false)
@@ -134,8 +150,9 @@ export function FeishuIntegrationTab({
   React.useEffect(() => {
     setDirectorySyncEnabled(savedDirectorySync)
     setLoginEnabled(savedLoginEnabled)
+    setNotificationEnabled(savedNotificationEnabled)
     setButtonText(savedButtonText)
-  }, [enabledCapabilities, savedDirectorySync, savedLoginEnabled, savedButtonText])
+  }, [enabledCapabilities, savedDirectorySync, savedLoginEnabled, savedNotificationEnabled, savedButtonText])
 
   // Both capabilities are opt-in and only run while the integration itself is enabled.
   const capabilitiesReadOnly = !integration || !config.is_enabled
@@ -144,13 +161,14 @@ export function FeishuIntegrationTab({
   const nextCapabilities = integration
     ? integration.supported_capabilities.filter((capability) => capability === 'directory_sync'
       ? directorySyncEnabled
-      : capability === 'user_login' ? loginEnabled : false)
+      : capability === 'user_login' ? loginEnabled
+        : capability === 'notification' ? notificationEnabled : false)
     : []
   const capabilitiesChanged = integration
     ? nextCapabilities.join() !== integration.enabled_capabilities.join()
     : false
   const canSaveCapabilities = Boolean(integration) && !capabilitiesReadOnly
-    && (canEditDirectorySync || canEditLogin)
+    && (canEditDirectorySync || canEditLogin || (canUpdate && integration.supported_capabilities.includes('notification')))
     && (capabilitiesChanged || (canEditLogin && buttonText.trim() !== savedButtonText.trim()))
   // Departments can only be browsed once the app credentials are saved and the
   // integration actually serves directory sync; requesting them earlier is rejected.
@@ -277,6 +295,49 @@ export function FeishuIntegrationTab({
     }
   }
 
+  const checkConnection = async () => {
+    if (!canUpdate || !config.is_enabled) return
+    setCheckingConnection(true)
+    try {
+      await integrationsApi.checkFeishuConnection()
+      toast.success(t('integrations.feishuConnectionCheckSuccess'))
+    } catch (error) {
+      console.error('Feishu connection check failed:', error)
+      toastFallback(error, t('integrations.feishuConnectionCheckFailed'))
+    } finally {
+      setCheckingConnection(false)
+    }
+  }
+
+  const loadTestRecipients = React.useCallback(async () => {
+    try {
+      const result = await integrationsApi.getFeishuTestRecipients()
+      setTestRecipients(result)
+      setTestRecipientId((current) => result.some((recipient) => recipient.id === current) ? current : '')
+    } catch (error) {
+      console.error('Failed to load Feishu test recipients:', error)
+      toastFallback(error, t('integrations.feishuTestFailed'))
+    }
+  }, [t])
+
+  React.useEffect(() => {
+    if (integration?.supported_capabilities.includes('notification')) loadTestRecipients()
+  }, [integration?.supported_capabilities, loadTestRecipients])
+
+  const sendTestMessage = async () => {
+    if (!canUpdate || !testRecipientId || !testTitle.trim() || !testContent.trim()) return
+    setSendingTest(true)
+    try {
+      await integrationsApi.sendFeishuTestMessage(testRecipientId, testTitle.trim(), testContent.trim())
+      toast.success(t('integrations.feishuTestSent'))
+    } catch (error) {
+      console.error('Failed to send Feishu test message:', error)
+      toastFallback(error, t('integrations.feishuTestFailed'))
+    } finally {
+      setSendingTest(false)
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -310,6 +371,18 @@ export function FeishuIntegrationTab({
               checked={loginEnabled}
               disabled={!canEditLogin || savingCapabilities}
               onCheckedChange={setLoginEnabled}
+            />
+          </div>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-medium">{t('integrations.capabilities.notification')}</h3>
+              <p className="text-xs text-muted-foreground">{t('integrations.feishuNotificationDescription')}</p>
+            </div>
+            <Switch
+              aria-label={t('integrations.capabilities.notification')}
+              checked={notificationEnabled}
+              disabled={!canUpdate || capabilitiesReadOnly || savingCapabilities}
+              onCheckedChange={setNotificationEnabled}
             />
           </div>
           <div className="space-y-2">
@@ -378,6 +451,53 @@ export function FeishuIntegrationTab({
               {t('save')}
             </Button>
           </div>
+        )}
+        {canUpdate && (
+          <section className="space-y-4 border-t pt-4" aria-labelledby="feishu-notification-test-title">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 id="feishu-notification-test-title" className="text-sm font-medium">{t('integrations.feishuTestMessage')}</h3>
+                <p className="text-xs text-muted-foreground">{t('integrations.feishuNotificationDescription')}</p>
+              </div>
+              <Button type="button" variant="outline" onClick={checkConnection} disabled={checkingConnection || !config.is_enabled}>
+                {checkingConnection && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {t('integrations.feishuConnectionCheck')}
+              </Button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="feishu-test-recipient-trigger">{t('integrations.feishuTestRecipient')}</Label>
+                <Select value={testRecipientId} onValueChange={setTestRecipientId}>
+                  <SelectTrigger id="feishu-test-recipient-trigger" aria-label={t('integrations.feishuTestRecipient')} className="w-full">
+                    <SelectValue placeholder={testRecipients.length ? t('integrations.feishuTestRecipientPlaceholder') : t('integrations.feishuNoTestRecipients')}>
+                      {testRecipients.find((recipient) => recipient.id === testRecipientId)?.username ?? ''}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {testRecipients.map((recipient) => (
+                      <SelectItem key={recipient.id} value={recipient.id}>
+                        {recipient.username}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="feishu-test-title">{t('integrations.feishuTestTitle')}</Label>
+                <Input id="feishu-test-title" value={testTitle} onChange={(event) => setTestTitle(event.target.value)} maxLength={200} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="feishu-test-content">{t('integrations.feishuTestContent')}</Label>
+              <Textarea id="feishu-test-content" value={testContent} onChange={(event) => setTestContent(event.target.value)} maxLength={2000} rows={3} />
+            </div>
+            <div className="flex justify-end">
+              <Button type="button" onClick={sendTestMessage} disabled={sendingTest || !testRecipientId || !testTitle.trim() || !testContent.trim() || !savedNotificationEnabled}>
+                {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {t('integrations.feishuTestSend')}
+              </Button>
+            </div>
+          </section>
         )}
         {departmentsAvailable && (
           <section className="space-y-3 border-t pt-4" aria-labelledby="feishu-departments-title">

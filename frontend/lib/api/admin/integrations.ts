@@ -19,6 +19,12 @@ export interface FeishuConfig {
   is_enabled: boolean
 }
 
+export interface FeishuTestRecipient {
+  id: string
+  username: string
+  email: string
+}
+
 export const integrationsApi = {
   list: (): Promise<Integration[]> => api.get('/admin/integrations'),
   types: (): Promise<IntegrationType[]> => api.get('/admin/integrations/types'),
@@ -39,5 +45,8 @@ export const integrationsApi = {
   updateFeishuConfig: (data: { app_id?: string; app_secret?: string; is_enabled?: boolean }): Promise<FeishuConfig> => api.put('/admin/integrations/feishu/config', data),
   getFeishuDepartments: (): Promise<FeishuDepartment[]> => api.get('/admin/integrations/feishu/departments'),
   updateFeishuDepartmentScope: (department_ids: string[]): Promise<{ department_ids: string[] }> => api.put('/admin/integrations/feishu/department-scope', { department_ids }),
+  checkFeishuConnection: (): Promise<{ status: string }> => api.post('/admin/integrations/feishu/connection-check', null),
+  getFeishuTestRecipients: (search = ''): Promise<FeishuTestRecipient[]> => api.get(`/admin/integrations/feishu/test-recipients${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+  sendFeishuTestMessage: (user_id: string, title: string, content: string): Promise<{ status: string }> => api.post('/admin/integrations/feishu/test-message', { user_id, title, content }),
   syncFeishuContacts: (): Promise<{ created: number; updated: number; skipped: number; teams_created: number }> => api.post('/admin/integrations/feishu/sync', null, { timeout: 120000 }),
 }

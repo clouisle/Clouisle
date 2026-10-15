@@ -355,3 +355,71 @@ def test_feishu_error_messages_are_translated(key):
     assert has_translation(key, "en")
     assert has_translation(key, "zh")
     assert t(key, lang="zh") != t(key, lang="en")
+
+
+@pytest.mark.asyncio
+async def test_connection_check_uses_token_authentication_without_directory_scope(
+    monkeypatch,
+):
+    client = _client(check_connection=AsyncMock())
+    monkeypatch.setattr(
+        feishu, "_configured_auth_client", AsyncMock(return_value=client)
+    )
+
+    response = await feishu.check_connection(current_user=SimpleNamespace())
+
+    assert response["data"] == {"status": "ok"}
+    client.check_connection.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_test_message_only_sends_to_the_selected_active_binding(monkeypatch):
+    user_id = uuid4()
+    binding = SimpleNamespace(feishu_user_id="ou-bound")
+
+    class BindingQuery:
+        async def first(self):
+            return binding
+
+    monkeypatch.setattr(
+        "app.models.feishu_user.FeishuUser.filter", lambda **kwargs: BindingQuery()
+    )
+    client = _client(send_user_message=AsyncMock())
+    monkeypatch.setattr(
+        feishu, "_configured_notification_client", AsyncMock(return_value=client)
+    )
+
+    response = await feishu.send_test_message(
+        feishu.FeishuTestMessageRequest(
+            user_id=str(user_id),
+            title="  Health check  ",
+            content="  Sent only to me.  ",
+        ),
+        current_user=SimpleNamespace(),
+    )
+
+    assert response["data"] == {"status": "sent"}
+    client.send_user_message.assert_awaited_once_with(
+        "ou-bound", "Health check", "Sent only to me."
+    )
+
+
+@pytest.mark.asyncio
+async def test_test_message_rejects_unbound_user_without_sending(monkeypatch):
+    class BindingQuery:
+        async def first(self):
+            return None
+
+    monkeypatch.setattr(
+        "app.models.feishu_user.FeishuUser.filter", lambda **kwargs: BindingQuery()
+    )
+
+    with pytest.raises(BusinessError) as exc:
+        await feishu.send_test_message(
+            feishu.FeishuTestMessageRequest(
+                user_id=str(uuid4()), title="Test", content="Test"
+            ),
+            current_user=SimpleNamespace(),
+        )
+
+    assert exc.value.msg_key == "feishu_test_recipient_unavailable"

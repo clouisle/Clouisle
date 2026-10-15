@@ -1204,6 +1204,16 @@ msgstr "Save the Feishu app ID and app secret before browsing or syncing departm
 msgid "feishu_secret_undecryptable"
 msgstr "The stored Feishu app secret cannot be decrypted. Save the app secret again."
 
+msgid "feishu_notification_not_enabled"
+msgstr "Enable the Feishu integration and its notifications capability before sending notifications."
+
+msgid "feishu_notification_not_configured"
+msgstr "Save the Feishu app ID and app secret, then grant the app permission to send direct messages."
+
+
+msgid "feishu_test_recipient_unavailable"
+msgstr "Select an active user linked to Feishu."
+
 msgid "force_password_change_required"
 msgstr "You are required to change your password before continuing."
 

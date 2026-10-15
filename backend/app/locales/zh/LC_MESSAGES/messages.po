@@ -1205,6 +1205,16 @@ msgstr "请先保存飞书 App ID 和 App Secret，再浏览或同步部门。"
 msgid "feishu_secret_undecryptable"
 msgstr "已保存的飞书应用密钥无法解密，请重新保存应用密钥。"
 
+msgid "feishu_notification_not_enabled"
+msgstr "请先启用飞书集成及其通知能力，再发送通知。"
+
+msgid "feishu_notification_not_configured"
+msgstr "请保存飞书 App ID 和 App Secret，并授予应用发送私聊消息的权限。"
+
+msgid "feishu_test_recipient_unavailable"
+msgstr "请选择已绑定飞书的启用用户。"
+
+
 msgid "force_password_change_required"
 msgstr "您需要先修改密码才能继续。"
 

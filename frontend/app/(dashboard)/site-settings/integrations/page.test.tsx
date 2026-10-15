@@ -7,14 +7,14 @@ const builtin = (provider_type: 'email' | 'webhook' | 'feishu'): Integration => 
   id: provider_type, name: provider_type, display_name: provider_type, provider_type,
   icon_url: null, button_text: null, is_enabled: true,
   enabled_capabilities: [provider_type === 'feishu' ? 'directory_sync' : 'notification'],
-  supported_capabilities: provider_type === 'feishu' ? ['directory_sync', 'user_login'] : ['notification'],
+  supported_capabilities: provider_type === 'feishu' ? ['directory_sync', 'user_login', 'notification'] : ['notification'],
   config: {}, attribute_mapping: {}, credentials_configured: [],
   login_config: { allow_signup: true, require_approval: false, default_role_id: null }, created_at: '', updated_at: '',
 })
 const login: Integration = { ...builtin('email'), id: 'login-1', name: 'company', display_name: 'Company Login', provider_type: 'oidc', enabled_capabilities: ['user_login'], supported_capabilities: ['user_login'] }
 const catalog: IntegrationType[] = [
   { provider_type: 'oidc', display_name: 'OpenID Connect', supported_capabilities: ['user_login'], singleton: false },
-  { provider_type: 'feishu', display_name: 'Feishu', supported_capabilities: ['directory_sync', 'user_login'], singleton: true },
+  { provider_type: 'feishu', display_name: 'Feishu', supported_capabilities: ['directory_sync', 'user_login', 'notification'], singleton: true }
 ]
 const list = mock(async () => [builtin('email'), builtin('webhook'), builtin('feishu'), login])
 const types = mock(async () => catalog)
@@ -92,6 +92,7 @@ test('lists login integrations alongside builtins and opens existing configurati
   expect(feishuCard.findAllByType('span').map((badge) => badge.children.join(''))).toEqual([
     'integrations.capabilities.directory_sync: integrations.enabled',
     'integrations.capabilities.user_login: integrations.disabled',
+    'integrations.capabilities.notification: integrations.disabled',
   ])
   act(() => feishuCard.findAllByProps({ 'aria-label': 'integrations.feishu', type: 'button' }).find((node) => node.props.onClick)?.props.onClick())
   expect(feishuProps?.config).toEqual(feishu)

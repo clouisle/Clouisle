@@ -13,6 +13,7 @@ export type SiteSettingsMessages = {
       description: string
       email: string
       webhook: string
+      feishu: string
     }
     integrations: {
       title: string
@@ -26,6 +27,7 @@ export type SiteSettingsMessages = {
       webhook: string
       feishu: string
       feishuDescription: string
+      feishuNotificationDescription: string
       configure: string
       secretConfigured: string
       enabled: string
@@ -48,6 +50,19 @@ export type SiteSettingsMessages = {
       feishuSync: string
       feishuSyncFailed: string
       feishuSyncResult: string
+      feishuConnectionCheck: string
+      feishuConnectionCheckSuccess: string
+      feishuConnectionCheckFailed: string
+      feishuTestMessage: string
+      feishuTestRecipient: string
+      feishuTestRecipientPlaceholder: string
+      feishuTestTitle: string
+      feishuTestContent: string
+      feishuTestSend: string
+      feishuTestSent: string
+      feishuTestFailed: string
+      feishuNoTestRecipients: string
+      feishuTestRecipientUnavailable: string
       feishuLogin: string
       feishuDirectorySyncDescription: string
       feishuLoginDescription: string

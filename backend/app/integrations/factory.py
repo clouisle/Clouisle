@@ -107,8 +107,48 @@ class WebhookNotificationIntegration:
         return send_notification_webhook_task.delay(notification_id)
 
 
+class FeishuNotificationIntegration:
+    id = NotificationChannel.FEISHU
+    not_enabled_message_key = "feishu_notification_not_enabled"
+    not_configured_message_key = "feishu_notification_not_configured"
+
+    async def is_enabled(self) -> bool:
+        from app.services.integration_config import get_builtin_integration
+
+        integration = await get_builtin_integration("feishu")
+        return (
+            integration.is_enabled
+            and IntegrationCapability.NOTIFICATION in integration.enabled_capabilities
+        )
+
+    async def validate_configuration(self) -> str | None:
+        from app.services.integration_config import get_builtin_integration
+
+        try:
+            integration = await get_builtin_integration("feishu")
+        except ValueError:
+            return self.not_configured_message_key
+        if (
+            not integration.is_enabled
+            or IntegrationCapability.NOTIFICATION
+            not in integration.enabled_capabilities
+        ):
+            return self.not_enabled_message_key
+        if not integration.config.get("app_id") or not integration.credentials.get(
+            "app_secret"
+        ):
+            return self.not_configured_message_key
+        return None
+
+    def dispatch_task(self, notification_id: str):
+        from app.tasks.notification import send_notification_feishu_task
+
+        return send_notification_feishu_task.delay(notification_id)
+
+
 _email_handler = EmailNotificationIntegration()
 _webhook_handler = WebhookNotificationIntegration()
+_feishu_handler = FeishuNotificationIntegration()
 
 
 def get_notification_integration(
@@ -121,6 +161,8 @@ def get_notification_integration(
         return _email_handler
     if definition.provider_type == "webhook":
         return _webhook_handler
+    if definition.provider_type == "feishu":
+        return _feishu_handler
     raise ValueError(f"No notification handler for integration: {provider_type}")
 
 

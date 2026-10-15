@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
+from tortoise.expressions import Q
 
 from app.api.deps import PermissionChecker
 from app.integrations.feishu import (
@@ -36,16 +37,14 @@ class FeishuDepartmentScopeUpdate(BaseModel):
     department_ids: list[str] = Field(min_length=1, max_length=500)
 
 
-def _new_client(app_id: str, encrypted_secret: str) -> FeishuClient:
-    return FeishuClient(app_id, encrypted_secret)
+class FeishuTestMessageRequest(BaseModel):
+    user_id: str = Field(min_length=1, max_length=255)
+    title: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1, max_length=2000)
 
 
 async def _configured_client() -> FeishuClient:
-    """Client for the saved Feishu app, or an actionable administrator error.
-
-    `BAD_REQUEST` (not a field validation code) so the administrator sees the
-    backend message instead of a bare "validation error".
-    """
+    """Client for directory operations, or an actionable administrator error."""
     integration = await get_builtin_integration("feishu")
     app_id = integration.config.get("app_id", "")
     encrypted_secret = integration.credentials.get("app_secret", "")
@@ -61,6 +60,110 @@ async def _configured_client() -> FeishuClient:
             code=ResponseCode.BAD_REQUEST, msg_key="feishu_directory_sync_disabled"
         )
     return _new_client(app_id, encrypted_secret)
+
+
+async def _configured_auth_client() -> FeishuClient:
+    integration = await get_builtin_integration("feishu")
+    app_id = integration.config.get("app_id", "")
+    app_secret = integration.credentials.get("app_secret", "")
+    if not app_id or not app_secret:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST, msg_key="feishu_not_configured"
+        )
+    return _new_client(app_id, app_secret)
+
+
+async def _configured_notification_client() -> FeishuClient:
+    integration = await get_builtin_integration("feishu")
+    app_id = integration.config.get("app_id", "")
+    encrypted_secret = integration.credentials.get("app_secret", "")
+    if not app_id or not encrypted_secret:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="feishu_notification_not_configured",
+        )
+    if (
+        not integration.is_enabled
+        or "notification" not in integration.enabled_capabilities
+    ):
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST, msg_key="feishu_notification_not_enabled"
+        )
+    return _new_client(app_id, encrypted_secret)
+
+
+@router.post("/connection-check", response_model=Response[dict[str, str]])
+async def check_connection(
+    current_user: User = Depends(
+        PermissionChecker("admin:integrations:settings:update")
+    ),
+):
+    try:
+        client = await _configured_auth_client()
+        await client.check_connection()
+    except BusinessError:
+        raise
+    except Exception as exc:
+        raise _feishu_failure(exc, "Feishu connection check") from exc
+    return success(data={"status": "ok"})
+
+
+@router.get("/test-recipients", response_model=Response[list[dict[str, str]]])
+async def list_test_recipients(
+    search: str = "",
+    current_user: User = Depends(PermissionChecker("admin:integrations:settings:read")),
+):
+    from app.models.feishu_user import FeishuUser
+
+    query = FeishuUser.filter(user__is_active=True).select_related("user")
+    if search.strip():
+        term = search.strip()
+        query = query.filter(
+            Q(user__username__icontains=term) | Q(user__email__icontains=term)
+        )
+    bindings = await query.order_by("user__username").limit(20)
+    return success(
+        data=[
+            {
+                "id": str(item.user_id),
+                "username": item.user.username,
+                "email": item.user.email,
+            }
+            for item in bindings
+        ]
+    )
+
+
+@router.post("/test-message", response_model=Response[dict[str, str]])
+async def send_test_message(
+    data: FeishuTestMessageRequest,
+    current_user: User = Depends(
+        PermissionChecker("admin:integrations:settings:update")
+    ),
+):
+    from app.models.feishu_user import FeishuUser
+
+    binding = await FeishuUser.filter(
+        user_id=data.user_id, user__is_active=True
+    ).first()
+    if not binding:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST, msg_key="feishu_test_recipient_unavailable"
+        )
+    try:
+        client = await _configured_notification_client()
+        await client.send_user_message(
+            binding.feishu_user_id, data.title.strip(), data.content.strip()
+        )
+    except BusinessError:
+        raise
+    except Exception as exc:
+        raise _feishu_failure(exc, "Feishu test message") from exc
+    return success(data={"status": "sent"})
+
+
+def _new_client(app_id: str, encrypted_secret: str) -> FeishuClient:
+    return FeishuClient(app_id, encrypted_secret)
 
 
 def _feishu_failure(exc: Exception, context: str) -> BusinessError:

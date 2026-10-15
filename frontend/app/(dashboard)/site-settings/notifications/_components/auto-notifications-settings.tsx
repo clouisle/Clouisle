@@ -31,7 +31,7 @@ const NOTIFICATION_CATEGORIES = {
 } as const
 
 // Available channels
-const CHANNELS = ['email', 'webhook'] as const
+const CHANNELS = ['email', 'webhook', 'feishu'] as const
 
 interface AutoNotificationsSettingsTabProps {
   canUpdate: boolean

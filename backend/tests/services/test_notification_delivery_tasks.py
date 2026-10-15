@@ -300,3 +300,106 @@ def test_email_task_marks_failed_and_retries_after_channel_exception():
     )
     retry.assert_called_once()
     assert retry.call_args.kwargs["countdown"] == 180
+
+
+@pytest.mark.anyio
+async def test_feishu_recipients_follow_scope_and_skip_unbound_or_inactive_users():
+    team_id = uuid4()
+    active = SimpleNamespace(id=uuid4(), is_active=True, locale="zh")
+    inactive = SimpleNamespace(id=uuid4(), is_active=False, locale="en")
+    member_orm = MagicMock()
+    member_orm.prefetch_related = AsyncMock(
+        return_value=[
+            SimpleNamespace(user=active),
+            SimpleNamespace(user=inactive),
+        ]
+    )
+    bindings_orm = query(
+        all=[SimpleNamespace(user_id=active.id, feishu_user_id="ou_active")]
+    )
+
+    with (
+        patch.object(
+            tasks.TeamMember, "filter", return_value=member_orm
+        ) as member_filter,
+        patch.object(
+            tasks.FeishuUser, "filter", return_value=bindings_orm
+        ) as binding_filter,
+    ):
+        recipients = await tasks._get_feishu_recipients(
+            notification(scope=NotificationScope.TEAM, team_id=team_id)
+        )
+
+    member_filter.assert_called_once_with(team_id=team_id)
+    binding_filter.assert_called_once_with(user_id__in=[active.id])
+    assert recipients == [("ou_active", "zh")]
+
+
+@pytest.mark.anyio
+async def test_feishu_delivery_sends_to_linked_users_and_records_partial_success():
+    item = notification()
+    context = tasks.NotificationContext(notification=item, site_name="Clouisle")
+    integration = SimpleNamespace(
+        config={"app_id": "cli_test"}, credentials={"app_secret": "encrypted"}
+    )
+    client = SimpleNamespace(
+        send_user_message=AsyncMock(side_effect=[None, OSError("rejected")])
+    )
+    updates = AsyncMock()
+
+    with (
+        patch.object(tasks, "_update_delivery_status", new=updates),
+        patch.object(
+            tasks, "_load_notification_context", new=AsyncMock(return_value=context)
+        ),
+        patch.object(
+            tasks,
+            "_get_feishu_recipients",
+            new=AsyncMock(return_value=[("ou_1", "en"), ("ou_2", "zh")]),
+        ),
+        patch.object(
+            tasks, "get_builtin_integration", new=AsyncMock(return_value=integration)
+        ),
+        patch.object(tasks, "FeishuClient", return_value=client) as client_factory,
+        patch.object(
+            tasks,
+            "_build_notification_message",
+            side_effect=[("title-en", "body-en"), ("标题", "正文")],
+        ),
+    ):
+        assert await tasks._send_notification_feishu(item.id) is True
+
+    client_factory.assert_called_once_with("cli_test", "encrypted")
+    assert client.send_user_message.await_args_list == [
+        call("ou_1", "title-en", "body-en", item.link_url),
+        call("ou_2", "标题", "正文", item.link_url),
+    ]
+    assert updates.await_args_list[-1].args[:3] == (
+        item.id,
+        NotificationChannel.FEISHU,
+        NotificationDeliveryStatus.SUCCESS,
+    )
+    assert "1/2" in updates.await_args_list[-1].args[3]
+
+
+@pytest.mark.anyio
+async def test_feishu_delivery_marks_no_bound_recipients_skipped():
+    item = notification()
+    context = tasks.NotificationContext(notification=item, site_name="Clouisle")
+    updates = AsyncMock()
+    with (
+        patch.object(tasks, "_update_delivery_status", new=updates),
+        patch.object(
+            tasks, "_load_notification_context", new=AsyncMock(return_value=context)
+        ),
+        patch.object(tasks, "_get_feishu_recipients", new=AsyncMock(return_value=[])),
+        patch.object(tasks, "get_builtin_integration", new=AsyncMock()),
+    ):
+        assert await tasks._send_notification_feishu(item.id) is True
+
+    assert updates.await_args_list[-1].args == (
+        item.id,
+        NotificationChannel.FEISHU,
+        NotificationDeliveryStatus.SKIPPED,
+        "feishu_no_bound_recipients",
+    )

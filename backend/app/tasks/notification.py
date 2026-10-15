@@ -11,6 +11,9 @@ import markdown  # type: ignore[import-untyped]
 from app.core.celery import celery_app
 from app.core.i18n import t
 from app.core.timezone import now_utc
+from app.integrations.feishu import FeishuClient
+from app.services.integration_config import get_builtin_integration
+from app.models.feishu_user import FeishuUser
 from app.integrations.factory import (
     NotificationMessage,
     get_notification_integration,
@@ -94,6 +97,35 @@ async def _load_notification_context(
         team=team,
         user=user,
     )
+
+
+async def _get_feishu_recipients(notification: Notification) -> list[tuple[str, str]]:
+    """Return active recipients as (Feishu user ID, locale) pairs."""
+    if notification.scope == NotificationScope.GLOBAL:
+        users = await User.filter(is_active=True).all()
+    elif notification.scope == NotificationScope.TEAM and notification.team_id:
+        members = await TeamMember.filter(
+            team_id=notification.team_id
+        ).prefetch_related("user")
+        users = [member.user for member in members if member.user.is_active]
+    elif notification.scope == NotificationScope.USER and notification.user_id:
+        user = await User.filter(id=notification.user_id, is_active=True).first()
+        users = [user] if user else []
+    else:
+        return []
+
+    user_ids = list(dict.fromkeys(user.id for user in users))
+    if not user_ids:
+        return []
+    bindings = await FeishuUser.filter(user_id__in=user_ids).all()
+    binding_by_user_id = {
+        str(binding.user_id): binding.feishu_user_id for binding in bindings
+    }
+    return [
+        (binding_by_user_id[str(user.id)], getattr(user, "locale", "en") or "en")
+        for user in users
+        if str(user.id) in binding_by_user_id
+    ]
 
 
 async def _update_delivery_status(
@@ -465,3 +497,79 @@ async def _send_notification_webhook(notification_id: UUID) -> bool:
         return True
     else:
         raise RuntimeError("webhook_send_failed")
+
+
+@celery_app.task(name="send_notification_feishu", bind=True, max_retries=3)
+def send_notification_feishu_task(self, notification_id: str):
+    loop = _get_event_loop()
+    try:
+        loop.run_until_complete(_send_notification_feishu(UUID(notification_id)))
+    except Exception as exc:
+        loop.run_until_complete(
+            _update_delivery_status(
+                UUID(notification_id),
+                NotificationChannel.FEISHU,
+                NotificationDeliveryStatus.FAILED,
+                _delivery_error_message(),
+            )
+        )
+        raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
+
+
+async def _send_notification_feishu(notification_id: UUID) -> bool:
+    await _update_delivery_status(
+        notification_id,
+        NotificationChannel.FEISHU,
+        NotificationDeliveryStatus.SENDING,
+    )
+    ctx = await _load_notification_context(notification_id)
+    if not ctx:
+        raise ValueError("notification_not_found")
+
+    recipients = await _get_feishu_recipients(ctx.notification)
+    if not recipients:
+        await _update_delivery_status(
+            notification_id,
+            NotificationChannel.FEISHU,
+            NotificationDeliveryStatus.SKIPPED,
+            "feishu_no_bound_recipients",
+        )
+        return True
+
+    integration = await get_builtin_integration("feishu")
+    client = FeishuClient(
+        integration.config.get("app_id", ""),
+        integration.credentials.get("app_secret", ""),
+    )
+    successes = 0
+    failures = 0
+    for feishu_user_id, locale in recipients:
+        title, content = _build_notification_message(ctx, locale)
+        try:
+            await client.send_user_message(
+                feishu_user_id, title, content, ctx.notification.link_url
+            )
+            successes += 1
+        except Exception:
+            failures += 1
+            logger.exception(
+                "Feishu notification failed for recipient %s", feishu_user_id
+            )
+
+    if successes == 0:
+        raise RuntimeError("feishu_send_failed")
+
+    error_message = None
+    if failures:
+        error_message = t(
+            "notification_delivery_partial_success",
+            success_count=successes,
+            total_count=len(recipients),
+        )
+    await _update_delivery_status(
+        notification_id,
+        NotificationChannel.FEISHU,
+        NotificationDeliveryStatus.SUCCESS,
+        error_message,
+    )
+    return True

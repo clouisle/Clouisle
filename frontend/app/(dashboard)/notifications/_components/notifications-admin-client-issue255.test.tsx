@@ -51,6 +51,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 const deliveries = [
   { channel: 'email', status: 'success', error_message: null, retry_count: 0 },
   { channel: 'webhook', status: 'sending', error_message: null, retry_count: 0 },
+  { channel: 'feishu', status: 'skipped', error_message: 'feishu_no_bound_recipients', retry_count: 0 },
   { channel: 'unknown', status: 'pending', error_message: null, retry_count: 0 },
 ]
 const item = { id: 'n1', title: 'First', scope: 'global', level: 'high', created_at: 'now', deliveries }

@@ -273,3 +273,24 @@ test("creates a global notification with the selected email channel", async () =
   expect(onOpenChange).toHaveBeenCalledWith(false);
   act(() => renderer.unmount());
 });
+
+test("creates a notification with Feishu delivery selected", async () => {
+  const renderer = await render();
+  const [title] = renderer.root.findAllByType("input");
+
+  await act(async () => {
+    title.props.onChange({ target: { value: "Maintenance" } });
+    renderer.root.findByType("textarea").props.onChange({ target: { value: "Tonight" } });
+    renderer.root
+      .findAllByProps({ id: "channel-feishu" })
+      .find((node) => typeof node.props.onChange === "function")!
+      .props.onChange({ target: { checked: true } });
+  });
+  await act(async () => renderer.root.findAllByType("button").at(-1)!.props.onClick());
+
+  expect(adminCreate).toHaveBeenCalledWith(
+    expect.objectContaining({ notify_channels: ["feishu"] }),
+    { silent: true },
+  );
+  act(() => renderer.unmount());
+});

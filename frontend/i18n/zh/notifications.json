@@ -39,14 +39,16 @@
     "viewNotification": "查看",
     "channel": {
       "email": "邮件",
-      "webhook": "Webhook"
+      "webhook": "Webhook",
+      "feishu": "飞书"
     },
     "deliveryStatus": {
       "title": "发送状态",
       "pending": "待发送",
       "sending": "发送中",
       "success": "已发送",
-      "failed": "发送失败"
+      "failed": "发送失败",
+      "skipped": "已跳过：没有已绑定的飞书接收人"
     },
     "retryCount": "已重试 {count} 次",
     "toast": {
@@ -123,7 +125,9 @@
       "selectTeam": "选择团队",
       "selectScope": "选择范围",
       "notifyChannels": "外部通知渠道",
-      "channelEmail": "邮件"
+      "channelEmail": "邮件",
+      "channelWebhook": "Webhook",
+      "channelFeishu": "飞书"
     }
   }
 }

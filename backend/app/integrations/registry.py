@@ -22,13 +22,17 @@ class IntegrationDefinition:
 def implicit_builtin_capabilities(definition: IntegrationDefinition) -> list[str]:
     """Capabilities a builtin's `is_enabled` flag grants on its own.
 
-    Login is deliberately excluded: turning on a builtin must not silently add a
-    new way to sign in. An administrator opts into `user_login` explicitly.
+    Login and Feishu notifications remain explicit opt-ins so enabling an
+    integration cannot silently change sign-in or messaging behavior.
     """
     return [
         capability
         for capability in definition.capabilities
         if capability != IntegrationCapability.USER_LOGIN
+        and not (
+            definition.provider_type == "feishu"
+            and capability == IntegrationCapability.NOTIFICATION
+        )
     ]
 
 
@@ -90,7 +94,11 @@ integration_registry = IntegrationRegistry(
         IntegrationDefinition(
             "feishu",
             "Feishu",
-            (IntegrationCapability.DIRECTORY_SYNC, IntegrationCapability.USER_LOGIN),
+            (
+                IntegrationCapability.DIRECTORY_SYNC,
+                IntegrationCapability.USER_LOGIN,
+                IntegrationCapability.NOTIFICATION,
+            ),
             ("app_secret",),
             True,
         ),

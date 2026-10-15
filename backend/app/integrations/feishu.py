@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from typing import Any
 from urllib.parse import quote
 
@@ -127,6 +128,43 @@ class FeishuClient:
         if not isinstance(token, str) or not token:
             raise FeishuAPIError("Feishu did not return a tenant access token")
         return token
+
+    async def check_connection(self) -> None:
+        """Verify app credentials by requesting a tenant access token."""
+        async with httpx.AsyncClient(
+            base_url=API_BASE,
+            timeout=TIMEOUT,
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
+            await self._token(client)
+
+    async def send_user_message(
+        self, feishu_user_id: str, title: str, content: str, link_url: str | None = None
+    ) -> None:
+        """Send a plain-text direct message to a tenant user as the app bot."""
+        message = f"{title}\n\n{content}"
+        if link_url:
+            message = f"{message}\n\n{link_url}"
+        async with httpx.AsyncClient(
+            base_url=API_BASE,
+            timeout=TIMEOUT,
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
+            token = await self._token(client)
+            await self._request(
+                client,
+                "POST",
+                "/im/v1/messages",
+                params={"receive_id_type": "user_id"},
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "receive_id": feishu_user_id,
+                    "msg_type": "text",
+                    "content": json.dumps({"text": message}, ensure_ascii=False),
+                },
+            )
 
     async def list_departments(self) -> list[FeishuDepartment]:
         async with httpx.AsyncClient(

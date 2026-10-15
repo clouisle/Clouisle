@@ -39,14 +39,16 @@
     "viewNotification": "View",
     "channel": {
       "email": "Email",
-      "webhook": "Webhook"
+      "webhook": "Webhook",
+      "feishu": "Feishu"
     },
     "deliveryStatus": {
       "title": "Delivery Status",
       "pending": "Pending",
       "sending": "Sending",
       "success": "Sent",
-      "failed": "Failed"
+      "failed": "Failed",
+      "skipped": "Skipped — no linked Feishu recipients"
     },
     "retryCount": "Retried {count} times",
     "toast": {
@@ -123,7 +125,9 @@
       "selectTeam": "Select team",
       "selectScope": "Select scope",
       "notifyChannels": "External Notification Channels",
-      "channelEmail": "Email"
+      "channelEmail": "Email",
+      "channelWebhook": "Webhook",
+      "channelFeishu": "Feishu"
     }
   }
 }

@@ -7,8 +7,7 @@ mock.module("next-intl", () => ({
   useTranslations: () => {
     const translate = (key: string, options?: { defaultValue?: string }) =>
       key.startsWith("admin.typeOptions.") ? options?.defaultValue || "" : key;
-    translate.has = (key: string) =>
-      !key.endsWith("webhook") && !key.endsWith("failed");
+    translate.has = (key: string) => !key.endsWith("webhook") && !key.endsWith("failed") && !key.endsWith("skipped")
     return translate;
   },
 }));
@@ -39,6 +38,7 @@ mock.module("@/components/ui/tooltip", () => ({
 mock.module("lucide-react", () => ({
   Mail: () => <span>mail-icon</span>,
   MessageSquare: () => <span>message-icon</span>,
+  MessageSquareText: () => <span>feishu-icon</span>,
   CheckCircle2: () => <span>success-icon</span>,
   XCircle: () => <span>failed-icon</span>,
   Loader2: () => <span>sending-icon</span>,
@@ -81,9 +81,16 @@ const notification = {
       created_at: "2026-07-20T12:00:00Z",
       updated_at: "2026-07-20T12:00:00Z",
     },
+    {
+      channel: "feishu",
+      status: "skipped",
+      error_message: "feishu_no_bound_recipients",
+      retry_count: 0,
+      created_at: "2026-07-20T12:00:00Z",
+      updated_at: "2026-07-20T12:00:00Z",
+    },
   ],
 } as const;
-
 test("renders notification metadata, link, and delivery outcomes", () => {
   let renderer: ReturnType<typeof create>;
   act(() => {
@@ -104,6 +111,9 @@ test("renders notification metadata, link, and delivery outcomes", () => {
   expect(text).toContain("The run stopped.");
   expect(text).toContain("workflow.run_failed");
   expect(text).toContain("date:2026-07-21T12:00:00Z");
+  expect(
+    renderer!.root.findAllByType("p").map((node) => node.children.join("")),
+  ).toContain("channel.feishu: skipped: feishu_no_bound_recipients");
   expect(
     renderer!.root.findAllByType("p").map((node) => node.children.join("")),
   ).toContain("webhook: failed: endpoint unavailable");
