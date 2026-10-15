@@ -199,8 +199,10 @@ async def add_team_member(
             msg_key="already_team_member",
         )
 
-    if member_in.role == TeamMemberRole.ADMIN and not deps.user_has_global_permission(
-        user_to_add, "team:manage"
+    if (
+        member_in.role == TeamMemberRole.ADMIN
+        and not current_user.is_superuser
+        and not deps.user_has_global_permission(user_to_add, "team:manage")
     ):
         raise BusinessError(
             code=ResponseCode.PERMISSION_DENIED,
