@@ -22,6 +22,31 @@ def _client(**overrides):
 
 
 @pytest.mark.asyncio
+async def test_test_recipients_requires_enabled_notification_capability(monkeypatch):
+    from app.models.feishu_user import FeishuUser
+
+    monkeypatch.setattr(
+        FeishuUser,
+        "filter",
+        MagicMock(side_effect=AssertionError("recipient bindings must not be queried")),
+    )
+    monkeypatch.setattr(
+        feishu,
+        "get_builtin_integration",
+        AsyncMock(
+            return_value=SimpleNamespace(is_enabled=True, enabled_capabilities=[])
+        ),
+    )
+
+    with pytest.raises(BusinessError) as exc_info:
+        await feishu.list_test_recipients(
+            search="", current_user=SimpleNamespace(id=uuid4())
+        )
+
+    assert exc_info.value.msg_key == "feishu_notification_not_enabled"
+
+
+@pytest.mark.asyncio
 async def test_sync_reports_feishu_rejection_reason_without_internal_details(
     monkeypatch,
 ):
@@ -413,6 +438,7 @@ async def test_test_message_rejects_unbound_user_without_sending(monkeypatch):
     monkeypatch.setattr(
         "app.models.feishu_user.FeishuUser.filter", lambda **kwargs: BindingQuery()
     )
+    monkeypatch.setattr(feishu, "_configured_notification_client", AsyncMock())
 
     with pytest.raises(BusinessError) as exc:
         await feishu.send_test_message(

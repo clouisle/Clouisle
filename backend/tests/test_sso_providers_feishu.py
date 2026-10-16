@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, call
+from unittest.mock import AsyncMock, Mock
 
 from urllib.parse import parse_qs, urlparse
 
@@ -428,8 +428,11 @@ async def test_user_info_tolerates_top_level_fields_and_rejects_errors(
 
 
 @pytest.mark.asyncio
-async def test_send_user_message_posts_text_message_with_user_id(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("locale", "label"), [("en", "View Details"), ("zh", "查看详情")]
+)
+async def test_send_user_message_posts_interactive_card_button_for_link(
+    monkeypatch: pytest.MonkeyPatch, locale: str, label: str
 ) -> None:
     import json
 
@@ -440,30 +443,30 @@ async def test_send_user_message_posts_text_message_with_user_id(
     monkeypatch.setattr(feishu_module.httpx, "AsyncClient", lambda **_kwargs: client)
     instance = feishu_module.FeishuClient("cli_test", encrypt_secret("secret"))
     await instance.send_user_message(
-        "ou_1", "Deployment complete", "All checks passed", "https://example.test/run"
+        "ou_1",
+        "Deployment complete",
+        "All checks passed",
+        "https://example.test/run",
+        label,
     )
 
-    client.request.assert_has_awaits(
-        [
-            call(
-                "POST",
-                "/auth/v3/tenant_access_token/internal",
-                json={"app_id": "cli_test", "app_secret": "secret"},
-            ),
-            call(
-                "POST",
-                "/im/v1/messages",
-                params={"receive_id_type": "user_id"},
-                headers={"Authorization": "Bearer t-token"},
-                json={
-                    "receive_id": "ou_1",
-                    "msg_type": "text",
-                    "content": json.dumps(
-                        {
-                            "text": "Deployment complete\n\nAll checks passed\n\nhttps://example.test/run"
-                        }
-                    ),
+    message_request = client.request.await_args_list[1]
+    assert message_request.args == ("POST", "/im/v1/messages")
+    assert message_request.kwargs["params"] == {"receive_id_type": "user_id"}
+    assert message_request.kwargs["json"]["receive_id"] == "ou_1"
+    assert message_request.kwargs["json"]["msg_type"] == "interactive"
+    assert json.loads(message_request.kwargs["json"]["content"]) == {
+        "schema": "2.0",
+        "config": {"wide_screen_mode": True},
+        "body": {
+            "elements": [
+                {"tag": "markdown", "content": "All checks passed"},
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": label},
+                    "type": "primary",
+                    "url": "https://example.test/run",
                 },
-            ),
-        ]
-    )
+            ]
+        },
+    }

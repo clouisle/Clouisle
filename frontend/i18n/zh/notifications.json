@@ -48,7 +48,8 @@
       "sending": "发送中",
       "success": "已发送",
       "failed": "发送失败",
-      "skipped": "已跳过：没有已绑定的飞书接收人"
+      "skipped": "已跳过：没有已绑定的飞书接收人",
+      "partialSuccess": "已发送给 {success_count}/{total_count} 位接收人"
     },
     "retryCount": "已重试 {count} 次",
     "toast": {

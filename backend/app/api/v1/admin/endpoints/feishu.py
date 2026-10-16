@@ -115,6 +115,14 @@ async def list_test_recipients(
 ):
     from app.models.feishu_user import FeishuUser
 
+    integration = await get_builtin_integration("feishu")
+    if (
+        not integration.is_enabled
+        or "notification" not in integration.enabled_capabilities
+    ):
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST, msg_key="feishu_notification_not_enabled"
+        )
     query = FeishuUser.filter(user__is_active=True).select_related("user")
     if search.strip():
         term = search.strip()
@@ -150,13 +158,11 @@ async def send_test_message(
         raise BusinessError(
             code=ResponseCode.BAD_REQUEST, msg_key="feishu_test_recipient_unavailable"
         )
+    client = await _configured_notification_client()
     try:
-        client = await _configured_notification_client()
         await client.send_user_message(
             binding.feishu_user_id, data.title.strip(), data.content.strip()
         )
-    except BusinessError:
-        raise
     except Exception as exc:
         raise _feishu_failure(exc, "Feishu test message") from exc
     return success(data={"status": "sent"})

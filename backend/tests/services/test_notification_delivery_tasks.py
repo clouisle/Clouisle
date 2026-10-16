@@ -36,6 +36,19 @@ def query(**methods):
     return value
 
 
+@pytest.mark.parametrize(
+    ("link_url", "expected"),
+    [
+        ("/app/notifications/123", "https://clouisle.example/app/notifications/123"),
+        ("https://other.example/path", "https://other.example/path"),
+        (None, None),
+    ],
+)
+def test_absolute_notification_url(link_url, expected):
+    with patch.object(tasks.settings, "FRONTEND_URL", "https://clouisle.example/"):
+        assert tasks._get_absolute_notification_url(link_url) == expected
+
+
 @pytest.mark.anyio
 async def test_update_delivery_status_transitions_and_counts_retries():
     delivery = SimpleNamespace(
@@ -336,15 +349,48 @@ async def test_feishu_recipients_follow_scope_and_skip_unbound_or_inactive_users
 
 
 @pytest.mark.anyio
+async def test_feishu_recipients_resolve_global_scope_and_deduplicate_linked_users():
+    duplicate_id = uuid4()
+    first = SimpleNamespace(id=duplicate_id, is_active=True, locale="en")
+    second = SimpleNamespace(id=uuid4(), is_active=True, locale="zh")
+    users_query = query(all=[first, second])
+    bindings_query = query(
+        all=[
+            SimpleNamespace(user_id=duplicate_id, feishu_user_id="ou_shared"),
+            SimpleNamespace(user_id=second.id, feishu_user_id="ou_second"),
+        ]
+    )
+    with (
+        patch.object(tasks.User, "filter", return_value=users_query) as user_filter,
+        patch.object(
+            tasks.FeishuUser, "filter", return_value=bindings_query
+        ) as binding_filter,
+    ):
+        recipients = await tasks._get_feishu_recipients(
+            notification(scope=NotificationScope.GLOBAL)
+        )
+
+    user_filter.assert_called_once_with(is_active=True)
+    binding_filter.assert_called_once_with(user_id__in=[duplicate_id, second.id])
+    assert recipients == [("ou_shared", "en"), ("ou_second", "zh")]
+
+
+@pytest.mark.anyio
+async def test_feishu_recipients_reject_user_scope_without_user_id():
+    with patch.object(tasks.User, "filter") as user_filter:
+        recipients = await tasks._get_feishu_recipients(
+            notification(scope=NotificationScope.USER, user_id=None)
+        )
+
+    assert recipients == []
+    user_filter.assert_not_called()
+
+
+@pytest.mark.anyio
 async def test_feishu_delivery_sends_to_linked_users_and_records_partial_success():
     item = notification()
     context = tasks.NotificationContext(notification=item, site_name="Clouisle")
-    integration = SimpleNamespace(
-        config={"app_id": "cli_test"}, credentials={"app_secret": "encrypted"}
-    )
-    client = SimpleNamespace(
-        send_user_message=AsyncMock(side_effect=[None, OSError("rejected")])
-    )
+    sender = AsyncMock(side_effect=[None, OSError("rejected")])
     updates = AsyncMock()
 
     with (
@@ -358,9 +404,10 @@ async def test_feishu_delivery_sends_to_linked_users_and_records_partial_success
             new=AsyncMock(return_value=[("ou_1", "en"), ("ou_2", "zh")]),
         ),
         patch.object(
-            tasks, "get_builtin_integration", new=AsyncMock(return_value=integration)
-        ),
-        patch.object(tasks, "FeishuClient", return_value=client) as client_factory,
+            tasks,
+            "get_notification_integration",
+            return_value=SimpleNamespace(send=sender),
+        ) as integration_factory,
         patch.object(
             tasks,
             "_build_notification_message",
@@ -369,17 +416,22 @@ async def test_feishu_delivery_sends_to_linked_users_and_records_partial_success
     ):
         assert await tasks._send_notification_feishu(item.id) is True
 
-    client_factory.assert_called_once_with("cli_test", "encrypted")
-    assert client.send_user_message.await_args_list == [
-        call("ou_1", "title-en", "body-en", item.link_url),
-        call("ou_2", "标题", "正文", item.link_url),
-    ]
+    integration_factory.assert_called_once_with(NotificationChannel.FEISHU)
+    assert sender.await_args_list[0].args[0] == NotificationMessage(
+        title="title-en",
+        content="body-en",
+        link_url=item.link_url,
+        recipient="ou_1",
+        link_label="View Details",
+    )
+    assert sender.await_args_list[1].args[0].link_label == "查看详情"
+    assert sender.await_args_list[1].args[0].recipient == "ou_2"
     assert updates.await_args_list[-1].args[:3] == (
         item.id,
         NotificationChannel.FEISHU,
         NotificationDeliveryStatus.SUCCESS,
     )
-    assert "1/2" in updates.await_args_list[-1].args[3]
+    assert "1/2 recipients succeeded" in updates.await_args_list[-1].args[3]
 
 
 @pytest.mark.anyio
@@ -393,7 +445,7 @@ async def test_feishu_delivery_marks_no_bound_recipients_skipped():
             tasks, "_load_notification_context", new=AsyncMock(return_value=context)
         ),
         patch.object(tasks, "_get_feishu_recipients", new=AsyncMock(return_value=[])),
-        patch.object(tasks, "get_builtin_integration", new=AsyncMock()),
+        patch.object(tasks, "get_notification_integration"),
     ):
         assert await tasks._send_notification_feishu(item.id) is True
 

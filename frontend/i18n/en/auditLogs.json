@@ -118,6 +118,7 @@
     "actioncreate_team": "Create Team",
     "actionupdate_team": "Update Team",
     "actiondelete_team": "Delete Team",
+    "actiontransfer_team_ownership": "Transfer Team Ownership",
     "actionadd_team_member": "Add Team Member",
     "actionremove_team_member": "Remove Team Member",
     "actioncreate_agent": "Create Agent",

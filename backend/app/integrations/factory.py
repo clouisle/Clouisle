@@ -18,6 +18,7 @@ class NotificationMessage:
     link_url: str | None = None
     recipient: str | None = None
     html_content: str | None = None
+    link_label: str | None = None
 
 
 class NotificationIntegration(Protocol):
@@ -140,10 +141,39 @@ class FeishuNotificationIntegration:
             return self.not_configured_message_key
         return None
 
+    async def send(self, message: NotificationMessage) -> bool:
+        if message.recipient is None:
+            raise ValueError("Feishu integration requires a recipient")
+        return await _send_feishu_message(
+            message.recipient,
+            message.title,
+            message.content,
+            message.link_url,
+            message.link_label,
+        )
+
     def dispatch_task(self, notification_id: str):
         from app.tasks.notification import send_notification_feishu_task
 
         return send_notification_feishu_task.delay(notification_id)
+
+
+async def _send_feishu_message(
+    recipient: str,
+    title: str,
+    content: str,
+    link_url: str | None = None,
+    link_label: str | None = None,
+) -> bool:
+    from app.integrations.feishu import FeishuClient
+    from app.services.integration_config import get_builtin_integration
+
+    integration = await get_builtin_integration("feishu")
+    client = FeishuClient(
+        integration.config["app_id"], integration.credentials["app_secret"]
+    )
+    await client.send_user_message(recipient, title, content, link_url, link_label)
+    return True
 
 
 _email_handler = EmailNotificationIntegration()

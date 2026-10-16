@@ -140,6 +140,46 @@ async def test_feishu_notification_requires_enabled_capability_and_credentials(
     )
 
 
+@pytest.mark.asyncio
+async def test_feishu_handler_sends_direct_message_through_configured_client(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from app.integrations import feishu as feishu_module
+    from app.services import integration_config
+
+    integration = SimpleNamespace(
+        config={"app_id": "cli_test"}, credentials={"app_secret": "encrypted"}
+    )
+    monkeypatch.setattr(
+        integration_config,
+        "get_builtin_integration",
+        AsyncMock(return_value=integration),
+    )
+    send_user_message = AsyncMock()
+    monkeypatch.setattr(
+        feishu_module,
+        "FeishuClient",
+        Mock(return_value=SimpleNamespace(send_user_message=send_user_message)),
+    )
+
+    result = await FeishuNotificationIntegration().send(
+        NotificationMessage(
+            title="Title",
+            content="Body",
+            link_url="https://example.test/notification",
+            link_label="查看详情",
+            recipient="ou_123",
+        )
+    )
+
+    assert result is True
+    send_user_message.assert_awaited_once_with(
+        "ou_123", "Title", "Body", "https://example.test/notification", "查看详情"
+    )
+
+
 def test_factory_dispatches_feishu_notification_task(monkeypatch):
     from app.tasks import notification as tasks
 

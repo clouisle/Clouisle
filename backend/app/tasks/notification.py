@@ -3,6 +3,7 @@
 """
 
 import logging
+from urllib.parse import urljoin, urlsplit
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -11,8 +12,6 @@ import markdown  # type: ignore[import-untyped]
 from app.core.celery import celery_app
 from app.core.i18n import t
 from app.core.timezone import now_utc
-from app.integrations.feishu import FeishuClient
-from app.services.integration_config import get_builtin_integration
 from app.models.feishu_user import FeishuUser
 from app.integrations.factory import (
     NotificationMessage,
@@ -26,6 +25,7 @@ from app.models.notification import (
     NotificationDeliveryStatus,
 )
 from app.models.site_setting import SiteSetting
+from app.core.config import settings
 from app.models.user import User, TeamMember, Team
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,16 @@ class NotificationContext:
     site_name: str
     team: Team | None = None
     user: User | None = None
+
+
+def _get_absolute_notification_url(link_url: str | None) -> str | None:
+    """Resolve app-relative notification links against the configured public frontend URL."""
+    if not link_url:
+        return None
+    parsed = urlsplit(link_url)
+    if parsed.scheme or parsed.netloc:
+        return link_url
+    return urljoin(f"{settings.FRONTEND_URL.rstrip('/')}/", link_url.lstrip("/"))
 
 
 def _get_event_loop():
@@ -536,18 +546,20 @@ async def _send_notification_feishu(notification_id: UUID) -> bool:
         )
         return True
 
-    integration = await get_builtin_integration("feishu")
-    client = FeishuClient(
-        integration.config.get("app_id", ""),
-        integration.credentials.get("app_secret", ""),
-    )
+    handler = get_notification_integration(NotificationChannel.FEISHU)
     successes = 0
     failures = 0
     for feishu_user_id, locale in recipients:
         title, content = _build_notification_message(ctx, locale)
         try:
-            await client.send_user_message(
-                feishu_user_id, title, content, ctx.notification.link_url
+            await handler.send(
+                NotificationMessage(
+                    title=title,
+                    content=content,
+                    link_url=_get_absolute_notification_url(ctx.notification.link_url),
+                    link_label=t("email_view_details", lang=locale),
+                    recipient=feishu_user_id,
+                )
             )
             successes += 1
         except Exception:

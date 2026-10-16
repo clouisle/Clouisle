@@ -10,7 +10,8 @@
       "title": "通知",
       "description": "管理通知规则和发送方式",
       "email": "邮件",
-      "webhook": "Webhook"
+      "webhook": "Webhook",
+      "feishu": "飞书"
     },
     "integrations": {
       "title": "集成",

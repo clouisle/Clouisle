@@ -113,6 +113,7 @@ async def test_superuser_can_transfer_team_ownership():
     _USERS = {new_owner.id: new_owner}
     _MEMBERSHIPS = {old_owner.id: _OWNER_MEMBERSHIP, new_owner.id: new_owner_membership}
 
+    audit_log = AsyncMock()
     with (
         patch("app.api.v1.endpoints.teams.Team", _TeamModel),
         patch("app.api.v1.endpoints.teams.TeamMember", _TeamMemberModel),
@@ -123,12 +124,26 @@ async def test_superuser_can_transfer_team_ownership():
         ),
         patch.object(teams, "check_team_permission", AsyncMock(return_value=_TEAM)),
         patch.object(teams.deps, "user_has_global_permission", return_value=True),
+        patch.object(teams, "AuditLogService") as audit_service,
     ):
+        audit_service.log = audit_log
         response = await teams.transfer_ownership(
+            request=SimpleNamespace(headers={}, client=None),
             team_id=_TEAM.id,
             new_owner_id=new_owner.id,
             current_user=superuser,
         )
+
+    audit_log.assert_awaited_once()
+    assert audit_log.await_args.kwargs["user"] is superuser
+    assert audit_log.await_args.kwargs["metadata"]["performed_by_superuser"] is True
+    assert (
+        audit_log.await_args.kwargs["changes"]["before"]["owner_username"]
+        == "old-owner"
+    )
+    assert (
+        audit_log.await_args.kwargs["changes"]["after"]["owner_username"] == "new-owner"
+    )
 
     assert response["code"] == 0
     assert _OWNER_MEMBERSHIP.role == TeamMemberRole.ADMIN
@@ -164,6 +179,7 @@ async def test_transfer_ownership_rejects_existing_owner():
         pytest.raises(teams.BusinessError) as error,
     ):
         await teams.transfer_ownership(
+            request=SimpleNamespace(headers={}, client=None),
             team_id=_TEAM.id,
             new_owner_id=old_owner.id,
             current_user=superuser,
@@ -203,8 +219,10 @@ async def test_superuser_transfer_handles_missing_previous_owner():
         ) as notify_user,
         patch.object(teams, "check_team_permission", AsyncMock(return_value=_TEAM)),
         patch.object(teams.deps, "user_has_global_permission", return_value=True),
+        patch.object(teams.AuditLogService, "log", new=AsyncMock()),
     ):
         response = await teams.transfer_ownership(
+            request=SimpleNamespace(headers={}, client=None),
             team_id=_TEAM.id,
             new_owner_id=new_owner.id,
             current_user=superuser,

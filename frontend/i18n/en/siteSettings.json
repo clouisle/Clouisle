@@ -10,7 +10,8 @@
       "title": "Notifications",
       "description": "Manage notification rules and delivery preferences",
       "email": "Email",
-      "webhook": "Webhook"
+      "webhook": "Webhook",
+      "feishu": "Feishu"
     },
     "integrations": {
       "title": "Integrations",

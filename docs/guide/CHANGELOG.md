@@ -14,7 +14,8 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - Unified SSO login providers, email, Webhook, and manual Feishu directory sync under Integration records and `/site-settings/integrations`, with static capabilities and separate login/settings permission domains.
 - Moved management APIs to `/api/v1/admin/integrations` and public login discovery to `/api/v1/sso/integrations`. Existing login/callback URLs, integration UUIDs, and identity bindings are preserved. Credentials are encrypted and omitted from admin responses.
 - Schema cutover requires a database backup and matching `SECRET_KEY`; rollback restores the matching database/application version. See [upgrade instructions](admin-guide/settings/SSO.md#upgrading-existing-installations). The Feishu integration additionally provides opt-in sign-in (`user_login`); see [Configure Feishu sign-in](admin-guide/settings/SSO.md#configure-feishu-sign-in).
-
+- Added Feishu notifications as an opt-in integration capability. Admins can send test messages to an explicitly selected linked user; notification delivery runs asynchronously and reports per-channel status for bound active recipients.
+- Team ownership transfers now write an audit event with the old/new owner and identify the acting administrator, including super administrators.
 - Super administrators bypass global permission checks and may grant team-admin membership to any user; regular operators can grant the team-admin role only to users with `team:manage`.
 
 ### Added

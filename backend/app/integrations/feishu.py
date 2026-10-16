@@ -140,12 +140,36 @@ class FeishuClient:
             await self._token(client)
 
     async def send_user_message(
-        self, feishu_user_id: str, title: str, content: str, link_url: str | None = None
+        self,
+        feishu_user_id: str,
+        title: str,
+        content: str,
+        link_url: str | None = None,
+        link_label: str | None = None,
     ) -> None:
-        """Send a plain-text direct message to a tenant user as the app bot."""
-        message = f"{title}\n\n{content}"
+        """Send a direct message, using a native card button for optional links."""
+        card: dict[str, Any] = {
+            "schema": "2.0",
+            "config": {"wide_screen_mode": True},
+            "body": {
+                "elements": [
+                    {"tag": "markdown", "content": content},
+                ]
+            },
+        }
         if link_url:
-            message = f"{message}\n\n{link_url}"
+            card["body"]["elements"].append(
+                {
+                    "tag": "button",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": link_label or "View details",
+                    },
+                    "type": "primary",
+                    "url": link_url,
+                }
+            )
+
         async with httpx.AsyncClient(
             base_url=API_BASE,
             timeout=TIMEOUT,
@@ -161,8 +185,8 @@ class FeishuClient:
                 headers={"Authorization": f"Bearer {token}"},
                 json={
                     "receive_id": feishu_user_id,
-                    "msg_type": "text",
-                    "content": json.dumps({"text": message}, ensure_ascii=False),
+                    "msg_type": "interactive",
+                    "content": json.dumps(card, ensure_ascii=False),
                 },
             )
 

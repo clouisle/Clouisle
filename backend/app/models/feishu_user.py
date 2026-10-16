@@ -19,6 +19,7 @@ class FeishuUser(models.Model):
         on_delete=fields.CASCADE,
         unique=True,
     )
+    user_id: uuid.UUID  # type: ignore[assignment]
     feishu_user_id = fields.CharField(max_length=255, unique=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)

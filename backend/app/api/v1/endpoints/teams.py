@@ -492,6 +492,7 @@ async def leave_team(
 @router.post("/{team_id}/transfer-ownership", response_model=Response[TeamSchema])
 async def transfer_ownership(
     *,
+    request: Request,
     team_id: UUID,
     new_owner_id: UUID,
     current_user: User = Depends(deps.get_current_active_user),
@@ -508,6 +509,13 @@ async def transfer_ownership(
         require_team_admin=True,
     )
 
+    previous_owner_membership = (
+        await TeamMember.filter(team=team, role=TeamMemberRole.OWNER)
+        .prefetch_related("user")
+        .first()
+    )
+    old_owner = previous_owner_membership.user if previous_owner_membership else None
+
     current_membership = await TeamMember.filter(team=team, user=current_user).first()
     if (
         not current_user.is_superuser
@@ -518,12 +526,6 @@ async def transfer_ownership(
             msg_key="team_owner_required",
             status_code=403,
         )
-
-    previous_owner_membership = (
-        await TeamMember.filter(team=team, role=TeamMemberRole.OWNER)
-        .prefetch_related("user")
-        .first()
-    )
 
     new_owner = (
         await User.filter(id=new_owner_id)
@@ -549,7 +551,6 @@ async def transfer_ownership(
             status_code=403,
             permission="team:manage",
         )
-    old_owner = previous_owner_membership.user if previous_owner_membership else None
     if old_owner and new_owner.id == old_owner.id:
         raise BusinessError(
             code=ResponseCode.CANNOT_PROMOTE_TO_OWNER,
@@ -568,6 +569,30 @@ async def transfer_ownership(
     await team.save()
 
     team = await Team.get(id=team_id).prefetch_related("owner")
+    await AuditLogService.log(
+        user=current_user,
+        action="transfer_team_ownership",
+        resource_type="team",
+        resource_id=team.id,
+        resource_name=team.name,
+        operation="update",
+        status="success",
+        request=request,
+        changes={
+            "before": {
+                "owner_id": str(old_owner.id) if old_owner else None,
+                "owner_username": old_owner.username if old_owner else None,
+            },
+            "after": {
+                "owner_id": str(new_owner.id),
+                "owner_username": new_owner.username,
+            },
+        },
+        metadata={
+            "team_id": str(team.id),
+            "performed_by_superuser": current_user.is_superuser,
+        },
+    )
 
     assert new_owner is not None
     new_owner_locale = await resolve_language(getattr(new_owner, "locale", None))

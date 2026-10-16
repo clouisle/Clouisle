@@ -306,7 +306,7 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
                 </Button>
               }
             />
-            <PopoverContent className="w-80 max-h-[min(28rem,calc(100vh-8rem))] overflow-hidden p-0 flex flex-col" align="end">
+            <PopoverContent className="w-80 h-[min(28rem,calc(100dvh-8rem))] overflow-hidden p-0 flex flex-col" align="end">
               <div className="p-3 border-b space-y-2">
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -330,7 +330,7 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
                   </div>
                 )}
               </div>
-              <ScrollArea className="min-h-0 flex-1">
+              <ScrollArea className="min-h-0 flex-1 overflow-hidden">
                 {filteredModels.length === 0 ? (
                   <div className="p-4 text-center text-muted-foreground text-sm">
                     {availableModels.length === 0
@@ -362,18 +362,16 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
                   </div>
                 )}
               </ScrollArea>
-              {selectedModelIds.size > 0 && (
-                <div className="border-t p-3">
-                  <Button
-                    className="w-full"
-                    size="sm"
-                    disabled={isAdding}
-                    onClick={handleAddModels}
-                  >
-                    {isAdding ? commonT('loading') : t('authorizeModels', { count: selectedModelIds.size })}
-                  </Button>
-                </div>
-              )}
+              <div className="border-t p-3">
+                <Button
+                  className="w-full"
+                  size="sm"
+                  disabled={isAdding || selectedModelIds.size === 0}
+                  onClick={handleAddModels}
+                >
+                  {isAdding ? commonT('loading') : t('authorizeModels', { count: selectedModelIds.size })}
+                </Button>
+              </div>
             </PopoverContent>
           </Popover>
         </PermissionGuard>

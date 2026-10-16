@@ -493,10 +493,10 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
                 </div>
               </div>
             </div>
-            <Button onClick={handleCreate} disabled={isSubmitting}>
-              {t('admin.submit')}
-            </Button>
           </div>
+          <Button onClick={handleCreate} disabled={isSubmitting}>
+            {t('admin.submit')}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

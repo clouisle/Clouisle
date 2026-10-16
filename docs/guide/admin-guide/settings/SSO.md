@@ -13,6 +13,8 @@ Manage external services in **Site Settings → Integrations** (`/site-settings/
 Capabilities are statically declared by the backend registry. Enabling an integration does not grant it additional capabilities. Email, Webhook, and Feishu are singleton integrations configured through their specialized forms. Feishu sends notification direct messages to users linked by directory sync; it does not provide Agent messaging.
 
 Feishu is a single integration built from one Feishu app (app ID and app secret) that declares `directory_sync`, `user_login`, and `notification`. Enabling the Feishu integration never grants sign-in by itself: web login is an explicit opt-in on the same integration. Turning the integration off stops directory sync, sign-in, and notifications while preserving the sign-in opt-in. See [System settings](system-settings.md) for its directory synchronization behavior.
+Feishu directory sync remains manual and one-way. The administrator selects departments and starts each sync; it creates or updates local users, binds each Feishu identity, and creates or updates corresponding department teams and memberships. It does not schedule syncs, delete users or teams missing from a later Feishu response, disable users, or remove memberships. Notifications are a separate capability: they send to active linked users and skip unbound recipients.
+
 
 ## Permissions
 

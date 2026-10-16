@@ -48,7 +48,8 @@
       "sending": "Sending",
       "success": "Sent",
       "failed": "Failed",
-      "skipped": "Skipped — no linked Feishu recipients"
+      "skipped": "Skipped — no linked Feishu recipients",
+      "partialSuccess": "Sent to {success_count} of {total_count} recipients"
     },
     "retryCount": "Retried {count} times",
     "toast": {

@@ -14,8 +14,8 @@
 - 登录身份源、邮件、Webhook 与飞书手动通讯录同步统一为 Integration，通过 `/site-settings/integrations` 管理，能力静态声明，login/settings 权限分域。
 - 管理 API 改为 `/api/v1/admin/integrations`，公开登录发现改为 `/api/v1/sso/integrations`；保留登录/回调地址、UUID 和身份绑定。凭据加密存储，管理响应不返回凭据。
 - Schema 切换前须备份数据库与匹配的 `SECRET_KEY`；回滚须恢复匹配的数据库和应用版本，详见[升级说明](admin-guide/settings/SSO_zh-CN.md#现有部署升级)。飞书集成另提供可选的登录能力（`user_login`），详见[配置飞书登录](admin-guide/settings/SSO_zh-CN.md#配置飞书登录)。
-
-### 新增
+- 新增可选的飞书通知集成能力。管理员可向明确选择的已绑定用户发送测试消息；通知通过异步任务发送，并为已绑定的活跃接收者记录各渠道状态。
+- 团队所有权转让现在会写入审计日志，记录转让前后的所有者，并标明实际操作者，包括超级管理员。
 
 #### 管理后台可观测性
 

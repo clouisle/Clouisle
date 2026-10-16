@@ -138,8 +138,7 @@ export function AutoNotificationsSettingsTab({ canUpdate }: AutoNotificationsSet
     }
   }
 
-  // Email and Webhook are the only externally supported channels.
-  const availableChannels = [...CHANNELS]
+  const availableChannels = CHANNELS
 
   if (loading) {
     return (

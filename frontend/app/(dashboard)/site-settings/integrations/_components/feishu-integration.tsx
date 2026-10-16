@@ -157,18 +157,31 @@ export function FeishuIntegrationTab({
   // Both capabilities are opt-in and only run while the integration itself is enabled.
   const capabilitiesReadOnly = !integration || !config.is_enabled
   const canEditDirectorySync = canUpdate && !capabilitiesReadOnly
+  const canEditNotification = canUpdate && !capabilitiesReadOnly
   const canEditLogin = canUpdateLogin && !capabilitiesReadOnly
   const nextCapabilities = integration
-    ? integration.supported_capabilities.filter((capability) => capability === 'directory_sync'
-      ? directorySyncEnabled
-      : capability === 'user_login' ? loginEnabled
-        : capability === 'notification' ? notificationEnabled : false)
+    ? integration.supported_capabilities.filter((capability) => {
+        if (capability === 'directory_sync') {
+          return canEditDirectorySync
+            ? directorySyncEnabled
+            : integration.enabled_capabilities.includes(capability)
+        }
+        if (capability === 'user_login') {
+          return canEditLogin ? loginEnabled : integration.enabled_capabilities.includes(capability)
+        }
+        if (capability === 'notification') {
+          return canEditNotification
+            ? notificationEnabled
+            : integration.enabled_capabilities.includes(capability)
+        }
+        return false
+      })
     : []
   const capabilitiesChanged = integration
     ? nextCapabilities.join() !== integration.enabled_capabilities.join()
     : false
   const canSaveCapabilities = Boolean(integration) && !capabilitiesReadOnly
-    && (canEditDirectorySync || canEditLogin || (canUpdate && integration.supported_capabilities.includes('notification')))
+    && (canEditDirectorySync || canEditLogin || canEditNotification)
     && (capabilitiesChanged || (canEditLogin && buttonText.trim() !== savedButtonText.trim()))
   // Departments can only be browsed once the app credentials are saved and the
   // integration actually serves directory sync; requesting them earlier is rejected.
@@ -321,8 +334,8 @@ export function FeishuIntegrationTab({
   }, [t])
 
   React.useEffect(() => {
-    if (integration?.supported_capabilities.includes('notification')) loadTestRecipients()
-  }, [integration?.supported_capabilities, loadTestRecipients])
+    if (savedNotificationEnabled) loadTestRecipients()
+  }, [savedNotificationEnabled, loadTestRecipients])
 
   const sendTestMessage = async () => {
     if (!canUpdate || !testRecipientId || !testTitle.trim() || !testContent.trim()) return
@@ -349,52 +362,60 @@ export function FeishuIntegrationTab({
       </CardHeader>
       <CardContent className="space-y-5">
         <section data-testid="feishu-capabilities" className="space-y-4 border-b pb-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h3 className="text-sm font-medium">{t('integrations.capabilities.directory_sync')}</h3>
-              <p className="text-xs text-muted-foreground">{t('integrations.feishuDirectorySyncDescription')}</p>
+          {canUpdate && (
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-medium">{t('integrations.capabilities.directory_sync')}</h3>
+                <p className="text-xs text-muted-foreground">{t('integrations.feishuDirectorySyncDescription')}</p>
+              </div>
+              <Switch
+                aria-label={t('integrations.capabilities.directory_sync')}
+                checked={directorySyncEnabled}
+                disabled={!canEditDirectorySync || savingCapabilities}
+                onCheckedChange={setDirectorySyncEnabled}
+              />
             </div>
-            <Switch
-              aria-label={t('integrations.capabilities.directory_sync')}
-              checked={directorySyncEnabled}
-              disabled={!canEditDirectorySync || savingCapabilities}
-              onCheckedChange={setDirectorySyncEnabled}
-            />
-          </div>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h3 className="text-sm font-medium">{t('integrations.feishuLogin')}</h3>
-              <p className="text-xs text-muted-foreground">{t('integrations.feishuLoginDescription')}</p>
+          )}
+          {canUpdateLogin && (
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-medium">{t('integrations.feishuLogin')}</h3>
+                <p className="text-xs text-muted-foreground">{t('integrations.feishuLoginDescription')}</p>
+              </div>
+              <Switch
+                aria-label={t('integrations.feishuLogin')}
+                checked={loginEnabled}
+                disabled={!canEditLogin || savingCapabilities}
+                onCheckedChange={setLoginEnabled}
+              />
             </div>
-            <Switch
-              aria-label={t('integrations.feishuLogin')}
-              checked={loginEnabled}
-              disabled={!canEditLogin || savingCapabilities}
-              onCheckedChange={setLoginEnabled}
-            />
-          </div>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h3 className="text-sm font-medium">{t('integrations.capabilities.notification')}</h3>
-              <p className="text-xs text-muted-foreground">{t('integrations.feishuNotificationDescription')}</p>
+          )}
+          {canUpdate && (
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-medium">{t('integrations.capabilities.notification')}</h3>
+                <p className="text-xs text-muted-foreground">{t('integrations.feishuNotificationDescription')}</p>
+              </div>
+              <Switch
+                aria-label={t('integrations.capabilities.notification')}
+                checked={notificationEnabled}
+                disabled={!canEditNotification || savingCapabilities}
+                onCheckedChange={setNotificationEnabled}
+              />
             </div>
-            <Switch
-              aria-label={t('integrations.capabilities.notification')}
-              checked={notificationEnabled}
-              disabled={!canUpdate || capabilitiesReadOnly || savingCapabilities}
-              onCheckedChange={setNotificationEnabled}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="feishu-button-text">{t('integrations.feishuButtonText')}</Label>
-            <Input
-              id="feishu-button-text"
-              value={buttonText}
-              onChange={(event) => setButtonText(event.target.value)}
-              disabled={!canEditLogin || savingCapabilities}
-            />
-            <p className="text-xs text-muted-foreground">{t('integrations.feishuButtonTextDesc')}</p>
-          </div>
+          )}
+          {canEditLogin && (
+            <div className="space-y-2">
+              <Label htmlFor="feishu-button-text">{t('integrations.feishuButtonText')}</Label>
+              <Input
+                id="feishu-button-text"
+                value={buttonText}
+                onChange={(event) => setButtonText(event.target.value)}
+                disabled={!canEditLogin || savingCapabilities}
+              />
+              <p className="text-xs text-muted-foreground">{t('integrations.feishuButtonTextDesc')}</p>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="feishu-redirect-url">{t('integrations.callbackUrl')}</Label>
             <div className="flex items-center gap-2">
@@ -416,7 +437,7 @@ export function FeishuIntegrationTab({
             </div>
             <p className="text-xs text-muted-foreground">{t('integrations.callbackUrlDesc')}</p>
           </div>
-          {(canEditDirectorySync || canEditLogin) && (
+          {(canEditDirectorySync || canEditLogin || canEditNotification) && (
             <div className="flex justify-end">
               <Button type="button" data-testid="feishu-capability-save" variant="outline" onClick={saveCapabilities} disabled={!canSaveCapabilities || savingCapabilities}>
                 {savingCapabilities ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
@@ -452,7 +473,7 @@ export function FeishuIntegrationTab({
             </Button>
           </div>
         )}
-        {canUpdate && (
+        {canUpdate && savedNotificationEnabled && (
           <section className="space-y-4 border-t pt-4" aria-labelledby="feishu-notification-test-title">
             <div className="flex items-start justify-between gap-4">
               <div>

@@ -41,14 +41,15 @@ export type NotificationsMessages = {
     viewNotification: string
     channel: {
       email: string
-      webhook: string
+      feishu: string
     }
     deliveryStatus: {
       title: string
       pending: string
       sending: string
       success: string
-      failed: string
+      skipped: string
+      partialSuccess: string
     }
     retryCount: string
     toast: {

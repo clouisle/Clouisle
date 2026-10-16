@@ -8,7 +8,7 @@
 - **外部渠道**：可配置邮件、通用 Webhook 和飞书私聊
 - **全局配置**：外部渠道为全局配置，适用于所有启用的通知类型
 
-飞书通知使用已配置的飞书集成，仅向通过通讯录同步绑定飞书身份的活跃用户发送私聊。未绑定用户会被跳过；发送状态可在通知详情中查看。
+飞书通知需要单独启用“通知”能力并配置飞书应用。发送通过 Celery 异步执行，并更新各渠道的发送状态；接收者必须已有飞书通讯录绑定。未绑定或已停用的用户不会收到私聊。部分成功时会记录本地化的成功数/总数；全部发送失败时，任务按现有通知 worker 的重试策略重试。
 
 ## 通知类型
 
@@ -94,10 +94,10 @@
 
 1. 进入 **站点设置** → **通知设置** → **自动通知** 标签页
 2. 勾选需要启用的通知类型
-3. 选择邮件或通用 Webhook 渠道（需先在对应设置页面启用）
+3. 在相应设置中启用后，选择邮件、通用 Webhook 和/或飞书渠道
 4. 保存配置
 
-接口为 `GET/PUT /api/v1/admin/site-settings/auto-notifications`。可用渠道为 `email` 和 `webhook`。默认不会启用外部渠道；默认种入的通知类型包含 `workflow.pause_pending`，但不包含密码过期相关类型。
+接口为 `GET/PUT /api/v1/admin/site-settings/auto-notifications`。可用渠道为 `email`、`webhook` 和 `feishu`。默认不会启用外部渠道；默认种入的通知类型包含 `workflow.pause_pending`，但不包含密码过期相关类型。
 
 ### API 配置
 
@@ -118,7 +118,7 @@ GET /api/v1/admin/site-settings/auto-notifications
       "user.activated",
       "security.login_anomaly"
     ],
-    "channels": ["email", "webhook"]
+    "channels": ["email", "webhook", "feishu"]
   },
   "msg": "success"
 }
@@ -137,7 +137,7 @@ Content-Type: application/json
     "user.activated",
     "security.login_anomaly"
   ],
-  "channels": ["email"]
+  "channels": ["email", "webhook", "feishu"]
 }
 ```
 
@@ -149,6 +149,9 @@ Content-Type: application/json
 |------|--------|------|
 | `email` | SMTP 设置 | 邮件通知 |
 | `webhook` | 自定义 Webhook URL | 通用 HTTP 回调 |
+| `feishu` | 已启用通知能力的飞书集成和已绑定用户 | Markdown 格式的飞书私聊 |
+
+使用自动通知前，必须在飞书集成中启用集成及“通知”能力。
 
 **注意**：邮件和通用 Webhook 需先在站点设置中配置并启用，才能用于自动通知。
 

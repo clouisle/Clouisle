@@ -8,7 +8,7 @@ The auto notification feature allows administrators to configure automatic notif
 - **External Channels**: Configure email, Webhook, and Feishu direct messages
 - **Global Configuration**: External channels are globally configured and apply to all enabled notification types
 
-Feishu delivery uses the configured Feishu integration and sends direct messages only to active users linked through Feishu directory sync. Unlinked users are skipped; delivery status is visible in notification details.
+Feishu requires its separate **Notifications** capability and a configured Feishu app. Sends run asynchronously through Celery and update per-channel delivery status; users must have a Feishu directory binding. Unlinked or inactive recipients are not sent a direct message. A partial delivery records a localized success/total count; if every recipient fails, the task retries under the notification worker's existing retry policy.
 
 ## Notification Types
 
@@ -94,10 +94,10 @@ These are valid notification types, but the default seeded `enabled_types` list 
 
 1. Go to **Site Settings** → **Notification Settings** → **Auto Notifications** tab
 2. Check notification types to enable
-3. Select email and/or Webhook channels after enabling them in their settings
+3. Select email, Webhook, and/or Feishu channels after enabling them in their settings
 4. Save configuration
 
-The endpoint is `GET/PUT /api/v1/admin/site-settings/auto-notifications`. It accepts the notification types listed above and the channels `email` and `webhook`. The default configuration has no external channels enabled; its seeded enabled types include `workflow.pause_pending` but not the password-expiration types.
+The endpoint is `GET/PUT /api/v1/admin/site-settings/auto-notifications`. It accepts the notification types listed above and the channels `email`, `webhook`, and `feishu`. The default configuration has no external channels enabled; its seeded enabled types include `workflow.pause_pending` but not the password-expiration types.
 
 ### API Configuration
 
@@ -118,7 +118,7 @@ Response example:
       "user.activated",
       "security.login_anomaly"
     ],
-    "channels": ["email", "webhook"]
+    "channels": ["email", "webhook", "feishu"]
   },
   "msg": "success"
 }
@@ -137,7 +137,7 @@ Content-Type: application/json
     "user.activated",
     "security.login_anomaly"
   ],
-  "channels": ["email"]
+  "channels": ["email", "webhook", "feishu"]
 }
 ```
 
@@ -149,6 +149,9 @@ Auto notifications support the following external channels:
 |---------|---------------|-------------|
 | `email` | SMTP settings | Email notifications |
 | `webhook` | Custom Webhook URL | Generic HTTP callback |
+| `feishu` | Feishu integration with Notifications capability and linked users | Markdown-rendered direct messages |
+
+Feishu integration and its **Notifications** capability must be enabled before it can be used in automatic notifications.
 
 **Note**: Email and Webhook must be configured and enabled in Site Settings before they can be used in auto notifications.
 
