@@ -14,6 +14,7 @@ Use the shared client from `frontend/lib/api/client.ts`.
 - Auth errors (`2000-2999`) redirect to login automatically.
 - Validation errors (`1001`) should be handled with `error.getFieldErrors()`.
 - Use `silent: true` if a request should suppress global toasts.
+- Preserve localized, user-facing backend error guidance regardless of message length; permission scopes and recovery steps can exceed 200 characters. Message keys and technical details still fall back to generic errors. Verify both HTTP error responses and HTTP 200 business errors.
 
 ### File downloads
 

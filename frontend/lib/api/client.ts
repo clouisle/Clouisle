@@ -68,7 +68,7 @@ function isLikelyTechnicalMessage(message: string): boolean {
 
 function shouldUseBackendMessage(message: string): boolean {
   const trimmed = message.trim()
-  if (!trimmed || trimmed.length > 200) return false
+  if (!trimmed) return false
   if (isLikelyMessageKey(trimmed) || isLikelyTechnicalMessage(trimmed)) return false
 
   const locale = getLocale().toLowerCase()
@@ -122,7 +122,7 @@ function redirectToLogin(): void {
   const target = encodeURIComponent(current)
   // 使用 setTimeout 确保在当前调用栈完成后执行重定向
   setTimeout(() => {
-    window.location.href = `/login?redirect=${target}`
+    window.location.href = new URL(`/login?redirect=${target}`, window.location.origin).href
   }, 0)
 }
 
