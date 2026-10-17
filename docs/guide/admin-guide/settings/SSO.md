@@ -1,6 +1,6 @@
 # Integrations and SSO Configuration Guide
 
-Manage external services in **Site Settings → Integrations** (`/site-settings/integrations`). Login providers, outbound email, Webhook delivery, and manual Feishu directory sync share one Integration model, but their capabilities and permissions remain separate.
+Manage external services in **Site Settings → Integrations** (`/site-settings/integrations`). Login providers, outbound email, Webhook delivery, and manual Feishu directory sync share one Integration model, but their capabilities and permissions remain separate. The builtin integrations each open on their own page (`/site-settings/integrations/email`, `/webhook`, `/feishu`); login providers keep their dialog on the list page.
 
 ## Supported capabilities
 
@@ -54,7 +54,7 @@ Feishu web sign-in is an opt-in capability of the Feishu integration. It uses th
 
 1. In the Feishu developer console, add the card's **Redirect URL** — `https://<backend-host>/api/v1/sso/callback/<integration-name>`, for example `…/api/v1/sso/callback/feishu` — to the app's redirect-URI allowlist. The Feishu card shows this exact value with a copy button; `<backend-host>` is the externally reachable backend/proxy origin, the same origin used for every provider's SSO callback.
 2. Grant the app the login scopes `contact:user.base:readonly contact:user.email:readonly`. Identity comes from the signed-in user's profile and needs no scope, but the email field requires `contact:user.email:readonly`.
-3. In **Site Settings → Integrations → Feishu**, open the card's capability section and turn on **Feishu sign-in**, optionally setting the button text. Both capability switches (directory sync and sign-in) are saved together through the generic `PUT /api/v1/admin/integrations/{id}` as `enabled_capabilities`: opening the card requires the settings read domain, and changing the sign-in opt-in requires `admin:integrations:login:update`, so a role enabling it holds both domains (a superuser always can).
+3. In **Site Settings → Integrations → Feishu**, use the integration page's capability section and turn on **Feishu sign-in**, optionally setting the button text. Both capability switches (directory sync and sign-in) are saved together through the generic `PUT /api/v1/admin/integrations/{id}` as `enabled_capabilities`: opening the card requires the settings read domain, and changing the sign-in opt-in requires `admin:integrations:login:update`, so a role enabling it holds both domains (a superuser always can).
 4. Save the app credentials on the same card if they are not configured yet. They are shared with directory sync, and a blank secret field preserves the saved secret. Leave the integration enabled.
 
 Sign-in is advertised on the login page only when global SSO is enabled, the integration is enabled, and `user_login` is one of its enabled capabilities. Without the opt-in, the integration keeps serving directory sync only and no Feishu login button appears. Turning the integration off stops both capabilities while preserving the opt-in.
@@ -62,6 +62,36 @@ Sign-in is advertised on the login page only when global SSO is enabled, the int
 The Feishu subject stored as the external identity `provider_user_id` is the profile `union_id`, falling back to `open_id` when `union_id` is absent, so replacing the app within the same developer account does not break existing connections.
 
 A Feishu account whose directory record carries no email receives the same deterministic placeholder address the directory sync uses, `feishu-<sha256(user_id)>@accounts.clouisle.example`, so sign-in and sync converge on one local account instead of creating two. Deriving that address needs the Feishu `user_id`, which requires `contact:user.employee_id:readonly`; without that scope there is no `user_id` for such an account and its first sign-in is rejected rather than creating a placeholder identity.
+
+## Synchronize Feishu knowledge
+
+System superusers open **Site Settings → Integrations → Feishu** (`/site-settings/integrations/feishu`). The page has separate **Integration configuration**, **Directory sync**, **Notifications**, and **Feishu knowledge sync** tabs. Delegated integration permissions alone do not grant the knowledge tab or its API. Configure the Feishu app and the directory, sign-in, and notification capability switches in **Integration configuration**, where they share one save action; manage department scope and manual sync in **Directory sync**; check connectivity and send test messages in **Notifications**.
+
+1. Save and enable the existing Feishu app integration. Knowledge sync reuses its app credentials and tenant access token; it does not use a signed-in user's token.
+2. Grant Wiki space/node reads, Docx block reads, Sheets reads, Base table/field/record reads, document exports, and Drive file/media downloads as needed. File metadata uses `drive:drive.metadata:readonly` (or broader Drive access); media downloads require `docs:document.media:download` or the relevant document/Sheets/Base scope. Also grant resource access to the selected space and documents: API scopes alone are insufficient.
+3. Create a destination knowledge base in the intended team. If no embedding model is explicitly selected, imports use the system default embedding model, just like ordinary document processing; that default must exist and be enabled. Add a source, select a visible Feishu space and destination, and choose a sync interval (1–43,200 minutes).
+4. Enable automatic sync or run **Sync now**. Automatic dispatch requires Celery Beat and a worker consuming the `knowledge` queue. Inspect each source's status, last sync time, result counts, errors, and conversion warnings.
+
+The sync page displays Wiki space names and records node titles in new error/warning results. Click a node title to open its Feishu original in a new tab. Historical results without titles display a clickable node ID instead; Feishu still enforces the viewer's original access permissions.
+
+Unsupported source types and file formats are skipped, not failed. Their titles, original-document links, types, and reasons appear under **Skipped (unsupported)** (`last_result.skipped`); `unsupported` remains their count. A run with no actual failures is successful and clears `last_error`, even if it skips unsupported documents. Real read, conversion, or indexing errors still count as failures.
+
+**Permission boundary:** this imports team knowledge; it does not mirror Feishu user ACLs. Local team/knowledge-base permissions control reading, retrieval, citations, and sharing after import. Confirm the destination audience before enabling sync. Revocation takes effect locally only when a subsequent sync detects it.
+
+Supported source types:
+
+| Source | Import behavior |
+|---|---|
+| Modern document (`docx`) | Rich text, headings, lists, code, quotes, todos, tables; authenticated image download and embedded attachment text extraction. Date reminders become text with a UTC event time, original millisecond timestamps, creator ID, and notification/all-day flags; they do not schedule local notifications. |
+| Legacy document (`doc`) | Export to DOCX and parse through the existing document processor |
+| Spreadsheet (`sheet`) | Read every grid worksheet in explicit row/column bands, preserving displayed values and source formulas |
+| Base (`bitable`) | Read every accessible table, field definition, and paginated record; include attachment text/images where parseable |
+| Drive file (`file`) | Download and parse PDF, DOC/DOCX, TXT, MD/Markdown, HTML/HTM, CSV, XLS/XLSX, JSON, and PPTX |
+| Mindnote (`mindnote`) | Report unsupported: [Feishu's public API explicitly excludes Mindnote](https://open.feishu.cn/document/server-docs/docs/docs-overview). Export to a supported file and import that file instead. |
+
+This is content ingestion, not a pixel-identical backup: Sheets floating images/charts and non-grid resources are not extracted; formulas are retained rather than calculated locally. Unsupported blocks, image/attachment formats, and extraction gaps produce warnings. Images remain local display assets, not OCR-derived searchable text. Downloads and generated content obey the configured knowledge-base upload limit; incomplete or oversized content fails without replacing the old version. Export failures (including partially unauthorized exports) are not promoted. Imported documents remain locally read-only, including chunk edits, deletion, and reprocessing.
+
+Each run scans the whole space before removing missing documents. Content changes replace the local index after successful processing while preserving the document ID; unchanged content avoids re-embedding. Download, incomplete scan, or processing failures preserve the previous imported version. Confirmed access denial removes the affected local copy; transient or ambiguous errors do not count as deletion. Restored access permits reimport. Disabling a source stops synchronization but keeps imported documents; deleting a source removes its imported documents and indexes, not unrelated local uploads.
 
 ## Protocol configuration
 
@@ -122,5 +152,6 @@ Permission grants migrate once; the completion marker prevents a restart from re
 - Callback mismatch: confirm the registered name and externally reachable URL/proxy headers. Do not register a new integrations callback route.
 - Missing configuration controls: check the relevant login or settings permission domain.
 - Feishu department browsing or sync reports that the integration must be enabled: save the app ID and app secret first, then enable the Feishu integration and turn on the **Directory sync** switch in its card. The department section is only shown while the integration is enabled and directory sync is saved on, and the API replies with that same guidance otherwise.
+- A `99991672` sync error lists the missing API scopes for the specific failed endpoint (for example, Bitable read permissions). Request those scopes under Feishu Open Platform → this app → Permissions, publish the app version, obtain administrator approval, and retry. Requirements differ by endpoint.
 - Undecryptable credentials: restore the matching `SECRET_KEY` or re-save credentials using the relevant settings form.
 - Cannot disconnect an identity: an account with no password cannot remove its only authentication method; establish another valid method first.

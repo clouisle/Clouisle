@@ -188,6 +188,38 @@ The old management namespace and `/sso/providers` discovery endpoint are removed
 
 See the [integration administration guide](../../admin-guide/settings/SSO.md) for protocol setup and the `config`, `attribute_mapping`, `credentials`, and `login_config` boundaries.
 
+## Feishu Knowledge Synchronization
+
+Base: `/api/v1/admin/integrations/feishu/knowledge`. **All endpoints require an active system superuser**, not delegated integration-management permissions. Responses use the standard `code`, `data`, `msg` envelope.
+
+| Method | Relative path | Data / behavior |
+|---|---|---|
+| GET | `/spaces` | App-visible Wiki spaces (`space_id`, `name`) |
+| GET | `/targets` | Active knowledge bases in non-deleted teams (`id`, `name`, `team_name`) |
+| GET | `/sources` | Configured sources and their latest results |
+| POST | `/sources` | Create a source after validating the selected space and destination |
+| PUT | `/sources/{source_id}` | Change `name`, `interval_minutes`, or `is_enabled`; destination and space are immutable |
+| POST | `/sources/{source_id}/sync` | Queue synchronization; response is source state, not completed indexing |
+| DELETE | `/sources/{source_id}` | Remove imported documents/indexes and source; returns `{ "id": "<source_id>" }` |
+
+Create body:
+
+```json
+{
+  "knowledge_base_id": "<uuid>",
+  "space_id": "<feishu-space-id>",
+  "name": "Team documentation",
+  "interval_minutes": 60,
+  "is_enabled": true
+}
+```
+
+`name` is nonblank and at most 100 characters; `space_id` is nonblank and at most 255. Intervals are 1–43,200 minutes (default 60). Unknown create/update fields are rejected. A duplicate destination/space source returns HTTP 409, as does a conflicting operation on a busy source. Disabled sources must be enabled before synchronization.
+
+Source output includes `id`, `knowledge_base_id`, `knowledge_base_name`, `space_id`, `space_name` (when recorded), `name`, `interval_minutes`, `is_enabled`, `status`, `last_synced_at`, `last_error`, `last_result`, `created_at`, and `updated_at`. Run results report `scan_complete`, `scanned`, `indexed`, `unchanged`, `removed`, `failed`, `unsupported`, `errors`, `skipped`, and `warnings`; they describe the latest run, not a history endpoint. Unsupported content is counted in `unsupported` and listed in `skipped` with `node_token`, `node_title`, `type`, and `reason`, not in `errors`. Only actual failures mark a completed scan as `error`; unsupported-only runs are `success` with `last_error=null`.
+
+Source types `docx`, `doc`, `sheet`, `bitable`, and supported `file` formats are imported using tenant-token access. Mindnote has no supported public content API and is reported under `unsupported`, as are unsupported file formats. Images and parseable embedded attachments are included; unextractable blocks/media produce conversion warnings. This does not mirror Feishu user permissions; local team/knowledge-base authorization applies. See [the format matrix, setup, and failure/deletion behavior](../../admin-guide/settings/SSO.md#synchronize-feishu-knowledge).
+
 ---
 
 ## Related
