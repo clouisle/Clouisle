@@ -2,10 +2,10 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
+import { Check, ChevronDown, ChevronRight, Copy, Loader2, RefreshCw, Save } from 'lucide-react'
 import { toast } from 'sonner'
-import { Check, ChevronDown, ChevronRight, Copy, Loader2, MessageSquareText, RefreshCw, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -23,6 +23,8 @@ import { integrationsApi } from '@/lib/api/admin/integrations'
 import type { FeishuConfig, FeishuDepartment, FeishuTestRecipient, Integration } from '@/lib/api/admin/integrations'
 import { ApiError } from '@/lib/api/client'
 import { API_BASE_URL } from '@/lib/constants'
+
+export type FeishuSettingsTab = 'configuration' | 'directory' | 'notification' | 'knowledge'
 
 /**
  * The axios interceptor already toasts backend messages, so only fill the gap it leaves:
@@ -83,14 +85,7 @@ function DepartmentRow({
       {expanded && department.children.length > 0 && (
         <div role="group">
           {department.children.map((child) => (
-            <DepartmentRow
-              key={child.department_id}
-              department={child}
-              depth={depth + 1}
-              selectedIds={selectedIds}
-              onToggle={onToggle}
-              canUpdate={canUpdate}
-            />
+            <DepartmentRow key={child.department_id} department={child} depth={depth + 1} selectedIds={selectedIds} onToggle={onToggle} canUpdate={canUpdate} />
           ))}
         </div>
       )}
@@ -105,6 +100,7 @@ export function FeishuIntegrationTab({
   integration,
   canUpdateLogin,
   onIntegrationChange,
+  tab,
 }: {
   config: FeishuConfig
   onConfigChange: (config: FeishuConfig) => void
@@ -112,6 +108,7 @@ export function FeishuIntegrationTab({
   integration: Integration | null
   canUpdateLogin: boolean
   onIntegrationChange: (integration: Integration) => void
+  tab: FeishuSettingsTab
 }) {
   const t = useTranslations('siteSettings')
   const [appId, setAppId] = React.useState(config.app_id)
@@ -156,9 +153,9 @@ export function FeishuIntegrationTab({
 
   // Both capabilities are opt-in and only run while the integration itself is enabled.
   const capabilitiesReadOnly = !integration || !config.is_enabled
-  const canEditDirectorySync = canUpdate && !capabilitiesReadOnly
-  const canEditNotification = canUpdate && !capabilitiesReadOnly
-  const canEditLogin = canUpdateLogin && !capabilitiesReadOnly
+  const canEditDirectorySync = tab === 'configuration' && canUpdate && !capabilitiesReadOnly
+  const canEditNotification = tab === 'configuration' && canUpdate && !capabilitiesReadOnly
+  const canEditLogin = tab === 'configuration' && canUpdateLogin && !capabilitiesReadOnly
   const nextCapabilities = integration
     ? integration.supported_capabilities.filter((capability) => {
         if (capability === 'directory_sync') {
@@ -181,10 +178,10 @@ export function FeishuIntegrationTab({
     ? nextCapabilities.join() !== integration.enabled_capabilities.join()
     : false
   const canSaveCapabilities = Boolean(integration) && !capabilitiesReadOnly
-    && (canEditDirectorySync || canEditLogin || canEditNotification)
     && (capabilitiesChanged || (canEditLogin && buttonText.trim() !== savedButtonText.trim()))
-  // Departments can only be browsed once the app credentials are saved and the
-  // integration actually serves directory sync; requesting them earlier is rejected.
+  const configChanged = appId.trim() !== config.app_id || appSecret.trim().length > 0
+  const canSaveConfiguration = canUpdate && Boolean(appId.trim()) && configChanged
+  // Departments require saved app credentials and an enabled directory capability.
   const departmentsAvailable = config.app_secret_configured && config.is_enabled && savedDirectorySync
 
   // The Feishu app must allowlist this exact URL before sign-in callbacks work.
@@ -239,42 +236,37 @@ export function FeishuIntegrationTab({
     })
   }
 
-  const saveCapabilities = async () => {
-    if (!integration || !canSaveCapabilities) return
+  const saveConfiguration = async () => {
+    if (saving || savingCapabilities) return
+    const shouldSaveConfig = canSaveConfiguration
+    const shouldSaveCapabilities = canSaveCapabilities
+    if (!shouldSaveConfig && !shouldSaveCapabilities) return
+
+    setSaving(true)
     setSavingCapabilities(true)
     try {
-      const updated = await integrationsApi.update(integration.id, {
-        enabled_capabilities: nextCapabilities,
-        // `button_text` belongs to the login domain, so a settings-only editor must not send it.
-        ...(canEditLogin ? { button_text: buttonText.trim() || null } : {}),
-      })
-      onIntegrationChange(updated)
+      if (shouldSaveConfig) {
+        const result = await integrationsApi.updateFeishuConfig({
+          app_id: appId.trim(),
+          app_secret: appSecret.trim() || undefined,
+        })
+        setAppSecret('')
+        onConfigChange({ ...config, ...result })
+      }
+      if (shouldSaveCapabilities && integration) {
+        const updated = await integrationsApi.update(integration.id, {
+          enabled_capabilities: nextCapabilities,
+          ...(canEditLogin ? { button_text: buttonText.trim() || null } : {}),
+        })
+        onIntegrationChange(updated)
+      }
       toast.success(t('saveSuccess'))
     } catch (error) {
-      console.error('Failed to save Feishu capabilities:', error)
-      toastFallback(error, t('saveError'))
-    } finally {
-      setSavingCapabilities(false)
-    }
-  }
-
-  const saveConfig = async () => {
-    if (!canUpdate) return
-    if (!appId.trim()) return
-    setSaving(true)
-    try {
-      const result = await integrationsApi.updateFeishuConfig({
-        app_id: appId.trim(),
-        app_secret: appSecret.trim() || undefined,
-      })
-      setAppSecret('')
-      onConfigChange({ ...config, ...result })
-      toast.success(t('saveSuccess'))
-    } catch (error) {
-      console.error('Failed to save Feishu configuration:', error)
+      console.error('Failed to save Feishu settings:', error)
       toastFallback(error, t('integrations.feishuSaveFailed'))
     } finally {
       setSaving(false)
+      setSavingCapabilities(false)
     }
   }
 
@@ -333,12 +325,7 @@ export function FeishuIntegrationTab({
     }
   }, [t])
 
-  React.useEffect(() => {
-    if (savedNotificationEnabled) loadTestRecipients()
-  }, [savedNotificationEnabled, loadTestRecipients])
-
   const sendTestMessage = async () => {
-    if (!canUpdate || !testRecipientId || !testTitle.trim() || !testContent.trim()) return
     setSendingTest(true)
     try {
       await integrationsApi.sendFeishuTestMessage(testRecipientId, testTitle.trim(), testContent.trim())
@@ -351,212 +338,213 @@ export function FeishuIntegrationTab({
     }
   }
 
+  React.useEffect(() => {
+    if (tab === 'notification' && savedNotificationEnabled && config.is_enabled) loadTestRecipients()
+  }, [tab, savedNotificationEnabled, config.is_enabled, loadTestRecipients])
+
   return (
     <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <MessageSquareText className="h-4 w-4" />
-          <CardTitle>{t('integrations.feishu')}</CardTitle>
-        </div>
-        <CardDescription>{t('integrations.feishuDescription')}</CardDescription>
-      </CardHeader>
       <CardContent className="space-y-5">
-        <section data-testid="feishu-capabilities" className="space-y-4 border-b pb-5">
-          {canUpdate && (
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-sm font-medium">{t('integrations.capabilities.directory_sync')}</h3>
-                <p className="text-xs text-muted-foreground">{t('integrations.feishuDirectorySyncDescription')}</p>
-              </div>
-              <Switch
-                aria-label={t('integrations.capabilities.directory_sync')}
-                checked={directorySyncEnabled}
-                disabled={!canEditDirectorySync || savingCapabilities}
-                onCheckedChange={setDirectorySyncEnabled}
-              />
-            </div>
-          )}
-          {canUpdateLogin && (
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-sm font-medium">{t('integrations.feishuLogin')}</h3>
-                <p className="text-xs text-muted-foreground">{t('integrations.feishuLoginDescription')}</p>
-              </div>
-              <Switch
-                aria-label={t('integrations.feishuLogin')}
-                checked={loginEnabled}
-                disabled={!canEditLogin || savingCapabilities}
-                onCheckedChange={setLoginEnabled}
-              />
-            </div>
-          )}
-          {canUpdate && (
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-sm font-medium">{t('integrations.capabilities.notification')}</h3>
-                <p className="text-xs text-muted-foreground">{t('integrations.feishuNotificationDescription')}</p>
-              </div>
-              <Switch
-                aria-label={t('integrations.capabilities.notification')}
-                checked={notificationEnabled}
-                disabled={!canEditNotification || savingCapabilities}
-                onCheckedChange={setNotificationEnabled}
-              />
-            </div>
-          )}
-          {canEditLogin && (
-            <div className="space-y-2">
-              <Label htmlFor="feishu-button-text">{t('integrations.feishuButtonText')}</Label>
-              <Input
-                id="feishu-button-text"
-                value={buttonText}
-                onChange={(event) => setButtonText(event.target.value)}
-                disabled={!canEditLogin || savingCapabilities}
-              />
-              <p className="text-xs text-muted-foreground">{t('integrations.feishuButtonTextDesc')}</p>
-            </div>
-          )}
-          <div className="space-y-2">
-            <Label htmlFor="feishu-redirect-url">{t('integrations.callbackUrl')}</Label>
-            <div className="flex items-center gap-2">
-              <code
-                id="feishu-redirect-url"
-                className="min-w-0 flex-1 overflow-x-auto rounded-md bg-muted px-3 py-2 font-mono text-xs"
-              >
-                {redirectUrl}
-              </code>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-sm"
-                aria-label={t('integrations.callbackUrl')}
-                onClick={copyRedirectUrl}
-              >
-                {copiedRedirect ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">{t('integrations.callbackUrlDesc')}</p>
-          </div>
-          {(canEditDirectorySync || canEditLogin || canEditNotification) && (
-            <div className="flex justify-end">
-              <Button type="button" data-testid="feishu-capability-save" variant="outline" onClick={saveCapabilities} disabled={!canSaveCapabilities || savingCapabilities}>
-                {savingCapabilities ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                {t('save')}
-              </Button>
-            </div>
-          )}
-        </section>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="feishu-app-id">{t('integrations.feishuAppId')}</Label>
-            <Input id="feishu-app-id" value={appId} onChange={(event) => setAppId(event.target.value)} disabled={!canUpdate} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="feishu-app-secret">{t('integrations.feishuAppSecret')}</Label>
-            <Input
-              id="feishu-app-secret"
-              type="password"
-              autoComplete="new-password"
-              value={appSecret}
-              onChange={(event) => setAppSecret(event.target.value)}
-              placeholder={config.app_secret_configured ? t('integrations.feishuSecretConfigured') : ''}
-              disabled={!canUpdate}
-            />
-            <p className="text-xs text-muted-foreground">{t('integrations.feishuAppSecretDesc')}</p>
-          </div>
-        </div>
-        {canUpdate && (
-          <div className="flex justify-end">
-            <Button type="button" variant="outline" onClick={saveConfig} disabled={saving || !appId.trim()}>
-              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              {t('save')}
-            </Button>
-          </div>
-        )}
-        {canUpdate && savedNotificationEnabled && (
-          <section className="space-y-4 border-t pt-4" aria-labelledby="feishu-notification-test-title">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 id="feishu-notification-test-title" className="text-sm font-medium">{t('integrations.feishuTestMessage')}</h3>
-                <p className="text-xs text-muted-foreground">{t('integrations.feishuNotificationDescription')}</p>
-              </div>
-              <Button type="button" variant="outline" onClick={checkConnection} disabled={checkingConnection || !config.is_enabled}>
-                {checkingConnection && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {t('integrations.feishuConnectionCheck')}
-              </Button>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
+        {tab === 'configuration' && <div className="space-y-5">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="feishu-test-recipient-trigger">{t('integrations.feishuTestRecipient')}</Label>
-                <Select value={testRecipientId} onValueChange={setTestRecipientId}>
-                  <SelectTrigger id="feishu-test-recipient-trigger" aria-label={t('integrations.feishuTestRecipient')} className="w-full">
-                    <SelectValue placeholder={testRecipients.length ? t('integrations.feishuTestRecipientPlaceholder') : t('integrations.feishuNoTestRecipients')}>
-                      {testRecipients.find((recipient) => recipient.id === testRecipientId)?.username ?? ''}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {testRecipients.map((recipient) => (
-                      <SelectItem key={recipient.id} value={recipient.id}>
-                        {recipient.username}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="feishu-app-id">{t('integrations.feishuAppId')}</Label>
+                <Input id="feishu-app-id" value={appId} onChange={(event) => setAppId(event.target.value)} disabled={!canUpdate} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="feishu-test-title">{t('integrations.feishuTestTitle')}</Label>
-                <Input id="feishu-test-title" value={testTitle} onChange={(event) => setTestTitle(event.target.value)} maxLength={200} />
+                <Label htmlFor="feishu-app-secret">{t('integrations.feishuAppSecret')}</Label>
+                <Input
+                  id="feishu-app-secret"
+                  type="password"
+                  autoComplete="new-password"
+                  value={appSecret}
+                  onChange={(event) => setAppSecret(event.target.value)}
+                  placeholder={config.app_secret_configured ? t('integrations.feishuSecretConfigured') : ''}
+                  disabled={!canUpdate}
+                />
+                <p className="text-xs text-muted-foreground">{t('integrations.feishuAppSecretDesc')}</p>
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="feishu-test-content">{t('integrations.feishuTestContent')}</Label>
-              <Textarea id="feishu-test-content" value={testContent} onChange={(event) => setTestContent(event.target.value)} maxLength={2000} rows={3} />
-            </div>
-            <div className="flex justify-end">
-              <Button type="button" onClick={sendTestMessage} disabled={sendingTest || !testRecipientId || !testTitle.trim() || !testContent.trim() || !savedNotificationEnabled}>
-                {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {t('integrations.feishuTestSend')}
-              </Button>
-            </div>
-          </section>
-        )}
-        {departmentsAvailable && (
-          <section className="space-y-3 border-t pt-4" aria-labelledby="feishu-departments-title">
-            <div>
-              <h3 id="feishu-departments-title" className="text-sm font-medium">{t('integrations.feishuDepartments')}</h3>
-              <p className="text-xs text-muted-foreground">{t('integrations.feishuDepartmentsDesc')}</p>
-            </div>
-            {loadingDepartments ? (
-              <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{t('integrations.feishuLoadingDepartments')}</div>
-            ) : departments.length > 0 ? (
-              <ScrollArea className="max-h-72 rounded-md border p-2">
-                <div role="tree" aria-label={t('integrations.feishuDepartments')}>
-                  {departments.map((department) => (
-                    <DepartmentRow key={department.department_id} department={department} depth={0} selectedIds={selectedIds} onToggle={toggleDepartment} canUpdate={canUpdate} />
-                  ))}
+            <section data-testid="feishu-capabilities" className="space-y-4">
+              {canUpdate && (
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-medium">{t('integrations.capabilities.directory_sync')}</h3>
+                    <p className="text-xs text-muted-foreground">{t('integrations.feishuDirectorySyncDescription')}</p>
+                  </div>
+                  <Switch
+                    aria-label={t('integrations.capabilities.directory_sync')}
+                    checked={directorySyncEnabled}
+                    disabled={!canEditDirectorySync || savingCapabilities}
+                    onCheckedChange={setDirectorySyncEnabled}
+                  />
                 </div>
-              </ScrollArea>
-            ) : (
-              <p className="rounded-md border p-3 text-sm text-muted-foreground">{t('integrations.feishuNoDepartments')}</p>
-            )}
-            {canUpdate && (
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button type="button" variant="outline" onClick={loadDepartments} disabled={loadingDepartments}>
-                  {loadingDepartments ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                  {t('integrations.feishuRefreshDepartments')}
-                </Button>
-                <Button type="button" variant="outline" onClick={saveScope} disabled={savingScope || Object.keys(selectedIds).length === 0}>
-                  {savingScope && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {t('integrations.feishuSaveScope')}
-                </Button>
-                <Button type="button" onClick={sync} disabled={syncing || !config.is_enabled || config.department_ids.length === 0}>
-                  {syncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                  {t('integrations.feishuSync')}
+              )}
+              {canUpdateLogin && (
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-medium">{t('integrations.feishuLogin')}</h3>
+                    <p className="text-xs text-muted-foreground">{t('integrations.feishuLoginDescription')}</p>
+                  </div>
+                  <Switch
+                    aria-label={t('integrations.feishuLogin')}
+                    checked={loginEnabled}
+                    disabled={!canEditLogin || savingCapabilities}
+                    onCheckedChange={setLoginEnabled}
+                  />
+                </div>
+              )}
+              {canEditLogin && (
+                <div className="space-y-2">
+                  <Label htmlFor="feishu-button-text">{t('integrations.feishuButtonText')}</Label>
+                  <Input
+                    id="feishu-button-text"
+                    value={buttonText}
+                    onChange={(event) => setButtonText(event.target.value)}
+                    disabled={!canEditLogin || savingCapabilities}
+                  />
+                  <p className="text-xs text-muted-foreground">{t('integrations.feishuButtonTextDesc')}</p>
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="feishu-redirect-url">{t('integrations.callbackUrl')}</Label>
+                <div className="flex items-center gap-2">
+                  <code
+                    id="feishu-redirect-url"
+                    className="min-w-0 flex-1 overflow-x-auto rounded-md bg-muted px-3 py-2 font-mono text-xs"
+                  >
+                    {redirectUrl}
+                  </code>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-sm"
+                    aria-label={t('integrations.callbackUrl')}
+                    onClick={copyRedirectUrl}
+                  >
+                    {copiedRedirect ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">{t('integrations.callbackUrlDesc')}</p>
+              </div>
+              {canUpdate && (
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-medium">{t('integrations.capabilities.notification')}</h3>
+                    <p className="text-xs text-muted-foreground">{t('integrations.feishuNotificationDescription')}</p>
+                  </div>
+                  <Switch
+                    aria-label={t('integrations.capabilities.notification')}
+                    checked={notificationEnabled}
+                    disabled={!canEditNotification || savingCapabilities}
+                    onCheckedChange={setNotificationEnabled}
+                  />
+                </div>
+              )}
+            </section>
+            {(canUpdate || canEditDirectorySync || canEditLogin || canEditNotification) && (
+              <div className="flex justify-end">
+                <Button type="button" data-testid="feishu-settings-save" variant="outline" onClick={saveConfiguration} disabled={(!canSaveConfiguration && !canSaveCapabilities) || saving || savingCapabilities}>
+                  {saving || savingCapabilities ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  {t('save')}
                 </Button>
               </div>
             )}
-          </section>
-        )}
+        </div>}
+        {tab === 'directory' && <div className="space-y-5">
+            {!savedDirectorySync ? (
+              <p className="rounded-md border p-3 text-sm text-muted-foreground">{t('integrations.feishuDirectorySyncDisabledHint')}</p>
+            ) : !config.app_secret_configured || !config.is_enabled ? (
+              <p className="rounded-md border p-3 text-sm text-muted-foreground">{t('integrations.feishuDirectorySyncUnavailable')}</p>
+            ) : (
+              <section className="space-y-3" aria-labelledby="feishu-departments-title">
+                <div>
+                  <h3 id="feishu-departments-title" className="text-sm font-medium">{t('integrations.feishuDepartments')}</h3>
+                  <p className="text-xs text-muted-foreground">{t('integrations.feishuDepartmentsDesc')}</p>
+                </div>
+                {loadingDepartments ? (
+                  <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{t('integrations.feishuLoadingDepartments')}</div>
+                ) : departments.length > 0 ? (
+                  <ScrollArea className="max-h-72 rounded-md border p-2">
+                    <div role="tree" aria-label={t('integrations.feishuDepartments')}>
+                      {departments.map((department) => (
+                        <DepartmentRow key={department.department_id} department={department} depth={0} selectedIds={selectedIds} onToggle={toggleDepartment} canUpdate={canUpdate} />
+                      ))}
+                    </div>
+                  </ScrollArea>
+                ) : (
+                  <p className="rounded-md border p-3 text-sm text-muted-foreground">{t('integrations.feishuNoDepartments')}</p>
+                )}
+                {canUpdate && (
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={loadDepartments} disabled={loadingDepartments}>
+                      {loadingDepartments ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      {t('integrations.feishuRefreshDepartments')}
+                    </Button>
+                    <Button type="button" variant="outline" onClick={saveScope} disabled={savingScope || Object.keys(selectedIds).length === 0}>
+                      {savingScope ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      {t('integrations.feishuSaveScope')}
+                    </Button>
+                    <Button type="button" onClick={sync} disabled={syncing || !config.is_enabled || config.department_ids.length === 0}>
+                      {syncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      {t('integrations.feishuSync')}
+                    </Button>
+                  </div>
+                )}
+              </section>
+            )}
+        </div>}
+        {tab === 'notification' && <div className="space-y-5">
+            {!savedNotificationEnabled ? (
+              <p className="rounded-md border p-3 text-sm text-muted-foreground">{t('integrations.feishuNotificationDisabledHint')}</p>
+            ) : (
+              <section className="space-y-4" aria-labelledby="feishu-notification-test-title">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 id="feishu-notification-test-title" className="text-sm font-medium">{t('integrations.feishuTestMessage')}</h3>
+                    <p className="text-xs text-muted-foreground">{t('integrations.feishuNotificationDescription')}</p>
+                  </div>
+                  <Button type="button" variant="outline" onClick={checkConnection} disabled={checkingConnection || !config.is_enabled}>
+                    {checkingConnection && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {t('integrations.feishuConnectionCheck')}
+                  </Button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="feishu-test-recipient-trigger">{t('integrations.feishuTestRecipient')}</Label>
+                    <Select value={testRecipientId} onValueChange={(value) => setTestRecipientId(value ?? '')}>
+                      <SelectTrigger id="feishu-test-recipient-trigger" aria-label={t('integrations.feishuTestRecipient')} className="w-full">
+                        <SelectValue placeholder={testRecipients.length ? t('integrations.feishuTestRecipientPlaceholder') : t('integrations.feishuNoTestRecipients')}>
+                          {testRecipients.find((recipient) => recipient.id === testRecipientId)?.username ?? ''}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {testRecipients.map((recipient) => (
+                          <SelectItem key={recipient.id} value={recipient.id}>
+                            {recipient.username}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="feishu-test-title">{t('integrations.feishuTestTitle')}</Label>
+                    <Input id="feishu-test-title" value={testTitle} onChange={(event) => setTestTitle(event.target.value)} maxLength={200} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="feishu-test-content">{t('integrations.feishuTestContent')}</Label>
+                  <Textarea id="feishu-test-content" value={testContent} onChange={(event) => setTestContent(event.target.value)} maxLength={2000} rows={3} />
+                </div>
+                <div className="flex justify-end">
+                  <Button type="button" onClick={sendTestMessage} disabled={sendingTest || !testRecipientId || !testTitle.trim() || !testContent.trim() || !savedNotificationEnabled}>
+                    {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {t('integrations.feishuTestSend')}
+                  </Button>
+                </div>
+              </section>
+            )}
+        </div>}
       </CardContent>
     </Card>
   )

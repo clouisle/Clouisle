@@ -30,9 +30,9 @@ const remove = mock(async () => undefined)
 const testConnection = mock(async () => ({ status: 'success', message: 'Connected' }))
 const toastSuccess = mock(() => undefined)
 const toastError = mock(() => undefined)
+const push = mock((href: string) => { void href })
 let permissions: Record<string, true> = {}
 let dialogProps: { open: boolean; provider: Integration | null; types: IntegrationType[]; onClose: (success?: boolean) => void } | null = null
-let feishuProps: { config: typeof feishu; canUpdate: boolean; integration: Integration | null; canUpdateLogin: boolean } | null = null
 
 mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
@@ -59,11 +59,7 @@ mock.module('@/components/ui/alert-dialog', () => ({
 }))
 mock.module('@/lib/api/admin/integrations', () => ({ integrationsApi: { list, types, getEmail, getWebhook, getFeishuConfig, updateEmail, updateWebhook, updateFeishuConfig, update, delete: remove, testConnection } }))
 mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform: (permission: string) => Boolean(permissions[permission]) }) }))
-mock.module('./_components', () => ({
-  EmailSettingsTab: ({ canUpdate }: { canUpdate: boolean }) => <div data-email-editable={String(canUpdate)} />,
-  WebhookSettingsTab: ({ canUpdate }: { canUpdate: boolean }) => <div data-webhook-editable={String(canUpdate)} />,
-  FeishuIntegrationTab: (props: NonNullable<typeof feishuProps>) => { feishuProps = props; return <div data-feishu-ready={String(props.config.app_secret_configured)} /> },
-}))
+mock.module('next/navigation', () => ({ useRouter: () => ({ push }) }))
 mock.module('./_components/login-integration-dialog', () => ({ LoginIntegrationDialog: (props: NonNullable<typeof dialogProps>) => { dialogProps = props; return props.open ? <div data-login-editor={props.provider?.id || 'new'} /> : null } }))
 
 const { default: SiteSettingsIntegrationsPage } = await import('./page')
@@ -78,14 +74,13 @@ async function render() {
 beforeEach(() => {
   permissions = { 'admin:integrations:login:read': true, 'admin:integrations:settings:read': true, 'admin:integrations:login:update': true, 'admin:integrations:settings:update': true }
   dialogProps = null
-  feishuProps = null
 })
 afterEach(() => {
   act(() => renderers.splice(0).forEach((renderer) => renderer.unmount()))
   mock.clearAllMocks()
 })
 
-test('lists login integrations alongside builtins and opens existing configuration forms', async () => {
+test('lists login integrations alongside builtins and navigates each to its own configuration page', async () => {
   const renderer = await render()
   expect(renderer.root.findAllByType('section').filter((node) => node.props['data-integration-id'])).toHaveLength(4)
   const feishuCard = renderer.root.findByProps({ 'data-integration-id': 'feishu' })
@@ -95,10 +90,9 @@ test('lists login integrations alongside builtins and opens existing configurati
     'integrations.capabilities.notification: integrations.disabled',
   ])
   act(() => feishuCard.findAllByProps({ 'aria-label': 'integrations.feishu', type: 'button' }).find((node) => node.props.onClick)?.props.onClick())
-  expect(feishuProps?.config).toEqual(feishu)
-  expect(feishuProps?.integration).toEqual(builtin('feishu'))
-  expect(feishuProps?.canUpdateLogin).toBe(true)
-  expect(renderer.root.findByProps({ 'data-feishu-ready': 'true' })).toBeDefined()
+  expect(push).toHaveBeenCalledWith('/site-settings/integrations/feishu')
+  act(() => renderer.root.findByProps({ 'data-integration-id': 'email' }).findAllByProps({ 'aria-label': 'integrations.configure', type: 'button' })[0].props.onClick())
+  expect(push).toHaveBeenCalledWith('/site-settings/integrations/email')
   expect(dialogProps?.open).toBe(false)
   act(() => renderer.root.findByProps({ 'aria-label': 'Company Login', type: 'button' }).props.onClick())
   expect(dialogProps?.provider).toEqual(login)

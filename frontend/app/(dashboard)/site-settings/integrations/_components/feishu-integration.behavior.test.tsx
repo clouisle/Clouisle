@@ -55,6 +55,12 @@ mock.module('@/components/ui/select', () => ({
   SelectContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   SelectItem: ({ children, value }: React.PropsWithChildren<{ value: string }>) => <div data-select-item={value}>{children}</div>,
 }))
+mock.module('@/components/ui/tabs', () => ({
+  Tabs: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  TabsList: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  TabsTrigger: ({ children }: React.PropsWithChildren) => <button>{children}</button>,
+  TabsContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+}))
 
 import { integrationsApi, type FeishuConfig, type Integration } from '@/lib/api/admin/integrations'
 import { ApiError } from '@/lib/api/client'
@@ -74,7 +80,7 @@ const integration: Integration = {
 
 const renderers: ReactTestRenderer[] = []
 
-function render(props: { config?: FeishuConfig; integration?: Integration | null; canUpdate?: boolean; canUpdateLogin?: boolean } = {}) {
+function render(props: { config?: FeishuConfig; integration?: Integration | null; canUpdate?: boolean; canUpdateLogin?: boolean; tab?: 'configuration' | 'directory' | 'notification' | 'knowledge' } = {}) {
   const onConfigChange = mock(() => {})
   const onIntegrationChange = mock(() => {})
   let renderer: ReactTestRenderer
@@ -87,6 +93,7 @@ function render(props: { config?: FeishuConfig; integration?: Integration | null
         integration={props.integration === undefined ? integration : props.integration}
         canUpdateLogin={props.canUpdateLogin ?? true}
         onIntegrationChange={onIntegrationChange}
+        tab={props.tab ?? 'configuration'}
       />
     )
   })
@@ -99,7 +106,7 @@ const button = (renderer: ReactTestRenderer, label: string) => renderer.root.fin
 const loginSwitch = (renderer: ReactTestRenderer) => renderer.root.findByProps({ 'aria-label': 'integrations.feishuLogin' })
 const directorySwitch = (renderer: ReactTestRenderer) => renderer.root.findByProps({ 'aria-label': 'integrations.capabilities.directory_sync' })
 const notificationSwitch = (renderer: ReactTestRenderer) => renderer.root.findByProps({ 'aria-label': 'integrations.capabilities.notification' })
-const capabilitySave = (renderer: ReactTestRenderer) => renderer.root.findByProps({ 'data-testid': 'feishu-capability-save' })
+const capabilitySave = (renderer: ReactTestRenderer) => renderer.root.findByProps({ 'data-testid': 'feishu-settings-save' })
 
 beforeEach(() => {
   spyOn(integrationsApi, 'getFeishuTestRecipients').mockResolvedValue([])
@@ -121,7 +128,7 @@ describe('FeishuIntegrationTab', () => {
       { department_id: 'dept-a', name: 'Engineering', parent_department_id: null, children: [] },
     ])
     let renderer: ReactTestRenderer
-    await act(async () => { renderer = create(<FeishuIntegrationTab config={config} onConfigChange={mock(() => {})} canUpdate={false} integration={integration} canUpdateLogin />) })
+    await act(async () => { renderer = create(<FeishuIntegrationTab config={config} onConfigChange={mock(() => {})} canUpdate={false} integration={integration} canUpdateLogin onIntegrationChange={mock(() => {})} tab="directory" />) })
     renderers.push(renderer!)
     expect(renderer!.root.findByProps({ 'aria-label': 'Engineering' }).props.disabled).toBe(true)
     expect(renderer!.root.findAllByType('button').some((item) => item.children.includes('integrations.feishuSync'))).toBe(false)
@@ -131,7 +138,7 @@ describe('FeishuIntegrationTab', () => {
     spyOn(integrationsApi, 'getFeishuDepartments').mockResolvedValue([])
     const syncFeishuContacts = spyOn(integrationsApi, 'syncFeishuContacts')
       .mockResolvedValue({ created: 3, updated: 1, skipped: 2, teams_created: 4 })
-    const { renderer } = render()
+    const { renderer } = render({ tab: 'directory' })
 
     await act(async () => button(renderer, 'integrations.feishuSync').props.onClick())
 
@@ -144,7 +151,7 @@ describe('FeishuIntegrationTab', () => {
   test('leaves backend-reported sync failures to the global error toast', async () => {
     spyOn(integrationsApi, 'getFeishuDepartments').mockResolvedValue([])
     spyOn(integrationsApi, 'syncFeishuContacts').mockRejectedValue(new ApiError(1002, 'Feishu API HTTP 400 (code 41050): no user authority error'))
-    const { renderer } = render()
+    const { renderer } = render({ tab: 'directory' })
 
     await act(async () => button(renderer, 'integrations.feishuSync').props.onClick())
 
@@ -155,7 +162,7 @@ describe('FeishuIntegrationTab', () => {
   test('shows a localized fallback when the sync fails before the API answers', async () => {
     spyOn(integrationsApi, 'getFeishuDepartments').mockResolvedValue([])
     spyOn(integrationsApi, 'syncFeishuContacts').mockRejectedValue(new Error('Failed to fetch'))
-    const { renderer } = render()
+    const { renderer } = render({ tab: 'directory' })
 
     await act(async () => button(renderer, 'integrations.feishuSync').props.onClick())
 
@@ -166,7 +173,7 @@ describe('FeishuIntegrationTab', () => {
     spyOn(integrationsApi, 'getFeishuDepartments').mockResolvedValue([
       { department_id: '0', name: 'Acme Ltd.', parent_department_id: null, children: [] },
     ])
-    const { renderer } = render()
+    const { renderer } = render({ tab: 'directory' })
 
     await act(async () => {})
 
@@ -176,7 +183,7 @@ describe('FeishuIntegrationTab', () => {
 
   test('skips the department request when directory sync is not enabled on the integration', async () => {
     const departments = spyOn(integrationsApi, 'getFeishuDepartments').mockResolvedValue([])
-    const { renderer } = render({ integration: { ...integration, enabled_capabilities: ['user_login'] } })
+    const { renderer } = render({ tab: 'directory', integration: { ...integration, enabled_capabilities: ['user_login'] } })
 
     await act(async () => {})
 
@@ -186,7 +193,7 @@ describe('FeishuIntegrationTab', () => {
 
   test('skips the department request while the integration is disabled', async () => {
     const departments = spyOn(integrationsApi, 'getFeishuDepartments').mockResolvedValue([])
-    render({ config: { ...config, is_enabled: false } })
+    render({ tab: 'directory', config: { ...config, is_enabled: false } })
 
     await act(async () => {})
 
@@ -204,6 +211,20 @@ describe('FeishuIntegrationTab', () => {
 
     expect(writeText).toHaveBeenCalledWith(url.children.join(''))
     writeText.mockClear()
+  })
+  test('saves credentials and capability changes through one button', async () => {
+    spyOn(integrationsApi, 'getFeishuDepartments').mockResolvedValue([])
+    const saveConfig = spyOn(integrationsApi, 'updateFeishuConfig').mockResolvedValue(config)
+    const saveIntegration = spyOn(integrationsApi, 'update').mockResolvedValue({ ...integration, enabled_capabilities: ['directory_sync', 'user_login'] })
+    const { renderer } = render()
+
+    await act(async () => renderer.root.findByProps({ id: 'feishu-app-id' }).props.onChange({ target: { value: 'new-app-id' } }))
+    await act(async () => loginSwitch(renderer).props.onCheckedChange(true))
+    expect(capabilitySave(renderer).props.disabled).toBe(false)
+    await act(async () => capabilitySave(renderer).props.onClick())
+
+    expect(saveConfig).toHaveBeenCalledWith({ app_id: 'new-app-id', app_secret: undefined })
+    expect(saveIntegration).toHaveBeenCalledWith('feishu-1', { enabled_capabilities: ['directory_sync', 'user_login'], button_text: null })
   })
 
   test('opts Feishu into web login by saving the merged capability list', async () => {
@@ -235,7 +256,7 @@ describe('FeishuIntegrationTab', () => {
   test('turns directory sync off through its own capability switch', async () => {
     spyOn(integrationsApi, 'getFeishuDepartments').mockResolvedValue([])
     const update = spyOn(integrationsApi, 'update').mockResolvedValue({ ...integration, enabled_capabilities: ['user_login'] })
-    const { renderer } = render({ integration: { ...integration, enabled_capabilities: ['directory_sync', 'user_login'] } })
+    const { renderer } = render({ tab: 'configuration', integration: { ...integration, enabled_capabilities: ['directory_sync', 'user_login'] } })
 
     expect(directorySwitch(renderer).props.checked).toBe(true)
     await act(async () => directorySwitch(renderer).props.onCheckedChange(false))
@@ -259,29 +280,26 @@ describe('FeishuIntegrationTab', () => {
   test('leaves capability controls read-only without settings update permission', async () => {
     spyOn(integrationsApi, 'getFeishuDepartments').mockResolvedValue([])
     const update = spyOn(integrationsApi, 'update').mockResolvedValue(integration)
-    const { renderer } = render({ canUpdate: false, canUpdateLogin: false })
+    const { renderer } = render({ tab: 'configuration', canUpdate: false, canUpdateLogin: false })
 
     expect(renderer.root.findAllByProps({ 'aria-label': 'integrations.capabilities.directory_sync' })).toHaveLength(0)
     expect(renderer.root.findAllByProps({ 'aria-label': 'integrations.feishuLogin' })).toHaveLength(0)
     expect(renderer.root.findAllByProps({ 'aria-label': 'integrations.capabilities.notification' })).toHaveLength(0)
-    expect(renderer.root.findAllByProps({ id: 'feishu-button-text' })).toHaveLength(0)
-    expect(renderer.root.findAllByProps({ 'data-testid': 'feishu-capability-save' })).toHaveLength(0)
+    expect(renderer.root.findAllByProps({ 'data-testid': 'feishu-settings-save' })).toHaveLength(0)
     expect(update).not.toHaveBeenCalled()
   })
 
   test('keeps capabilities disabled until the Feishu integration itself is enabled', async () => {
     spyOn(integrationsApi, 'getFeishuDepartments').mockResolvedValue([])
-    const { renderer } = render({ config: { ...config, is_enabled: false } })
+    const { renderer } = render({ tab: 'configuration', config: { ...config, is_enabled: false } })
 
-    expect(directorySwitch(renderer).props.disabled).toBe(true)
-    expect(loginSwitch(renderer).props.disabled).toBe(true)
-    expect(renderer.root.findByProps({ 'aria-label': 'integrations.capabilities.notification' }).props.disabled).toBe(true)
-    expect(renderer.root.findAllByProps({ 'data-testid': 'feishu-capability-save' })).toHaveLength(0)
+    expect(notificationSwitch(renderer).props.disabled).toBe(true)
+    expect(capabilitySave(renderer).props.disabled).toBe(true)
   })
 
   test('checks Feishu app authentication without requiring directory sync capability', async () => {
     const check = spyOn(integrationsApi, 'checkFeishuConnection').mockResolvedValue({ status: 'ok' })
-    const { renderer } = render({ integration: { ...integration, enabled_capabilities: ['notification'] } })
+    const { renderer } = render({ tab: 'notification', integration: { ...integration, enabled_capabilities: ['notification'] } })
     await act(async () => {})
     await act(async () => button(renderer, 'integrations.feishuConnectionCheck').props.onClick())
 
@@ -296,7 +314,7 @@ describe('FeishuIntegrationTab', () => {
     ]
     spyOn(integrationsApi, 'getFeishuTestRecipients').mockResolvedValue(recipients)
     const send = spyOn(integrationsApi, 'sendFeishuTestMessage').mockResolvedValue({ status: 'sent' })
-    const { renderer } = render({ integration: { ...integration, enabled_capabilities: ['directory_sync', 'notification'] } })
+    const { renderer } = render({ tab: 'notification', integration: { ...integration, enabled_capabilities: ['directory_sync', 'notification'] } })
     await act(async () => {})
     const recipientSelect = renderer.root.findByProps({ 'data-select-value': '' })
     await act(async () => recipientSelect.props['data-on-value-change']('user-2'))
@@ -311,7 +329,7 @@ describe('FeishuIntegrationTab', () => {
     expect(success).toHaveBeenCalledWith('integrations.feishuTestSent')
   })
   test('allows an authorized admin to enable Feishu notifications', async () => {
-    const { renderer, onIntegrationChange } = render({ integration: { ...integration, enabled_capabilities: ['directory_sync'] } })
+    const { renderer, onIntegrationChange } = render({ tab: 'configuration', integration: { ...integration, enabled_capabilities: ['directory_sync'] } })
     const update = spyOn(integrationsApi, 'update').mockResolvedValue({
       ...integration,
       enabled_capabilities: ['directory_sync', 'notification'],

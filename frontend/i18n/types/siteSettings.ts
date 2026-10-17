@@ -1,7 +1,55 @@
-// GENERATED — 2026-10-14T05:40:40.654Z
+// GENERATED — 2026-10-17T15:53:02.942Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
+    feishuKnowledge: {
+      title: string
+      superuserOnly: string
+      warning: string
+      credentials: string
+      create: string
+      refresh: string
+      loading: string
+      loadingOptions: string
+      loadFailed: string
+      empty: string
+      name: string
+      target: string
+      space: string
+      selectSpace: string
+      selectTarget: string
+      noOptions: string
+      interval: string
+      enabled: string
+      lastSync: string
+      never: string
+      result: string
+      resultScanned: string
+      resultIndexed: string
+      resultUnchanged: string
+      resultFailed: string
+      resultUnsupported: string
+      resultRemoved: string
+      resultErrors: string
+      resultWarnings: string
+      resultNode: string
+      resultType: string
+      resultUnknownError: string
+      edit: string
+      sync: string
+      save: string
+      cancel: string
+      delete: string
+      resultSkipped: string
+      deleteConfirm: string
+      status: {
+        idle: string
+        queued: string
+        running: string
+        success: string
+        error: string
+      }
+    }
     title: string
     description: string
     general: string
@@ -26,6 +74,13 @@ export type SiteSettingsMessages = {
       email: string
       webhook: string
       feishu: string
+      back: string
+      tabConfiguration: string
+      tabDirectory: string
+      tabNotification: string
+      feishuDirectorySyncDisabledHint: string
+      feishuDirectorySyncUnavailable: string
+      feishuNotificationDisabledHint: string
       feishuDescription: string
       feishuNotificationDescription: string
       configure: string

@@ -58,4 +58,16 @@ describe('route permissions', () => {
     expect(canAccessRoute('/app/api-keys', hasPermission)).toBe(true)
     expect(canAccessRoute('/app/api-keys', () => false)).toBe(false)
   })
+  test('gates builtin integration sub-pages on integration settings permission', () => {
+    const routes = [
+      '/site-settings/integrations/email',
+      '/site-settings/integrations/webhook',
+      '/site-settings/integrations/feishu',
+    ]
+    for (const route of routes) {
+      expect(getRequiredPermissionForPath(route)).toBe('admin:integrations:settings:read')
+      expect(canAccessRoute(route, (permission) => permission === 'admin:integrations:settings:read')).toBe(true)
+      expect(canAccessRoute(route, (permission) => permission === 'admin:integrations:login:read')).toBe(false)
+    }
+  })
 })

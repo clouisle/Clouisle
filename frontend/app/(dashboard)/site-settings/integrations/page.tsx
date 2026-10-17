@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Globe, Mail, Plus, Settings2, Shield, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,12 +10,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { useCanPerform } from '@/components/permission-guard'
 import { integrationsApi, type Integration, type IntegrationType, type FeishuConfig } from '@/lib/api/admin/integrations'
 import type { EmailSettings, WebhookSettings } from '@/lib/api/site-settings'
-import { EmailSettingsTab, FeishuIntegrationTab, WebhookSettingsTab } from './_components'
 import { LoginIntegrationDialog } from './_components/login-integration-dialog'
 
 type BuiltinType = 'email' | 'webhook' | 'feishu'
@@ -27,6 +26,7 @@ export default function SiteSettingsIntegrationsPage() {
   const t = useTranslations('siteSettings')
   const tLogin = useTranslations('sso')
   const { canPerform } = useCanPerform()
+  const router = useRouter()
   const canReadLogin = canPerform('admin:integrations:login:read')
   const canReadSettings = canPerform('admin:integrations:settings:read')
   const canUpdateLogin = canPerform('admin:integrations:login:update')
@@ -34,7 +34,6 @@ export default function SiteSettingsIntegrationsPage() {
   const [instances, setInstances] = React.useState<Integration[]>([])
   const [types, setTypes] = React.useState<IntegrationType[]>([])
   const [loading, setLoading] = React.useState(true)
-  const [activeBuiltin, setActiveBuiltin] = React.useState<BuiltinType | null>(null)
   const [editIntegration, setEditIntegration] = React.useState<Integration | null>(null)
   const [showLoginDialog, setShowLoginDialog] = React.useState(false)
   const [deleteIntegration, setDeleteIntegration] = React.useState<Integration | null>(null)
@@ -130,7 +129,7 @@ export default function SiteSettingsIntegrationsPage() {
           const editable = builtin ? canUpdateSettings : canUpdateLogin
           const enabled = builtin === 'email' ? emailSettings?.smtp_enabled : builtin === 'webhook' ? webhookSettings?.webhook_enabled : builtin === 'feishu' ? feishuConfig?.is_enabled : integration.is_enabled
           const open = () => {
-            if (builtin) setActiveBuiltin(builtin)
+            if (builtin) router.push(`/site-settings/integrations/${builtin}`)
             else { setEditIntegration(integration); setShowLoginDialog(true) }
           }
           return <Card key={integration.id} size="sm" className="!gap-0 !py-0" data-integration-id={integration.id}>
@@ -146,13 +145,6 @@ export default function SiteSettingsIntegrationsPage() {
           </Card>
         })}
       </div>
-      <Dialog open={activeBuiltin !== null} onOpenChange={(open) => { if (!open) { setActiveBuiltin(null); load() } }}>
-        <DialogContent className="!w-[64vw] !max-w-[64vw] max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>{activeBuiltin ? t(`integrations.${activeBuiltin}`) : ''}</DialogTitle><DialogDescription>{activeBuiltin === 'feishu' ? t('integrations.feishuDescription') : activeBuiltin === 'email' ? t('email.basicSettingsDesc') : t('webhook.basicSettingsDesc')}</DialogDescription></DialogHeader>
-          {activeBuiltin === 'email' && emailSettings && <EmailSettingsTab settings={emailSettings} onSettingsChange={setEmailSettings} canUpdate={canUpdateSettings} credentialsConfigured={instances.find((instance) => instance.provider_type === 'email')?.credentials_configured} />}
-          {activeBuiltin === 'webhook' && webhookSettings && <WebhookSettingsTab settings={webhookSettings} onSettingsChange={setWebhookSettings} canUpdate={canUpdateSettings} credentialsConfigured={instances.find((instance) => instance.provider_type === 'webhook')?.credentials_configured} />}
-          {activeBuiltin === 'feishu' && feishuConfig && <FeishuIntegrationTab config={feishuConfig} onConfigChange={setFeishuConfig} canUpdate={canUpdateSettings} integration={instances.find((instance) => instance.provider_type === 'feishu') ?? null} canUpdateLogin={canUpdateLogin} onIntegrationChange={(updated) => setInstances((current) => current.map((instance) => instance.id === updated.id ? updated : instance))} />}
-        </DialogContent>
-      </Dialog>
       {canReadLogin && <LoginIntegrationDialog open={showLoginDialog} provider={editIntegration} types={types} onClose={(success) => { setShowLoginDialog(false); setEditIntegration(null); if (success) load() }} />}
       <AlertDialog open={deleteIntegration !== null} onOpenChange={(open) => { if (!open) setDeleteIntegration(null) }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{tLogin('deleteProvider')}</AlertDialogTitle><AlertDialogDescription>{tLogin('deleteConfirm')}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{tLogin('cancel')}</AlertDialogCancel><AlertDialogAction disabled={!canUpdateLogin} onClick={remove}>{tLogin('delete')}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </div>
