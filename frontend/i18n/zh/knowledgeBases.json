@@ -1,5 +1,6 @@
 {
   "knowledgeBases": {
+    "feishuImported": "飞书同步", "feishuOriginal": "查看飞书文档", "feishuReadOnly": "此文档由飞书同步管理。请在飞书中修改原文；不支持本地编辑、重新处理或删除。",
     "common": {
       "openMenu": "打开菜单"
     },
