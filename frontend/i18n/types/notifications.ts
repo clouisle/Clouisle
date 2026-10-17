@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-14T05:40:40.651Z
+// GENERATED — 2026-10-17T15:53:02.945Z
 // Source: i18n/en/notifications.json
 export type NotificationsMessages = {
   notifications: {
@@ -41,6 +41,7 @@ export type NotificationsMessages = {
     viewNotification: string
     channel: {
       email: string
+      webhook: string
       feishu: string
     }
     deliveryStatus: {
@@ -48,6 +49,7 @@ export type NotificationsMessages = {
       pending: string
       sending: string
       success: string
+      failed: string
       skipped: string
       partialSuccess: string
     }
