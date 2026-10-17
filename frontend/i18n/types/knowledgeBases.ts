@@ -1,7 +1,10 @@
-// GENERATED — 2026-10-14T05:40:40.650Z
+// GENERATED — 2026-10-17T15:53:02.943Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
+    feishuImported: string
+    feishuOriginal: string
+    feishuReadOnly: string
     common: {
       openMenu: string
     }

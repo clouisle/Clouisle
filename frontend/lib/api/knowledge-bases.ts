@@ -147,7 +147,17 @@ export interface KnowledgeBaseShareListResponse {
 // ============ Document Types ============
 
 export type DocumentStatus = 'pending' | 'processing' | 'completed' | 'error'
-export type DocumentType = 'pdf' | 'docx' | 'doc' | 'txt' | 'markdown' | 'html' | 'csv' | 'xlsx' | 'xls' | 'json' | 'url'
+export type DocumentType = 'pdf' | 'docx' | 'doc' | 'txt' | 'md' | 'markdown' | 'html' | 'csv' | 'xlsx' | 'xls' | 'json' | 'pptx' | 'url'
+
+export interface DocumentMetadata extends Record<string, unknown> {
+  feishu_source_id?: string
+  feishu_obj_token?: string
+  feishu_obj_type?: string
+  feishu_node_token?: string
+  feishu_source_url?: string
+  feishu_read_only?: boolean
+  feishu_media_document_id?: string
+}
 
 export interface Document {
   id: string
@@ -160,7 +170,7 @@ export interface Document {
   status: DocumentStatus
   chunk_count: number
   error_message: string | null
-  metadata: Record<string, unknown> | null
+  metadata: DocumentMetadata | null
   created_at: string
   updated_at: string
 }
