@@ -3096,3 +3096,72 @@ msgstr "删除集成"
 msgid "audit_log_test_integration_failed"
 msgstr "集成配置检查失败"
 
+
+msgid "feishu_document_source_managed"
+msgstr "该文档由飞书同步管理，请通过同步源管理其内容。"
+
+msgid "feishu_kb_has_sync_sources"
+msgstr "请先删除该知识库的飞书同步源，再删除知识库。"
+
+msgid "feishu_knowledge_api_error"
+msgstr "飞书知识库接口拒绝了请求（错误码 {code}，HTTP {status}）。"
+
+msgid "feishu_knowledge_sync_failed"
+msgstr "飞书知识库同步失败，请检查同步源后重试。"
+
+msgid "feishu_knowledge_connection_failed"
+msgstr "无法连接飞书，请检查应用配置和网络连接。"
+
+msgid "feishu_knowledge_processing_failed"
+msgstr "同步文档索引失败，请检查目标知识库的向量模型配置。"
+
+msgid "feishu_knowledge_conversion_failed"
+msgstr "飞书文档内容转换失败：内容包含尚不支持的元素，或文档结构不完整。这不是 Embedding 模型配置错误；请检查原文内容。"
+
+msgid "feishu_knowledge_disabled"
+msgstr "请先启用飞书集成及该同步源，再执行同步。"
+
+msgid "feishu_knowledge_source_not_found"
+msgstr "飞书知识库同步源不存在。"
+
+msgid "feishu_knowledge_publish_failed"
+msgstr "无法提交同步任务，请检查任务队列后重试。"
+
+msgid "feishu_knowledge_target_unavailable"
+msgstr "目标知识库不可用或未启用。"
+
+msgid "feishu_knowledge_unsupported_type"
+msgstr "不支持的飞书内容类型或文件格式：{type}。思维笔记暂无公开内容读取 API。"
+
+msgid "feishu_knowledge_partial_failure"
+msgstr "部分文档同步失败，请查看同步结果。"
+
+msgid "feishu_knowledge_source_busy"
+msgstr "该同步源正在执行操作，请等待当前操作结束。"
+
+msgid "feishu_knowledge_source_exists"
+msgstr "该飞书知识空间已连接到所选知识库。"
+
+msgid "feishu_knowledge_space_unavailable"
+msgstr "飞书应用无法访问所选知识空间，请检查应用的资源访问权限。"
+
+msgid "audit_log_create_feishu_knowledge_source"
+msgstr "创建飞书知识库同步源"
+
+msgid "audit_log_update_feishu_knowledge_source"
+msgstr "更新飞书知识库同步源"
+
+msgid "audit_log_sync_feishu_knowledge_source"
+msgstr "执行飞书知识库同步"
+
+msgid "audit_log_delete_feishu_knowledge_source"
+msgstr "删除飞书知识库同步源"
+
+msgid "feishu_knowledge_missing_api_permissions"
+msgstr "飞书应用缺少 API 权限（99991672）。当前失败接口要求的权限：{scopes}（以飞书权限页说明为准）。请在飞书开放平台 → 当前应用 → 权限管理申请这些权限，完成版本发布及管理员审批后重试。"
+
+msgid "feishu_knowledge_required_scopes_unknown"
+msgstr "飞书未返回具体权限名称，请查看开放平台中对应接口的权限要求"
+
+msgid "feishu_knowledge_resource_access_denied"
+msgstr "飞书应用无权访问目标知识空间或文档。请让知识空间管理员将该应用／机器人添加为成员，并确认其可访问目标文档；API 权限与资源访问权限需要分别授权。"

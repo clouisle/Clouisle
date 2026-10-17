@@ -3096,3 +3096,72 @@ msgstr "Delete integration"
 msgid "audit_log_test_integration_failed"
 msgstr "Integration configuration check failed"
 
+
+msgid "feishu_document_source_managed"
+msgstr "This document is managed by Feishu synchronization. Manage it through its synchronization source."
+
+msgid "feishu_kb_has_sync_sources"
+msgstr "Delete this knowledge base's Feishu synchronization sources before deleting the knowledge base."
+
+msgid "feishu_knowledge_api_error"
+msgstr "Feishu knowledge API rejected the request (code {code}, HTTP {status})."
+
+msgid "feishu_knowledge_sync_failed"
+msgstr "Feishu knowledge synchronization failed. Check the source and try again."
+
+msgid "feishu_knowledge_connection_failed"
+msgstr "Unable to connect to Feishu. Check application configuration and network connectivity."
+
+msgid "feishu_knowledge_processing_failed"
+msgstr "The imported document could not be indexed. Check the knowledge base embedding configuration."
+
+msgid "feishu_knowledge_conversion_failed"
+msgstr "Feishu document conversion failed: the content contains unsupported elements or an incomplete document structure. This is not an embedding model configuration error; check the source content."
+
+msgid "feishu_knowledge_disabled"
+msgstr "Enable the Feishu integration and this synchronization source before syncing."
+
+msgid "feishu_knowledge_source_not_found"
+msgstr "Feishu knowledge synchronization source not found."
+
+msgid "feishu_knowledge_publish_failed"
+msgstr "Unable to queue synchronization. Check the task broker and try again."
+
+msgid "feishu_knowledge_target_unavailable"
+msgstr "The target knowledge base is unavailable or inactive."
+
+msgid "feishu_knowledge_unsupported_type"
+msgstr "Unsupported Feishu content type or file format: {type}. Mindnote has no public content API."
+
+msgid "feishu_knowledge_partial_failure"
+msgstr "Some documents could not be synchronized. Check the synchronization results."
+
+msgid "feishu_knowledge_source_busy"
+msgstr "This synchronization source is busy. Wait for the current operation to finish."
+
+msgid "feishu_knowledge_source_exists"
+msgstr "This Feishu space is already connected to the selected knowledge base."
+
+msgid "feishu_knowledge_space_unavailable"
+msgstr "The selected Feishu knowledge space is unavailable to the application. Check its resource permissions."
+
+msgid "audit_log_create_feishu_knowledge_source"
+msgstr "Create Feishu knowledge synchronization source"
+
+msgid "audit_log_update_feishu_knowledge_source"
+msgstr "Update Feishu knowledge synchronization source"
+
+msgid "audit_log_sync_feishu_knowledge_source"
+msgstr "Synchronize Feishu knowledge source"
+
+msgid "audit_log_delete_feishu_knowledge_source"
+msgstr "Delete Feishu knowledge synchronization source"
+
+msgid "feishu_knowledge_missing_api_permissions"
+msgstr "The Feishu app lacks API permissions (99991672). Required scopes for the failed API: {scopes} (follow the API permission page). Request these permissions under Feishu Open Platform → this app → Permissions, publish the app version, obtain administrator approval, then retry."
+
+msgid "feishu_knowledge_required_scopes_unknown"
+msgstr "Feishu did not return scope names; check the API permission requirements in Open Platform"
+
+msgid "feishu_knowledge_resource_access_denied"
+msgstr "The Feishu app cannot access the target Wiki space or document. Ask the space administrator to add the app/bot as a member and grant access to the document. API permissions and resource access must be granted separately."

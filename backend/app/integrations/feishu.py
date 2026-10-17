@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from dataclasses import dataclass, field
 import json
+import re
 from typing import Any
 from urllib.parse import quote
 
@@ -58,9 +61,27 @@ class FeishuAPIError(ValueError):
     carries the raw response for server logs.
     """
 
-    def __init__(self, message: str, *, detail: str | None = None):
+    def __init__(
+        self,
+        message: str,
+        *,
+        detail: str | None = None,
+        code: int | None = None,
+        status_code: int | None = None,
+        required_scopes: tuple[str, ...] = (),
+    ):
         super().__init__(message)
         self.detail = detail
+        self.code = code
+        self.status_code = status_code
+        self.resource_scope: str | None = None
+        self.required_scopes = required_scopes
+
+    @property
+    def permission_denied(self) -> bool:
+        return self.code != 99991672 and (
+            self.status_code == 403 or self.code in (131006, 1770032)
+        )
 
 
 def _short(value: object, limit: int = 120) -> str:
@@ -89,10 +110,55 @@ def _error_message(response: httpx.Response) -> tuple[str, str]:
     )
 
 
+def _required_scopes(body: Any, path: str) -> tuple[str, ...]:
+    """Expose only validated scope identifiers, never raw provider messages."""
+    if not isinstance(body, dict) or body.get("code") != 99991672:
+        return ()
+    error = body.get("error")
+    violations = (
+        error.get("permission_violations", []) if isinstance(error, dict) else []
+    )
+    scopes = []
+    if isinstance(violations, list):
+        for violation in violations[:30]:
+            scope = violation.get("subject") if isinstance(violation, dict) else None
+            if (
+                isinstance(scope, str)
+                and re.fullmatch(r"[a-z][a-z0-9_]*(?::[a-z][a-z0-9_.]*){1,4}", scope)
+                and len(scope) <= 100
+            ):
+                if scope not in scopes:
+                    scopes.append(scope)
+    if not scopes:
+        known_scopes = {
+            "/wiki/v2/spaces": (
+                "wiki:space:retrieve",
+                "wiki:wiki:readonly",
+                "wiki:wiki",
+            ),
+            "/wiki/v2/spaces/": (
+                "wiki:node:retrieve",
+                "wiki:wiki:readonly",
+                "wiki:wiki",
+            ),
+            "/bitable/v1/apps/": (
+                "bitable:app:readonly",
+                "bitable:app",
+                "base:table:read",
+            ),
+        }
+        for prefix, candidates in known_scopes.items():
+            if path.startswith(prefix):
+                scopes = list(candidates)
+                break
+    return tuple(scopes)
+
+
 class FeishuClient:
     def __init__(self, app_id: str, encrypted_app_secret: str):
         self.app_id = app_id.strip()
         self.app_secret = decrypt_secret(encrypted_app_secret)
+        self._knowledge_request_at = 0.0
 
     async def _request(
         self, client: httpx.AsyncClient, method: str, path: str, **kwargs: Any
@@ -100,7 +166,19 @@ class FeishuClient:
         response = await client.request(method, path, **kwargs)
         if response.status_code >= 400:
             message, detail = _error_message(response)
-            raise FeishuAPIError(message, detail=detail)
+            error_body = None
+            try:
+                error_body = response.json()
+                code = error_body.get("code") if isinstance(error_body, dict) else None
+            except ValueError:
+                code = None
+            raise FeishuAPIError(
+                message,
+                detail=detail,
+                code=code,
+                status_code=response.status_code,
+                required_scopes=_required_scopes(error_body, path),
+            )
         try:
             body = response.json()
         except ValueError as exc:
@@ -114,6 +192,8 @@ class FeishuClient:
             raise FeishuAPIError(
                 f"Feishu API error {code}: {_short(msg)}",
                 detail=str(body)[:1024],
+                code=code if isinstance(code, int) else None,
+                required_scopes=_required_scopes(body, path),
             )
         return body
 
@@ -370,6 +450,119 @@ class FeishuClient:
                     if not payload.get("has_more") or not page_token:
                         break
             return list(users.values())
+
+    async def _wiki_pages(
+        self,
+        client: httpx.AsyncClient,
+        headers: dict[str, str],
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """A failed or malformed page must never look like a complete inventory."""
+        items: list[dict[str, Any]] = []
+        tokens: set[str] = set()
+        query: dict[str, Any] = {"page_size": PAGE_SIZE, **(params or {})}
+        while True:
+            interval = 0.61 if path.startswith("/wiki/") else 0.21
+            delay = self._knowledge_request_at + interval - time.monotonic()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            self._knowledge_request_at = time.monotonic()
+            body = await self._request(
+                client, "GET", path, headers=headers, params=query
+            )
+            data = body.get("data")
+            if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+                raise FeishuAPIError("Feishu returned an invalid Wiki/document page")
+            if any(not isinstance(item, dict) for item in data["items"]):
+                raise FeishuAPIError("Feishu returned an invalid Wiki/document item")
+            if not isinstance(data.get("has_more"), bool):
+                raise FeishuAPIError("Feishu did not confirm pagination completion")
+            items.extend(data["items"])
+            if not data.get("has_more"):
+                return items
+            token = data.get("page_token")
+            if not isinstance(token, str) or not token or token in tokens:
+                raise FeishuAPIError("Feishu pagination did not advance; scan aborted")
+            tokens.add(token)
+            query["page_token"] = token
+
+    async def list_wiki_spaces(self) -> list[dict[str, str]]:
+        async with httpx.AsyncClient(
+            base_url=API_BASE, timeout=TIMEOUT, follow_redirects=False, trust_env=False
+        ) as client:
+            token = await self._token(client)
+            items = await self._wiki_pages(
+                client, {"Authorization": f"Bearer {token}"}, "/wiki/v2/spaces"
+            )
+        spaces = []
+        for item in items:
+            if not isinstance(item.get("space_id"), str) or not item["space_id"]:
+                raise FeishuAPIError("Feishu returned a Wiki space without an ID")
+            spaces.append(
+                {"space_id": item["space_id"], "name": str(item.get("name", ""))}
+            )
+        return spaces
+
+    async def list_wiki_nodes(self, space_id: str) -> list[dict[str, Any]]:
+        """Walk every child page, including empty permission-filtered pages."""
+        async with httpx.AsyncClient(
+            base_url=API_BASE, timeout=TIMEOUT, follow_redirects=False, trust_env=False
+        ) as client:
+            headers = {"Authorization": f"Bearer {await self._token(client)}"}
+            pending: list[str | None] = [None]
+            visited: set[str] = set()
+            nodes: list[dict[str, Any]] = []
+            while pending:
+                parent = pending.pop()
+                try:
+                    children = await self._wiki_pages(
+                        client,
+                        headers,
+                        f"/wiki/v2/spaces/{quote(space_id, safe='')}/nodes",
+                        params={"parent_node_token": parent} if parent else None,
+                    )
+                except FeishuAPIError as exc:
+                    # A denied subtree is an incomplete scan, not evidence that
+                    # every document in this source lost access.
+                    exc.resource_scope = "wiki_node" if parent else "wiki_space"
+                    raise
+                for node in children:
+                    node_token = node.get("node_token")
+                    if not isinstance(node_token, str) or not node_token:
+                        raise FeishuAPIError(
+                            "Feishu returned a Wiki node without a token"
+                        )
+                    if node_token in visited:
+                        raise FeishuAPIError(
+                            "Feishu Wiki contains a repeated node; scan aborted"
+                        )
+                    visited.add(node_token)
+                    if not node.get("obj_token") or not node.get("obj_type"):
+                        raise FeishuAPIError(
+                            "Feishu returned a Wiki node without its object"
+                        )
+                    if not isinstance(node.get("has_child"), bool):
+                        raise FeishuAPIError(
+                            "Feishu did not confirm Wiki child inventory"
+                        )
+                    nodes.append(node)
+                    if node.get("has_child"):
+                        pending.append(node_token)
+            return nodes
+
+    async def get_docx_blocks(self, document_id: str) -> list[dict[str, Any]]:
+        async with httpx.AsyncClient(
+            base_url=API_BASE, timeout=TIMEOUT, follow_redirects=False, trust_env=False
+        ) as client:
+            headers = {"Authorization": f"Bearer {await self._token(client)}"}
+            return await self._wiki_pages(
+                client,
+                headers,
+                f"/docx/v1/documents/{quote(document_id, safe='')}/blocks",
+                params={"document_revision_id": -1, "page_size": 500},
+            )
 
 
 # --- User-authorized web login ------------------------------------------------

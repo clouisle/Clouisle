@@ -464,6 +464,11 @@ async def test_delete_knowledge_base_removes_record_and_audits(monkeypatch):
     access = AsyncMock(return_value=record)
     monkeypatch.setattr(knowledge_bases, "check_kb_access", access)
     monkeypatch.setattr(knowledge_bases.AuditLogService, "log", audit)
+    monkeypatch.setattr(
+        knowledge_bases.FeishuKnowledgeSource,
+        "filter",
+        lambda **kwargs: SimpleNamespace(exists=AsyncMock(return_value=False)),
+    )
 
     result = await knowledge_bases.delete_knowledge_base(
         record.id, SimpleNamespace(), _user()

@@ -89,6 +89,7 @@ from .user_sso_connection import UserSSOConnection
 from .sso_session import SSOSession
 from .feishu_department import FeishuDepartment
 from .feishu_user import FeishuUser
+from .feishu_knowledge import FeishuKnowledgeSource, FeishuKnowledgeDocument
 from .memory import MemoryEntity, MemoryRelation, EntityType, RelationType
 from .password_history import PasswordHistory
 from .agent_run import (
@@ -117,6 +118,8 @@ __all__ = [
     "Permission",
     "FeishuDepartment",
     "FeishuUser",
+    "FeishuKnowledgeSource",
+    "FeishuKnowledgeDocument",
     "Team",
     "TeamMember",
     "ScopedRoleAssignment",

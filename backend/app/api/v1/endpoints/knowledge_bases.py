@@ -18,6 +18,7 @@ from app.api import deps
 from app.core.i18n import has_translation, t
 from app.models.user import User, Team, TeamMember
 from app.models.model import TeamModel, Model
+from app.models.feishu_knowledge import FeishuKnowledgeSource
 from app.models import (
     SiteSetting,
     KB_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
@@ -201,6 +202,16 @@ def serialize_knowledge_base_error(error_message: str | None) -> str | None:
 
 def serialize_document_error(error_message: str | None) -> str | None:
     return serialize_knowledge_base_error(error_message)
+
+
+def ensure_document_is_locally_managed(doc: Document) -> None:
+    metadata = doc.metadata or {}
+    if metadata.get("feishu_source_id") or metadata.get("feishu_read_only"):
+        raise BusinessError(
+            code=ResponseCode.FORBIDDEN,
+            msg_key="feishu_document_source_managed",
+            status_code=403,
+        )
 
 
 async def serialize_document(doc: Document) -> dict[str, Any]:
@@ -942,6 +953,11 @@ async def delete_knowledge_base(
     kb = await check_kb_access(
         kb_id, current_user, require_write=True, allow_owner_write=False
     )
+    if await FeishuKnowledgeSource.filter(knowledge_base_id=kb.id).exists():
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="feishu_kb_has_sync_sources",
+        )
     kb_name = kb.name
     audit_before = AuditLogService.snapshot(kb, "knowledge_base")
 
@@ -1261,6 +1277,7 @@ async def update_document(
             msg_key="document_not_found",
             status_code=404,
         )
+    ensure_document_is_locally_managed(doc)
 
     audit_before = AuditLogService.snapshot(doc, "document")
 
@@ -1307,6 +1324,7 @@ async def delete_document(
             msg_key="document_not_found",
             status_code=404,
         )
+    ensure_document_is_locally_managed(doc)
 
     doc_name = doc.name
     audit_before = AuditLogService.snapshot(doc, "document")
@@ -1452,7 +1470,18 @@ async def get_document_media(
             status_code=404,
         ) from None
 
-    storage_key = f"documents/{kb_id}/media/{doc_id}/{safe_filename}"
+    media_document_id = doc_id
+    metadata = doc.metadata or {}
+    if metadata.get("feishu_source_id") and metadata.get("feishu_media_document_id"):
+        try:
+            media_document_id = UUID(metadata["feishu_media_document_id"])
+        except (ValueError, TypeError, AttributeError):
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="file_not_found",
+                status_code=404,
+            ) from None
+    storage_key = f"documents/{kb_id}/media/{media_document_id}/{safe_filename}"
     root = document_processor._storage_root()
     storage = await get_upload_storage_backend(root)
     media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
@@ -1496,6 +1525,7 @@ async def process_document(
             msg_key="document_not_found",
             status_code=404,
         )
+    ensure_document_is_locally_managed(doc)
 
     if doc.status != DocumentStatus.PENDING.value:
         raise BusinessError(
@@ -1580,6 +1610,7 @@ async def process_document_with_chunks(
             msg_key="document_not_found",
             status_code=404,
         )
+    ensure_document_is_locally_managed(doc)
 
     # Allow reprocessing for pending, completed, and error status documents
     # Only block if currently processing
@@ -1880,6 +1911,7 @@ async def reprocess_document(
             msg_key="document_not_found",
             status_code=404,
         )
+    ensure_document_is_locally_managed(doc)
 
     # Cancel existing task if any
     old_task_id = (doc.metadata or {}).get("task_id")
@@ -1962,6 +1994,7 @@ async def retry_failed_chunks(
             msg_key="document_not_found",
             status_code=404,
         )
+    ensure_document_is_locally_managed(doc)
 
     if doc.status != DocumentStatus.ERROR.value:
         raise BusinessError(
@@ -2043,6 +2076,7 @@ async def retry_failed_chunk(
             msg_key="document_not_found",
             status_code=404,
         )
+    ensure_document_is_locally_managed(doc)
 
     if doc.status == DocumentStatus.PROCESSING.value:
         raise BusinessError(
@@ -2171,6 +2205,7 @@ async def update_document_chunk(
             msg_key="document_not_found",
             status_code=404,
         )
+    ensure_document_is_locally_managed(doc)
 
     chunk = await DocumentChunk.filter(id=chunk_id, document_id=doc_id).first()
     if not chunk:
@@ -2307,6 +2342,7 @@ async def delete_document_chunk(
             msg_key="document_not_found",
             status_code=404,
         )
+    ensure_document_is_locally_managed(doc)
 
     chunk = await DocumentChunk.filter(id=chunk_id, document_id=doc_id).first()
     if not chunk:
@@ -2415,6 +2451,7 @@ async def create_document_chunk(
             msg_key="document_not_found",
             status_code=404,
         )
+    ensure_document_is_locally_managed(doc)
 
     token_count = len(chunk_in.content) // 4
     embedding_model_id = str(kb.embedding_model_id) if kb.embedding_model_id else None
@@ -2539,6 +2576,7 @@ async def rechunk_document(
             msg_key="document_not_found",
             status_code=404,
         )
+    ensure_document_is_locally_managed(doc)
 
     if doc.status == DocumentStatus.PROCESSING.value:
         raise BusinessError(

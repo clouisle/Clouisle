@@ -39,6 +39,7 @@ celery_app = Celery(
     backend=f"{REDIS_URL}/1",
     include=[
         "app.tasks.knowledge_base",
+        "app.tasks.feishu_knowledge",
         "app.tasks.usage",
         "app.tasks.workflow",
         "app.tasks.audit_log",
@@ -83,6 +84,7 @@ celery_app.conf.update(
 # Optional: Configure task routes
 celery_app.conf.task_routes = {
     "app.tasks.knowledge_base.*": {"queue": "knowledge"},
+    "app.tasks.feishu_knowledge.*": {"queue": "knowledge"},
     "app.tasks.usage.*": {"queue": "default"},
     "app.tasks.workflow.*": {"queue": "workflow"},
     "app.tasks.notification.*": {"queue": "default"},
@@ -105,6 +107,11 @@ celery_app.conf.task_routes = {
 
 # Beat schedule for periodic tasks
 celery_app.conf.beat_schedule = {
+    "dispatch-feishu-knowledge-sync": {
+        "task": "app.tasks.feishu_knowledge.dispatch_due_sources_task",
+        "schedule": 60.0,
+        "options": {"queue": "knowledge"},
+    },
     # Reset daily usage every day at 00:00
     "reset-daily-usage": {
         "task": "tasks.reset_daily_usage",

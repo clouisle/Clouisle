@@ -23,6 +23,7 @@ from app.api.v1.admin.endpoints import (
     totp,
     packages,
     feishu,
+    feishu_knowledge,
 )
 
 from app.api.v1.endpoints import knowledge_bases as platform_knowledge_bases
@@ -55,6 +56,11 @@ admin_router.include_router(
 )
 admin_router.include_router(
     feishu.router, prefix="/integrations/feishu", tags=["admin-integrations"]
+)
+admin_router.include_router(
+    feishu_knowledge.router,
+    prefix="/integrations/feishu/knowledge",
+    tags=["admin-integrations"],
 )
 admin_router.include_router(
     integrations.router, prefix="/integrations", tags=["admin-integrations"]

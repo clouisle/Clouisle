@@ -178,6 +178,11 @@ async def test_knowledge_base_detail_update_and_delete_lifecycle(
             knowledge_bases, "kb_with_model_info", AsyncMock(return_value={"id": kb_id})
         ),
         patch.object(knowledge_bases.KnowledgeBase, "filter", return_value=Query()),
+        patch.object(
+            knowledge_bases.FeishuKnowledgeSource,
+            "filter",
+            return_value=SimpleNamespace(exists=AsyncMock(return_value=False)),
+        ),
         patch.object(knowledge_bases.KnowledgeBase, "get", return_value=get_query),
         patch.object(
             knowledge_bases,
@@ -222,7 +227,7 @@ async def test_knowledge_base_detail_update_and_delete_lifecycle(
 @pytest.mark.anyio
 async def test_document_list_detail_and_update_branches():
     kb_id, doc_id = uuid4(), uuid4()
-    doc = SimpleNamespace(id=doc_id, name="old", save=AsyncMock())
+    doc = SimpleNamespace(id=doc_id, name="old", metadata=None, save=AsyncMock())
     list_query = Query([doc], total=4)
     detail_query = Query(first=doc)
     reloaded_query = Query(first=doc)
