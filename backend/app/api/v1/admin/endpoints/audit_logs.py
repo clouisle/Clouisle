@@ -750,6 +750,31 @@ AUDIT_ACTION_OPTIONS: list[AuditLogActionOption] = [
         fallback_label="Delete Knowledge Base",
     ),
     AuditLogActionOption(
+        value="submit_workflow_pause_request",
+        translation_key="auditLogs.actionsubmit_workflow_pause_request",
+        fallback_label="Submit Workflow Pause Request",
+    ),
+    AuditLogActionOption(
+        value="create_feishu_knowledge_source",
+        translation_key="auditLogs.actioncreate_feishu_knowledge_source",
+        fallback_label="Create Feishu Knowledge Source",
+    ),
+    AuditLogActionOption(
+        value="update_feishu_knowledge_source",
+        translation_key="auditLogs.actionupdate_feishu_knowledge_source",
+        fallback_label="Update Feishu Knowledge Source",
+    ),
+    AuditLogActionOption(
+        value="sync_feishu_knowledge_source",
+        translation_key="auditLogs.actionsync_feishu_knowledge_source",
+        fallback_label="Sync Feishu Knowledge Source",
+    ),
+    AuditLogActionOption(
+        value="delete_feishu_knowledge_source",
+        translation_key="auditLogs.actiondelete_feishu_knowledge_source",
+        fallback_label="Delete Feishu Knowledge Source",
+    ),
+    AuditLogActionOption(
         value="sandbox_task_cancelled",
         translation_key="auditLogs.actionsandbox_task_cancelled",
         fallback_label="Sandbox Task Cancelled",

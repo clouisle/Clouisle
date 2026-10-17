@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-14T05:40:40.647Z
+// GENERATED — 2026-10-17T15:53:02.945Z
 // Source: i18n/en/auditLogs.json
 export type AuditLogsMessages = {
   auditLogs: {
@@ -120,6 +120,7 @@ export type AuditLogsMessages = {
     actioncreate_team: string
     actionupdate_team: string
     actiondelete_team: string
+    actiontransfer_team_ownership: string
     actionadd_team_member: string
     actionremove_team_member: string
     actioncreate_agent: string
@@ -244,6 +245,13 @@ export type AuditLogsMessages = {
     actioncreate_knowledge_base: string
     actionupdate_knowledge_base: string
     actiondelete_knowledge_base: string
+    actionsubmit_workflow_pause_request: string
+    resourceTypeWorkflowPauseRequest: string
+    actioncreate_feishu_knowledge_source: string
+    actionupdate_feishu_knowledge_source: string
+    actionsync_feishu_knowledge_source: string
+    actiondelete_feishu_knowledge_source: string
+    resourceTypeFeishuKnowledgeSource: string
     resourceTypeToolConfig: string
     resourceTypePrompt: string
     resourceTypeWorkflowRun: string

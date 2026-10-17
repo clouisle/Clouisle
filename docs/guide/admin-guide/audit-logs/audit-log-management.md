@@ -38,6 +38,16 @@ The audit log shows:
 
 ## Audit Log Events
 
+### Feishu Knowledge Synchronization
+
+The action filter includes `create_feishu_knowledge_source`,
+`update_feishu_knowledge_source`, `sync_feishu_knowledge_source`, and
+`delete_feishu_knowledge_source`. The list, filter, and detail drawer display
+localized action labels; the resource type is `feishu_knowledge_source`.
+
+The manual sync event records acceptance of a synchronization request, not
+completion of the background synchronization job.
+
 ### Authentication Events
 
 **Login Events:**
