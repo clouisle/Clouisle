@@ -1,5 +1,16 @@
 {
   "siteSettings": {
+    "feishuKnowledge": {
+      "title": "知识库同步", "superuserOnly": "仅启用状态的系统超级管理员可管理飞书知识库同步。",
+      "warning": "仅单向导入，不会同步飞书权限。导入文档的访问权限由目标 Clouisle 知识库的本地团队权限决定。启用同步前请确认访问范围。",
+      "credentials": "复用飞书应用凭据和租户访问令牌。支持新旧文档、电子表格、多维表格及可解析的文件附件，并处理文档内图片和附件。思维笔记暂无公开内容 API，会报告为不支持。请同时授予 API 权限和源资源访问权限。",
+      "create": "添加同步源", "refresh": "刷新", "loading": "加载中…", "loadingOptions": "正在加载飞书知识空间和目标知识库…", "loadFailed": "无法加载同步源，请刷新重试。", "empty": "尚未配置同步源。",
+      "name": "同步源名称", "target": "目标知识库", "space": "飞书知识空间", "selectSpace": "选择知识空间", "selectTarget": "选择已有知识库", "noOptions": "未找到当前应用可访问的知识空间，或尚无可用目标知识库。飞书 API 权限不等于资源授权：请启用应用的机器人能力，由知识空间管理员在文档右上角“…”→“更多”→“添加应用”授权；也可将机器人加入群，再将该群添加到知识空间成员／管理员。这里只列出应用身份可访问的 Wiki 空间，不包含“我的文档库”。请同时确认已创建目标 Clouisle 知识库；授权后关闭并重新打开此弹窗。",
+      "interval": "同步间隔（分钟）", "enabled": "启用自动同步", "lastSync": "上次同步", "never": "从未同步", "result": "上次同步结果", "resultScanned": "扫描", "resultIndexed": "已入库", "resultUnchanged": "未变化", "resultFailed": "失败", "resultUnsupported": "不支持", "resultRemoved": "已移除", "resultErrors": "失败文档及原因", "resultWarnings": "内容警告", "resultNode": "节点", "resultType": "类型", "resultUnknownError": "未知错误", "edit": "编辑同步源", "sync": "立即同步", "save": "保存", "cancel": "取消", "delete": "删除同步源",
+      "resultSkipped": "已跳过（不支持）",
+      "deleteConfirm": "确定删除同步源“{name}”？此同步源导入的全部文档、搜索索引、媒体和存储文件也将被永久删除。",
+      "status": { "idle": "空闲", "queued": "已排队", "running": "同步中", "success": "成功", "error": "失败" }
+    },
     "title": "站点设置",
     "description": "管理全站配置和系统选项",
     "general": "常规",
@@ -24,7 +35,14 @@
       "email": "邮件",
       "webhook": "Webhook",
       "feishu": "飞书",
-      "feishuDescription": "配置飞书应用、通讯录同步、登录和通知。",
+      "back": "返回集成列表",
+      "tabConfiguration": "集成配置",
+      "tabDirectory": "通讯录同步",
+      "tabNotification": "消息通知",
+      "feishuDirectorySyncDisabledHint": "请在“集成配置”中打开“通讯录同步”能力后，再浏览并导入部门。",
+      "feishuDirectorySyncUnavailable": "请先保存飞书应用凭据并保持集成启用，才能浏览部门。",
+      "feishuNotificationDisabledHint": "请在“集成配置”中打开“通知”能力后，再发送飞书消息。",
+      "feishuDescription": "连接飞书，同步通讯录成员和飞书知识空间内容到知识库，并配置登录与通知。",
       "feishuNotificationDescription": "允许通过飞书应用私聊发送手动通知和自动通知。",
       "configure": "配置",
       "secretConfigured": "密钥已配置",

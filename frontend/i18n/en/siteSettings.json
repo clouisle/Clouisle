@@ -1,5 +1,16 @@
 {
   "siteSettings": {
+    "feishuKnowledge": {
+      "title": "Feishu knowledge sync", "superuserOnly": "Only active system superusers can manage Feishu knowledge synchronization.",
+      "warning": "One-way import only. Feishu permissions are NOT mirrored. Imported documents are accessible according to the target Clouisle knowledge base's local team permissions. Review access before enabling sync.",
+      "credentials": "Uses the existing Feishu app credentials and tenant access token. Supports documents, sheets, Bitable, and supported file attachments, including document images and attachments. Mindnote has no public content API and is reported as unsupported. Grant API permissions and access to the source resources.",
+      "create": "Add source", "refresh": "Refresh", "loading": "Loading…", "loadingOptions": "Loading Feishu Wiki spaces and target knowledge bases…", "loadFailed": "Could not load sources. Refresh to retry.", "empty": "No synchronization sources configured.",
+      "name": "Source name", "target": "Target knowledge base", "space": "Wiki space", "selectSpace": "Select a Wiki space", "selectTarget": "Select an existing knowledge base", "noOptions": "No Wiki spaces are visible to this app, or no target knowledge base is available. API scopes do not grant resource access: enable the app's bot capability, then ask a Wiki administrator to authorize it from a document's … → More → Add Application menu. Alternatively, add the bot to a group and grant that group Wiki membership/administration. Only app-visible Wiki spaces are listed, not My Document Library. Also ensure a target Clouisle knowledge base exists. Close and reopen this dialog after authorization.",
+      "interval": "Sync interval (minutes)", "enabled": "Automatic sync enabled", "lastSync": "Last synchronization", "never": "Never", "result": "Last run results", "resultScanned": "Scanned", "resultIndexed": "Indexed", "resultUnchanged": "Unchanged", "resultFailed": "Failed", "resultUnsupported": "Unsupported", "resultRemoved": "Removed", "resultErrors": "Failed documents and reasons", "resultWarnings": "Content warnings", "resultNode": "Node", "resultType": "Type", "resultUnknownError": "Unknown error", "edit": "Edit source", "sync": "Sync now", "save": "Save", "cancel": "Cancel", "delete": "Delete source",
+      "resultSkipped": "Skipped (unsupported)",
+      "deleteConfirm": "Delete source “{name}”? All documents imported by this source, their search indexes, media, and stored files will also be permanently deleted.",
+      "status": { "idle": "Idle", "queued": "Queued", "running": "Running", "success": "Successful", "error": "Failed" }
+    },
     "title": "Site Settings",
     "description": "Manage site-wide configuration and system options",
     "general": "General",
@@ -24,7 +35,14 @@
       "email": "Email",
       "webhook": "Webhook",
       "feishu": "Feishu",
-      "feishuDescription": "Configure the Feishu app, directory sync, sign-in, and notifications.",
+      "back": "Back to integrations",
+      "tabConfiguration": "Integration configuration",
+      "tabDirectory": "Directory sync",
+      "tabNotification": "Notifications",
+      "feishuDirectorySyncDisabledHint": "Turn on the Directory sync capability in Integration configuration to browse and import departments.",
+      "feishuDirectorySyncUnavailable": "Save the Feishu app credentials and keep the integration enabled to browse departments.",
+      "feishuNotificationDisabledHint": "Turn on the Notifications capability in Integration configuration to send Feishu messages.",
+      "feishuDescription": "Connect Feishu to sync directory members and Feishu Wiki content into knowledge bases, and configure sign-in and notifications.",
       "feishuNotificationDescription": "Allow Feishu direct messages for manual and automatic notifications.",
       "configure": "Configure",
       "secretConfigured": "Secret configured",
