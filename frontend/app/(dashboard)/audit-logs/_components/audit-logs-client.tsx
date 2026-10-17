@@ -37,7 +37,7 @@ export function AuditLogsClient() {
 
       {/* Statistics Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
+        <Card className="gap-0">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               {t("totalLogs")}
@@ -54,7 +54,7 @@ export function AuditLogsClient() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="gap-0">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               {t("todayLogs")}
@@ -71,7 +71,7 @@ export function AuditLogsClient() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="gap-0">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               {t("failedLogs")}
@@ -88,7 +88,7 @@ export function AuditLogsClient() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="gap-0">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               {t("activeUsers")}
