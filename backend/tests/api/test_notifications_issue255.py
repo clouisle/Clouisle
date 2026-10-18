@@ -245,10 +245,19 @@ CHANNEL_FAILURES = [
 ]
 
 
-@pytest.mark.parametrize("channel", ["dingtalk", "wechat", "feishu", "slack"])
-def test_admin_create_rejects_removed_notification_channels(channel):
-    with pytest.raises(ValueError, match="Input should be 'email' or 'webhook'"):
+@pytest.mark.parametrize("channel", ["dingtalk", "wechat", "slack"])
+def test_admin_create_rejects_unsupported_notification_channels(channel):
+    # The rejection reason is asserted by naming the offending value; the enum's
+    # exact wording is pydantic's, not this endpoint's contract.
+    with pytest.raises(ValueError, match=channel):
         payload(notify_channels=[channel])
+
+
+def test_admin_create_accepts_feishu_notification_channel():
+    assert NotificationChannel.FEISHU.value == "feishu"
+    assert payload(notify_channels=["feishu"]).notify_channels == [
+        NotificationChannel.FEISHU
+    ]
 
 
 @pytest.mark.anyio
