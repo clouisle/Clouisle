@@ -556,7 +556,15 @@ async def _finalize_receipt(
     receipt: WeChatAgentReceipt, session, run: AgentRun
 ) -> None:
     """Map a terminal run to its outbound delivery rows."""
+    from app.models.user import User
     from app.services.wechat_agent_io import build_output
+
+    # Resolve the recipient locale before any localized text is produced. The
+    # failure and unavailable branches emit text without the full
+    # authorization path, so the process-context language may still belong to
+    # an unrelated earlier receipt.
+    recipient = await User.filter(id=receipt.user_id).first()
+    set_language(getattr(recipient, "locale", None) or "en")
 
     if run.status == AgentRunStatus.STOPPED:
         # The stop command already told the user; never imply a reply was sent.
@@ -611,7 +619,6 @@ async def _finalize_receipt(
         )
         await _clear_active_run(session, run)
         return
-    set_language(getattr(user, "locale", None) or "en")
     payloads = await build_output(run, receipt, session, user)
     # Claim finalization once: two recovery passes can observe the same
     # terminal run, and without this claim both would append the same outbox
@@ -716,6 +723,13 @@ async def _process_pending(
         return
 
     await _ensure_conversation(session, agent, user)
+    # Persist and send before downloads, transcription or model submission.
+    # The durable event key prevents a recovery pass from acknowledging twice.
+    if not await WeChatAgentDelivery.filter(
+        receipt_id=receipt.id, event_key="busy"
+    ).exists():
+        await _reply_text(receipt, t("wechat_agent_received"), key="received")
+        await _deliver(binding, user)
     from app.services.wechat_agent_io import normalize_input
 
     try:

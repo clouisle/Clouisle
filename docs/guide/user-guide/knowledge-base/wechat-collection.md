@@ -31,7 +31,7 @@ Each connection uses its own conversation. Repeated messages continue that conve
 
 Send `/new` (or `/新对话`), `/stop` (`/停止`), `/status` (`/状态`) or `/help` (`/帮助`) to control the conversation. Normal messages are processed in order; they do not start competing runs. When the Agent asks a question, the next answer resumes that waiting run instead of starting another task. `/new` only resets once the current task has finished; otherwise wait or stop it first. Changing the connection's purpose is blocked while work is active; stop it or wait for completion first.
 
-Agent execution uses the connected user's identity and the application's existing model, tool, knowledge and quota permissions. Revoked access or a disconnected connection prevents further execution or delivery. Only final answers and required interaction prompts are sent to WeChat, not internal reasoning or tool traces.
+Agent execution uses the connected user's identity and the application's existing model, tool, knowledge and quota permissions. Revoked access or a disconnected connection prevents further execution or delivery. Before preparing a normal task's attachments or submitting its run, the platform attempts to send a deduplicated “🤔Thinking...” notice (“🤔思考中...” in Chinese); it confirms receipt and preparation, not completion. Messages waiting behind an active run receive the existing busy notice instead. Commands and answers to Agent questions retain their own responses. WeChat receives these status notices, final answers and required interaction prompts, not internal reasoning or tool traces. Notices use the same delivery safeguards: an ambiguous send is not blindly retried, and delivery is not guaranteed when WeChat is unavailable.
 
 | WeChat input | Agent input |
 | --- | --- |

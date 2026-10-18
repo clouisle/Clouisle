@@ -28,6 +28,7 @@ from app.models.wechat_agent import (
 )
 from app.models.wechat_knowledge import WeChatKnowledgeBinding
 from app.services import wechat_agent_runtime as runtime
+from app.services.wechat_agent_io import deliver_pending as deliver_agent_pending
 from app.services.wechat_connection import utcnow
 
 
@@ -264,8 +265,43 @@ async def test_terminal_run_delivers_canonical_text(world):
 
 
 @pytest.mark.asyncio
-async def test_failed_run_sends_generic_message_only(world):
+async def test_failure_notice_uses_recipient_locale(world):
+    """The worker's process language must not decide the notice's language.
+
+    The failure branch emits text before the full authorization path, so it
+    reads the recipient locale itself instead of relying on whichever language
+    an unrelated earlier receipt left in the worker context.
+    """
+    from app.core.i18n import set_language
+    from app.models.user import User as UserModel
+
+    await UserModel.filter(id=world.user.id).update(locale="zh")
+    set_language("en")
     receipt = await receipt_for(world)
+    await runtime.process_binding(str(world.binding.id))
+    run = world.submission.run
+    await AgentRun.filter(id=run.id).update(
+        status=AgentRunStatus.FAILED,
+        error_message="provider detail",
+        finished_at=utcnow(),
+    )
+    await WeChatAgentReceipt.filter(id=receipt.id).update(
+        updated_at=utcnow() - timedelta(seconds=30)
+    )
+    # An unrelated earlier task left the worker context in a different
+    # language; the finalization pass must resolve it from the recipient.
+    set_language("en")
+    await runtime.process_binding(str(world.binding.id))
+
+    delivery = await WeChatAgentDelivery.get(receipt_id=receipt.id, event_key="final")
+    assert delivery.payload["text"] == "Agent 任务未完成，请打开对话查看详情。"
+    assert "Clouisle" not in delivery.payload["text"]
+    assert "provider detail" not in delivery.payload["text"]
+
+
+@pytest.mark.asyncio
+async def test_failed_run_sends_generic_message_only(world):
+    receipt = await receipt_for(world, identifier="failed-generic")
     await runtime.process_binding(str(world.binding.id))
     run = world.submission.run
 
@@ -768,3 +804,74 @@ async def test_natural_language_is_not_treated_as_command(world):
     assert world.submission.calls, "bare Chinese words must stay user content"
     refreshed = await WeChatAgentReceipt.get(id=receipt.id)
     assert refreshed.status == "submitted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ambiguous", [False, True])
+async def test_receipt_ack_precedes_preparation_and_is_not_resent(
+    world, monkeypatch, ambiguous
+):
+    import app.services.wechat_agent_io as io
+
+    receipt = await receipt_for(world)
+    sent = []
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def send_text(self, to, text, token, *, client_id):
+            sent.append((to, text, token, client_id))
+            if ambiguous:
+                raise TimeoutError("send outcome unknown")
+
+    async def normalize(receipt, session, agent, user, client):
+        assert len(sent) == 1
+        assert not await AgentRun.all().exists()
+        return await world.io.normalize_input(receipt, session, agent, user, client)
+
+    monkeypatch.setattr(io, "WeChatClient", Client)
+    monkeypatch.setattr(io, "deliver_pending", deliver_agent_pending)
+    monkeypatch.setattr(io, "normalize_input", normalize)
+    # A failed submission leaves the receipt pending, so recovery revisits the
+    # same acknowledgement before trying to submit again.
+    world.submission.error = RuntimeError("submission unavailable")
+    await runtime.process_binding(str(world.binding.id))
+    await runtime.process_binding(str(world.binding.id))
+
+    ack = await WeChatAgentDelivery.get(receipt_id=receipt.id, event_key="received")
+    assert ack.status == ("unknown" if ambiguous else "submitted")
+    assert len(sent) == 1
+    assert sent[0][0] == world.binding.wechat_user_id
+    assert sent[0][2] == "ctx-1"
+    assert (await WeChatAgentReceipt.get(id=receipt.id)).status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_busy_and_command_messages_do_not_get_receipt_ack(world):
+    await receipt_for(world, identifier="first")
+    await runtime.process_binding(str(world.binding.id))
+    queued = await receipt_for(world, identifier="queued")
+    command = await receipt_for(world, text="/status", identifier="status")
+    await runtime.process_binding(str(world.binding.id))
+    assert await WeChatAgentDelivery.filter(
+        receipt_id=queued.id, event_key="busy"
+    ).exists()
+    assert not await WeChatAgentDelivery.filter(
+        receipt_id__in=[queued.id, command.id], event_key="received"
+    ).exists()
+
+    await AgentRun.filter(id=world.submission.run.id).update(
+        status=AgentRunStatus.COMPLETED, finished_at=utcnow()
+    )
+    await runtime.process_binding(str(world.binding.id))
+    assert (await WeChatAgentReceipt.get(id=queued.id)).status == "submitted"
+    assert not await WeChatAgentDelivery.filter(
+        receipt_id=queued.id, event_key="received"
+    ).exists()

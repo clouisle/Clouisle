@@ -3321,7 +3321,10 @@ msgid "wechat_agent_questions_partial"
 msgstr "Answered {done} of {total} questions. Send the remaining answer, or /skip to skip."
 
 msgid "wechat_agent_run_failed"
-msgstr "The Agent task did not finish. Open the conversation in Clouisle for details."
+msgstr "The Agent task did not finish. Open the conversation for details."
+
+msgid "wechat_agent_received"
+msgstr "🤔Thinking..."
 
 msgid "wechat_agent_purpose_inactive"
 msgstr "This connection is not currently using the Agent application."

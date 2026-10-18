@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extracted the durable chat submission pipeline into `agent_submission`, shared by the web chat routes and the WeChat Agent runtime so both commit the run, the input row and their mapping before publishing.
 - Documented the separate Sandbox Worker dependency for WeChat Agent tools and existing-session checkpointing, including isolated Linux-container startup on macOS and diagnosis of recovery/checkpoint timeouts.
 - Fixed isolated Bash tools rewriting `/workspace` to caller-host physical paths, which misplaced generated files when macOS callers and Linux sandbox workers used different `/tmp` aliases and made artifact collection report missing files.
+- Added deduplicated WeChat Agent receipt acknowledgements before attachment preparation and run submission, while preserving command/question replies and the existing busy notice for queued messages.
 
 #### Admin Observability
 

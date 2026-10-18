@@ -2321,6 +2321,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Run is not waiting for user answers",
         "zh": "运行未处于等待用户输入状态",
     },
+    "run_status_completed": {"en": "Completed", "zh": "已完成"},
+    "run_status_completing": {"en": "Completing", "zh": "完成中"},
+    "run_status_failed": {"en": "Failed", "zh": "失败"},
+    "run_status_idle": {"en": "Idle", "zh": "空闲"},
+    "run_status_interrupted": {"en": "Interrupted", "zh": "已中断"},
+    "run_status_queued": {"en": "Queued", "zh": "排队中"},
+    "run_status_running": {"en": "Running", "zh": "运行中"},
+    "run_status_stopped": {"en": "Stopped", "zh": "已停止"},
+    "run_status_stopping": {"en": "Stopping", "zh": "停止中"},
+    "run_status_waiting": {"en": "Waiting for your answer", "zh": "等待你的回答"},
     "runway_api_error": {"en": "Runway API error", "zh": "Runway API 错误"},
     "runway_endpoint_not_found": {
         "en": "Runway endpoint not found",
@@ -3145,6 +3155,108 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Webhook trigger is not enabled for this workflow",
         "zh": "此工作流未启用 Webhook 触发",
     },
+    "wechat_agent_answer_invalid_choice": {
+        "en": "Please choose one of: {options}",
+        "zh": "请选择其中一项：{options}",
+    },
+    "wechat_agent_answer_required": {
+        "en": "This question still needs an answer: {question}",
+        "zh": "这个问题还需要回答：{question}",
+    },
+    "wechat_agent_answer_skipped": {
+        "en": "Questions skipped.",
+        "zh": "已跳过这些问题。",
+    },
+    "wechat_agent_attachments_disabled": {
+        "en": "This Agent does not accept file attachments.",
+        "zh": "此 Agent 未开放文件附件。",
+    },
+    "wechat_agent_binding_disconnected": {
+        "en": "The WeChat connection is no longer active.",
+        "zh": "微信连接已失效。",
+    },
+    "wechat_agent_busy": {
+        "en": "The previous message is still being processed. Please wait for it to finish.",
+        "zh": "上一条消息仍在处理中，请等待完成。",
+    },
+    "wechat_agent_config_missing": {
+        "en": "No Agent is configured for this connection.",
+        "zh": "该连接尚未配置 Agent。",
+    },
+    "wechat_agent_context_missing": {
+        "en": "WeChat reply context is unavailable. View the result in the web conversation.",
+        "zh": "微信回复上下文不可用，请在网页会话中查看结果。",
+    },
+    "wechat_agent_conversation_missing": {
+        "en": "The Agent session has no conversation yet.",
+        "zh": "Agent 会话尚未建立对话。",
+    },
+    "wechat_agent_file_too_large": {
+        "en": "The attachment exceeds the Agent size limit.",
+        "zh": "附件超过 Agent 的大小限制。",
+    },
+    "wechat_agent_file_type_unsupported": {
+        "en": "This attachment type is not allowed by the Agent.",
+        "zh": "此 Agent 不允许该附件类型。",
+    },
+    "wechat_agent_help": {
+        "en": "Commands: /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help; /skip skips pending questions.",
+        "zh": "命令：/新对话（/new）开始新对话；/停止（/stop）停止任务并取消排队消息；/状态（/status）查看状态；/帮助（/help）查看帮助；/跳过（/skip）跳过待答问题。",
+    },
+    "wechat_agent_media_failed": {
+        "en": "The attachment could not be downloaded from WeChat. Please send it again.",
+        "zh": "未能从微信下载该附件，请重新发送。",
+    },
+    "wechat_agent_media_unsupported": {
+        "en": "This message type is not supported by the connected Agent.",
+        "zh": "该消息类型暂不支持接入此 Agent。",
+    },
+    "wechat_agent_new_conversation": {
+        "en": "Your next message will start a new conversation.",
+        "zh": "下一条消息将开始新的对话。",
+    },
+    "wechat_agent_no_output": {
+        "en": "The Agent finished without producing a visible reply.",
+        "zh": "Agent 已完成，但没有产生可见回复。",
+    },
+    "wechat_agent_purpose_inactive": {
+        "en": "This connection is not currently using the Agent application.",
+        "zh": "该连接当前未启用 Agent 应用用途。",
+    },
+    "wechat_agent_questions_partial": {
+        "en": "Answered {done} of {total} questions. Send the remaining answer, or /skip to skip.",
+        "zh": "已回答 {done}/{total} 个问题，请继续回答，或发送 /跳过（/skip）跳过。",
+    },
+    "wechat_agent_received": {"en": "🤔Thinking...", "zh": "🤔思考中..."},
+    "wechat_agent_run_failed": {
+        "en": "The Agent task did not finish. Open the conversation for details.",
+        "zh": "Agent 任务未完成，请打开对话查看详情。",
+    },
+    "wechat_agent_status": {"en": "Status: {status}", "zh": "状态：{status}"},
+    "wechat_agent_stopped": {
+        "en": "Stopped. Queued messages were cancelled.",
+        "zh": "已停止，排队中的消息已取消。",
+    },
+    "wechat_agent_too_many_files": {
+        "en": "There are too many attachments in one message.",
+        "zh": "单条消息的附件数量超过限制。",
+    },
+    "wechat_agent_unknown_command": {
+        "en": "Unknown command. Send /help to see available commands.",
+        "zh": "未知命令，发送 /帮助（/help）查看可用命令。",
+    },
+    "wechat_agent_variables_invalid": {
+        "en": "Check the Agent input variables, including required values, types and limits.",
+        "zh": "请检查 Agent 输入变量的必填项、类型和取值限制。",
+    },
+    "wechat_agent_video_unsupported": {
+        "en": "Video input requires an Agent with vision support and a configured speech recognition model for its audio.",
+        "zh": "视频输入需要 Agent 支持视觉识别；有音轨时还需要配置语音识别模型。",
+    },
+    "wechat_agent_vision_required": {
+        "en": "This Agent's chat model does not support image input.",
+        "zh": "此 Agent 的聊天模型不支持图片输入。",
+    },
     "wechat_already_connected": {
         "en": "WeChat reports an existing connection but did not issue credentials. Disconnect the previous authorization in WeChat, then authorize again.",
         "zh": "微信提示已有连接，但未返回授权凭据。请在微信中断开原授权后重新连接。",
@@ -3156,121 +3268,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "wechat_authorization_expired": {
         "en": "WeChat authorization expired. Authorize again in personal settings.",
         "zh": "微信授权已失效，请在个人设置中重新授权。",
-    },
-    "run_status_idle": {"en": "Idle", "zh": "空闲"},
-    "run_status_queued": {"en": "Queued", "zh": "排队中"},
-    "run_status_running": {"en": "Running", "zh": "运行中"},
-    "run_status_stopping": {"en": "Stopping", "zh": "停止中"},
-    "run_status_completing": {"en": "Completing", "zh": "完成中"},
-    "run_status_completed": {"en": "Completed", "zh": "已完成"},
-    "run_status_stopped": {"en": "Stopped", "zh": "已停止"},
-    "run_status_failed": {"en": "Failed", "zh": "失败"},
-    "run_status_interrupted": {"en": "Interrupted", "zh": "已中断"},
-    "run_status_waiting": {"en": "Waiting for your answer", "zh": "等待你的回答"},
-    "wechat_agent_vision_required": {
-        "en": "This Agent's chat model does not support image input.",
-        "zh": "此 Agent 的聊天模型不支持图片输入。",
-    },
-    "wechat_agent_no_output": {
-        "en": "The Agent finished without producing a visible reply.",
-        "zh": "Agent 已完成，但没有产生可见回复。",
-    },
-    "wechat_agent_help": {
-        "en": "Commands: /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help; /skip skips pending questions.",
-        "zh": "命令：/新对话（/new）开始新对话；/停止（/stop）停止任务并取消排队消息；/状态（/status）查看状态；/帮助（/help）查看帮助；/跳过（/skip）跳过待答问题。",
-    },
-    "wechat_agent_status": {"en": "Status: {status}", "zh": "状态：{status}"},
-    "wechat_agent_new_conversation": {
-        "en": "Your next message will start a new conversation.",
-        "zh": "下一条消息将开始新的对话。",
-    },
-    "wechat_agent_stopped": {
-        "en": "Stopped. Queued messages were cancelled.",
-        "zh": "已停止，排队中的消息已取消。",
-    },
-    "wechat_agent_answer_required": {
-        "en": "This question still needs an answer: {question}",
-        "zh": "这个问题还需要回答：{question}",
-    },
-    "wechat_agent_answer_invalid_choice": {
-        "en": "Please choose one of: {options}",
-        "zh": "请选择其中一项：{options}",
-    },
-    "wechat_agent_questions_partial": {
-        "en": "Answered {done} of {total} questions. Send the remaining answer, or /skip to skip.",
-        "zh": "已回答 {done}/{total} 个问题，请继续回答，或发送 /跳过（/skip）跳过。",
-    },
-    "wechat_agent_run_failed": {
-        "en": "The Agent task did not finish. Open the conversation in Clouisle for details.",
-        "zh": "Agent 任务未完成，请在 Clouisle 中打开对话查看详情。",
-    },
-    "wechat_agent_purpose_inactive": {
-        "en": "This connection is not currently using the Agent application.",
-        "zh": "该连接当前未启用 Agent 应用用途。",
-    },
-    "wechat_agent_config_missing": {
-        "en": "No Agent is configured for this connection.",
-        "zh": "该连接尚未配置 Agent。",
-    },
-    "wechat_agent_busy": {
-        "en": "The previous message is still being processed. Please wait for it to finish.",
-        "zh": "上一条消息仍在处理中，请等待完成。",
-    },
-    "wechat_agent_unknown_command": {
-        "en": "Unknown command. Send /help to see available commands.",
-        "zh": "未知命令，发送 /帮助（/help）查看可用命令。",
-    },
-    "wechat_agent_answer_skipped": {
-        "en": "Questions skipped.",
-        "zh": "已跳过这些问题。",
-    },
-    "wechat_agent_media_failed": {
-        "en": "The attachment could not be downloaded from WeChat. Please send it again.",
-        "zh": "未能从微信下载该附件，请重新发送。",
-    },
-    "wechat_agent_media_unsupported": {
-        "en": "This message type is not supported by the connected Agent.",
-        "zh": "该消息类型暂不支持接入此 Agent。",
-    },
-    "wechat_agent_video_unsupported": {
-        "en": "Video input requires an Agent with vision support and a configured speech recognition model for its audio.",
-        "zh": "视频输入需要 Agent 支持视觉识别；有音轨时还需要配置语音识别模型。",
-    },
-    "wechat_agent_attachments_disabled": {
-        "en": "This Agent does not accept file attachments.",
-        "zh": "此 Agent 未开放文件附件。",
-    },
-    "wechat_agent_file_too_large": {
-        "en": "The attachment exceeds the Agent size limit.",
-        "zh": "附件超过 Agent 的大小限制。",
-    },
-    "wechat_agent_file_type_unsupported": {
-        "en": "This attachment type is not allowed by the Agent.",
-        "zh": "此 Agent 不允许该附件类型。",
-    },
-    "wechat_agent_too_many_files": {
-        "en": "There are too many attachments in one message.",
-        "zh": "单条消息的附件数量超过限制。",
-    },
-    "wechat_agent_conversation_missing": {
-        "en": "The Agent session has no conversation yet.",
-        "zh": "Agent 会话尚未建立对话。",
-    },
-    "wechat_agent_context_missing": {
-        "en": "WeChat reply context is unavailable. View the result in the web conversation.",
-        "zh": "微信回复上下文不可用，请在网页会话中查看结果。",
-    },
-    "wechat_agent_binding_disconnected": {
-        "en": "The WeChat connection is no longer active.",
-        "zh": "微信连接已失效。",
-    },
-    "wechat_purpose_busy": {
-        "en": "A task is still active. Wait for it to finish, or stop the Agent task before changing the purpose.",
-        "zh": "仍有任务在处理，请等待完成，或停止 Agent 任务后再切换用途。",
-    },
-    "wechat_agent_variables_invalid": {
-        "en": "Check the Agent input variables, including required values, types and limits.",
-        "zh": "请检查 Agent 输入变量的必填项、类型和取值限制。",
     },
     "wechat_binary_content": {
         "en": "The file contents do not match the declared document format.",
@@ -3335,6 +3332,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "wechat_processing_failed": {
         "en": "This item could not be processed. Check its format and recognition configuration.",
         "zh": "无法处理该项，请检查文件格式和识别配置。",
+    },
+    "wechat_purpose_busy": {
+        "en": "A task is still active. Wait for it to finish, or stop the Agent task before changing the purpose.",
+        "zh": "仍有任务在处理，请等待完成，或停止 Agent 任务后再切换用途。",
     },
     "wechat_reply_heading": {
         "en": "Knowledge collection: {name}",

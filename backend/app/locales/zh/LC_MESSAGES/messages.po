@@ -3321,7 +3321,10 @@ msgid "wechat_agent_questions_partial"
 msgstr "已回答 {done}/{total} 个问题，请继续回答，或发送 /跳过（/skip）跳过。"
 
 msgid "wechat_agent_run_failed"
-msgstr "Agent 任务未完成，请在 Clouisle 中打开对话查看详情。"
+msgstr "Agent 任务未完成，请打开对话查看详情。"
+
+msgid "wechat_agent_received"
+msgstr "🤔思考中..."
 
 msgid "wechat_agent_purpose_inactive"
 msgstr "该连接当前未启用 Agent 应用用途。"
