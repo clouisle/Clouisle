@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from app.core.config import settings
 from app.services.sandbox.gateway import sandbox_gateway
 from app.services.sandbox.models import (
     SandboxJob,
@@ -260,6 +261,10 @@ class BashSandboxTool:
         return rewritten
 
     async def _runtime_workspace_root(self) -> Path:
+        # The worker owns physical placement; callers on macOS may resolve /tmp
+        # to /private/tmp, which is not the Linux worker's workspace alias.
+        if settings.SANDBOX_FILESYSTEM_ISOLATION_ENABLED:
+            return Path("/workspace")
         if not self.session_id:
             return Path(self.workspace_root)
         workspace = await sandbox_gateway.get_session_workspace(

@@ -135,7 +135,24 @@ class WeChatClient:
         except TimeoutError:
             return {"status": "wait"}
 
-    async def get_updates(self, cursor: str) -> dict:
+    async def get_updates(
+        self, cursor: str, *, wait_seconds: float | None = None
+    ) -> dict:
+        """Fetch one update batch.
+
+        ``wait_seconds`` bounds a single call so a scheduled task can return
+        promptly instead of holding a worker slot for the full long-poll
+        timeout. The upstream treats an empty batch as "nothing yet".
+        """
+        if wait_seconds is None:
+            return await self._get_updates(cursor)
+        try:
+            async with asyncio.timeout(wait_seconds):
+                return await self._get_updates(cursor)
+        except TimeoutError:
+            return {"msgs": [], "get_updates_buf": cursor}
+
+    async def _get_updates(self, cursor: str) -> dict:
         try:
             return await self._request(
                 "ilink/bot/getupdates", {"get_updates_buf": cursor}

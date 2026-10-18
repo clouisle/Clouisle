@@ -28,6 +28,8 @@ The admin audit log records lifecycle events for executable sandbox jobs and the
 
 When filesystem isolation is enabled (`SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true`), the sandbox launcher wraps executions in a dedicated `bwrap` process configured with strict namespace isolation:
 
+Bash commands keep logical `/workspace` paths across the API/Agent-worker boundary. Only the Sandbox Worker maps its physical session directory; caller-host paths such as macOS `/private/tmp` must not be embedded in commands. Bash-generated files and artifact collection therefore use the same session workspace.
+
 ```text
 bwrap \
   --unshare-user --unshare-pid --unshare-ipc --unshare-uts \

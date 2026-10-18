@@ -1,9 +1,23 @@
-"""Agent-queue orchestration and recovery of durable WeChat Agent sessions."""
+"""Scheduled WeChat update polling and Agent-queue recovery."""
 
 from celery import shared_task
 from tortoise.expressions import Q
 
 from app.tasks.knowledge_base import _run_async
+
+
+@shared_task(name="app.tasks.wechat_agent.poll_bindings_task")
+def poll_bindings_task() -> dict:
+    """Poll every connected binding once; one Beat tick, one bounded batch.
+
+    The receiver used to be a permanently running process. It is now a
+    scheduled task, so there is no extra deployment to own; Celery Beat runs a
+    single instance and the Redis lease inside ``poll_binding`` keeps the work
+    idempotent if two ticks ever overlap.
+    """
+    from app.services.wechat_receiver import poll_connected_bindings
+
+    return _run_async(poll_connected_bindings())
 
 
 @shared_task(

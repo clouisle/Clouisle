@@ -111,6 +111,11 @@ celery_app.conf.task_routes = {
 
 # Beat schedule for periodic tasks
 celery_app.conf.beat_schedule = {
+    "poll-wechat-bindings": {
+        "task": "app.tasks.wechat_agent.poll_bindings_task",
+        "schedule": 3.0,
+        "options": {"queue": "agent"},
+    },
     "recover-wechat-agent-bindings": {
         "task": "app.tasks.wechat_agent.recover_bindings_task",
         "schedule": 3.0,

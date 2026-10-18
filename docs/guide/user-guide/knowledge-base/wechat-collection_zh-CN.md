@@ -75,18 +75,14 @@ Agent 使用扫码用户的真实身份，继续执行应用原有的模型、�
 
 ## 部署要求
 
-先启动 API，由现有数据库初始化流程创建采集表。启动知识库 Celery worker、Beat，再启动独立接收进程：
+先启动 API，由现有数据库初始化流程创建采集表，然后启动现有的 Celery worker **和** Beat 调度器。Beat 每三秒轮询一次微信，并交给 worker 落库；**不需要再单独部署微信接收进程**。
 
-```bash
-python main.py wechat-receiver
-```
+处理微信任务的 worker 需要访问 PostgreSQL、Redis，以及微信官方 iLink 和媒体 CDN 的 HTTPS 出站地址。消息接入（`app.tasks.wechat_agent.*`）与 Agent 运行共用 `agent` 队列，采集处理使用 `knowledge` 队列。Beat 每分钟恢复采集任务，每三秒重试 Agent 收件与未发出的回复。PostgreSQL 锁串行化处理；凭据、收件载荷、游标和回复上下文 token 都使用稳定的 `SECRET_KEY` 加密，API 与 worker 必须使用同一密钥。远程存储部署复用现有的内部上传网关，不需要上传目录。
 
-Compose、Helm 和独立 Kubernetes 清单已包含 `wechat-receiver`。接收进程不需要上传目录；远程存储模式的知识库 worker 复用现有内部上传网关。后端镜像包含 `ffmpeg`、`ffprobe`；本地 worker 处理音视频时也需要在 `PATH` 中安装这两个程序。识别模型和嵌入模型需要正确配置，并获得目标团队授权。
-
-接收进程需要访问 PostgreSQL、Redis，以及微信官方 iLink 和媒体 CDN 的 HTTPS 出站地址。知识库任务进入 `knowledge` 队列，Agent 接入和运行进入 `agent` 队列。Beat 每分钟恢复采集任务，每三秒检查 Agent 收件和待投递回复。PostgreSQL 锁串行化处理；凭据、收件载荷和游标使用稳定的 `SECRET_KEY` 加密，API、接收进程和 worker 必须使用同一密钥。
+Agent 模式还需要就绪的 Sandbox Worker，用于沙箱工具和已有会话工作区的检查点保存。该服务必须与普通 worker、Beat 一起保持运行；移除微信接收进程不等于移除沙箱依赖。macOS 本地开发请在仓库根目录运行 `backend/.venv/bin/python main.py sandbox-worker --local-dev -c 1`，使用包含 Bubblewrap 的 Linux 容器，不要通过关闭隔离来绕过缺少 `bwrap` 的问题。没有就绪的沙箱 worker 时，恢复／检查点保存可能超时，微信会提示 Agent 任务未完成；应检查对应 AgentRun 错误并恢复 worker 后再重试。
 
 > [!IMPORTANT]
-> 本次发布把采集目标和识别模型从连接记录移到独立的可选配置，并删除旧列。该切换**不向后兼容**：升级前（或升级同时）必须停止仍在运行旧 schema 的 API、worker 和接收进程。请把 API、知识库 worker 和接收进程作为同一步骤重启，不要让旧的应用进程继续访问升级后的 schema。
+> 本次发布把采集目标和识别模型从连接记录移到独立的可选配置，并删除旧列。该切换**不向后兼容**：升级前必须停止仍在运行旧 schema 的进程，并把 API、Celery worker 和 Beat 作为同一步骤重启。
 
 微信客户端支持情况、账号授权与部署网络准入由上游控制。正式开放前，需要在实际部署网络使用真实账号验收扫码、文章／卡片投递、附件下载和手机回复。
 

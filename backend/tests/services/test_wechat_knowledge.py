@@ -2,6 +2,7 @@
 
 import base64
 from datetime import timedelta
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import httpx
@@ -1025,3 +1026,122 @@ async def test_purpose_migration_preserves_active_collection_once(collection_db)
     await migrate_wechat_purpose()
     await binding.refresh_from_db()
     assert binding.purpose == "none"
+
+
+class _FakeRedis:
+    """Minimal Redis surface used by the polling lease."""
+
+    def __init__(self):
+        self.values: dict[str, str] = {}
+
+    async def set(self, key, value, nx=False, ex=None):
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    async def get(self, key):
+        return self.values.get(key)
+
+    async def eval(self, script, numkeys, key, *args):
+        current = self.values.get(key)
+        if current != args[0]:
+            return 0
+        if "del" in script:
+            del self.values[key]
+            return 1
+        return 1
+
+
+@pytest.mark.asyncio
+async def test_poll_binding_stores_receipts_and_dispatches(collection_db, monkeypatch):
+    from app.services import wechat_receiver
+
+    _, _, _, _, binding, _ = collection_db
+    redis = _FakeRedis()
+    dispatched = []
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            self.wait = None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get_updates(self, cursor, *, wait_seconds=None):
+            self.wait = wait_seconds
+            return {"msgs": [message("poll-1")], "get_updates_buf": "next"}
+
+    monkeypatch.setattr(wechat_receiver, "get_redis", AsyncMock(return_value=redis))
+    monkeypatch.setattr(wechat_receiver, "WeChatClient", Client)
+    monkeypatch.setattr(
+        wechat_receiver.celery_app,
+        "send_task",
+        lambda *args, **kwargs: dispatched.append(kwargs),
+    )
+
+    result = await wechat_receiver.poll_binding(binding)
+
+    assert result == {"polled": True, "accepted": 1}
+    assert await WeChatKnowledgeReceipt.filter(binding_id=binding.id).count() == 1
+    assert dispatched and dispatched[0]["queue"] == "knowledge"
+    # The scheduled tick must not hold a worker for the full long-poll.
+    assert wechat_receiver.POLL_WAIT_SECONDS <= 5
+
+
+@pytest.mark.asyncio
+async def test_poll_binding_skips_when_lease_is_held(collection_db, monkeypatch):
+    from app.services import wechat_receiver
+
+    _, _, _, _, binding, _ = collection_db
+    redis = _FakeRedis()
+    redis.values[f"wechat:poll:{binding.id}"] = "another-worker"
+    opened = []
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            opened.append(True)
+
+    monkeypatch.setattr(wechat_receiver, "get_redis", AsyncMock(return_value=redis))
+    monkeypatch.setattr(wechat_receiver, "WeChatClient", Client)
+
+    result = await wechat_receiver.poll_binding(binding)
+
+    assert result == {"polled": False, "reason": "leased"}
+    assert opened == [], "a leased binding must not call upstream"
+
+
+@pytest.mark.asyncio
+async def test_poll_binding_marks_expired_authorization(collection_db, monkeypatch):
+    from app.services import wechat_receiver
+
+    _, _, _, _, binding, _ = collection_db
+    redis = _FakeRedis()
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get_updates(self, cursor, *, wait_seconds=None):
+            raise WeChatAPIError(-14)
+
+    monkeypatch.setattr(wechat_receiver, "get_redis", AsyncMock(return_value=redis))
+    monkeypatch.setattr(wechat_receiver, "WeChatClient", Client)
+
+    result = await wechat_receiver.poll_binding(binding)
+
+    assert result["polled"] is False and result["code"] == -14
+    await binding.refresh_from_db()
+    assert binding.status == "error"
+    assert binding.last_error == "wechat_authorization_expired"
+    # The lease is released even when the poll fails.
+    assert f"wechat:poll:{binding.id}" not in redis.values

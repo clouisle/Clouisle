@@ -73,18 +73,14 @@ Only completed indexing is reported as success. WeChat's acceptance of a reply i
 
 ## Deployment requirements
 
-Run the API first so its normal schema bootstrap creates the collection tables. Run the existing knowledge Celery worker and Beat scheduler, plus the standalone receiver:
+Run the API first so its normal schema bootstrap creates the collection tables, then run the existing Celery worker **and** Beat scheduler. Beat polls WeChat every three seconds and asks one worker to store each new message; there is no separate receiver process to deploy.
 
-```bash
-python main.py wechat-receiver
-```
+The worker handling WeChat needs outbound HTTPS access to the official iLink backend and WeChat media CDN, plus PostgreSQL and Redis. Message intake (`app.tasks.wechat_agent.*`) and Agent runs share the `agent` queue; collection processing uses `knowledge`. Beat also recovers collection receipts every minute and re-drives Agent receipts and unsent replies every three seconds. PostgreSQL locks serialize ownership; credentials, incoming payloads, cursors and reply context tokens are encrypted using the deployment's stable `SECRET_KEY`. Remote-storage deployments reuse the existing authenticated internal upload gateway, so no uploads volume is required.
 
-Compose, Helm and the standalone Kubernetes manifest include a `wechat-receiver` deployment. The receiver does not need an uploads volume; knowledge workers use the existing authenticated internal upload gateway in remote-storage mode. The backend image includes `ffmpeg` and `ffprobe`; local knowledge workers need those executables on `PATH` for audio/video extraction. Recognition and embedding models must be configured and authorized for the target team.
-
-The receiver needs outbound HTTPS access to the official iLink backend and WeChat media CDN, plus PostgreSQL and Redis. Collection processing uses the `knowledge` queue; Agent orchestration and runs use the `agent` queue. Beat recovers collection receipts every minute and checks Agent receipts and pending deliveries every three seconds. PostgreSQL locks serialize ownership; credentials, incoming payloads and cursors are encrypted using the deployment's stable `SECRET_KEY`.
+Agent mode also requires a ready Sandbox Worker for sandbox tools and checkpointing existing session workspaces. Keep that service running alongside the normal worker and Beat; removing the WeChat receiver does not remove the sandbox dependency. On macOS, run `backend/.venv/bin/python main.py sandbox-worker --local-dev -c 1` from the repository root to use the Linux container with Bubblewrap. Do not disable isolation to work around a missing `bwrap`. If no sandbox worker is ready, recovery/checkpointing can time out and WeChat reports that the Agent task did not finish; inspect the conversation's AgentRun error and restore the worker before retrying.
 
 > [!IMPORTANT]
-> This release moves the collection target and recognition models from the connection row into a separate optional configuration, and drops the old columns. The cutover is **not backward-compatible**: existing API, worker and receiver processes running the previous schema must be stopped before (or together with) the upgrade. Restart the API, the knowledge worker and the receiver as one deployment step; do not leave old application processes running against the upgraded schema.
+> This release moves the collection target and recognition models from the connection row into a separate optional configuration, and drops the old columns. The cutover is **not backward-compatible**: stop any process still running the previous schema before upgrading, and restart the API, the Celery worker and Beat as one deployment step.
 
 WeChat client availability, account authorization and deployment-network admission are controlled upstream. Validate QR authorization, original article/card delivery, attachment download and actual phone replies using a real account in the production network before announcing availability.
 

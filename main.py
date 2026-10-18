@@ -429,8 +429,6 @@ Examples:
         help="Disable auto-reload (use Gunicorn for production)",
     )
 
-    subparsers.add_parser("wechat-receiver", help="Receive bound WeChat knowledge messages")
-
     # Worker command
     worker_parser = subparsers.add_parser("worker", help="Start the Celery worker")
     worker_parser.add_argument(
@@ -498,11 +496,6 @@ Examples:
         )
     elif args.command == "worker":
         start_worker(concurrency=args.concurrency, queues=args.queues)
-    elif args.command == "wechat-receiver":
-        import asyncio
-        os.chdir(BACKEND_DIR)
-        from app.services.wechat_receiver import run_receiver
-        asyncio.run(run_receiver())
     elif args.command == "sandbox-worker":
         if args.local_dev:
             start_sandbox_worker_container(

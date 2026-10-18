@@ -1,11 +1,10 @@
-"""Standalone receiver: no FastAPI worker owns long-lived WeChat polling."""
+"""WeChat update polling: one durable batch per binding per tick."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-from contextlib import suppress
 from uuid import uuid4
 
 from tortoise import Tortoise
@@ -136,63 +135,57 @@ async def accept_updates(binding: WeChatKnowledgeBinding, response: dict) -> lis
     return ids
 
 
-async def receive_once(binding: WeChatKnowledgeBinding):
+# A scheduled poll returns quickly: the upstream long-poll is bounded so one
+# Beat tick never occupies a worker slot for the full HTTP timeout.
+POLL_WAIT_SECONDS = 2.5
+LEASE_SECONDS = 90
+
+
+async def poll_binding(binding: WeChatKnowledgeBinding) -> dict:
+    """Read one update batch for a binding and persist it durably.
+
+    Safe to call from any number of workers: a Redis lease elects a single
+    poller per binding, and ``accept_updates`` re-checks the cursor and
+    generation under a row lock before committing.
+    """
     redis = await get_redis()
     key, owner = f"wechat:poll:{binding.id}", str(uuid4())
-    if not await redis.set(key, owner, nx=True, ex=90):
-        await asyncio.sleep(2)
-        return
+    if not await redis.set(key, owner, nx=True, ex=LEASE_SECONDS):
+        return {"polled": False, "reason": "leased"}
     try:
         async with WeChatClient(
             binding.base_url, decrypt_secret(binding.token)
         ) as client:
-            polling = asyncio.create_task(
-                client.get_updates(
-                    decrypt_secret(binding.cursor) if binding.cursor else ""
-                )
+            response = await client.get_updates(
+                decrypt_secret(binding.cursor) if binding.cursor else "",
+                wait_seconds=POLL_WAIT_SECONDS,
             )
-            try:
-                while not polling.done():
-                    done, _ = await asyncio.wait({polling}, timeout=1)
-                    if done:
-                        break
-                    valid = await WeChatKnowledgeBinding.filter(
-                        id=binding.id, status="connected", generation=binding.generation
-                    ).exists()
-                    lock_owner = await redis.get(key)
-                    if not valid or lock_owner not in (owner, owner.encode()):
-                        polling.cancel()
-                        return
-                response = await polling
-                # Keep a bounded lease through the short receipt transaction.
-                renewed = await redis.eval(
-                    "if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('expire',KEYS[1],90) else return 0 end",
-                    1,
-                    key,
-                    owner,
-                )
-                if not renewed:
-                    return
-                ids = await accept_updates(binding, response)
-                if binding.purpose == "agent":
-                    await asyncio.to_thread(
-                        celery_app.send_task,
-                        "app.tasks.wechat_agent.process_binding_task",
-                        args=[str(binding.id)],
-                        queue="agent",
-                    )
-                for receipt_id in ids:
-                    await asyncio.to_thread(
-                        celery_app.send_task,
-                        "app.tasks.wechat_knowledge.process_receipt_task",
-                        args=[receipt_id],
-                        queue="knowledge",
-                    )
-            finally:
-                if not polling.done():
-                    polling.cancel()
-                with suppress(asyncio.CancelledError):
-                    await polling
+        # Keep the lease through the short receipt transaction.
+        renewed = await redis.eval(
+            "if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('expire',KEYS[1],ARGV[2]) else return 0 end",
+            1,
+            key,
+            owner,
+            LEASE_SECONDS,
+        )
+        if not renewed:
+            return {"polled": False, "reason": "lease_lost"}
+        ids = await accept_updates(binding, response)
+        if binding.purpose == "agent":
+            await asyncio.to_thread(
+                celery_app.send_task,
+                "app.tasks.wechat_agent.process_binding_task",
+                args=[str(binding.id)],
+                queue="agent",
+            )
+        for receipt_id in ids:
+            await asyncio.to_thread(
+                celery_app.send_task,
+                "app.tasks.wechat_knowledge.process_receipt_task",
+                args=[receipt_id],
+                queue="knowledge",
+            )
+        return {"polled": True, "accepted": len(ids)}
     except WeChatAPIError as exc:
         await WeChatKnowledgeBinding.filter(
             id=binding.id, generation=binding.generation, status="connected"
@@ -202,14 +195,7 @@ async def receive_once(binding: WeChatKnowledgeBinding):
             else "wechat_connection_failed",
             **({"status": "error"} if exc.code == -14 else {}),
         )
-        await asyncio.sleep(5)
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.warning(
-            "WeChat receiver iteration failed; durable receipts remain recoverable"
-        )
-        await asyncio.sleep(5)
+        return {"polled": False, "reason": "wechat_error", "code": exc.code}
     finally:
         await redis.eval(
             "if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end",
@@ -219,8 +205,20 @@ async def receive_once(binding: WeChatKnowledgeBinding):
         )
 
 
+async def poll_connected_bindings() -> dict:
+    """Poll every connected binding once; called by the Celery Beat tick."""
+    bindings = await WeChatKnowledgeBinding.filter(status="connected").exclude(token="")
+    results = await asyncio.gather(
+        *(poll_binding(binding) for binding in bindings), return_exceptions=True
+    )
+    polled = sum(
+        1 for result in results if isinstance(result, dict) and result.get("polled")
+    )
+    return {"bindings": len(bindings), "polled": polled}
+
+
 async def run_receiver():
-    active: dict = {}
+    """Local debugging loop; production polls from the Celery Beat tick."""
     await Tortoise.init(
         db_url=settings.DATABASE_URL,
         modules={"models": ["app.models"]},
@@ -228,24 +226,8 @@ async def run_receiver():
     )
     try:
         while True:
-            bindings = await WeChatKnowledgeBinding.filter(status="connected").exclude(
-                token=""
-            )
-            current = {row.id: row for row in bindings}
-            for identifier, task in list(active.items()):
-                if identifier not in current:
-                    task.cancel()
-                if task.done() or identifier not in current:
-                    with suppress(asyncio.CancelledError, Exception):
-                        await task
-                    active.pop(identifier, None)
-            for identifier, binding in current.items():
-                if identifier not in active:
-                    active[identifier] = asyncio.create_task(receive_once(binding))
+            await poll_connected_bindings()
             await asyncio.sleep(1)
     finally:
-        for task in active.values():
-            task.cancel()
-        await asyncio.gather(*active.values(), return_exceptions=True)
         await Tortoise.close_connections()
         await close_redis()
