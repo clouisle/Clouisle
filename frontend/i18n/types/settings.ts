@@ -1,8 +1,135 @@
-// GENERATED — 2026-10-17T15:53:02.942Z
+// GENERATED — 2026-10-18T12:45:55.116Z
 // Source: i18n/en/settings.json
 export type SettingsMessages = {
   settings: {
     title: string
+    wechat: {
+      title: string
+      downloadOriginal: string
+      description: string
+      purposeTitle: string
+      purposeHint: string
+      purposeNone: string
+      purposeKnowledgeCollection: string
+      purposeAgent: string
+      purposeLabel: string
+      purposeSelect: string
+      purposeActive: string
+      purposeBusy: string
+      agentTitle: string
+      agentHint: string
+      agentSelect: string
+      noAgents: string
+      agentVariables: string
+      agentVariablesHint: string
+      agentInactive: string
+      agentStt: string
+      agentInput: string
+      agentStatusActive: string
+      agentRunStatus: string
+      agentConversation: string
+      agentDelivery: string
+      deliveryPending: string
+      deliverySending: string
+      deliverySubmitted: string
+      deliveryUnknown: string
+      deliveryError: string
+      deliveryUnavailable: string
+      deliveryCancelled: string
+      stop: string
+      runStatus: {
+        queued: string
+        running: string
+        stopping: string
+        completing: string
+        completed: string
+        stopped: string
+        failed: string
+        interrupted: string
+        waiting: string
+      }
+      receiptStatus: {
+        pending: string
+        submitted: string
+        completed: string
+        error: string
+      }
+      agentReceiptsTitle: string
+      agentReceiptsHint: string
+      noAgentReceipts: string
+      collectionReceiptsTitle: string
+      collectionReceiptsHint: string
+      variablesRequired: string
+      variablesOptional: string
+      variablePlaceholder: string
+      variableNumberInvalid: string
+      variableOptionInvalid: string
+      variableTooLong: string
+      save: string
+      saved: string
+      cancel: string
+      bindingRule: string
+      loading: string
+      failed: string
+      refresh: string
+      empty: string
+      targetMissing: string
+      connectionError: string
+      change: string
+      connect: string
+      disabled: string
+      target: string
+      selectTarget: string
+      noTargets: string
+      modelHint: string
+      vision: string
+      stt: string
+      notConfigured: string
+      collectionActive: string
+      collectionInactive: string
+      collectionTitle: string
+      collectionHint: string
+      connections: string
+      lastReceived: string
+      never: string
+      showQr: string
+      qrLabel: string
+      bound: string
+      verifyCode: string
+      verify: string
+      closeQr: string
+      disconnect: string
+      disconnectHint: string
+      recent: string
+      noReceipts: string
+      replyHint: string
+      item: string
+      status: {
+        connected: string
+        disconnected: string
+        error: string
+      }
+      login: {
+        wait: string
+        scaned: string
+        confirmed: string
+        expired: string
+        need_verifycode: string
+        verify_code_blocked: string
+      }
+      receipt: {
+        pending: string
+        processing: string
+        completed: string
+        error: string
+      }
+      itemStatus: {
+        completed: string
+        duplicate: string
+        error: string
+        pending: string
+      }
+    }
     description: string
     cancel: string
     profile: string
