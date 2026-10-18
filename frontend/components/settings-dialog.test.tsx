@@ -59,6 +59,7 @@ mock.module('next-intl', () => ({
     values ? `${key}:${Object.values(values).join(',')}` : key,
 }))
 mock.module('next/navigation', () => ({ useRouter: () => ({ push }) }))
+mock.module('./wechat-knowledge', () => ({ WeChatKnowledge: () => null }))
 mock.module('sonner', () => ({ toast: { info: infoToast, success: successToast, warning: warningToast } }))
 const Icon = () => null
 mock.module('lucide-react', () => ({

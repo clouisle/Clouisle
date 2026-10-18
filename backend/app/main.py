@@ -352,6 +352,9 @@ async def lifespan(app: FastAPI):
     await init_observability_run_fields()
     # Generate schemas
     await Tortoise.generate_schemas()
+    from app.core.wechat_migration import migrate_wechat_knowledge_schema
+
+    await migrate_wechat_knowledge_schema()
     await initialize_integrations()
     try:
         await init_observability_run_error_index()
@@ -544,7 +547,9 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                         # 隐藏敏感字段
                         if isinstance(request_body, dict):
                             request_body = {
-                                k: "***" if k in ["password", "token", "secret"] else v
+                                k: "***"
+                                if k in ["password", "token", "secret", "verify_code"]
+                                else v
                                 for k, v in request_body.items()
                             }
                     elif "form" in content_type:

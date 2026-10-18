@@ -40,6 +40,8 @@ celery_app = Celery(
     include=[
         "app.tasks.knowledge_base",
         "app.tasks.feishu_knowledge",
+        "app.tasks.wechat_knowledge",
+        "app.tasks.wechat_agent",
         "app.tasks.usage",
         "app.tasks.workflow",
         "app.tasks.audit_log",
@@ -85,6 +87,8 @@ celery_app.conf.update(
 celery_app.conf.task_routes = {
     "app.tasks.knowledge_base.*": {"queue": "knowledge"},
     "app.tasks.feishu_knowledge.*": {"queue": "knowledge"},
+    "app.tasks.wechat_knowledge.*": {"queue": "knowledge"},
+    "app.tasks.wechat_agent.*": {"queue": "agent"},
     "app.tasks.usage.*": {"queue": "default"},
     "app.tasks.workflow.*": {"queue": "workflow"},
     "app.tasks.notification.*": {"queue": "default"},
@@ -107,6 +111,16 @@ celery_app.conf.task_routes = {
 
 # Beat schedule for periodic tasks
 celery_app.conf.beat_schedule = {
+    "recover-wechat-agent-bindings": {
+        "task": "app.tasks.wechat_agent.recover_bindings_task",
+        "schedule": 3.0,
+        "options": {"queue": "agent"},
+    },
+    "recover-wechat-knowledge-receipts": {
+        "task": "app.tasks.wechat_knowledge.recover_receipts_task",
+        "schedule": 60.0,
+        "options": {"queue": "knowledge"},
+    },
     "dispatch-feishu-knowledge-sync": {
         "task": "app.tasks.feishu_knowledge.dispatch_due_sources_task",
         "schedule": 60.0,

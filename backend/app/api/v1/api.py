@@ -24,6 +24,7 @@ from app.api.v1.endpoints import (
     memories,
     totp,
     embed,
+    wechat_knowledge,
 )
 from app.api.v1 import workflow_versions
 from app.api.v1.admin.api import admin_router
@@ -63,4 +64,7 @@ api_router.include_router(sso.router, prefix="/sso", tags=["sso"])
 api_router.include_router(memories.router, prefix="/memories", tags=["memories"])
 api_router.include_router(totp.router, prefix="/totp", tags=["totp"])
 api_router.include_router(embed.router, prefix="/embed", tags=["embed"])
+api_router.include_router(
+    wechat_knowledge.router, prefix="/wechat-knowledge", tags=["wechat-knowledge"]
+)
 api_router.include_router(admin_router, prefix="/admin", tags=["admin"])

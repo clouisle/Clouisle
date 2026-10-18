@@ -21,6 +21,7 @@ Welcome to the user and operator documentation for Clouisle. For the extended Ch
 - [Team roles](user-guide/teams/team-roles.md)
 - [Knowledge bases](user-guide/knowledge-base/browsing-kb.md)
 - [Upload documents](user-guide/knowledge-base/uploading-documents.md)
+- [Connect WeChat](user-guide/knowledge-base/wechat-collection.md)
 - [Manage documents](user-guide/knowledge-base/document-management.md)
 - [Search knowledge bases](user-guide/knowledge-base/searching.md)
 - [Document metadata](user-guide/knowledge-base/document-metadata.md)

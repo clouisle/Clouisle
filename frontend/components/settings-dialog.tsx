@@ -47,6 +47,7 @@ import {
   formatValidationSummaryMessage
 } from '@/lib/validation'
 import { ApiError } from '@/lib/api/client'
+import { WeChatKnowledge } from './wechat-knowledge'
 
 interface SettingsDialogProps {
   open: boolean
@@ -497,6 +498,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <TabsTrigger value="account">
                 <Shield className="mr-1.5 h-4 w-4" />
                 {t('account')}
+              </TabsTrigger>
+              <TabsTrigger value="wechat">
+                <LinkIcon className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                {t('wechat.title')}
               </TabsTrigger>
             </TabsList>
 
@@ -952,6 +957,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </CardContent>
                 </Card>
               )}
+            </TabsContent>
+            <TabsContent value="wechat" className="space-y-6">
+              <WeChatKnowledge active={open} />
             </TabsContent>
           </Tabs>
         )}

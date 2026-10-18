@@ -119,6 +119,22 @@ services:
       api:
         condition: service_healthy
 
+  wechat-receiver:
+    image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
+    restart: unless-stopped
+    command: ["python", "main.py", "wechat-receiver"]
+    healthcheck:
+      disable: true
+    env_file: .env
+    environment:
+      POSTGRES_SERVER: db
+      REDIS_HOST: redis
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   sandbox-worker:
     image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest
     restart: unless-stopped

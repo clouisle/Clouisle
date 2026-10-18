@@ -68,6 +68,7 @@
 - [团队角色](user-guide/teams/team-roles.md)
 - [知识库](user-guide/knowledge-base/browsing-kb.md)
 - [上传文档](user-guide/knowledge-base/uploading-documents.md)
+- [微信互联](user-guide/knowledge-base/wechat-collection_zh-CN.md)
 - [文档管理](user-guide/knowledge-base/document-management.md)
 - [知识库搜索](user-guide/knowledge-base/searching.md)
 - [文档元数据](user-guide/knowledge-base/document-metadata.md)

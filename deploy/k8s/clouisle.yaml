@@ -546,6 +546,40 @@ spec:
               - key: INTERNAL_API_TOKEN
                 path: internal-api-token
 
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wechat-receiver
+  namespace: clouisle
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wechat-receiver
+  template:
+    metadata:
+      labels:
+        app: wechat-receiver
+    spec:
+      containers:
+        - name: wechat-receiver
+          image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "main.py", "wechat-receiver"]
+          envFrom:
+            - configMapRef:
+                name: clouisle-config
+            - secretRef:
+                name: clouisle-secret
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+
 # ===========================================================================
 # 10. Sandbox Worker — DaemonSet (one isolated local disk per eligible node)
 # ===========================================================================

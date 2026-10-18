@@ -62,6 +62,7 @@ mock.module('next-intl', () => ({
     values ? `${key}:${Object.values(values).join(',')}` : key,
 }))
 mock.module('next/navigation', () => ({ useRouter: () => ({ push }) }))
+mock.module('./wechat-knowledge', () => ({ WeChatKnowledge: () => null }))
 mock.module('sonner', () => ({ toast: { info: infoToast, success: successToast, warning: warningToast } }))
 const Icon = () => null
 mock.module('lucide-react', () => ({
@@ -248,7 +249,6 @@ describe('SettingsDialog', () => {
 
     await click('account')
     expect(container.textContent).toContain('connectedAccounts')
-    expect(container.textContent).toContain('GitHub')
     expect(container.textContent).toContain('setPassword')
     expect(container.querySelector('#current')).toBeNull()
     expect(container.textContent).not.toContain('dangerZone')

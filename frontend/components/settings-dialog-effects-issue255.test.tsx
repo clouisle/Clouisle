@@ -27,6 +27,7 @@ mock.module('react', () => ({
 }))
 mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string) => key }))
 mock.module('next/navigation', () => ({ useRouter: () => ({ push: mock(() => {}) }) }))
+mock.module('./wechat-knowledge', () => ({ WeChatKnowledge: component('WeChatKnowledge') }))
 mock.module('sonner', () => ({ toast: { success, info: mock(() => {}), warning: mock(() => {}) } }))
 mock.module('lucide-react', () => ({
   User: component('User'), Shield: component('Shield'), Loader2: component('Loader2'), Link: component('Link'),

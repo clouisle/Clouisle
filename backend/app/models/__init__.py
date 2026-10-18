@@ -90,6 +90,20 @@ from .sso_session import SSOSession
 from .feishu_department import FeishuDepartment
 from .feishu_user import FeishuUser
 from .feishu_knowledge import FeishuKnowledgeSource, FeishuKnowledgeDocument
+from .wechat_knowledge import (
+    WeChatKnowledgeBinding,
+    WeChatKnowledgeLogin,
+    WeChatKnowledgeReceipt,
+    WeChatKnowledgeItem,
+    WeChatKnowledgeContent,
+    WeChatKnowledgeCollection,
+)
+from .wechat_agent import (
+    WeChatAgentConfig,
+    WeChatAgentSession,
+    WeChatAgentReceipt,
+    WeChatAgentDelivery,
+)
 from .memory import MemoryEntity, MemoryRelation, EntityType, RelationType
 from .password_history import PasswordHistory
 from .agent_run import (
@@ -120,6 +134,16 @@ __all__ = [
     "FeishuUser",
     "FeishuKnowledgeSource",
     "FeishuKnowledgeDocument",
+    "WeChatKnowledgeBinding",
+    "WeChatKnowledgeLogin",
+    "WeChatKnowledgeReceipt",
+    "WeChatKnowledgeItem",
+    "WeChatKnowledgeContent",
+    "WeChatKnowledgeCollection",
+    "WeChatAgentConfig",
+    "WeChatAgentSession",
+    "WeChatAgentReceipt",
+    "WeChatAgentDelivery",
     "Team",
     "TeamMember",
     "ScopedRoleAssignment",
