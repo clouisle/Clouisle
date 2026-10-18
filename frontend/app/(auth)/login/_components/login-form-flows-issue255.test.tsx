@@ -61,6 +61,7 @@ mock.module('@/lib/api', () => ({
   usersApi: { updateProfile },
   siteSettingsApi: { getPublic },
   ssoApi: { getPublicIntegrations, initiateLogin },
+  getIntegrationIconUrl: () => '/integrations/stub.png',
   ApiError,
 }))
 mock.module('@/lib/validation', () => ({

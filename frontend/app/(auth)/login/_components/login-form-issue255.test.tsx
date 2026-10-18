@@ -53,6 +53,7 @@ mock.module('@/lib/api', () => ({
   usersApi: { updateProfile: mock(async () => {}) },
   siteSettingsApi: { getPublic },
   ssoApi: { getPublicIntegrations: mock(async () => []), initiateLogin },
+  getIntegrationIconUrl: () => '/integrations/stub.png',
   ApiError: class ApiError extends Error {},
 }))
 mock.module('@/lib/validation', () => ({

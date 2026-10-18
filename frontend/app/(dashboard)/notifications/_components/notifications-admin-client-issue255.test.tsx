@@ -16,7 +16,7 @@ mock.module('next-intl', () => ({
   },
 }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess } }))
-mock.module('lucide-react', () => Object.fromEntries(['Plus', 'Trash2', 'ChevronLeft', 'ChevronRight', 'ChevronsLeft', 'ChevronsRight', 'Search', 'X', 'Mail', 'MessageSquare', 'CheckCircle2', 'XCircle', 'Loader2', 'Clock', 'Eye', 'MoreHorizontal'].map((name) => [name, () => null])))
+mock.module('lucide-react', () => Object.fromEntries(['Plus', 'Trash2', 'ChevronLeft', 'ChevronRight', 'ChevronsLeft', 'ChevronsRight', 'Search', 'X', 'Mail', 'MessageSquare', 'MessageSquareText', 'CheckCircle2', 'XCircle', 'Loader2', 'Clock', 'Eye', 'MoreHorizontal'].map((name) => [name, () => null])))
 mock.module('@/lib/api/admin/notifications', () => ({ notificationsApi: { adminList, adminDelete } }))
 mock.module('@/hooks/use-url-search-state', () => ({
   useUrlSearchState: () => {
