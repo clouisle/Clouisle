@@ -961,6 +961,22 @@ async def delete_knowledge_base(
     kb_name = kb.name
     audit_before = AuditLogService.snapshot(kb, "knowledge_base")
 
+    from app.services.wechat_cleanup import delete_collection_originals
+    from app.models.wechat_knowledge import WeChatKnowledgeItem
+
+    collected_ids = (
+        await WeChatKnowledgeItem.filter(receipt__knowledge_base_id=kb.id)
+        .exclude(document_id=None)
+        .values_list("document_id", flat=True)
+    )
+    if collected_ids:
+        for collected in await Document.filter(
+            id__in=collected_ids, knowledge_base_id=kb.id
+        ):
+            await delete_collection_originals(collected)
+            if collected.file_path:
+                await document_processor.delete_file(collected.file_path)
+
     # Delete all documents and chunks (cascades)
     await kb.delete()
 
@@ -1352,6 +1368,11 @@ async def delete_document(
     if doc.file_path:
         await document_processor.delete_file(doc.file_path)
 
+    if (doc.metadata or {}).get("source") == "wechat":
+        from app.services.wechat_cleanup import delete_collection_originals
+
+        await delete_collection_originals(doc)
+
     # Update KB statistics
     kb.document_count = max(0, kb.document_count - 1)
     kb.total_chunks = max(0, kb.total_chunks - doc.chunk_count)
@@ -1424,8 +1445,9 @@ async def download_document(
         "pdf": "application/pdf",
         "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "doc": "application/msword",
+        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         "txt": "text/plain",
-        "md": "text/markdown",
+        "markdown": "text/markdown",
         "html": "text/html",
         "csv": "text/csv",
         "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

@@ -208,6 +208,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
     { value: 'pdf', label: 'PDF' },
     { value: 'docx', label: 'DOCX' },
     { value: 'doc', label: 'DOC' },
+    { value: 'pptx', label: 'PPTX' },
     { value: 'txt', label: 'TXT' },
     { value: 'markdown', label: 'Markdown' },
     { value: 'html', label: 'HTML' },
@@ -529,8 +530,8 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="uppercase text-xs">
-                      {doc.doc_type}
+                    <Badge variant="outline" className="text-xs">
+                      {typeOptions.find(option => option.value === doc.doc_type)?.label ?? doc.doc_type.toUpperCase()}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">

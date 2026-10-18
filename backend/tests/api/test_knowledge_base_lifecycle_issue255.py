@@ -8,6 +8,7 @@ from tortoise.expressions import Q
 from app.api.v1.endpoints import knowledge_bases
 from app.models.knowledge_base import DocumentStatus
 from app.schemas.knowledge_base import DocumentUpdate, KnowledgeBaseUpdate
+from app.models.wechat_knowledge import WeChatKnowledgeItem
 
 
 @pytest.fixture(autouse=True)
@@ -182,6 +183,15 @@ async def test_knowledge_base_detail_update_and_delete_lifecycle(
             knowledge_bases.FeishuKnowledgeSource,
             "filter",
             return_value=SimpleNamespace(exists=AsyncMock(return_value=False)),
+        ),
+        patch.object(
+            WeChatKnowledgeItem,
+            "filter",
+            return_value=MagicMock(
+                exclude=MagicMock(
+                    return_value=MagicMock(values_list=AsyncMock(return_value=[]))
+                )
+            ),
         ),
         patch.object(knowledge_bases.KnowledgeBase, "get", return_value=get_query),
         patch.object(

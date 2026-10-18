@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Personal WeChat Knowledge Collection
+
+- Added personal ClawBot QR authorization independent of feature configuration; connections may remain unused, with optional knowledge collection configured and disabled separately without disconnecting.
+- Added a standalone `wechat-receiver` process, encrypted credentials and receipts, target snapshots, replay protection, PostgreSQL processing locks and knowledge-queue recovery.
+- Added automatic text, link and document collection, team-authorized image/audio extraction and time-labelled video frame sampling; all received attachments have independent outcomes and guarded original downloads.
+- Added English/Chinese personal settings, explicit extraction/index failures and cautious reply acceptance reporting; native article cards and real-account delivery remain upstream-dependent.
+- Packaged ffmpeg in backend images and included receiver deployments in Compose, Helm and Kubernetes.
+- Added an idempotent startup migration for existing WeChat binding tables missing `disconnected_at`; API startup fails rather than serving an incompatible schema if the upgrade fails.
+- Preserved original document types, filenames and downloads for WeChat file collection; URL submissions remain links, while Markdown is only an internal extraction format. Existing collected file/link records are restored at startup without rebuilding their indexes.
+- Removed the WeChat collection button and dialog from knowledge-base detail pages; personal settings remain the collection configuration entry point.
+- Renamed the personal settings tab to “WeChat Connect” (“微信互联”), distinguishing the overall connection entry from its current knowledge collection capability.
+- Split connection credentials from saved purpose settings; each connection activates exactly one of none, knowledge collection, or a single Agent application.
+- Upgraded MarkItDown to 0.1.8 to process PPTX files containing embedded SVG images without raster fallbacks, preserving slide text and embedded media instead of failing with `no embedded image`.
+- Added owner-authorized WeChat Agent configuration, durable private conversations and input snapshots, queued messages, interactive answers and run controls using the existing AgentRun runtime.
+- Added WeChat Agent input mapping for text, images, files, voice transcripts and video, plus native outbound image/video/file delivery through the iLink CDN and durable per-message delivery outcomes that are never blind-resent after an ambiguous send.
+- Extracted the durable chat submission pipeline into `agent_submission`, shared by the web chat routes and the WeChat Agent runtime so both commit the run, the input row and their mapping before publishing.
+
 #### Admin Observability
 
 - Rebuilt the admin observability console with six focused views for run outcomes, on-demand traces, model/tool/retrieval dependencies, queues, infrastructure, and alerts.

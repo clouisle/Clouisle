@@ -88,7 +88,7 @@ const docTypeIcons: Record<string, React.ReactNode> = {
   docx: <FileType className="h-4 w-4 text-blue-500" />,
   doc: <FileType className="h-4 w-4 text-blue-500" />,
   txt: <FileText className="h-4 w-4 text-gray-500" />,
-  md: <FileText className="h-4 w-4 text-gray-500" />,
+  markdown: <FileText className="h-4 w-4 text-gray-500" />,
   html: <FileType className="h-4 w-4 text-orange-500" />,
   csv: <FileType className="h-4 w-4 text-green-500" />,
   xlsx: <FileType className="h-4 w-4 text-green-600" />,
@@ -209,8 +209,9 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
     { value: 'pdf', label: 'PDF' },
     { value: 'docx', label: 'DOCX' },
     { value: 'doc', label: 'DOC' },
+    { value: 'pptx', label: 'PPTX' },
     { value: 'txt', label: 'TXT' },
-    { value: 'md', label: 'Markdown' },
+    { value: 'markdown', label: 'Markdown' },
     { value: 'html', label: 'HTML' },
     { value: 'csv', label: 'CSV' },
     { value: 'xlsx', label: 'XLSX' },
@@ -537,8 +538,8 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="uppercase text-xs">
-                      {doc.doc_type}
+                    <Badge variant="outline" className="text-xs">
+                      {typeOptions.find(option => option.value === doc.doc_type)?.label ?? doc.doc_type.toUpperCase()}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
