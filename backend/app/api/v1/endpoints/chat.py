@@ -84,19 +84,12 @@ from app.services.message_branching import (
     find_descendant_branch_from,
     get_last_active_canonical_message,
     get_prefix_path_before,
-    get_visible_conversation_messages,
     get_version_count as get_branch_version_count,
     get_version_root_id,
 )
 from app.services.asset import asset_service
 
 # Import helper functions from modules
-from app.api.v1.endpoints.chat_helpers import (
-    get_streaming_config,
-)
-from app.api.v1.endpoints.chat_tools import (
-    build_file_content_for_context,
-)
 from app.api.v1.endpoints.chat_rag import (
     perform_rag_retrieval,
     aggregate_rag_contexts,
@@ -1517,15 +1510,15 @@ async def chat(
 ) -> Any:
     """Queue a durable non-stream run and return its canonical result."""
     from app.models.agent_run import AgentRunMode
+    from app.services.agent_submission import submit_chat_run
 
-    started = await _enqueue_durable_chat_run(
+    started = await submit_chat_run(
         agent_id,
         chat_in,
         auth_result,
         mode=AgentRunMode.NON_STREAM,
     )
-    start_data = RunStartOut.model_validate(started["data"])
-    run = await _wait_for_agent_run(start_data.run_id)
+    run = await _wait_for_agent_run(started.run_id)
     return await _build_non_stream_run_response(run)
 
 
@@ -2023,214 +2016,6 @@ async def _enqueue_existing_message_run(
     )
 
 
-async def _enqueue_durable_chat_run(
-    agent_id: UUID,
-    chat_in: ChatRequest,
-    auth_result: Any,
-    *,
-    mode: Any,
-) -> dict:
-    """Create the durable input row and enqueue one worker-owned run."""
-    current_user, api_key = _split_run_auth(auth_result)
-    if not current_user.is_active:
-        raise BusinessError(
-            code=ResponseCode.INACTIVE_USER,
-            msg_key="inactive_user",
-            status_code=401,
-        )
-    await deps.check_api_key_agent_access(api_key, agent_id)
-
-    agent = await check_agent_chat_access(agent_id, current_user)
-    conversation = await get_or_create_conversation(
-        agent, current_user, chat_in.conversation_id, chat_in.variables
-    )
-
-    from app.models.agent import RAGMode
-
-    rag_contexts: list[dict[str, Any]] | None = None
-    if agent.rag_mode == RAGMode.AUTO and await AgentKnowledgeBase.exists(
-        agent_id=agent.id
-    ):
-        rag_contexts = aggregate_rag_contexts(
-            await perform_rag_retrieval(
-                agent,
-                current_user,
-                chat_in.message,
-                await get_visible_conversation_messages(
-                    conversation.id, limit=AUTO_RAG_HISTORY_LIMIT
-                ),
-            )
-        )
-
-    workflow_assets = (
-        await _resolve_workflow_asset_refs(
-            references=chat_in.workflow_asset_refs,
-            agent=agent,
-            user=current_user,
-            api_key=api_key,
-        )
-        if chat_in.workflow_asset_refs
-        else []
-    )
-
-    message_assets = await _resolve_message_assets(
-        attachments=[*chat_in.images, *chat_in.file_urls],
-        agent=agent,
-        user=current_user,
-        conversation_id=conversation.id,
-        api_key=api_key,
-    )
-    if chat_in.variable_asset_ids:
-        variable_assets = await _resolve_message_assets(
-            attachments=chat_in.variable_asset_ids,
-            agent=agent,
-            user=current_user,
-            conversation_id=conversation.id,
-            api_key=api_key,
-        )
-        message_assets.extend(
-            (asset, "variable", index)
-            for index, (asset, _, _) in enumerate(variable_assets)
-        )
-    round_id = uuid4()
-    user_branch_parent_id = await get_next_user_branch_parent_id(conversation)
-
-    async with _message_asset_transaction(bool(message_assets or workflow_assets)):
-        if workflow_assets:
-            existing_asset_ids = {asset.id for asset, _, _ in message_assets}
-            first_position = (
-                max((position for _, _, position in message_assets), default=-1) + 1
-            )
-            (
-                imported_images,
-                imported_files,
-                imported_links,
-            ) = await _bind_workflow_assets_to_conversation(
-                assets=workflow_assets,
-                conversation_id=conversation.id,
-                existing_asset_ids=existing_asset_ids,
-                first_position=first_position,
-                user=current_user,
-                api_key=api_key,
-                expected_team_id=UUID(str(agent.team_id)) if agent.team_id else None,
-            )
-            chat_in.images.extend(imported_images)
-            chat_in.file_urls.extend(imported_files)
-            message_assets.extend(imported_links)
-        user_msg = await Message.create(
-            conversation=conversation,
-            role=MessageRole.USER,
-            content=chat_in.message,
-            images=[img.model_dump() for img in chat_in.images]
-            if chat_in.images
-            else None,
-            file_urls=[f.model_dump() for f in chat_in.file_urls]
-            if chat_in.file_urls
-            else None,
-            rag_context=rag_contexts,
-            branch_parent_id=user_branch_parent_id,
-            round_id=round_id,
-            round_index=0,
-            round_role=MessageRoundRole.USER_INPUT,
-            is_round_canonical=True,
-        )
-        await _attach_message_assets(
-            message_id=user_msg.id,
-            assets=message_assets,
-        )
-
-    await update_message_stats(agent, token_usage=None)
-    effective_locale = await resolve_language(getattr(current_user, "locale", None))
-    streaming_config = get_streaming_config(agent)
-    _, updated_file_urls = await build_file_content_for_context(
-        agent=agent,
-        file_urls=chat_in.file_urls,
-        legacy_files=chat_in.files,
-        user_locale=effective_locale,
-        tool_timeouts=streaming_config["tool_timeouts"],
-        user=current_user,
-    )
-    if updated_file_urls is not None and user_msg.file_urls != updated_file_urls:
-        user_msg.file_urls = updated_file_urls
-        await user_msg.save(update_fields=["file_urls"])
-
-    from app.services.agent_run_store import create_run, transition_run_if_status
-    from app.services.agent_run_worker import build_payload
-
-    run = await create_run(
-        agent_id=agent.id,
-        conversation_id=conversation.id,
-        user_id=current_user.id,
-        mode=mode,
-        resource_name=agent.name,
-        team_id=str(agent.team_id) if agent.team_id else None,
-        source_message_id=user_msg.id,
-    )
-    run.active_round_id = round_id
-    await run.save(update_fields=["active_round_id"])
-    payload = build_payload(
-        agent_id=agent.id,
-        conversation_id=conversation.id,
-        user_id=current_user.id,
-        mode=mode,
-        user_message_id=user_msg.id,
-        round_id=round_id,
-        run_id=run.id,
-        message=chat_in.message,
-        images=[image.model_dump() for image in chat_in.images],
-        file_urls=updated_file_urls
-        if updated_file_urls is not None
-        else [file.model_dump() for file in chat_in.file_urls],
-        legacy_files=[file.model_dump() for file in chat_in.files],
-        history_override=(
-            [
-                message.model_dump(exclude_none=True)
-                for message in chat_in.history_override
-            ]
-            if chat_in.history_override
-            else None
-        ),
-        variables=chat_in.variables,
-        branch_parent_id=user_branch_parent_id,
-        locale=effective_locale,
-        rag_contexts=rag_contexts,
-    )
-    run.worker_payload = payload
-    await run.save(update_fields=["worker_payload"])
-
-    try:
-        from app.tasks.agent import run_agent_task
-
-        task_result = run_agent_task.apply_async(args=(payload,))
-        task_id = getattr(task_result, "id", None)
-        if task_id:
-            run.celery_task_id = task_id
-            await run.save(update_fields=["celery_task_id"])
-    except Exception as exc:
-        from app.models.agent_run import AgentRunStatus
-        from app.services.agent_run_store import transition_run_if_status
-
-        await transition_run_if_status(
-            run,
-            AgentRunStatus.QUEUED,
-            AgentRunStatus.FAILED,
-            error_code="enqueue_failed",
-            error_message=str(exc),
-        )
-        raise
-
-    return success(
-        data=RunStartOut(
-            run_id=run.id,
-            conversation_id=conversation.id,
-            user_message_id=user_msg.id,
-            status=run.status.value,
-            stream_url=f"/agents/{agent_id}/chat/runs/{run.id}/stream",
-        )
-    )
-
-
-# ============ AgentRun Endpoints ==========
 @router.post(
     "/{agent_id}/chat/runs",
     response_model=Response[RunStartOut],
@@ -2245,13 +2030,15 @@ async def start_chat_run(
 ) -> Any:
     """Persist a chat request and enqueue its durable AgentRun worker."""
     from app.models.agent_run import AgentRunMode
+    from app.services.agent_submission import start_out, submit_chat_run
 
-    return await _enqueue_durable_chat_run(
+    submission = await submit_chat_run(
         agent_id,
         chat_in,
         auth_result,
         mode=AgentRunMode.SEND,
     )
+    return start_out(submission)
 
 
 @router.get(

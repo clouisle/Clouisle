@@ -3165,3 +3165,214 @@ msgstr "飞书未返回具体权限名称，请查看开放平台中对应接口
 
 msgid "feishu_knowledge_resource_access_denied"
 msgstr "飞书应用无权访问目标知识空间或文档。请让知识空间管理员将该应用／机器人添加为成员，并确认其可访问目标文档；API 权限与资源访问权限需要分别授权。"
+
+msgid "wechat_kb_inactive"
+msgstr "知识库未启用，请选择其他目标。"
+
+msgid "wechat_model_unavailable"
+msgstr "识别模型不可用或未获得目标团队授权。"
+
+msgid "wechat_login_limit"
+msgstr "待确认授权过多，请等待已有二维码过期后重试。"
+
+msgid "wechat_connection_failed"
+msgstr "无法连接微信，请检查部署网络后重试。"
+
+msgid "wechat_login_not_found"
+msgstr "微信授权会话不存在。"
+
+msgid "wechat_already_connected"
+msgstr "微信提示已有连接，但未返回授权凭据。请在微信中断开原授权后重新连接。"
+
+msgid "wechat_identity_in_use"
+msgstr "该微信身份已连接到另一个平台账户。"
+
+msgid "wechat_binding_not_found"
+msgstr "微信连接不存在。"
+
+msgid "wechat_binding_disconnected"
+msgstr "微信连接已断开。"
+
+msgid "wechat_authorization_expired"
+msgstr "微信授权已失效，请在个人设置中重新授权。"
+
+msgid "wechat_media_conversion_failed"
+msgstr "无法解码该媒体文件，请检查编码后重试。"
+
+msgid "wechat_vision_required"
+msgstr "采集图片或视频需要为该连接配置团队已授权的视觉模型。"
+
+msgid "wechat_stt_required"
+msgstr "采集音频需要为该连接配置团队已授权的语音识别模型。"
+
+msgid "wechat_empty_content"
+msgstr "未提取到有效内容，该项未建立索引。"
+
+msgid "wechat_ffmpeg_required"
+msgstr "音视频采集需要在知识库处理进程中安装 ffmpeg 和 ffprobe。"
+
+msgid "wechat_media_duration"
+msgstr "无法读取媒体时长，或已超过 30 分钟限制。"
+
+msgid "wechat_url_invalid"
+msgstr "文章链接无效或过长。"
+
+msgid "wechat_article_blocked"
+msgstr "文章需要验证或无法访问，未将验证提示页加入知识库。"
+
+msgid "wechat_type_unsupported"
+msgstr "该消息或文件格式暂不支持知识库采集。"
+
+msgid "wechat_index_failed"
+msgstr "内容已提取，但索引失败，请检查知识库的嵌入模型配置。"
+
+msgid "wechat_processing_failed"
+msgstr "无法处理该项，请检查文件格式和识别配置。"
+
+msgid "wechat_target_unavailable"
+msgstr "目标知识库已无写权限，采集已停止，请在个人设置中修改绑定。"
+
+msgid "wechat_reply_heading"
+msgstr "知识库采集：{name}"
+
+msgid "wechat_item_completed"
+msgstr "已索引"
+
+msgid "wechat_item_duplicate"
+msgstr "已收录"
+
+msgid "wechat_item_error"
+msgstr "失败"
+
+msgid "wechat_item_pending"
+msgstr "处理中"
+
+msgid "wechat_text_encoding"
+msgstr "文本文件需要使用 UTF-8 编码，请转换后再采集。"
+
+msgid "wechat_binary_content"
+msgstr "文件内容与声明的文档格式不符。"
+
+msgid "audit_log_connect_wechat_binding"
+msgstr "授权微信连接"
+
+msgid "audit_log_update_wechat_binding"
+msgstr "修改微信采集配置"
+
+msgid "audit_log_disconnect_wechat_binding"
+msgstr "断开微信连接"
+
+msgid "audit_log_collect_wechat_content"
+msgstr "采集微信知识内容"
+
+msgid "wechat_purpose_busy"
+msgstr "仍有任务在处理，请等待完成，或停止 Agent 任务后再切换用途。"
+
+msgid "wechat_agent_variables_invalid"
+msgstr "请检查 Agent 输入变量的必填项、类型和取值限制。"
+
+msgid "wechat_agent_media_unsupported"
+msgstr "该消息类型暂不支持接入此 Agent。"
+
+msgid "wechat_agent_video_unsupported"
+msgstr "视频输入需要 Agent 支持视觉识别；有音轨时还需要配置语音识别模型。"
+
+msgid "wechat_agent_attachments_disabled"
+msgstr "此 Agent 未开放文件附件。"
+
+msgid "wechat_agent_file_too_large"
+msgstr "附件超过 Agent 的大小限制。"
+
+msgid "wechat_agent_file_type_unsupported"
+msgstr "此 Agent 不允许该附件类型。"
+
+msgid "wechat_agent_too_many_files"
+msgstr "单条消息的附件数量超过限制。"
+
+msgid "wechat_agent_conversation_missing"
+msgstr "Agent 会话尚未建立对话。"
+
+msgid "wechat_agent_context_missing"
+msgstr "微信回复上下文不可用，请在网页会话中查看结果。"
+
+msgid "wechat_agent_binding_disconnected"
+msgstr "微信连接已失效。"
+
+
+msgid "wechat_agent_help"
+msgstr "命令：/新对话（/new）开始新对话；/停止（/stop）停止任务并取消排队消息；/状态（/status）查看状态；/帮助（/help）查看帮助；/跳过（/skip）跳过待答问题。"
+
+msgid "wechat_agent_status"
+msgstr "状态：{status}"
+
+msgid "wechat_agent_new_conversation"
+msgstr "下一条消息将开始新的对话。"
+
+msgid "wechat_agent_stopped"
+msgstr "已停止，排队中的消息已取消。"
+
+msgid "wechat_agent_answer_required"
+msgstr "这个问题还需要回答：{question}"
+
+msgid "wechat_agent_answer_invalid_choice"
+msgstr "请选择其中一项：{options}"
+
+msgid "wechat_agent_questions_partial"
+msgstr "已回答 {done}/{total} 个问题，请继续回答，或发送 /跳过（/skip）跳过。"
+
+msgid "wechat_agent_run_failed"
+msgstr "Agent 任务未完成，请在 Clouisle 中打开对话查看详情。"
+
+msgid "wechat_agent_purpose_inactive"
+msgstr "该连接当前未启用 Agent 应用用途。"
+
+msgid "wechat_agent_config_missing"
+msgstr "该连接尚未配置 Agent。"
+
+msgid "wechat_agent_busy"
+msgstr "上一条消息仍在处理中，请等待完成。"
+
+msgid "wechat_agent_unknown_command"
+msgstr "未知命令，发送 /帮助（/help）查看可用命令。"
+
+msgid "wechat_agent_answer_skipped"
+msgstr "已跳过这些问题。"
+
+msgid "wechat_agent_no_output"
+msgstr "Agent 已完成，但没有产生可见回复。"
+
+msgid "wechat_agent_vision_required"
+msgstr "此 Agent 的聊天模型不支持图片输入。"
+
+msgid "run_status_idle"
+msgstr "空闲"
+
+msgid "run_status_queued"
+msgstr "排队中"
+
+msgid "run_status_running"
+msgstr "运行中"
+
+msgid "run_status_stopping"
+msgstr "停止中"
+
+msgid "run_status_completing"
+msgstr "完成中"
+
+msgid "run_status_completed"
+msgstr "已完成"
+
+msgid "run_status_stopped"
+msgstr "已停止"
+
+msgid "run_status_failed"
+msgstr "失败"
+
+msgid "run_status_interrupted"
+msgstr "已中断"
+
+msgid "run_status_waiting"
+msgstr "等待你的回答"
+
+msgid "wechat_agent_media_failed"
+msgstr "未能从微信下载该附件，请重新发送。"

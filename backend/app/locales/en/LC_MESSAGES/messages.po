@@ -3165,3 +3165,214 @@ msgstr "Feishu did not return scope names; check the API permission requirements
 
 msgid "feishu_knowledge_resource_access_denied"
 msgstr "The Feishu app cannot access the target Wiki space or document. Ask the space administrator to add the app/bot as a member and grant access to the document. API permissions and resource access must be granted separately."
+
+msgid "wechat_kb_inactive"
+msgstr "The knowledge base is not active. Choose another target."
+
+msgid "wechat_model_unavailable"
+msgstr "The recognition model is unavailable or is not authorized for this team."
+
+msgid "wechat_login_limit"
+msgstr "Too many pending authorizations. Wait for an existing QR code to expire."
+
+msgid "wechat_connection_failed"
+msgstr "Unable to connect to WeChat. Check the deployment network and try again."
+
+msgid "wechat_login_not_found"
+msgstr "WeChat authorization session not found."
+
+msgid "wechat_already_connected"
+msgstr "WeChat reports an existing connection but did not issue credentials. Disconnect the previous authorization in WeChat, then authorize again."
+
+msgid "wechat_identity_in_use"
+msgstr "This WeChat identity is already connected to another platform account."
+
+msgid "wechat_binding_not_found"
+msgstr "WeChat connection not found."
+
+msgid "wechat_binding_disconnected"
+msgstr "The WeChat connection has been disconnected."
+
+msgid "wechat_authorization_expired"
+msgstr "WeChat authorization expired. Authorize again in personal settings."
+
+msgid "wechat_media_conversion_failed"
+msgstr "Unable to decode this media file. Check its encoding and try again."
+
+msgid "wechat_vision_required"
+msgstr "Configure a team-authorized vision model for this connection to collect images or video."
+
+msgid "wechat_stt_required"
+msgstr "Configure a team-authorized speech recognition model for this connection to collect audio."
+
+msgid "wechat_empty_content"
+msgstr "No usable content was extracted; the item was not indexed."
+
+msgid "wechat_ffmpeg_required"
+msgstr "Audio/video collection requires ffmpeg and ffprobe on the knowledge worker."
+
+msgid "wechat_media_duration"
+msgstr "The media duration could not be read or exceeds the 30-minute limit."
+
+msgid "wechat_url_invalid"
+msgstr "The article URL is invalid or too long."
+
+msgid "wechat_article_blocked"
+msgstr "The article requires verification or cannot be accessed. Its verification page was not collected."
+
+msgid "wechat_type_unsupported"
+msgstr "This message or file format is not supported for knowledge collection."
+
+msgid "wechat_index_failed"
+msgstr "Content extraction completed but indexing failed. Check the knowledge base embedding configuration."
+
+msgid "wechat_processing_failed"
+msgstr "This item could not be processed. Check its format and recognition configuration."
+
+msgid "wechat_target_unavailable"
+msgstr "Collection stopped because the target knowledge base is no longer writable. Update the binding in personal settings."
+
+msgid "wechat_reply_heading"
+msgstr "Knowledge collection: {name}"
+
+msgid "wechat_item_completed"
+msgstr "Indexed"
+
+msgid "wechat_item_duplicate"
+msgstr "Already collected"
+
+msgid "wechat_item_error"
+msgstr "Failed"
+
+msgid "wechat_item_pending"
+msgstr "Processing"
+
+msgid "wechat_text_encoding"
+msgstr "Text documents must use UTF-8 encoding. Convert the file before collecting it."
+
+msgid "wechat_binary_content"
+msgstr "The file contents do not match the declared document format."
+
+msgid "audit_log_connect_wechat_binding"
+msgstr "Authorize WeChat connection"
+
+msgid "audit_log_update_wechat_binding"
+msgstr "Update WeChat collection settings"
+
+msgid "audit_log_disconnect_wechat_binding"
+msgstr "Disconnect WeChat connection"
+
+msgid "audit_log_collect_wechat_content"
+msgstr "Collect WeChat knowledge content"
+
+msgid "wechat_purpose_busy"
+msgstr "A task is still active. Wait for it to finish, or stop the Agent task before changing the purpose."
+
+msgid "wechat_agent_variables_invalid"
+msgstr "Check the Agent input variables, including required values, types and limits."
+
+msgid "wechat_agent_media_unsupported"
+msgstr "This message type is not supported by the connected Agent."
+
+msgid "wechat_agent_video_unsupported"
+msgstr "Video input requires an Agent with vision support and a configured speech recognition model for its audio."
+
+msgid "wechat_agent_attachments_disabled"
+msgstr "This Agent does not accept file attachments."
+
+msgid "wechat_agent_file_too_large"
+msgstr "The attachment exceeds the Agent size limit."
+
+msgid "wechat_agent_file_type_unsupported"
+msgstr "This attachment type is not allowed by the Agent."
+
+msgid "wechat_agent_too_many_files"
+msgstr "There are too many attachments in one message."
+
+msgid "wechat_agent_conversation_missing"
+msgstr "The Agent session has no conversation yet."
+
+msgid "wechat_agent_context_missing"
+msgstr "WeChat reply context is unavailable. View the result in the web conversation."
+
+msgid "wechat_agent_binding_disconnected"
+msgstr "The WeChat connection is no longer active."
+
+
+msgid "wechat_agent_help"
+msgstr "Commands: /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help; /skip skips pending questions."
+
+msgid "wechat_agent_status"
+msgstr "Status: {status}"
+
+msgid "wechat_agent_new_conversation"
+msgstr "Your next message will start a new conversation."
+
+msgid "wechat_agent_stopped"
+msgstr "Stopped. Queued messages were cancelled."
+
+msgid "wechat_agent_answer_required"
+msgstr "This question still needs an answer: {question}"
+
+msgid "wechat_agent_answer_invalid_choice"
+msgstr "Please choose one of: {options}"
+
+msgid "wechat_agent_questions_partial"
+msgstr "Answered {done} of {total} questions. Send the remaining answer, or /skip to skip."
+
+msgid "wechat_agent_run_failed"
+msgstr "The Agent task did not finish. Open the conversation in Clouisle for details."
+
+msgid "wechat_agent_purpose_inactive"
+msgstr "This connection is not currently using the Agent application."
+
+msgid "wechat_agent_config_missing"
+msgstr "No Agent is configured for this connection."
+
+msgid "wechat_agent_busy"
+msgstr "The previous message is still being processed. Please wait for it to finish."
+
+msgid "wechat_agent_unknown_command"
+msgstr "Unknown command. Send /help to see available commands."
+
+msgid "wechat_agent_answer_skipped"
+msgstr "Questions skipped."
+
+msgid "wechat_agent_no_output"
+msgstr "The Agent finished without producing a visible reply."
+
+msgid "wechat_agent_vision_required"
+msgstr "This Agent's chat model does not support image input."
+
+msgid "run_status_idle"
+msgstr "Idle"
+
+msgid "run_status_queued"
+msgstr "Queued"
+
+msgid "run_status_running"
+msgstr "Running"
+
+msgid "run_status_stopping"
+msgstr "Stopping"
+
+msgid "run_status_completing"
+msgstr "Completing"
+
+msgid "run_status_completed"
+msgstr "Completed"
+
+msgid "run_status_stopped"
+msgstr "Stopped"
+
+msgid "run_status_failed"
+msgstr "Failed"
+
+msgid "run_status_interrupted"
+msgstr "Interrupted"
+
+msgid "run_status_waiting"
+msgstr "Waiting for your answer"
+
+msgid "wechat_agent_media_failed"
+msgstr "The attachment could not be downloaded from WeChat. Please send it again."
