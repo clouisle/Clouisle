@@ -1009,6 +1009,60 @@ async def test_agent_purpose_rejects_unpublished_private_and_missing_required_va
 
 
 @pytest.mark.asyncio
+async def test_agent_variable_change_resets_existing_conversation_but_same_values_do_not(
+    collection_db,
+):
+    from app.api.v1.endpoints.wechat_knowledge import PurposeInput, update_purpose
+    from app.models.agent import Agent, AgentStatus, Conversation
+    from app.models.wechat_agent import WeChatAgentConfig, WeChatAgentSession
+
+    user, _, kb, _, binding, _ = collection_db
+    agent = await Agent.create(
+        id=uuid4(),
+        name="Variable writer",
+        team_id=kb.team_id,
+        created_by=user,
+        status=AgentStatus.PUBLISHED,
+        variables=[{"name": "tone", "type": "text", "required": True}],
+    )
+    await update_purpose(
+        binding.id,
+        PurposeInput(purpose="agent", agent_id=agent.id, variables={"tone": "formal"}),
+        user,
+    )
+    conversation = await Conversation.create(agent=agent, user=user)
+    session = await WeChatAgentSession.create(
+        binding=binding,
+        agent=agent,
+        conversation=conversation,
+        pending_answers={"old": "answer"},
+        pending_tool_call_id="old-call",
+    )
+
+    await update_purpose(
+        binding.id,
+        PurposeInput(purpose="agent", agent_id=agent.id, variables={"tone": "formal"}),
+        user,
+    )
+    await session.refresh_from_db()
+    assert session.conversation_id == conversation.id
+    assert session.pending_answers == {"old": "answer"}
+    assert session.pending_tool_call_id == "old-call"
+
+    await update_purpose(
+        binding.id,
+        PurposeInput(purpose="agent", agent_id=agent.id, variables={"tone": "concise"}),
+        user,
+    )
+    await session.refresh_from_db()
+    config = await WeChatAgentConfig.get(binding_id=binding.id)
+    assert config.variables == {"tone": "concise"}
+    assert session.conversation_id is None
+    assert session.pending_answers == {}
+    assert session.pending_tool_call_id is None
+
+
+@pytest.mark.asyncio
 async def test_purpose_migration_preserves_active_collection_once(collection_db):
     from tortoise import Tortoise
     from app.core.wechat_migration import migrate_wechat_purpose
@@ -1145,3 +1199,579 @@ async def test_poll_binding_marks_expired_authorization(collection_db, monkeypat
     assert binding.last_error == "wechat_authorization_expired"
     # The lease is released even when the poll fails.
     assert f"wechat:poll:{binding.id}" not in redis.values
+
+
+@pytest.mark.asyncio
+async def test_accept_updates_rejects_invalid_batch_and_skips_malformed_messages(
+    collection_db,
+):
+    _, _, _, _, binding, _ = collection_db
+    with pytest.raises(WeChatAPIError):
+        await accept_updates(binding, {"msgs": {"not": "a list"}})
+
+    malformed = message(identifier=None)
+    oversized = message(identifier="x" * 129)
+    accepted = await accept_updates(
+        binding,
+        {
+            "msgs": [None, {}, malformed, oversized, message("valid-after-invalid")],
+            "get_updates_buf": "advance-after-invalid",
+        },
+    )
+
+    assert len(accepted) == 1
+    assert await WeChatKnowledgeReceipt.filter(
+        message_id="valid-after-invalid"
+    ).exists()
+    await binding.refresh_from_db()
+    assert decrypt_secret(binding.cursor) == "advance-after-invalid"
+
+
+@pytest.mark.asyncio
+async def test_poll_binding_discards_batch_when_lease_expires_before_commit(
+    collection_db, monkeypatch
+):
+    from app.services import wechat_receiver
+
+    _, _, _, _, binding, _ = collection_db
+    redis = _FakeRedis()
+
+    async def lost_lease(*_args, **_kwargs):
+        return 0
+
+    redis.eval = lost_lease
+
+    class Client:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        async def get_updates(self, *_args, **_kwargs):
+            return {"msgs": [message("lease-lost")], "get_updates_buf": "uncommitted"}
+
+    monkeypatch.setattr(wechat_receiver, "get_redis", AsyncMock(return_value=redis))
+    monkeypatch.setattr(wechat_receiver, "WeChatClient", Client)
+
+    result = await wechat_receiver.poll_binding(binding)
+
+    assert result == {"polled": False, "reason": "lease_lost"}
+    assert not await WeChatKnowledgeReceipt.filter(message_id="lease-lost").exists()
+    await binding.refresh_from_db()
+    assert binding.cursor == ""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("body", ["环境异常", "访问过于频繁", "完成验证后即可继续访问"])
+async def test_article_challenge_is_not_indexed_as_content(
+    collection_db, monkeypatch, body
+):
+    from app.models.wechat_knowledge import WeChatKnowledgeItem
+    from app.services import wechat_ingestion as ingestion
+
+    user, _, kb, _, binding, _ = collection_db
+    receipt = await WeChatKnowledgeReceipt.create(
+        binding=binding,
+        user=user,
+        knowledge_base=kb,
+        message_id="challenge",
+        payload=encrypt_secret("{}"),
+    )
+    item = await WeChatKnowledgeItem.create(receipt=receipt, item_index=0)
+    monkeypatch.setattr(
+        ingestion.document_processor,
+        "fetch_url_content",
+        AsyncMock(return_value=(body, {})),
+    )
+    with pytest.raises(BusinessError) as blocked:
+        await ingestion.text_for_input(
+            {"kind": "url", "url": "https://mp.weixin.qq.com/s/article"},
+            receipt,
+            kb,
+            None,
+            item,
+        )
+    assert blocked.value.msg_key == "wechat_article_blocked"
+    await item.refresh_from_db()
+    assert item.document_id is None
+
+
+@pytest.mark.asyncio
+async def test_article_source_retains_title_url_and_caption(collection_db, monkeypatch):
+    from app.models.wechat_knowledge import WeChatKnowledgeItem
+    from app.services import wechat_ingestion as ingestion
+
+    user, _, kb, _, binding, _ = collection_db
+    receipt = await WeChatKnowledgeReceipt.create(
+        binding=binding,
+        user=user,
+        knowledge_base=kb,
+        message_id="article-source",
+        payload=encrypt_secret("{}"),
+    )
+    item = await WeChatKnowledgeItem.create(receipt=receipt, item_index=0)
+    monkeypatch.setattr(
+        ingestion.document_processor,
+        "fetch_url_content",
+        AsyncMock(return_value=("Article body", {"title": "Article title"})),
+    )
+    text, title, source = await ingestion.text_for_input(
+        {
+            "kind": "url",
+            "url": "https://example.com/article",
+            "caption": "Save for onboarding",
+        },
+        receipt,
+        kb,
+        None,
+        item,
+    )
+    assert (text, title) == ("Article body", "Article title")
+    assert source["source_url"] == "https://example.com/article"
+    assert source["wechat_caption"] == "Save for onboarding"
+    assert source["wechat_receipt_id"] == str(receipt.id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure,expected",
+    [
+        (OSError("storage unavailable"), "pending"),
+        (ValueError("bad content"), "error"),
+        (WeChatAPIError("file_too_large"), "error"),
+    ],
+)
+async def test_receipt_distinguishes_retryable_storage_from_terminal_content_errors(
+    collection_db, monkeypatch, failure, expected
+):
+    import json
+    from app.models.wechat_knowledge import WeChatKnowledgeItem
+    from app.services import wechat_ingestion as ingestion
+    from app.services.audit_log import AuditLogService
+
+    user, _, kb, _, binding, _ = collection_db
+    receipt = await WeChatKnowledgeReceipt.create(
+        binding=binding,
+        user=user,
+        knowledge_base=kb,
+        message_id="receipt-error",
+        payload=encrypt_secret(json.dumps(message())),
+    )
+
+    async def fail_item(current, index, spec):
+        await WeChatKnowledgeItem.get_or_create(receipt=current, item_index=index)
+        raise failure
+
+    monkeypatch.setattr(ingestion, "process_item", fail_item)
+    monkeypatch.setattr(ingestion, "reply_result", AsyncMock())
+    monkeypatch.setattr(AuditLogService, "log", AsyncMock())
+    result = await ingestion._process_receipt(str(receipt.id))
+    assert result["status"] == expected
+    await receipt.refresh_from_db()
+    assert receipt.lease_owner is None and receipt.lease_expires_at is None
+    item = await WeChatKnowledgeItem.get(receipt=receipt, item_index=0)
+    if expected == "pending":
+        assert item.status == "pending"
+        assert receipt.results == []
+    else:
+        assert item.status == "error"
+        assert item.last_error == (
+            "file_too_large"
+            if isinstance(failure, WeChatAPIError)
+            else "wechat_processing_failed"
+        )
+        assert receipt.results[0]["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_expired_content_lease_reuses_document_without_double_counting(
+    collection_db, monkeypatch
+):
+    from app.models.knowledge_base import Document
+    from app.models.wechat_knowledge import WeChatKnowledgeItem, WeChatKnowledgeContent
+    from app.services import wechat_ingestion as ingestion
+
+    monkeypatch.setattr(ingestion, "save_content", AsyncSave())
+    user, _, kb, _, binding, _ = collection_db
+    receipt = await WeChatKnowledgeReceipt.create(
+        binding=binding,
+        user=user,
+        knowledge_base=kb,
+        message_id="lease",
+        payload=encrypt_secret("{}"),
+    )
+    first = await WeChatKnowledgeItem.create(receipt=receipt, item_index=0)
+    second = await WeChatKnowledgeItem.create(receipt=receipt, item_index=1)
+    document, duplicate = await ingestion.claim_document(
+        receipt, first, kb, "Same body", "Note", {}
+    )
+    assert not duplicate
+    with pytest.raises(ingestion.CollectionBusy):
+        await ingestion.claim_document(receipt, second, kb, "Same body", "Note", {})
+    await WeChatKnowledgeContent.filter(document_id=document.id).update(
+        lease_expires_at=utcnow() - timedelta(seconds=1)
+    )
+    resumed, duplicate = await ingestion.claim_document(
+        receipt, second, kb, "Same body", "Note", {}
+    )
+    assert resumed.id == document.id and not duplicate
+    await kb.refresh_from_db()
+    assert kb.document_count == 1
+    assert await Document.filter(knowledge_base=kb).count() == 1
+    claim = await WeChatKnowledgeContent.get(document_id=document.id)
+    assert claim.owner_item_id == second.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "context_token,fail_send,expected",
+    [
+        (None, False, "unavailable"),
+        ("context", False, "submitted"),
+        ("context", True, "unknown"),
+    ],
+)
+async def test_collection_reply_is_not_replayed_after_ambiguous_send(
+    collection_db, monkeypatch, context_token, fail_send, expected
+):
+    from app.services import wechat_ingestion as ingestion
+
+    user, _, kb, _, binding, _ = collection_db
+    receipt = await WeChatKnowledgeReceipt.create(
+        binding=binding,
+        user=user,
+        knowledge_base=kb,
+        message_id="reply",
+        payload=encrypt_secret("{}"),
+        results=[{"index": 0, "status": "completed", "name": "Saved note"}],
+    )
+    sends = []
+
+    class Client:
+        def __init__(self, *args):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def send_text(self, recipient, text, token):
+            sends.append((recipient, text, token))
+            if fail_send:
+                raise TimeoutError("response lost")
+
+    monkeypatch.setattr(ingestion, "WeChatClient", Client)
+    await ingestion.reply_result(receipt, {"context_token": context_token})
+    await receipt.refresh_from_db()
+    assert receipt.reply_status == expected
+    await ingestion.reply_result(receipt, {"context_token": context_token})
+    assert len(sends) == (1 if context_token else 0)
+    if sends:
+        assert sends[0][0] == binding.wechat_user_id
+        assert "Saved note" in sends[0][1]
+        assert sends[0][2] == context_token
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "filename,mime,raw,error",
+    [
+        ("bad.txt", "text/plain", b"\xff", "wechat_text_encoding"),
+        ("bad.txt", "text/plain", b"hidden\x00binary", "wechat_binary_content"),
+        ("bad.pdf", "application/pdf", b"not a pdf", "wechat_binary_content"),
+        (
+            "bad.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            b"not a zip",
+            "wechat_binary_content",
+        ),
+    ],
+)
+async def test_media_rejects_binary_disguised_as_document(
+    collection_db, monkeypatch, filename, mime, raw, error
+):
+    from types import SimpleNamespace
+    from app.models.wechat_knowledge import WeChatKnowledgeItem
+    from app.services import wechat_ingestion as ingestion
+    from app.api.v1.endpoints import knowledge_bases
+
+    user, _, kb, _, binding, _ = collection_db
+    receipt = await WeChatKnowledgeReceipt.create(
+        binding=binding,
+        user=user,
+        knowledge_base=kb,
+        message_id="binary",
+        payload=encrypt_secret("{}"),
+    )
+    item = await WeChatKnowledgeItem.create(receipt=receipt, item_index=0)
+    monkeypatch.setattr(
+        knowledge_bases,
+        "get_kb_document_max_upload_size_mb",
+        AsyncMock(return_value=10),
+    )
+    monkeypatch.setattr(ingestion, "save_content", AsyncSave())
+    extract = AsyncMock(side_effect=AssertionError("invalid bytes reached parser"))
+    monkeypatch.setattr(ingestion.document_processor, "extract_text", extract)
+    client = SimpleNamespace(
+        download_media=AsyncMock(return_value=(raw, filename, mime))
+    )
+    with pytest.raises(BusinessError) as rejected:
+        await ingestion.text_for_input(
+            {"kind": "media", "item": {"type": 4}}, receipt, kb, client, item
+        )
+    assert rejected.value.msg_key == error
+    extract.assert_not_awaited()
+    await item.refresh_from_db()
+    assert item.original_path.endswith("/" + filename)
+    assert item.document_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "kind,filename,mime,raw,transcript,expected",
+    [
+        (4, "note.txt", "text/plain", b"Note", "", "Parsed note"),
+        (
+            3,
+            "voice.silk",
+            "audio/silk",
+            b"audio",
+            "Provider transcript",
+            "Provider transcript",
+        ),
+        (2, "photo.png", "image/png", b"image", "", "Image description"),
+    ],
+)
+async def test_media_extraction_preserves_private_original_provenance(
+    collection_db, monkeypatch, kind, filename, mime, raw, transcript, expected
+):
+    from types import SimpleNamespace
+    from app.models.wechat_knowledge import WeChatKnowledgeItem
+    from app.services import wechat_ingestion as ingestion
+    from app.api.v1.endpoints import knowledge_bases
+
+    user, _, kb, _, binding, _ = collection_db
+    receipt = await WeChatKnowledgeReceipt.create(
+        binding=binding,
+        user=user,
+        knowledge_base=kb,
+        message_id="valid-media",
+        payload=encrypt_secret("{}"),
+    )
+    item = await WeChatKnowledgeItem.create(receipt=receipt, item_index=0)
+    monkeypatch.setattr(
+        knowledge_bases,
+        "get_kb_document_max_upload_size_mb",
+        AsyncMock(return_value=10),
+    )
+    monkeypatch.setattr(ingestion, "save_content", AsyncSave())
+    monkeypatch.setattr(
+        ingestion.document_processor,
+        "extract_text",
+        AsyncMock(return_value=("Parsed note", {"pages": 1})),
+    )
+    monkeypatch.setattr(
+        ingestion, "extract_media", AsyncMock(return_value="Image description")
+    )
+    incoming = {
+        "type": kind,
+        "voice_item": {"text": transcript, "media": {"key": "audio"}},
+    }
+    client = SimpleNamespace(
+        download_media=AsyncMock(return_value=(raw, filename, mime))
+    )
+    text, name, source = await ingestion.text_for_input(
+        {"kind": "media", "item": incoming, "caption": "Context"},
+        receipt,
+        kb,
+        client,
+        item,
+    )
+    assert (text, name) == (expected, filename)
+    assert source["wechat_original_size"] == len(raw)
+    assert source["wechat_original_mime"] == mime
+    assert source["wechat_caption"] == "Context"
+    await item.refresh_from_db()
+    assert source["wechat_original_path"] == item.original_path
+    assert item.original_path.startswith(
+        f"documents/{kb.id}/wechat/{item.id}/original/"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("indexed", [False, True])
+async def test_item_completion_requires_real_indexed_chunks(
+    collection_db, monkeypatch, indexed
+):
+    from app.models.knowledge_base import Document
+    from app.models.wechat_knowledge import WeChatKnowledgeItem
+    from app.services import wechat_ingestion as ingestion
+    from app.tasks import knowledge_base as tasks
+
+    user, _, kb, _, binding, _ = collection_db
+    receipt = await WeChatKnowledgeReceipt.create(
+        binding=binding,
+        user=user,
+        knowledge_base=kb,
+        message_id="index-result",
+        payload=encrypt_secret("{}"),
+    )
+    monkeypatch.setattr(ingestion, "save_content", AsyncSave())
+
+    async def index(document_id, _):
+        await Document.filter(id=document_id).update(
+            status="completed", chunk_count=int(indexed)
+        )
+
+    monkeypatch.setattr(tasks, "_process_document", index)
+    if indexed:
+        item = await ingestion.process_item(
+            receipt, 0, {"kind": "text", "text": "Durable knowledge"}
+        )
+        assert item.status == "completed"
+        repeated = await ingestion.process_item(
+            receipt, 0, {"kind": "text", "text": "Different retry payload"}
+        )
+        assert repeated.id == item.id and repeated.document_id == item.document_id
+        assert await Document.filter(knowledge_base=kb).count() == 1
+    else:
+        with pytest.raises(BusinessError) as failed:
+            await ingestion.process_item(
+                receipt, 0, {"kind": "text", "text": "Durable knowledge"}
+            )
+        assert failed.value.msg_key == "wechat_index_failed"
+        item = await WeChatKnowledgeItem.get(receipt=receipt, item_index=0)
+        assert item.status == "pending"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "spec,error",
+    [
+        (
+            {"kind": "url", "url": "https://example.com/" + "x" * 1024},
+            "wechat_url_invalid",
+        ),
+        ({"kind": "unsupported"}, "wechat_type_unsupported"),
+        ({"kind": "media", "item": {"type": 99}}, "wechat_type_unsupported"),
+    ],
+)
+async def test_invalid_input_is_rejected_before_download(
+    collection_db, monkeypatch, spec, error
+):
+    from app.models.wechat_knowledge import WeChatKnowledgeItem
+    from app.services import wechat_ingestion as ingestion
+
+    user, _, kb, _, binding, _ = collection_db
+    receipt = await WeChatKnowledgeReceipt.create(
+        binding=binding,
+        user=user,
+        knowledge_base=kb,
+        message_id="invalid",
+        payload=encrypt_secret("{}"),
+    )
+    item = await WeChatKnowledgeItem.create(receipt=receipt, item_index=0)
+    with pytest.raises(BusinessError) as rejected:
+        await ingestion.text_for_input(spec, receipt, kb, None, item)
+    assert rejected.value.msg_key == error
+    assert item.document_id is None and item.original_path is None
+
+
+@pytest.mark.asyncio
+async def test_revoked_target_after_indexing_cannot_report_success(
+    collection_db, monkeypatch
+):
+    from app.models.knowledge_base import Document
+    from app.services import wechat_ingestion as ingestion
+    from app.tasks import knowledge_base as tasks
+
+    user, _, kb, _, binding, _ = collection_db
+    receipt = await WeChatKnowledgeReceipt.create(
+        binding=binding,
+        user=user,
+        knowledge_base=kb,
+        message_id="revoked-during-index",
+        payload=encrypt_secret("{}"),
+    )
+    monkeypatch.setattr(ingestion, "save_content", AsyncSave())
+
+    async def index(document_id, _):
+        await Document.filter(id=document_id).update(status="completed", chunk_count=1)
+        await WeChatKnowledgeBinding.filter(id=binding.id).update(status="disconnected")
+
+    monkeypatch.setattr(tasks, "_process_document", index)
+    with pytest.raises(BusinessError) as denied:
+        await ingestion.process_item(
+            receipt, 0, {"kind": "text", "text": "Revoked document"}
+        )
+    assert denied.value.msg_key == "wechat_binding_disconnected"
+    document = await Document.get(knowledge_base=kb)
+    assert document.status == "error"
+    assert document.error_message == "wechat_target_unavailable"
+
+
+def test_recover_receipts_schedules_only_durable_work(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+    from app.models.wechat_knowledge import WeChatKnowledgeLogin, WeChatKnowledgeReceipt
+    from app.tasks import wechat_knowledge
+
+    stale_id, reply_id = uuid4(), uuid4()
+    pending_rows = [
+        SimpleNamespace(id=stale_id, status="pending"),
+        SimpleNamespace(id=reply_id, status="completed"),
+    ]
+    deleted = AsyncMock(return_value=1)
+
+    class AwaitableQuery:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def limit(self, *_args):
+            return self
+
+        def __await__(self):
+            async def resolve():
+                return self.rows
+
+            return resolve().__await__()
+
+    monkeypatch.setattr(
+        WeChatKnowledgeLogin,
+        "filter",
+        lambda **_kwargs: SimpleNamespace(delete=deleted),
+    )
+    monkeypatch.setattr(
+        WeChatKnowledgeReceipt,
+        "filter",
+        lambda *_args, **_kwargs: AwaitableQuery(pending_rows),
+    )
+    scheduled = []
+    monkeypatch.setattr(
+        wechat_knowledge.process_receipt_task,
+        "delay",
+        lambda receipt_id: scheduled.append(receipt_id),
+    )
+    monkeypatch.setattr(
+        wechat_knowledge,
+        "_run_async",
+        lambda coroutine: asyncio.run(coroutine),
+    )
+
+    result = wechat_knowledge.recover_receipts_task.run()
+
+    assert result == {"queued": 2}
+    assert scheduled == [str(stale_id), str(reply_id)]
+    deleted.assert_awaited_once()

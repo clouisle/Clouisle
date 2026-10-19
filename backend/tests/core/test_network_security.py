@@ -222,6 +222,39 @@ def test_normalize_ssrf_allowlist_entry():
         assert exc_info.value.msg_key == "ssrf_allowlist_entry_invalid"
 
 
+@pytest.mark.parametrize(
+    "entry,error",
+    [
+        (None, "ssrf_allowlist_entry_invalid"),
+        ("10.0.0.0/0", "ssrf_allowlist_entry_forbidden"),
+        ("169.254.0.0/16", "ssrf_allowlist_entry_forbidden"),
+        ("*.corp.internal", None),
+        ("host*name.internal", "ssrf_allowlist_entry_invalid"),
+    ],
+)
+def test_normalize_ssrf_allowlist_entry_rejects_malformed_and_critical_ranges(
+    entry, error
+):
+    if error is None:
+        assert normalize_ssrf_allowlist_entry(entry) == entry
+        return
+    with pytest.raises(BusinessError) as exc_info:
+        normalize_ssrf_allowlist_entry(entry)
+    assert exc_info.value.msg_key == error
+
+
+def test_target_allowlist_exact_and_wildcard_matching():
+    from app.core.network_security import is_target_allowlisted
+
+    address = ipaddress.ip_address("10.2.3.4")
+    assert is_target_allowlisted("db.corp.internal", [address], [" DB.CORP.INTERNAL "])
+    assert is_target_allowlisted("db.corp.internal", [address], ["*.corp.internal"])
+    assert not is_target_allowlisted(
+        "not-corp.internal", [address], ["*.corp.internal"]
+    )
+    assert not is_target_allowlisted("other.example", [address], ["", "192.168.0.0/16"])
+
+
 def test_normalize_ssrf_allowlist():
     entries = ["192.168.1.100", "192.168.1.100", "10.0.0.0/16", "*.corp.internal"]
     normalized = normalize_ssrf_allowlist(entries)
@@ -292,3 +325,63 @@ def test_validate_database_config_with_allowlist():
             {"host": "db.corp.internal", "port": 5432},
             allowlist=["10.20.0.0/16"],
         )
+
+
+@pytest.mark.asyncio
+async def test_async_external_url_validation_loads_allowlist_and_fails_closed(
+    monkeypatch,
+):
+    import app.core.network_security as security
+
+    async def allowed_targets():
+        return ["*.corp.internal"]
+
+    monkeypatch.setattr(security, "get_ssrf_allowed_targets", allowed_targets)
+
+    def public_resolution(_host, _port, **_kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.12.0.8", 443))]
+
+    result = await security.ensure_external_http_url_allowed(
+        "https://api.corp.internal/health", getaddrinfo=public_resolution
+    )
+    assert str(result) == "https://api.corp.internal/health"
+
+    async def denied_targets():
+        return []
+
+    monkeypatch.setattr(security, "get_ssrf_allowed_targets", denied_targets)
+    with pytest.raises(BusinessError) as denied:
+        await security.ensure_external_http_url_allowed(
+            "https://api.corp.internal/health", getaddrinfo=public_resolution
+        )
+    assert denied.value.msg_key == "http_tool_url_host_not_allowed"
+
+
+def test_allowlist_rejects_critical_ip_and_invalid_wildcard_suffix():
+    for entry in ("169.254.1.1", "*.corp", "*.corp.internal.extra*", "bad."):
+        with pytest.raises(BusinessError):
+            normalize_ssrf_allowlist_entry(entry)
+
+
+def test_host_validation_accepts_fake_ip_and_host_only_database_config():
+    def fake_resolution(*_args, **_kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.18.0.1", 5432))]
+
+    assert (
+        validate_external_host("db.example.test", getaddrinfo=fake_resolution)
+        == "db.example.test"
+    )
+    assert (
+        validate_database_config(
+            {"host": "db.example.test"}, getaddrinfo=fake_resolution
+        )
+        is None
+    )
+
+
+def test_database_url_skips_empty_authority_entries():
+    public_sock = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 5432))]
+    validate_database_config(
+        {"url": "mongodb://,db.example.test,,/db"},
+        getaddrinfo=lambda *_args, **_kwargs: public_sock,
+    )

@@ -449,3 +449,235 @@ async def test_test_message_rejects_unbound_user_without_sending(monkeypatch):
         )
 
     assert exc.value.msg_key == "feishu_test_recipient_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_config_update_with_blank_secret_preserves_existing_credential(
+    monkeypatch,
+):
+    integration = SimpleNamespace(
+        id=uuid4(),
+        config={"department_ids": ["dept-a"]},
+        credentials={"app_secret": "already-encrypted"},
+        is_enabled=True,
+    )
+    update = AsyncMock(return_value=integration)
+    monkeypatch.setattr(feishu, "update_builtin_config", update)
+    monkeypatch.setattr(feishu.AuditLogService, "log", AsyncMock())
+
+    response = await feishu.update_config(
+        request=MagicMock(),
+        data=feishu.FeishuConfigUpdate(app_id=" cli-updated ", app_secret="   "),
+        current_user=SimpleNamespace(id=uuid4()),
+    )
+
+    update.assert_awaited_once_with(
+        "feishu", {"app_id": "cli-updated"}, None, enabled=None
+    )
+    assert response["data"]["app_secret_configured"] is True
+    assert "already-encrypted" not in str(response)
+
+
+@pytest.mark.parametrize("value", ["   "])
+def test_feishu_source_validators_reject_blank_required_names(value):
+    from pydantic import ValidationError
+    from app.api.v1.admin.endpoints.feishu_knowledge import SourceCreate, SourceUpdate
+
+    with pytest.raises(ValidationError):
+        SourceUpdate(name=value)
+    with pytest.raises(ValidationError):
+        SourceCreate(knowledge_base_id=uuid4(), space_id="  ", name="Docs")
+    with pytest.raises(ValidationError):
+        SourceCreate(knowledge_base_id=uuid4(), space_id="space", name=value)
+
+
+def test_optional_feishu_scope_validation_and_failure_mapping():
+    from app.integrations.feishu import FeishuDepartment
+
+    tree = [FeishuDepartment("0", "Acme", None, [FeishuDepartment("dept-a", "A", "0")])]
+    assert feishu._flatten_department_ids(tree) == {"0", "dept-a"}
+
+    secret_error = feishu._feishu_failure(
+        IntegrationSecretError("ciphertext must stay private"), "Feishu request"
+    )
+    unexpected_error = feishu._feishu_failure(
+        RuntimeError("database password"), "Feishu request"
+    )
+    assert secret_error.msg_key == "feishu_secret_undecryptable"
+    assert secret_error.kwargs == {}
+    assert unexpected_error.msg_key == "internal_error"
+    assert unexpected_error.kwargs == {}
+
+
+@pytest.mark.asyncio
+async def test_test_message_maps_provider_error_without_exposing_provider_details(
+    monkeypatch,
+):
+    from app.models.feishu_user import FeishuUser
+
+    class BindingQuery:
+        async def first(self):
+            return SimpleNamespace(feishu_user_id="ou-bound")
+
+    monkeypatch.setattr(FeishuUser, "filter", lambda **_kwargs: BindingQuery())
+    client = _client(
+        send_user_message=AsyncMock(
+            side_effect=FeishuAPIError(
+                "Feishu API HTTP 403 (code 131006): denied",
+                detail="contains-private-provider-context",
+            )
+        )
+    )
+    monkeypatch.setattr(
+        feishu, "_configured_notification_client", AsyncMock(return_value=client)
+    )
+
+    with pytest.raises(BusinessError) as raised:
+        await feishu.send_test_message(
+            feishu.FeishuTestMessageRequest(
+                user_id=str(uuid4()), title="Test", content="Message"
+            ),
+            current_user=SimpleNamespace(),
+        )
+
+    assert raised.value.msg_key == "feishu_api_error"
+    assert "contains-private-provider-context" not in raised.value.kwargs.get(
+        "error", ""
+    )
+
+
+@pytest.mark.asyncio
+async def test_department_scope_rejects_empty_and_unknown_selection_without_persisting(
+    monkeypatch,
+):
+    client = _client(
+        list_departments=AsyncMock(
+            return_value=[SimpleNamespace(department_id="dept-a", children=[])]
+        )
+    )
+    monkeypatch.setattr(feishu, "_configured_client", AsyncMock(return_value=client))
+    update = AsyncMock()
+    monkeypatch.setattr(feishu, "update_builtin_config", update)
+
+    for ids in ([], ["   "], ["missing"]):
+        with pytest.raises(BusinessError) as raised:
+            await feishu.update_department_scope(
+                request=MagicMock(),
+                data=feishu.FeishuDepartmentScopeUpdate(department_ids=ids or [" "]),
+                current_user=SimpleNamespace(id=uuid4()),
+            )
+        assert raised.value.code == ResponseCode.VALIDATION_ERROR
+
+    update.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_configured_notification_client_requires_enabled_capability(monkeypatch):
+    integration = SimpleNamespace(
+        config={"app_id": "cli-test"},
+        credentials={"app_secret": "encrypted"},
+        is_enabled=True,
+        enabled_capabilities=["directory_sync"],
+    )
+    monkeypatch.setattr(
+        feishu, "get_builtin_integration", AsyncMock(return_value=integration)
+    )
+
+    with pytest.raises(BusinessError) as raised:
+        await feishu._configured_notification_client()
+
+    assert raised.value.msg_key == "feishu_notification_not_enabled"
+
+
+@pytest.mark.asyncio
+async def test_test_recipient_search_uses_trimmed_username_or_email_filter(monkeypatch):
+    from app.models.feishu_user import FeishuUser
+
+    user = SimpleNamespace(id=uuid4(), username="ada", email="ada@example.com")
+    binding = SimpleNamespace(user_id=user.id, user=user)
+    calls = {}
+
+    class Query:
+        def select_related(self, *fields):
+            calls["select_related"] = fields
+            return self
+
+        def filter(self, *args, **kwargs):
+            calls["filter"] = (args, kwargs)
+            return self
+
+        def order_by(self, *fields):
+            calls["order_by"] = fields
+            return self
+
+        def limit(self, count):
+            calls["limit"] = count
+            return self
+
+        def __await__(self):
+            async def rows():
+                return [binding]
+
+            return rows().__await__()
+
+    integration = SimpleNamespace(
+        is_enabled=True, enabled_capabilities=["notification"]
+    )
+    monkeypatch.setattr(
+        feishu, "get_builtin_integration", AsyncMock(return_value=integration)
+    )
+    monkeypatch.setattr(FeishuUser, "filter", lambda **kwargs: Query())
+
+    response = await feishu.list_test_recipients(
+        search="  ada  ", current_user=SimpleNamespace(id=uuid4())
+    )
+
+    assert response["data"] == [
+        {"id": str(user.id), "username": "ada", "email": "ada@example.com"}
+    ]
+    search_filter = calls["filter"][0][0]
+    assert search_filter.join_type == "OR"
+    assert [child.filters for child in search_filter.children] == [
+        {"user__username__icontains": "ada"},
+        {"user__email__icontains": "ada"},
+    ]
+    assert calls["filter"][1] == {}
+    assert calls["order_by"] == ("user__username",)
+    assert calls["limit"] == 20
+
+
+@pytest.mark.asyncio
+async def test_directory_sync_of_one_subteam_includes_ancestor_and_excludes_siblings(
+    monkeypatch,
+):
+    dept_a = SimpleNamespace(department_id="dept-a", children=[])
+    dept_b = SimpleNamespace(department_id="dept-b", children=[])
+    company = SimpleNamespace(department_id="0", children=[dept_a, dept_b])
+    client = _client(
+        list_departments=AsyncMock(return_value=[company]),
+        list_users=AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        feishu,
+        "get_builtin_integration",
+        AsyncMock(return_value=SimpleNamespace(config={"department_ids": ["dept-a"]})),
+    )
+    monkeypatch.setattr(feishu, "_configured_client", AsyncMock(return_value=client))
+    monkeypatch.setattr(
+        feishu,
+        "sync_directory_users",
+        AsyncMock(return_value=SimpleNamespace(created=0, updated=0, skipped=0)),
+    )
+    sync_teams = AsyncMock(return_value=1)
+    monkeypatch.setattr(feishu, "sync_department_teams", sync_teams)
+
+    response = await feishu.sync_contacts(
+        request=MagicMock(), current_user=SimpleNamespace(id=uuid4())
+    )
+
+    assert response["data"]["teams_created"] == 1
+    assert [item.department_id for item in sync_teams.await_args.args[0]] == [
+        "0",
+        "dept-a",
+    ]
+    assert client.list_users.await_args.args[0] == ["0", "dept-a"]

@@ -357,6 +357,7 @@ async def _apply_command(
             )
             await _resume_run(resumed)
             return True
+        return False
     elif command == "stop":
         await _stop_current(session, run)
         await _reply_text(receipt, t("wechat_agent_stopped"))
@@ -682,8 +683,14 @@ async def _process_pending(
 
     if text:
         command = _command_of(text)
-        if command and await _apply_command(receipt, session, run, command):
-            return
+        if command:
+            applied = await _apply_command(receipt, session, run, command)
+            if applied or (
+                command == "skip"
+                and run is not None
+                and run.status == AgentRunStatus.WAITING
+            ):
+                return
 
     if run is not None and run.status == AgentRunStatus.WAITING:
         if not text:

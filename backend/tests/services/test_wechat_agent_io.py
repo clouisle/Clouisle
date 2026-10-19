@@ -8,8 +8,11 @@ per-send reauthorization. No production credentials or network calls.
 
 import json
 from datetime import timedelta
+from urllib.parse import quote
 from uuid import uuid4
+from types import SimpleNamespace
 
+from unittest.mock import AsyncMock
 import httpx
 import pytest
 import pytest_asyncio
@@ -786,3 +789,1363 @@ async def test_build_output_never_leaks_reasoning_or_tool_text(io_db):
     assert payloads == [{"kind": "text", "text": "最终答复"}]
     assert all("SECRET" not in json.dumps(payload) for payload in payloads)
     assert all("generate_image" not in json.dumps(payload) for payload in payloads)
+
+
+@pytest.mark.asyncio
+async def test_normalize_input_voice_download_transcribes_and_keeps_original(
+    io_db, monkeypatch
+):
+    """Without a provider transcript the download is transcribed and retained."""
+    user, _, agent, binding, _, session = io_db
+    from app.services import wechat_agent_io
+
+    receipt = await make_receipt(
+        binding,
+        user,
+        agent,
+        receipt_message(
+            [
+                {"type": 1, "text_item": {"text": "听一下"}},
+                {"type": 3, "voice_item": {"media": {"aes_key": "k"}}},
+            ]
+        ),
+    )
+
+    class VoiceClient:
+        async def download_media(self, item, max_bytes):
+            assert item["type"] == 3 and max_bytes == 10 * 1024 * 1024
+            return b"voice-bytes", "voice.silk", "audio/silk"
+
+    stored = {}
+    transcribe_calls = []
+
+    async def fake_store(content, storage_key, content_type):
+        stored[storage_key] = (content, content_type)
+
+    async def fake_transcribe(path_bytes, filename, team_id, stt_model_id):
+        transcribe_calls.append((path_bytes, filename, team_id, stt_model_id))
+        return "语音识别结果"
+
+    monkeypatch.setattr(wechat_agent_io, "_store_upload", fake_store)
+    monkeypatch.setattr(wechat_agent_io, "_transcribe_voice", fake_transcribe)
+    request = await wechat_agent_io.normalize_input(
+        receipt, session, agent, user, VoiceClient()
+    )
+    assert request.message == "语音识别结果\n\n听一下"
+    assert request.file_urls == [] and request.images == []
+    # The original voice is retained as a private attachment, not delivered.
+    assert len(stored) == 1
+    assert next(iter(stored.values()))[0] == b"voice-bytes"
+    assert transcribe_calls == [
+        (b"voice-bytes", "voice.silk", str(agent.team_id), None)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_normalize_input_rejects_unknown_item_type(io_db):
+    user, _, agent, binding, _, session = io_db
+    from app.services import wechat_agent_io
+
+    receipt = await make_receipt(
+        binding,
+        user,
+        agent,
+        receipt_message([{"type": 9, "location_item": {"text": "here"}}]),
+    )
+    with pytest.raises(BusinessError) as exc:
+        await wechat_agent_io.normalize_input(receipt, session, agent, user, None)
+    assert exc.value.msg_key == "wechat_agent_media_unsupported"
+
+
+@pytest.mark.asyncio
+async def test_normalize_input_image_maps_conversation_scoped_asset(io_db, monkeypatch):
+    user, _, agent, binding, _, session = io_db
+    from app.services import wechat_agent_io
+
+    receipt = await make_receipt(
+        binding,
+        user,
+        agent,
+        receipt_message([{"type": 2, "image_item": {"media": {}}}]),
+    )
+    monkeypatch.setattr(wechat_agent_io, "_store_upload", AsyncMock())
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat_helpers.model_utils.resolve_agent_chat_model",
+        AsyncMock(return_value=SimpleNamespace(supports_vision=True)),
+    )
+    client = SimpleNamespace(
+        download_media=AsyncMock(return_value=(b"png-bytes", "photo.png", "image/png"))
+    )
+    request = await wechat_agent_io.normalize_input(
+        receipt, session, agent, user, client
+    )
+    assert len(request.images) == 1
+    image = request.images[0]
+    assert request.file_urls == []
+    asset = await Asset.get(id=image.asset_id)
+    assert image.url == f"/api/v1/upload/files/{quote(asset.storage_key, safe='/')}"
+    assert asset.content_type == "image/png"
+    assert asset.created_by_id == user.id and asset.team_id is None
+    # The ref binds the asset to the session's conversation scope.
+    from app.models.asset import AssetScopeRef, AssetScopeType
+
+    ref = await AssetScopeRef.get(
+        scope_type=AssetScopeType.CONVERSATION,
+        scope_id=session.conversation_id,
+        asset_id=asset.id,
+    )
+    assert image.asset_ref == ref.ref
+
+
+@pytest.mark.asyncio
+async def test_normalize_input_video_extraction_error_is_remapped(io_db, monkeypatch):
+    user, _, agent, binding, _, session = io_db
+    from app.services import wechat_agent_io
+
+    receipt = await make_receipt(
+        binding,
+        user,
+        agent,
+        receipt_message([{"type": 5, "video_item": {"media": {}}}]),
+    )
+    monkeypatch.setattr(
+        wechat_agent_io,
+        "_agent_vision_model_id",
+        AsyncMock(return_value="vision-model"),
+    )
+    monkeypatch.setattr(wechat_agent_io, "_retain_original", AsyncMock())
+
+    def fail_extract(*_args):
+        raise BusinessError(code=400, msg_key="wechat_media_duration")
+
+    monkeypatch.setattr(wechat_agent_io, "extract_media", fail_extract)
+    with pytest.raises(BusinessError) as exc:
+        await wechat_agent_io.normalize_input(
+            receipt,
+            session,
+            agent,
+            user,
+            SimpleNamespace(
+                download_media=AsyncMock(
+                    return_value=(b"video", "clip.mp4", "video/mp4")
+                )
+            ),
+        )
+    assert exc.value.msg_key == "wechat_media_duration"
+
+
+@pytest.mark.asyncio
+async def test_transcribe_voice_converts_then_transcribes(monkeypatch):
+    from app.services import wechat_agent_io
+
+    tool_calls = []
+    transcribed = []
+
+    async def fake_tool(*args):
+        tool_calls.append(args)
+        return b""
+
+    async def fake_audio_text(path, team_id, model_id):
+        transcribed.append((path.name, team_id, str(model_id)))
+        return "对话内容"
+
+    monkeypatch.setattr(
+        "shutil.which",
+        lambda name: "/usr/bin/ffmpeg" if name == "ffmpeg" else None,
+    )
+    monkeypatch.setattr("app.services.wechat_media.run_media_tool", fake_tool)
+    monkeypatch.setattr("app.services.wechat_media.audio_text", fake_audio_text)
+    result = await wechat_agent_io._transcribe_voice(
+        b"silk-bytes", "voice.silk", "team-id", "stt-model"
+    )
+    assert result == "对话内容"
+    assert len(tool_calls) == 1
+    assert tool_calls[0][0] == "/usr/bin/ffmpeg"
+    args = list(tool_calls[0])
+    assert args[5:9] == ["file,pipe", "-i", args[7], "-vn"]
+    assert args[7].endswith("input.silk")
+    assert args[9:13] == ["-ac", "1", "-ar", "16000"]
+    assert args[-3:] == ["-b:a", "48k", args[-1]]
+    assert args[-1].endswith("audio.mp3")
+    # The converted MP3 path is handed to the transcriber with the team/model ids.
+    assert transcribed == [("audio.mp3", "team-id", "stt-model")]
+
+
+@pytest.mark.asyncio
+async def test_transcribe_voice_requires_ffmpeg(monkeypatch):
+    from app.services import wechat_agent_io
+
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    with pytest.raises(BusinessError) as exc:
+        await wechat_agent_io._transcribe_voice(
+            b"silk-bytes", "voice.silk", "team-id", "stt-model"
+        )
+    assert exc.value.msg_key == "wechat_agent_media_unsupported"
+
+
+@pytest.mark.asyncio
+async def test_transcribe_voice_conversion_failure_propagates(monkeypatch):
+    from app.services import wechat_agent_io
+
+    async def failing_tool(*_args):
+        raise BusinessError(code=400, msg_key="wechat_media_conversion_failed")
+
+    async def must_not_run(*_args, **_kwargs):
+        raise AssertionError("transcription must not run after a failed conversion")
+
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/ffmpeg")
+    monkeypatch.setattr("app.services.wechat_media.run_media_tool", failing_tool)
+    monkeypatch.setattr("app.services.wechat_media.audio_text", must_not_run)
+    with pytest.raises(BusinessError) as exc:
+        await wechat_agent_io._transcribe_voice(
+            b"silk-bytes", "voice.silk", "team-id", "stt-model"
+        )
+    assert exc.value.msg_key == "wechat_media_conversion_failed"
+
+
+@pytest.mark.asyncio
+async def test_resolve_run_assets_handles_duplicates_and_unreadable_display(
+    io_db, monkeypatch
+):
+    user, _, agent, binding, conversation, _ = io_db
+    from app.models.agent_run import AgentRun, AgentRunMode, AgentRunStatus
+    from app.models.asset import AssetScopeRef, AssetScopeType
+    from app.services import wechat_agent_io
+
+    run = await AgentRun.create(
+        id=uuid4(),
+        agent=agent,
+        conversation=conversation,
+        user=user,
+        mode=AgentRunMode.SEND,
+        status=AgentRunStatus.COMPLETED,
+    )
+    round_id = uuid4()
+    canonical = await Message.create(
+        id=uuid4(),
+        conversation=conversation,
+        role="assistant",
+        content="ok",
+        round_id=round_id,
+        is_round_canonical=True,
+    )
+    run.canonical_message_id = canonical.id
+    await run.save(update_fields=["canonical_message_id"])
+    asset = await _asset_for(agent.team, user)
+    await AssetScopeRef.create(
+        id=uuid4(),
+        scope_type=AssetScopeType.CONVERSATION,
+        scope_id=conversation.id,
+        asset=asset,
+        ref="cccc",
+    )
+    # A malformed tool payload is skipped; a non-dict display is skipped too.
+    await Message.create(
+        id=uuid4(),
+        conversation=conversation,
+        role="tool",
+        content="not-json",
+        round_id=round_id,
+        round_role="tool_result",
+    )
+    await Message.create(
+        id=uuid4(),
+        conversation=conversation,
+        role="tool",
+        content=json.dumps([{"asset_ref": "cccc"}]),
+        round_id=round_id,
+        round_role="tool_result",
+    )
+    await Message.create(
+        id=uuid4(),
+        conversation=conversation,
+        role="tool",
+        content=json.dumps(
+            {
+                "kind": "media.image",
+                "success": True,
+                "images": [{"image": {"asset_ref": "cccc"}}],
+            }
+        ),
+        round_id=round_id,
+        round_role="tool_result",
+    )
+    await Message.create(
+        id=uuid4(),
+        conversation=conversation,
+        role="tool",
+        content=json.dumps(
+            {"kind": "media.video", "success": True, "video": {"asset_ref": "cccc"}}
+        ),
+        round_id=round_id,
+        round_role="tool_result",
+    )
+    resolved = await wechat_agent_io._resolve_run_assets(run, agent, user)
+    assert [item.id for item in resolved] == [asset.id]
+
+
+@pytest.mark.asyncio
+async def test_build_output_ignores_missing_agent_row(io_db):
+    user, _, agent, binding, conversation, session = io_db
+    from app.models.agent_run import AgentRun, AgentRunMode, AgentRunStatus
+    from app.services import wechat_agent_io
+
+    run = await AgentRun.create(
+        id=uuid4(),
+        agent=agent,
+        conversation=conversation,
+        user=user,
+        mode=AgentRunMode.SEND,
+        status=AgentRunStatus.COMPLETED,
+    )
+    run.canonical_message_id = None
+    await run.save(update_fields=["canonical_message_id"])
+    await run.delete()
+    payloads = await wechat_agent_io.build_output(
+        run,
+        await make_receipt(binding, user, agent, receipt_message([])),
+        session,
+        user,
+    )
+    assert payloads == []
+
+
+@pytest.mark.asyncio
+async def test_upload_asset_media_builds_typed_image_and_video_items(monkeypatch):
+    from app.services import wechat_agent_io
+
+    captured = {}
+
+    async def reserve(**kwargs):
+        captured.update(kwargs)
+        return "https://cdn.weixin.qq.com/upload", "unused"
+
+    async def upload(url, ciphertext):
+        captured["url"] = url
+        captured["ciphertext"] = ciphertext
+        return "download-param"
+
+    client = SimpleNamespace(
+        get_upload_url=AsyncMock(side_effect=reserve),
+        upload_media=AsyncMock(side_effect=upload),
+    )
+    monkeypatch.setattr(
+        wechat_agent_io, "_read_asset_bytes", AsyncMock(return_value=b"media bytes")
+    )
+    image_item = await wechat_agent_io._upload_asset_media(
+        client,
+        SimpleNamespace(
+            storage_key="generated/a.png",
+            content_type="image/png",
+            display_filename="a.png",
+        ),
+        "wechat-user",
+    )
+    assert image_item["type"] == wechat_agent_io.ITEM_IMAGE
+    assert image_item["image_item"]["mid_size"] == len(captured["ciphertext"])
+    assert image_item["image_item"]["media"]["encrypt_type"] == 1
+
+    captured.clear()
+    video_item = await wechat_agent_io._upload_asset_media(
+        client,
+        SimpleNamespace(
+            storage_key="generated/b.mp4",
+            content_type="video/mp4",
+            display_filename="b.mp4",
+        ),
+        "wechat-user",
+    )
+    assert video_item["type"] == wechat_agent_io.ITEM_VIDEO
+    assert video_item["video_item"]["video_size"] == len(captured["ciphertext"])
+    assert video_item["video_item"]["media"]["encrypt_query_param"] == "download-param"
+    assert captured["media_type"] == 2
+
+
+@pytest.mark.asyncio
+async def test_send_payload_sends_authorized_asset_as_media_item(io_db, monkeypatch):
+    from app.services import wechat_agent_io
+
+    user, team, agent, binding, conversation, _ = io_db
+    asset = await _asset_for(team, user)
+    sent = {}
+
+    class AssetClient:
+        async def send_media(self, to_user, context_token, *, item, client_id):
+            sent["to_user"] = to_user
+            sent["context_token"] = context_token
+            sent["item"] = item
+            sent["client_id"] = client_id
+
+    async def authorized_upload(client, authorized, to_user_id):
+        sent["uploaded"] = (to_user_id, client is not None)
+        return {"type": 2, "image_item": {"mid_size": 4}}
+
+    monkeypatch.setattr(
+        wechat_agent_io, "_authorized_output_asset", AsyncMock(return_value=asset)
+    )
+    monkeypatch.setattr(
+        wechat_agent_io, "_upload_asset_media", AsyncMock(side_effect=authorized_upload)
+    )
+    context = {
+        "context_token": "ctx-token",
+        "conversation_id": conversation.id,
+        "user": user,
+        "agent": agent,
+    }
+    await wechat_agent_io._send_payload(
+        AssetClient(),
+        {"kind": "asset", "asset_id": str(asset.id)},
+        context,
+        "client-1",
+        binding,
+    )
+    assert sent["to_user"] == binding.wechat_user_id
+    assert sent["context_token"] == "ctx-token"
+    assert sent["client_id"] == "client-1"
+    assert sent["item"] == {"type": 2, "image_item": {"mid_size": 4}}
+    assert sent["uploaded"] == (binding.wechat_user_id, True)
+
+
+@pytest.mark.asyncio
+async def test_send_payload_rejects_unauthorized_asset(io_db, monkeypatch):
+    from app.services import wechat_agent_io
+
+    user, _, agent, binding, _, _ = io_db
+    monkeypatch.setattr(
+        wechat_agent_io, "_authorized_output_asset", AsyncMock(return_value=None)
+    )
+    client = SimpleNamespace(send_media=AsyncMock(), send_text=AsyncMock())
+    with pytest.raises(WeChatAPIError) as exc:
+        await wechat_agent_io._send_payload(
+            client,
+            {"kind": "asset", "asset_id": str(uuid4())},
+            {"context_token": "ctx", "conversation_id": uuid4()},
+            "client-2",
+            binding,
+        )
+    assert exc.value.code == "asset_unavailable"
+    client.send_media.assert_not_awaited()
+    client.send_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_deliver_pending_skips_bindings_without_receipts(io_db):
+    user, _, agent, binding, _, session = io_db
+    await deliver_pending(binding, user)
+    assert await WeChatAgentDelivery.all().count() == 0
+
+
+@pytest.mark.asyncio
+async def test_deliver_pending_lost_claim_never_resends(io_db, monkeypatch):
+    """A row claimed by a concurrent worker between query and update is skipped."""
+    user, _, agent, binding, _, session = io_db
+    receipt = await make_receipt(
+        binding,
+        user,
+        agent,
+        receipt_message([{"type": 1, "text_item": {"text": "hi"}}]),
+        status="completed",
+    )
+    delivery = await WeChatAgentDelivery.create(
+        id=uuid4(),
+        receipt=receipt,
+        event_key="final",
+        sequence=0,
+        payload={"kind": "text", "text": "答复"},
+    )
+    sent = []
+
+    class NeverUsedClient:
+        async def __aenter__(self):
+            raise AssertionError("a lost claim must not open a client")
+
+        async def __aexit__(self, *args):
+            return False
+
+    monkeypatch.setattr(
+        "app.services.wechat_agent_io.WeChatClient",
+        lambda *args, **kwargs: NeverUsedClient(),
+    )
+
+    from tortoise.queryset import QuerySet
+
+    original_update = QuerySet.update
+
+    async def always_lose_update(self, *args, **kwargs):
+        if self.model is WeChatAgentDelivery:
+            # The row was claimed by a concurrent worker before this pass.
+            return 0
+        return await original_update(self, *args, **kwargs)
+
+    monkeypatch.setattr(QuerySet, "update", always_lose_update)
+    await deliver_pending(binding, user)
+    assert sent == []
+    await delivery.refresh_from_db()
+    assert delivery.status == "pending"
+
+
+def test_attachment_configuration_and_safe_filenames_have_stable_defaults():
+    from types import SimpleNamespace
+
+    from app.services import wechat_agent_io
+
+    assert wechat_agent_io._attachment_limits(
+        SimpleNamespace(attachment_config=None)
+    ) == (
+        10 * 1024 * 1024,
+        5,
+        set(),
+    )
+    assert wechat_agent_io._attachment_limits(
+        SimpleNamespace(attachment_config={"max_files": None})
+    ) == (
+        10 * 1024 * 1024,
+        5,
+        set(),
+    )
+    assert wechat_agent_io._attachment_limits(
+        SimpleNamespace(attachment_config={"max_files": "many"})
+    ) == (
+        10 * 1024 * 1024,
+        5,
+        set(),
+    )
+    configured = SimpleNamespace(
+        attachment_config={
+            "max_file_size": "invalid",
+            "max_files": None,
+            "allowed_extensions": [".TXT", "pdf", ".PNG"],
+        }
+    )
+    assert wechat_agent_io._attachment_limits(configured) == (
+        10 * 1024 * 1024,
+        5,
+        {".txt", ".png"},
+    )
+    assert (
+        wechat_agent_io._sanitize_name("../folder\\notes.txt", "fallback.bin")
+        == "notes.txt"
+    )
+    assert wechat_agent_io._sanitize_name("../", "fallback.bin") == "fallback.bin"
+    assert wechat_agent_io._ensure_extension("image", "image/png") == "image.png"
+    assert wechat_agent_io._ensure_extension("notes.txt", "image/png") == "notes.txt"
+
+
+def test_media_types_map_to_wechat_cdn_envelopes():
+    from app.services import wechat_agent_io
+
+    assert wechat_agent_io._media_item_type("image/png") == (2, 1, "image_item")
+    assert wechat_agent_io._media_item_type("video/mp4") == (5, 2, "video_item")
+    assert wechat_agent_io._media_item_type("application/pdf") == (4, 3, "file_item")
+
+
+@pytest.mark.asyncio
+async def test_run_asset_resolution_skips_missing_and_foreign_assets(
+    io_db, monkeypatch
+):
+    user, _, agent, binding, conversation, session = io_db
+    from app.models.agent_run import AgentRun, AgentRunMode, AgentRunStatus
+    from app.services import wechat_agent_io
+
+    run = await AgentRun.create(
+        id=uuid4(),
+        agent=agent,
+        conversation=conversation,
+        user=user,
+        mode=AgentRunMode.SEND,
+        status=AgentRunStatus.COMPLETED,
+    )
+    assert (
+        await wechat_agent_io._resolve_run_assets(
+            SimpleNamespace(conversation_id=None, canonical_message_id=None),
+            agent,
+            user,
+        )
+        == []
+    )
+    assert await wechat_agent_io._resolve_run_assets(run, agent, user) == []
+
+
+@pytest.mark.asyncio
+async def test_asset_read_uses_storage_backend_for_local_mode(monkeypatch):
+    from app.services import wechat_agent_io
+
+    class Storage:
+        async def read(self, key):
+            assert key == "agent-attachments/asset.txt"
+            return b"private bytes"
+
+    async def storage_backend(_root):
+        return Storage()
+
+    from app.services import document_processor, upload_storage
+
+    monkeypatch.setattr(document_processor, "_remote_mode", lambda: False)
+    monkeypatch.setattr(upload_storage, "get_upload_storage_backend", storage_backend)
+    asset = SimpleNamespace(storage_key="agent-attachments/asset.txt")
+    assert await wechat_agent_io._read_asset_bytes(asset) == b"private bytes"
+
+
+@pytest.mark.asyncio
+async def test_normalize_input_rejects_attachment_count_and_byte_limits(io_db):
+    user, _, agent, binding, _, session = io_db
+    from app.services import wechat_agent_io
+
+    agent.attachment_config = {"max_files": 1}
+    await agent.save(update_fields=["attachment_config"])
+    receipt = await make_receipt(
+        binding,
+        user,
+        agent,
+        receipt_message(
+            [
+                {"type": 3, "voice_item": {"text": "transcribed"}},
+                {"type": 4, "file_item": {"file_name": "b.txt"}},
+            ]
+        ),
+    )
+
+    class MustNotDownload:
+        async def download_media(self, *_args):
+            raise AssertionError("file count is rejected before download")
+
+    with pytest.raises(BusinessError) as too_many:
+        await wechat_agent_io.normalize_input(
+            receipt, session, agent, user, MustNotDownload()
+        )
+    assert too_many.value.msg_key == "wechat_agent_too_many_files"
+
+    agent.attachment_config = {"max_file_size": 2}
+    await agent.save(update_fields=["attachment_config"])
+    one_file = await make_receipt(
+        binding,
+        user,
+        agent,
+        receipt_message([{"type": 4, "file_item": {"file_name": "a.txt"}}]),
+    )
+
+    class Oversized:
+        async def download_media(self, _item, _limit):
+            return b"large", "a.txt", "text/plain"
+
+    with pytest.raises(BusinessError) as too_large:
+        await wechat_agent_io.normalize_input(
+            one_file, session, agent, user, Oversized()
+        )
+    assert too_large.value.msg_key == "wechat_agent_file_too_large"
+
+
+@pytest.mark.asyncio
+async def test_normalize_input_rejects_images_without_vision(io_db, monkeypatch):
+    user, _, agent, binding, _, session = io_db
+    from app.services import wechat_agent_io
+
+    receipt = await make_receipt(
+        binding,
+        user,
+        agent,
+        receipt_message([{"type": 2, "image_item": {"media": {}}}]),
+    )
+    monkeypatch.setattr(
+        wechat_agent_io, "_agent_supports_vision", AsyncMock(return_value=False)
+    )
+
+    class DownloadImage:
+        async def download_media(self, *_args):
+            return b"image", "photo.png", "image/png"
+
+    with pytest.raises(BusinessError) as unavailable:
+        await wechat_agent_io.normalize_input(
+            receipt, session, agent, user, DownloadImage()
+        )
+    assert unavailable.value.msg_key == "wechat_agent_vision_required"
+
+
+def test_display_asset_refs_only_accepts_successful_known_schemas():
+    from app.services.wechat_agent_io import _display_asset_refs
+
+    assert _display_asset_refs(
+        {
+            "kind": "media.image",
+            "success": True,
+            "images": [{"image": {"asset_ref": "image-ref"}}, None],
+            "artifacts": [{"asset_ref": "artifact-ref"}],
+        }
+    ) == ["image-ref", "artifact-ref"]
+    assert _display_asset_refs(
+        {"kind": "media.video", "success": True, "video": {"asset_ref": "video-ref"}}
+    ) == ["video-ref"]
+    assert (
+        _display_asset_refs(
+            {
+                "kind": "media.image",
+                "success": False,
+                "images": [{"image": {"asset_ref": "hidden"}}],
+            }
+        )
+        == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_send_one_marks_explicit_provider_rejection_as_error(io_db, monkeypatch):
+    from app.services import wechat_agent_io
+
+    user, _, agent, binding, _, session = io_db
+    receipt = await make_receipt(
+        binding, user, agent, receipt_message([]), status="completed"
+    )
+    delivery = await WeChatAgentDelivery.create(
+        id=uuid4(),
+        receipt=receipt,
+        event_key="rejected-final",
+        sequence=0,
+        payload={"kind": "text", "text": "reply"},
+        status="sending",
+    )
+
+    async def resolved(*_args):
+        return (
+            {
+                "binding": binding,
+                "user": user,
+                "agent": agent,
+                "agent_id": agent.id,
+                "session": session,
+                "conversation_id": session.conversation_id,
+                "context_token": "ctx-token",
+            },
+            "",
+        )
+
+    class RejectClient:
+        def __init__(self, *_args):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def send_text(self, *_args, **_kwargs):
+            raise WeChatAPIError("permission_denied")
+
+    monkeypatch.setattr(wechat_agent_io, "_delivery_context", resolved)
+    monkeypatch.setattr(wechat_agent_io, "WeChatClient", RejectClient)
+    await wechat_agent_io._send_one(delivery, binding)
+    await delivery.refresh_from_db()
+    assert delivery.status == "error"
+    assert delivery.error == "permission_denied"
+
+
+@pytest.mark.asyncio
+async def test_upload_asset_media_rejects_empty_or_oversized_bytes(monkeypatch):
+    from app.services import wechat_agent_io
+
+    asset = SimpleNamespace(
+        storage_key="generated/x.bin",
+        content_type="application/octet-stream",
+        display_filename="x.bin",
+    )
+
+    async def no_bytes(_asset):
+        return b""
+
+    monkeypatch.setattr(wechat_agent_io, "_read_asset_bytes", no_bytes)
+    with pytest.raises(WeChatAPIError) as empty:
+        await wechat_agent_io._upload_asset_media(SimpleNamespace(), asset, "wechat")
+    assert empty.value.code == "empty_media"
+
+    async def too_many_bytes(_asset):
+        return b"x" * (wechat_agent_io.WECHAT_MEDIA_LIMIT + 1)
+
+    monkeypatch.setattr(wechat_agent_io, "_read_asset_bytes", too_many_bytes)
+    with pytest.raises(WeChatAPIError) as oversized:
+        await wechat_agent_io._upload_asset_media(SimpleNamespace(), asset, "wechat")
+    assert oversized.value.code == "file_too_large"
+
+
+@pytest.mark.asyncio
+async def test_upload_asset_media_builds_typed_file_payload(monkeypatch):
+    from app.services import wechat_agent_io
+
+    asset = SimpleNamespace(
+        storage_key="generated/report.pdf",
+        content_type="application/pdf",
+        display_filename="report.pdf",
+    )
+    monkeypatch.setattr(
+        wechat_agent_io, "_read_asset_bytes", AsyncMock(return_value=b"PDF bytes")
+    )
+    captured = {}
+
+    async def reserve(**kwargs):
+        captured.update(kwargs)
+        return "https://cdn.weixin.qq.com/upload", "unused"
+
+    async def upload(url, ciphertext):
+        captured["url"] = url
+        captured["ciphertext"] = ciphertext
+        return "download-param"
+
+    client = SimpleNamespace(
+        get_upload_url=AsyncMock(side_effect=reserve),
+        upload_media=AsyncMock(side_effect=upload),
+    )
+    item = await wechat_agent_io._upload_asset_media(client, asset, "wechat-user")
+    assert item["type"] == wechat_agent_io.ITEM_FILE
+    payload = item["file_item"]
+    assert payload["file_name"] == "report.pdf"
+    assert payload["len"] == "9"
+    assert payload["media"]["encrypt_query_param"] == "download-param"
+    assert captured["raw_size"] == 9
+    assert captured["file_size"] == len(captured["ciphertext"])
+    assert captured["to_user_id"] == "wechat-user"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("vision", [None, "vision-model"])
+async def test_video_input_requires_vision_and_preserves_caption_once(
+    io_db, monkeypatch, vision
+):
+    from app.services import wechat_agent_io
+
+    user, _, agent, binding, _, session = io_db
+    receipt = await make_receipt(
+        binding,
+        user,
+        agent,
+        receipt_message(
+            [
+                {"type": 1, "text_item": {"text": "Summarize this clip"}},
+                {"type": 5, "video_item": {"media": {}}},
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        wechat_agent_io, "_agent_vision_model_id", AsyncMock(return_value=vision)
+    )
+    retain = AsyncMock()
+    monkeypatch.setattr(wechat_agent_io, "_retain_original", retain)
+    monkeypatch.setattr(
+        wechat_agent_io, "extract_media", AsyncMock(return_value="A train arrives.")
+    )
+    client = SimpleNamespace(
+        download_media=AsyncMock(return_value=(b"video", "clip.mp4", "video/mp4"))
+    )
+    if vision is None:
+        with pytest.raises(BusinessError) as unavailable:
+            await wechat_agent_io.normalize_input(receipt, session, agent, user, client)
+        assert unavailable.value.msg_key == "wechat_agent_video_unsupported"
+        retain.assert_not_awaited()
+    else:
+        request = await wechat_agent_io.normalize_input(
+            receipt, session, agent, user, client
+        )
+        assert request.message == "A train arrives.\n\nSummarize this clip"
+        assert request.images == [] and request.file_urls == []
+        retain.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_retried_asset_reuses_private_identity_and_rejects_changed_bytes(
+    io_db, monkeypatch
+):
+    from app.services import wechat_agent_io
+
+    user, _, agent, binding, _, _ = io_db
+    receipt = await make_receipt(binding, user, agent, receipt_message([]))
+    store = AsyncMock()
+    monkeypatch.setattr(wechat_agent_io, "_store_upload", store)
+    args = dict(
+        filename="note.txt",
+        content_type="text/plain",
+        user=user,
+        receipt=receipt,
+        index=0,
+    )
+    first = await wechat_agent_io._save_asset(b"original", **args)
+    same = await wechat_agent_io._save_asset(b"original", **args)
+    assert same.id == first.id
+    assert first.created_by_id == user.id and first.team_id is None
+    with pytest.raises(BusinessError) as changed:
+        await wechat_agent_io._save_asset(b"tampered", **args)
+    assert changed.value.msg_key == "wechat_agent_media_unsupported"
+    store.assert_awaited_once()
+    assert await Asset.filter(storage_key=first.storage_key).count() == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "revocation,expected",
+    [
+        ("inactive_user", "wechat_agent_binding_disconnected"),
+        ("unapproved_user", "wechat_agent_binding_disconnected"),
+        ("missing_agent", "wechat_agent_config_missing"),
+        ("unpublished_agent", "agent_access_denied"),
+        ("missing_conversation", "wechat_agent_conversation_missing"),
+        ("missing_context", "wechat_agent_context_missing"),
+        ("reauthorized", "wechat_agent_binding_disconnected"),
+    ],
+)
+async def test_delivery_context_rechecks_revoked_state(io_db, revocation, expected):
+    from app.services import wechat_agent_io
+
+    user, _, agent, binding, _, session = io_db
+    receipt = await make_receipt(binding, user, agent, receipt_message([]))
+    if revocation == "inactive_user":
+        user.is_active = False
+        await user.save(update_fields=["is_active"])
+    elif revocation == "unapproved_user":
+        user.approval_status = "pending"
+        await user.save(update_fields=["approval_status"])
+    elif revocation == "missing_agent":
+        receipt.agent_id = None
+    elif revocation == "unpublished_agent":
+        agent.status = "draft"
+        await agent.save(update_fields=["status"])
+    elif revocation == "missing_conversation":
+        session.conversation_id = None
+        await session.save(update_fields=["conversation_id"])
+    elif revocation == "missing_context":
+        session.context_token = ""
+        await session.save(update_fields=["context_token"])
+    elif revocation == "reauthorized":
+        binding.disconnected_at = utcnow()
+        await binding.save(update_fields=["disconnected_at"])
+    context, error = await wechat_agent_io._delivery_context(
+        binding, None, receipt, user
+    )
+    assert context is None and error == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure,expected",
+    [
+        ("wrapped_timeout", "unknown"),
+        ("business_error", "error"),
+        ("cancelled", "sending"),
+    ],
+)
+async def test_delivery_preserves_ambiguous_or_cancelled_send_state(
+    io_db, monkeypatch, failure, expected
+):
+    import asyncio
+    from app.services import wechat_agent_io
+
+    user, _, agent, binding, _, _ = io_db
+    receipt = await make_receipt(
+        binding, user, agent, receipt_message([]), status="completed"
+    )
+    delivery = await WeChatAgentDelivery.create(
+        id=uuid4(),
+        receipt=receipt,
+        event_key="failure",
+        sequence=0,
+        payload={"kind": "text", "text": "reply"},
+        status="sending",
+    )
+
+    async def send(*args, **kwargs):
+        if failure == "wrapped_timeout":
+            raise WeChatAPIError("transport_error") from TimeoutError("lost response")
+        if failure == "business_error":
+            raise BusinessError(code=400, msg_key="wechat_agent_media_unsupported")
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(wechat_agent_io, "_send_payload", send)
+    if failure == "cancelled":
+        with pytest.raises(asyncio.CancelledError):
+            await wechat_agent_io._send_one(delivery, binding)
+    else:
+        await wechat_agent_io._send_one(delivery, binding)
+    await delivery.refresh_from_db()
+    assert delivery.status == expected
+    if failure == "business_error":
+        assert delivery.error == "wechat_agent_media_unsupported"
+
+
+@pytest.mark.asyncio
+async def test_normalize_transcribed_voice_keeps_caption_once_without_download(
+    io_db, monkeypatch
+):
+    user, _, agent, binding, _, session = io_db
+    receipt = await make_receipt(
+        binding,
+        user,
+        agent,
+        receipt_message(
+            [
+                {"type": 1, "text_item": {"text": "Context"}},
+                {"type": 3, "voice_item": {"text": "Transcript", "media": {}}},
+            ]
+        ),
+    )
+    from app.services import wechat_agent_io
+
+    client = SimpleNamespace(download_media=AsyncMock(side_effect=AssertionError))
+    monkeypatch.setattr(wechat_agent_io, "_transcribe_voice", AsyncMock())
+
+    request = await wechat_agent_io.normalize_input(
+        receipt, session, agent, user, client
+    )
+
+    assert request.message == "Transcript\n\nContext"
+    client.download_media.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_asset_resolution_skips_unauthorized_generated_artifact(
+    io_db, monkeypatch
+):
+    user, _, agent, binding, conversation, _ = io_db
+    from app.models.agent_run import AgentRun, AgentRunMode, AgentRunStatus
+    from app.models.asset import AssetScopeRef, AssetScopeType
+    from app.services import wechat_agent_io
+
+    run = await AgentRun.create(
+        id=uuid4(),
+        agent=agent,
+        conversation=conversation,
+        user=user,
+        mode=AgentRunMode.SEND,
+        status=AgentRunStatus.COMPLETED,
+    )
+    round_id = uuid4()
+    canonical = await Message.create(
+        id=uuid4(),
+        conversation=conversation,
+        role="assistant",
+        content="answer",
+        round_id=round_id,
+        is_round_canonical=True,
+    )
+    run.canonical_message_id = canonical.id
+    await run.save(update_fields=["canonical_message_id"])
+    asset = await _asset_for(agent.team, user)
+    await AssetScopeRef.create(
+        id=uuid4(),
+        scope_type=AssetScopeType.CONVERSATION,
+        scope_id=conversation.id,
+        asset=asset,
+        ref="dead",
+    )
+    await Message.create(
+        id=uuid4(),
+        conversation=conversation,
+        role="tool",
+        content=json.dumps(
+            {
+                "kind": "media.image",
+                "success": True,
+                "images": [{"image": {"asset_ref": "dead"}}],
+            }
+        ),
+        round_id=round_id,
+        round_role="tool_result",
+    )
+    monkeypatch.setattr(
+        wechat_agent_io.asset_service,
+        "resolve_ref",
+        AsyncMock(side_effect=BusinessError(msg_key="asset_unavailable")),
+    )
+
+    assert await wechat_agent_io._resolve_run_assets(run, agent, user) == []
+
+
+@pytest.mark.asyncio
+async def test_send_one_marks_missing_receipt_unavailable(io_db, monkeypatch):
+    from app.services import wechat_agent_io
+
+    user, _, agent, binding, _, _ = io_db
+    receipt = await make_receipt(
+        binding, user, agent, receipt_message([]), status="completed"
+    )
+    delivery = await WeChatAgentDelivery.create(
+        id=uuid4(),
+        receipt=receipt,
+        event_key="orphaned",
+        sequence=0,
+        payload={"kind": "text", "text": "must not send"},
+        status="sending",
+    )
+    missing = SimpleNamespace(first=AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        wechat_agent_io.WeChatAgentReceipt, "filter", lambda **_kwargs: missing
+    )
+
+    await wechat_agent_io._send_one(delivery, binding)
+
+    await delivery.refresh_from_db()
+    assert delivery.status == "unavailable"
+    assert delivery.error == "wechat_agent_binding_disconnected"
+
+
+@pytest.mark.asyncio
+async def test_remote_asset_storage_uses_upload_gateway(monkeypatch):
+    from app.services import document_processor, upload_gateway, wechat_agent_io
+
+    calls = []
+
+    class Gateway:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def put(self, path, *, params, content):
+            calls.append((path, params, content))
+            return SimpleNamespace(raise_for_status=lambda: None)
+
+    monkeypatch.setattr(document_processor, "_remote_mode", lambda: True)
+    monkeypatch.setattr(upload_gateway, "client", lambda: Gateway())
+
+    await wechat_agent_io._store_upload(b"private", "agent-attachments/a", "text/plain")
+
+    assert calls == [
+        ("/internal/uploads/save", {"key": "agent-attachments/a"}, b"private")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_remote_asset_read_uses_upload_gateway(monkeypatch):
+    from app.services import document_processor, upload_gateway, wechat_agent_io
+
+    read = AsyncMock(return_value=b"private bytes")
+    monkeypatch.setattr(document_processor, "_remote_mode", lambda: True)
+    monkeypatch.setattr(upload_gateway, "read", read)
+
+    result = await wechat_agent_io._read_asset_bytes(
+        SimpleNamespace(storage_key="agent-attachments/a")
+    )
+
+    assert result == b"private bytes"
+    read.assert_awaited_once_with("agent-attachments/a")
+
+
+@pytest.mark.asyncio
+async def test_run_asset_resolution_deduplicates_refs_to_the_same_asset(
+    io_db, monkeypatch
+):
+    user, _, agent, _, conversation, _ = io_db
+    from app.models.agent_run import AgentRun, AgentRunMode, AgentRunStatus
+    from app.services import wechat_agent_io
+
+    run = await AgentRun.create(
+        id=uuid4(),
+        agent=agent,
+        conversation=conversation,
+        user=user,
+        mode=AgentRunMode.SEND,
+        status=AgentRunStatus.COMPLETED,
+    )
+    canonical = await Message.create(
+        id=uuid4(),
+        conversation=conversation,
+        role="assistant",
+        content="answer",
+        round_id=uuid4(),
+        is_round_canonical=True,
+    )
+    run.canonical_message_id = canonical.id
+    await run.save(update_fields=["canonical_message_id"])
+    asset = await _asset_for(agent.team, user)
+    round_id = canonical.round_id
+    for ref in ("image-ref", "artifact-ref"):
+        display = (
+            {
+                "kind": "media.image",
+                "success": True,
+                "images": [{"image": {"asset_ref": ref}}],
+            }
+            if ref == "image-ref"
+            else {"success": True, "artifacts": [{"asset_ref": ref}]}
+        )
+        await Message.create(
+            id=uuid4(),
+            conversation=conversation,
+            role="tool",
+            content=json.dumps(display),
+            round_id=round_id,
+            round_role="tool_result",
+        )
+    resolve_ref = AsyncMock(return_value=asset)
+    monkeypatch.setattr(wechat_agent_io.asset_service, "resolve_ref", resolve_ref)
+
+    resolved = await wechat_agent_io._resolve_run_assets(run, agent, user)
+
+    assert [entry.id for entry in resolved] == [asset.id]
+    assert resolve_ref.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_build_output_keeps_text_when_agent_row_is_missing(io_db, monkeypatch):
+    user, _, _, _, conversation, _ = io_db
+    from app.services import wechat_agent_io
+
+    canonical = await Message.create(
+        id=uuid4(),
+        conversation=conversation,
+        role="assistant",
+        content="Still deliver this answer",
+        is_round_canonical=True,
+    )
+    query = SimpleNamespace(first=AsyncMock(return_value=None))
+    monkeypatch.setattr(wechat_agent_io.Agent, "filter", lambda **_kwargs: query)
+
+    payloads = await wechat_agent_io.build_output(
+        SimpleNamespace(canonical_message_id=canonical.id, agent_id=uuid4()),
+        SimpleNamespace(),
+        SimpleNamespace(),
+        user,
+    )
+
+    assert payloads == [{"kind": "text", "text": "Still deliver this answer"}]
+
+
+@pytest.mark.asyncio
+async def test_voice_caption_is_not_repeated_after_transcription(io_db, monkeypatch):
+    user, _, agent, binding, _, session = io_db
+    receipt = await make_receipt(
+        binding,
+        user,
+        agent,
+        receipt_message(
+            [
+                {"type": 1, "text_item": {"text": "Meeting notes"}},
+                {"type": 3, "voice_item": {"media": {}}},
+                {"type": 3, "voice_item": {"media": {}}},
+            ]
+        ),
+    )
+    from app.services import wechat_agent_io
+
+    client = SimpleNamespace(
+        download_media=AsyncMock(
+            side_effect=[
+                (b"voice-one", "voice-one.silk", "audio/silk"),
+                (b"voice-two", "voice-two.silk", "audio/silk"),
+            ]
+        )
+    )
+    monkeypatch.setattr(wechat_agent_io, "_store_upload", AsyncMock())
+    monkeypatch.setattr(
+        wechat_agent_io,
+        "_transcribe_voice",
+        AsyncMock(side_effect=["First transcript", "Second transcript"]),
+    )
+
+    request = await wechat_agent_io.normalize_input(
+        receipt, session, agent, user, client
+    )
+
+    assert request.message == "First transcript\n\nMeeting notes\n\nSecond transcript"
+
+
+@pytest.mark.asyncio
+async def test_normalize_input_rejects_media_when_attachments_disabled(io_db):
+    user, _, agent, binding, _, session = io_db
+    agent.enable_attachments = False
+    await agent.save(update_fields=["enable_attachments"])
+    receipt = await make_receipt(
+        binding,
+        user,
+        agent,
+        receipt_message([{"type": 9, "location_item": {"text": "here"}}]),
+    )
+
+    with pytest.raises(BusinessError) as denied:
+        await __import__(
+            "app.services.wechat_agent_io", fromlist=["normalize_input"]
+        ).normalize_input(receipt, session, agent, user, None)
+
+    assert denied.value.msg_key == "wechat_agent_attachments_disabled"
+
+
+@pytest.mark.asyncio
+async def test_missing_video_model_is_distinguished_from_nonvision_model(
+    io_db, monkeypatch
+):
+    user, _, agent, binding, _, session = io_db
+    receipt = await make_receipt(
+        binding,
+        user,
+        agent,
+        receipt_message([{"type": 5, "video_item": {"media": {}}}]),
+    )
+    from app.services import wechat_agent_io
+
+    monkeypatch.setattr(
+        wechat_agent_io, "_agent_vision_model_id", AsyncMock(return_value=None)
+    )
+    client = SimpleNamespace(
+        download_media=AsyncMock(return_value=(b"video", "clip.mp4", "video/mp4"))
+    )
+
+    with pytest.raises(BusinessError) as unsupported:
+        await wechat_agent_io.normalize_input(receipt, session, agent, user, client)
+
+    assert unsupported.value.msg_key == "wechat_agent_video_unsupported"
+    client.download_media.assert_awaited_once_with(
+        {"type": 5, "video_item": {"media": {}}}, 10 * 1024 * 1024
+    )
+
+
+@pytest.mark.asyncio
+async def test_text_only_receipt_ignores_unused_model_and_preserves_all_text(io_db):
+    user, _, agent, binding, _, session = io_db
+    receipt = await make_receipt(
+        binding,
+        user,
+        agent,
+        receipt_message(
+            [
+                {"type": 1, "text_item": {"text": "First"}},
+                {"type": 1, "text_item": {"text": "Second"}},
+            ]
+        ),
+    )
+    from app.services import wechat_agent_io
+
+    request = await wechat_agent_io.normalize_input(
+        receipt, session, agent, user, SimpleNamespace()
+    )
+
+    assert request.message == "First\n\nSecond"
+    assert request.images == [] and request.file_urls == []
+
+
+@pytest.mark.asyncio
+async def test_invalid_saved_delivery_context_agent_is_unavailable(io_db):
+    from app.services import wechat_agent_io
+
+    user, _, agent, binding, _, session = io_db
+    receipt = await make_receipt(binding, user, agent, receipt_message([]))
+    agent.status = AgentStatus.DRAFT
+    await agent.save(update_fields=["status"])
+
+    context, reason = await wechat_agent_io._delivery_context(
+        binding, None, receipt, user
+    )
+
+    assert context is None
+    assert reason == "agent_access_denied"
+
+
+@pytest.mark.asyncio
+async def test_delivery_without_active_agent_session_stays_unavailable(io_db):
+    from app.services import wechat_agent_io
+
+    user, _, agent, binding, _, session = io_db
+    receipt = await make_receipt(binding, user, agent, receipt_message([]))
+    await session.delete()
+
+    context, reason = await wechat_agent_io._delivery_context(
+        binding, None, receipt, user
+    )
+
+    assert context is None
+    assert reason == "wechat_agent_conversation_missing"

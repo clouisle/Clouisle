@@ -635,3 +635,61 @@ async def test_generic_octet_stream_image_is_sniffed(monkeypatch):
     text = await renderer.attachment({"file_token": "image", "name": "image.png"})
     assert "data:image/png;base64," in text
     assert renderer.warnings == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "sheets",
+    [
+        None,
+        [None],
+        [{"sheet_id": "s"}],
+        [{"sheet_id": "s", "grid_properties": {"row_count": -1, "column_count": 1}}],
+        [{"sheet_id": "s", "grid_properties": {"row_count": True, "column_count": 1}}],
+    ],
+)
+async def test_invalid_sheet_metadata_aborts_before_partial_import(monkeypatch, sheets):
+    monkeypatch.setattr(
+        tabular, "request_json", AsyncMock(return_value=envelope({"sheets": sheets}))
+    )
+    with pytest.raises(FeishuAPIError):
+        await tabular.load_tabular(SimpleNamespace(), "sheet", "book", "Broken")
+
+
+@pytest.mark.asyncio
+async def test_repeated_sheet_identity_aborts_instead_of_duplicate_content(monkeypatch):
+    sheet = {"sheet_id": "s", "grid_properties": {"row_count": 0, "column_count": 0}}
+    monkeypatch.setattr(
+        tabular,
+        "request_json",
+        AsyncMock(return_value=envelope({"sheets": [sheet, sheet]})),
+    )
+    with pytest.raises(FeishuAPIError, match="repeated"):
+        await tabular.load_tabular(SimpleNamespace(), "sheet", "book", "Repeated")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "value_range",
+    [
+        {"range": "other!A1", "majorDimension": "ROWS", "values": []},
+        {"range": "s!A1", "majorDimension": "COLUMNS", "values": []},
+        {"range": "s!A1", "majorDimension": "ROWS", "values": None},
+        {"range": "s!A1", "majorDimension": "ROWS", "values": [[1], [2]]},
+        {"range": "s!A1", "majorDimension": "ROWS", "values": [[1, 2]]},
+        {"range": "s!A1", "majorDimension": "ROWS", "values": ["not a row"]},
+        {"range": "", "majorDimension": "ROWS", "values": [[1]]},
+    ],
+)
+async def test_sheet_range_mismatch_never_becomes_silent_data_loss(
+    monkeypatch, value_range
+):
+    monkeypatch.setattr(
+        tabular,
+        "request_json",
+        AsyncMock(return_value=envelope({"valueRanges": [value_range]})),
+    )
+    with pytest.raises(FeishuAPIError):
+        await tabular._sheet_values(
+            SimpleNamespace(), "/values", "s!A1", 1, 1, "FormattedValue", [None]
+        )

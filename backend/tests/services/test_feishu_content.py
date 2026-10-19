@@ -401,3 +401,39 @@ async def test_oversized_export_result_never_requests_download(transport_client)
     with pytest.raises(FeishuAPIError, match="size limit"):
         await content.export_document(client, "doc-token", "doc", "docx")
     assert not any(request.url.path.endswith("/download") for request in requests)
+
+
+@pytest.mark.asyncio
+async def test_export_download_checks_decoded_size_and_accepts_gzip_encoding(
+    transport_client, monkeypatch
+):
+    import gzip
+
+    monkeypatch.setattr(content.asyncio, "sleep", AsyncMock())
+    decoded = b"expanded document"
+    encoded = gzip.compress(decoded)
+    states = iter(
+        [
+            httpx.Response(200, json={"code": 0, "data": {"ticket": "task"}}),
+            httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {"result": export_result(file_size=len(decoded))},
+                },
+            ),
+            httpx.Response(
+                200,
+                content=encoded,
+                headers={
+                    "content-encoding": "gzip",
+                    "content-length": str(len(encoded)),
+                },
+            ),
+        ]
+    )
+    client, _ = transport_client(lambda _request: next(states))
+
+    result = await content.export_document(client, "doc-token", "doc", "docx")
+
+    assert result.content == decoded

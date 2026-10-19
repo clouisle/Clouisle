@@ -26,14 +26,14 @@ import type {
   WeChatTarget,
 } from '@/lib/api/wechat-knowledge'
 
-mock.module('next-intl', () => ({
-  useTranslations: () => (key: string, values?: Record<string, string>) => {
-    if (values?.purpose != null) return `${key}:${values.purpose}`
-    if (values?.target != null) return `${key}:${values.target}`
-    if (values?.status != null) return `${key}:${values.status}`
-    return key
-  },
-}))
+const translate = (key: string, values?: Record<string, string>) => {
+  if (values?.purpose != null) return `${key}:${values.purpose}`
+  if (values?.target != null) return `${key}:${values.target}`
+  if (values?.status != null) return `${key}:${values.status}`
+  return key
+}
+
+mock.module('next-intl', () => ({ useTranslations: () => translate }))
 mock.module('next/link', () => ({
   default: ({ children, href }: { children?: React.ReactNode; href: string }) => <a href={href}>{children}</a>,
 }))
@@ -153,6 +153,16 @@ async function flush(container: HTMLElement, expected: string) {
     if ((container.textContent ?? '').includes(expected)) return
     await settle(10)
   }
+  throw new Error(`Timed out waiting for rendered text: ${expected}`)
+}
+
+async function flushInputValue(container: HTMLElement, value: string) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const inputs = [...container.querySelectorAll('input, textarea')]
+    if (inputs.some(input => input.value === value)) return
+    await settle(10)
+  }
+  throw new Error(`Input value did not appear: ${value}`)
 }
 
 async function render(options: { bindings?: WeChatBinding[]; receipts?: WeChatReceipt[]; agentReceipts?: WeChatAgentReceipt[] } = {}) {
@@ -211,6 +221,8 @@ describe('WeChatKnowledge purpose selection', () => {
       })],
     })
     await click(container, 'change')
+    await flush(container, 'User name')
+    await flushInputValue(container, 'Ada')
     await click(container, 'save')
     expect(purposeMock).toHaveBeenCalledTimes(1)
     expect(purposeMock.mock.calls[0]?.[1]).toMatchObject({

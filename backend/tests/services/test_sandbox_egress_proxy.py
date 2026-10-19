@@ -176,3 +176,124 @@ async def test_site_setting_read_failure_blocks_all_sandbox_egress(monkeypatch):
     monkeypatch.setattr(SiteSetting, "get_value", get_value)
 
     assert await get_sandbox_network_allowlist() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("wire_request", "reason"),
+    [
+        (b"broken\r\n\r\n", "invalid_request"),
+        (b"GET http://pypi.org/simple HTTP/1.1\r\n\r\n", "https_required"),
+        (b"CONNECT pypi.org:80 HTTP/1.1\r\n\r\n", "port_not_allowed"),
+        (b"CONNECT 127.0.0.1:443 HTTP/1.1\r\n\r\n", "invalid_host"),
+        (b"CONNECT pypi.org:443/path HTTP/1.1\r\n\r\n", "invalid_destination"),
+    ],
+)
+async def test_proxy_rejects_unsafe_requests_before_opening_upstream(
+    monkeypatch, wire_request, reason
+):
+    proxy = SandboxEgressProxy(job_id="unsafe-request", allowed_hosts=["pypi.org"])
+    upstream = AsyncMock(
+        side_effect=AssertionError("unsafe destination reached upstream")
+    )
+    monkeypatch.setattr(proxy, "_connect_public", upstream)
+    async with proxy:
+        reader, writer = await asyncio.open_unix_connection(str(proxy.socket_path))
+        try:
+            writer.write(wire_request)
+            await writer.drain()
+            response = await asyncio.wait_for(reader.read(), 2)
+            assert response.startswith(b"HTTP/1.1 403 Forbidden")
+            assert reason.encode() in response
+            assert any(
+                f"reason={reason}" in entry for entry in proxy.blocked_diagnostics
+            )
+            upstream.assert_not_awaited()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_proxy_returns_bad_gateway_when_allowed_upstream_is_unreachable(
+    monkeypatch,
+):
+    proxy = SandboxEgressProxy(job_id="unreachable", allowed_hosts=["pypi.org"])
+    monkeypatch.setattr(
+        proxy, "_connect_public", AsyncMock(side_effect=OSError("unreachable"))
+    )
+    async with proxy:
+        reader, writer = await asyncio.open_unix_connection(str(proxy.socket_path))
+        try:
+            writer.write(b"CONNECT pypi.org:443 HTTP/1.1\r\n\r\n")
+            await writer.drain()
+            response = await asyncio.wait_for(reader.read(), 2)
+            assert response.startswith(b"HTTP/1.1 502 Bad Gateway")
+            assert b"host pypi.org" in response
+            assert proxy.blocked_diagnostics == []
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        "",
+        " ",
+        "https://pypi.org:invalid/simple",
+        "https://pypi.org/simple?token=secret",
+        "https://pypi.org/simple#fragment",
+    ],
+)
+def test_package_sources_reject_ambiguous_or_secret_bearing_urls(value):
+    with pytest.raises(SandboxNetworkPolicyError):
+        normalize_sandbox_package_source(value, DEFAULT_SANDBOX_NETWORK_ALLOWLIST)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        "",
+        "white space.example",
+        "\ud800.example",
+        "-bad.example",
+        "localhost",
+        "x" * 64 + ".example",
+    ],
+)
+def test_invalid_network_hosts_fail_closed(value):
+    assert (
+        sandbox_network_host_is_allowed(value, DEFAULT_SANDBOX_NETWORK_ALLOWLIST)
+        is False
+    )
+
+
+def test_nonstring_allowlist_entry_fails_closed():
+    with pytest.raises(SandboxNetworkPolicyError):
+        normalize_sandbox_network_allowlist(["pypi.org", None])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "address", ["127.0.0.1", "10.0.0.1", "169.254.169.254", "::1", "fc00::1"]
+)
+async def test_allowlisted_host_cannot_resolve_to_private_network(monkeypatch, address):
+    import socket
+
+    proxy = SandboxEgressProxy(job_id="dns-rebinding", allowed_hosts=["pypi.org"])
+    loop = asyncio.get_running_loop()
+    family = socket.AF_INET6 if ":" in address else socket.AF_INET
+    endpoint = (address, 443, 0, 0) if family == socket.AF_INET6 else (address, 443)
+    monkeypatch.setattr(
+        loop,
+        "getaddrinfo",
+        AsyncMock(return_value=[(family, socket.SOCK_STREAM, 6, "", endpoint)]),
+    )
+    connect = AsyncMock(side_effect=AssertionError("private endpoint was contacted"))
+    monkeypatch.setattr(loop, "sock_connect", connect)
+    with pytest.raises(ValueError, match="No public address"):
+        await proxy._connect_public("pypi.org", 443)
+    connect.assert_not_awaited()
