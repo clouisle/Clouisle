@@ -430,6 +430,11 @@ async def test_rebuild_context_tool_concurrency_reads_registry(monkeypatch):
     monkeypatch.setattr(
         agent_run_worker.Message, "get_or_none", AsyncMock(return_value=user_msg)
     )
+    monkeypatch.setattr(
+        agent_run_worker,
+        "AgentRunStream",
+        lambda _run_id: SimpleNamespace(seed_sequence=AsyncMock()),
+    )
 
     loop_context, _, _ = await agent_run_worker._rebuild_context(
         {

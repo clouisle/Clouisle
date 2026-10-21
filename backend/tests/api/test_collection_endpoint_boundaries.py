@@ -10,6 +10,12 @@ from app.schemas.response import BusinessError, ResponseCode
 from app.services import wechat_connection
 
 
+@pytest.fixture(autouse=True)
+def enabled_wechat_features(monkeypatch):
+    """The feature gate is covered separately; these tests assert the target boundaries."""
+    monkeypatch.setattr(wechat_knowledge, "require_feature", AsyncMock())
+
+
 @pytest.mark.asyncio
 async def test_wechat_binding_is_owner_scoped(monkeypatch):
     user = SimpleNamespace(id=uuid4())
