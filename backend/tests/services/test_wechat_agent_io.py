@@ -2157,3 +2157,174 @@ async def test_delivery_without_active_agent_session_stays_unavailable(io_db):
 
     assert context is None
     assert reason == "wechat_agent_conversation_missing"
+
+
+@pytest.mark.asyncio
+async def test_normalize_input_rejects_noncommand_media_payloads(io_db):
+    from app.services import wechat_agent_io
+
+    user, _, agent, binding, _, session = io_db
+    receipt = await make_receipt(
+        binding,
+        user,
+        agent,
+        {"item_list": [{"type": 99, "location_item": {"text": "not a command"}}]},
+    )
+    with pytest.raises(BusinessError) as unsupported:
+        await wechat_agent_io.normalize_input(receipt, session, agent, user, None)
+    assert unsupported.value.msg_key == "wechat_agent_media_unsupported"
+
+
+@pytest.mark.asyncio
+async def test_normalize_input_maps_failed_media_download_to_io_boundary(io_db):
+    from app.services import wechat_agent_io
+
+    user, _, agent, binding, _, session = io_db
+    receipt = await make_receipt(
+        binding,
+        user,
+        agent,
+        receipt_message([{"type": 4, "file_item": {"file_name": "notes.txt"}}]),
+    )
+    client = SimpleNamespace(
+        download_media=AsyncMock(side_effect=WeChatAPIError("media_missing"))
+    )
+
+    with pytest.raises(WeChatAPIError) as unavailable:
+        await wechat_agent_io.normalize_input(receipt, session, agent, user, client)
+    assert unavailable.value.code == "media_missing"
+    client.download_media.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_send_one_requeues_delivery_when_feature_revoked_during_send(
+    io_db, monkeypatch
+):
+    from app.services import wechat_agent_io
+
+    user, _, agent, binding, _, _ = io_db
+    receipt = await make_receipt(binding, user, agent, receipt_message([]))
+    delivery = await WeChatAgentDelivery.create(
+        id=uuid4(),
+        receipt=receipt,
+        event_key="feature-revoked-during-send",
+        sequence=0,
+        payload={"kind": "text", "text": "answer"},
+        status="sending",
+    )
+    monkeypatch.setattr(
+        wechat_agent_io,
+        "_send_payload",
+        AsyncMock(
+            side_effect=BusinessError(code=400, msg_key="integration_feature_disabled")
+        ),
+    )
+    monkeypatch.setattr(
+        wechat_agent_io, "enabled_features", AsyncMock(return_value={"agent_chat"})
+    )
+    monkeypatch.setattr(
+        wechat_agent_io,
+        "_delivery_context",
+        AsyncMock(return_value=({"binding": binding}, "")),
+    )
+
+    await wechat_agent_io._send_one(delivery, binding)
+
+    await delivery.refresh_from_db()
+    assert delivery.status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_register_inbound_media_rejects_non_media_item(io_db):
+    from app.services import wechat_agent_io
+
+    user, _, agent, binding, _, _ = io_db
+    receipt = await make_receipt(binding, user, agent, receipt_message([]))
+    with pytest.raises(BusinessError) as unsupported:
+        await wechat_agent_io._register_inbound_media(
+            {"type": 3},
+            agent=agent,
+            user=user,
+            receipt=receipt,
+            index=0,
+            raw=(b"voice", "voice.silk", "audio/silk"),
+        )
+    assert unsupported.value.msg_key == "wechat_agent_media_unsupported"
+
+
+@pytest.mark.asyncio
+async def test_delivery_context_uses_session_when_receipt_run_is_missing(
+    io_db, monkeypatch
+):
+    from app.services import wechat_agent_io
+
+    user, _, agent, binding, conversation, session = io_db
+    receipt = await make_receipt(binding, user, agent, receipt_message([]))
+    receipt_context = SimpleNamespace(
+        binding_id=binding.id,
+        user_id=user.id,
+        agent_id=agent.id,
+        run_id=uuid4(),
+        created_at=receipt.created_at,
+    )
+    monkeypatch.setattr(wechat_agent_io, "_run_row", AsyncMock(return_value=None))
+
+    context, reason = await wechat_agent_io._delivery_context(
+        binding, None, receipt_context, user
+    )
+
+    assert reason == ""
+    assert context["conversation_id"] == conversation.id
+    assert context["session"].id == session.id
+
+
+@pytest.mark.asyncio
+async def test_delivery_retries_when_feature_is_disabled_mid_send(io_db, monkeypatch):
+    from app.services import wechat_agent_io
+
+    user, _, agent, binding, _, _ = io_db
+    receipt = await make_receipt(binding, user, agent, receipt_message([]))
+    delivery = await WeChatAgentDelivery.create(
+        id=uuid4(),
+        receipt=receipt,
+        event_key="feature-retry",
+        sequence=0,
+        payload={"kind": "text", "text": "answer"},
+        status="sending",
+    )
+    monkeypatch.setattr(
+        wechat_agent_io,
+        "enabled_features",
+        AsyncMock(return_value={"knowledge_collection"}),
+    )
+
+    await wechat_agent_io._send_one(delivery, binding)
+
+    await delivery.refresh_from_db()
+    assert delivery.status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_delivery_feature_revocation_after_claim_keeps_pending_for_retry(
+    io_db, monkeypatch
+):
+    from app.services import wechat_agent_io
+
+    user, _, agent, binding, _, _ = io_db
+    receipt = await make_receipt(binding, user, agent, receipt_message([]))
+    delivery = await WeChatAgentDelivery.create(
+        id=uuid4(),
+        receipt=receipt,
+        event_key="revoked-feature",
+        sequence=0,
+        payload={"kind": "text", "text": "answer"},
+    )
+    monkeypatch.setattr(
+        wechat_agent_io,
+        "enabled_features",
+        AsyncMock(side_effect=[{"agent_chat"}, set()]),
+    )
+    await wechat_agent_io.deliver_pending(binding, user)
+
+    await delivery.refresh_from_db()
+    assert delivery.status == "pending"

@@ -468,6 +468,141 @@ async def test_lifecycle_watcher_stops_when_parent_config_or_lease_changes(
         assert client.refresh_calls == 0
 
 
+@pytest.mark.asyncio
+async def test_lifecycle_refreshes_ownership_while_config_is_current(
+    channel, monkeypatch
+):
+    class Redis:
+        closed = False
+        refresh_calls = 0
+
+        async def eval(self, *_args):
+            self.refresh_calls += 1
+            return 1
+
+        async def aclose(self):
+            self.closed = True
+
+    client = Redis()
+    monkeypatch.setattr(receiver, "receiver_redis", lambda: client)
+    parent_checks = iter((100, 100, 999))
+    monkeypatch.setattr(receiver.os, "getppid", lambda: next(parent_checks))
+    monkeypatch.setattr(receiver, "configured_receiver", lambda _integration: True)
+    monkeypatch.setattr(receiver, "receiver_fingerprint", lambda _integration: "same")
+    monkeypatch.setattr(
+        receiver,
+        "get_builtin_integration",
+        AsyncMock(return_value=channel.integration),
+    )
+    monkeypatch.setattr(receiver.asyncio, "sleep", AsyncMock())
+    killed = []
+    monkeypatch.setattr(receiver.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    config = receiver.ReceiverConfig(
+        channel.config.integration_id,
+        channel.config.app_id,
+        channel.config.encrypted_secret,
+        "worker",
+    )
+
+    await receiver._watch_lifecycle(
+        config, {"fingerprint": "same", "state": "connected"}, 100
+    )
+
+    assert client.refresh_calls == 1
+    assert client.closed
+    assert killed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "missing",
+    [
+        "CLOUISLE_RECEIVER_OWNER",
+        "CLOUISLE_RECEIVER_PARENT",
+        "CLOUISLE_RECEIVER_FINGERPRINT",
+    ],
+)
+async def test_receiver_entrypoint_requires_every_ownership_value(monkeypatch, missing):
+    values = {
+        "CLOUISLE_RECEIVER_OWNER": "worker",
+        "CLOUISLE_RECEIVER_PARENT": "123",
+        "CLOUISLE_RECEIVER_FINGERPRINT": "fingerprint",
+    }
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv(missing)
+
+    with pytest.raises(ValueError, match="managed automatically"):
+        receiver.run_receiver()
+
+
+def test_receiver_empty_secret_stops_before_sdk_start_and_cleans_up(
+    monkeypatch,
+):
+    import sys
+    from types import ModuleType
+
+    sdk_loop, database_loop = asyncio.new_event_loop(), asyncio.new_event_loop()
+    loops = iter((database_loop, sdk_loop))
+    monkeypatch.setattr(receiver.asyncio, "new_event_loop", lambda: next(loops))
+    monkeypatch.setattr(receiver.asyncio, "set_event_loop", lambda _loop: None)
+    monkeypatch.setattr(
+        receiver,
+        "Thread",
+        lambda **_kwargs: SimpleNamespace(start=lambda: None, join=lambda **_kw: None),
+    )
+    monkeypatch.setattr(receiver.signal, "getsignal", lambda _signal: "old")
+    monkeypatch.setattr(receiver.signal, "signal", lambda *_args: None)
+    config = receiver.ReceiverConfig(uuid4(), "cli", "encrypted", "worker")
+    monkeypatch.setattr(receiver, "_initialize", AsyncMock(return_value=config))
+
+    cancellation = []
+
+    class Watcher:
+        def cancel(self):
+            cancellation.append(True)
+            return True
+
+    watcher = Watcher()
+
+    scheduled = []
+
+    def schedule(coroutine, _loop):
+        coroutine.close()
+        scheduled.append(coroutine)
+        if len(scheduled) == 1:
+            return SimpleNamespace(result=lambda **_kwargs: config)
+        return watcher
+
+    watcher.result = lambda **_kwargs: None
+
+    monkeypatch.setattr(receiver.asyncio, "run_coroutine_threadsafe", schedule)
+    monkeypatch.setattr(receiver, "decrypt_secret", lambda _secret: "")
+    monkeypatch.setenv("CLOUISLE_RECEIVER_OWNER", "worker")
+    monkeypatch.setenv("CLOUISLE_RECEIVER_PARENT", "123")
+    monkeypatch.setenv("CLOUISLE_RECEIVER_FINGERPRINT", "fingerprint")
+
+    class SDKClient:
+        def __init__(self, *_args, **_kwargs):
+            raise AssertionError("SDK must not start without an app secret")
+
+    lark = ModuleType("lark_oapi")
+    lark.ws = SimpleNamespace(Client=SDKClient)
+    lark.LogLevel = SimpleNamespace(WARNING=1)
+    ws_module = ModuleType("lark_oapi.ws")
+    ws_module.client = SimpleNamespace(
+        loop=None, logger=SimpleNamespace(addFilter=lambda _f: None)
+    )
+    monkeypatch.setitem(sys.modules, "lark_oapi", lark)
+    monkeypatch.setitem(sys.modules, "lark_oapi.ws", ws_module)
+
+    receiver.run_receiver()
+
+    assert cancellation
+    assert not sdk_loop.is_running()
+    assert not database_loop.is_running()
+
+
 def test_receiver_entrypoint_rejects_missing_worker_ownership(monkeypatch):
     for name in (
         "CLOUISLE_RECEIVER_OWNER",

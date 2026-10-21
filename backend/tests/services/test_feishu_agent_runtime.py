@@ -1125,3 +1125,248 @@ async def test_dispatch_failure_is_recorded_for_recovery(world, monkeypatch):
     updated = await FeishuAgentReceipt.get(id=receipt.id)
     assert updated.status == "submitted"
     assert updated.error == "feishu_agent_run_failed"
+
+
+@pytest.mark.asyncio
+async def test_receipt_bound_to_revoked_agent_is_explained_not_rerouted(world):
+    receipt = await receipt_for(world, message_id="om_revoked")
+    await Agent.filter(id=world.agent.id).update(status=AgentStatus.DRAFT)
+
+    await runtime.process_pending()
+
+    failed = await FeishuAgentReceipt.get(id=receipt.id)
+    assert failed.status == "error"
+    assert failed.error == "feishu_agent_agent_unavailable"
+    assert not world.submission.calls
+    assert not await FeishuAgentDelivery.filter(receipt_id=receipt.id).exists()
+
+
+@pytest.mark.asyncio
+async def test_final_delivery_is_unavailable_after_user_revocation(world):
+    receipt = await receipt_for(world, message_id="om_revoked_user")
+    await runtime.process_pending()
+    run = world.submission.run
+    await AgentRun.filter(id=run.id).update(status=AgentRunStatus.COMPLETED)
+    await User.filter(id=world.user.id).update(is_active=False)
+
+    await runtime._finalize_receipt(receipt, None, await AgentRun.get(id=run.id))
+
+    failed = await FeishuAgentReceipt.get(id=receipt.id)
+    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id, event_key="final")
+    assert failed.status == "completed"
+    assert failed.error == "feishu_agent_channel_disabled"
+    assert delivery.status == "unavailable"
+    assert delivery.error == "feishu_agent_channel_disabled"
+    assert not await FeishuAgentDelivery.filter(
+        receipt_id=receipt.id, status="pending"
+    ).exists()
+
+
+@pytest.mark.asyncio
+async def test_accept_different_message_ids_as_distinct_provider_events(world):
+    first = await receipt_for(world, message_id="om_distinct_1")
+    second_id = await runtime.accept_message(text_event(message_id="om_distinct_2"))
+
+    assert second_id is not None
+    second = await FeishuAgentReceipt.get(id=second_id)
+    assert first.message_id != second.message_id
+    assert await FeishuAgentReceipt.filter(user_id=world.user.id).count() == 2
+
+
+@pytest.mark.asyncio
+async def test_accept_ignores_unhandled_message_type(world):
+    event = text_event(message_type="image", message_id="om_image")
+
+    assert await runtime.accept_message(event) is None
+    assert not await FeishuAgentReceipt.filter(message_id="om_image").exists()
+
+
+@pytest.mark.asyncio
+async def test_finalize_skips_delivery_when_agent_authorization_revoked(world):
+    receipt = await receipt_for(world, message_id="om_revoked_agent_output")
+    await runtime.process_pending()
+    run = world.submission.run
+    await AgentRun.filter(id=run.id).update(status=AgentRunStatus.COMPLETED)
+    await Agent.filter(id=world.agent.id).update(status=AgentStatus.DRAFT)
+
+    await runtime._finalize_receipt(receipt, None, await AgentRun.get(id=run.id))
+
+    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id, event_key="final")
+    assert delivery.status == "unavailable"
+    assert delivery.error == "feishu_agent_channel_disabled"
+    assert not await FeishuAgentDelivery.filter(
+        receipt_id=receipt.id, status="pending"
+    ).exists()
+
+
+@pytest.mark.asyncio
+async def test_send_one_records_transport_failure_without_retry(world):
+    receipt = await receipt_for(world, message_id="om_send_failure")
+    await runtime._create_delivery(
+        receipt, event_key="command", sequence=0, text="reply"
+    )
+    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id)
+    await FeishuAgentDelivery.filter(id=delivery.id).update(status="sending")
+    world.transport.error = RuntimeError("provider rejected request")
+
+    await runtime._send_one(await FeishuAgentDelivery.get(id=delivery.id))
+
+    recorded = await FeishuAgentDelivery.get(id=delivery.id)
+    assert recorded.status == "error"
+    assert recorded.error == "feishu_agent_run_failed"
+    assert len(world.transport.sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_process_submitted_missing_run_records_failure(world):
+    receipt = await receipt_for(world, message_id="om_missing_run")
+    await runtime.process_pending()
+    await FeishuAgentSession.filter(
+        integration_id=receipt.integration_id,
+        chat_id=receipt.chat_id,
+        user_id=receipt.user_id,
+        agent_id=receipt.agent_id,
+    ).update(active_run_id=None)
+    await FeishuAgentReceipt.filter(id=receipt.id).update(
+        status="submitted", run_id=None
+    )
+
+    await runtime.process_message(str(receipt.id))
+
+    failed = await FeishuAgentReceipt.get(id=receipt.id)
+    assert failed.status == "error"
+    assert failed.error == "feishu_agent_run_failed"
+
+
+@pytest.mark.asyncio
+async def test_delivery_without_receipt_is_unavailable(world, monkeypatch):
+    receipt = await receipt_for(world, message_id="om_orphan")
+    await runtime._create_delivery(
+        receipt, event_key="command", sequence=0, text="reply"
+    )
+    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id)
+
+    class MissingReceiptQuery:
+        async def first(self):
+            return None
+
+    monkeypatch.setattr(
+        FeishuAgentReceipt,
+        "filter",
+        lambda **kwargs: MissingReceiptQuery(),
+    )
+    await runtime._send_one(delivery)
+
+    assert not world.transport.sent
+
+
+@pytest.mark.asyncio
+async def test_failed_question_submission_consumes_answer(world, monkeypatch):
+    receipt, run = await _waiting_run(
+        world, [{"id": "q1", "question": "Why?", "required": True}]
+    )
+    answer = await receipt_for(world, text="because", message_id="om_answer_failed")
+
+    async def failed_submit(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "app.services.agent_run_store.submit_user_answers", failed_submit
+    )
+    await runtime.process_pending()
+
+    consumed = await FeishuAgentReceipt.get(id=answer.id)
+    assert consumed.status == "completed"
+    assert consumed.error == "feishu_agent_run_failed"
+    assert (await AgentRun.get(id=run.id)).status == AgentRunStatus.WAITING
+    assert (await FeishuAgentReceipt.get(id=receipt.id)).status == "submitted"
+
+
+def test_question_text_formats_multiple_questions_and_options():
+    assert (
+        runtime._question_text(
+            {"question": "  Pick one? ", "options": ["A", "B"]}, 2, 3
+        )
+        == "[2/3]\nPick one?\nA / B"
+    )
+    assert runtime._question_text({"question": "Solo?"}, 1, 1) == "Solo?"
+
+
+@pytest.mark.asyncio
+async def test_announce_questions_reports_partial_answers(world):
+    receipt = await receipt_for(world)
+    from app.models.agent import Conversation
+
+    conversation = await Conversation.create(agent=world.agent, user=world.user)
+    run = await AgentRun.create(
+        id=uuid4(),
+        agent=world.agent,
+        conversation=conversation,
+        user=world.user,
+        mode=AgentRunMode.SEND,
+        status=AgentRunStatus.WAITING,
+        pending_tool_call_id="call-partial",
+        pending_tool_input={
+            "questions": [
+                {"id": "q1", "question": "First?"},
+                {"id": "q2", "question": "Second?"},
+            ]
+        },
+    )
+
+    await runtime._announce_questions(receipt, run, answered={"q1": "done"})
+
+    delivery = await FeishuAgentDelivery.get(
+        receipt_id=receipt.id, event_key="ask:call-partial"
+    )
+    assert "Second?" in delivery.text
+    assert "First?" not in delivery.text
+    assert "Answered 1 of 2 questions" in delivery.text
+
+
+@pytest.mark.asyncio
+async def test_clear_active_run_keeps_different_pointer(world):
+    session = await FeishuAgentSession.create(
+        integration=world.integration,
+        chat_id=CHAT_ID,
+        user=world.user,
+        agent=world.agent,
+    )
+    from app.models.agent import Conversation
+
+    conversation = await Conversation.create(agent=world.agent, user=world.user)
+    run = await AgentRun.create(
+        id=uuid4(),
+        agent=world.agent,
+        conversation=conversation,
+        user=world.user,
+        mode=AgentRunMode.SEND,
+        status=AgentRunStatus.COMPLETED,
+    )
+    other_run = await AgentRun.create(
+        id=uuid4(),
+        agent=world.agent,
+        conversation=conversation,
+        user=world.user,
+        mode=AgentRunMode.SEND,
+        status=AgentRunStatus.RUNNING,
+    )
+    pointer = other_run.id
+    session.active_run_id = pointer
+    await session.save(update_fields=["active_run_id"])
+
+    await runtime._clear_active_run(session, run)
+
+    assert (await FeishuAgentSession.get(id=session.id)).active_run_id == pointer
+
+
+@pytest.mark.asyncio
+async def test_agent_list_explains_when_no_agents_are_selectable(world):
+    await Agent.filter(id=world.agent.id).update(status=AgentStatus.DRAFT)
+
+    text = await runtime._agents_text(
+        await runtime._selectable_agents(world.integration, world.user)
+    )
+
+    assert text
+    assert world.agent.name not in text
