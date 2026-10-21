@@ -2,6 +2,7 @@
 
 import React from 'react'
 import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { ApiError } from '@/lib/api/client'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 import { DatabaseToolDialog } from './database-tool-dialog'
 import { ToolDetail } from '@/lib/api'
@@ -35,13 +36,9 @@ mock.module('@/components/ui/dialog', () => ({
   DialogHeader: passthrough(),
   DialogTitle: passthrough('h2'),
 }))
-
 mock.module('@/components/ui/select', () => ({
   Select: ({ value, onValueChange, children }: React.PropsWithChildren<{ value?: string; onValueChange?: (val: string) => void }>) => (
-    <div data-value={value}>
-      <button data-testid="select-trigger" onClick={() => onValueChange?.('mysql')}>change-to-mysql</button>
-      {children}
-    </div>
+    <div id="team" data-value={value} onValueChange={onValueChange}>{children}</div>
   ),
   SelectContent: passthrough(),
   SelectItem: passthrough(),
@@ -49,7 +46,6 @@ mock.module('@/components/ui/select', () => ({
   SelectValue: passthrough('span'),
 }))
 
-const TabContext = React.createContext<((v: string) => void) | undefined>(undefined)
 mock.module('@/components/ui/tabs', () => ({
   Tabs: ({ children, value, onValueChange }: React.PropsWithChildren<{ value?: string; onValueChange?: (v: string) => void }>) => (
     <TabContext.Provider value={onValueChange}>
@@ -401,5 +397,207 @@ describe('DatabaseToolDialog', () => {
     })
     await act(async () => form.props.onSubmit({ preventDefault: () => undefined }))
     expect(renderer.root.findByProps({ id: 'name' }).props.value).toBe('test_db')
+  })
+  test('shows required field validation and clears each error after correction', async () => {
+    const onSave = mock(async () => undefined)
+    let renderer: ReactTestRenderer
+
+    await act(async () => {
+      renderer = create(<DatabaseToolDialog open onOpenChange={() => undefined} onSave={onSave} />)
+    })
+    renderers.push(renderer!)
+
+    act(() => renderer!.root.findByProps({ 'data-testid': 'tab-url' }).props.onClick())
+    const form = renderer!.root.findByType('form')
+    await act(async () => form.props.onSubmit({ preventDefault: () => undefined }))
+
+    expect(onSave).not.toHaveBeenCalled()
+    expect(renderer!.root.findByProps({ id: 'name' }).props['aria-invalid']).toBe(true)
+    expect(renderer!.root.findByProps({ id: 'displayName' }).props['aria-invalid']).toBe(true)
+    expect(renderer!.root.findByProps({ id: 'connectionUrl' }).props['aria-invalid']).toBe(true)
+    expect(renderer!.root.findAllByType('p').map((node) => node.children.join(' '))).toContain('error.nameRequired')
+    expect(renderer!.root.findAllByType('p').map((node) => node.children.join(' '))).toContain('form.displayNameRequired')
+    expect(renderer!.root.findAllByType('p').map((node) => node.children.join(' '))).toContain('databaseDialog.urlRequired')
+
+    act(() => {
+      renderer!.root.findByProps({ id: 'name' }).props.onChange({ target: { value: 'reporting_db' } })
+      renderer!.root.findByProps({ id: 'displayName' }).props.onChange({ target: { value: 'Reporting DB' } })
+      renderer!.root.findByProps({ id: 'connectionUrl' }).props.onChange({ target: { value: 'postgresql://db/app' } })
+    })
+    expect(renderer!.root.findByProps({ id: 'name' }).props['aria-invalid']).toBe(false)
+    expect(renderer!.root.findByProps({ id: 'displayName' }).props['aria-invalid']).toBe(false)
+    expect(renderer!.root.findByProps({ id: 'connectionUrl' }).props['aria-invalid']).toBe(false)
+  })
+
+  test('reports connection test failures and thrown errors to the user', async () => {
+    let renderer: ReactTestRenderer
+    await act(async () => {
+      renderer = create(<DatabaseToolDialog open onOpenChange={() => undefined} onSave={mock(async () => undefined)} />)
+    })
+    renderers.push(renderer!)
+    const testButton = renderer!.root.findAllByType('button').find((button) =>
+      button.children.includes('databaseDialog.testConnection')
+    )!
+
+    toolsApi.testDatabaseConnection.mockResolvedValueOnce({ success: false, message: 'Access denied' })
+    await act(async () => testButton.props.onClick())
+    expect(renderer!.root.findAllByType('span').some((node) => node.children.includes('Access denied'))).toBe(true)
+
+    toolsApi.testDatabaseConnection.mockRejectedValueOnce(new Error('Database is offline'))
+    await act(async () => testButton.props.onClick())
+    expect(renderer!.root.findAllByType('span').some((node) => node.children.includes('Database is offline'))).toBe(true)
+  })
+
+  test('uses URL configuration for connection checks and displays successful result', async () => {
+    let renderer: ReactTestRenderer
+    await act(async () => {
+      renderer = create(<DatabaseToolDialog open onOpenChange={() => undefined} onSave={mock(async () => undefined)} />)
+    })
+    renderers.push(renderer!)
+    act(() => renderer!.root.findByProps({ 'data-testid': 'tab-url' }).props.onClick())
+    act(() => {
+      renderer!.root.findByProps({ id: 'connectionUrl' }).props.onChange({
+        target: { value: '  postgresql://readonly:secret@db.internal/app  ' },
+      })
+    })
+    toolsApi.testDatabaseConnection.mockResolvedValueOnce({ success: true, message: 'Connection verified' })
+    const testButton = renderer!.root.findAllByType('button').find((button) =>
+      button.children.includes('databaseDialog.testConnection')
+    )!
+
+    await act(async () => testButton.props.onClick())
+
+    expect(toolsApi.testDatabaseConnection).toHaveBeenLastCalledWith({
+      db_type: 'postgresql',
+      url: 'postgresql://readonly:secret@db.internal/app',
+      timeout: 15,
+      max_limit: 100,
+    })
+    expect(renderer!.root.findAllByType('span').some((node) => node.children.includes('Connection verified'))).toBe(true)
+  })
+
+  test('keeps an edited tool name locked and closes only after a successful save', async () => {
+    const onOpenChange = mock(() => undefined)
+    const onSave = mock(async () => undefined)
+    const tool = {
+      id: 'database-tool',
+      name: 'readonly_db',
+      display_name: 'Read-only DB',
+      description: '',
+      type: 'custom',
+      custom_type: 'database',
+      category: 'data',
+      visibility: 'team',
+      parameters: [],
+      is_enabled: false,
+      requires_config: false,
+      config_fields: [],
+      database_config: { db_type: 'mysql', host: 'db.internal', port: 3306, database: 'orders' },
+    } as unknown as ToolDetail
+    let renderer: ReactTestRenderer
+
+    await act(async () => {
+      renderer = create(<DatabaseToolDialog tool={tool} open onOpenChange={onOpenChange} onSave={onSave} />)
+    })
+    renderers.push(renderer!)
+    expect(renderer!.root.findByProps({ id: 'name' }).props.disabled).toBe(true)
+    expect(renderer!.root.findByProps({ id: 'name' }).props.value).toBe('readonly_db')
+    expect(renderer!.root.findByProps({ id: 'database' }).props.value).toBe('orders')
+    expect(renderer!.root.findByProps({ id: 'host' }).props.value).toBe('db.internal')
+
+    const form = renderer!.root.findByType('form')
+    await act(async () => form.props.onSubmit({ preventDefault: () => undefined }))
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'readonly_db',
+      display_name: 'Read-only DB',
+      visibility: 'team',
+      is_enabled: false,
+      database_config: expect.objectContaining({ db_type: 'mysql', host: 'db.internal', port: 3306 }),
+    }))
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+  test('submits connection credentials and notifies the selected team', async () => {
+    const onSave = mock(async () => undefined)
+    const onSelectedTeamChange = mock(() => undefined)
+    let renderer: ReactTestRenderer
+
+    await act(async () => {
+      renderer = create(
+        <DatabaseToolDialog
+          open
+          onOpenChange={() => undefined}
+          onSave={onSave}
+          teams={[{ id: 'team-1', name: 'Core Team' }, { id: 'team-2', name: 'Data Team' }]}
+          selectedTeamId="team-1"
+          onSelectedTeamChange={onSelectedTeamChange}
+        />
+      )
+    })
+    renderers.push(renderer!)
+
+    const teamSelect = renderer!.root.findByProps({ id: 'team' })
+    act(() => teamSelect.props.onValueChange('team-2'))
+    expect(onSelectedTeamChange).toHaveBeenCalledWith('team-2')
+
+    act(() => {
+      renderer!.root.findByProps({ id: 'name' }).props.onChange({ target: { value: 'warehouse' } })
+      renderer!.root.findByProps({ id: 'displayName' }).props.onChange({ target: { value: 'Warehouse' } })
+      renderer!.root.findByProps({ id: 'host' }).props.onChange({ target: { value: 'db.internal' } })
+      renderer!.root.findByProps({ id: 'port' }).props.onChange({ target: { value: '5544' } })
+      renderer!.root.findByProps({ id: 'database' }).props.onChange({ target: { value: 'analytics' } })
+      renderer!.root.findByProps({ id: 'username' }).props.onChange({ target: { value: 'reader' } })
+      renderer!.root.findByProps({ id: 'password' }).props.onChange({ target: { value: 'secret' } })
+    })
+    await act(async () => renderer!.root.findByType('form').props.onSubmit({ preventDefault: () => undefined }))
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      database_config: expect.objectContaining({
+        db_type: 'postgresql', host: 'db.internal', port: 5544,
+        database: 'analytics', username: 'reader', password: 'secret',
+      }),
+    }))
+  })
+
+  test('reveals and masks the entered database password', async () => {
+    let renderer: ReactTestRenderer
+    await act(async () => {
+      renderer = create(<DatabaseToolDialog open onOpenChange={() => undefined} onSave={mock(async () => undefined)} />)
+    })
+    renderers.push(renderer!)
+
+    const password = renderer!.root.findByProps({ id: 'password' })
+    expect(password.props.type).toBe('password')
+    act(() => password.props.onChange({ target: { value: 'secret' } }))
+    const visibilityButton = renderer!.root.findAllByType('button').find((button) => button.props.type === 'button')!
+    act(() => visibilityButton.props.onClick())
+    expect(renderer!.root.findByProps({ id: 'password' }).props.type).toBe('text')
+    act(() => visibilityButton.props.onClick())
+    expect(renderer!.root.findByProps({ id: 'password' }).props.type).toBe('password')
+  })
+
+  test('shows server validation errors and allows a corrected save', async () => {
+    const onSave = mock(async () => { throw new ApiError(1001, 'Invalid', { errors: { displayName: 'Already in use' } }) })
+    const onOpenChange = mock(() => undefined)
+    let renderer: ReactTestRenderer
+    await act(async () => {
+      renderer = create(<DatabaseToolDialog open onOpenChange={onOpenChange} onSave={onSave} />)
+    })
+    renderers.push(renderer!)
+
+    act(() => {
+      renderer!.root.findByProps({ id: 'name' }).props.onChange({ target: { value: 'inventory' } })
+      renderer!.root.findByProps({ id: 'displayName' }).props.onChange({ target: { value: 'Inventory' } })
+    })
+    const form = renderer!.root.findByType('form')
+    await act(async () => form.props.onSubmit({ preventDefault: () => undefined }))
+    expect(renderer!.root.findByProps({ id: 'displayName' }).props['aria-invalid']).toBe(true)
+    expect(renderer!.root.findAllByType('p').some((node) => node.children.includes('Already in use'))).toBe(true)
+    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+
+    onSave.mockImplementation(async () => undefined)
+    act(() => renderer!.root.findByProps({ id: 'displayName' }).props.onChange({ target: { value: 'Inventory DB' } }))
+    await act(async () => form.props.onSubmit({ preventDefault: () => undefined }))
+    expect(onSave).toHaveBeenCalledTimes(2)
+    expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 })

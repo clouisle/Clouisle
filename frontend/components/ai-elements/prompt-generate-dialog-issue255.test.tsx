@@ -117,4 +117,30 @@ describe('prompt generate dialog Issue #255 callbacks', () => {
     await act(async () => button(renderer, 'copy').props.onClick())
     expect(toastError).toHaveBeenCalledWith('errors.copyFailed')
   })
+
+  test('restores generation controls after a stream error and allows a successful retry', async () => {
+    const renderer = render()
+    describePrompt(renderer, 'Write a helpful system prompt')
+    parseStream.mockImplementationOnce(async function* () {
+      yield { type: 'content_delta', data: { delta: 'Partial output' } }
+      yield { type: 'error', data: { msg: 'stream failed' } }
+    })
+
+    await act(async () => button(renderer, 'generate').props.onClick())
+
+    expect(toastError).toHaveBeenCalledWith('errors.generateFailed')
+    expect(renderer.root.findByProps({ id: 'description' }).props.disabled).toBe(false)
+    expect(button(renderer, 'regenerate')).toBeDefined()
+    expect(button(renderer, 'apply')).toBeDefined()
+    expect(renderer.root.findByType('pre').children.join('')).toBe('Partial output')
+
+    parseStream.mockImplementationOnce(async function* () {
+      yield { type: 'content_delta', data: { delta: 'Recovered prompt' } }
+    })
+    await act(async () => button(renderer, 'regenerate').props.onClick())
+
+    expect(renderer.root.findAll((node) => node.children.includes('Recovered prompt'))).toHaveLength(1)
+    expect(renderer.root.findAllByType('button').some((candidate) => candidate.findAll((node) => node.children.includes('regenerate')).length > 0)).toBe(true)
+    expect(renderer.root.findAllByType('button').some((candidate) => candidate.findAll((node) => node.children.includes('apply')).length > 0)).toBe(true)
+  })
 })

@@ -269,6 +269,49 @@ describe('AgentPreviewPanel', () => {
     expect(toastError).toHaveBeenCalledWith('common.invalidFileTypeWithAllowed:{"allowed":"pdf, txt"}')
     expect(sendMessage).toHaveBeenCalledWith('Read', undefined, undefined, [])
   })
+  test('blocks a required-variable prompt until validation succeeds', async () => {
+    variableForm = { ...variableForm, needsInput: true, isValid: false }
+    validate.mockReturnValue(false)
+    const agent = { ...baseAgent, variables: [{ name: 'topic', type: 'text', required: true }] } as never
+    let tree = render(agent)
+    let input = find(tree, ChatInput)[0]
+
+    expect(input.props.placeholder).toBe('chat.variables.fillRequired')
+    await (input.props.onSubmit as (message: string) => Promise<void>)('Explain this')
+    expect(validate).toHaveBeenCalledTimes(1)
+    expect(sendMessage).not.toHaveBeenCalled()
+
+    variableForm = { ...variableForm, needsInput: false, isValid: true }
+    tree = render(agent)
+    input = find(tree, ChatInput)[0]
+    await (input.props.onSubmit as (message: string) => Promise<void>)('Explain this')
+    expect(sendMessage).toHaveBeenCalledWith('Explain this', undefined, undefined, [])
+  })
+
+  test('recovers from a failed document upload and submits successfully on retry', async () => {
+    const document = { id: 'retry-doc', name: 'notes.txt', size: 9, type: 'text/plain', file: new File(['notes'], 'notes.txt'), isDocument: true }
+    const agent = { ...baseAgent, enable_attachments: true } as never
+    uploadFile.mockRejectedValueOnce(new Error('network unavailable'))
+    const originalError = console.error
+    console.error = mock(() => undefined)
+    try {
+      let tree = render(agent)
+      let input = find(tree, ChatInput)[0]
+      await (input.props.onSubmit as (message: string, files: unknown[]) => Promise<void>)('Summarize', [document])
+      expect(sendMessage).toHaveBeenCalledWith('Summarize', undefined, undefined, [])
+      tree = render(agent)
+      input = find(tree, ChatInput)[0]
+      expect(input.props.isUploading).toBe(false)
+      expect(input.props.files).toEqual([])
+
+      uploadFile.mockResolvedValueOnce({ url: '/retry.txt' })
+      await (input.props.onSubmit as (message: string, files: unknown[]) => Promise<void>)('Summarize again', [document])
+      expect(uploadFile).toHaveBeenCalledTimes(2)
+      expect(sendMessage).toHaveBeenLastCalledWith('Summarize again', undefined, [{ filename: 'notes.txt', url: '/retry.txt', size: 9, mime_type: 'text/plain' }], [])
+    } finally {
+      console.error = originalError
+    }
+  })
 
   test('localizes chat errors, dismisses them, and delegates reset controls', () => {
     chat = { ...chat, error: { message: 'quota', quotaType: 'output' } }

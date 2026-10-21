@@ -9,6 +9,17 @@ let stateIndex = 0
 let search = ''
 const setSearch = mock(() => {})
 
+let pageSizeOnValueChange: ((value: string) => void) | undefined
+mock.module('@/components/ui/select', () => ({
+  Select: ({ children, onValueChange, ...props }: React.PropsWithChildren<Record<string, unknown>>) => {
+    pageSizeOnValueChange = onValueChange as ((value: string) => void) | undefined
+    return React.createElement('div', { ...props, 'data-testid': 'page-size-select' }, children as ReactNode)
+  },
+  SelectContent: ({ children }: React.PropsWithChildren) => React.createElement('div', null, children),
+  SelectItem: ({ children, value }: React.PropsWithChildren<{ value: string }>) => React.createElement('button', { 'data-value': value }, children),
+  SelectTrigger: ({ children }: React.PropsWithChildren) => React.createElement('button', null, children),
+  SelectValue: () => null,
+}))
 mock.module('react', () => ({
   ...React,
   useEffect: () => {},
@@ -116,5 +127,18 @@ describe('AuditLogsTable', () => {
     globalThis.window = { getSelection: () => ({ toString: () => 'selected' }) } as unknown as Window & typeof globalThis
     row?.props.onClick()
     expect(setters[5]).not.toHaveBeenCalled()
+  })
+  test('changes page and page size through visible pagination controls', () => {
+    const rendered = render([[], false, 3, 20, 4, null, false, null, false, [], []])
+    expect(rendered.some((element) => element.props.children === 'pageInfo:3/4')).toBe(true)
+
+    const paginationButtons = rendered.filter((element) => element.props.className === 'h-8 w-8')
+    paginationButtons[2].props.onClick()
+    expect(setters[2]).toHaveBeenCalledWith(4)
+    const pageSizeSelect = rendered.find((element) => element.props.value === '20')
+    expect(pageSizeSelect).toBeDefined()
+    ;(pageSizeSelect?.props.onValueChange as ((value: string) => void) | undefined)?.('50')
+    expect(setters[3]).toHaveBeenCalledWith(50)
+    expect(setters[2]).toHaveBeenNthCalledWith(2, 1)
   })
 })

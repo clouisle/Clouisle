@@ -102,9 +102,17 @@ async function renderClient() {
   return renderer!
 }
 
+function textNode(node: unknown): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(textNode).join(' ')
+  if (React.isValidElement<{ children?: React.ReactNode }>(node)) return textNode(node.props.children)
+  if (node && typeof node === 'object' && 'children' in node) return textNode((node as { children?: unknown }).children)
+  if (node && typeof node === 'object' && 'props' in node) return textNode((node as { props?: { children?: unknown } }).props?.children)
+  return ''
+}
+
 function text() {
-  return renderer!.root.findAll(() => true).flatMap(node => node.children)
-    .filter(child => typeof child === 'string').join(' ')
+  return textNode(renderer!.toJSON())
 }
 
 function button(label: string) {
@@ -166,6 +174,32 @@ describe('PermissionsClient', () => {
     await act(async () => button('reset').props.onClick())
     expect(getPermissions).toHaveBeenLastCalledWith(1, 10, undefined, undefined)
   })
+  test('navigates permission pages and disables pagination at the boundaries', async () => {
+    getPermissions.mockResolvedValue({ items: [customPermission], total: 21 })
+    await renderClient()
+
+    const pageButtons = () => renderer!.root.findAllByType('button')
+      .filter(node => node.props.className?.includes('h-8 w-8'))
+
+    expect(text()).toContain('pageInfo:1,3')
+    expect(pageButtons().map(node => node.props.disabled)).toEqual([true, true, false, false])
+
+    await act(async () => pageButtons()[2].props.onClick())
+    expect(text()).toContain('pageInfo:2,3')
+    expect(getPermissions).toHaveBeenLastCalledWith(2, 10, undefined, undefined)
+    expect(pageButtons().map(node => node.props.disabled)).toEqual([false, false, false, false])
+
+    await act(async () => pageButtons()[3].props.onClick())
+    expect(text()).toContain('pageInfo:3,3')
+    expect(getPermissions).toHaveBeenLastCalledWith(3, 10, undefined, undefined)
+    expect(pageButtons().map(node => node.props.disabled)).toEqual([false, false, true, true])
+
+    await act(async () => pageButtons()[1].props.onClick())
+    expect(text()).toContain('pageInfo:2,3')
+    await act(async () => pageButtons()[0].props.onClick())
+    expect(text()).toContain('pageInfo:1,3')
+  })
+
 
   test('hides mutation controls and disables system selection without authorization', async () => {
     getPermissions.mockResolvedValueOnce({ items: [customPermission, systemPermission], total: 2 })
@@ -177,6 +211,33 @@ describe('PermissionsClient', () => {
     const checkboxes = renderer!.root.findAllByType('input').filter(node => node.props.type === 'checkbox')
     expect(checkboxes[1].props.disabled).toBe(false)
     expect(checkboxes[2].props.disabled).toBe(true)
+  })
+
+  test('keeps selected permissions and closes the bulk confirmation when deletion fails', async () => {
+    permissions = new Set(['admin:permission:delete'])
+    getPermissions.mockResolvedValue({ items: [customPermission], total: 1 })
+    deletePermission.mockRejectedValueOnce(new Error('offline'))
+    await renderClient()
+
+    const rowCheckbox = renderer!.root.findAllByType('input')
+      .filter(node => node.props.type === 'checkbox')[1]
+    act(() => rowCheckbox.props.onChange())
+    expect(text()).toContain('permissionsSelected')
+    expect(text()).toContain('1')
+
+    const bulkDelete = renderer!.root.findAllByType('button')
+      .find(node => node.props.className?.includes('text-destructive'))!
+    act(() => bulkDelete.props.onClick())
+    expect(text()).toContain('confirmBulkDelete:1')
+
+    await act(async () => renderer!.root.findAllByType('button')
+      .filter(node => node.children.includes('delete')).at(-1)!.props.onClick())
+
+    expect(deletePermission).toHaveBeenCalledWith('permission-1')
+    expect(toastSuccess).not.toHaveBeenCalled()
+    expect(text()).toContain('permissionsSelected')
+    expect(text()).toContain('1')
+    expect(text()).not.toContain('confirmBulkDelete:1')
   })
 
   test('opens permitted create/edit/delete actions and bulk deletes selected permissions', async () => {

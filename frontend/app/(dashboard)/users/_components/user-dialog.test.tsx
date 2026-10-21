@@ -77,13 +77,19 @@ beforeEach(() => {
   onSuccess.mockClear()
 })
 
-test('loads roles and saves edited user data', async () => {
+test('loads roles, selects a role, and saves edited user data', async () => {
   updateUser.mockResolvedValue(user)
-  const renderer = render(true)
+  let renderer!: ReactTestRenderer
+  act(() => {
+    renderer = create(<UserDialog open onOpenChange={onOpenChange} user={{ ...user, roles: [] } as never} onSuccess={onSuccess} />)
+  })
 
   await act(async () => {})
   expect(getRoles).toHaveBeenCalledWith(1, 100)
   expect(input(renderer, 'username').props.value).toBe('Ada')
+  expect(JSON.stringify(renderer.toJSON())).toContain('Administrator')
+  const roleCheckbox = renderer.root.findAllByType('input').find((node) => node.props.id === 'role-role-1')!
+  await act(async () => roleCheckbox.props.onChange())
   await submit(renderer)
 
   expect(updateUser).toHaveBeenCalledWith('user-1', { email: 'ada@example.test', is_active: true, roles: ['admin'] })

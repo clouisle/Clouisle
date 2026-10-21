@@ -160,6 +160,27 @@ test('covers terms, translated API validation, and captcha callbacks', async () 
   expect(container.textContent).toContain('custom')
 })
 
+test('submits accepted terms and the solved captcha in the registration contract', async () => {
+  getPublic.mockResolvedValue({ enable_captcha: true, require_terms_acceptance_on_register: true, terms_enabled: true, terms_url: 'https://example.test/terms', terms_text: '', privacy_enabled: false, privacy_url: '', privacy_text: '' })
+  await render()
+  await fillValidForm()
+  await submit()
+  expect(register).not.toHaveBeenCalled()
+
+  const terms = container.querySelector('#termsAccepted') as HTMLInputElement
+  await act(async () => terms.click())
+  await act(async () => {})
+
+  const captchaButton = [...container.querySelectorAll('button')].find((node) => node.textContent === 'captchaClickPrompt')!
+  Object.defineProperty(captchaButton, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 200, height: 80 }) })
+  await act(async () => captchaButton.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+  await act(async () => captchaButton.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 50, clientY: 20 })))
+  await submit()
+
+  expect(register).toHaveBeenCalledWith({ username: 'fake-user', email: 'fake@example.test', password: 'secret1', terms_accepted: true, captcha_id: 'fake-captcha', captcha_token: 'fake-token', locale: 'en' })
+  expect(container.textContent).toContain('registrationComplete')
+})
+
 test('runs verification, resend, back, and failed verification callbacks', async () => {
   register.mockResolvedValue({ is_superuser: false, email_verified: false, is_active: false })
   await render()
@@ -192,4 +213,43 @@ test('handles failed verification email delivery and allows resend and back', as
 
   await click('backToRegister')
   expect(container.querySelector('form')).toBeTruthy()
+})
+test('shows username validation and clears a field error when corrected', async () => {
+  await render()
+  await input('username', 'fake-user')
+  await input('email', 'fake@example.test')
+  await input('password', 'secret1')
+  await input('confirmPassword', 'secret1')
+  register.mockRejectedValueOnce({ errors: { username: ['username_taken'] } })
+
+  await submit()
+  expect(container.querySelector('#username')?.getAttribute('aria-invalid')).toBe('true')
+  expect(container.textContent).toContain('username_taken')
+
+  await input('username', 'new-user')
+  expect(container.textContent).not.toContain('username_taken')
+})
+
+test('shows server registration errors and keeps the form available', async () => {
+  register.mockRejectedValueOnce(new Error('registration unavailable'))
+  await render()
+  await fillValidForm()
+
+  await submit()
+
+  expect(container.querySelector('form')).toBeTruthy()
+  expect(container.textContent).not.toContain('registrationComplete')
+})
+
+test('welcomes the first registered administrator with an active success state', async () => {
+  register.mockResolvedValueOnce({ is_superuser: true, email_verified: false, is_active: true })
+  await render()
+  await fillValidForm()
+
+  await submit()
+
+  expect(container.textContent).toContain('registrationComplete')
+  expect(container.textContent).toContain('accountActivated')
+  expect(toastSuccess).toHaveBeenCalledWith('registerSuccessActive')
+  expect(sendVerification).not.toHaveBeenCalled()
 })

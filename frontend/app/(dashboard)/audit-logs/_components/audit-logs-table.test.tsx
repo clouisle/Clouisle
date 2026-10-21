@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import React from 'react'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
@@ -118,6 +118,69 @@ describe('AuditLogsTable', () => {
 
     await act(async () => renderer.root.findAllByType('button').find((node) => node.props.onClick && node.props.disabled === false)!.props.onClick())
     expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, search: 'alex' }))
+  })
+  test('omits empty filters, resets filters and page size to the first page', async () => {
+    list.mockResolvedValue({ items: [], total_pages: 3 })
+    const renderer = await render()
+
+    expect(list).toHaveBeenLastCalledWith({ page: 1, page_size: 20, search: undefined, status: undefined, action: undefined })
+    const statusFilter = renderer.root.findAllByType('button').find((node) => node.props.options?.some((option: { value: string }) => option.value === 'failed'))!
+    await act(async () => statusFilter.props.onSelectionChange(new Set(['failed'])))
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, status: ['failed'], action: undefined }))
+
+    const pageSize = renderer.root.findByType('select')
+    await act(async () => pageSize.props.onValueChange('50'))
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, page_size: 50, status: ['failed'] }))
+
+    const reset = renderer.root.findAllByType('button').find((node) => node.children.includes('reset'))!
+    await act(async () => reset.props.onClick())
+    expect(list).toHaveBeenLastCalledWith({ page: 1, page_size: 50, search: undefined, status: undefined, action: undefined })
+    expect(JSON.stringify(renderer.toJSON())).toContain('noLogs')
+  })
+
+  test('shows the empty state after a list request fails', async () => {
+    const error = spyOn(console, 'error').mockImplementation(() => {})
+    list.mockRejectedValue(new Error('unavailable'))
+
+    const renderer = await render()
+
+    expect(JSON.stringify(renderer.toJSON())).toContain('noLogs')
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('loading')
+    expect(error).toHaveBeenCalledWith('Failed to load audit logs:', expect.any(Error))
+  })
+
+  test('does not show export success when the export request fails', async () => {
+    const error = spyOn(console, 'error').mockImplementation(() => {})
+    list.mockResolvedValue({ items: [], total_pages: 0 })
+    exportLogs.mockRejectedValue(new Error('unavailable'))
+
+    const renderer = await render()
+    await act(async () => renderer.root.findAllByType('button').find((node) => node.children.includes('exportCSV'))!.props.onClick())
+
+    expect(exportLogs).toHaveBeenCalledWith({ search: undefined, status: undefined, action: undefined }, 'csv')
+    expect(toastSuccess).not.toHaveBeenCalled()
+    expect(error).toHaveBeenCalledWith('Failed to export audit logs:', expect.any(Error))
+  })
+
+  test('exports JSON using the active search filter', async () => {
+    list.mockResolvedValue({ items: [], total_pages: 0 })
+    exportLogs.mockResolvedValue(new Blob(['{}']))
+    globalThis.window.URL.createObjectURL = mock(() => 'blob:json')
+    globalThis.window.URL.revokeObjectURL = mock()
+    const anchor = { href: '', download: '', click: mock() }
+    globalThis.document = {
+      createElement: () => anchor,
+      body: { appendChild: () => anchor, removeChild: () => anchor },
+    } as unknown as Document
+
+    const renderer = await render()
+    await act(async () => renderer.root.findByType('input').props.onChange({ target: { value: 'admin' } }))
+    await act(async () => renderer.root.findAllByType('button').find((node) => node.children.includes('exportJSON'))!.props.onClick())
+
+    expect(exportLogs).toHaveBeenCalledWith({ search: 'admin', status: undefined, action: undefined }, 'json')
+    expect(anchor.download).toContain('.json')
+    expect(anchor.click).toHaveBeenCalled()
+    expect(toastSuccess).toHaveBeenCalledWith('exportSuccess')
   })
 
   test('exports CSV and confirms completion', async () => {

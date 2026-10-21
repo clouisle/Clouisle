@@ -9,12 +9,15 @@ let allowed = new Set<string>()
 let stateValues: unknown[] = []
 const push = mock(() => {})
 const setState = mock((value: unknown) => value)
+const toastSuccess = mock(() => {})
+const toastError = mock(() => {})
 const getAgent = mock()
 const updateAgent = mock()
 const publishAgent = mock()
 const unpublishAgent = mock()
 let toolbarProps: Record<string, unknown> = {}
 let orchestrationProps: Record<string, unknown> = {}
+class TestApiError extends Error {}
 
 mock.module('react', () => ({
   ...ReactActual,
@@ -29,12 +32,12 @@ mock.module('next/navigation', () => ({
 }))
 mock.module('next/link', () => ({ default: ({ children, href }: { children: ReactNode; href: string }) => <a href={href}>{children}</a> }))
 mock.module('next/image', () => ({ default: ({ alt }: { alt: string }) => <img alt={alt} /> }))
-mock.module('sonner', () => ({ toast: { success: mock(), error: mock() } }))
+mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
 mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam }) }))
 mock.module('@/hooks/use-permissions', () => ({ usePermissions: () => ({ user: currentUser }) }))
 mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform: (permission: string) => allowed.has(permission) }) }))
 mock.module('@/lib/api', () => ({ agentsApi: { getAgent, updateAgent, publishAgent, unpublishAgent }, ApiError: class ApiError extends Error {} }))
-mock.module('@/lib/api/client', () => ({ ApiError: class ApiError extends Error {} }))
+mock.module('@/lib/api/client', () => ({ ApiError: TestApiError }))
 mock.module('@/components/ui/skeleton', () => ({ Skeleton: ({ className }: { className?: string }) => <div className={className}>skeleton</div> }))
 mock.module('@/components/ui/scroll-area', () => ({ ScrollArea: ({ children }: { children: ReactNode }) => <div>{children}</div> }))
 mock.module('@/components/ui/dialog', () => ({
@@ -101,6 +104,8 @@ beforeEach(() => {
   publishAgent.mockReset()
   unpublishAgent.mockReset()
   toolbarProps = {}
+  toastSuccess.mockClear()
+  toastError.mockClear()
   orchestrationProps = {}
 })
 
@@ -199,5 +204,107 @@ describe('AgentEditor', () => {
 
     expect(html).toContain('data-testid="agent-publish-button"')
     expect(html).toContain('data-testid="agent-save-button"')
+  })
+
+  it('reports successful saves and displays joined validation errors', async () => {
+    stateValues = [agent, false, false, false]
+    updateAgent.mockResolvedValue({ ...agent, name: 'Saved' })
+    renderEditor()
+
+    await (toolbarProps.onSave as () => Promise<void>)()
+    expect(toastSuccess).toHaveBeenCalledWith('agentSaved')
+
+    class ValidationError extends TestApiError {
+      isValidationError() { return true }
+      getFieldErrors() { return { name: ['Name is required'], description: ['Description is invalid'] } }
+    }
+    updateAgent.mockRejectedValue(new ValidationError('Invalid agent'))
+    await (toolbarProps.onSave as () => Promise<void>)()
+
+    expect(toastError).toHaveBeenCalledWith('Name is required, Description is invalid')
+
+    class ValidationErrorWithoutFields extends TestApiError {
+      isValidationError() { return true }
+      getFieldErrors() { return {} }
+    }
+    updateAgent.mockRejectedValue(new ValidationErrorWithoutFields('Please review the agent'))
+    await (toolbarProps.onSave as () => Promise<void>)()
+    expect(toastError).toHaveBeenLastCalledWith('Please review the agent')
+  })
+
+  it('does not duplicate API-client notifications for ordinary save failures', async () => {
+    stateValues = [agent, false, false, false]
+    updateAgent.mockRejectedValue(new Error('Network error'))
+    renderEditor()
+
+    await (toolbarProps.onSave as () => Promise<void>)()
+
+    expect(updateAgent).toHaveBeenCalledTimes(1)
+    expect(toastError).not.toHaveBeenCalled()
+    expect(toastSuccess).not.toHaveBeenCalled()
+  })
+
+  it('routes toolbar actions to the expected state transitions', () => {
+    stateValues = [agent, false, false, false]
+    renderEditor()
+
+    ;(toolbarProps.onSettingsClick as () => void)()
+    ;(toolbarProps.onPreviewClick as () => void)()
+    ;(toolbarProps.onEmbedClick as () => void)()
+    ;(toolbarProps.onToggleSidebar as () => void)()
+
+    expect(setState).toHaveBeenCalledTimes(5)
+    expect(setState).toHaveBeenNthCalledWith(1, true)
+    expect(setState).toHaveBeenNthCalledWith(2, true)
+    expect(setState).toHaveBeenNthCalledWith(3, true)
+    expect(setState).toHaveBeenNthCalledWith(4, true)
+    expect(setState).toHaveBeenNthCalledWith(5, true)
+  })
+
+  it('grants editing to superusers and opted-in users with update permission', () => {
+    currentUser = { id: 'other-user', is_superuser: true }
+    stateValues = [agent, false, false, false]
+    renderEditor()
+    expect(toolbarProps.canUpdate).toBe(true)
+    expect(orchestrationProps.canUpdate).toBe(true)
+
+    currentUser = { id: 'other-user' }
+    allowed = new Set(['agent:update'])
+    stateValues = [agent, false, false, false]
+    renderToStaticMarkup(<AgentEditor agentId="agent-1" allowPermissionUpdate />)
+    expect(toolbarProps.canUpdate).toBe(true)
+    expect(orchestrationProps.canUpdate).toBe(true)
+  })
+
+  it('keeps unrelated team members read-only', () => {
+    currentUser = { id: 'other-user' }
+    currentTeam = { id: 'team-1', role: 'member' }
+    stateValues = [agent, false, false, false]
+    renderEditor()
+
+    expect(toolbarProps.canUpdate).toBe(false)
+    expect(orchestrationProps.canUpdate).toBe(false)
+  })
+
+  it('does not duplicate publish API errors as manual toast notifications', async () => {
+    stateValues = [agent, false, false, false]
+    publishAgent.mockRejectedValue(new Error('API client handles this'))
+    renderEditor()
+
+    await (toolbarProps.onPublish as () => Promise<void>)()
+
+    expect(publishAgent).toHaveBeenCalledWith('agent-1')
+    expect(toastError).not.toHaveBeenCalled()
+    expect(toastSuccess).not.toHaveBeenCalled()
+  })
+
+  it('confirms a published agent with success feedback', async () => {
+    stateValues = [agent, false, false, false]
+    publishAgent.mockResolvedValue({ ...agent, status: 'published' })
+    renderEditor()
+
+    await (toolbarProps.onPublish as () => Promise<void>)()
+
+    expect(toastSuccess).toHaveBeenCalledWith('agentPublished')
   })
 })

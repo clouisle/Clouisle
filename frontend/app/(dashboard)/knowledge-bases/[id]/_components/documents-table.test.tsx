@@ -245,6 +245,73 @@ describe('DocumentsTable', () => {
     expect(toastSuccess).toHaveBeenCalledWith('documentDeleted')
     expect(onRefresh).toHaveBeenCalledTimes(1)
   })
+  test('keeps the current rows after a load failure and reloads on refresh trigger', async () => {
+    getDocuments.mockResolvedValueOnce({ items: [baseDocument], total: 1, page: 1, page_size: 10 })
+      .mockRejectedValueOnce(new Error('temporary outage'))
+      .mockResolvedValueOnce({ items: [{ ...baseDocument, name: 'Updated.pdf' }], total: 1, page: 1, page_size: 10 })
+
+    let tree = await flush()
+    expect(text(tree)).toContain('Guide.pdf')
+
+    await flush()
+    tree = render()
+    expect(text(tree)).toContain('Guide.pdf')
+
+    cursor = 0
+    tree = DocumentsTable({ knowledgeBaseId: 'kb-1', refreshTrigger: 1, onRefresh })
+    while (effects.length) {
+      const pending = effects.splice(0)
+      pending.forEach(effect => effect())
+      await Promise.resolve()
+      await Promise.resolve()
+      tree = render()
+    }
+    expect(getDocuments).toHaveBeenCalledTimes(3)
+    expect(text(tree)).toContain('Updated.pdf')
+  })
+
+  test('selects and clears all eligible documents and confirms bulk deletion feedback', async () => {
+    permissions = new Set(['kb:delete'])
+    getDocuments.mockResolvedValue({
+      items: [baseDocument, { ...baseDocument, id: 'doc-2', name: 'Second.pdf' }],
+      total: 2, page: 1, page_size: 10,
+    })
+    deleteDocument.mockResolvedValue({})
+
+    let tree = await flush()
+    elements(tree).filter(item => item.type === 'checkbox')[1].props.onCheckedChange()
+    tree = render()
+    expect(text(tree)).toContain('1 documentsSelected')
+
+    const toolbarButtons = elements(tree).filter(item => item.type === 'button' && item.props.className === 'h-8 w-8')
+    toolbarButtons[1].props.onClick()
+    tree = render()
+    expect(text(tree)).toContain('confirmBulkDocumentsDelete:2')
+    await find(tree, 'alert-action', 'delete').props.onClick()
+
+    expect(deleteDocument).toHaveBeenCalledTimes(2)
+    expect(toastSuccess).toHaveBeenCalledWith('bulkDocumentsDeleted:2')
+    expect(onRefresh).toHaveBeenCalledTimes(1)
+    expect(text(render())).not.toContain('documentsSelected')
+  })
+
+  test('reports successful downloads and retries failed chunks with refreshed data', async () => {
+    permissions = new Set(['kb:update'])
+    const failed = { ...baseDocument, status: 'error', error_message: 'chunk failure' }
+    getDocuments.mockResolvedValue({ items: [failed], total: 1, page: 1, page_size: 10 })
+    downloadDocument.mockResolvedValue({})
+    retryFailedChunks.mockResolvedValue({})
+
+    const tree = await flush()
+    await find(tree, 'dropdown-item', 'downloadOriginal').props.onClick()
+    expect(toastSuccess).toHaveBeenCalledWith('downloadStarted')
+
+    await find(tree, 'dropdown-item', 'retryFailedChunks').props.onClick()
+    expect(retryFailedChunks).toHaveBeenCalledWith('kb-1', 'doc-1')
+    expect(toastSuccess).toHaveBeenCalledWith('retryStarted')
+    expect(getDocuments).toHaveBeenCalledTimes(2)
+  })
+
 
   test('filters, paginates, retries, opens URL sources, and runs bulk actions', async () => {
     permissions = new Set(['kb:update', 'kb:delete'])

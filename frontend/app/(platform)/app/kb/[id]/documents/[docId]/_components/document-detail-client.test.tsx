@@ -394,6 +394,63 @@ describe('platform DocumentDetailClient', () => {
     expect(toastError).toHaveBeenCalledWith('chunkContentEmpty')
     expect(api.updateChunk).not.toHaveBeenCalled()
   })
+  test('pages through chunks and clamps navigation to available pages', async () => {
+    api.getDocumentChunks
+      .mockResolvedValueOnce({ items: [chunk], total: 21, page: 1, page_size: 20 })
+      .mockResolvedValueOnce({ items: [{ ...chunk, id: 'chunk-21', content: 'Last page chunk', chunk_index: 20 }], total: 21, page: 2, page_size: 20 })
+    let tree = await flush()
+
+    expect(text(tree)).toContain('pageInfo:1,2')
+    const next = buttonWithIcon(tree, 'ChevronRight')!
+    expect(next.props.disabled).toBe(false)
+    next.props.onClick()
+    tree = await flush()
+    expect(api.getDocumentChunks).toHaveBeenLastCalledWith('kb-1', 'doc-1', { page: 2, pageSize: 20 })
+    expect(text(tree)).toContain('Last page chunk')
+    expect(text(tree)).toContain('pageInfo:2,2')
+
+    const nextAtEnd = buttonWithIcon(tree, 'ChevronRight')!
+    expect(nextAtEnd.props.disabled).toBe(true)
+    nextAtEnd.props.onClick()
+    tree = render()
+    expect(text(tree)).toContain('pageInfo:2,2')
+
+    buttonWithIcon(tree, 'ChevronLeft')!.props.onClick()
+    tree = await flush()
+    expect(api.getDocumentChunks).toHaveBeenLastCalledWith('kb-1', 'doc-1', { page: 1, pageSize: 20 })
+    expect(text(tree)).toContain('First chunk')
+  })
+
+  test('offers the first-chunk action for an empty completed document', async () => {
+    api.getDocumentChunks.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+    api.createChunk.mockResolvedValue({})
+    const tree = await flush()
+
+    expect(text(tree)).toContain('noChunks')
+    await find(tree, 'button', 'addFirstChunk').props.onClick()
+    expect(api.createChunk).toHaveBeenCalledWith('kb-1', 'doc-1', { content: 'newChunkPlaceholder' }, -1)
+    expect(toastSuccess).toHaveBeenCalledWith('chunkCreated')
+  })
+
+  test('cancels then confirms deleting a chunk and refreshes its list', async () => {
+    api.deleteChunk.mockResolvedValue({})
+    let tree = await flush()
+
+    await tooltipButton(tree, 'deleteChunk').props.onClick()
+    tree = render()
+    expect(dialog(tree, 1).props.open).toBe(true)
+    dialog(tree, 1).props.onOpenChange(false)
+    tree = render()
+    expect(dialog(tree, 1).props.open).toBe(false)
+    expect(api.deleteChunk).not.toHaveBeenCalled()
+
+    await tooltipButton(tree, 'deleteChunk').props.onClick()
+    tree = render()
+    await find(dialog(tree, 1), 'alert-action', 'delete').props.onClick()
+    expect(api.deleteChunk).toHaveBeenCalledWith('kb-1', 'doc-1', 'chunk-1')
+    expect(api.getDocumentChunks).toHaveBeenCalledTimes(2)
+    expect(toastSuccess).toHaveBeenCalledWith('chunkDeleted')
+  })
 
   test('silently exits editing when content is unchanged', async () => {
     let tree = await flush()

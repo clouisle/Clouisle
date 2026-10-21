@@ -290,6 +290,54 @@ describe('dashboard DocumentDetailClient', () => {
     })
     expect(toastSuccess).toHaveBeenCalledWith('processStartedSingle')
   })
+  test('does not expose document or chunk mutations for Feishu-managed documents', async () => {
+    api.getDocument.mockResolvedValue({
+      ...document,
+      metadata: { feishu_source_id: 'feishu-doc-1' },
+      status: 'error',
+      error_message: 'Embedding failed',
+    })
+    api.getDocumentChunks.mockResolvedValue({
+      items: [{ ...chunk, status: 'failed', error_message: 'Provider unavailable' }],
+      total: 1, page: 1, page_size: 20,
+    })
+    const tree = await flush()
+
+    expect(text(tree)).toContain('feishuReadOnly')
+    expect(text(tree)).toContain('feishuImported')
+    expect(elements(tree).some(item => item.type === 'button' && text(item).includes('reprocess'))).toBe(false)
+    expect(buttonWithIcon(tree, 'Trash2')?.props.disabled).toBe(true)
+    expect(find(tree, 'button', 'retryFailedChunks').props.disabled).toBe(true)
+    expect(elements(tree).some(item => item.type === 'tooltip' && text(item).includes('deleteChunk'))).toBe(false)
+    expect(elements(tree).some(item => item.type === 'tooltip' && text(item).includes('retryFailedChunk'))).toBe(false)
+    const preview = chunkPreview(tree, 'First chunk')
+    expect(preview.props.role).toBeUndefined()
+    expect(preview.props.tabIndex).toBeUndefined()
+  })
+
+  test('does not report a successful process when processing a pending document fails', async () => {
+    api.getDocument.mockResolvedValue({ ...document, status: 'pending', chunk_count: 0 })
+    api.processDocument.mockRejectedValue(new Error('offline'))
+    const tree = await flush()
+
+    await find(tree, 'button', 'startProcessing').props.onClick()
+
+    expect(api.processDocument).toHaveBeenCalledWith('kb-1', 'doc-1', {
+      chunk_size: 800, chunk_overlap: 80, separator: '\n', clean_text: true,
+    })
+    expect(toastSuccess).not.toHaveBeenCalledWith('processStartedSingle')
+    expect(api.getDocument).toHaveBeenCalledTimes(1)
+  })
+
+  test('redirects to the knowledge base when loading the document fails', async () => {
+    api.getDocument.mockRejectedValue(new Error('offline'))
+
+    const tree = await flush()
+
+    expect(push).toHaveBeenCalledWith('/knowledge-bases/kb-1')
+    expect(text(tree)).not.toContain('Guide.pdf')
+  })
+
 
   test('exits clean edits and guards dirty mouse and keyboard exits', async () => {
     let tree = await flush()
@@ -460,4 +508,168 @@ describe('dashboard DocumentDetailClient', () => {
     filePreview!.props.onClose()
   })
 
+  test('shows empty chunk state and creates the first chunk', async () => {
+    api.getDocumentChunks.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+    api.createChunk.mockResolvedValue({})
+    let tree = await flush()
+
+    expect(text(tree)).toContain('noChunks')
+    await find(tree, 'button', 'addFirstChunk').props.onClick()
+
+    tree = await flush()
+    expect(api.createChunk).toHaveBeenCalledWith('kb-1', 'doc-1', { content: 'newChunkPlaceholder' }, -1)
+    expect(api.getDocumentChunks).toHaveBeenCalledTimes(2)
+    expect(toastSuccess).toHaveBeenCalledWith('chunkCreated')
+    expect(text(tree)).toContain('noChunks')
+  })
+
+  test('loads the original file for download and reports load failure', async () => {
+    let tree = await flush()
+    const download = elements(tree).find(item => item.type === 'button' && item.props['aria-label'] === 'download')
+    expect(download).toBeDefined()
+
+    api.getDocumentFile.mockRejectedValueOnce(new Error('offline'))
+    await (download!.props.onClick as () => Promise<void>)()
+
+    expect(api.getDocumentFile).toHaveBeenCalledWith('kb-1', 'doc-1')
+    expect(toastError).toHaveBeenCalledWith('downloadFailed')
+  })
+
+  test('loads adjacent chunk pages and disables paging at each boundary', async () => {
+    api.getDocumentChunks.mockResolvedValue({ items: [chunk], total: 41, page: 1, page_size: 20 })
+    let tree = await flush()
+    expect(text(tree)).toContain('pageInfo:1,3')
+    const next = buttonWithIcon(tree, 'ChevronRight')!
+    expect(next.props.disabled).toBe(false)
+    next.props.onClick()
+    tree = await flush()
+    expect(api.getDocumentChunks).toHaveBeenLastCalledWith('kb-1', 'doc-1', { page: 2, pageSize: 20 })
+    expect(text(tree)).toContain('pageInfo:2,3')
+
+    buttonWithIcon(tree, 'ChevronLeft')!.props.onClick()
+    tree = await flush()
+    expect(api.getDocumentChunks).toHaveBeenLastCalledWith('kb-1', 'doc-1', { page: 1, pageSize: 20 })
+    expect(buttonWithIcon(tree, 'ChevronLeft')!.props.disabled).toBe(true)
+  })
+  test('disables next-page navigation on the last chunk page', async () => {
+    api.getDocumentChunks.mockResolvedValue({ items: [chunk], total: 41, page: 1, page_size: 20 })
+    let tree = await flush()
+    for (const page of [2, 3]) {
+      const next = buttonWithIcon(tree, 'ChevronRight')!
+      expect(next.props.disabled).toBe(false)
+      next.props.onClick()
+      tree = await flush()
+      expect(api.getDocumentChunks).toHaveBeenLastCalledWith('kb-1', 'doc-1', { page, pageSize: 20 })
+    }
+
+    expect(text(tree)).toContain('pageInfo:3,3')
+    expect(buttonWithIcon(tree, 'ChevronRight')!.props.disabled).toBe(true)
+  })
+
+  test('keeps the loaded document visible when fetching chunks fails', async () => {
+    api.getDocumentChunks.mockRejectedValue(new Error('offline'))
+
+    const tree = await flush()
+
+    expect(text(tree)).toContain('Guide.pdf')
+    expect(text(tree)).toContain('2 chunks')
+    expect(text(tree)).toContain('noChunks')
+    expect(push).not.toHaveBeenCalled()
+  })
+
+
+  test('confirms chunk deletion, refreshes the list, and reports success', async () => {
+    api.deleteChunk.mockResolvedValue({})
+    let tree = await flush()
+    await tooltipButton(tree, 'deleteChunk').props.onClick()
+    tree = render()
+    expect(dialog(tree, 1).props.open).toBe(true)
+
+    await find(dialog(tree, 1), 'alert-action', 'delete').props.onClick()
+    tree = await flush()
+    expect(api.deleteChunk).toHaveBeenCalledWith('kb-1', 'doc-1', 'chunk-1')
+    expect(api.getDocumentChunks).toHaveBeenCalledTimes(2)
+    expect(dialog(tree, 1).props.open).toBe(false)
+    expect(toastSuccess).toHaveBeenCalledWith('chunkDeleted')
+  })
+
+  test('keeps a failed chunk deletion dialog open without reporting success', async () => {
+    api.deleteChunk.mockRejectedValue(new Error('offline'))
+    let tree = await flush()
+    await tooltipButton(tree, 'deleteChunk').props.onClick()
+    tree = render()
+    await find(dialog(tree, 1), 'alert-action', 'delete').props.onClick()
+    tree = render()
+
+    expect(api.deleteChunk).toHaveBeenCalledWith('kb-1', 'doc-1', 'chunk-1')
+    expect(dialog(tree, 1).props.open).toBe(true)
+    expect(toastSuccess).not.toHaveBeenCalledWith('chunkDeleted')
+  })
+
+  test('uses default settings for zero-valued metadata and falls back for invalid numeric edits', async () => {
+    api.getDocument.mockResolvedValue({
+      ...document, status: 'pending', chunk_count: 0,
+      metadata: { chunk_size: 0, chunk_overlap: 0, separator: '', clean_text: false },
+    })
+    let tree = await flush()
+    const inputs = elements(tree).filter(item => item.type === 'input')
+    expect(inputs[0].props.value).toBe(800)
+    expect(inputs[1].props.value).toBe(80)
+    expect(inputs[2].props.value).toBe('\n')
+    inputs[0].props.onChange({ target: { value: 'invalid' } })
+    tree = render()
+    await find(tree, 'button', 'previewChunks').props.onClick()
+    expect(api.previewChunks).toHaveBeenCalledWith('kb-1', 'doc-1', {
+      chunk_size: 1000, chunk_overlap: 80, separator: undefined, clean_text: false,
+    })
+  })
+
+  test('shows the original media preview with document metadata and closes it', async () => {
+    api.getDocumentFile.mockResolvedValueOnce(new Blob(['image bytes'], { type: 'image/png' }))
+    let tree = await flush()
+    const previewButton = elements(tree).find(item => item.type === 'button' && item.props['aria-label'] === 'previewOriginal')!
+    previewButton.props.onClick()
+    tree = render()
+    const panel = elements(tree).find(item => item.props && typeof item.props.loadFile === 'function')!
+
+    expect(panel.props.file).toMatchObject({ filename: 'Guide.pdf', mimeType: 'application/pdf' })
+    panel.props.onClose()
+    tree = render()
+    expect(elements(tree).some(item => item.props && typeof item.props.loadFile === 'function')).toBe(false)
+  })
+
+  test('returns to the knowledge base from the document detail back button', async () => {
+    const tree = await flush()
+    const back = buttonWithIcon(tree, 'ArrowLeft')
+    expect(back).toBeDefined()
+    back!.props.onClick()
+    expect(push).toHaveBeenCalledWith('/knowledge-bases/kb-1')
+  })
+
+  test('keeps document deletion confirmation open and does not navigate when deletion fails', async () => {
+    api.deleteDocument.mockRejectedValue(new Error('offline'))
+    let tree = await flush()
+    buttonWithIcon(tree, 'Trash2')!.props.onClick()
+    tree = render()
+    await find(dialog(tree, 0), 'alert-action', 'delete').props.onClick()
+    tree = render()
+    expect(api.deleteDocument).toHaveBeenCalledWith('kb-1', 'doc-1')
+    expect(dialog(tree, 0).props.open).toBe(true)
+    expect(push).not.toHaveBeenCalled()
+    expect(toastSuccess).not.toHaveBeenCalledWith('documentDeleted')
+  })
+
+  test('retains document and chunk errors after failed bulk retry', async () => {
+    api.getDocument.mockResolvedValue({ ...document, status: 'error', error_message: 'Embedding failed' })
+    api.getDocumentChunks.mockResolvedValue({
+      items: [{ ...chunk, status: 'failed', error_message: 'Provider unavailable' }], total: 1, page: 1, page_size: 20,
+    })
+    const tree = await flush()
+    api.retryFailedChunks.mockRejectedValue(new Error('offline'))
+    await find(tree, 'button', 'retryFailedChunks').props.onClick()
+    const afterRetry = render()
+    expect(text(afterRetry)).toContain('Embedding failed')
+    expect(text(afterRetry)).toContain('chunkErrorMessage:Provider unavailable')
+    expect(toastSuccess).not.toHaveBeenCalledWith('retryStarted')
+  })
 })

@@ -1,3 +1,4 @@
+import { ApiError } from '@/lib/api/client'
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import React from 'react'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
@@ -28,7 +29,7 @@ mock.module('@/components/ui/switch', () => ({
   ),
 }))
 mock.module('@/components/ui/select', () => ({
-  Select: ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => <div {...props}>{children}</div>,
+  Select: ({ children, value, onValueChange }: React.PropsWithChildren<{ value?: string; onValueChange?: (value: string) => void }>) => <div data-select-value={value} data-on-value-change={onValueChange}>{children}</div>,
   SelectContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   SelectItem: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   SelectTrigger: ({ children, ...props }: React.HTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,
@@ -112,7 +113,87 @@ describe('WebhookSettingsTab', () => {
     expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(true)
     expect(renderer.root.findByProps({ id: 'webhook-headers' }).props['aria-invalid']).toBe(true)
   })
+  test('emits field changes without mutating controlled settings props', async () => {
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook').mockResolvedValue(settings)
+    const { renderer, onSettingsChange } = render()
 
+    act(() => renderer.root.findByProps({ id: 'webhook-url' }).props.onChange({ target: { value: 'https://hooks.example/new' } }))
+    act(() => renderer.root.findByProps({ id: 'webhook-secret' }).props.onChange({ target: { value: 'new-secret' } }))
+    act(() => renderer.root.findByProps({ id: 'webhook-headers' }).props.onChange({ target: { value: '{"X-Token":"abc"}' } }))
+
+    expect(onSettingsChange).toHaveBeenCalledWith({ ...settings, webhook_url: 'https://hooks.example/new' })
+    expect(onSettingsChange).toHaveBeenCalledWith({ ...settings, webhook_secret: 'new-secret' })
+    expect(onSettingsChange).toHaveBeenCalledWith({ ...settings, webhook_headers: { 'X-Token': 'abc' } })
+    await act(async () => button(renderer, 'save').props.onClick())
+    expect(updateWebhook).toHaveBeenCalledWith(settings)
+  })
+
+  test('maps server validation errors to visible field feedback', async () => {
+    const error = new ApiError(1001, 'Invalid', { errors: { webhook_url: 'invalid URL' } })
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook').mockRejectedValue(error)
+    const consoleError = spyOn(console, 'error').mockImplementation(() => {})
+    const { renderer } = render()
+
+    await act(async () => button(renderer, 'save').props.onClick())
+    expect(updateWebhook).toHaveBeenCalledWith(settings)
+    expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(true)
+    expect(consoleError).toHaveBeenCalledTimes(1)
+  })
+  test('does not fabricate field errors for opaque save failures', async () => {
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook').mockRejectedValue(new Error('offline'))
+    const consoleError = spyOn(console, 'error').mockImplementation(() => {})
+    const { renderer } = render()
+
+    await act(async () => button(renderer, 'save').props.onClick())
+    expect(updateWebhook).toHaveBeenCalledWith(settings)
+    expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(false)
+    expect(consoleError).toHaveBeenCalledTimes(1)
+  })
+
+  test('maps save and test API validation errors to fields', async () => {
+    const error = new ApiError(1001, 'Invalid', { errors: { webhook_url: 'invalid URL' } })
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook').mockRejectedValue(error)
+    const sendTestWebhook = spyOn(integrationsApi, 'sendTestWebhook').mockRejectedValue(error)
+    const consoleError = spyOn(console, 'error').mockImplementation(() => {})
+    const { renderer } = render()
+
+    await act(async () => button(renderer, 'save').props.onClick())
+    expect(updateWebhook).toHaveBeenCalledWith(settings)
+    expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(true)
+
+    await act(async () => button(renderer, 'webhook.sendTest').props.onClick())
+    expect(sendTestWebhook).toHaveBeenCalledTimes(1)
+    expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(true)
+    expect(consoleError).toHaveBeenCalledTimes(2)
+  })
+
+  test('allows disabled webhooks to save without URL validation and disables test action', async () => {
+    const disabledSettings = { ...settings, webhook_enabled: false, webhook_url: '' }
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook').mockResolvedValue(disabledSettings)
+    const sendTestWebhook = spyOn(integrationsApi, 'sendTestWebhook').mockResolvedValue()
+    const { renderer } = render({ settings: disabledSettings })
+
+    expect(button(renderer, 'webhook.sendTest').props.disabled).toBe(true)
+    await act(async () => button(renderer, 'save').props.onClick())
+
+    expect(updateWebhook).toHaveBeenCalledWith(disabledSettings)
+    expect(sendTestWebhook).not.toHaveBeenCalled()
+    expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(false)
+  })
+
+  test('does not call save or test APIs when validation fails', async () => {
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook')
+    const sendTestWebhook = spyOn(integrationsApi, 'sendTestWebhook')
+    const { renderer } = render({ settings: { ...settings, webhook_url: '' } })
+
+    await act(async () => button(renderer, 'save').props.onClick())
+    await act(async () => button(renderer, 'webhook.sendTest').props.onClick())
+
+    expect(updateWebhook).not.toHaveBeenCalled()
+    expect(sendTestWebhook).not.toHaveBeenCalled()
+    expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(true)
+    expect(renderer.root.findAllByProps({ role: 'alert' }).length).toBeGreaterThan(0)
+  })
   test('hides update actions and disables controls for read-only viewers', () => {
     const { renderer } = render({ canUpdate: false })
 

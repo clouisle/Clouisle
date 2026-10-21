@@ -47,7 +47,7 @@ mock.module('@/components/ui/checkbox', () => ({
   ),
 }))
 mock.module('@/components/ui/scroll-area', () => ({ ScrollArea: ({ children }: React.PropsWithChildren) => <div>{children}</div> }))
-mock.module('@/components/ui/switch', () => ({ Switch: (props: { checked: boolean; onCheckedChange: (checked: boolean) => void; disabled?: boolean; 'aria-label': string }) => <button {...props} /> }))
+mock.module('@/components/ui/switch', () => ({ Switch: ({ checked, onCheckedChange, disabled, ...props }: { checked: boolean; onCheckedChange: (checked: boolean) => void; disabled?: boolean; 'aria-label': string }) => <input {...props} type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onCheckedChange(event.target.checked)} /> }))
 mock.module('@/components/ui/select', () => ({
   Select: ({ children, value, onValueChange }: React.PropsWithChildren<{ value: string; onValueChange: (value: string) => void }>) => <div data-select-value={value} data-on-value-change={onValueChange}>{children}</div>,
   SelectTrigger: ({ children, ...props }: React.PropsWithChildren<React.ButtonHTMLAttributes<HTMLButtonElement>>) => <button {...props}>{children}</button>,
@@ -368,4 +368,68 @@ test('enables a requested feature on a legacy-disabled record without reactivati
   await act(async () => notificationSwitch(renderer).props.onCheckedChange(true))
   await act(async () => capabilitySave(renderer).props.onClick())
   expect(update).toHaveBeenCalledWith(integration.id, { enabled_capabilities: ['notification'] })
+})
+test('selects a department subtree and saves the returned scope', async () => {
+  const departments = spyOn(integrationsApi, 'getFeishuDepartments').mockResolvedValue([
+    {
+      department_id: 'root',
+      name: 'Company',
+      parent_department_id: null,
+      children: [
+        {
+          department_id: 'engineering',
+          name: 'Engineering',
+          parent_department_id: 'root',
+          children: [{ department_id: 'platform', name: 'Platform', parent_department_id: 'engineering', children: [] }],
+        },
+      ],
+    },
+  ])
+  const updatedScope = ['root', 'engineering', 'platform']
+  const saveScope = spyOn(integrationsApi, 'updateFeishuDepartmentScope').mockResolvedValue({ department_ids: updatedScope })
+  const { renderer, onConfigChange } = render({ tab: 'directory', config: { ...config, department_ids: [] } })
+
+  await act(async () => {})
+
+  expect(departments).toHaveBeenCalledTimes(1)
+  expect(renderer.root.findByProps({ 'aria-label': 'Company' }).props.checked).toBe(false)
+  await act(async () => renderer.root.findByProps({ 'aria-label': 'Company' }).props.onCheckedChange(true))
+  await act(async () => button(renderer, 'integrations.feishuSaveScope').props.onClick())
+
+  expect(saveScope).toHaveBeenCalledWith(['root', 'engineering', 'platform'])
+  expect(onConfigChange).toHaveBeenCalledWith({ ...config, department_ids: updatedScope })
+  expect(success).toHaveBeenCalledWith('integrations.feishuScopeSaved')
+})
+test('keeps the department selection and reports a scope save failure', async () => {
+  spyOn(integrationsApi, 'getFeishuDepartments').mockResolvedValue([
+    { department_id: 'dept-b', name: 'Research', parent_department_id: null, children: [] },
+  ])
+  const saveScope = spyOn(integrationsApi, 'updateFeishuDepartmentScope').mockRejectedValue(new Error('Network unavailable'))
+  const { renderer, onConfigChange } = render({ tab: 'directory', config: { ...config, department_ids: [] } })
+
+  await act(async () => {})
+  await act(async () => renderer.root.findByProps({ 'aria-label': 'Research' }).props.onCheckedChange(true))
+  await act(async () => button(renderer, 'integrations.feishuSaveScope').props.onClick())
+
+  expect(saveScope).toHaveBeenCalledWith(['dept-b'])
+  expect(onConfigChange).not.toHaveBeenCalled()
+  expect(error).toHaveBeenCalledWith('integrations.feishuScopeSaveFailed')
+})
+test('clears a stale notification recipient when the refreshed recipient list no longer contains it', async () => {
+  const getRecipients = spyOn(integrationsApi, 'getFeishuTestRecipients')
+    .mockResolvedValueOnce([{ id: 'user-old', username: 'Old user', email: 'old@example.com' }])
+    .mockResolvedValueOnce([{ id: 'user-new', username: 'New user', email: 'new@example.com' }])
+  const send = spyOn(integrationsApi, 'sendFeishuTestMessage').mockResolvedValue({ status: 'sent' })
+  const { renderer } = render({ tab: 'notification', integration: { ...integration, enabled_capabilities: ['directory_sync', 'notification'] } })
+
+  await act(async () => {})
+  await act(async () => renderer.root.findByProps({ 'data-select-value': '' }).props['data-on-value-change']('user-old'))
+  await act(async () => renderer.update(<FeishuIntegrationTab config={config} onConfigChange={mock(() => {})} canUpdate integration={{ ...integration, enabled_capabilities: ['directory_sync', 'notification'] }} canUpdateLogin onIntegrationChange={mock(() => {})} tab="configuration" />))
+  await act(async () => renderer.update(<FeishuIntegrationTab config={config} onConfigChange={mock(() => {})} canUpdate integration={{ ...integration, enabled_capabilities: ['directory_sync', 'notification'] }} canUpdateLogin onIntegrationChange={mock(() => {})} tab="notification" />))
+  await act(async () => {})
+
+  expect(getRecipients).toHaveBeenCalledTimes(2)
+  expect(renderer.root.findByProps({ id: 'feishu-test-recipient-trigger' }).findByType('span').children.join('')).toBe('integrations.feishuTestRecipientPlaceholder')
+  expect(button(renderer, 'integrations.feishuTestSend').props.disabled).toBe(true)
+  expect(send).not.toHaveBeenCalled()
 })

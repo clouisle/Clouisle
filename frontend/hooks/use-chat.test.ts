@@ -1816,4 +1816,32 @@ describe('useChat', () => {
     expect(result.pendingRunInputs).toEqual([])
     await sending
   })
+  it('removes a failed steering message and reports the API error', async () => {
+    const onError = mock()
+    options = { agentId: 'agent-1', onError }
+    renderHookHarness()
+    const release = deferred<StreamEvent>()
+    const runEvent = (sequence: number, type: string, payload: Record<string, unknown>) => ({
+      event: type,
+      data: { run_id: 'run-1', sequence, timestamp: '2026-08-31T00:00:00Z', type, payload },
+    })
+    streamEvents = [
+      runEvent(1, 'run_start', { status: 'running', run_id: 'run-1' }),
+      runEvent(2, 'message_start', { conversation_id: 'conversation-1', message_id: 'assistant-1' }),
+      release.promise,
+    ]
+    postRunInput.mockRejectedValue(new Error('Run input was rejected'))
+    chatStream.mockReturnValue({ stream: Promise.resolve(new Response()), abort: mock() })
+
+    const sending = result.sendMessage('initial')
+    for (let attempt = 0; attempt < 10 && result.runId !== 'run-1'; attempt += 1) await flush()
+    await result.sendMessage('steer this run')
+    for (let attempt = 0; attempt < 10 && result.pendingRunInputs.length > 0; attempt += 1) await flush()
+
+    expect(postRunInput).toHaveBeenCalledWith('agent-1', 'run-1', expect.objectContaining({ content: 'steer this run' }))
+    expect(result.pendingRunInputs).toEqual([])
+    expect(onError).toHaveBeenCalledWith({ message: 'Run input was rejected' })
+    release.resolve(runEvent(3, 'run_end', { status: 'completed', message_id: 'assistant-1' }))
+    await sending
+  })
 })

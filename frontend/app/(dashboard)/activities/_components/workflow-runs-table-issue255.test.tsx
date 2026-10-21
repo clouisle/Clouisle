@@ -110,7 +110,35 @@ describe('dashboard workflow runs table issue #255 coverage', () => {
     expect(setSearch).toHaveBeenCalledWith('')
     expect(states.slice(10, 15)).toEqual([[], [], [], [], []])
   })
+  test('pagination requests the next page and returns to the first page when page size changes', async () => {
+    getAllWorkflowRuns.mockResolvedValue({ items: runs, total: 42 } as never)
+    render(); await flush(); let tree = render()
+    const next = descendants(tree).find((n) => n.type === 'Button' && descendants(n).some((child) => child.type === 'ChevronRight'))!
+    next.props.onClick()
+    expect(states[2]).toBe(2)
+    render(); await flush();
+    expect(getAllWorkflowRuns).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, pageSize: 20 }))
 
+    tree = render()
+    descendants(tree).find((n) => n.type === 'Select')!.props.onValueChange('50')
+    expect(states[3]).toBe(50)
+    expect(states[2]).toBe(1)
+  })
+
+  test('canceling single-run deletion closes confirmation without deleting', async () => {
+    getAllWorkflowRuns.mockResolvedValue({ items: runs, total: 42 } as never)
+    render(); await flush(); let tree = render()
+    descendants(tree).find((n) => n.type === 'DropdownMenuItem' && n.props.variant === 'destructive')!.props.onClick()
+    tree = render()
+    expect(descendants(tree).find((n) => n.type === 'AlertDialog')!.props.open).toBe(true)
+    descendants(tree).find((n) => n.type === 'AlertDialog')!.props.onOpenChange(false)
+    tree = render()
+    expect(descendants(tree).find((n) => n.type === 'AlertDialog')!.props.open).toBe(false)
+    expect(deleteWorkflowRun).not.toHaveBeenCalled()
+  })
+ 
+
+ 
   test('renders safe empty/error states without privileged actions', async () => {
     const error = new Error('offline'); const consoleError = mock(() => {}); console.error = consoleError
     allowed = false; getAllWorkflowRuns.mockRejectedValue(error); getTeams.mockRejectedValue(error); getUsers.mockRejectedValue(error)

@@ -322,6 +322,30 @@ describe('RetrievalLab', () => {
     expect(text(find(tree, 'select', props => props.value === 'vector'))).toContain('vectorSearch')
   })
 
+  test('submits trimmed queries with Enter, preserves Shift+Enter, and ignores blank input', async () => {
+    let tree = await flush()
+    const preventDefault = mock()
+
+    tree = await enterQuery(tree, '   ')
+    await searchButton(tree).props.onClick()
+    expect(search).not.toHaveBeenCalled()
+
+    tree = await enterQuery(tree, '  policy search  ')
+    query(tree).props.onKeyDown({ key: 'Enter', shiftKey: true, nativeEvent: { isComposing: false }, preventDefault })
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(search).not.toHaveBeenCalled()
+
+    search.mockResolvedValueOnce(response())
+    query(tree).props.onKeyDown({ key: 'Enter', shiftKey: false, nativeEvent: { isComposing: false }, preventDefault })
+    await settle()
+
+    expect(preventDefault).toHaveBeenCalledTimes(1)
+    expect(search).toHaveBeenCalledWith('kb-1', expect.objectContaining({
+      query: 'policy search', search_mode: 'hybrid', top_k: 5,
+    }))
+    expect(text(render())).toContain('Guide')
+  })
+
   test('shows connectivity guidance only for request failures and ignores IME composition Enter', async () => {
     search.mockRejectedValue(new ApiError(-1, 'network detail'))
     let tree = await flush()
@@ -545,5 +569,50 @@ describe('RetrievalLab', () => {
     slots.splice(0); effects = []; cursor = 0
     const unsafe = Image({ src: 'javascript:alert(1)', alt: 'unsafe' })
     expect(text((unsafe.type as (props: { src?: string; alt?: string }) => ReactNode)(unsafe.props))).toContain('unsafe')
+  })
+  test('highlights query terms in result previews and forwards bounded configuration', async () => {
+    const result = response()
+    result.results[0].content = 'Policy: policy-makers follow the guide.'
+    search.mockResolvedValueOnce(result)
+    let tree = await flush()
+    find(tree, 'button', props => text(props.children as ReactNode).includes('advancedSettings')).props.onClick()
+    tree = render()
+
+    find(tree, 'input', props => props.id === 'topKA').props.onChange({ target: { value: '99' } })
+    find(render(), 'input', props => props.id === 'thresholdA').props.onChange({ target: { value: '2' } })
+    find(render(), 'input', props => props.id === 'rrfKA').props.onChange({ target: { value: '0' } })
+    find(render(), 'input', props => props.id === 'candidateA').props.onChange({ target: { value: '1' } })
+    tree = await enterQuery(render(), 'policy guide')
+    await searchButton(tree).props.onClick()
+    tree = await settle()
+
+    expect(search).toHaveBeenCalledWith('kb-1', expect.objectContaining({
+      query: 'policy guide', top_k: 20, score_threshold: 1, threshold: 1,
+      rrf_k: 1, rerank_candidate_k: 20,
+    }))
+    const resultButton = find(tree, 'button', props => String(props['aria-label']).startsWith('selectResult'))
+    const marks = elements(resultButton).filter(element => element.type === 'mark')
+    expect(marks.map(mark => text(mark))).toEqual(['Policy', 'policy', 'guide'])
+  })
+
+  test('replaces a named preset and can clear the selected preset', async () => {
+    let tree = await flush()
+    find(tree, 'input', props => props['aria-label'] === 'presetName').props.onChange({ target: { value: ' Fast ' } })
+    tree = render()
+    button(tree, 'savePreset').props.onClick()
+    tree = render()
+
+    find(tree, 'input', props => props.id === 'topKA').props.onChange({ target: { value: '8' } })
+    tree = render()
+    find(tree, 'input', props => props['aria-label'] === 'presetName').props.onChange({ target: { value: 'Fast' } })
+    tree = render()
+    button(tree, 'savePreset').props.onClick()
+    tree = render()
+    expect(JSON.parse(local.get('retrieval-lab:kb-1')!).presets).toHaveLength(1)
+    expect(JSON.parse(local.get('retrieval-lab:kb-1')!).presets[0].config.top_k).toBe(8)
+
+    find(tree, 'select', props => props['aria-label'] === 'presets').props.onValueChange('__none__')
+    tree = render()
+    expect(button(tree, 'applyToProduction').props.disabled).toBe(true)
   })
 })

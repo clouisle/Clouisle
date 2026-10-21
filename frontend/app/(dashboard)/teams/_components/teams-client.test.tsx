@@ -8,7 +8,8 @@ const ui = (props: Record<string, unknown>) => props.children
 const Button = ui
 const PermissionGuard = ui
 const TeamDialog = (props: Record<string, unknown>) => props.children
-const TeamDetailDialog = (props: Record<string, unknown>) => props.children
+const AlertDialogAction = (props: Record<string, unknown>) => jsx('alert-dialog-action', props)
+let permissions = ['admin:team:create', 'admin:team:update', 'admin:team:delete']
 let states: unknown[] = []
 let stateIndex = 0
 let effects: Array<() => void | Promise<void>> = []
@@ -52,7 +53,7 @@ mock.module('@/hooks/use-url-search-state', () => ({ useUrlSearchState: () => [s
 mock.module('@/hooks/use-debounce', () => ({ useDebounce: (value: string) => value }))
 mock.module('@/components/permission-guard', () => ({
   PermissionGuard,
-  useCanPerform: () => ({ canPerform: () => true }),
+  useCanPerform: () => ({ canPerform: (permission: string) => permissions.includes(permission) }),
 }))
 mock.module('./team-dialog', () => ({ TeamDialog }))
 mock.module('./team-detail-dialog', () => ({ TeamDetailDialog }))
@@ -71,7 +72,7 @@ mock.module('@/components/ui/dropdown-menu', () => ({
 }))
 mock.module('@/components/ui/tooltip', () => ({ Tooltip: ui, TooltipContent: ui, TooltipTrigger: ui }))
 mock.module('@/components/ui/alert-dialog', () => ({
-  AlertDialog: ui, AlertDialogAction: ui, AlertDialogCancel: ui, AlertDialogContent: ui,
+  AlertDialog: ui, AlertDialogAction, AlertDialogCancel: ui, AlertDialogContent: ui,
   AlertDialogDescription: ui, AlertDialogFooter: ui, AlertDialogHeader: ui, AlertDialogTitle: ui,
 }))
 
@@ -120,6 +121,7 @@ beforeEach(() => {
   setSearchQuery.mockClear()
   deleteTeam.mockClear()
   toastSuccess.mockClear()
+  permissions = ['admin:team:create', 'admin:team:update', 'admin:team:delete']
   getTeams = () => Promise.resolve({ items: [], total: 0 })
 })
 
@@ -149,6 +151,39 @@ describe('TeamsClient', () => {
     expect(textContent(failed)).toContain('noTeams')
     expect(find(failed, (element) => String(element.props.className).includes('animate-pulse'))).toBeUndefined()
   })
+  test('closes the delete dialog and clears the selected team when deletion fails', async () => {
+    getTeams = mock(() => Promise.resolve({ items: [team], total: 1 }))
+    deleteTeam.mockImplementation(() => Promise.reject(new Error('delete failed')))
+    render()
+    await effects.at(-1)?.()
+    let tree = render()
+    const deleteAction = find(tree, (element) => element.props.variant === 'destructive' && textContent(element).includes('delete') && typeof element.props.onClick === 'function')
+    ;(deleteAction?.props.onClick as (event: { stopPropagation: () => void }) => void)({ stopPropagation: mock() })
+
+    tree = render()
+    expect(textContent(tree)).toContain('deleteTeamConfirm:{"name":"Platform"}')
+    const confirm = find(tree, (element) => element.type === AlertDialogAction && typeof element.props.onClick === 'function')
+    await (confirm?.props.onClick as (event: { stopPropagation: () => void }) => Promise<void>)({ stopPropagation: mock() })
+
+    tree = render()
+    expect(deleteTeam).toHaveBeenCalledWith('team-1')
+    expect(toastSuccess).not.toHaveBeenCalled()
+    expect(find(tree, (element) => element.type === TeamDetailDialog)?.props.team).toBeUndefined()
+    expect(findAll(tree, (element) => element.props.onOpenChange && element.props.open === true)).toHaveLength(0)
+  })
+  test('submits the debounced search term to the team listing API', async () => {
+    getTeams = mock(() => Promise.resolve({ items: [], total: 0 }))
+    searchQuery = 'platform'
+
+    render()
+    await effects.at(-1)?.()
+    render()
+
+    expect(getTeams).toHaveBeenCalledWith(1, 12, 'platform')
+    expect(textContent(render())).toContain('noTeams')
+  })
+
+
 
   test('opens the create dialog from the guarded action', () => {
     const initial = render()
@@ -192,33 +227,131 @@ describe('TeamsClient', () => {
     ;(selectWrapper?.props.onClick as (event: { stopPropagation: () => void }) => void)({ stopPropagation: mock() })
     expect(textContent(render())).toContain('1 teamsSelected')
 
-    // ponytail: pagination buttons share the same mock shape as the clear-selection icon; selection clearing is covered by bulk success below.
   })
 
-  test('edits, deletes, bulk deletes, and refreshes after dialog success', async () => {
+  test('opens the edit dialog with the selected team', async () => {
+    getTeams = mock(() => Promise.resolve({ items: [team], total: 1 }))
+    render()
+    await effects.at(-1)?.()
+    const loaded = render()
+    const editAction = find(loaded, (element) => element.props.variant === 'ghost' && textContent(element).includes('edit') && typeof element.props.onClick === 'function')
+    ;(editAction?.props.onClick as (event: { stopPropagation: () => void }) => void)({ stopPropagation: mock() })
+
+    const opened = render()
+    const dialog = find(opened, (element) => element.type === TeamDialog)
+    expect(dialog?.props.open).toBe(true)
+    expect(dialog?.props.team).toEqual(team)
+  })
+
+  test('closes bulk-delete confirmation without success when a deletion fails', async () => {
+    getTeams = mock(() => Promise.resolve({ items: [team], total: 1 }))
+    deleteTeam.mockImplementation(() => Promise.reject(new Error('delete failed')))
+    render()
+    await effects.at(-1)?.()
+    const selectAll = find(render(), (element) => typeof element.props.onCheckedChange === 'function')
+    ;(selectAll?.props.onCheckedChange as () => void)()
+    const selected = render()
+    const bulkDelete = find(selected, (element) => String(element.props.className).includes('text-destructive') && typeof element.props.onClick === 'function')
+    ;(bulkDelete?.props.onClick as () => void)()
+
+    const confirmation = render()
+    const confirm = find(confirmation, (element) => element.type === AlertDialogAction && typeof element.props.onClick === 'function')
+    await (confirm?.props.onClick as (event: { stopPropagation: () => void }) => Promise<void>)({ stopPropagation: mock() })
+
+    const afterFailure = render()
+    expect(deleteTeam).toHaveBeenCalledWith('team-1')
+    expect(toastSuccess).not.toHaveBeenCalled()
+    expect(textContent(afterFailure)).toContain('1 teamsSelected')
+    expect(findAll(afterFailure, (element) => element.props.onOpenChange && element.props.open === true)).toHaveLength(0)
+  })
+
+  test('deletes a team after confirming and refreshes after dialog success', async () => {
+    getTeams = mock(() => Promise.resolve({ items: [team], total: 1 }))
+    render()
+    await effects.at(-1)?.()
+    const loaded = render()
+    const deleteAction = find(loaded, (element) => element.props.variant === 'destructive' && textContent(element).includes('delete') && typeof element.props.onClick === 'function')
+    ;(deleteAction?.props.onClick as (event: { stopPropagation: () => void }) => void)({ stopPropagation: mock() })
+
+    const confirmation = render()
+    expect(textContent(confirmation)).toContain('deleteTeamConfirm:{"name":"Platform"}')
+    const confirm = find(confirmation, (element) => element.type === AlertDialogAction && typeof element.props.onClick === 'function')
+    await (confirm?.props.onClick as (event: { stopPropagation: () => void }) => Promise<void>)({ stopPropagation: mock() })
+    expect(deleteTeam).toHaveBeenCalledWith('team-1')
+    expect(toastSuccess).toHaveBeenCalledWith('teamDeleted')
+
+    ;(find(render(), (element) => element.type === TeamDialog)?.props.onSuccess as () => void)()
+    expect(getTeams).toHaveBeenCalled()
+  })
+
+  test('bulk deletes selected teams after confirming', async () => {
     getTeams = mock(() => Promise.resolve({ items: [team, { ...team, id: 'team-2', name: 'Ops' }], total: 2 }))
+    render()
+    await effects.at(-1)?.()
+    const selectAll = find(render(), (element) => typeof element.props.onCheckedChange === 'function')
+    ;(selectAll?.props.onCheckedChange as () => void)()
+    const selected = render()
+    const bulkDelete = find(selected, (element) => String(element.props.className).includes('text-destructive') && typeof element.props.onClick === 'function')
+    ;(bulkDelete?.props.onClick as () => void)()
+
+    const confirmation = render()
+    expect(textContent(confirmation)).toContain('confirmBulkDelete:{"count":2}')
+    const confirm = find(confirmation, (element) => element.type === AlertDialogAction && typeof element.props.onClick === 'function')
+    await (confirm?.props.onClick as (event: { stopPropagation: () => void }) => Promise<void>)({ stopPropagation: mock() })
+    expect(deleteTeam).toHaveBeenCalledWith('team-1')
+    expect(deleteTeam).toHaveBeenCalledWith('team-2')
+    expect(toastSuccess).toHaveBeenCalledWith('bulkDeleted:{"count":2}')
+  })
+  test('advances pages and disables forward navigation on the last page', async () => {
+    getTeams = mock(() => Promise.resolve({ items: [team], total: 25 }))
+    render()
+    await effects.at(-1)?.()
+    const firstPage = render()
+    const pageButtons = findAll(firstPage, (element) => element.type === Button && element.props.size === 'icon')
+
+    expect(textContent(firstPage)).toContain('pageInfo:{"page":1,"total":3}')
+    expect(pageButtons[0].props.disabled).toBe(true)
+    expect(pageButtons[1].props.disabled).toBe(true)
+    ;(pageButtons[2].props.onClick as () => void)()
+    render()
+    await effects.at(-1)?.()
+    const secondPage = render()
+
+    expect(getTeams).toHaveBeenLastCalledWith(2, 12, undefined)
+    expect(textContent(secondPage)).toContain('pageInfo:{"page":2,"total":3}')
+    const lastPageButtons = findAll(secondPage, (element) => element.type === Button && element.props.size === 'icon')
+    ;(lastPageButtons[3].props.onClick as () => void)()
+    render()
+    await effects.at(-1)?.()
+    expect(getTeams).toHaveBeenLastCalledWith(3, 12, undefined)
+    expect(findAll(render(), (element) => element.type === Button && element.props.size === 'icon')[2].props.disabled).toBe(true)
+  })
+
+  test('hides team action menus when update and delete permissions are absent', async () => {
+    permissions = []
+    getTeams = mock(() => Promise.resolve({ items: [team], total: 1 }))
+    render()
+    await effects.at(-1)?.()
+
+    const loaded = render()
+    expect(textContent(loaded)).toContain('Platform')
+    expect(find(loaded, (element) => String(element.props.className).includes('absolute top-4 right-4'))).toBeUndefined()
+  })
+  test('select all excludes the protected default team', async () => {
+    getTeams = mock(() => Promise.resolve({
+      items: [team, { ...team, id: 'team-default', name: 'Default', is_default: true }],
+      total: 2,
+    }))
     render()
     await effects.at(-1)?.()
     const loaded = render()
 
-    ;(find(loaded, (element) => textContent(element).includes('edit') && typeof element.props.onClick === 'function')?.props.onClick as (event: { stopPropagation: () => void }) => void)({ stopPropagation: mock() })
-    expect(find(render(), (element) => element.type === TeamDialog)?.props.team).toEqual(team)
-
-    states[10] = team
-    states[8] = true
-    await (findAll(render(), (element) => element.props.variant === 'destructive' && typeof element.props.onClick === 'function')[2]?.props.onClick as () => Promise<void>)()
-    expect(deleteTeam).toHaveBeenCalledWith('team-1')
-    expect(toastSuccess).toHaveBeenCalledWith('teamDeleted')
-
-    const selectAll = find(render(), (element) => typeof element.props.onCheckedChange === 'function')
+    const selectAll = find(loaded, (element) => typeof element.props.onCheckedChange === 'function')
     ;(selectAll?.props.onCheckedChange as () => void)()
-    const bulkOpen = find(render(), (element) => String(element.props.className).includes('text-destructive') && typeof element.props.onClick === 'function')
-    ;(bulkOpen?.props.onClick as () => void)()
-    await (findAll(render(), (element) => textContent(element).includes('delete') && typeof element.props.onClick === 'function').at(-1)?.props.onClick as () => Promise<void>)()
-    expect(deleteTeam).toHaveBeenCalledWith('team-2')
-    expect(toastSuccess).toHaveBeenLastCalledWith('bulkDeleted:{"count":2}')
 
-    ;(find(render(), (element) => element.type === TeamDialog)?.props.onSuccess as () => void)()
-    expect(getTeams).toHaveBeenCalled()
+    const selected = render()
+    expect(textContent(selected)).toContain('1 teamsSelected')
+    expect(findAll(selected, (element) => String(element.props.className).includes('absolute top-4 left-4'))).toHaveLength(1)
+    expect(textContent(selected)).toContain('defaultTeam')
   })
 })

@@ -226,6 +226,142 @@ describe('platform agent logs page', () => {
     await flush()
     expect(getAgentConversations.mock.calls.at(-1)?.[1]?.search).toBeUndefined()
   })
+  test('uses the selected 30-day and 90-day filters in conversation requests', async () => {
+    let page = await renderLoadedPage()
+    const selects: Tree[] = []
+    const collect = (node: ReactNode) => {
+      const resolved = resolve(node)
+      if (!resolved || typeof resolved !== 'object' || !('type' in resolved)) return
+      const tree = resolved as Tree
+      if (tree.type === 'select') selects.push(tree)
+      const children = tree.props.children
+      for (const child of Array.isArray(children) ? children : [children]) collect(child as ReactNode)
+    }
+    collect(page)
+
+    for (const filter of ['30d', '90d']) {
+      ;(selects[0].props.onValueChange as (value: string) => void)(filter)
+      page = renderLogsPage()
+      await flush()
+      const request = getAgentConversations.mock.calls.at(-1)?.[1]
+      expect(request?.createdAfter).toBeString()
+      expect(Date.parse(request?.createdAfter ?? '')).toBeLessThanOrEqual(Date.now())
+      expect(request?.sortBy).toBe('created_at')
+    }
+  })
+
+  test('confirms deletion and refreshes the current conversation page', async () => {
+    getAgentConversations.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+    await renderLoadedPage()
+    state[12] = 'conversation-1'
+    const page = renderLogsPage()
+
+    await (find(page, (tree) => tree.type === 'alert-dialog-action').props.onClick as () => Promise<void>)()
+
+    expect(deleteConversation).toHaveBeenCalledWith('conversation-1')
+    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 1 }))
+    expect(state[12]).toBeNull()
+  })
+
+  test('keeps the logs page usable when conversation loading fails', async () => {
+    getAgentConversations.mockRejectedValueOnce(new Error('unavailable'))
+
+    const page = await renderLoadedPage()
+
+    expect(find(page, (tree) => tree.type === 'p' && tree.props.children === 'noConversations')).toBeDefined()
+  })
+
+  test('closes a conversation drawer after deleting its selected conversation', async () => {
+    getAgentConversations.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+    await renderLoadedPage()
+    state[9] = true
+    state[10] = { id: 'conversation-1', messages: [] }
+    state[12] = 'conversation-1'
+    const page = renderLogsPage()
+
+    await (find(page, (tree) => tree.type === 'alert-dialog-action').props.onClick as () => Promise<void>)()
+
+    expect(state[10]).toBeNull()
+    expect(state[9]).toBe(false)
+  })
+  test('opens the drawer when conversation detail cannot be loaded', async () => {
+    getAgentConversations.mockResolvedValue({
+      items: [{ id: 'conversation-1', title: 'Billing', message_count: 1, created_at: '', updated_at: '' }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    })
+    getConversation.mockRejectedValueOnce(new Error('unavailable'))
+    const page = await renderLoadedPage()
+
+    await (find(page, (tree) => tree.type === 'tr' && tree.props.onClick).props.onClick as () => Promise<void>)()
+
+    expect(getConversation).toHaveBeenCalledWith('conversation-1')
+    expect(state[9]).toBe(true)
+    expect(state[11]).toBe(false)
+  })
+
+  test('closes the delete confirmation when deletion fails', async () => {
+    deleteConversation.mockRejectedValueOnce(new Error('unavailable'))
+    await renderLoadedPage()
+    state[12] = 'conversation-1'
+    const page = renderLogsPage()
+
+    await (find(page, (tree) => tree.type === 'alert-dialog-action').props.onClick as () => Promise<void>)()
+
+    expect(deleteConversation).toHaveBeenCalledWith('conversation-1')
+    expect(state[12]).toBeNull()
+  })
+
+
+
+  test('shows the search-specific empty state after a filtered request returns no matches', async () => {
+    getAgentConversations.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+    let page = await renderLoadedPage()
+
+    const search = find(page, (tree) => tree.type === 'input')
+    ;(search.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: 'missing topic' } })
+    page = renderLogsPage()
+    await flush()
+    page = renderLogsPage()
+
+    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ search: 'missing topic' }))
+    expect(find(page, (tree) => tree.type === 'p' && tree.props.children === 'noSearchResults')).toBeDefined()
+  })
+
+  test('uses the pagination first, previous, and last controls for their target pages', async () => {
+    getAgentConversations.mockResolvedValue({ items: [], total: 41, page: 1, page_size: 20 })
+    let page = await renderLoadedPage()
+
+    const next = find(page, (tree) => tree.type === 'button' && tree.props['aria-label'] === 'next')
+    await (next.props.onClick as () => Promise<void>)()
+    page = renderLogsPage()
+    expect(find(page, (tree) => tree.type === 'button' && tree.props['aria-label'] === 'prev').props.disabled).toBe(false)
+
+    const previous = find(page, (tree) => tree.type === 'button' && tree.props['aria-label'] === 'prev')
+    await (previous.props.onClick as () => Promise<void>)()
+    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 1 }))
+
+    page = renderLogsPage()
+    const last = find(page, (tree) => tree.type === 'button' && tree.props['aria-label'] === 'pagination.last')
+    await (last.props.onClick as () => Promise<void>)()
+    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 3 }))
+    page = renderLogsPage()
+    const first = find(page, (tree) => tree.type === 'button' && tree.props['aria-label'] === 'pagination.first')
+    await (first.props.onClick as () => Promise<void>)()
+    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 1 }))
+  })
+
+  test('canceling the delete confirmation closes it without deleting', async () => {
+    await renderLoadedPage()
+    state[12] = 'conversation-1'
+    const page = renderLogsPage()
+
+    ;(find(page, (tree) => tree.type === 'alert-dialog').props.onOpenChange as (open: boolean) => void)(false)
+
+    expect(state[12]).toBeNull()
+    expect(deleteConversation).not.toHaveBeenCalled()
+  })
 
   test('routes away when the agent request fails', async () => {
     getAgent.mockRejectedValueOnce(new Error('missing'))

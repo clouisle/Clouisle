@@ -151,3 +151,65 @@ test('preserves compatible mappings, falls back to start parameters, and clears 
   await Promise.all(effects.map(effect => effect()))
   expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({ inputMappings: [] }))
 })
+
+test('clears the selected workflow while retaining the output variable', () => {
+  const onConfigChange = mock(() => {})
+  const tree = render({
+    workflowId: 'workflow-1',
+    workflowName: 'Flow',
+    workflowDescription: 'Description',
+    inputMappings: [{ name: 'query', type: 'string', required: true, source: 'constant', constantValue: 'old' }],
+    outputVariable: 'flowResult',
+  }, { onConfigChange })
+
+  const clearButton = descendants(tree).find(node => node.type === component && node.props.onClick && node.props.variant === 'ghost' && node.props.size === 'icon')
+  clearButton!.props.onClick!()
+
+  expect(onConfigChange).toHaveBeenCalledWith({ ...defaultSubWorkflowNodeConfig, outputVariable: 'flowResult' })
+})
+
+test('replaces mappings when a selected workflow changes an input type', async () => {
+  getWorkflow.mockImplementation(async () => ({
+    variables: [{ name: 'query', type: 'number', required: false, description: 'Numeric query', default: 12 }],
+  }))
+  const onConfigChange = mock(() => {})
+  render({
+    workflowId: 'workflow-1',
+    inputMappings: [{ name: 'query', type: 'string', required: true, source: 'variable', variableRef: '{{input.query}}' }],
+    outputVariable: 'result',
+  }, { onConfigChange })
+
+  await Promise.all(effects.map(effect => effect()))
+
+  expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({
+    inputMappings: [{ name: 'query', type: 'number', required: false, description: 'Numeric query', source: 'constant', constantValue: '12' }],
+  }))
+})
+
+test('switching a mapped input back to a constant removes its variable reference', () => {
+  const onConfigChange = mock(() => {})
+  const tree = render({
+    workflowId: 'workflow-1',
+    inputMappings: [{ name: 'query', type: 'string', required: true, source: 'variable', variableRef: '{{input.query}}', variableRefNodeLabel: 'Input' }],
+    outputVariable: 'result',
+  }, { onConfigChange })
+
+  descendants(tree).find(node => node.type === component && typeof node.props.onClick === 'function' && text(node).includes('configCommon.constant'))!.props.onClick!()
+
+  expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({
+    inputMappings: [{ name: 'query', type: 'string', required: true, source: 'constant', variableRef: undefined, variableRefNodeLabel: undefined }],
+  }))
+})
+
+test('filters published workflows by matching names and descriptions case-insensitively', () => {
+  states = [true, true, [
+    { id: 'by-name', name: 'Invoice flow', description: 'Creates reports' },
+    { id: 'by-description', name: 'Other flow', description: 'Invoice processing' },
+    { id: 'unrelated', name: 'Archive', description: 'Old records' },
+  ], false, true, 'INVOICE']
+  const tree = render({ inputMappings: [], outputVariable: 'result' })
+
+  expect(text(tree)).toContain('Invoice flow')
+  expect(text(tree)).toContain('Other flow')
+  expect(text(tree)).not.toContain('Archive')
+})

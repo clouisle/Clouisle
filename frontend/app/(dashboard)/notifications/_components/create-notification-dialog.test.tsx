@@ -62,10 +62,16 @@ mock.module("@/components/ui/dialog", () => ({
 }));
 mock.module("@/components/ui/field", () => ({ FieldError: element }));
 mock.module("@/components/ui/select", () => ({
-  Select: element,
-  SelectContent: element,
-  SelectItem: element,
-  SelectTrigger: element,
+  Select: ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => (
+    <select
+      value={String(props.value ?? "")}
+      disabled={Boolean(props.disabled)}
+      onChange={(event) => (props.onValueChange as ((value: string) => void) | undefined)?.(event.target.value)}
+    >{children}</select>
+  ),
+  SelectContent: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  SelectItem: ({ children, value }: React.PropsWithChildren<{ value?: string }>) => <option value={value}>{children}</option>,
+  SelectTrigger: () => null,
 }));
 mock.module("@/components/ui/checkbox", () => ({
   Checkbox: ({
@@ -96,7 +102,26 @@ mock.module("@/components/ui/markdown-editor", () => ({
   ),
 }));
 mock.module("@/components/ui/combobox", () => ({
-  Combobox: element,
+  Combobox: ({ children, onValueChange, onInputValueChange, items, value }: React.PropsWithChildren<{
+    onValueChange?: (value: unknown) => void;
+    onInputValueChange?: (value: string) => void;
+    items?: { value: string; label: string }[];
+    value?: { value: string; label: string } | null;
+  }>) => (
+    <div>
+      {children}
+      <input
+        aria-label="Search users"
+        value={value?.label ?? ""}
+        onChange={(event) => onInputValueChange?.(event.target.value)}
+      />
+      {items?.map((item) => (
+        <button key={item.value} type="button" onClick={() => onValueChange?.(item)}>
+          {item.label}
+        </button>
+      ))}
+    </div>
+  ),
   ComboboxContent: element,
   ComboboxEmpty: element,
   ComboboxInput: element,
@@ -123,12 +148,16 @@ const render = async () => {
   });
   return renderer!;
 };
+const submitButton = (renderer: ReactTestRenderer) =>
+  renderer.root.findAllByType("button").find((button) => button.children.includes("admin.submit"))!;
 
 beforeEach(() => {
   adminCreate.mockReset();
   adminCreate.mockImplementation(() => Promise.resolve());
   getTeams.mockClear();
-  getUsers.mockClear();
+  getTeams.mockImplementation(() => Promise.resolve({ items: [] }));
+  getUsers.mockReset();
+  getUsers.mockImplementation(() => Promise.resolve({ items: [] }));
   success.mockClear();
   onOpenChange.mockClear();
   onSuccess.mockClear();
@@ -139,7 +168,7 @@ test("blocks notification creation until a title is supplied", async () => {
   const renderer = await render();
 
   await act(async () => {
-    await renderer.root.findAllByType("button").at(-1)!.props.onClick();
+    await submitButton(renderer).props.onClick();
   });
 
   expect(adminCreate).not.toHaveBeenCalled();
@@ -156,30 +185,26 @@ test("blocks notification creation until a title is supplied", async () => {
 test("validates required content and team audience", async () => {
   const renderer = await render();
   const [title] = renderer.root.findAllByType("input");
-  const scope = renderer.root.findAllByProps({ value: "global" })[0];
+  const scope = renderer.root.findAllByType("select")[0];
 
   await act(async () => {
     title.props.onChange({ target: { value: "Maintenance" } });
   });
-  await act(async () => {
-    await renderer.root.findAllByType("button").at(-1)!.props.onClick();
-  });
+  await act(async () => submitButton(renderer).props.onClick());
   expect(adminCreate).not.toHaveBeenCalled();
   expect(renderer.root.findAllByType("div").map((node) => node.children.join("")).join(" ")).toContain("content: requiredFields");
 
   await act(async () => {
     renderer.root.findByType("textarea").props.onChange({ target: { value: "Tonight" } });
-    scope.props.onValueChange("team");
+    scope.props.onChange({ target: { value: "team" } });
   });
-  await act(async () => {
-    await renderer.root.findAllByType("button").at(-1)!.props.onClick();
-  });
+  await act(async () => submitButton(renderer).props.onClick());
   expect(adminCreate).not.toHaveBeenCalled();
   expect(renderer.root.findAllByType("div").map((node) => node.children.join("")).join(" ")).toContain("team_id: requiredFields");
 
-  await act(async () => scope.props.onValueChange("user"));
+  await act(async () => scope.props.onChange({ target: { value: "user" } }));
   await act(async () => {
-    await renderer.root.findAllByType("button").at(-1)!.props.onClick();
+    await submitButton(renderer).props.onClick();
   });
   expect(adminCreate).not.toHaveBeenCalled();
   expect(renderer.root.findAllByType("div").map((node) => node.children.join("")).join(" ")).toContain("user_id: requiredFields");
@@ -190,19 +215,19 @@ test("creates a scheduled team notification", async () => {
   getTeams.mockImplementation(() => Promise.resolve({ items: [{ id: "team-7", name: "Operations" }] }));
   const renderer = await render();
   const [title, link, expires] = renderer.root.findAllByType("input");
-  const scope = renderer.root.findAllByProps({ value: "global" })[0];
+  const scope = renderer.root.findAllByType("select")[0];
 
   await act(async () => {
     title.props.onChange({ target: { value: "Maintenance" } });
     link.props.onChange({ target: { value: "https://example.test/status" } });
     expires.props.onChange({ target: { value: "2030-04-05T09:30" } });
     renderer.root.findByType("textarea").props.onChange({ target: { value: "Tonight" } });
-    scope.props.onValueChange("team");
+    scope.props.onChange({ target: { value: "team" } });
   });
-  const team = renderer.root.findAllByProps({ value: "" }).find((node) => typeof node.props.onValueChange === "function")!;
-  await act(async () => team.props.onValueChange("team-7"));
+  const team = renderer.root.findAllByType("select").find((node) => node.props.value === "");
+  await act(async () => team!.props.onChange({ target: { value: "team-7" } }));
   await act(async () => {
-    await renderer.root.findAllByType("button").at(-1)!.props.onClick();
+    await submitButton(renderer).props.onClick();
   });
 
   expect(adminCreate).toHaveBeenCalledWith(expect.objectContaining({
@@ -226,10 +251,10 @@ test("shows a create failure and recovers when the title changes", async () => {
     renderer.root.findByType("textarea").props.onChange({ target: { value: "Tonight" } });
   });
   await act(async () => {
-    await renderer.root.findAllByType("button").at(-1)!.props.onClick();
+    await submitButton(renderer).props.onClick();
   });
   expect(renderer.root.findAllByType("div").map((node) => node.children.join("")).join(" ")).toContain("title: already exists");
-  expect(renderer.root.findAllByType("button").at(-1)!.props.disabled).toBe(false);
+  expect(submitButton(renderer).props.disabled).toBe(false);
 
   await act(async () => title.props.onChange({ target: { value: "Maintenance notice" } }));
   expect(renderer.root.findAllByType("div").map((node) => node.children.join("")).join(" ")).not.toContain("already exists");
@@ -253,7 +278,7 @@ test("creates a global notification with the selected email channel", async () =
       .props.onChange({ target: { checked: true } });
   });
   await act(async () => {
-    await renderer.root.findAllByType("button").at(-1)!.props.onClick();
+    await submitButton(renderer).props.onClick();
   });
 
   expect(adminCreate).toHaveBeenCalledWith(
@@ -286,11 +311,115 @@ test("creates a notification with Feishu delivery selected", async () => {
       .find((node) => typeof node.props.onChange === "function")!
       .props.onChange({ target: { checked: true } });
   });
-  await act(async () => renderer.root.findAllByType("button").at(-1)!.props.onClick());
+  await act(async () => submitButton(renderer).props.onClick());
 
   expect(adminCreate).toHaveBeenCalledWith(
     expect.objectContaining({ notify_channels: ["feishu"] }),
     { silent: true },
   );
+  act(() => renderer.unmount());
+});
+test("loads users and creates a notification for the selected user", async () => {
+  getUsers.mockImplementation(() => Promise.resolve({
+    items: [{ id: "user-9", username: "alex" }],
+  }));
+  const renderer = await render();
+  const title = renderer.root.findAllByType("input").find((node) => !node.props["aria-label"] && node.props.type !== "checkbox")!;
+  const scope = renderer.root.findAllByType("select")[0];
+
+  await act(async () => scope.props.onChange({ target: { value: "user" } }));
+  expect(getUsers).toHaveBeenCalledWith({ page: 1, pageSize: 20, search: undefined });
+
+  const searchInput = renderer.root.findAllByType("input").find((node) => node.props["aria-label"] === "Search users")!;
+  await act(async () => searchInput.props.onChange({ target: { value: " alex " } }));
+  expect(getUsers).toHaveBeenLastCalledWith({ page: 1, pageSize: 20, search: "alex" });
+  const userOption = renderer.root.findAllByType("button").find((node) => node.children.includes("alex"))!;
+  await act(async () => userOption.props.onClick());
+  expect(renderer.root.findAllByType("input").find((node) => node.props["aria-label"] === "Search users")!.props.value).toBe("alex");
+
+  await act(async () => {
+    title.props.onChange({ target: { value: "Account notice" } });
+    renderer.root.findByType("textarea").props.onChange({ target: { value: "Please review." } });
+    await submitButton(renderer).props.onClick();
+  });
+
+  expect(adminCreate).toHaveBeenCalledWith(expect.objectContaining({
+    scope: "user",
+    team_id: null,
+    user_id: "user-9",
+    title: "Account notice",
+    content: "Please review.",
+  }), { silent: true });
+  expect(onSuccess).toHaveBeenCalledTimes(1);
+  expect(onOpenChange).toHaveBeenCalledWith(false);
+  act(() => renderer.unmount());
+});
+
+test("clears server validation errors after editing and allows a successful retry", async () => {
+  validationErrors = { title: "already exists" };
+  adminCreate.mockImplementationOnce(() => Promise.reject(new Error("invalid")));
+  const renderer = await render();
+  const title = renderer.root.findAllByType("input").find((node) => !node.props["aria-label"] && node.props.type !== "checkbox")!;
+
+  await act(async () => {
+    title.props.onChange({ target: { value: "Maintenance" } });
+    renderer.root.findByType("textarea").props.onChange({ target: { value: "Tonight" } });
+    await submitButton(renderer).props.onClick();
+  });
+  expect(renderer.root.findAllByType("div").map((node) => node.children.join("")).join(" ")).toContain("title: already exists");
+  expect(onSuccess).not.toHaveBeenCalled();
+
+  await act(async () => title.props.onChange({ target: { value: "Maintenance update" } }));
+  expect(renderer.root.findAllByType("div").map((node) => node.children.join("")).join(" ")).not.toContain("already exists");
+  await act(async () => submitButton(renderer).props.onClick());
+
+  expect(adminCreate).toHaveBeenCalledTimes(2);
+  expect(adminCreate).toHaveBeenLastCalledWith(expect.objectContaining({ title: "Maintenance update" }), { silent: true });
+  expect(onSuccess).toHaveBeenCalledTimes(1);
+  expect(onOpenChange).toHaveBeenCalledWith(false);
+  act(() => renderer.unmount());
+});
+
+test("sends the selected notification type, level and webhook channel", async () => {
+  const renderer = await render();
+  const title = renderer.root.findAllByType("input").find((node) => !node.props["aria-label"] && node.props.type !== "checkbox")!;
+  const selectors = renderer.root.findAllByType("select");
+  const level = selectors.find((node) => node.props.value === "medium")!;
+  const type = selectors.find((node) => node.props.value === "system_announcement")!;
+
+  await act(async () => {
+    title.props.onChange({ target: { value: "Urgent notice" } });
+    renderer.root.findByType("textarea").props.onChange({ target: { value: "Read this." } });
+    type.props.onChange({ target: { value: "security_login_anomaly" } });
+    level.props.onChange({ target: { value: "high" } });
+    renderer.root.findByProps({ id: "channel-webhook" }).props.onChange({ target: { checked: true } });
+    await submitButton(renderer).props.onClick();
+  });
+
+  expect(adminCreate).toHaveBeenCalledWith(expect.objectContaining({
+    type: "security_login_anomaly",
+    level: "high",
+    notify_channels: ["webhook"],
+  }), { silent: true });
+  act(() => renderer.unmount());
+});
+
+test("rejects whitespace-only title and content before creating", async () => {
+  const renderer = await render();
+  const [title] = renderer.root.findAllByType("input");
+  const submit = submitButton(renderer);
+
+  await act(async () => {
+    title.props.onChange({ target: { value: "   " } });
+    renderer.root.findByType("textarea").props.onChange({ target: { value: "   " } });
+    await submit.props.onClick();
+  });
+  expect(adminCreate).not.toHaveBeenCalled();
+  expect(renderer.root.findAllByType("div").map((node) => node.children.join("")).join(" ")).toContain("title: requiredFields");
+
+  await act(async () => title.props.onChange({ target: { value: "Maintenance" } }));
+  await act(async () => submitButton(renderer).props.onClick());
+  expect(adminCreate).not.toHaveBeenCalled();
+  expect(renderer.root.findAllByType("div").map((node) => node.children.join("")).join(" ")).toContain("content: requiredFields");
   act(() => renderer.unmount());
 });

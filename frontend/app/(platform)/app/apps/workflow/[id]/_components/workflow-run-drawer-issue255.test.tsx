@@ -91,11 +91,13 @@ mock.module('@/lib/validation', () => ({
   normalizeValidationErrors: () => ({}),
   formatValidationSummaryMessage: (field: string, message: unknown) => `${field}: ${message}`,
 }))
+const getPendingPauseRequest = mock(async () => null)
+const submitPauseRequest = mock(async () => ({ pause_request_id: 'pause-1', status: 'submitted' }))
 mock.module('@/lib/api/workflows', () => ({
   workflowsApi: {
     runWorkflow, debugWorkflow, cancelWorkflowRun, streamWorkflowRun,
-    getPendingPauseRequest: mock(async () => null),
-    submitPauseRequest: mock(async () => ({ pause_request_id: 'pause-1', status: 'submitted' })),
+    getPendingPauseRequest,
+    submitPauseRequest,
   },
 }))
 mock.module('@/components/chat/pause-request-actions', () => ({
@@ -178,8 +180,9 @@ beforeEach(() => {
   refs = []
   memos = []
   effects = []
-  streamHandlers = undefined
-  for (const fn of [runWorkflow, debugWorkflow, cancelWorkflowRun, streamWorkflowRun, closeStream, onClose, onNodeTracesChange, onDebugRunComplete, toast.success, toast.error, toast.info]) fn.mockClear()
+  for (const fn of [runWorkflow, debugWorkflow, cancelWorkflowRun, streamWorkflowRun, closeStream, getPendingPauseRequest, submitPauseRequest, onClose, onNodeTracesChange, onDebugRunComplete, toast.success, toast.error, toast.info]) fn.mockClear()
+  getPendingPauseRequest.mockResolvedValue(null)
+  submitPauseRequest.mockResolvedValue({ pause_request_id: 'pause-1', status: 'submitted' })
   runWorkflow.mockResolvedValue({ run_id: 'run-1' })
   debugWorkflow.mockResolvedValue({ run_id: 'debug-1' })
   cancelWorkflowRun.mockResolvedValue({ cancelled: true })
@@ -331,6 +334,23 @@ describe('workflow run drawer issue #255 coverage', () => {
     await buttons(tree).find((node) => text(node).includes('cancelRun'))!.props.onClick()
     expect(toast.info).toHaveBeenCalledWith('runDrawer.cannotCancelRun')
   })
+  test('cleans up the active stream when cancellation is rejected', async () => {
+    cancelWorkflowRun.mockRejectedValue(new Error('server unavailable'))
+    render()
+    let tree = render()
+    await buttons(tree).find((node) => text(node).includes('startRun'))!.props.onClick()
+    tree = render()
+    expect(buttons(tree).some((node) => text(node).includes('cancelRun'))).toBe(true)
+
+    await buttons(tree).find((node) => text(node).includes('cancelRun'))!.props.onClick()
+    tree = render()
+
+    expect(cancelWorkflowRun).toHaveBeenCalledWith('run-1')
+    expect(closeStream).toHaveBeenCalled()
+    expect(buttons(tree).some((node) => text(node).includes('cancelRun'))).toBe(false)
+    expect(toast.success).not.toHaveBeenCalledWith('runDrawer.cancelledRun')
+    expect(toast.info).not.toHaveBeenCalledWith('runDrawer.cannotCancelRun')
+  })
 
   test('handles rejected execution and successful/failed clipboard effects', async () => {
     runWorkflow.mockRejectedValue(new Error('Failed to fetch internal detail'))
@@ -354,4 +374,93 @@ describe('workflow run drawer issue #255 coverage', () => {
     await buttons(tree).find((node) => text(node).includes('copy'))!.props.onClick()
     expect(toast.error).toHaveBeenCalledWith('editor.copyFailed')
   })
+  test('shows a safe failure when a draft debug run cannot start', async () => {
+    debugWorkflow.mockRejectedValue(new Error('Traceback: secret'))
+    let tree = render({ workflow: { ...workflow, status: 'draft' } as never })
+    await buttons(tree).find((node) => text(node).includes('debugDraft'))!.props.onClick()
+    tree = render({ workflow: { ...workflow, status: 'draft' } as never })
+
+    expect(text(tree)).toContain('executionFailed')
+    expect(text(tree)).toContain('unknownError')
+    expect(text(tree)).not.toContain('secret')
+    expect(toast.error).toHaveBeenCalledWith('runDrawer.debugFailed')
+  })
+  test('renders output and node trace details, including skipped and failed nodes', async () => {
+    render()
+    let tree = render()
+    await buttons(tree).find((node) => text(node).includes('startRun'))!.props.onClick()
+    streamHandlers!.onEvent({ type: 'node_start', timestamp: 'start', data: { node_id: 'node-1', node_type: 'llm', node_label: 'Lookup' } })
+    streamHandlers!.onEvent({ type: 'node_error', timestamp: 'end', data: { node_id: 'node-1', error: 'Bad input' } })
+    streamHandlers!.onEvent({ type: 'node_skip', timestamp: 'skip', data: { node_id: 'node-2', node_type: 'condition', node_label: 'Skipped' } })
+    streamHandlers!.onEvent({ type: 'output', timestamp: 'out', data: { outputs: { answer: 'Result text' } } })
+    streamHandlers!.onEvent({ type: 'workflow_complete', timestamp: 'done', data: { outputs: { answer: 'Result text' }, duration_ms: 1250 } })
+    tree = render()
+    expect(text(tree)).toContain('Result text')
+    expect(text(tree)).toContain('1.250s')
+    expect(text(tree)).toContain('outputSection')
+    expect(text(tree)).toContain('answer')
+    const tabs = descendants(tree).find((node) => node.type === 'Tabs')!
+    tabs.props.onValueChange('detail')
+    tree = render()
+    expect(text(tree)).toContain('Lookup')
+    expect(text(tree)).toContain('Bad input')
+    tabs.props.onValueChange('trace')
+    tree = render()
+    expect(text(tree)).toContain('Skipped')
+    expect(onNodeTracesChange).toHaveBeenLastCalledWith(expect.any(Map))
+  })
+
+  test('loads pause request after waiting and reports load or submit failures', async () => {
+    getPendingPauseRequest.mockRejectedValueOnce(new Error('offline'))
+    render()
+    let tree = render()
+    await buttons(tree).find((node) => text(node).includes('startRun'))!.props.onClick()
+    streamHandlers!.onEvent({ type: 'workflow_waiting', timestamp: '', sequence: 4, data: {} })
+    await Promise.resolve()
+    tree = render()
+    expect(getPendingPauseRequest).toHaveBeenCalledWith('workflow-1', 'run-1')
+    expect(text(tree)).toContain('pauseLoadError')
+    getPendingPauseRequest.mockResolvedValueOnce({ id: 'pause-2', request_type: 'approval' })
+    streamHandlers!.onEvent({ type: 'workflow_waiting', timestamp: '', sequence: 5, data: {} })
+    await Promise.resolve()
+    tree = render()
+    const pause = descendants(tree).find((node) => node.type === 'pause-request-actions')!
+    expect(pause.props.workflowId).toBe('workflow-1')
+    expect(pause.props.runId).toBe('run-1')
+    expect(pause.props.pauseRequestId).toBe('pause-2')
+    submitPauseRequest.mockRejectedValueOnce(new Error('offline'))
+    await pause.props.onSubmit({ approved: true }, 'reviewed')
+    tree = render()
+    expect(submitPauseRequest).toHaveBeenCalledWith('workflow-1', 'run-1', 'pause-2', { approved: true }, 'reviewed')
+    expect(text(tree)).toContain('pauseSubmitError')
+  })
+  test('refreshes pending approval and resumes the stream after submission', async () => {
+    render()
+    let tree = render()
+    await buttons(tree).find((node) => text(node).includes('startRun'))!.props.onClick()
+    streamHandlers!.onEvent({ type: 'workflow_waiting', timestamp: 'waiting', sequence: 8, data: {} })
+    await Promise.resolve()
+    tree = render()
+    expect(descendants(tree).find((node) => node.type === 'Tabs')!.props.value).toBe('result')
+    expect(getPendingPauseRequest).toHaveBeenCalledWith('workflow-1', 'run-1')
+    getPendingPauseRequest.mockResolvedValueOnce({ id: 'pause-next', request_type: 'approval' })
+    const pause = descendants(tree).find((node) => node.type === 'pause-request-actions')!
+    await pause.props.onSubmit({ approved: false }, 'needs changes')
+    tree = render()
+
+    expect(submitPauseRequest).toHaveBeenCalledWith('workflow-1', 'run-1', 'pause-1', { approved: false }, 'needs changes')
+    expect(getPendingPauseRequest).toHaveBeenCalledWith('workflow-1', 'run-1')
+    expect(descendants(tree).find((node) => node.type === 'pause-request-actions')!.props.pauseRequestId).toBe('pause-next')
+    expect(streamWorkflowRun).toHaveBeenCalledTimes(1)
+
+    submitPauseRequest.mockResolvedValueOnce({ status: 'submitted' })
+    await descendants(tree).find((node) => node.type === 'pause-request-actions')!.props.onSubmit({ approved: true }, 'approved')
+    tree = render()
+    expect(submitPauseRequest).toHaveBeenLastCalledWith('workflow-1', 'run-1', 'pause-next', { approved: true }, 'approved')
+    expect(streamWorkflowRun).toHaveBeenCalledTimes(2)
+    expect(streamWorkflowRun).toHaveBeenLastCalledWith('run-1', expect.objectContaining({ fromSequence: 8 }))
+    expect(text(tree)).not.toContain('pause-next')
+    expect(buttons(tree).some((node) => text(node).includes('cancelRun'))).toBe(true)
+  })
+})
 })

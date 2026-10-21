@@ -71,6 +71,13 @@ function render() {
   return renderer!
 }
 
+function textNode(node: unknown): string {
+  if (typeof node === 'string') return node
+  if (Array.isArray(node)) return node.map(textNode).join('')
+  if (node && typeof node === 'object' && 'children' in node) return textNode(node.children)
+  return ''
+}
+
 function button(renderer: ReactTestRenderer, label: string) {
   return renderer.root.findAllByType('button').find(node => node.children.includes(label))!
 }
@@ -142,6 +149,42 @@ describe('UsersClient', () => {
     expect(usersApi.getUsers).toHaveBeenLastCalledWith({ page: 1, pageSize: 10, status: ['inactive'], roles: ['admin'], search: 'ada' })
   })
 
+  test('reset clears search and both filters before reloading the unfiltered list', async () => {
+    usersApi.getUsers.mockResolvedValue({ items: [user], total: 1 })
+    const renderer = render()
+    await act(async () => {})
+
+    const search = renderer.root.findByProps({ placeholder: 'filterUsers' })
+    await act(async () => search.props.onChange({ target: { value: 'ada' } }))
+    await act(async () => button(renderer, 'filter-status').props.onClick())
+    await act(async () => button(renderer, 'filter-role').props.onClick())
+    expect(usersApi.getUsers).toHaveBeenLastCalledWith({ page: 1, pageSize: 10, status: ['inactive'], roles: ['admin'], search: 'ada' })
+    expect(button(renderer, 'reset')).toBeDefined()
+
+    await act(async () => button(renderer, 'reset').props.onClick())
+
+    expect(renderer.root.findByProps({ placeholder: 'filterUsers' }).props.value).toBe('')
+    expect(usersApi.getUsers).toHaveBeenLastCalledWith({ page: 1, pageSize: 10, status: undefined, roles: undefined, search: undefined })
+    expect(renderer.root.findAllByType('button').some(node => node.children.includes('reset'))).toBe(false)
+  })
+
+  test('toggles an individual row selection and clears it when a filter changes', async () => {
+    usersApi.getUsers.mockResolvedValue({ items: [user, inactiveUser], total: 2 })
+    const renderer = render()
+    await act(async () => {})
+
+    const rowCheckbox = renderer.root.findAllByType('input').filter(node => node.props.type === 'checkbox')[1]
+    await act(async () => rowCheckbox.props.onChange())
+    expect(renderer.root.findAllByType('tr').find(row => row.props['data-state'] === 'selected')).toBeDefined()
+    expect(textNode(renderer.toJSON())).toContain('usersSelected')
+    expect(textNode(renderer.toJSON())).toContain('1')
+
+    await act(async () => button(renderer, 'filter-status').props.onClick())
+
+    expect(renderer.root.findAllByType('tr').some(row => row.props['data-state'] === 'selected')).toBe(false)
+    expect(usersApi.getUsers).toHaveBeenLastCalledWith({ page: 1, pageSize: 10, status: ['inactive'], roles: undefined, search: undefined })
+  })
+
   test('changes page and page size through pagination controls', async () => {
     usersApi.getUsers.mockResolvedValue({ items: [user], total: 25 })
     const renderer = render()
@@ -185,6 +228,20 @@ describe('UsersClient', () => {
     expect(usersApi.getStats).toHaveBeenCalledTimes(2)
   })
 
+  test('hides update actions without update permission while keeping separately permitted actions', async () => {
+    canPerform.mockImplementation(permission => permission !== 'admin:user:update')
+    usersApi.getUsers.mockResolvedValue({ items: [user], total: 1 })
+    const renderer = render()
+    await act(async () => {})
+
+    const labels = renderer.root.findAllByType('button').flatMap(node => node.children)
+    expect(labels).toContain('createUser')
+    expect(labels).toContain('delete')
+    expect(labels).not.toContain('edit')
+    expect(labels).not.toContain('deactivate')
+    expect(labels).not.toContain('forcePasswordChange')
+  })
+
   test('contains a failed status action without reporting success', async () => {
     usersApi.getUsers.mockResolvedValue({ items: [user], total: 1 })
     usersApi.deactivateUser.mockRejectedValueOnce(new Error('unavailable'))
@@ -196,6 +253,19 @@ describe('UsersClient', () => {
     expect(usersApi.deactivateUser).toHaveBeenCalledWith('user-1')
     expect(toast.success).not.toHaveBeenCalled()
     expect(usersApi.getUsers).toHaveBeenCalledTimes(1)
+  })
+
+  test('shows SSO status and omits local password actions for externally authenticated users', async () => {
+    const ssoUser = { ...user, auth_source: 'ldap', external_id: 'external-1' }
+    usersApi.getUsers.mockResolvedValue({ items: [ssoUser], total: 1 })
+    const renderer = render()
+    await act(async () => {})
+
+    expect(JSON.stringify(renderer.toJSON())).toContain('sso')
+    const labels = renderer.root.findAllByType('button').flatMap(node => node.children)
+    expect(labels).not.toContain('forcePasswordChange')
+    expect(labels).not.toContain('resetPasswordExpiration')
+    expect(labels).not.toContain('grantPasswordExemption')
   })
 
   test('hides create, edit, status, and delete actions without permission', async () => {
@@ -291,5 +361,32 @@ describe('UsersClient', () => {
     await act(async () => renderer.root.findAllByType('button').filter(node => node.children.includes('delete')).at(-1)!.props.onClick())
     expect(usersApi.deleteUser).toHaveBeenCalledWith('user-1')
     expect(usersApi.deleteUser).toHaveBeenCalledWith('user-2')
+  })
+  test('keeps selection and success state unchanged when bulk password action fails', async () => {
+    usersApi.getUsers.mockResolvedValue({ items: [user, inactiveUser], total: 2 })
+    usersApi.bulkForcePasswordChange.mockRejectedValueOnce(new Error('unavailable'))
+    const renderer = render()
+    await act(async () => {})
+
+    await selectAllUsers(renderer)
+    await act(async () => bulkActionButtons(renderer)[5].props.onClick())
+
+    expect(usersApi.bulkForcePasswordChange).toHaveBeenCalledWith(['user-1', 'user-2'])
+    expect(renderer.root.findAllByType('tr').filter(row => row.props['data-state'] === 'selected')).toHaveLength(2)
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(usersApi.getUsers).toHaveBeenCalledTimes(1)
+  })
+
+  test('moves to the last page and disables forward navigation at the boundary', async () => {
+    usersApi.getUsers.mockResolvedValue({ items: [user], total: 25 })
+    const renderer = render()
+    await act(async () => {})
+
+    const paginationButtons = renderer.root.findAllByType('button').filter(node => node.props.size === 'icon' && node.props.variant === 'outline')
+    await act(async () => paginationButtons[3].props.onClick())
+
+    expect(usersApi.getUsers).toHaveBeenLastCalledWith({ page: 3, pageSize: 10, status: undefined, roles: undefined, search: undefined })
+    expect(paginationButtons[2].props.disabled).toBe(true)
+    expect(paginationButtons[3].props.disabled).toBe(true)
   })
 })

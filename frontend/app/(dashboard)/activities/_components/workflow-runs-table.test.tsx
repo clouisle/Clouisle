@@ -185,4 +185,26 @@ describe('WorkflowRunsTable', () => {
     expect(deleteWorkflowRun).toHaveBeenCalledWith('run-87654321')
     expect(success).toHaveBeenCalledWith('activities.runDetail.deleteSuccess')
   })
+  test('selects and clears the current page and moves through paginated results', async () => {
+    getAllWorkflowRuns.mockResolvedValue({
+      items: [
+        { id: 'run-page-one', workflow_id: 'workflow-1', workflow_name: 'First page', status: 'success', trigger_type: 'manual', created_at: '2026-01-01T10:00:00Z' },
+        { id: 'run-page-two', workflow_id: 'workflow-1', workflow_name: 'First page second', status: 'success', trigger_type: 'manual', created_at: '2026-01-01T10:01:00Z' },
+      ],
+      total: 25,
+    })
+    const renderer = await render()
+    const checkboxes = () => renderer.root.findAllByType('input').filter((input) => input.props.onCheckedChange)
+    const headerCheckbox = checkboxes()[0]!
+
+    act(() => headerCheckbox.props.onCheckedChange())
+    expect(renderer.root.findAllByType('button').some((button) => text(button.props.children).includes('activities.runDetail.deleteSelected:{"count":2}'))).toBe(true)
+
+    act(() => checkboxes()[0]!.props.onCheckedChange())
+    expect(renderer.root.findAllByType('button').some((button) => text(button.props.children).includes('deleteSelected'))).toBe(false)
+
+    const nextPage = renderer.root.findAllByType('button').filter((button) => button.props.onClick && button.props.className === 'h-8 w-8')[2]!
+    await act(async () => nextPage.props.onClick())
+    expect(getAllWorkflowRuns).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }))
+  })
 })

@@ -366,4 +366,17 @@ describe('ChatInput', () => {
     act(() => chatInput(disabledTree).props.onPaste({ preventDefault, clipboardData: undefined }))
     expect(preventDefault).toHaveBeenCalledTimes(1)
   })
+
+
+  test('does not submit empty text or attachments when Enter is pressed', () => {
+    const onSubmit = mock(() => undefined)
+    const preventDefault = mock(() => undefined)
+    const tree = renderChatInput({ value: '  ', onSubmit })
+
+    act(() => chatInput(tree).props.onKeyDown({ key: 'Enter', shiftKey: false, preventDefault }))
+
+    expect(preventDefault).toHaveBeenCalledTimes(1)
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
 })
