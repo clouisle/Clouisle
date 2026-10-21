@@ -139,11 +139,11 @@ function UserTableRow({ user, onEdit, onDelete, onStatusChange }: UserTableRowPr
                             <LinkIcon className="h-4 w-4 text-muted-foreground" />
                           )}
                         </TooltipTrigger>
-                        <TooltipContent>
-                          <div className="text-xs">
-                            <p className="font-medium">{conn.integration_display_name}</p>
+                        <TooltipContent className="max-w-xs">
+                          <div className="text-xs break-words">
+                            <p className="font-medium break-words">{conn.integration_display_name}</p>
                             {conn.provider_email && (
-                              <p className="text-muted-foreground">{conn.provider_email}</p>
+                              <p className="text-muted-foreground break-all">{conn.provider_email}</p>
                             )}
                           </div>
                         </TooltipContent>

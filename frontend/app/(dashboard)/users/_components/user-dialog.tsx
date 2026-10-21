@@ -339,9 +339,9 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
                         <LinkIcon className="h-5 w-5 text-muted-foreground" />
                       )}
                       <div>
-                        <div className="text-sm font-medium">{connection.integration_display_name}</div>
+                        <div className="text-sm font-medium break-words">{connection.integration_display_name}</div>
                         {connection.provider_email && (
-                          <div className="text-xs text-muted-foreground">{connection.provider_email}</div>
+                          <div className="text-xs text-muted-foreground break-all">{connection.provider_email}</div>
                         )}
                       </div>
                     </div>
