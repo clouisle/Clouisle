@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Messaging Integration Features
+
+- Added WeChat iLink to site integrations with independent Agent chat and knowledge collection feature switches; personal QR authorization and connection purposes remain user-owned. Disabled features pause intake, execution and unsent replies without deleting durable state.
+- Made Feishu long connections automatic in existing Agent-queue workers, with singleton ownership, live connection status, dynamic mode/credential changes and failure recovery. No extra service or receiver command is required; HTTP callbacks remain supported.
+- Fixed the Feishu Celery recovery task's import scope so scheduled recovery can advance persisted receipts and completed-receipt outbox replies without a `NameError`.
+- Added an always-visible bilingual Feishu Agent chat setup checklist with private-message receive/send and identity permissions, event subscription, and publication/approval requirements; clarified that a connected WebSocket does not confirm message readiness.
+- Moved Feishu replying-Agent selection to each user's personal settings, shared with `/use`; removed the admin global list, preserved accepted-run bindings, and migrated existing session selections without assigning administrator defaults to unused users.
+- Added a per-user Feishu Agent chat switch that preserves Agent selection/history while pausing intake, queued processing and unsent replies; re-enabling resumes pending work without affecting other users.
+- Simplified personal Feishu settings with one prioritized setup hint and compact controls; moved usage help to the replying-Agent label's hover/focus tooltip, separate from save actions, and clarified automatic switch saving, paused-message handling, per-Agent conversation reuse and bilingual commands.
+- Compacted personal WeChat settings with authorization/refresh in the header, smaller connection cards, inline purpose actions and responsive two-column forms. Removed Agent activity and collection history panels and their requests; retained current-run status, stop controls, help-icon tooltips and backend records.
+- Aligned personal Feishu and WeChat settings with compact configuration cards, consistent spacing, small action buttons and secondary-before-primary save actions, preserving each channel's controls and help tooltips.
+- Added WeChat iLink `/agents` (`/智能体`) and `/use <number>` (`/使用 <编号>`) commands, sharing personal configuration and published-Agent authorization, refusing busy switches, preserving accepted-message bindings and per-Agent conversations, with durable bilingual replies.
+- Expanded personal Feishu and WeChat instruction tooltips to document each channel's available bot commands and behavior.
+- Added an explicit Feishu identity binding flow under Account security for existing accounts, using owner-scoped expiring OAuth sessions, same-tab confirmation, and conflict checks without email matching or changing the current login.
+
 #### Personal WeChat Knowledge Collection
 
 - Added personal ClawBot QR authorization independent of feature configuration; connections may remain unused, with optional knowledge collection configured and disabled separately without disconnecting.
@@ -19,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added an idempotent startup migration for existing WeChat binding tables missing `disconnected_at`; API startup fails rather than serving an incompatible schema if the upgrade fails.
 - Preserved original document types, filenames and downloads for WeChat file collection; URL submissions remain links, while Markdown is only an internal extraction format. Existing collected file/link records are restored at startup without rebuilding their indexes.
 - Removed the WeChat collection button and dialog from knowledge-base detail pages; personal settings remain the collection configuration entry point.
-- Renamed the personal settings tab to “WeChat Connect” (“微信互联”), distinguishing the overall connection entry from its current knowledge collection capability.
+- Named the personal settings tab “WeChat iLink” (“微信 iLink”), distinguishing the overall connection entry from its current knowledge collection capability.
 - Split connection credentials from saved purpose settings; each connection activates exactly one of none, knowledge collection, or a single Agent application.
 - Upgraded MarkItDown to 0.1.8 to process PPTX files containing embedded SVG images without raster fallbacks, preserving slide text and embedded media instead of failing with `no embedded image`.
 - Added owner-authorized WeChat Agent configuration, durable private conversations and input snapshots, queued messages, interactive answers and run controls using the existing AgentRun runtime.

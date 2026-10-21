@@ -32,7 +32,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { usersApi, authApi, ssoApi, totpApi, type User as UserType, type SSOConnection, type PasswordStatus, type TOTPStatusResponse } from '@/lib/api'
-import { getIntegrationIconUrl } from '@/lib/api/integrations'
+import { getIntegrationIconUrl, type IntegrationLoginPublic } from '@/lib/api/integrations'
+import { SSOLinkStateError } from '@/lib/api/sso'
 import { useSiteSettings } from '@/contexts/site-settings-context'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { AlertCircle, Clock } from 'lucide-react'
@@ -48,6 +49,7 @@ import {
 } from '@/lib/validation'
 import { ApiError } from '@/lib/api/client'
 import { WeChatKnowledge } from './wechat-knowledge'
+import { FeishuAgentSettings } from './feishu-agent-settings'
 
 interface SettingsDialogProps {
   open: boolean
@@ -92,6 +94,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   // SSO
   const [disconnectingId, setDisconnectingId] = React.useState<string | null>(null)
+  const [linkableProviders, setLinkableProviders] = React.useState<IntegrationLoginPublic[]>([])
+  const [linkableLoading, setLinkableLoading] = React.useState(false)
+  const [linkableError, setLinkableError] = React.useState(false)
+  const [linkingProvider, setLinkingProvider] = React.useState<string | null>(null)
+  const userRequestRef = React.useRef(0)
+  const linkableRequestRef = React.useRef(0)
 
   // Delete account
   const [deleting, setDeleting] = React.useState(false)
@@ -121,9 +129,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   }, [open])
 
   const loadUser = async () => {
+    const requestId = ++userRequestRef.current
     try {
       setLoading(true)
       const userData = await authApi.getCurrentUser({ skipAuthRedirect: true })
+      if (requestId !== userRequestRef.current) return
       setUser(userData)
       setProfileData({
         username: userData.username,
@@ -135,6 +145,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       if (userData.auth_source === 'local') {
         try {
           const status = await usersApi.getPasswordStatus()
+          if (requestId !== userRequestRef.current) return
           setPasswordStatus(status)
         } catch {
           // Password status not available
@@ -144,6 +155,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       // Load TOTP status
       try {
         const status = await totpApi.getStatus()
+        if (requestId !== userRequestRef.current) return
         setTotpStatus(status)
       } catch {
         // TOTP status not available
@@ -151,7 +163,60 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     } catch {
       // Error handled by API client
     } finally {
-      setLoading(false)
+      if (requestId === userRequestRef.current) setLoading(false)
+    }
+  }
+
+  const loadLinkableProviders = React.useCallback(async () => {
+    const requestId = ++linkableRequestRef.current
+    setLinkableLoading(true)
+    setLinkableError(false)
+    try {
+      const providers = await ssoApi.getLinkableIntegrations()
+      if (requestId !== linkableRequestRef.current) return
+      setLinkableProviders(providers)
+    } catch {
+      if (requestId !== linkableRequestRef.current) return
+      setLinkableProviders([])
+      setLinkableError(true)
+    } finally {
+      if (requestId === linkableRequestRef.current) setLinkableLoading(false)
+    }
+  }, [])
+
+  // Load linkable Feishu providers when the dialog opens
+  React.useEffect(() => {
+    if (!open) {
+      linkableRequestRef.current++
+      setLinkableProviders([])
+      setLinkableError(false)
+      setLinkableLoading(false)
+      setLinkingProvider(null)
+      return
+    }
+    void loadLinkableProviders()
+  }, [open, loadLinkableProviders])
+
+  const handleStartLink = async (provider: IntegrationLoginPublic) => {
+    const providerLabel = provider.display_name || provider.name
+    setLinkingProvider(provider.name)
+    try {
+      const link = await ssoApi.startLink(provider.name)
+      window.location.href = link.authorization_url
+    } catch (error) {
+      // A storage failure means the callback could not verify the pending state,
+      // so navigating would create an unusable authorization.
+      if (error instanceof SSOLinkStateError) {
+        toast.error(tSSO('linkStartFailed'))
+      } else if (error instanceof ApiError && error.code === 5001) {
+        toast.error(tSSO('linkAlreadyLinked', { provider: providerLabel }))
+        await loadLinkableProviders()
+        await loadUser()
+      } else {
+        toast.error(tSSO('linkStartFailed'))
+      }
+    } finally {
+      setLinkingProvider(null)
     }
   }
 
@@ -503,6 +568,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 <LinkIcon className="mr-1.5 h-4 w-4" aria-hidden="true" />
                 {t('wechat.title')}
               </TabsTrigger>
+              <TabsTrigger value="feishu">
+                <LinkIcon className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                {t('feishu.title')}
+              </TabsTrigger>
             </TabsList>
 
             {/* Profile Tab */}
@@ -626,75 +695,139 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             {/* Account Tab */}
             <TabsContent value="account" className="space-y-6">
               {/* SSO Connections */}
-              {user?.sso_connections && user.sso_connections.length > 0 && (
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base">{tSSO('connectedAccounts')}</CardTitle>
-                    <CardDescription>{tSSO('connectedAccountsDescription')}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {user.sso_connections.map((connection: SSOConnection) => (
-                      <div
-                        key={connection.id}
-                        className="flex items-center justify-between rounded-lg border p-3"
-                      >
-                        <div className="flex items-center gap-3">
-                          {getIntegrationIconUrl(connection.integration_provider_type, connection.integration_icon_url) && (
-                            <img
-                              src={getIntegrationIconUrl(connection.integration_provider_type, connection.integration_icon_url)!}
-                              alt={connection.integration_display_name}
-                              className="h-8 w-8 rounded"
-                            />
-                          )}
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-medium">{connection.integration_display_name}</p>
-                              <LinkIcon className="h-3 w-3 text-muted-foreground" />
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              {tSSO('lastLogin')}: {formatDateTime(connection.last_login, locale)}
-                            </p>
-                          </div>
-                        </div>
-                        <AlertDialog>
-                          <AlertDialogTrigger
-                            render={(props) => (
-                              <Button
-                                {...props}
-                                variant="outline"
-                                size="sm"
-                                disabled={disconnectingId === connection.id}
-                              >
-                                {disconnectingId === connection.id ? (
-                                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                                ) : (
-                                  <Unlink className="mr-1 h-3 w-3" />
-                                )}
-                                {tSSO('disconnect')}
-                              </Button>
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">{tSSO('connectedAccounts')}</CardTitle>
+                  <CardDescription>{tSSO('connectedAccountsDescription')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {user?.sso_connections && user.sso_connections.length > 0 && (
+                    <>
+                      {user.sso_connections.map((connection: SSOConnection) => (
+                        <div
+                          key={connection.id}
+                          className="flex items-center justify-between rounded-lg border p-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            {getIntegrationIconUrl(connection.integration_provider_type, connection.integration_icon_url) && (
+                              <img
+                                src={getIntegrationIconUrl(connection.integration_provider_type, connection.integration_icon_url)!}
+                                alt={connection.integration_display_name}
+                                className="h-8 w-8 rounded"
+                              />
                             )}
-                          />
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>{tSSO('disconnect')}</AlertDialogTitle>
-                              <AlertDialogDescription>{tSSO('disconnectConfirm')}</AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
-                              <AlertDialogAction
-                                variant="destructive"
-                                onClick={() => handleDisconnect(connection.id)}
-                              >
-                                {tSSO('disconnect')}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              )}
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium">{connection.integration_display_name}</p>
+                                <LinkIcon className="h-3 w-3 text-muted-foreground" />
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {tSSO('lastLogin')}: {formatDateTime(connection.last_login, locale)}
+                              </p>
+                            </div>
+                          </div>
+                          <AlertDialog>
+                            <AlertDialogTrigger
+                              render={(props) => (
+                                <Button
+                                  {...props}
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={disconnectingId === connection.id}
+                                >
+                                  {disconnectingId === connection.id ? (
+                                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Unlink className="mr-1 h-3 w-3" />
+                                  )}
+                                  {tSSO('disconnect')}
+                                </Button>
+                              )}
+                            />
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>{tSSO('disconnect')}</AlertDialogTitle>
+                                <AlertDialogDescription>{tSSO('disconnectConfirm')}</AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
+                                <AlertDialogAction
+                                  variant="destructive"
+                                  onClick={() => handleDisconnect(connection.id)}
+                                >
+                                  {tSSO('disconnect')}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      ))}
+                    </>
+                  )}
+
+                  {user?.sso_connections && user.sso_connections.length === 0 && (
+                    <p className="text-sm text-muted-foreground">{tSSO('noConnectedAccounts')}</p>
+                  )}
+
+                  {/* Linkable Feishu providers */}
+                  {linkableLoading && (
+                    <div className="flex items-center gap-2 rounded-lg border p-3 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      {tSSO('linkableFeishu')}
+                    </div>
+                  )}
+
+                  {!linkableLoading && linkableError && (
+                    <Alert variant="destructive">
+                      <AlertDescription>{tSSO('linkableLoadFailed')}</AlertDescription>
+                    </Alert>
+                  )}
+
+                  {!linkableLoading && !linkableError && linkableProviders.length > 0 && (
+                    <div className="space-y-2">
+                      {linkableProviders.map((provider) => (
+                        <div
+                          key={provider.id}
+                          className="flex items-center justify-between rounded-lg border p-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            {getIntegrationIconUrl(provider.provider_type, provider.icon_url) && (
+                              <img
+                                src={getIntegrationIconUrl(provider.provider_type, provider.icon_url)!}
+                                alt={provider.display_name}
+                                className="h-8 w-8 rounded"
+                              />
+                            )}
+                            <div>
+                              <p className="text-sm font-medium">{provider.display_name}</p>
+                              <p className="text-xs text-muted-foreground">{tSSO('linkAccountsDescription')}</p>
+                            </div>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={linkingProvider === provider.name}
+                            onClick={() => handleStartLink(provider)}
+                          >
+                            {linkingProvider === provider.name ? (
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            ) : (
+                              <LinkIcon className="mr-1 h-3 w-3" />
+                            )}
+                            {linkingProvider === provider.name
+                              ? tSSO('linkStarting', { provider: provider.display_name })
+                              : tSSO('linkProvider', { provider: provider.display_name })}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {!linkableLoading && !linkableError && linkableProviders.length === 0 && (
+                    <p className="text-sm text-muted-foreground">{tSSO('linkableEmpty')}</p>
+                  )}
+                </CardContent>
+              </Card>
 
               {/* Two-Factor Authentication */}
               <Card>
@@ -960,6 +1093,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             </TabsContent>
             <TabsContent value="wechat" className="space-y-6">
               <WeChatKnowledge active={open} />
+            </TabsContent>
+            <TabsContent value="feishu" className="space-y-6">
+              <FeishuAgentSettings active={open} />
             </TabsContent>
           </Tabs>
         )}

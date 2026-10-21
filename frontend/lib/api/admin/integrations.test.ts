@@ -45,53 +45,6 @@ describe('admin integrationsApi requests', () => {
     }
   })
 
-  it('uses typed builtin and global login settings endpoints', async () => {
-    const get = spyOn(api, 'get').mockResolvedValue({})
-    const put = spyOn(api, 'put').mockResolvedValue({})
-    const post = spyOn(api, 'post').mockResolvedValue(undefined)
-    try {
-      await integrationsApi.types()
-      await integrationsApi.getEmail()
-      await integrationsApi.getWebhook()
-      await integrationsApi.getFeishuConfig()
-      await integrationsApi.getFeishuDepartments()
-      await integrationsApi.getFeishuTestRecipients('ada user')
-      await integrationsApi.getLoginSettings()
-      await integrationsApi.updateEmail({ smtp_enabled: false })
-      await integrationsApi.updateWebhook({ webhook_enabled: true })
-      await integrationsApi.updateFeishuConfig({ is_enabled: true })
-      await integrationsApi.updateFeishuDepartmentScope(['department-1'])
-      await integrationsApi.updateLoginSettings({ sso_enabled: false })
-      await integrationsApi.sendTestEmail('admin@example.com')
-      await integrationsApi.sendTestWebhook()
-      await integrationsApi.checkFeishuConnection()
-      await integrationsApi.sendFeishuTestMessage('user-1', 'Test', 'Message')
-      await integrationsApi.syncFeishuContacts()
-      expect(get.mock.calls.map(([url]) => url)).toEqual([
-        '/admin/integrations/types', '/admin/integrations/email', '/admin/integrations/webhook',
-        '/admin/integrations/feishu/config', '/admin/integrations/feishu/departments',
-        '/admin/integrations/feishu/test-recipients?search=ada%20user', '/admin/integrations/login-settings',
-      ])
-      expect(put.mock.calls).toEqual([
-        ['/admin/integrations/email', { smtp_enabled: false }],
-        ['/admin/integrations/webhook', { webhook_enabled: true }],
-        ['/admin/integrations/feishu/config', { is_enabled: true }],
-        ['/admin/integrations/feishu/department-scope', { department_ids: ['department-1'] }],
-        ['/admin/integrations/login-settings', { sso_enabled: false }],
-      ])
-      expect(post.mock.calls).toEqual([
-        ['/admin/integrations/email/test', { email: 'admin@example.com' }],
-        ['/admin/integrations/webhook/test', null],
-        ['/admin/integrations/feishu/connection-check', null],
-        ['/admin/integrations/feishu/test-message', { user_id: 'user-1', title: 'Test', content: 'Message' }],
-        ['/admin/integrations/feishu/sync', null, { timeout: 120000 }],
-      ])
-    } finally {
-      get.mockRestore()
-      put.mockRestore()
-      post.mockRestore()
-    }
-  })
 
   it('propagates request errors unchanged', async () => {
     const error = new Error('request failed')

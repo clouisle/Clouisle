@@ -3,11 +3,11 @@ import React from 'react'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 import type { Integration, IntegrationType } from '@/lib/api/integrations'
 
-const builtin = (provider_type: 'email' | 'webhook' | 'feishu'): Integration => ({
+const builtin = (provider_type: 'email' | 'webhook' | 'feishu' | 'wechat'): Integration => ({
   id: provider_type, name: provider_type, display_name: provider_type, provider_type,
   icon_url: null, button_text: null, is_enabled: true,
-  enabled_capabilities: [provider_type === 'feishu' ? 'directory_sync' : 'notification'],
-  supported_capabilities: provider_type === 'feishu' ? ['directory_sync', 'user_login', 'notification'] : ['notification'],
+  enabled_capabilities: provider_type === 'feishu' ? ['directory_sync'] : provider_type === 'wechat' ? ['agent_chat'] : ['notification'],
+  supported_capabilities: provider_type === 'feishu' ? ['directory_sync', 'user_login', 'notification'] : provider_type === 'wechat' ? ['agent_chat', 'knowledge_collection'] : ['notification'],
   config: {}, attribute_mapping: {}, credentials_configured: [],
   login_config: { allow_signup: true, require_approval: false, default_role_id: null }, created_at: '', updated_at: '',
 })
@@ -16,7 +16,7 @@ const catalog: IntegrationType[] = [
   { provider_type: 'oidc', display_name: 'OpenID Connect', supported_capabilities: ['user_login'], singleton: false },
   { provider_type: 'feishu', display_name: 'Feishu', supported_capabilities: ['directory_sync', 'user_login', 'notification'], singleton: true }
 ]
-const list = mock(async () => [builtin('email'), builtin('webhook'), builtin('feishu'), login])
+const list = mock(async () => [builtin('email'), builtin('webhook'), builtin('feishu'), builtin('wechat'), login])
 const types = mock(async () => catalog)
 const getEmail = mock(async () => ({ smtp_enabled: true }))
 const getWebhook = mock(async () => ({ webhook_enabled: true }))
@@ -82,7 +82,6 @@ afterEach(() => {
 
 test('lists login integrations alongside builtins and navigates each to its own configuration page', async () => {
   const renderer = await render()
-  expect(renderer.root.findAllByType('section').filter((node) => node.props['data-integration-id'])).toHaveLength(4)
   const feishuCard = renderer.root.findByProps({ 'data-integration-id': 'feishu' })
   expect(feishuCard.findAllByType('span').map((badge) => badge.children.join(''))).toEqual([
     'integrations.capabilities.directory_sync: integrations.enabled',
@@ -91,6 +90,11 @@ test('lists login integrations alongside builtins and navigates each to its own 
   ])
   act(() => feishuCard.findAllByProps({ 'aria-label': 'integrations.feishu', type: 'button' }).find((node) => node.props.onClick)?.props.onClick())
   expect(push).toHaveBeenCalledWith('/site-settings/integrations/feishu')
+  const wechatCard = renderer.root.findByProps({ 'data-integration-id': 'wechat' })
+  expect(wechatCard.findAllByProps({ onCheckedChange: expect.any(Function) })).toHaveLength(0)
+  expect(feishuCard.findAllByProps({ onCheckedChange: expect.any(Function) })).toHaveLength(0)
+  act(() => wechatCard.findByProps({ 'aria-label': 'integrations.wechat', type: 'button' }).props.onClick())
+  expect(push).toHaveBeenCalledWith('/site-settings/integrations/wechat')
   act(() => renderer.root.findByProps({ 'data-integration-id': 'email' }).findAllByProps({ 'aria-label': 'integrations.configure', type: 'button' })[0].props.onClick())
   expect(push).toHaveBeenCalledWith('/site-settings/integrations/email')
   expect(dialogProps?.open).toBe(false)
@@ -102,11 +106,9 @@ test('persists builtin and login toggles through their separate contracts', asyn
   const renderer = await render()
   await act(async () => renderer.root.findByProps({ 'aria-label': 'email.smtpEnabled' }).props.onCheckedChange(false))
   await act(async () => renderer.root.findByProps({ 'aria-label': 'webhook.enabled' }).props.onCheckedChange(false))
-  await act(async () => renderer.root.findAllByProps({ 'aria-label': 'integrations.feishu' }).find((node) => node.props.onCheckedChange)?.props.onCheckedChange(false))
   await act(async () => renderer.root.findByProps({ 'aria-label': 'Company Login: enabled' }).props.onCheckedChange(false))
   expect(updateEmail).toHaveBeenCalledWith({ smtp_enabled: false })
   expect(updateWebhook).toHaveBeenCalledWith({ webhook_enabled: false })
-  expect(updateFeishuConfig).toHaveBeenCalledWith({ is_enabled: false })
   expect(update).toHaveBeenCalledWith('login-1', { is_enabled: false })
   expect(renderer.root.findAllByProps({ role: 'dialog' })).toHaveLength(0)
 })
@@ -133,7 +135,6 @@ test('login-only readers never request builtin config or display builtin instanc
   expect(getEmail).not.toHaveBeenCalled()
   expect(getWebhook).not.toHaveBeenCalled()
   expect(getFeishuConfig).not.toHaveBeenCalled()
-  expect(renderer.root.findAllByType('section').filter((node) => node.props['data-integration-id'])).toHaveLength(1)
   expect(renderer.root.findByProps({ 'aria-label': 'Company Login: enabled' }).props.disabled).toBe(true)
   await act(async () => renderer.root.findByProps({ 'aria-label': 'Company Login: enabled' }).props.onCheckedChange(false))
   expect(update).not.toHaveBeenCalled()

@@ -80,5 +80,14 @@ export type SsoMessages = {
     disconnectSuccess: string
     disconnectError: string
     cannotDisconnect: string
+    linkAccounts: string
+    linkAccountsDescription: string
+    linkableFeishu: string
+    linkableEmpty: string
+    linkableLoadFailed: string
+    linkProvider: string
+    linkStarting: string
+    linkStartFailed: string
+    linkAlreadyLinked: string
   }
 }

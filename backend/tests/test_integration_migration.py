@@ -24,6 +24,14 @@ from app.models.user_sso_connection import UserSSOConnection
 async def database():
     await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
     await Tortoise.generate_schemas()
+    from app.models.integration import Integration
+
+    await Integration.create(
+        name="wechat",
+        provider_type="wechat",
+        display_name="WeChat iLink",
+        enabled_capabilities=[],
+    )
     try:
         yield Tortoise.get_connection("default")
     finally:
@@ -135,7 +143,8 @@ async def test_builtin_settings_move_once_without_overwriting_later_edits(databa
     await email.save()
     await initialize_integrations()
     assert (await Integration.get(id=email.id)).config["smtp_host"] == "new.example.com"
-    assert await Integration.all().count() == 3
+    wechat = await Integration.get(provider_type="wechat")
+    assert wechat.enabled_capabilities == []
     assert not await SiteSetting.filter(key="smtp_password").exists()
     assert await SiteSetting.get_value("sso_match_by_email") is False
 

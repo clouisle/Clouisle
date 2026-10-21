@@ -289,13 +289,6 @@ describe('FeishuIntegrationTab', () => {
     expect(update).not.toHaveBeenCalled()
   })
 
-  test('keeps capabilities disabled until the Feishu integration itself is enabled', async () => {
-    spyOn(integrationsApi, 'getFeishuDepartments').mockResolvedValue([])
-    const { renderer } = render({ tab: 'configuration', config: { ...config, is_enabled: false } })
-
-    expect(notificationSwitch(renderer).props.disabled).toBe(true)
-    expect(capabilitySave(renderer).props.disabled).toBe(true)
-  })
 
   test('checks Feishu app authentication without requiring directory sync capability', async () => {
     const check = spyOn(integrationsApi, 'checkFeishuConnection').mockResolvedValue({ status: 'ok' })
@@ -362,3 +355,17 @@ describe('FeishuIntegrationTab', () => {
 })
 
 
+
+test('enables a requested feature on a legacy-disabled record without reactivating stored login', async () => {
+  const updated = { ...integration, is_enabled: true, enabled_capabilities: ['notification'] as Integration['enabled_capabilities'] }
+  const update = spyOn(integrationsApi, 'update').mockResolvedValue(updated)
+  const { renderer } = render({
+    config: { ...config, is_enabled: false },
+    integration: { ...integration, is_enabled: false, enabled_capabilities: ['user_login'] },
+    canUpdateLogin: false,
+  })
+  expect(notificationSwitch(renderer).props.disabled).toBe(false)
+  await act(async () => notificationSwitch(renderer).props.onCheckedChange(true))
+  await act(async () => capabilitySave(renderer).props.onClick())
+  expect(update).toHaveBeenCalledWith(integration.id, { enabled_capabilities: ['notification'] })
+})

@@ -19,12 +19,19 @@ from app.services.sandbox.worker_heartbeat import (
     start_worker_heartbeat,
     stop_worker_heartbeat,
 )
+from app.services.integration_receivers import (
+    start_integration_receivers,
+    stop_integration_receivers,
+)
 
 logger = logging.getLogger(__name__)
 
 worker_ready.connect(start_worker_heartbeat, weak=False)
 worker_shutting_down.connect(stop_worker_heartbeat, weak=False)
 worker_shutdown.connect(stop_worker_heartbeat, weak=False)
+worker_ready.connect(start_integration_receivers, weak=False)
+worker_shutting_down.connect(stop_integration_receivers, weak=False)
+worker_shutdown.connect(stop_integration_receivers, weak=False)
 
 # Redis URL for Celery broker and result backend
 if settings.REDIS_PASSWORD:
@@ -42,6 +49,7 @@ celery_app = Celery(
         "app.tasks.feishu_knowledge",
         "app.tasks.wechat_knowledge",
         "app.tasks.wechat_agent",
+        "app.tasks.feishu_agent",
         "app.tasks.usage",
         "app.tasks.workflow",
         "app.tasks.audit_log",
@@ -89,6 +97,7 @@ celery_app.conf.task_routes = {
     "app.tasks.feishu_knowledge.*": {"queue": "knowledge"},
     "app.tasks.wechat_knowledge.*": {"queue": "knowledge"},
     "app.tasks.wechat_agent.*": {"queue": "agent"},
+    "app.tasks.feishu_agent.*": {"queue": "agent"},
     "app.tasks.usage.*": {"queue": "default"},
     "app.tasks.workflow.*": {"queue": "workflow"},
     "app.tasks.notification.*": {"queue": "default"},
@@ -119,6 +128,11 @@ celery_app.conf.beat_schedule = {
     "recover-wechat-agent-bindings": {
         "task": "app.tasks.wechat_agent.recover_bindings_task",
         "schedule": 3.0,
+        "options": {"queue": "agent"},
+    },
+    "recover-feishu-agent-channel": {
+        "task": "app.tasks.feishu_agent.recover_pending_task",
+        "schedule": 10.0,
         "options": {"queue": "agent"},
     },
     "recover-wechat-knowledge-receipts": {

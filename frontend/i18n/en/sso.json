@@ -77,6 +77,15 @@
     "disconnectConfirm": "Are you sure you want to disconnect this account?",
     "disconnectSuccess": "Account disconnected successfully",
     "disconnectError": "Failed to disconnect account",
-    "cannotDisconnect": "Cannot disconnect the only authentication method"
+    "cannotDisconnect": "Cannot disconnect the only authentication method",
+    "linkAccounts": "Link Accounts",
+    "linkAccountsDescription": "Bind a Feishu identity to this account so you can sign in with it.",
+    "linkableFeishu": "Available Feishu login",
+    "linkableEmpty": "No enabled Feishu login is available to link. Ask an administrator to enable Feishu user login, or sync your directory identity.",
+    "linkableLoadFailed": "Failed to load available Feishu login",
+    "linkProvider": "Link {provider}",
+    "linkStarting": "Opening {provider} authorization...",
+    "linkStartFailed": "Failed to start {provider} linking",
+    "linkAlreadyLinked": "This {provider} identity is already linked"
   }
 }

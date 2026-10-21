@@ -4,6 +4,7 @@ import * as React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { ApiError } from '@/lib/api/client'
+import type { IntegrationLoginPublic } from '@/lib/api/integrations'
 
 const window = new Window()
 globalThis.window = window as unknown as Window & typeof globalThis
@@ -12,6 +13,7 @@ globalThis.navigator = window.navigator as unknown as Navigator
 globalThis.MouseEvent = window.MouseEvent as unknown as typeof MouseEvent
 globalThis.Event = window.Event as unknown as typeof Event
 globalThis.localStorage = window.localStorage as unknown as Storage
+globalThis.sessionStorage = window.sessionStorage as unknown as Storage
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const push = mock<(path: string) => void>()
@@ -23,11 +25,15 @@ const changePassword = mock(() => Promise.resolve())
 const deleteAccount = mock(() => Promise.resolve())
 const sendVerification = mock(() => Promise.resolve())
 const disconnectConnection = mock(() => Promise.resolve())
+const getLinkableIntegrations = mock(() => Promise.resolve([] as IntegrationLoginPublic[]))
+const startLink = mock(() => Promise.resolve({ authorization_url: 'https://accounts.feishu.cn/authorize?state=link-state', session_id: 'link-state' }))
+const completeLink = mock(() => Promise.resolve())
 const disableTotp = mock(() => Promise.resolve())
 const regenerateBackupCodes = mock(() => Promise.resolve({ codes: ['code-one', 'code-two'] }))
 const infoToast = mock<(message: string) => void>()
 const successToast = mock<(message: string) => void>()
 const warningToast = mock<(message: string) => void>()
+const errorToast = mock<(message: string) => void>()
 const inputHandlers = new Map<string, React.ChangeEventHandler<HTMLInputElement> | undefined>()
 let deleteAccountOnClick: (() => Promise<void>) | undefined
 let otpOnChange: ((value: string) => void) | undefined
@@ -60,7 +66,8 @@ mock.module('next-intl', () => ({
 }))
 mock.module('next/navigation', () => ({ useRouter: () => ({ push }) }))
 mock.module('./wechat-knowledge', () => ({ WeChatKnowledge: () => null }))
-mock.module('sonner', () => ({ toast: { info: infoToast, success: successToast, warning: warningToast } }))
+mock.module('./feishu-agent-settings', () => ({ FeishuAgentSettings: () => null }))
+mock.module('sonner', () => ({ toast: { info: infoToast, success: successToast, warning: warningToast, error: errorToast } }))
 const Icon = () => null
 mock.module('lucide-react', () => ({
   AlertCircle: Icon, Clock: Icon, Copy: Icon, Download: Icon, KeyRound: Icon, Link: Icon,
@@ -71,7 +78,7 @@ mock.module('@/lib/api', () => ({
   ApiError,
   authApi: { getCurrentUser, sendVerification },
   usersApi: { getPasswordStatus, updateProfile, changePassword, deleteAccount },
-  ssoApi: { disconnectConnection },
+  ssoApi: { disconnectConnection, getLinkableIntegrations, startLink, completeLink },
   totpApi: { getStatus: getTotpStatus, disable: disableTotp, regenerateBackupCodes },
 }))
 mock.module('@/components/ui/dialog', () => ({
@@ -193,8 +200,12 @@ beforeEach(() => {
   getCurrentUser.mockReset()
   getCurrentUser.mockImplementation(() => Promise.resolve(user))
   inputHandlers.clear()
-  for (const fn of [getPasswordStatus, getTotpStatus, updateProfile, changePassword, deleteAccount, sendVerification, disconnectConnection, disableTotp, regenerateBackupCodes, infoToast, successToast, warningToast, push]) fn.mockClear()
+  for (const fn of [getPasswordStatus, getTotpStatus, updateProfile, changePassword, deleteAccount, sendVerification, disconnectConnection, getLinkableIntegrations, startLink, completeLink, disableTotp, regenerateBackupCodes, infoToast, successToast, warningToast, errorToast, push]) fn.mockClear()
+  getLinkableIntegrations.mockImplementation(() => Promise.resolve([]))
+  startLink.mockImplementation(() => Promise.resolve({ authorization_url: 'https://accounts.feishu.cn/authorize?state=link-state', session_id: 'link-state' }))
+  completeLink.mockImplementation(() => Promise.resolve())
   localStorage.setItem('access_token', 'token')
+  sessionStorage.clear()
 })
 
 afterEach(() => {
@@ -417,5 +428,113 @@ describe('SettingsDialog', () => {
     expect(localStorage.getItem('access_token')).toBeNull()
     expect(onOpenChange).toHaveBeenCalledWith(false)
     expect(push).toHaveBeenCalledWith('/login')
+  })
+
+  test('always shows the linked accounts card with an empty state for zero identities', async () => {
+    user = { ...user, auth_source: 'local', sso_connections: [] }
+    await render()
+    await click('account')
+
+    expect(container.textContent).toContain('connectedAccounts')
+    expect(container.textContent).toContain('noConnectedAccounts')
+    expect(getLinkableIntegrations).toHaveBeenCalledWith()
+  })
+
+  test('does not fetch linkable providers before the dialog opens', async () => {
+    await render(false)
+    expect(getLinkableIntegrations).not.toHaveBeenCalled()
+
+    act(() => root.unmount())
+    container.remove()
+    await render()
+    expect(getLinkableIntegrations).toHaveBeenCalledWith()
+  })
+
+  test('starts Feishu binding, stores the pending state, and navigates to the provider', async () => {
+    getLinkableIntegrations.mockImplementation(() => Promise.resolve([{
+      id: 'integration-1',
+      name: 'feishu',
+      display_name: 'Feishu',
+      icon_url: null,
+      button_text: null,
+      provider_type: 'feishu',
+    }]))
+    // The real client stages the pending state before navigating; the mock keeps
+    // that observable contract.
+    startLink.mockImplementation(async () => {
+      sessionStorage.setItem('sso_link_pending_session', 'link-state')
+      return { authorization_url: 'https://accounts.feishu.cn/authorize?state=link-state', session_id: 'link-state' }
+    })
+    await render()
+    await click('account')
+
+    await click('linkProvider:Feishu')
+
+    expect(startLink).toHaveBeenCalledWith('feishu')
+    expect(sessionStorage.getItem('sso_link_pending_session')).toBe('link-state')
+    expect(localStorage.getItem('access_token')).toBe('token')
+  })
+
+  test('surfaces a provider loading failure instead of hiding the action', async () => {
+    getLinkableIntegrations.mockRejectedValueOnce(new ApiError(500, 'load failed'))
+    await render()
+    await click('account')
+
+    expect(container.textContent).toContain('linkableLoadFailed')
+    expect(container.textContent).not.toContain('linkableEmpty')
+  })
+
+  test('keeps the login token when the pending link state cannot be stored', async () => {
+    getLinkableIntegrations.mockImplementation(() => Promise.resolve([{
+      id: 'integration-1',
+      name: 'feishu',
+      display_name: 'Feishu',
+      icon_url: null,
+      button_text: null,
+      provider_type: 'feishu',
+    }]))
+    const store = sessionStorage as { setItem: Storage['setItem'] }
+    const originalSetItem = store.setItem
+    Object.defineProperty(store, 'setItem', {
+      configurable: true,
+      writable: true,
+      value: () => {
+        throw new Error('QuotaExceededError')
+      },
+    })
+    await render()
+    await click('account')
+
+    await click('linkProvider:Feishu')
+
+    expect(startLink).toHaveBeenCalledWith('feishu')
+    expect(sessionStorage.getItem('sso_link_pending_session')).toBeNull()
+    expect(localStorage.getItem('access_token')).toBe('token')
+    Object.defineProperty(store, 'setItem', {
+      configurable: true,
+      writable: true,
+      value: originalSetItem,
+    })
+  })
+
+  test('refreshes linkable providers when the identity is already linked', async () => {
+    getLinkableIntegrations.mockImplementation(() => Promise.resolve([{
+      id: 'integration-1',
+      name: 'feishu',
+      display_name: 'Feishu',
+      icon_url: null,
+      button_text: null,
+      provider_type: 'feishu',
+    }]))
+    startLink.mockRejectedValueOnce(new ApiError(5001, 'already linked'))
+    await render()
+    await click('account')
+
+    await click('linkProvider:Feishu')
+
+    expect(errorToast).toHaveBeenCalledWith('linkAlreadyLinked:Feishu')
+    expect(getLinkableIntegrations).toHaveBeenCalledTimes(2)
+    expect(getCurrentUser).toHaveBeenCalledTimes(2)
+    expect(localStorage.getItem('access_token')).toBe('token')
   })
 })

@@ -10,6 +10,7 @@ from app.models.wechat_agent import (
     WeChatAgentDelivery,
 )
 from app.models.wechat_knowledge import WeChatKnowledgeReceipt
+from app.schemas.response import BusinessError
 from app.services.wechat_connection import collection_error
 
 TERMINAL_RUNS = [
@@ -33,16 +34,34 @@ async def authorized_agent(agent_id: UUID | None, user) -> Agent:
     return agent
 
 
-async def check_switch_idle(binding_id: UUID) -> None:
+async def available_agents(user) -> list[Agent]:
+    """Stable numbering shared by personal settings and WeChat commands."""
+    output = []
+    async for candidate in (
+        Agent.filter(status=AgentStatus.PUBLISHED).only("id").order_by("name", "id")
+    ):
+        try:
+            output.append(await authorized_agent(candidate.id, user))
+        except BusinessError:
+            continue
+    return output
+
+
+async def check_switch_idle(
+    binding_id: UUID, *, exclude_receipt_id: UUID | None = None
+) -> None:
     active = (
         await WeChatAgentSession.filter(binding_id=binding_id)
         .exclude(active_run__status__in=TERMINAL_RUNS)
         .exclude(active_run_id=None)
         .exists()
     )
-    queued = await WeChatAgentReceipt.filter(
+    pending = WeChatAgentReceipt.filter(
         binding_id=binding_id, status__in=["pending", "submitted"]
-    ).exists()
+    )
+    if exclude_receipt_id is not None:
+        pending = pending.exclude(id=exclude_receipt_id)
+    queued = await pending.exists()
     collecting = await WeChatKnowledgeReceipt.filter(
         binding_id=binding_id, status__in=["pending", "processing"]
     ).exists()

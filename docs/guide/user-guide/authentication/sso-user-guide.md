@@ -66,12 +66,9 @@ Single Sign-On (SSO) allows you to log in to Clouisle using your existing organi
 
 ### Linking SSO to an Existing Account
 
-There is **no user-side "Connect" action** for SSO providers. Instead, linking happens automatically during login:
+**Feishu:** sign in to your existing Clouisle account, then open the avatar menu → **Profile → Account security → Connected Accounts → Link Feishu**. Complete Feishu authorization in the same browser tab and confirm binding. Your current account, email, password and permissions stay unchanged; email matching is not needed. If no link action is available, ask an administrator to enable global SSO and Feishu sign-in. A Feishu identity already linked to another account cannot be reassigned through this flow.
 
-- When you log in with an SSO provider whose email matches an existing Clouisle account, the SSO connection is linked to that account (email matching `sso_match_by_email` is enabled by default)
-- If no matching account exists, a new account is created automatically (when `sso_auto_create_users` is enabled)
-
-If you have an existing account and want SSO login to apply to it, log in with the provider that uses the same email address.
+For other providers, linking still happens during login when the provider email matches an existing account and `sso_match_by_email` is enabled. A new account may be created if there is no match and automatic registration is enabled. Email matching is a global policy in **Site Settings → Security**, not a manual account-binding control in External integrations.
 
 ### Disconnecting an SSO Provider
 

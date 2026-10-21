@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { integrationsApi, type FeishuConfig, type Integration } from '@/lib/api/admin/integrations'
 import { FeishuIntegrationTab, FeishuKnowledgeSync } from '../_components'
 
-type FeishuSettingsTab = 'configuration' | 'directory' | 'notification' | 'knowledge'
+type FeishuSettingsTab = 'configuration' | 'directory' | 'notification' | 'agentChat' | 'knowledge'
 
 export default function FeishuIntegrationPage() {
   const t = useTranslations('siteSettings')
@@ -56,6 +56,7 @@ export default function FeishuIntegrationPage() {
         <TabsTrigger value="configuration">{t('integrations.tabConfiguration')}</TabsTrigger>
         <TabsTrigger value="directory">{t('integrations.tabDirectory')}</TabsTrigger>
         <TabsTrigger value="notification">{t('integrations.tabNotification')}</TabsTrigger>
+        <TabsTrigger value="agentChat">{t('integrations.tabAgentChat')}</TabsTrigger>
         {canManageKnowledge && <TabsTrigger value="knowledge">{t('feishuKnowledge.title')}</TabsTrigger>}
       </TabsList>
       <TabsContent value={tab} className="space-y-4">
@@ -68,7 +69,10 @@ export default function FeishuIntegrationPage() {
             canUpdate={canPerform('admin:integrations:settings:update')}
             integration={integration}
             canUpdateLogin={canPerform('admin:integrations:login:update')}
-            onIntegrationChange={(updated) => setInstances((current) => current.map((item) => item.id === updated.id ? updated : item))}
+            onIntegrationChange={(updated) => {
+              setInstances((current) => current.map((item) => item.id === updated.id ? updated : item))
+              setConfig(current => current ? { ...current, is_enabled: updated.is_enabled } : current)
+            }}
             tab={tab}
           />
         ) : <p className="text-muted-foreground">{tCommon('loading')}</p>}

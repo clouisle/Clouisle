@@ -103,7 +103,13 @@ def _required_domains(integration: Integration, values: dict) -> set[str]:
             # before anything is written, so they cannot be used to shift the
             # permission check.
             supported = set(definition.capabilities)
-            changed = (set(integration.enabled_capabilities or []) & supported) ^ (
+            previous = set(integration.enabled_capabilities or [])
+            if (
+                integration.provider_type in {"wechat", "feishu"}
+                and not integration.is_enabled
+            ):
+                previous.clear()
+            changed = (previous & supported) ^ (
                 set(values["enabled_capabilities"] or []) & supported
             )
             if changed:
@@ -330,6 +336,13 @@ async def update_integration(
             msg_key="integration_invalid_configuration",
         )
     _validate_update(integration, values)
+    if (
+        integration.provider_type in {"wechat", "feishu"}
+        and "enabled_capabilities" in values
+    ):
+        # Function switches are authoritative. Recover a legacy-disabled record
+        # without adding a new master toggle or granting unrequested features.
+        values["is_enabled"] = True
     if values.get("name") and values["name"] != integration.name:
         if await Integration.filter(name=values["name"]).first():
             raise BusinessError(

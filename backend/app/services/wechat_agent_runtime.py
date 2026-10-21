@@ -29,7 +29,7 @@ import json
 import logging
 from datetime import timedelta
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from tortoise.transactions import in_transaction
 
@@ -55,6 +55,7 @@ from app.schemas.agent import ChatRequest
 from app.schemas.response import BusinessError
 from app.services.wechat_connection import collection_error, utcnow
 from app.services.wechat_purpose import authorized_agent
+from app.services.integration_features import enabled_features, require_feature
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,10 @@ COMMANDS = {
     "/帮助": "help",
     "/skip": "skip",
     "/跳过": "skip",
+    "/agents": "agents",
+    "/智能体": "agents",
+    "/use": "use",
+    "/使用": "use",
 }
 
 
@@ -125,6 +130,7 @@ async def _authorized_context(
     receipt: WeChatAgentReceipt,
 ) -> tuple[WeChatKnowledgeBinding, User, Agent]:
     """Re-authorize every execution and every delivery attempt."""
+    await require_feature("wechat", "agent_chat")
     binding = await WeChatKnowledgeBinding.filter(id=receipt.binding_id).first()
     user = await User.filter(id=receipt.user_id).first()
     if not binding or not user or binding.user_id != receipt.user_id:
@@ -240,7 +246,11 @@ async def _answer_cutoff(run: AgentRun):
 
 
 def _command_of(text: str) -> str | None:
-    return COMMANDS.get(text.strip())
+    stripped = text.strip()
+    parts = stripped.split(maxsplit=1)
+    if parts and parts[0] in ("/use", "/使用"):
+        return "use"
+    return COMMANDS.get(stripped)
 
 
 async def _stop_current(session, run: AgentRun | None) -> None:
@@ -319,10 +329,122 @@ async def _reply_text(
         )
 
 
+async def _agent_selection_command(receipt: WeChatAgentReceipt, command: str) -> None:
+    """Commit a routing choice and its reply together; never rebind a receipt."""
+    from app.services.wechat_purpose import (
+        available_agents,
+        check_switch_idle,
+        resolve_variables,
+    )
+    from app.services.audit_log import AuditLogService
+
+    user = await User.get(id=receipt.user_id)
+    agents = await available_agents(user)
+    if command == "agents":
+        lines = [t("wechat_agent_agents_header")]
+        lines.extend(
+            f"{index}. {agent.name} · {agent.team.name}"
+            for index, agent in enumerate(agents, start=1)
+        )
+        lines.append(t("wechat_agent_agents_footer"))
+        await _reply_text(
+            receipt, "\n".join(lines) if agents else t("wechat_agent_no_agents")
+        )
+        await _consume(receipt)
+        return
+
+    text = _text_of(json.loads(decrypt_secret(receipt.payload)))
+    parts = text.split(maxsplit=1)
+    argument = parts[1].strip() if len(parts) > 1 else ""
+    selected = None
+    if argument.isascii() and argument.isdigit():
+        index = int(argument)
+        if 1 <= index <= len(agents):
+            selected = agents[index - 1]
+    else:
+        selected = next((agent for agent in agents if str(agent.id) == argument), None)
+    if selected is None:
+        await _reply_text(
+            receipt,
+            t("wechat_agent_use_invalid" if argument else "wechat_agent_use_missing"),
+        )
+        await _consume(receipt)
+        return
+
+    changed = False
+    async with in_transaction() as db:
+        binding = (
+            await WeChatKnowledgeBinding.filter(id=receipt.binding_id)
+            .using_db(db)
+            .select_for_update()
+            .get()
+        )
+        current = await WeChatAgentReceipt.filter(id=receipt.id).using_db(db).first()
+        if current is None or current.status != "pending":
+            return
+        # Recheck ownership, authorization and availability after taking the
+        # same row lock used by web configuration and inbound snapshots.
+        _, user, _ = await _authorized_context(receipt)
+        selected = await authorized_agent(selected.id, user)
+        if binding.purpose != "agent":
+            raise collection_error("wechat_agent_config_missing")
+        config = (
+            await WeChatAgentConfig.filter(binding_id=binding.id).using_db(db).first()
+        )
+        if config and config.agent_id == selected.id:
+            reply = t("wechat_agent_use_current", agent=selected.name)
+        else:
+            try:
+                await check_switch_idle(binding.id, exclude_receipt_id=receipt.id)
+                variables = resolve_variables(selected, {})
+            except BusinessError as exc:
+                reply = t(
+                    "wechat_agent_use_variables"
+                    if exc.msg_key == "wechat_agent_variables_invalid"
+                    else exc.msg_key
+                )
+            else:
+                await WeChatAgentConfig.update_or_create(
+                    binding_id=binding.id,
+                    defaults={
+                        "agent_id": selected.id,
+                        "variables": variables,
+                        "stt_model_id": None,
+                    },
+                    using_db=db,
+                )
+                binding.generation = uuid4()
+                await binding.save(
+                    using_db=db, update_fields=["generation", "updated_at"]
+                )
+                reply = t("wechat_agent_use_selected", agent=selected.name)
+                changed = True
+        await _reply_text(receipt, reply)
+        await _consume(receipt)
+    if changed:
+        await AuditLogService.log(
+            user=user,
+            action="update_wechat_binding",
+            resource_type="wechat_binding",
+            resource_id=receipt.binding_id,
+            resource_name=None,
+            operation="update",
+            status="success",
+            metadata={
+                "purpose": "agent",
+                "agent_id": str(selected.id),
+                "source": "wechat_command",
+            },
+        )
+
+
 async def _apply_command(
     receipt: WeChatAgentReceipt, session, run: AgentRun | None, command: str
 ) -> bool:
     """Deterministic command handling; commands preempt queued messages."""
+    if command in ("agents", "use"):
+        await _agent_selection_command(receipt, command)
+        return True
     if command == "help":
         await _reply_text(receipt, t("wechat_agent_help"))
     elif command == "status":
@@ -422,6 +544,7 @@ async def _submit_receipt(
         ):
             raise collection_error("wechat_agent_binding_disconnected", 403)
         agent = await authorized_agent(receipt.agent_id, user)
+        await require_feature("wechat", "agent_chat")
         submission = await submit_chat_run(
             agent.id,
             prepared,
@@ -586,6 +709,8 @@ async def _finalize_receipt(
     try:
         _, user, _ = await _authorized_context(receipt)
     except BusinessError as exc:
+        if exc.msg_key == "integration_feature_disabled":
+            return
         key = exc.msg_key or "wechat_agent_binding_disconnected"
         # The run finished, but the reply must never look like it was sent.
         await WeChatAgentReceipt.filter(id=receipt.id).update(
@@ -673,6 +798,8 @@ async def _process_pending(
     try:
         binding, user, agent = await _authorized_context(receipt)
     except BusinessError as exc:
+        if exc.msg_key == "integration_feature_disabled":
+            return
         await WeChatAgentReceipt.filter(id=receipt.id).update(
             status="error",
             error=exc.msg_key or "wechat_agent_binding_disconnected",
@@ -684,6 +811,10 @@ async def _process_pending(
     if text:
         command = _command_of(text)
         if command:
+            if command in ("agents", "use"):
+                # Control replies need the ordinary authorized delivery context
+                # even when no normal chat message has created a conversation.
+                await _ensure_conversation(session, agent, user)
             applied = await _apply_command(receipt, session, run, command)
             if applied or (
                 command == "skip"
@@ -776,6 +907,8 @@ async def _process_pending(
 async def _process_receipt(receipt: WeChatAgentReceipt, binding) -> None:
     """Advance one receipt through command, answer, submit or finalize."""
     config = await WeChatAgentConfig.filter(binding_id=binding.id).first()
+    if "agent_chat" not in await enabled_features("wechat"):
+        return
     if not config or not config.agent_id:
         if receipt.status == "pending":
             await WeChatAgentReceipt.filter(id=receipt.id).update(
@@ -826,6 +959,8 @@ async def _deliver(binding, user) -> None:
 
 async def process_binding(binding_id: str) -> dict:
     """Advance every ready receipt for one binding; called under the binding lock."""
+    if "agent_chat" not in await enabled_features("wechat"):
+        return {"pending": True, "processed": 0}
     binding = await WeChatKnowledgeBinding.filter(id=binding_id).first()
     if binding is None:
         return {"pending": False, "processed": 0}

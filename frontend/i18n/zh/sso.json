@@ -77,6 +77,15 @@
     "disconnectConfirm": "确定要解除此账号的关联吗？",
     "disconnectSuccess": "账号关联已解除",
     "disconnectError": "解除账号关联失败",
-    "cannotDisconnect": "无法解除唯一的认证方式"
+    "cannotDisconnect": "无法解除唯一的认证方式",
+    "linkAccounts": "关联账号",
+    "linkAccountsDescription": "将飞书身份关联到当前账号，之后即可用飞书登录。",
+    "linkableFeishu": "可关联的飞书登录",
+    "linkableEmpty": "暂无可关联的飞书登录。请联系管理员启用飞书用户登录，或同步通讯录身份。",
+    "linkableLoadFailed": "加载可关联的飞书登录失败",
+    "linkProvider": "绑定{provider}",
+    "linkStarting": "正在打开{provider}授权...",
+    "linkStartFailed": "发起{provider}关联失败",
+    "linkAlreadyLinked": "该{provider}身份已有关联"
   }
 }

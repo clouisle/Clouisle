@@ -1,5 +1,5 @@
-export type IntegrationCapability = 'user_login' | 'directory_sync' | 'notification'
-export type IntegrationProviderType = 'oauth2' | 'oidc' | 'saml2' | 'cas' | 'email' | 'webhook' | 'feishu'
+export type IntegrationCapability = 'user_login' | 'directory_sync' | 'notification' | 'agent_chat' | 'knowledge_collection'
+export type IntegrationProviderType = 'oauth2' | 'oidc' | 'saml2' | 'cas' | 'email' | 'webhook' | 'feishu' | 'wechat'
 
 export interface IntegrationLoginConfig {
   allow_signup: boolean

@@ -1,6 +1,6 @@
 # Integrations and SSO Configuration Guide
 
-Manage external services in **Site Settings → Integrations** (`/site-settings/integrations`). Login providers, outbound email, Webhook delivery, and manual Feishu directory sync share one Integration model, but their capabilities and permissions remain separate. The builtin integrations each open on their own page (`/site-settings/integrations/email`, `/webhook`, `/feishu`); login providers keep their dialog on the list page.
+Manage external services in **Site Settings → Integrations** (`/site-settings/integrations`). Login providers, email, Webhook, Feishu and WeChat share one Integration model, with separate capabilities and permission domains. Builtins open their own pages (`/site-settings/integrations/email`, `/webhook`, `/feishu`, `/wechat`); login providers retain their list-page dialog.
 
 ## Supported capabilities
 
@@ -8,20 +8,68 @@ Manage external services in **Site Settings → Integrations** (`/site-settings/
 |---|---|---|
 | `oauth2`, `oidc`, `saml2`, `cas` | `user_login` | Login |
 | `email`, `webhook` | `notification` | Settings |
-| `feishu` | `directory_sync`, `user_login`, `notification` | Settings (app ID/app secret, department scope, directory sync, notification capability) and Login (sign-in opt-in, button text, sign-in enable/disable) |
+| `feishu` | `directory_sync`, `user_login`, `notification`, `agent_chat` | Settings (shared app credentials, transport, directory and notifications); Login (sign-in opt-in); personal settings (replying Agent) |
+| `wechat` | `agent_chat`, `knowledge_collection` | Settings (platform feature availability); personal settings (each user's authorization and connection purpose) |
 
-Capabilities are statically declared by the backend registry. Enabling an integration does not grant it additional capabilities. Email, Webhook, and Feishu are singleton integrations configured through their specialized forms. Feishu sends notification direct messages to users linked by directory sync; it does not provide Agent messaging.
+Capabilities are statically declared by the backend registry. Feishu and WeChat expose **feature switches, not an integration master switch**. Enable only the required capabilities; changing one does not grant another. Feishu remains a singleton app configured through **Site Settings → Integrations → Feishu**.
 
-Feishu is a single integration built from one Feishu app (app ID and app secret) that declares `directory_sync`, `user_login`, and `notification`. Enabling the Feishu integration never grants sign-in by itself: web login is an explicit opt-in on the same integration. Turning the integration off stops directory sync, sign-in, and notifications while preserving the sign-in opt-in. See [System settings](system-settings.md) for its directory synchronization behavior.
-Feishu directory sync remains manual and one-way. The administrator selects departments and starts each sync; it creates or updates local users, binds each Feishu identity, and creates or updates corresponding department teams and memberships. It does not schedule syncs, delete users or teams missing from a later Feishu response, disable users, or remove memberships. Notifications are a separate capability: they send to active linked users and skip unbound recipients.
+Feishu directory sync remains manual and one-way. The administrator selects departments and starts each sync; it creates or updates local users, binds each Feishu identity, and creates or updates department teams and memberships. Notifications remain a separate capability. Feishu Agent chat is another explicit capability and routes private text messages through Clouisle's durable AgentRun runtime; it does not run an Agent loop inside Feishu.
+
+Each user selects their own replying Agent in **Personal settings → Feishu** or with `/use`. Candidates are published Agents their mapped Clouisle account can access. Selection is scoped per integration/user; conversations remain isolated per chat/user/Agent. Changes affect later messages only. Group chats and media are not supported.
+
+## Configure Feishu Agent chat
+
+Feishu Agent chat reuses the existing Feishu app integration and the durable Clouisle AgentRun runtime. It is an explicit `agent_chat` capability; enabling it does not broaden user access to Agents.
+
+1. Enable the Feishu bot capability in the Feishu developer console. Grant `im:message.p2p_msg:readonly` (receive private messages), `im:message:send_as_bot` (send bot replies), and `contact:user.base:readonly` (user identity lookup). Subscribe to `im.message.receive_v1` (**Receive messages**). Publish the app version and complete any required administrator approval so the permissions take effect. Group-mention receive permissions do not permit private-message intake.
+2. In **Site Settings → Integrations → Feishu → Agent chat**, choose **HTTP callback** or **Long connection (WebSocket)**. Existing configurations keep callback mode. Match the delivery mode in Feishu Open Platform's **Events & callbacks** settings.
+3. Ask each user to link their identity through Feishu directory sync or sign-in and select an Agent in **Personal settings → Feishu**. There is no administrator-managed global Agent list.
+4. Enable the `agent_chat` feature in **Integration configuration**. Run the existing API, Celery Beat, and an `agent`-queue worker; no new service or receiver command is required.
+
+The **Agent chat** tab always displays the required app setup checklist, including before the capability or app credentials are configured. It is setup guidance, not an automatic check of granted Feishu permissions.
+
+In **Personal settings → Feishu**, each user saves a replying Agent and turns on **Enable Agent chat**. This switch applies only to that user and saves immediately. Turning it off retains the choice/history and pauses intake, queued processing and unsent replies; already-started work may finish. The shared administrator capability must also remain enabled.
+
+Personal settings show one setup hint at a time: channel availability, identity binding, selected Agent availability, then selection setup. Detailed pause/switch behavior is available under **How it works**.
+
+On upgrade, existing users retain the Agent from their latest selected session; unused users must choose one. The old global list and per-chat selection marker are removed. Deploy matching API and worker versions and restart workers together after the schema cutover.
+
+### Long connection: local or private-network deployments
+
+Save **Long connection (WebSocket)** as the event delivery mode. It uses the saved App ID and App Secret; no public callback URL, Verification Token, or Encrypt Key is needed. In Feishu Open Platform, choose long connection event delivery and subscribe to `im.message.receive_v1`.
+
+An existing Celery worker consuming `agent` automatically manages the receiver when Agent chat is enabled, long connection mode is saved, and app credentials are configured. Feature disable or callback mode stops it; credential changes replace it. Expiring Redis ownership elects one receiver with failover. The child stops when ownership is lost or its parent exits.
+
+The Agent chat tab reports the saved receiver state: waiting for a worker, connecting, connected, reconnecting, unconfigured, disabled, or error. The SDK handles heartbeat/reconnection; terminal failures are restarted by the worker with backoff. Keep the API, worker, and Beat running with the same database, Redis, and `SECRET_KEY`. Use a dedicated Feishu app for local debugging to avoid sharing event delivery with production.
+
+**Connected** confirms only the WebSocket connection, not message permissions or event subscriptions. If the bot does not reply and there are no inbound receipts, check that `im:message.p2p_msg:readonly` is granted in the published app version and that `im.message.receive_v1` is subscribed with long connection delivery. Send a new private message after the changes take effect; do not assume previously unreceived messages will replay.
+
+### HTTP callback: publicly reachable deployments
+
+Save **HTTP callback** as the delivery mode. Configure the matching Verification Token and Encrypt Key, then register `https://<backend-host>/api/v1/integrations/feishu/callback` in Feishu's encrypted event delivery settings. Feishu must be able to reach this URL. Secrets are encrypted at rest and never returned by the settings API. The callback endpoint rejects requests while long connection mode is selected; switching back to callbacks automatically stops the managed receiver.
+
+### Bot commands
+
+Users can message the bot only in private text chats. `/agents` lists the user's accessible published Agents and `/use <number>` shares the personal-settings selection. `/new` starts a fresh conversation after the active run finishes, `/status` reports progress, `/stop` stops the selected Agent's active run, and `/help` lists commands. Plain text resumes the selected Agent's waiting `ask_user` run.
+
+The callback API is documented in [Feishu Agent Chat API](../../api-reference/endpoints/feishu-agent.md). Treat it as a Feishu provider callback, not a public application API.
+
+## Configure WeChat features
+
+Open **Site Settings → Integrations → WeChat iLink** and enable `agent_chat`, `knowledge_collection`, or both. Existing workers and Beat handle polling and processing; no receiver service or command is added. Fresh installations start with both features off. On first upgrade, active authorized personal connections preserve their current purposes as enabled platform features; subsequent administrator choices are not overwritten.
+
+Users still authorize their own WeChat identity and select exactly one connection purpose in personal settings. Disabling a feature pauses its new intake, execution and replies without deleting personal credentials, history or pending records. Already-started operations may finish; re-enabling allows pending work to resume. Messages sent while polling is paused remain subject to WeChat's retention policy. See [Connect WeChat](../../user-guide/knowledge-base/wechat-collection.md).
+
+Personal WeChat settings place authorization and refresh in the header, with compact connection cards and inline purpose actions. Configuration fields use two columns on wider screens and one on narrow screens. Hover over or focus the help icon beside the page title for usage guidance, or beside the image/video recognition model field for model guidance. The settings page does not display Agent activity or collection history; current Agent run status and stop controls remain on the connection card. Backend records are retained.
+
 
 
 ## Permissions
 
 - `admin:integrations:login:read/update`: view/manage login integrations and the global SSO policy shown on **Site Settings → Security**.
-- `admin:integrations:settings:read/update`: view/manage builtin email, Webhook, and Feishu configuration, credentials, tests, and synchronization.
+- `admin:integrations:settings:read/update`: view/manage builtin email, Webhook, Feishu and WeChat feature settings, credentials, tests, synchronization, and Agent chat configuration.
 - Either read domain permits access to the Integrations page and catalog. The instance list is filtered to the caller's domains; edit controls remain separate. Backend authorization is authoritative.
-- Update authorization on the generic `PUT /api/v1/admin/integrations/{id}` is per field. `enabled_capabilities` and `is_enabled` are charged to the domain of the capabilities involved (`user_login` → login, `directory_sync` → settings). A builtin's `config` and `credentials` are charged to settings. Login-facing fields (`button_text`, `display_name`, `icon_url`, `login_config`, `attribute_mapping`) are charged to login whenever the integration type is login-capable. Because Feishu is both a builtin and login-capable, two fields of the same card can require different domains.
+- Update authorization on the generic `PUT /api/v1/admin/integrations/{id}` is per field. `enabled_capabilities` and `is_enabled` are charged to the domain of the capabilities involved (`user_login` → login; Feishu `directory_sync`, `notification`, and `agent_chat` → settings). A builtin's `config` and `credentials` are charged to settings. Login-facing fields (`button_text`, `display_name`, `icon_url`, `login_config`, `attribute_mapping`) are charged to login whenever the integration type is login-capable. Feishu's specialized Agent-chat configuration API uses the settings domain; the app's existing login opt-in remains a separate login-domain capability.
 - `admin:settings:read/update` still governs unrelated site settings; it is not a replacement for integration permissions.
 
 ## Configure GitHub login
@@ -55,13 +103,26 @@ Feishu web sign-in is an opt-in capability of the Feishu integration. It uses th
 1. In the Feishu developer console, add the card's **Redirect URL** — `https://<backend-host>/api/v1/sso/callback/<integration-name>`, for example `…/api/v1/sso/callback/feishu` — to the app's redirect-URI allowlist. The Feishu card shows this exact value with a copy button; `<backend-host>` is the externally reachable backend/proxy origin, the same origin used for every provider's SSO callback.
 2. Grant the app the login scopes `contact:user.base:readonly contact:user.email:readonly`. Identity comes from the signed-in user's profile and needs no scope, but the email field requires `contact:user.email:readonly`.
 3. In **Site Settings → Integrations → Feishu**, use the integration page's capability section and turn on **Feishu sign-in**, optionally setting the button text. Both capability switches (directory sync and sign-in) are saved together through the generic `PUT /api/v1/admin/integrations/{id}` as `enabled_capabilities`: opening the card requires the settings read domain, and changing the sign-in opt-in requires `admin:integrations:login:update`, so a role enabling it holds both domains (a superuser always can).
-4. Save the app credentials on the same card if they are not configured yet. They are shared with directory sync, and a blank secret field preserves the saved secret. Leave the integration enabled.
+4. Save the app credentials on the same page if not configured yet. They are shared with directory sync; a blank secret field preserves the saved secret.
 
-Sign-in is advertised on the login page only when global SSO is enabled, the integration is enabled, and `user_login` is one of its enabled capabilities. Without the opt-in, the integration keeps serving directory sync only and no Feishu login button appears. Turning the integration off stops both capabilities while preserving the opt-in.
+The login page advertises Feishu only when global SSO and the `user_login` feature are enabled. Disabling Feishu sign-in stops that feature without changing other enabled features; there is no integration master switch on this page.
 
 The Feishu subject stored as the external identity `provider_user_id` is the profile `union_id`, falling back to `open_id` when `union_id` is absent, so replacing the app within the same developer account does not break existing connections.
 
 A Feishu account whose directory record carries no email receives the same deterministic placeholder address the directory sync uses, `feishu-<sha256(user_id)>@accounts.clouisle.example`, so sign-in and sync converge on one local account instead of creating two. Deriving that address needs the Feishu `user_id`, which requires `contact:user.employee_id:readonly`; without that scope there is no `user_id` for such an account and its first sign-in is rejected rather than creating a placeholder identity.
+
+### Link Feishu to an existing account
+
+Sign in to the existing Clouisle account first. Open the avatar menu → **Profile → Account security → Connected Accounts**, then choose **Link Feishu**. Complete Feishu authorization in the same browser tab and confirm the binding. This keeps the current account, password, email, permissions, and login session; it does not create an account or use email matching.
+
+The link action appears only when global SSO is enabled in **Site Settings → Security** and **Feishu sign-in** is enabled in **Site Settings → Integrations → Feishu**. It reuses the existing registered sign-in callback URL; no additional Feishu redirect URL is required. An identity linked to a different account is rejected rather than reassigned; ask an administrator to resolve an existing directory or account binding.
+
+If the verified Feishu email already belongs to another local account, linking is also rejected even when the profile lacks a directory `user_id`. This is an ownership-conflict check, not automatic email matching or account merging.
+
+Accounts linked through **Account security → Connected Accounts → Link Feishu** are excluded from directory synchronization. Their Feishu members count as skipped: sync does not create duplicate accounts, overwrite their local profile, or add department-team memberships. Existing memberships and the Feishu sign-in/bot link remain intact. Ordinary directory-managed users continue to sync. This ownership choice persists through later sign-ins and capability toggles. Upgrades recover prior manual links from retained successful `link_sso` audit events; records whose audit history was removed cannot be reliably classified retroactively.
+
+The authenticated APIs are `GET /api/v1/sso/links/integrations`, `POST /api/v1/sso/links?provider_name=<name>` (returns an authorization URL and a short-lived session ID), and `POST /api/v1/sso/links/complete` with `{"session_id":"..."}`. The provider callback only stages the verified identity. Completion requires the original signed-in owner and consumes the session. The browser also checks its pending session before allowing confirmation.
+
 
 ## Synchronize Feishu knowledge
 
@@ -151,7 +212,7 @@ Permission grants migrate once; the completion marker prevents a restart from re
 - Feishu callback rejected or no account created: confirm the app registered `https://<backend-host>/api/v1/sso/callback/<integration-name>`, that the login scopes include `contact:user.email:readonly`, and — for accounts without a directory email — `contact:user.employee_id:readonly`, without which there is no `user_id` to derive the placeholder address and the first sign-in is rejected.
 - Callback mismatch: confirm the registered name and externally reachable URL/proxy headers. Do not register a new integrations callback route.
 - Missing configuration controls: check the relevant login or settings permission domain.
-- Feishu department browsing or sync reports that the integration must be enabled: save the app ID and app secret first, then enable the Feishu integration and turn on the **Directory sync** switch in its card. The department section is only shown while the integration is enabled and directory sync is saved on, and the API replies with that same guidance otherwise.
+- Feishu department browsing or sync reports that its feature is disabled: save the App ID and App Secret, then enable and save **Directory sync** in Integration configuration. No separate integration master switch is required.
 - A `99991672` sync error lists the missing API scopes for the specific failed endpoint (for example, Bitable read permissions). Request those scopes under Feishu Open Platform → this app → Permissions, publish the app version, obtain administrator approval, and retry. Requirements differ by endpoint.
 - Undecryptable credentials: restore the matching `SECRET_KEY` or re-save credentials using the relevant settings form.
 - Cannot disconnect an identity: an account with no password cannot remove its only authentication method; establish another valid method first.

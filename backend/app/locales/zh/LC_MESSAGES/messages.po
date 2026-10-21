@@ -1211,6 +1211,12 @@ msgstr "请先启用飞书集成及其通知能力，再发送通知。"
 msgid "feishu_notification_not_configured"
 msgstr "请保存飞书 App ID 和 App Secret，并授予应用发送私聊消息的权限。"
 
+msgid "feishu_agent_chat_agent_unavailable"
+msgstr "该智能体不可用于飞书智能体对话。请选择您可访问的、属于有效团队的已发布智能体。"
+
+msgid "feishu_agent_chat_agent_unpublished"
+msgstr "只有已发布的智能体才能回复飞书消息，请先发布该智能体。"
+
 msgid "feishu_test_recipient_unavailable"
 msgstr "请选择已绑定飞书的启用用户。"
 
@@ -2261,6 +2267,9 @@ msgstr "SSO 提供商不存在"
 msgid "sso_registration_disabled"
 msgstr "SSO 注册已禁用"
 
+msgid "sso_connection_exists"
+msgstr "当前账号或飞书身份已有关联，请先解除关联或联系管理员。"
+
 msgid "sso_session_expired"
 msgstr "SSO 会话已过期"
 
@@ -3187,6 +3196,9 @@ msgstr "微信提示已有连接，但未返回授权凭据。请在微信中断
 msgid "wechat_identity_in_use"
 msgstr "该微信身份已连接到另一个平台账户。"
 
+msgid "integration_feature_disabled"
+msgstr "此集成功能已停用，请联系管理员启用。"
+
 msgid "wechat_binding_not_found"
 msgstr "微信连接不存在。"
 
@@ -3300,7 +3312,31 @@ msgstr "微信连接已失效。"
 
 
 msgid "wechat_agent_help"
-msgstr "命令：/新对话（/new）开始新对话；/停止（/stop）停止任务并取消排队消息；/状态（/status）查看状态；/帮助（/help）查看帮助；/跳过（/skip）跳过待答问题。"
+msgstr "命令：/智能体（/agents）查看可用智能体；/使用 <编号>（/use <number>）在空闲时切换智能体；/新对话（/new）开始新对话；/停止（/stop）停止任务并取消排队消息；/状态（/status）查看状态；/帮助（/help）查看帮助；/跳过（/skip）跳过待答问题。"
+
+msgid "wechat_agent_agents_header"
+msgstr "可用智能体："
+
+msgid "wechat_agent_agents_footer"
+msgstr "发送 /使用 <编号> 切换，收到成功确认后再发送新消息。列表变化时编号可能改变。"
+
+msgid "wechat_agent_no_agents"
+msgstr "暂无你有权使用的已发布智能体。"
+
+msgid "wechat_agent_use_missing"
+msgstr "请发送 /使用 <编号>，编号来自 /智能体 列表。"
+
+msgid "wechat_agent_use_invalid"
+msgstr "该智能体不在你的可用列表中，请发送 /智能体 查看当前列表。"
+
+msgid "wechat_agent_use_current"
+msgstr "正在使用 {agent}，会话与配置不变。"
+
+msgid "wechat_agent_use_selected"
+msgstr "已切换到 {agent}，后续新消息将使用该智能体，并保留它原有的会话。输入变量使用默认值，语音识别模型未配置，可在个人设置 → 微信 iLink 中调整。"
+
+msgid "wechat_agent_use_variables"
+msgstr "该智能体需要配置输入变量，请到个人设置 → 微信 iLink 中填写并保存。当前智能体未改变。"
 
 msgid "wechat_agent_status"
 msgstr "状态：{status}"
@@ -3379,3 +3415,66 @@ msgstr "等待你的回答"
 
 msgid "wechat_agent_media_failed"
 msgstr "未能从微信下载该附件，请重新发送。"
+
+msgid "feishu_agent_help"
+msgstr "命令：/智能体（/agents）查看可用智能体；/使用（/use）<编号> 切换智能体；/新对话（/new）开始新对话；/停止（/stop）停止任务并取消排队消息；/状态（/status）查看状态；/帮助（/help）查看帮助。"
+
+msgid "feishu_agent_status"
+msgstr "智能体：{agent} — 状态：{status}"
+
+msgid "feishu_agent_received"
+msgstr "🤔思考中..."
+
+msgid "feishu_agent_busy"
+msgstr "上一条消息仍在处理中，请等待完成。"
+
+msgid "feishu_agent_new_conversation"
+msgstr "下一条消息将开始新的对话。"
+
+msgid "feishu_agent_stopped"
+msgstr "已停止，排队中的消息已取消。"
+
+msgid "feishu_agent_run_failed"
+msgstr "Agent 任务未完成，请打开对话查看详情。"
+
+msgid "feishu_agent_no_output"
+msgstr "Agent 已完成，但没有产生可见回复。"
+
+msgid "feishu_agent_answer_required"
+msgstr "这个问题仍需要回答：{question}"
+
+msgid "feishu_agent_answer_invalid_choice"
+msgstr "请选择以下之一：{options}"
+
+msgid "feishu_agent_questions_partial"
+msgstr "已回答 {total} 个问题中的 {done} 个，请发送剩余答案。"
+
+msgid "feishu_agent_agents_header"
+msgstr "你可以使用的智能体（发送 /使用 <编号> 切换）："
+
+msgid "feishu_agent_agents_footer"
+msgstr "发送 /使用 <编号> 切换智能体。"
+
+msgid "feishu_agent_no_agents"
+msgstr "你暂时没有可在飞书中使用的智能体，请联系管理员发布。"
+
+msgid "feishu_agent_agent_none"
+msgstr "尚未选择"
+
+msgid "feishu_agent_agent_unavailable"
+msgstr "该智能体当前不可用。"
+
+msgid "feishu_agent_channel_disabled"
+msgstr "飞书通道已停用，请在网页应用中查看对话。"
+
+msgid "feishu_agent_use_missing"
+msgstr "请发送 /使用 <编号>，编号来自 /智能体 列表。"
+
+msgid "feishu_agent_use_invalid"
+msgstr "该智能体不在你的可用列表中，请发送 /智能体 查看。"
+
+msgid "feishu_agent_use_current"
+msgstr "正在使用 {agent}。"
+
+msgid "feishu_agent_use_selected"
+msgstr "已切换到 {agent}，下一条消息将发送给它。"

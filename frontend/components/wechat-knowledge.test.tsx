@@ -19,10 +19,8 @@ globals.IS_REACT_ACT_ENVIRONMENT = false
 
 import type {
   WeChatAgentOption,
-  WeChatAgentReceipt,
   WeChatBinding,
   WeChatModel,
-  WeChatReceipt,
   WeChatTarget,
 } from '@/lib/api/wechat-knowledge'
 
@@ -38,11 +36,16 @@ mock.module('next/link', () => ({
   default: ({ children, href }: { children?: React.ReactNode; href: string }) => <a href={href}>{children}</a>,
 }))
 mock.module('qrcode.react', () => ({ QRCodeSVG: () => <div data-testid="qr" /> }))
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  TooltipTrigger: (props: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
+  TooltipContent: ({ children }: React.PropsWithChildren) => <>{children}</>,
+}))
 mock.module('@/components/ui/select', () => ({
   Select: ({ children, value }: { children?: React.ReactNode; value?: string }) => <div data-select-value={value}>{children}</div>,
   SelectContent: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
   SelectEmpty: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
-  SelectItem: ({ children, value }: { children?: React.ReactNode; value: string }) => <button data-value={value}>{children}</button>,
+  SelectItem: ({ children, value, disabled }: { children?: React.ReactNode; value: string; disabled?: boolean }) => <button data-value={value} disabled={disabled}>{children}</button>,
   SelectTrigger: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
   SelectValue: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
 }))
@@ -101,17 +104,16 @@ function binding(overrides: Partial<WeChatBinding> = {}): WeChatBinding {
 }
 
 const state = {
+  features: { agent_chat: true, knowledge_collection: true },
   bindings: [] as WeChatBinding[],
-  receipts: [] as WeChatReceipt[],
-  agentReceipts: [] as WeChatAgentReceipt[],
 }
 const purposeMock = mock(() => Promise.resolve(binding()))
 const stopRunMock = mock(() => Promise.resolve({}))
 
 mock.module('@/lib/api/wechat-knowledge', () => ({
-  WECHAT_ACTIVE_RECEIPT_STATUSES: ['pending', 'submitted'],
   WECHAT_ACTIVE_RUN_STATUSES: ['queued', 'running', 'stopping', 'completing', 'waiting'],
   wechatKnowledgeApi: {
+    features: () => Promise.resolve(state.features),
     bindings: () => Promise.resolve(state.bindings),
     targets: () => Promise.resolve([target]),
     models: () => Promise.resolve({ vision: [], stt: [sttModel] }),
@@ -122,9 +124,6 @@ mock.module('@/lib/api/wechat-knowledge', () => ({
     login: () => Promise.reject(new Error('unused')),
     poll: () => Promise.reject(new Error('unused')),
     disconnect: () => Promise.resolve({ id: 'binding-1' }),
-    receipts: () => Promise.resolve(state.receipts),
-    agentReceipts: () => Promise.resolve(state.agentReceipts),
-    original: () => Promise.resolve(),
   },
 }))
 
@@ -165,19 +164,18 @@ async function flushInputValue(container: HTMLElement, value: string) {
   throw new Error(`Input value did not appear: ${value}`)
 }
 
-async function render(options: { bindings?: WeChatBinding[]; receipts?: WeChatReceipt[]; agentReceipts?: WeChatAgentReceipt[] } = {}) {
+async function render(options: { bindings?: WeChatBinding[]; features?: { agent_chat: boolean; knowledge_collection: boolean } } = {}) {
   purposeMock.mockClear()
   stopRunMock.mockClear()
+  state.features = options.features ?? { agent_chat: true, knowledge_collection: true }
   state.bindings = options.bindings ?? [binding()]
-  state.receipts = options.receipts ?? []
-  state.agentReceipts = options.agentReceipts ?? []
   const container = document.createElement('div')
   document.body.appendChild(container)
   containers.push(container)
   const root = createRoot(container)
   roots.push(root)
   root.render(<WeChatKnowledge active />)
-  await flush(container, 'purposeTitle')
+  await flush(container, state.bindings.length > 0 ? 'change' : 'empty')
   return { container }
 }
 
@@ -193,22 +191,6 @@ async function click(container: HTMLElement, label: string) {
 }
 
 describe('WeChatKnowledge purpose selection', () => {
-  test('shows one purpose per connection and no second enable switch', async () => {
-    const { container } = await render({
-      bindings: [binding({
-        purpose: 'agent',
-        agent_config: {
-          agent_id: 'agent-1', agent_name: 'Support Agent', variables: { user_name: 'Ada' },
-          stt_model_id: null, conversation_id: null, run_id: null, run_status: null,
-        },
-      })],
-    })
-    const content = container.textContent ?? ''
-    expect(content).toContain('purposeTitle')
-    expect(content).toContain('purposeActive:purposeAgent')
-    expect(content).not.toContain('"enable"')
-    expect(content).not.toContain('"disable"')
-  })
 
   test('saves the Agent purpose with variables and speech model', async () => {
     const { container } = await render({
@@ -271,21 +253,7 @@ describe('WeChatKnowledge purpose selection', () => {
     })
   })
 
-  test('renders Agent delivery outcomes and the web conversation link', async () => {
-    const { container } = await render({
-      agentReceipts: [{
-        id: 'receipt-1', binding_id: 'binding-1', status: 'completed', agent_name: 'Support Agent',
-        agent_id: 'agent-1', conversation_id: 'conv-1', run_id: 'run-1', run_status: 'completed',
-        error: null, delivery_status: ['submitted'], created_at: '2026-10-18T00:00:00Z',
-      }],
-    })
-    const content = container.textContent ?? ''
-    expect(content).toContain('receiptStatus.completed')
-    expect(content).toContain('agentDelivery:deliverySubmitted')
-    expect(container.querySelector('a')?.getAttribute('href')).toBe('/chat/agent-1?conversation=conv-1')
-  })
-
-  test('offers stop for a nonterminal run and keeps collection receipts distinct', async () => {
+  test('offers stop for a nonterminal run', async () => {
     const { container } = await render({
       bindings: [binding({
         purpose: 'agent',
@@ -294,16 +262,35 @@ describe('WeChatKnowledge purpose selection', () => {
           stt_model_id: null, conversation_id: 'conv-1', run_id: 'run-9', run_status: 'running',
         },
       })],
-      receipts: [{
-        id: 'kb-1', binding_id: 'binding-1', knowledge_base_id: 'kb-1', status: 'completed',
-        last_error: null, reply_status: 'sent', results: [], created_at: '2026-10-18T00:00:00Z',
-      }],
     })
     const content = container.textContent ?? ''
     expect(content).toContain('runStatus.running')
-    expect(content).toContain('collectionReceiptsTitle')
-    expect(content).toContain('agentReceiptsTitle')
     await click(container, 'stop')
     expect(stopRunMock).toHaveBeenCalledWith('agent-1', 'run-9')
   })
+})
+
+test('disabled features retain existing configuration but block login and purpose saving', async () => {
+  const { container } = await render({
+    features: { agent_chat: false, knowledge_collection: false },
+    bindings: [binding({ purpose: 'agent', agent_config: {
+      agent_id: 'agent-1', agent_name: 'Support Agent', variables: {},
+      stt_model_id: null, conversation_id: null, run_id: null, run_status: null,
+    } })],
+  })
+  expect(container.textContent).toContain('featuresDisabled')
+  expect(container.textContent).toContain('Support Agent')
+  expect(buttonByLabel(container, 'showQr')?.disabled).toBe(true)
+  expect(buttonByLabel(container, 'disconnect')?.disabled).toBe(false)
+  await click(container, 'change')
+  expect(container.querySelector<HTMLButtonElement>('[data-value="agent"]')?.disabled).toBe(true)
+  expect(container.querySelector<HTMLButtonElement>('[data-value="knowledge_collection"]')?.disabled).toBe(true)
+  expect(buttonByLabel(container, 'save')?.disabled).toBe(true)
+  expect(purposeMock).not.toHaveBeenCalled()
+})
+
+test('onboarding focuses on authorization without empty history sections', async () => {
+  const { container } = await render({ bindings: [] })
+  expect(buttonByLabel(container, 'showQr')?.disabled).toBe(false)
+  expect(buttonByLabel(container, 'change')).toBeUndefined()
 })

@@ -19,6 +19,19 @@ export interface FeishuConfig {
   is_enabled: boolean
 }
 
+export interface FeishuAgentChatConfig {
+  connection_mode: 'callback' | 'long_connection'
+  event_verification_token_configured: boolean
+  event_encrypt_key_configured: boolean
+  is_enabled: boolean
+  capability_enabled: boolean
+  receiver_status: {
+    state: 'disabled' | 'callback' | 'unconfigured' | 'waiting' | 'starting' | 'connected' | 'reconnecting' | 'error'
+    managed: boolean
+  }
+}
+
+
 export interface FeishuTestRecipient {
   id: string
   username: string
@@ -42,7 +55,9 @@ export const integrationsApi = {
   updateWebhook: (data: Partial<WebhookSettings>): Promise<WebhookSettings> => api.put('/admin/integrations/webhook', data),
   sendTestWebhook: (): Promise<void> => api.post('/admin/integrations/webhook/test', null),
   getFeishuConfig: (): Promise<FeishuConfig> => api.get('/admin/integrations/feishu/config'),
-  updateFeishuConfig: (data: { app_id?: string; app_secret?: string; is_enabled?: boolean }): Promise<FeishuConfig> => api.put('/admin/integrations/feishu/config', data),
+  updateFeishuConfig: (data: { app_id?: string; app_secret?: string }): Promise<FeishuConfig> => api.put('/admin/integrations/feishu/config', data),
+  getFeishuAgentChatConfig: (): Promise<FeishuAgentChatConfig> => api.get('/admin/integrations/feishu/agent-chat/config'),
+  updateFeishuAgentChatConfig: (data: { connection_mode?: FeishuAgentChatConfig['connection_mode']; event_verification_token?: string; event_encrypt_key?: string }): Promise<FeishuAgentChatConfig> => api.put('/admin/integrations/feishu/agent-chat/config', data),
   getFeishuDepartments: (): Promise<FeishuDepartment[]> => api.get('/admin/integrations/feishu/departments'),
   updateFeishuDepartmentScope: (department_ids: string[]): Promise<{ department_ids: string[] }> => api.put('/admin/integrations/feishu/department-scope', { department_ids }),
   checkFeishuConnection: (): Promise<{ status: string }> => api.post('/admin/integrations/feishu/connection-check', null),

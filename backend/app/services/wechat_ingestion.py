@@ -34,6 +34,7 @@ from app.services.wechat_connection import (
 )
 from app.services.wechat_media import extract_media
 from app.services.wechat_locks import CollectionBusy, collection_lock
+from app.services.integration_features import enabled_features, require_feature
 
 logger = logging.getLogger(__name__)
 URL_RE = re.compile(r"https?://[^\s<>\[\]（）]+")
@@ -66,6 +67,7 @@ def split_items(payload: dict) -> list[dict]:
 
 
 async def actor_target(receipt: WeChatKnowledgeReceipt):
+    await require_feature("wechat", "knowledge_collection")
     binding = await WeChatKnowledgeBinding.filter(
         id=receipt.binding_id, status="connected"
     ).first()
@@ -218,6 +220,7 @@ async def document_source_fields(name: str, metadata: dict, content_path: str) -
 async def claim_document(
     receipt, item, kb, text: str, name: str, metadata: dict
 ) -> tuple[Document, bool]:
+    await require_feature("wechat", "knowledge_collection")
     normalized = text.replace("\r\n", "\n").strip()
     if not normalized:
         raise collection_error("wechat_empty_content")
@@ -322,7 +325,9 @@ async def process_item(receipt, index: int, spec: dict):
             await document.refresh_from_db()
             try:
                 await actor_target(receipt)
-            except BusinessError:
+            except BusinessError as exc:
+                if exc.msg_key == "integration_feature_disabled":
+                    raise
                 document.status = "error"
                 document.error_message = "wechat_target_unavailable"
                 await document.save(update_fields=["status", "error_message"])
@@ -355,12 +360,16 @@ async def heartbeat(receipt_id, owner):
 
 
 async def reply_result(receipt, payload):
+    if "knowledge_collection" not in await enabled_features("wechat"):
+        return
     if receipt.reply_status != "pending":
         return
     try:
         binding, user, kb = await actor_target(receipt)
         set_language(user.locale or "en")
-    except BusinessError:
+    except BusinessError as exc:
+        if exc.msg_key == "integration_feature_disabled":
+            return
         # Loss of target permission must not expose titles or indexed content.
         binding = await WeChatKnowledgeBinding.filter(
             id=receipt.binding_id, status="connected"
@@ -392,10 +401,18 @@ async def reply_result(receipt, payload):
         async with WeChatClient(
             binding.base_url, decrypt_secret(binding.token)
         ) as client:
+            await require_feature("wechat", "knowledge_collection")
             await client.send_text(
                 binding.wechat_user_id, text, payload["context_token"]
             )
         state = "submitted"
+    except BusinessError as exc:
+        if exc.msg_key == "integration_feature_disabled":
+            await WeChatKnowledgeReceipt.filter(
+                id=receipt.id, reply_status="sending"
+            ).update(reply_status="pending")
+            return
+        state = "unknown"
     except Exception:
         state = "unknown"
     await WeChatKnowledgeReceipt.filter(id=receipt.id).update(reply_status=state)
@@ -410,6 +427,8 @@ async def process_receipt(receipt_id: str) -> dict:
 
 
 async def _process_receipt(receipt_id: str) -> dict:
+    if "knowledge_collection" not in await enabled_features("wechat"):
+        return {"status": "pending"}
     owner = uuid4()
     claimed = (
         await WeChatKnowledgeReceipt.filter(id=receipt_id)
@@ -439,6 +458,11 @@ async def _process_receipt(receipt_id: str) -> dict:
                 # Leave the receipt recoverable after infrastructure failures.
                 raise CollectionBusy() from exc
             except Exception as exc:
+                if (
+                    isinstance(exc, BusinessError)
+                    and exc.msg_key == "integration_feature_disabled"
+                ):
+                    raise
                 item = await WeChatKnowledgeItem.get(
                     receipt_id=receipt.id, item_index=index
                 )
@@ -490,6 +514,8 @@ async def _process_receipt(receipt_id: str) -> dict:
     except CollectionBusy:
         return {"status": "pending"}
     except BusinessError as exc:
+        if exc.msg_key == "integration_feature_disabled":
+            return {"status": "pending"}
         receipt.status, receipt.last_error = (
             "error",
             exc.msg_key or "wechat_processing_failed",

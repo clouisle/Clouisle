@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock
 
 import httpx
@@ -229,6 +230,45 @@ async def test_directory_missing_user_id_aborts_instead_of_creating_wrong_identi
 
     with pytest.raises(feishu.FeishuAPIError, match="user_id"):
         await transport_client(handler).list_users(["department"])
+
+
+@pytest.mark.asyncio
+async def test_reply_text_sends_text_with_provider_idempotency(transport_client):
+    requests = []
+
+    def handler(request):
+        auth = token_response(request)
+        if auth:
+            return auth
+        requests.append(request)
+        return httpx.Response(200, json={"code": 0, "data": {"message_id": "reply"}})
+
+    client = transport_client(handler)
+    await client.reply_text("om_source", "hello 飞书", uuid="delivery-1")
+
+    assert [request.url.path for request in requests] == [
+        "/open-apis/im/v1/messages/om_source/reply"
+    ]
+    assert requests[0].headers["Authorization"] == "Bearer tenant-token"
+    assert json.loads(requests[0].content) == {
+        "msg_type": "text",
+        "content": '{"text": "hello 飞书"}',
+        "uuid": "delivery-1",
+    }
+
+
+@pytest.mark.asyncio
+async def test_reply_text_rejects_invalid_provider_parameters(transport_client):
+    client = transport_client(lambda _request: httpx.Response(200, json={"code": 0}))
+
+    with pytest.raises(ValueError):
+        await client.reply_text("", "reply", uuid="delivery-1")
+
+    with pytest.raises(ValueError):
+        await client.reply_text("message", "reply", uuid="x" * 51)
+
+    with pytest.raises(ValueError):
+        await client.reply_text("message", "x" * (150 * 1024 + 1), uuid="delivery-1")
 
 
 @pytest.mark.asyncio

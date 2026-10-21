@@ -1,9 +1,11 @@
-# Connect WeChat
+# WeChat iLink
 
-Use **personal settings → WeChat Connect** to authorize your account. A connection can remain unused, collect knowledge, or chat with one Agent. **Only one purpose is active at a time.**
+Use **personal settings → WeChat iLink** to authorize your account. A connection can remain unused, collect knowledge, or chat with one Agent. **Only one purpose is active at a time.**
 
 1. **Connect** — scan and confirm authorization without selecting a knowledge base or Agent.
 2. **Choose a purpose** — select **Do nothing**, **Knowledge collection**, or **Single Agent** and save. Saved configurations are retained when inactive; they do not independently enable a second purpose.
+
+An administrator must first enable **Agent chat**, **Knowledge collection**, or both in **Site Settings → Integrations → WeChat iLink**. Only enabled purposes can be selected; QR authorization is unavailable when both features are off. Existing connections remain visible and backend history is retained. Disabling a platform feature pauses its intake, execution and replies while preserving credentials and pending work; re-enabling resumes eligible work. Already-started operations may finish. Upstream retention determines whether messages sent during a polling pause remain available.
 
 ## Connect your account
 
@@ -27,9 +29,11 @@ Each accepted submission retains its contributor and original target. A purpose 
 
 Choose **Single Agent**, select one published Agent that you can use, fill its required input variables, optionally choose a speech recognition model, and save. Knowledge collection becomes inactive; incoming links and files are Agent inputs, not automatic knowledge-base uploads. Returning to **Do nothing** keeps the saved Agent configuration.
 
-Each connection uses its own conversation. Repeated messages continue that conversation; selecting a different Agent isolates its history. Changed starting variables create a new conversation. You can view the conversation from the Agent activity records in personal settings, subject to normal authorization.
+Each connection uses its own conversation. Repeated messages continue that conversation; selecting a different Agent isolates its history. Changed starting variables create a new conversation. Conversations remain available in web chat under normal authorization. Personal settings show the current run status and stop control, not an Agent activity list.
 
 Send `/new` (or `/新对话`), `/stop` (`/停止`), `/status` (`/状态`) or `/help` (`/帮助`) to control the conversation. Normal messages are processed in order; they do not start competing runs. When the Agent asks a question, the next answer resumes that waiting run instead of starting another task. `/new` only resets once the current task has finished; otherwise wait or stop it first. Changing the connection's purpose is blocked while work is active; stop it or wait for completion first.
+
+In Agent chat mode, send `/agents` (`/智能体`) to list your accessible published Agents, then `/use <number>` (`/使用 <编号>`) to switch. An accessible Agent's UUID is also accepted. Numbering follows the current name/ID order and can change when Agents are added or renamed. The command updates the same connection configuration as personal settings. It cannot switch while a run, other accepted messages, collection work or replies are pending; finish or stop the work and wait for delivery before trying again. Wait for the successful switch confirmation before sending your next message: already accepted messages are never rerouted. Selecting the current Agent changes nothing. Switching to another Agent uses its default variables and clears the speech recognition model; missing required variables must be configured on the web. Each Agent retains its own conversation when switching back. These commands do not change a knowledge-collection connection into Agent chat; configure Agent chat on the web first.
 
 Agent execution uses the connected user's identity and the application's existing model, tool, knowledge and quota permissions. Revoked access or a disconnected connection prevents further execution or delivery. Before preparing a normal task's attachments or submitting its run, the platform attempts to send a deduplicated “🤔Thinking...” notice (“🤔思考中...” in Chinese); it confirms receipt and preparation, not completion. Messages waiting behind an active run receive the existing busy notice instead. Commands and answers to Agent questions retain their own responses. WeChat receives these status notices, final answers and required interaction prompts, not internal reasoning or tool traces. Notices use the same delivery safeguards: an ambiguous send is not blindly retried, and delivery is not guaranteed when WeChat is unavailable.
 
@@ -43,7 +47,7 @@ Agent execution uses the connected user's identity and the application's existin
 
 Text accompanying an attachment becomes its caption. Attachments beyond the Agent's configured limits, extensions it disallows, and content its models cannot read are rejected with an explicit reply instead of being silently dropped. An audio file received as a generic file is passed to the Agent as that file, exactly like a web-chat upload; it is not auto-transcribed. Voice messages use the transcript path above.
 
-Generated images, videos and files — including generated audio, which is sent as a file rather than a voice message — are uploaded to WeChat as native media. Only text and registered conversation Assets are ever sent; no public storage URL is forwarded. The Agent activity list records each WeChat message's run state and the delivery outcome (`Queued`, `Sending`, `Accepted by WeChat`, `Failed to send`, `WeChat unavailable, not sent`, `Sent, delivery unconfirmed`). A timeout after transmission is recorded as unconfirmed rather than resent.
+Generated images, videos and files — including generated audio, which is sent as a file rather than a voice message — are uploaded to WeChat as native media. Only text and registered conversation Assets are ever sent; no public storage URL is forwarded. Per-message run and delivery outcomes remain recorded in the backend but are not listed in personal settings. A timeout after transmission is recorded as unconfirmed rather than resent.
 
 ## What can be collected?
 
@@ -63,9 +67,9 @@ Attachments are limited to the smaller of the configured knowledge document uplo
 
 ## Results and originals
 
-Recent submissions list each item's indexed, duplicate, processing or failed result. Supported originals are retained and can be downloaded from that submission while the contributor still has access to the target. Replayed messages do not create another document; identical extracted content is deduplicated within the target knowledge base while keeping separate submission records.
+Collection results are reported through WeChat; inspect the target knowledge base for indexed documents and their processing state. Personal settings do not display submission history or original-download controls. Backend submission records and supported originals are retained, with authenticated record and original-download APIs still subject to contributor and target-access checks. Replayed messages do not create another document; identical extracted content is deduplicated within the target knowledge base while keeping separate submission records.
 
-Only completed indexing is reported as success. WeChat's acceptance of a reply is **not proof that the phone displayed it**. An ambiguous send is not blindly repeated; inspect the canonical submission result in the platform.
+Only completed indexing is reported as success. WeChat's acceptance of a reply is **not proof that the phone displayed it**. An ambiguous send is not blindly repeated; backend submission records remain the canonical processing result.
 
 ## Disconnect
 
@@ -76,6 +80,8 @@ Only completed indexing is reported as success. WeChat's acceptance of a reply i
 Run the API first so its normal schema bootstrap creates the collection tables, then run the existing Celery worker **and** Beat scheduler. Beat polls WeChat every three seconds and asks one worker to store each new message; there is no separate receiver process to deploy.
 
 The worker handling WeChat needs outbound HTTPS access to the official iLink backend and WeChat media CDN, plus PostgreSQL and Redis. Message intake (`app.tasks.wechat_agent.*`) and Agent runs share the `agent` queue; collection processing uses `knowledge`. Beat also recovers collection receipts every minute and re-drives Agent receipts and unsent replies every three seconds. PostgreSQL locks serialize ownership; credentials, incoming payloads, cursors and reply context tokens are encrypted using the deployment's stable `SECRET_KEY`. Remote-storage deployments reuse the existing authenticated internal upload gateway, so no uploads volume is required.
+
+Platform features control which purposes Beat polls and workers process. Fresh installations default to both features off. The first upgrade preserves active authorized personal uses as platform features, without copying personal credentials into the integration record. Subsequent startup does not overwrite administrator selections.
 
 Agent mode also requires a ready Sandbox Worker for sandbox tools and checkpointing existing session workspaces. Keep that service running alongside the normal worker and Beat; removing the WeChat receiver does not remove the sandbox dependency. On macOS, run `backend/.venv/bin/python main.py sandbox-worker --local-dev -c 1` from the repository root to use the Linux container with Bubblewrap. Do not disable isolation to work around a missing `bwrap`. If no sandbox worker is ready, recovery/checkpointing can time out and WeChat reports that the Agent task did not finish; inspect the conversation's AgentRun error and restore the worker before retrying.
 
@@ -90,6 +96,7 @@ All routes use the current user's JWT under `/api/v1/wechat-knowledge`; they do 
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| GET | `/features` | Read the current `agent_chat` and `knowledge_collection` availability; disabled purposes cannot be activated. |
 | GET | `/bindings` | List your connections, active `purpose`, saved collection and single-Agent configuration. |
 | GET | `/targets` | List active writable knowledge bases. |
 | GET | `/models?knowledge_base_id=…` | List enabled team-authorized vision and speech models. |

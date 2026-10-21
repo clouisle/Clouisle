@@ -26,6 +26,7 @@ from app.services.wechat_connection import (
     start_login,
     validate_models,
 )
+from app.services.integration_features import enabled_features, require_feature
 
 router = APIRouter()
 
@@ -54,6 +55,17 @@ async def owned_binding(identifier: UUID, user: User) -> WeChatKnowledgeBinding:
     return binding
 
 
+@router.get("/features")
+async def features(user: User = Depends(get_current_active_user)):
+    enabled = await enabled_features("wechat")
+    return success(
+        data={
+            "agent_chat": "agent_chat" in enabled,
+            "knowledge_collection": "knowledge_collection" in enabled,
+        }
+    )
+
+
 @router.get("/bindings")
 async def bindings(user: User = Depends(get_current_active_user)):
     rows = await WeChatKnowledgeBinding.filter(user_id=user.id).order_by("-created_at")
@@ -62,6 +74,7 @@ async def bindings(user: User = Depends(get_current_active_user)):
 
 @router.get("/targets")
 async def targets(user: User = Depends(get_current_active_user)):
+    await require_feature("wechat", "knowledge_collection")
     from app.api.v1.endpoints.knowledge_bases import (
         _kb_access_mode,
         kb_read_visibility_filter,
@@ -90,6 +103,7 @@ async def targets(user: User = Depends(get_current_active_user)):
 async def models(
     knowledge_base_id: UUID, user: User = Depends(get_current_active_user)
 ):
+    await require_feature("wechat", "knowledge_collection")
     kb = await check_binding_target(knowledge_base_id, user)
     return success(data=await available_models(kb))
 
@@ -116,15 +130,11 @@ async def poll(
 
 @router.get("/agents")
 async def agents(user: User = Depends(get_current_active_user)):
-    from app.models.agent import Agent, AgentStatus
-    from app.services.wechat_purpose import authorized_agent
+    await require_feature("wechat", "agent_chat")
+    from app.services.wechat_purpose import available_agents
 
     output = []
-    async for candidate in Agent.filter(status=AgentStatus.PUBLISHED).only("id"):
-        try:
-            agent = await authorized_agent(candidate.id, user)
-        except BusinessError:
-            continue
+    for agent in await available_agents(user):
         output.append(
             {
                 "id": str(agent.id),
@@ -140,6 +150,7 @@ async def agents(user: User = Depends(get_current_active_user)):
 
 @router.get("/agent-models")
 async def agent_models(agent_id: UUID, user: User = Depends(get_current_active_user)):
+    await require_feature("wechat", "agent_chat")
     from app.services.wechat_purpose import authorized_agent
 
     agent = await authorized_agent(agent_id, user)
@@ -159,6 +170,11 @@ async def update_purpose(
     )
 
     binding = await owned_binding(identifier, user)
+    if data.purpose != "none":
+        await require_feature(
+            "wechat",
+            "agent_chat" if data.purpose == "agent" else "knowledge_collection",
+        )
     if data.purpose == "agent" and (data.knowledge_base_id or data.vision_model_id):
         raise collection_error("validation_error")
     if data.purpose == "knowledge_collection" and (data.agent_id or data.variables):
@@ -215,6 +231,11 @@ async def update_purpose(
             .get()
         )
         await check_switch_idle(binding.id)
+        if data.purpose != "none":
+            await require_feature(
+                "wechat",
+                "agent_chat" if data.purpose == "agent" else "knowledge_collection",
+            )
         if data.purpose == "knowledge_collection":
             await WeChatKnowledgeCollection.update_or_create(
                 binding_id=binding.id, defaults=config_values, using_db=db

@@ -81,6 +81,14 @@ async def ingestion_db(monkeypatch):
             db_url="sqlite://:memory:", modules={"models": ["app.models"]}
         )
         await context.generate_schemas()
+        from app.models.integration import Integration
+
+        await Integration.create(
+            name="wechat",
+            provider_type="wechat",
+            display_name="WeChat iLink",
+            enabled_capabilities=["agent_chat", "knowledge_collection"],
+        )
         user = await User.create(
             id=uuid4(),
             username="collector",

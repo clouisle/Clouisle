@@ -20,6 +20,7 @@ from app.models.wechat_knowledge import (
     WeChatKnowledgeLogin,
 )
 from app.schemas.response import BusinessError, ResponseCode
+from app.services.integration_features import require_any_feature
 
 
 def utcnow():
@@ -136,6 +137,7 @@ async def binding_summary(binding: WeChatKnowledgeBinding) -> dict:
 
 
 async def start_login(user: User) -> WeChatKnowledgeLogin:
+    await require_any_feature("wechat", ("agent_chat", "knowledge_collection"))
     await WeChatKnowledgeLogin.filter(user_id=user.id, expires_at__lt=utcnow()).delete()
     active = (
         await WeChatKnowledgeLogin.filter(user_id=user.id, expires_at__gt=utcnow())
@@ -162,6 +164,7 @@ async def start_login(user: User) -> WeChatKnowledgeLogin:
 async def poll_login(
     login_id: UUID, user: User, verify_code: str | None = None
 ) -> dict:
+    await require_any_feature("wechat", ("agent_chat", "knowledge_collection"))
     login = await WeChatKnowledgeLogin.filter(id=login_id, user_id=user.id).first()
     if not login:
         raise collection_error("wechat_login_not_found", 404)
@@ -185,6 +188,9 @@ async def poll_login(
                 # We cannot reconstruct credentials for some other installation.
                 raise collection_error("wechat_already_connected")
             if state == "confirmed":
+                await require_any_feature(
+                    "wechat", ("agent_chat", "knowledge_collection")
+                )
                 token, identity, bot = (
                     result.get("bot_token"),
                     result.get("ilink_user_id"),

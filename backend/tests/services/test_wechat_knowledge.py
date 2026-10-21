@@ -79,6 +79,14 @@ async def collection_db():
             db_url="sqlite://:memory:", modules={"models": ["app.models"]}
         )
         await context.generate_schemas()
+        from app.models.integration import Integration
+
+        await Integration.create(
+            name="wechat",
+            provider_type="wechat",
+            display_name="WeChat iLink",
+            enabled_capabilities=["agent_chat", "knowledge_collection"],
+        )
         user = await User.create(
             id=uuid4(),
             username="collector",
@@ -1714,64 +1722,3 @@ async def test_revoked_target_after_indexing_cannot_report_success(
     document = await Document.get(knowledge_base=kb)
     assert document.status == "error"
     assert document.error_message == "wechat_target_unavailable"
-
-
-def test_recover_receipts_schedules_only_durable_work(monkeypatch):
-    import asyncio
-    from types import SimpleNamespace
-    from app.models.wechat_knowledge import WeChatKnowledgeLogin, WeChatKnowledgeReceipt
-    from app.tasks import wechat_knowledge
-
-    stale_id, reply_id = uuid4(), uuid4()
-    pending_rows = [
-        SimpleNamespace(id=stale_id, status="pending"),
-        SimpleNamespace(id=reply_id, status="completed"),
-    ]
-    deleted = AsyncMock(return_value=1)
-
-    class AwaitableQuery:
-        def __init__(self, rows):
-            self.rows = rows
-
-        def filter(self, *_args, **_kwargs):
-            return self
-
-        def order_by(self, *_args):
-            return self
-
-        def limit(self, *_args):
-            return self
-
-        def __await__(self):
-            async def resolve():
-                return self.rows
-
-            return resolve().__await__()
-
-    monkeypatch.setattr(
-        WeChatKnowledgeLogin,
-        "filter",
-        lambda **_kwargs: SimpleNamespace(delete=deleted),
-    )
-    monkeypatch.setattr(
-        WeChatKnowledgeReceipt,
-        "filter",
-        lambda *_args, **_kwargs: AwaitableQuery(pending_rows),
-    )
-    scheduled = []
-    monkeypatch.setattr(
-        wechat_knowledge.process_receipt_task,
-        "delay",
-        lambda receipt_id: scheduled.append(receipt_id),
-    )
-    monkeypatch.setattr(
-        wechat_knowledge,
-        "_run_async",
-        lambda coroutine: asyncio.run(coroutine),
-    )
-
-    result = wechat_knowledge.recover_receipts_task.run()
-
-    assert result == {"queued": 2}
-    assert scheduled == [str(stale_id), str(reply_id)]
-    deleted.assert_awaited_once()

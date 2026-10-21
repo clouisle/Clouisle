@@ -350,11 +350,17 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Retrieval evaluation table cleanup failed: {e}")
 
     await init_observability_run_fields()
+    from app.core.sso_link_migration import migrate_sso_link_sessions
+
+    await migrate_sso_link_sessions()
     # Generate schemas
     await Tortoise.generate_schemas()
     from app.core.wechat_migration import migrate_wechat_knowledge_schema
 
     await migrate_wechat_knowledge_schema()
+    from app.core.feishu_agent_migration import migrate_feishu_agent_selection
+
+    await migrate_feishu_agent_selection()
     await initialize_integrations()
     try:
         await init_observability_run_error_index()

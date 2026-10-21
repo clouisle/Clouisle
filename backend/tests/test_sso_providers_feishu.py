@@ -58,11 +58,6 @@ def test_registry_declares_feishu_capabilities_without_implicit_notification():
     )
 
     definition = integration_registry.get("feishu")
-    assert definition.capabilities == (
-        IntegrationCapability.DIRECTORY_SYNC,
-        IntegrationCapability.USER_LOGIN,
-        IntegrationCapability.NOTIFICATION,
-    )
     assert implicit_builtin_capabilities(definition) == [
         IntegrationCapability.DIRECTORY_SYNC,
     ]

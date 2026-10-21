@@ -4,6 +4,7 @@ from celery import shared_task
 from tortoise.expressions import Q
 
 from app.tasks.knowledge_base import _run_async
+from app.services.integration_features import enabled_features
 
 
 @shared_task(name="app.tasks.wechat_agent.poll_bindings_task")
@@ -51,6 +52,8 @@ def recover_bindings_task() -> dict:
     from app.models.wechat_agent import WeChatAgentDelivery, WeChatAgentReceipt
 
     async def recover():
+        if "agent_chat" not in await enabled_features("wechat"):
+            return {"queued": 0}
         identifiers = set(
             await WeChatAgentReceipt.filter(status__in=["pending", "submitted"])
             .order_by("created_at")

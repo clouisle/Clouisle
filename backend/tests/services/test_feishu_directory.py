@@ -12,6 +12,15 @@ from app.schemas.user import User as UserSchema
 from app.services import feishu_directory
 
 
+@pytest.fixture(autouse=True)
+def no_self_service_links(monkeypatch):
+    monkeypatch.setattr(
+        feishu_directory,
+        "_self_service_directory_exclusions",
+        AsyncMock(return_value=(set(), set())),
+    )
+
+
 class Query:
     def __init__(self, result=None, results=None):
         self.result = result

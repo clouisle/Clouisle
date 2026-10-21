@@ -1,6 +1,6 @@
 # 集成与 SSO 配置指南
 
-在 **站点设置 → 集成**（`/site-settings/integrations`）统一管理登录身份源、邮件、Webhook 和飞书通讯录。它们使用同一 Integration 模型，但功能与权限并不混用。内置集成各自打开独立页面（`/site-settings/integrations/email`、`/webhook`、`/feishu`）；登录身份源仍在列表页以弹窗配置。
+在 **站点设置 → 集成**（`/site-settings/integrations`）统一管理登录身份源、邮件、Webhook、飞书与微信。它们使用同一 Integration 模型，但功能与权限并不混用。内置集成各自打开独立页面（`/site-settings/integrations/email`、`/webhook`、`/feishu`、`/wechat`）；登录身份源仍在列表页以弹窗配置。
 
 ## 支持范围
 
@@ -8,17 +8,65 @@
 |---|---|---|
 | `oauth2`、`oidc`、`saml2`、`cas` | `user_login` | login |
 | `email`、`webhook` | `notification` | settings |
-| `feishu` | `directory_sync`、`user_login`、`notification` | settings（app_id、app_secret、部门范围、通讯录同步、通知能力）与 login（登录开关、按钮文案、登录的启用/停用） |
+| `feishu` | `directory_sync`、`user_login`、`notification`、`agent_chat` | settings（共享应用凭据、接收方式、通讯录与通知）；login（登录开关）；个人设置（回复智能体） |
+| `wechat` | `agent_chat`、`knowledge_collection` | settings（平台功能可用性）；个人设置（各用户授权与连接用途） |
 
-能力由后端注册表静态声明，不能通过配置添加尚未实现的功能。邮件、Webhook 和飞书为单实例集成，使用专用表单配置。飞书通知会向通过通讯录同步绑定的用户发送私聊；不提供 Agent 消息。
+能力由后端注册表静态声明。飞书与微信仅提供**功能开关，不增加集成总开关**；按需启用功能，修改一项不会自动授予其他功能。飞书仍是单实例应用，在 **站点设置 → 集成 → 飞书** 配置。
 
-飞书是由同一套飞书应用凭据（app_id、app_secret）构成的单个集成，同时声明 `directory_sync`、`user_login` 和 `notification`。启用飞书集成本身不会授予登录能力，网页登录需要在同一集成上显式开启；关闭集成会同时停用通讯录同步、登录与通知，但保留登录选项。飞书仍是手动、单向通讯录同步，详见[系统设置](system-settings.md)。
-飞书通讯录同步仍是手动、单向操作：管理员选择部门并逐次启动同步；系统创建或更新本地用户、绑定飞书身份，并创建或更新对应的部门团队和成员关系。同步不会自动定时运行，也不会删除后续飞书响应中缺失的用户或团队、禁用用户或移除成员关系。通知是独立能力：仅向已绑定的活跃用户发送，未绑定用户会跳过。
+飞书通讯录同步仍是手动、单向操作。通知仍是独立能力。Agent 对话是另一项显式能力，私聊文本会进入 Clouisle 的 durable AgentRun 执行路径；不会在飞书内部另建 Agent 运行时。
+
+每位用户在 **个人设置 → 飞书** 或通过 `/use` 自行选择回复智能体，候选项仅包括其绑定的 Clouisle 账号有权访问的已发布 Agent。选择按集成和用户隔离，会话仍按聊天、用户和 Agent 隔离；切换只影响后续消息。不处理群聊和媒体。
+
+## 配置飞书 Agent 对话
+
+飞书 Agent 对话复用现有飞书应用集成和 Clouisle durable AgentRun 运行时，是一项显式的 `agent_chat` 能力；开启后不会扩大用户的 Agent 访问权限。
+
+1. 在飞书开发者后台开启机器人能力，授予 `im:message.p2p_msg:readonly`（获取用户发给机器人的单聊消息）、`im:message:send_as_bot`（以应用身份发消息）和 `contact:user.base:readonly`（查询用户基本信息），并订阅 `im.message.receive_v1`（接收消息）事件。发布应用版本，并完成所需的管理员审批，使权限生效。接收群聊 @ 消息的权限不能代替接收私聊消息的权限。
+2. 在 **站点设置 → 集成 → 飞书 → 智能体对话** 中选择 **HTTP 回调** 或 **长连接（WebSocket）**，并保存。已有配置默认保持回调模式；飞书开放平台的 **事件与回调** 中也要选择相同的接收方式。
+3. 用户通过飞书通讯录同步或飞书登录绑定账号后，在 **个人设置 → 飞书** 中选择回复智能体；不再由管理员配置全局 Agent 名单。
+4. 在“集成配置”中启用 `agent_chat` 功能。运行现有 API、Celery Beat 和消费 `agent` 队列的 worker，无需新增服务或接收命令。
+
+“智能体对话”页签始终显示飞书应用必需配置清单，未开启能力或未配置凭据时也可查看。这是配置指引，不代表系统已自动检测飞书权限是否开通。
+
+每位用户在 **个人设置 → 飞书** 中先保存回复智能体，再打开 **启用智能体对话**。该开关立即保存且仅影响本人。关闭后保留选择与历史，暂停新消息接入、待处理消息和未发送回复；已开始的任务仍可能完成。后台共享功能开关也必须开启。
+
+个人设置只显示一项配置提示，依次优先检查通道可用性、账号绑定、所选智能体可用性和选择配置。暂停与切换的详细规则在默认折叠的“使用说明”中查看。
+
+升级时，已有用户保留其最近所选会话的 Agent；未使用过的用户需要自行选择。旧全局名单和会话选择标记会被移除。API 与 worker 必须部署匹配版本，并在 schema 切换后同步重启 worker。
+
+### 长连接：本地或无公网入口的环境
+
+保存 **长连接（WebSocket）** 接收方式。它复用已保存的 App ID 和 App Secret，无需公网回调地址、Verification Token 或 Encrypt Key。在飞书开放平台中选择使用长连接接收事件，并订阅 `im.message.receive_v1`。
+
+消费 `agent` 队列的现有 Celery worker 自动托管接收进程。智能体对话开启、保存长连接方式并配置应用凭据后启动，不依赖全局智能体名单。关闭功能或切回 HTTP 回调会停止接收；修改凭据会重建连接。多个 worker 通过 Redis 过期所有权选主并接管故障；子进程在失去所有权或父进程退出后停止。
+
+智能体对话页显示已保存配置的接收状态：等待 worker、连接中、已连接、重连中、未配置、已关闭或异常。SDK 处理心跳与重连，终止性故障由 worker 退避重启。API、worker 和 Beat 仍需运行，并使用相同数据库、Redis 和 `SECRET_KEY`。本地调试建议使用独立飞书应用，避免与线上争用事件。
+
+“已连接”仅表示 WebSocket 连接成功，不代表消息权限或事件订阅已就绪。如果机器人不回复且没有收件记录，先检查已发布版本是否获得 `im:message.p2p_msg:readonly` 权限，以及 `im.message.receive_v1` 是否使用长连接方式订阅。配置生效后重新发送一条私聊消息；不能假定之前未接收的消息会自动补推。
+
+### HTTP 回调：有公网入口的环境
+
+保存 **HTTP 回调** 接收方式，配置相同的 Verification Token 和 Encrypt Key，并在飞书加密事件推送设置中登记 `https://<backend-host>/api/v1/integrations/feishu/callback`。飞书必须能访问该地址。密钥加密保存且不会通过设置 API 返回。选择长连接时，回调地址会拒绝请求；切回回调方式后自动停止托管接收进程。
+
+### 机器人命令
+
+用户只能通过私聊纯文本使用机器人。`/agents` 查看自己可访问的已发布 Agent，`/use <序号>` 与个人设置共用选择；`/new` 在当前运行结束后新建对话，`/status` 查看状态，`/stop` 停止所选 Agent 的当前运行，`/help` 查看命令。所选 Agent 等待 `ask_user` 回答时，普通文本恢复原运行。
+
+回调 API 详见[飞书 Agent 对话 API](../../api-reference/endpoints/feishu-agent.md)。该地址只供飞书事件回调使用，不是公开应用 API。
+
+## 配置微信功能
+
+进入 **站点设置 → 集成 → 微信 iLink**，按需启用 `agent_chat`、`knowledge_collection` 或两者。收件轮询和处理复用现有 worker 与 Beat，无需新增接收服务或命令。新安装默认关闭两项功能；首次升级根据现有已授权且正在使用的个人连接保留对应功能，之后不覆盖管理员选择。
+
+各用户仍在个人设置中独立扫码授权，并为每个连接选择一个用途。关闭平台功能会暂停对应新收件、执行与回复，不删除个人凭据、历史或待处理记录；已开始的操作仍可能完成，重新开启后继续处理待办。暂停轮询期间的消息能否恢复取决于微信上游保留策略，详见[微信 iLink](../../user-guide/knowledge-base/wechat-collection_zh-CN.md)。
+
+个人微信 iLink 将扫码授权与刷新放在标题栏，连接卡片紧凑展示状态，用途摘要与操作同行；配置表单宽屏双列、窄屏单列。悬浮或聚焦页面标题旁的帮助图标查看使用说明，图片／视频识别模型字段旁的帮助图标显示模型说明。设置页不再展示智能体运行和采集记录，连接卡片仍显示当前任务状态并提供停止操作；后台记录保留。
+
 
 - `admin:integrations:login:read/update`：查看或管理登录集成，以及 **站点设置 → 安全** 中的全局 SSO 策略。
-- `admin:integrations:settings:read/update`：查看或管理邮件、Webhook、飞书的配置、凭据、测试和同步。
+- `admin:integrations:settings:read/update`：查看或管理邮件、Webhook、飞书与微信的功能设置、凭据、测试、通讯录同步及 Agent 对话配置。
 - 任一域的 read 权限可进入集成页面和读取类型目录；实例列表按授权域过滤，编辑控件分别授权。后端权限检查为最终依据。
-- 通用 `PUT /api/v1/admin/integrations/{id}` 的更新授权按字段判定：`enabled_capabilities` 与 `is_enabled` 计入所涉及能力所属的域（`user_login` → login，`directory_sync` → settings）；内置集成的 `config`、`credentials` 计入 settings；只要集成的类型支持登录，`button_text`、`display_name`、`icon_url`、`login_config`、`attribute_mapping` 计入 login。飞书既是内置集成又支持登录，因此同一张卡片上的不同字段可能分别要求不同的域。
+- 通用 `PUT /api/v1/admin/integrations/{id}` 的更新授权按字段判定：`enabled_capabilities` 与 `is_enabled` 计入所涉及能力所属的域（`user_login` → login，飞书 `directory_sync`、`notification` 和 `agent_chat` → settings）；内置集成的 `config`、`credentials` 计入 settings；只要集成的类型支持登录，`button_text`、`display_name`、`icon_url`、`login_config`、`attribute_mapping` 计入 login。飞书 Agent 对话专用配置 API 使用 settings 域；现有登录开关仍单独受 login 域控制。
 - `admin:settings:read/update` 继续管理其他站点设置，不替代集成权限。
 
 ## 配置 GitHub 登录
@@ -43,13 +91,26 @@ OAuth2/OIDC、SAML2 和 CAS 保留原协议配置。SAML ACS 地址仍使用上�
 1. 在飞书开发者后台把卡片中显示的 **重定向地址**（`https://<backend-host>/api/v1/sso/callback/<integration-name>`，例如 `…/api/v1/sso/callback/feishu`）加入应用的重定向 URL 白名单；该地址在飞书卡片中直接可见并可一键复制。`<backend-host>` 是外部可达的后端（或代理）域名，与所有身份源的回调域名一致。
 2. 为应用授予登录所需 scope：`contact:user.base:readonly contact:user.email:readonly`。身份来自登录用户资料本身，无需 scope；邮箱字段需要 `contact:user.email:readonly`。
 3. 在 **站点设置 → 集成 → 飞书** 页面的“能力”区域打开 **飞书登录** 开关，并按需填写按钮文案。两个能力开关（通讯录同步与飞书登录）一起通过通用 `PUT /api/v1/admin/integrations/{id}` 以 `enabled_capabilities` 保存：打开该卡片需要 settings 域 read 权限，修改登录开关需要 `admin:integrations:login:update`，因此启用它的角色需同时具备两个域（超级管理员始终可以）。
-4. 如果尚未配置应用凭据，在同一张卡片上填写。凭据与通讯录同步共用，密钥留空表示保留原值。保持集成处于启用状态。
+4. 如果尚未配置应用凭据，在同一页面填写。凭据与通讯录同步共用，密钥留空表示保留原值。
 
-只有在全局 SSO 已启用、集成已启用、且 `user_login` 位于其已启用能力中时，登录页才会展示飞书登录按钮。未开启该选项时，飞书只提供通讯录同步，不出现登录按钮。关闭集成会同时停用两项能力，但保留该选项。
+只有全局 SSO 已启用且 `user_login` 功能已开启时，登录页才展示飞书登录按钮。关闭“飞书登录”仅停用该功能，不影响其他已启用功能；页面不提供集成总开关。
 
 登录身份以资料中的 `union_id` 作为外部身份 `provider_user_id` 存储；缺少 `union_id` 时回退为 `open_id`，因此在同一开发者账号内更换应用不会导致已绑定账号失效。
 
 通讯录中没有任何邮箱的飞书账号，会使用与目录同步相同的确定性占位邮箱 `feishu-<sha256(user_id)>@accounts.clouisle.example`，使登录与同步汇聚到同一个本地账号而不是各建一个。推导该地址需要飞书 `user_id`，因此需要 `contact:user.employee_id:readonly`；缺少该 scope 时这类账号没有 `user_id`，其首次登录会被拒绝，而不会创建占位身份。
+
+### 将飞书绑定到已有账号
+
+先登录已有 Clouisle 账号，再进入头像菜单 → **个人资料 → 账户安全 → 关联账号**，点击 **绑定飞书**。在同一浏览器标签页完成飞书授权并确认绑定。此流程保留当前账号、密码、邮箱、权限和登录状态，不创建新账号，也不依赖邮箱匹配。
+
+管理员需在 **站点设置 → 安全** 启用全局 SSO，并在 **站点设置 → 集成 → 飞书** 启用 **飞书登录**，用户才会看到可绑定的飞书入口。绑定复用已登记的登录回调地址，无需在飞书另加重定向地址。如果飞书身份已属于其他账号，系统拒绝重新分配，请联系管理员处理已有通讯录或账号绑定。
+
+即使飞书资料未返回通讯录 `user_id`，已验证邮箱属于其他本地账号时也会拒绝绑定。这是身份归属冲突检查，不会按邮箱自动匹配或合并账号。
+
+通过 **账户安全 → 关联账号 → 绑定飞书** 关联的用户会被通讯录同步排除，对应飞书成员计入“跳过”：不重复创建账号、不覆盖本地资料，也不新增部门团队成员关系。已有成员关系、飞书登录及机器人绑定保留，普通通讯录托管用户继续正常同步。后续飞书登录或能力开关变化不会取消此排除。升级时会依据保留的成功 `link_sso` 审计记录识别此前的手动绑定；审计历史已被删除的记录无法可靠追溯分类。
+
+相关接口均需登录：`GET /api/v1/sso/links/integrations`、`POST /api/v1/sso/links?provider_name=<name>`（返回授权地址和短期会话 ID）、`POST /api/v1/sso/links/complete`（请求体为 `{"session_id":"..."}`）。飞书回调只暂存已验证身份，最终绑定需由原发起账号确认并消费会话；浏览器也会核对本标签页保存的待绑定会话。
+
 
 ## 同步飞书知识库
 
@@ -117,7 +178,7 @@ OAuth2/OIDC、SAML2 和 CAS 保留原协议配置。SAML ACS 地址仍使用上�
 - 飞书回调被拒或未创建账号：确认应用已登记 `https://<backend-host>/api/v1/sso/callback/<integration-name>`，登录 scope 包含 `contact:user.email:readonly`；对于通讯录中没有邮箱的账号还需 `contact:user.employee_id:readonly`，否则没有可据以推导占位邮箱的 `user_id`，首次登录会被拒绝。
 - 回调不匹配：检查名称、公开域名和代理头；不要登记新的 integrations callback 地址。
 - 无配置或编辑控件：检查对应 login/settings 权限域。
-- 飞书部门浏览或同步提示集成未启用：先保存 App ID 和 App Secret，再启用飞书集成并在卡片中打开 **通讯录同步** 开关。部门区域仅在集成已启用且通讯录同步已保存开启时显示，否则接口会返回同样的提示。
+- 飞书部门浏览或同步提示功能未启用：先保存 App ID 和 App Secret，再在“集成配置”中打开并保存 **通讯录同步** 功能。无需额外的集成总开关。
 - 同步结果中的 `99991672` 会针对**失败的具体接口**列出缺少的 API scope（例如多维表格读取权限）。按提示在飞书开放平台 → 当前应用 → 权限管理申请对应权限，发布应用版本并完成管理员审批后重试；不同接口要求的权限不同。
 - 凭据无法解密：恢复匹配的 `SECRET_KEY`，或通过对应表单重新保存凭据。
 - 无法解除唯一身份连接：无密码账号必须先建立另一种可用认证方式。

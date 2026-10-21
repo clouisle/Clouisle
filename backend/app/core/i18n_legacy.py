@@ -1089,6 +1089,84 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Embedding model cannot be changed after knowledge base creation",
         "zh": "知识库创建后不可修改嵌入模型",
     },
+    "feishu_agent_agent_none": {"en": "not selected yet", "zh": "尚未选择"},
+    "feishu_agent_agent_unavailable": {
+        "en": "That Agent is not available to you right now.",
+        "zh": "该智能体当前不可用。",
+    },
+    "feishu_agent_agents_footer": {
+        "en": "Send /use <number> to switch the Agent.",
+        "zh": "发送 /使用 <编号> 切换智能体。",
+    },
+    "feishu_agent_agents_header": {
+        "en": "Agents you can use (send /use <number> to switch):",
+        "zh": "你可以使用的智能体（发送 /使用 <编号> 切换）：",
+    },
+    "feishu_agent_answer_invalid_choice": {
+        "en": "Please choose one of: {options}",
+        "zh": "请选择以下之一：{options}",
+    },
+    "feishu_agent_answer_required": {
+        "en": "This question still needs an answer: {question}",
+        "zh": "这个问题仍需要回答：{question}",
+    },
+    "feishu_agent_busy": {
+        "en": "The previous message is still being processed. Please wait for it to finish.",
+        "zh": "上一条消息仍在处理中，请等待完成。",
+    },
+    "feishu_agent_channel_disabled": {
+        "en": "The Feishu channel is no longer active. Open the conversation in the web app.",
+        "zh": "飞书通道已停用，请在网页应用中查看对话。",
+    },
+    "feishu_agent_help": {
+        "en": "Commands: /agents lists the Agents you can use; /use <number> switches the Agent; /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help.",
+        "zh": "命令：/智能体（/agents）查看可用智能体；/使用（/use）<编号> 切换智能体；/新对话（/new）开始新对话；/停止（/stop）停止任务并取消排队消息；/状态（/status）查看状态；/帮助（/help）查看帮助。",
+    },
+    "feishu_agent_new_conversation": {
+        "en": "Your next message will start a new conversation.",
+        "zh": "下一条消息将开始新的对话。",
+    },
+    "feishu_agent_no_agents": {
+        "en": "No Agent is available to you in Feishu yet. Ask an administrator to publish one.",
+        "zh": "你暂时没有可在飞书中使用的智能体，请联系管理员发布。",
+    },
+    "feishu_agent_no_output": {
+        "en": "The Agent finished without producing a visible reply.",
+        "zh": "Agent 已完成，但没有产生可见回复。",
+    },
+    "feishu_agent_questions_partial": {
+        "en": "Answered {done} of {total} questions. Send the remaining answer.",
+        "zh": "已回答 {total} 个问题中的 {done} 个，请发送剩余答案。",
+    },
+    "feishu_agent_received": {"en": "🤔Thinking...", "zh": "🤔思考中..."},
+    "feishu_agent_run_failed": {
+        "en": "The Agent task did not finish. Open the conversation for details.",
+        "zh": "Agent 任务未完成，请打开对话查看详情。",
+    },
+    "feishu_agent_status": {
+        "en": "Agent: {agent} — Status: {status}",
+        "zh": "智能体：{agent} — 状态：{status}",
+    },
+    "feishu_agent_stopped": {
+        "en": "Stopped. Queued messages were cancelled.",
+        "zh": "已停止，排队中的消息已取消。",
+    },
+    "feishu_agent_use_current": {
+        "en": "Already using {agent}.",
+        "zh": "正在使用 {agent}。",
+    },
+    "feishu_agent_use_invalid": {
+        "en": "That Agent is not in your list. Send /agents to see the ones you can use.",
+        "zh": "该智能体不在你的可用列表中，请发送 /智能体 查看。",
+    },
+    "feishu_agent_use_missing": {
+        "en": "Send /use with the number of an Agent from /agents.",
+        "zh": "请发送 /使用 <编号>，编号来自 /智能体 列表。",
+    },
+    "feishu_agent_use_selected": {
+        "en": "Now using {agent}. Your next message goes to it.",
+        "zh": "已切换到 {agent}，下一条消息将发送给它。",
+    },
     "feishu_api_error": {
         "en": "Feishu rejected the request: {error}",
         "zh": "飞书拒绝了该请求：{error}",
@@ -3200,8 +3278,40 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "此 Agent 不允许该附件类型。",
     },
     "wechat_agent_help": {
-        "en": "Commands: /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help; /skip skips pending questions.",
-        "zh": "命令：/新对话（/new）开始新对话；/停止（/stop）停止任务并取消排队消息；/状态（/status）查看状态；/帮助（/help）查看帮助；/跳过（/skip）跳过待答问题。",
+        "en": "Commands: /agents lists available Agents; /use <number> switches the Agent when idle; /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help; /skip skips pending questions.",
+        "zh": "命令：/智能体（/agents）查看可用智能体；/使用 <编号>（/use <number>）在空闲时切换智能体；/新对话（/new）开始新对话；/停止（/stop）停止任务并取消排队消息；/状态（/status）查看状态；/帮助（/help）查看帮助；/跳过（/skip）跳过待答问题。",
+    },
+    "wechat_agent_agents_header": {
+        "en": "Available Agents:",
+        "zh": "可用智能体：",
+    },
+    "wechat_agent_agents_footer": {
+        "en": "Send /use <number> to switch. Wait for confirmation before sending your next message. Numbers may change when the list changes.",
+        "zh": "发送 /使用 <编号> 切换，收到成功确认后再发送新消息。列表变化时编号可能改变。",
+    },
+    "wechat_agent_no_agents": {
+        "en": "No published Agents are available to you.",
+        "zh": "暂无你有权使用的已发布智能体。",
+    },
+    "wechat_agent_use_missing": {
+        "en": "Send /use <number>, using a number from /agents.",
+        "zh": "请发送 /使用 <编号>，编号来自 /智能体 列表。",
+    },
+    "wechat_agent_use_invalid": {
+        "en": "That Agent is not in your available list. Send /agents to see the current list.",
+        "zh": "该智能体不在你的可用列表中，请发送 /智能体 查看当前列表。",
+    },
+    "wechat_agent_use_current": {
+        "en": "Already using {agent}. Your conversation and settings are unchanged.",
+        "zh": "正在使用 {agent}，会话与配置不变。",
+    },
+    "wechat_agent_use_selected": {
+        "en": "Now using {agent}. New messages will use it. Its previous conversation is kept; input variables use defaults and speech recognition is not configured. You can adjust these in Personal settings → WeChat iLink.",
+        "zh": "已切换到 {agent}，后续新消息将使用该智能体，并保留它原有的会话。输入变量使用默认值，语音识别模型未配置，可在个人设置 → 微信 iLink 中调整。",
+    },
+    "wechat_agent_use_variables": {
+        "en": "This Agent needs input variables. Configure it in Personal settings → WeChat iLink, then save. Your current Agent is unchanged.",
+        "zh": "该智能体需要配置输入变量，请到个人设置 → 微信 iLink 中填写并保存。当前智能体未改变。",
     },
     "wechat_agent_media_failed": {
         "en": "The attachment could not be downloaded from WeChat. Please send it again.",
@@ -3272,6 +3382,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "wechat_binary_content": {
         "en": "The file contents do not match the declared document format.",
         "zh": "文件内容与声明的文档格式不符。",
+    },
+    "integration_feature_disabled": {
+        "en": "This integration feature is disabled. Contact an administrator to enable it.",
+        "zh": "此集成功能已停用，请联系管理员启用。",
     },
     "wechat_binding_disconnected": {
         "en": "The WeChat connection has been disconnected.",

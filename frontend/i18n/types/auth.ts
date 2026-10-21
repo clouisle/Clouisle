@@ -93,6 +93,18 @@ export type AuthMessages = {
     ssoCallbackFailedDescription: string
     ssoCallbackProcessing: string
     ssoCallbackBackToLogin: string
+    ssoLinkCallbackTitle: string
+    ssoLinkCallbackDescription: string
+    ssoLinkCallbackProcessing: string
+    ssoLinkCallbackConfirm: string
+    ssoLinkCallbackSuccessTitle: string
+    ssoLinkCallbackSuccessDescription: string
+    ssoLinkCallbackReturnToApp: string
+    ssoLinkCallbackInvalidTitle: string
+    ssoLinkCallbackInvalidDescription: string
+    ssoLinkCallbackBackToSettings: string
+    ssoLinkCallbackFailedTitle: string
+    ssoLinkCallbackFailedDescription: string
     invalidEmail: string
     verificationTokenMissing: string
     verificationTokenInvalid: string

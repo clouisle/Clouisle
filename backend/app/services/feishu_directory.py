@@ -17,6 +17,7 @@ from app.models.feishu_department import FeishuDepartment as FeishuDepartmentMap
 from app.models.feishu_user import FeishuUser
 from app.models.site_setting import SiteSetting
 from app.models.user import Team, TeamMember, User
+from app.models.user_sso_connection import UserSSOConnection
 from app.services.audit_log import AuditLogService
 from app.services.team_role_sync import assign_default_role, assign_default_team
 
@@ -93,6 +94,25 @@ async def _get_or_create_department_team(department, *, connection):
     return team, True
 
 
+async def _self_service_directory_exclusions() -> tuple[set[UUID], set[str]]:
+    """Snapshot local owners and Feishu IDs; never match accounts by email."""
+    links = await UserSSOConnection.filter(
+        integration__provider_type="feishu", self_service_linked=True
+    ).values("user_id", "provider_user_id", "provider_data")
+    user_ids: set[UUID] = set()
+    external_ids: set[str] = set()
+    for link in links:
+        user_ids.add(link["user_id"])
+        external_ids.add(link["provider_user_id"])
+        profile = link["provider_data"]
+        if isinstance(profile, dict):
+            for key in ("user_id", "union_id", "open_id"):
+                value = profile.get(key)
+                if isinstance(value, str) and value.strip():
+                    external_ids.add(value.strip())
+    return user_ids, external_ids
+
+
 async def sync_department_teams(departments, members: list[FeishuDirectoryUser]) -> int:
     """Create/update managed department teams and add linked Feishu members."""
     if not departments:
@@ -100,6 +120,7 @@ async def sync_department_teams(departments, members: list[FeishuDirectoryUser])
 
     selected = {department.department_id: department for department in departments}
     teams_created = 0
+    excluded_users, excluded_ids = await _self_service_directory_exclusions()
     async with in_transaction() as connection:
         for department in selected.values():
             team, created = await _get_or_create_department_team(
@@ -109,12 +130,21 @@ async def sync_department_teams(departments, members: list[FeishuDirectoryUser])
             for member in members:
                 if department.department_id not in member.department_ids:
                     continue
+                if any(
+                    identifier in excluded_ids
+                    for identifier in (
+                        member.user_id.strip(),
+                        member.open_id,
+                        member.union_id,
+                    )
+                ):
+                    continue
                 binding = (
                     await FeishuUser.filter(feishu_user_id=member.user_id)
                     .using_db(connection)
                     .first()
                 )
-                if not binding:
+                if not binding or binding.user_id in excluded_users:
                     continue
                 user = (
                     await User.filter(id=binding.user_id).using_db(connection).first()
@@ -166,9 +196,16 @@ async def sync_directory_users(
     created = updated = skipped = 0
     audit_entries: list[tuple[User, str]] = []
 
+    excluded_users, excluded_ids = await _self_service_directory_exclusions()
     for member in members:
         feishu_user_id = member.user_id.strip()
         if not feishu_user_id:
+            skipped += 1
+            continue
+        if any(
+            identifier in excluded_ids
+            for identifier in (feishu_user_id, member.open_id, member.union_id)
+        ):
             skipped += 1
             continue
         email = member.email or placeholder_email(feishu_user_id)
@@ -179,6 +216,9 @@ async def sync_directory_users(
                     .using_db(connection)
                     .first()
                 )
+                if binding and binding.user_id in excluded_users:
+                    skipped += 1
+                    continue
                 user = (
                     await User.filter(id=binding.user_id).using_db(connection).first()
                     if binding
@@ -195,6 +235,9 @@ async def sync_directory_users(
                         .using_db(connection)
                         .first()
                     )
+                    if user and user.id in excluded_users:
+                        skipped += 1
+                        continue
                     if user:
                         await FeishuUser.create(
                             user=user,

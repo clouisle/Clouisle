@@ -20,11 +20,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { integrationsApi } from '@/lib/api/admin/integrations'
-import type { FeishuConfig, FeishuDepartment, FeishuTestRecipient, Integration } from '@/lib/api/admin/integrations'
+import type { FeishuAgentChatConfig, FeishuConfig, FeishuDepartment, FeishuTestRecipient, Integration } from '@/lib/api/admin/integrations'
 import { ApiError } from '@/lib/api/client'
 import { API_BASE_URL } from '@/lib/constants'
 
-export type FeishuSettingsTab = 'configuration' | 'directory' | 'notification' | 'knowledge'
+export type FeishuSettingsTab = 'configuration' | 'directory' | 'notification' | 'agentChat' | 'knowledge'
 
 /**
  * The axios interceptor already toasts backend messages, so only fill the gap it leaves:
@@ -125,15 +125,23 @@ export function FeishuIntegrationTab({
   const [testTitle, setTestTitle] = React.useState('Clouisle Feishu test')
   const [testContent, setTestContent] = React.useState('This is a test message from Clouisle.')
   const [sendingTest, setSendingTest] = React.useState(false)
+  const [agentChatConfig, setAgentChatConfig] = React.useState<FeishuAgentChatConfig | null>(null)
+  const [agentChatConnectionMode, setAgentChatConnectionMode] = React.useState<FeishuAgentChatConfig['connection_mode']>('callback')
+  const [agentChatVerificationToken, setAgentChatVerificationToken] = React.useState('')
+  const [agentChatEncryptKey, setAgentChatEncryptKey] = React.useState('')
+  const [loadingAgentChat, setLoadingAgentChat] = React.useState(false)
+  const [savingAgentChat, setSavingAgentChat] = React.useState(false)
 
   const enabledCapabilities = integration?.enabled_capabilities
   const savedButtonText = integration?.button_text ?? ''
-  const savedDirectorySync = Boolean(integration?.enabled_capabilities.includes('directory_sync'))
-  const savedLoginEnabled = Boolean(integration?.enabled_capabilities.includes('user_login'))
-  const savedNotificationEnabled = Boolean(integration?.enabled_capabilities.includes('notification'))
+  const savedDirectorySync = Boolean(integration?.is_enabled && integration.enabled_capabilities.includes('directory_sync'))
+  const savedLoginEnabled = Boolean(integration?.is_enabled && integration.enabled_capabilities.includes('user_login'))
+  const savedNotificationEnabled = Boolean(integration?.is_enabled && integration.enabled_capabilities.includes('notification'))
+  const savedAgentChatEnabled = Boolean(integration?.is_enabled && integration.enabled_capabilities.includes('agent_chat'))
   const [directorySyncEnabled, setDirectorySyncEnabled] = React.useState(savedDirectorySync)
   const [loginEnabled, setLoginEnabled] = React.useState(savedLoginEnabled)
   const [notificationEnabled, setNotificationEnabled] = React.useState(savedNotificationEnabled)
+  const [agentChatEnabled, setAgentChatEnabled] = React.useState(savedAgentChatEnabled)
   const [buttonText, setButtonText] = React.useState(savedButtonText)
   const [savingCapabilities, setSavingCapabilities] = React.useState(false)
   const [copiedRedirect, setCopiedRedirect] = React.useState(false)
@@ -148,34 +156,41 @@ export function FeishuIntegrationTab({
     setDirectorySyncEnabled(savedDirectorySync)
     setLoginEnabled(savedLoginEnabled)
     setNotificationEnabled(savedNotificationEnabled)
+    setAgentChatEnabled(savedAgentChatEnabled)
     setButtonText(savedButtonText)
-  }, [enabledCapabilities, savedDirectorySync, savedLoginEnabled, savedNotificationEnabled, savedButtonText])
+  }, [enabledCapabilities, savedDirectorySync, savedLoginEnabled, savedNotificationEnabled, savedAgentChatEnabled, savedButtonText])
 
-  // Both capabilities are opt-in and only run while the integration itself is enabled.
-  const capabilitiesReadOnly = !integration || !config.is_enabled
+  // Feature selection stays editable even when a legacy record was disabled.
+  const capabilitiesReadOnly = !integration
   const canEditDirectorySync = tab === 'configuration' && canUpdate && !capabilitiesReadOnly
   const canEditNotification = tab === 'configuration' && canUpdate && !capabilitiesReadOnly
+  const canEditAgentChat = tab === 'configuration' && canUpdate && !capabilitiesReadOnly
   const canEditLogin = tab === 'configuration' && canUpdateLogin && !capabilitiesReadOnly
   const nextCapabilities = integration
     ? integration.supported_capabilities.filter((capability) => {
         if (capability === 'directory_sync') {
           return canEditDirectorySync
             ? directorySyncEnabled
-            : integration.enabled_capabilities.includes(capability)
+            : integration.is_enabled && integration.enabled_capabilities.includes(capability)
         }
         if (capability === 'user_login') {
-          return canEditLogin ? loginEnabled : integration.enabled_capabilities.includes(capability)
+          return canEditLogin ? loginEnabled : integration.is_enabled && integration.enabled_capabilities.includes(capability)
         }
         if (capability === 'notification') {
           return canEditNotification
             ? notificationEnabled
-            : integration.enabled_capabilities.includes(capability)
+            : integration.is_enabled && integration.enabled_capabilities.includes(capability)
+        }
+        if (capability === 'agent_chat') {
+          return canEditAgentChat
+            ? agentChatEnabled
+            : integration.is_enabled && integration.enabled_capabilities.includes(capability)
         }
         return false
       })
     : []
   const capabilitiesChanged = integration
-    ? nextCapabilities.join() !== integration.enabled_capabilities.join()
+    ? nextCapabilities.join() !== (integration.is_enabled ? integration.enabled_capabilities : []).join()
     : false
   const canSaveCapabilities = Boolean(integration) && !capabilitiesReadOnly
     && (capabilitiesChanged || (canEditLogin && buttonText.trim() !== savedButtonText.trim()))
@@ -183,6 +198,56 @@ export function FeishuIntegrationTab({
   const canSaveConfiguration = canUpdate && Boolean(appId.trim()) && configChanged
   // Departments require saved app credentials and an enabled directory capability.
   const departmentsAvailable = config.app_secret_configured && config.is_enabled && savedDirectorySync
+
+  // The Feishu app must allowlist this exact URL before event delivery works.
+  const agentChatCallbackUrl = React.useMemo(() => {
+    if (typeof window === 'undefined') return ''
+    try {
+      const base = new URL(API_BASE_URL, window.location.origin)
+      return `${base.origin}${base.pathname.replace(/\/$/, '')}/integrations/feishu/callback`
+    } catch {
+      return ''
+    }
+  }, [])
+
+  // Agent chat settings load lazily: only the administrator who opens the tab
+  // pays for them, and a capability that is off never issues the requests.
+  const agentChatAvailable = Boolean(config.app_secret_configured && config.app_id)
+  React.useEffect(() => {
+    if (tab !== 'agentChat' || !agentChatAvailable || !savedAgentChatEnabled) return
+    let active = true
+    setLoadingAgentChat(true)
+    void integrationsApi.getFeishuAgentChatConfig()
+      .then((agentChat) => {
+        if (!active) return
+        setAgentChatConfig(agentChat)
+        setAgentChatConnectionMode(agentChat.connection_mode)
+      })
+      .catch((error) => {
+        console.error('Failed to load Feishu agent chat configuration:', error)
+        if (active) toastFallback(error, t('integrations.feishuAgentChatConfigFailed'))
+      })
+      .finally(() => {
+        if (active) setLoadingAgentChat(false)
+      })
+    return () => { active = false }
+  }, [tab, agentChatAvailable, savedAgentChatEnabled, t])
+
+  React.useEffect(() => {
+    if (tab !== 'agentChat' || !agentChatAvailable || !savedAgentChatEnabled) return
+    let active = true
+    let inFlight = false
+    const timer = window.setInterval(() => {
+      if (inFlight) return
+      inFlight = true
+      void integrationsApi.getFeishuAgentChatConfig().then(result => {
+        if (active) setAgentChatConfig(current => current ? { ...current, receiver_status: result.receiver_status } : current)
+      }).catch(() => {
+        if (active) setAgentChatConfig(current => current ? { ...current, receiver_status: { state: 'error', managed: true } } : current)
+      }).finally(() => { inFlight = false })
+    }, 5000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [tab, agentChatAvailable, savedAgentChatEnabled])
 
   // The Feishu app must allowlist this exact URL before sign-in callbacks work.
   const redirectUrl = React.useMemo(() => {
@@ -267,6 +332,42 @@ export function FeishuIntegrationTab({
     } finally {
       setSaving(false)
       setSavingCapabilities(false)
+    }
+  }
+
+
+  const agentChatSecretsChanged = agentChatConnectionMode === 'callback'
+    && (agentChatVerificationToken.trim().length > 0 || agentChatEncryptKey.trim().length > 0)
+  const agentChatModeChanged = Boolean(agentChatConfig)
+    && agentChatConnectionMode !== agentChatConfig?.connection_mode
+  const canSaveAgentChat = canUpdate && !loadingAgentChat && Boolean(agentChatConfig)
+    && (agentChatSecretsChanged || agentChatModeChanged)
+  const agentChatConnectionModes = [
+    { value: 'callback', label: t('integrations.feishuAgentChatCallbackMode') },
+    { value: 'long_connection', label: t('integrations.feishuAgentChatLongConnectionMode') },
+  ] as const
+
+  const saveAgentChat = async () => {
+    if (savingAgentChat || !canSaveAgentChat) return
+    setSavingAgentChat(true)
+    try {
+      const result = await integrationsApi.updateFeishuAgentChatConfig({
+        connection_mode: agentChatConnectionMode,
+        ...(agentChatSecretsChanged ? {
+          event_verification_token: agentChatVerificationToken.trim() || undefined,
+          event_encrypt_key: agentChatEncryptKey.trim() || undefined,
+        } : {}),
+      })
+      setAgentChatConfig(result)
+      setAgentChatConnectionMode(result.connection_mode)
+      setAgentChatVerificationToken('')
+      setAgentChatEncryptKey('')
+      toast.success(t('integrations.feishuAgentChatSaved'))
+    } catch (error) {
+      console.error('Failed to save Feishu agent chat configuration:', error)
+      toastFallback(error, t('integrations.feishuAgentChatSaveFailed'))
+    } finally {
+      setSavingAgentChat(false)
     }
   }
 
@@ -406,6 +507,20 @@ export function FeishuIntegrationTab({
                   <p className="text-xs text-muted-foreground">{t('integrations.feishuButtonTextDesc')}</p>
                 </div>
               )}
+              {canUpdate && (
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-medium">{t('integrations.feishuAgentChat')}</h3>
+                    <p className="text-xs text-muted-foreground">{t('integrations.feishuAgentChatDescription')}</p>
+                  </div>
+                  <Switch
+                    aria-label={t('integrations.feishuAgentChat')}
+                    checked={agentChatEnabled}
+                    disabled={!canEditAgentChat || savingCapabilities}
+                    onCheckedChange={setAgentChatEnabled}
+                  />
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="feishu-redirect-url">{t('integrations.callbackUrl')}</Label>
                 <div className="flex items-center gap-2">
@@ -442,7 +557,7 @@ export function FeishuIntegrationTab({
                 </div>
               )}
             </section>
-            {(canUpdate || canEditDirectorySync || canEditLogin || canEditNotification) && (
+            {(canUpdate || canEditDirectorySync || canEditLogin || canEditNotification || canEditAgentChat) && (
               <div className="flex justify-end">
                 <Button type="button" data-testid="feishu-settings-save" variant="outline" onClick={saveConfiguration} disabled={(!canSaveConfiguration && !canSaveCapabilities) || saving || savingCapabilities}>
                   {saving || savingCapabilities ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -492,6 +607,119 @@ export function FeishuIntegrationTab({
                   </div>
                 )}
               </section>
+            )}
+        </div>}
+        {tab === 'agentChat' && <div className="space-y-5" data-testid="feishu-agent-chat">
+            <section className="space-y-2 rounded-md border p-3 text-sm" aria-labelledby="feishu-agent-chat-requirements-title">
+              <h3 id="feishu-agent-chat-requirements-title" className="font-medium">{t('integrations.feishuAgentChatRequirementsTitle')}</h3>
+              <p className="text-muted-foreground">{t('integrations.feishuAgentChatRequirementsIntro')}</p>
+              <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+                <li><code className="break-all text-xs">im:message.p2p_msg:readonly</code> — {t('integrations.feishuAgentChatReceivePermission')}</li>
+                <li><code className="break-all text-xs">im:message:send_as_bot</code> — {t('integrations.feishuAgentChatSendPermission')}</li>
+                <li><code className="break-all text-xs">contact:user.base:readonly</code> — {t('integrations.feishuAgentChatIdentityPermission')}</li>
+              </ul>
+              <p className="text-muted-foreground">{t('integrations.feishuAgentChatPublishRequirements')}</p>
+              <p className="text-muted-foreground">{t('integrations.feishuAgentChatConnectionNotice')}</p>
+            </section>
+            {!savedAgentChatEnabled ? (
+              <p className="rounded-md border p-3 text-sm text-muted-foreground">{t('integrations.feishuAgentChatDisabledHint')}</p>
+            ) : !agentChatAvailable ? (
+              <p className="rounded-md border p-3 text-sm text-muted-foreground">{t('integrations.feishuAgentChatUnavailable')}</p>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="feishu-agent-chat-connection-mode">{t('integrations.feishuAgentChatConnectionMode')}</Label>
+                  <Select
+                    value={agentChatConnectionMode}
+                    disabled={!canUpdate || loadingAgentChat || savingAgentChat || !agentChatConfig}
+                    onValueChange={(value) => {
+                      if (value === 'callback' || value === 'long_connection') setAgentChatConnectionMode(value)
+                    }}
+                  >
+                    <SelectTrigger id="feishu-agent-chat-connection-mode" className="w-full">
+                      <SelectValue>{agentChatConnectionModes.find((mode) => mode.value === agentChatConnectionMode)?.label}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {agentChatConnectionModes.map((mode) => (
+                        <SelectItem key={mode.value} value={mode.value}>{mode.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {agentChatConnectionMode === 'long_connection' ? (
+                  <section className="space-y-2 rounded-md border p-3" data-testid="feishu-agent-chat-long-connection">
+                    <p className="text-sm">{t('integrations.feishuAgentChatLongConnectionDesc')}</p>
+                    <p className="text-xs text-muted-foreground">{t('integrations.feishuAgentChatLongConnectionSetup')}</p>
+                    <p role="status" className="text-sm">{t('integrations.feishuReceiverStatus')}: {t(`integrations.feishuReceiverStates.${agentChatConfig?.receiver_status.state ?? 'waiting'}`)}</p>
+                    <p className="text-xs text-muted-foreground">{t('integrations.feishuAgentChatLongConnectionProcess')}</p>
+                  </section>
+                ) : <>
+                <div className="space-y-2">
+                  <Label htmlFor="feishu-agent-chat-callback-url">{t('integrations.feishuAgentChatCallbackUrl')}</Label>
+                  <div className="flex items-center gap-2">
+                    <code
+                      id="feishu-agent-chat-callback-url"
+                      className="min-w-0 flex-1 overflow-x-auto rounded-md bg-muted px-3 py-2 font-mono text-xs"
+                    >
+                      {agentChatCallbackUrl}
+                    </code>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label={t('integrations.feishuAgentChatCallbackUrl')}
+                      onClick={() => void navigator.clipboard.writeText(agentChatCallbackUrl)}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{t('integrations.feishuAgentChatCallbackUrlDesc')}</p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="feishu-agent-chat-verification-token">{t('integrations.feishuAgentChatVerificationToken')}</Label>
+                    <Input
+                      id="feishu-agent-chat-verification-token"
+                      type="password"
+                      autoComplete="new-password"
+                      value={agentChatVerificationToken}
+                      onChange={(event) => setAgentChatVerificationToken(event.target.value)}
+                      placeholder={agentChatConfig?.event_verification_token_configured ? t('integrations.feishuSecretConfigured') : ''}
+                      disabled={!canUpdate}
+                    />
+                    <p className="text-xs text-muted-foreground">{t('integrations.feishuAgentChatVerificationTokenDesc')}</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="feishu-agent-chat-encrypt-key">{t('integrations.feishuAgentChatEncryptKey')}</Label>
+                    <Input
+                      id="feishu-agent-chat-encrypt-key"
+                      type="password"
+                      autoComplete="new-password"
+                      value={agentChatEncryptKey}
+                      onChange={(event) => setAgentChatEncryptKey(event.target.value)}
+                      placeholder={agentChatConfig?.event_encrypt_key_configured ? t('integrations.feishuSecretConfigured') : ''}
+                      disabled={!canUpdate}
+                    />
+                    <p className="text-xs text-muted-foreground">{t('integrations.feishuAgentChatEncryptKeyDesc')}</p>
+                  </div>
+                </div>
+                </>}
+                <p className="rounded-md border p-3 text-sm text-muted-foreground">{t('integrations.feishuAgentChatPersonalSelection')}</p>
+                {canUpdate && (
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      data-testid="feishu-agent-chat-save"
+                      variant="outline"
+                      onClick={saveAgentChat}
+                      disabled={!canSaveAgentChat || savingAgentChat}
+                    >
+                      {savingAgentChat ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      {t('save')}
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
         </div>}
         {tab === 'notification' && <div className="space-y-5">

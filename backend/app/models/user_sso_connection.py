@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from tortoise import fields, models
 
@@ -11,6 +12,8 @@ if TYPE_CHECKING:
 
 class UserSSOConnection(models.Model):
     """Links users to their SSO provider accounts"""
+
+    user_id: UUID
 
     id = fields.UUIDField(primary_key=True)
     user: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
@@ -26,6 +29,8 @@ class UserSSOConnection(models.Model):
     )
     provider_username = fields.CharField(max_length=255, null=True)
     provider_email = fields.CharField(max_length=255, null=True)
+    # Account-security links are not managed by directory synchronization.
+    self_service_linked = fields.BooleanField(default=False)
 
     # Additional provider data (JSON)
     provider_data: dict = fields.JSONField(

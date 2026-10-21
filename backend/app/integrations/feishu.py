@@ -270,6 +270,36 @@ class FeishuClient:
                 },
             )
 
+    async def reply_text(self, message_id: str, text: str, *, uuid: str) -> None:
+        """Reply to one inbound bot message with provider-side deduplication."""
+        if (
+            not message_id
+            or len(message_id) > 255
+            or not text
+            or len(text.encode("utf-8")) > 150 * 1024
+            or not uuid
+            or len(uuid) > 50
+        ):
+            raise ValueError("Invalid Feishu reply parameters")
+        async with httpx.AsyncClient(
+            base_url=API_BASE,
+            timeout=TIMEOUT,
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
+            token = await self._token(client)
+            await self._request(
+                client,
+                "POST",
+                f"/im/v1/messages/{quote(message_id, safe='')}/reply",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "msg_type": "text",
+                    "content": json.dumps({"text": text}, ensure_ascii=False),
+                    "uuid": uuid,
+                },
+            )
+
     async def list_departments(self) -> list[FeishuDepartment]:
         async with httpx.AsyncClient(
             base_url=API_BASE,

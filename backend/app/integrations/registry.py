@@ -8,6 +8,8 @@ class IntegrationCapability(StrEnum):
     USER_LOGIN = "user_login"
     DIRECTORY_SYNC = "directory_sync"
     NOTIFICATION = "notification"
+    AGENT_CHAT = "agent_chat"
+    KNOWLEDGE_COLLECTION = "knowledge_collection"
 
 
 @dataclass(frozen=True)
@@ -22,8 +24,9 @@ class IntegrationDefinition:
 def implicit_builtin_capabilities(definition: IntegrationDefinition) -> list[str]:
     """Capabilities a builtin's `is_enabled` flag grants on its own.
 
-    Login and Feishu notifications remain explicit opt-ins so enabling an
-    integration cannot silently change sign-in or messaging behavior.
+    Login, Feishu notifications, and Feishu agent chat remain explicit opt-ins
+    so enabling an integration cannot silently change sign-in, messaging, or
+    which Agents answer external chat messages.
     """
     return [
         capability
@@ -31,7 +34,11 @@ def implicit_builtin_capabilities(definition: IntegrationDefinition) -> list[str
         if capability != IntegrationCapability.USER_LOGIN
         and not (
             definition.provider_type == "feishu"
-            and capability == IntegrationCapability.NOTIFICATION
+            and capability
+            in (
+                IntegrationCapability.NOTIFICATION,
+                IntegrationCapability.AGENT_CHAT,
+            )
         )
     ]
 
@@ -92,14 +99,28 @@ integration_registry = IntegrationRegistry(
             True,
         ),
         IntegrationDefinition(
+            "wechat",
+            "WeChat iLink",
+            (
+                IntegrationCapability.AGENT_CHAT,
+                IntegrationCapability.KNOWLEDGE_COLLECTION,
+            ),
+            singleton=True,
+        ),
+        IntegrationDefinition(
             "feishu",
             "Feishu",
             (
                 IntegrationCapability.DIRECTORY_SYNC,
                 IntegrationCapability.USER_LOGIN,
                 IntegrationCapability.NOTIFICATION,
+                IntegrationCapability.AGENT_CHAT,
             ),
-            ("app_secret",),
+            (
+                "app_secret",
+                "event_verification_token",
+                "event_encrypt_key",
+            ),
             True,
         ),
     )

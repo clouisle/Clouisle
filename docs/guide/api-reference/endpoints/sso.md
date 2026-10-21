@@ -13,9 +13,12 @@ The SSO API retains browser login and identity disconnection. Management uses un
 | `GET` | `/api/v1/sso/integrations` | List enabled login integrations (public) |
 | `GET` | `/api/v1/sso/login/{provider_name}` | Begin SSO login; redirects the browser to the identity provider |
 | `GET` | `/api/v1/sso/callback/{provider_name}` | Identity-provider callback; redirects the browser back to the frontend |
+| `GET` | `/api/v1/sso/links/integrations` | List enabled Feishu sign-in integrations the caller can link |
+| `POST` | `/api/v1/sso/links?provider_name={name}` | Start linking Feishu to the authenticated account |
+| `POST` | `/api/v1/sso/links/complete` | Confirm the staged identity as the original authenticated caller |
 | `DELETE` | `/api/v1/sso/connections/{connection_id}` | Disconnect one of the caller's SSO connections |
 
-> `login` and `callback` return HTTP redirects, not the JSON envelope. The frontend receives the result on its `/sso-callback` route.
+> `login` and `callback` return HTTP redirects, not the JSON envelope. Login results arrive at `/sso-callback`; Feishu account-link results arrive at `/sso-link-callback` without issuing a login token.
 
 ---
 
@@ -112,6 +115,15 @@ The token is a standard JWT access token (see [Authentication](../authentication
 ```
 
 Common `error` values: `sso_provider_not_found`, `sso_session_expired`, `sso_login_failed`, `pending_approval`, `inactive`.
+
+### Linking Feishu to the current account
+
+All three `/links` endpoints require `Authorization: Bearer <token>`. They do not create a user, run automatic email matching, or replace the caller's login session.
+
+1. `GET /api/v1/sso/links/integrations` returns the same public integration fields as login discovery, restricted to enabled Feishu sign-in integrations not already linked by the caller. Global SSO must be enabled.
+2. `POST /api/v1/sso/links?provider_name=feishu` returns `{"code":0,"data":{"authorization_url":"https://…","session_id":"…"},"msg":"…"}`. Store the pending session in the current tab before navigating to the authorization URL. The session expires after 10 minutes and reuses the registered `/sso/callback/{name}` URL.
+3. Successful provider authorization stages the identity and returns HTTP `303` to `{frontend}/sso-link-callback?session_id=…`. Rejection returns to that route with `error=sso_provider_not_found`, `sso_session_expired`, or `sso_login_failed`. The browser checks its pending state and requires explicit confirmation.
+4. `POST /api/v1/sso/links/complete` with `{"session_id":"…"}` binds the staged identity to its original authenticated owner and consumes the session. Success returns `{"code":0,"data":null,"msg":"…"}`. Unverified, expired, consumed, disabled-provider, and other-owner sessions cannot complete. Existing OAuth/directory identity conflicts or a provider email owned by another account are rejected with business code `5001`; configuration errors at initiation use `6304`.
 
 ---
 

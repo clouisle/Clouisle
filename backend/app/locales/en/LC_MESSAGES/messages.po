@@ -1210,6 +1210,12 @@ msgstr "Enable the Feishu integration and its notifications capability before se
 msgid "feishu_notification_not_configured"
 msgstr "Save the Feishu app ID and app secret, then grant the app permission to send direct messages."
 
+msgid "feishu_agent_chat_agent_unavailable"
+msgstr "This agent is not available for Feishu agent chat. Choose a published agent on an active team that you can access."
+
+msgid "feishu_agent_chat_agent_unpublished"
+msgstr "Only published agents can answer Feishu messages. Publish the agent first."
+
 
 msgid "feishu_test_recipient_unavailable"
 msgstr "Select an active user linked to Feishu."
@@ -2261,6 +2267,9 @@ msgstr "SSO provider not found"
 msgid "sso_registration_disabled"
 msgstr "SSO registration is disabled"
 
+msgid "sso_connection_exists"
+msgstr "This account or Feishu identity is already linked. Unlink it first or contact an administrator."
+
 msgid "sso_session_expired"
 msgstr "SSO session expired"
 
@@ -3187,6 +3196,9 @@ msgstr "WeChat reports an existing connection but did not issue credentials. Dis
 msgid "wechat_identity_in_use"
 msgstr "This WeChat identity is already connected to another platform account."
 
+msgid "integration_feature_disabled"
+msgstr "This integration feature is disabled. Contact an administrator to enable it."
+
 msgid "wechat_binding_not_found"
 msgstr "WeChat connection not found."
 
@@ -3300,7 +3312,31 @@ msgstr "The WeChat connection is no longer active."
 
 
 msgid "wechat_agent_help"
-msgstr "Commands: /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help; /skip skips pending questions."
+msgstr "Commands: /agents lists available Agents; /use <number> switches the Agent when idle; /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help; /skip skips pending questions."
+
+msgid "wechat_agent_agents_header"
+msgstr "Available Agents:"
+
+msgid "wechat_agent_agents_footer"
+msgstr "Send /use <number> to switch. Wait for confirmation before sending your next message. Numbers may change when the list changes."
+
+msgid "wechat_agent_no_agents"
+msgstr "No published Agents are available to you."
+
+msgid "wechat_agent_use_missing"
+msgstr "Send /use <number>, using a number from /agents."
+
+msgid "wechat_agent_use_invalid"
+msgstr "That Agent is not in your available list. Send /agents to see the current list."
+
+msgid "wechat_agent_use_current"
+msgstr "Already using {agent}. Your conversation and settings are unchanged."
+
+msgid "wechat_agent_use_selected"
+msgstr "Now using {agent}. New messages will use it. Its previous conversation is kept; input variables use defaults and speech recognition is not configured. You can adjust these in Personal settings → WeChat iLink."
+
+msgid "wechat_agent_use_variables"
+msgstr "This Agent needs input variables. Configure it in Personal settings → WeChat iLink, then save. Your current Agent is unchanged."
 
 msgid "wechat_agent_status"
 msgstr "Status: {status}"
@@ -3379,3 +3415,66 @@ msgstr "Waiting for your answer"
 
 msgid "wechat_agent_media_failed"
 msgstr "The attachment could not be downloaded from WeChat. Please send it again."
+
+msgid "feishu_agent_help"
+msgstr "Commands: /agents lists the Agents you can use; /use <number> switches the Agent; /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help."
+
+msgid "feishu_agent_status"
+msgstr "Agent: {agent} — Status: {status}"
+
+msgid "feishu_agent_received"
+msgstr "🤔Thinking..."
+
+msgid "feishu_agent_busy"
+msgstr "The previous message is still being processed. Please wait for it to finish."
+
+msgid "feishu_agent_new_conversation"
+msgstr "Your next message will start a new conversation."
+
+msgid "feishu_agent_stopped"
+msgstr "Stopped. Queued messages were cancelled."
+
+msgid "feishu_agent_run_failed"
+msgstr "The Agent task did not finish. Open the conversation for details."
+
+msgid "feishu_agent_no_output"
+msgstr "The Agent finished without producing a visible reply."
+
+msgid "feishu_agent_answer_required"
+msgstr "This question still needs an answer: {question}"
+
+msgid "feishu_agent_answer_invalid_choice"
+msgstr "Please choose one of: {options}"
+
+msgid "feishu_agent_questions_partial"
+msgstr "Answered {done} of {total} questions. Send the remaining answer."
+
+msgid "feishu_agent_agents_header"
+msgstr "Agents you can use (send /use <number> to switch):"
+
+msgid "feishu_agent_agents_footer"
+msgstr "Send /use <number> to switch the Agent."
+
+msgid "feishu_agent_no_agents"
+msgstr "No Agent is available to you in Feishu yet. Ask an administrator to publish one."
+
+msgid "feishu_agent_agent_none"
+msgstr "not selected yet"
+
+msgid "feishu_agent_agent_unavailable"
+msgstr "That Agent is not available to you right now."
+
+msgid "feishu_agent_channel_disabled"
+msgstr "The Feishu channel is no longer active. Open the conversation in the web app."
+
+msgid "feishu_agent_use_missing"
+msgstr "Send /use with the number of an Agent from /agents."
+
+msgid "feishu_agent_use_invalid"
+msgstr "That Agent is not in your list. Send /agents to see the ones you can use."
+
+msgid "feishu_agent_use_current"
+msgstr "Already using {agent}."
+
+msgid "feishu_agent_use_selected"
+msgstr "Now using {agent}. Your next message goes to it."

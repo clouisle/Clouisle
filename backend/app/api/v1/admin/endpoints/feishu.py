@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from tortoise.expressions import Q
 
 from app.api.deps import PermissionChecker
@@ -21,6 +21,12 @@ from app.services.integration_config import (
 from app.schemas.response import BusinessError, Response, ResponseCode, success
 from app.services.audit_log import AuditLogService
 from app.services.feishu_directory import sync_department_teams, sync_directory_users
+from app.services.feishu_agent_events import (
+    CONNECTION_MODE_KEY,
+    FeishuConnectionMode,
+    get_connection_mode,
+)
+from app.services.integration_receiver_state import receiver_status
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -28,9 +34,10 @@ FEISHU_COMPANY_DEPARTMENT_ID = "0"
 
 
 class FeishuConfigUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     app_id: str = Field(min_length=1, max_length=255)
     app_secret: str | None = Field(default=None, max_length=4096)
-    is_enabled: bool | None = None
 
 
 class FeishuDepartmentScopeUpdate(BaseModel):
@@ -41,6 +48,26 @@ class FeishuTestMessageRequest(BaseModel):
     user_id: str = Field(min_length=1, max_length=255)
     title: str = Field(min_length=1, max_length=200)
     content: str = Field(min_length=1, max_length=2000)
+
+
+class FeishuAgentChatConfigUpdate(BaseModel):
+    """Agent-chat channel settings; secrets are input-only and may be blank."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    connection_mode: FeishuConnectionMode | None = None
+    event_verification_token: str | None = Field(default=None, max_length=255)
+    event_encrypt_key: str | None = Field(default=None, max_length=255)
+
+    @field_validator("event_verification_token", "event_encrypt_key")
+    @classmethod
+    def normalize_secret(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if stripped and len(stripped) < 8:
+            raise ValueError("feishu_agent_chat_secret_too_short")
+        return stripped or None
 
 
 async def _configured_client() -> FeishuClient:
@@ -241,7 +268,6 @@ async def update_config(
         {"app_secret": data.app_secret.strip()}
         if data.app_secret and data.app_secret.strip()
         else None,
-        enabled=data.is_enabled,
     )
     configured = bool(integration.credentials.get("app_secret"))
     await AuditLogService.log(
@@ -261,6 +287,89 @@ async def update_config(
             "app_secret_configured": configured,
             "is_enabled": integration.is_enabled,
             "department_ids": integration.config.get("department_ids", []),
+        }
+    )
+
+
+@router.get("/agent-chat/config", response_model=Response[dict[str, Any]])
+async def get_agent_chat_config(
+    current_user: User = Depends(PermissionChecker("admin:integrations:settings:read")),
+):
+    """Agent-chat channel state; secrets are reported as configured flags only."""
+    integration = await get_builtin_integration("feishu")
+    credentials = integration.credentials
+    return success(
+        data={
+            "connection_mode": get_connection_mode(integration),
+            "event_verification_token_configured": bool(
+                credentials.get("event_verification_token")
+            ),
+            "event_encrypt_key_configured": bool(credentials.get("event_encrypt_key")),
+            "is_enabled": integration.is_enabled,
+            "capability_enabled": "agent_chat" in integration.enabled_capabilities,
+            "receiver_status": await receiver_status(integration),
+        }
+    )
+
+
+@router.put("/agent-chat/config", response_model=Response[dict[str, Any]])
+async def update_agent_chat_config(
+    request: Request,
+    data: FeishuAgentChatConfigUpdate,
+    current_user: User = Depends(
+        PermissionChecker("admin:integrations:settings:update")
+    ),
+):
+    """Store transport mode and callback secrets; users own Agent selection."""
+    secret_values = {
+        key: value
+        for key, value in {
+            "event_verification_token": data.event_verification_token,
+            "event_encrypt_key": data.event_encrypt_key,
+        }.items()
+        if value
+    }
+    config_values: dict[str, Any] = {}
+    if data.connection_mode is not None:
+        config_values[CONNECTION_MODE_KEY] = data.connection_mode
+    updated = await update_builtin_config(
+        "feishu",
+        config_values,
+        secret_values or None,
+    )
+    await AuditLogService.log(
+        user=current_user,
+        action="update_feishu_agent_chat_config",
+        resource_type="integration",
+        resource_id=updated.id,
+        resource_name="feishu_agent_chat",
+        operation="update",
+        status="success",
+        request=request,
+        changes={
+            "after": {
+                "connection_mode": get_connection_mode(updated),
+                "event_verification_token_configured": bool(
+                    updated.credentials.get("event_verification_token")
+                ),
+                "event_encrypt_key_configured": bool(
+                    updated.credentials.get("event_encrypt_key")
+                ),
+            }
+        },
+    )
+    return success(
+        data={
+            "connection_mode": get_connection_mode(updated),
+            "event_verification_token_configured": bool(
+                updated.credentials.get("event_verification_token")
+            ),
+            "event_encrypt_key_configured": bool(
+                updated.credentials.get("event_encrypt_key")
+            ),
+            "is_enabled": updated.is_enabled,
+            "capability_enabled": "agent_chat" in updated.enabled_capabilities,
+            "receiver_status": await receiver_status(updated),
         }
     )
 

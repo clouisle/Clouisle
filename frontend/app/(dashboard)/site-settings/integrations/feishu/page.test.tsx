@@ -80,6 +80,14 @@ test('exposes dedicated directory and notification tabs', async () => {
   expect(renderer.root.findAllByProps({ 'data-config': true })).toHaveLength(1)
 })
 
+test('exposes an agent chat tab that configures the Feishu bot channel', async () => {
+  const renderer = await render()
+  await act(async () => renderer.root.findByProps({ 'data-tab': 'agentChat' }).props.onClick())
+  expect(tabProps?.tab).toBe('agentChat')
+  expect(renderer.root.findAllByProps({ 'data-config': true })).toHaveLength(1)
+  expect(knowledgeRenders).toBe(0)
+})
+
 test('switches to the embedded knowledge sync panel for system superusers', async () => {
   const renderer = await render()
   await act(async () => renderer.root.findByProps({ 'data-tab': 'knowledge' }).props.onClick())

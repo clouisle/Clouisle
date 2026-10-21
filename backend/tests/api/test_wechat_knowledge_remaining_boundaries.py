@@ -9,6 +9,11 @@ from app.models.wechat_agent import WeChatAgentReceipt
 from app.schemas.response import BusinessError, ResponseCode
 
 
+@pytest.fixture(autouse=True)
+def enabled_wechat_features(monkeypatch):
+    monkeypatch.setattr(wechat_knowledge, "require_feature", AsyncMock())
+
+
 @pytest.mark.asyncio
 async def test_purpose_rejects_fields_from_the_other_purpose(monkeypatch):
     user = SimpleNamespace(id=uuid4())
@@ -433,6 +438,9 @@ async def test_agent_discovery_skips_unauthorized_published_candidates(monkeypat
 
     class Candidates:
         def only(self, *_fields):
+            return self
+
+        def order_by(self, *_fields):
             return self
 
         def __aiter__(self):

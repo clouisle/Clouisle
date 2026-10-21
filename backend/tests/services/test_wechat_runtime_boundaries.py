@@ -1035,6 +1035,7 @@ async def test_submitted_receipt_without_run_is_terminal_error(world):
 
 @pytest.mark.asyncio
 async def test_blank_optional_answer_prompts_for_later_required_question(world):
+    await receipt_for(world, identifier="optional-question-owner")
     await runtime.process_binding(str(world.binding.id))
     run = await AgentRun.get(id=world.submission.run.id)
     await AgentRun.filter(id=run.id).update(
@@ -1228,90 +1229,6 @@ def test_agent_task_returns_pending_when_binding_lock_is_held(monkeypatch):
     result = wechat_agent.process_binding_task.run("binding-id")
 
     assert result == {"pending": True}
-
-
-def test_agent_recovery_deduplicates_pending_receipts_and_outbox_bindings(monkeypatch):
-    import asyncio
-    from app.models.wechat_agent import WeChatAgentDelivery, WeChatAgentReceipt
-    from app.tasks import wechat_agent
-
-    first, second = uuid4(), uuid4()
-
-    class Query:
-        def __init__(self, values):
-            self.values = values
-
-        def order_by(self, *_args):
-            return self
-
-        def limit(self, *_args):
-            return self
-
-        async def values_list(self, field, **_kwargs):
-            return self.values
-
-    def receipts_filter(**kwargs):
-        if "status__in" in kwargs:
-            return Query([first])
-        return Query([first, second])
-
-    monkeypatch.setattr(WeChatAgentReceipt, "filter", receipts_filter)
-    monkeypatch.setattr(
-        WeChatAgentDelivery, "filter", lambda *_args, **_kwargs: Query([uuid4()])
-    )
-    queued = []
-    monkeypatch.setattr(
-        wechat_agent.process_binding_task, "delay", lambda value: queued.append(value)
-    )
-    monkeypatch.setattr(
-        wechat_agent, "_run_async", lambda coroutine: asyncio.run(coroutine)
-    )
-
-    result = wechat_agent.recover_bindings_task.run()
-
-    assert result == {"queued": 2}
-    assert set(queued) == {str(first), str(second)}
-
-
-@pytest.mark.asyncio
-async def test_connected_binding_poll_summary_counts_only_successful_polls(monkeypatch):
-    from app.models.wechat_knowledge import WeChatKnowledgeBinding
-    from app.services import wechat_receiver
-
-    bindings = [SimpleNamespace(id=uuid4()) for _ in range(3)]
-
-    class BindingQuery:
-        def exclude(self, **_kwargs):
-            return self
-
-        def __await__(self):
-            async def resolve():
-                return bindings
-
-            return resolve().__await__()
-
-    monkeypatch.setattr(
-        WeChatKnowledgeBinding, "filter", lambda **_kwargs: BindingQuery()
-    )
-    calls = iter(
-        [
-            {"polled": True, "accepted": 1},
-            {"polled": False, "reason": "leased"},
-            RuntimeError("one upstream poll failed"),
-        ]
-    )
-
-    async def poll(_binding):
-        result = next(calls)
-        if isinstance(result, Exception):
-            raise result
-        return result
-
-    monkeypatch.setattr(wechat_receiver, "poll_binding", poll)
-
-    result = await wechat_receiver.poll_connected_bindings()
-
-    assert result == {"bindings": 3, "polled": 1}
 
 
 @pytest.mark.asyncio

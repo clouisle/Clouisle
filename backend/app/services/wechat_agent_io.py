@@ -37,6 +37,7 @@ from app.schemas.response import BusinessError, ResponseCode
 from app.services.asset import asset_service
 from app.services.wechat_connection import utcnow
 from app.services.wechat_media import extract_media
+from app.services.integration_features import enabled_features, require_feature
 
 logger = logging.getLogger(__name__)
 
@@ -741,6 +742,7 @@ async def _send_payload(
     client_id: str,
     binding,
 ) -> None:
+    await require_feature("wechat", "agent_chat")
     kind = payload.get("kind")
     to_user = binding.wechat_user_id
     context_token = context["context_token"]
@@ -749,6 +751,7 @@ async def _send_payload(
         if asset is None:
             raise WeChatAPIError("asset_unavailable")
         item = await _upload_asset_media(client, asset, to_user)
+        await require_feature("wechat", "agent_chat")
         await client.send_media(to_user, context_token, item=item, client_id=client_id)
         return
     await client.send_text(
@@ -757,6 +760,11 @@ async def _send_payload(
 
 
 async def _send_one(delivery: WeChatAgentDelivery, binding) -> None:
+    if "agent_chat" not in await enabled_features("wechat"):
+        await WeChatAgentDelivery.filter(id=delivery.id, status="sending").update(
+            status="pending"
+        )
+        return
     receipt = await WeChatAgentReceipt.filter(id=delivery.receipt_id).first()
     if receipt is None:
         await WeChatAgentDelivery.filter(id=delivery.id).update(
@@ -798,6 +806,11 @@ async def _send_one(delivery: WeChatAgentDelivery, binding) -> None:
         )
         return
     except BusinessError as exc:
+        if exc.msg_key == "integration_feature_disabled":
+            await WeChatAgentDelivery.filter(id=delivery.id, status="sending").update(
+                status="pending"
+            )
+            return
         await WeChatAgentDelivery.filter(id=delivery.id).update(
             status="error", error=exc.msg_key or "wechat_agent_media_unsupported"
         )
@@ -812,6 +825,8 @@ async def deliver_pending(binding, user) -> None:
     session, conversation and credential so an older Agent's result is never
     sent through a newer session's conversation.
     """
+    if "agent_chat" not in await enabled_features("wechat"):
+        return
     set_language(getattr(user, "locale", None) or "en")
     from datetime import timedelta
 

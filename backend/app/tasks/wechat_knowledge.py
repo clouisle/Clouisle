@@ -4,6 +4,7 @@ from celery import shared_task
 from tortoise.expressions import Q
 
 from app.tasks.knowledge_base import _run_async
+from app.services.integration_features import enabled_features
 
 
 @shared_task(
@@ -24,6 +25,8 @@ def recover_receipts_task() -> dict:
 
     async def recover():
         await WeChatKnowledgeLogin.filter(expires_at__lt=utcnow()).delete()
+        if "knowledge_collection" not in await enabled_features("wechat"):
+            return {"queued": 0}
         rows = (
             await WeChatKnowledgeReceipt.filter(
                 Q(status__in=["pending", "processing"]) | Q(reply_status="pending"),

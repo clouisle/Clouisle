@@ -3,6 +3,7 @@ import { publicAgentsApi } from './agents'
 import { API_BASE_URL } from '@/lib/constants'
 
 export type WeChatPurpose = 'none' | 'knowledge_collection' | 'agent'
+export interface WeChatFeatures { agent_chat: boolean; knowledge_collection: boolean }
 
 export interface WeChatTarget { id: string; name: string; team_name: string }
 export interface WeChatCollection {
@@ -99,6 +100,7 @@ export const WECHAT_ACTIVE_RUN_STATUSES = ['queued', 'running', 'stopping', 'com
 
 const base = '/wechat-knowledge'
 export const wechatKnowledgeApi = {
+  features: () => api.get<WeChatFeatures>(`${base}/features`),
   bindings: () => api.get<WeChatBinding[]>(`${base}/bindings`),
   targets: () => api.get<WeChatTarget[]>(`${base}/targets`),
   models: (id: string) => api.get<WeChatModels>(`${base}/models`, { params: { knowledge_base_id: id } }),

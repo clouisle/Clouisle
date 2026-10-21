@@ -17,8 +17,23 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - Added Feishu notifications as an opt-in integration capability. Admins can send test messages to an explicitly selected linked user; notification delivery runs asynchronously and reports per-channel status for bound active recipients.
 - Team ownership transfers now write an audit event with the old/new owner and identify the acting administrator, including super administrators.
 - Super administrators bypass global permission checks and may grant team-admin membership to any user; regular operators can grant the team-admin role only to users with `team:manage`.
+- Fixed a `NameError` in Feishu's scheduled recovery task, restoring recovery of persisted receipts and unsent replies after their receipts complete.
+- Added an always-visible bilingual Feishu Agent chat setup checklist naming the required permissions, event subscription and publication/approval steps; clarified that WebSocket connectivity does not confirm message readiness.
+- Moved Feishu replying-Agent selection to Personal settings → Feishu, shared with `/use`. Admin integration settings now manage transport only. Existing session choices migrate per user; switching does not reroute accepted messages or active runs.
+- Added an immediately saved personal Feishu Agent chat switch, independent of shared channel availability. Turning off preserves selection/history and pauses intake, queued processing and unsent replies.
+- Simplified personal Feishu settings with a prioritized setup hint and a help-icon tooltip beside the replying-Agent label, separate from save actions; clarified automatic switch saving, paused-message handling, per-Agent conversation reuse and bilingual commands.
+- Expanded personal Feishu and WeChat instruction tooltips to describe each bot's supported commands and what they do.
+- Added Account security → Connected Accounts → Link Feishu for existing accounts, with explicit authorization, same-tab confirmation, owner-scoped completion and identity-conflict rejection; corrected the earlier binding guidance.
+- Excluded self-service Feishu account links from directory user/profile and department-membership synchronization, preventing duplicate imports while preserving ordinary directory-managed users. Link provenance survives sign-in; upgrades recover previous manual links from retained binding audit events.
+- Compacted personal WeChat settings with header authorization/refresh, inline actions and responsive forms. Removed Agent activity and collection history panels and their requests; current-run status, stop controls and backend history remain.
+- Aligned personal Feishu and WeChat settings card styling, spacing, action sizes and save-button order without changing channel behavior.
 
 ### Added
+
+#### Integrations
+- Added optional Feishu WebSocket long connections managed automatically by existing Agent-queue workers, with live receiver status, dynamic feature/configuration changes and singleton failure recovery. No extra service or receiver command is required; HTTP callbacks remain supported.
+- Added WeChat iLink integration settings with independent Agent chat and knowledge collection feature switches. Personal bindings remain user-owned; disabled features preserve history, pending work and unsent replies.
+- Added WeChat Agent listing and switching commands (`/agents`, `/use`, `/智能体`, `/使用`) with shared personal selection, idle guards, required-variable guidance and preserved per-Agent conversations.
 
 #### Chat and File Previews
 - Added a unified artifact list with file counts, expandable results, authenticated downloads, and shared previews for common document, media, and code formats.
@@ -49,6 +64,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - RAG context remains `null` when retrieval did not run and `[]` when retrieval ran but returned no contexts.
 
 ### Fixed
+
+#### Integrations
+- Added the missing Chinese and English Agent chat capability labels so the integrations page renders Feishu capability badges without missing-message errors.
 
 #### Asset Access and Previews
 - Protected generated images, generated videos, and sandbox artifacts with scope-aware authorization and authenticated client downloads.

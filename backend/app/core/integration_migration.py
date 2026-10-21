@@ -143,6 +143,7 @@ BUILTIN_DEFAULTS = {
         "webhook_body_template": '{"title": "{{title}}", "content": "{{content}}", "link_url": "{{link_url}}"}',
     },
     "feishu": {"app_id": "", "department_ids": []},
+    "wechat": {},
 }
 
 
@@ -150,6 +151,8 @@ async def initialize_integrations() -> None:
     """Seed builtin instances once and remove their obsolete setting keys atomically."""
     from app.models.integration import Integration
     from app.models.site_setting import SiteSetting
+
+    from app.models.wechat_knowledge import WeChatKnowledgeBinding
 
     async with in_transaction() as connection:
         if connection.capabilities.dialect != "sqlite":
@@ -174,6 +177,9 @@ async def initialize_integrations() -> None:
                     "feishu_department_scope",
                     "feishu_app_secret_encrypted",
                 ]
+            elif provider_type == "wechat":
+                config, credentials, keys = {}, {}, []
+                enabled = True
             else:
                 config = {
                     key: settings.get(key, value) for key, value in defaults.items()
@@ -202,14 +208,32 @@ async def initialize_integrations() -> None:
                 while await Integration.filter(name=name).using_db(connection).exists():
                     suffix += 1
                     name = f"builtin-{provider_type}-{suffix}"
+                capabilities = (
+                    implicit_builtin_capabilities(definition) if enabled else []
+                )
+                if provider_type == "wechat":
+                    # Preserve existing active uses once; fresh installations
+                    # start with both functions off. Personal tokens stay private.
+                    purposes = set(
+                        await WeChatKnowledgeBinding.filter(status="connected")
+                        .exclude(token="")
+                        .using_db(connection)
+                        .values_list("purpose", flat=True)
+                    )
+                    capabilities = [
+                        capability
+                        for purpose, capability in (
+                            ("agent", "agent_chat"),
+                            ("knowledge_collection", "knowledge_collection"),
+                        )
+                        if purpose in purposes
+                    ]
                 await Integration.create(
                     name=name,
                     provider_type=provider_type,
                     display_name=definition.display_name,
                     is_enabled=enabled,
-                    enabled_capabilities=(
-                        implicit_builtin_capabilities(definition) if enabled else []
-                    ),
+                    enabled_capabilities=capabilities,
                     config=config,
                     credentials=credentials,
                     using_db=connection,

@@ -289,7 +289,9 @@ async def test_feishu_config_reads_unified_non_secret_fields(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_feishu_config_updates_shared_credentials_and_enabled_state(monkeypatch):
+async def test_feishu_config_updates_credentials_without_changing_feature_selection(
+    monkeypatch,
+):
     integration = SimpleNamespace(
         id=uuid4(),
         config={"department_ids": ["0"]},
@@ -301,13 +303,11 @@ async def test_feishu_config_updates_shared_credentials_and_enabled_state(monkey
     monkeypatch.setattr(feishu.AuditLogService, "log", AsyncMock())
     response = await feishu.update_config(
         request=MagicMock(),
-        data=feishu.FeishuConfigUpdate(
-            app_id=" cli-test ", app_secret=" new-secret ", is_enabled=True
-        ),
+        data=feishu.FeishuConfigUpdate(app_id=" cli-test ", app_secret=" new-secret "),
         current_user=SimpleNamespace(id=uuid4()),
     )
     update.assert_awaited_once_with(
-        "feishu", {"app_id": "cli-test"}, {"app_secret": "new-secret"}, enabled=True
+        "feishu", {"app_id": "cli-test"}, {"app_secret": "new-secret"}
     )
     assert response["data"]["app_secret_configured"]
     assert "new-secret" not in str(response)
@@ -471,9 +471,7 @@ async def test_config_update_with_blank_secret_preserves_existing_credential(
         current_user=SimpleNamespace(id=uuid4()),
     )
 
-    update.assert_awaited_once_with(
-        "feishu", {"app_id": "cli-updated"}, None, enabled=None
-    )
+    update.assert_awaited_once_with("feishu", {"app_id": "cli-updated"}, None)
     assert response["data"]["app_secret_configured"] is True
     assert "already-encrypted" not in str(response)
 

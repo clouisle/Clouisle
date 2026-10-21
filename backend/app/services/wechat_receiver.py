@@ -7,11 +7,9 @@ import json
 import logging
 from uuid import uuid4
 
-from tortoise import Tortoise
 from tortoise.transactions import in_transaction
 
-from app.core.config import settings
-from app.core.redis import close_redis, get_redis
+from app.core.redis import get_redis
 from app.core.celery import celery_app
 from app.integrations.credentials import decrypt_secret, encrypt_secret
 from app.integrations.wechat import WeChatAPIError, WeChatClient
@@ -22,6 +20,7 @@ from app.models.wechat_knowledge import (
 )
 from app.models.wechat_agent import WeChatAgentConfig, WeChatAgentReceipt
 from app.services.wechat_connection import utcnow
+from app.services.integration_features import enabled_features
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +42,10 @@ async def accept_updates(binding: WeChatKnowledgeBinding, response: dict) -> lis
             or current.generation != binding.generation
             or current.cursor != binding.cursor
         ):
+            return []
+        feature = "agent_chat" if current.purpose == "agent" else current.purpose
+        enabled = await enabled_features("wechat")
+        if not enabled or (current.purpose != "none" and feature not in enabled):
             return []
         messages = response.get("msgs") or []
         if not isinstance(messages, list):
@@ -148,6 +151,9 @@ async def poll_binding(binding: WeChatKnowledgeBinding) -> dict:
     poller per binding, and ``accept_updates`` re-checks the cursor and
     generation under a row lock before committing.
     """
+    feature = "agent_chat" if binding.purpose == "agent" else binding.purpose
+    if feature not in await enabled_features("wechat"):
+        return {"polled": False, "reason": "feature_disabled"}
     redis = await get_redis()
     key, owner = f"wechat:poll:{binding.id}", str(uuid4())
     if not await redis.set(key, owner, nx=True, ex=LEASE_SECONDS):
@@ -207,7 +213,20 @@ async def poll_binding(binding: WeChatKnowledgeBinding) -> dict:
 
 async def poll_connected_bindings() -> dict:
     """Poll every connected binding once; called by the Celery Beat tick."""
-    bindings = await WeChatKnowledgeBinding.filter(status="connected").exclude(token="")
+    enabled = await enabled_features("wechat")
+    purposes = [
+        purpose
+        for purpose, feature in (
+            ("agent", "agent_chat"),
+            ("knowledge_collection", "knowledge_collection"),
+        )
+        if feature in enabled
+    ]
+    if not purposes:
+        return {"bindings": 0, "polled": 0}
+    bindings = await WeChatKnowledgeBinding.filter(
+        status="connected", purpose__in=purposes
+    ).exclude(token="")
     results = await asyncio.gather(
         *(poll_binding(binding) for binding in bindings), return_exceptions=True
     )
@@ -215,19 +234,3 @@ async def poll_connected_bindings() -> dict:
         1 for result in results if isinstance(result, dict) and result.get("polled")
     )
     return {"bindings": len(bindings), "polled": polled}
-
-
-async def run_receiver():
-    """Local debugging loop; production polls from the Celery Beat tick."""
-    await Tortoise.init(
-        db_url=settings.DATABASE_URL,
-        modules={"models": ["app.models"]},
-        _enable_global_fallback=True,
-    )
-    try:
-        while True:
-            await poll_connected_bindings()
-            await asyncio.sleep(1)
-    finally:
-        await Tortoise.close_connections()
-        await close_redis()

@@ -7,6 +7,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, Field
+from tortoise.exceptions import IntegrityError
+from tortoise.transactions import in_transaction
 
 from app.api import deps
 from app.core import security
@@ -15,6 +18,9 @@ from app.models.site_setting import SiteSetting
 from app.models.integration import Integration
 from app.models.sso_session import SSOSession
 from app.models.user import User
+from app.models.user_sso_connection import UserSSOConnection
+from app.integrations.feishu import FeishuAPIError
+from app.models.feishu_user import FeishuUser
 from app.schemas.response import BusinessError, Response, ResponseCode, success
 from app.schemas.integration import IntegrationLoginPublic
 from app.integrations.registry import IntegrationCapability, integration_registry
@@ -201,7 +207,18 @@ async def sso_callback(
 ):
     """Handle SSO callback"""
     provider = await Integration.get_or_none(name=provider_name)
-    if not provider or not _supports_login(provider):
+    if not provider:
+        return await _sso_error_redirect("sso_provider_not_found")
+    if not _supports_login(provider):
+        if provider.provider_type == "feishu" and isinstance(state, str) and state:
+            pending = await SSOSession.get_or_none(
+                session_id=state, integration=provider
+            )
+            if pending and getattr(pending, "link_user_id", None) is not None:
+                return RedirectResponse(
+                    url=f"{await _frontend_url()}/sso-link-callback?error=sso_provider_not_found",
+                    status_code=303,
+                )
         return await _sso_error_redirect("sso_provider_not_found")
 
     if provider.provider_type in PKCE_PROVIDER_TYPES:
@@ -215,8 +232,27 @@ async def sso_callback(
         return await _sso_error_redirect("sso_session_expired")
 
     session = await SSOSession.get_or_none(session_id=session_id, integration=provider)
-    if not session or session.expires_at < now_utc():
+    if not session:
         return await _sso_error_redirect("sso_session_expired")
+    linking = getattr(session, "link_user_id", None) is not None
+    if session.expires_at < now_utc():
+        if linking:
+            return RedirectResponse(
+                url=f"{await _frontend_url()}/sso-link-callback?error=sso_session_expired",
+                status_code=303,
+            )
+        return await _sso_error_redirect("sso_session_expired", session.redirect_url)
+
+    if linking and (
+        not provider.is_enabled
+        or provider.provider_type != "feishu"
+        or session.link_user_info is not None
+        or not await SiteSetting.get_value("sso_enabled", False)
+    ):
+        return RedirectResponse(
+            url=f"{await _frontend_url()}/sso-link-callback?error=sso_session_expired",
+            status_code=303,
+        )
 
     try:
         provider_instance = SSOService.get_provider_instance(provider)
@@ -248,11 +284,34 @@ async def sso_callback(
             return await _sso_error_redirect("sso_login_failed", session.redirect_url)
 
         provider_user_id = user_info.get("provider_user_id")
-        if not provider_user_id:
-            return await _sso_error_redirect("sso_login_failed", session.redirect_url)
+        if not isinstance(provider_user_id, str) or not provider_user_id:
+            if not linking:
+                return await _sso_error_redirect(
+                    "sso_login_failed", session.redirect_url
+                )
+            raise BusinessError(
+                code=ResponseCode.SSO_AUTHENTICATION_FAILED,
+                msg_key="sso_login_failed",
+            )
 
         mapped_data = provider_instance.map_user_attributes(user_info)
         mapped_data.update(user_info)
+        if linking:
+            staged = await SSOSession.filter(
+                id=session.id,
+                link_user_id=session.link_user_id,
+                link_user_info__isnull=True,
+                expires_at__gt=now_utc(),
+            ).update(link_user_info=mapped_data, code_verifier=None)
+            if staged != 1:
+                raise BusinessError(
+                    code=ResponseCode.SSO_SESSION_EXPIRED,
+                    msg_key="sso_session_expired",
+                )
+            return RedirectResponse(
+                url=f"{await _frontend_url()}/sso-link-callback?session_id={quote(session.session_id)}",
+                status_code=303,
+            )
 
         user, is_new = await SSOService.find_or_create_user(
             provider=provider, provider_user_id=provider_user_id, user_info=mapped_data
@@ -310,6 +369,12 @@ async def sso_callback(
         return RedirectResponse(url=redirect_url)
 
     except BusinessError as e:
+        if linking:
+            await session.delete()
+            return RedirectResponse(
+                url=f"{await _frontend_url()}/sso-link-callback?error=sso_login_failed",
+                status_code=303,
+            )
         await AuditLogService.log(
             user=None,
             action="sso_login_failed",
@@ -324,6 +389,13 @@ async def sso_callback(
         )
         return await _sso_error_redirect("sso_login_failed", session.redirect_url)
     except Exception:
+        if linking:
+            logger.exception("Feishu account-link authorization failed")
+            await session.delete()
+            return RedirectResponse(
+                url=f"{await _frontend_url()}/sso-link-callback?error=sso_login_failed",
+                status_code=303,
+            )
         await AuditLogService.log(
             user=None,
             action="sso_login_failed",
@@ -337,6 +409,253 @@ async def sso_callback(
             metadata={"provider": provider.name},
         )
         return await _sso_error_redirect("sso_login_failed", session.redirect_url)
+
+
+class SSOAccountLinkRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=255)
+
+
+@router.get(
+    "/links/integrations", response_model=Response[list[IntegrationLoginPublic]]
+)
+async def list_linkable_integrations(
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Return enabled Feishu sign-in integrations not yet linked by this user."""
+    if not await SiteSetting.get_value("sso_enabled", False):
+        return success(data=[])
+
+    providers = await Integration.filter(is_enabled=True, provider_type="feishu").all()
+    linked_ids = set(
+        await UserSSOConnection.filter(user=current_user).values_list(
+            "integration_id", flat=True
+        )
+    )
+    return success(
+        data=[
+            IntegrationLoginPublic(
+                id=provider.id,
+                name=provider.name,
+                display_name=provider.display_name,
+                icon_url=provider.icon_url,
+                button_text=provider.button_text,
+                provider_type=provider.provider_type,
+            )
+            for provider in providers
+            if _supports_login(provider) and provider.id not in linked_ids
+        ]
+    )
+
+
+@router.post("/links", response_model=Response[dict[str, str]])
+async def start_account_link(
+    request: Request,
+    provider_name: str = Query(..., min_length=1, max_length=100),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Start linking a Feishu identity to the authenticated account."""
+    provider = await Integration.get_or_none(
+        name=provider_name, is_enabled=True, provider_type="feishu"
+    )
+    if (
+        not provider
+        or not _supports_login(provider)
+        or not await SiteSetting.get_value("sso_enabled", False)
+    ):
+        raise BusinessError(
+            code=ResponseCode.SSO_PROVIDER_NOT_FOUND,
+            msg_key="sso_provider_not_found",
+        )
+    if await UserSSOConnection.filter(user=current_user, integration=provider).exists():
+        raise BusinessError(
+            code=ResponseCode.ALREADY_EXISTS, msg_key="sso_connection_exists"
+        )
+
+    state = secrets.token_urlsafe(32)
+    callback_url = f"{_backend_url(request)}/api/v1/sso/callback/{provider.name}"
+    try:
+        authorization = await SSOService.get_provider_instance(
+            provider
+        ).get_authorization_url(state=state, redirect_uri=callback_url)
+    except (FeishuAPIError, ValueError) as exc:
+        logger.warning("Failed to initialize Feishu account link: %s", exc)
+        raise BusinessError(
+            code=ResponseCode.SSO_INVALID_CONFIGURATION,
+            msg_key="sso_invalid_configuration",
+        ) from exc
+    if not isinstance(authorization, tuple) or len(authorization) != 3:
+        raise BusinessError(
+            code=ResponseCode.SSO_INVALID_CONFIGURATION,
+            msg_key="sso_invalid_configuration",
+        )
+    auth_url, code_verifier, _nonce = authorization
+    if not isinstance(auth_url, str):
+        raise BusinessError(
+            code=ResponseCode.SSO_INVALID_CONFIGURATION,
+            msg_key="sso_invalid_configuration",
+        )
+
+    await SSOSession.create(
+        session_id=state,
+        integration=provider,
+        link_user=current_user,
+        code_verifier=code_verifier,
+        redirect_url="/app",
+        expires_at=now_utc() + timedelta(minutes=10),
+    )
+    await AuditLogService.log(
+        user=current_user,
+        action="start_sso_link",
+        resource_type="integration",
+        resource_id=provider.id,
+        resource_name=provider.name,
+        operation="create",
+        status="success",
+        request=request,
+    )
+    return success(data={"authorization_url": auth_url, "session_id": state})
+
+
+@router.post("/links/complete", response_model=Response[None])
+async def complete_account_link(
+    data: SSOAccountLinkRequest,
+    request: Request,
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Finalize the pending provider identity for the authenticated owner."""
+    try:
+        if not await SiteSetting.get_value("sso_enabled", False):
+            raise BusinessError(
+                code=ResponseCode.SSO_PROVIDER_NOT_FOUND,
+                msg_key="sso_provider_not_found",
+            )
+        async with in_transaction() as db:
+            # Serialize this actor's pending links without changing their account.
+            actor = (
+                await User.filter(id=current_user.id, is_active=True)
+                .using_db(db)
+                .select_for_update()
+                .first()
+            )
+            if actor is None:
+                raise BusinessError(
+                    code=ResponseCode.INACTIVE_USER, msg_key="inactive_user"
+                )
+            session = (
+                await SSOSession.filter(
+                    session_id=data.session_id,
+                    link_user_id=current_user.id,
+                    link_user_info__isnull=False,
+                )
+                .using_db(db)
+                .select_for_update()
+                .prefetch_related("integration")
+                .first()
+            )
+            if (
+                session is None
+                or session.expires_at < now_utc()
+                or not session.integration.is_enabled
+                or not _supports_login(session.integration)
+                or session.integration.provider_type != "feishu"
+            ):
+                raise BusinessError(
+                    code=ResponseCode.SSO_SESSION_EXPIRED,
+                    msg_key="sso_session_expired",
+                )
+
+            identity = session.link_user_info
+            if not isinstance(identity, dict):
+                raise BusinessError(
+                    code=ResponseCode.SSO_AUTHENTICATION_FAILED,
+                    msg_key="sso_login_failed",
+                )
+            provider_user_id = identity.get("provider_user_id")
+            if not isinstance(provider_user_id, str) or not provider_user_id:
+                raise BusinessError(
+                    code=ResponseCode.SSO_AUTHENTICATION_FAILED,
+                    msg_key="sso_login_failed",
+                )
+            existing = (
+                await UserSSOConnection.filter(
+                    integration_id=session.integration_id,
+                    provider_user_id=provider_user_id,
+                )
+                .using_db(db)
+                .first()
+            )
+            if existing is not None and existing.user_id != current_user.id:
+                raise BusinessError(
+                    code=ResponseCode.ALREADY_EXISTS,
+                    msg_key="sso_connection_exists",
+                )
+            if (
+                existing is None
+                and await UserSSOConnection.filter(
+                    integration_id=session.integration_id, user_id=current_user.id
+                )
+                .using_db(db)
+                .exists()
+            ):
+                raise BusinessError(
+                    code=ResponseCode.ALREADY_EXISTS, msg_key="sso_connection_exists"
+                )
+            # OAuth and directory sign-in must resolve to the same actor.
+            if (
+                identity.get("user_id")
+                and await FeishuUser.filter(feishu_user_id=identity["user_id"])
+                .exclude(user_id=current_user.id)
+                .using_db(db)
+                .exists()
+            ):
+                raise BusinessError(
+                    code=ResponseCode.ALREADY_EXISTS, msg_key="sso_connection_exists"
+                )
+            email = identity.get("email")
+            if (
+                isinstance(email, str)
+                and email
+                and await User.filter(email=email)
+                .exclude(id=current_user.id)
+                .using_db(db)
+                .exists()
+            ):
+                raise BusinessError(
+                    code=ResponseCode.ALREADY_EXISTS, msg_key="sso_connection_exists"
+                )
+            if existing is None:
+                await UserSSOConnection.create(
+                    user_id=current_user.id,
+                    integration_id=session.integration_id,
+                    provider_user_id=provider_user_id,
+                    provider_username=identity.get("username"),
+                    provider_email=identity.get("email"),
+                    provider_data=identity,
+                    self_service_linked=True,
+                    using_db=db,
+                )
+            elif not existing.self_service_linked:
+                existing.self_service_linked = True
+                await existing.save(using_db=db, update_fields=["self_service_linked"])
+            provider_name = session.integration.name
+            await session.delete(using_db=db)
+    except IntegrityError as exc:
+        raise BusinessError(
+            code=ResponseCode.ALREADY_EXISTS, msg_key="sso_connection_exists"
+        ) from exc
+
+    await AuditLogService.log(
+        user=current_user,
+        action="link_sso",
+        resource_type="sso_connection",
+        resource_id=None,
+        resource_name=provider_name,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={"provider": provider_name},
+    )
+    return success()
 
 
 @router.delete("/connections/{connection_id}", response_model=Response[None])
