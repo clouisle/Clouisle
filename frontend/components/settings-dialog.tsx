@@ -225,6 +225,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     [profileErrors]
   )
 
+  // The link endpoint only returns identities this account has not linked yet,
+  // so an empty list also means "already linked". The card above shows that
+  // connection, and the empty hint would wrongly blame the administrator.
+  const feishuConnected = React.useMemo(
+    () =>
+      (user?.sso_connections ?? []).some(
+        (connection) => connection.integration_provider_type === 'feishu'
+      ),
+    [user?.sso_connections]
+  )
+
   const passwordSummaryEntries = React.useMemo(
     () => getValidationSummaryEntries(passwordErrors, ['currentPassword', 'newPassword', 'confirmPassword']),
     [passwordErrors]
@@ -823,7 +834,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </div>
                   )}
 
-                  {!linkableLoading && !linkableError && linkableProviders.length === 0 && (
+                  {!linkableLoading && !linkableError && linkableProviders.length === 0 && !feishuConnected && (
                     <p className="text-sm text-muted-foreground">{tSSO('linkableEmpty')}</p>
                   )}
                 </CardContent>
@@ -890,14 +901,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           </div>
                         </div>
                       </div>
-                      <Button
-                        variant="default"
-                        size="sm"
-                        onClick={() => setSetupWizardOpen(true)}
-                      >
-                        <Shield className="mr-2 h-4 w-4" />
-                        {t('enableTwoFactor')}
-                      </Button>
+                      <div className="flex justify-end">
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => setSetupWizardOpen(true)}
+                        >
+                          <Shield className="mr-2 h-4 w-4" />
+                          {t('enableTwoFactor')}
+                        </Button>
+                      </div>
                     </>
                   )}
                 </CardContent>

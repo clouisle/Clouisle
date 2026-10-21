@@ -81,7 +81,7 @@
     "linkAccounts": "关联账号",
     "linkAccountsDescription": "将飞书身份关联到当前账号，之后即可用飞书登录。",
     "linkableFeishu": "可关联的飞书登录",
-    "linkableEmpty": "暂无可关联的飞书登录。请联系管理员启用飞书用户登录，或同步通讯录身份。",
+    "linkableEmpty": "暂无可关联的飞书登录。请联系管理员在“站点设置 → 集成 → 飞书”启用飞书用户登录。",
     "linkableLoadFailed": "加载可关联的飞书登录失败",
     "linkProvider": "绑定{provider}",
     "linkStarting": "正在打开{provider}授权...",

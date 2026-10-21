@@ -440,6 +440,24 @@ describe('SettingsDialog', () => {
     expect(getLinkableIntegrations).toHaveBeenCalledWith()
   })
 
+  test('hides the empty hint when the account already has a Feishu connection', async () => {
+    user = {
+      ...user,
+      sso_connections: [{
+        ...user.sso_connections[0],
+        integration_id: 'feishu',
+        integration_name: 'feishu',
+        integration_provider_type: 'feishu',
+        integration_display_name: 'Feishu',
+      }],
+    }
+    await render()
+    await click('account')
+
+    expect(container.textContent).toContain('Feishu')
+    expect(container.textContent).not.toContain('linkableEmpty')
+  })
+
   test('does not fetch linkable providers before the dialog opens', async () => {
     await render(false)
     expect(getLinkableIntegrations).not.toHaveBeenCalled()

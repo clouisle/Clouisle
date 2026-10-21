@@ -81,7 +81,7 @@
     "linkAccounts": "Link Accounts",
     "linkAccountsDescription": "Bind a Feishu identity to this account so you can sign in with it.",
     "linkableFeishu": "Available Feishu login",
-    "linkableEmpty": "No enabled Feishu login is available to link. Ask an administrator to enable Feishu user login, or sync your directory identity.",
+    "linkableEmpty": "No Feishu login is available to link. Ask an administrator to enable Feishu user login under Site Settings → Integrations → Feishu.",
     "linkableLoadFailed": "Failed to load available Feishu login",
     "linkProvider": "Link {provider}",
     "linkStarting": "Opening {provider} authorization...",
