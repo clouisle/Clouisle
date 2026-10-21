@@ -243,3 +243,46 @@ async def test_database_unavailable_at_startup_is_retried_and_recovers(monkeypat
     monkeypatch.setattr(owner, "reconcile", reconcile)
     await owner._serve()
     assert len(attempts) == 2
+
+
+def test_receiver_manager_starts_only_for_agent_queue(monkeypatch):
+    started = []
+
+    class FakeManager:
+        def start(self):
+            started.append(self)
+
+    monkeypatch.setattr(manager, "_manager", None)
+    monkeypatch.setattr(manager, "IntegrationReceiverManager", FakeManager)
+    sender = SimpleNamespace(
+        task_consumer=SimpleNamespace(queues=[SimpleNamespace(name="default")])
+    )
+
+    manager.start_integration_receivers(sender)
+    assert started == []
+
+    sender.task_consumer.queues.append(SimpleNamespace(name="agent"))
+    manager.start_integration_receivers(sender)
+    manager.start_integration_receivers(sender)
+    assert len(started) == 1
+
+
+def test_receiver_manager_stop_is_safe_without_manager_and_clears_running_manager(
+    monkeypatch,
+):
+    class FakeManager:
+        def __init__(self):
+            self.stopped = False
+
+        def stop(self):
+            self.stopped = True
+
+    monkeypatch.setattr(manager, "_manager", None)
+    manager.stop_integration_receivers()
+    assert manager._manager is None
+
+    active = FakeManager()
+    monkeypatch.setattr(manager, "_manager", active)
+    manager.stop_integration_receivers()
+    assert active.stopped
+    assert manager._manager is None

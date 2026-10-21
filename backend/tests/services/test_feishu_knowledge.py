@@ -1467,6 +1467,41 @@ class _Qdrant:
         self.payloads.append((collection_name, payload, points, wait))
 
 
+class FilterSelector:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class FilterModel:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class FieldCondition:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class MatchValue:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class PointIdsList:
+    def __init__(self, points):
+        self.points = points
+
+
+def _qmodels_shim():
+    return SimpleNamespace(
+        FilterSelector=FilterSelector,
+        Filter=FilterModel,
+        FieldCondition=FieldCondition,
+        MatchValue=MatchValue,
+        PointIdsList=PointIdsList,
+    )
+
+
 def vector_shim(monkeypatch, client, dimension=1024):
     real = service.vectors
     monkeypatch.setattr(
@@ -1476,7 +1511,7 @@ def vector_shim(monkeypatch, client, dimension=1024):
             _get_qdrant_client=AsyncMock(return_value=client),
             get_kb_embedding_dimension=AsyncMock(return_value=dimension),
             _collection_name=real._collection_name,
-            qmodels=real.qmodels,
+            qmodels=_qmodels_shim(),
             settings=SimpleNamespace(
                 QDRANT_COLLECTION_PREFIX=real.settings.QDRANT_COLLECTION_PREFIX
             ),
@@ -1743,3 +1778,139 @@ def test_wiki_renderer_ignores_repeated_references_but_rejects_duplicate_blocks(
 def test_wiki_renderer_rejects_invalid_unreachable_or_empty_content(blocks):
     with pytest.raises(service.ImportProcessingError):
         service.blocks_to_markdown(blocks, "Invalid")
+
+
+def test_inline_reminder_overflow_and_unsupported_elements_are_distinguished():
+    with pytest.raises(service.ImportProcessingError, match="Unsupported"):
+        service._inline([{"unknown": {}}])
+    rendered = service._inline(
+        [
+            {
+                "reminder": {
+                    "expire_time": 10**30,
+                    "notify_time": 0,
+                    "create_user_id": "u1",
+                }
+            }
+        ]
+    )
+    assert "1000000000000000000000000000000 ms since Unix epoch" in rendered
+    assert "create_user_id=u1" in rendered
+
+
+def test_renderer_covers_empty_table_and_repeated_unsupported_block():
+    markdown, warnings = service.blocks_to_markdown(
+        [
+            {"block_id": "root", "block_type": 1, "children": ["table", "unknown"]},
+            {
+                "block_id": "table",
+                "block_type": 31,
+                "table": {"property": {"column_size": 1}, "cells": []},
+            },
+            {"block_id": "unknown", "block_type": 99},
+        ],
+        "Title",
+    )
+    assert markdown.startswith("# Title")
+    assert warnings == ["unsupported_block:99"]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_pending_skips_empty_vectors_and_removal_without_document(
+    monkeypatch,
+):
+    mapping = SimpleNamespace(
+        staging_document_id=None,
+        document_id=uuid4(),
+        cleanup_chunk_ids=[],
+        pending_file_path=None,
+        obsolete_file_path=None,
+        save=AsyncMock(),
+        content_hash="hash",
+    )
+    kb = SimpleNamespace(id=uuid4())
+    monkeypatch.setattr(service.DocumentChunk, "filter", Mock(return_value=Query([])))
+    dimension = AsyncMock()
+    monkeypatch.setattr(service.vectors, "get_kb_embedding_dimension", dimension)
+    await service._cleanup_pending(mapping, kb)
+    dimension.assert_not_awaited()
+    assert mapping.staging_document_id is None
+
+    mapping.document_id = None
+    monkeypatch.setattr(service, "_cleanup_pending", AsyncMock())
+    monkeypatch.setattr(service.Document, "filter", Mock(return_value=Query(None)))
+    monkeypatch.setattr(service, "_recount_kb", AsyncMock())
+    await service.remove_import(mapping, kb)
+    assert mapping.content_hash is None
+    mapping.save.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_source_reports_missing_id(monkeypatch):
+    monkeypatch.setattr(
+        service.FeishuKnowledgeSource, "filter", Mock(return_value=Query(None))
+    )
+    with pytest.raises(BusinessError) as raised:
+        await service.get_source(uuid4())
+    assert raised.value.msg_key == "feishu_knowledge_source_not_found"
+
+
+@pytest.mark.asyncio
+async def test_scan_reports_unsupported_and_failed_nodes(monkeypatch, source):
+    kb = SimpleNamespace(id=source.knowledge_base_id)
+    nodes = [
+        {"node_token": "u", "obj_type": "unsupported", "obj_token": "u"},
+        {"node_token": "bad", "obj_type": "doc", "obj_token": "bad"},
+    ]
+    mappings = {
+        node["obj_token"]: SimpleNamespace(
+            obj_type=node["obj_type"],
+            obj_token=node["obj_token"],
+            node_token=node["node_token"],
+            last_error=None,
+            save=AsyncMock(),
+            delete=AsyncMock(),
+        )
+        for node in nodes
+    }
+
+    async def get_or_create(**kwargs):
+        return mappings[kwargs["obj_token"]], False
+
+    monkeypatch.setattr(service.KnowledgeBase, "filter", Mock(return_value=Query(kb)))
+    monkeypatch.setattr(service.FeishuKnowledgeDocument, "get_or_create", get_or_create)
+    monkeypatch.setattr(
+        service.FeishuKnowledgeDocument, "filter", Mock(return_value=Query([]))
+    )
+    monkeypatch.setattr(
+        service, "load_rich_content", AsyncMock(side_effect=RuntimeError("secret"))
+    )
+    result = await service._scan_source(
+        source, SimpleNamespace(list_wiki_nodes=AsyncMock(return_value=nodes))
+    )
+    assert result["unsupported"] == 1
+    assert result["skipped"][0]["node_token"] == "u"
+    assert result["failed"] == 1
+    assert result["errors"][0]["node_token"] == "bad"
+
+
+@pytest.mark.asyncio
+async def test_delete_source_removes_each_import_and_recounts(monkeypatch, source):
+    mapping = SimpleNamespace(delete=AsyncMock())
+    kb = SimpleNamespace(id=source.knowledge_base_id)
+    monkeypatch.setattr(service, "source_lock", unlocked)
+    monkeypatch.setattr(service, "get_source", AsyncMock(return_value=source))
+    monkeypatch.setattr(service.KnowledgeBase, "get", AsyncMock(return_value=kb))
+    monkeypatch.setattr(
+        service.FeishuKnowledgeDocument, "filter", Mock(return_value=Query([mapping]))
+    )
+    remove = AsyncMock()
+    recount = AsyncMock()
+    monkeypatch.setattr(service, "remove_import", remove)
+    monkeypatch.setattr(service, "_recount_kb", recount)
+    source.delete = AsyncMock()
+    await service.delete_source(source.id)
+    remove.assert_awaited_once_with(mapping, kb)
+    mapping.delete.assert_awaited_once()
+    source.delete.assert_awaited_once()
+    recount.assert_awaited_once_with(kb.id)

@@ -8,6 +8,7 @@ Covers the two web regressions that matter after the shared extraction:
 """
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -161,3 +162,63 @@ async def test_mode_defaults_to_send(world):
     )
     submitted = await AgentRun.get(id=submission.run_id)
     assert submitted.mode == AgentRunMode.SEND
+
+
+@pytest.mark.asyncio
+async def test_submission_dispatch_publishes_once(world):
+    submission = await agent_submission.submit_chat_run(
+        world.agent.id,
+        ChatRequest(message="hello"),
+        (world.user, None),
+        defer_dispatch=True,
+    )
+
+    await submission.dispatch()
+    await submission.dispatch()
+
+    assert len(world.published) == 1
+    assert world.published[0][0] == submission.run_id
+
+
+def test_split_run_auth_accepts_a_direct_user():
+    user = SimpleNamespace(id=uuid4())
+
+    assert agent_submission._split_run_auth(user) == (user, None)
+
+
+@pytest.mark.asyncio
+async def test_publish_without_broker_task_id_does_not_save_run(monkeypatch):
+
+    run = SimpleNamespace(id=uuid4(), save=AsyncMock())
+    task = SimpleNamespace(apply_async=MagicMock(return_value=SimpleNamespace(id="")))
+    monkeypatch.setattr("app.tasks.agent.run_agent_task", task)
+
+    await agent_submission._publish(run, {"run_id": str(run.id)})
+
+    run.save.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_submit_marks_queued_run_failed_when_dispatch_raises(world, monkeypatch):
+    from app.models.agent_run import AgentRunStatus
+    from app.services import agent_run_store
+
+    async def fail_publish(*_args):
+        raise RuntimeError("broker unavailable")
+
+    transition = AsyncMock()
+    monkeypatch.setattr(agent_submission, "_publish", fail_publish)
+    monkeypatch.setattr(agent_run_store, "transition_run_if_status", transition)
+
+    with pytest.raises(RuntimeError, match="broker unavailable"):
+        await agent_submission.submit_chat_run(
+            world.agent.id,
+            ChatRequest(message="hello"),
+            (world.user, None),
+        )
+
+    assert transition.await_args.args[1:3] == (
+        AgentRunStatus.QUEUED,
+        AgentRunStatus.FAILED,
+    )
+    assert transition.await_args.kwargs["error_code"] == "enqueue_failed"

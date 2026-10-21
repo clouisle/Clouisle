@@ -309,3 +309,276 @@ async def test_list_departments_includes_company_root_node_and_attaches_children
     ]
     assert len(tenant_requests) == 1
     assert tenant_requests[0].headers["Authorization"] == "Bearer token"
+
+
+@pytest.mark.asyncio
+async def test_malformed_token_and_directory_responses_are_rejected(monkeypatch):
+    from app.integrations import feishu
+
+    responses = [
+        {"code": 0},
+        {"code": 0, "tenant_access_token": "token"},
+        {"code": 0, "data": {"tenant": {"name": "   "}}},
+    ]
+
+    def handler(request):
+        return httpx.Response(200, json=responses.pop(0), request=request)
+
+    transport = httpx.MockTransport(handler)
+    original = httpx.AsyncClient
+
+    class Factory:
+        def __init__(self, **kwargs):
+            kwargs.pop("timeout", None)
+            kwargs.pop("follow_redirects", None)
+            kwargs.pop("trust_env", None)
+            self.client = original(transport=transport, **kwargs)
+
+        async def __aenter__(self):
+            return self.client
+
+        async def __aexit__(self, *args):
+            await self.client.aclose()
+
+    monkeypatch.setattr(feishu.httpx, "AsyncClient", Factory)
+    client = feishu.FeishuClient.__new__(feishu.FeishuClient)
+    client.app_id, client.app_secret = "app", "secret"
+    with pytest.raises(feishu.FeishuAPIError, match="access token"):
+        await client.check_connection()
+
+    with pytest.raises(feishu.FeishuAPIError, match="tenant name"):
+        await client.list_departments()
+
+
+def test_scope_extraction_ignores_bad_violations_and_uses_path_fallback():
+    assert feishu._required_scopes(
+        {"code": 99991672, "error": {"permission_violations": "invalid"}},
+        "/wiki/v2/spaces",
+    ) == ("wiki:space:retrieve", "wiki:wiki:readonly", "wiki:wiki")
+    assert (
+        feishu._required_scopes(
+            {
+                "code": 99991672,
+                "error": {"permission_violations": [None, {"subject": "bad"}]},
+            },
+            "/unknown",
+        )
+        == ()
+    )
+
+
+@pytest.mark.asyncio
+async def test_message_without_link_omits_card_button(monkeypatch):
+    from app.integrations import feishu
+    import json
+
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if request.url.path.endswith("tenant_access_token/internal"):
+            body = {"code": 0, "tenant_access_token": "token"}
+        else:
+            body = {"code": 0}
+        return httpx.Response(200, json=body, request=request)
+
+    transport = httpx.MockTransport(handler)
+    original = httpx.AsyncClient
+
+    class Factory:
+        def __init__(self, **kwargs):
+            kwargs.pop("timeout", None)
+            kwargs.pop("follow_redirects", None)
+            kwargs.pop("trust_env", None)
+            self.client = original(transport=transport, **kwargs)
+
+        async def __aenter__(self):
+            return self.client
+
+        async def __aexit__(self, *args):
+            await self.client.aclose()
+
+    monkeypatch.setattr(feishu.httpx, "AsyncClient", Factory)
+    client = feishu.FeishuClient.__new__(feishu.FeishuClient)
+    client.app_id, client.app_secret = "app", "secret"
+    await client.send_user_message("user", "Title", "body")
+    payload = json.loads(requests[-1].content)
+    card = json.loads(payload["content"])
+    assert card["body"]["elements"] == [{"tag": "markdown", "content": "body"}]
+
+
+@pytest.mark.asyncio
+async def test_directory_and_wiki_malformed_payloads_fail_closed(monkeypatch):
+    from app.integrations import feishu
+
+    responses = []
+
+    def handler(request):
+        body = responses.pop(0)
+        return httpx.Response(200, json=body, request=request)
+
+    transport = httpx.MockTransport(handler)
+    original = httpx.AsyncClient
+
+    class Factory:
+        def __init__(self, **kwargs):
+            kwargs.pop("timeout", None)
+            kwargs.pop("follow_redirects", None)
+            kwargs.pop("trust_env", None)
+            self.client = original(transport=transport, **kwargs)
+
+        async def __aenter__(self):
+            return self.client
+
+        async def __aexit__(self, *args):
+            await self.client.aclose()
+
+    monkeypatch.setattr(feishu.httpx, "AsyncClient", Factory)
+    client = feishu.FeishuClient.__new__(feishu.FeishuClient)
+    client.app_id, client.app_secret = "app", "secret"
+    client._knowledge_request_at = 0
+
+    responses.extend(
+        [
+            {"code": 0, "tenant_access_token": "token"},
+            {"code": 0, "data": {"tenant": {"name": "Acme"}}},
+            {"code": 0, "data": None},
+        ]
+    )
+    with pytest.raises(feishu.FeishuAPIError, match="department response"):
+        await client.list_departments()
+
+    responses.extend(
+        [
+            {"code": 0, "tenant_access_token": "token"},
+            {"code": 0, "data": {"items": [{"name": "missing id"}], "has_more": False}},
+        ]
+    )
+    with pytest.raises(feishu.FeishuAPIError, match="without an ID"):
+        await client.list_wiki_spaces()
+
+    responses.extend(
+        [
+            {"code": 0, "tenant_access_token": "token"},
+            {
+                "code": 0,
+                "data": {
+                    "items": [{"node_token": "n", "has_child": False}],
+                    "has_more": False,
+                },
+            },
+        ]
+    )
+    with pytest.raises(feishu.FeishuAPIError, match="without its object"):
+        await client.list_wiki_nodes("space")
+
+
+def test_login_body_rejects_non_object_response():
+    request = httpx.Request("POST", "https://example.com/login")
+    with pytest.raises(feishu.FeishuAPIError, match="unexpected body"):
+        feishu._login_body(
+            httpx.Response(200, json=["unexpected"], request=request), "login"
+        )
+
+
+@pytest.mark.asyncio
+async def test_error_without_message_uses_request_path(monkeypatch):
+    from app.integrations import feishu
+
+    def handler(request):
+        if request.url.path.endswith("tenant_access_token/internal"):
+            return httpx.Response(
+                200, json={"code": 0, "tenant_access_token": "token"}, request=request
+            )
+        return httpx.Response(400, json={"code": 123}, request=request)
+
+    transport = httpx.MockTransport(handler)
+    original = httpx.AsyncClient
+
+    class Factory:
+        def __init__(self, **kwargs):
+            kwargs.pop("timeout", None)
+            kwargs.pop("follow_redirects", None)
+            kwargs.pop("trust_env", None)
+            self.client = original(transport=transport, **kwargs)
+
+        async def __aenter__(self):
+            return self.client
+
+        async def __aexit__(self, *args):
+            await self.client.aclose()
+
+    monkeypatch.setattr(feishu.httpx, "AsyncClient", Factory)
+    client = feishu.FeishuClient.__new__(feishu.FeishuClient)
+    client.app_id, client.app_secret = "app", "secret"
+    with pytest.raises(feishu.FeishuAPIError, match="HTTP 400"):
+        await client.list_users(["dept"])
+
+
+@pytest.mark.asyncio
+async def test_user_and_wiki_pagination_validate_payload_and_duplicate_nodes(
+    monkeypatch,
+):
+    from app.integrations import feishu
+
+    responses = []
+
+    def handler(request):
+        return httpx.Response(200, json=responses.pop(0), request=request)
+
+    transport = httpx.MockTransport(handler)
+    original = httpx.AsyncClient
+
+    class Factory:
+        def __init__(self, **kwargs):
+            kwargs.pop("timeout", None)
+            kwargs.pop("follow_redirects", None)
+            kwargs.pop("trust_env", None)
+            self.client = original(transport=transport, **kwargs)
+
+        async def __aenter__(self):
+            return self.client
+
+        async def __aexit__(self, *args):
+            await self.client.aclose()
+
+    monkeypatch.setattr(feishu.httpx, "AsyncClient", Factory)
+    client = feishu.FeishuClient.__new__(feishu.FeishuClient)
+    client.app_id, client.app_secret = "app", "secret"
+    client._knowledge_request_at = 0
+    responses.extend(
+        [
+            {"code": 0, "tenant_access_token": "token"},
+            {"code": 0, "data": None},
+        ]
+    )
+    with pytest.raises(feishu.FeishuAPIError, match="user response"):
+        await client.list_users(["dept"])
+
+    responses.extend(
+        [
+            {"code": 0, "tenant_access_token": "token"},
+            {
+                "code": 0,
+                "data": {
+                    "items": [
+                        {
+                            "node_token": "n",
+                            "obj_token": "o",
+                            "obj_type": "doc",
+                            "has_child": False,
+                        },
+                        {
+                            "node_token": "n",
+                            "obj_token": "o",
+                            "obj_type": "doc",
+                            "has_child": False,
+                        },
+                    ],
+                    "has_more": False,
+                },
+            },
+        ]
+    )
+    with pytest.raises(feishu.FeishuAPIError, match="repeated node"):
+        await client.list_wiki_nodes("space")

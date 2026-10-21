@@ -850,3 +850,278 @@ async def test_recover_pending_counts_integrations_with_work(world):
     assert summary["integrations"] >= 1
     await FeishuAgentReceipt.all().delete()
     assert (await runtime.recover_pending())["integrations"] == 0
+
+
+# --- uncovered helper and recovery outcomes ---------------------------------
+
+
+@pytest.mark.parametrize(
+    ("event", "expected"),
+    [
+        ({}, ""),
+        ({"message": []}, ""),
+        ({"message": {"content": "not json"}}, ""),
+        ({"message": {"content": "[]"}}, ""),
+        ({"message": {"content": {"text": "  hello  "}}}, "hello"),
+        ({"message": {"content": {"text": 7}}}, ""),
+    ],
+)
+def test_event_text_requires_valid_text_payload(event, expected):
+    assert runtime._event_text(event) == expected
+
+
+def test_text_chunks_preserve_multibyte_boundaries_and_empty_values():
+    assert runtime._split_text_chunks("") == []
+    assert runtime._split_text_chunks("abc", limit=3) == ["abc"]
+    chunks = runtime._split_text_chunks("ab🙂cd", limit=4)
+    assert chunks == ["ab", "🙂", "cd"]
+    assert "".join(chunks) == "ab🙂cd"
+
+
+@pytest.mark.parametrize(
+    ("event", "expected"),
+    [
+        ({"sender": {"sender_type": "app", "sender_id": {"user_id": "u"}}}, []),
+        ({"sender": {"sender_type": "user", "sender_id": None}}, []),
+        (
+            {
+                "sender": {
+                    "sender_type": "user",
+                    "sender_id": {"user_id": "u", "union_id": "s", "open_id": "s"},
+                }
+            },
+            [("user_id", "u"), ("subject", "s")],
+        ),
+    ],
+)
+def test_sender_candidates_ignore_non_users_and_deduplicate(event, expected):
+    assert runtime._sender_ids(event) == expected
+
+
+@pytest.mark.asyncio
+async def test_accept_ignores_invalid_envelope_and_missing_sender(world):
+    assert await runtime.accept_message([]) is None
+    assert await runtime.accept_message(text_event(sender=None)) is None
+    event = text_event()
+    event["message"]["content"] = "{}"
+    assert await runtime.accept_message(event) is None
+    assert not await FeishuAgentReceipt.all().exists()
+
+
+@pytest.mark.asyncio
+async def test_session_helpers_handle_missing_and_terminal_mismatch(world):
+    assert (
+        await runtime._session_for(world.integration.id, CHAT_ID, world.user.id, None)
+        is None
+    )
+    assert await runtime._active_run(None) is None
+    session = await FeishuAgentSession.create(
+        integration_id=world.integration.id,
+        chat_id=CHAT_ID,
+        user_id=world.user.id,
+        agent_id=world.agent.id,
+    )
+    await runtime._clear_active_run(session, None)
+    assert session.active_run_id is None
+
+
+@pytest.mark.asyncio
+async def test_answer_cutoff_is_missing_without_owner_delivery(world):
+    from app.models.agent import Conversation
+
+    conversation = await Conversation.create(
+        agent_id=world.agent.id, user_id=world.user.id
+    )
+    run = await AgentRun.create(
+        id=uuid4(),
+        agent_id=world.agent.id,
+        conversation_id=conversation.id,
+        user_id=world.user.id,
+        mode=AgentRunMode.SEND,
+        status=AgentRunStatus.WAITING,
+        pending_tool_call_id="call-1",
+    )
+    receipt = await receipt_for(world)
+    await FeishuAgentReceipt.filter(id=receipt.id).update(run_id=run.id)
+    receipt = await FeishuAgentReceipt.get(id=receipt.id)
+    assert await runtime._answer_cutoff(run) is None
+
+
+@pytest.mark.asyncio
+async def test_apply_use_without_argument_consumes_with_command_reply(world):
+    receipt = await receipt_for(world, text="/use")
+    session = await session_for(world)
+    applied, same_session = await runtime._apply_command(
+        receipt, session, world.agent, None, "use", "", world.integration, world.user
+    )
+    assert applied and same_session.id == session.id
+    assert (await FeishuAgentReceipt.get(id=receipt.id)).status == "completed"
+    assert await FeishuAgentDelivery.filter(
+        receipt_id=receipt.id, event_key="command"
+    ).exists()
+
+
+@pytest.mark.asyncio
+async def test_use_resolution_rejects_non_index_and_unlisted_uuid(world):
+    assert (
+        await runtime._resolve_use_argument("not-an-id", world.integration, world.user)
+        is None
+    )
+    assert (
+        await runtime._resolve_use_argument(str(uuid4()), world.integration, world.user)
+        is None
+    )
+    assert (
+        await runtime._resolve_use_argument("0", world.integration, world.user) is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_dispatch_or_defer_skips_nonqueued_and_recent_receipt(world):
+    receipt = await receipt_for(world)
+    await runtime.process_pending()
+    run = world.submission.run
+    calls = []
+
+    async def dispatch(payload, dispatched_run):
+        calls.append(dispatched_run.id)
+
+    from app.services import agent_submission
+
+    old = agent_submission.dispatch_run
+    agent_submission.dispatch_run = dispatch
+    try:
+        run.status = AgentRunStatus.RUNNING
+        await runtime._dispatch_or_defer(receipt, run)
+        assert calls == []
+        run.status = AgentRunStatus.QUEUED
+        await runtime._dispatch_or_defer(receipt, run)
+        assert calls == []
+        receipt.updated_at = utcnow() - timedelta(seconds=11)
+        await runtime._dispatch_or_defer(receipt, run)
+        assert calls == [run.id]
+    finally:
+        agent_submission.dispatch_run = old
+
+
+@pytest.mark.asyncio
+async def test_delivery_authorization_rejects_unbound_noncommand(world):
+    receipt = await receipt_for(world)
+    await FeishuAgentReceipt.filter(id=receipt.id).update(agent_id=None)
+    receipt = await FeishuAgentReceipt.get(id=receipt.id)
+    assert not await runtime._delivery_authorized(receipt)
+
+
+@pytest.mark.asyncio
+async def test_client_requires_app_credentials(db):
+    integration = SimpleNamespace(config={}, credentials={})
+    with pytest.raises(Exception) as error:
+        await runtime._client_for(integration)
+    assert getattr(error.value, "msg_key", None) == "feishu_agent_channel_disabled"
+
+
+@pytest.mark.asyncio
+async def test_drain_chat_empty_queue_reports_zero(world):
+    result = await runtime._drain_chat(
+        (world.integration.id, "empty-chat", world.user.id)
+    )
+    assert result == {"processed": 0}
+
+
+@pytest.mark.asyncio
+async def test_apply_use_current_agent_keeps_existing_session(world):
+    receipt = await receipt_for(world, text=f"/use {world.agent.id}")
+    session = await session_for(world)
+    applied, resulting = await runtime._apply_command(
+        receipt,
+        session,
+        world.agent,
+        None,
+        "use",
+        str(world.agent.id),
+        world.integration,
+        world.user,
+    )
+    assert applied and resulting.id == session.id
+    response = await FeishuAgentDelivery.get(receipt_id=receipt.id, event_key="command")
+    assert world.agent.name in response.text
+    assert (await FeishuAgentReceipt.get(id=receipt.id)).status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_send_one_records_rejected_parameters(world):
+    receipt = await receipt_for(world, message_id="om_rejected")
+    await runtime._create_delivery(
+        receipt, event_key="command", sequence=0, text="reply"
+    )
+    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id)
+    await FeishuAgentDelivery.filter(id=delivery.id).update(status="sending")
+    world.transport.error = ValueError("invalid recipient parameters")
+
+    await runtime._send_one(await FeishuAgentDelivery.get(id=delivery.id))
+
+    failed = await FeishuAgentDelivery.get(id=delivery.id)
+    assert failed.status == "error"
+    assert failed.error == "feishu_agent_run_failed"
+    assert world.transport.sent == [(receipt.message_id, "reply", delivery.uuid)]
+
+
+@pytest.mark.asyncio
+async def test_send_one_defers_when_personal_feature_is_disabled(world):
+    receipt = await receipt_for(world, message_id="om_personal_disabled")
+    await runtime._create_delivery(
+        receipt, event_key="command", sequence=0, text="reply"
+    )
+    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id)
+    await FeishuAgentDelivery.filter(id=delivery.id).update(status="sending")
+    await FeishuAgentPreference.filter(
+        integration_id=world.integration.id, user_id=world.user.id
+    ).update(is_enabled=False)
+
+    await runtime._send_one(await FeishuAgentDelivery.get(id=delivery.id))
+
+    assert (await FeishuAgentDelivery.get(id=delivery.id)).status == "pending"
+    assert not world.transport.sent
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        {},
+        {"sender": None},
+        {"sender": {"sender_type": "app"}},
+    ],
+)
+def test_sender_candidates_ignore_absent_sender_structures(event):
+    assert runtime._sender_ids(event) == []
+
+
+@pytest.mark.asyncio
+async def test_resolve_integration_requires_matching_enabled_capability(world):
+    assert await runtime._resolve_integration("") is None
+    await Integration.filter(id=world.integration.id).update(enabled_capabilities=[])
+    assert await runtime._resolve_integration(APP_ID) is None
+    await Integration.filter(id=world.integration.id).update(
+        enabled_capabilities=["agent_chat"], config={"app_id": "different"}
+    )
+    assert await runtime._resolve_integration(APP_ID) is None
+
+
+@pytest.mark.asyncio
+async def test_dispatch_failure_is_recorded_for_recovery(world, monkeypatch):
+    receipt = await receipt_for(world)
+    await runtime.process_pending()
+    run = world.submission.run
+    await FeishuAgentReceipt.filter(id=receipt.id).update(
+        updated_at=utcnow() - timedelta(seconds=30)
+    )
+
+    async def fail_dispatch(payload, submitted_run):
+        raise RuntimeError("broker unavailable")
+
+    monkeypatch.setattr("app.services.agent_submission.dispatch_run", fail_dispatch)
+    await runtime._dispatch_or_defer(await FeishuAgentReceipt.get(id=receipt.id), run)
+
+    updated = await FeishuAgentReceipt.get(id=receipt.id)
+    assert updated.status == "submitted"
+    assert updated.error == "feishu_agent_run_failed"
