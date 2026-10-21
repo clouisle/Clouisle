@@ -52,7 +52,7 @@ mock.module('next-intl', () => ({ useLocale: () => instanceLocale ?? 'en', useTr
 mock.module('next/navigation', () => ({ usePathname: () => '/dashboard/observability', useRouter: () => ({ replace }), useSearchParams: () => params }))
 mock.module('lucide-react', () => {
   const Icon = () => null
-  return { Activity: Icon, AlertTriangle: Icon, Bell: Icon, Boxes: Icon, CalendarIcon: Icon, Check: Icon, ChevronDown: Icon, ChevronRight: Icon, Clock3: Icon, Database: Icon, ExternalLink: Icon, Gauge: Icon, RefreshCw: Icon, Server: Icon, Workflow: Icon }
+  return { Activity: Icon, AlertTriangle: Icon, Bell: Icon, Boxes: Icon, CalendarIcon: Icon, Check: Icon, CheckCircle2: Icon, ChevronDown: Icon, ChevronRight: Icon, Clock3: Icon, Coins: Icon, Database: Icon, ExternalLink: Icon, Gauge: Icon, RefreshCw: Icon, Server: Icon, Workflow: Icon }
 })
 mock.module('recharts', () => {
   const Chart = ({ children }: React.PropsWithChildren) => <div>{children}</div>

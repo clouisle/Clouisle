@@ -80,6 +80,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### Admin Dashboards
+
+- Unified the Activity Log, Audit Log, and Observability statistic cards with the dashboard's shared data card: muted small titles, large values, and tinted 48px icon tiles. The card is now one shared component, and the observability run-detail panel keeps a compact variant.
+
 #### Admin Observability
 
 - Aligned console tabs and filters with the shared dashboard Tabs, Select, and Input components; standardized control heights.
