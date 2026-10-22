@@ -132,9 +132,8 @@ async def _pg_schema(
                 # information_schema and then double-quoted, so the identifier
                 # cannot carry SQL: no value from the model reaches this string.
                 quoted_table = _quote_postgresql_identifier(table)
-                s_rows = await conn.fetch(  # lgtm[py/sql-injection]
-                    "SELECT * FROM " + quoted_table + " LIMIT 3"
-                )
+                sample_sql = "SELECT * FROM " + quoted_table + " LIMIT 3"
+                s_rows = await conn.fetch(sample_sql)  # lgtm[py/sql-injection]
                 if s_rows:
                     col_names = list(s_rows[0].keys())
                     samples = [
@@ -175,9 +174,10 @@ async def _pg_query(db_config: dict[str, Any], sql: str, limit: int) -> dict[str
             if "limit" not in wrapped_sql.lower():
                 wrapped_sql = f"{wrapped_sql} LIMIT {int(limit) + 1}"
 
-            # Executing caller-supplied SQL is this tool's contract: the request
-            # runs inside a read-only transaction against a database the caller
-            # configured, and no server-side credentials or app tables are used.
+            # Executing caller-supplied SQL is this tool's contract. The caller
+            # runs `validate_readonly_sql` (sqlglot: single read-only statement,
+            # length-capped) before reaching here, and the statement runs inside a
+            # read-only transaction against the database the caller configured.
             records = await conn.fetch(wrapped_sql)  # lgtm[py/sql-injection]
             if not records:
                 return {

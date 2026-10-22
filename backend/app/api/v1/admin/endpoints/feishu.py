@@ -224,7 +224,12 @@ def _feishu_failure(exc: Exception, context: str) -> BusinessError:
             error=str(exc),
         )
     if isinstance(exc, IntegrationSecretError):
-        logger.error("%s failed: %s", context, exc)
+        # Log the failure class only: the exception belongs to the credential
+        # subsystem, so its message is treated as secret-shaped even though the
+        # current text is fixed.
+        logger.error(
+            "%s failed: integration credential could not be decrypted", context
+        )
         return BusinessError(
             code=ResponseCode.BAD_REQUEST,
             msg_key="feishu_secret_undecryptable",

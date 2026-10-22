@@ -1118,6 +1118,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "The Feishu channel is no longer active. Open the conversation in the web app.",
         "zh": "飞书通道已停用，请在网页应用中查看对话。",
     },
+    "feishu_agent_chat_agent_unavailable": {
+        "en": "This agent is not available for Feishu agent chat. Choose a published agent on an active team that you can access.",
+        "zh": "该智能体不可用于飞书智能体对话。请选择您可访问的、属于有效团队的已发布智能体。",
+    },
+    "feishu_agent_chat_agent_unpublished": {
+        "en": "Only published agents can answer Feishu messages. Publish the agent first.",
+        "zh": "只有已发布的智能体才能回复飞书消息，请先发布该智能体。",
+    },
     "feishu_agent_help": {
         "en": "Commands: /agents lists the Agents you can use; /use <number> switches the Agent; /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help.",
         "zh": "命令：/智能体（/agents）查看可用智能体；/使用（/use）<编号> 切换智能体；/新对话（/new）开始新对话；/停止（/stop）停止任务并取消排队消息；/状态（/status）查看状态；/帮助（/help）查看帮助。",
@@ -1400,6 +1408,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "integration_config_valid": {
         "en": "Integration configuration is valid",
         "zh": "集成配置有效",
+    },
+    "integration_feature_disabled": {
+        "en": "This integration feature is disabled. Contact an administrator to enable it.",
+        "zh": "此集成功能已停用，请联系管理员启用。",
     },
     "integration_invalid_configuration": {
         "en": "Invalid integration configuration or capability",
@@ -2759,6 +2771,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "CAS 响应解析失败",
     },
     "sso_cas_validation_failed": {"en": "CAS validation failed", "zh": "CAS 校验失败"},
+    "sso_connection_exists": {
+        "en": "This account or Feishu identity is already linked. Unlink it first or contact an administrator.",
+        "zh": "当前账号或飞书身份已有关联，请先解除关联或联系管理员。",
+    },
     "sso_connection_not_found": {
         "en": "SSO connection not found",
         "zh": "SSO 连接未找到",
@@ -3233,6 +3249,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Webhook trigger is not enabled for this workflow",
         "zh": "此工作流未启用 Webhook 触发",
     },
+    "wechat_agent_agents_footer": {
+        "en": "Send /use <number> to switch. Wait for confirmation before sending your next message. Numbers may change when the list changes.",
+        "zh": "发送 /使用 <编号> 切换，收到成功确认后再发送新消息。列表变化时编号可能改变。",
+    },
+    "wechat_agent_agents_header": {"en": "Available Agents:", "zh": "可用智能体："},
     "wechat_agent_answer_invalid_choice": {
         "en": "Please choose one of: {options}",
         "zh": "请选择其中一项：{options}",
@@ -3281,38 +3302,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Commands: /agents lists available Agents; /use <number> switches the Agent when idle; /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help; /skip skips pending questions.",
         "zh": "命令：/智能体（/agents）查看可用智能体；/使用 <编号>（/use <number>）在空闲时切换智能体；/新对话（/new）开始新对话；/停止（/stop）停止任务并取消排队消息；/状态（/status）查看状态；/帮助（/help）查看帮助；/跳过（/skip）跳过待答问题。",
     },
-    "wechat_agent_agents_header": {
-        "en": "Available Agents:",
-        "zh": "可用智能体：",
-    },
-    "wechat_agent_agents_footer": {
-        "en": "Send /use <number> to switch. Wait for confirmation before sending your next message. Numbers may change when the list changes.",
-        "zh": "发送 /使用 <编号> 切换，收到成功确认后再发送新消息。列表变化时编号可能改变。",
-    },
-    "wechat_agent_no_agents": {
-        "en": "No published Agents are available to you.",
-        "zh": "暂无你有权使用的已发布智能体。",
-    },
-    "wechat_agent_use_missing": {
-        "en": "Send /use <number>, using a number from /agents.",
-        "zh": "请发送 /使用 <编号>，编号来自 /智能体 列表。",
-    },
-    "wechat_agent_use_invalid": {
-        "en": "That Agent is not in your available list. Send /agents to see the current list.",
-        "zh": "该智能体不在你的可用列表中，请发送 /智能体 查看当前列表。",
-    },
-    "wechat_agent_use_current": {
-        "en": "Already using {agent}. Your conversation and settings are unchanged.",
-        "zh": "正在使用 {agent}，会话与配置不变。",
-    },
-    "wechat_agent_use_selected": {
-        "en": "Now using {agent}. New messages will use it. Its previous conversation is kept; input variables use defaults and speech recognition is not configured. You can adjust these in Personal settings → WeChat iLink.",
-        "zh": "已切换到 {agent}，后续新消息将使用该智能体，并保留它原有的会话。输入变量使用默认值，语音识别模型未配置，可在个人设置 → 微信 iLink 中调整。",
-    },
-    "wechat_agent_use_variables": {
-        "en": "This Agent needs input variables. Configure it in Personal settings → WeChat iLink, then save. Your current Agent is unchanged.",
-        "zh": "该智能体需要配置输入变量，请到个人设置 → 微信 iLink 中填写并保存。当前智能体未改变。",
-    },
     "wechat_agent_media_failed": {
         "en": "The attachment could not be downloaded from WeChat. Please send it again.",
         "zh": "未能从微信下载该附件，请重新发送。",
@@ -3324,6 +3313,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "wechat_agent_new_conversation": {
         "en": "Your next message will start a new conversation.",
         "zh": "下一条消息将开始新的对话。",
+    },
+    "wechat_agent_no_agents": {
+        "en": "No published Agents are available to you.",
+        "zh": "暂无你有权使用的已发布智能体。",
     },
     "wechat_agent_no_output": {
         "en": "The Agent finished without producing a visible reply.",
@@ -3355,6 +3348,26 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Unknown command. Send /help to see available commands.",
         "zh": "未知命令，发送 /帮助（/help）查看可用命令。",
     },
+    "wechat_agent_use_current": {
+        "en": "Already using {agent}. Your conversation and settings are unchanged.",
+        "zh": "正在使用 {agent}，会话与配置不变。",
+    },
+    "wechat_agent_use_invalid": {
+        "en": "That Agent is not in your available list. Send /agents to see the current list.",
+        "zh": "该智能体不在你的可用列表中，请发送 /智能体 查看当前列表。",
+    },
+    "wechat_agent_use_missing": {
+        "en": "Send /use <number>, using a number from /agents.",
+        "zh": "请发送 /使用 <编号>，编号来自 /智能体 列表。",
+    },
+    "wechat_agent_use_selected": {
+        "en": "Now using {agent}. New messages will use it. Its previous conversation is kept; input variables use defaults and speech recognition is not configured. You can adjust these in Personal settings → WeChat iLink.",
+        "zh": "已切换到 {agent}，后续新消息将使用该智能体，并保留它原有的会话。输入变量使用默认值，语音识别模型未配置，可在个人设置 → 微信 iLink 中调整。",
+    },
+    "wechat_agent_use_variables": {
+        "en": "This Agent needs input variables. Configure it in Personal settings → WeChat iLink, then save. Your current Agent is unchanged.",
+        "zh": "该智能体需要配置输入变量，请到个人设置 → 微信 iLink 中填写并保存。当前智能体未改变。",
+    },
     "wechat_agent_variables_invalid": {
         "en": "Check the Agent input variables, including required values, types and limits.",
         "zh": "请检查 Agent 输入变量的必填项、类型和取值限制。",
@@ -3382,10 +3395,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "wechat_binary_content": {
         "en": "The file contents do not match the declared document format.",
         "zh": "文件内容与声明的文档格式不符。",
-    },
-    "integration_feature_disabled": {
-        "en": "This integration feature is disabled. Contact an administrator to enable it.",
-        "zh": "此集成功能已停用，请联系管理员启用。",
     },
     "wechat_binding_disconnected": {
         "en": "The WeChat connection has been disconnected.",
