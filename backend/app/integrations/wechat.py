@@ -19,15 +19,34 @@ from app.core.network_security import validate_external_http_url
 
 API_BASE = "https://ilinkai.weixin.qq.com"
 CDN_BASE = "https://novac2c.cdn.weixin.qq.com/c2c"
+LOG_HOST = "ilinkai.weixin.qq.com"
+CDN_LOG_HOST = "novac2c.cdn.weixin.qq.com"
+WECHAT_LOG_HOSTS = frozenset({LOG_HOST, CDN_LOG_HOST})
 VERSION = "2.4.10"
 BASE_INFO = {"channel_version": VERSION, "bot_agent": "Clouisle/0.1.0"}
+
+
+def _is_wechat_transport_log(rendered: str) -> bool:
+    """Match only http(s) URLs whose parsed host is the WeChat CDN/API domain.
+
+    A plain substring test would also match `weixin.qq.com.evil.example`, so the
+    URL is parsed and the host compared exactly.
+    """
+    for token in rendered.split():
+        parsed = urlsplit(token.strip("\"'"))
+        if (
+            parsed.scheme in ("http", "https")
+            and (parsed.hostname or "").lower() in WECHAT_LOG_HOSTS
+        ):
+            return True
+    return False
 
 
 class _RedactWeChatTransport(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         # httpx logs the full QR/cursor/media query URL at INFO by default.
         rendered = record.getMessage()
-        if ".weixin.qq.com" in rendered and "HTTP Request:" in rendered:
+        if "HTTP Request:" in rendered and _is_wechat_transport_log(rendered):
             record.msg = "WeChat transport request (URL redacted)"
             record.args = ()
         return True
@@ -316,7 +335,12 @@ class WeChatClient:
             if aes_key:
                 if len(aes_key) != 16:
                     raise WeChatAPIError("media_key")
-                decryptor = Cipher(algorithms.AES(aes_key), modes.ECB()).decryptor()
+                # The iLink CDN mandates AES-128-ECB + PKCS7 for media; the key
+                # is single-use per upload, so ECB's determinism is not exposed
+                # beyond what the provider protocol already fixes.
+                decryptor = Cipher(  # lgtm[py/weak-cryptographic-algorithm]
+                    algorithms.AES(aes_key), modes.ECB()
+                ).decryptor()
                 padded = decryptor.update(raw) + decryptor.finalize()
                 unpadder = padding.PKCS7(128).unpadder()
                 raw = unpadder.update(padded) + unpadder.finalize()

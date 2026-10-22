@@ -568,7 +568,10 @@ def _aes_ecb_decrypt(ciphertext: bytes, key: bytes) -> bytes:
     from cryptography.hazmat.primitives import padding
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-    decryptor = Cipher(algorithms.AES(key), modes.ECB()).decryptor()
+    # Mirrors the iLink CDN media format (AES-128-ECB + PKCS7) under test.
+    decryptor = Cipher(  # lgtm[py/weak-cryptographic-algorithm]
+        algorithms.AES(key), modes.ECB()
+    ).decryptor()
     padded = decryptor.update(ciphertext) + decryptor.finalize()
     unpadder = padding.PKCS7(128).unpadder()
     return unpadder.update(padded) + unpadder.finalize()

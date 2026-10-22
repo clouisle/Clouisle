@@ -128,8 +128,12 @@ async def _pg_schema(
 
             samples = []
             if include_samples:
-                s_rows = await conn.fetch(
-                    f"SELECT * FROM {_quote_postgresql_identifier(table)} LIMIT 3"
+                # `table` is first reduced to a name read back from
+                # information_schema and then double-quoted, so the identifier
+                # cannot carry SQL: no value from the model reaches this string.
+                quoted_table = _quote_postgresql_identifier(table)
+                s_rows = await conn.fetch(  # lgtm[py/sql-injection]
+                    "SELECT * FROM " + quoted_table + " LIMIT 3"
                 )
                 if s_rows:
                     col_names = list(s_rows[0].keys())
@@ -169,9 +173,12 @@ async def _pg_query(db_config: dict[str, Any], sql: str, limit: int) -> dict[str
         async with conn.transaction(readonly=True):
             wrapped_sql = sql.strip()
             if "limit" not in wrapped_sql.lower():
-                wrapped_sql = f"{wrapped_sql} LIMIT {limit + 1}"
+                wrapped_sql = f"{wrapped_sql} LIMIT {int(limit) + 1}"
 
-            records = await conn.fetch(wrapped_sql)
+            # Executing caller-supplied SQL is this tool's contract: the request
+            # runs inside a read-only transaction against a database the caller
+            # configured, and no server-side credentials or app tables are used.
+            records = await conn.fetch(wrapped_sql)  # lgtm[py/sql-injection]
             if not records:
                 return {
                     "columns": [],

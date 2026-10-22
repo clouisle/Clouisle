@@ -489,6 +489,26 @@ def test_feishu_source_validators_reject_blank_required_names(value):
         SourceCreate(knowledge_base_id=uuid4(), space_id="space", name=value)
 
 
+def test_feishu_failure_logging_never_contains_provider_body(caplog):
+    secret_detail = "provider echoed tenant-app-secret"
+
+    with caplog.at_level("WARNING", logger="app.api.v1.admin.endpoints.feishu"):
+        feishu._feishu_failure(
+            FeishuAPIError(
+                "Feishu API HTTP 403 (code 131006): denied",
+                detail=secret_detail,
+                code=131006,
+                status_code=403,
+            ),
+            "Feishu test message",
+        )
+
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    assert "code=131006" in logged
+    assert "status=403" in logged
+    assert secret_detail not in logged
+
+
 def test_optional_feishu_scope_validation_and_failure_mapping():
     from app.integrations.feishu import FeishuDepartment
 

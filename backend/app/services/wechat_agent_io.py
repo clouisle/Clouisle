@@ -560,7 +560,10 @@ def _encrypt_media(content: bytes) -> tuple[bytes, str, str]:
     key = secrets.token_bytes(16)
     padder = padding.PKCS7(128).padder()
     padded = padder.update(content) + padder.finalize()
-    encryptor = Cipher(algorithms.AES(key), modes.ECB()).encryptor()
+    # iLink CDN media must be AES-128-ECB + PKCS7; the key is fresh per upload.
+    encryptor = Cipher(  # lgtm[py/weak-cryptographic-algorithm]
+        algorithms.AES(key), modes.ECB()
+    ).encryptor()
     ciphertext = encryptor.update(padded) + encryptor.finalize()
     return ciphertext, key.hex(), hashlib.md5(content).hexdigest()
 

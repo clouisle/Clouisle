@@ -204,10 +204,19 @@ def _feishu_failure(exc: Exception, context: str) -> BusinessError:
 
     `BAD_REQUEST` is used because the frontend renders backend messages for this code;
     validation errors are reserved for field-level form validation and are not toasted.
+
+    Only structured fields are logged. `FeishuAPIError.detail` holds the raw provider
+    response, which may echo the tenant app secret, so it stays on the exception (for
+    local inspection) and never reaches a log sink.
     """
     if isinstance(exc, FeishuAPIError):
         logger.warning(
-            "%s rejected by Feishu: %s | response=%s", context, exc, exc.detail
+            "%s rejected by Feishu: %s | code=%s status=%s scopes=%s",
+            context,
+            exc,
+            exc.code,
+            exc.status_code,
+            ",".join(exc.required_scopes) or "-",
         )
         return BusinessError(
             code=ResponseCode.BAD_REQUEST,

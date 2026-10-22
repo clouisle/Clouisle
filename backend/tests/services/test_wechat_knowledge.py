@@ -485,7 +485,10 @@ async def test_real_media_decryption_and_size_boundary(monkeypatch):
     plaintext = b"The original file bytes"
     padder = padding.PKCS7(128).padder()
     padded = padder.update(plaintext) + padder.finalize()
-    encryptor = Cipher(algorithms.AES(key), modes.ECB()).encryptor()
+    # Mirrors the iLink CDN media format (AES-128-ECB + PKCS7) under test.
+    encryptor = Cipher(  # lgtm[py/weak-cryptographic-algorithm]
+        algorithms.AES(key), modes.ECB()
+    ).encryptor()
     encrypted = encryptor.update(padded) + encryptor.finalize()
 
     async def handler(request):

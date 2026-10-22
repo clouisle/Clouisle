@@ -76,6 +76,32 @@ def test_official_url_normalizes_bot_base_and_allows_media_query():
         )
 
 
+def test_transport_filter_redacts_only_parsed_wechat_hosts():
+    filt = wechat._RedactWeChatTransport()
+
+    for message in (
+        "HTTP Request: GET https://ilinkai.weixin.qq.com/ilink/bot/getupdates?cursor=secret",
+        "HTTP Request: GET https://novac2c.cdn.weixin.qq.com/c2c/download?x=1",
+    ):
+        record = logging.LogRecord(
+            "httpx", logging.INFO, __file__, 1, message, (), None
+        )
+        assert filt.filter(record) is True
+        assert record.getMessage() == "WeChat transport request (URL redacted)"
+
+    # A look-alike host must not be treated as WeChat: the previous substring
+    # test would have redacted it (and CodeQL flagged the reverse case).
+    for message in (
+        "HTTP Request: GET https://weixin.qq.com.evil.example/c2c",
+        "HTTP Request: GET https://api.example.com",
+    ):
+        record = logging.LogRecord(
+            "httpx", logging.INFO, __file__, 1, message, (), None
+        )
+        assert filt.filter(record) is True
+        assert record.getMessage() == message
+
+
 def test_transport_filter_redacts_wechat_request_urls():
     filt = wechat._RedactWeChatTransport()
     record = logging.LogRecord(
@@ -333,7 +359,10 @@ def _encrypt(plaintext: bytes) -> tuple[bytes, str]:
     key = bytes(range(16))
     padder = padding.PKCS7(128).padder()
     padded = padder.update(plaintext) + padder.finalize()
-    encryptor = Cipher(algorithms.AES(key), modes.ECB()).encryptor()
+    # Mirrors the iLink CDN media format (AES-128-ECB + PKCS7) under test.
+    encryptor = Cipher(  # lgtm[py/weak-cryptographic-algorithm]
+        algorithms.AES(key), modes.ECB()
+    ).encryptor()
     return encryptor.update(padded) + encryptor.finalize(), key.hex()
 
 
