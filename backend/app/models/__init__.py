@@ -97,6 +97,7 @@ from .wechat_knowledge import (
     WeChatKnowledgeItem,
     WeChatKnowledgeContent,
     WeChatKnowledgeCollection,
+    WeChatPollBatch,
 )
 from .wechat_agent import (
     WeChatAgentConfig,
@@ -146,6 +147,7 @@ __all__ = [
     "WeChatKnowledgeItem",
     "WeChatKnowledgeContent",
     "WeChatKnowledgeCollection",
+    "WeChatPollBatch",
     "WeChatAgentConfig",
     "WeChatAgentSession",
     "WeChatAgentReceipt",

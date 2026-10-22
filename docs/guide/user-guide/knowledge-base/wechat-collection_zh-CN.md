@@ -79,16 +79,20 @@ Agent 使用扫码用户的真实身份，继续执行应用原有的模型、�
 
 ## 部署要求
 
-先启动 API，由现有数据库初始化流程创建采集表，然后启动现有的 Celery worker **和** Beat 调度器。Beat 每三秒轮询一次微信，并交给 worker 落库；**不需要再单独部署微信接收进程**。
+先启动 API 创建采集及轮询表，再启动普通 Celery worker 和 Beat。微信轮询进入普通 worker 已消费的 `default` 队列，不需要专用进程。任一功能启用时，Beat 每三秒派发有界批次，优先处理等待最久的绑定，并限制并发和全局在途数量；过载时实际轮询间隔会变长，不会无限灌入任务。
 
-处理微信任务的 worker 需要访问 PostgreSQL、Redis，以及微信官方 iLink 和媒体 CDN 的 HTTPS 出站地址。消息接入（`app.tasks.wechat_agent.*`）与 Agent 运行共用 `agent` 队列，采集处理使用 `knowledge` 队列。Beat 每分钟恢复采集任务，每三秒重试 Agent 收件与未发出的回复。PostgreSQL 锁串行化处理；凭据、收件载荷、游标和回复上下文 token 都使用稳定的 `SECRET_KEY` 加密，API 与 worker 必须使用同一密钥。远程存储部署复用现有的内部上传网关，不需要上传目录。
+轮询 worker 需要访问 PostgreSQL、Redis 及微信官方 iLink HTTPS 接口；每批复用有界 HTTP 连接池，不共享账号认证信息。只有新增 Agent 收件才唤醒 `agent` 队列，只有新增采集收件才唤醒 `knowledge`；空批次和重放消息不产生业务任务。空消息且游标不变时跳过接入写入，空消息但游标变化时仍安全提交。Agent worker 还需访问媒体 CDN。对应功能启用时，Beat 每分钟恢复采集任务，每三秒公平推进有待处理 Agent 收件或未发送回复的绑定。PostgreSQL 锁串行化处理，凭据和收件载荷仍使用稳定的 `SECRET_KEY` 加密；远程存储复用内部上传网关。
 
 平台功能开关决定 Beat 轮询哪些用途，以及 worker 处理哪些任务。新安装默认关闭两项功能；首次升级根据现有已授权且正在使用的个人连接保留对应功能，不把个人凭据复制到集成记录。后续启动不会覆盖管理员的功能选择。`GET /api/v1/wechat-knowledge/features` 向已登录用户返回当前 `agent_chat` 与 `knowledge_collection` 可用性。
+
+Beat 直接读取数据库中已保存的平台功能开关，正常情况下每两秒同步一次，并移除已关闭功能的调度项，而不是继续派发空任务。两项功能全关后，完成同步即停止所有微信定时派发；重新开启会恢复对应调度，无需重启 Beat。已入队任务仍检查当前功能状态，已经开始的操作可能完成。数据库读取失败时暂停集成调度，不影响其他维护任务。升级时需重启一次 Beat 加载 `IntegrationScheduler`，之后切换开关无需重启。
+
+轮询参数仍为 `WECHAT_POLL_BATCH_SIZE`（64）、`WECHAT_POLL_CONCURRENCY`（16）、`WECHAT_POLL_MAX_BATCHES`（全局 8）。轮询与其他任务共享普通 worker 槽位，各副本参数须一致。每批最多执行 30 秒，通过 90 秒领取租约恢复。切换见[升级及索引说明](../../operations/upgrading_zh-CN.md#微信轮询升级切换)；默认值不是生产容量承诺。
 
 Agent 模式还需要就绪的 Sandbox Worker，用于沙箱工具和已有会话工作区的检查点保存。该服务必须与普通 worker、Beat 一起保持运行；移除微信接收进程不等于移除沙箱依赖。macOS 本地开发请在仓库根目录运行 `backend/.venv/bin/python main.py sandbox-worker --local-dev -c 1`，使用包含 Bubblewrap 的 Linux 容器，不要通过关闭隔离来绕过缺少 `bwrap` 的问题。没有就绪的沙箱 worker 时，恢复／检查点保存可能超时，微信会提示 Agent 任务未完成；应检查对应 AgentRun 错误并恢复 worker 后再重试。
 
 > [!IMPORTANT]
-> 本次发布把采集目标和识别模型从连接记录移到独立的可选配置，并删除旧列。该切换**不向后兼容**：升级前必须停止仍在运行旧 schema 的进程，并把 API、Celery worker 和 Beat 作为同一步骤重启。
+> 升级前先停 Beat。若曾部署专用轮询 worker，先排空其 `wechat_poll` 队列再停止；无法排空时，等待旧领取租约到期，由新调度器恢复。启动匹配版本 API、普通 worker 和 Beat，不要混用新旧轮询实现。
 
 微信客户端支持情况、账号授权与部署网络准入由上游控制。正式开放前，需要在实际部署网络使用真实账号验收扫码、文章／卡片投递、附件下载和手机回复。
 

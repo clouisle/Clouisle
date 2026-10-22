@@ -78,3 +78,33 @@ async def test_recovery_task_delivers_outbox_after_receipt_completed(
     assert world.transport.sent == [
         (receipt.message_id, "Recovered answer", delivery.uuid)
     ]
+
+
+@pytest.mark.asyncio
+async def test_disabled_channel_preserves_pending_receipt_and_outbox(
+    world, recover_task
+):
+    from app.models.integration import Integration
+
+    receipt = await receipt_for(world, message_id="om_paused_recovery")
+    delivery = await FeishuAgentDelivery.create(
+        receipt=receipt,
+        event_key="notice",
+        sequence=0,
+        uuid=str(uuid4()),
+        text="Waiting answer",
+    )
+    await Integration.filter(id=world.integration.id).update(enabled_capabilities=[])
+
+    assert await recover_task() == {"integrations": 0, "processed": 0}
+    assert (await FeishuAgentReceipt.get(id=receipt.id)).status == "pending"
+    assert (await FeishuAgentDelivery.get(id=delivery.id)).status == "pending"
+    assert world.transport.sent == []
+    assert await AgentRun.all().count() == 0
+
+    await Integration.filter(id=world.integration.id).update(
+        enabled_capabilities=["agent_chat"]
+    )
+    assert await recover_task() == {"integrations": 1, "processed": 1}
+    assert (await FeishuAgentReceipt.get(id=receipt.id)).status == "submitted"
+    assert (await FeishuAgentDelivery.get(id=delivery.id)).status == "sent"

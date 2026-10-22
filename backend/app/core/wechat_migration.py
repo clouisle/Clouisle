@@ -7,6 +7,7 @@ from app.core.init_data import execute_startup_migration_query
 
 async def migrate_wechat_knowledge_schema() -> None:
     connection = Tortoise.get_connection("default")
+    await migrate_wechat_polling_state(connection)
     await migrate_wechat_connection_configuration()
     await migrate_wechat_purpose()
     if connection.capabilities.dialect == "sqlite":
@@ -36,6 +37,44 @@ async def migrate_wechat_knowledge_schema() -> None:
         "UPDATE documents SET doc_type = 'markdown' WHERE doc_type = 'md'",
     )
     await restore_wechat_document_sources()
+
+
+async def migrate_wechat_polling_state(connection) -> None:
+    """Add scheduling columns before legacy table rebuilds use current models.
+
+    Large-table indexes are installed concurrently by the deployment runbook,
+    not by the startup migration's short lock/statement deadlines.
+    """
+    definitions = {
+        "poll_next_at": "TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        "poll_claim": "UUID NULL",
+        "poll_claim_expires_at": "TIMESTAMPTZ NULL",
+        "agent_recovery_at": "TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
+    }
+    if connection.capabilities.dialect == "sqlite":
+        columns = await connection.execute_query_dict(
+            'PRAGMA table_info("wechat_knowledge_bindings")'
+        )
+        names = {row["name"] for row in columns}
+        if not names:
+            return
+        for name in definitions:
+            if name not in names:
+                kind = "VARCHAR(36)" if name == "poll_claim" else "TIMESTAMP"
+                await connection.execute_query(
+                    f'ALTER TABLE "wechat_knowledge_bindings" ADD COLUMN "{name}" {kind} NULL'
+                )
+        for name in ("poll_next_at", "agent_recovery_at"):
+            await connection.execute_query(
+                f'UPDATE "wechat_knowledge_bindings" SET "{name}" = CURRENT_TIMESTAMP WHERE "{name}" IS NULL'
+            )
+        return
+    for name, definition in definitions.items():
+        await execute_startup_migration_query(
+            connection,
+            'ALTER TABLE IF EXISTS "wechat_knowledge_bindings" '
+            f'ADD COLUMN IF NOT EXISTS "{name}" {definition}',
+        )
 
 
 async def migrate_wechat_purpose() -> None:

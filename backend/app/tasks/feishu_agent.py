@@ -46,6 +46,10 @@ def recover_pending_task() -> dict:
 
 async def _recover() -> dict:
     from app.services.feishu_agent_runtime import process_pending, recover_pending
+    from app.services.integration_features import enabled_features
+
+    if "agent_chat" not in await enabled_features("feishu"):
+        return {"integrations": 0, "processed": 0}
 
     summary = await recover_pending()
     summary["processed"] = (await process_pending()).get("processed", 0)

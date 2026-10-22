@@ -276,7 +276,7 @@ async def test_switch_is_visible_in_web_summary_and_receiver_snapshot(world):
         generation=world.binding.generation,
         cursor=world.binding.cursor,
     )
-    assert await receiver.accept_updates(stale, {"msgs": []}) == []
+    assert (await receiver.accept_updates(stale, {"msgs": []})).accepted == 0
 
     accepted = await accept_one(world, "next message", "after-switch")
     assert accepted.agent_id == second.id

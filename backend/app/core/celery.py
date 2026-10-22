@@ -49,6 +49,7 @@ celery_app = Celery(
         "app.tasks.feishu_knowledge",
         "app.tasks.wechat_knowledge",
         "app.tasks.wechat_agent",
+        "app.tasks.wechat_poll",
         "app.tasks.feishu_agent",
         "app.tasks.usage",
         "app.tasks.workflow",
@@ -70,6 +71,7 @@ celery_app.conf.update(
     result_serializer="json",
     timezone=settings.TIMEZONE,
     enable_utc=True,
+    beat_scheduler="app.core.integration_scheduler:IntegrationScheduler",
     task_default_queue="default",
     # Task execution settings
     task_acks_late=True,
@@ -97,6 +99,7 @@ celery_app.conf.task_routes = {
     "app.tasks.feishu_knowledge.*": {"queue": "knowledge"},
     "app.tasks.wechat_knowledge.*": {"queue": "knowledge"},
     "app.tasks.wechat_agent.*": {"queue": "agent"},
+    "app.tasks.wechat_poll.*": {"queue": "default"},
     "app.tasks.feishu_agent.*": {"queue": "agent"},
     "app.tasks.usage.*": {"queue": "default"},
     "app.tasks.workflow.*": {"queue": "workflow"},
@@ -120,31 +123,6 @@ celery_app.conf.task_routes = {
 
 # Beat schedule for periodic tasks
 celery_app.conf.beat_schedule = {
-    "poll-wechat-bindings": {
-        "task": "app.tasks.wechat_agent.poll_bindings_task",
-        "schedule": 3.0,
-        "options": {"queue": "agent"},
-    },
-    "recover-wechat-agent-bindings": {
-        "task": "app.tasks.wechat_agent.recover_bindings_task",
-        "schedule": 3.0,
-        "options": {"queue": "agent"},
-    },
-    "recover-feishu-agent-channel": {
-        "task": "app.tasks.feishu_agent.recover_pending_task",
-        "schedule": 10.0,
-        "options": {"queue": "agent"},
-    },
-    "recover-wechat-knowledge-receipts": {
-        "task": "app.tasks.wechat_knowledge.recover_receipts_task",
-        "schedule": 60.0,
-        "options": {"queue": "knowledge"},
-    },
-    "dispatch-feishu-knowledge-sync": {
-        "task": "app.tasks.feishu_knowledge.dispatch_due_sources_task",
-        "schedule": 60.0,
-        "options": {"queue": "knowledge"},
-    },
     # Reset daily usage every day at 00:00
     "reset-daily-usage": {
         "task": "tasks.reset_daily_usage",

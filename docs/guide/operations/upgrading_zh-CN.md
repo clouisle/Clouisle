@@ -10,6 +10,14 @@
 - [ ] 确认回滚 image tag/digest 和可用的备份恢复路径。
 - [ ] 安排并通知维护窗口。
 
+## 微信轮询升级切换
+
+微信有界轮询现由普通 worker 消费 `default` 队列，无需专用服务。升级前先停 Beat；若曾部署专用轮询 worker，先排空其 `wechat_poll` 队列再停止，或等待旧的 90 秒领取租约到期，由新调度器恢复。启动匹配版本 API 升级 schema，再启动普通 worker、Beat。轮询与其他任务共享 worker 槽位，不保留旧队列兼容消费者。
+
+大规模启用前，请在 PostgreSQL 自动提交模式下执行[英文指南中的四条并发建索引语句](upgrading.md#wechat-polling-cutover)，每条语句都必须在事务外运行。索引不放入 API 启动迁移，避免大表构建超过启动超时；`IF NOT EXISTS` 不会修复无效索引，失败后须检查有效性并重新构建。
+
+使用有代表性的数据对到期轮询和恢复查询执行 `EXPLAIN (ANALYZE, BUFFERS)`。各副本使用相同轮询参数；增加副本不会提高全局 `WECHAT_POLL_MAX_BATCHES` 上限。恢复流量前验证新消息接入、空消息行为、Agent 回复、开关启停及 worker 崩溃恢复。
+
 ## Docker Compose 升级
 
 在包含当前 `docker-compose.yml` 和 `.env` 的安装目录执行（安装器默认目录为 `/opt/clouisle`）。以下命令不会本地构建镜像；请先在 Compose/环境配置中替换为已发布的 `IMAGE_TAG`。
@@ -20,7 +28,7 @@ git pull          # 仅源代码 checkout 需要；安装器部署可能没有 G
 
 # 拉取固定版本并重建服务。这是停止/重建操作，不是滚动重启。
 docker compose pull
-docker compose up -d --force-recreate
+docker compose up -d --force-recreate --remove-orphans
 
 # 验证所有服务和 API 健康检查
 docker compose ps
@@ -44,7 +52,7 @@ docker push "$REGISTRY/clouisle-sandbox-worker:$IMAGE_TAG"
 
 ## Kubernetes 升级
 
-提供的 Kubernetes 部署使用 `clouisle` 命名空间，其中 `api`、`worker`、`beat` 和 `frontend` 为 Deployment，`sandbox-worker` 为 DaemonSet（每个符合条件的节点一个 Pod）。从仓库根目录构建并发布不可变 tag，更新应用工作负载，再逐一观察 rollout：
+提供的 Kubernetes 部署包含 `api`、`worker`、`beat` 和 `frontend` Deployment，以及 `sandbox-worker` DaemonSet。微信轮询复用普通 worker，不单独部署。
 
 若现有安装仍运行旧版 `sandbox-worker` Deployment，请先排空其任务并删除该 Deployment，再应用更新后的 manifest；不要让两个 controller 同时挂载同一沙箱本地路径。应用 `deploy/k8s/clouisle.yaml` 创建 DaemonSet 后，再执行下方镜像更新命令。
 

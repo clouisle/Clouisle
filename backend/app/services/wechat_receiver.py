@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from dataclasses import dataclass, field
 from uuid import uuid4
+
+import httpx
 
 from tortoise.transactions import in_transaction
 
@@ -25,10 +28,54 @@ from app.services.integration_features import enabled_features
 logger = logging.getLogger(__name__)
 
 
-async def accept_updates(binding: WeChatKnowledgeBinding, response: dict) -> list[str]:
-    """Atomically commit receipt snapshots before acknowledging the upstream cursor."""
-    accepted_agent = False
-    ids = []
+@dataclass
+class UpdateAcceptResult:
+    agent_receipt_ids: list[str] = field(default_factory=list)
+    knowledge_receipt_ids: list[str] = field(default_factory=list)
+
+    @property
+    def accepted(self) -> int:
+        return len(self.agent_receipt_ids) + len(self.knowledge_receipt_ids)
+
+
+def _candidate_messages(
+    binding: WeChatKnowledgeBinding, response: dict
+) -> list[tuple[str, dict]]:
+    messages = response.get("msgs") or []
+    if not isinstance(messages, list):
+        raise WeChatAPIError("invalid_messages")
+    candidates = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        if (
+            message.get("from_user_id") != binding.wechat_user_id
+            or message.get("message_type") != 1
+            or message.get("message_state") != 2
+        ):
+            continue
+        identifier = message.get("message_id")
+        if identifier is None or len(str(identifier)) > 128:
+            continue
+        candidates.append((str(identifier), message))
+    return candidates
+
+
+async def accept_updates(
+    binding: WeChatKnowledgeBinding, response: dict
+) -> UpdateAcceptResult:
+    """Atomically commit new receipt snapshots before acknowledging the cursor."""
+    candidates = _candidate_messages(binding, response)
+    cursor = response.get("get_updates_buf")
+    prior_cursor = decrypt_secret(binding.cursor) if binding.cursor else ""
+    if (
+        not candidates
+        and (cursor is None or str(cursor) == prior_cursor)
+        and not getattr(binding, "last_error", None)
+    ):
+        return UpdateAcceptResult()
+
+    result = UpdateAcceptResult()
     async with in_transaction() as db:
         current = (
             await WeChatKnowledgeBinding.filter(id=binding.id)
@@ -40,70 +87,65 @@ async def accept_updates(binding: WeChatKnowledgeBinding, response: dict) -> lis
             not current
             or current.status != "connected"
             or current.generation != binding.generation
+            or (
+                getattr(binding, "poll_claim", None) is not None
+                and (
+                    current.poll_claim != getattr(binding, "poll_claim", None)
+                    or current.poll_claim_expires_at is None
+                    or current.poll_claim_expires_at <= utcnow()
+                )
+            )
             or current.cursor != binding.cursor
         ):
-            return []
+            return result
         feature = "agent_chat" if current.purpose == "agent" else current.purpose
         enabled = await enabled_features("wechat")
         if not enabled or (current.purpose != "none" and feature not in enabled):
-            return []
-        messages = response.get("msgs") or []
-        if not isinstance(messages, list):
-            raise WeChatAPIError("invalid_messages")
-        collection = (
-            await WeChatKnowledgeCollection.filter(binding_id=current.id)
-            .using_db(db)
-            .first()
-        )
-        agent_config = (
-            await WeChatAgentConfig.filter(binding_id=current.id).using_db(db).first()
-        )
-        for message in messages:
-            if not isinstance(message, dict):
-                continue
-            if (
-                message.get("from_user_id") != current.wechat_user_id
-                or message.get("message_type") != 1
-                or message.get("message_state") != 2
-            ):
-                continue
-            identifier = message.get("message_id")
-            if identifier is None or len(str(identifier)) > 128:
-                continue
-            if (
-                await WeChatAgentReceipt.filter(
-                    binding_id=current.id, message_id=str(identifier)
-                )
+            return result
+
+        collection = None
+        agent_config = None
+        if candidates and current.purpose == "knowledge_collection":
+            collection = (
+                await WeChatKnowledgeCollection.filter(binding_id=current.id)
                 .using_db(db)
-                .exists()
-            ):
-                continue
-            if (
-                current.purpose == "agent"
-                and await WeChatKnowledgeReceipt.filter(
-                    binding_id=current.id, message_id=str(identifier)
-                )
+                .first()
+            )
+        elif candidates and current.purpose == "agent":
+            agent_config = (
+                await WeChatAgentConfig.filter(binding_id=current.id)
                 .using_db(db)
-                .exists()
-            ):
-                continue
+                .first()
+            )
+
+        for identifier, message in candidates:
             if current.purpose == "agent":
-                if agent_config and agent_config.agent_id:
-                    await WeChatAgentReceipt.get_or_create(
-                        binding_id=current.id,
-                        message_id=str(identifier),
-                        using_db=db,
-                        defaults={
-                            "user_id": current.user_id,
-                            "agent_id": agent_config.agent_id,
-                            "variables": agent_config.variables,
-                            "stt_model_id": agent_config.stt_model_id,
-                            "payload": encrypt_secret(
-                                json.dumps(message, ensure_ascii=False)
-                            ),
-                        },
+                if not agent_config or not agent_config.agent_id:
+                    continue
+                if (
+                    await WeChatKnowledgeReceipt.filter(
+                        binding_id=current.id, message_id=identifier
                     )
-                    accepted_agent = True
+                    .using_db(db)
+                    .exists()
+                ):
+                    continue
+                receipt, created = await WeChatAgentReceipt.get_or_create(
+                    binding_id=current.id,
+                    message_id=identifier,
+                    using_db=db,
+                    defaults={
+                        "user_id": current.user_id,
+                        "agent_id": agent_config.agent_id,
+                        "variables": agent_config.variables,
+                        "stt_model_id": agent_config.stt_model_id,
+                        "payload": encrypt_secret(
+                            json.dumps(message, ensure_ascii=False)
+                        ),
+                    },
+                )
+                if created:
+                    result.agent_receipt_ids.append(str(receipt.id))
                 continue
             if (
                 current.purpose != "knowledge_collection"
@@ -111,9 +153,17 @@ async def accept_updates(binding: WeChatKnowledgeBinding, response: dict) -> lis
                 or not collection.knowledge_base_id
             ):
                 continue
-            receipt, _ = await WeChatKnowledgeReceipt.get_or_create(
+            if (
+                await WeChatAgentReceipt.filter(
+                    binding_id=current.id, message_id=identifier
+                )
+                .using_db(db)
+                .exists()
+            ):
+                continue
+            knowledge_receipt, created = await WeChatKnowledgeReceipt.get_or_create(
                 binding_id=current.id,
-                message_id=str(identifier),
+                message_id=identifier,
                 using_db=db,
                 defaults={
                     "user_id": current.user_id,
@@ -123,19 +173,27 @@ async def accept_updates(binding: WeChatKnowledgeBinding, response: dict) -> lis
                     "payload": encrypt_secret(json.dumps(message, ensure_ascii=False)),
                 },
             )
-            ids.append(str(receipt.id))
-        cursor = response.get("get_updates_buf")
-        if cursor:
+            if created:
+                result.knowledge_receipt_ids.append(str(knowledge_receipt.id))
+
+        cursor_changed = cursor is not None and str(cursor) != prior_cursor
+        if cursor_changed:
             current.cursor = encrypt_secret(str(cursor))
-        current.last_received_at = (
-            utcnow() if ids or accepted_agent else current.last_received_at
-        )
-        current.last_error = None
-        await current.save(
-            using_db=db,
-            update_fields=["cursor", "last_received_at", "last_error", "updated_at"],
-        )
-    return ids
+        has_new_receipts = result.accepted > 0
+        if has_new_receipts:
+            current.last_received_at = utcnow()
+        if cursor_changed or has_new_receipts or current.last_error:
+            current.last_error = None
+            await current.save(
+                using_db=db,
+                update_fields=[
+                    "cursor",
+                    "last_received_at",
+                    "last_error",
+                    "updated_at",
+                ],
+            )
+    return result
 
 
 # A scheduled poll returns quickly: the upstream long-poll is bounded so one
@@ -144,13 +202,10 @@ POLL_WAIT_SECONDS = 2.5
 LEASE_SECONDS = 90
 
 
-async def poll_binding(binding: WeChatKnowledgeBinding) -> dict:
-    """Read one update batch for a binding and persist it durably.
-
-    Safe to call from any number of workers: a Redis lease elects a single
-    poller per binding, and ``accept_updates`` re-checks the cursor and
-    generation under a row lock before committing.
-    """
+async def poll_binding(
+    binding: WeChatKnowledgeBinding, *, http: httpx.AsyncClient | None = None
+) -> dict:
+    """Read one update batch for a binding and persist it durably."""
     feature = "agent_chat" if binding.purpose == "agent" else binding.purpose
     if feature not in await enabled_features("wechat"):
         return {"polled": False, "reason": "feature_disabled"}
@@ -159,14 +214,17 @@ async def poll_binding(binding: WeChatKnowledgeBinding) -> dict:
     if not await redis.set(key, owner, nx=True, ex=LEASE_SECONDS):
         return {"polled": False, "reason": "leased"}
     try:
-        async with WeChatClient(
-            binding.base_url, decrypt_secret(binding.token)
-        ) as client:
+        client_args = (binding.base_url, decrypt_secret(binding.token))
+        client_context = (
+            WeChatClient(*client_args, http=http)
+            if http is not None
+            else WeChatClient(*client_args)
+        )
+        async with client_context as client:
             response = await client.get_updates(
                 decrypt_secret(binding.cursor) if binding.cursor else "",
                 wait_seconds=POLL_WAIT_SECONDS,
             )
-        # Keep the lease through the short receipt transaction.
         renewed = await redis.eval(
             "if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('expire',KEYS[1],ARGV[2]) else return 0 end",
             1,
@@ -176,22 +234,19 @@ async def poll_binding(binding: WeChatKnowledgeBinding) -> dict:
         )
         if not renewed:
             return {"polled": False, "reason": "lease_lost"}
-        ids = await accept_updates(binding, response)
-        if binding.purpose == "agent":
-            await asyncio.to_thread(
-                celery_app.send_task,
-                "app.tasks.wechat_agent.process_binding_task",
-                args=[str(binding.id)],
-                queue="agent",
-            )
-        for receipt_id in ids:
+        accepted = await accept_updates(binding, response)
+        if accepted.agent_receipt_ids:
+            from app.services.wechat_agent_dispatch import enqueue_binding
+
+            await enqueue_binding(binding.id)
+        for receipt_id in accepted.knowledge_receipt_ids:
             await asyncio.to_thread(
                 celery_app.send_task,
                 "app.tasks.wechat_knowledge.process_receipt_task",
                 args=[receipt_id],
                 queue="knowledge",
             )
-        return {"polled": True, "accepted": len(ids)}
+        return {"polled": True, "accepted": accepted.accepted}
     except WeChatAPIError as exc:
         await WeChatKnowledgeBinding.filter(
             id=binding.id, generation=binding.generation, status="connected"
@@ -209,28 +264,3 @@ async def poll_binding(binding: WeChatKnowledgeBinding) -> dict:
             key,
             owner,
         )
-
-
-async def poll_connected_bindings() -> dict:
-    """Poll every connected binding once; called by the Celery Beat tick."""
-    enabled = await enabled_features("wechat")
-    purposes = [
-        purpose
-        for purpose, feature in (
-            ("agent", "agent_chat"),
-            ("knowledge_collection", "knowledge_collection"),
-        )
-        if feature in enabled
-    ]
-    if not purposes:
-        return {"bindings": 0, "polled": 0}
-    bindings = await WeChatKnowledgeBinding.filter(
-        status="connected", purpose__in=purposes
-    ).exclude(token="")
-    results = await asyncio.gather(
-        *(poll_binding(binding) for binding in bindings), return_exceptions=True
-    )
-    polled = sum(
-        1 for result in results if isinstance(result, dict) and result.get("polled")
-    )
-    return {"bindings": len(bindings), "polled": polled}

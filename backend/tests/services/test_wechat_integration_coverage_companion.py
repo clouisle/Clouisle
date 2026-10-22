@@ -510,6 +510,42 @@ async def test_client_context_manager_closes_the_transport():
 
 
 @pytest.mark.asyncio
+async def test_client_with_borrowed_transport_does_not_close_it():
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json={}))
+    shared = httpx.AsyncClient(transport=transport)
+    async with wechat.WeChatClient(token="account-token", http=shared) as client:
+        assert client.http is shared
+    assert not shared.is_closed
+    await shared.aclose()
+
+
+@pytest.mark.asyncio
+async def test_shared_transport_never_reuses_account_auth_or_cookies():
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={})
+
+    shared = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        headers={"Authorization": "Bearer shared-default"},
+        cookies={"session": "shared-cookie"},
+    )
+    try:
+        async with wechat.WeChatClient(token="first-secret", http=shared) as first:
+            await first._request("test", {})
+        async with wechat.WeChatClient(token="second-secret", http=shared) as second:
+            await second._request("test", {})
+        assert requests[0].headers["Authorization"] == "Bearer first-secret"
+        assert requests[1].headers["Authorization"] == "Bearer second-secret"
+        assert requests[0].headers.get("cookie", "") == ""
+        assert requests[1].headers.get("cookie", "") == ""
+    finally:
+        await shared.aclose()
+
+
+@pytest.mark.asyncio
 async def test_media_download_gives_up_after_repeated_redirects():
     client = make_client(
         lambda request: httpx.Response(302, headers={"location": "/c2c/download"})

@@ -39,6 +39,7 @@ from app.integrations.feishu_content import (
 from app.services.feishu_rich_content import load_rich_content
 from app.services.feishu_tabular import load_tabular
 from app.models.feishu_knowledge import FeishuKnowledgeDocument, FeishuKnowledgeSource
+from app.models.integration import Integration
 from app.models.knowledge_base import (
     Document,
     DocumentChunk,
@@ -246,6 +247,8 @@ async def queue_source(source_id: UUID) -> FeishuKnowledgeSource:
 
 
 async def dispatch_due_sources() -> dict[str, int]:
+    if not await Integration.filter(provider_type="feishu", is_enabled=True).exists():
+        return {"queued": 0, "failed": 0}
     now = utcnow()
     candidates = await FeishuKnowledgeSource.filter(
         Q(is_enabled=True, next_sync_at__lte=now)

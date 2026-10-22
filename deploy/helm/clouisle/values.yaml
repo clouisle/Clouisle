@@ -42,6 +42,9 @@ config:
   RETRIEVAL_SHADOW_ENABLED: "false"
   SANDBOX_RUNTIME_ENABLED: "true"
   SANDBOX_WORKER_CONCURRENCY: "1"
+  WECHAT_POLL_BATCH_SIZE: "64"
+  WECHAT_POLL_CONCURRENCY: "16"
+  WECHAT_POLL_MAX_BATCHES: "8"
   # Shared virtual path in API, Agent workers and sandbox workers, not a shared disk.
   SANDBOX_WORKSPACE_ROOT: /var/lib/clouisle/sandbox/jobs
   SANDBOX_FILESYSTEM_ISOLATION_ENABLED: "true"
@@ -122,6 +125,7 @@ worker:
     limits:
       cpu: "2"
       memory: 2Gi
+
 
 sandboxWorker:
   enabled: true

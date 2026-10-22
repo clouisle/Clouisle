@@ -959,6 +959,11 @@ async def test_pending_cleanup_keeps_retry_handles_until_external_cleanup_succee
 
 @pytest.mark.asyncio
 async def test_dispatch_continues_past_busy_and_failed_sources(monkeypatch):
+    monkeypatch.setattr(
+        service.Integration,
+        "filter",
+        Mock(return_value=SimpleNamespace(exists=AsyncMock(return_value=True))),
+    )
     identifiers = [uuid4() for _ in range(3)]
     query = SimpleNamespace(values_list=AsyncMock(return_value=identifiers))
     monkeypatch.setattr(

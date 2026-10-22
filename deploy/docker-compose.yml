@@ -118,7 +118,6 @@ services:
         condition: service_healthy
       api:
         condition: service_healthy
-
   sandbox-worker:
     image: registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker:latest
     restart: unless-stopped

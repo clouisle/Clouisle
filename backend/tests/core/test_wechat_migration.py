@@ -108,36 +108,6 @@ class FakeTransaction:
 
 
 @pytest.mark.asyncio
-async def test_postgres_schema_upgrade_uses_idempotent_ddl(monkeypatch):
-    from app.core import wechat_migration
-
-    connection = FakeDatabase()
-    connection.capabilities.dialect = "postgres"
-    monkeypatch.setattr(Tortoise, "get_connection", lambda name: connection)
-    configuration = AsyncMock()
-    purpose = AsyncMock()
-    restore = AsyncMock()
-    ddl = AsyncMock()
-    monkeypatch.setattr(
-        wechat_migration, "migrate_wechat_connection_configuration", configuration
-    )
-    monkeypatch.setattr(wechat_migration, "migrate_wechat_purpose", purpose)
-    monkeypatch.setattr(wechat_migration, "restore_wechat_document_sources", restore)
-    monkeypatch.setattr(wechat_migration, "execute_startup_migration_query", ddl)
-
-    await migrate_wechat_knowledge_schema()
-
-    assert [call.args[1] for call in ddl.await_args_list] == [
-        'ALTER TABLE IF EXISTS "wechat_knowledge_bindings" '
-        'ADD COLUMN IF NOT EXISTS "disconnected_at" TIMESTAMPTZ NULL',
-        "UPDATE documents SET doc_type = 'markdown' WHERE doc_type = 'md'",
-    ]
-    configuration.assert_awaited_once_with()
-    purpose.assert_awaited_once_with()
-    restore.assert_awaited_once_with()
-
-
-@pytest.mark.asyncio
 async def test_postgres_purpose_migration_skips_existing_column(monkeypatch):
     from tortoise import transactions
     from app.core.wechat_migration import migrate_wechat_purpose
@@ -291,3 +261,43 @@ async def test_restore_sources_skips_non_wechat_documents(database):
 
     assert document.doc_type == "markdown"
     assert document.metadata == {"source": "upload"}
+
+
+@pytest.mark.asyncio
+async def test_polling_upgrade_preserves_existing_binding_and_becomes_schedulable(
+    database,
+):
+    from app.models.user import User
+    from app.models.wechat_knowledge import WeChatKnowledgeBinding
+    from app.services.wechat_connection import utcnow
+
+    connection = Tortoise.get_connection("default")
+    user = await User.create(
+        username="legacy-poll",
+        email="legacy-poll@example.test",
+        hashed_password="unused",
+    )
+    binding = await WeChatKnowledgeBinding.create(
+        user=user,
+        wechat_user_id="legacy",
+        bot_id="legacy",
+        token="encrypted",
+        base_url="https://ilinkai.weixin.qq.com",
+        purpose="agent",
+    )
+    for name in (
+        "poll_next_at",
+        "poll_claim",
+        "poll_claim_expires_at",
+        "agent_recovery_at",
+    ):
+        await connection.execute_query(
+            f'ALTER TABLE "wechat_knowledge_bindings" DROP COLUMN "{name}"'
+        )
+    await migrate_wechat_knowledge_schema()
+    await migrate_wechat_knowledge_schema()
+    saved = await WeChatKnowledgeBinding.get(id=binding.id)
+    assert saved.token == "encrypted" and saved.purpose == "agent"
+    assert saved.poll_next_at <= utcnow()
+    assert saved.agent_recovery_at <= utcnow()
+    assert saved.poll_claim is None and saved.poll_claim_expires_at is None

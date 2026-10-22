@@ -3,6 +3,7 @@
 from uuid import UUID, uuid4
 
 from tortoise import fields, models
+from tortoise.timezone import now
 
 
 class WeChatKnowledgeBinding(models.Model):
@@ -22,11 +23,28 @@ class WeChatKnowledgeBinding(models.Model):
     last_error = fields.TextField(null=True)
     last_received_at = fields.DatetimeField(null=True)
     disconnected_at = fields.DatetimeField(null=True)
+    poll_next_at = fields.DatetimeField(default=now)
+    poll_claim = fields.UUIDField(null=True)
+    poll_claim_expires_at = fields.DatetimeField(null=True)
+    agent_recovery_at = fields.DatetimeField(default=now)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
     class Meta:
         table = "wechat_knowledge_bindings"
+
+
+class WeChatPollBatch(models.Model):
+    """Fixed reusable slots bound queued/running polling batches globally."""
+
+    id = fields.IntField(primary_key=True)
+    claim = fields.UUIDField(null=True)
+    expires_at = fields.DatetimeField(null=True)
+    started = fields.BooleanField(default=False)
+    bindings: list[dict] = fields.JSONField(default=list)
+
+    class Meta:
+        table = "wechat_poll_batches"
 
 
 class WeChatKnowledgeCollection(models.Model):

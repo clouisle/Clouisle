@@ -1,82 +1,102 @@
-"""Scheduled WeChat update polling and Agent-queue recovery."""
+"""Scheduled WeChat Agent receipt recovery."""
+
+import logging
 
 from celery import shared_task
-from tortoise.expressions import Q
 
-from app.tasks.knowledge_base import _run_async
+from app.core.timezone import now_utc
 from app.services.integration_features import enabled_features
+from app.tasks.knowledge_base import _run_async
 
-
-@shared_task(name="app.tasks.wechat_agent.poll_bindings_task")
-def poll_bindings_task() -> dict:
-    """Poll every connected binding once; one Beat tick, one bounded batch.
-
-    The receiver used to be a permanently running process. It is now a
-    scheduled task, so there is no extra deployment to own; Celery Beat runs a
-    single instance and the Redis lease inside ``poll_binding`` keeps the work
-    idempotent if two ticks ever overlap.
-    """
-    from app.services.wechat_receiver import poll_connected_bindings
-
-    return _run_async(poll_connected_bindings())
+logger = logging.getLogger(__name__)
+RECOVERY_BATCH_SIZE = 64
 
 
 @shared_task(
-    name="app.tasks.wechat_agent.process_binding_task",
+    name="app.tasks.wechat_agent.process_claimed_binding_task",
     acks_late=True,
     reject_on_worker_lost=True,
 )
-def process_binding_task(binding_id: str) -> dict:
+def process_binding_task(binding_id: str, ownership_token: str) -> dict:
     from app.services.wechat_agent_runtime import process_binding
+    from app.services.wechat_agent_dispatch import (
+        owns_binding_dispatch,
+        release_binding_dispatch,
+    )
     from app.services.wechat_locks import CollectionBusy, collection_lock
 
     async def process():
+        if not await owns_binding_dispatch(binding_id, ownership_token):
+            return {"stale": True}
+
+        acquired_lock = False
         try:
             async with collection_lock(f"wechat-agent:{binding_id}"):
+                acquired_lock = True
                 return await process_binding(binding_id)
         except CollectionBusy:
             return {"pending": True}
+        finally:
+            if acquired_lock:
+                await release_binding_dispatch(binding_id, ownership_token)
 
     return _run_async(process())
 
 
 @shared_task(name="app.tasks.wechat_agent.recover_bindings_task")
 def recover_bindings_task() -> dict:
-    """Re-drive bindings with unfinished work after a crash or a cold start.
+    """Fairly re-drive a bounded page of bindings that still have durable work."""
+    from tortoise import Tortoise
 
-    This is a safety net, not the normal progress loop: ``process_binding``
-    re-dispatches its own queued runs and sends its own outbox rows. Queuing a
-    binding only when it holds pending/submitted receipts or unsent deliveries
-    keeps an idle binding from being reprocessed on every tick.
-    """
-    from app.models.wechat_agent import WeChatAgentDelivery, WeChatAgentReceipt
+    from app.models.wechat_knowledge import WeChatKnowledgeBinding
+    from app.services.wechat_agent_dispatch import enqueue_binding
 
     async def recover():
         if "agent_chat" not in await enabled_features("wechat"):
             return {"queued": 0}
-        identifiers = set(
-            await WeChatAgentReceipt.filter(status__in=["pending", "submitted"])
-            .order_by("created_at")
-            .limit(100)
-            .values_list("binding_id", flat=True)
-        )
-        # An unsent delivery can outlive its receipt (the receipt completes as
-        # soon as its answer is queued), so delivery work is resolved on its
-        # own receipt ids instead of reusing the pending-receipt set.
-        delivery_receipt_ids = (
-            await WeChatAgentDelivery.filter(Q(status="pending") | Q(status="sending"))
-            .order_by("created_at")
-            .limit(100)
-            .values_list("receipt_id", flat=True)
-        )
-        if delivery_receipt_ids:
-            identifiers.update(
-                await WeChatAgentReceipt.filter(
-                    id__in=list(delivery_receipt_ids)
-                ).values_list("binding_id", flat=True)
+
+        # EXISTS keeps this a bounded binding scan even when a binding has many
+        # receipts and deliveries (and their joins would multiply one another).
+        conn = Tortoise.get_connection("default")
+        placeholder = "?" if conn.capabilities.dialect == "sqlite" else "$1"
+        identifiers = await conn.execute_query_dict(
+            f"""
+            SELECT b.id
+            FROM wechat_knowledge_bindings b
+            WHERE EXISTS (
+                SELECT 1
+                FROM wechat_agent_receipts r
+                WHERE r.binding_id = b.id
+                  AND r.status IN ('pending', 'submitted')
+            ) OR EXISTS (
+                SELECT 1
+                FROM wechat_agent_deliveries d
+                JOIN wechat_agent_receipts r ON r.id = d.receipt_id
+                WHERE r.binding_id = b.id
+                  AND d.status IN ('pending', 'sending')
             )
-        for identifier in identifiers:
-            process_binding_task.delay(str(identifier))
-        return {"queued": len(identifiers)}
+            ORDER BY b.agent_recovery_at, b.id
+            LIMIT {placeholder}
+            """,
+            [RECOVERY_BATCH_SIZE],
+        )
+        if not identifiers:
+            return {"queued": 0}
+
+        await WeChatKnowledgeBinding.filter(
+            id__in=[row["id"] for row in identifiers]
+        ).update(agent_recovery_at=now_utc())
+
+        queued = 0
+        for row in identifiers:
+            try:
+                if await enqueue_binding(row["id"]):
+                    queued += 1
+            except Exception:
+                logger.exception(
+                    "Failed to dispatch WeChat Agent recovery for binding %s",
+                    row["id"],
+                )
+        return {"queued": queued}
 
     return _run_async(recover())

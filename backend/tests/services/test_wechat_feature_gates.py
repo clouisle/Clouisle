@@ -88,13 +88,15 @@ async def test_disabled_intake_keeps_cursor_and_can_accept_same_batch_after_reen
     }
     redis.assert_not_awaited()
     batch = {"msgs": [message()], "get_updates_buf": "next-cursor"}
-    assert await receiver.accept_updates(binding, batch) == []
+    assert (await receiver.accept_updates(binding, batch)).accepted == 0
     assert not await WeChatKnowledgeReceipt.all().exists()
     assert (await WeChatKnowledgeBinding.get(id=binding.id)).cursor == binding.cursor
     await Integration.filter(provider_type="wechat").update(
         enabled_capabilities=["knowledge_collection"]
     )
-    ids = await receiver.accept_updates(binding, batch)
+    result = await receiver.accept_updates(binding, batch)
+    assert result.agent_receipt_ids == []
+    ids = result.knowledge_receipt_ids
     receipt = await WeChatKnowledgeReceipt.get(id=ids[0])
     assert receipt.knowledge_base_id == kb.id
     assert receipt.message_id == str(message()["message_id"])
@@ -190,8 +192,8 @@ async def test_disabled_collection_preserves_pending_receipt_without_processing(
     collection_db, monkeypatch
 ):
     _, _, _, _, binding, _ = collection_db
-    ids = await receiver.accept_updates(binding, {"msgs": [message()]})
-    receipt = await WeChatKnowledgeReceipt.get(id=ids[0])
+    accepted = await receiver.accept_updates(binding, {"msgs": [message()]})
+    receipt = await WeChatKnowledgeReceipt.get(id=accepted.knowledge_receipt_ids[0])
     work = AsyncMock()
     monkeypatch.setattr(ingestion, "process_item", work)
     await Integration.filter(provider_type="wechat").update(

@@ -43,92 +43,16 @@ def run_async(monkeypatch):
 def test_recover_bindings_returns_idle_when_agent_feature_disabled(
     monkeypatch, run_async
 ):
-    from app.models import wechat_agent as models
+    from tortoise import Tortoise
 
     feature_check = AsyncMock(return_value={"knowledge_collection"})
     monkeypatch.setattr(wechat_agent, "enabled_features", feature_check)
-    monkeypatch.setattr(
-        models.WeChatAgentReceipt,
-        "filter",
-        Mock(side_effect=AssertionError("disabled recovery must not inspect receipts")),
-    )
-    monkeypatch.setattr(
-        models.WeChatAgentDelivery,
-        "filter",
-        Mock(
-            side_effect=AssertionError("disabled recovery must not inspect deliveries")
-        ),
-    )
+    connection = Mock()
+    monkeypatch.setattr(Tortoise, "get_connection", Mock(return_value=connection))
 
     assert wechat_agent.recover_bindings_task() == {"queued": 0}
-    feature_check.assert_called_once_with("wechat")
-
-
-def test_recover_bindings_queues_receipt_and_delivery_work(monkeypatch, run_async):
-    from app.models import wechat_agent as models
-
-    receipt_id = uuid4()
-    binding_id = uuid4()
-    pending_receipts = Query([binding_id])
-    pending_deliveries = Query([receipt_id])
-    delivery_receipts = Query([binding_id])
-    receipt_filters = Mock(side_effect=[pending_receipts, delivery_receipts])
-    monkeypatch.setattr(models.WeChatAgentReceipt, "filter", receipt_filters)
-    monkeypatch.setattr(
-        models.WeChatAgentDelivery, "filter", Mock(return_value=pending_deliveries)
-    )
-    monkeypatch.setattr(
-        wechat_agent, "enabled_features", AsyncMock(return_value={"agent_chat"})
-    )
-    dispatch = Mock()
-    monkeypatch.setattr(wechat_agent.process_binding_task, "delay", dispatch)
-
-    assert wechat_agent.recover_bindings_task() == {"queued": 1}
-    dispatch.assert_called_once_with(str(binding_id))
-    assert receipt_filters.call_count == 2
-
-
-def test_recover_bindings_with_no_delivery_rows_only_queues_receipts(
-    monkeypatch, run_async
-):
-    from app.models import wechat_agent as models
-
-    binding_id = uuid4()
-    receipt_filters = Mock(return_value=Query([binding_id]))
-    monkeypatch.setattr(models.WeChatAgentReceipt, "filter", receipt_filters)
-    monkeypatch.setattr(
-        models.WeChatAgentDelivery, "filter", Mock(return_value=Query())
-    )
-    monkeypatch.setattr(
-        wechat_agent, "enabled_features", AsyncMock(return_value={"agent_chat"})
-    )
-    dispatch = Mock()
-    monkeypatch.setattr(wechat_agent.process_binding_task, "delay", dispatch)
-
-    assert wechat_agent.recover_bindings_task() == {"queued": 1}
-    dispatch.assert_called_once_with(str(binding_id))
-    assert receipt_filters.call_count == 1
-
-
-def test_recover_bindings_deduplicates_binding_with_receipt_and_delivery(
-    monkeypatch, run_async
-):
-    from app.models import wechat_agent as models
-
-    binding_id = uuid4()
-    receipt_filters = Mock(side_effect=[Query([binding_id]), Query([binding_id])])
-    monkeypatch.setattr(models.WeChatAgentReceipt, "filter", receipt_filters)
-    monkeypatch.setattr(
-        models.WeChatAgentDelivery, "filter", Mock(return_value=Query([uuid4()]))
-    )
-    monkeypatch.setattr(
-        wechat_agent, "enabled_features", AsyncMock(return_value={"agent_chat"})
-    )
-    dispatch = Mock()
-    monkeypatch.setattr(wechat_agent.process_binding_task, "delay", dispatch)
-
-    assert wechat_agent.recover_bindings_task() == {"queued": 1}
-    dispatch.assert_called_once_with(str(binding_id))
+    feature_check.assert_awaited_once_with("wechat")
+    connection.execute_query_dict.assert_not_called()
 
 
 def test_recover_knowledge_receipts_disabled_feature_still_expires_logins(

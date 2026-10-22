@@ -79,16 +79,24 @@ def official_url(value: str, *, media: bool = False) -> str:
 
 
 class WeChatClient:
-    def __init__(self, base_url: str = API_BASE, token: str = ""):
+    def __init__(
+        self,
+        base_url: str = API_BASE,
+        token: str = "",
+        *,
+        http: httpx.AsyncClient | None = None,
+    ):
         self.base_url = official_url(base_url)
         self.token = token
-        self.http = httpx.AsyncClient(follow_redirects=False, timeout=40.0)
+        self._owns_http = http is None
+        self.http = http or httpx.AsyncClient(follow_redirects=False, timeout=40.0)
 
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, *args):
-        await self.http.aclose()
+        if self._owns_http:
+            await self.http.aclose()
 
     async def _request(
         self, endpoint: str, body: dict | None = None, *, authenticated: bool = True
@@ -97,6 +105,7 @@ class WeChatClient:
             "iLink-App-Id": "bot",
             "iLink-App-ClientVersion": str((2 << 16) | (4 << 8) | 10),
         }
+        headers["Cookie"] = ""
         if body is not None:
             headers.update(
                 {

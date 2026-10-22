@@ -1215,6 +1215,8 @@ def test_agent_task_returns_pending_when_binding_lock_is_held(monkeypatch):
     from contextlib import asynccontextmanager
     from app.services import wechat_locks
     from app.tasks import wechat_agent
+    from app.services import wechat_agent_dispatch
+    from unittest.mock import AsyncMock
 
     @asynccontextmanager
     async def busy_lock(_name):
@@ -1225,8 +1227,11 @@ def test_agent_task_returns_pending_when_binding_lock_is_held(monkeypatch):
     monkeypatch.setattr(
         wechat_agent, "_run_async", lambda coroutine: asyncio.run(coroutine)
     )
+    monkeypatch.setattr(
+        wechat_agent_dispatch, "owns_binding_dispatch", AsyncMock(return_value=True)
+    )
 
-    result = wechat_agent.process_binding_task.run("binding-id")
+    result = wechat_agent.process_binding_task.run("binding-id", "owned-token")
 
     assert result == {"pending": True}
 

@@ -131,16 +131,18 @@ async def test_receipts_are_unique_snapshots_and_disconnect_discards_late_poll(
     collection_db,
 ):
     _, _, kb, kb2, binding, _ = collection_db
-    ids = await accept_updates(
+    accepted = await accept_updates(
         binding,
         {
             "msgs": [message(), message(), message("2", "stranger")],
             "get_updates_buf": "next",
         },
     )
+    ids = accepted.knowledge_receipt_ids
+    assert accepted.agent_receipt_ids == []
+    assert len(ids) == 1
     assert await WeChatKnowledgeReceipt.all().count() == 1
     receipt = await WeChatKnowledgeReceipt.get(id=ids[0])
-    assert receipt.message_id == "18446744073709551615"
     assert receipt.knowledge_base_id == kb.id
     await WeChatKnowledgeCollection.filter(binding_id=binding.id).update(
         knowledge_base_id=kb2.id
@@ -150,13 +152,14 @@ async def test_receipts_are_unique_snapshots_and_disconnect_discards_late_poll(
         await accept_updates(
             binding, {"msgs": [message("new")], "get_updates_buf": "late"}
         )
-        == []
-    )
+    ).accepted == 0
     await receipt.refresh_from_db()
     assert receipt.knowledge_base_id == kb.id
     await binding.refresh_from_db()
     await WeChatKnowledgeBinding.filter(id=binding.id).update(status="disconnected")
-    assert await accept_updates(binding, {"msgs": [message("after-disconnect")]}) == []
+    assert (
+        await accept_updates(binding, {"msgs": [message("after-disconnect")]})
+    ).accepted == 0
     assert await WeChatKnowledgeReceipt.all().count() == 1
 
 
@@ -243,12 +246,10 @@ async def test_brand_new_identity_connects_without_collection(
     # Authorization alone never enables collection.
     assert not await WeChatKnowledgeCollection.filter(binding_id=binding.id).exists()
     assert confirmed["binding"]["collection"] is None
-    assert (
-        await accept_updates(
-            binding, {"msgs": [message(identifier="ignored", sender="fresh-wechat")]}
-        )
-        == []
+    result = await accept_updates(
+        binding, {"msgs": [message(identifier="ignored", sender="fresh-wechat")]}
     )
+    assert result.accepted == 0
 
 
 @pytest.mark.asyncio
@@ -258,16 +259,14 @@ async def test_configless_connection_ignores_messages_but_advances_cursor(
     user, _, _, _, _, _ = collection_db
     binding = await connected_binding(user, "silent-wechat", "silent-bot")
     cursor = binding.cursor
-    assert (
-        await accept_updates(
-            binding,
-            {
-                "msgs": [message(identifier="1", sender="silent-wechat")],
-                "get_updates_buf": "advance",
-            },
-        )
-        == []
+    result = await accept_updates(
+        binding,
+        {
+            "msgs": [message(identifier="1", sender="silent-wechat")],
+            "get_updates_buf": "advance",
+        },
     )
+    assert result.accepted == 0
     assert await WeChatKnowledgeReceipt.all().count() == 0
     await binding.refresh_from_db()
     assert binding.cursor != cursor
@@ -331,16 +330,14 @@ async def test_endpoint_configures_replaces_and_disables_optional_collection(
     assert binding.status == "connected"
     assert binding.token and decrypt_secret(binding.token) == "not-real"
     # Messages are ignored without a receipt, but the cursor still advances.
-    assert (
-        await accept_updates(
-            binding,
-            {
-                "msgs": [message(identifier="after-disable")],
-                "get_updates_buf": "advance",
-            },
-        )
-        == []
+    result = await accept_updates(
+        binding,
+        {
+            "msgs": [message(identifier="after-disable")],
+            "get_updates_buf": "advance",
+        },
     )
+    assert result.accepted == 0
     await binding.refresh_from_db()
     assert decrypt_secret(binding.cursor) == "advance"
     assert await WeChatKnowledgeReceipt.all().count() == 0
@@ -351,10 +348,10 @@ async def test_receipt_snapshot_survives_collection_change_and_removal(collectio
     from app.api.v1.endpoints.wechat_knowledge import PurposeInput, update_purpose
 
     user, _, kb, kb2, binding, _ = collection_db
-    ids = await accept_updates(
+    accepted = await accept_updates(
         binding, {"msgs": [message()], "get_updates_buf": "next"}
     )
-    receipt = await WeChatKnowledgeReceipt.get(id=ids[0])
+    receipt = await WeChatKnowledgeReceipt.get(id=accepted.knowledge_receipt_ids[0])
     # A purpose switch waits until previously accepted work finishes.
     with pytest.raises(BusinessError) as busy:
         await update_purpose(
@@ -944,7 +941,9 @@ async def test_exclusive_agent_purpose_routes_once_and_preserves_inactive_collec
     assert binding.purpose == "agent"
     assert await WeChatKnowledgeCollection.filter(binding_id=binding.id).exists()
     incoming = message("agent-input")
-    assert await accept_updates(binding, {"msgs": [incoming, incoming]}) == []
+    result = await accept_updates(binding, {"msgs": [incoming, incoming]})
+    assert len(result.agent_receipt_ids) == 1
+    assert result.knowledge_receipt_ids == []
     assert await WeChatAgentReceipt.filter(binding_id=binding.id).count() == 1
     assert await WeChatKnowledgeReceipt.filter(binding_id=binding.id).count() == 0
     receipt = await WeChatAgentReceipt.get(binding_id=binding.id)
@@ -958,7 +957,7 @@ async def test_exclusive_agent_purpose_routes_once_and_preserves_inactive_collec
     assert await WeChatAgentConfig.filter(binding_id=binding.id).exists()
     await binding.refresh_from_db()
     assert binding.status == "connected" and binding.purpose == "none"
-    assert await accept_updates(binding, {"msgs": [message("ignored")]}) == []
+    assert (await accept_updates(binding, {"msgs": [message("ignored")]})).accepted == 0
     assert await WeChatAgentReceipt.filter(binding_id=binding.id).count() == 1
     await update_purpose(binding.id, PurposeInput(purpose="knowledge_collection"), user)
     await binding.refresh_from_db()
@@ -1151,8 +1150,210 @@ async def test_poll_binding_stores_receipts_and_dispatches(collection_db, monkey
     assert result == {"polled": True, "accepted": 1}
     assert await WeChatKnowledgeReceipt.filter(binding_id=binding.id).count() == 1
     assert dispatched and dispatched[0]["queue"] == "knowledge"
-    # The scheduled tick must not hold a worker for the full long-poll.
+
     assert wechat_receiver.POLL_WAIT_SECONDS <= 5
+
+
+@pytest.mark.asyncio
+async def test_empty_unchanged_poll_is_transaction_free(collection_db, monkeypatch):
+    from app.services import wechat_receiver
+
+    _, _, _, _, binding, _ = collection_db
+    await binding.refresh_from_db()
+    cursor = binding.cursor
+
+    async def no_transaction():
+        raise AssertionError("unchanged empty response must not open a transaction")
+
+    monkeypatch.setattr(wechat_receiver, "in_transaction", no_transaction)
+    result = await wechat_receiver.accept_updates(
+        binding,
+        {"msgs": [], "get_updates_buf": decrypt_secret(cursor) if cursor else ""},
+    )
+    assert result.accepted == 0
+    await binding.refresh_from_db()
+    assert binding.cursor == cursor
+
+
+@pytest.mark.asyncio
+async def test_empty_poll_clears_old_error_without_advancing_cursor(collection_db):
+    from app.services import wechat_receiver
+
+    _, _, _, _, binding, _ = collection_db
+    await WeChatKnowledgeBinding.filter(id=binding.id).update(last_error="old failure")
+    await binding.refresh_from_db()
+    cursor = binding.cursor
+    result = await wechat_receiver.accept_updates(
+        binding,
+        {"msgs": [], "get_updates_buf": decrypt_secret(cursor) if cursor else ""},
+    )
+    assert result.accepted == 0
+    await binding.refresh_from_db()
+    assert binding.last_error is None
+    assert binding.cursor == cursor
+
+
+@pytest.mark.asyncio
+async def test_poll_binding_dispatches_only_new_agent_receipts(
+    collection_db, monkeypatch
+):
+    from app.api.v1.endpoints.wechat_knowledge import PurposeInput, update_purpose
+    from app.models.agent import Agent, AgentStatus
+    from app.services import wechat_receiver
+
+    user, _, kb, _, binding, _ = collection_db
+    agent = await Agent.create(
+        id=uuid4(),
+        name="Polling agent",
+        team_id=kb.team_id,
+        created_by=user,
+        status=AgentStatus.PUBLISHED,
+    )
+    await update_purpose(
+        binding.id, PurposeInput(purpose="agent", agent_id=agent.id), user
+    )
+    await binding.refresh_from_db()
+    incoming = message("agent-poll-receipt")
+
+    class Client:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        async def get_updates(self, *_args, **_kwargs):
+            return {"msgs": [incoming]}
+
+    redis = _FakeRedis()
+    dispatch = AsyncMock(return_value=True)
+    monkeypatch.setattr(wechat_receiver, "get_redis", AsyncMock(return_value=redis))
+    monkeypatch.setattr(wechat_receiver, "WeChatClient", Client)
+    monkeypatch.setattr("app.services.wechat_agent_dispatch.enqueue_binding", dispatch)
+    result = await wechat_receiver.poll_binding(binding)
+    assert result["accepted"] == 1
+    dispatch.assert_awaited_once_with(binding.id)
+
+    result = await wechat_receiver.poll_binding(binding)
+    assert result["accepted"] == 0
+    dispatch.assert_awaited_once_with(binding.id)
+
+
+@pytest.mark.asyncio
+async def test_poll_binding_borrows_shared_http_client(collection_db, monkeypatch):
+    from app.services import wechat_receiver
+
+    _, _, _, _, binding, _ = collection_db
+    redis = _FakeRedis()
+    shared = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200))
+    )
+
+    class Client:
+        def __init__(self, *_args, **kwargs):
+            assert kwargs["http"] is shared
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        async def get_updates(self, *_args, **_kwargs):
+            return {"msgs": []}
+
+    monkeypatch.setattr(wechat_receiver, "WeChatClient", Client)
+    monkeypatch.setattr(wechat_receiver, "get_redis", AsyncMock(return_value=redis))
+    result = await wechat_receiver.poll_binding(binding, http=shared)
+    assert result["polled"] is True
+    assert not shared.is_closed
+    await shared.aclose()
+
+
+@pytest.mark.asyncio
+async def test_changed_empty_cursor_is_committed(collection_db, monkeypatch):
+    from app.services import wechat_receiver
+
+    _, _, _, _, binding, _ = collection_db
+    result = await wechat_receiver.accept_updates(
+        binding, {"msgs": [], "get_updates_buf": "changed-empty-cursor"}
+    )
+    assert result.accepted == 0
+    await binding.refresh_from_db()
+    assert decrypt_secret(binding.cursor) == "changed-empty-cursor"
+
+
+@pytest.mark.asyncio
+async def test_replaced_or_expired_batch_cannot_commit_cursor(collection_db):
+    from app.services import wechat_receiver
+
+    _, _, _, _, binding, _ = collection_db
+    old_claim = uuid4()
+    await WeChatKnowledgeBinding.filter(id=binding.id).update(
+        poll_claim=old_claim, poll_claim_expires_at=utcnow() + timedelta(seconds=90)
+    )
+    await binding.refresh_from_db()
+    await WeChatKnowledgeBinding.filter(id=binding.id).update(poll_claim=uuid4())
+    assert (
+        await wechat_receiver.accept_updates(
+            binding,
+            {"msgs": [message("late-batch")], "get_updates_buf": "must-not-commit"},
+        )
+    ).accepted == 0
+    assert not await WeChatKnowledgeReceipt.all().exists()
+    assert (await WeChatKnowledgeBinding.get(id=binding.id)).cursor == ""
+    await WeChatKnowledgeBinding.filter(id=binding.id).update(
+        poll_claim=old_claim, poll_claim_expires_at=utcnow() - timedelta(seconds=1)
+    )
+    assert (
+        await wechat_receiver.accept_updates(
+            binding, {"msgs": [], "get_updates_buf": "expired-cursor"}
+        )
+    ).accepted == 0
+    assert (await WeChatKnowledgeBinding.get(id=binding.id)).cursor == ""
+
+
+@pytest.mark.asyncio
+async def test_poll_binding_does_not_dispatch_duplicate_knowledge_receipt(
+    collection_db, monkeypatch
+):
+    from app.services import wechat_receiver
+
+    _, _, _, _, binding, _ = collection_db
+    incoming = message("duplicate-poll")
+    accepted = await wechat_receiver.accept_updates(binding, {"msgs": [incoming]})
+    assert len(accepted.knowledge_receipt_ids) == 1
+    redis = _FakeRedis()
+    dispatched = []
+
+    async def duplicate_updates(self, *_args, **_kwargs):
+        return {"msgs": [incoming]}
+
+    class Client:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        get_updates = duplicate_updates
+
+    monkeypatch.setattr(wechat_receiver, "get_redis", AsyncMock(return_value=redis))
+    monkeypatch.setattr(wechat_receiver, "WeChatClient", Client)
+    monkeypatch.setattr(
+        wechat_receiver.celery_app,
+        "send_task",
+        lambda *args, **kwargs: dispatched.append(kwargs),
+    )
+    result = await wechat_receiver.poll_binding(binding)
+    assert result["accepted"] == 0
+    assert dispatched == []
 
 
 @pytest.mark.asyncio
@@ -1228,7 +1429,8 @@ async def test_accept_updates_rejects_invalid_batch_and_skips_malformed_messages
         },
     )
 
-    assert len(accepted) == 1
+    assert accepted.accepted == 1
+    assert accepted.agent_receipt_ids == []
     assert await WeChatKnowledgeReceipt.filter(
         message_id="valid-after-invalid"
     ).exists()

@@ -33,6 +33,8 @@ The settings APIs are available to administrators with `admin:integrations:setti
 
 Feature selection is saved through `PUT /api/v1/admin/integrations/{id}` using `enabled_capabilities`, not an integration master switch. App credentials remain under `/api/v1/admin/integrations/feishu/config`; that endpoint does not accept an `is_enabled` toggle. Disabling Agent chat preserves receipts and unsent replies for re-enabling; operations already started may finish.
 
+Beat normally reconciles saved integration switches every two seconds. Turning off `agent_chat` removes `recover-feishu-agent-channel` from its schedule instead of publishing idle recovery tasks; turning it back on restores the ten-second recovery interval without restarting Beat. Already queued recovery tasks recheck the feature before scanning receipts. Feishu Wiki synchronization is separate: its minute dispatcher requires an enabled integration and at least one enabled Wiki source, not `agent_chat`, `directory_sync`, `user_login`, or `notification`. Those capability switches do not pause enabled Wiki sources. Restart Beat once when upgrading to load the feature-aware scheduler.
+
 The secrets are encrypted at rest and write-only. Administrators manage the shared transport; they cannot choose another user's replying Agent through these APIs.
 
 ## Personal settings

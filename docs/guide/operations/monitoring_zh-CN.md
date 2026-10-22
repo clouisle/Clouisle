@@ -19,6 +19,16 @@ Clouisle 的监控设置。
 
 运行摘要保存在紧凑索引记录中，保留 30 天。仅记录白名单中的时序、状态、模型名称、Token 数量、资源/团队标识符和错误代码；不会保存提示词、消息正文、工具参数/结果、凭据或 traceback。没有提交时间的历史运行不会回填。新的 Agent 记录包含模型聚合和安全的运行根 span；不会采集工具/检索子 span 及其聚合，API 会将这些数据标记为不可用，不会推断数值。告警规则在读取告警时评估，因此评估依赖 API 可用；定时清理任务使用现有的 `default` Celery 队列。
 
+## 集成定时调度
+
+现有 Beat 进程使用 `app.core.integration_scheduler:IntegrationScheduler`，正常情况下每两秒直接读取一次数据库中的管理员设置，不新增同步任务，也不在 Redis 另存开关副本。升级时需重启一次 Beat 加载新调度器；之后保存功能开关或同步源状态，无需重启。
+
+- 微信任一功能启用时，调度及轮询批次进入普通 worker 消费的 `default` 队列。持久化领取仍限制全局积压并保证按到期时间公平推进，但轮询与其他任务共享执行槽位。参数见[轮询限制](../deployment/environment-variables.md#wechat-polling-limits)，切换见[升级及索引说明](upgrading_zh-CN.md#微信轮询升级切换)。
+- 飞书 Agent 恢复跟随 `agent_chat`；登录、通知和手动通讯录同步不会产生周期性恢复任务。
+- 飞书知识库同步不受这些能力开关控制：仅在集成启用且存在启用的同步源时派发。要暂停知识库同步，请关闭同步源。
+
+完成同步后，关闭功能对应的条目不再存在于 Beat 活动调度表中，不会继续产生 `Task ... succeeded` 空任务日志。已经入队的任务仍可能出现，worker 会重新检查功能状态；已经开始的操作可能完成。读取设置失败时，Beat 暂停集成派发并记录 `Integration schedule refresh failed; pausing integration tasks`，其他维护任务继续运行；恢复数据库访问后自动恢复已启用的调度。Beat 必须保持单副本。
+
 ## 日志
 
 ### 应用日志
