@@ -210,10 +210,12 @@ def _feishu_failure(exc: Exception, context: str) -> BusinessError:
     local inspection) and never reaches a log sink.
     """
     if isinstance(exc, FeishuAPIError):
+        # Log structured metadata only. `exc`/`exc.detail` are derived from the
+        # provider response body, which can echo the tenant app secret, so
+        # neither object is passed to a log call.
         logger.warning(
-            "%s rejected by Feishu: %s | code=%s status=%s scopes=%s",
+            "%s rejected by Feishu | code=%s status=%s scopes=%s",
             context,
-            exc,
             exc.code,
             exc.status_code,
             ",".join(exc.required_scopes) or "-",

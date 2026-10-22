@@ -338,9 +338,7 @@ class WeChatClient:
                 # The iLink CDN mandates AES-128-ECB + PKCS7 for media; the key
                 # is single-use per upload, so ECB's determinism is not exposed
                 # beyond what the provider protocol already fixes.
-                decryptor = Cipher(  # lgtm[py/weak-cryptographic-algorithm]
-                    algorithms.AES(aes_key), modes.ECB()
-                ).decryptor()
+                decryptor = Cipher(algorithms.AES(aes_key), modes.ECB()).decryptor()
                 padded = decryptor.update(raw) + decryptor.finalize()
                 unpadder = padding.PKCS7(128).unpadder()
                 raw = unpadder.update(padded) + unpadder.finalize()

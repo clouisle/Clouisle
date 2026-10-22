@@ -360,9 +360,7 @@ def _encrypt(plaintext: bytes) -> tuple[bytes, str]:
     padder = padding.PKCS7(128).padder()
     padded = padder.update(plaintext) + padder.finalize()
     # Mirrors the iLink CDN media format (AES-128-ECB + PKCS7) under test.
-    encryptor = Cipher(  # lgtm[py/weak-cryptographic-algorithm]
-        algorithms.AES(key), modes.ECB()
-    ).encryptor()
+    encryptor = Cipher(algorithms.AES(key), modes.ECB()).encryptor()
     return encryptor.update(padded) + encryptor.finalize(), key.hex()
 
 
