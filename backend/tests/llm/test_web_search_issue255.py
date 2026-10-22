@@ -180,6 +180,7 @@ async def test_fetch_webpage_converts_url_via_markitdown_and_truncates(monkeypat
     converter = install_markitdown(
         monkeypatch, text_content="x" * 100, title="  Page Title  "
     )
+    install_client(monkeypatch, FakeClient(get=ConnectionError("network down")))
 
     result = await subject.fetch_webpage("https://example.test/page", 10)
 
@@ -220,6 +221,7 @@ async def test_fetch_webpage_maps_http_errors(monkeypatch):
             self.response = SimpleNamespace(status_code=status_code)
 
     install_markitdown(monkeypatch, exc=FakeHTTPError(404))
+    install_client(monkeypatch, FakeClient(get=ConnectionError("network down")))
     monkeypatch.setattr(subject, "t", lambda key, **kwargs: (key, kwargs))
 
     result = await subject.fetch_webpage("https://example.test/missing")
@@ -234,6 +236,7 @@ async def test_fetch_webpage_maps_http_errors(monkeypatch):
 @pytest.mark.anyio
 async def test_fetch_webpage_maps_generic_errors(monkeypatch):
     install_markitdown(monkeypatch, exc=RuntimeError("boom"))
+    install_client(monkeypatch, FakeClient(get=ConnectionError("network down")))
     monkeypatch.setattr(subject, "t", lambda key, **kwargs: (key, kwargs))
 
     result = await subject.fetch_webpage("https://example.test/page")
