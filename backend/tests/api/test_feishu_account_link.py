@@ -59,6 +59,9 @@ async def channel(monkeypatch):
     )
     monkeypatch.setattr(sso.SSOService, "find_or_create_user", login)
     monkeypatch.setattr(sso.AuditLogService, "log", AsyncMock())
+    # Authorization status codes are the subject here; the token blacklist lives
+    # in Redis, so stub it rather than requiring a Redis instance.
+    monkeypatch.setattr(deps, "is_token_blacklisted", AsyncMock(return_value=False))
     monkeypatch.setattr(sso, "_backend_url", lambda _: "https://api.example")
 
     async def setting(key, default=None):

@@ -813,9 +813,17 @@ async def get_cached_run_status(run_id: UUID) -> AgentRunStatus | None:
 
 
 async def _wake_run_worker(run_id: UUID) -> None:
-    redis = await get_redis()
-    pubsub_channel = RUN_INPUT_WAKEUP_PREFIX.format(run_id=run_id)
-    await redis.publish(pubsub_channel, "1")
+    """Best-effort latency hint; the input row is already durable in PostgreSQL.
+
+    A Redis outage must not fail ``enqueue_input``: the worker also polls queued
+    inputs, so the only cost of a missed publish is a later wake-up.
+    """
+    try:
+        redis = await get_redis()
+        pubsub_channel = RUN_INPUT_WAKEUP_PREFIX.format(run_id=run_id)
+        await redis.publish(pubsub_channel, "1")
+    except Exception:
+        logger.warning("Failed to wake run worker for %s", run_id, exc_info=True)
 
 
 def run_input_wakeup_channel(run_id: UUID) -> str:
