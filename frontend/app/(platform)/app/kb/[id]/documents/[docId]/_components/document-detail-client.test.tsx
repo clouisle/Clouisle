@@ -406,7 +406,7 @@ describe('platform DocumentDetailClient', () => {
     next.props.onClick()
     tree = await flush()
     expect(api.getDocumentChunks).toHaveBeenLastCalledWith('kb-1', 'doc-1', { page: 2, pageSize: 20 })
-    expect(text(tree)).toContain('Last page chunk')
+    expect(elements(tree).some(item => item.type === 'chunk-markdown' && item.props.source === 'Last page chunk')).toBe(true)
     expect(text(tree)).toContain('pageInfo:2,2')
 
     const nextAtEnd = buttonWithIcon(tree, 'ChevronRight')!
@@ -418,7 +418,7 @@ describe('platform DocumentDetailClient', () => {
     buttonWithIcon(tree, 'ChevronLeft')!.props.onClick()
     tree = await flush()
     expect(api.getDocumentChunks).toHaveBeenLastCalledWith('kb-1', 'doc-1', { page: 1, pageSize: 20 })
-    expect(text(tree)).toContain('First chunk')
+    expect(elements(tree).some(item => item.type === 'chunk-markdown' && item.props.source === 'First chunk')).toBe(true)
   })
 
   test('offers the first-chunk action for an empty completed document', async () => {

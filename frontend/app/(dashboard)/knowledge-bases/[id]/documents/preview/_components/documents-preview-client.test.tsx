@@ -456,4 +456,3 @@ describe('DocumentsPreviewClient', () => {
     expect(api.getDocumentFile).toHaveBeenCalledWith('kb-1', 'doc-2')
   })
 })
-})

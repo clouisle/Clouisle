@@ -11,6 +11,7 @@ const toolsApi = {
   testDatabaseConnection: mock(async () => ({ success: true, message: 'Connected' })),
 }
 
+const TabContext = React.createContext<((value: string) => void) | undefined>(undefined)
 mock.module('next-intl', () => ({
   useTranslations: () => Object.assign(
     (key: string) => key,
@@ -37,9 +38,20 @@ mock.module('@/components/ui/dialog', () => ({
   DialogTitle: passthrough('h2'),
 }))
 mock.module('@/components/ui/select', () => ({
-  Select: ({ value, onValueChange, children }: React.PropsWithChildren<{ value?: string; onValueChange?: (val: string) => void }>) => (
-    <div id="team" data-value={value} onValueChange={onValueChange}>{children}</div>
-  ),
+  Select: ({ value, onValueChange, children }: React.PropsWithChildren<{ value?: string; onValueChange?: (val: string) => void }>) => {
+    const trigger = React.Children.toArray(children)[0]
+    const triggerId =
+      React.isValidElement(trigger) && trigger.props && typeof trigger.props === 'object' && 'id' in trigger.props
+        && typeof trigger.props.id === 'string'
+        ? trigger.props.id
+        : undefined
+    return (
+      <div id={triggerId} data-value={value} onValueChange={onValueChange}>
+        <button data-testid="select-trigger" onClick={() => onValueChange?.('mysql')}>change-to-mysql</button>
+        {children}
+      </div>
+    )
+  },
   SelectContent: passthrough(),
   SelectItem: passthrough(),
   SelectTrigger: passthrough('button'),

@@ -198,7 +198,7 @@ function render(params: Promise<{ id: string }> = Promise.resolve({ id: 'agent-1
   return renderer!
 }
 async function flush() {
-  await act(async () => { await Promise.resolve(); await Promise.resolve() })
+  await act(async () => { for (let index = 0; index < 8; index++) await Promise.resolve() })
 }
 
 function output() { return JSON.stringify(renderer!.toJSON()) }
@@ -277,7 +277,7 @@ beforeEach(() => {
       constructor(callback: (entries: Array<{ isIntersecting: boolean }>) => void) {
         intersectionCallback = callback
       }
-      observe = observe
+      observe = (target: unknown) => observe(target)
       disconnect = disconnect
     },
   })
@@ -406,13 +406,18 @@ describe('PublicChatPage', () => {
   })
 
   test('loads the next conversation page when the history sentinel intersects', async () => {
-    getConversations.mockResolvedValueOnce({ items: conversations, total: 8 })
+    let resolveFirstPage!: (value: { items: Array<{ id: string; title: string | null }>; total: number }) => void
+    getConversations.mockReset()
+    getConversations.mockImplementationOnce(() => new Promise((resolve) => { resolveFirstPage = resolve }))
     getConversations.mockResolvedValueOnce({
       items: [{ id: 'conv-3', title: 'Third chat' }],
       total: 8,
     })
 
     render()
+    await flush()
+    expect(intersectionCallback).toBeUndefined()
+    await act(async () => { resolveFirstPage({ items: conversations, total: 8 }); await Promise.resolve() })
     await flush()
     expect(intersectionCallback).toBeDefined()
 
@@ -759,18 +764,24 @@ describe('PublicChatPage', () => {
   })
 
   test('loads the next conversation page when the history sentinel becomes visible', async () => {
-    getConversations
-      .mockResolvedValueOnce({
+    let resolveFirstPage!: (value: { items: Array<{ id: string; title: string }>; total: number }) => void
+    getConversations.mockReset()
+    getConversations.mockImplementationOnce(() => new Promise((resolve) => { resolveFirstPage = resolve }))
+    getConversations.mockResolvedValueOnce({
+      items: [{ id: 'page-two-0', title: 'Page two conversation' }],
+      total: 6,
+    })
+    render()
+    await flush()
+    expect(intersectionCallback).toBeUndefined()
+    await act(async () => {
+      resolveFirstPage({
         items: Array.from({ length: 5 }, (_, index) => ({ id: `page-one-${index}`, title: `Page one ${index}` })),
         total: 6,
       })
-      .mockResolvedValueOnce({
-        items: [{ id: 'page-two-0', title: 'Page two conversation' }],
-        total: 6,
-      })
-    render()
+      await Promise.resolve()
+    })
     await flush()
-
     expect(intersectionCallback).toBeDefined()
     expect(getConversations).toHaveBeenCalledWith('agent-1', { page: 1, pageSize: 5 })
     await act(async () => {

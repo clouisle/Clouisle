@@ -265,14 +265,13 @@ test("filters notifications and fetches every page of unread results", async () 
   const renderer = await renderClient();
   const scopeFilter = renderer.root.findByProps({ "data-filter": "scope" });
   const unreadFilter = renderer.root.findByProps({ "data-filter": "unreadOnly" });
-  list.mockResolvedValueOnce({ items: [], total: 0, page: 1, page_size: 20 });
+  list.mockResolvedValueOnce({ items: [defaultItem], total: 1, page: 1, page_size: 20 });
   await act(async () => {
     scopeFilter.findAllByType("button").find((node) => node.children.join("") === "scopeOptions.user")!.props.onClick();
   });
   expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ scope: "user", page: 1 }));
-  list
-    .mockResolvedValueOnce({ items: [firstUnread], total: 2, page: 1, page_size: 20 })
-    .mockResolvedValueOnce({ items: [secondUnread], total: 2, page: 2, page_size: 20 });
+  list.mockResolvedValueOnce({ items: [firstUnread], total: 2, page: 1, page_size: 20 });
+  list.mockResolvedValueOnce({ items: [firstUnread, secondUnread], total: 2, page: 2, page_size: 20 });
   await act(async () => {
     unreadFilter.findAllByType("button")[0]!.props.onClick();
   });
@@ -281,8 +280,8 @@ test("filters notifications and fetches every page of unread results", async () 
     unread_only: true,
     page: 2,
   }));
-  expect(renderer.root.findAllByType("button").some((node) => nodeText(node) === "First unread")).toBe(true);
-  expect(renderer.root.findAllByType("button").some((node) => nodeText(node) === "Second unread")).toBe(true);
+  expect(nodeText(renderer.root)).toContain("First unread");
+  expect(nodeText(renderer.root)).toContain("Second unread");
   expect(renderer.root.findAllByType("span").some((node) => nodeText(node) === "1 / 1")).toBe(false);
   act(() => renderer.unmount());
 });

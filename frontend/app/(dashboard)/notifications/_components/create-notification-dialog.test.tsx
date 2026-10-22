@@ -74,17 +74,8 @@ mock.module("@/components/ui/select", () => ({
   SelectTrigger: () => null,
 }));
 mock.module("@/components/ui/checkbox", () => ({
-  Checkbox: ({
-    onCheckedChange,
-    ...props
-  }: {
-    onCheckedChange?: (checked: boolean) => void;
-  }) => (
-    <input
-      {...props}
-      type="checkbox"
-      onChange={(event) => onCheckedChange?.(event.target.checked)}
-    />
+  Checkbox: ({ onCheckedChange, checked, ...props }: { onCheckedChange?: (checked: boolean) => void; checked?: boolean }) => (
+    <input {...props} id={props.id} checked={checked} type="checkbox" onChange={(event) => onCheckedChange?.(event.target.checked)} />
   ),
 }));
 mock.module("@/components/ui/markdown-editor", () => ({
@@ -148,6 +139,9 @@ const render = async () => {
   });
   return renderer!;
 };
+const nodeText = (node: ReactTestRenderer['root']): string =>
+  node.children.map((child) => typeof child === 'string' ? child : nodeText(child)).join('');
+
 const submitButton = (renderer: ReactTestRenderer) =>
   renderer.root.findAllByType("button").find((button) => button.children.includes("admin.submit"))!;
 
@@ -340,8 +334,8 @@ test("loads users and creates a notification for the selected user", async () =>
   await act(async () => {
     title.props.onChange({ target: { value: "Account notice" } });
     renderer.root.findByType("textarea").props.onChange({ target: { value: "Please review." } });
-    await submitButton(renderer).props.onClick();
   });
+  await act(async () => submitButton(renderer).props.onClick());
 
   expect(adminCreate).toHaveBeenCalledWith(expect.objectContaining({
     scope: "user",
@@ -364,13 +358,13 @@ test("clears server validation errors after editing and allows a successful retr
   await act(async () => {
     title.props.onChange({ target: { value: "Maintenance" } });
     renderer.root.findByType("textarea").props.onChange({ target: { value: "Tonight" } });
-    await submitButton(renderer).props.onClick();
   });
-  expect(renderer.root.findAllByType("div").map((node) => node.children.join("")).join(" ")).toContain("title: already exists");
+  await act(async () => submitButton(renderer).props.onClick());
+  expect(nodeText(renderer.root)).toContain("title: already exists");
   expect(onSuccess).not.toHaveBeenCalled();
 
   await act(async () => title.props.onChange({ target: { value: "Maintenance update" } }));
-  expect(renderer.root.findAllByType("div").map((node) => node.children.join("")).join(" ")).not.toContain("already exists");
+  expect(nodeText(renderer.root)).not.toContain("already exists");
   await act(async () => submitButton(renderer).props.onClick());
 
   expect(adminCreate).toHaveBeenCalledTimes(2);
@@ -390,12 +384,14 @@ test("sends the selected notification type, level and webhook channel", async ()
   await act(async () => {
     title.props.onChange({ target: { value: "Urgent notice" } });
     renderer.root.findByType("textarea").props.onChange({ target: { value: "Read this." } });
-    type.props.onChange({ target: { value: "security_login_anomaly" } });
-    level.props.onChange({ target: { value: "high" } });
-    renderer.root.findByProps({ id: "channel-webhook" }).props.onChange({ target: { checked: true } });
-    await submitButton(renderer).props.onClick();
   });
-
+  await act(async () => type.props.onChange({ target: { value: "security_login_anomaly" } }));
+  const updatedLevel = renderer.root.findAllByType("select").find((node) => node.props.value === "medium")!;
+  await act(async () => updatedLevel.props.onChange({ target: { value: "high" } }));
+  await act(async () => {
+    renderer.root.findByProps({ id: "channel-webhook" }).props.onCheckedChange(true);
+  });
+  await act(async () => submitButton(renderer).props.onClick());
   expect(adminCreate).toHaveBeenCalledWith(expect.objectContaining({
     type: "security_login_anomaly",
     level: "high",

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { ReactNode } from 'react'
 
 const push = mock()
-const toast = { success: mock(), error: mock(), loading: mock(() => 'toast-1') }
+const toast = { success: mock(), error: mock(), warning: mock(), loading: mock(() => 'toast-1') }
 const api = {
   getKnowledgeBase: mock(),
   getDocument: mock(),
@@ -75,7 +75,7 @@ mock.module('@/components/ui/textarea', () => ({ Textarea: element('textarea') }
 mock.module('@/components/ui/switch', () => ({
   Switch: ({ checked, onCheckedChange, ...props }: { checked: boolean; onCheckedChange(value: boolean): void }) => ({
     type: 'button',
-    props: { ...props, role: 'switch', 'aria-checked': checked, onClick: () => onCheckedChange(!checked) },
+    props: { ...props, role: 'switch', 'aria-checked': checked, checked, onCheckedChange: () => onCheckedChange(!checked), onChange: () => onCheckedChange(!checked), onClick: () => onCheckedChange(!checked) },
   }),
 }))
 
@@ -168,10 +168,11 @@ const preview = {
 beforeEach(() => {
   state = []
   effects = []
-  push.mockReset()
+  Object.values(api).forEach(fn => fn.mockReset())
   toast.success.mockReset()
   toast.error.mockReset()
-  Object.values(api).forEach(fn => fn.mockReset())
+  toast.warning.mockReset()
+  push.mockReset()
   api.getKnowledgeBase.mockResolvedValue(knowledgeBase)
   api.getDocument.mockResolvedValue(document)
   api.previewChunks.mockResolvedValue(preview)
@@ -409,10 +410,14 @@ describe('DocumentsPreviewClient', () => {
     tree = render()
     expect(text(tree)).toContain('Alpha beta')
 
-    ;(findAll(tree, node => node.props.id === 'chunk_size')[0].props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '900' } })
-    ;(findAll(tree, node => node.props.id === 'chunk_overlap')[0].props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '25' } })
-    ;(findAll(tree, node => node.props.id === 'separator')[0].props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '---' } })
-    ;(findAll(tree, node => node.props.id === 'clean_text')[0].props.onCheckedChange as (checked: boolean) => void)(false)
+    const control = (id: string) => findAll(tree, node => node.props.id === id)[0]
+    ;(control('chunk_size').props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '900' } })
+    tree = render()
+    ;(control('chunk_overlap').props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '25' } })
+    tree = render()
+    ;(control('separator').props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '---' } })
+    tree = render()
+    ;(control('clean_text').props.onClick as () => void)()
     tree = render()
     expect(text(tree)).toContain('noPreviewYet')
     expect(text(tree)).not.toContain('Alpha beta')

@@ -279,12 +279,33 @@ describe('DocumentsTable', () => {
     deleteDocument.mockResolvedValue({})
 
     let tree = await flush()
-    elements(tree).filter(item => item.type === 'checkbox')[1].props.onCheckedChange()
+    const checkboxes = elements(tree).filter(item => item.type === 'checkbox')
+    checkboxes[0].props.onCheckedChange()
     tree = render()
-    expect(text(tree)).toContain('1 documentsSelected')
+    expect(text(tree)).toContain('2   documentsSelected')
 
-    const toolbarButtons = elements(tree).filter(item => item.type === 'button' && item.props.className === 'h-8 w-8')
-    toolbarButtons[1].props.onClick()
+    elements(tree).filter(item => item.type === 'checkbox')[0].props.onCheckedChange()
+    tree = render()
+    expect(text(tree)).not.toContain('documentsSelected')
+
+    elements(tree).filter(item => item.type === 'checkbox')[0].props.onCheckedChange()
+    tree = render()
+    expect(text(tree)).toContain('2   documentsSelected')
+
+    const clearSelection = elements(tree).find(item => item.type === 'button' && item.props.className === 'h-8 w-8' && item.props.variant === 'ghost')
+    clearSelection!.props.onClick()
+    tree = render()
+    expect(text(tree)).not.toContain('documentsSelected')
+
+    const rowCheckboxes = elements(tree).filter(item => item.type === 'checkbox')
+    rowCheckboxes[1].props.onCheckedChange()
+    tree = render()
+    elements(tree).filter(item => item.type === 'checkbox')[2].props.onCheckedChange()
+    tree = render()
+    expect(text(tree)).toContain('2   documentsSelected')
+
+    const destructiveBulkButton = elements(tree).find(item => item.type === 'button' && String(item.props.className).includes('text-destructive'))
+    destructiveBulkButton!.props.onClick()
     tree = render()
     expect(text(tree)).toContain('confirmBulkDocumentsDelete:2')
     await find(tree, 'alert-action', 'delete').props.onClick()

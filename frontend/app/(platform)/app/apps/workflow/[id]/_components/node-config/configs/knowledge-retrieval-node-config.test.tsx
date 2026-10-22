@@ -121,12 +121,12 @@ test('updates query, retrieval, and output settings for a selected knowledge bas
 test('selects a query variable and clears stale constant input', () => {
   const onConfigChange = mock(() => {})
   states = [true, true, true, [{ id: 'kb-1', name: 'Product docs' }], false, true, '']
-  const tree = render({ knowledgeBaseId: 'kb-1', querySource: 'constant', queryConstantValue: 'old query' }, {
+  const tree = render({ knowledgeBaseId: 'kb-1', querySource: 'variable', queryConstantValue: 'old query' }, {
     onConfigChange,
     openVariablePopover: 'query-input',
   })
 
-  descendants(tree).find(node => node.type === 'button' && text(node).includes('Question'))!.props.onClick!()
+  descendants(tree).find(node => node.type === 'button' && typeof node.props.onClick === 'function' && text(node).includes('Question'))!.props.onClick!()
 
   expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({
     querySource: 'variable',

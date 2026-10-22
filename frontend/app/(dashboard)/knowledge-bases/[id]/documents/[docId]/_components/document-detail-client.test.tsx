@@ -28,6 +28,7 @@ mock.module('next/navigation', () => ({ useRouter: () => router }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
 mock.module('@/lib/api', () => ({ adminKnowledgeBasesApi: api }))
 mock.module('@/components/ui/chunk-markdown', () => ({ ChunkMarkdown: 'chunk-markdown' }))
+const { FeishuDocumentSource } = await import('@/components/knowledge-bases/feishu-document-source')
 
 const ui = {
   Button: 'button', Badge: 'badge', Input: 'input', Label: 'label', Textarea: 'textarea',
@@ -304,7 +305,7 @@ describe('dashboard DocumentDetailClient', () => {
     const tree = await flush()
 
     expect(text(tree)).toContain('feishuReadOnly')
-    expect(text(tree)).toContain('feishuImported')
+    expect(elements(tree).some(item => item.type === FeishuDocumentSource)).toBe(true)
     expect(elements(tree).some(item => item.type === 'button' && text(item).includes('reprocess'))).toBe(false)
     expect(buttonWithIcon(tree, 'Trash2')?.props.disabled).toBe(true)
     expect(find(tree, 'button', 'retryFailedChunks').props.disabled).toBe(true)
@@ -523,16 +524,21 @@ describe('dashboard DocumentDetailClient', () => {
     expect(text(tree)).toContain('noChunks')
   })
 
-  test('loads the original file for download and reports load failure', async () => {
-    let tree = await flush()
-    const download = elements(tree).find(item => item.type === 'button' && item.props['aria-label'] === 'download')
-    expect(download).toBeDefined()
-
+  test('delegates original file load failures to the preview panel', async () => {
     api.getDocumentFile.mockRejectedValueOnce(new Error('offline'))
-    await (download!.props.onClick as () => Promise<void>)()
+    let tree = await flush()
+    const previewBtn = elements(tree).find(item => item.type === 'button' && item.props['aria-label'] === 'previewOriginal')
+    expect(previewBtn).toBeDefined()
 
+    previewBtn!.props.onClick()
+    tree = render()
+    const panel = elements(tree).find(item => item.props && typeof item.props.loadFile === 'function')
+    expect(panel).toBeDefined()
+    expect(panel!.props.labels).toMatchObject({ download: 'downloadOriginal' })
+    const loadFile = panel!.props.loadFile
+    if (typeof loadFile !== 'function') throw new Error('Expected loadFile')
+    await expect(Promise.resolve(loadFile())).rejects.toThrow('offline')
     expect(api.getDocumentFile).toHaveBeenCalledWith('kb-1', 'doc-1')
-    expect(toastError).toHaveBeenCalledWith('downloadFailed')
   })
 
   test('loads adjacent chunk pages and disables paging at each boundary', async () => {
@@ -620,7 +626,7 @@ describe('dashboard DocumentDetailClient', () => {
     tree = render()
     await find(tree, 'button', 'previewChunks').props.onClick()
     expect(api.previewChunks).toHaveBeenCalledWith('kb-1', 'doc-1', {
-      chunk_size: 1000, chunk_overlap: 80, separator: undefined, clean_text: false,
+      chunk_size: 1000, chunk_overlap: 80, separator: '\n', clean_text: false,
     })
   })
 

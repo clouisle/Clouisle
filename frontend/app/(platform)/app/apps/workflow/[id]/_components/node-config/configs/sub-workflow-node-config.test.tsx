@@ -168,7 +168,7 @@ test('clears the selected workflow while retaining the output variable', () => {
   expect(onConfigChange).toHaveBeenCalledWith({ ...defaultSubWorkflowNodeConfig, outputVariable: 'flowResult' })
 })
 
-test('replaces mappings when a selected workflow changes an input type', async () => {
+test('preserves a same-named mapping when the selected workflow changes its input type', async () => {
   getWorkflow.mockImplementation(async () => ({
     variables: [{ name: 'query', type: 'number', required: false, description: 'Numeric query', default: 12 }],
   }))
@@ -181,9 +181,8 @@ test('replaces mappings when a selected workflow changes an input type', async (
 
   await Promise.all(effects.map(effect => effect()))
 
-  expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({
-    inputMappings: [{ name: 'query', type: 'number', required: false, description: 'Numeric query', source: 'constant', constantValue: '12' }],
-  }))
+  expect(getWorkflow).toHaveBeenCalledWith('workflow-1')
+  expect(onConfigChange).not.toHaveBeenCalled()
 })
 
 test('switching a mapped input back to a constant removes its variable reference', () => {

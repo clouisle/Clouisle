@@ -172,8 +172,9 @@ test('loads and saves object-storage configuration after editing its fields', as
     renderer.root.findByProps({ id: 'objectStorageSecretKey' }).props.onChange({ target: { value: 'new-secret-key' } })
     renderer.root.findByProps({ id: 'objectStorageSecure' }).props.onCheckedChange(false)
     renderer.root.findByProps({ id: 'objectStorageForcePathStyle' }).props.onCheckedChange(true)
-    await saveButton(renderer).props.onClick()
   })
+
+  await act(async () => saveButton(renderer).props.onClick())
 
   expect(bulkUpdate).toHaveBeenCalledWith(expect.objectContaining({
     upload_storage_backend: 'object',
@@ -219,10 +220,15 @@ test('normalizes unknown storage backend values to local and uses defaults for m
   })
   const renderer = await render()
 
-  expect(renderer.root.findAllByType('select')[0].props.value).toBe('local')
+  const backendSelect = renderer.root.findAllByType('select')[0]
+  expect(backendSelect.props.value).toBe('local')
   expect(renderer.root.findByProps({ id: 'retentionDays' }).props.value).toBe(365)
   expect(renderer.root.findByProps({ id: 'archivePath' }).props.value).toBe('/var/log/clouisle/audit_archives')
   expect(renderer.root.findByProps({ id: 'kbDocumentMaxUploadSize' }).props.value).toBe(50)
+  expect(renderer.root.findAllByProps({ id: 'objectStorageSecure' })).toHaveLength(0)
+  expect(renderer.root.findAllByProps({ id: 'objectStorageForcePathStyle' })).toHaveLength(0)
+
+  await act(async () => backendSelect.props.onChange({ target: { value: 'object' } }))
   expect(renderer.root.findByProps({ id: 'objectStorageSecure' }).props.checked).toBe(true)
   expect(renderer.root.findByProps({ id: 'objectStorageForcePathStyle' }).props.checked).toBe(true)
   act(() => renderer.unmount())

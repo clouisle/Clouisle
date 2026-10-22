@@ -8,6 +8,7 @@ const ui = (props: Record<string, unknown>) => props.children
 const Button = ui
 const PermissionGuard = ui
 const TeamDialog = (props: Record<string, unknown>) => props.children
+const TeamDetailDialog = (props: Record<string, unknown>) => props.children
 const AlertDialogAction = (props: Record<string, unknown>) => jsx('alert-dialog-action', props)
 let permissions = ['admin:team:create', 'admin:team:update', 'admin:team:delete']
 let states: unknown[] = []
@@ -71,8 +72,10 @@ mock.module('@/components/ui/dropdown-menu', () => ({
   DropdownMenuSeparator: ui, DropdownMenuTrigger: ui,
 }))
 mock.module('@/components/ui/tooltip', () => ({ Tooltip: ui, TooltipContent: ui, TooltipTrigger: ui }))
+const AlertDialog = ({ open, children }: { open?: boolean; children?: unknown }) =>
+  jsx('alert-dialog', { open, children })
 mock.module('@/components/ui/alert-dialog', () => ({
-  AlertDialog: ui, AlertDialogAction, AlertDialogCancel: ui, AlertDialogContent: ui,
+  AlertDialog, AlertDialogAction, AlertDialogCancel: ui, AlertDialogContent: ui,
   AlertDialogDescription: ui, AlertDialogFooter: ui, AlertDialogHeader: ui, AlertDialogTitle: ui,
 }))
 
@@ -101,6 +104,19 @@ function find(node: unknown, predicate: (element: Tree) => boolean): Tree | unde
   }
 }
 
+function clickTooltipButton(node: unknown, className: string) {
+  const trigger = find(node, (element) =>
+    typeof element.props.onClick === 'function'
+    && String((element.props.render as Tree | undefined)?.props?.className).includes(className)
+  )
+  ;(trigger?.props.onClick as (() => void) | undefined)?.()
+}
+
+function openDialogAction(node: unknown): Tree | undefined {
+  const dialog = find(node, (element) => element.type === AlertDialog && element.props.open === true)
+  return dialog ? find(dialog, (element) => element.type === AlertDialogAction) : undefined
+}
+
 function findAll(node: unknown, predicate: (element: Tree) => boolean): Tree[] {
   if (!node || typeof node !== 'object') return []
   const element = node as Tree
@@ -119,7 +135,8 @@ beforeEach(() => {
   states = []
   searchQuery = ''
   setSearchQuery.mockClear()
-  deleteTeam.mockClear()
+  deleteTeam.mockReset()
+  deleteTeam.mockImplementation(async () => {})
   toastSuccess.mockClear()
   permissions = ['admin:team:create', 'admin:team:update', 'admin:team:delete']
   getTeams = () => Promise.resolve({ items: [], total: 0 })
@@ -162,7 +179,7 @@ describe('TeamsClient', () => {
 
     tree = render()
     expect(textContent(tree)).toContain('deleteTeamConfirm:{"name":"Platform"}')
-    const confirm = find(tree, (element) => element.type === AlertDialogAction && typeof element.props.onClick === 'function')
+    const confirm = openDialogAction(tree)
     await (confirm?.props.onClick as (event: { stopPropagation: () => void }) => Promise<void>)({ stopPropagation: mock() })
 
     tree = render()
@@ -234,7 +251,7 @@ describe('TeamsClient', () => {
     render()
     await effects.at(-1)?.()
     const loaded = render()
-    const editAction = find(loaded, (element) => element.props.variant === 'ghost' && textContent(element).includes('edit') && typeof element.props.onClick === 'function')
+    const editAction = find(loaded, (element) => textContent(element) === 'edit' && typeof element.props.onClick === 'function')
     ;(editAction?.props.onClick as (event: { stopPropagation: () => void }) => void)({ stopPropagation: mock() })
 
     const opened = render()
@@ -251,11 +268,10 @@ describe('TeamsClient', () => {
     const selectAll = find(render(), (element) => typeof element.props.onCheckedChange === 'function')
     ;(selectAll?.props.onCheckedChange as () => void)()
     const selected = render()
-    const bulkDelete = find(selected, (element) => String(element.props.className).includes('text-destructive') && typeof element.props.onClick === 'function')
-    ;(bulkDelete?.props.onClick as () => void)()
+    clickTooltipButton(selected, 'text-destructive')
 
     const confirmation = render()
-    const confirm = find(confirmation, (element) => element.type === AlertDialogAction && typeof element.props.onClick === 'function')
+    const confirm = openDialogAction(confirmation)
     await (confirm?.props.onClick as (event: { stopPropagation: () => void }) => Promise<void>)({ stopPropagation: mock() })
 
     const afterFailure = render()
@@ -275,7 +291,7 @@ describe('TeamsClient', () => {
 
     const confirmation = render()
     expect(textContent(confirmation)).toContain('deleteTeamConfirm:{"name":"Platform"}')
-    const confirm = find(confirmation, (element) => element.type === AlertDialogAction && typeof element.props.onClick === 'function')
+    const confirm = openDialogAction(confirmation)
     await (confirm?.props.onClick as (event: { stopPropagation: () => void }) => Promise<void>)({ stopPropagation: mock() })
     expect(deleteTeam).toHaveBeenCalledWith('team-1')
     expect(toastSuccess).toHaveBeenCalledWith('teamDeleted')
@@ -291,12 +307,11 @@ describe('TeamsClient', () => {
     const selectAll = find(render(), (element) => typeof element.props.onCheckedChange === 'function')
     ;(selectAll?.props.onCheckedChange as () => void)()
     const selected = render()
-    const bulkDelete = find(selected, (element) => String(element.props.className).includes('text-destructive') && typeof element.props.onClick === 'function')
-    ;(bulkDelete?.props.onClick as () => void)()
+    clickTooltipButton(selected, 'text-destructive')
 
     const confirmation = render()
     expect(textContent(confirmation)).toContain('confirmBulkDelete:{"count":2}')
-    const confirm = find(confirmation, (element) => element.type === AlertDialogAction && typeof element.props.onClick === 'function')
+    const confirm = openDialogAction(confirmation)
     await (confirm?.props.onClick as (event: { stopPropagation: () => void }) => Promise<void>)({ stopPropagation: mock() })
     expect(deleteTeam).toHaveBeenCalledWith('team-1')
     expect(deleteTeam).toHaveBeenCalledWith('team-2')

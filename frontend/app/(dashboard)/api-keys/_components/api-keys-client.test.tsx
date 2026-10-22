@@ -373,7 +373,8 @@ test('respects action permissions and keeps the list usable when mutations fail'
   expect(findByType(render(), AlertDialog).props.open).toBe(false)
   expect(toastSuccess).not.toHaveBeenCalled()
   tree = render()
-  findAll(tree, (node) => node.type === Button && node.props.size === 'icon')[0].props.onClick()
+  const bulkActionBar = findAll(tree, (node) => node.type === 'div' && node.props.className === 'fixed bottom-8 left-1/2 -translate-x-1/2 z-50')[0]
+  findAll(bulkActionBar, (node) => node.type === Button && node.props.size === 'icon')[0].props.onClick()
   expect(text(render())).not.toContain('apiKeys.keysSelected')
 })
 test('keeps key listing available when stats or owner-filter loading fails', async () => {

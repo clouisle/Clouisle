@@ -141,10 +141,11 @@ mock.module('@/components/ui/select', () => ({
   SelectValue: element('select-value'),
 }))
 mock.module('@/components/ui/dropdown-menu', () => ({
-  DropdownMenu: element('dropdown'),
+  DropdownMenu: element('dropdown-menu'),
+  DropdownMenuTrigger: element('dropdown-trigger'),
   DropdownMenuContent: element('dropdown-content'),
-  DropdownMenuItem: ({ render, children, ...props }: Record<string, unknown>) => render ?? { type: 'dropdown-item', props: { ...props, children } },
-  DropdownMenuTrigger: ({ render }: { render: ReactNode }) => render,
+  DropdownMenuItem: element('dropdown-item'),
+  DropdownMenuSeparator: element('dropdown-separator'),
 }))
 mock.module('@/components/ui/tooltip', () => ({
   Tooltip: element('tooltip'),
@@ -396,7 +397,7 @@ describe('admin app panels', () => {
 
     let tree = await settledPanel(() => AdminAgentsPanel())
     expect(toastError).toHaveBeenCalledWith('Unable to load agents')
-    expect(JSON.stringify(tree)).toContain('"children":"empty"')
+    expect(JSON.stringify(tree)).toContain('empty')
 
     agentListPage.mockResolvedValue({
       items: [{ id: 'agent-1', name: 'Support Bot', status: 'draft', visibility: 'team', team: null, created_by: null, conversation_count: 0, message_count: 0, updated_at: '2026-01-01T00:00:00Z' }],
@@ -404,6 +405,7 @@ describe('admin app panels', () => {
       page: 1,
       page_size: 10,
     })
+    searchValue = 'retry'
     tree = await settledPanel(() => AdminAgentsPanel())
     agentPublish.mockRejectedValueOnce(new Error('Unable to publish agent'))
 

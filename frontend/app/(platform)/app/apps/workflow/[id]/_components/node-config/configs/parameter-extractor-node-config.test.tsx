@@ -125,7 +125,19 @@ mock.module('../../nodes/parameter-extractor-node', () => ({
   },
   getExtractionMethodConfig: () => methods,
   extractedParamTypeConfig: typeConfig,
-  generateJsonSchema: (parameters: Config['parameters']) => ({ properties: parameters.map(parameter => parameter.name) }),
+  generateJsonSchema: (parameters: Config['parameters']) => ({
+    name: 'extracted_parameters',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: Object.fromEntries(parameters.map(parameter => [parameter.name, {
+        description: parameter.description || undefined,
+        type: parameter.type,
+      }])),
+      required: parameters.filter(parameter => parameter.required).map(parameter => parameter.name),
+      additionalProperties: false,
+    },
+  }),
 }))
 
 const { ParameterExtractorNodeConfig } = await import('./parameter-extractor-node-config')
@@ -337,7 +349,7 @@ describe('ParameterExtractorNodeConfig', () => {
     const tree = render({ ...baseConfig, modelId: 'removed-model', parameters: [parameter] })
     expect(JSON.stringify(tree)).toContain('removed-model')
     const schema = find(tree, node => node.type === 'pre')
-    expect(schema.props.children).toContain('"required": [\n    "answer"\n  ]')
+    expect(schema.props.children).toContain('"required": [\n      "answer"\n    ]')
     expect(schema.props.children).toContain('"description": "Answer"')
   })
 

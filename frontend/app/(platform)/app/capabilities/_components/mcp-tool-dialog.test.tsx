@@ -205,10 +205,14 @@ describe('MCP tool dialog', () => {
 
     expect(button(renderer, 'mcpDialog.fetchTools').props.disabled).toBe(true)
     change(input(renderer, 'url'), 'https://mcp.test/events')
-    change(values(renderer, 'mcpDialog.headerNamePlaceholder')[0], 'Authorization')
-    change(values(renderer, 'mcpDialog.headerValuePlaceholder')[0], 'Bearer token')
-    change(values(renderer, 'mcpDialog.headerNamePlaceholder')[1], '   ')
-    change(values(renderer, 'mcpDialog.headerValuePlaceholder')[1], 'ignored')
+    const sseTab = () => renderer.root.findAll((node) => node.props?.['data-tab-content'] === 'sse')[0]
+    const sseInputs = (placeholder: string) =>
+      sseTab().findAll((node) => node.type === 'input' && node.props.placeholder === placeholder)
+    change(sseInputs('mcpDialog.headerNamePlaceholder')[0], 'Authorization')
+    change(sseInputs('mcpDialog.headerValuePlaceholder')[0], 'Bearer token')
+    await click(button(renderer, 'mcpDialog.addHeader'))
+    change(sseInputs('mcpDialog.headerNamePlaceholder')[1], '   ')
+    change(sseInputs('mcpDialog.headerValuePlaceholder')[1], 'ignored')
     await click(button(renderer, 'mcpDialog.fetchTools'))
     expect(listMcpTools).toHaveBeenCalledWith({ transport: 'sse', url: 'https://mcp.test/events', headers: { Authorization: 'Bearer token' } })
     expect(toastSuccess).toHaveBeenCalledWith('mcpDialog.toolsLoaded')
