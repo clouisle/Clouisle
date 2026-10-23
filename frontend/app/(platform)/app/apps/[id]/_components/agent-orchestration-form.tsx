@@ -83,7 +83,7 @@ function ConfigCard({
     <div data-testid={testId} className={cn('rounded-xl bg-muted overflow-hidden', className)}>
       <div
         className={cn(
-          'flex items-center gap-3 px-4 py-3',
+          'flex items-center gap-3 px-4 py-2.5 min-h-[44px]',
           onToggle && 'cursor-pointer transition-colors'
         )}
         onClick={onToggle}
