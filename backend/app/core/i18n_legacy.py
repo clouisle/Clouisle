@@ -1147,6 +1147,30 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "已回答 {total} 个问题中的 {done} 个，请发送剩余答案。",
     },
     "feishu_agent_received": {"en": "🤔Thinking...", "zh": "🤔思考中..."},
+    "feishu_agent_answer_text_required": {
+        "en": "Please answer the pending question with text; attachments cannot answer it.",
+        "zh": "请用文字回答当前问题，附件不能作为问题答案。",
+    },
+    "feishu_agent_attachments_disabled": {
+        "en": "This Agent does not accept attachments.",
+        "zh": "当前智能体未启用附件，请先开启附件功能。",
+    },
+    "feishu_agent_too_many_files": {
+        "en": "Too many attachments for this Agent.",
+        "zh": "附件数量超过当前智能体限制。",
+    },
+    "feishu_agent_file_type_unsupported": {
+        "en": "This attachment type is not allowed by the Agent.",
+        "zh": "当前智能体不允许此附件类型。",
+    },
+    "feishu_agent_file_too_large": {
+        "en": "The attachment exceeds the Agent's size limit.",
+        "zh": "附件大小超过当前智能体限制。",
+    },
+    "feishu_agent_media_failed": {
+        "en": "Unable to read the Feishu attachment. Check the bot's message resource permission and try again.",
+        "zh": "无法读取飞书附件，请检查机器人的消息资源读取权限后重试。",
+    },
     "feishu_agent_run_failed": {
         "en": "The Agent task did not finish. Open the conversation for details.",
         "zh": "Agent 任务未完成，请打开对话查看详情。",

@@ -57,7 +57,6 @@ from app.models.feishu_agent import (
 from app.models.integration_delivery import IntegrationDelivery
 from app.models.integration import Integration
 from app.models.user import User
-from app.schemas.agent import ChatRequest
 from app.schemas.response import BusinessError
 from app.services.integration_features import active_features
 
@@ -276,7 +275,7 @@ async def accept_message(event: dict) -> str | None:
     message = event.get("message")
     if not senders or not isinstance(message, dict):
         return None
-    if _text(message.get("message_type")) != "text":
+    if _text(message.get("message_type")) not in ("text", "file", "image", "post"):
         return None
     if _text(message.get("chat_type")) != "p2p":
         return None
@@ -284,8 +283,10 @@ async def accept_message(event: dict) -> str | None:
     chat_id = _text(message.get("chat_id"))
     if not message_id or not chat_id:
         return None
-    text = _event_text(event)
-    if not text:
+    from app.services.feishu_agent_input import parse_message
+
+    text, attachments = parse_message(message)
+    if not text and not attachments:
         return None
     integration = await _resolve_integration(_text(event.get("app_id")))
     if integration is None:
@@ -371,6 +372,7 @@ async def accept_message(event: dict) -> str | None:
                     message_id=message_id,
                     sender_id=resolved_sender_id,
                     text=text,
+                    attachments=attachments,
                     using_db=db,
                 )
         except Exception:
@@ -851,7 +853,12 @@ async def _submit_receipt(
     from app.services.agent_submission import submit_chat_run
     from app.models.agent_run import AgentRunMode
 
-    prepared = ChatRequest(message=receipt.text)
+    from app.services.feishu_agent_input import prepare_input
+
+    integration = await Integration.get(id=receipt.integration_id)
+    prepared = await prepare_input(
+        receipt, session, agent, user, await _client_for(integration)
+    )
 
     async with in_transaction() as db:
         locked = (
@@ -1081,6 +1088,12 @@ async def _process_pending(
     if run is not None and run.status == AgentRunStatus.WAITING:
         if session is None:
             return
+        if receipt.attachments:
+            await _reply_text(
+                receipt, t("feishu_agent_answer_text_required"), key="answer_error"
+            )
+            await _consume(receipt, error="feishu_agent_answer_text_required")
+            return
         cutoff = await _answer_cutoff(run)
         if cutoff is None:
             # The structured question has not been persisted yet, so no message
@@ -1117,13 +1130,24 @@ async def _process_pending(
         await _reply_text(receipt, t("feishu_agent_received"), key=progress_key)
     try:
         await _submit_receipt(receipt, session, agent, user)
-    except BusinessError:
-        logger.warning("Feishu agent submission busy for %s", receipt.id)
-    except Exception as exc:
-        logger.warning("Feishu agent submission failed for %s", receipt.id)
+    except BusinessError as exc:
+        if exc.status_code == 409:
+            return
         await FeishuAgentReceipt.filter(id=receipt.id, status="pending").update(
-            error=_error_key(exc), updated_at=utcnow()
+            status="error", error=_error_key(exc), updated_at=utcnow()
         )
+        await _reply_text(receipt, t(_error_key(exc)), key="final")
+    except Exception as exc:
+        logger.exception("Feishu agent submission failed for %s", receipt.id)
+        if receipt.attachments:
+            await FeishuAgentReceipt.filter(id=receipt.id, status="pending").update(
+                status="error", error="feishu_agent_media_failed", updated_at=utcnow()
+            )
+            await _reply_text(receipt, t("feishu_agent_media_failed"), key="final")
+        else:
+            await FeishuAgentReceipt.filter(id=receipt.id, status="pending").update(
+                error=_error_key(exc), updated_at=utcnow()
+            )
 
 
 async def _process_receipt(receipt: FeishuAgentReceipt) -> None:

@@ -421,6 +421,41 @@ class FeishuClient:
                 },
             )
 
+    async def download_message_resource(
+        self, message_id: str, resource_key: str, *, kind: str, max_bytes: int
+    ) -> tuple[bytes, str, str]:
+        """Download only resources addressed through the authenticated message API."""
+        if kind not in ("file", "image") or max_bytes <= 0:
+            raise ValueError("Invalid Feishu resource parameters")
+        async with self._transport() as client:
+            token = await self._token(client)
+            path = f"/im/v1/messages/{quote(message_id, safe='')}/resources/{quote(resource_key, safe='')}"
+            async with client.stream(
+                "GET",
+                path,
+                params={"type": kind},
+                headers={"Authorization": f"Bearer {token}"},
+            ) as response:
+                if 300 <= response.status_code < 400:
+                    raise FeishuAPIError("Feishu resource redirect refused")
+                if response.status_code >= 400:
+                    await response.aread()
+                    message, detail = _error_message(response)
+                    raise FeishuAPIError(
+                        message, detail=detail, status_code=response.status_code
+                    )
+                content = bytearray()
+                async for chunk in response.aiter_bytes():
+                    if len(content) + len(chunk) > max_bytes:
+                        from app.services.feishu_agent_runtime import channel_error
+
+                        raise channel_error("feishu_agent_file_too_large")
+                    content.extend(chunk)
+                mime = response.headers.get(
+                    "content-type", "application/octet-stream"
+                ).split(";")[0]
+                return bytes(content), "", mime
+
     def _transport(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
             base_url=API_BASE,

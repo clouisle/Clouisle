@@ -265,6 +265,78 @@ def delivery_fields(receipt):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["file", "post"])
+async def test_attachment_message_reaches_run_with_private_asset(
+    world, monkeypatch, kind
+):
+    from unittest.mock import AsyncMock
+    from app.services import feishu_agent_input as inputs
+    from app.models.asset import Asset
+
+    await Agent.filter(id=world.agent.id).update(enable_attachments=True)
+    event = text_event(message_type=kind, message_id=f"om_attachment_{kind}")
+    content = {"file_key": "file_secret", "file_name": "report.txt"}
+    if kind == "post":
+        content = {
+            "zh_cn": {
+                "title": "总结",
+                "content": [
+                    [
+                        {"tag": "text", "text": "分析一下"},
+                        {
+                            "tag": "file",
+                            "file_key": "file_secret",
+                            "file_name": "report.txt",
+                        },
+                    ]
+                ],
+            }
+        }
+    event["message"]["content"] = json.dumps(content)
+    receipt_id = await runtime.accept_message(event)
+    assert receipt_id is not None
+    assert await runtime.accept_message(event) is None
+    download = AsyncMock(return_value=(b"report content", "", "text/plain"))
+    transport_factory = runtime._client_for
+
+    async def client_for(integration):
+        client = await transport_factory(integration)
+        client.download_message_resource = download
+        return client
+
+    monkeypatch.setattr(runtime, "_client_for", client_for)
+    monkeypatch.setattr(inputs, "_store_upload", AsyncMock())
+    await runtime.process_pending()
+    receipt = await FeishuAgentReceipt.get(id=receipt_id)
+    assert receipt.status == "submitted"
+    request = world.submission.calls[0][1]
+    assert request.file_urls[0].filename == "report.txt"
+    asset = await Asset.get(id=request.file_urls[0].asset_id)
+    assert asset.created_by_id == world.user.id
+    assert asset.team_id is None
+    assert request.message == ("总结\n分析一下" if kind == "post" else "")
+    await runtime.process_pending()
+    assert download.await_count == 1
+    assert len(world.submission.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_disabled_attachments_receive_explanation(world):
+    event = text_event(message_type="file")
+    event["message"]["content"] = json.dumps(
+        {"file_key": "file_key", "file_name": "report.txt"}
+    )
+    receipt_id = await runtime.accept_message(event)
+    await runtime.process_pending()
+    receipt = await FeishuAgentReceipt.get(id=receipt_id)
+    assert receipt.status == "error"
+    assert receipt.error == "feishu_agent_attachments_disabled"
+    assert not world.submission.calls
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id, event_key="final")
+    assert delivery.status == "sent"
+
+
+@pytest.mark.asyncio
 async def test_accept_persists_durable_receipt(world):
     receipt = await receipt_for(world)
 

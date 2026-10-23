@@ -31,6 +31,19 @@ async def migrate_feishu_agent_selection() -> None:
             else "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'feishu_agent_preferences'"
         )
         names = {row["name" if sqlite else "column_name"] for row in preference_columns}
+        receipt_columns = await db.execute_query_dict(
+            'PRAGMA table_info("feishu_agent_receipts")'
+            if sqlite
+            else "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'feishu_agent_receipts'"
+        )
+        if receipt_columns and "attachments" not in {
+            row["name" if sqlite else "column_name"] for row in receipt_columns
+        }:
+            await db.execute_query(
+                "ALTER TABLE feishu_agent_receipts ADD COLUMN attachments "
+                + ("JSON" if sqlite else "JSONB")
+                + " NOT NULL DEFAULT '[]'"
+            )
         if "is_enabled" not in names:
             await db.execute_query(
                 "ALTER TABLE feishu_agent_preferences ADD COLUMN is_enabled BOOLEAN NOT NULL DEFAULT FALSE"

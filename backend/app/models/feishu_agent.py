@@ -128,6 +128,7 @@ class FeishuAgentReceipt(models.Model):
     message_id = fields.CharField(max_length=128)
     sender_id = fields.CharField(max_length=128, null=True)
     text = fields.TextField(default="")
+    attachments: list = fields.JSONField(default=list)
     run = fields.ForeignKeyField(
         "models.AgentRun",
         related_name="feishu_agent_receipts",
