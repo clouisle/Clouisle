@@ -83,6 +83,7 @@ Welcome to the user and operator documentation for Clouisle. For the extended Ch
 - [Auth API](api-reference/endpoints/auth.md)
 - [Chat API](api-reference/endpoints/chat.md)
 - [Conversation Statistics API](api-reference/endpoints/conversations.md)
+- [Delivery Log API](api-reference/endpoints/deliveries.md)
 - [Embed API](api-reference/endpoints/embed.md)
 - [Knowledge Bases API](api-reference/endpoints/knowledge-bases.md)
 - [Memories API](api-reference/endpoints/memories.md)

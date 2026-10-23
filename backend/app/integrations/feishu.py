@@ -17,6 +17,10 @@ from app.integrations.credentials import decrypt_secret
 API_BASE = "https://open.feishu.cn/open-apis"
 TIMEOUT = httpx.Timeout(20.0, connect=5.0)
 PAGE_SIZE = 50
+# Feishu rejects these sizes before storing anything.
+IMAGE_MAX_BYTES = 10 * 1024 * 1024
+FILE_MAX_BYTES = 30 * 1024 * 1024
+REPLY_MEDIA_TYPES = frozenset({"image", "file", "media"})
 
 # User-authorized (web login) endpoints. Overridable per integration so a
 # deployment can point at a Lark tenant or a test double.
@@ -131,6 +135,8 @@ def _required_scopes(body: Any, path: str) -> tuple[str, ...]:
                     scopes.append(scope)
     if not scopes:
         known_scopes = {
+            "/im/v1/images": ("im:resource:upload", "im:resource"),
+            "/im/v1/files": ("im:resource:upload", "im:resource"),
             "/wiki/v2/spaces": (
                 "wiki:space:retrieve",
                 "wiki:wiki:readonly",
@@ -299,6 +305,129 @@ class FeishuClient:
                     "uuid": uuid,
                 },
             )
+
+    async def reply_markdown(self, message_id: str, text: str, *, uuid: str) -> None:
+        """Reply using a Feishu interactive card with a Markdown element."""
+        if (
+            not message_id
+            or len(message_id) > 255
+            or not text
+            or len(text.encode("utf-8")) > 150 * 1024
+            or not uuid
+            or len(uuid) > 50
+        ):
+            raise ValueError("Invalid Feishu Markdown reply parameters")
+        card = {
+            "schema": "2.0",
+            "config": {"wide_screen_mode": True},
+            "body": {"elements": [{"tag": "markdown", "content": text}]},
+        }
+        async with httpx.AsyncClient(
+            base_url=API_BASE,
+            timeout=TIMEOUT,
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
+            token = await self._token(client)
+            await self._request(
+                client,
+                "POST",
+                f"/im/v1/messages/{quote(message_id, safe='')}/reply",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "msg_type": "interactive",
+                    "content": json.dumps(card, ensure_ascii=False),
+                    "uuid": uuid,
+                },
+            )
+
+    async def upload_image(
+        self, content: bytes, *, filename: str, content_type: str
+    ) -> str:
+        """Upload bytes as a message image and return the image key."""
+        if not content or len(content) > IMAGE_MAX_BYTES:
+            raise ValueError("Invalid Feishu image size")
+        if not filename or not content_type:
+            raise ValueError("Invalid Feishu image parameters")
+        async with self._transport() as client:
+            token = await self._token(client)
+            body = await self._request(
+                client,
+                "POST",
+                "/im/v1/images",
+                headers={"Authorization": f"Bearer {token}"},
+                data={"image_type": "message"},
+                files={"image": (filename, content, content_type)},
+            )
+        key = (body.get("data") or {}).get("image_key")
+        if not isinstance(key, str) or not key.strip():
+            raise FeishuAPIError("Feishu did not return an image key")
+        return key
+
+    async def upload_file(
+        self,
+        content: bytes,
+        *,
+        filename: str,
+        content_type: str,
+        file_type: str = "stream",
+    ) -> str:
+        """Upload bytes as a message file and return the file key."""
+        if not content or len(content) > FILE_MAX_BYTES:
+            raise ValueError("Invalid Feishu file size")
+        if not filename or not content_type or not file_type:
+            raise ValueError("Invalid Feishu file parameters")
+        async with self._transport() as client:
+            token = await self._token(client)
+            body = await self._request(
+                client,
+                "POST",
+                "/im/v1/files",
+                headers={"Authorization": f"Bearer {token}"},
+                data={"file_type": file_type, "file_name": filename},
+                files={"file": (filename, content, content_type)},
+            )
+        key = (body.get("data") or {}).get("file_key")
+        if not isinstance(key, str) or not key.strip():
+            raise FeishuAPIError("Feishu did not return a file key")
+        return key
+
+    async def reply_media(
+        self, message_id: str, *, msg_type: str, key: str, uuid: str
+    ) -> None:
+        """Reply with an uploaded image, file, or native video."""
+        if (
+            not message_id
+            or len(message_id) > 255
+            or msg_type not in REPLY_MEDIA_TYPES
+            or not key
+            or len(key) > 255
+            or not uuid
+            or len(uuid) > 50
+        ):
+            raise ValueError("Invalid Feishu media reply parameters")
+        content = {"image_key": key} if msg_type == "image" else {"file_key": key}
+        async with self._transport() as client:
+            token = await self._token(client)
+            await self._request(
+                client,
+                "POST",
+                f"/im/v1/messages/{quote(message_id, safe='')}/reply",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "msg_type": msg_type,
+                    "content": json.dumps(content),
+                    "uuid": uuid,
+                },
+            )
+
+    def _transport(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            base_url=API_BASE,
+            timeout=TIMEOUT,
+            follow_redirects=False,
+            trust_env=False,
+        )
 
     async def list_departments(self) -> list[FeishuDepartment]:
         async with httpx.AsyncClient(

@@ -103,14 +103,13 @@ from .wechat_agent import (
     WeChatAgentConfig,
     WeChatAgentSession,
     WeChatAgentReceipt,
-    WeChatAgentDelivery,
 )
 from .feishu_agent import (
-    FeishuAgentDelivery,
     FeishuAgentPreference,
     FeishuAgentReceipt,
     FeishuAgentSession,
 )
+from .integration_delivery import IntegrationDelivery
 from .memory import MemoryEntity, MemoryRelation, EntityType, RelationType
 from .password_history import PasswordHistory
 from .agent_run import (
@@ -151,11 +150,10 @@ __all__ = [
     "WeChatAgentConfig",
     "WeChatAgentSession",
     "WeChatAgentReceipt",
-    "WeChatAgentDelivery",
     "FeishuAgentPreference",
     "FeishuAgentSession",
     "FeishuAgentReceipt",
-    "FeishuAgentDelivery",
+    "IntegrationDelivery",
     "Team",
     "TeamMember",
     "ScopedRoleAssignment",

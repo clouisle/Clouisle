@@ -121,6 +121,7 @@
 - [认证与登录 API](api-reference/endpoints/auth.md)
 - [对话 API](api-reference/endpoints/chat.md)
 - [会话统计 API](api-reference/endpoints/conversations.md)
+- [投递记录 API](api-reference/endpoints/deliveries.md)
 - [外部免登嵌入 API](api-reference/endpoints/embed.md)
 - [知识库 API](api-reference/endpoints/knowledge-bases.md)
 - [记忆 API](api-reference/endpoints/memories.md)

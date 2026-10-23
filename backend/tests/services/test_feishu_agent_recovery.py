@@ -7,10 +7,12 @@ import pytest
 import pytest_asyncio
 
 from app.models.agent_run import AgentRun, AgentRunStatus
-from app.models.feishu_agent import FeishuAgentDelivery, FeishuAgentReceipt
+from app.models.feishu_agent import FeishuAgentReceipt
+from app.models.integration_delivery import IntegrationDelivery
 from app.tasks import feishu_agent
 from tests.services.test_feishu_agent_runtime import (
     db as db,
+    delivery_fields,
     receipt_for,
     world as world,
 )
@@ -60,23 +62,23 @@ async def test_recovery_task_delivers_outbox_after_receipt_completed(
 ):
     receipt = await receipt_for(world, message_id="om_recovery_outbox")
     await FeishuAgentReceipt.filter(id=receipt.id).update(status="completed")
-    delivery = await FeishuAgentDelivery.create(
-        receipt=receipt,
+    delivery = await IntegrationDelivery.create(
+        **delivery_fields(receipt),
         event_key="final",
         sequence=0,
-        uuid=str(uuid4()),
+        provider_uuid=str(uuid4()),
         text="Recovered answer",
     )
 
     assert await recover_task() == {"integrations": 1, "processed": 0}
 
-    assert (await FeishuAgentDelivery.get(id=delivery.id)).status == "sent"
+    assert (await IntegrationDelivery.get(id=delivery.id)).status == "sent"
     assert world.transport.sent == [
-        (receipt.message_id, "Recovered answer", delivery.uuid)
+        (receipt.message_id, "Recovered answer", delivery.provider_uuid)
     ]
     assert await recover_task() == {"integrations": 0, "processed": 0}
     assert world.transport.sent == [
-        (receipt.message_id, "Recovered answer", delivery.uuid)
+        (receipt.message_id, "Recovered answer", delivery.provider_uuid)
     ]
 
 
@@ -87,18 +89,18 @@ async def test_disabled_channel_preserves_pending_receipt_and_outbox(
     from app.models.integration import Integration
 
     receipt = await receipt_for(world, message_id="om_paused_recovery")
-    delivery = await FeishuAgentDelivery.create(
-        receipt=receipt,
+    delivery = await IntegrationDelivery.create(
+        **delivery_fields(receipt),
         event_key="notice",
         sequence=0,
-        uuid=str(uuid4()),
+        provider_uuid=str(uuid4()),
         text="Waiting answer",
     )
     await Integration.filter(id=world.integration.id).update(enabled_capabilities=[])
 
     assert await recover_task() == {"integrations": 0, "processed": 0}
     assert (await FeishuAgentReceipt.get(id=receipt.id)).status == "pending"
-    assert (await FeishuAgentDelivery.get(id=delivery.id)).status == "pending"
+    assert (await IntegrationDelivery.get(id=delivery.id)).status == "pending"
     assert world.transport.sent == []
     assert await AgentRun.all().count() == 0
 
@@ -107,4 +109,4 @@ async def test_disabled_channel_preserves_pending_receipt_and_outbox(
     )
     assert await recover_task() == {"integrations": 1, "processed": 1}
     assert (await FeishuAgentReceipt.get(id=receipt.id)).status == "submitted"
-    assert (await FeishuAgentDelivery.get(id=delivery.id)).status == "sent"
+    assert (await IntegrationDelivery.get(id=delivery.id)).status == "sent"

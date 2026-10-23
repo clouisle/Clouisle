@@ -40,6 +40,7 @@ import enMemories from './en/memories.json'
 import enEmbed from './en/embed.json'
 import enPackages from './en/packages.json'
 import enOnboarding from './en/onboarding.json'
+import enDeliveryLog from './en/deliveryLog.json'
 
 import zhCommon from './zh/common.json'
 import zhNav from './zh/nav.json'
@@ -73,6 +74,7 @@ import zhMemories from './zh/memories.json'
 import zhEmbed from './zh/embed.json'
 import zhPackages from './zh/packages.json'
 import zhOnboarding from './zh/onboarding.json'
+import zhDeliveryLog from './zh/deliveryLog.json'
 
 const MESSAGE_MODULES: Record<Locale, Record<string, unknown>[]> = {
   en: [
@@ -81,7 +83,7 @@ const MESSAGE_MODULES: Record<Locale, Record<string, unknown>[]> = {
     enPlatform, enAgents, enApps, enChat, enKnowledgeBases, enTools,
     enConversations, enApiKeys, enPublicChat, enPromptGenerator, enWorkflow,
     enActivities, enAuditLogs, enSso, enNotifications, enRun, enMemories,
-    enEmbed, enPackages, enOnboarding,
+    enEmbed, enPackages, enOnboarding, enDeliveryLog,
   ],
   zh: [
     zhCommon, zhNav, zhAuth, zhDashboard, zhTeams, zhUsers, zhRoles,
@@ -89,7 +91,7 @@ const MESSAGE_MODULES: Record<Locale, Record<string, unknown>[]> = {
     zhPlatform, zhAgents, zhApps, zhChat, zhKnowledgeBases, zhTools,
     zhConversations, zhApiKeys, zhPublicChat, zhPromptGenerator, zhWorkflow,
     zhActivities, zhAuditLogs, zhSso, zhNotifications, zhRun, zhMemories,
-    zhEmbed, zhPackages, zhOnboarding,
+    zhEmbed, zhPackages, zhOnboarding, zhDeliveryLog,
   ],
 }
 

@@ -616,6 +616,7 @@ export function FeishuIntegrationTab({
               <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
                 <li><code className="break-all text-xs">im:message.p2p_msg:readonly</code> — {t('integrations.feishuAgentChatReceivePermission')}</li>
                 <li><code className="break-all text-xs">im:message:send_as_bot</code> — {t('integrations.feishuAgentChatSendPermission')}</li>
+                <li><code className="break-all text-xs">im:resource</code> — {t('integrations.feishuAgentChatMediaPermission')}</li>
                 <li><code className="break-all text-xs">contact:user.base:readonly</code> — {t('integrations.feishuAgentChatIdentityPermission')}</li>
               </ul>
               <p className="text-muted-foreground">{t('integrations.feishuAgentChatPublishRequirements')}</p>

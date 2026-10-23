@@ -17,9 +17,9 @@ from app.models.agent_run import (
     AgentRunMode,
     AgentRunStatus,
 )
+from app.models.integration_delivery import IntegrationDelivery
 from app.models.wechat_agent import (
     WeChatAgentConfig,
-    WeChatAgentDelivery,
     WeChatAgentReceipt,
     WeChatAgentSession,
 )
@@ -117,7 +117,7 @@ async def test_waiting_run_persists_question_delivery(world):
     await WeChatAgentReceipt.filter(id=owner.id).update(updated_at=utcnow())
     await runtime.process_binding(str(world.binding.id))
 
-    question = await WeChatAgentDelivery.get(
+    question = await IntegrationDelivery.get(
         receipt_id=owner.id, event_key="ask:call-waiting"
     )
     assert question.status == "pending"
@@ -173,7 +173,7 @@ async def test_long_waiting_question_preserves_utf8_across_delivery_rows(world):
         },
     )
     await runtime.process_binding(str(world.binding.id))
-    rows = await WeChatAgentDelivery.filter(
+    rows = await IntegrationDelivery.filter(
         receipt_id=owner.id, event_key="ask:long-call"
     ).order_by("sequence")
     text = "".join(row.payload["text"] for row in rows)
@@ -354,7 +354,7 @@ async def test_optional_question_left_blank_is_resumed_without_notice(world):
     finally:
         store.submit_user_answers = real_submit
 
-    assert not await WeChatAgentDelivery.filter(
+    assert not await IntegrationDelivery.filter(
         receipt_id=receipt.id, event_key="answer_error"
     ).exists()
     assert (await WeChatAgentSession.get(id=session.id)).pending_tool_call_id is None
@@ -393,7 +393,7 @@ async def test_waiting_run_without_owner_receipt_waits_for_announcement(world):
     session = await WeChatAgentSession.get(id=session.id)
     assert session.pending_answers == {}
     assert (await WeChatAgentReceipt.get(id=receipt.id)).status == "pending"
-    assert not await WeChatAgentDelivery.filter(
+    assert not await IntegrationDelivery.filter(
         receipt_id=receipt.id, event_key="ask:cc-4"
     ).exists()
     assert not await AgentRunInput.filter(run_id=run.id).exists()
@@ -424,7 +424,7 @@ async def test_announcement_with_earlier_answers_reports_partial_progress(world)
         receipt, await AgentRun.get(id=run.id), answered={"q1": "A"}
     )
 
-    rows = await WeChatAgentDelivery.filter(
+    rows = await IntegrationDelivery.filter(
         receipt_id=receipt.id, event_key="ask:cc-5"
     ).order_by("sequence")
     assert rows, "the unanswered question must still be announced"
@@ -593,7 +593,7 @@ async def test_help_command_replies_localized_and_completes(world):
     applied = await runtime._apply_command(receipt, session, None, "help")
 
     assert applied is True
-    rows = await WeChatAgentDelivery.filter(
+    rows = await IntegrationDelivery.filter(
         receipt_id=receipt.id, event_key="command"
     ).order_by("sequence")
     assert rows and rows[0].payload["text"].strip()
@@ -619,7 +619,7 @@ async def test_unknown_command_marker_is_not_consumed(world):
     assert applied is False
     refreshed = await WeChatAgentReceipt.get(id=receipt.id)
     assert refreshed.status == "pending"
-    assert not await WeChatAgentDelivery.filter(receipt_id=receipt.id).exists()
+    assert not await IntegrationDelivery.filter(receipt_id=receipt.id).exists()
 
 
 @pytest.mark.asyncio
@@ -639,7 +639,7 @@ async def test_skip_command_for_idle_run_is_not_consumed(world):
     assert applied is False
     refreshed = await WeChatAgentReceipt.get(id=receipt.id)
     assert refreshed.status == "pending"
-    assert not await WeChatAgentDelivery.filter(receipt_id=receipt.id).exists()
+    assert not await IntegrationDelivery.filter(receipt_id=receipt.id).exists()
 
 
 @pytest.mark.asyncio
@@ -884,7 +884,7 @@ async def test_submission_revalidates_disconnect_under_lock(world, monkeypatch):
     assert refreshed.status == "error"
     assert refreshed.error == "wechat_agent_binding_disconnected"
     # The acknowledgement was already delivered, but the run was never created.
-    assert await WeChatAgentDelivery.filter(
+    assert await IntegrationDelivery.filter(
         receipt_id=receipt.id, event_key="received"
     ).exists()
     assert not await AgentRun.all().exists()
@@ -908,7 +908,7 @@ async def test_all_questions_answered_announces_notice_only(world):
 
     await runtime._announce_questions(receipt, run, answered={"q1": "A"})
 
-    rows = await WeChatAgentDelivery.filter(
+    rows = await IntegrationDelivery.filter(
         receipt_id=receipt.id, event_key="ask:cc-13"
     ).order_by("sequence")
     assert rows, "the partial-progress notice itself must be delivered"
@@ -951,7 +951,7 @@ async def test_stopped_run_finalization_is_silent_but_completes(world):
     refreshed = await WeChatAgentReceipt.get(id=receipt.id)
     assert refreshed.status == "completed"
     assert refreshed.error == "wechat_agent_stopped"
-    assert not await WeChatAgentDelivery.filter(
+    assert not await IntegrationDelivery.filter(
         receipt_id=receipt.id, event_key="final"
     ).exists()
     assert (await WeChatAgentSession.get(id=session.id)).active_run_id is None
@@ -977,7 +977,7 @@ async def test_interrupted_run_reports_generic_failure(world):
     refreshed = await WeChatAgentReceipt.get(id=receipt.id)
     assert refreshed.status == "error"
     assert refreshed.error == "wechat_agent_run_failed"
-    delivery = await WeChatAgentDelivery.get(receipt_id=receipt.id, event_key="final")
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id, event_key="final")
     assert "worker vanished" not in delivery.payload["text"]
     assert delivery.payload["text"].strip()
 
@@ -1008,7 +1008,7 @@ async def test_finalize_without_authorization_marks_unavailable_reply(
     refreshed = await WeChatAgentReceipt.get(id=receipt.id)
     assert refreshed.status == "completed"
     assert refreshed.error == "agent_access_denied"
-    delivery = await WeChatAgentDelivery.get(receipt_id=receipt.id, event_key="final")
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id, event_key="final")
     assert delivery.status == "unavailable"
     assert delivery.error == "agent_access_denied"
     assert delivery.payload["text"].strip()
@@ -1060,7 +1060,7 @@ async def test_blank_optional_answer_prompts_for_later_required_question(world):
     assert saved_session.pending_answers == {"q1": ""}
     assert saved_receipt.status == "completed"
     assert saved_receipt.error == "wechat_agent_answer_required"
-    delivery = await WeChatAgentDelivery.get(
+    delivery = await IntegrationDelivery.get(
         receipt_id=answer.id, event_key="answer_error"
     )
     assert "Explain?" in delivery.payload["text"]
@@ -1083,7 +1083,7 @@ async def test_finalize_empty_completed_run_sends_explicit_no_output(world):
     await runtime.process_binding(str(world.binding.id))
 
     saved = await WeChatAgentReceipt.get(id=receipt.id)
-    delivery = await WeChatAgentDelivery.get(receipt_id=receipt.id, event_key="final")
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id, event_key="final")
     assert saved.status == "completed" and saved.error is None
     assert delivery.payload["text"].strip()
     assert (await WeChatAgentSession.get(id=session.id)).active_run_id is None
@@ -1133,7 +1133,7 @@ async def test_stop_command_without_active_run_clears_session_and_reports(world)
 
     saved = await WeChatAgentReceipt.get(id=receipt.id)
     session = await WeChatAgentSession.get(binding_id=world.binding.id)
-    delivery = await WeChatAgentDelivery.get(receipt_id=receipt.id, event_key="command")
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id, event_key="command")
     assert saved.status == "completed" and saved.error is None
     assert session.active_run_id is None and session.pending_answers == {}
     assert "stop" in delivery.payload["text"].lower()
@@ -1174,7 +1174,7 @@ async def test_required_answer_validation_saves_and_consumes_incomplete_answer(
     assert saved_session.pending_answers == {"optional": ""}
     assert saved_answer.status == "completed"
     assert saved_answer.error == "wechat_agent_answer_required"
-    notice = await WeChatAgentDelivery.get(
+    notice = await IntegrationDelivery.get(
         receipt_id=answer.id, event_key="answer_error"
     )
     assert "Explain?" in notice.payload["text"]
@@ -1320,6 +1320,6 @@ async def test_waiting_run_with_empty_questions_leaves_answer_pending(world):
     )
 
     assert (await WeChatAgentReceipt.get(id=answer.id)).status == "pending"
-    assert not await WeChatAgentDelivery.filter(
+    assert not await IntegrationDelivery.filter(
         receipt_id=owner.id, event_key="ask:empty-questions"
     ).exists()

@@ -27,6 +27,7 @@
     "logoutSuccess": "Logged out successfully",
     "auditLogs": "Audit Logs",
     "observability": "Observability",
-    "memories": "Memories"
+    "memories": "Memories",
+    "deliveries": "Delivery Log"
   }
 }

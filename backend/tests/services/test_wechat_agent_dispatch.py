@@ -9,12 +9,14 @@ import pytest
 import pytest_asyncio
 
 from app.models.integration import Integration
-from app.models.wechat_agent import WeChatAgentDelivery, WeChatAgentReceipt
+from app.models.integration_delivery import IntegrationDelivery
+from app.models.wechat_agent import WeChatAgentReceipt
 from app.models.wechat_knowledge import WeChatKnowledgeBinding
 from app.services import wechat_agent_dispatch as dispatch
 from app.services.wechat_connection import utcnow
 from app.tasks import wechat_agent
 from tests.services.test_wechat_agent_runtime import db as db, world as world
+from tests.services.delivery_fixtures import wechat_delivery_fields
 
 
 @pytest_asyncio.fixture
@@ -97,8 +99,8 @@ async def test_completed_receipt_outbox_recovers_and_feature_pause_preserves_wor
         payload="encrypted",
         status="completed",
     )
-    delivery = await WeChatAgentDelivery.create(
-        receipt=receipt,
+    delivery = await IntegrationDelivery.create(
+        **wechat_delivery_fields(receipt),
         event_key="final",
         sequence=0,
         payload={"kind": "text", "text": "pending answer"},
@@ -109,8 +111,8 @@ async def test_completed_receipt_outbox_recovers_and_feature_pause_preserves_wor
     enqueue.assert_awaited_once()
     await Integration.filter(provider_type="wechat").update(enabled_capabilities=[])
     assert await recover() == {"queued": 0}
-    assert (await WeChatAgentDelivery.get(id=delivery.id)).status == "pending"
-    await WeChatAgentDelivery.filter(id=delivery.id).update(status="sent")
+    assert (await IntegrationDelivery.get(id=delivery.id)).status == "pending"
+    await IntegrationDelivery.filter(id=delivery.id).update(status="sent")
     await Integration.filter(provider_type="wechat").update(
         enabled_capabilities=["agent_chat"]
     )

@@ -1,4 +1,4 @@
-"""Durable per-chat Agent sessions, inbound receipts and outbound deliveries.
+"""Durable per-chat Agent sessions and inbound receipts.
 
 Each linked user selects their own Agent. Durable chat state remains keyed by
 ``(integration, chat, user, agent)`` so switching never rebinds existing runs:
@@ -9,10 +9,8 @@ Each linked user selects their own Agent. Durable chat state remains keyed by
   message maps to at most one ``AgentRun``, enforced by a unique constraint on
   ``(integration, message_id)`` so a replayed provider event never submits a
   second run,
-* ``FeishuAgentDelivery`` is the durable outbound queue.  Each row carries a
-  deterministic provider dedup ``uuid`` derived from its own identity, so a
-  crashed send is retried by recovery without the user seeing a duplicate
-  message.
+Outbound replies live in the provider-neutral ``IntegrationDelivery`` queue so
+no integration owns a private delivery table.
 """
 
 from __future__ import annotations
@@ -154,41 +152,8 @@ class FeishuAgentReceipt(models.Model):
         ordering = ["created_at", "id"]
 
 
-class FeishuAgentDelivery(models.Model):
-    """One outbound Feishu reply, durable until the provider accepted it.
-
-    ``uuid`` is deterministic per row so a retry after a crash is deduplicated
-    by Feishu itself instead of reaching the chat twice.  ``status`` values:
-    ``pending``, ``sending`` (claimed by one worker), ``sent``, ``error`` and
-    ``unavailable`` (the run finished but the reply must not be sent).
-    """
-
-    id = fields.UUIDField(primary_key=True, default=uuid.uuid4)
-    receipt = fields.ForeignKeyField(
-        "models.FeishuAgentReceipt",
-        related_name="deliveries",
-        on_delete=fields.CASCADE,
-    )
-    receipt_id: uuid.UUID
-    event_key = fields.CharField(max_length=255)
-    sequence = fields.IntField()
-    uuid = fields.CharField(max_length=50, unique=True)
-    text = fields.TextField()
-    status = fields.CharField(max_length=20, default="pending")
-    error = fields.CharField(max_length=100, null=True)
-    created_at = fields.DatetimeField(auto_now_add=True)
-    updated_at = fields.DatetimeField(auto_now=True)
-
-    class Meta:
-        table = "feishu_agent_deliveries"
-        unique_together = (("receipt", "event_key", "sequence"),)
-        indexes = (("status", "created_at"),)
-        ordering = ["created_at", "sequence"]
-
-
 __all__ = [
     "FeishuAgentPreference",
     "FeishuAgentSession",
     "FeishuAgentReceipt",
-    "FeishuAgentDelivery",
 ]

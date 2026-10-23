@@ -21,13 +21,13 @@ from app.integrations.credentials import encrypt_secret
 from app.models.agent import Agent, AgentStatus, AgentVisibility
 from app.models.agent_run import AgentRun, AgentRunMode, AgentRunStatus
 from app.models.feishu_agent import (
-    FeishuAgentDelivery,
     FeishuAgentPreference,
     FeishuAgentReceipt,
     FeishuAgentSession,
 )
 from app.models.feishu_user import FeishuUser
 from app.models.integration import Integration
+from app.models.integration_delivery import IntegrationDelivery
 from app.models.user import Team, TeamMember, User
 from app.models.user_sso_connection import UserSSOConnection
 from app.services import feishu_agent_runtime as runtime
@@ -85,6 +85,39 @@ class FakeTransport:
         self.sent.append((message_id, text, uuid))
         if self.error is not None:
             raise self.error
+
+    async def reply_markdown(self, message_id, text, *, uuid):
+        self.sent.append((message_id, text, uuid))
+        if self.error is not None:
+            raise self.error
+
+
+class FakeAssetTransport(FakeTransport):
+    """Feishu transport with native media upload and reply recording."""
+
+    def __init__(self):
+        super().__init__()
+        self.uploads = []
+        self.media = []
+        self.upload_error = None
+        self.reply_error = None
+
+    async def upload_image(self, content, *, filename, content_type):
+        self.uploads.append(("image", content, filename, content_type))
+        if self.upload_error is not None:
+            raise self.upload_error
+        return "img_key"
+
+    async def upload_file(self, content, *, filename, content_type, file_type="stream"):
+        self.uploads.append((file_type, content, filename, content_type))
+        if self.upload_error is not None:
+            raise self.upload_error
+        return "file_key"
+
+    async def reply_media(self, message_id, *, msg_type, key, uuid):
+        self.media.append((message_id, msg_type, key, uuid))
+        if self.reply_error is not None:
+            raise self.reply_error
 
 
 def text_event(
@@ -179,7 +212,13 @@ async def world(db, monkeypatch):
 
 def _client_for(transport):
     async def _factory(integration):
-        return SimpleNamespace(reply_text=transport)
+        client = SimpleNamespace(reply_text=transport)
+        if hasattr(transport, "reply_markdown"):
+            client.reply_markdown = transport.reply_markdown
+        for name in ("upload_image", "upload_file", "reply_media"):
+            if hasattr(transport, name):
+                setattr(client, name, getattr(transport, name))
+        return client
 
     return _factory
 
@@ -206,6 +245,20 @@ async def receipt_for(world, text="hello", message_id=None, **kwargs):
     )
     assert receipt_id is not None
     return await FeishuAgentReceipt.get(id=receipt_id)
+
+
+def delivery_fields(receipt):
+    """Identity fields a durable outbound row copies from its receipt."""
+    return {
+        "provider_type": "feishu",
+        "integration_id": receipt.integration_id,
+        "receipt_id": receipt.id,
+        "user_id": receipt.user_id,
+        "agent_id": receipt.agent_id,
+        "run_id": receipt.run_id,
+        "chat_id": receipt.chat_id,
+        "message_id": receipt.message_id,
+    }
 
 
 # --- inbound validation and identity -----------------------------------------
@@ -337,7 +390,7 @@ async def test_second_message_while_running_starts_no_second_run(world):
 
     assert len(world.submission.calls) == 1
     assert await AgentRun.all().count() == 1
-    busy = await FeishuAgentDelivery.filter(
+    busy = await IntegrationDelivery.filter(
         receipt_id=second.id, event_key="busy"
     ).first()
     assert busy is not None
@@ -407,7 +460,7 @@ async def test_agents_command_lists_only_accessible_agents(world):
 
     await runtime.process_message(str(command.id))
 
-    delivery = await FeishuAgentDelivery.get(receipt_id=command.id, event_key="command")
+    delivery = await IntegrationDelivery.get(receipt_id=command.id, event_key="command")
     assert world.agent.name in delivery.text
     assert hidden.name not in delivery.text
     assert (await FeishuAgentReceipt.get(id=command.id)).status == "completed"
@@ -460,7 +513,7 @@ async def test_use_command_rejects_unknown_agent(world):
 
     await runtime.process_message(str(use.id))
 
-    delivery = await FeishuAgentDelivery.get(receipt_id=use.id, event_key="command")
+    delivery = await IntegrationDelivery.get(receipt_id=use.id, event_key="command")
     assert delivery.text
     assert (await FeishuAgentReceipt.get(id=use.id)).status == "completed"
     assert not world.submission.calls
@@ -522,7 +575,7 @@ async def test_status_and_help_commands_do_not_start_runs(world):
     assert not world.submission.calls
     for receipt in (help_receipt, status_receipt):
         assert (await FeishuAgentReceipt.get(id=receipt.id)).status == "completed"
-        assert await FeishuAgentDelivery.filter(receipt_id=receipt.id).exists()
+        assert await IntegrationDelivery.filter(receipt_id=receipt.id).exists()
 
 
 @pytest.mark.asyncio
@@ -569,7 +622,7 @@ async def test_waiting_run_announces_question_and_ignores_older_message(world):
         ],
     )
 
-    question = await FeishuAgentDelivery.get(
+    question = await IntegrationDelivery.get(
         receipt_id=receipt.id, event_key="ask:call-1"
     )
     assert question.text
@@ -613,7 +666,7 @@ async def test_invalid_choice_is_rejected_and_not_replayed(world):
 
     session = await session_for(world)
     assert session.pending_answers == {}
-    rejection = await FeishuAgentDelivery.filter(
+    rejection = await IntegrationDelivery.filter(
         receipt_id=invalid.id, event_key="answer_error"
     ).first()
     assert rejection is not None
@@ -681,12 +734,13 @@ async def test_terminal_run_delivers_canonical_text(world):
 
     refreshed = await FeishuAgentReceipt.get(id=receipt.id)
     assert refreshed.status == "completed"
-    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id, event_key="final")
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id, event_key="final")
     assert delivery.text == "the answer"
-    assert delivery.uuid and len(delivery.uuid) <= 50
+    assert delivery.kind == "markdown"
+    assert delivery.provider_uuid and len(delivery.provider_uuid) <= 50
     final = next(sent for sent in world.transport.sent if sent[1] == delivery.text)
     assert final[0] == receipt.message_id
-    assert final[2] == delivery.uuid
+    assert final[2] == delivery.provider_uuid
 
 
 @pytest.mark.asyncio
@@ -707,7 +761,7 @@ async def test_failed_run_sends_generic_notice_only(world):
 
     refreshed = await FeishuAgentReceipt.get(id=receipt.id)
     assert refreshed.status == "error"
-    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id, event_key="final")
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id, event_key="final")
     assert "provider secret detail" not in delivery.text
     assert delivery.text.strip()
 
@@ -729,7 +783,7 @@ async def test_disabled_feature_preserves_terminal_run_until_reenabled(world):
     refreshed = await FeishuAgentReceipt.get(id=receipt.id)
     assert refreshed.status == "submitted"
     assert refreshed.error is None
-    assert not await FeishuAgentDelivery.filter(
+    assert not await IntegrationDelivery.filter(
         receipt_id=receipt.id, event_key="final"
     ).exists()
     await Integration.filter(id=world.integration.id).update(
@@ -739,7 +793,7 @@ async def test_disabled_feature_preserves_terminal_run_until_reenabled(world):
     refreshed = await FeishuAgentReceipt.get(id=receipt.id)
     assert refreshed.status == "completed"
     assert refreshed.error is None
-    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id, event_key="final")
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id, event_key="final")
     assert delivery.status == "sent"
 
 
@@ -756,7 +810,7 @@ async def test_empty_canonical_output_sends_explicit_notice(world):
     )
     await runtime.process_pending()
 
-    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id, event_key="final")
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id, event_key="final")
     assert delivery.text.strip()
 
 
@@ -775,11 +829,387 @@ async def test_concurrent_finalization_queues_the_answer_once(world):
     await runtime._finalize_receipt(stale, await session_for(world), run)
 
     assert (
-        await FeishuAgentDelivery.filter(
+        await IntegrationDelivery.filter(
             receipt_id=receipt.id, event_key="final"
         ).count()
         == 1
     )
+
+
+# --- generated artifacts -----------------------------------------------------
+
+
+async def _generated_asset(
+    world,
+    *,
+    conversation_id=None,
+    ref="abcd",
+    content_type="image/png",
+    size=4,
+):
+    from app.models.asset import Asset, AssetScopeRef, AssetScopeType
+
+    asset = await Asset.create(
+        id=uuid4(),
+        storage_key=f"generated-images/{uuid4().hex}.bin",
+        original_filename="artifact.bin",
+        display_filename="artifact.bin",
+        content_type=content_type,
+        size=size,
+        checksum="0" * 64,
+        source="generated_media",
+        team_id=world.team.id,
+        created_by_id=world.user.id,
+    )
+    if conversation_id is not None:
+        await AssetScopeRef.create(
+            id=uuid4(),
+            scope_type=AssetScopeType.CONVERSATION,
+            scope_id=conversation_id,
+            asset=asset,
+            ref=ref,
+        )
+    return asset
+
+
+def _image_display(ref="abcd", *, success=True):
+    return {
+        "kind": "media.image",
+        "success": success,
+        "images": [{"image": {"asset_ref": ref}}],
+    }
+
+
+async def _terminal_run(
+    world, *, display=None, canonical_text="answer", conversation_id=None
+):
+    from app.models.agent import Message, MessageRole
+
+    receipt = await receipt_for(world, message_id=f"om_artifact_{uuid4().hex}")
+    await runtime.process_pending()
+    run = world.submission.run
+    round_id = uuid4()
+    if display is not None:
+        await Message.create(
+            id=uuid4(),
+            conversation_id=run.conversation_id,
+            role=MessageRole.TOOL,
+            content=json.dumps(display),
+            round_id=round_id,
+            round_role="tool_result",
+            round_index=0,
+        )
+    canonical = await Message.create(
+        id=uuid4(),
+        conversation_id=conversation_id or run.conversation_id,
+        role=MessageRole.ASSISTANT,
+        content=canonical_text,
+        round_id=round_id,
+        round_role="assistant_final",
+    )
+    await AgentRun.filter(id=run.id).update(
+        status=AgentRunStatus.COMPLETED,
+        canonical_message_id=canonical.id,
+        finished_at=utcnow(),
+    )
+    await FeishuAgentReceipt.filter(id=receipt.id).update(
+        updated_at=utcnow() - timedelta(seconds=30)
+    )
+    return receipt, run
+
+
+async def _use_media_transport(world, monkeypatch):
+    transport = FakeAssetTransport()
+    monkeypatch.setattr(runtime, "_client_for", _client_for(transport))
+
+    async def read_bytes(asset):
+        return b"artifact-bytes"
+
+    monkeypatch.setattr("app.services.channel_artifacts.read_asset_bytes", read_bytes)
+    return transport
+
+
+@pytest.mark.asyncio
+async def test_terminal_run_delivers_generated_image_as_native_media(
+    world, monkeypatch
+):
+    transport = await _use_media_transport(world, monkeypatch)
+    receipt = await receipt_for(world, message_id="om_image")
+    await runtime.process_pending()
+    run = world.submission.run
+    asset = await _generated_asset(world, conversation_id=run.conversation_id)
+    from app.models.agent import Message, MessageRole
+
+    round_id = uuid4()
+    await Message.create(
+        id=uuid4(),
+        conversation_id=run.conversation_id,
+        role=MessageRole.TOOL,
+        content=json.dumps(_image_display("abcd")),
+        round_id=round_id,
+        round_role="tool_result",
+        round_index=0,
+    )
+    canonical = await Message.create(
+        id=uuid4(),
+        conversation_id=run.conversation_id,
+        role=MessageRole.ASSISTANT,
+        content="",
+        round_id=None,
+        round_role="assistant_final",
+    )
+    await AgentRun.filter(id=run.id).update(
+        status=AgentRunStatus.COMPLETED,
+        canonical_message_id=canonical.id,
+        finished_at=utcnow(),
+        active_round_id=round_id,
+    )
+    await FeishuAgentReceipt.filter(id=receipt.id).update(
+        updated_at=utcnow() - timedelta(seconds=30)
+    )
+
+    await runtime.process_pending()
+
+    delivery = await IntegrationDelivery.get(
+        receipt_id=receipt.id, event_key="final-asset", sequence=0
+    )
+    assert delivery.kind == "asset"
+    assert delivery.asset_id == asset.id
+    assert delivery.media_type == "image"
+    assert delivery.media_key == "img_key"
+    assert delivery.status == "sent"
+    assert transport.uploads == [
+        ("image", b"artifact-bytes", "artifact.bin", "image/png")
+    ]
+    assert transport.media == [
+        (receipt.message_id, "image", "img_key", delivery.provider_uuid)
+    ]
+    # An artifact-only answer does not also emit the empty-output notice.
+    assert not await IntegrationDelivery.filter(
+        receipt_id=receipt.id, event_key="final"
+    ).exists()
+
+
+@pytest.mark.asyncio
+async def test_artifact_scoped_to_another_conversation_is_not_delivered(
+    world, monkeypatch
+):
+    transport = await _use_media_transport(world, monkeypatch)
+    receipt, run = await _terminal_run(world, display=_image_display("abcd"))
+    from app.models.agent import Conversation
+
+    other = await Conversation.create(agent_id=world.agent.id, user_id=world.user.id)
+    await _generated_asset(world, conversation_id=other.id)
+
+    await runtime.process_pending()
+
+    assert not await IntegrationDelivery.filter(
+        receipt_id=receipt.id, event_key="final-asset"
+    ).exists()
+    assert transport.uploads == []
+
+
+@pytest.mark.asyncio
+async def test_foreign_canonical_message_is_not_delivered(world, monkeypatch):
+    await _use_media_transport(world, monkeypatch)
+    from app.models.agent import Conversation
+
+    other = await Conversation.create(agent_id=world.agent.id, user_id=world.user.id)
+    receipt, _ = await _terminal_run(
+        world, canonical_text="foreign answer", conversation_id=other.id
+    )
+
+    await runtime.process_pending()
+
+    text = await IntegrationDelivery.get(receipt_id=receipt.id, event_key="final")
+    assert text.text != "foreign answer"
+    assert text.text.strip()
+
+
+@pytest.mark.asyncio
+async def test_upload_failure_is_terminal_error_not_ambiguous(world, monkeypatch):
+    transport = await _use_media_transport(world, monkeypatch)
+    transport.upload_error = TimeoutError("upload timeout")
+    receipt, run = await _terminal_run(world, display=_image_display("abcd"))
+    await _generated_asset(world, conversation_id=run.conversation_id)
+
+    await runtime.process_pending()
+
+    delivery = await IntegrationDelivery.get(
+        receipt_id=receipt.id, event_key="final-asset"
+    )
+    assert delivery.status == "error"
+    assert delivery.error == "feishu_agent_asset_upload_failed"
+    assert transport.media == []
+
+
+@pytest.mark.asyncio
+async def test_artifact_reply_timeout_is_unknown_and_not_resent(world, monkeypatch):
+    transport = await _use_media_transport(world, monkeypatch)
+    transport.reply_error = TimeoutError("reply timeout")
+    receipt, run = await _terminal_run(world, display=_image_display("abcd"))
+    await _generated_asset(world, conversation_id=run.conversation_id)
+
+    await runtime.process_pending()
+    delivery = await IntegrationDelivery.get(
+        receipt_id=receipt.id, event_key="final-asset"
+    )
+    assert delivery.status == "unknown"
+    assert len(transport.media) == 1
+    await runtime.process_pending()
+    assert len(transport.media) == 1
+
+
+@pytest.mark.asyncio
+async def test_artifact_is_reauthorized_before_upload(world, monkeypatch):
+    transport = await _use_media_transport(world, monkeypatch)
+    receipt = await receipt_for(world, message_id="om_recheck")
+    await runtime.process_pending()
+    run = world.submission.run
+    asset = await _generated_asset(world, conversation_id=run.conversation_id)
+    from app.models.asset import AssetScopeRef
+
+    await FeishuAgentReceipt.filter(id=receipt.id).update(status="completed")
+    await IntegrationDelivery.create(
+        provider_type="feishu",
+        integration_id=receipt.integration_id,
+        receipt_id=receipt.id,
+        user_id=receipt.user_id,
+        agent_id=receipt.agent_id,
+        run_id=receipt.run_id,
+        chat_id=receipt.chat_id,
+        message_id=receipt.message_id,
+        event_key="final-asset",
+        sequence=0,
+        provider_uuid=str(uuid4()),
+        text=asset.display_filename,
+        kind="asset",
+        asset_id=asset.id,
+        filename=asset.display_filename,
+        content_type=asset.content_type,
+        size=asset.size,
+    )
+    # The artifact was queued while authorized, then lost its scope.
+    await AssetScopeRef.filter(asset_id=asset.id).delete()
+
+    await runtime.deliver_pending_for_integration(world.integration.id)
+
+    delivery = await IntegrationDelivery.get(
+        receipt_id=receipt.id, event_key="final-asset"
+    )
+    assert delivery.status == "error"
+    assert delivery.error == "feishu_agent_asset_unavailable"
+    assert transport.uploads == []
+
+
+@pytest.mark.asyncio
+async def test_mp4_artifact_uses_native_video_and_other_files_use_file(
+    world, monkeypatch
+):
+    transport = await _use_media_transport(world, monkeypatch)
+    receipt, run = await _terminal_run(world, display=_image_display("abcd"))
+    await _generated_asset(
+        world, conversation_id=run.conversation_id, content_type="video/mp4"
+    )
+    await runtime.process_pending()
+
+    delivery = await IntegrationDelivery.get(
+        receipt_id=receipt.id, event_key="final-asset"
+    )
+    assert delivery.media_type == "media"
+    assert transport.uploads[0][0] == "mp4"
+    assert transport.media[0][1] == "media"
+
+    transport.uploads.clear()
+    transport.media.clear()
+    receipt2, run2 = await _terminal_run(world, display=_image_display("abcd"))
+    await _generated_asset(
+        world, conversation_id=run2.conversation_id, content_type="application/pdf"
+    )
+    await runtime.process_pending()
+
+    delivery2 = await IntegrationDelivery.get(
+        receipt_id=receipt2.id, event_key="final-asset"
+    )
+    assert delivery2.media_type == "file"
+    assert transport.uploads[0][0] == "pdf"
+    assert transport.media[0][1] == "file"
+
+
+@pytest.mark.asyncio
+async def test_rejected_upload_size_is_permanent_error(world, monkeypatch):
+    transport = await _use_media_transport(world, monkeypatch)
+    transport.upload_error = ValueError("Invalid Feishu image size")
+    receipt, run = await _terminal_run(world, display=_image_display("abcd"))
+    await _generated_asset(world, conversation_id=run.conversation_id)
+
+    await runtime.process_pending()
+
+    delivery = await IntegrationDelivery.get(
+        receipt_id=receipt.id, event_key="final-asset"
+    )
+    assert delivery.status == "error"
+    assert delivery.error == "feishu_agent_asset_unsupported"
+    assert transport.media == []
+
+
+@pytest.mark.asyncio
+async def test_provider_upload_rejection_is_not_reported_as_unsupported_format(
+    world, monkeypatch, caplog
+):
+    from app.integrations.feishu import FeishuAPIError
+
+    transport = await _use_media_transport(world, monkeypatch)
+    transport.upload_error = FeishuAPIError(
+        "Feishu API error 234001: Invalid request param.",
+        code=234001,
+        status_code=400,
+    )
+    receipt, run = await _terminal_run(world, display=_image_display("abcd"))
+    await _generated_asset(
+        world,
+        conversation_id=run.conversation_id,
+        content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    )
+
+    with caplog.at_level("WARNING", logger=runtime.logger.name):
+        await runtime.process_pending()
+
+    delivery = await IntegrationDelivery.get(
+        receipt_id=receipt.id, event_key="final-asset"
+    )
+    assert delivery.status == "error"
+    assert delivery.error == "feishu_agent_asset_upload_failed"
+    assert "234001" in delivery.error_detail
+    assert "Invalid request param" in delivery.error_detail
+    assert transport.media == []
+    assert "234001" in caplog.text
+    assert str(run.id) in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_unsuccessful_tool_display_yields_no_asset(world, monkeypatch):
+    transport = await _use_media_transport(world, monkeypatch)
+    receipt, run = await _terminal_run(
+        world, display=_image_display("abcd", success=False)
+    )
+    await _generated_asset(world, conversation_id=run.conversation_id)
+
+    await runtime.process_pending()
+
+    assert not await IntegrationDelivery.filter(
+        receipt_id=receipt.id, event_key="final-asset"
+    ).exists()
+    assert transport.uploads == []
+
+
+@pytest.mark.asyncio
+async def test_asset_media_type_classification():
+    assert runtime._asset_media_type("image/png") == "image"
+    assert runtime._asset_media_type("image/heic; charset=binary") == "image"
+    assert runtime._asset_media_type("video/mp4") == "media"
+    assert runtime._asset_media_type("video/webm") == "file"
+    assert runtime._asset_media_type("") == "file"
 
 
 # --- delivery ----------------------------------------------------------------
@@ -799,7 +1229,7 @@ async def test_ambiguous_send_is_not_resent(world):
     world.transport.error = TimeoutError("outcome unknown")
     await runtime.process_pending()
 
-    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id, event_key="final")
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id, event_key="final")
     assert delivery.status == "unknown"
     assert sum(sent[1] == delivery.text for sent in world.transport.sent) == 1
     # A later pass must not resend an ambiguous row.
@@ -829,13 +1259,13 @@ async def test_expired_send_lease_is_resolved_as_unknown(world):
         updated_at=utcnow() - timedelta(seconds=30)
     )
     await runtime.process_pending()
-    await FeishuAgentDelivery.filter(receipt_id=receipt.id).update(
+    await IntegrationDelivery.filter(receipt_id=receipt.id).update(
         status="sending", updated_at=utcnow() - timedelta(seconds=3600)
     )
 
     await runtime.process_pending()
 
-    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id, event_key="final")
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id, event_key="final")
     assert delivery.status == "unknown"
     assert sum(sent[1] == delivery.text for sent in world.transport.sent) == 1
 
@@ -956,7 +1386,7 @@ async def test_apply_use_without_argument_consumes_with_command_reply(world):
     )
     assert applied and same_session.id == session.id
     assert (await FeishuAgentReceipt.get(id=receipt.id)).status == "completed"
-    assert await FeishuAgentDelivery.filter(
+    assert await IntegrationDelivery.filter(
         receipt_id=receipt.id, event_key="command"
     ).exists()
 
@@ -1043,7 +1473,7 @@ async def test_apply_use_current_agent_keeps_existing_session(world):
         world.user,
     )
     assert applied and resulting.id == session.id
-    response = await FeishuAgentDelivery.get(receipt_id=receipt.id, event_key="command")
+    response = await IntegrationDelivery.get(receipt_id=receipt.id, event_key="command")
     assert world.agent.name in response.text
     assert (await FeishuAgentReceipt.get(id=receipt.id)).status == "completed"
 
@@ -1054,16 +1484,18 @@ async def test_send_one_records_rejected_parameters(world):
     await runtime._create_delivery(
         receipt, event_key="command", sequence=0, text="reply"
     )
-    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id)
-    await FeishuAgentDelivery.filter(id=delivery.id).update(status="sending")
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id)
+    await IntegrationDelivery.filter(id=delivery.id).update(status="sending")
     world.transport.error = ValueError("invalid recipient parameters")
 
-    await runtime._send_one(await FeishuAgentDelivery.get(id=delivery.id))
+    await runtime._send_one(await IntegrationDelivery.get(id=delivery.id))
 
-    failed = await FeishuAgentDelivery.get(id=delivery.id)
+    failed = await IntegrationDelivery.get(id=delivery.id)
     assert failed.status == "error"
     assert failed.error == "feishu_agent_run_failed"
-    assert world.transport.sent == [(receipt.message_id, "reply", delivery.uuid)]
+    assert world.transport.sent == [
+        (receipt.message_id, "reply", delivery.provider_uuid)
+    ]
 
 
 @pytest.mark.asyncio
@@ -1072,15 +1504,15 @@ async def test_send_one_defers_when_personal_feature_is_disabled(world):
     await runtime._create_delivery(
         receipt, event_key="command", sequence=0, text="reply"
     )
-    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id)
-    await FeishuAgentDelivery.filter(id=delivery.id).update(status="sending")
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id)
+    await IntegrationDelivery.filter(id=delivery.id).update(status="sending")
     await FeishuAgentPreference.filter(
         integration_id=world.integration.id, user_id=world.user.id
     ).update(is_enabled=False)
 
-    await runtime._send_one(await FeishuAgentDelivery.get(id=delivery.id))
+    await runtime._send_one(await IntegrationDelivery.get(id=delivery.id))
 
-    assert (await FeishuAgentDelivery.get(id=delivery.id)).status == "pending"
+    assert (await IntegrationDelivery.get(id=delivery.id)).status == "pending"
     assert not world.transport.sent
 
 
@@ -1138,7 +1570,7 @@ async def test_receipt_bound_to_revoked_agent_is_explained_not_rerouted(world):
     assert failed.status == "error"
     assert failed.error == "feishu_agent_agent_unavailable"
     assert not world.submission.calls
-    assert not await FeishuAgentDelivery.filter(receipt_id=receipt.id).exists()
+    assert not await IntegrationDelivery.filter(receipt_id=receipt.id).exists()
 
 
 @pytest.mark.asyncio
@@ -1152,12 +1584,12 @@ async def test_final_delivery_is_unavailable_after_user_revocation(world):
     await runtime._finalize_receipt(receipt, None, await AgentRun.get(id=run.id))
 
     failed = await FeishuAgentReceipt.get(id=receipt.id)
-    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id, event_key="final")
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id, event_key="final")
     assert failed.status == "completed"
     assert failed.error == "feishu_agent_channel_disabled"
     assert delivery.status == "unavailable"
     assert delivery.error == "feishu_agent_channel_disabled"
-    assert not await FeishuAgentDelivery.filter(
+    assert not await IntegrationDelivery.filter(
         receipt_id=receipt.id, status="pending"
     ).exists()
 
@@ -1191,10 +1623,10 @@ async def test_finalize_skips_delivery_when_agent_authorization_revoked(world):
 
     await runtime._finalize_receipt(receipt, None, await AgentRun.get(id=run.id))
 
-    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id, event_key="final")
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id, event_key="final")
     assert delivery.status == "unavailable"
     assert delivery.error == "feishu_agent_channel_disabled"
-    assert not await FeishuAgentDelivery.filter(
+    assert not await IntegrationDelivery.filter(
         receipt_id=receipt.id, status="pending"
     ).exists()
 
@@ -1205,13 +1637,13 @@ async def test_send_one_records_transport_failure_without_retry(world):
     await runtime._create_delivery(
         receipt, event_key="command", sequence=0, text="reply"
     )
-    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id)
-    await FeishuAgentDelivery.filter(id=delivery.id).update(status="sending")
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id)
+    await IntegrationDelivery.filter(id=delivery.id).update(status="sending")
     world.transport.error = RuntimeError("provider rejected request")
 
-    await runtime._send_one(await FeishuAgentDelivery.get(id=delivery.id))
+    await runtime._send_one(await IntegrationDelivery.get(id=delivery.id))
 
-    recorded = await FeishuAgentDelivery.get(id=delivery.id)
+    recorded = await IntegrationDelivery.get(id=delivery.id)
     assert recorded.status == "error"
     assert recorded.error == "feishu_agent_run_failed"
     assert len(world.transport.sent) == 1
@@ -1244,7 +1676,7 @@ async def test_delivery_without_receipt_is_unavailable(world, monkeypatch):
     await runtime._create_delivery(
         receipt, event_key="command", sequence=0, text="reply"
     )
-    delivery = await FeishuAgentDelivery.get(receipt_id=receipt.id)
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id)
 
     class MissingReceiptQuery:
         async def first(self):
@@ -1316,7 +1748,7 @@ async def test_announce_questions_reports_partial_answers(world):
 
     await runtime._announce_questions(receipt, run, answered={"q1": "done"})
 
-    delivery = await FeishuAgentDelivery.get(
+    delivery = await IntegrationDelivery.get(
         receipt_id=receipt.id, event_key="ask:call-partial"
     )
     assert "Second?" in delivery.text

@@ -24,6 +24,7 @@ from app.api.v1.admin.endpoints import (
     packages,
     feishu,
     feishu_knowledge,
+    deliveries,
 )
 
 from app.api.v1.endpoints import knowledge_bases as platform_knowledge_bases
@@ -64,6 +65,9 @@ admin_router.include_router(
 )
 admin_router.include_router(
     integrations.router, prefix="/integrations", tags=["admin-integrations"]
+)
+admin_router.include_router(
+    deliveries.router, prefix="/deliveries", tags=["admin-deliveries"]
 )
 admin_router.include_router(
     notifications.router, prefix="/notifications", tags=["admin-notifications"]

@@ -139,7 +139,7 @@ async def test_personal_switch_pauses_intake_processing_and_replies_without_losi
     world, monkeypatch
 ):
     from tests.services.test_feishu_agent_runtime import text_event
-    from app.models.feishu_agent import FeishuAgentDelivery
+    from app.models.integration_delivery import IntegrationDelivery
 
     monkeypatch.setattr(settings.AuditLogService, "log", AsyncMock())
     receipt = await receipt_for(world)
@@ -156,7 +156,7 @@ async def test_personal_switch_pauses_intake_processing_and_replies_without_losi
     await runtime._reply_text(receipt, "pending response")
     await runtime.deliver_pending_for_integration(world.integration.id)
     assert not world.transport.sent
-    assert (await FeishuAgentDelivery.get(receipt=receipt)).status == "pending"
+    assert (await IntegrationDelivery.get(receipt_id=receipt.id)).status == "pending"
     await settings.update_config(
         settings.PreferenceInput(is_enabled=True), MagicMock(), world.user
     )

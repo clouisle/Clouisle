@@ -54,6 +54,7 @@ const routePermissionMap: Record<string, string | string[]> = {
   '/dashboard/observability': 'observability:read',
   '/notifications': 'notifications:read',
   '/audit-logs': 'audit_logs:read',
+  '/deliveries': 'admin:integrations:settings:read',
   '/site-settings': 'settings:read',
   '/site-settings/integrations': ['admin:integrations:login:read', 'admin:integrations:settings:read'],
 }
@@ -114,7 +115,7 @@ const Icon = () => <svg />
 mock.module('lucide-react', () => ({
   Activity: Icon, AppWindow: Icon, Bell: Icon, Bot: Icon, Brain: Icon, ChevronUp: Icon,
   Database: Icon, FileText: Icon, HelpCircle: Icon, Key: Icon, KeyRound: Icon,
-  LayoutDashboard: Icon, LogOut: Icon, Settings: Icon, Shield: Icon, User: Icon,
+  LayoutDashboard: Icon, LogOut: Icon, Settings: Icon, Shield: Icon, Send: Icon, User: Icon,
   Users: Icon, UsersRound: Icon, Wrench: Icon,
 }))
 
@@ -177,6 +178,14 @@ describe('AppSidebar', () => {
     expect(output).not.toContain('activities')
     expect(output).not.toContain('users')
     expect(renderer.root.findByProps({ href: '/knowledge-bases' }).findByProps({ 'data-active': true })).toBeTruthy()
+  })
+
+  test('shows the delivery log to integration settings readers with dashboard access', async () => {
+    canAccessDashboard = true
+    allowedPermissions.add('admin:integrations:settings:read')
+    const renderer = await renderSidebar()
+    expect(renderer.root.findByProps({ href: '/deliveries' })).toBeDefined()
+    canAccessDashboard = false
   })
 
   test('loads the user and opens profile settings', async () => {

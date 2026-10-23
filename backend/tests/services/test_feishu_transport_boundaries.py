@@ -258,6 +258,30 @@ async def test_reply_text_sends_text_with_provider_idempotency(transport_client)
 
 
 @pytest.mark.asyncio
+async def test_reply_markdown_uses_interactive_card_and_idempotency(transport_client):
+    requests = []
+
+    def handler(request):
+        auth = token_response(request)
+        if auth:
+            return auth
+        requests.append(request)
+        return httpx.Response(200, json={"code": 0, "data": {"message_id": "reply"}})
+
+    await transport_client(handler).reply_markdown(
+        "om_source", "**answer**", uuid="delivery-markdown"
+    )
+
+    assert requests[0].url.path == "/open-apis/im/v1/messages/om_source/reply"
+    payload = json.loads(requests[0].content)
+    assert payload["msg_type"] == "interactive"
+    assert payload["uuid"] == "delivery-markdown"
+    assert json.loads(payload["content"])["body"]["elements"] == [
+        {"tag": "markdown", "content": "**answer**"}
+    ]
+
+
+@pytest.mark.asyncio
 async def test_reply_text_rejects_invalid_provider_parameters(transport_client):
     client = transport_client(lambda _request: httpx.Response(200, json={"code": 0}))
 
@@ -269,6 +293,176 @@ async def test_reply_text_rejects_invalid_provider_parameters(transport_client):
 
     with pytest.raises(ValueError):
         await client.reply_text("message", "x" * (150 * 1024 + 1), uuid="delivery-1")
+
+
+@pytest.mark.asyncio
+async def test_upload_image_uses_authenticated_multipart_and_returns_key(
+    transport_client,
+):
+    def handler(request):
+        if token_response(request):
+            return token_response(request)
+        assert request.headers["authorization"] == "Bearer tenant-token"
+        assert "multipart/form-data; boundary=" in request.headers["content-type"]
+        body = request.read()
+        assert b'name="image_type"' in body and b"message" in body
+        assert b'name="image"; filename="photo.png"' in body
+        assert b"Content-Type: image/png" in body
+        assert b"png-bytes" in body
+        return httpx.Response(200, json={"code": 0, "data": {"image_key": "img-key"}})
+
+    assert (
+        await transport_client(handler).upload_image(
+            b"png-bytes", filename="photo.png", content_type="image/png"
+        )
+        == "img-key"
+    )
+
+
+@pytest.mark.asyncio
+async def test_upload_file_uses_authenticated_multipart_and_returns_key(
+    transport_client,
+):
+    def handler(request):
+        if token_response(request):
+            return token_response(request)
+        assert request.headers["authorization"] == "Bearer tenant-token"
+        assert "multipart/form-data; boundary=" in request.headers["content-type"]
+        body = request.read()
+        assert b'name="file_type"' in body and b"mp4" in body
+        assert b'name="file_name"' in body and b"video.mp4" in body
+        assert b'name="file"; filename="video.mp4"' in body
+        assert b"Content-Type: video/mp4" in body
+        assert b"mp4-bytes" in body
+        return httpx.Response(200, json={"code": 0, "data": {"file_key": "file-key"}})
+
+    assert (
+        await transport_client(handler).upload_file(
+            b"mp4-bytes",
+            filename="video.mp4",
+            content_type="video/mp4",
+            file_type="mp4",
+        )
+        == "file-key"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "method,kwargs",
+    [
+        (
+            "upload_image",
+            {"content": b"", "filename": "a.png", "content_type": "image/png"},
+        ),
+        (
+            "upload_image",
+            {
+                "content": b"x" * (10 * 1024 * 1024 + 1),
+                "filename": "a.png",
+                "content_type": "image/png",
+            },
+        ),
+        (
+            "upload_file",
+            {
+                "content": b"",
+                "filename": "a",
+                "content_type": "application/octet-stream",
+            },
+        ),
+        (
+            "upload_file",
+            {
+                "content": b"x" * (30 * 1024 * 1024 + 1),
+                "filename": "a",
+                "content_type": "application/octet-stream",
+            },
+        ),
+    ],
+)
+async def test_upload_rejects_empty_or_oversized_before_network(
+    transport_client, method, kwargs
+):
+    client = transport_client(lambda _request: pytest.fail("network must not be used"))
+    with pytest.raises(ValueError):
+        await getattr(client, method)(**kwargs)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body", [{"code": 0, "data": {}}, {"code": 0, "data": {"image_key": " "}}]
+)
+async def test_upload_image_rejects_missing_or_invalid_key(transport_client, body):
+    def handler(request):
+        if token_response(request):
+            return token_response(request)
+        return httpx.Response(200, json=body)
+
+    with pytest.raises(feishu.FeishuAPIError, match="image key"):
+        await transport_client(handler).upload_image(
+            b"x", filename="x.png", content_type="image/png"
+        )
+
+
+@pytest.mark.asyncio
+async def test_upload_permission_failure_uses_sanitized_feishu_error(transport_client):
+    def handler(request):
+        if token_response(request):
+            return token_response(request)
+        return httpx.Response(403, json={"code": 99991672, "msg": "permission denied"})
+
+    with pytest.raises(feishu.FeishuAPIError) as raised:
+        await transport_client(handler).upload_file(
+            b"x", filename="x", content_type="application/octet-stream"
+        )
+    assert "im:resource:upload" in raised.value.required_scopes
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "msg_type,expected",
+    [
+        ("image", {"image_key": "resource"}),
+        ("file", {"file_key": "resource"}),
+        ("media", {"file_key": "resource"}),
+    ],
+)
+async def test_reply_media_sends_resource_with_provider_idempotency(
+    transport_client, msg_type, expected
+):
+    def handler(request):
+        if token_response(request):
+            return token_response(request)
+        assert request.url.path.endswith("/messages/om_media/reply")
+        payload = json.loads(request.content)
+        assert payload == {
+            "msg_type": msg_type,
+            "content": json.dumps(expected),
+            "uuid": "stable-delivery",
+        }
+        return httpx.Response(200, json={"code": 0})
+
+    await transport_client(handler).reply_media(
+        "om_media", msg_type=msg_type, key="resource", uuid="stable-delivery"
+    )
+
+
+@pytest.mark.asyncio
+async def test_reply_media_rejects_invalid_parameters_before_network(transport_client):
+    client = transport_client(lambda _request: pytest.fail("network must not be used"))
+    for args in [
+        ("", "image", "k", "u"),
+        ("m", "text", "k", "u"),
+        ("m", "image", "", "u"),
+        ("m", "file", "k", ""),
+        ("m" * 256, "media", "k", "u"),
+        ("m", "media", "k", "u" * 51),
+    ]:
+        with pytest.raises(ValueError):
+            await client.reply_media(
+                args[0], msg_type=args[1], key=args[2], uuid=args[3]
+            )
 
 
 @pytest.mark.asyncio

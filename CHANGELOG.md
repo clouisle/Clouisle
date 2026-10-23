@@ -10,13 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 #### Messaging Integration Features
-
+- Replaced the per-provider Feishu and WeChat delivery tables with one provider-neutral `integration_deliveries` queue; startup copies existing rows and drops the legacy tables, so deploy API and workers together.
+- Added a standalone **Delivery log** page (`/deliveries`, Monitoring navigation) and `GET /api/v1/admin/deliveries` to inspect shared outbound delivery outcomes by provider, status, run ID or file name, following the audit-log search/select/pagination layout.
+- Aligned Delivery log with Audit Logs using shared multi-select faceted filters, one URL-backed search field for full run IDs or file-name substrings, page-size controls and loading state; original provider errors wrap directly in the table instead of requiring hover.
 - Added WeChat iLink to site integrations with independent Agent chat and knowledge collection feature switches; personal QR authorization and connection purposes remain user-owned. Disabled features pause intake, execution and unsent replies without deleting durable state.
 - Made Feishu long connections automatic in existing Agent-queue workers, with singleton ownership, live connection status, dynamic mode/credential changes and failure recovery. No extra service or receiver command is required; HTTP callbacks remain supported.
 - Fixed the Feishu Celery recovery task's import scope so scheduled recovery can advance persisted receipts and completed-receipt outbox replies without a `NameError`.
 - Replaced unconditional WeChat/Feishu Beat entries with database-reconciled schedules: feature changes add/remove the corresponding tasks within the normal two-second refresh window without restarting Beat. Feishu Wiki dispatch follows enabled source records independently of login/directory/notification/Agent switches. Database refresh failures pause integration dispatch while ordinary maintenance continues; queued work retains execution-time guards.
 - Replaced all-binding WeChat polling with oldest-due, durable bounded batches routed to ordinary workers across Compose, Helm and Kubernetes. Added deployment-wide backpressure, stale-generation/claim fencing, finite batch deadlines and shared per-batch HTTP pools with request-local authentication. Empty/replayed polls no longer wake business tasks; empty changed cursors still commit. Agent recovery scans bindings fairly and coalesces queued/running wakeups, including completed-receipt outbox work.
+- Final Feishu Agent answers now use interactive cards with Markdown; artifact discovery recovers the tool-result round from AgentRun when a canonical message lacks its round ID.
 - Added an always-visible bilingual Feishu Agent chat setup checklist with private-message receive/send and identity permissions, event subscription, and publication/approval requirements; clarified that a connected WebSocket does not confirm message readiness.
+- Clarified bilingual Feishu artifact upload permission guidance, including file-only upload scopes, app publication and administrator approval, and a fresh file-generation verification step.
 - Moved Feishu replying-Agent selection to each user's personal settings, shared with `/use`; removed the admin global list, preserved accepted-run bindings, and migrated existing session selections without assigning administrator defaults to unused users.
 - Added a per-user Feishu Agent chat switch that preserves Agent selection/history while pausing intake, queued processing and unsent replies; re-enabling resumes pending work without affecting other users.
 - Simplified personal Feishu settings with one prioritized setup hint and compact controls; moved usage help to the replying-Agent label's hover/focus tooltip, separate from save actions, and clarified automatic switch saving, paused-message handling, per-Agent conversation reuse and bilingual commands.
@@ -105,6 +109,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `MIT-0` to the approved permissive-license policy.
 
 ### Fixed
+
+#### Feishu Agent Channel
+- Recorded provider file-upload rejections as upload failures instead of unsupported formats, and kept the provider's original error message, HTTP status and code on the delivery row so failed rows show the real cause. Feishu API errors subclass `ValueError`, so a permission, size or storage rejection previously appeared as `feishu_agent_asset_unsupported`.
 
 #### Admin Observability
 - Kept the Dependencies view available when tool and retrieval spans have no token counts; those rows now report unavailable token usage instead of failing the response.

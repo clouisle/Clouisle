@@ -34,6 +34,7 @@ export const ROUTE_PERMISSION_CONFIG: RoutePermissionConfig[] = [
   { path: '/memories', permission: 'admin:memory:read' },
   { path: '/notifications', permission: 'admin:dashboard:access' },
   { path: '/audit-logs', permission: 'audit:read' },
+  { path: '/deliveries', permission: 'admin:integrations:settings:read' },
   {
     path: '/site-settings',
     permission: 'admin:settings:read',

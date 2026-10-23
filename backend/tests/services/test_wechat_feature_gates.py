@@ -8,7 +8,8 @@ from app.api.v1.endpoints import wechat_knowledge as endpoints
 from app.integrations.credentials import decrypt_secret
 from app.models.agent_run import AgentRun
 from app.models.integration import Integration
-from app.models.wechat_agent import WeChatAgentDelivery, WeChatAgentReceipt
+from app.models.integration_delivery import IntegrationDelivery
+from app.models.wechat_agent import WeChatAgentReceipt
 from app.models.wechat_knowledge import WeChatKnowledgeBinding, WeChatKnowledgeReceipt
 from app.schemas.response import BusinessError
 from app.services import wechat_agent_io as io
@@ -28,6 +29,7 @@ from tests.services.test_wechat_agent_runtime import (
     receipt_for,
 )
 from tests.services.test_wechat_knowledge import collection_db as collection_db, message
+from tests.services.delivery_fixtures import wechat_delivery_fields
 
 
 @pytest.mark.asyncio
@@ -152,8 +154,8 @@ async def test_disabled_delivery_stays_pending_and_sends_once_after_reenable(
 ):
     user, _, agent, binding, _, _ = io_db
     receipt = await make_receipt(binding, user, agent, receipt_message([]))
-    delivery = await WeChatAgentDelivery.create(
-        receipt=receipt,
+    delivery = await IntegrationDelivery.create(
+        **wechat_delivery_fields(receipt),
         event_key="final",
         sequence=0,
         payload={"kind": "text", "text": "Canonical answer"},
@@ -177,14 +179,14 @@ async def test_disabled_delivery_stays_pending_and_sends_once_after_reenable(
     await Integration.filter(provider_type="wechat").update(enabled_capabilities=[])
     await io.deliver_pending(binding, user)
     assert not sent
-    assert (await WeChatAgentDelivery.get(id=delivery.id)).status == "pending"
+    assert (await IntegrationDelivery.get(id=delivery.id)).status == "pending"
     await Integration.filter(provider_type="wechat").update(
         enabled_capabilities=["agent_chat"]
     )
     await io.deliver_pending(binding, user)
     await io.deliver_pending(binding, user)
     assert sent == [("wechat-user", "Canonical answer", str(delivery.id))]
-    assert (await WeChatAgentDelivery.get(id=delivery.id)).status == "submitted"
+    assert (await IntegrationDelivery.get(id=delivery.id)).status == "sent"
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-"""Single-Agent configuration, private session mappings, durable receipts and replies."""
+"""Single-Agent configuration, private session mappings and durable receipts."""
 
 from uuid import UUID, uuid4
 
@@ -111,23 +111,3 @@ class WeChatAgentReceipt(models.Model):
         unique_together = (("binding", "message_id"),)
         indexes = (("status", "created_at"),)
         ordering = ["created_at", "id"]
-
-
-class WeChatAgentDelivery(models.Model):
-    id = fields.UUIDField(primary_key=True, default=uuid4)
-    receipt = fields.ForeignKeyField(
-        "models.WeChatAgentReceipt", related_name="deliveries", on_delete=fields.CASCADE
-    )
-    receipt_id: UUID
-    event_key = fields.CharField(max_length=255)
-    sequence = fields.IntField()
-    payload: dict = fields.JSONField()
-    status = fields.CharField(max_length=20, default="pending")
-    error = fields.TextField(null=True)
-    created_at = fields.DatetimeField(auto_now_add=True)
-    updated_at = fields.DatetimeField(auto_now=True)
-
-    class Meta:
-        table = "wechat_agent_deliveries"
-        unique_together = (("receipt", "event_key", "sequence"),)
-        ordering = ["created_at", "sequence"]

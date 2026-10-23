@@ -16,7 +16,7 @@ Durable state (PostgreSQL is the truth, never Redis/SSE):
   Clouisle conversation, the active run and the accumulated ``ask_user``
   answers.  A receipt keeps the Agent it was accepted with even if the user
   switches Agents afterwards.
-* ``FeishuAgentDelivery`` is the outbound queue.  Each row carries a
+* ``IntegrationDelivery`` is the outbound queue.  Each row carries a
   deterministic provider ``uuid`` so a retry after a crash is deduplicated by
   Feishu instead of reaching the chat twice, and a send whose outcome is
   unknown is never blind-resent.
@@ -50,11 +50,11 @@ from app.core.i18n import set_language, t
 from app.models.agent import Agent, AgentStatus, Conversation
 from app.models.agent_run import AgentRun, AgentRunStatus
 from app.models.feishu_agent import (
-    FeishuAgentDelivery,
     FeishuAgentPreference,
     FeishuAgentReceipt,
     FeishuAgentSession,
 )
+from app.models.integration_delivery import IntegrationDelivery
 from app.models.integration import Integration
 from app.models.user import User
 from app.schemas.agent import ChatRequest
@@ -419,18 +419,32 @@ async def _create_delivery(
     *,
     event_key: str,
     sequence: int,
-    text: str,
+    text: str = "",
     status: str = "pending",
     error: str | None = None,
+    kind: str = "text",
+    asset=None,
 ) -> None:
     """Idempotent outbound row; its deterministic uuid dedups the provider."""
-    await FeishuAgentDelivery.get_or_create(
+    await IntegrationDelivery.get_or_create(
+        provider_type="feishu",
         receipt_id=receipt.id,
         event_key=event_key,
         sequence=sequence,
         defaults={
-            "uuid": _delivery_uuid(receipt.id, event_key, sequence),
+            "integration_id": receipt.integration_id,
+            "user_id": receipt.user_id,
+            "agent_id": receipt.agent_id,
+            "run_id": receipt.run_id,
+            "chat_id": receipt.chat_id,
+            "message_id": receipt.message_id,
+            "provider_uuid": _delivery_uuid(receipt.id, event_key, sequence),
             "text": text,
+            "kind": kind,
+            "asset_id": asset.id if asset is not None else None,
+            "filename": asset.display_filename if asset is not None else None,
+            "content_type": asset.content_type if asset is not None else None,
+            "size": asset.size if asset is not None else None,
             "status": status,
             "error": error,
         },
@@ -460,8 +474,11 @@ async def _announce_questions(
     """Persist the question delivery; its created_at is the answer cutoff."""
     questions = (run.pending_tool_input or {}).get("questions") or []
     event_key = f"ask:{run.pending_tool_call_id}"
-    if await FeishuAgentDelivery.filter(
-        receipt_id=receipt.id, event_key=event_key, status="sent"
+    if await IntegrationDelivery.filter(
+        provider_type="feishu",
+        receipt_id=receipt.id,
+        event_key=event_key,
+        status="sent",
     ).exists():
         return
     total = len(questions)
@@ -500,7 +517,8 @@ async def _answer_cutoff(run: AgentRun) -> Any:
     if not receipt_ids:
         return None
     delivery = (
-        await FeishuAgentDelivery.filter(
+        await IntegrationDelivery.filter(
+            provider_type="feishu",
             receipt_id__in=list(receipt_ids),
             event_key=f"ask:{run.pending_tool_call_id}",
         )
@@ -930,13 +948,32 @@ async def _finalize_receipt(
     if not claimed:
         await _clear_active_run(session, run)
         return
-    if not chunks:
+    assets: list = []
+    agent = await Agent.filter(id=run.agent_id).first()
+    if agent is not None:
+        from app.services.channel_artifacts import resolve_run_assets
+
+        assets = await resolve_run_assets(run, agent, recipient)
+    if not chunks and not assets:
         # A completed run with no visible content still owes the user an
         # explicit answer instead of an empty outbox.
         await _reply_text(receipt, t("feishu_agent_no_output"), key="final")
     for sequence, chunk in enumerate(chunks):
         await _create_delivery(
-            receipt, event_key="final", sequence=sequence, text=chunk
+            receipt,
+            event_key="final",
+            sequence=sequence,
+            text=chunk,
+            kind="markdown",
+        )
+    for sequence, asset in enumerate(assets):
+        await _create_delivery(
+            receipt,
+            event_key="final-asset",
+            sequence=sequence,
+            text=asset.display_filename,
+            kind="asset",
+            asset=asset,
         )
     await _clear_active_run(session, run)
 
@@ -971,6 +1008,9 @@ async def _canonical_chunks(run: AgentRun) -> list[str]:
     if not run.canonical_message_id:
         return []
     canonical = await Message.get_or_none(id=run.canonical_message_id)
+    if canonical is None or canonical.conversation_id != run.conversation_id:
+        # A foreign or detached message is never this run's visible output.
+        return []
     text = (canonical.content or "").strip() if canonical else ""
     return _split_text_chunks(text)
 
@@ -1061,8 +1101,8 @@ async def _process_pending(
         return
 
     if run is not None and run.status not in TERMINAL_RUN_STATUSES:
-        if not await FeishuAgentDelivery.filter(
-            receipt_id=receipt.id, event_key="busy"
+        if not await IntegrationDelivery.filter(
+            provider_type="feishu", receipt_id=receipt.id, event_key="busy"
         ).exists():
             await _reply_text(receipt, t("feishu_agent_busy"), key="busy")
         return
@@ -1071,8 +1111,8 @@ async def _process_pending(
     # Persist progress before submission. Delivery runs outside the chat lock
     # so provider latency cannot prevent durable intake of the next message.
     progress_key = f"received:{receipt.id}"
-    if not await FeishuAgentDelivery.filter(
-        receipt_id=receipt.id, event_key=progress_key
+    if not await IntegrationDelivery.filter(
+        provider_type="feishu", receipt_id=receipt.id, event_key=progress_key
     ).exists():
         await _reply_text(receipt, t("feishu_agent_received"), key=progress_key)
     try:
@@ -1207,7 +1247,9 @@ async def process_pending() -> dict:
             processed += summary["processed"]
     drained = {row.integration_id for row in ordered}
     unsent_receipt_ids = (
-        await FeishuAgentDelivery.filter(Q(status="pending") | Q(status="sending"))
+        await IntegrationDelivery.filter(
+            Q(status="pending") | Q(status="sending"), provider_type="feishu"
+        )
         .order_by("created_at")
         .limit(100)
         .values_list("receipt_id", flat=True)
@@ -1237,7 +1279,9 @@ async def recover_pending() -> dict:
         .values_list("integration_id", flat=True)
     )
     delivery_receipt_ids = (
-        await FeishuAgentDelivery.filter(Q(status="pending") | Q(status="sending"))
+        await IntegrationDelivery.filter(
+            Q(status="pending") | Q(status="sending"), provider_type="feishu"
+        )
         .order_by("created_at")
         .limit(100)
         .values_list("receipt_id", flat=True)
@@ -1265,29 +1309,29 @@ async def _client_for(integration: Integration):
     return FeishuClient(app_id, encrypted_secret)
 
 
-async def _send_one(delivery: FeishuAgentDelivery) -> None:
+async def _send_one(delivery: IntegrationDelivery) -> None:
     """Send one claimed row; every failure mode is recorded, never guessed."""
     receipt = await FeishuAgentReceipt.filter(id=delivery.receipt_id).first()
     if receipt is None:
-        await FeishuAgentDelivery.filter(id=delivery.id).update(
+        await IntegrationDelivery.filter(id=delivery.id).update(
             status="unavailable", error="feishu_agent_channel_disabled"
         )
         return
     from app.services.feishu_agent_preferences import personal_enabled
 
     if not await personal_enabled(receipt.integration_id, receipt.user_id):
-        await FeishuAgentDelivery.filter(id=delivery.id, status="sending").update(
+        await IntegrationDelivery.filter(id=delivery.id, status="sending").update(
             status="pending"
         )
         return
     integration = await Integration.filter(id=receipt.integration_id).first()
     if integration is not None and "agent_chat" not in active_features(integration):
-        await FeishuAgentDelivery.filter(id=delivery.id, status="sending").update(
+        await IntegrationDelivery.filter(id=delivery.id, status="sending").update(
             status="pending"
         )
         return
     if integration is None or not integration.is_enabled:
-        await FeishuAgentDelivery.filter(id=delivery.id).update(
+        await IntegrationDelivery.filter(id=delivery.id).update(
             status="unavailable", error="feishu_agent_channel_disabled"
         )
         return
@@ -1295,20 +1339,38 @@ async def _send_one(delivery: FeishuAgentDelivery) -> None:
         client = await _client_for(integration)
         current = await Integration.filter(id=receipt.integration_id).first()
         if current is not None and "agent_chat" not in active_features(current):
-            await FeishuAgentDelivery.filter(id=delivery.id, status="sending").update(
+            await IntegrationDelivery.filter(id=delivery.id, status="sending").update(
                 status="pending"
             )
             return
         if not await personal_enabled(receipt.integration_id, receipt.user_id):
-            await FeishuAgentDelivery.filter(id=delivery.id, status="sending").update(
+            await IntegrationDelivery.filter(id=delivery.id, status="sending").update(
                 status="pending"
             )
             return
-        await client.reply_text(receipt.message_id, delivery.text, uuid=delivery.uuid)
+        if delivery.kind == "asset":
+            status, error, detail = await _send_asset(client, delivery, receipt)
+            if status != "sent":
+                await IntegrationDelivery.filter(id=delivery.id).update(
+                    status=status, error=error, error_detail=detail, updated_at=utcnow()
+                )
+                return
+        else:
+            reply = (
+                client.reply_markdown
+                if delivery.kind == "markdown"
+                else client.reply_text
+            )
+            await reply(receipt.message_id, delivery.text, uuid=delivery.provider_uuid)
     except ValueError as exc:
+        from app.services.delivery_errors import error_detail
+
         # Rejected parameters can never succeed on a retry.
-        await FeishuAgentDelivery.filter(id=delivery.id).update(
-            status="error", error=_error_key(exc), updated_at=utcnow()
+        await IntegrationDelivery.filter(id=delivery.id).update(
+            status="error",
+            error=_error_key(exc),
+            error_detail=error_detail(exc),
+            updated_at=utcnow(),
         )
         return
     except Exception as exc:
@@ -1324,18 +1386,164 @@ async def _send_one(delivery: FeishuAgentDelivery) -> None:
             or cause.__class__.__name__ == "TimeoutException"
         ):
             ambiguous = True
+        from app.services.delivery_errors import error_detail
+
+        detail = error_detail(exc)
         if ambiguous:
-            await FeishuAgentDelivery.filter(id=delivery.id).update(
-                status="unknown", updated_at=utcnow()
+            await IntegrationDelivery.filter(id=delivery.id).update(
+                status="unknown", error_detail=detail, updated_at=utcnow()
             )
             return
-        await FeishuAgentDelivery.filter(id=delivery.id).update(
-            status="error", error=_error_key(exc), updated_at=utcnow()
+        await IntegrationDelivery.filter(id=delivery.id).update(
+            status="error",
+            error=_error_key(exc),
+            error_detail=detail,
+            updated_at=utcnow(),
         )
         return
-    await FeishuAgentDelivery.filter(id=delivery.id).update(
-        status="sent", error=None, updated_at=utcnow()
+    await IntegrationDelivery.filter(id=delivery.id).update(
+        status="sent", error=None, error_detail=None, updated_at=utcnow()
     )
+
+
+IMAGE_CONTENT_TYPES = frozenset(
+    {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/gif",
+        "image/bmp",
+        "image/x-icon",
+        "image/vnd.microsoft.icon",
+        "image/tiff",
+        "image/heic",
+    }
+)
+FEISHU_FILE_SUBTYPES = {
+    "application/pdf": "pdf",
+    "application/msword": "doc",
+    "application/vnd.ms-excel": "xls",
+    "application/vnd.ms-powerpoint": "ppt",
+}
+
+
+def _asset_media_type(content_type: str) -> str:
+    """Feishu-native image and MP4 video; every other Asset is a file."""
+    normalized = (content_type or "").split(";", 1)[0].strip().lower()
+    if normalized in IMAGE_CONTENT_TYPES:
+        return "image"
+    if normalized == "video/mp4":
+        return "media"
+    return "file"
+
+
+async def _send_asset(
+    client, delivery: IntegrationDelivery, receipt
+) -> tuple[str, str | None, str | None]:
+    """Upload once, remember the provider key, then reply with it.
+
+    Upload failures happen before any message reaches the chat, so they are
+    permanent delivery errors rather than ambiguous sends. Only the reply
+    propagates its timeout to the caller, which marks the row ``unknown``.
+    """
+    from app.services.channel_artifacts import (
+        authorize_output_asset,
+        read_asset_bytes,
+    )
+    from app.services.delivery_errors import error_detail
+
+    if delivery.asset_id is None or receipt.run_id is None or receipt.agent_id is None:
+        return "error", "feishu_agent_asset_unavailable", None
+    run = await AgentRun.filter(id=receipt.run_id).first()
+    user = await User.filter(id=receipt.user_id).first()
+    agent = await Agent.filter(id=receipt.agent_id).first()
+    if run is None or user is None or agent is None or run.conversation_id is None:
+        return "error", "feishu_agent_asset_unavailable", None
+    asset = await authorize_output_asset(
+        delivery.asset_id,
+        conversation_id=run.conversation_id,
+        agent=agent,
+        user=user,
+    )
+    if asset is None:
+        return "error", "feishu_agent_asset_unavailable", None
+    try:
+        content = await read_asset_bytes(asset)
+    except Exception as exc:
+        logger.warning(
+            "Failed to read Feishu delivery asset %s", delivery.asset_id, exc_info=True
+        )
+        return "error", "feishu_agent_asset_unreadable", error_detail(exc)
+    if not content:
+        return "error", "feishu_agent_asset_unreadable", None
+
+    media_type = delivery.media_type
+    media_key = delivery.media_key
+    if not media_key:
+        content_type = asset.content_type or "application/octet-stream"
+        filename = asset.display_filename or "attachment"
+        media_type = _asset_media_type(content_type)
+        try:
+            if media_type == "image":
+                media_key = await client.upload_image(
+                    content, filename=filename, content_type=content_type
+                )
+            else:
+                media_key = await client.upload_file(
+                    content,
+                    filename=filename,
+                    content_type=content_type,
+                    file_type=(
+                        "mp4"
+                        if media_type == "media"
+                        else FEISHU_FILE_SUBTYPES.get(content_type, "stream")
+                    ),
+                )
+        except ValueError as exc:
+            from app.integrations.feishu import FeishuAPIError
+
+            # FeishuAPIError subclasses ValueError: a provider rejection (scope,
+            # size limit, storage) must not be recorded as a local format
+            # rejection, and its code is what operators need to fix it.
+            if isinstance(exc, FeishuAPIError):
+                logger.warning(
+                    "Feishu rejected upload for delivery %s (run %s, %s): "
+                    "HTTP %s code %s: %s",
+                    delivery.id,
+                    receipt.run_id,
+                    content_type,
+                    exc.status_code,
+                    exc.code,
+                    exc,
+                )
+                return "error", "feishu_agent_asset_upload_failed", error_detail(exc)
+            logger.warning(
+                "Rejected local upload parameters for delivery %s (run %s, %s, %s bytes)",
+                delivery.id,
+                receipt.run_id,
+                content_type,
+                len(content),
+            )
+            return "error", "feishu_agent_asset_unsupported", error_detail(exc)
+        except Exception as exc:
+            logger.warning(
+                "Failed to upload Feishu delivery asset %s (run %s, %s)",
+                delivery.asset_id,
+                receipt.run_id,
+                content_type,
+                exc_info=True,
+            )
+            return "error", "feishu_agent_asset_upload_failed", error_detail(exc)
+        await IntegrationDelivery.filter(id=delivery.id).update(
+            media_type=media_type, media_key=media_key, updated_at=utcnow()
+        )
+    await client.reply_media(
+        receipt.message_id,
+        msg_type=media_type,
+        key=media_key,
+        uuid=delivery.provider_uuid,
+    )
+    return "sent", None, None
 
 
 async def deliver_pending_for_integration(integration_id: UUID) -> None:
@@ -1356,7 +1564,9 @@ async def deliver_pending_for_integration(integration_id: UUID) -> None:
     if not receipt_ids:
         return
     rows = (
-        await FeishuAgentDelivery.filter(receipt_id__in=list(receipt_ids))
+        await IntegrationDelivery.filter(
+            provider_type="feishu", receipt_id__in=list(receipt_ids)
+        )
         .filter(Q(status="pending") | Q(status="sending", updated_at__lt=lease_cutoff))
         .order_by("created_at", "sequence")
     )
@@ -1364,10 +1574,9 @@ async def deliver_pending_for_integration(integration_id: UUID) -> None:
     for row in rows:
         recipient = recipients.get(row.receipt_id, False)
         if recipient is False:
-            owner = await FeishuAgentReceipt.filter(id=row.receipt_id).first()
             recipient = (
-                await User.filter(id=owner.user_id).first()
-                if owner is not None
+                await User.filter(id=row.user_id).first()
+                if row.user_id is not None
                 else None
             )
             recipients[row.receipt_id] = recipient
@@ -1377,13 +1586,13 @@ async def deliver_pending_for_integration(integration_id: UUID) -> None:
         if row.status == "sending" and row.updated_at < lease_cutoff:
             # A crash left the claim behind: the outcome is unknown, so the row
             # is never blind-resent.
-            await FeishuAgentDelivery.filter(
+            await IntegrationDelivery.filter(
                 id=row.id, status="sending", updated_at__lt=lease_cutoff
             ).update(status="unknown")
             continue
         if row.status != "pending":
             continue
-        claimed = await FeishuAgentDelivery.filter(id=row.id, status="pending").update(
+        claimed = await IntegrationDelivery.filter(id=row.id, status="pending").update(
             status="sending"
         )
         if not claimed:

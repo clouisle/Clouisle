@@ -361,6 +361,9 @@ async def lifespan(app: FastAPI):
     from app.core.feishu_agent_migration import migrate_feishu_agent_selection
 
     await migrate_feishu_agent_selection()
+    from app.core.integration_delivery_migration import migrate_integration_deliveries
+
+    await migrate_integration_deliveries()
     await initialize_integrations()
     try:
         await init_observability_run_error_index()

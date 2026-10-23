@@ -26,11 +26,18 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS wechat_agent_recovery_due_idx
 ON wechat_knowledge_bindings (agent_recovery_at, id);
 CREATE INDEX CONCURRENTLY IF NOT EXISTS wechat_agent_receipt_pending_idx
 ON wechat_agent_receipts (binding_id) WHERE status IN ('pending', 'submitted');
-CREATE INDEX CONCURRENTLY IF NOT EXISTS wechat_agent_delivery_pending_idx
-ON wechat_agent_deliveries (receipt_id) WHERE status IN ('pending', 'sending');
+CREATE INDEX CONCURRENTLY IF NOT EXISTS integration_delivery_pending_idx
+ON integration_deliveries (provider_type, status, created_at)
+WHERE status IN ('pending', 'sending');
 ```
 
 Verify the due-binding and recovery queries with `EXPLAIN (ANALYZE, BUFFERS)` on representative data. Match polling limits across replicas; raising replicas does not raise the global `WECHAT_POLL_MAX_BATCHES` cap. Validate new-message intake, empty-message behavior, Agent replies, feature disable/re-enable and worker-loss recovery before reopening traffic.
+
+## Messaging delivery queue cutover
+
+Feishu and WeChat Agent chat now share one durable outbound table, `integration_deliveries`. On first startup, the API copies rows from `feishu_agent_deliveries` and `wechat_agent_deliveries`, then drops both tables. Deploy the API and every worker (including Celery Beat hosts) to the matching version before accepting traffic or allowing queued work to resume: an older worker would insert into a table that no longer exists. Roll back only together with the database backup taken before the upgrade; restoring the old image alone cannot recreate the dropped queue.
+
+Inspect outcomes afterward on the **Delivery log** page (`/deliveries`), or through `GET /api/v1/admin/deliveries`.
 
 ## Docker Compose Upgrade
 

@@ -23,6 +23,7 @@ import {
   Wrench,
   Activity,
   FileText,
+  Send,
   Bell,
   User,
   Brain,
@@ -212,6 +213,12 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       url: '/audit-logs',
       icon: FileText,
       permission: ROUTE_PERMISSION_MAP['/audit-logs'],
+    },
+    {
+      title: t('deliveries'),
+      url: '/deliveries',
+      icon: Send,
+      permission: ROUTE_PERMISSION_MAP['/deliveries'],
     },
   ]
 

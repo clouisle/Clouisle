@@ -23,8 +23,8 @@ from app.integrations.wechat import WeChatAPIError
 from app.models.agent import Agent, AgentStatus, AgentVisibility, Conversation, Message
 from app.models.asset import Asset
 from app.models.user import Team, User
+from app.models.integration_delivery import IntegrationDelivery
 from app.models.wechat_agent import (
-    WeChatAgentDelivery,
     WeChatAgentReceipt,
     WeChatAgentSession,
 )
@@ -37,6 +37,7 @@ from app.services.wechat_agent_io import (
 )
 from app.services.wechat_connection import utcnow
 from app.schemas.response import BusinessError
+from tests.services.delivery_fixtures import wechat_delivery_fields
 
 
 def receipt_message(items, identifier="18446744073709551615"):
@@ -446,9 +447,9 @@ async def test_deliver_pending_claims_and_sends_with_stable_client_id(
         "app.services.wechat_agent_io.WeChatClient",
         lambda *args, **kwargs: FakeClient(),
     )
-    delivery = await WeChatAgentDelivery.create(
+    delivery = await IntegrationDelivery.create(
         id=uuid4(),
-        receipt=receipt,
+        **wechat_delivery_fields(receipt),
         event_key="final",
         sequence=0,
         payload={"kind": "text", "text": "最终答复"},
@@ -459,8 +460,8 @@ async def test_deliver_pending_claims_and_sends_with_stable_client_id(
     assert sent[0][1] == "最终答复"
     assert sent[0][2] == "ctx-token"
     assert sent[0][3] == str(delivery.id)
-    row = await WeChatAgentDelivery.get(id=delivery.id)
-    assert row.status == "submitted"
+    row = await IntegrationDelivery.get(id=delivery.id)
+    assert row.status == "sent"
     # A second pass never resends an already-submitted row.
     await deliver_pending(binding, user)
     assert len(sent) == 1
@@ -476,9 +477,9 @@ async def test_deliver_pending_marks_unavailable_when_disconnected(io_db, monkey
         receipt_message([{"type": 1, "text_item": {"text": "hi"}}]),
         status="completed",
     )
-    await WeChatAgentDelivery.create(
+    await IntegrationDelivery.create(
         id=uuid4(),
-        receipt=receipt,
+        **wechat_delivery_fields(receipt),
         event_key="final",
         sequence=0,
         payload={"kind": "text", "text": "答复"},
@@ -491,7 +492,7 @@ async def test_deliver_pending_marks_unavailable_when_disconnected(io_db, monkey
     binding.status = "disconnected"
     await binding.save(update_fields=["status"])
     await deliver_pending(binding, user)
-    row = await WeChatAgentDelivery.first()
+    row = await IntegrationDelivery.first()
     assert row.status == "unavailable"
     assert row.error == "wechat_agent_binding_disconnected"
 
@@ -506,9 +507,9 @@ async def test_deliver_pending_timeout_becomes_unknown(io_db, monkeypatch):
         receipt_message([{"type": 1, "text_item": {"text": "hi"}}]),
         status="completed",
     )
-    await WeChatAgentDelivery.create(
+    await IntegrationDelivery.create(
         id=uuid4(),
-        receipt=receipt,
+        **wechat_delivery_fields(receipt),
         event_key="final",
         sequence=0,
         payload={"kind": "text", "text": "答复"},
@@ -529,7 +530,7 @@ async def test_deliver_pending_timeout_becomes_unknown(io_db, monkeypatch):
         lambda *args, **kwargs: TimeoutClient(),
     )
     await deliver_pending(binding, user)
-    row = await WeChatAgentDelivery.first()
+    row = await IntegrationDelivery.first()
     assert row.status == "unknown"
     # Unknown rows are never blind-resent.
     await deliver_pending(binding, user)
@@ -546,18 +547,18 @@ async def test_stale_sending_rows_expire_to_unknown(io_db):
         receipt_message([{"type": 1, "text_item": {"text": "hi"}}]),
         status="completed",
     )
-    row = await WeChatAgentDelivery.create(
+    row = await IntegrationDelivery.create(
         id=uuid4(),
-        receipt=receipt,
+        **wechat_delivery_fields(receipt),
         event_key="final",
         sequence=0,
         payload={"kind": "text", "text": "答复"},
         status="sending",
     )
     stale_at = utcnow() - timedelta(seconds=3600)
-    await WeChatAgentDelivery.filter(id=row.id).update(updated_at=stale_at)
+    await IntegrationDelivery.filter(id=row.id).update(updated_at=stale_at)
     await deliver_pending(binding, user)
-    row = await WeChatAgentDelivery.get(id=row.id)
+    row = await IntegrationDelivery.get(id=row.id)
     assert row.status == "unknown"
 
 
@@ -692,7 +693,7 @@ async def _asset_for(team, user, key="generated-images/a.png", name="a.png"):
 
 @pytest.mark.asyncio
 async def test_output_asset_same_conversation_is_authorized(io_db):
-    from app.services.wechat_agent_io import _authorized_output_asset
+    from app.services import channel_artifacts
 
     user, team, agent, binding, conversation, _ = io_db
     asset = await _asset_for(team, user)
@@ -710,14 +711,19 @@ async def test_output_asset_same_conversation_is_authorized(io_db):
         "agent": agent,
         "conversation_id": conversation.id,
     }
-    authorized = await _authorized_output_asset(asset.id, context)
+    authorized = await channel_artifacts.authorize_output_asset(
+        asset.id,
+        conversation_id=context["conversation_id"],
+        agent=context["agent"],
+        user=context["user"],
+    )
     assert authorized is not None and authorized.id == asset.id
 
 
 @pytest.mark.asyncio
 async def test_output_asset_foreign_conversation_is_rejected(io_db):
     from app.models.asset import AssetScopeRef, AssetScopeType
-    from app.services.wechat_agent_io import _authorized_output_asset
+    from app.services import channel_artifacts
 
     user, team, agent, binding, conversation, _ = io_db
     asset = await _asset_for(team, user)
@@ -733,21 +739,45 @@ async def test_output_asset_foreign_conversation_is_rejected(io_db):
         ref="aaaa",
     )
     context = {"user": user, "agent": agent, "conversation_id": other_conversation.id}
-    assert await _authorized_output_asset(asset.id, context) is None
+    assert (
+        await channel_artifacts.authorize_output_asset(
+            asset.id,
+            conversation_id=context["conversation_id"],
+            agent=agent,
+            user=user,
+        )
+        is None
+    )
     # The same asset is authorized for its own conversation.
     own = {"user": user, "agent": agent, "conversation_id": conversation.id}
-    assert await _authorized_output_asset(asset.id, own) is not None
+    assert (
+        await channel_artifacts.authorize_output_asset(
+            asset.id,
+            conversation_id=own["conversation_id"],
+            agent=agent,
+            user=user,
+        )
+        is not None
+    )
 
 
 @pytest.mark.asyncio
 async def test_output_asset_foreign_team_is_rejected(io_db):
-    from app.services.wechat_agent_io import _authorized_output_asset
+    from app.services import channel_artifacts
 
     user, team, agent, binding, conversation, _ = io_db
     other_team = await Team.create(id=uuid4(), name="Other team")
     asset = await _asset_for(other_team, user)
     context = {"user": user, "agent": agent, "conversation_id": conversation.id}
-    assert await _authorized_output_asset(asset.id, context) is None
+    assert (
+        await channel_artifacts.authorize_output_asset(
+            asset.id,
+            conversation_id=context["conversation_id"],
+            agent=agent,
+            user=user,
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -1019,7 +1049,7 @@ async def test_resolve_run_assets_handles_duplicates_and_unreadable_display(
     user, _, agent, binding, conversation, _ = io_db
     from app.models.agent_run import AgentRun, AgentRunMode, AgentRunStatus
     from app.models.asset import AssetScopeRef, AssetScopeType
-    from app.services import wechat_agent_io
+    from app.services import channel_artifacts
 
     run = await AgentRun.create(
         id=uuid4(),
@@ -1089,7 +1119,7 @@ async def test_resolve_run_assets_handles_duplicates_and_unreadable_display(
         round_id=round_id,
         round_role="tool_result",
     )
-    resolved = await wechat_agent_io._resolve_run_assets(run, agent, user)
+    resolved = await channel_artifacts.resolve_run_assets(run, agent, user)
     assert [item.id for item in resolved] == [asset.id]
 
 
@@ -1139,7 +1169,7 @@ async def test_upload_asset_media_builds_typed_image_and_video_items(monkeypatch
         upload_media=AsyncMock(side_effect=upload),
     )
     monkeypatch.setattr(
-        wechat_agent_io, "_read_asset_bytes", AsyncMock(return_value=b"media bytes")
+        wechat_agent_io, "read_asset_bytes", AsyncMock(return_value=b"media bytes")
     )
     image_item = await wechat_agent_io._upload_asset_media(
         client,
@@ -1190,7 +1220,7 @@ async def test_send_payload_sends_authorized_asset_as_media_item(io_db, monkeypa
         return {"type": 2, "image_item": {"mid_size": 4}}
 
     monkeypatch.setattr(
-        wechat_agent_io, "_authorized_output_asset", AsyncMock(return_value=asset)
+        wechat_agent_io, "authorize_output_asset", AsyncMock(return_value=asset)
     )
     monkeypatch.setattr(
         wechat_agent_io, "_upload_asset_media", AsyncMock(side_effect=authorized_upload)
@@ -1221,14 +1251,19 @@ async def test_send_payload_rejects_unauthorized_asset(io_db, monkeypatch):
 
     user, _, agent, binding, _, _ = io_db
     monkeypatch.setattr(
-        wechat_agent_io, "_authorized_output_asset", AsyncMock(return_value=None)
+        wechat_agent_io, "authorize_output_asset", AsyncMock(return_value=None)
     )
     client = SimpleNamespace(send_media=AsyncMock(), send_text=AsyncMock())
     with pytest.raises(WeChatAPIError) as exc:
         await wechat_agent_io._send_payload(
             client,
             {"kind": "asset", "asset_id": str(uuid4())},
-            {"context_token": "ctx", "conversation_id": uuid4()},
+            {
+                "context_token": "ctx",
+                "conversation_id": uuid4(),
+                "agent": agent,
+                "user": user,
+            },
             "client-2",
             binding,
         )
@@ -1241,7 +1276,7 @@ async def test_send_payload_rejects_unauthorized_asset(io_db, monkeypatch):
 async def test_deliver_pending_skips_bindings_without_receipts(io_db):
     user, _, agent, binding, _, session = io_db
     await deliver_pending(binding, user)
-    assert await WeChatAgentDelivery.all().count() == 0
+    assert await IntegrationDelivery.all().count() == 0
 
 
 @pytest.mark.asyncio
@@ -1255,9 +1290,9 @@ async def test_deliver_pending_lost_claim_never_resends(io_db, monkeypatch):
         receipt_message([{"type": 1, "text_item": {"text": "hi"}}]),
         status="completed",
     )
-    delivery = await WeChatAgentDelivery.create(
+    delivery = await IntegrationDelivery.create(
         id=uuid4(),
-        receipt=receipt,
+        **wechat_delivery_fields(receipt),
         event_key="final",
         sequence=0,
         payload={"kind": "text", "text": "答复"},
@@ -1281,7 +1316,7 @@ async def test_deliver_pending_lost_claim_never_resends(io_db, monkeypatch):
     original_update = QuerySet.update
 
     async def always_lose_update(self, *args, **kwargs):
-        if self.model is WeChatAgentDelivery:
+        if self.model is IntegrationDelivery:
             # The row was claimed by a concurrent worker before this pass.
             return 0
         return await original_update(self, *args, **kwargs)
@@ -1354,7 +1389,7 @@ async def test_run_asset_resolution_skips_missing_and_foreign_assets(
 ):
     user, _, agent, binding, conversation, session = io_db
     from app.models.agent_run import AgentRun, AgentRunMode, AgentRunStatus
-    from app.services import wechat_agent_io
+    from app.services import channel_artifacts
 
     run = await AgentRun.create(
         id=uuid4(),
@@ -1365,19 +1400,19 @@ async def test_run_asset_resolution_skips_missing_and_foreign_assets(
         status=AgentRunStatus.COMPLETED,
     )
     assert (
-        await wechat_agent_io._resolve_run_assets(
+        await channel_artifacts.resolve_run_assets(
             SimpleNamespace(conversation_id=None, canonical_message_id=None),
             agent,
             user,
         )
         == []
     )
-    assert await wechat_agent_io._resolve_run_assets(run, agent, user) == []
+    assert await channel_artifacts.resolve_run_assets(run, agent, user) == []
 
 
 @pytest.mark.asyncio
 async def test_asset_read_uses_storage_backend_for_local_mode(monkeypatch):
-    from app.services import wechat_agent_io
+    from app.services import channel_artifacts
 
     class Storage:
         async def read(self, key):
@@ -1392,7 +1427,7 @@ async def test_asset_read_uses_storage_backend_for_local_mode(monkeypatch):
     monkeypatch.setattr(document_processor, "_remote_mode", lambda: False)
     monkeypatch.setattr(upload_storage, "get_upload_storage_backend", storage_backend)
     asset = SimpleNamespace(storage_key="agent-attachments/asset.txt")
-    assert await wechat_agent_io._read_asset_bytes(asset) == b"private bytes"
+    assert await channel_artifacts.read_asset_bytes(asset) == b"private bytes"
 
 
 @pytest.mark.asyncio
@@ -1471,9 +1506,9 @@ async def test_normalize_input_rejects_images_without_vision(io_db, monkeypatch)
 
 
 def test_display_asset_refs_only_accepts_successful_known_schemas():
-    from app.services.wechat_agent_io import _display_asset_refs
+    from app.services.channel_artifacts import display_asset_refs
 
-    assert _display_asset_refs(
+    assert display_asset_refs(
         {
             "kind": "media.image",
             "success": True,
@@ -1481,11 +1516,11 @@ def test_display_asset_refs_only_accepts_successful_known_schemas():
             "artifacts": [{"asset_ref": "artifact-ref"}],
         }
     ) == ["image-ref", "artifact-ref"]
-    assert _display_asset_refs(
+    assert display_asset_refs(
         {"kind": "media.video", "success": True, "video": {"asset_ref": "video-ref"}}
     ) == ["video-ref"]
     assert (
-        _display_asset_refs(
+        display_asset_refs(
             {
                 "kind": "media.image",
                 "success": False,
@@ -1504,9 +1539,9 @@ async def test_send_one_marks_explicit_provider_rejection_as_error(io_db, monkey
     receipt = await make_receipt(
         binding, user, agent, receipt_message([]), status="completed"
     )
-    delivery = await WeChatAgentDelivery.create(
+    delivery = await IntegrationDelivery.create(
         id=uuid4(),
-        receipt=receipt,
+        **wechat_delivery_fields(receipt),
         event_key="rejected-final",
         sequence=0,
         payload={"kind": "text", "text": "reply"},
@@ -1546,6 +1581,10 @@ async def test_send_one_marks_explicit_provider_rejection_as_error(io_db, monkey
     await delivery.refresh_from_db()
     assert delivery.status == "error"
     assert delivery.error == "permission_denied"
+    assert (
+        delivery.error_detail
+        == "WeChatAPIError: WeChat request failed | code permission_denied"
+    )
 
 
 @pytest.mark.asyncio
@@ -1561,7 +1600,7 @@ async def test_upload_asset_media_rejects_empty_or_oversized_bytes(monkeypatch):
     async def no_bytes(_asset):
         return b""
 
-    monkeypatch.setattr(wechat_agent_io, "_read_asset_bytes", no_bytes)
+    monkeypatch.setattr(wechat_agent_io, "read_asset_bytes", no_bytes)
     with pytest.raises(WeChatAPIError) as empty:
         await wechat_agent_io._upload_asset_media(SimpleNamespace(), asset, "wechat")
     assert empty.value.code == "empty_media"
@@ -1569,7 +1608,7 @@ async def test_upload_asset_media_rejects_empty_or_oversized_bytes(monkeypatch):
     async def too_many_bytes(_asset):
         return b"x" * (wechat_agent_io.WECHAT_MEDIA_LIMIT + 1)
 
-    monkeypatch.setattr(wechat_agent_io, "_read_asset_bytes", too_many_bytes)
+    monkeypatch.setattr(wechat_agent_io, "read_asset_bytes", too_many_bytes)
     with pytest.raises(WeChatAPIError) as oversized:
         await wechat_agent_io._upload_asset_media(SimpleNamespace(), asset, "wechat")
     assert oversized.value.code == "file_too_large"
@@ -1585,7 +1624,7 @@ async def test_upload_asset_media_builds_typed_file_payload(monkeypatch):
         display_filename="report.pdf",
     )
     monkeypatch.setattr(
-        wechat_agent_io, "_read_asset_bytes", AsyncMock(return_value=b"PDF bytes")
+        wechat_agent_io, "read_asset_bytes", AsyncMock(return_value=b"PDF bytes")
     )
     captured = {}
 
@@ -1748,9 +1787,9 @@ async def test_delivery_preserves_ambiguous_or_cancelled_send_state(
     receipt = await make_receipt(
         binding, user, agent, receipt_message([]), status="completed"
     )
-    delivery = await WeChatAgentDelivery.create(
+    delivery = await IntegrationDelivery.create(
         id=uuid4(),
-        receipt=receipt,
+        **wechat_delivery_fields(receipt),
         event_key="failure",
         sequence=0,
         payload={"kind": "text", "text": "reply"},
@@ -1812,7 +1851,7 @@ async def test_run_asset_resolution_skips_unauthorized_generated_artifact(
     user, _, agent, binding, conversation, _ = io_db
     from app.models.agent_run import AgentRun, AgentRunMode, AgentRunStatus
     from app.models.asset import AssetScopeRef, AssetScopeType
-    from app.services import wechat_agent_io
+    from app.services import channel_artifacts, wechat_agent_io
 
     run = await AgentRun.create(
         id=uuid4(),
@@ -1861,7 +1900,7 @@ async def test_run_asset_resolution_skips_unauthorized_generated_artifact(
         AsyncMock(side_effect=BusinessError(msg_key="asset_unavailable")),
     )
 
-    assert await wechat_agent_io._resolve_run_assets(run, agent, user) == []
+    assert await channel_artifacts.resolve_run_assets(run, agent, user) == []
 
 
 @pytest.mark.asyncio
@@ -1872,9 +1911,9 @@ async def test_send_one_marks_missing_receipt_unavailable(io_db, monkeypatch):
     receipt = await make_receipt(
         binding, user, agent, receipt_message([]), status="completed"
     )
-    delivery = await WeChatAgentDelivery.create(
+    delivery = await IntegrationDelivery.create(
         id=uuid4(),
-        receipt=receipt,
+        **wechat_delivery_fields(receipt),
         event_key="orphaned",
         sequence=0,
         payload={"kind": "text", "text": "must not send"},
@@ -1921,13 +1960,13 @@ async def test_remote_asset_storage_uses_upload_gateway(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_remote_asset_read_uses_upload_gateway(monkeypatch):
-    from app.services import document_processor, upload_gateway, wechat_agent_io
+    from app.services import channel_artifacts, document_processor, upload_gateway
 
     read = AsyncMock(return_value=b"private bytes")
     monkeypatch.setattr(document_processor, "_remote_mode", lambda: True)
     monkeypatch.setattr(upload_gateway, "read", read)
 
-    result = await wechat_agent_io._read_asset_bytes(
+    result = await channel_artifacts.read_asset_bytes(
         SimpleNamespace(storage_key="agent-attachments/a")
     )
 
@@ -1984,7 +2023,9 @@ async def test_run_asset_resolution_deduplicates_refs_to_the_same_asset(
     resolve_ref = AsyncMock(return_value=asset)
     monkeypatch.setattr(wechat_agent_io.asset_service, "resolve_ref", resolve_ref)
 
-    resolved = await wechat_agent_io._resolve_run_assets(run, agent, user)
+    from app.services import channel_artifacts
+
+    resolved = await channel_artifacts.resolve_run_assets(run, agent, user)
 
     assert [entry.id for entry in resolved] == [asset.id]
     assert resolve_ref.await_count == 2
@@ -2006,7 +2047,11 @@ async def test_build_output_keeps_text_when_agent_row_is_missing(io_db, monkeypa
     monkeypatch.setattr(wechat_agent_io.Agent, "filter", lambda **_kwargs: query)
 
     payloads = await wechat_agent_io.build_output(
-        SimpleNamespace(canonical_message_id=canonical.id, agent_id=uuid4()),
+        SimpleNamespace(
+            canonical_message_id=canonical.id,
+            agent_id=uuid4(),
+            conversation_id=conversation.id,
+        ),
         SimpleNamespace(),
         SimpleNamespace(),
         user,
@@ -2205,9 +2250,9 @@ async def test_send_one_requeues_delivery_when_feature_revoked_during_send(
 
     user, _, agent, binding, _, _ = io_db
     receipt = await make_receipt(binding, user, agent, receipt_message([]))
-    delivery = await WeChatAgentDelivery.create(
+    delivery = await IntegrationDelivery.create(
         id=uuid4(),
-        receipt=receipt,
+        **wechat_delivery_fields(receipt),
         event_key="feature-revoked-during-send",
         sequence=0,
         payload={"kind": "text", "text": "answer"},
@@ -2285,9 +2330,9 @@ async def test_delivery_retries_when_feature_is_disabled_mid_send(io_db, monkeyp
 
     user, _, agent, binding, _, _ = io_db
     receipt = await make_receipt(binding, user, agent, receipt_message([]))
-    delivery = await WeChatAgentDelivery.create(
+    delivery = await IntegrationDelivery.create(
         id=uuid4(),
-        receipt=receipt,
+        **wechat_delivery_fields(receipt),
         event_key="feature-retry",
         sequence=0,
         payload={"kind": "text", "text": "answer"},
@@ -2313,9 +2358,9 @@ async def test_delivery_feature_revocation_after_claim_keeps_pending_for_retry(
 
     user, _, agent, binding, _, _ = io_db
     receipt = await make_receipt(binding, user, agent, receipt_message([]))
-    delivery = await WeChatAgentDelivery.create(
+    delivery = await IntegrationDelivery.create(
         id=uuid4(),
-        receipt=receipt,
+        **wechat_delivery_fields(receipt),
         event_key="revoked-feature",
         sequence=0,
         payload={"kind": "text", "text": "answer"},

@@ -7,7 +7,7 @@ into WeChat replies.  All state lives in PostgreSQL:
 * ``WeChatAgentReceipt`` maps one upstream message to one ``AgentRun``,
 * ``WeChatAgentSession`` owns the conversation, the active run, the reply
   context token and the accumulated answers for a waiting ``ask_user`` call,
-* ``WeChatAgentDelivery`` is the durable outbound queue.
+* ``IntegrationDelivery`` is the durable outbound queue.
 
 Guarantees:
 
@@ -43,10 +43,11 @@ from app.models.agent_run import (
     AgentRunMode,
     AgentRunStatus,
 )
+from app.models.integration import Integration
 from app.models.user import User
+from app.models.integration_delivery import IntegrationDelivery
 from app.models.wechat_agent import (
     WeChatAgentConfig,
-    WeChatAgentDelivery,
     WeChatAgentReceipt,
     WeChatAgentSession,
 )
@@ -175,11 +176,31 @@ async def _create_delivery(
     status: str = "pending",
     error: str | None = None,
 ) -> None:
-    await WeChatAgentDelivery.get_or_create(
+    integration = await Integration.get_or_none(provider_type="wechat")
+    kind = str(payload.get("kind") or "text")
+    asset_id = payload.get("asset_id")
+    await IntegrationDelivery.get_or_create(
+        provider_type="wechat",
         receipt_id=receipt.id,
         event_key=event_key,
         sequence=sequence,
-        defaults={"payload": payload, "status": status, "error": error},
+        defaults={
+            "integration_id": integration.id if integration is not None else None,
+            "user_id": receipt.user_id,
+            "agent_id": receipt.agent_id,
+            "run_id": receipt.run_id,
+            "chat_id": str(receipt.binding_id),
+            "message_id": receipt.message_id,
+            "kind": kind,
+            "text": str(payload.get("text") or ""),
+            "payload": payload,
+            "asset_id": UUID(asset_id) if asset_id else None,
+            "filename": payload.get("filename"),
+            "content_type": payload.get("content_type"),
+            "size": payload.get("size"),
+            "status": status,
+            "error": error,
+        },
     )
 
 
@@ -203,8 +224,8 @@ async def _announce_questions(
     """Persist the question delivery; its created_at is the answer cutoff."""
     questions = (run.pending_tool_input or {}).get("questions") or []
     event_key = f"ask:{run.pending_tool_call_id}"
-    if await WeChatAgentDelivery.filter(
-        receipt_id=receipt.id, event_key=event_key
+    if await IntegrationDelivery.filter(
+        provider_type="wechat", receipt_id=receipt.id, event_key=event_key
     ).exists():
         return
     total = len(questions)
@@ -235,7 +256,8 @@ async def _answer_cutoff(run: AgentRun):
     if not receipt_ids:
         return None
     delivery = (
-        await WeChatAgentDelivery.filter(
+        await IntegrationDelivery.filter(
+            provider_type="wechat",
             receipt_id__in=list(receipt_ids),
             event_key=f"ask:{run.pending_tool_call_id}",
         )
@@ -854,8 +876,8 @@ async def _process_pending(
         return
 
     if run is not None and run.status not in TERMINAL_RUN_STATUSES:
-        if not await WeChatAgentDelivery.filter(
-            receipt_id=receipt.id, event_key="busy"
+        if not await IntegrationDelivery.filter(
+            provider_type="wechat", receipt_id=receipt.id, event_key="busy"
         ).exists():
             await _reply_text(receipt, t("wechat_agent_busy"), key="busy")
         return
@@ -863,8 +885,8 @@ async def _process_pending(
     await _ensure_conversation(session, agent, user)
     # Persist and send before downloads, transcription or model submission.
     # The durable event key prevents a recovery pass from acknowledging twice.
-    if not await WeChatAgentDelivery.filter(
-        receipt_id=receipt.id, event_key="busy"
+    if not await IntegrationDelivery.filter(
+        provider_type="wechat", receipt_id=receipt.id, event_key="busy"
     ).exists():
         await _reply_text(receipt, t("wechat_agent_received"), key="received")
         await _deliver(binding, user)

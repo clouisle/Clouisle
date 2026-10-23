@@ -10,8 +10,8 @@ from app.integrations.credentials import encrypt_secret
 from app.models.agent import Agent, AgentStatus, Conversation
 from app.models.agent_run import AgentRun, AgentRunMode, AgentRunStatus
 from app.models.user import Team, TeamMember, User
+from app.models.integration_delivery import IntegrationDelivery
 from app.models.wechat_agent import (
-    WeChatAgentDelivery,
     WeChatAgentReceipt,
     WeChatAgentSession,
 )
@@ -19,6 +19,8 @@ from app.models.wechat_knowledge import (
     WeChatKnowledgeBinding,
     WeChatKnowledgeReceipt,
 )
+
+from tests.services.delivery_fixtures import wechat_delivery_fields
 from app.schemas.response import BusinessError
 from app.services import wechat_purpose
 
@@ -282,17 +284,18 @@ async def test_switch_idle_reports_each_kind_of_pending_work(db):
     assert queued.value.msg_key == "wechat_purpose_busy"
     await WeChatAgentReceipt.filter(id=receipt.id).delete()
 
-    delivery = await WeChatAgentDelivery.create(
+    delivery_receipt = await WeChatAgentReceipt.create(
         id=uuid4(),
-        receipt=await WeChatAgentReceipt.create(
-            id=uuid4(),
-            binding=binding,
-            user=user,
-            agent=agent,
-            message_id="m-2",
-            payload="{}",
-            status="completed",
-        ),
+        binding=binding,
+        user=user,
+        agent=agent,
+        message_id="m-2",
+        payload="{}",
+        status="completed",
+    )
+    delivery = await IntegrationDelivery.create(
+        id=uuid4(),
+        **wechat_delivery_fields(delivery_receipt),
         event_key="final",
         sequence=0,
         payload={"kind": "text", "text": "hi"},
@@ -300,7 +303,7 @@ async def test_switch_idle_reports_each_kind_of_pending_work(db):
     with pytest.raises(BusinessError) as delivering:
         await wechat_purpose.check_switch_idle(binding.id)
     assert delivering.value.msg_key == "wechat_purpose_busy"
-    await WeChatAgentDelivery.filter(id=delivery.id).update(status="submitted")
+    await IntegrationDelivery.filter(id=delivery.id).update(status="sent")
     await wechat_purpose.check_switch_idle(binding.id)
 
     from app.models.knowledge_base import KnowledgeBase

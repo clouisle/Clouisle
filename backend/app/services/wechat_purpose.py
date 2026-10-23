@@ -4,10 +4,10 @@ from uuid import UUID
 
 from app.models.agent import Agent, AgentStatus
 from app.models.agent_run import AgentRunStatus
+from app.models.integration_delivery import IntegrationDelivery
 from app.models.wechat_agent import (
     WeChatAgentReceipt,
     WeChatAgentSession,
-    WeChatAgentDelivery,
 )
 from app.models.wechat_knowledge import WeChatKnowledgeReceipt
 from app.schemas.response import BusinessError
@@ -65,8 +65,10 @@ async def check_switch_idle(
     collecting = await WeChatKnowledgeReceipt.filter(
         binding_id=binding_id, status__in=["pending", "processing"]
     ).exists()
-    delivering = await WeChatAgentDelivery.filter(
-        receipt__binding_id=binding_id, status__in=["pending", "sending"]
+    delivering = await IntegrationDelivery.filter(
+        provider_type="wechat",
+        chat_id=str(binding_id),
+        status__in=["pending", "sending"],
     ).exists()
     if active or queued or collecting or delivering:
         raise collection_error("wechat_purpose_busy", 409)

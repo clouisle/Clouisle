@@ -70,9 +70,10 @@ def recover_bindings_task() -> dict:
                   AND r.status IN ('pending', 'submitted')
             ) OR EXISTS (
                 SELECT 1
-                FROM wechat_agent_deliveries d
+                FROM integration_deliveries d
                 JOIN wechat_agent_receipts r ON r.id = d.receipt_id
                 WHERE r.binding_id = b.id
+                  AND d.provider_type = 'wechat'
                   AND d.status IN ('pending', 'sending')
             )
             ORDER BY b.agent_recovery_at, b.id

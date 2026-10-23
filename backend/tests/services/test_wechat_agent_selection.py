@@ -21,9 +21,9 @@ from app.models.agent import Agent, AgentStatus, AgentVisibility, Conversation
 from app.models.agent_run import AgentRun, AgentRunStatus
 from app.models.integration import Integration
 from app.models.user import Team, TeamMember, User
+from app.models.integration_delivery import IntegrationDelivery
 from app.models.wechat_agent import (
     WeChatAgentConfig,
-    WeChatAgentDelivery,
     WeChatAgentReceipt,
     WeChatAgentSession,
 )
@@ -78,7 +78,7 @@ async def command_receipt(world, text, identifier):
 
 
 def deliveries_for(receipt_id):
-    return WeChatAgentDelivery.filter(receipt_id=receipt_id).order_by("sequence")
+    return IntegrationDelivery.filter(receipt_id=receipt_id).order_by("sequence")
 
 
 async def texts_for(receipt_id):
@@ -113,7 +113,7 @@ async def complete_outbox(world):
     ).values_list("id", flat=True)
     if not receipt_ids:
         return
-    await WeChatAgentDelivery.filter(
+    await IntegrationDelivery.filter(
         receipt_id__in=list(receipt_ids), status__in=["pending", "sending"]
     ).update(status="submitted")
 
@@ -507,7 +507,7 @@ async def test_switch_refused_while_outbox_has_a_pending_delivery(world):
     await process(world)
     # The runtime's IO boundary records rows but never sends them, so rows are
     # still pending here: exactly the guard condition.
-    assert await WeChatAgentDelivery.filter(status="pending").exists()
+    assert await IntegrationDelivery.filter(status="pending").exists()
 
     receipt = await command_receipt(world, "/使用 2", "use-outbox")
     await process(world)
@@ -756,7 +756,7 @@ async def test_agent_feature_disabled_leaves_command_receipt_untouched(world):
 
     assert (await config_for(world)).agent_id == world.agent.id
     assert (await WeChatAgentReceipt.get(id=receipt.id)).status == "pending"
-    assert not await WeChatAgentDelivery.filter(receipt_id=receipt.id).exists()
+    assert not await IntegrationDelivery.filter(receipt_id=receipt.id).exists()
 
 
 @pytest.mark.asyncio
@@ -830,8 +830,9 @@ async def test_legacy_commands_still_work_next_to_selection(world):
     assert (
         await WeChatAgentReceipt.get(message_id="legacy-help")
     ).status == "completed"
-    assert await WeChatAgentDelivery.filter(
-        receipt__message_id="legacy-help", event_key="command"
+    help_receipt = await WeChatAgentReceipt.get(message_id="legacy-help")
+    assert await IntegrationDelivery.filter(
+        provider_type="wechat", receipt_id=help_receipt.id, event_key="command"
     ).exists()
     assert not await AgentRun.all().exists()
     assert (await config_for(world)).agent_id == world.agent.id

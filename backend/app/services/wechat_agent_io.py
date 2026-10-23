@@ -16,7 +16,6 @@ import json
 import logging
 import secrets
 from urllib.parse import quote
-from uuid import UUID
 
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -24,17 +23,22 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from app.core.i18n import set_language
 from app.integrations.credentials import decrypt_secret
 from app.integrations.wechat import WeChatAPIError, WeChatClient
-from app.models.agent import Agent, Message, MessageRole
+from app.models.agent import Agent, Message
 from app.models.asset import Asset, AssetScopeType, AssetSource
 from app.models.user import User
+from app.models.integration_delivery import IntegrationDelivery
 from app.models.wechat_agent import (
-    WeChatAgentDelivery,
     WeChatAgentReceipt,
     WeChatAgentSession,
 )
 from app.schemas.agent import ChatRequest, FileUrl, ImageContent
 from app.schemas.response import BusinessError, ResponseCode
 from app.services.asset import asset_service
+from app.services.channel_artifacts import (
+    authorize_output_asset,
+    read_asset_bytes,
+    resolve_run_assets,
+)
 from app.services.wechat_connection import utcnow
 from app.services.wechat_media import extract_media
 from app.services.integration_features import enabled_features, require_feature
@@ -146,20 +150,6 @@ async def _store_upload(content: bytes, storage_key: str, content_type: str) -> 
         return
     storage = await get_upload_storage_backend(UPLOAD_ROOT)
     await storage.save(storage_key, content, content_type=content_type)
-
-
-async def _read_asset_bytes(asset: Asset) -> bytes:
-    """Read authorized Asset bytes through local storage or the upload gateway."""
-    from app.api.v1.endpoints.upload import UPLOAD_ROOT
-    from app.services.document_processor import document_processor
-    from app.services.upload_storage import get_upload_storage_backend
-
-    if document_processor._remote_mode():
-        from app.services import upload_gateway
-
-        return await upload_gateway.read(asset.storage_key)
-    storage = await get_upload_storage_backend(UPLOAD_ROOT)
-    return await storage.read(asset.storage_key)
 
 
 async def _save_asset(
@@ -453,87 +443,20 @@ async def normalize_input(
     )
 
 
-async def _resolve_run_assets(run, agent: Agent, user: User) -> list[Asset]:
-    """Collect generated Assets from the run's canonical round only."""
-    conversation_id = run.conversation_id
-    if not conversation_id:
-        return []
-    canonical = await Message.get_or_none(id=run.canonical_message_id)
-    if canonical is None:
-        return []
-    round_id = canonical.round_id
-    refs: list[str] = []
-    if round_id is not None:
-        tools = (
-            await Message.filter(
-                conversation_id=conversation_id,
-                role=MessageRole.TOOL,
-                round_id=round_id,
-            )
-            .exclude(round_role=None)
-            .order_by("round_index", "created_at")
-        )
-        for message in tools:
-            try:
-                display = json.loads(message.content)
-            except (TypeError, ValueError):
-                continue
-            if not isinstance(display, dict):
-                continue
-            refs.extend(_display_asset_refs(display))
-    assets: list[Asset] = []
-    seen: set[UUID] = set()
-    for ref in dict.fromkeys(refs):
-        try:
-            asset = await asset_service.resolve_ref(
-                scope_type=AssetScopeType.CONVERSATION,
-                scope_id=conversation_id,
-                ref=ref,
-                team_id=agent.team_id,
-                user_id=user.id,
-            )
-        except BusinessError:
-            continue
-        if asset.id in seen:
-            continue
-        seen.add(asset.id)
-        assets.append(asset)
-    return assets
-
-
-def _display_asset_refs(display: dict) -> list[str]:
-    """Extract Asset refs from recognized tool display schemas only."""
-    refs: list[str] = []
-    kind = display.get("kind")
-    if kind == "media.image" and display.get("success"):
-        for generated in display.get("images") or []:
-            image = generated.get("image") if isinstance(generated, dict) else None
-            ref = image.get("asset_ref") if isinstance(image, dict) else None
-            if ref:
-                refs.append(str(ref))
-    elif kind == "media.video" and display.get("success"):
-        video = display.get("video")
-        ref = video.get("asset_ref") if isinstance(video, dict) else None
-        if ref:
-            refs.append(str(ref))
-    if display.get("success"):
-        for artifact in display.get("artifacts") or []:
-            ref = artifact.get("asset_ref") if isinstance(artifact, dict) else None
-            if ref:
-                refs.append(str(ref))
-    return refs
-
-
 async def build_output(run, receipt, session, user) -> list[dict]:
     """Build WeChat delivery payloads for a terminal run's visible output."""
     payloads: list[dict] = []
     canonical = await Message.get_or_none(id=run.canonical_message_id)
-    text = (canonical.content or "").strip() if canonical else ""
+    text = (
+        (canonical.content or "").strip()
+        if canonical is not None and canonical.conversation_id == run.conversation_id
+        else ""
+    )
     if text:
         payloads.extend({"kind": "text", "text": chunk} for chunk in chunk_text(text))
     agent = await Agent.filter(id=run.agent_id).first()
     if agent is not None:
-        for asset in await _resolve_run_assets(run, agent, user):
+        for asset in await resolve_run_assets(run, agent, user):
             payloads.append(
                 {
                     "kind": "asset",
@@ -575,7 +498,7 @@ async def _upload_asset_media(
     with PKCS7 padding, POST the ciphertext, then reference the returned
     download parameter inside the typed item.
     """
-    content = await _read_asset_bytes(asset)
+    content = await read_asset_bytes(asset)
     if not content:
         raise WeChatAPIError("empty_media")
     if len(content) > WECHAT_MEDIA_LIMIT:
@@ -633,7 +556,7 @@ async def _reload_user(user_id):
 
 
 async def _delivery_context(
-    binding, delivery: WeChatAgentDelivery, receipt: WeChatAgentReceipt, user
+    binding, delivery: IntegrationDelivery, receipt: WeChatAgentReceipt, user
 ):
     """Resolve and reauthorize the exact context for one delivery row.
 
@@ -701,41 +624,6 @@ async def _run_row(run_id):
     return await AgentRun.filter(id=run_id).first()
 
 
-async def _authorized_output_asset(asset_id, context) -> Asset | None:
-    """Authorize a generated Asset for outbound delivery to WeChat.
-
-    Stricter than the generic web path: the Asset must be scoped to this exact
-    conversation (or attached to a message inside it), so another
-    conversation's artifact can never be sent to a WeChat user.
-    """
-    from app.models.asset import AssetScopeRef
-    from app.services.asset_access import authorize_asset_for_scope
-
-    try:
-        asset = await authorize_asset_for_scope(
-            UUID(str(asset_id)),
-            scope_type=AssetScopeType.CONVERSATION,
-            scope_id=context["conversation_id"],
-            user=context["user"],
-            expected_team_id=context["agent"].team_id,
-        )
-    except BusinessError:
-        return None
-    conversation_id = context["conversation_id"]
-    scoped = await AssetScopeRef.filter(
-        scope_type=AssetScopeType.CONVERSATION,
-        scope_id=conversation_id,
-        asset_id=asset.id,
-    ).exists()
-    if not scoped:
-        from app.models.asset import MessageAsset
-
-        scoped = await MessageAsset.filter(
-            asset_id=asset.id, message__conversation_id=conversation_id
-        ).exists()
-    return asset if scoped else None
-
-
 async def _send_payload(
     client: WeChatClient,
     payload: dict,
@@ -748,7 +636,12 @@ async def _send_payload(
     to_user = binding.wechat_user_id
     context_token = context["context_token"]
     if kind == "asset":
-        asset = await _authorized_output_asset(payload.get("asset_id"), context)
+        asset = await authorize_output_asset(
+            payload.get("asset_id"),
+            conversation_id=context["conversation_id"],
+            agent=context["agent"],
+            user=context["user"],
+        )
         if asset is None:
             raise WeChatAPIError("asset_unavailable")
         item = await _upload_asset_media(client, asset, to_user)
@@ -760,21 +653,21 @@ async def _send_payload(
     )
 
 
-async def _send_one(delivery: WeChatAgentDelivery, binding) -> None:
+async def _send_one(delivery: IntegrationDelivery, binding) -> None:
     if "agent_chat" not in await enabled_features("wechat"):
-        await WeChatAgentDelivery.filter(id=delivery.id, status="sending").update(
+        await IntegrationDelivery.filter(id=delivery.id, status="sending").update(
             status="pending"
         )
         return
     receipt = await WeChatAgentReceipt.filter(id=delivery.receipt_id).first()
     if receipt is None:
-        await WeChatAgentDelivery.filter(id=delivery.id).update(
+        await IntegrationDelivery.filter(id=delivery.id).update(
             status="unavailable", error="wechat_agent_binding_disconnected"
         )
         return
     context, key = await _delivery_context(binding, delivery, receipt, None)
     if context is None:
-        await WeChatAgentDelivery.filter(id=delivery.id).update(
+        await IntegrationDelivery.filter(id=delivery.id).update(
             status="unavailable", error=key
         )
         return
@@ -789,34 +682,49 @@ async def _send_one(delivery: WeChatAgentDelivery, binding) -> None:
             )
     except asyncio.CancelledError:
         raise
-    except (TimeoutError, asyncio.TimeoutError):
+    except (TimeoutError, asyncio.TimeoutError) as exc:
+        from app.services.delivery_errors import error_detail
+
         # A crash or timeout after transmission is ambiguous: never blind-resend.
-        await WeChatAgentDelivery.filter(id=delivery.id).update(status="unknown")
+        await IntegrationDelivery.filter(id=delivery.id).update(
+            status="unknown", error_detail=error_detail(exc)
+        )
         return
     except WeChatAPIError as exc:
+        from app.services.delivery_errors import error_detail
+
+        detail = error_detail(exc)
         cause = exc.__cause__
         if isinstance(cause, (TimeoutError, asyncio.TimeoutError)) or (
             cause is not None and cause.__class__.__name__ == "TimeoutException"
         ):
             # The request may already have reached WeChat: outcome is unknown.
-            await WeChatAgentDelivery.filter(id=delivery.id).update(status="unknown")
+            await IntegrationDelivery.filter(id=delivery.id).update(
+                status="unknown", error_detail=detail
+            )
             return
         code = exc.code if isinstance(exc.code, str) else str(exc.code)
-        await WeChatAgentDelivery.filter(id=delivery.id).update(
-            status="error", error=code
+        await IntegrationDelivery.filter(id=delivery.id).update(
+            status="error", error=code, error_detail=detail
         )
         return
     except BusinessError as exc:
         if exc.msg_key == "integration_feature_disabled":
-            await WeChatAgentDelivery.filter(id=delivery.id, status="sending").update(
+            await IntegrationDelivery.filter(id=delivery.id, status="sending").update(
                 status="pending"
             )
             return
-        await WeChatAgentDelivery.filter(id=delivery.id).update(
-            status="error", error=exc.msg_key or "wechat_agent_media_unsupported"
+        from app.services.delivery_errors import error_detail
+
+        await IntegrationDelivery.filter(id=delivery.id).update(
+            status="error",
+            error=exc.msg_key or "wechat_agent_media_unsupported",
+            error_detail=error_detail(exc),
         )
         return
-    await WeChatAgentDelivery.filter(id=delivery.id).update(status="submitted")
+    await IntegrationDelivery.filter(id=delivery.id).update(
+        status="sent", error=None, error_detail=None
+    )
 
 
 async def deliver_pending(binding, user) -> None:
@@ -842,7 +750,9 @@ async def deliver_pending(binding, user) -> None:
     # Only rows that still need action are loaded: a submitted, errored or
     # unavailable row is terminal and must never be rescanned every pass.
     rows = (
-        await WeChatAgentDelivery.filter(receipt_id__in=list(receipt_ids))
+        await IntegrationDelivery.filter(
+            provider_type="wechat", receipt_id__in=list(receipt_ids)
+        )
         .filter(Q(status="pending") | Q(status="sending", updated_at__lt=lease_cutoff))
         .order_by("created_at", "sequence")
     )
@@ -850,13 +760,13 @@ async def deliver_pending(binding, user) -> None:
         if row.status == "sending" and row.updated_at < lease_cutoff:
             # A crash left the claim behind: the outcome is unknown, so the row
             # is never blind-resent.
-            await WeChatAgentDelivery.filter(
+            await IntegrationDelivery.filter(
                 id=row.id, status="sending", updated_at__lt=lease_cutoff
             ).update(status="unknown")
             continue
         if row.status != "pending":
             continue
-        claimed = await WeChatAgentDelivery.filter(id=row.id, status="pending").update(
+        claimed = await IntegrationDelivery.filter(id=row.id, status="pending").update(
             status="sending"
         )
         if not claimed:

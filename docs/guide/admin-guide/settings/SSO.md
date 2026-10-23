@@ -154,6 +154,14 @@ This is content ingestion, not a pixel-identical backup: Sheets floating images/
 
 Each run scans the whole space before removing missing documents. Content changes replace the local index after successful processing while preserving the document ID; unchanged content avoids re-embedding. Download, incomplete scan, or processing failures preserve the previous imported version. Confirmed access denial removes the affected local copy; transient or ambiguous errors do not count as deletion. Restored access permits reimport. Disabling a source stops synchronization but keeps imported documents; deleting a source removes its imported documents and indexes, not unrelated local uploads.
 
+## Delivery log
+
+**Delivery log** (`/deliveries`, under Monitoring in the sidebar) shows the durable outbound queue shared by Feishu and WeChat Agent chat: provider, event, artifact file name, status, error and the originating `AgentRun`. It requires `admin:integrations:settings:read`.
+
+Select one or more providers and statuses with the same faceted filters as Audit Logs. Search file names (preserved in the page URL) or filter by run ID. The page defaults to 20 rows; choose 10, 20, 50 or 100. Changing a filter resets pagination. `sent` means the provider accepted the reply request, not that the recipient read or downloaded it. Failed rows show the provider's original error text, HTTP status and code; long errors wrap in the table. `pending`, `sending` and `unknown` rows are queue state: a `sending` lease that expires becomes `unknown` and is never resent blindly. Message text, Feishu/WeChat resource keys and credentials are not displayed.
+
+The queue is one provider-neutral table (`integration_deliveries`). Startup copies rows from the former per-provider delivery tables and drops them, so deploy the matching API and worker versions together.
+
 ## Protocol configuration
 
 OAuth2/OIDC retains client IDs, endpoints, scopes, and mapping; SAML2 retains entity IDs, SSO URL, certificate and ACS URL (`/sso/callback/{name}`); CAS retains server URL, service URL and version.
