@@ -1,12 +1,34 @@
-// GENERATED — 2026-10-18T12:45:55.116Z
+// GENERATED — 2026-10-23T16:59:06.999Z
 // Source: i18n/en/settings.json
 export type SettingsMessages = {
   settings: {
     title: string
+    feishu: {
+      title: string
+      description: string
+      enable: string
+      enableHint: string
+      selectBeforeEnable: string
+      help: string
+      refresh: string
+      loading: string
+      disabled: string
+      unlinked: string
+      agent: string
+      choose: string
+      unavailable: string
+      empty: string
+      switchHint: string
+      clear: string
+      save: string
+      saved: string
+      failed: string
+    }
     wechat: {
       title: string
-      downloadOriginal: string
       description: string
+      help: string
+      modelHelp: string
       purposeTitle: string
       purposeHint: string
       purposeNone: string
@@ -14,10 +36,9 @@ export type SettingsMessages = {
       purposeAgent: string
       purposeLabel: string
       purposeSelect: string
-      purposeActive: string
       purposeBusy: string
-      agentTitle: string
-      agentHint: string
+      featuresDisabled: string
+      featurePaused: string
       agentSelect: string
       noAgents: string
       agentVariables: string
@@ -25,17 +46,7 @@ export type SettingsMessages = {
       agentInactive: string
       agentStt: string
       agentInput: string
-      agentStatusActive: string
       agentRunStatus: string
-      agentConversation: string
-      agentDelivery: string
-      deliveryPending: string
-      deliverySending: string
-      deliverySubmitted: string
-      deliveryUnknown: string
-      deliveryError: string
-      deliveryUnavailable: string
-      deliveryCancelled: string
       stop: string
       runStatus: {
         queued: string
@@ -48,17 +59,6 @@ export type SettingsMessages = {
         interrupted: string
         waiting: string
       }
-      receiptStatus: {
-        pending: string
-        submitted: string
-        completed: string
-        error: string
-      }
-      agentReceiptsTitle: string
-      agentReceiptsHint: string
-      noAgentReceipts: string
-      collectionReceiptsTitle: string
-      collectionReceiptsHint: string
       variablesRequired: string
       variablesOptional: string
       variablePlaceholder: string
@@ -87,7 +87,6 @@ export type SettingsMessages = {
       notConfigured: string
       collectionActive: string
       collectionInactive: string
-      collectionTitle: string
       collectionHint: string
       connections: string
       lastReceived: string
@@ -100,10 +99,7 @@ export type SettingsMessages = {
       closeQr: string
       disconnect: string
       disconnectHint: string
-      recent: string
-      noReceipts: string
       replyHint: string
-      item: string
       status: {
         connected: string
         disconnected: string
@@ -116,18 +112,6 @@ export type SettingsMessages = {
         expired: string
         need_verifycode: string
         verify_code_blocked: string
-      }
-      receipt: {
-        pending: string
-        processing: string
-        completed: string
-        error: string
-      }
-      itemStatus: {
-        completed: string
-        duplicate: string
-        error: string
-        pending: string
       }
     }
     description: string

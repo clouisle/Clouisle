@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-17T15:53:02.942Z
+// GENERATED — 2026-10-23T16:59:07.000Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
@@ -70,10 +70,21 @@ export type SiteSettingsMessages = {
         user_login: string
         directory_sync: string
         notification: string
+        agent_chat: string
+        knowledge_collection: string
       }
       email: string
       webhook: string
       feishu: string
+      wechat: string
+      wechatDescription: string
+      wechatUnavailable: string
+      wechatFeaturesHint: string
+      wechatFeatureDescriptions: {
+        agent_chat: string
+        knowledge_collection: string
+      }
+      wechatRuntimeHint: string
       back: string
       tabConfiguration: string
       tabDirectory: string
@@ -121,6 +132,47 @@ export type SiteSettingsMessages = {
       feishuLogin: string
       feishuDirectorySyncDescription: string
       feishuLoginDescription: string
+      feishuAgentChat: string
+      tabAgentChat: string
+      feishuAgentChatDescription: string
+      feishuAgentChatRequirementsTitle: string
+      feishuAgentChatRequirementsIntro: string
+      feishuAgentChatReceivePermission: string
+      feishuAgentChatSendPermission: string
+      feishuAgentChatMediaPermission: string
+      feishuAgentChatIdentityPermission: string
+      feishuAgentChatPublishRequirements: string
+      feishuAgentChatConnectionNotice: string
+      feishuAgentChatDisabledHint: string
+      feishuAgentChatUnavailable: string
+      feishuAgentChatConnectionMode: string
+      feishuAgentChatCallbackMode: string
+      feishuAgentChatLongConnectionMode: string
+      feishuAgentChatLongConnectionDesc: string
+      feishuAgentChatLongConnectionSetup: string
+      feishuAgentChatLongConnectionProcess: string
+      feishuReceiverStatus: string
+      feishuReceiverStates: {
+        disabled: string
+        callback: string
+        unconfigured: string
+        waiting: string
+        starting: string
+        connected: string
+        reconnecting: string
+        error: string
+      }
+      feishuAgentChatVerificationToken: string
+      feishuAgentChatVerificationTokenDesc: string
+      feishuAgentChatEncryptKey: string
+      feishuAgentChatEncryptKeyDesc: string
+      feishuAgentChatSecretsMissing: string
+      feishuAgentChatCallbackUrl: string
+      feishuAgentChatCallbackUrlDesc: string
+      feishuAgentChatPersonalSelection: string
+      feishuAgentChatConfigFailed: string
+      feishuAgentChatSaveFailed: string
+      feishuAgentChatSaved: string
       feishuButtonText: string
       feishuButtonTextDesc: string
       callbackUrl: string

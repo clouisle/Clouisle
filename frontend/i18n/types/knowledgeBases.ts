@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-17T15:53:02.943Z
+// GENERATED — 2026-10-23T16:59:06.992Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
