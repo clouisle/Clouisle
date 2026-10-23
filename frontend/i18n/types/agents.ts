@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-23T16:59:06.987Z
+// GENERATED — 2026-10-23T19:49:42.003Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {
@@ -131,8 +131,6 @@ export type AgentsMessages = {
     tokenUsage: string
     orchestration: {
       title: string
-      enableCitations: string
-      enableCitationsDesc: string
       sidebar: {
         orchestration: string
         api: string

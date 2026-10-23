@@ -129,8 +129,6 @@
     "tokenUsage": "Token Usage",
     "orchestration": {
       "title": "Orchestration",
-      "enableCitations": "Enable Citations",
-      "enableCitationsDesc": "When enabled, answers include citations and display their sources.",
       "sidebar": {
         "orchestration": "Orchestration",
         "api": "API Access",

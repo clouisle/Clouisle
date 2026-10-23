@@ -129,8 +129,6 @@
     "tokenUsage": "Token 用量",
     "orchestration": {
       "title": "编排",
-      "enableCitations": "启用引用来源",
-      "enableCitationsDesc": "开启后在回答中标注引用并展示来源",
       "sidebar": {
         "orchestration": "编排",
         "api": "访问 API",

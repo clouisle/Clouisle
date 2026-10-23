@@ -197,7 +197,6 @@ export function AgentOrchestrationForm({
   const [toolsConfig, setToolsConfig] = React.useState<ToolConfig[]>(
     agent.tools_config || []
   )
-  const [enableCitations, setEnableCitations] = React.useState(agent.enable_citations ?? false)
   const [enableAttachments, setEnableAttachments] = React.useState(agent.enable_attachments || false)
   const [enableUserInputRequest, setEnableUserInputRequest] = React.useState(
     agent.enable_user_input_request || false
@@ -246,7 +245,6 @@ export function AgentOrchestrationForm({
       }))
     )
     setToolsConfig(agent.tools_config || [])
-    setEnableCitations(agent.enable_citations ?? false)
     setEnableAttachments(agent.enable_attachments || false)
     setEnableUserInputRequest(agent.enable_user_input_request || false)
     setEnableMemory(agent.enable_memory || false)
@@ -336,7 +334,6 @@ export function AgentOrchestrationForm({
       tools_config: toolsConfig,
       variables: variables,
       knowledge_base_configs: knowledgeBaseConfigs,
-      enable_citations: enableCitations,
       enable_attachments: enableAttachments,
       enable_user_input_request: enableUserInputRequest,
       enable_memory: enableMemory,
@@ -348,7 +345,7 @@ export function AgentOrchestrationForm({
       attachment_config: enableAttachments ? attachmentConfig : null,
       rag_mode: effectiveRagMode,
     })
-  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableCitations, enableAttachments, enableUserInputRequest, enableMemory, memoryConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig, attachmentConfig, effectiveRagMode, onUpdate])
+  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableAttachments, enableUserInputRequest, enableMemory, memoryConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig, attachmentConfig, effectiveRagMode, onUpdate])
 
   // Character count for prompt
   const promptLength = systemPrompt.length
@@ -657,13 +654,6 @@ export function AgentOrchestrationForm({
           readOnly={!canUpdate}
         />
       </ConfigCard>
-      <div className="flex items-start justify-between gap-3 rounded-lg border p-3" data-testid="agent-enable-citations">
-        <div className="space-y-1">
-          <Label className="text-xs">{t('enableCitations')}</Label>
-          <p className="text-xs text-muted-foreground">{t('enableCitationsDesc')}</p>
-        </div>
-        {canUpdate && <Switch checked={enableCitations} onCheckedChange={setEnableCitations} />}
-      </div>
 
       {/* Attachments Section */}
       <ConfigCard
