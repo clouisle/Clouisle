@@ -1,31 +1,20 @@
 from __future__ import annotations
 
-import base64
-import io
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from PIL import Image
 
 from app.llm.types import (
     ContentPart,
     ContentType,
     FunctionCall,
-    ImageContent,
     Message,
     MessageRole,
     ToolCall,
 )
 from app.models.agent import MessageRole as ConversationMessageRole
 from app.services import chat_context
-
-
-def _data_url(mode: str = "RGB", size: tuple[int, int] = (2, 2)) -> str:
-    source = io.BytesIO()
-    Image.new(mode, size).save(source, format="PNG")
-    encoded = base64.b64encode(source.getvalue()).decode()
-    return f"data:image/png;base64,{encoded}"
 
 
 def _agent(**values):
@@ -67,36 +56,6 @@ def test_context_helper_boundaries_and_multimodal_variants():
     )
     assert protected == {0}
     assert meta[0]["custom_flag"] is True
-
-    rgba = _data_url("RGBA", (3000, 2)).split(",", 1)[1]
-    normalized, image_format = chat_context._normalize_vision_image(rgba, "png")
-    assert image_format == "jpeg"
-    with Image.open(io.BytesIO(base64.b64decode(normalized))) as image:
-        assert image.mode == "RGB"
-
-    content = chat_context.build_vision_content(
-        "describe",
-        [
-            SimpleNamespace(url=None),
-            {},
-            {"url": "https://example.test/image.png"},
-            {"url": _data_url()},
-        ],
-    )
-    assert content[0].text == "describe"
-    assert content[-2].type == ContentType.TEXT
-    assert content[-1].type == ContentType.IMAGE
-    assert content[-1].image is not None
-    assert content[-1].image.base64 is not None
-
-    refs = chat_context.build_uploaded_image_reference_text(
-        [
-            SimpleNamespace(url=None, base64="encoded"),
-            {},
-            {"url": "https://example.test/image.png"},
-        ]
-    )
-    assert refs.count("available as a reference image") == 2
 
 
 def test_context_text_json_and_media_helpers_cover_empty_and_fallbacks():
@@ -142,15 +101,12 @@ def test_context_text_json_and_media_helpers_cover_empty_and_fallbacks():
     parts = [
         ContentPart(type=ContentType.TEXT, text="text"),
         ContentPart(type=ContentType.TEXT),
-        ContentPart(
-            type=ContentType.IMAGE, image=ImageContent(url="https://example.test/a")
-        ),
         ContentPart(type=ContentType.VIDEO),
     ]
     assert chat_context._stringify_content("plain") == "plain"
     assert chat_context._stringify_content(None) == ""
     assert chat_context._stringify_content([]) == ""
-    assert chat_context._stringify_content(parts) == "text\n[image]"
+    assert chat_context._stringify_content(parts) == "text"
 
     item = SimpleNamespace(value="assistant")
     assert chat_context._get_override_value({"role": "user"}, "role") == "user"
@@ -314,7 +270,8 @@ async def test_override_history_builds_summary_protocol_and_current_user(monkeyp
         user_locale="en",
         history_override=history,
         current_images=None,
-        model_supports_vision=False,
+        input_capabilities=SimpleNamespace(modalities=frozenset()),
+        model_config=None,
         current_user_message_id=None,
         include_current_user_message=True,
         exclude_message_ids=None,
@@ -401,6 +358,23 @@ async def test_database_history_paths_and_active_round_delta(monkeypatch):
     monkeypatch.setattr(
         chat_context, "get_visible_conversation_messages_after", visible_after
     )
+
+    async def no_links(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(
+        "app.models.asset.MessageAsset.filter",
+        lambda **_kwargs: SimpleNamespace(
+            prefetch_related=lambda *_args: SimpleNamespace(
+                order_by=lambda *_args: no_links()
+            )
+        ),
+    )
+
+    async def resolve_parts(*_args, **_kwargs):
+        return [], ""
+
+    monkeypatch.setattr(chat_context, "_resolve_message_asset_parts", resolve_parts)
     messages, _, _ = await chat_context._build_messages_with_file_content(
         agent=_agent(),
         conversation=_conversation(),
@@ -409,7 +383,8 @@ async def test_database_history_paths_and_active_round_delta(monkeypatch):
         user_locale="en",
         history_override=None,
         current_images=None,
-        model_supports_vision=False,
+        input_capabilities=SimpleNamespace(modalities=frozenset()),
+        model_config=None,
         current_user_message_id=current_id,
         include_current_user_message=False,
         exclude_message_ids=None,
@@ -450,7 +425,8 @@ async def test_database_history_paths_and_active_round_delta(monkeypatch):
         user_locale="en",
         history_override=active_override,
         current_images=None,
-        model_supports_vision=False,
+        input_capabilities=SimpleNamespace(modalities=frozenset()),
+        model_config=None,
         current_user_message_id=None,
         include_current_user_message=True,
         exclude_message_ids=None,
@@ -704,7 +680,8 @@ async def test_context_message_builder_covers_summary_active_delta_and_unknown_r
         user_locale="en",
         history_override=None,
         current_images=None,
-        model_supports_vision=False,
+        input_capabilities=SimpleNamespace(modalities=frozenset()),
+        model_config=None,
         current_user_message_id=current_id,
         include_current_user_message=True,
         exclude_message_ids=None,
@@ -742,7 +719,8 @@ async def test_context_message_builder_covers_summary_active_delta_and_unknown_r
         user_locale="en",
         history_override=active_override,
         current_images=None,
-        model_supports_vision=False,
+        input_capabilities=SimpleNamespace(modalities=frozenset()),
+        model_config=None,
         current_user_message_id=None,
         include_current_user_message=True,
         exclude_message_ids=None,
@@ -764,7 +742,8 @@ async def test_context_message_builder_covers_summary_active_delta_and_unknown_r
         user_locale="en",
         history_override=inactive_override,
         current_images=None,
-        model_supports_vision=False,
+        input_capabilities=SimpleNamespace(modalities=frozenset()),
+        model_config=None,
         current_user_message_id=None,
         include_current_user_message=True,
         exclude_message_ids=None,

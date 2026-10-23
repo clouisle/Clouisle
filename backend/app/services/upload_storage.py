@@ -49,6 +49,13 @@ class UploadStorageBackend(ABC):
     async def read(self, key: str) -> bytes:
         """Read key content."""
 
+    async def read_limited(self, key: str, max_bytes: int) -> bytes:
+        """Read at most max_bytes plus one byte for an explicit overflow check."""
+        content = await self.read(key)
+        if len(content) > max_bytes:
+            raise ValueError("asset_view_size_limit_exceeded")
+        return content
+
     @abstractmethod
     async def response(
         self,
@@ -107,6 +114,13 @@ class LocalUploadStorage(UploadStorageBackend):
     async def read(self, key: str) -> bytes:
         async with aiofiles.open(self._path(key), "rb") as f:
             return await f.read()
+
+    async def read_limited(self, key: str, max_bytes: int) -> bytes:
+        async with aiofiles.open(self._path(key), "rb") as f:
+            content = await f.read(max_bytes + 1)
+        if len(content) > max_bytes:
+            raise ValueError("asset_view_size_limit_exceeded")
+        return content
 
     async def response(
         self,
@@ -231,6 +245,15 @@ class ObjectUploadStorage(UploadStorageBackend):
         async with self._client() as client:
             result = await client.get_object(Bucket=self.config.bucket, Key=key)
             return await result["Body"].read()
+
+    async def read_limited(self, key: str, max_bytes: int) -> bytes:
+        async with self._client() as client:
+            result = await client.get_object(Bucket=self.config.bucket, Key=key)
+            body = result["Body"]
+            content = await body.read(max_bytes + 1)
+            if len(content) > max_bytes:
+                raise ValueError("asset_view_size_limit_exceeded")
+            return content
 
     async def response(
         self,

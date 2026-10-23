@@ -573,9 +573,7 @@ _MODEL_DISCOVERY_MAX_OUTPUT_TOKENS_KEYS = (
     "outputTokenLimit",
 )
 _MODEL_DISCOVERY_CAPABILITY_KEYS = {
-    "vision": ("vision", "supports_vision", "supportsVision"),
     "function_call": (
-        "function_call",
         "functionCall",
         "tools",
         "function_calling",
@@ -838,10 +836,15 @@ def _extract_discovery_token_limit(
     return None
 
 
-def _extract_discovery_capabilities(item: dict[str, Any]) -> dict[str, bool] | None:
-    capabilities: dict[str, bool] = {}
+def _extract_discovery_capabilities(item: dict[str, Any]) -> dict[str, Any] | None:
+    capabilities: dict[str, Any] = {}
     declared_capabilities = item.get("capabilities")
     sources = (item, declared_capabilities)
+    for source in sources:
+        if isinstance(source, dict) and isinstance(source.get("vision"), bool):
+            capabilities["input_modalities"] = (
+                ["text", "image"] if source["vision"] else ["text"]
+            )
     for capability, keys in _MODEL_DISCOVERY_CAPABILITY_KEYS.items():
         for source in sources:
             if not isinstance(source, dict):
@@ -867,7 +870,7 @@ def _extract_discovery_capabilities(item: dict[str, Any]) -> dict[str, bool] | N
                 if isinstance(value, str)
             )
     if features & {"vision", "image_input", "multimodal", "image_to_text"}:
-        capabilities.setdefault("vision", True)
+        capabilities.setdefault("input_modalities", ["text", "image"])
     if features & {
         "function_call",
         "function_calling",
@@ -878,16 +881,34 @@ def _extract_discovery_capabilities(item: dict[str, Any]) -> dict[str, bool] | N
         capabilities.setdefault("function_call", True)
     if features & {"json_mode", "response_format", "structured_outputs"}:
         capabilities.setdefault("json_mode", True)
+    from app.schemas.model import validate_model_capabilities
+
+    for source in (declared_capabilities, item):
+        if isinstance(source, dict):
+            declared = {
+                key: source[key]
+                for key in ("input_modalities", "output_modalities", "input_limits")
+                if key in source
+            }
+            capabilities.update(validate_model_capabilities(declared) or {})
 
     architecture = item.get("architecture")
     if isinstance(architecture, dict):
         input_modalities = architecture.get("input_modalities")
-        if isinstance(input_modalities, list) and any(
-            isinstance(value, str) and value.lower() == "image"
-            for value in input_modalities
-        ):
-            capabilities.setdefault("vision", True)
-
+        output_modalities = architecture.get("output_modalities")
+        allowed = {"text", "image", "audio", "video", "file"}
+        if isinstance(input_modalities, list):
+            capabilities["input_modalities"] = [
+                str(value).lower()
+                for value in input_modalities
+                if str(value).lower() in allowed
+            ]
+        if isinstance(output_modalities, list):
+            capabilities["output_modalities"] = [
+                str(value).lower()
+                for value in output_modalities
+                if str(value).lower() in allowed
+            ]
     return capabilities or None
 
 

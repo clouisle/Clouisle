@@ -51,6 +51,9 @@ async def check_binding_target(kb_id: UUID | None, user: User) -> KnowledgeBase:
 
 
 async def available_models(kb: KnowledgeBase) -> dict:
+    from app.llm.capabilities import get_effective_input_capabilities
+    from app.llm.types import ContentType
+
     granted = await TeamModel.filter(
         team_id=kb.team_id, is_enabled=True, model__is_enabled=True
     ).prefetch_related("model")
@@ -59,8 +62,9 @@ async def available_models(kb: KnowledgeBase) -> dict:
         model = grant.model
         if model.model_type == ModelType.STT:
             result["stt"].append({"id": str(model.id), "name": model.name})
-        elif model.model_type == ModelType.CHAT and (model.capabilities or {}).get(
-            "vision"
+        elif (
+            model.model_type == ModelType.CHAT
+            and ContentType.IMAGE in get_effective_input_capabilities(model).modalities
         ):
             result["vision"].append({"id": str(model.id), "name": model.name})
     return result

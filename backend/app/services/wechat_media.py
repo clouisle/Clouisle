@@ -38,7 +38,10 @@ async def image_text(content: bytes, team_id: str, model_id) -> str:
     if not model_id:
         raise collection_error("wechat_vision_required")
     model, _ = await model_manager.resolve_team_chat_model(team_id, str(model_id))
-    if not (model.capabilities or {}).get("vision"):
+    from app.llm.capabilities import get_effective_input_capabilities
+    from app.llm.types import ContentType
+
+    if ContentType.IMAGE not in get_effective_input_capabilities(model).modalities:
         raise collection_error("wechat_model_unavailable")
 
     def normalize():

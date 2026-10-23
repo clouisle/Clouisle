@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
-import type { ReactNode } from 'react'
 
 type Tree = { type: unknown; props: Record<string, unknown> }
 type Setter<T> = (value: T | ((current: T) => T)) => void
@@ -10,7 +9,6 @@ const element = (name: string) => {
   Component.displayName = name
   return Component
 }
-const ui = ({ children }: { children?: ReactNode }) => children
 
 let states: unknown[] = []
 let stateIndex = 0
@@ -59,18 +57,6 @@ mock.module('@/lib/validation', () => ({
 }))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 
-for (const path of ['button', 'dialog', 'input', 'label', 'select', 'combobox', 'switch', 'textarea', 'tabs', 'popover', 'tooltip', 'field']) {
-  const exports: Record<string, unknown> = {}
-  const names: Record<string, string[]> = {
-    button: ['Button'], dialog: ['Dialog', 'DialogContent', 'DialogDescription', 'DialogFooter', 'DialogHeader', 'DialogTitle'],
-    input: ['Input'], label: ['Label'], select: ['Select', 'SelectContent', 'SelectItem', 'SelectTrigger', 'SelectValue'],
-    combobox: ['Combobox', 'ComboboxContent', 'ComboboxEmpty', 'ComboboxInput', 'ComboboxItem', 'ComboboxList'],
-    switch: ['Switch'], textarea: ['Textarea'], tabs: ['Tabs', 'TabsContent', 'TabsList', 'TabsTrigger'],
-    popover: ['Popover', 'PopoverContent', 'PopoverTrigger'], tooltip: ['Tooltip', 'TooltipContent', 'TooltipTrigger'], field: ['FieldError'],
-  }
-  for (const name of names[path]) exports[name] = name === 'Dialog' || name === 'Tabs' || name === 'Popover' || name === 'Tooltip' ? ui : element(name)
-  mock.module(`@/components/ui/${path}`, () => exports)
-}
 
 const { ModelDialog } = await import('./model-dialog')
 
@@ -174,7 +160,10 @@ describe('ModelDialog issue #255 callbacks', () => {
     await (findAll(tree, (node) => typeof node.props.onSubmit === 'function')[0].props.onSubmit as (event: { preventDefault: () => void }) => Promise<void>)({ preventDefault: () => undefined })
     expect(createModel).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Coverage model', provider: 'openai', model_id: 'gpt-fake',
-      capabilities: { vision: true, function_call: true, streaming: false, json_mode: true },
+      capabilities: expect.objectContaining({
+        input_modalities: ['text'], output_modalities: [],
+        function_call: true, streaming: false, json_mode: true,
+      }),
       default_params: expect.objectContaining({ temperature: 0.7, extra_body: { trace: true }, custom: 1 }),
       config: { region: 'test' },
     }))

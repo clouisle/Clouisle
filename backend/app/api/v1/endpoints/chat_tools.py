@@ -15,6 +15,36 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class AssetViewResult(dict):
+    """Metadata-only view result for durable ref replay."""
+
+    def __init__(self, *, display_result: dict[str, Any], llm_result: str):
+        super().__init__(display_result=display_result, llm_result=llm_result)
+
+    @property
+    def display_result(self) -> dict[str, Any]:
+        return self["display_result"]
+
+    @property
+    def llm_result(self) -> str:
+        return self["llm_result"]
+
+
+def _asset_modality(mime_type: str):
+    from app.llm.types import ContentType
+
+    normalized = mime_type.split(";", 1)[0].strip().lower()
+    if normalized.startswith("image/"):
+        return ContentType.IMAGE
+    if normalized.startswith("audio/"):
+        return ContentType.AUDIO
+    if normalized.startswith("video/"):
+        return ContentType.VIDEO
+    if normalized == "application/pdf":
+        return ContentType.FILE
+    return None
+
+
 async def _execute_asset_tool(
     tool_name: str,
     arguments: dict[str, Any],
@@ -38,7 +68,7 @@ async def _execute_asset_tool(
     if not agent or (not user and workflow_run_id is None):
         return json.dumps({"error": t("agent_context_required")}, ensure_ascii=False)
     ref = arguments.get("ref")
-    if not isinstance(ref, str):
+    if tool_name != "list_assets" and not isinstance(ref, str):
         return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
 
     if workflow_run_id is not None:
@@ -55,6 +85,28 @@ async def _execute_asset_tool(
         except (ValueError, AttributeError):
             return json.dumps({"error": t("validation_error")}, ensure_ascii=False)
         scope_type = AssetScopeType.CONVERSATION
+
+    if tool_name == "list_assets":
+        from app.services.asset_access import list_authorized_assets
+
+        try:
+            result = await list_authorized_assets(
+                scope_type=scope_type,
+                scope_id=scope_id,
+                user=user,
+                expected_team_id=getattr(agent, "team_id", None),
+                query=arguments.get("query", ""),
+                kind=arguments.get("kind"),
+                cursor=arguments.get("cursor"),
+                limit=arguments.get("limit", 10),
+            )
+            return json.dumps(result, ensure_ascii=False)
+        except ValueError as exc:
+            return json.dumps(
+                {"error": t("validation_error"), "detail": str(exc)}, ensure_ascii=False
+            )
+        except BusinessError:
+            return json.dumps({"error": t("access_denied")}, ensure_ascii=False)
 
     try:
         from app.services.asset_access import resolve_authorized_asset_ref
@@ -153,6 +205,39 @@ async def _execute_asset_tool(
                 },
                 ensure_ascii=False,
             )
+        if tool_name == "view_asset":
+            from app.api.v1.endpoints.chat_helpers.model_utils import (
+                resolve_agent_chat_model,
+            )
+            from app.services.asset_view import resolve_view_content
+
+            chat_model = await resolve_agent_chat_model(agent)
+            extracted_text = bool(arguments.get("extracted_text", False))
+            asset, content_part, marker = await resolve_view_content(
+                ref,
+                scope_type=scope_type,
+                scope_id=scope_id,
+                user=user,
+                agent=agent,
+                model_config=chat_model.model,
+                materialize=False,
+                extracted_text=extracted_text,
+                selection=arguments.get("selection"),
+            )
+            return AssetViewResult(
+                display_result={
+                    "kind": "asset.view",
+                    "version": 1,
+                    "ref": ref,
+                    "modality": json.loads(marker)["modality"],
+                    "mime_type": asset.content_type,
+                    "filename": asset.display_filename,
+                    "checksum": asset.checksum,
+                    "extracted_text": extracted_text,
+                    "size": asset.size,
+                },
+                llm_result=marker,
+            )
         storage = await get_upload_storage_backend(UPLOAD_ROOT)
         if tool_name == "read_asset":
             if "read" not in asset_service.capabilities(asset):
@@ -221,7 +306,14 @@ async def execute_tool_call(
 
     from app.services.error_messages import exception_to_user_message
 
-    if tool_name in {"inspect_asset", "read_asset", "parse_asset", "materialize_asset"}:
+    if tool_name in {
+        "list_assets",
+        "inspect_asset",
+        "read_asset",
+        "parse_asset",
+        "materialize_asset",
+        "view_asset",
+    }:
         return await _execute_asset_tool(
             tool_name,
             arguments,

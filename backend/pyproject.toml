@@ -67,6 +67,7 @@ dependencies = [
     "motor>=3.7.1",
     "sqlglot>=26.0.0",
     "lark-oapi==1.7.5",
+    "pypdf>=6.21.2",
 ]
 
 [tool.uv]

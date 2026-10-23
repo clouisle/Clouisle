@@ -259,6 +259,14 @@ Returns a single `ModelBrief` object (same shape as list items above), or `null`
 }
 ```
 
+## Chat input and output modalities
+
+For chat models, `capabilities.input_modalities` declares the ordered input modalities accepted by the configured model: `text`, `image`, `audio`, `video`, and `file`. `capabilities.output_modalities` independently declares generated output modalities. Image/audio/video generation model types remain separate operations; output declarations do not enable generation by themselves.
+
+The runtime intersects model declarations with the selected adapter's implemented wire formats. Unsupported modality/MIME combinations fail explicitly. A `file` declaration is not a promise to accept arbitrary MIME types; supported types depend on the adapter (for example, PDF only where native PDF serialization is implemented). Optional `input_limits` can declare per-modality `max_bytes` and `mime_types`; omitted limits are unknown, not unlimited guarantees.
+
+OpenRouter uses the OpenAI-compatible chat endpoint with its native `image_url`, `input_audio` (base64 bytes only), `video_url` (URL or data URL), and PDF `file` parts. OpenAI-compatible custom gateways are not assumed to support OpenRouter-specific audio, video, or file formats.
+
 ## List Models (admin)
 
 Get a paginated list of all configured models.
@@ -314,8 +322,7 @@ curl -X GET "https://your-domain.com/api/v1/admin/models?page=1&page_size=20" \
         },
         "capabilities": {
           "streaming": true,
-          "function_calling": true,
-          "vision": false
+          "function_calling": true
         },
         "config": {},
         "is_enabled": true,
@@ -350,7 +357,7 @@ curl -X GET "https://your-domain.com/api/v1/admin/models?page=1&page_size=20" \
 | `input_price` | number | Input price per 1M tokens |
 | `output_price` | number | Output price per 1M tokens |
 | `default_params` | object | Default inference parameters |
-| `capabilities` | object | Model capabilities (e.g. `streaming`, `function_calling`, `vision`) |
+| `capabilities` | object | Model input/output modalities, streaming and function calling; chat `input_modalities` and `output_modalities` are independent |
 | `config` | object | Additional provider-specific configuration |
 | `is_enabled` | boolean | Enabled status |
 | `is_default` | boolean | Whether this is the default model for its type |
@@ -428,7 +435,8 @@ POST /api/v1/admin/models
   "capabilities": {
     "streaming": true,
     "function_calling": true,
-    "vision": false
+    "input_modalities": ["text", "image"],
+    "output_modalities": []
   },
   "config": {},
   "is_enabled": true,

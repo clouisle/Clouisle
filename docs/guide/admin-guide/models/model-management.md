@@ -59,7 +59,9 @@ The model list shows:
 5. Set capabilities:
    - **Context Length**: Maximum context window
    - **Max Output Tokens**: Maximum response length
-   - **Capabilities**: Streaming, function calling, vision, etc. (JSON)
+   - **Chat input modalities**: Declare only modalities the model accepts: `text`, `image`, `audio`, `video`, and `file`. Effective inputs are limited to serialization and MIME support in the selected provider adapter. Existing `vision` flags migrate to canonical input modalities during upgrade.
+   - **Output modalities**: Declare generated modalities independently from inputs; this does not enable generation unless the model type and adapter provide it.
+   - **Input limits** can be configured through the model API as optional per-modality `mime_types` and `max_bytes` entries in capabilities. Example: `{"input_modalities":["text","image"],"input_limits":{"image":{"mime_types":["image/png"],"max_bytes":10485760}}}`. The model editor preserves these limits when saving modality changes; omitted adapter limits remain unknown rather than unlimited guarantees.
 
 6. Configure pricing:
    - **Input Price**: Cost per 1M input tokens

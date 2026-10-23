@@ -35,7 +35,6 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from app.api.v1.endpoints.chat_helpers import (
-    get_tool_execution_payloads,
     iter_with_idle_timeout,
 )
 from app.api.v1.endpoints.chat_sse import (
@@ -43,7 +42,7 @@ from app.api.v1.endpoints.chat_sse import (
     build_tool_call_sse_event,
     build_tool_result_sse_event,
 )
-from app.api.v1.endpoints.chat_tools import execute_tool_call
+from app.api.v1.endpoints.chat_tools import AssetViewResult, execute_tool_call
 from app.llm.tools.interaction import ToolInteractionRequest
 from app.llm.types import ChatStreamChunk, FinishReason, StopReason
 from app.services import agent_round
@@ -91,8 +90,8 @@ class AgentLoopContext:
     model_used: str | None
     # final user message text (with image inventory appended)
     user_message: str = ""
-    model_supports_vision: bool = False
-    # tools
+    input_capabilities: Any = None
+    model_config: Any = None
     tools: list[Any] | None = None
     tool_display_names: dict[str, str] = field(default_factory=dict)
     tool_timeouts: dict[str, Any] = field(default_factory=dict)
@@ -105,7 +104,6 @@ class AgentLoopContext:
     deadline_seconds: float | None = None
     # request prep outputs
     sandbox_session_id: str | None = None
-    file_content: str | None = None
     current_images: list[Any] | None = None
     working_history_override: list[dict[str, Any]] | None = None
     image_pool: list[Any] = field(default_factory=list)
@@ -448,7 +446,43 @@ class AgentLoop:
                     },
                 )
 
-            display_result, llm_result = get_tool_execution_payloads(tool_result)
+            if isinstance(tool_result, AssetViewResult):
+                llm_result = tool_result.llm_result
+                record = {
+                    "id": tc.id,
+                    "name": tool_name,
+                    "arguments": arguments,
+                    "persist_result": json.dumps(
+                        {
+                            "kind": "asset.view.persisted",
+                            "version": 1,
+                            "display": tool_result.display_result,
+                            "marker": tool_result.llm_result,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    "llm_result": llm_result,
+                    "display_result": json.dumps(
+                        tool_result.display_result, ensure_ascii=False
+                    ),
+                    "display_name": display_name,
+                }
+                metric_status = "completed"
+                return (
+                    self._build_tool_call_sse(tc),
+                    build_tool_result_sse_event(
+                        tool_call_id=tc.id,
+                        tool_name=tool_name,
+                        tool_display_name=display_name,
+                        display_result=json.dumps(
+                            tool_result.display_result, ensure_ascii=False
+                        ),
+                    ),
+                    None,
+                    record,
+                )
+            display_result = json.dumps(tool_result, ensure_ascii=False)
+            llm_result = display_result
             metric_status = "completed"
             if tool_started_at is not None:
                 try:
@@ -626,7 +660,7 @@ class AgentLoop:
         tool_index = self._next_round_index()
         await agent_round.persist_tool_result(
             conversation=ctx.conversation,
-            content=record["display_result"],
+            content=record.get("persist_result") or record["display_result"],
             tool_call_id=record["id"],
             tool_name=record["name"],
             round_id=ctx.round_id,
@@ -650,12 +684,10 @@ class AgentLoop:
             agent=ctx.agent,
             conversation=ctx.conversation,
             user_message=ctx.user_message,
-            file_content=ctx.file_content,
             user_locale=ctx.user_locale,
             history_override=ctx.working_history_override,
-            current_images=ctx.current_images,
-            model_supports_vision=ctx.model_supports_vision,
-            current_user_message_id=ctx.current_user_message_id,
+            input_capabilities=ctx.input_capabilities,
+            model_config=self.context.model_config,
             include_current_user_message=ctx.include_current_user_message,
             exclude_message_ids=ctx.exclude_message_ids,
             history_before_message_created_at=ctx.history_before_message_created_at,
@@ -667,7 +699,7 @@ class AgentLoop:
             tokenizer_model_id=ctx.tokenizer_model_id,
             model_context_limit=ctx.model_context_limit,
             model_max_output_tokens=ctx.model_max_output_tokens,
-            provider=ctx.model_provider,
+            current_images=ctx.current_images,
         )
 
     async def run(self) -> AsyncIterator[str | None]:
@@ -1246,7 +1278,8 @@ class AgentLoop:
                             continue
                         await agent_round.persist_tool_result(
                             conversation=ctx.conversation,
-                            content=p_data["display_result"],
+                            content=p_data.get("persist_result")
+                            or p_data["display_result"],
                             tool_call_id=p_data["id"],
                             tool_name=p_data["name"],
                             round_id=ctx.round_id,

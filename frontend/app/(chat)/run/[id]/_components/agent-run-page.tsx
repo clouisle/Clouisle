@@ -5,10 +5,10 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { AlertCircle, Loader2, RefreshCw, Sparkles } from 'lucide-react'
 import Image from 'next/image'
-import { ApiError, publicAgentsApi, type PublicAgent } from '@/lib/api'
+import { ApiError, publicAgentsApi, uploadApi, type PublicAgent, type ChatFileUrl, type ChatImageContent } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { AgentChatEmptyState, AgentChatSurface, useVariableForm } from '@/components/chat'
+import { AgentChatEmptyState, AgentChatSurface, useVariableForm, type ChatInputFile } from '@/components/chat'
 import { useRun } from '@/hooks/use-run'
 import { extractVariables } from '@/lib/utils/extract-variables'
 
@@ -73,14 +73,28 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
   })
 
 
-  const handleSendMessage = async (text: string) => {
-    if (!text.trim()) return
-    if (needsVariableInput && !validateVariables()) {
-      setVariablesOpen(true)
+  const [files, setFiles] = React.useState<ChatInputFile[]>([])
+  const [isUploading, setIsUploading] = React.useState(false)
+  const handleSendMessage = async (text: string, submittedFiles?: ChatInputFile[]) => {
+    const filesToProcess = submittedFiles ?? files
+    if ((!text.trim() && filesToProcess.length === 0) || (needsVariableInput && !validateVariables())) {
+      if (needsVariableInput) setVariablesOpen(true)
       return
     }
-    setInput('')
-    await sendMessage(text, undefined, undefined, Object.values(variableAssetIds).flatMap((value) => Array.isArray(value) ? value : [value]))
+    setIsUploading(filesToProcess.length > 0)
+    try {
+      const uploaded = await Promise.all(filesToProcess.map(async (item) => {
+        const result = await uploadApi.uploadFileWithProgress(item.file, item.isDocument ? 'documents' : 'files')
+        return { asset_id: result.asset_id, filename: item.name, url: result.url, size: item.size, mime_type: item.type, isDocument: item.isDocument }
+      }))
+      const images: ChatImageContent[] = uploaded.filter((item) => item.mime_type.startsWith('image/') && !item.isDocument).map((item) => ({ asset_id: item.asset_id, type: 'image_url', url: item.url }))
+      const fileUrls: ChatFileUrl[] = uploaded.filter((item) => !item.mime_type.startsWith('image/') || item.isDocument).map((item) => ({ asset_id: item.asset_id, filename: item.filename, url: item.url, size: item.size, mime_type: item.mime_type }))
+      setInput('')
+      setFiles([])
+      await sendMessage(text, images.length ? images : undefined, fileUrls.length ? fileUrls : undefined, Object.values(variableAssetIds).flatMap((value) => Array.isArray(value) ? value : [value]))
+    } finally {
+      setIsUploading(false)
+    }
   }
 
   if (isLoading) {
@@ -194,7 +208,13 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
           variableFieldErrors={variableFieldErrors}
           variablesOpen={variablesOpen}
           onVariablesOpenChange={setVariablesOpen}
-          allowAttachments={false}
+          allowAttachments={metadata.enable_attachments}
+          enableFileUpload={metadata.enable_attachments}
+          inputModalities={metadata.input_modalities}
+          fileUploadConfig={metadata.attachment_config}
+          files={files}
+          onFilesChange={setFiles}
+          isUploading={isUploading}
           poweredByText={metadata.powered_by_text}
           className="flex-1"
         />

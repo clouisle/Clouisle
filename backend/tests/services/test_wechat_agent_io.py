@@ -951,9 +951,15 @@ async def test_normalize_input_image_maps_conversation_scoped_asset(io_db, monke
         receipt_message([{"type": 2, "image_item": {"media": {}}}]),
     )
     monkeypatch.setattr(wechat_agent_io, "_store_upload", AsyncMock())
+    from app.llm.types import ContentType
+
     monkeypatch.setattr(
         "app.api.v1.endpoints.chat_helpers.model_utils.resolve_agent_chat_model",
-        AsyncMock(return_value=SimpleNamespace(supports_vision=True)),
+        AsyncMock(
+            return_value=SimpleNamespace(
+                input_capabilities=SimpleNamespace(modalities={ContentType.IMAGE})
+            )
+        ),
     )
     client = SimpleNamespace(
         download_media=AsyncMock(return_value=(b"png-bytes", "photo.png", "image/png"))

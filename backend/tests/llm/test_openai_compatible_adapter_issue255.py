@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.llm.adapters.chat.openai_compatible_adapter import OpenAICompatibleAdapter
+from app.llm.errors import InvalidRequestError
 from app.llm.types import (
     ContentPart,
     ContentType,
@@ -118,21 +119,25 @@ def test_base_url_provider_detection_and_message_conversion():
         ),
         Message(role=MessageRole.TOOL, content="sunny", tool_call_id="call-1"),
         Message(role=MessageRole.ASSISTANT, content="plain"),
-    ]
-    messages.append(
         SimpleNamespace(
             role="user",
-            content=[
-                ContentPart(type=ContentType.VIDEO),
-                ContentPart(type=ContentType.IMAGE, image=ImageContent()),
-                {"type": "text", "text": "raw"},
-            ],
+            content=[{"type": "text", "text": "raw"}],
             tool_calls=None,
             tool_call_id=None,
-        )
-    )
-
+        ),
+    ]
     converted = instance._convert_messages(messages)
+
+    generic_video_message = SimpleNamespace(
+        role="user",
+        content=[ContentPart(type=ContentType.VIDEO)],
+        tool_calls=None,
+        tool_call_id=None,
+    )
+    converted = instance._convert_messages(messages)
+    with pytest.raises(InvalidRequestError, match="Video input is unsupported"):
+        instance._convert_messages([generic_video_message])
+
     assert converted[0]["content"] == [
         {"type": "text", "text": "look"},
         {

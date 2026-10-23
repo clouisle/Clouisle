@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.llm.adapters.chat.openai_adapter import OpenAIAdapter
+from app.llm.errors import InvalidRequestError
 from app.llm.types import (
     ContentType,
     FinishReason,
@@ -147,6 +148,53 @@ def test_convert_messages_covers_multimodal_tools_and_empty_content():
     assert converted[1]["content"] == ""
     assert converted[1]["tool_calls"][0]["function"]["name"] == "lookup"
     assert converted[2] == {"role": "tool", "content": "", "tool_call_id": "call-1"}
+    relative_upload = obj(
+        role=MessageRole.USER,
+        content=[
+            obj(
+                type=ContentType.IMAGE,
+                image=obj(
+                    url="/api/v1/upload/files/private.png", format="png", base64=None
+                ),
+            )
+        ],
+        tool_calls=None,
+        tool_call_id=None,
+    )
+    with pytest.raises(InvalidRequestError, match="absolute HTTP\\(S\\)|data URL"):
+        openai._convert_messages([relative_upload])
+    legacy_data_url = obj(
+        role=MessageRole.USER,
+        content=[
+            obj(
+                type=ContentType.IMAGE,
+                image=obj(url="data:image/png;base64,aW1n", base64=None, format="png"),
+            )
+        ],
+        tool_calls=None,
+        tool_call_id=None,
+    )
+    assert (
+        openai._convert_messages([legacy_data_url])[0]["content"][0]["image_url"]["url"]
+        == "data:image/png;base64,aW1n"
+    )
+    mismatched_data_url = obj(
+        role=MessageRole.USER,
+        content=[
+            obj(
+                type=ContentType.IMAGE,
+                image=obj(
+                    url="data:image/jpeg;base64,aW1n",
+                    base64=None,
+                    format="png",
+                ),
+            )
+        ],
+        tool_calls=None,
+        tool_call_id=None,
+    )
+    with pytest.raises(InvalidRequestError, match="MIME does not match"):
+        openai._convert_messages([mismatched_data_url])
 
 
 @pytest.mark.anyio

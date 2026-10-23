@@ -108,6 +108,7 @@
       "stop": "Stop",
       "attachFile": "Attach file",
       "fileTooLarge": "File size exceeds the limit of {maxSize}MB",
+      "invalidFileType": "This file type is not supported by this Agent or model",
       "maxFilesReached": "Maximum {max} files allowed",
       "dropFiles": "Drop files here",
       "steeringQueued": "Steering sent to the active run",

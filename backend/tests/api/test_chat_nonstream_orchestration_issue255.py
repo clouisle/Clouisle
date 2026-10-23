@@ -355,41 +355,6 @@ async def test_chat_maps_durable_run_failure_without_final_persistence(
 
 
 @pytest.mark.asyncio
-async def test_append_asset_manifest_formats_when_connection_available(monkeypatch):
-    from app.models.asset import MessageAsset
-
-    monkeypatch.setattr(MessageAsset._meta, "default_connection", object())
-    build_manifest = AsyncMock(return_value=[])
-    format_manifest = Mock(return_value="")
-    monkeypatch.setattr(
-        chat.asset_service, "build_conversation_manifest", build_manifest
-    )
-    monkeypatch.setattr(chat.asset_service, "format_manifest", format_manifest)
-    agent = SimpleNamespace(id=uuid4(), team_id=None)
-    user = SimpleNamespace(id=uuid4())
-
-    result = await chat._append_asset_manifest(
-        "original message",
-        conversation_id=uuid4(),
-        agent=agent,
-        user=user,
-    )
-
-    assert result == "original message"
-    build_manifest.assert_awaited_once()
-
-    format_manifest.return_value = "<available_assets>...</available_assets>"
-    result = await chat._append_asset_manifest(
-        "original message",
-        conversation_id=uuid4(),
-        agent=agent,
-        user=user,
-    )
-
-    assert result == "original message\n\n<available_assets>...</available_assets>"
-
-
-@pytest.mark.asyncio
 async def test_message_asset_transaction_uses_db_transaction(monkeypatch):
     from app.models.asset import MessageAsset
 

@@ -251,17 +251,18 @@ async def submit_chat_run(
     await update_message_stats(agent, token_usage=None)
     effective_locale = await resolve_language(getattr(current_user, "locale", None))
     streaming_config = get_streaming_config(agent)
-    _, updated_file_urls = await build_file_content_for_context(
+    await build_file_content_for_context(
         agent=agent,
-        file_urls=chat_in.file_urls,
+        file_urls=[
+            file
+            for file in chat_in.file_urls
+            if not file.asset_id and not file.asset_ref
+        ],
         legacy_files=chat_in.files,
         user_locale=effective_locale,
         tool_timeouts=streaming_config["tool_timeouts"],
         user=current_user,
     )
-    if updated_file_urls is not None and user_msg.file_urls != updated_file_urls:
-        user_msg.file_urls = updated_file_urls
-        await user_msg.save(update_fields=["file_urls"])
 
     run = await create_run(
         agent_id=agent.id,
@@ -284,9 +285,7 @@ async def submit_chat_run(
         run_id=run.id,
         message=chat_in.message,
         images=[image.model_dump() for image in chat_in.images],
-        file_urls=updated_file_urls
-        if updated_file_urls is not None
-        else [file.model_dump() for file in chat_in.file_urls],
+        file_urls=[file.model_dump() for file in chat_in.file_urls],
         legacy_files=[file.model_dump() for file in chat_in.files],
         history_override=(
             [

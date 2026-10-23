@@ -125,6 +125,8 @@ export interface AgentChatSurfaceProps {
   inputDisabled?: boolean
   allowAttachments?: boolean
   enableFileUpload?: boolean
+  inputModalities?: string[]
+  inputMimeTypes?: Record<string, string[]>
   fileUploadConfig?: AttachmentConfig | null
   files?: ChatInputFile[]
   onFilesChange?: (files: ChatInputFile[]) => void
@@ -214,6 +216,8 @@ export function AgentChatSurface({
   inputDisabled = false,
   allowAttachments = false,
   enableFileUpload = false,
+  inputModalities = ['text'],
+  inputMimeTypes,
   fileUploadConfig,
   files,
   onFilesChange,
@@ -337,6 +341,8 @@ export function AgentChatSurface({
           isStreaming={isStreaming}
           allowAttachments={allowAttachments}
           enableFileUpload={enableFileUpload}
+          inputModalities={inputModalities}
+          inputMimeTypes={inputMimeTypes}
           fileUploadConfig={fileUploadConfig}
           files={files}
           onFilesChange={onFilesChange}

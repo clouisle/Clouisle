@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.models.agent import Agent
 from app.models.model import Model, TeamModel
@@ -27,7 +27,7 @@ class ChatModelResolution:
     provider: str
     context_length: int | None
     max_output_tokens: int | None
-    supports_vision: bool
+    input_capabilities: Any
 
 
 async def resolve_agent_chat_model(agent: Agent) -> ChatModelResolution:
@@ -69,7 +69,8 @@ async def resolve_agent_chat_model(agent: Agent) -> ChatModelResolution:
                 msg_key="model_disabled",
             )
 
-    capabilities = model.capabilities or {}
+    from app.llm.capabilities import get_effective_input_capabilities
+
     return ChatModelResolution(
         model=model,
         team_model=team_model,
@@ -78,7 +79,7 @@ async def resolve_agent_chat_model(agent: Agent) -> ChatModelResolution:
         provider=model.provider,
         context_length=model.context_length,
         max_output_tokens=model.max_output_tokens,
-        supports_vision=bool(capabilities.get("vision")),
+        input_capabilities=get_effective_input_capabilities(model),
     )
 
 
@@ -97,17 +98,10 @@ async def get_model_identifier(agent: Agent) -> str | None:
 
 
 async def get_model_capabilities(agent: Agent) -> dict:
-    """Get model capabilities including vision support."""
-    if not agent.model_id:
-        return {"supports_vision": False}
-
-    team_model = (
-        await TeamModel.filter(id=agent.model_id).prefetch_related("model").first()
-    )
-    if not team_model:
-        return {"supports_vision": False}
-
-    capabilities = team_model.model.capabilities or {}
-    supports_vision = bool(capabilities.get("vision"))
-
-    return {"supports_vision": supports_vision}
+    """Get effective model input modality capabilities."""
+    resolution = await resolve_agent_chat_model(agent)
+    return {
+        "input_modalities": sorted(
+            modality.value for modality in resolution.input_capabilities.modalities
+        )
+    }

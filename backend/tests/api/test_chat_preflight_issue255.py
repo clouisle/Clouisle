@@ -22,9 +22,8 @@ def _fake_chat_resolution():
         model_id=str(model_uuid),
         tokenizer_model_id="stub-model",
         provider="stub",
-        context_length=8192,
         max_output_tokens=1024,
-        supports_vision=False,
+        input_capabilities=SimpleNamespace(modalities=frozenset()),
     )
 
 
@@ -162,12 +161,16 @@ async def test_public_agent_info_returns_minimal_projection(monkeypatch):
     current_agent.hide_reasoning = False
     current_agent.hide_artifact_list = True
     monkeypatch.setattr(chat, "get_public_agent", AsyncMock(return_value=current_agent))
+    monkeypatch.setattr(
+        chat,
+        "get_model_capabilities",
+        AsyncMock(return_value={"input_modalities": ["text"]}),
+    )
 
     result = await chat.get_public_agent_info(current_agent.id, user())
 
     assert result["data"].name == "Assistant"
     assert result["data"].suggested_questions == []
-    assert result["data"].variables == []
     assert result["data"].powered_by_text == "Acme Inc"
     assert result["data"].created_by.username == "owner"
     assert result["data"].hide_artifact_list is True

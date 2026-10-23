@@ -74,8 +74,6 @@
     "maxTokens": "最大 Token 数",
     "maxTokensPlaceholder": "留空使用模型默认值",
     "capabilities": "模型能力",
-    "supportsVision": "视觉理解",
-    "supportsVisionHint": "支持处理图片",
     "supportsFunctionCall": "函数调用",
     "supportsFunctionCallHint": "支持工具/函数调用",
     "supportsStreaming": "流式输出",
@@ -251,6 +249,17 @@
       "audio_generation": "音频生成",
       "text_to_image": "文生图",
       "text_to_video": "文生视频"
+    },
+    "inputModalities": "输入模态",
+    "inputModalitiesHint": "选择模型接受的输入模态；实际支持取决于提供方适配器及配置的 MIME/字节限制。",
+    "outputModalities": "输出模态",
+    "outputModalitiesHint": "选择模型可生成的模态；此声明本身不会启用生成",
+    "modality": {
+      "text": "文本",
+      "image": "图像",
+      "audio": "音频",
+      "video": "视频",
+      "file": "文件"
     }
   }
 }

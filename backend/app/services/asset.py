@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -218,7 +217,9 @@ class AssetService:
         limit: int = 12,
     ) -> list[dict[str, Any]]:
         links = (
-            await MessageAsset.filter(message__conversation_id=conversation_id)
+            await MessageAsset.filter(
+                message__conversation_id=conversation_id, message__is_active=True
+            )
             .prefetch_related("asset")
             .order_by("-message__created_at", "position")
             .limit(limit)
@@ -267,6 +268,18 @@ class AssetService:
             for binding in bindings:
                 if binding.asset_id in seen:
                     continue
+                if (
+                    await MessageAsset.filter(
+                        asset_id=binding.asset_id,
+                        message__conversation_id=conversation_id,
+                    ).exists()
+                    and not await MessageAsset.filter(
+                        asset_id=binding.asset_id,
+                        message__conversation_id=conversation_id,
+                        message__is_active=True,
+                    ).exists()
+                ):
+                    continue
                 try:
                     asset = await self.get_authorized(
                         binding.asset_id,
@@ -311,8 +324,8 @@ class AssetService:
         if not manifest:
             return (
                 "<available_assets>\n"
-                "No attachments are available in this conversation. "
-                "Do not call Asset tools or guess refs.\n"
+                "This preview is empty. Use list_assets to discover older available assets. "
+                "Never guess refs.\n"
                 "</available_assets>"
             )
         lines = [
@@ -320,6 +333,8 @@ class AssetService:
             (
                 "Use the exact 4-character ref with Asset tools or "
                 "reference_image_refs for image generation. Do not guess refs."
+                " This is a limited preview, not the full catalogue. Use list_assets with query/kind "
+                "and next_cursor to find older files, then view_asset(ref) to inspect their content."
             ),
         ]
         for item in manifest:
@@ -345,10 +360,26 @@ class AssetService:
             raise RuntimeError("Stored Asset content does not match its metadata")
         return content
 
-    async def mark_deleted(self, asset: Asset) -> None:
-        asset.status = AssetStatus.DELETED
-        asset.deleted_at = datetime.now(UTC)
-        await asset.save(update_fields=["status", "deleted_at", "updated_at"])
+    async def read_bounded(
+        self,
+        asset: Asset,
+        *,
+        storage: UploadStorageBackend,
+        max_bytes: int,
+    ) -> bytes:
+        """Read checksum-verified asset bytes without exceeding max_bytes."""
+        if asset.size > max_bytes:
+            raise ValueError("asset_view_size_limit_exceeded")
+        read_limited = getattr(storage, "read_limited", None)
+        if read_limited is None:
+            raise RuntimeError("Upload storage does not support bounded reads")
+        content = await read_limited(asset.storage_key, max_bytes)
+        if (
+            len(content) != asset.size
+            or hashlib.sha256(content).hexdigest() != asset.checksum
+        ):
+            raise RuntimeError("Stored Asset content does not match its metadata")
+        return content
 
     @staticmethod
     def _access_denied() -> BusinessError:

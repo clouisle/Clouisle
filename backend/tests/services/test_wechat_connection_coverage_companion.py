@@ -122,7 +122,7 @@ async def test_available_models_selects_vision_and_speech_only(db):
         provider="openai",
         model_id="gpt-4o",
         model_type=ModelType.CHAT.value,
-        capabilities={"vision": True},
+        capabilities={"input_modalities": ["text", "image"]},
     )
     blind = await Model.create(
         id=uuid4(),

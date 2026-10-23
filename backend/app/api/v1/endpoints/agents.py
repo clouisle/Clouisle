@@ -132,11 +132,20 @@ async def build_agent_out(agent: Agent) -> dict:
     """Build AgentOut response with all relations."""
     # Get model info
     model_info = None
+    input_modalities = ["text"]
     if agent.model_id:
         team_model = (
             await TeamModel.filter(id=agent.model_id).prefetch_related("model").first()
         )
         if team_model:
+            from app.llm.capabilities import get_effective_input_capabilities
+
+            input_modalities = sorted(
+                part.value
+                for part in get_effective_input_capabilities(
+                    team_model.model
+                ).modalities
+            )
             model_info = ModelInfo(
                 id=team_model.id,
                 name=team_model.model.name,
@@ -180,6 +189,7 @@ async def build_agent_out(agent: Agent) -> dict:
 
     # Manually build the dict to avoid QuerySet issues with ForeignKey fields
     agent_data = {
+        "input_modalities": input_modalities,
         "id": agent.id,
         "name": agent.name,
         "description": agent.description,

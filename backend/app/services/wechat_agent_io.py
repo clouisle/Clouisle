@@ -16,6 +16,7 @@ import json
 import logging
 import secrets
 from urllib.parse import quote
+from app.llm.types import ContentType
 
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -249,7 +250,7 @@ async def _agent_supports_vision(agent: Agent) -> bool:
         resolution = await resolve_agent_chat_model(agent)
     except BusinessError:
         return False
-    return resolution.supports_vision
+    return ContentType.IMAGE in resolution.input_capabilities.modalities
 
 
 async def _agent_vision_model_id(agent: Agent) -> str | None:
@@ -260,7 +261,11 @@ async def _agent_vision_model_id(agent: Agent) -> str | None:
         resolution = await resolve_agent_chat_model(agent)
     except BusinessError:
         return None
-    return resolution.model_id if resolution.supports_vision else None
+    return (
+        resolution.model_id
+        if ContentType.IMAGE in resolution.input_capabilities.modalities
+        else None
+    )
 
 
 async def _transcribe_voice(

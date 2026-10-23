@@ -138,7 +138,12 @@ def test_converts_multimodal_history_tool_results_and_declarations():
                         "data": "aW1hZ2U=",
                     }
                 },
-                {"file_data": {"file_uri": "https://example.com/image.png"}},
+                {
+                    "file_data": {
+                        "mime_type": "image/png",
+                        "file_uri": "https://example.com/image.png",
+                    }
+                },
             ],
         },
         {

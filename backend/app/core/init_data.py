@@ -17,6 +17,26 @@ STARTUP_MIGRATION_LOCK_TIMEOUT = "2s"
 STARTUP_MIGRATION_QUERY_TIMEOUT_SECONDS = 3
 
 
+async def migrate_model_input_modalities() -> None:
+    """Migrate legacy model vision booleans to canonical input modalities."""
+    conn = Tortoise.get_connection("default")
+    _, tables = await conn.execute_query(
+        "SELECT table_name FROM information_schema.tables WHERE table_name = 'models' AND table_schema = 'public'"
+    )
+    if not tables:
+        return
+    await conn.execute_query(
+        """UPDATE models SET capabilities = jsonb_set(
+            COALESCE(capabilities::jsonb, '{}'::jsonb), '{input_modalities}',
+            CASE WHEN COALESCE((capabilities::jsonb ->> 'vision')::boolean, FALSE)
+                 THEN '[\"text\",\"image\"]'::jsonb ELSE '[\"text\"]'::jsonb END,
+            true) WHERE capabilities IS NULL OR NOT (capabilities::jsonb ? 'input_modalities')"""
+    )
+    await conn.execute_query(
+        "UPDATE models SET capabilities = capabilities::jsonb - 'vision' WHERE capabilities::jsonb ? 'vision'"
+    )
+
+
 async def init_model_endpoint_allowlist() -> None:
     """Seed the endpoint allowlist once from defaults and existing models."""
     from app.core.model_endpoint_policy import (
@@ -3150,6 +3170,7 @@ async def init_db():
             f"Agent powered_by_text migration failed (may be first run): {e}"
         )
 
+    await migrate_model_input_modalities()
     try:
         await init_message_history_index()
     except Exception as e:

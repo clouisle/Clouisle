@@ -175,6 +175,56 @@ async def test_read_asset_returns_text():
 
 
 @pytest.mark.asyncio
+async def test_view_asset_validates_ref_without_materializing_bytes(monkeypatch):
+    asset = _asset(ctype="image/png", orig="photo.png")
+    from app.models.asset import AssetScopeType
+
+    monkeypatch.setattr(
+        "app.services.asset_access.resolve_authorized_asset_ref",
+        AsyncMock(return_value=asset),
+    )
+    resolve = AsyncMock(
+        return_value=(
+            asset,
+            None,
+            json.dumps(
+                {
+                    "kind": "asset.view",
+                    "version": 1,
+                    "ref": "abcd",
+                    "modality": "image",
+                    "mime_type": "image/png",
+                    "wire_mime_type": "image/png",
+                    "checksum": asset.checksum,
+                    "size": asset.size,
+                    "extracted_text": False,
+                    "selection": None,
+                    "representation": {"kind": "native", "selection": None},
+                }
+            ),
+        )
+    )
+    monkeypatch.setattr("app.services.asset_view.resolve_view_content", resolve)
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat_helpers.model_utils.resolve_agent_chat_model",
+        AsyncMock(return_value=SimpleNamespace(model=SimpleNamespace())),
+    )
+
+    result = await _execute_asset_tool(
+        "view_asset",
+        {"ref": "abcd"},
+        agent=_agent(),
+        user=_user(),
+        conversation_id=str(uuid4()),
+    )
+
+    assert result.display_result["modality"] == "image"
+    resolve.assert_awaited_once()
+    assert resolve.await_args.kwargs["materialize"] is False
+    assert resolve.await_args.kwargs["scope_type"] == AssetScopeType.CONVERSATION
+
+
+@pytest.mark.asyncio
 async def test_read_asset_refuses_binary():
     asset = _asset(ctype="image/png", orig="photo.png")
     svc = _make_service(asset, capabilities=["inspect", "vision", "sandbox"])

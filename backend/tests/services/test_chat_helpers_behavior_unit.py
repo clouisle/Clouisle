@@ -63,32 +63,19 @@ def test_config_language_and_streaming_defaults(monkeypatch):
 
 @pytest.mark.anyio
 async def test_model_utils_handle_unset_missing_and_capable_models(monkeypatch):
-    no_model_agent = SimpleNamespace(model_id=None)
-    assert await model_utils.get_model_identifier(no_model_agent) is None
-    assert await model_utils.get_model_capabilities(no_model_agent) == {
-        "supports_vision": False
-    }
+    from app.llm.types import ContentType
 
-    model_uuid = uuid4()
-    model = SimpleNamespace(
-        id=model_uuid,
-        provider="acme",
-        model_id="vision-1",
-        capabilities={"vision": 1},
+    capabilities = SimpleNamespace(
+        modalities=frozenset({ContentType.TEXT, ContentType.IMAGE})
     )
     monkeypatch.setattr(
-        model_utils.TeamModel,
-        "filter",
-        lambda **_kwargs: Query(SimpleNamespace(model=model)),
+        model_utils,
+        "resolve_agent_chat_model",
+        AsyncMock(return_value=SimpleNamespace(input_capabilities=capabilities)),
     )
-    agent = SimpleNamespace(model_id=uuid4())
-
-    assert await model_utils.get_model_identifier(agent) == str(model_uuid)
-    assert await model_utils.get_model_capabilities(agent) == {"supports_vision": True}
-
-    monkeypatch.setattr(model_utils.TeamModel, "filter", lambda **_kwargs: Query(None))
-    assert await model_utils.get_model_identifier(agent) is None
-    assert await model_utils.get_model_capabilities(agent) == {"supports_vision": False}
+    assert await model_utils.get_model_capabilities(SimpleNamespace()) == {
+        "input_modalities": ["image", "text"]
+    }
 
 
 @pytest.mark.anyio

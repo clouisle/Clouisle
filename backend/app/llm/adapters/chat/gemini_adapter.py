@@ -10,6 +10,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
+from app.llm.errors import InvalidRequestError
 from app.llm.types import (
     Message,
     MessageRole,
@@ -127,29 +128,72 @@ class GeminiAdapter(BaseChatAdapter):
                         )
                         if part_type == "text" and hasattr(part, "text") and part.text:
                             parts.append({"text": part.text})
-                        elif part_type == "image" and hasattr(part, "image"):
-                            img = part.image
-                            if img is not None and img.base64:
-                                img_format = (
-                                    img.format
-                                    if hasattr(img, "format") and img.format
-                                    else "png"
+                        elif part_type in {"image", "audio", "video"}:
+                            media = getattr(part, part_type, None)
+                            if media is None:
+                                raise InvalidRequestError(
+                                    message=f"{part_type.title()} content is missing"
                                 )
+                            if media.asset_ref:
+                                raise InvalidRequestError(
+                                    message="Unresolved asset reference cannot be serialized"
+                                )
+                            if media.base64:
+                                mime = media.mime_type or f"{part_type}/{media.format}"
                                 parts.append(
                                     {
                                         "inline_data": {
-                                            "mime_type": f"image/{img_format}",
-                                            "data": img.base64,
+                                            "mime_type": mime,
+                                            "data": media.base64,
                                         }
                                     }
                                 )
-                            elif img is not None and img.url:
+                            elif media.url and part_type == "image":
                                 parts.append(
                                     {
                                         "file_data": {
-                                            "file_uri": img.url,
+                                            "mime_type": media.mime_type or "image/png",
+                                            "file_uri": media.url,
                                         }
                                     }
+                                )
+                            elif media.url:
+                                parts.append(
+                                    {
+                                        "file_data": {
+                                            "mime_type": media.mime_type,
+                                            "file_uri": media.url,
+                                        }
+                                    }
+                                )
+                            else:
+                                raise InvalidRequestError(
+                                    message=f"{part_type.title()} payload is missing"
+                                )
+                        elif part_type == "file" and hasattr(part, "file"):
+                            file = part.file
+                            if file is None:
+                                raise InvalidRequestError(
+                                    message="File content is missing"
+                                )
+                            if file.extracted_text:
+                                parts.append(
+                                    {
+                                        "text": f"{file.filename or 'Document'}:\n{file.extracted_text}"
+                                    }
+                                )
+                            elif file.mime_type == "application/pdf" and file.base64:
+                                parts.append(
+                                    {
+                                        "inline_data": {
+                                            "mime_type": "application/pdf",
+                                            "data": file.base64,
+                                        }
+                                    }
+                                )
+                            else:
+                                raise InvalidRequestError(
+                                    message=f"Unsupported Gemini file MIME type: {file.mime_type}"
                                 )
                     elif isinstance(part, dict):
                         if part.get("text"):

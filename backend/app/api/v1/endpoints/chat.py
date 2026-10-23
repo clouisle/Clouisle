@@ -89,7 +89,7 @@ from app.services.message_branching import (
 )
 from app.services.asset import asset_service
 
-# Import helper functions from modules
+from app.api.v1.endpoints.chat_helpers.model_utils import get_model_capabilities
 from app.api.v1.endpoints.chat_rag import (
     perform_rag_retrieval,
     aggregate_rag_contexts,
@@ -153,26 +153,6 @@ def _calculate_model_usage(
         cache_creation_tokens,
         estimated_prompt_tokens,
     )
-
-
-async def _append_asset_manifest(
-    message: str,
-    *,
-    conversation_id: UUID,
-    agent: Agent,
-    user: User,
-) -> str:
-    if MessageAsset._meta.default_connection is None:
-        return message
-    manifest = await asset_service.build_conversation_manifest(
-        conversation_id=conversation_id,
-        team_id=UUID(str(agent.team_id)) if agent.team_id else None,
-        user_id=user.id,
-    )
-    manifest_text = asset_service.format_manifest(manifest)
-    if not manifest_text:
-        return message
-    return f"{message}\n\n{manifest_text}" if message else manifest_text
 
 
 async def _resolve_message_assets(
@@ -741,7 +721,8 @@ async def build_messages(
     user_locale: str | None = None,
     history_override: list[Any] | None = None,
     current_images: list[Any] | None = None,
-    model_supports_vision: bool = False,
+    model_config: Any = None,
+    input_capabilities: Any = None,
     current_user_message_id: UUID | None = None,
 ) -> list[LLMChatMessage]:
     """Build message list for LLM call."""
@@ -753,7 +734,8 @@ async def build_messages(
         user_locale=user_locale,
         history_override=history_override,
         current_images=current_images,
-        model_supports_vision=model_supports_vision,
+        model_config=model_config,
+        input_capabilities=input_capabilities,
         current_user_message_id=current_user_message_id,
     )
 
@@ -980,6 +962,67 @@ Examples of when to search:
             )
 
     if getattr(agent, "enable_attachments", False):
+        asset_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "list_assets",
+                    "description": "Discover assets in the current scope before viewing them. Search filenames with query, filter kind, and follow next_cursor until has_more is false. Returned refs work with view_asset and other asset tools. Keep query and kind unchanged when paging.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "maxLength": 200,
+                                "description": "Case-insensitive filename substring; omit to list all.",
+                            },
+                            "kind": {
+                                "type": "string",
+                                "enum": ["image", "audio", "video", "file"],
+                            },
+                            "cursor": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{4}$",
+                                "description": "next_cursor from the previous page.",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 30,
+                                "default": 10,
+                            },
+                        },
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "view_asset",
+                    "description": "View an authorized attachment as native multimodal model input when supported.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "ref": {"type": "string", "pattern": "^[0-9a-f]{4}$"},
+                            "extracted_text": {"type": "boolean", "default": False},
+                            "selection": {
+                                "type": "object",
+                                "properties": {
+                                    "start_seconds": {"type": "number", "minimum": 0},
+                                    "end_seconds": {"type": "number", "minimum": 0},
+                                    "page_start": {"type": "integer", "minimum": 1},
+                                    "page_end": {"type": "integer", "minimum": 1},
+                                },
+                            },
+                        },
+                        "required": ["ref"],
+                    },
+                },
+            },
+        ]
+        for asset_tool in asset_tools:
+            append_openai_tool(asset_tool)
         asset_tools = [
             {
                 "type": "function",
@@ -1225,6 +1268,8 @@ async def get_tool_display_names(
     if getattr(agent, "enable_attachments", False):
         display_names.update(
             {
+                "list_assets": t("asset_tool_list", lang=user_locale),
+                "view_asset": t("asset_tool_view", lang=user_locale),
                 "inspect_asset": t("asset_tool_inspect", lang=user_locale),
                 "read_asset": t("asset_tool_read", lang=user_locale),
                 "parse_asset": t("asset_tool_parse", lang=user_locale),
@@ -1378,7 +1423,9 @@ async def get_public_agent_info(
             opening_message=agent.opening_message,
             suggested_questions=agent.suggested_questions or [],
             powered_by_text=agent.powered_by_text,
-            variables=agent.variables or [],
+            input_modalities=sorted(
+                (await get_model_capabilities(agent)).get("input_modalities", ["text"])
+            ),
             enable_attachments=agent.enable_attachments,
             attachment_config=agent.attachment_config,
             hide_tool_calls=agent.hide_tool_calls,

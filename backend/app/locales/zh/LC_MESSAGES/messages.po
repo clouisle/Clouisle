@@ -582,6 +582,12 @@ msgstr "... [已省略 {count} 行] ..."
 msgid "bash_output_repeated_lines"
 msgstr "[重复 {count} 次]"
 
+msgid "asset_tool_list"
+msgstr "查找历史附件"
+
+msgid "asset_tool_view"
+msgstr "读取多模态附件"
+
 msgid "asset_tool_inspect"
 msgstr "查看附件"
 

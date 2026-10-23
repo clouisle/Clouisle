@@ -123,7 +123,7 @@ async def lifespan(app: FastAPI):
         init_workflow_run_page_config,
         init_workflow_pause_requests_table,
         drop_model_provider_uniqueness,
-        init_model_provider_display_name,
+        migrate_model_input_modalities,
         revert_channel_id_to_model_id,
         init_kb_rerank_fields,
         init_kb_visibility_fields,
@@ -324,7 +324,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Model provider uniqueness migration failed: {e}")
 
-    await init_model_provider_display_name()
+    await migrate_model_input_modalities()
     try:
         await init_kb_rerank_fields()
     except Exception as e:

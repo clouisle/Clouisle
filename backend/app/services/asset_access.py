@@ -78,6 +78,102 @@ async def resolve_authorized_asset_ref(
     )
 
 
+async def list_authorized_assets(
+    *,
+    scope_type: AssetScopeType,
+    scope_id: UUID,
+    user: User | None,
+    expected_team_id: UUID | None = None,
+    query: str = "",
+    kind: str | None = None,
+    cursor: str | None = None,
+    limit: int = 10,
+) -> dict:
+    """Discover scope-local assets without reading bytes or crossing branches."""
+    from datetime import UTC, datetime
+    from tortoise.expressions import Q, Subquery
+    from app.models.asset import MessageAsset
+    from app.services.asset import asset_service
+
+    team_id = await _authorized_scope_team_id(
+        scope_type=scope_type,
+        scope_id=scope_id,
+        user=user,
+        api_key=None,
+        expected_team_id=expected_team_id,
+    )
+    if type(limit) is not int or not 1 <= limit <= 30:
+        raise ValueError("limit must be between 1 and 30")
+    if not isinstance(query, str) or len(query) > 200:
+        raise ValueError("query must be a filename substring of at most 200 characters")
+    if kind not in (None, "image", "audio", "video", "file"):
+        raise ValueError("kind must be image, audio, video, or file")
+    if cursor is not None and (
+        not isinstance(cursor, str)
+        or len(cursor) != 4
+        or any(c not in "0123456789abcdef" for c in cursor)
+    ):
+        raise ValueError("cursor must be a ref returned by list_assets")
+    bindings = AssetScopeRef.filter(
+        scope_type=scope_type,
+        scope_id=scope_id,
+        asset__status=AssetStatus.AVAILABLE,
+    ).filter(
+        Q(asset__expires_at__isnull=True) | Q(asset__expires_at__gt=datetime.now(UTC))
+    )
+    owner = Q(asset__created_by_id__isnull=True)
+    if user is not None:
+        owner |= Q(asset__created_by_id=user.id)
+    access = Q(asset__team_id__isnull=True) & owner
+    if team_id is not None:
+        access |= Q(asset__team_id=team_id)
+    bindings = bindings.filter(access)
+    if scope_type == AssetScopeType.CONVERSATION:
+        active = MessageAsset.filter(
+            message__conversation_id=scope_id, message__is_active=True
+        ).values("asset_id")
+        hidden = (
+            MessageAsset.filter(message__conversation_id=scope_id)
+            .exclude(asset_id__in=Subquery(active))
+            .values("asset_id")
+        )
+        bindings = bindings.exclude(asset_id__in=Subquery(hidden))
+    if query.strip():
+        bindings = bindings.filter(
+            Q(asset__display_filename__icontains=query.strip())
+            | Q(asset__original_filename__icontains=query.strip())
+        )
+    if kind in {"image", "audio", "video"}:
+        bindings = bindings.filter(asset__content_type__istartswith=f"{kind}/")
+    elif kind == "file":
+        bindings = bindings.exclude(
+            Q(asset__content_type__istartswith="image/")
+            | Q(asset__content_type__istartswith="audio/")
+            | Q(asset__content_type__istartswith="video/")
+        )
+    if cursor:
+        bindings = bindings.filter(ref__gt=cursor)
+    rows = await bindings.order_by("ref").prefetch_related("asset").limit(limit + 1)
+    has_more = len(rows) > limit
+    page = rows[:limit]
+    return {
+        "items": [
+            {
+                "ref": row.ref,
+                "name": row.asset.display_filename,
+                "type": row.asset.content_type,
+                "size": row.asset.size,
+                "origin": row.asset.source.value,
+                "created_at": row.asset.created_at.isoformat(),
+                "capabilities": asset_service.capabilities(row.asset),
+            }
+            for row in page
+        ],
+        "has_more": has_more,
+        "next_cursor": page[-1].ref if has_more else None,
+    }
+
+
 async def _authorized_scope_team_id(
     *,
     scope_type: AssetScopeType,

@@ -474,6 +474,7 @@ class AgentOut(AgentBase):
     avatar_url: str | None = None
     model_id: UUID | None = None
     model: ModelInfo | None = None
+    input_modalities: list[str] = Field(default_factory=lambda: ["text"])
     system_prompt: str | None = None
     max_iterations: int = 5
     hide_tool_calls: bool = False
@@ -522,7 +523,7 @@ class AgentPublicOut(BaseModel):
     opening_message: str | None = None
     suggested_questions: list[str] = []
     powered_by_text: str | None = None
-    variables: list[dict[str, Any]] = []
+    input_modalities: list[str] = Field(default_factory=lambda: ["text"])
     enable_attachments: bool = False
     attachment_config: dict[str, Any] | None = None
     hide_tool_calls: bool = False

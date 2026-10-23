@@ -91,7 +91,14 @@ async def test_image_text_requires_vision_and_normalizes_the_image(monkeypatch):
     monkeypatch.setattr(
         media.model_manager,
         "resolve_team_chat_model",
-        AsyncMock(return_value=(SimpleNamespace(capabilities={}), None)),
+        AsyncMock(
+            return_value=(
+                SimpleNamespace(
+                    model_type="chat", provider="openai", base_url=None, capabilities={}
+                ),
+                None,
+            )
+        ),
     )
     with pytest.raises(Exception) as no_vision:
         await media.image_text(b"x", "team", uuid4())
@@ -100,7 +107,17 @@ async def test_image_text_requires_vision_and_normalizes_the_image(monkeypatch):
     monkeypatch.setattr(
         media.model_manager,
         "resolve_team_chat_model",
-        AsyncMock(return_value=(SimpleNamespace(capabilities={"vision": True}), None)),
+        AsyncMock(
+            return_value=(
+                SimpleNamespace(
+                    model_type="chat",
+                    provider="openai",
+                    base_url=None,
+                    capabilities={"input_modalities": ["text", "image"]},
+                ),
+                None,
+            )
+        ),
     )
     chat = AsyncMock(return_value=SimpleNamespace(content="  extracted text  "))
     monkeypatch.setattr(media.model_manager, "team_chat", chat)
@@ -124,7 +141,17 @@ async def test_image_text_rejects_oversized_pixels_and_empty_answers(monkeypatch
     monkeypatch.setattr(
         media.model_manager,
         "resolve_team_chat_model",
-        AsyncMock(return_value=(SimpleNamespace(capabilities={"vision": True}), None)),
+        AsyncMock(
+            return_value=(
+                SimpleNamespace(
+                    model_type="chat",
+                    provider="openai",
+                    base_url=None,
+                    capabilities={"input_modalities": ["text", "image"]},
+                ),
+                None,
+            )
+        ),
     )
     monkeypatch.setattr(media.Image, "open", lambda _: _OversizedImage())
     with pytest.raises(Exception) as oversized:

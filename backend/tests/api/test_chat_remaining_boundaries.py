@@ -237,35 +237,6 @@ async def test_memory_subgraph_normalizes_invalid_filter_and_depth(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_append_asset_manifest_returns_manifest_only_for_empty_message(
-    monkeypatch,
-):
-    from app.models.asset import MessageAsset
-
-    monkeypatch.setattr(MessageAsset._meta, "default_connection", object())
-    monkeypatch.setattr(
-        chat.asset_service, "build_conversation_manifest", AsyncMock(return_value=[])
-    )
-    monkeypatch.setattr(
-        chat.asset_service,
-        "format_manifest",
-        Mock(return_value="<assets>docs</assets>"),
-    )
-    agent = SimpleNamespace(id=uuid4(), team_id=uuid4())
-    user = SimpleNamespace(id=uuid4())
-
-    assert (
-        await chat._append_asset_manifest(
-            "",
-            conversation_id=uuid4(),
-            agent=agent,
-            user=user,
-        )
-        == "<assets>docs</assets>"
-    )
-
-
-@pytest.mark.anyio
 async def test_resolve_message_assets_skips_duplicate_workflow_run_reference(
     monkeypatch,
 ):
@@ -449,40 +420,6 @@ async def test_append_round_history_entry_includes_only_provided_fields():
             "is_round_canonical": True,
         }
     ]
-
-
-@pytest.mark.anyio
-async def test_get_agent_tools_appends_attachment_tools_for_deduped_names(
-    monkeypatch,
-):
-    from app.models.agent import RAGMode
-
-    agent = SimpleNamespace(
-        id=uuid4(),
-        team_id=uuid4(),
-        tools_config=[],
-        enable_memory=False,
-        enable_user_input_request=False,
-        rag_mode=RAGMode.OFF,
-        enable_attachments=True,
-        enable_image_generation=False,
-        enable_video_generation=False,
-    )
-
-    tools = await chat.get_agent_tools(agent)
-
-    names = [tool["function"]["name"] for tool in tools]
-    assert names == [
-        "inspect_asset",
-        "read_asset",
-        "parse_asset",
-        "materialize_asset",
-    ]
-    assert all(
-        tool["function"]["parameters"]["properties"].get("ref", {}).get("pattern")
-        == "^[0-9a-f]{4}$"
-        for tool in tools
-    )
 
 
 @pytest.mark.anyio

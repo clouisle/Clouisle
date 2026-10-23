@@ -263,6 +263,10 @@ async def test_rebuild_context_filters_ask_user_and_applies_payload_rag(
     user_msg = SimpleNamespace(
         id=uuid4(), rag_context=None, content="original question"
     )
+    monkeypatch.setattr(
+        "app.services.agent_run_worker.Message.get_or_none",
+        AsyncMock(return_value=user_msg),
+    )
     round_id = uuid4()
     chat_model = SimpleNamespace(
         model_id="db-model",
@@ -270,7 +274,8 @@ async def test_rebuild_context_filters_ask_user_and_applies_payload_rag(
         provider=None,
         context_length=128_000,
         max_output_tokens=None,
-        supports_vision=True,
+        model=SimpleNamespace(),
+        input_capabilities=SimpleNamespace(modalities=frozenset()),
     )
     seeded = AsyncMock()
 
@@ -295,6 +300,18 @@ async def test_rebuild_context_filters_ask_user_and_applies_payload_rag(
             ]
         ),
     )
+
+    async def no_asset_links(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(
+        "app.models.asset.MessageAsset.filter",
+        lambda **_kwargs: SimpleNamespace(
+            prefetch_related=lambda *_args: SimpleNamespace(
+                order_by=lambda *_args: no_asset_links()
+            )
+        ),
+    )
     monkeypatch.setattr(
         "app.api.v1.endpoints.chat.get_tool_display_names", AsyncMock(return_value={})
     )
@@ -315,12 +332,8 @@ async def test_rebuild_context_filters_ask_user_and_applies_payload_rag(
         AsyncMock(return_value=SimpleNamespace(will_summarize=True, compression=None)),
     )
     monkeypatch.setattr(
-        "app.api.v1.endpoints.chat._append_asset_manifest",
-        AsyncMock(side_effect=lambda text, **_kwargs: text),
-    )
-    monkeypatch.setattr(
         "app.api.v1.endpoints.chat_rag.build_rag_prompt",
-        lambda contexts, message: f"{message} [rag:{len(contexts)}]",
+        lambda contexts, message, **_kwargs: f"{message} [rag:{len(contexts)}]",
     )
     monkeypatch.setattr(
         agent_run_worker.Message, "get_or_none", AsyncMock(return_value=user_msg)
@@ -386,13 +399,21 @@ async def test_rebuild_context_tool_concurrency_reads_registry(monkeypatch):
     )
     conversation = SimpleNamespace(id=uuid4(), user_id=uuid4())
     user_msg = SimpleNamespace(id=uuid4(), rag_context=None, content="q")
+    monkeypatch.setattr(
+        "app.services.agent_run_worker.Message.get_or_none",
+        AsyncMock(return_value=user_msg),
+    )
     chat_model = SimpleNamespace(
         model_id="db-model",
         tokenizer_model_id=None,
         provider=None,
         context_length=128_000,
+        model_context_limit=128_000,
+        model_max_output_tokens=None,
+        model_used="db-model",
         max_output_tokens=None,
-        supports_vision=False,
+        model=SimpleNamespace(),
+        input_capabilities=SimpleNamespace(modalities=frozenset()),
     )
 
     async def _create_session(**_kwargs):
@@ -415,6 +436,18 @@ async def test_rebuild_context_tool_concurrency_reads_registry(monkeypatch):
         "app.api.v1.endpoints.chat_tools.build_file_content_for_context",
         AsyncMock(return_value=("", None)),
     )
+
+    async def no_asset_links_2(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(
+        "app.models.asset.MessageAsset.filter",
+        lambda **_kwargs: SimpleNamespace(
+            prefetch_related=lambda *_args: SimpleNamespace(
+                order_by=lambda *_args: no_asset_links_2()
+            )
+        ),
+    )
     monkeypatch.setattr(
         "app.services.message_branching.get_visible_conversation_messages",
         AsyncMock(return_value=[]),
@@ -422,10 +455,6 @@ async def test_rebuild_context_tool_concurrency_reads_registry(monkeypatch):
     monkeypatch.setattr(
         "app.services.chat_context.build_context_plan",
         AsyncMock(return_value=SimpleNamespace(will_summarize=False, compression=None)),
-    )
-    monkeypatch.setattr(
-        "app.api.v1.endpoints.chat._append_asset_manifest",
-        AsyncMock(side_effect=lambda text, **_kwargs: text),
     )
     monkeypatch.setattr(
         agent_run_worker.Message, "get_or_none", AsyncMock(return_value=user_msg)

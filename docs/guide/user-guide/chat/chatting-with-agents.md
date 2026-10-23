@@ -105,6 +105,14 @@ If the agent supports file uploads (attachments enabled):
 5. Add your message or question about the file
 6. Click **Send**
 
+
+Chat attachments are kept as scoped asset references in conversation history. Before each model request, the server authorizes each reference and reads its bytes from private storage; it does not use a public upload URL as model input. Images, audio, video, and PDF files are sent as native input only when the selected model adapter supports their modality and MIME type. Other parseable documents are supplied as extracted text; unsupported formats or model capabilities return an explicit error. Viewing an attachment with the `view_asset` tool follows the same authorization and capability checks, and its content is reloaded from the asset when a durable run resumes.
+
+The attachment picker supports the selected model's image, audio, and video input modalities. Document upload remains available when enabled by the Agent, including for text-only models through text extraction. Native `file` currently means supported PDF input, not arbitrary binary formats. `view_asset` accepts PDF page ranges or bounded audio/video time ranges; media range processing requires FFmpeg in the backend environment. Extracted text is labeled and reports truncation. Files attached only to an inactive conversation branch are not available to the current branch.
+
+No asset directory is automatically added to the model context. The Agent discovers files on demand with `list_assets`, using an optional case-insensitive filename `query` and `kind` (`image`, `audio`, `video`, or `file`). Results include scope-local refs and metadata, never file bytes or download credentials. Pages contain 10 items by default (maximum 30). When `has_more` is true, repeat the same query and kind with the returned `next_cursor`; then call `view_asset` with the selected ref. Discovery excludes unavailable/expired assets and files attached only to inactive branches, and cannot search another conversation.
+
+
 **Upload limits:**
 - All chat uploads are limited to **10 MB per file** (server-enforced)
 - Max files per message is configurable by the agent (default 5)

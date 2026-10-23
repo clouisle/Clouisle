@@ -168,6 +168,7 @@ export interface Agent {
   avatar_url?: string | null
   model_id?: string | null
   model?: ModelInfo | null
+  input_modalities?: string[]
   system_prompt?: string | null
   max_iterations: number
   hide_tool_calls: boolean
@@ -1358,6 +1359,7 @@ export interface PublicAgent {
   suggested_questions: string[]
   powered_by_text?: string | null
   variables: VariableDefinition[]
+  input_modalities: string[]
   enable_attachments: boolean
   attachment_config?: AttachmentConfig | null
   hide_tool_calls: boolean

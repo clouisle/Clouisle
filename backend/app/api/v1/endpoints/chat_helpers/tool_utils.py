@@ -86,6 +86,8 @@ async def get_tool_display_names(
     if getattr(agent, "enable_attachments", False):
         display_names.update(
             {
+                "list_assets": t("asset_tool_list", lang=user_locale),
+                "view_asset": t("asset_tool_view", lang=user_locale),
                 "inspect_asset": t("asset_tool_inspect", lang=user_locale),
                 "read_asset": t("asset_tool_read", lang=user_locale),
                 "parse_asset": t("asset_tool_parse", lang=user_locale),
