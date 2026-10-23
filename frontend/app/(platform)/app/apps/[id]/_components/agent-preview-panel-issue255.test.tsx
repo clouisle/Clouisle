@@ -234,7 +234,7 @@ describe('AgentPreviewPanel', () => {
     expect(submitAskUser).toHaveBeenCalledWith('ask-1', { answers: { target: 'cloud' } })
   })
 
-  test('converts images and uploads documents with progress before sending', async () => {
+  test('uploads images and documents with progress before sending', async () => {
     const image = { id: 'image', name: 'photo.png', size: 5, type: 'image/png', file: new File(['img'], 'photo.png') }
     const document = { id: 'doc', name: 'notes.txt', size: 9, type: 'text/plain', file: new File(['notes'], 'notes.txt'), isDocument: true }
     const agent = { ...baseAgent, enable_attachments: true } as never
@@ -246,19 +246,23 @@ describe('AgentPreviewPanel', () => {
     ;(uploadFile.mock.calls[0][2] as (value: { percent: number }) => void)({ percent: 42 })
     await pending
 
-    expect(uploadFile).toHaveBeenCalledWith(document.file, 'documents', expect.any(Function))
-    expect(sendMessage).toHaveBeenCalledWith('Analyze', [
-      { type: 'image_url', url: 'data:image/png;base64,aW1hZ2U=' },
-    ], [{ filename: 'notes.txt', url: '/uploaded.txt', size: 9, mime_type: 'text/plain' }], [])
+    expect(uploadFile.mock.calls.map((call) => [call[0], call[1]])).toEqual([
+      [image.file, 'files'],
+      [document.file, 'documents'],
+    ])
+    expect(sendMessage).toHaveBeenCalledWith('Analyze', undefined, [
+      { asset_id: undefined, filename: 'photo.png', url: '/uploaded.txt', size: 5, mime_type: 'image/png' },
+      { asset_id: undefined, filename: 'notes.txt', url: '/uploaded.txt', size: 9, mime_type: 'text/plain' },
+    ], [])
     tree = render(agent)
     expect(find(tree, ChatInput)[0].props.files).toEqual([])
     expect(find(tree, ChatInput)[0].props.isUploading).toBe(false)
   })
 
-  test('reports upload validation failures and still submits text', async () => {
+  test('reports upload validation failures and aborts the submission', async () => {
     const document = { id: 'doc', name: 'bad.exe', size: 2, type: 'application/x-msdownload', file: new File(['x'], 'bad.exe'), isDocument: true }
     uploadFile.mockRejectedValue(new ApiError(1001, 'invalid', { allowed: ['pdf', 'txt'] }))
-    const tree = render({ ...baseAgent, enable_attachments: true } as never)
+    let tree = render({ ...baseAgent, enable_attachments: true } as never)
     const originalError = console.error
     console.error = mock(() => undefined)
     try {
@@ -267,7 +271,9 @@ describe('AgentPreviewPanel', () => {
       console.error = originalError
     }
     expect(toastError).toHaveBeenCalledWith('common.invalidFileTypeWithAllowed:{"allowed":"pdf, txt"}')
-    expect(sendMessage).toHaveBeenCalledWith('Read', undefined, undefined, [])
+    expect(sendMessage).not.toHaveBeenCalled()
+    tree = render({ ...baseAgent, enable_attachments: true } as never)
+    expect(find(tree, ChatInput)[0].props.isUploading).toBe(false)
   })
   test('blocks a required-variable prompt until validation succeeds', async () => {
     variableForm = { ...variableForm, needsInput: true, isValid: false }
@@ -288,7 +294,7 @@ describe('AgentPreviewPanel', () => {
     expect(sendMessage).toHaveBeenCalledWith('Explain this', undefined, undefined, [])
   })
 
-  test('recovers from a failed document upload and submits successfully on retry', async () => {
+  test('aborts on a failed document upload and succeeds on retry', async () => {
     const document = { id: 'retry-doc', name: 'notes.txt', size: 9, type: 'text/plain', file: new File(['notes'], 'notes.txt'), isDocument: true }
     const agent = { ...baseAgent, enable_attachments: true } as never
     uploadFile.mockRejectedValueOnce(new Error('network unavailable'))
@@ -298,16 +304,15 @@ describe('AgentPreviewPanel', () => {
       let tree = render(agent)
       let input = find(tree, ChatInput)[0]
       await (input.props.onSubmit as (message: string, files: unknown[]) => Promise<void>)('Summarize', [document])
-      expect(sendMessage).toHaveBeenCalledWith('Summarize', undefined, undefined, [])
+      expect(sendMessage).not.toHaveBeenCalled()
       tree = render(agent)
       input = find(tree, ChatInput)[0]
       expect(input.props.isUploading).toBe(false)
-      expect(input.props.files).toEqual([])
 
       uploadFile.mockResolvedValueOnce({ url: '/retry.txt' })
       await (input.props.onSubmit as (message: string, files: unknown[]) => Promise<void>)('Summarize again', [document])
       expect(uploadFile).toHaveBeenCalledTimes(2)
-      expect(sendMessage).toHaveBeenLastCalledWith('Summarize again', undefined, [{ filename: 'notes.txt', url: '/retry.txt', size: 9, mime_type: 'text/plain' }], [])
+      expect(sendMessage).toHaveBeenCalledWith('Summarize again', undefined, [{ asset_id: undefined, filename: 'notes.txt', url: '/retry.txt', size: 9, mime_type: 'text/plain' }], [])
     } finally {
       console.error = originalError
     }

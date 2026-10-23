@@ -928,7 +928,7 @@ export default function PublicChatPage({
         disabled={runStatus === 'waiting'}
         isLoading={chatLoading}
         isStreaming={isStreaming}
-        allowAttachments={agent.enable_attachments && agent.input_modalities.some((modality) => ['image', 'audio', 'video'].includes(modality))}
+        allowAttachments={agent.enable_attachments && (agent.input_modalities ?? []).some((modality) => ['image', 'audio', 'video'].includes(modality))}
         enableFileUpload={agent.enable_attachments}
         inputModalities={agent.input_modalities}
         fileUploadConfig={agent.attachment_config}

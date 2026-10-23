@@ -103,6 +103,7 @@ mock.module('@/components/ui/combobox', () => {
     ComboboxList: ({ children }: { children: (value: string) => React.ReactNode }) => <>{children('gpt-4o')}</>,
   }
 })
+mock.module('@/components/ui/checkbox', () => ({ Checkbox: ({ checked, disabled, onCheckedChange }: { checked: boolean; disabled?: boolean; onCheckedChange: (checked: boolean) => void }) => <input type="checkbox" data-modality checked={checked} disabled={disabled} onChange={(event) => onCheckedChange(event.target.checked)} /> }))
 mock.module('@/components/ui/switch', () => ({ Switch: ({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (checked: boolean) => void }) => <input type="checkbox" checked={checked} onChange={(event) => onCheckedChange(event.target.checked)} /> }))
 mock.module('@/components/ui/tabs', () => ({
   Tabs: ({ children }: React.PropsWithChildren) => <>{children}</>,
@@ -192,7 +193,10 @@ function selectValue(renderer: ReactTestRenderer, value: string, occurrence = 0)
 }
 
 function switchValue(renderer: ReactTestRenderer, index: number, checked: boolean) {
-  act(() => renderer.root.findAllByProps({ type: 'checkbox' })[index].props.onChange({ target: { checked } }))
+  const switches = renderer.root
+    .findAllByProps({ type: 'checkbox' })
+    .filter((item) => item.props['data-modality'] === undefined)
+  act(() => switches[index].props.onChange({ target: { checked } }))
 }
 
 function buttonWithText(renderer: ReactTestRenderer, text: string) {
@@ -446,9 +450,8 @@ describe('model management dialog', () => {
     switchValue(renderer, 0, false)
     switchValue(renderer, 1, true)
     switchValue(renderer, 2, true)
-    switchValue(renderer, 3, true)
-    switchValue(renderer, 4, false)
-    switchValue(renderer, 5, true)
+    switchValue(renderer, 3, false)
+    switchValue(renderer, 4, true)
 
     await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
 

@@ -56,6 +56,34 @@ mock.module('@/lib/validation', () => ({
   formatValidationSummaryMessage: (field: string, message: string) => `${field}: ${message}`,
 }))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
+mock.module('@/components/ui/checkbox', () => ({ Checkbox: element('checkbox') }))
+mock.module('@/components/ui/switch', () => ({ Switch: element('switch') }))
+mock.module('@/components/ui/dialog', () => ({
+  Dialog: element('dialog'), DialogContent: element('dialog-content'), DialogDescription: element('dialog-description'),
+  DialogFooter: element('dialog-footer'), DialogHeader: element('dialog-header'), DialogTitle: element('dialog-title'),
+}))
+mock.module('@/components/ui/button', () => ({ Button: element('button') }))
+mock.module('@/components/ui/input', () => ({ Input: element('input') }))
+mock.module('@/components/ui/label', () => ({ Label: element('label') }))
+mock.module('@/components/ui/textarea', () => ({ Textarea: element('textarea') }))
+mock.module('@/components/ui/field', () => ({ FieldError: element('field-error') }))
+mock.module('@/components/ui/select', () => ({
+  Select: element('select'), SelectContent: element('select-content'), SelectItem: element('select-item'),
+  SelectTrigger: element('select-trigger'), SelectValue: element('select-value'),
+}))
+mock.module('@/components/ui/combobox', () => ({
+  Combobox: element('combobox'), ComboboxContent: element('combobox-content'), ComboboxEmpty: element('combobox-empty'),
+  ComboboxInput: element('combobox-input'), ComboboxItem: element('combobox-item'), ComboboxList: element('combobox-list'),
+}))
+mock.module('@/components/ui/tabs', () => ({
+  Tabs: element('tabs'), TabsContent: element('tabs-content'), TabsList: element('tabs-list'), TabsTrigger: element('tabs-trigger'),
+}))
+mock.module('@/components/ui/popover', () => ({
+  Popover: element('popover'), PopoverContent: element('popover-content'), PopoverTrigger: element('popover-trigger'),
+}))
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: element('tooltip'), TooltipContent: element('tooltip-content'), TooltipTrigger: element('tooltip-trigger'),
+}))
 
 
 const { ModelDialog } = await import('./model-dialog')
@@ -98,7 +126,7 @@ function validChatState() {
   states[13] = '0.1'
   states[14] = '0.2'
   states[15] = '500'
-  states[16] = true
+  states[16] = ['text']
   states[17] = true
   states[18] = false
   states[19] = true

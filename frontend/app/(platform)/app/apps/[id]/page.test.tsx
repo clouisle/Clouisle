@@ -143,7 +143,10 @@ describe('AgentEditor', () => {
   })
 
   it('saves initialized values and publishes or unpublishes the agent', async () => {
-    stateValues = [agent, false, false, false, false, false, false, '', '', '', null, '', 5, false, false, false, true]
+    // useState order: agent, isLoading, isSaving, showSettings, showEmbed, mobilePreviewOpen, sidebarCollapsed,
+    // name, description, icon, modelId, systemPrompt, maxIterations, hideToolCalls, hideMessageActions,
+    // enableCitations, hideReasoning, hideArtifactList
+    stateValues = [agent, false, false, false, false, false, false, '', '', '', null, '', 5, false, false, false, false, true]
     updateAgent.mockResolvedValue(agent)
     publishAgent.mockResolvedValue({ ...agent, status: 'published' })
 

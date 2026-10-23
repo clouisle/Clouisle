@@ -184,8 +184,8 @@ function selectValue(renderer: ReactTestRenderer, value: string, occurrence = 0)
 
 function switchValue(renderer: ReactTestRenderer, index: number, checked: boolean) {
   const inputs = renderer.root.findAllByProps({ type: 'checkbox' })
-  const modality = inputs.filter((item) => item.props['aria-hidden'] === undefined)
-  act(() => modality[index].props.onCheckedChange(checked))
+  const switches = inputs.filter((item) => item.props['aria-hidden'] === undefined)
+  act(() => switches[index].props.onChange({ target: { checked } }))
 }
 
 function buttonWithText(renderer: ReactTestRenderer, text: string) {
@@ -328,9 +328,8 @@ describe('model management dialog', () => {
     switchValue(renderer, 0, false)
     switchValue(renderer, 1, true)
     switchValue(renderer, 2, true)
-    switchValue(renderer, 3, true)
-    switchValue(renderer, 4, false)
-    switchValue(renderer, 5, true)
+    switchValue(renderer, 3, false)
+    switchValue(renderer, 4, true)
 
     await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
 

@@ -184,6 +184,7 @@ const agent = {
   id: 'agent-1', name: 'Safe Agent', description: 'Helpful description', opening_message: '',
   icon: '', avatar_url: '', suggested_questions: ['First question', 'Second question'], variables: [],
  enable_attachments: false, attachment_config: undefined, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false,
+ input_modalities: ['text', 'image'],
  enable_citations: false,
   hide_artifact_list: true,
   created_by: { username: 'owner' },
@@ -982,18 +983,8 @@ describe('PublicChatPage', () => {
     expect(sendMessage).toHaveBeenCalledTimes(1)
   })
 
-  test('converts image attachments and uploads documents with progress', async () => {
+  test('uploads image and document attachments with progress', async () => {
     getPublicAgent.mockResolvedValueOnce({ ...agent, enable_attachments: true })
-    class MockFileReader {
-      result: string | ArrayBuffer | null = null
-      onload: (() => void) | null = null
-      onerror: (() => void) | null = null
-      readAsDataURL(file: File) {
-        this.result = `data:${file.type};base64,c2FmZQ==`
-        this.onload?.()
-      }
-    }
-    Object.defineProperty(globalThis, 'FileReader', { configurable: true, value: MockFileReader })
     render()
     await flush()
 
@@ -1002,7 +993,7 @@ describe('PublicChatPage', () => {
     uploadFileWithProgress.mockImplementation(async (file, category, onProgress) => {
       onProgress({ percent: 50 })
       return {
-        asset_id: category === 'images' ? 'image-asset' : 'document-asset',
+        asset_id: category === 'files' ? 'image-asset' : 'document-asset',
         url: `https://files.example.test/${file.name}`,
       }
     })
@@ -1011,13 +1002,16 @@ describe('PublicChatPage', () => {
 
     expect(uploadFileWithProgress).toHaveBeenCalledTimes(2)
     expect(uploadFileWithProgress.mock.calls[0][0]).toBe(image.file)
-    expect(uploadFileWithProgress.mock.calls[0][1]).toBe('images')
+    expect(uploadFileWithProgress.mock.calls[0][1]).toBe('files')
     expect(uploadFileWithProgress.mock.calls[1][0]).toBe(documentFile.file)
     expect(uploadFileWithProgress.mock.calls[1][1]).toBe('documents')
     expect(sendMessage).toHaveBeenCalledWith(
       'with files',
-      [{ asset_id: 'image-asset', type: 'image_url', url: 'https://files.example.test/safe.png' }],
-      [{ asset_id: 'document-asset', filename: 'safe.pdf', url: 'https://files.example.test/safe.pdf', size: 4, mime_type: 'application/pdf' }],
+      undefined,
+      [
+        { asset_id: 'image-asset', filename: 'safe.png', url: 'https://files.example.test/safe.png', size: 4, mime_type: 'image/png' },
+        { asset_id: 'document-asset', filename: 'safe.pdf', url: 'https://files.example.test/safe.pdf', size: 4, mime_type: 'application/pdf' },
+      ],
       [],
     )
   })

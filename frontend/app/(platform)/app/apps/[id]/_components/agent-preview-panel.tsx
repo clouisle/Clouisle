@@ -101,11 +101,28 @@ export function AgentPreviewPanel({ agent, onClose }: AgentPreviewPanelProps) {
       setIsUploading(true)
       try {
         fileUrls = await Promise.all(filesToProcess.map(async (item) => {
-          const result = await uploadApi.uploadFileWithProgress(item.file, item.isDocument ? 'documents' : 'files')
+          const updateProgress = (progress: { percent: number }) => {
+            setFiles(prev => prev.map(file =>
+              file.id === item.id ? { ...file, isUploading: true, uploadProgress: progress.percent } : file
+            ))
+          }
+          setFiles(prev => prev.map(file =>
+            file.id === item.id ? { ...file, isUploading: true, uploadProgress: 0 } : file
+          ))
+          const result = await uploadApi.uploadFileWithProgress(
+            item.file,
+            item.isDocument ? 'documents' : 'files',
+            updateProgress
+          )
+          setFiles(prev => prev.map(file =>
+            file.id === item.id ? { ...file, isUploading: false, uploadProgress: 100 } : file
+          ))
           return { asset_id: result.asset_id, filename: item.name, url: result.url, size: item.size, mime_type: item.type }
         }))
       } catch (error) {
+        console.error('Failed to upload files:', error)
         showUploadValidationError(error, tCommon)
+        setFiles(prev => prev.map(file => ({ ...file, isUploading: false, uploadProgress: undefined })))
         return
       } finally {
         setIsUploading(false)
