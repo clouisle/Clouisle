@@ -594,16 +594,22 @@ async def _submit_receipt(
             .update(active_run_id=submission.run_id)
         )
         session.active_run_id = submission.run_id
-    await _dispatch_or_defer(receipt, submission.run)
+    await _dispatch_or_defer(receipt, submission.run, initial=True)
 
 
-async def _dispatch_or_defer(receipt: WeChatAgentReceipt, run: AgentRun) -> None:
+async def _dispatch_or_defer(
+    receipt: WeChatAgentReceipt, run: AgentRun, *, initial: bool = False
+) -> None:
     """Publish after the receipt mapping committed; recovery repeats safely."""
     from app.services.agent_submission import dispatch_run
 
     if run.status != AgentRunStatus.QUEUED:
         return
-    if receipt.updated_at and utcnow() - receipt.updated_at < REDISPATCH_BACKOFF:
+    if (
+        not initial
+        and receipt.updated_at
+        and utcnow() - receipt.updated_at < REDISPATCH_BACKOFF
+    ):
         return
     try:
         await dispatch_run(run.worker_payload, run)
@@ -701,7 +707,15 @@ async def _consume(receipt: WeChatAgentReceipt, *, error: str | None = None) -> 
 async def _finalize_receipt(
     receipt: WeChatAgentReceipt, session, run: AgentRun
 ) -> None:
-    """Map a terminal run to its outbound delivery rows."""
+    """Commit receipt completion and its outbox atomically, or retry both."""
+    async with in_transaction():
+        await _finalize_receipt_output(receipt, session, run)
+
+
+async def _finalize_receipt_output(
+    receipt: WeChatAgentReceipt, session, run: AgentRun
+) -> None:
+    """Map a terminal run to its outbound delivery rows inside the transaction."""
     from app.models.user import User
     from app.services.wechat_agent_io import build_output
 

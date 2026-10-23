@@ -29,6 +29,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - Excluded self-service Feishu account links from directory user/profile and department-membership synchronization, preventing duplicate imports while preserving ordinary directory-managed users. Link provenance survives sign-in; upgrades recover previous manual links from retained binding audit events.
 - Compacted personal WeChat settings with header authorization/refresh, inline actions and responsive forms. Removed Agent activity and collection history panels and their requests; current-run status, stop controls and backend history remain.
 - Aligned personal Feishu and WeChat settings card styling, spacing, action sizes and save-button order without changing channel behavior.
+- Fixed WeChat Agent first-run dispatch being delayed by the retry backoff. Terminal receipt completion, reply outbox creation and session release now commit atomically, so a failed outbox write remains recoverable instead of silently losing the model reply. Restart all ordinary Celery workers after upgrading; already completed historical receipts without final deliveries require explicit reconciliation and are not automatically resent.
 
 ### Added
 

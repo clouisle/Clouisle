@@ -208,6 +208,82 @@ async def test_receipt_submits_run_and_maps_before_dispatch(world):
 
 
 @pytest.mark.asyncio
+async def test_first_message_runs_without_another_message_or_recovery(
+    world, monkeypatch
+):
+    """The first publish must not be throttled as a retry of the fresh run."""
+
+    async def execute(payload, run):
+        receipt = await WeChatAgentReceipt.get(run_id=run.id)
+        session = await WeChatAgentSession.get(binding_id=world.binding.id)
+        assert receipt.status == "submitted"
+        assert session.active_run_id == run.id
+        await AgentRun.filter(id=run.id).update(
+            status=AgentRunStatus.COMPLETED, finished_at=utcnow()
+        )
+        world.io.outputs[str(run.id)] = [{"kind": "text", "text": "first answer"}]
+
+    monkeypatch.setattr("app.services.agent_submission.dispatch_run", execute)
+    receipt = await receipt_for(world)
+    await runtime.process_binding(str(world.binding.id))
+    run = await AgentRun.get(id=(await WeChatAgentReceipt.get(id=receipt.id)).run_id)
+    assert run.status == AgentRunStatus.COMPLETED
+    await runtime.process_binding(str(world.binding.id))
+    reply = await IntegrationDelivery.get(receipt_id=receipt.id, event_key="final")
+    assert reply.payload["text"] == "first answer"
+    assert (
+        await WeChatAgentSession.get(binding_id=world.binding.id)
+    ).active_run_id is None
+
+
+@pytest.mark.asyncio
+async def test_partial_outbox_failure_keeps_terminal_receipt_recoverable(
+    world, monkeypatch
+):
+    receipt = await receipt_for(world)
+    await runtime.process_binding(str(world.binding.id))
+    run = world.submission.run
+    world.io.outputs[str(run.id)] = [
+        {"kind": "text", "text": "first chunk"},
+        {"kind": "text", "text": "second chunk"},
+    ]
+    await AgentRun.filter(id=run.id).update(
+        status=AgentRunStatus.COMPLETED, finished_at=utcnow()
+    )
+    create_delivery = runtime._create_delivery
+
+    async def fail_second(receipt, **kwargs):
+        if kwargs["event_key"] == "final" and kwargs["sequence"] == 1:
+            raise RuntimeError("outbox insert failed")
+        await create_delivery(receipt, **kwargs)
+
+    monkeypatch.setattr(runtime, "_create_delivery", fail_second)
+    await runtime.process_binding(str(world.binding.id))
+    assert (await WeChatAgentReceipt.get(id=receipt.id)).status == "submitted"
+    assert (
+        await WeChatAgentSession.get(binding_id=world.binding.id)
+    ).active_run_id == run.id
+    assert not await IntegrationDelivery.filter(
+        receipt_id=receipt.id, event_key="final"
+    ).exists()
+
+    monkeypatch.setattr(runtime, "_create_delivery", create_delivery)
+    await runtime.process_binding(str(world.binding.id))
+    await runtime.process_binding(str(world.binding.id))
+    replies = await IntegrationDelivery.filter(
+        receipt_id=receipt.id, event_key="final"
+    ).order_by("sequence")
+    assert [reply.payload["text"] for reply in replies] == [
+        "first chunk",
+        "second chunk",
+    ]
+    assert (await WeChatAgentReceipt.get(id=receipt.id)).status == "completed"
+    assert (
+        await WeChatAgentSession.get(binding_id=world.binding.id)
+    ).active_run_id is None
+
+
+@pytest.mark.asyncio
 async def test_duplicate_receipt_message_id_submits_once(world):
     await receipt_for(world, identifier="dup")
     payload = message_payload()
