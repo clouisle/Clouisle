@@ -338,7 +338,23 @@ async def normalize_input(
     max_size, max_files, _ = _attachment_limits(agent)
     media_count = 0
     caption_used = False
-    for position, spec in enumerate(split_items(payload)):
+    specs = []
+    messages = payload.get("batch_messages") or [payload]
+    identifiers = payload.get("batch_receipt_ids") or [str(receipt.id)]
+    for identifier, message in zip(identifiers, messages, strict=True):
+        source = (
+            receipt
+            if identifier == str(receipt.id)
+            else await WeChatAgentReceipt.get(id=identifier)
+        )
+        specs.extend(
+            (source, index, spec) for index, spec in enumerate(split_items(message))
+        )
+    previous_source = None
+    for source, position, spec in specs:
+        if source.id != previous_source:
+            caption_used = False
+            previous_source = source.id
         if spec["kind"] == "unsupported":
             raise io_error("wechat_agent_media_unsupported")
         if spec["kind"] == "text":
@@ -368,7 +384,7 @@ async def normalize_input(
         if kind == ITEM_VOICE:
             # The original voice stays a private Asset even when only the
             # transcript is forwarded to the model.
-            await _retain_original(raw, filename, mime, receipt, user, position, kind)
+            await _retain_original(raw, filename, mime, source, user, position, kind)
             texts.append(
                 await _transcribe_voice(
                     raw, filename, str(agent.team_id), receipt.stt_model_id
@@ -382,7 +398,7 @@ async def normalize_input(
             vision_model_id = await _agent_vision_model_id(agent)
             if vision_model_id is None:
                 raise io_error("wechat_agent_video_unsupported")
-            await _retain_original(raw, filename, mime, receipt, user, position, kind)
+            await _retain_original(raw, filename, mime, source, user, position, kind)
             try:
                 texts.append(
                     await extract_media(
@@ -405,7 +421,7 @@ async def normalize_input(
             item,
             agent=agent,
             user=user,
-            receipt=receipt,
+            receipt=source,
             index=position,
             raw=(raw, filename, mime),
         )

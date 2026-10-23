@@ -30,6 +30,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - Compacted personal WeChat settings with header authorization/refresh, inline actions and responsive forms. Removed Agent activity and collection history panels and their requests; current-run status, stop controls and backend history remain.
 - Aligned personal Feishu and WeChat settings card styling, spacing, action sizes and save-button order without changing channel behavior.
 - Fixed WeChat Agent first-run dispatch being delayed by the retry backoff. Terminal receipt completion, reply outbox creation and session release now commit atomically, so a failed outbox write remains recoverable instead of silently losing the model reply. Restart all ordinary Celery workers after upgrading; already completed historical receipts without final deliveries require explicit reconciliation and are not automatically resent.
+- WeChat Agent chat now combines adjacent ordinary messages from one `getupdates` response into one prompt, including text and attachments, with one run and one reply. Original message identities remain deduplicated; merged receipts share the run without producing duplicate replies. Commands split groups, waiting structured answers keep their existing handling, and separate responses are never combined. No extra waiting window or database migration is required; restart ordinary workers to load the change.
 
 ### Added
 

@@ -192,6 +192,75 @@ async def receipt_for(world, text="hello", identifier="mid"):
 
 
 @pytest.mark.asyncio
+async def test_one_response_combines_text_and_file_and_replay_is_deduplicated(
+    world, monkeypatch
+):
+    from app.services.wechat_receiver import accept_updates
+    from app.services import wechat_agent_io as io
+
+    text = {**message_payload("总结一下"), "message_id": "caption"}
+    file = {
+        **message_payload(),
+        "message_id": "document",
+        "item_list": [{"type": 4, "file_item": {"file_name": "report.docx"}}],
+    }
+    response = {"msgs": [text, file], "get_updates_buf": "batch-one"}
+    accepted = await accept_updates(world.binding, response)
+    assert len(accepted.agent_receipt_ids) == 2
+    rows = await WeChatAgentReceipt.all().order_by("created_at")
+    assert [row.status for row in rows] == ["pending", "merged"]
+    payload = json.loads(decrypt_secret(rows[0].payload))
+    assert payload["batch_messages"] == [text, file]
+
+    async def normalize(receipt, session, agent, user, client):
+        from app.schemas.agent import ChatRequest
+
+        data = json.loads(decrypt_secret(receipt.payload))
+        assert [item["type"] for item in data["item_list"]] == [1, 4]
+        return ChatRequest(message="总结一下", conversation_id=session.conversation_id)
+
+    monkeypatch.setattr(io, "normalize_input", normalize)
+    await runtime.process_binding(str(world.binding.id))
+    assert await AgentRun.all().count() == 1
+    run = world.submission.run
+    world.io.outputs[str(run.id)] = [{"kind": "text", "text": "summary"}]
+    await AgentRun.filter(id=run.id).update(status=AgentRunStatus.COMPLETED)
+    await runtime.process_binding(str(world.binding.id))
+    await runtime.process_binding(str(world.binding.id))
+    assert await IntegrationDelivery.filter(event_key="received").count() == 1
+    assert await IntegrationDelivery.filter(event_key="final").count() == 1
+    fresh = await WeChatKnowledgeBinding.get(id=world.binding.id)
+    replay = await accept_updates(fresh, response)
+    assert replay.agent_receipt_ids == []
+    assert await WeChatAgentReceipt.all().count() == 2
+
+
+@pytest.mark.asyncio
+async def test_response_commands_and_separate_responses_do_not_merge(world):
+    from app.services.wechat_receiver import accept_updates
+
+    messages = [
+        {**message_payload(text), "message_id": str(index)}
+        for index, text in enumerate(["first", "/status", "second", "third"])
+    ]
+    await accept_updates(world.binding, {"msgs": messages, "get_updates_buf": "one"})
+    rows = await WeChatAgentReceipt.all().order_by("created_at")
+    assert [row.status for row in rows] == ["pending", "pending", "pending", "merged"]
+    assert "batch_messages" not in json.loads(decrypt_secret(rows[0].payload))
+    fresh = await WeChatKnowledgeBinding.get(id=world.binding.id)
+    await accept_updates(
+        fresh,
+        {
+            "msgs": [{**message_payload("fourth"), "message_id": "four"}],
+            "get_updates_buf": "two",
+        },
+    )
+    fourth = await WeChatAgentReceipt.get(message_id="four")
+    assert fourth.status == "pending"
+    assert "batch_messages" not in json.loads(decrypt_secret(fourth.payload))
+
+
+@pytest.mark.asyncio
 async def test_receipt_submits_run_and_maps_before_dispatch(world):
     receipt = await receipt_for(world)
     result = await runtime.process_binding(str(world.binding.id))

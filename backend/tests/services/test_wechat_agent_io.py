@@ -119,6 +119,49 @@ async def make_receipt(binding, user, agent, payload, status="pending"):
     )
 
 
+@pytest.mark.asyncio
+async def test_batch_normalization_keeps_text_assets_and_aggregate_limit(
+    io_db, monkeypatch
+):
+    from app.services import wechat_agent_io as io
+    from app.services.wechat_receiver import _merge_agent_receipts
+    from tortoise.transactions import in_transaction
+
+    user, _, agent, binding, _, session = io_db
+    text = receipt_message([{"type": 1, "text_item": {"text": "总结一下"}}])
+    document = receipt_message([{"type": 4, "file_item": {"file_name": "report.txt"}}])
+    first = await make_receipt(binding, user, agent, text)
+    second = await make_receipt(binding, user, agent, document)
+    async with in_transaction() as db:
+        await _merge_agent_receipts([(first, text), (second, document)], db)
+    first = await WeChatAgentReceipt.get(id=first.id)
+    monkeypatch.setattr(io, "_store_upload", AsyncMock())
+    client = SimpleNamespace(
+        download_media=AsyncMock(
+            return_value=(b"report content", "report.txt", "text/plain")
+        )
+    )
+    prepared = await io.normalize_input(first, session, agent, user, client)
+    assert prepared.message == "总结一下"
+    assert prepared.file_urls[0].filename == "report.txt"
+    asset = await Asset.get(id=prepared.file_urls[0].asset_id)
+    assert str(second.id) in asset.storage_key
+    again = await io.normalize_input(first, session, agent, user, client)
+    assert again.file_urls[0].asset_id == prepared.file_urls[0].asset_id
+
+    third = await make_receipt(binding, user, agent, document)
+    fourth = await make_receipt(binding, user, agent, document)
+    async with in_transaction() as db:
+        await _merge_agent_receipts(
+            [(first, text), (second, document), (third, document), (fourth, document)],
+            db,
+        )
+    first = await WeChatAgentReceipt.get(id=first.id)
+    with pytest.raises(BusinessError) as exc:
+        await io.normalize_input(first, session, agent, user, client)
+    assert exc.value.msg_key == "wechat_agent_too_many_files"
+
+
 def test_chunk_text_preserves_every_utf8_byte():
     text = "你好" * 2000
     chunks = chunk_text(text)

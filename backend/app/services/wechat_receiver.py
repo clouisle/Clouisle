@@ -61,6 +61,67 @@ def _candidate_messages(
     return candidates
 
 
+async def _merge_agent_receipts(rows, db) -> None:
+    """Keep originals for deduplication; one receipt owns each response segment."""
+    from app.models.agent_run import AgentRun, AgentRunStatus
+    from app.models.wechat_agent import WeChatAgentSession
+    from app.services.wechat_agent_runtime import _command_of, _text_of
+
+    session = (
+        await WeChatAgentSession.filter(
+            binding_id=rows[0][0].binding_id, agent_id=rows[0][0].agent_id
+        )
+        .using_db(db)
+        .first()
+    )
+    if session and session.active_run_id:
+        run = await AgentRun.filter(id=session.active_run_id).using_db(db).first()
+        if run and run.status == AgentRunStatus.WAITING:
+            return
+
+    groups = []
+    group = []
+    for receipt, message in rows:
+        if _command_of(_text_of(message)):
+            if group:
+                groups.append(group)
+                group = []
+            continue
+        group.append((receipt, message))
+    if group:
+        groups.append(group)
+    for group in groups:
+        if len(group) < 2:
+            continue
+        owner, first = group[0]
+        payload = {
+            **first,
+            "item_list": [
+                item for _, message in group for item in message.get("item_list") or []
+            ],
+            "context_token": next(
+                (
+                    message["context_token"]
+                    for _, message in reversed(group)
+                    if message.get("context_token")
+                ),
+                "",
+            ),
+            "batch_messages": [message for _, message in group],
+            "batch_receipt_ids": [str(receipt.id) for receipt, _ in group],
+        }
+        await (
+            WeChatAgentReceipt.filter(id=owner.id)
+            .using_db(db)
+            .update(payload=encrypt_secret(json.dumps(payload, ensure_ascii=False)))
+        )
+        await (
+            WeChatAgentReceipt.filter(id__in=[receipt.id for receipt, _ in group[1:]])
+            .using_db(db)
+            .update(status="merged")
+        )
+
+
 async def accept_updates(
     binding: WeChatKnowledgeBinding, response: dict
 ) -> UpdateAcceptResult:
@@ -118,6 +179,7 @@ async def accept_updates(
                 .first()
             )
 
+        agent_receipts = []
         for identifier, message in candidates:
             if current.purpose == "agent":
                 if not agent_config or not agent_config.agent_id:
@@ -146,6 +208,7 @@ async def accept_updates(
                 )
                 if created:
                     result.agent_receipt_ids.append(str(receipt.id))
+                    agent_receipts.append((receipt, message))
                 continue
             if (
                 current.purpose != "knowledge_collection"
@@ -175,6 +238,9 @@ async def accept_updates(
             )
             if created:
                 result.knowledge_receipt_ids.append(str(knowledge_receipt.id))
+
+        if agent_receipts:
+            await _merge_agent_receipts(agent_receipts, db)
 
         cursor_changed = cursor is not None and str(cursor) != prior_cursor
         if cursor_changed:

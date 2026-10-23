@@ -588,6 +588,20 @@ async def _submit_receipt(
         )
         if not claimed:
             raise collection_error("wechat_agent_busy", 409)
+        batch_ids = (
+            json.loads(decrypt_secret(receipt.payload)).get("batch_receipt_ids") or []
+        )
+        if batch_ids:
+            await (
+                WeChatAgentReceipt.filter(
+                    id__in=batch_ids,
+                    binding_id=receipt.binding_id,
+                    agent_id=receipt.agent_id,
+                    status="merged",
+                )
+                .using_db(db)
+                .update(run_id=submission.run_id)
+            )
         await (
             WeChatAgentSession.filter(id=session.id)
             .using_db(db)
