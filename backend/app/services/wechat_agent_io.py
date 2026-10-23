@@ -42,6 +42,7 @@ from app.services.channel_artifacts import (
 from app.services.wechat_connection import utcnow
 from app.services.wechat_media import extract_media
 from app.services.integration_features import enabled_features, require_feature
+from app.services.message_split import split_message_text
 
 logger = logging.getLogger(__name__)
 
@@ -60,20 +61,7 @@ def io_error(key: str, status: int = 400) -> BusinessError:
 
 
 def chunk_text(text: str) -> list[str]:
-    """Split text on UTF-8 boundaries without losing any content."""
-    data = text.encode("utf-8")
-    if len(data) <= WECHAT_TEXT_LIMIT:
-        return [text] if text else []
-    chunks: list[bytes] = []
-    start = 0
-    while start < len(data):
-        end = min(start + WECHAT_TEXT_LIMIT, len(data))
-        if end < len(data):
-            while end > start and (data[end] & 0xC0) == 0x80:
-                end -= 1
-        chunks.append(data[start:end])
-        start = end
-    return [chunk.decode("utf-8") for chunk in chunks]
+    return split_message_text(text, limit=WECHAT_TEXT_LIMIT)
 
 
 def split_items(payload: dict) -> list[dict]:

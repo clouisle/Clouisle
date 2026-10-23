@@ -57,6 +57,7 @@ from app.schemas.response import BusinessError
 from app.services.wechat_connection import collection_error, utcnow
 from app.services.wechat_purpose import authorized_agent
 from app.services.integration_features import enabled_features, require_feature
+from app.services.message_split import split_message_text
 
 logger = logging.getLogger(__name__)
 
@@ -108,23 +109,7 @@ def _text_of(payload: dict) -> str:
 
 
 def _split_text_chunks(text: str, *, limit: int = 3500) -> list[str]:
-    """Split on UTF-8 boundaries so a chunk is never sent half-encoded."""
-    encoded = text.encode("utf-8")
-    if len(encoded) <= limit:
-        return [text] if text else []
-    chunks: list[str] = []
-    current = ""
-    current_size = 0
-    for character in text:
-        size = len(character.encode("utf-8"))
-        if current_size + size > limit:
-            chunks.append(current)
-            current, current_size = "", 0
-        current += character
-        current_size += size
-    if current:
-        chunks.append(current)
-    return chunks
+    return split_message_text(text, limit=limit)
 
 
 async def _authorized_context(

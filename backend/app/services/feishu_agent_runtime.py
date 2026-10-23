@@ -59,6 +59,7 @@ from app.models.integration import Integration
 from app.models.user import User
 from app.schemas.response import BusinessError
 from app.services.integration_features import active_features
+from app.services.message_split import split_message_text
 
 logger = logging.getLogger(__name__)
 
@@ -140,20 +141,7 @@ def _event_text(event: dict) -> str:
 
 
 def _split_text_chunks(text: str, *, limit: int = TEXT_CHUNK_LIMIT) -> list[str]:
-    """Split on UTF-8 boundaries without losing any content."""
-    data = text.encode("utf-8")
-    if len(data) <= limit:
-        return [text] if text else []
-    chunks: list[bytes] = []
-    start = 0
-    while start < len(data):
-        end = min(start + limit, len(data))
-        if end < len(data):
-            while end > start and (data[end] & 0xC0) == 0x80:
-                end -= 1
-        chunks.append(data[start:end])
-        start = end
-    return [chunk.decode("utf-8") for chunk in chunks]
+    return split_message_text(text, limit=limit)
 
 
 def _delivery_uuid(receipt_id: UUID, event_key: str, sequence: int) -> str:
