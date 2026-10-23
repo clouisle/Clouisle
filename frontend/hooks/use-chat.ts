@@ -1870,7 +1870,7 @@ function buildUserMessageParts(
     parts.push({ type: 'image', url: image.url } as MessagePart)
   }
   for (const file of fileUrls ?? []) {
-    parts.push({ type: 'file', filename: file.filename, size: file.size } as MessagePart)
+    parts.push({ type: 'file', filename: file.filename, url: file.url, mimeType: file.mime_type, size: file.size })
   }
   return parts
 }
