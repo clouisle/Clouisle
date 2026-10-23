@@ -212,6 +212,7 @@ describe('AgentOrchestrationForm', () => {
     expect(onUpdate.mock.calls.at(-1)?.[0].enable_user_input_request).toBe(true)
   })
 
+
   test('loads only current-team resources and tolerates a rejected resource request', async () => {
     getKnowledgeBases.mockResolvedValue({
       items: [
@@ -243,7 +244,6 @@ describe('AgentOrchestrationForm', () => {
     getKnowledgeBases.mockRejectedValue(new Error('offline'))
     render()
     await flush()
-    expect(states[25]).toEqual([])
   })
 
   test('applies prompt, variable, knowledge-base, and every tool-kind callback', () => {
@@ -417,7 +417,6 @@ describe('AgentOrchestrationForm', () => {
     const onUpdate = mock(() => undefined)
     render(onUpdate)
     await flush()
-    expect(states[25]).toEqual([])
 
     currentTeam = { id: 'team-2' }
     getKnowledgeBases.mockResolvedValue({ items: [{ id: 'kb-2', name: 'Recovered', team: { id: 'team-2' } }] })

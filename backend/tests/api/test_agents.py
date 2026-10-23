@@ -126,6 +126,7 @@ def agent(**overrides):
         "hide_tool_calls": False,
         "hide_message_actions": False,
         "hide_reasoning": False,
+        "enable_citations": False,
         "tools_config": [],
         "enable_attachments": False,
         "enable_user_input_request": False,
@@ -400,6 +401,7 @@ async def test_create_agent_persists_config_and_knowledge_binding(monkeypatch):
     assert create.await_args.kwargs["memory_config"]["max_memories_per_retrieval"] == 6
     assert create.await_args.kwargs["enable_user_input_request"] is True
     assert create.await_args.kwargs["hide_artifact_list"] is True
+    assert create.await_args.kwargs["enable_citations"] is False
     binding_create.assert_awaited_once()
     agents.AuditLogService.log.assert_awaited_once()
 
@@ -868,6 +870,7 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
         hide_tool_calls=True,
         hide_message_actions=False,
         hide_reasoning=False,
+        enable_citations=True,
         opening_message="Hello",
         hide_artifact_list=True,
         suggested_questions=["Help?"],
@@ -905,6 +908,7 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
     assert item.enable_attachments is True
     assert item.enable_user_input_request is True
     assert item.video_generation_config["default_model_ref"] == "dummy/model"
+    assert item.enable_citations is True
     assert item.hide_artifact_list is True
     assert item.powered_by_text == "Acme Inc"
     fields = agents.AuditLogService.log.await_args.kwargs["metadata"]["fields_updated"]
@@ -916,6 +920,7 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
         "powered_by_text",
         "enable_user_input_request",
         "hide_artifact_list",
+        "enable_citations",
     } <= set(fields)
 
 

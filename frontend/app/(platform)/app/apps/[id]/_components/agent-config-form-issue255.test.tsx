@@ -215,6 +215,7 @@ test('applies field callbacks and submits the enabled-memory payload', async () 
     opening_message: null,
     suggested_questions: [' Keep? ', 'Second?'],
     visibility: 'team',
+    enable_citations: false,
     enable_memory: true,
     memory_config: {
       max_memories_per_retrieval: 25,

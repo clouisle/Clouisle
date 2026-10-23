@@ -446,6 +446,8 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   hideMessageActions?: boolean
   /** Hide reasoning / chain-of-thought panel */
   hideReasoning?: boolean
+  /** Hide inline citation markers and the cited-sources list. */
+  hideCitations?: boolean
   /** Current conversation ID (shown on errors for debugging) */
   conversationId?: string | null
   /** Controlled open state for chain of thought */
@@ -474,11 +476,12 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       onOpenCodePreview,
       hideToolCalls = false,
       hideMessageActions = false,
+      hideCitations = false,
       hideReasoning = false,
-      conversationId,
       chainOfThoughtOpen,
       onChainOfThoughtOpenChange,
       onRequestScrollIntoView,
+      conversationId,
       className,
       ...props
     },
@@ -902,6 +905,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             key={index}
             text={part.text}
             sources={citedSources}
+            hideCitations={hideCitations}
             isStreaming={isStreaming && part.state !== 'done'}
             activeSpeechSentence={activeSpeechSentence}
             onOpenCodePreview={onOpenCodePreview}
@@ -1062,6 +1066,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       pairedToolResultIndexes,
       renderToolResultContent,
       t,
+      hideCitations,
       toolResultsByCallIndex,
     ])
     const isManuallyStoppedMessage = Boolean(message.metadata?.isManuallyStopped) || otherParts.some(isStoppedPart)
@@ -1580,7 +1585,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
           )}
         </MessageContent>
 
-        {isAssistant && citedSources.length > 0 && (
+        {isAssistant && !hideCitations && citedSources.length > 0 && (
           <SourceContent sources={citedSources} onOpenCodePreview={onOpenCodePreview} />
         )}
       </>
@@ -1596,6 +1601,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
       hasChainOfThought,
       isAssistant,
       isChainOfThoughtStreaming,
+      hideCitations,
       isEditing,
       isErroredMessage,
       isLoadingMessage,
@@ -1790,6 +1796,7 @@ function areMessagePropsEqual(prev: Readonly<MessageProps>, next: Readonly<Messa
     && prev.hideToolCalls === next.hideToolCalls
     && prev.hideMessageActions === next.hideMessageActions
     && prev.hideReasoning === next.hideReasoning
+    && prev.hideCitations === next.hideCitations
     && prev.conversationId === next.conversationId
     && prev.chainOfThoughtOpen === next.chainOfThoughtOpen
     && prev.onChainOfThoughtOpenChange === next.onChainOfThoughtOpenChange
@@ -2222,9 +2229,11 @@ function normalizeMessageText(input: string, normalizeMath: boolean) {
 function prepareCitationMarkdown(
   text: string,
   sources: CitationSourcePart[],
-  isStreaming: boolean
+  isStreaming: boolean,
+  hideCitations: boolean
 ) {
   const normalizedText = normalizeMessageText(text, !isStreaming)
+  if (hideCitations) return stripCitationMarkers(normalizedText)
   const hasCitationPrefix = normalizedText.includes('[[') || normalizedText.includes('\ue200')
 
   if (!hasCitationPrefix) {
@@ -2281,6 +2290,7 @@ function prepareCitationMarkdown(
 export const TextWithCitations = React.memo(function TextWithCitations({
   text,
   sources,
+  hideCitations = false,
   isStreaming = false,
   activeSpeechSentence,
   onOpenCodePreview,
@@ -2288,6 +2298,7 @@ export const TextWithCitations = React.memo(function TextWithCitations({
 }: {
   text: string
   sources: CitationSourcePart[]
+  hideCitations?: boolean
   isStreaming?: boolean
   activeSpeechSentence?: string | null
   onOpenCodePreview?: (payload: ChatPreviewPayload) => void
@@ -2296,8 +2307,8 @@ export const TextWithCitations = React.memo(function TextWithCitations({
   const containerRef = React.useRef<HTMLDivElement>(null)
 
   const processedText = React.useMemo(() => (
-    prepareCitationMarkdown(text, sources, isStreaming)
-  ), [text, sources, isStreaming])
+    prepareCitationMarkdown(text, sources, isStreaming, hideCitations)
+  ), [text, sources, isStreaming, hideCitations])
   const clearSpeechHighlight = React.useCallback(() => {
     const highlightedElements = containerRef.current?.querySelectorAll('mark[data-speech-highlight="true"]')
     if (!highlightedElements) {
@@ -2511,7 +2522,8 @@ export const TextWithCitations = React.memo(function TextWithCitations({
     </div>
   )
 }, (prevProps, nextProps) => (
-  prevProps.text === nextProps.text
+  prevProps.hideCitations === nextProps.hideCitations
+  && prevProps.text === nextProps.text
   && prevProps.sources === nextProps.sources
   && prevProps.isStreaming === nextProps.isStreaming
   && prevProps.activeSpeechSentence === nextProps.activeSpeechSentence

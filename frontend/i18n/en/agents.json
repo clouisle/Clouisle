@@ -34,6 +34,8 @@
       "hideToolCallsDesc": "Hide tool call details in chat while keeping tools enabled.",
       "hideMessageActions": "Hide Message Actions",
       "hideMessageActionsDesc": "Hide the action toolbar under each message.",
+      "enableCitations": "Enable Citations",
+      "enableCitationsDesc": "When enabled, answers include citations and display their sources.",
       "hideReasoning": "Hide Reasoning",
       "hideReasoningDesc": "Hide the thinking process / chain of thought in chat.",
       "hideArtifactList": "Hide Artifact List",
@@ -127,6 +129,8 @@
     "tokenUsage": "Token Usage",
     "orchestration": {
       "title": "Orchestration",
+      "enableCitations": "Enable Citations",
+      "enableCitationsDesc": "When enabled, answers include citations and display their sources.",
       "sidebar": {
         "orchestration": "Orchestration",
         "api": "API Access",

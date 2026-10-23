@@ -421,7 +421,11 @@ async def _rebuild_context(
     if agent.rag_mode == RAGMode.AUTO and rag_contexts:
         from app.api.v1.endpoints.chat_rag import build_rag_prompt
 
-        user_message_text = build_rag_prompt(rag_contexts, user_message_text)
+        user_message_text = build_rag_prompt(
+            rag_contexts,
+            user_message_text,
+            enable_citations=getattr(agent, "enable_citations", False),
+        )
     user_message_text = await _append_asset_manifest(
         user_message_text,
         conversation_id=conversation.id,

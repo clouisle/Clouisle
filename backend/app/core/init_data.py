@@ -2251,6 +2251,24 @@ async def init_agent_hide_message_actions_reasoning_fields():
     )
 
 
+async def init_agent_enable_citations_field():
+    """Add the Agent citation preference column."""
+    conn = Tortoise.get_connection("default")
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+    """)
+    if not tables:
+        return
+    await execute_startup_migration_query(
+        conn,
+        """
+        ALTER TABLE agents
+        ADD COLUMN IF NOT EXISTS enable_citations BOOLEAN NOT NULL DEFAULT FALSE
+        """,
+    )
+
+
 async def init_agent_hide_artifact_list_field():
     """Add hide_artifact_list field to agents table."""
     logger.info("Initializing agent hide_artifact_list field...")
@@ -3462,7 +3480,10 @@ async def init_db():
     # 11.1 Initialize agent hide_message_actions and hide_reasoning fields
     await init_agent_hide_message_actions_reasoning_fields()
 
-    # 11.2 Initialize agent hide_artifact_list field
+    # 11.2 Initialize agent citation preference
+    await init_agent_enable_citations_field()
+
+    # 11.3 Initialize agent hide_artifact_list field
     await init_agent_hide_artifact_list_field()
 
     # 12. Initialize agent memory fields

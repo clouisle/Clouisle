@@ -34,6 +34,8 @@
       "hideToolCallsDesc": "在对话中隐藏工具调用详情，但不禁用工具执行。",
       "hideMessageActions": "隐藏消息操作栏",
       "hideMessageActionsDesc": "隐藏每条消息下方的操作栏。",
+      "enableCitations": "启用引用来源",
+      "enableCitationsDesc": "开启后在回答中标注引用并展示来源",
       "hideReasoning": "隐藏思考过程",
       "hideReasoningDesc": "在对话中隐藏思维链/思考过程。",
       "hideArtifactList": "隐藏产物列表",
@@ -127,6 +129,8 @@
     "tokenUsage": "Token 用量",
     "orchestration": {
       "title": "编排",
+      "enableCitations": "启用引用来源",
+      "enableCitationsDesc": "开启后在回答中标注引用并展示来源",
       "sidebar": {
         "orchestration": "编排",
         "api": "访问 API",

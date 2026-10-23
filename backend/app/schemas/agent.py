@@ -353,6 +353,9 @@ class AgentCreate(AgentBase):
     hide_reasoning: bool = Field(
         default=False, description="Hide reasoning/chain-of-thought in chat UI"
     )
+    enable_citations: bool = Field(
+        default=False, description="Enable source citations in chat"
+    )
     hide_artifact_list: bool = Field(
         default=False, description="Hide generated artifact lists in chat UI"
     )
@@ -425,6 +428,7 @@ class AgentUpdate(BaseModel):
     hide_tool_calls: bool | None = None
     hide_message_actions: bool | None = None
     hide_reasoning: bool | None = None
+    enable_citations: bool | None = None
     hide_artifact_list: bool | None = None
     tools_config: list[ToolConfig] | None = None
     tools_credentials: dict[str, str] | None = None
@@ -475,6 +479,7 @@ class AgentOut(AgentBase):
     hide_tool_calls: bool = False
     hide_message_actions: bool = False
     hide_reasoning: bool = False
+    enable_citations: bool = False
     hide_artifact_list: bool = False
     tools_config: list[ToolConfig] = []
     tools_credentials: dict[str, str] = {}
@@ -523,6 +528,7 @@ class AgentPublicOut(BaseModel):
     hide_tool_calls: bool = False
     hide_message_actions: bool = False
     hide_reasoning: bool = False
+    enable_citations: bool = False
     hide_artifact_list: bool = False
     created_by: CreatorInfo | None = None
 
@@ -545,6 +551,7 @@ class EmbedAgentInfo(BaseModel):
     hide_tool_calls: bool = False
     hide_message_actions: bool = False
     hide_reasoning: bool = False
+    enable_citations: bool = False
     hide_artifact_list: bool = False
     embed_config: dict[str, Any] = {}
 

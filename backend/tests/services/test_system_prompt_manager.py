@@ -24,6 +24,7 @@ def _agent(
     enable_user_input_request=False,
     enable_attachments=False,
     rag_mode="off",
+    enable_citations=False,
 ):
     return SimpleNamespace(
         id="agent-1",
@@ -33,6 +34,7 @@ def _agent(
         enable_attachments=enable_attachments,
         rag_mode=rag_mode,
         tools_config=tools_config or [],
+        enable_citations=enable_citations,
     )
 
 
@@ -100,6 +102,30 @@ def test_chat_mode_injects_memory_when_enabled():
     assert "## Memory System" in prompt
 
 
+@pytest.mark.parametrize(
+    ("enabled", "expected"),
+    [(False, False), (True, True)],
+)
+def test_chat_citation_guidance_requires_preference_and_source_capability(
+    enabled, expected
+):
+    prompt = build_system_prompt(
+        _agent(enable_citations=enabled, rag_mode="auto"),
+        user_locale="en",
+        invocation_mode=CHAT_MODE,
+    )
+    assert ("## Source Citations" in prompt) is expected
+
+
+def test_chat_citation_guidance_is_omitted_without_source_capability():
+    prompt = build_system_prompt(
+        _agent(enable_citations=True, rag_mode="off"),
+        user_locale="en",
+        invocation_mode=CHAT_MODE,
+    )
+    assert "## Source Citations" not in prompt
+
+
 def test_chat_mode_injects_temporal_instruction_en_and_zh():
     prompt_en = build_system_prompt(
         _agent(),
@@ -159,11 +185,17 @@ def test_chat_mode_injects_ask_user_guidance_when_enabled():
 @pytest.mark.parametrize(
     "agent",
     [
-        _agent(rag_mode="auto"),
-        _agent(rag_mode="agentic"),
-        _agent(tools_config=[{"type": "builtin", "name": "web_search"}]),
-        _agent(tools_config=[{"type": "builtin", "name": "fetch_webpage"}]),
-        _agent(enable_attachments=True),
+        _agent(rag_mode="auto", enable_citations=True),
+        _agent(rag_mode="agentic", enable_citations=True),
+        _agent(
+            tools_config=[{"type": "builtin", "name": "web_search"}],
+            enable_citations=True,
+        ),
+        _agent(
+            tools_config=[{"type": "builtin", "name": "fetch_webpage"}],
+            enable_citations=True,
+        ),
+        _agent(enable_attachments=True, enable_citations=True),
     ],
 )
 def test_chat_mode_injects_source_citation_contract_for_source_capabilities(agent):

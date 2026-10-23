@@ -179,6 +179,7 @@ curl -X GET "https://your-domain.com/api/v1/agents/550e8400-e29b-41d4-a716-44665
     "hide_tool_calls": false,
     "hide_message_actions": false,
     "hide_reasoning": false,
+    "enable_citations": false,
     "tools_config": [
       {
         "type": "builtin",
@@ -290,6 +291,7 @@ POST /api/v1/agents
 | `hide_tool_calls` | boolean | No | Hide tool call details in chat UI (default: false) |
 | `hide_message_actions` | boolean | No | Hide token usage/speed stats in chat UI (default: false) |
 | `hide_reasoning` | boolean | No | Hide reasoning/chain-of-thought in chat UI (default: false) |
+| `enable_citations` | boolean | No | Opt in to source-citation instructions, inline citation cards, and source lists in chat/preview (default: false, including existing agents). Does not disable retrieval/tools/attachments when false. Workflow-mode Agent calls do not receive citation instructions. |
 | `tools_config` | array | No | Tool configs (`type`/`name`/`tool_id`/`server_id`/`skill_id`/`config`) |
 | `tools_credentials` | object | No | Tool credentials (API keys, tokens, etc.) |
 | `enable_attachments` | boolean | No | Enable file and image attachments (default: false) |
@@ -854,6 +856,7 @@ Authentication is effectively required: the route declares an optional-auth depe
     "hide_tool_calls": false,
     "hide_message_actions": false,
     "hide_reasoning": false,
+    "enable_citations": false,
     "created_by": {
       "id": "user-001",
       "username": "alice",

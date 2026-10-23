@@ -520,16 +520,25 @@ def test_build_rag_prompt_uses_stable_aggregated_source_ids():
         },
     ]
     aggregated = aggregate_rag_contexts(contexts)
-    prompt = build_rag_prompt(contexts, "How much leave?")
+    prompt_without_citations = build_rag_prompt(contexts, "How much leave?")
+    prompt_with_citations = build_rag_prompt(
+        contexts, "How much leave?", enable_citations=True
+    )
 
     assert len(aggregated) == 1
     citation_id = aggregated[0]["citation_id"]
     assert citation_id.startswith("rag_")
-    assert f"citation_id: {citation_id}" in prompt
-    assert "source: Policies - Leave\ncontent:\npart one\n\npart two" in prompt
-    assert "[[cite:SOURCE_ID]]" in prompt
-    assert "Do not use numeric references such as `[1]` or `[39]`" in prompt
-    assert "User question: How much leave?" in prompt
+    assert f"citation_id: {citation_id}" not in prompt_without_citations
+    assert (
+        "source: Policies - Leave\ncontent:\npart one\n\npart two"
+        in prompt_without_citations
+    )
+    assert f"citation_id: {citation_id}" in prompt_with_citations
+    assert "[[cite:SOURCE_ID]]" in prompt_with_citations
+    assert (
+        "Do not use numeric references such as `[1]` or `[39]`" in prompt_with_citations
+    )
+    assert "User question: How much leave?" in prompt_with_citations
 
 
 @pytest.mark.asyncio

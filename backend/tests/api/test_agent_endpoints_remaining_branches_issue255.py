@@ -73,6 +73,7 @@ def agent(**overrides):
         "hide_tool_calls": False,
         "hide_message_actions": False,
         "hide_reasoning": False,
+        "enable_citations": False,
         "tools_config": [],
         "enable_attachments": False,
         "attachment_config": None,

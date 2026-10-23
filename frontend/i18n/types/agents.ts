@@ -36,6 +36,8 @@ export type AgentsMessages = {
       hideToolCallsDesc: string
       hideMessageActions: string
       hideMessageActionsDesc: string
+      enableCitations: string
+      enableCitationsDesc: string
       hideReasoning: string
       hideReasoningDesc: string
       hideArtifactList: string
@@ -129,6 +131,8 @@ export type AgentsMessages = {
     tokenUsage: string
     orchestration: {
       title: string
+      enableCitations: string
+      enableCitationsDesc: string
       sidebar: {
         orchestration: string
         api: string

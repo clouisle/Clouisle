@@ -404,7 +404,7 @@ async def test_run_and_agent_visibility_migrations_skip_unavailable_schema(
 ) -> None:
     conn = SimpleNamespace(
         capabilities=SimpleNamespace(dialect="sqlite"),
-        execute_query=AsyncMock(side_effect=[(1, []), (1, []), (1, [])]),
+        execute_query=AsyncMock(side_effect=[(1, []), (1, []), (1, []), (1, [])]),
     )
     migration = AsyncMock()
     monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
@@ -412,10 +412,11 @@ async def test_run_and_agent_visibility_migrations_skip_unavailable_schema(
 
     await init_data.init_agent_run_fields()
     await init_data.init_agent_hide_message_actions_reasoning_fields()
+    await init_data.init_agent_enable_citations_field()
     await init_data.init_agent_hide_artifact_list_field()
 
     migration.assert_not_awaited()
-    assert conn.execute_query.await_count == 3
+    assert conn.execute_query.await_count == 4
 
 
 @pytest.mark.asyncio
@@ -631,6 +632,24 @@ async def test_agent_hide_message_actions_and_reasoning_add_both_columns(
 
 
 @pytest.mark.asyncio
+async def test_agent_citation_preference_migration_adds_default_false_column(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = SimpleNamespace(execute_query=AsyncMock(side_effect=[(1, ["agents"])]))
+    migration = AsyncMock()
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", migration)
+
+    await init_data.init_agent_enable_citations_field()
+
+    statement = migration.await_args.args[1]
+    assert (
+        "ADD COLUMN IF NOT EXISTS enable_citations BOOLEAN NOT NULL DEFAULT FALSE"
+        in statement
+    )
+
+
+@pytest.mark.asyncio
 async def test_feishu_placeholder_email_rewrites_only_legacy_domain(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -774,6 +793,7 @@ async def test_init_db_seeds_permissions_roles_and_settings_end_to_end(
         "init_memory_tables",
         "init_agent_hide_tool_calls_field",
         "init_agent_hide_message_actions_reasoning_fields",
+        "init_agent_enable_citations_field",
         "init_agent_hide_artifact_list_field",
         "init_agent_memory_fields",
         "init_agent_media_generation_fields",

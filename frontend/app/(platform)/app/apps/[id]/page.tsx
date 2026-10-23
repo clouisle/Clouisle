@@ -82,6 +82,7 @@ export function AgentEditor({
   const [maxIterations, setMaxIterations] = React.useState(5)
   const [hideToolCalls, setHideToolCalls] = React.useState(false)
   const [hideMessageActions, setHideTokenStats] = React.useState(false)
+  const [enableCitations, setEnableCitations] = React.useState(false)
   const [hideReasoning, setHideReasoning] = React.useState(false)
   const [hideArtifactList, setHideArtifactList] = React.useState(false)
   const [openingMessage, setOpeningMessage] = React.useState('')
@@ -117,6 +118,7 @@ export function AgentEditor({
       setMaxIterations(data.max_iterations || 5)
       setHideToolCalls(data.hide_tool_calls || false)
       setHideTokenStats(data.hide_message_actions || false)
+      setEnableCitations(data.enable_citations ?? false)
       setHideReasoning(data.hide_reasoning || false)
       setHideArtifactList(data.hide_artifact_list || false)
       setOpeningMessage(data.opening_message || '')
@@ -168,6 +170,7 @@ export function AgentEditor({
         hide_tool_calls: hideToolCalls,
         hide_message_actions: hideMessageActions,
         hide_reasoning: hideReasoning,
+        enable_citations: enableCitations,
         hide_artifact_list: hideArtifactList,
         opening_message: openingMessage || null,
         suggested_questions: suggestedQuestions.filter((q) => q.trim()),
@@ -213,6 +216,7 @@ export function AgentEditor({
     hideToolCalls,
     hideMessageActions,
     hideReasoning,
+    enableCitations,
     hideArtifactList,
     openingMessage,
     suggestedQuestions,
@@ -366,7 +370,7 @@ export function AgentEditor({
 
           {/* Preview Panel */}
           <div className="hidden md:block md:w-95 md:min-w-95 2xl:w-[clamp(30rem,28vw,42rem)] 2xl:min-w-[30rem] shrink-0 h-full min-h-0 overflow-hidden border rounded-lg">
-            <AgentPreviewPanel agent={{ ...agent, hide_tool_calls: hideToolCalls, hide_message_actions: hideMessageActions, hide_reasoning: hideReasoning, hide_artifact_list: hideArtifactList }} />
+            <AgentPreviewPanel agent={{ ...agent, enable_citations: enableCitations, hide_tool_calls: hideToolCalls, hide_message_actions: hideMessageActions, hide_reasoning: hideReasoning, hide_artifact_list: hideArtifactList }} />
           </div>
           <Dialog open={mobilePreviewOpen} onOpenChange={setMobilePreviewOpen}>
             <DialogContent
@@ -379,7 +383,7 @@ export function AgentEditor({
               className="top-0 left-0 h-[100dvh] w-screen max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none p-0 md:hidden"
             >
               <AgentPreviewPanel
-                agent={{ ...agent, hide_tool_calls: hideToolCalls, hide_message_actions: hideMessageActions, hide_reasoning: hideReasoning, hide_artifact_list: hideArtifactList }}
+                agent={{ ...agent, enable_citations: enableCitations, hide_tool_calls: hideToolCalls, hide_message_actions: hideMessageActions, hide_reasoning: hideReasoning, hide_artifact_list: hideArtifactList }}
                 onClose={() => setMobilePreviewOpen(false)}
               />
             </DialogContent>
@@ -412,9 +416,11 @@ export function AgentEditor({
         onHideToolCallsChange={setHideToolCalls}
         hideMessageActions={hideMessageActions}
         onHideTokenStatsChange={setHideTokenStats}
-        hideReasoning={hideReasoning}
+        enableCitations={enableCitations}
+        onEnableCitationsChange={setEnableCitations}
         hideArtifactList={hideArtifactList}
         onHideArtifactListChange={setHideArtifactList}
+        hideReasoning={hideReasoning}
         onHideReasoningChange={setHideReasoning}
         hasToolsEnabled={hasToolsEnabled}
         readOnly={!canUpdateAgent}

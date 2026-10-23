@@ -81,6 +81,7 @@ const metadata = {
   hide_tool_calls: false,
   hide_message_actions: false,
   hide_reasoning: false,
+  enable_citations: false,
   created_by: { username: 'owner' },
 }
 

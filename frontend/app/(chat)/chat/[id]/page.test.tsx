@@ -184,6 +184,7 @@ const agent = {
   id: 'agent-1', name: 'Safe Agent', description: 'Helpful description', opening_message: '',
   icon: '', avatar_url: '', suggested_questions: ['First question', 'Second question'], variables: [],
  enable_attachments: false, attachment_config: undefined, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false,
+ enable_citations: false,
   hide_artifact_list: true,
   created_by: { username: 'owner' },
 }
@@ -377,6 +378,7 @@ describe('PublicChatPage', () => {
     expect(setConversationId).toHaveBeenCalledWith('conv-1')
     expect(setMessages).toHaveBeenCalledWith([{ id: 'converted-0', role: 'user', content: 'backend message' }])
     expect(renderer!.root.findAllByProps({ 'data-chat-container': true })).toHaveLength(1)
+    expect(chatContainerProps.hideCitations).toBe(true)
     expect(output()).toContain('First chat')
     expect(output()).toContain('untitledChat')
 

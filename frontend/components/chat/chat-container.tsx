@@ -39,6 +39,8 @@ interface ChatContainerProps {
   hideMessageActions?: boolean;
   /** Hide reasoning / chain-of-thought panel */
   hideReasoning?: boolean;
+  /** Hide inline citation markers and the cited-sources list. */
+  hideCitations?: boolean;
   /** Hide generated artifact lists below assistant messages. */
   hideArtifactList?: boolean;
   /** Current conversation ID (shown on errors for debugging) */
@@ -145,6 +147,7 @@ interface ChatMessageRowProps {
   hideToolCalls: boolean;
   hideMessageActions: boolean;
   hideReasoning: boolean;
+  hideCitations: boolean;
   conversationId?: string | null;
   onRequestScrollIntoView: (messageId: string) => void;
   setMessageElement: (messageId: string, element: HTMLDivElement | null) => void;
@@ -164,6 +167,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
   hideToolCalls,
   hideMessageActions,
   hideReasoning,
+  hideCitations,
   conversationId,
   onRequestScrollIntoView,
   setMessageElement,
@@ -204,6 +208,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
         hideToolCalls={hideToolCalls}
         hideMessageActions={hideMessageActions}
         hideReasoning={hideReasoning}
+        hideCitations={hideCitations}
         conversationId={conversationId}
         onRequestScrollIntoView={handleRequestScrollIntoView}
       />
@@ -223,6 +228,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
   && prev.hideToolCalls === next.hideToolCalls
   && prev.hideMessageActions === next.hideMessageActions
   && prev.hideReasoning === next.hideReasoning
+  && prev.hideCitations === next.hideCitations
   && prev.conversationId === next.conversationId
   && prev.onRequestScrollIntoView === next.onRequestScrollIntoView
   && prev.setMessageElement === next.setMessageElement
@@ -246,6 +252,7 @@ export function ChatContainer({
   hideToolCalls = false,
   hideMessageActions = false,
   hideReasoning = false,
+  hideCitations = false,
   hideArtifactList = false,
   conversationId,
   headerInset = false,
@@ -615,6 +622,7 @@ export function ChatContainer({
                 hideToolCalls={hideToolCalls}
                 hideMessageActions={hideMessageActions}
                 hideReasoning={hideReasoning}
+                hideCitations={hideCitations}
                 conversationId={conversationId}
                 onRequestScrollIntoView={requestMessageScrollIntoView}
                 setMessageElement={setMessageElement}

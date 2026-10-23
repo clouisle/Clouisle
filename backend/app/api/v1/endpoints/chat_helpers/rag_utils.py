@@ -28,13 +28,20 @@ def aggregate_rag_contexts(rag_contexts: list[dict]) -> list[dict]:
     return list(unique.values())
 
 
-def build_rag_prompt(rag_contexts: list[dict], user_message: str) -> str:
-    """Build prompt with RAG contexts."""
+def build_rag_prompt(
+    rag_contexts: list[dict], user_message: str, *, enable_citations: bool = False
+) -> str:
+    """Build prompt with RAG contexts and optional citation references."""
     if not rag_contexts:
         return user_message
 
     context_text = "\n\n".join(
-        f"[Knowledge Base: {ctx['knowledge_base_name']}]\n{ctx['content']}"
+        (
+            f"[Source ID: {ctx['citation_id']}]\n"
+            if enable_citations and ctx.get("citation_id")
+            else ""
+        )
+        + f"[Knowledge Base: {ctx['knowledge_base_name']}]\n{ctx['content']}"
         for ctx in rag_contexts
     )
     return f"""Based on the following knowledge base contexts, please answer the user's question:

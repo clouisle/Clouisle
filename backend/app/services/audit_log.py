@@ -54,6 +54,7 @@ class AuditLogService:
             "hide_tool_calls",
             "hide_message_actions",
             "hide_reasoning",
+            "enable_citations",
             "hide_artifact_list",
             "tools_config",
             "enable_attachments",

@@ -1241,6 +1241,7 @@ export default function PublicChatPage({
               hideToolCalls={agent.hide_tool_calls}
               hideMessageActions={agent.hide_message_actions}
               hideReasoning={agent.hide_reasoning}
+              hideCitations={!agent.enable_citations}
               hideArtifactList={agent.hide_artifact_list}
               conversationId={conversationId}
               headerInset={showHeader}

@@ -86,8 +86,10 @@ const callbacks = {
   onOpeningMessageChange: mock(() => undefined), onSuggestedQuestionsChange: mock(() => undefined),
   onPoweredByTextChange: mock(() => undefined),
   onVisibilityChange: mock(() => undefined), onModelChange: mock(() => undefined),
-  onMaxIterationsChange: mock(() => undefined), onHideToolCallsChange: mock(() => undefined),
+  onHideToolCallsChange: mock(() => undefined), onHideTokenStatsChange: mock(() => undefined),
+  onEnableCitationsChange: mock(() => undefined), onHideReasoningChange: mock(() => undefined),
   onHideArtifactListChange: mock(() => undefined),
+  onMaxIterationsChange: mock(() => undefined),
 }
 const agent = { model: { id: 'fallback', name: 'Fallback model' } } as never
 function render(overrides: Record<string, unknown> = {}) {
@@ -161,6 +163,8 @@ describe('AgentSettingsDrawer', () => {
     ;(find(tree, Select)[0].props.onValueChange as (value: string) => void)('team')
     ;(find(tree, Select)[0].props.onValueChange as (value: string) => void)('')
     ;(find(tree, Switch)[0].props.onCheckedChange as (value: boolean) => void)(true)
+    const toolCallToggle = descendants(tree).find((node) => node.props['data-testid'] === 'settings-hide-tool-calls')!
+    ;(find(toolCallToggle, Switch)[0].props.onCheckedChange as (value: boolean) => void)(true)
 
     expect(callbacks.onIconChange).toHaveBeenCalledWith('/new.png')
     expect(callbacks.onNameChange).toHaveBeenCalledWith('New name')

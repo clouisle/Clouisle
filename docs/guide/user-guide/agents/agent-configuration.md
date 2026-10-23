@@ -176,10 +176,13 @@ The following toggles control the chat experience:
 | **Hide tool calls** | off | Hide tool call details in the chat UI |
 | **Hide message actions** | off | Hide token usage / speed stats in the chat UI |
 | **Hide reasoning** | off | Hide reasoning / chain-of-thought in the chat UI |
+| **Enable source citations** | off | Add source-citation instructions and display inline citations and the source list in chat and preview. Knowledge retrieval, web tools, and attachment reading still work when disabled. |
 | **Hide artifact list** | off | Hide the generated files list under assistant messages in chat and preview. |
 | **Enable attachments** | off | Allow file and image attachments (limits configurable) |
 | **Enable interactive questions** | off | Allow the agent to pause and ask one or more structured questions; users can pick options, type custom text, or skip |
 | **Enable memory** | off | Remember user information across conversations (memory config: max memories per retrieval, auto-extract, importance threshold) |
+
+Source citations are opt-in (`enable_citations: true`) for both new and existing agents. Enable the switch in Agent Settings when answers should cite retrieved documents, web results, or attachments. When disabled, Clouisle does not inject citation requirements into the system prompt or automatic RAG context, and hides citation cards and the source list, including for existing messages. Enabling the switch does not add citation instructions to Workflow-mode Agent calls.
 
 
 Background extraction is also controlled by the administrator's **Site Settings > Memory** category. For eligible pending user turns, the global switch, extraction model, cooldown (`10-3600` seconds), and pending-turn trigger (`1-50` turns) determine when extraction is queued; Agent memory must be enabled as well.

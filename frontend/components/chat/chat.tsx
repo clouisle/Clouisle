@@ -12,6 +12,7 @@ interface ChatProps {
   className?: string;
   isStreaming?: boolean;
   isLoading?: boolean;
+  hideCitations?: boolean;
   autoScroll?: boolean;
   renderPart?: (part: MessagePart, index: number) => React.ReactNode;
   emptyState?: React.ReactNode;
@@ -38,6 +39,7 @@ export function Chat({
   isStreaming = false,
   isLoading = false,
   autoScroll = true,
+  hideCitations = false,
   renderPart,
   emptyState,
   // Input props
@@ -67,6 +69,7 @@ export function Chat({
         renderPart={renderPart}
         emptyState={emptyState}
         className={containerClassName}
+        hideCitations={hideCitations}
       />
 
       {/* Input Area */}

@@ -90,6 +90,9 @@ class Agent(models.Model):
     hide_reasoning = fields.BooleanField(
         default=False, description="Hide reasoning/chain-of-thought in chat UI"
     )
+    enable_citations = fields.BooleanField(
+        default=False, description="Enable source citations in chat"
+    )
     hide_artifact_list = fields.BooleanField(
         default=False, description="Hide generated artifact lists in chat UI"
     )

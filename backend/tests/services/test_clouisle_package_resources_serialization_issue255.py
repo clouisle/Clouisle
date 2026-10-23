@@ -276,6 +276,7 @@ def test_resource_field_serialization_rewrites_only_mapped_ids():
         "hide_tool_calls": True,
         "hide_message_actions": False,
         "hide_reasoning": False,
+        "enable_citations": True,
         "hide_artifact_list": True,
         "enable_memory": True,
         "enable_user_input_request": True,
@@ -292,7 +293,9 @@ def test_resource_field_serialization_rewrites_only_mapped_ids():
     assert fields["enable_memory"] is True
     assert fields["hide_artifact_list"] is True
     assert fields["enable_user_input_request"] is True
+    assert fields["enable_citations"] is True
     assert payload["tools_config"][0]["tool_id"] == "source-tool"
+    assert resources._agent_fields({}, {})["enable_citations"] is False
 
     defaults = resources._tool_fields({"name": "Tool"})
     assert defaults["display_name"] == "Tool"

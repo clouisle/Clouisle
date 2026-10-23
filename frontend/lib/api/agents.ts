@@ -172,6 +172,7 @@ export interface Agent {
   max_iterations: number
   hide_tool_calls: boolean
   hide_message_actions: boolean
+  enable_citations: boolean
   hide_reasoning: boolean
   hide_artifact_list: boolean
   tools_config: ToolConfig[]
@@ -230,6 +231,7 @@ export interface AgentCreateInput {
   hide_tool_calls?: boolean
   hide_message_actions?: boolean
   hide_reasoning?: boolean
+  enable_citations?: boolean
   hide_artifact_list?: boolean
   tools_config?: ToolConfig[]
   knowledge_base_configs?: AgentKnowledgeBaseConfig[]
@@ -262,6 +264,7 @@ export interface AgentUpdateInput {
   hide_tool_calls?: boolean
   hide_message_actions?: boolean
   hide_reasoning?: boolean
+  enable_citations?: boolean
   hide_artifact_list?: boolean
   tools_config?: ToolConfig[]
   knowledge_base_configs?: AgentKnowledgeBaseConfig[]
@@ -1359,6 +1362,7 @@ export interface PublicAgent {
   attachment_config?: AttachmentConfig | null
   hide_tool_calls: boolean
   hide_message_actions: boolean
+  enable_citations: boolean
   hide_reasoning: boolean
   hide_artifact_list: boolean
   embed_config?: Record<string, unknown> | null
