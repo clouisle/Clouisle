@@ -32,20 +32,6 @@ def _safe_json_loads(value: str | None) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def get_tool_execution_payloads(result: Any) -> tuple[str, str]:
-    """Build display and LLM payloads from tool execution result."""
-    from app.llm.tools.builtin.media import ToolExecutionResult
-
-    if isinstance(result, ToolExecutionResult):
-        display_result = json.dumps(result.display_result, ensure_ascii=False)
-        return display_result, result.llm_result
-    if isinstance(result, dict):
-        payload = json.dumps(result, ensure_ascii=False)
-        return payload, payload
-    stringified = str(result) if result is not None else ""
-    return stringified, stringified
-
-
 def _has_image_source(image: Any) -> bool:
     source = image.get("image", image) if isinstance(image, dict) else image
     return bool(

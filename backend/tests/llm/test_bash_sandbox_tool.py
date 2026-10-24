@@ -54,7 +54,8 @@ async def test_cross_host_bash_file_is_collectable(monkeypatch, tmp_path):
     result = await BashSandboxTool(session_id="session").execute(
         "printf product-slides > /workspace/introduction.pptx"
     )
-    assert result["success"]
+    assert result.display_result["success"]
+    assert result.display_result["status"] == "completed"
     assert (workspace.root / "introduction.pptx").read_bytes() == b"product-slides"
     store = SandboxArtifactStore(manager)
     uploaded = []

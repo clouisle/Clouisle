@@ -8,6 +8,7 @@ This group covers application-level execution and orchestration design.
 - [Workflow engine architecture](WORKFLOW_ENGINE_ARCHITECTURE.md)
 - [Workflow node spec](WORKFLOW_NODE_SPEC.md)
 - [Tool system spec](TOOL_SYSTEM_SPEC.md)
+- [Builtin tool output encoding evaluation](BUILTIN_TOOL_OUTPUT_EVALUATION.md)
 
 ## Scope
 

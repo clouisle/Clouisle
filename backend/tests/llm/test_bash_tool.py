@@ -35,7 +35,7 @@ async def test_bash_tool_allows_running_workspace_python_script():
     ) as mock_submit:
         result = await tool.execute("python3 output/create_doc.py")
 
-    assert result["success"] is True
+    assert result.display_result["success"] is True
     job = mock_submit.await_args.args[0]
     assert job.command == ["bash", "-c", "python3 output/create_doc.py"]
     assert job.cwd == "/workspace"
@@ -57,8 +57,8 @@ async def test_bash_tool_rejects_find_root_scan_variants(command: str):
     with patch("app.llm.tools.bash.sandbox_gateway.submit_and_wait") as mock_submit:
         result = await tool.execute(command)
 
-    assert result["success"] is False
-    assert "Root-level find scans are not allowed" in result["error"]
+    assert result.display_result["success"] is False
+    assert "Root-level find scans are not allowed" in result.display_result["error"]
     mock_submit.assert_not_awaited()
 
 

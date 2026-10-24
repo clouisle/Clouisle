@@ -79,6 +79,15 @@ Chat uploads, generated media, and collected sandbox artifacts are durable `Asse
 - `workflow_asset_refs` imports selected workflow-run Assets into a conversation. The server authorizes both the source run and destination conversation before linking them.
 - Cross-scope or cross-team access is not a file conversion. Each operation reauthorizes its source and destination; generated-media and artifact download URLs are protected. In chat, Markdown links to collected sandbox artifacts open in the authenticated file preview; copied URLs still require an authenticated request. Dragging the preview divider collapses the conversation-history sidebar only when the chat panel reaches its 400 px minimum; above that threshold it stays open. Reopen the sidebar with its toggle. During dragging, the preview keeps its current viewport size and applies the new size on release. Never guess refs or reuse paths from another conversation.
 
+### Model-facing tool results
+
+Tool results keep their structured display/citation payloads. The model receives a concise representation instead: document ranges and sandbox files use line-prefixed text, searches use referenced excerpts, and execution tools use status plus output blocks. Snapshot/hashline anchors, Asset refs, citations, task identifiers and continuation cursors are retained. Restored runs use the same model representation; clients do not need to parse model prose.
+
+`fetch_webpage` and `markitdown` persist complete extracted documents as protected scope-local Assets and return bounded previews. Continue with `read_asset` / `search_asset`; these reading tools remain available for those builtins even when user uploads are disabled. Multi-document previews may be omitted to stay within the call budget, but the returned refs remain readable. Unsupported/oversized or undecodable sources fail explicitly, not as silently truncated documents.
+
+Continuation cursors are opaque. Cursor encoding was compressed to reduce model input; cursors issued before this upgrade must be restarted with a line range when rejected. TOON is not required: measured results favored dedicated text for document reads and retained JSON for unknown/configured outputs. See the [encoding evaluation](../../dev/design/app-platform/BUILTIN_TOOL_OUTPUT_EVALUATION.md).
+
+
 ## Configuration
 
 | Variable | Generic Default | Sandbox Worker Deployment | Description |
@@ -113,6 +122,7 @@ Chat uploads, generated media, and collected sandbox artifacts are durable `Asse
 Sandbox egress is configured in [Settings → Security → Sandbox Egress Allowlist](../admin-guide/settings/system-settings.md#sandbox-egress-allowlist), not by an environment variable. The initial defaults permit `pypi.org`, `files.pythonhosted.org`, `pypi.python.org`, and `registry.npmjs.org`. The saved exact-host policy is read for every job; an empty list blocks external hosts, and custom package indexes must use HTTPS.
 
 AgentRun round boundaries are checkpointed on the session's owning sandbox worker before the run becomes completed, waiting for a user answer, or stopped. Idle runtime directories are evicted after checkpointing and restored on the next task. Persist workspace, checkpoint, identity, lock and cache paths on the same worker-local disk. TTL cleanup permanently deletes session data when a worker can process the cleanup task; an unreachable node's local files cannot be deleted remotely.
+- Bash tool results include a bounded head/tail preview. If output exceeds the sandbox capture limit, execution stops explicitly and the partial preview is labeled; the retained log is available only during its owning sandbox session. Read it by `/workspace/...` path with the sandbox `read` tool, which preserves hashline/snapshot anchors. Session TTL cleanup deletes logs; they are not durable Assets and cannot be read from another session.
 
 The caller fails closed: when `SANDBOX_RUNTIME_ENABLED` is false, code execution returns a failure without running a local fallback. A failed sandbox task also returns failure. The sandbox-worker image installs Bubblewrap and enables isolation; a missing binary or workspace root fails the task instead of launching the payload without isolation.
 

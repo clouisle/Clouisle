@@ -24,6 +24,7 @@ import codecs
 import hashlib
 import json
 import secrets
+import zlib
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -542,8 +543,8 @@ def _utf8_prefix(raw: bytes, limit: int) -> bytes:
 
 
 def _encode_cursor(payload: dict[str, Any]) -> str:
-    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True)
-    return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii").rstrip("=")
+    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return base64.urlsafe_b64encode(zlib.compress(raw)).decode("ascii").rstrip("=")
 
 
 def _decode_cursor(
@@ -558,7 +559,13 @@ def _decode_cursor(
         raise ValueError("asset_document_invalid_cursor")
     try:
         padded = cursor + "=" * (-len(cursor) % 4)
-        raw = base64.urlsafe_b64decode(padded.encode("ascii"))
+        compressed = base64.b64decode(
+            padded.encode("ascii"), altchars=b"-_", validate=True
+        )
+        decoder = zlib.decompressobj()
+        raw = decoder.decompress(compressed, 2049)
+        if len(raw) > 2048 or not decoder.eof or decoder.unused_data:
+            raise ValueError("asset_document_invalid_cursor")
         payload = json.loads(raw.decode("utf-8"))
     except Exception:
         raise ValueError("asset_document_invalid_cursor") from None

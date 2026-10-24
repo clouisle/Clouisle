@@ -156,15 +156,19 @@ async def test_chat_streams_document_ref_and_reads_it_through_real_tool(
     tool_message = next(
         message for message in model_calls[1] if message.role.value == "tool"
     )
-    tool_payload = json.loads(tool_message.content)
-    assert tool_payload["ref"] == "a1b2"
-    assert [segment["text"] for segment in tool_payload["segments"]][:2] == [
+    assert "alpha" in tool_message.content and "beta" in tool_message.content
+    assert "a1b2" in tool_message.content
+    displayed = json.loads(
+        next(step["content"] for step in result["dialogue"] if step["role"] == "tool")
+    )
+    assert displayed["ref"] == "a1b2"
+    assert [segment["text"] for segment in displayed["segments"]][:2] == [
         "alpha",
         "beta",
     ]
-    assert tool_payload["eof"] is True
-    assert "asset_id" not in tool_payload
-    assert tool_payload["citation_id"]
+    assert displayed["eof"] is True
+    assert displayed["citation_id"] in tool_message.content
+    assert "asset_id" not in displayed
 
     derived = await Asset.filter(parent_id=workflow_asset.asset.id).first()
     assert derived is not None

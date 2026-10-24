@@ -15,6 +15,8 @@ from app.services.sandbox.models import (
     SandboxLimits,
     SandboxTaskStatus,
 )
+from app.utils.sandbox_output import preview_stream, render_sandbox_output
+from app.utils.tool_output import ToolExecutionResult
 
 from .registry import ToolInfo, ToolParameter, tool_registry
 from .bash_output import denoise_output
@@ -183,7 +185,7 @@ class BashSandboxTool:
         command: str,
         timeout: float = 30.0,
         cwd: str = "/workspace",
-    ) -> dict[str, Any]:
+    ) -> ToolExecutionResult:
         runtime_workspace_root = await self._runtime_workspace_root()
         logical_cwd = self._normalize_logical_cwd(cwd, runtime_workspace_root)
         try:
@@ -191,7 +193,9 @@ class BashSandboxTool:
                 self._normalize_install_commands(command)
             )
         except BashRootScanError as exc:
-            return {"success": False, "error": str(exc)}
+            return self._result(
+                {"success": False, "status": "failed", "error": str(exc)}
+            )
         runtime_command = self._map_workspace_paths(
             runtime_command, runtime_workspace_root
         )
@@ -218,35 +222,94 @@ class BashSandboxTool:
                 team_id=self.team_id,
                 timeout_seconds=timeout + 5,
             )
-
             failed = not result.success
-            return {
+            timed_out = bool(getattr(result, "timed_out", False)) or (
+                result.status == SandboxTaskStatus.FAILED
+                and "timeout" in (result.error or "").lower()
+            )
+            stdout = self._preview_stream(
+                self._restore_workspace_paths(result.stdout, runtime_workspace_root),
+                failed=failed,
+            )
+            stderr = self._preview_stream(
+                self._restore_workspace_paths(result.stderr, runtime_workspace_root),
+                failed=failed,
+            )
+            display: dict[str, Any] = {
                 "success": result.success,
-                "stdout": denoise_output(
-                    self._restore_workspace_paths(
-                        result.stdout, runtime_workspace_root
-                    ),
-                    failed=failed,
-                ),
-                "stderr": denoise_output(
-                    self._restore_workspace_paths(
-                        result.stderr, runtime_workspace_root
-                    ),
-                    failed=failed,
-                ),
-                "exit_code": result.metadata.exit_code,
-                "timed_out": result.status == SandboxTaskStatus.FAILED
-                and "timeout" in (result.error or "").lower(),
-                "error": self._restore_workspace_paths(
-                    result.error, runtime_workspace_root
-                ),
+                "status": "timed_out"
+                if timed_out
+                else ("completed" if result.success else "failed"),
+                "cwd": logical_cwd,
             }
+            if result.metadata.exit_code is not None:
+                display["exit_code"] = result.metadata.exit_code
+            if getattr(result.metadata, "total_ms", None) is not None:
+                display["duration_ms"] = result.metadata.total_ms
+            display.update(
+                self._stream_fields(
+                    "stdout", stdout, getattr(result, "stdout_log", None)
+                )
+            )
+            display.update(
+                self._stream_fields(
+                    "stderr", stderr, getattr(result, "stderr_log", None)
+                )
+            )
+            for stream, value in (("stdout", result.stdout), ("stderr", result.stderr)):
+                preview = display.get(stream)
+                raw_text = value or ""
+                raw_lines = len(raw_text.splitlines())
+                preview_lines = len(preview.splitlines()) if preview else 0
+                log_lines = getattr(result, f"{stream}_lines", None)
+                if log_lines is not None:
+                    display[f"{stream}_lines"] = log_lines
+                omitted = display.get(f"{stream}_omitted_lines", 0) + max(
+                    0, raw_lines - preview_lines
+                )
+                if log_lines is not None:
+                    omitted = max(omitted, max(0, log_lines - preview_lines))
+                if omitted:
+                    display[f"{stream}_omitted_lines"] = omitted
+                if getattr(result, f"{stream}_truncated", False):
+                    display[f"{stream}_capture_truncated"] = True
+                if getattr(result, f"{stream}_log_partial", False):
+                    display[f"{stream}_log_partial"] = True
+            error = self._restore_workspace_paths(result.error, runtime_workspace_root)
+            if error:
+                display["error"] = error
+            return self._result(display)
         except Exception as e:
             logger.exception("Bash sandbox execution failed: %s", e)
-            return {
-                "success": False,
-                "error": str(e),
-            }
+            return self._result({"success": False, "status": "failed", "error": str(e)})
+
+    @staticmethod
+    def _result(display: dict[str, Any]) -> ToolExecutionResult:
+        return ToolExecutionResult(
+            display_result=display,
+            llm_result=render_sandbox_output("bash", display),
+        )
+
+    @staticmethod
+    def _preview_stream(text: str | None, *, failed: bool) -> str:
+        denoised = denoise_output(text, failed=failed) or ""
+        preview, _, _ = preview_stream(denoised)
+        return preview
+
+    def _stream_fields(
+        self,
+        stream: str,
+        preview: str,
+        log_path: str | None,
+    ) -> dict[str, Any]:
+        fields: dict[str, Any] = {}
+        if preview:
+            fields[stream] = preview
+        # Ephemeral jobs lose their workspace after execution, so only
+        # session-backed jobs can reopen a persisted log.
+        if log_path and self.session_id:
+            fields[f"{stream}_log"] = f"/workspace/{log_path.lstrip('/')}"
+        return fields
 
     def _normalize_install_commands(self, command: str) -> str:
         return re.sub(

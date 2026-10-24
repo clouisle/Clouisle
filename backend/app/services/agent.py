@@ -27,6 +27,7 @@ from app.models.agent import Agent, AgentKnowledgeBase, RAGMode
 from app.models.tool import Tool
 from app.schemas.response import BusinessError
 from app.services.system_prompt import WORKFLOW_MODE, build_system_prompt
+from app.utils.tool_output import get_tool_execution_payloads
 
 if TYPE_CHECKING:
     from app.llm.types.chat import ToolCall
@@ -152,20 +153,23 @@ class AgentService:
                 if user_id is not None:
                     tool_kwargs["user_id"] = user_id
                 tool_result = await self._execute_tool(**tool_kwargs)
+                display_result, model_result = get_tool_execution_payloads(
+                    tool_result, tool_call.function.name
+                )
                 artifacts.extend(self._extract_artifacts(tool_result))
                 dialogue.append(
                     {
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "tool_name": tool_call.function.name,
-                        "content": str(tool_result),
+                        "content": display_result,
                         "iteration": current_turn,
                     }
                 )
                 messages.append(
                     Message(
                         role=MessageRole.TOOL,
-                        content=str(tool_result),
+                        content=model_result,
                         tool_call_id=tool_call.id,
                     )
                 )
@@ -285,20 +289,23 @@ class AgentService:
                     if user_id is not None:
                         tool_kwargs["user_id"] = user_id
                     tool_result = await self._execute_tool(**tool_kwargs)
+                    display_result, model_result = get_tool_execution_payloads(
+                        tool_result, tool_call.function.name
+                    )
                     artifacts.extend(self._extract_artifacts(tool_result))
                     dialogue.append(
                         {
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "tool_name": tool_call.function.name,
-                            "content": str(tool_result),
+                            "content": display_result,
                             "iteration": current_turn,
                         }
                     )
                     messages.append(
                         Message(
                             role=MessageRole.TOOL,
-                            content=str(tool_result),
+                            content=model_result,
                             tool_call_id=tool_call.id,
                         )
                     )
@@ -427,7 +434,7 @@ class AgentService:
             return images, files
         from uuid import UUID
 
-        from app.models.asset import Asset, AssetScopeType, AssetSource
+        from app.models.asset import AssetScopeType
         from app.models.user import User
         from app.schemas.response import BusinessError, ResponseCode
         from app.services.asset import asset_service
@@ -474,72 +481,7 @@ class AgentService:
                 return item
             return getattr(item, "url", None)
 
-        async def register_external(url: str) -> Any:
-            from urllib.parse import unquote, urlparse
-
-            import httpx
-
-            from app.api.v1.endpoints.upload import save_generated_upload
-            from app.core.network_security import ensure_external_http_url_allowed
-
-            await ensure_external_http_url_allowed(url)
-            config = getattr(agent, "attachment_config", None) or {}
-            max_bytes = min(
-                max(int(config.get("max_file_size") or 10 * 1024 * 1024), 1),
-                50 * 1024 * 1024,
-            )
-            filename = unquote(urlparse(url).path.rsplit("/", 1)[-1]) or "download"
-            chunks: list[bytes] = []
-            total = 0
-            try:
-                async with httpx.AsyncClient(
-                    timeout=60.0,
-                    follow_redirects=False,
-                    trust_env=False,
-                ) as client:
-                    async with client.stream("GET", url) as response:
-                        response.raise_for_status()
-                        if not response.is_success:
-                            raise BusinessError(msg_key="file_download_failed")
-                        content_type = (
-                            response.headers.get("content-type", "")
-                            .split(";", 1)[0]
-                            .strip()
-                            or "application/octet-stream"
-                        )
-                        async for chunk in response.aiter_bytes():
-                            total += len(chunk)
-                            if total > max_bytes:
-                                raise BusinessError(msg_key="file_too_large")
-                            chunks.append(chunk)
-            except BusinessError:
-                raise
-            except Exception as exc:
-                logger.warning("Failed to download workflow attachment: %s", exc)
-                raise BusinessError(msg_key="file_download_failed") from exc
-            content = b"".join(chunks)
-            if not content:
-                raise BusinessError(msg_key="file_download_failed")
-            upload_info = await save_generated_upload(
-                content=content,
-                category="agent-attachments",
-                content_type=content_type,
-                filename=filename,
-            )
-            return await asset_service.register_bytes(
-                storage_key=upload_info["storage_key"],
-                original_filename=filename,
-                content_type=content_type,
-                content=content,
-                source=AssetSource.UPLOAD,
-                team_id=None if user is not None else team_id,
-                created_by_id=user.id if user is not None else None,
-                provenance={"origin": "external_url", "url": url},
-            )
-
-        async def resolve_asset(item: Any) -> Any:
-            from urllib.parse import unquote, urlparse
-
+        async def resolve_asset(item: Any) -> tuple[Any, str | None]:
             if isinstance(item, dict):
                 ref = item.get("asset_ref")
                 asset_id = item.get("asset_id")
@@ -550,12 +492,15 @@ class AgentService:
                 ref = getattr(item, "asset_ref", None)
                 asset_id = getattr(item, "asset_id", None)
             if ref:
-                return await resolve_authorized_asset_ref(
+                return (
+                    await resolve_authorized_asset_ref(
+                        ref,
+                        scope_type=scope_type,
+                        scope_id=scope_id,
+                        user=user,
+                        expected_team_id=team_id,
+                    ),
                     ref,
-                    scope_type=scope_type,
-                    scope_id=scope_id,
-                    user=user,
-                    expected_team_id=team_id,
                 )
             if asset_id:
                 try:
@@ -565,40 +510,59 @@ class AgentService:
                         code=ResponseCode.VALIDATION_ERROR,
                         msg_key="validation_error",
                     ) from exc
-                return await authorize_asset_for_scope(
-                    asset_uuid,
-                    scope_type=scope_type,
-                    scope_id=scope_id,
-                    user=user,
-                    expected_team_id=team_id,
+                return (
+                    await authorize_asset_for_scope(
+                        asset_uuid,
+                        scope_type=scope_type,
+                        scope_id=scope_id,
+                        user=user,
+                        expected_team_id=team_id,
+                    ),
+                    None,
                 )
             url = attachment_url(item)
             if not url:
                 raise BusinessError(
                     code=ResponseCode.VALIDATION_ERROR, msg_key="validation_error"
                 )
-            path = unquote(urlparse(url).path)
-            marker = "/api/v1/upload/files/"
-            if path.startswith(marker):
-                asset = await Asset.filter(storage_key=path[len(marker) :]).first()
-                if asset is None:
-                    raise BusinessError(
-                        code=ResponseCode.NOT_FOUND,
-                        msg_key="file_not_found",
-                        status_code=404,
-                    )
-                return await authorize_asset_for_scope(
-                    asset.id,
-                    scope_type=scope_type,
-                    scope_id=scope_id,
-                    user=user,
-                    expected_team_id=team_id,
-                )
-            if urlparse(url).scheme not in {"http", "https"}:
-                raise BusinessError(
-                    code=ResponseCode.VALIDATION_ERROR, msg_key="validation_error"
-                )
-            return await register_external(url)
+            from app.services.asset_url_import import (
+                InternalDocument,
+                load_url_document,
+                persist_scoped_document,
+            )
+
+            config = getattr(agent, "attachment_config", None) or {}
+            max_bytes = min(
+                max(int(config.get("max_file_size") or 10 * 1024 * 1024), 1),
+                50 * 1024 * 1024,
+            )
+            document = await load_url_document(
+                url,
+                scope_type=scope_type,
+                scope_id=scope_id,
+                user=user,
+                expected_team_id=team_id,
+                max_bytes=max_bytes,
+            )
+            if isinstance(document, InternalDocument):
+                return document.asset, document.ref
+            scoped = await persist_scoped_document(
+                document.content,
+                filename=document.filename,
+                content_type=document.content_type,
+                scope_type=scope_type,
+                scope_id=scope_id,
+                user=user,
+                expected_team_id=team_id,
+                provenance={
+                    "origin": "external_url",
+                    "url": None if url.startswith("data:") else url,
+                    "final_url": None
+                    if document.final_url.startswith("data:")
+                    else document.final_url,
+                },
+            )
+            return scoped.asset, scoped.ref
 
         async def bind_items(items: list[Any] | None) -> list[Any] | None:
             from urllib.parse import quote
@@ -609,21 +573,24 @@ class AgentService:
             for item in items:
                 if item is None or item == "":
                     continue
-                asset = await resolve_asset(item)
+                asset, existing_ref = await resolve_asset(item)
                 if asset is None:
                     raise BusinessError(
                         code=ResponseCode.VALIDATION_ERROR,
                         msg_key="validation_error",
                     )
-                binding = await asset_service.get_or_create_ref(
-                    scope_type=scope_type,
-                    scope_id=scope_id,
-                    asset=asset,
-                )
+                if existing_ref is None:
+                    existing_ref = (
+                        await asset_service.get_or_create_ref(
+                            scope_type=scope_type,
+                            scope_id=scope_id,
+                            asset=asset,
+                        )
+                    ).ref
                 data = dict(item) if isinstance(item, dict) else {}
                 data.update(
                     {
-                        "asset_ref": binding.ref,
+                        "asset_ref": existing_ref,
                         "asset_id": str(asset.id),
                         "url": f"/api/v1/upload/files/{quote(asset.storage_key, safe='/')}",
                     }
@@ -742,13 +709,17 @@ class AgentService:
                         "Failed to get MCP tools for agent from %s: %s", tool_id, e
                     )
 
-        if getattr(agent, "enable_attachments", False):
-            from app.api.v1.endpoints.chat_helpers.asset_tools import (
-                build_asset_tools,
-            )
+        from app.api.v1.endpoints.chat_helpers.asset_tools import (
+            asset_tool_names_for_agent,
+            build_asset_tools,
+        )
 
+        asset_tool_names = asset_tool_names_for_agent(agent)
+        if asset_tool_names:
             tools.extend(
-                ToolDefinition.model_validate(schema) for schema in build_asset_tools()
+                ToolDefinition.model_validate(schema)
+                for schema in build_asset_tools()
+                if schema["function"]["name"] in asset_tool_names
             )
 
         if agent.enable_image_generation:
@@ -894,7 +865,7 @@ class AgentService:
                     config=skill_config,
                     tenant_id=str(agent.team_id) if agent.team_id else None,
                 )
-                return result.to_dict()
+                return result.to_chat_payload()
             except Exception as e:
                 logger.exception("Skill execution error: %s", e)
                 return {"error": resolve_user_visible_error(str(e))}
@@ -973,11 +944,15 @@ class AgentService:
 
         # Execute the tool
         try:
+            from app.models.user import User
+
+            user = await User.get_or_none(id=user_id) if user_id else None
             result = await tool_registry.execute(
                 name=tool_name,
                 arguments=arguments,
                 credentials=credentials,
                 agent=agent,
+                user=user,
                 team_id=str(agent.team_id) if agent.team_id else None,
                 **extra_kwargs,
                 **scope_context,

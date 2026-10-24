@@ -9,6 +9,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.utils.tool_output import unwrap_persisted_display
+
 
 # ============ Enums ============
 
@@ -663,6 +665,12 @@ class MessageRoundStep(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    @model_validator(mode="after")
+    def _unwrap_tool_display(self) -> "MessageRoundStep":
+        if self.role == "tool":
+            self.content = unwrap_persisted_display(self.content)
+        return self
+
 
 class MessageOut(BaseModel):
     """Message response schema"""
@@ -706,6 +714,12 @@ class MessageOut(BaseModel):
     )
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="after")
+    def _unwrap_tool_display(self) -> "MessageOut":
+        if self.role == "tool":
+            self.content = unwrap_persisted_display(self.content)
+        return self
 
 
 class SwitchVersionRequest(BaseModel):

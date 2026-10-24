@@ -221,5 +221,5 @@ async def test_bash_tool_denoises_stdout_and_stderr():
     ):
         result = await tool.execute(command="test", cwd="/workspace")
 
-    assert result["stdout"] == "ok\nstep\n[repeated 10 times]"
-    assert result["stderr"] == "err\nprogress\n"
+    assert result.display_result["stdout"] == "ok\nstep\n[repeated 10 times]"
+    assert result.display_result["stderr"] == "err\nprogress\n"

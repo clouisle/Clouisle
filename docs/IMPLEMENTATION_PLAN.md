@@ -1,6 +1,12 @@
 # Implementation Plan
 
 ## Active
+- **builtin-tool-output** — Completed. See `docs/plan/builtin-tool-output.md`.
+  - [x] 1. Shared result utils and replay contract
+  - [x] 2. Asset, sandbox and persistent web reading outputs
+  - [x] 3. Search, memory and short-result renderers
+  - [x] 4. Encoding evaluation, regression verification and delivery
+
 - **asset-document-reading** — Completed. See `docs/plan/asset-document-reading.md`.
   - [x] 1. Complete extraction and persistent text representations
   - [x] 2. Bounded reads, search and continuation

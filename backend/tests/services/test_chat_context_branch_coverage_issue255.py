@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from uuid import uuid4
+import json
 
 import pytest
 
@@ -286,7 +287,7 @@ async def test_override_history_builds_summary_protocol_and_current_user(monkeyp
         MessageRole.TOOL,
     ]
     assert messages[2].content == "current"
-    assert messages[-1].content == '{"result": "ok"}'
+    assert json.loads(messages[-1].content) == {"result": "ok"}
     assert protected
     assert len(meta) == len(messages)
 

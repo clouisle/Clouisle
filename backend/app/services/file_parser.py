@@ -89,6 +89,8 @@ class FileParserService:
         ".json": "application/json",
         ".html": "text/html",
         ".htm": "text/html",
+        ".xml": "application/xml",
+        ".rtf": "application/rtf",
     }
     SUPPORTED_TEMP_SUFFIXES = {
         ".pdf": ".pdf",
@@ -104,6 +106,8 @@ class FileParserService:
         ".json": ".json",
         ".html": ".html",
         ".htm": ".htm",
+        ".xml": ".xml",
+        ".rtf": ".rtf",
     }
 
     def __init__(self):

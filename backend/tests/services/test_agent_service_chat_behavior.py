@@ -59,7 +59,7 @@ async def test_chat_executes_tool_then_aggregates_final_response_usage():
                 "role": "tool",
                 "tool_call_id": "call-1",
                 "tool_name": "search",
-                "content": "{'results': ['match']}",
+                "content": json.dumps({"results": ["match"]}),
                 "iteration": 1,
             },
             {
@@ -75,7 +75,7 @@ async def test_chat_executes_tool_then_aggregates_final_response_usage():
     second_messages = chat.await_args_list[1].kwargs["messages"]
     assert [(message.role, message.content) for message in second_messages] == [
         ("assistant", "I will search."),
-        ("tool", "{'results': ['match']}"),
+        ("tool", json.dumps({"results": ["match"]})),
     ]
 
 
@@ -115,6 +115,7 @@ async def test_execute_tool_forwards_workflow_scope_to_builtin_tool():
         arguments={},
         credentials={},
         agent=agent,
+        user=None,
         team_id=None,
         workflow_run_id="workflow-run-1",
     )
@@ -252,7 +253,7 @@ async def test_chat_stream_yields_content_tool_calls_usage_and_final_response():
                     "role": "tool",
                     "tool_call_id": "call-1",
                     "tool_name": "search",
-                    "content": "{'results': ['match']}",
+                    "content": json.dumps({"results": ["match"]}),
                     "iteration": 1,
                 },
                 {
@@ -309,7 +310,7 @@ async def test_chat_stream_emits_dialogue_when_tool_limit_is_reached():
                 "role": "tool",
                 "tool_call_id": "call-1",
                 "tool_name": "search",
-                "content": "{'files': [{'url': 'output.csv'}]}",
+                "content": json.dumps({"files": [{"url": "output.csv"}]}),
                 "iteration": 1,
             },
         ],
@@ -407,6 +408,7 @@ async def test_execute_tool_uses_team_credentials_and_reports_execution_errors()
         "arguments": {"query": "docs"},
         "credentials": {"TEST_API_KEY": "mock-key"},
         "agent": agent,
+        "user": None,
         "team_id": "team-1",
     }
 
@@ -430,7 +432,10 @@ async def test_execute_skill_tool_returns_results_and_safe_errors():
         patch(
             "app.services.skill_executor.SkillExecutor.execute",
             new=AsyncMock(
-                return_value=SimpleNamespace(to_dict=lambda: {"summary": "done"})
+                return_value=SimpleNamespace(
+                    to_chat_payload=lambda: {"summary": "done"},
+                    to_dict=lambda: {"summary": "done"},
+                )
             ),
         ) as execute,
     ):
@@ -709,6 +714,7 @@ async def test_execute_tool_falls_back_to_empty_global_credentials():
         arguments={},
         credentials={},
         agent=agent,
+        user=None,
         team_id=None,
     )
 

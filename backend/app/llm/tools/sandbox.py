@@ -35,6 +35,15 @@ class ExecutionResult:
     error: str | None = None
     stdout: str = ""
     stderr: str = ""
+    stdout_log: str | None = None
+    stderr_log: str | None = None
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
+    stdout_lines: int | None = None
+    stderr_lines: int | None = None
+    stdout_log_partial: bool = False
+    stderr_log_partial: bool = False
+    timed_out: bool = False
 
 
 async def execute_code(
@@ -86,4 +95,11 @@ async def execute_code(
         error=runtime_result.error,
         stdout=runtime_result.stdout,
         stderr=runtime_result.stderr,
+        stdout_log=getattr(runtime_result, "stdout_log", None),
+        stderr_log=getattr(runtime_result, "stderr_log", None),
+        stdout_truncated=getattr(runtime_result, "stdout_truncated", False),
+        stderr_truncated=getattr(runtime_result, "stderr_truncated", False),
+        stdout_lines=getattr(runtime_result, "stdout_lines", None),
+        stderr_lines=getattr(runtime_result, "stderr_lines", None),
+        timed_out=getattr(runtime_result, "timed_out", False),
     )

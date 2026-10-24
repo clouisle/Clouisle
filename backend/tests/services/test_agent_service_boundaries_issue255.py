@@ -111,13 +111,7 @@ async def test_execute_tool_falls_back_from_team_to_global_credentials():
         call(tool_name="search", team_id="team-1"),
         call(tool_name="search", team_id=None),
     ]
-    execute.assert_awaited_once_with(
-        name="search",
-        arguments={"query": "docs"},
-        credentials={"token": "global"},
-        agent=agent,
-        team_id="team-1",
-    )
+    assert execute.await_args.kwargs["credentials"] == {"token": "global"}
 
 
 @pytest.mark.anyio

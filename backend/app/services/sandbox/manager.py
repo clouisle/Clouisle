@@ -37,7 +37,12 @@ from .models import (
 )
 from .node_env import NodeEnvironmentManager
 from .policies import sandbox_policy_engine
-from .process_launcher import SandboxProcessLauncher, _session_lock_fd
+from .process_launcher import (
+    ProcessLaunchResult,
+    SandboxOutputLimitError,
+    SandboxProcessLauncher,
+    _session_lock_fd,
+)
 from .python_env import PythonEnvironmentManager
 from .result_store import sandbox_result_store
 from .session_store import STANDALONE_ROUND, sandbox_session_store
@@ -274,7 +279,25 @@ class SandboxManager:
         metadata.mark_prepare_completed(datetime.now(UTC))
 
         try:
-            result = await self._run_job(job, workspace, metadata)
+            try:
+                result = await self._run_job(job, workspace, metadata)
+            except SandboxOutputLimitError as exc:
+                partial = self._relative_log_path(exc.log_path, workspace)
+                keyword = (
+                    ("stdout" if exc.stream == "stdout" else "stderr")
+                    if exc.stream in {"stdout", "stderr"}
+                    else None
+                )
+                transfer: dict[str, Any] = {}
+                if keyword is not None and partial is not None:
+                    transfer[f"{keyword}_log"] = partial
+                    transfer[f"{keyword}_log_partial"] = True
+                result = LegacyExecutionResult(
+                    success=False,
+                    error=str(exc),
+                    stderr=str(exc),
+                    **transfer,
+                )
             await self._guard(job)
             self._enforce_disk_limit(job, workspace, stage="execution")
             artifacts = await self._collect_artifacts(
@@ -316,6 +339,15 @@ class SandboxManager:
             error=result.error,
             stdout=result.stdout,
             stderr=result.stderr,
+            timed_out=result.timed_out,
+            stdout_log=result.stdout_log,
+            stderr_log=result.stderr_log,
+            stdout_truncated=result.stdout_truncated,
+            stderr_truncated=result.stderr_truncated,
+            stdout_lines=result.stdout_lines,
+            stderr_lines=result.stderr_lines,
+            stdout_log_partial=result.stdout_log_partial,
+            stderr_log_partial=result.stderr_log_partial,
             artifacts=artifacts,
             metadata=metadata,
         )
@@ -392,9 +424,11 @@ class SandboxManager:
                 workspace_root=str(workspace.root),
                 cache_root=str(self.workspace_manager.cache_root),
                 network_proxy=network_proxy,
+                log_dir=str(workspace.logs_dir),
+                log_stem=f"exec-{job.job_id}",
             )
             metadata.mark_execute_completed(datetime.now(UTC))
-            return self._parse_snippet_result(process_result, script_path)
+            return self._parse_snippet_result(process_result, script_path, workspace)
 
         if job.command:
             cwd = self.workspace_manager.resolve_workspace_path(workspace, job.cwd)
@@ -413,6 +447,8 @@ class SandboxManager:
                 workspace_root=str(workspace.root),
                 cache_root=str(self.workspace_manager.cache_root),
                 network_proxy=network_proxy,
+                log_dir=str(workspace.logs_dir),
+                log_stem=f"exec-{job.job_id}",
             )
             metadata.mark_execute_completed(datetime.now(UTC))
             success = process_result.exit_code == 0 and not process_result.timed_out
@@ -431,6 +467,7 @@ class SandboxManager:
                 error=error,
                 stdout=process_result.stdout,
                 stderr=process_result.stderr,
+                **self._transfer_execution_logs(process_result, workspace),
             )
 
         metadata.mark_execute_completed(datetime.now(UTC))
@@ -724,10 +761,47 @@ async function __execute__() {{
             return command
         return [resolved, *command[1:]]
 
+    @staticmethod
+    def _relative_log_path(
+        path: str | None,
+        workspace: SandboxWorkspace | None,
+    ) -> str | None:
+        if path is None:
+            return None
+        if workspace is None:
+            return Path(path).name
+        try:
+            return str(Path(path).relative_to(workspace.root))
+        except ValueError:
+            return Path(path).name
+
+    @staticmethod
+    def _transfer_execution_logs(
+        process_result: ProcessLaunchResult,
+        workspace: SandboxWorkspace | None,
+    ) -> dict[str, Any]:
+        """Expose workspace-relative log paths that the read tool can reopen."""
+
+        def logical(path: str | None) -> str | None:
+            return SandboxManager._relative_log_path(path, workspace)
+
+        return {
+            "stdout_log": logical(getattr(process_result, "stdout_log", None)),
+            "stderr_log": logical(getattr(process_result, "stderr_log", None)),
+            "stdout_truncated": getattr(process_result, "stdout_truncated", False),
+            "stderr_truncated": getattr(process_result, "stderr_truncated", False),
+            "stdout_lines": getattr(process_result, "stdout_lines", None),
+            "stderr_lines": getattr(process_result, "stderr_lines", None),
+            "stdout_log_partial": getattr(process_result, "stdout_log_partial", False),
+            "stderr_log_partial": getattr(process_result, "stderr_log_partial", False),
+            "timed_out": getattr(process_result, "timed_out", False),
+        }
+
     def _parse_snippet_result(
         self,
         process_result,
         script_path: Path,
+        workspace: SandboxWorkspace | None = None,
     ) -> LegacyExecutionResult:
         del script_path
         stdout = process_result.stdout
@@ -748,6 +822,7 @@ async function __execute__() {{
                 ),
                 stdout="\n".join(logs) if logs else "",
                 stderr=stderr,
+                **self._transfer_execution_logs(process_result, workspace),
             )
 
         if process_result.timed_out:
@@ -756,6 +831,7 @@ async function __execute__() {{
                 error=t("request_timeout"),
                 stdout=stdout,
                 stderr=stderr,
+                **self._transfer_execution_logs(process_result, workspace),
             )
 
         return LegacyExecutionResult(
@@ -773,6 +849,7 @@ async function __execute__() {{
             ),
             stdout=stdout,
             stderr=stderr,
+            **self._transfer_execution_logs(process_result, workspace),
         )
 
     async def _build_command_env(
@@ -1004,6 +1081,15 @@ async function __execute__() {{
                 error=result.error,
                 stdout=result.stdout,
                 stderr=result.stderr,
+                timed_out=result.timed_out,
+                stdout_log=result.stdout_log,
+                stderr_log=result.stderr_log,
+                stdout_truncated=result.stdout_truncated,
+                stderr_truncated=result.stderr_truncated,
+                stdout_lines=result.stdout_lines,
+                stderr_lines=result.stderr_lines,
+                stdout_log_partial=result.stdout_log_partial,
+                stderr_log_partial=result.stderr_log_partial,
                 artifacts=result.artifacts,
             )
             or result

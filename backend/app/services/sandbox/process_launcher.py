@@ -5,18 +5,26 @@ from __future__ import annotations
 import asyncio
 import math
 import os
+import re
 import shutil
 import signal
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 import sys
+from typing import Any
 
 from .egress_proxy import SandboxEgressProxy
 
 _session_lock_fd: ContextVar[int | None] = ContextVar(
     "sandbox_session_lock_fd", default=None
 )
+
+#: Shared upper bound for one execution's stdout+stderr logs. Reaching it stops
+#: the process; the in-memory preview is bounded separately by
+#: ``max_stdout_kb``/``max_stderr_kb``.
+MAX_EXECUTION_LOG_BYTES = 8 * 1024 * 1024
+_LOG_STEM_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
 
 
 @dataclass
@@ -25,10 +33,51 @@ class ProcessLaunchResult:
     stdout: str = ""
     stderr: str = ""
     timed_out: bool = False
+    stdout_log: str | None = None
+    stderr_log: str | None = None
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
+    stdout_lines: int | None = None
+    stderr_lines: int | None = None
+
+
+@dataclass
+class _StreamCapture:
+    payload: bytes = b""
+    truncated: bool = False
+    total_bytes: int = 0
+    lines: int = 0
+
+
+class _LogBudget:
+    """Shared byte budget for one execution's stdout and stderr logs."""
+
+    def __init__(self, limit_bytes: int):
+        self.remaining = limit_bytes
 
 
 class SandboxIsolationError(RuntimeError):
     """Raised when the configured filesystem jail cannot be created."""
+
+
+class SandboxOutputLimitError(RuntimeError):
+    """Raised when an execution stream exceeds its persisted log budget."""
+
+    def __init__(
+        self,
+        limit_bytes: int,
+        *,
+        stream: str | None = None,
+        log_path: str | None = None,
+    ):
+        self.limit_bytes = limit_bytes
+        self.stream = stream
+        self.log_path = log_path
+        super().__init__(
+            "Sandbox command output exceeded the "
+            f"{limit_bytes // (1024 * 1024)} MB execution log limit; "
+            "the process was stopped and its log is partial"
+        )
 
 
 class SandboxProcessLauncher:
@@ -70,11 +119,14 @@ class SandboxProcessLauncher:
         workspace_root: str | None = None,
         cache_root: str | None = None,
         network_proxy: SandboxEgressProxy | None = None,
+        log_dir: str | None = None,
+        log_stem: str | None = None,
     ) -> ProcessLaunchResult:
         if network_proxy is not None and not self.filesystem_isolation_enabled:
             raise SandboxIsolationError(
                 "Allowlisted sandbox egress requires filesystem isolation"
             )
+        stdout_log_path, stderr_log_path = self._execution_log_paths(log_dir, log_stem)
         launch_command = command
         launch_cwd = cwd
         launch_env = env
@@ -96,53 +148,171 @@ class SandboxProcessLauncher:
             if lock_fd is not None and not self.filesystem_isolation_enabled
             else {}
         )
-        process = await asyncio.create_subprocess_exec(
-            *launch_command,
-            cwd=launch_cwd,
-            env=launch_env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            start_new_session=True,
-            **inherited,
+        stdout_handle = (
+            stdout_log_path.open("wb") if stdout_log_path is not None else None
         )
-
-        stdout_task = asyncio.create_task(
-            self._read_bounded(process.stdout, max_stdout_kb * 1024)
+        stderr_handle = (
+            stderr_log_path.open("wb") if stderr_log_path is not None else None
         )
-        stderr_task = asyncio.create_task(
-            self._read_bounded(process.stderr, max_stderr_kb * 1024)
-        )
-        completion = asyncio.gather(process.wait(), stdout_task, stderr_task)
+        process: asyncio.subprocess.Process | None = None
+        stdout_task: asyncio.Task[_StreamCapture] | None = None
+        stderr_task: asyncio.Task[_StreamCapture] | None = None
         try:
+            process = await asyncio.create_subprocess_exec(
+                *launch_command,
+                cwd=launch_cwd,
+                env=launch_env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+                **inherited,
+            )
+            log_budget = (
+                _LogBudget(MAX_EXECUTION_LOG_BYTES)
+                if stdout_handle is not None or stderr_handle is not None
+                else None
+            )
+            stdout_task = asyncio.create_task(
+                self._read_bounded(
+                    process.stdout,
+                    max_stdout_kb * 1024,
+                    log_handle=stdout_handle,
+                    log_budget=log_budget,
+                    stream_name="stdout",
+                )
+            )
+            stderr_task = asyncio.create_task(
+                self._read_bounded(
+                    process.stderr,
+                    max_stderr_kb * 1024,
+                    log_handle=stderr_handle,
+                    log_budget=log_budget,
+                    stream_name="stderr",
+                )
+            )
+            limit_hit = asyncio.get_running_loop().create_future()
+            limit_error: list[SandboxOutputLimitError] = []
+
+            def observe_reader(task: asyncio.Task[_StreamCapture]) -> None:
+                if task.cancelled():
+                    return
+                error = task.exception()
+                if isinstance(error, SandboxOutputLimitError):
+                    limit_error.append(error)
+                    if not limit_hit.done():
+                        limit_hit.set_result(None)
+
+            stdout_task.add_done_callback(observe_reader)
+            stderr_task.add_done_callback(observe_reader)
+            wait_task = asyncio.ensure_future(process.wait())
+            timed_out = False
             if timeout_seconds is None:
-                output = await completion
+                await asyncio.wait(
+                    {wait_task, limit_hit}, return_when=asyncio.FIRST_COMPLETED
+                )
             else:
-                output = await asyncio.wait_for(completion, timeout=timeout_seconds)
-            _, (stdout, stdout_truncated), (stderr, stderr_truncated) = output
-            if lock_fd is not None:
+                await asyncio.wait(
+                    {wait_task, limit_hit},
+                    timeout=timeout_seconds,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            if not limit_hit.done():
+                limit_hit.cancel()
+            if limit_hit.done() and not limit_hit.cancelled():
+                await self._terminate_process_group(process)
+                for task in (stdout_task, stderr_task):
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
+                raise limit_error[0]
+            if wait_task.cancelled():
+                for task in (stdout_task, stderr_task):
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
+                raise asyncio.CancelledError
+            if not wait_task.done():
+                timed_out = True
+                await self._terminate_process_group(process)
+                if not wait_task.done():
+                    wait_task.cancel()
+                captures = await self._captures_after_stop(stdout_task, stderr_task)
+            else:
+                try:
+                    captures = await asyncio.gather(stdout_task, stderr_task)
+                except SandboxOutputLimitError:
+                    for task in (stdout_task, stderr_task):
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(
+                        stdout_task, stderr_task, return_exceptions=True
+                    )
+                    raise
+                except Exception:
+                    for task in (stdout_task, stderr_task):
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(
+                        stdout_task, stderr_task, return_exceptions=True
+                    )
+                    raise
+            if lock_fd is not None and not timed_out:
                 # A completed tool cannot leave background writers in the workspace.
                 self._kill_remaining_process_group(process)
-            return self._add_network_diagnostics(
-                ProcessLaunchResult(
-                    exit_code=process.returncode or 0,
-                    stdout=self._decode_output(stdout, stdout_truncated),
-                    stderr=self._decode_output(stderr, stderr_truncated),
-                ),
-                network_proxy,
+            stdout_capture, stderr_capture = captures
+            stderr = self._decode_output(
+                stderr_capture.payload, stderr_capture.truncated
             )
-        except asyncio.TimeoutError:
-            await self._terminate_process_group(process)
+            if timed_out:
+                timeout_message = f"Execution timeout ({timeout_seconds}s)"
+                stderr = f"{timeout_message}\n{stderr}" if stderr else timeout_message
             return self._add_network_diagnostics(
                 ProcessLaunchResult(
-                    exit_code=-1,
-                    stderr=f"Execution timeout ({timeout_seconds}s)",
-                    timed_out=True,
+                    exit_code=-1 if timed_out else (process.returncode or 0),
+                    stdout=self._decode_output(
+                        stdout_capture.payload, stdout_capture.truncated
+                    ),
+                    stderr=stderr,
+                    timed_out=timed_out,
+                    stdout_log=str(stdout_log_path) if stdout_log_path else None,
+                    stderr_log=str(stderr_log_path) if stderr_log_path else None,
+                    stdout_truncated=stdout_capture.truncated,
+                    stderr_truncated=stderr_capture.truncated,
+                    stdout_lines=stdout_capture.lines
+                    if stdout_log_path is not None
+                    else None,
+                    stderr_lines=stderr_capture.lines
+                    if stderr_log_path is not None
+                    else None,
                 ),
                 network_proxy,
             )
         except asyncio.CancelledError:
-            await self._terminate_process_group(process)
+            if process is not None:
+                await self._terminate_process_group(process)
+            for task in (stdout_task, stderr_task):
+                if task is not None and not task.done():
+                    task.cancel()
             raise
+        finally:
+            for handle in (stdout_handle, stderr_handle):
+                if handle is not None:
+                    handle.close()
+
+    @staticmethod
+    def _execution_log_paths(
+        log_dir: str | None, log_stem: str | None
+    ) -> tuple[Path | None, Path | None]:
+        if log_dir is None or log_stem is None:
+            return None, None
+        if not _LOG_STEM_RE.fullmatch(log_stem):
+            raise ValueError("Invalid execution log stem")
+        directory = Path(log_dir)
+        directory.mkdir(parents=True, exist_ok=True)
+        return (
+            directory / f"{log_stem}.stdout.log",
+            directory / f"{log_stem}.stderr.log",
+        )
 
     def _isolated_launch(
         self,
@@ -353,23 +523,66 @@ class SandboxProcessLauncher:
             pass
 
     @staticmethod
+    async def _captures_after_stop(
+        *tasks: asyncio.Task[_StreamCapture],
+    ) -> tuple[_StreamCapture, _StreamCapture]:
+        """Collect killed-process output without waiting on an unclosed stdout."""
+        _, pending = await asyncio.wait(tasks, timeout=1.0)
+        for task in pending:
+            task.cancel()
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        captures: list[_StreamCapture] = []
+        for result in results:
+            if isinstance(result, SandboxOutputLimitError):
+                raise result
+            captures.append(
+                result if isinstance(result, _StreamCapture) else _StreamCapture()
+            )
+        return captures[0], captures[1]
+
+    @staticmethod
     async def _read_bounded(
         stream: asyncio.StreamReader | None,
         max_bytes: int,
-    ) -> tuple[bytes, bool]:
+        *,
+        log_handle: Any | None = None,
+        log_budget: _LogBudget | None = None,
+        stream_name: str | None = None,
+    ) -> _StreamCapture:
         if stream is None:
-            return b"", False
+            return _StreamCapture()
 
         max_bytes = max(0, max_bytes)
+        capture = _StreamCapture()
         output = bytearray()
-        truncated = False
+        total_newlines = 0
+        last_byte = b""
         while chunk := await stream.read(64 * 1024):
+            capture.total_bytes += len(chunk)
+            total_newlines += chunk.count(b"\n")
+            last_byte = chunk[-1:]
             remaining = max_bytes - len(output)
             if remaining > 0:
                 output.extend(chunk[:remaining])
             if len(chunk) > remaining:
-                truncated = True
-        return bytes(output), truncated
+                capture.truncated = True
+            if log_handle is not None:
+                budget = log_budget or _LogBudget(MAX_EXECUTION_LOG_BYTES)
+                if len(chunk) > budget.remaining:
+                    raise SandboxOutputLimitError(
+                        MAX_EXECUTION_LOG_BYTES,
+                        stream=stream_name,
+                        log_path=getattr(log_handle, "name", None),
+                    )
+                budget.remaining -= len(chunk)
+                log_handle.write(chunk)
+        capture.lines = total_newlines + (
+            1 if capture.total_bytes and last_byte != b"\n" else 0
+        )
+        if log_handle is not None:
+            log_handle.flush()
+        capture.payload = bytes(output)
+        return capture
 
     @staticmethod
     def _decode_output(payload: bytes, truncated: bool) -> str:

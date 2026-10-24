@@ -35,7 +35,6 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from app.api.v1.endpoints.chat_helpers import (
-    get_tool_execution_payloads,
     iter_with_idle_timeout,
 )
 from app.api.v1.endpoints.chat_sse import (
@@ -45,6 +44,11 @@ from app.api.v1.endpoints.chat_sse import (
 )
 from app.api.v1.endpoints.chat_tools import AssetViewResult, execute_tool_call
 from app.llm.tools.interaction import ToolInteractionRequest
+from app.utils.tool_output import (
+    ToolExecutionResult,
+    get_tool_execution_payloads,
+    persistable_model_result,
+)
 from app.llm.types import ChatStreamChunk, FinishReason, StopReason
 from app.services import agent_round
 from app.services.sandbox.recovery import (
@@ -190,12 +194,12 @@ def _safe_arguments(arguments: str | dict | None) -> dict[str, Any]:
         return {}
 
 
-def _include_workspace_reset(result: str, notices: list[dict[str, Any]]) -> str:
-    """Keep recovery information in the persisted tool protocol, not just logs."""
+def _include_workspace_reset_result(result: str, notices: list[dict[str, Any]]) -> str:
+    """Append recovery control data without discarding the tool's own output."""
     try:
         payload = json.loads(result)
     except (TypeError, ValueError):
-        payload = result
+        payload = {"result": result}
     if not isinstance(payload, dict):
         payload = {"result": payload}
     payload["workspace_reset"] = notices[-1]
@@ -405,6 +409,8 @@ class AgentLoop:
         tool_started_clock = time.monotonic() if collect_dependency_metric else 0.0
         metric_status = "in_progress"
         metric_error_category: str | None = None
+        persist_result: str | None = None
+        tool_result: Any = None
         try:
             with (
                 capture_workspace_resets() as reset_notices,
@@ -482,7 +488,9 @@ class AgentLoop:
                     None,
                     record,
                 )
-            display_result, llm_result = get_tool_execution_payloads(tool_result)
+            display_result, llm_result = get_tool_execution_payloads(
+                tool_result, tool_name
+            )
             metric_status = "completed"
             if tool_started_at is not None:
                 try:
@@ -541,8 +549,20 @@ class AgentLoop:
                     )
 
         if reset_notices:
-            display_result = _include_workspace_reset(display_result, reset_notices)
-            llm_result = _include_workspace_reset(llm_result, reset_notices)
+            display_result = _include_workspace_reset_result(
+                display_result, reset_notices
+            )
+            # Recovery control data must remain machine-readable for replanning,
+            # so this rare event keeps the structured payload instead of the
+            # compact prose used for ordinary results.
+            llm_result = display_result
+
+        persist_result = persistable_model_result(
+            tool_name,
+            display_result,
+            llm_result,
+            explicit=isinstance(tool_result, ToolExecutionResult),
+        )
 
         return (
             self._build_tool_call_sse(tc),
@@ -557,6 +577,7 @@ class AgentLoop:
                 "id": tc.id,
                 "name": tool_name,
                 "arguments": arguments,
+                "persist_result": persist_result,
                 "display_result": display_result,
                 "llm_result": llm_result,
                 "display_name": display_name,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+import re
 from .sandbox_paths import (
     normalize_workspace_path as _normalize_workspace_path,
     runtime_workspace_path as _runtime_workspace_path,
@@ -10,7 +10,6 @@ from .sandbox_paths import (
 from typing import Any
 
 from app.core.config import settings
-from app.llm.tools.builtin.media import ToolExecutionResult
 from app.services.sandbox.gateway import sandbox_gateway
 from app.services.sandbox.models import (
     SandboxArtifactLimits,
@@ -19,6 +18,8 @@ from app.services.sandbox.models import (
     SandboxJobSource,
     SandboxLimits,
 )
+from app.utils.sandbox_output import render_sandbox_output
+from app.utils.tool_output import ToolExecutionResult
 
 from .registry import ToolInfo, ToolParameter, tool_registry
 
@@ -912,12 +913,21 @@ class SandboxReadTool:
                 team_id=self.team_id,
                 timeout_seconds=15,
             )
-            return {
+            content = result.result if result.success else None
+            tag = None
+            if isinstance(content, str):
+                match = re.search(r"(?m)^[1-9]\d*#([0-9A-F]{4})\|", content)
+                if match is not None:
+                    tag = match.group(1)
+            response = {
                 "success": result.success,
                 "path": safe_path,
-                "content": result.result if result.success else None,
+                "content": content,
                 "error": result.error,
             }
+            if tag is not None:
+                response["tag"] = tag
+            return response
         except Exception as exc:
             return {"success": False, "error": str(exc)}
 
@@ -1049,20 +1059,14 @@ class SandboxArtifactTool:
         display_result = {
             "success": success,
             "result": f"Generated {len(markdown_links)} downloadable link(s) for the assistant response.",
+            "instruction": result_instruction,
             "count": len(markdown_links),
             "artifacts": files,
             "error": error,
         }
-        llm_result = {
-            "success": success,
-            "result": result_instruction if success else None,
-            "markdown_links": markdown_links,
-            "files": files,
-            "error": error,
-        }
         return ToolExecutionResult(
             display_result=display_result,
-            llm_result=json.dumps(llm_result, ensure_ascii=False),
+            llm_result=render_sandbox_output("artifact", display_result),
         )
 
 

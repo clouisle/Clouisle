@@ -127,8 +127,37 @@ async def test_get_agent_tools_registers_shared_asset_tools():
 
 
 @pytest.mark.anyio
+async def test_get_agent_tools_filters_document_readers_for_web_tools_only():
+    service = AgentService()
+
+    web_only = await service._get_agent_tools(
+        _agent(
+            enable_attachments=False,
+            tools_config=[{"type": "builtin", "name": "fetch_webpage"}],
+        )
+    )
+    names = {tool.function.name for tool in web_only}
+    assert {"list_assets", "inspect_asset", "read_asset", "search_asset"} <= names
+    assert "view_asset" not in names
+    assert "materialize_asset" not in names
+
+    bare = await service._get_agent_tools(
+        _agent(enable_attachments=False, tools_config=[])
+    )
+    assert not {tool.function.name for tool in bare} & {
+        "list_assets",
+        "view_asset",
+        "inspect_asset",
+        "read_asset",
+        "search_asset",
+        "materialize_asset",
+    }
+
+
+@pytest.mark.anyio
 async def test_bind_scoped_attachments_registers_upload_url():
     from app.models.asset import AssetScopeType
+    from app.services.asset_url_import import InternalDocument
 
     team_id = uuid4()
     run_id = uuid4()
@@ -141,18 +170,17 @@ async def test_bind_scoped_attachments_registers_upload_url():
         size=11,
     )
     user = SimpleNamespace(id=user_id)
-    asset_query = SimpleNamespace(first=AsyncMock(return_value=asset))
-    authorize = AsyncMock(return_value=asset)
-    get_ref = AsyncMock(return_value=SimpleNamespace(ref="a1b2"))
+    load = AsyncMock(
+        return_value=InternalDocument(
+            asset=asset,
+            ref="a1b2",
+            url="/api/v1/upload/files/general/2026/10/report.txt",
+        )
+    )
     service = AgentService()
 
     with (
-        patch(
-            "app.models.asset.Asset.filter",
-            lambda **_kwargs: asset_query,
-        ),
-        patch("app.services.asset.asset_service.get_or_create_ref", get_ref),
-        patch("app.services.asset_access.authorize_asset_for_scope", authorize),
+        patch("app.services.asset_url_import.load_url_document", load),
         patch(
             "app.services.asset_access.authorize_asset_scope",
             AsyncMock(return_value=team_id),
@@ -177,15 +205,11 @@ async def test_bind_scoped_attachments_registers_upload_url():
             "size": 11,
         }
     ]
-    authorize.assert_awaited_once()
-    assert authorize.await_args.kwargs["scope_type"] == AssetScopeType.WORKFLOW_RUN
-    assert authorize.await_args.kwargs["scope_id"] == run_id
-    assert authorize.await_args.kwargs["user"] is user
-    get_ref.assert_awaited_once_with(
-        scope_type=AssetScopeType.WORKFLOW_RUN,
-        scope_id=run_id,
-        asset=asset,
-    )
+    load.assert_awaited_once()
+    assert load.await_args.kwargs["scope_type"] == AssetScopeType.WORKFLOW_RUN
+    assert load.await_args.kwargs["scope_id"] == run_id
+    assert load.await_args.kwargs["user"] is user
+    assert load.await_args.kwargs["max_bytes"] == 10 * 1024 * 1024
 
 
 @pytest.mark.anyio
@@ -232,6 +256,8 @@ async def test_bind_scoped_attachments_resolves_private_asset_id():
 
 @pytest.mark.anyio
 async def test_bind_scoped_attachments_registers_external_url():
+    from app.services.asset_url_import import ExternalDocument, ScopedDocument
+
     team_id = uuid4()
     run_id = uuid4()
     user_id = uuid4()
@@ -243,53 +269,20 @@ async def test_bind_scoped_attachments_registers_external_url():
         size=5,
     )
     user = SimpleNamespace(id=user_id)
-    register = AsyncMock(return_value=asset)
-
-    class Response:
-        headers = {"content-type": "text/plain; charset=utf-8"}
-        is_success = True
-
-        def raise_for_status(self):
-            return None
-
-        async def aiter_bytes(self):
-            yield b"hello"
-
-    class Stream:
-        async def __aenter__(self):
-            return Response()
-
-        async def __aexit__(self, *_args):
-            return False
-
-    class Client:
-        def __init__(self, **_kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return False
-
-        def stream(self, _method, _url):
-            return Stream()
+    load = AsyncMock(
+        return_value=ExternalDocument(
+            content=b"hello",
+            content_type="text/plain",
+            filename="report.txt",
+            url="https://example.test/files/report.txt",
+            final_url="https://cdn.example.test/report.txt",
+        )
+    )
+    persist = AsyncMock(return_value=ScopedDocument(asset=asset, ref="a1b2"))
 
     with (
-        patch(
-            "app.core.network_security.ensure_external_http_url_allowed",
-            AsyncMock(),
-        ),
-        patch("httpx.AsyncClient", Client),
-        patch(
-            "app.api.v1.endpoints.upload.save_generated_upload",
-            AsyncMock(return_value={"storage_key": asset.storage_key}),
-        ),
-        patch("app.services.asset.asset_service.register_bytes", register),
-        patch(
-            "app.services.asset.asset_service.get_or_create_ref",
-            AsyncMock(return_value=SimpleNamespace(ref="a1b2")),
-        ),
+        patch("app.services.asset_url_import.load_url_document", load),
+        patch("app.services.asset_url_import.persist_scoped_document", persist),
         patch(
             "app.services.asset_access.authorize_asset_scope",
             AsyncMock(return_value=team_id),
@@ -306,8 +299,113 @@ async def test_bind_scoped_attachments_registers_external_url():
 
     assert files[0]["asset_ref"] == "a1b2"
     assert files[0]["filename"] == "report.txt"
-    assert register.await_args.kwargs["content"] == b"hello"
-    assert register.await_args.kwargs["created_by_id"] == user_id
+    persist.assert_awaited_once()
+    assert persist.await_args.args[0] == b"hello"
+    assert persist.await_args.kwargs["user"] is user
+    assert persist.await_args.kwargs["provenance"] == {
+        "origin": "external_url",
+        "url": "https://example.test/files/report.txt",
+        "final_url": "https://cdn.example.test/report.txt",
+    }
+
+
+@pytest.mark.anyio
+async def test_bind_scoped_attachments_skips_empty_items_and_data_provenance():
+    from app.services.asset_url_import import ExternalDocument, ScopedDocument
+
+    team_id = uuid4()
+    run_id = uuid4()
+    user = SimpleNamespace(id=uuid4())
+    asset = SimpleNamespace(
+        id=uuid4(),
+        storage_key="general/2026/10/data.txt",
+        content_type="text/plain",
+        display_filename="data.txt",
+        size=1,
+    )
+    load = AsyncMock(
+        return_value=ExternalDocument(
+            content=b"x",
+            content_type="text/plain",
+            filename="data.txt",
+            url="data:text/plain;base64,eA==",
+            final_url="data:text/plain;base64,eA==",
+        )
+    )
+    persist = AsyncMock(return_value=ScopedDocument(asset=asset, ref="f1"))
+
+    disabled_images, disabled_files = await AgentService()._bind_scoped_attachments(
+        agent=_agent(enable_attachments=False),
+        images=None,
+        files=["https://example.test/x"],
+        user_id=None,
+    )
+    assert disabled_images is None
+    assert disabled_files == ["https://example.test/x"]
+
+    empty_images, empty_files = await AgentService()._bind_scoped_attachments(
+        agent=_agent(enable_attachments=True),
+        images=None,
+        files=None,
+        user_id=None,
+    )
+    assert empty_images is None
+    assert empty_files is None
+
+    with (
+        patch("app.services.asset_url_import.load_url_document", load),
+        patch("app.services.asset_url_import.persist_scoped_document", persist),
+        patch(
+            "app.services.asset_access.authorize_asset_scope",
+            AsyncMock(return_value=team_id),
+        ),
+        patch("app.models.user.User.get_or_none", AsyncMock(return_value=user)),
+    ):
+        images, files = await AgentService()._bind_scoped_attachments(
+            agent=_agent(team_id=team_id, enable_attachments=True),
+            images=[None, ""],
+            files=["data:text/plain;base64,eA=="],
+            user_id=str(user.id),
+            workflow_run_id=run_id,
+        )
+
+    assert images == []
+    assert files[0]["asset_ref"] == "f1"
+    assert persist.await_args.kwargs["provenance"] == {
+        "origin": "external_url",
+        "url": None,
+        "final_url": None,
+    }
+
+
+@pytest.mark.anyio
+async def test_execute_builtin_tool_passes_resolved_user():
+    service = AgentService()
+    team_id = uuid4()
+    user = SimpleNamespace(id=uuid4())
+    tool_call = SimpleNamespace(
+        id="call-time",
+        function=SimpleNamespace(name="get_current_time", arguments="{}"),
+    )
+    execute = AsyncMock(return_value={"datetime": "now"})
+
+    with (
+        patch("app.llm.tools.tool_registry.get_tool", return_value=object()),
+        patch(
+            "app.models.tool_config.ToolConfig.filter",
+            return_value=SimpleNamespace(first=AsyncMock(return_value=None)),
+        ),
+        patch("app.llm.tools.tool_registry.execute", new=execute),
+        patch("app.models.user.User.get_or_none", AsyncMock(return_value=user)),
+    ):
+        result = await service._execute_tool(
+            _agent(team_id=team_id),
+            tool_call,
+            user_id=str(user.id),
+        )
+
+    assert result == {"datetime": "now"}
+    assert execute.await_args.kwargs["user"] is user
 
 
 @pytest.mark.anyio
@@ -356,6 +454,8 @@ async def test_bind_scoped_attachments_rejects_invalid_ids_and_missing_auth():
 
 @pytest.mark.anyio
 async def test_bind_scoped_attachments_binds_image_without_file_metadata():
+    from app.services.asset_url_import import InternalDocument
+
     team_id = uuid4()
     run_id = uuid4()
     user_id = uuid4()
@@ -367,21 +467,19 @@ async def test_bind_scoped_attachments_binds_image_without_file_metadata():
         size=9,
     )
     user = SimpleNamespace(id=user_id)
-    asset_query = SimpleNamespace(first=AsyncMock(return_value=asset))
+    load = AsyncMock(
+        return_value=InternalDocument(
+            asset=asset,
+            ref="e5f6",
+            url="/api/v1/upload/files/general/2026/10/photo.png",
+        )
+    )
 
     with (
-        patch("app.models.asset.Asset.filter", lambda **_kwargs: asset_query),
+        patch("app.services.asset_url_import.load_url_document", load),
         patch(
             "app.services.asset_access.authorize_asset_scope",
             AsyncMock(return_value=team_id),
-        ),
-        patch(
-            "app.services.asset_access.authorize_asset_for_scope",
-            AsyncMock(return_value=asset),
-        ),
-        patch(
-            "app.services.asset.asset_service.get_or_create_ref",
-            AsyncMock(return_value=SimpleNamespace(ref="e5f6")),
         ),
         patch("app.models.user.User.get_or_none", AsyncMock(return_value=user)),
     ):
@@ -432,84 +530,36 @@ async def test_bind_scoped_attachments_denies_scope_before_network_io():
 
 
 @pytest.mark.anyio
-async def test_bind_scoped_attachments_rejects_external_redirect_and_oversize():
+async def test_bind_scoped_attachments_surfaces_shared_import_errors():
     from app.schemas.response import BusinessError
 
-    class Response:
-        def __init__(self, *, success: bool = True, chunks: tuple[bytes, ...] = ()):
-            self.headers = {"content-type": "text/plain"}
-            self.is_success = success
-            self.chunks = chunks
-
-        def raise_for_status(self):
-            return None
-
-        async def aiter_bytes(self):
-            for chunk in self.chunks:
-                yield chunk
-
-    class Stream:
-        def __init__(self, response: Response):
-            self.response = response
-
-        async def __aenter__(self):
-            return self.response
-
-        async def __aexit__(self, *_args):
-            return False
-
-    class Client:
-        response = Response()
-
-        def __init__(self, **_kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return False
-
-        def stream(self, _method, _url):
-            return Stream(self.response)
-
-    async def bind(client_response: Response, *, max_file_size: int = 1024):
-        Client.response = client_response
+    for msg_key in ("file_download_failed", "file_too_large"):
+        load = AsyncMock(side_effect=BusinessError(msg_key=msg_key))
+        persist = AsyncMock()
         with (
+            patch("app.services.asset_url_import.load_url_document", load),
+            patch("app.services.asset_url_import.persist_scoped_document", persist),
             patch(
                 "app.services.asset_access.authorize_asset_scope",
                 AsyncMock(return_value=uuid4()),
             ),
-            patch(
-                "app.core.network_security.ensure_external_http_url_allowed",
-                AsyncMock(),
-            ),
-            patch("httpx.AsyncClient", Client),
             patch("app.models.user.User.get_or_none", AsyncMock(return_value=object())),
-            patch(
-                "app.services.asset.asset_service.register_bytes", AsyncMock()
-            ) as register,
             pytest.raises(BusinessError) as error,
         ):
             await AgentService()._bind_scoped_attachments(
                 agent=_agent(
                     team_id=uuid4(),
                     enable_attachments=True,
-                    attachment_config={"max_file_size": max_file_size},
+                    attachment_config={"max_file_size": 1024},
                 ),
                 images=None,
                 files=["https://example.test/file.txt"],
                 user_id=str(uuid4()),
                 workflow_run_id=uuid4(),
             )
-        register.assert_not_awaited()
-        return error.value
-
-    redirect = await bind(Response(success=False))
-    assert redirect.msg_key == "file_download_failed"
-
-    oversized = await bind(Response(chunks=(b"x" * 4096,)), max_file_size=1024)
-    assert oversized.msg_key == "file_too_large"
+        assert error.value.msg_key == msg_key
+        persist.assert_not_awaited()
+        assert load.await_args.kwargs["max_bytes"] == 1024
 
 
 @pytest.mark.anyio

@@ -9,9 +9,8 @@ from app.api.v1.endpoints.chat_helpers.general import (
     collect_conversation_images,
     get_compression_trigger,
     get_item_value,
-    get_tool_execution_payloads,
 )
-from app.llm.tools.builtin.media import ToolExecutionResult
+from app.utils.tool_output import ToolExecutionResult, get_tool_execution_payloads
 from app.models.agent import MessageRole
 
 

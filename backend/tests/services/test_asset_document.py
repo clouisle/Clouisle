@@ -607,3 +607,22 @@ async def test_object_range_beyond_eof_returns_empty(monkeypatch):
     backend = _object_storage(monkeypatch, client)
 
     assert await backend.read_range("key", 100, 10) == b""
+
+
+@pytest.mark.asyncio
+async def test_compressed_cursor_rejects_oversized_decode_and_trailing_data(
+    database, storage
+):
+    import base64
+    import zlib
+
+    asset = await create_asset(storage, b"first\nlast\n")
+    page = await read_document(asset, storage=storage, line_count=1)
+    packed = base64.urlsafe_b64decode(
+        page["next_cursor"] + "=" * (-len(page["next_cursor"]) % 4)
+    )
+    malformed = [zlib.compress(b"x" * 100000), packed + b"trailing", packed[:-2]]
+    for raw in malformed:
+        cursor = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+        with pytest.raises(ValueError, match="asset_document_invalid_cursor"):
+            await read_document(asset, storage=storage, cursor=cursor)

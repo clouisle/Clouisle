@@ -1,4 +1,3 @@
-import json
 import re
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -6,7 +5,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.core.config import settings
-from app.llm.tools.builtin.media import ToolExecutionResult
 from app.llm.tools.registry import tool_registry
 from app.llm.tools.sandbox_files import (
     SandboxArtifactTool,
@@ -20,6 +18,7 @@ from app.llm.tools.sandbox_files import (
     register_sandbox_file_tools,
 )
 from app.services.sandbox.models import SandboxArtifact
+from app.utils.tool_output import ToolExecutionResult
 
 
 def _run_sandbox_code(code: str, params: dict):
@@ -692,13 +691,12 @@ async def test_artifact_tool_rejects_empty_paths():
     assert result.display_result == {
         "success": False,
         "result": "Generated 0 downloadable link(s) for the assistant response.",
+        "instruction": "No downloadable links are available for these artifacts.",
         "count": 0,
         "artifacts": [],
         "error": "At least one artifact path is required",
     }
-    llm_payload = json.loads(result.llm_result)
-    assert llm_payload["success"] is False
-    assert llm_payload["markdown_links"] == []
+    assert result.llm_result == "Error: At least one artifact path is required"
 
 
 @pytest.mark.anyio
@@ -752,13 +750,11 @@ async def test_artifact_tool_collects_paths_as_markdown_links():
     ]
     assert result.display_result["success"] is True
     assert result.display_result["count"] == 1
-    llm_payload = json.loads(result.llm_result)
-    assert llm_payload["markdown_links"] == [
-        "[report.docx](/api/v1/upload/files/sandbox-artifacts/2026/05/report.docx)"
+    assert result.llm_result.splitlines() == [
+        "Collected 1 file(s).",
+        "- [report.docx](/api/v1/upload/files/sandbox-artifacts/2026/05/report.docx) · ref=a1b2 · 123 bytes · application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "Use these Markdown links in your final answer. To inspect, read, parse, or reuse a collected file, pass its asset_ref to the matching Asset tool.",
     ]
-    assert llm_payload["files"][0]["filename"] == "report.docx"
-    assert llm_payload["files"][0]["asset_ref"] == "a1b2"
-    assert "asset_ref" in llm_payload["result"]
     job = mock_submit.await_args.args[0]
     assert job.cwd == "/workspace"
     assert job.artifacts[0].path == "/workspace/output/report.docx"

@@ -37,6 +37,21 @@ def asset_tool_display_names(user_locale: str | None = None) -> dict[str, str]:
     }
 
 
+def asset_tool_names_for_agent(agent: object) -> tuple[str, ...]:
+    """Keep persisted web documents readable even without file uploads."""
+    if getattr(agent, "enable_attachments", False):
+        return ASSET_TOOL_NAMES
+    configured = getattr(agent, "tools_config", None) or []
+    if any(
+        isinstance(config, dict)
+        and config.get("type") == "builtin"
+        and config.get("name") in {"fetch_webpage", "markitdown"}
+        for config in configured
+    ):
+        return ("list_assets", "inspect_asset", "read_asset", "search_asset")
+    return ()
+
+
 def describe_attachment_references(items: list[object] | None) -> list[dict]:
     """Bounded attachment metadata; never inlines extracted document text."""
     documents: list[dict] = []

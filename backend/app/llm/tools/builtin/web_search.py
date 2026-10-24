@@ -7,15 +7,16 @@
 
 import asyncio
 import logging
+from pathlib import Path
 import urllib.parse
 from typing import Any
 
 from bs4 import BeautifulSoup
 import httpx
-from markitdown import MarkItDown
 import trafilatura
 
 from app.core.i18n import t
+from app.schemas.response import BusinessError
 from app.services.citations import stable_citation_id, with_web_citation_ids
 from ..registry import tool_registry, ToolParameter, ToolConcurrency
 
@@ -334,7 +335,7 @@ async def _duckduckgo_search(query: str, num_results: int) -> dict:
 
 
 def _extract_readable_content(html: str, url: str) -> tuple[str, str | None]:
-    """使用 trafilatura 提取网页正文与标题，并在失败时兜底。"""
+    """Extract readable Markdown and the title from an HTML document."""
     extracted = trafilatura.extract(
         html,
         url=url,
@@ -346,151 +347,253 @@ def _extract_readable_content(html: str, url: str) -> tuple[str, str | None]:
     )
     metadata = trafilatura.extract_metadata(html, default_url=url)
     title = metadata.title if metadata and metadata.title else None
-
-    if extracted and extracted.strip():
-        return extracted.strip(), title
-
-    # Trafilatura 无法提取正文（例如非文章页面或极简结构），使用 MarkItDown 兜底
-    fallback_result = MarkItDown().convert(url)
-    fallback_text = (fallback_result.text_content or "").strip()
-    fallback_title = (
-        title or (getattr(fallback_result, "title", None) or "").strip() or None
-    )
-    return fallback_text, fallback_title
+    return (extracted or "").strip(), title
 
 
-async def fetch_webpage(url: str, max_length: int = 5000) -> dict[str, Any]:
+def _document_payload(
+    *,
+    url: str,
+    title: str | None,
+    citation_id: str,
+    ref: str,
+    document: dict[str, Any],
+) -> dict[str, Any]:
+    """Single-document payload rendered by the shared tool-output renderer."""
+    segments = document["segments"]
+    return {
+        "kind": "web.document",
+        "success": True,
+        "url": url,
+        "title": title,
+        "citation_id": citation_id,
+        "ref": ref,
+        "filename": document["filename"],
+        "start_line": document["start_line"],
+        "total_lines": document["total_lines"],
+        "segments": segments,
+        "next_cursor": document["next_cursor"],
+        "eof": document["eof"],
+    }
+
+
+def _error_payload(
+    url: str,
+    exc: BusinessError,
+    *,
+    ref: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "url": None if url.startswith("data:") else url,
+        "error": _translate_business_error(exc),
+        "success": False,
+    }
+    if ref is not None:
+        payload["ref"] = ref
+    return payload
+
+
+def _translate_business_error(exc: BusinessError) -> str:
+    kwargs = dict(exc.kwargs)
+    if exc.msg_key == "fetch_webpage_http_error" and "status_code" not in kwargs:
+        kwargs["status_code"] = exc.status_code
+    return t(exc.msg_key or "tool_execution_failed", **kwargs)
+
+
+def _markdown_filename(url: str, title: str | None) -> str:
+    from app.services.asset_url_import import safe_display_filename
+
+    base = "" if url.startswith("data:") else safe_display_filename(url, default="")
+    stem = Path(base).stem if base else ""
+    if not stem and title:
+        stem = safe_display_filename(title.replace(" ", "-"), default="")
+    return f"{(stem or 'webpage')[:200]}.md"
+
+
+async def _read_preview(asset: Any) -> dict[str, Any]:
+    from app.api.v1.endpoints.upload import UPLOAD_ROOT
+    from app.services.asset_document import read_document
+    from app.services.upload_storage import get_upload_storage_backend
+
+    storage = await get_upload_storage_backend(UPLOAD_ROOT)
+    return await read_document(asset, storage=storage)
+
+
+async def fetch_webpage(
+    url: str,
+    agent: Any | None = None,
+    user: Any | None = None,
+    conversation_id: Any = None,
+    workflow_run_id: Any = None,
+) -> dict[str, Any]:
     """
-    获取网页内容并提取正文 Markdown。
+    获取网页内容并在当前执行范围内保存完整正文。
 
-    优先通过 HTTP 请求并结合 Trafilatura 提取纯正文和元数据；
-    若非普通 HTTP(S) URL（如 data: 协议或本地文档）、网络异常或正文提取为空，
-    则回退至 MarkItDown 引擎解析。
+    正文会完整保存为受保护的 Asset；本次响应只返回有界行窗口，模型可通过
+    read_asset/search_asset 继续读取到 eof，不会静默截断。
 
     Args:
-        url: 网页 URL
-        max_length: 返回内容的最大长度，默认 5000
+        url: 网页 URL，也可以是当前范围内受保护的附件文件 URL
 
     Returns:
-        网页标题与正文内容
+        网页标题、有界正文预览、引用 ID 与 Asset ref
     """
-    # 限制非 HTTP URL：只允许安全的 data: 协议，严禁本地文件路径或 file:// 协议
-    if not url.startswith(("http://", "https://")):
-        if not url.startswith("data:"):
-            return {
-                "url": url,
-                "error": t("fetch_webpage_unsupported_scheme"),
-                "success": False,
-            }
-        try:
-            result = await asyncio.wait_for(
-                asyncio.to_thread(MarkItDown().convert, url), timeout=30
-            )
-            text = (result.text_content or "").strip()
-            title = (getattr(result, "title", None) or "").strip() or None
-            if len(text) > max_length:
-                text = text[:max_length] + "..."
-            return {
-                "url": url,
-                "title": title,
-                "content": text,
-                "citation_id": stable_citation_id("web", url),
-                "success": True,
-            }
-        except Exception as e:
-            status_code = getattr(getattr(e, "response", None), "status_code", None)
-            if status_code is not None:
-                return {
-                    "url": url,
-                    "error": t("fetch_webpage_http_error", status_code=status_code),
-                    "success": False,
-                }
-            return {"url": url, "error": t("tool_execution_failed"), "success": False}
+    from app.services.asset_url_import import (
+        InternalDocument,
+        decode_text,
+        infer_filename_extension,
+        is_html_document,
+        load_url_document,
+        persist_scoped_document,
+        resolve_document_scope,
+    )
 
     try:
-        async with httpx.AsyncClient(
-            timeout=25.0,
-            follow_redirects=True,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-                ),
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            },
-        ) as client:
-            response = await client.get(url)
-            if response.status_code >= 400:
-                return {
-                    "url": url,
-                    "error": t(
-                        "fetch_webpage_http_error", status_code=response.status_code
-                    ),
-                    "success": False,
-                }
-            html_text = response.text
-
-        # 在后台线程中执行正文提取
-        text, title = await asyncio.to_thread(_extract_readable_content, html_text, url)
-
-        if len(text) > max_length:
-            text = text[:max_length] + "..."
-
+        scope_type, scope_id = resolve_document_scope(
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
+        )
+    except BusinessError:
         return {
-            "url": url,
-            "title": title,
-            "content": text,
-            "citation_id": stable_citation_id("web", url),
-            "success": True,
-        }
-    except httpx.HTTPStatusError as e:
-        status_code = e.response.status_code if e.response else 500
-        return {
-            "url": url,
-            "error": t("fetch_webpage_http_error", status_code=status_code),
+            "url": url if not url.startswith("data:") else None,
+            "error": t("agent_context_required"),
             "success": False,
         }
-    except httpx.TimeoutException:
-        return {"url": url, "error": t("tool_execution_timeout"), "success": False}
-    except Exception as e:
-        status_code = getattr(getattr(e, "response", None), "status_code", None)
-        if status_code is not None:
+
+    display_url = None if url.startswith("data:") else url
+    expected_team_id = getattr(agent, "team_id", None)
+    try:
+        source = await load_url_document(
+            url,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            user=user,
+            expected_team_id=expected_team_id,
+        )
+    except BusinessError as exc:
+        return _error_payload(url, exc)
+
+    citation_id = stable_citation_id("web", url)
+
+    if isinstance(source, InternalDocument):
+        try:
+            document = await _read_preview(source.asset)
+        except ValueError as exc:
             return {
-                "url": url,
-                "error": t("fetch_webpage_http_error", status_code=status_code),
+                "url": display_url,
+                "ref": source.ref,
+                "error": t(str(exc)),
                 "success": False,
             }
-        logger.warning(
-            "fetch_webpage HTTP fetch failed for %s: %s, falling back to MarkItDown",
-            url,
-            e,
-        )
-        try:
-            fallback = await asyncio.wait_for(
-                asyncio.to_thread(MarkItDown().convert, url), timeout=15
-            )
-            text = (fallback.text_content or "").strip()
-            title = (getattr(fallback, "title", None) or "").strip() or None
-            if len(text) > max_length:
-                text = text[:max_length] + "..."
+        except RuntimeError:
             return {
-                "url": url,
-                "title": title,
-                "content": text,
-                "citation_id": stable_citation_id("web", url),
-                "success": True,
+                "url": display_url,
+                "error": t("file_not_found"),
+                "success": False,
             }
-        except Exception as fallback_e:
-            status_code = getattr(
-                getattr(fallback_e, "response", None), "status_code", None
+        title = (source.asset.provenance or {}).get("title")
+        return _document_payload(
+            url=display_url,
+            title=title,
+            citation_id=citation_id,
+            ref=source.ref,
+            document=document,
+        )
+
+    title: str | None = None
+    if is_html_document(source.content_type, source.filename):
+        try:
+            html = decode_text(source.content, source.charset)
+        except ValueError as exc:
+            return {
+                "url": display_url,
+                "error": t(str(exc)),
+                "success": False,
+            }
+        try:
+            text, title = await asyncio.to_thread(
+                _extract_readable_content, html, source.final_url
             )
-            if status_code is not None:
-                return {
-                    "url": url,
-                    "error": t("fetch_webpage_http_error", status_code=status_code),
-                    "success": False,
-                }
-            return {"url": url, "error": t("tool_execution_failed"), "success": False}
+        except Exception:
+            logger.warning(
+                "Readability extraction failed for %s", source.final_url, exc_info=True
+            )
+            text, title = "", None
+        if not text:
+            from app.services.file_parser import file_parser_service
+
+            try:
+                extracted = await file_parser_service.extract_file(
+                    source.content, "webpage.html"
+                )
+            except ValueError as exc:
+                return _error_payload(url, BusinessError(msg_key=str(exc)))
+            text = extracted.text
+            title = title or extracted.title
+        from app.services.file_parser import MAX_EXTRACTED_CHARS
+
+        if len(text) > MAX_EXTRACTED_CHARS:
+            return _error_payload(
+                url,
+                BusinessError(msg_key="asset_document_resource_limit_exceeded"),
+            )
+        content = text.encode("utf-8")
+        content_type = "text/markdown"
+        filename = _markdown_filename(url, title)
+    else:
+        content = source.content
+        content_type = source.content_type
+        filename = source.filename
+        if not Path(filename).suffix:
+            filename = f"{filename}{infer_filename_extension(content_type, filename)}"
+
+    try:
+        persisted = await persist_scoped_document(
+            content,
+            filename=filename,
+            content_type=content_type,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            user=user,
+            expected_team_id=expected_team_id,
+            provenance={
+                "origin": "web",
+                "url": display_url,
+                "final_url": None
+                if source.final_url.startswith("data:")
+                else source.final_url,
+                "title": title,
+                "source_content_type": source.content_type,
+                "citation_id": citation_id,
+            },
+        )
+    except BusinessError as exc:
+        return _error_payload(url, exc)
+
+    try:
+        document = await _read_preview(persisted.asset)
+    except ValueError as exc:
+        return {
+            "url": display_url,
+            "title": title,
+            "ref": persisted.ref,
+            "citation_id": citation_id,
+            "error": t(str(exc)),
+            "success": False,
+        }
+    except RuntimeError:
+        return {
+            "url": display_url,
+            "error": t("file_not_found"),
+            "success": False,
+        }
+
+    return _document_payload(
+        url=display_url,
+        title=title,
+        citation_id=citation_id,
+        ref=persisted.ref,
+        document=document,
+    )
 
 
 def register_web_search_tools() -> None:
@@ -520,20 +623,17 @@ def register_web_search_tools() -> None:
     tool_registry.register(
         name="fetch_webpage",
         concurrency=ToolConcurrency.SHARED,
-        description="获取网页内容。读取指定 URL 的网页文本内容。用于深入阅读搜索结果中感兴趣的页面。",
+        description=(
+            "获取网页内容。读取指定 URL 的网页正文，完整内容会保存为受保护的文档并返回"
+            "有界预览与 ref；需要更多内容时用 read_asset 继续读取到 eof，或用 "
+            "search_asset 定位文本。也支持当前范围内的受保护附件 URL。"
+        ),
         parameters=[
             ToolParameter(
                 name="url",
                 type="string",
-                description="要获取的网页 URL",
+                description="要获取的网页 URL，或当前范围内的受保护附件文件 URL",
                 required=True,
-            ),
-            ToolParameter(
-                name="max_length",
-                type="integer",
-                description="返回内容的最大字符数，默认 5000",
-                required=False,
-                default=5000,
             ),
         ],
     )(fetch_webpage)

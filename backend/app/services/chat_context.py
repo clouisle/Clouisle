@@ -256,13 +256,15 @@ def summarize_tool_result_for_llm(
     tool_name: str | None,
     stored_content: str,
 ) -> str:
+    from app.utils.tool_output import render_tool_output
+
     payload = _safe_json_loads(stored_content)
     if not payload:
         return stored_content
     return (
         _build_media_llm_summary(tool_name, payload)
         or _build_skill_llm_summary(payload)
-        or stored_content
+        or render_tool_output(tool_name, payload)
     )
 
 

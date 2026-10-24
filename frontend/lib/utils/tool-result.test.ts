@@ -11,6 +11,13 @@ import {
 } from './tool-result'
 
 describe('parseToolResultOutput', () => {
+  it('unwraps persisted model summaries without exposing them as display data', () => {
+    const display = { citation_id: 'web_saved', title: 'Saved source', url: 'https://example.test', content: 'source text' }
+    const persisted = { kind: 'tool.result.persisted', version: 1, display, llm_result: 'concise model summary' }
+    expect(parseToolResultOutput(JSON.stringify(persisted))).toEqual(display)
+    expect(extractToolCitationSources('fetch_webpage', persisted)).toEqual([expect.objectContaining({ citationId: 'web_saved', content: 'source text' })])
+    expect(parseToolResultOutput({ ...persisted, version: 2 })).toEqual({ ...persisted, version: 2 })
+  })
   it('parses valid JSON while preserving non-string values', () => {
     const object = { value: 1 }
 
@@ -26,6 +33,15 @@ describe('parseToolResultOutput', () => {
 })
 
 describe('extractToolCitationSources', () => {
+  it('extracts webpage citations from canonical segments without duplicated content', () => {
+    expect(extractToolCitationSources('fetch_webpage', { citation_id: 'web_segment', url: 'https://example.test', title: 'Article', segments: [{ line: 1, text: '完整网页' }] })).toEqual([expect.objectContaining({ citationId: 'web_segment', content: '完整网页' })])
+  })
+  it('preserves per-file citations and readable previews from converted URL documents', () => {
+    const sources = extractToolCitationSources('markitdown', {
+      files: [{ filename: '报价.docx', url: 'https://example.test/quote.docx', citation_id: 'web_quote', ref: 'abcd', eof: false, segments: [{ line: 1, text: '预算依据' }] }, { error: 'download failed' }],
+    })
+    expect(sources).toEqual([expect.objectContaining({ citationId: 'web_quote', title: '报价.docx', content: '预算依据', metadata: { ref: 'abcd', eof: false } })])
+  })
   it('extracts structured sources from Agentic RAG and web search results', () => {
     expect(extractToolCitationSources('knowledge_search', {
       contexts: [{

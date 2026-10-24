@@ -88,10 +88,12 @@ from app.services.message_branching import (
     get_version_root_id,
 )
 from app.services.asset import asset_service
+from app.utils.tool_output import unwrap_persisted_display
 
 from app.api.v1.endpoints.chat_helpers.asset_tools import (
     asset_tool_display_names,
     build_asset_tools,
+    asset_tool_names_for_agent,
 )
 from app.api.v1.endpoints.chat_helpers.model_utils import get_model_capabilities
 from app.api.v1.endpoints.chat_rag import (
@@ -640,7 +642,11 @@ async def build_round_steps_map(
                 {
                     "id": step.id,
                     "role": step.role.value,
-                    "content": step.content,
+                    "content": (
+                        unwrap_persisted_display(step.content)
+                        if step.role == MessageRole.TOOL
+                        else step.content
+                    ),
                     "tool_calls": step.tool_calls,
                     "tool_call_id": step.tool_call_id,
                     "tool_name": step.tool_name,
@@ -965,8 +971,9 @@ Examples of when to search:
                 }
             )
 
-    if getattr(agent, "enable_attachments", False):
-        for asset_tool in build_asset_tools():
+    enabled_asset_tools = asset_tool_names_for_agent(agent)
+    for asset_tool in build_asset_tools():
+        if asset_tool["function"]["name"] in enabled_asset_tools:
             append_openai_tool(asset_tool)
 
     if agent.enable_image_generation:
@@ -1121,9 +1128,14 @@ async def get_tool_display_names(
 
     tools_config = list(agent.tools_config or [])
 
-    # Add attachment tool display names if attachments are enabled
-    if getattr(agent, "enable_attachments", False):
-        display_names.update(asset_tool_display_names(user_locale))
+    enabled_asset_tools = asset_tool_names_for_agent(agent)
+    display_names.update(
+        {
+            name: label
+            for name, label in asset_tool_display_names(user_locale).items()
+            if name in enabled_asset_tools
+        }
+    )
 
     # Add knowledge_search display name for agentic RAG mode
     if agent.rag_mode == RAGMode.AGENTIC:
