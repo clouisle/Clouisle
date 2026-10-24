@@ -319,6 +319,65 @@ def _rows(
     return output
 
 
+def _web_results(payload: dict[str, Any]) -> str:
+    """Web hits as title/url lines: the field names are the same on every row."""
+    rows = payload.get("results")
+    if not isinstance(rows, list):
+        return json_output(payload)
+    output: list[str] = []
+    if payload.get("query"):
+        output.append(f"Search: {_field(payload['query'])}")
+    if payload.get("answer"):
+        output.append(f"Answer: {_field(payload['answer'])}")
+    known = {
+        *_IDENTITY_KEYS,
+        "results",
+        "answer",
+        "message",
+        "query",
+        "success",
+        "kind",
+        "has_more",
+        "next_cursor",
+        "eof",
+        "title",
+        "name",
+        "url",
+        "link",
+        "content",
+        "summary",
+        "score",
+        # Provider routing diagnostics stay in the display payload only.
+        "search_engine",
+    }
+    for index, row in enumerate(rows, 1):
+        if not isinstance(row, dict):
+            output.append(json_output(row))
+            continue
+        heading = row.get("title") or row.get("name") or "Untitled"
+        markers = " · ".join(
+            str(row[field])
+            for field in ("citation_id", "score", "published", "author")
+            if row.get(field) is not None
+        )
+        output.append(
+            f"{index}. {_field(heading)}" + (f" · {markers}" if markers else "")
+        )
+        if row.get("url") or row.get("link"):
+            output.append(_field(row.get("url") or row.get("link")))
+        body = row.get("content") or row.get("summary")
+        if body:
+            output.append(body if isinstance(body, str) else json_output(body))
+        extra = {key: value for key, value in row.items() if key not in known}
+        if extra:
+            output.append(json_output(extra))
+    if not rows:
+        output.append("No results.")
+    output.append(format_continuation(payload))
+    output.append(_extras(payload, known))
+    return "\n".join(filter(None, output))
+
+
 def _entries(
     payload: dict[str, Any],
     key: str,
@@ -685,12 +744,7 @@ def render_tool_output(tool_name: str | None, payload: Any) -> str:
             ),
         )
     if tool_name == "web_search":
-        return _entries(
-            payload,
-            "results",
-            identity_fields=("citation_id", "title", "url", "score"),
-            body_fields=("content",),
-        )
+        return _web_results(payload)
     if tool_name in {"knowledge_search", "search_knowledge_base"}:
         return _knowledge_search(payload)
     if tool_name == "rss_feed_reader":

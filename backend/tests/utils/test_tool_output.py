@@ -222,10 +222,48 @@ def test_web_search_renders_citations_and_answer_without_dropping_extra_fields()
     rendered = render_tool_output("web_search", payload)
 
     assert "Answer: direct" in rendered
-    assert "citation_id=web_1" in rendered
-    assert "score=0.5" in rendered
+    assert "1. T · web_1 · 0.5" in rendered
+    assert "https://example.com" in rendered
     assert "body" in rendered
     assert '"provider_extra":{"a":1}' in rendered
+    assert "success" not in rendered
+
+
+def test_web_search_omits_provider_routing_and_keeps_hits_compact():
+    rendered = render_tool_output(
+        "web_search",
+        {
+            "query": "上海 天气",
+            "results": [
+                {
+                    "title": "A",
+                    "url": "https://a.test",
+                    "content": "x",
+                    "citation_id": "w1",
+                },
+                {
+                    "title": "B",
+                    "url": "https://b.test",
+                    "content": "y",
+                    "citation_id": "w2",
+                },
+            ],
+            "success": True,
+            "search_engine": "duckduckgo",
+        },
+    )
+
+    assert rendered.splitlines() == [
+        "Search: 上海 天气",
+        "1. A · w1",
+        "https://a.test",
+        "x",
+        "2. B · w2",
+        "https://b.test",
+        "y",
+    ]
+    assert "duckduckgo" not in rendered
+    assert "title=" not in rendered
 
 
 def test_rss_renders_feed_metadata_and_article_entries():
@@ -750,7 +788,7 @@ def test_entry_rows_cover_malformed_and_fallback_shapes():
     no_body = render_tool_output(
         "web_search", {"results": [{"title": "T", "content": 0}]}
     )
-    assert "1. title=T" in no_body
+    assert "1. T" in no_body
 
 
 def test_knowledge_renderer_covers_malformed_and_optional_fields():
@@ -847,3 +885,28 @@ def test_renderer_error_fallback_preserves_payload():
     payload = {"error": "boom", "retryable": True}
     rendered = render_tool_output("read_asset", payload)
     assert json.loads(rendered) == payload
+
+
+def test_web_search_keeps_non_dict_rows_and_alternate_result_fields():
+    rendered = render_tool_output(
+        "web_search",
+        {
+            "results": [
+                "raw-row",
+                {
+                    "name": "Named",
+                    "link": "https://named.test",
+                    "summary": "s",
+                    "provider": 1,
+                },
+                {"title": "Untitled body", "content": 0},
+            ],
+            "has_more": True,
+        },
+    )
+
+    assert rendered.splitlines()[0] == '"raw-row"'
+    assert "Named" in rendered and "https://named.test" in rendered
+    assert '"provider":1' in rendered
+    assert "3. Untitled body" in rendered
+    assert "More results available." in rendered

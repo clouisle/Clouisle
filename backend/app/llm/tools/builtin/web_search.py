@@ -312,6 +312,16 @@ async def _duckduckgo_search(query: str, num_results: int) -> dict:
             html_text = response.text
 
         results = await asyncio.to_thread(_parse_ddg_html, html_text, num_results)
+        if not results:
+            # DuckDuckGo answers anti-bot challenges with a 200/202 page that has
+            # no result nodes. Reporting success here would tell the model the
+            # search ran and legitimately found nothing.
+            return {
+                "query": query,
+                "error": t("web_search_blocked_or_empty"),
+                "success": False,
+                "results": [],
+            }
         return {
             "query": query,
             "results": with_web_citation_ids(results),

@@ -3316,6 +3316,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Volcengine video task completed without video output",
         "zh": "火山方舟视频任务已完成，但未返回视频结果",
     },
+    "web_search_blocked_or_empty": {
+        "en": "The search engine returned no usable results (it may be blocking automated requests); try again or choose another engine",
+        "zh": "搜索引擎未返回可用结果（可能拦截了自动请求）；请重试或切换搜索引擎",
+    },
     "web_search_api_error": {
         "en": "Search API error: {status_code}",
         "zh": "搜索 API 错误：{status_code}",

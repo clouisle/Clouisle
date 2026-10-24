@@ -349,3 +349,29 @@ def test_register_web_search_tools_defines_both_handlers(monkeypatch):
     assert [(item.name, item.required, item.default) for item in fetch_parameters] == [
         ("url", True, None),
     ]
+
+
+@pytest.mark.anyio
+async def test_duckduckgo_challenge_page_is_a_failure_not_an_empty_success(monkeypatch):
+    install_client(
+        monkeypatch,
+        FakeClient(post=fake_response(text="<html><body>challenge</body></html>")),
+    )
+    monkeypatch.setattr(subject, "t", lambda key, **kwargs: key)
+
+    result = await subject._duckduckgo_search("上海 天气", 5)
+
+    assert result["success"] is False
+    assert result["results"] == []
+    assert result["error"] == "web_search_blocked_or_empty"
+
+
+@pytest.mark.anyio
+async def test_duckduckgo_parsed_results_remain_successful(monkeypatch):
+    html = '<div class="result"><a class="result__a" href="https://example.test/a">A</a><a class="result__snippet">S</a></div>'
+    install_client(monkeypatch, FakeClient(post=fake_response(text=html)))
+
+    result = await subject._duckduckgo_search("weather", 5)
+
+    assert result["success"] is True
+    assert result["results"][0]["url"] == "https://example.test/a"
