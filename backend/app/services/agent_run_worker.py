@@ -487,6 +487,7 @@ async def _rebuild_context(
         iteration_offset=int(payload.get("iteration_offset", 0)),
         streaming=is_streaming,
         collect_dependency_metrics=True,
+        observability_run_id=UUID(payload["run_id"]),
         execute_tool_call=__import__(
             "app.api.v1.endpoints.chat_tools", fromlist=["execute_tool_call"]
         ).execute_tool_call,

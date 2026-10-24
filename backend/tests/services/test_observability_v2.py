@@ -740,10 +740,15 @@ async def test_retention_batches_expired_rows_and_preserves_active_alerts(monkey
     )
     monkeypatch.setattr(observability_v2, "RETENTION_BATCH_SIZE", 2)
     monkeypatch.setattr(observability_v2, "RETENTION_BATCHES_PER_CYCLE", 2)
+    payload_delete = MagicMock(delete=AsyncMock(return_value=0))
+    payload_filter = MagicMock(return_value=payload_delete)
+    from app.models.observability_payload import ObservabilityToolPayload
+
     monkeypatch.setattr(observability_v2.ObservabilityRun, "filter", run_filter)
     monkeypatch.setattr(
         observability_v2.ObservabilityAlertEvent, "filter", alert_filter
     )
+    monkeypatch.setattr(ObservabilityToolPayload, "filter", payload_filter)
 
     deleted = await observability_v2.retain()
 
@@ -753,6 +758,7 @@ async def test_retention_batches_expired_rows_and_preserves_active_alerts(monkey
     assert alert_select.values_list.await_count == 1
     assert alert_filter.call_args_list[0].kwargs["status"] == "resolved"
     alert_delete.delete.assert_awaited_once()
+    assert payload_filter.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -2431,10 +2437,15 @@ async def test_retention_stops_after_batch_limit_when_all_batches_are_full(
             self.deleted_batches += 1
             return batch_size
 
-    run_query, alert_query = Query(), Query()
+    run_query, alert_query, payload_query = Query(), Query(), Query()
+    from app.models.observability_payload import ObservabilityToolPayload
+
     monkeypatch.setattr(observability_v2, "RETENTION_BATCHES_PER_CYCLE", 2)
     monkeypatch.setattr(
         observability_v2.ObservabilityRun, "filter", lambda **_kwargs: run_query
+    )
+    monkeypatch.setattr(
+        ObservabilityToolPayload, "filter", lambda **_kwargs: payload_query
     )
     monkeypatch.setattr(
         observability_v2.ObservabilityAlertEvent,
@@ -2445,3 +2456,4 @@ async def test_retention_stops_after_batch_limit_when_all_batches_are_full(
     assert await observability_v2.retain() == 4 * batch_size
     assert (run_query.batch_reads, run_query.deleted_batches) == (2, 2)
     assert (alert_query.batch_reads, alert_query.deleted_batches) == (2, 2)
+    assert payload_query.deleted_batches == 2

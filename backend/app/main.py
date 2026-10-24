@@ -104,6 +104,7 @@ async def lifespan(app: FastAPI):
         init_assets_tables,
         init_agent_run_fields,
         init_observability_run_error_index,
+        init_observability_tool_payload_table,
         init_observability_run_fields,
         init_agent_user_input_request,
         init_agent_hide_tool_calls_field,
@@ -355,6 +356,10 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Retrieval evaluation table cleanup failed: {e}")
 
     await init_observability_run_fields()
+    try:
+        await init_observability_tool_payload_table()
+    except Exception as e:
+        logger.warning(f"Observability tool payload table migration failed: {e}")
     from app.core.sso_link_migration import migrate_sso_link_sessions
 
     await migrate_sso_link_sessions()

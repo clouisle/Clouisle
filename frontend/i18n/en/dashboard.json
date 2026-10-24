@@ -163,25 +163,238 @@
       "title": "Observability",
       "description": "Monitor AI run performance, queues, infrastructure, and alerts.",
       "consoleDescription": "A live, bounded view of run health, dependency performance, capacity, infrastructure, and alert response.",
-      "tabs": { "overview": "Overview", "runs": "Run diagnostics", "dependencies": "Models & tools", "queues": "Queues", "infrastructure": "Infrastructure", "alerts": "Alerts" },
-      "actions": { "refresh": "Refresh", "retry": "Retry", "apply": "Apply", "openIssue": "Open issue", "loadMore": "Load more", "save": "Save" },
-      "filters": { "team": "Team", "teamId": "Team ID", "period": "Time range", "source": "Source", "allSources": "All sources", "status": "Status", "allStatuses": "All statuses", "errorCategory": "Error category", "runId": "Run ID", "alertStatus": "Alert status" },
-      "periods": { "15m": "Last 15 minutes", "1h": "Last hour", "24h": "Last 24 hours", "7d": "Last 7 days", "custom": "Custom time range" },
-      "customRange": { "pickDate": "Pick a date range", "presets": "Quick ranges", "description": "Selected dates include the whole day in your browser's local time zone. Telemetry is retained for 30 days.", "invalid": "Choose a complete, valid date range. URL timestamps must include a time zone.", "cancel": "Cancel" },
-      "states": { "loading": "Loading observability data", "errorDescription": "Check service health and try again.", "lastUpdated": "Last updated {time}", "noSamples": "No samples are available in this view.", "unavailableDetail": "This data source is unavailable. Values are not reported as zero." },
-      "quality": { "fresh": "Fresh sample · {samples} runs", "partial": "Partial coverage · {samples} runs", "stale": "Data is stale · last sample includes {samples} runs", "unavailable": "Observability data unavailable", "no_data": "No samples in this window", "window": "Window {start} – {end}", "lastSample": "Last sample {time}" },
-      "status": {"healthy": "Healthy", "warning": "Warning", "danger": "Critical", "unhealthy": "Unhealthy", "unknown": "Unknown", "success": "Success", "completed": "Completed", "completing": "Completing", "failed": "Failed", "interrupted": "Interrupted", "running": "Running", "stopping": "Stopping", "stopped": "Stopped", "waiting": "Waiting", "pending": "Pending", "queued": "Queued", "cancelled": "Cancelled", "timeout": "Timeout", "error": "Error", "degraded": "Degraded", "unavailable": "Unavailable", "stale": "Stale", "offline": "Offline"},
-      "sources": { "agent": "Agent", "workflow": "Workflow" },
-      "severity": { "critical": "Critical", "warning": "Warning", "info": "Info" },
-      "issues": { "affected": "{count} affected", "none": "No active issues reported." },
-      "metrics": { "agentSubmitted": "Agent runs submitted", "agentSuccessRate": "Agent success rate", "agentP95": "Agent P95 duration", "firstTokenP95": "First token P95 {value}", "agentTokens": "Agent tokens", "workflowSubmitted": "Workflow runs submitted", "workflowSuccessRate": "Workflow success rate", "workflowP95": "Workflow P95 duration", "workflowTokens": "Workflow tokens", "completedFailed": "{completed} completed · {failed} failed" },
-      "charts": { "runTrend": "Run activity", "runTrendDesc": "Submitted, completed, and failed runs by time bucket. Counts use one axis.", "completed": "Completed", "failed": "Failed", "submitted": "Submitted", "latencyTrend": "Latency percentiles", "latencyTrendDesc": "P95 and first-token P95 durations in milliseconds; unavailable samples stay blank.", "p95": "P95 duration (ms)", "firstTokenP95": "First-token P95 (ms)", "tokenTrend": "Token activity", "tokenTrendDesc": "Tokens attributed to runs in each time bucket.", "tokens": "Tokens", "sampleCoverage": "{samples} runs in bucket" },
-      "runs": { "title": "Run diagnostics", "description": "Server-paginated run summaries. Trace content loads only when a run is opened.", "columns": { "source": "Source", "name": "Resource", "team": "Team", "status": "Status", "submitted": "Submitted", "queue": "Queue", "duration": "Duration", "tokens": "Tokens", "error": "Error", "trace": "Trace" } },
-      "dependencies": { "models": "Models", "tools": "Tools", "retrieval": "Retrieval", "description": "Aggregates come from sampled telemetry; missing values indicate insufficient samples.", "requests": "Requests", "samples": "Samples", "successRate": "Success rate", "completedFailed": "{completed} completed · {failed} failed", "p50": "P50", "p95": "P95", "firstTokenP95": "First-token P95", "tokens": "Tokens" },
-      "queues": { "workers": "Workers", "workersDescription": "Worker and queue inspection is bounded; unavailable counts remain blank.", "workerQueues": "Queues", "lastHeartbeat": "Last heartbeat", "scheduled": "Scheduled", "queues": "Queues", "queuesDescription": "Dynamically discovered queues include sandbox queues when available.", "active": "Active", "reserved": "Reserved", "pending": "Pending", "consumers": "Consumers", "oldestWait": "Oldest wait", "observedAt": "Observed", "pendingTrend": "Pending tasks for {name}" },
-      "infrastructure": {"instances": "Service instances", "dependencies": "Service dependencies", "latency": "Latency", "slowQueries": "Slow queries", "safeQueryNotice": "Query text is normalized and bounded; parameter values are not displayed.", "queryReset": "Statistics reset at {time}", "calls": "Calls", "mean": "Mean", "max": "Maximum", "total": "Total", "roles": {"api": "API"}, "metric": {"cpu_percent": "CPU", "memory_percent": "Memory"}, "scope": {"host": "Host metrics · not container resource usage"}, "retainedSample": "Last recorded values · not current usage", "lastObservedAt": "Last sample"},
-      "alerts": { "events": "Alert events", "eventsDescription": "Acknowledge incidents or silence them for a bounded duration.", "active": "Active", "resolved": "Resolved", "all": "All", "acknowledge": "Acknowledge", "silence": "Silence", "silenceDuration": "Silence duration", "seconds": "{count} seconds", "started": "Started {time}", "silencedUntil": "Silenced until {time}", "noEvents": "No alert events in this view.", "rules": "Alert rules", "rulesDescription": "Configure thresholds and evaluation/recovery windows.", "enabled": "Enabled", "threshold": "Threshold", "evaluationWindow": "Evaluate {count}s", "recoveryWindow": "Recover after {count}s" },
-      "details": { "runTitle": "Run trace", "traceDescription": "On-demand execution trace detail", "traceStatus": "{recorded} spans recorded · {complete}", "complete": "complete", "incomplete": "incomplete", "traceExpired": "Trace has expired", "traceTruncated": "Trace data was truncated at the retention limit", "waterfall": "Trace waterfall", "traceUnavailable": "No trace spans were retained for this run.", "errorCategory": "Error category" }
+      "tabs": {
+        "overview": "Overview",
+        "runs": "Run diagnostics",
+        "dependencies": "Models & tools",
+        "queues": "Queues",
+        "infrastructure": "Infrastructure",
+        "alerts": "Alerts"
+      },
+      "actions": {
+        "refresh": "Refresh",
+        "retry": "Retry",
+        "apply": "Apply",
+        "openIssue": "Open issue",
+        "loadMore": "Load more",
+        "save": "Save"
+      },
+      "filters": {
+        "team": "Team",
+        "teamId": "Team ID",
+        "period": "Time range",
+        "source": "Source",
+        "allSources": "All sources",
+        "status": "Status",
+        "allStatuses": "All statuses",
+        "errorCategory": "Error category",
+        "runId": "Run ID",
+        "alertStatus": "Alert status"
+      },
+      "periods": {
+        "15m": "Last 15 minutes",
+        "1h": "Last hour",
+        "24h": "Last 24 hours",
+        "7d": "Last 7 days",
+        "custom": "Custom time range"
+      },
+      "customRange": {
+        "pickDate": "Pick a date range",
+        "presets": "Quick ranges",
+        "description": "Selected dates include the whole day in your browser's local time zone. Telemetry is retained for 30 days.",
+        "invalid": "Choose a complete, valid date range. URL timestamps must include a time zone.",
+        "cancel": "Cancel"
+      },
+      "states": {
+        "loading": "Loading observability data",
+        "errorDescription": "Check service health and try again.",
+        "lastUpdated": "Last updated {time}",
+        "noSamples": "No samples are available in this view.",
+        "unavailableDetail": "This data source is unavailable. Values are not reported as zero."
+      },
+      "quality": {
+        "fresh": "Fresh sample · {samples} runs",
+        "partial": "Partial coverage · {samples} runs",
+        "stale": "Data is stale · last sample includes {samples} runs",
+        "unavailable": "Observability data unavailable",
+        "no_data": "No samples in this window",
+        "window": "Window {start} – {end}",
+        "lastSample": "Last sample {time}"
+      },
+      "status": {
+        "healthy": "Healthy",
+        "warning": "Warning",
+        "danger": "Critical",
+        "unhealthy": "Unhealthy",
+        "unknown": "Unknown",
+        "success": "Success",
+        "completed": "Completed",
+        "completing": "Completing",
+        "failed": "Failed",
+        "interrupted": "Interrupted",
+        "running": "Running",
+        "stopping": "Stopping",
+        "stopped": "Stopped",
+        "waiting": "Waiting",
+        "pending": "Pending",
+        "queued": "Queued",
+        "cancelled": "Cancelled",
+        "timeout": "Timeout",
+        "error": "Error",
+        "degraded": "Degraded",
+        "unavailable": "Unavailable",
+        "stale": "Stale",
+        "offline": "Offline"
+      },
+      "sources": {
+        "agent": "Agent",
+        "workflow": "Workflow"
+      },
+      "severity": {
+        "critical": "Critical",
+        "warning": "Warning",
+        "info": "Info"
+      },
+      "issues": {
+        "affected": "{count} affected",
+        "none": "No active issues reported."
+      },
+      "metrics": {
+        "agentSubmitted": "Agent runs submitted",
+        "agentSuccessRate": "Agent success rate",
+        "agentP95": "Agent P95 duration",
+        "firstTokenP95": "First token P95 {value}",
+        "agentTokens": "Agent tokens",
+        "workflowSubmitted": "Workflow runs submitted",
+        "workflowSuccessRate": "Workflow success rate",
+        "workflowP95": "Workflow P95 duration",
+        "workflowTokens": "Workflow tokens",
+        "completedFailed": "{completed} completed · {failed} failed"
+      },
+      "charts": {
+        "runTrend": "Run activity",
+        "runTrendDesc": "Submitted, completed, and failed runs by time bucket. Counts use one axis.",
+        "completed": "Completed",
+        "failed": "Failed",
+        "submitted": "Submitted",
+        "latencyTrend": "Latency percentiles",
+        "latencyTrendDesc": "P95 and first-token P95 durations in milliseconds; unavailable samples stay blank.",
+        "p95": "P95 duration (ms)",
+        "firstTokenP95": "First-token P95 (ms)",
+        "tokenTrend": "Token activity",
+        "tokenTrendDesc": "Tokens attributed to runs in each time bucket.",
+        "tokens": "Tokens",
+        "sampleCoverage": "{samples} runs in bucket"
+      },
+      "runs": {
+        "title": "Run diagnostics",
+        "description": "Server-paginated run summaries. Trace content loads only when a run is opened.",
+        "columns": {
+          "source": "Source",
+          "name": "Resource",
+          "team": "Team",
+          "status": "Status",
+          "submitted": "Submitted",
+          "queue": "Queue",
+          "duration": "Duration",
+          "tokens": "Tokens",
+          "error": "Error",
+          "trace": "Trace"
+        }
+      },
+      "dependencies": {
+        "models": "Models",
+        "tools": "Tools",
+        "retrieval": "Retrieval",
+        "description": "Aggregates come from sampled telemetry; missing values indicate insufficient samples.",
+        "requests": "Requests",
+        "samples": "Samples",
+        "successRate": "Success rate",
+        "completedFailed": "{completed} completed · {failed} failed",
+        "p50": "P50",
+        "p95": "P95",
+        "firstTokenP95": "First-token P95",
+        "tokens": "Tokens"
+      },
+      "queues": {
+        "workers": "Workers",
+        "workersDescription": "Worker and queue inspection is bounded; unavailable counts remain blank.",
+        "workerQueues": "Queues",
+        "lastHeartbeat": "Last heartbeat",
+        "scheduled": "Scheduled",
+        "queues": "Queues",
+        "queuesDescription": "Dynamically discovered queues include sandbox queues when available.",
+        "active": "Active",
+        "reserved": "Reserved",
+        "pending": "Pending",
+        "consumers": "Consumers",
+        "oldestWait": "Oldest wait",
+        "observedAt": "Observed",
+        "pendingTrend": "Pending tasks for {name}"
+      },
+      "infrastructure": {
+        "instances": "Service instances",
+        "dependencies": "Service dependencies",
+        "latency": "Latency",
+        "slowQueries": "Slow queries",
+        "safeQueryNotice": "Query text is normalized and bounded; parameter values are not displayed.",
+        "queryReset": "Statistics reset at {time}",
+        "calls": "Calls",
+        "mean": "Mean",
+        "max": "Maximum",
+        "total": "Total",
+        "roles": {
+          "api": "API"
+        },
+        "metric": {
+          "cpu_percent": "CPU",
+          "memory_percent": "Memory"
+        },
+        "scope": {
+          "host": "Host metrics · not container resource usage"
+        },
+        "retainedSample": "Last recorded values · not current usage",
+        "lastObservedAt": "Last sample"
+      },
+      "alerts": {
+        "events": "Alert events",
+        "eventsDescription": "Acknowledge incidents or silence them for a bounded duration.",
+        "active": "Active",
+        "resolved": "Resolved",
+        "all": "All",
+        "acknowledge": "Acknowledge",
+        "silence": "Silence",
+        "silenceDuration": "Silence duration",
+        "seconds": "{count} seconds",
+        "started": "Started {time}",
+        "silencedUntil": "Silenced until {time}",
+        "noEvents": "No alert events in this view.",
+        "rules": "Alert rules",
+        "rulesDescription": "Configure thresholds and evaluation/recovery windows.",
+        "enabled": "Enabled",
+        "threshold": "Threshold",
+        "evaluationWindow": "Evaluate {count}s",
+        "recoveryWindow": "Recover after {count}s"
+      },
+      "details": {
+        "runTitle": "Run trace",
+        "traceDescription": "On-demand execution trace detail",
+        "traceStatus": "{recorded} spans recorded · {complete}",
+        "complete": "complete",
+        "incomplete": "incomplete",
+        "traceExpired": "Trace has expired",
+        "traceTruncated": "Trace data was truncated at the retention limit",
+        "waterfall": "Trace waterfall",
+        "traceUnavailable": "No trace spans were retained for this run.",
+        "errorCategory": "Error category",
+        "modelInput": "Model input",
+        "rawData": "Raw data",
+        "payloadBytes": "Model {model} B · raw {display} B",
+        "notFinished": "Not finished",
+        "partial": "Partial record",
+        "payloadUnavailable": "Tool payload could not be loaded.",
+        "payloadNotRecorded": "No payload was recorded for this call (legacy data)."
+      }
     }
   }
 }

@@ -81,6 +81,22 @@ export interface TraceSpan {
   metadata: Record<string, unknown>
 }
 
+export interface ToolPayloadDetail {
+  tool_call_id: string
+  tool_name: string
+  display: string | null
+  model_input: string | null
+  display_bytes: number
+  model_bytes: number
+  model_sha256: string | null
+  renderer: string | null
+  eof: boolean | null
+  has_cursor: boolean
+  partial: boolean
+  error: string | null
+  recorded: boolean
+}
+
 export interface RunDetailResponse {
   run: RunSummary
   spans: TraceSpan[]
@@ -222,6 +238,8 @@ export const observabilityApi = {
     api.get<RunsResponse>(withParams('/admin/observability/runs', params)),
   getRun: (source: ObservabilitySource, runId: string): Promise<RunDetailResponse> =>
     api.get<RunDetailResponse>(`/admin/observability/runs/${source}/${encodeURIComponent(runId)}`),
+  getRunToolPayload: (source: ObservabilitySource, runId: string, toolCallId: string): Promise<ToolPayloadDetail> =>
+    api.get<ToolPayloadDetail>(`/admin/observability/runs/${source}/${encodeURIComponent(runId)}/tools/${encodeURIComponent(toolCallId)}`),
   getDependencies: (params: { period?: ObservabilityPeriod; start_time?: string; end_time?: string; team_id?: string } = {}): Promise<DependenciesResponse> =>
     api.get<DependenciesResponse>(withParams('/admin/observability/dependencies', params)),
   getQueues: (): Promise<QueuesResponse> => api.get<QueuesResponse>('/admin/observability/queues'),

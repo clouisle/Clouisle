@@ -1456,6 +1456,42 @@ async def init_agent_run_fields():
     )
 
 
+async def init_observability_tool_payload_table() -> None:
+    """Create the on-demand tool payload table on existing installations."""
+    conn = Tortoise.get_connection("default")
+    if conn.capabilities.dialect != "postgres":
+        return
+    await conn.execute_query(
+        """
+        CREATE TABLE IF NOT EXISTS observability_tool_payloads (
+            id UUID PRIMARY KEY,
+            run_id UUID NOT NULL,
+            conversation_id UUID,
+            tool_call_id VARCHAR(100) NOT NULL,
+            tool_name VARCHAR(100) NOT NULL,
+            display_text TEXT,
+            model_text TEXT,
+            display_bytes INTEGER NOT NULL DEFAULT 0,
+            model_bytes INTEGER NOT NULL DEFAULT 0,
+            model_sha256 VARCHAR(64),
+            renderer VARCHAR(64),
+            eof BOOLEAN,
+            has_cursor BOOLEAN NOT NULL DEFAULT FALSE,
+            partial BOOLEAN NOT NULL DEFAULT FALSE,
+            error VARCHAR(200),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (run_id, tool_call_id)
+        )
+        """
+    )
+    await conn.execute_query(
+        """
+        CREATE INDEX IF NOT EXISTS idx_observability_tool_payloads_run_created
+        ON observability_tool_payloads (run_id, created_at)
+        """
+    )
+
+
 async def init_observability_run_fields():
     """Add diagnostics fields required by existing run-summary tables."""
     conn = Tortoise.get_connection("default")

@@ -666,6 +666,12 @@ async def run_detail(source: str, run_id: UUID) -> dict[str, Any] | None:
     trace_expired = False
     trace_truncated = bool(row.dependency_metrics_truncated)
     if source == "agent":
+        from app.services.observability_payload import payload_metadata
+
+        try:
+            payloads = await payload_metadata(run_id)
+        except Exception:
+            payloads = {}
         for metric in row.dependency_metrics or []:
             if not isinstance(metric, dict):
                 continue
@@ -692,7 +698,14 @@ async def run_detail(source: str, run_id: UUID) -> dict[str, Any] | None:
                     "tool": str(name) if kind == "tool" else None,
                     "error_category": metric.get("error_category"),
                     "token_usage": None,
-                    "metadata": {},
+                    "metadata": {
+                        **(
+                            {"tool_call_id": str(metric.get("tool_call_id"))}
+                            if metric.get("tool_call_id")
+                            else {}
+                        ),
+                        **payloads.get(str(metric.get("tool_call_id") or ""), {}),
+                    },
                 }
             )
     if source == "workflow":
@@ -1523,6 +1536,9 @@ async def retain() -> int:
         )
         if not run_ids:
             break
+        from app.models.observability_payload import ObservabilityToolPayload
+
+        await ObservabilityToolPayload.filter(run_id__in=list(run_ids)).delete()
         deleted = int(await ObservabilityRun.filter(id__in=list(run_ids)).delete())
         deleted_runs += deleted
         if deleted < 1 or len(run_ids) < RETENTION_BATCH_SIZE:

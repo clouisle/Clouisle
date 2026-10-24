@@ -45,6 +45,7 @@ from app.api.v1.endpoints.chat_sse import (
 from app.api.v1.endpoints.chat_tools import AssetViewResult, execute_tool_call
 from app.llm.tools.interaction import ToolInteractionRequest
 from app.utils.tool_output import (
+    KNOWN_OUTPUT_TOOLS,
     ToolExecutionResult,
     get_tool_execution_payloads,
     persistable_model_result,
@@ -153,6 +154,8 @@ class AgentLoopContext:
     # persistence granularity
     persist_step_per_tool: bool = False
     collect_dependency_metrics: bool = False
+    # Observability run id, used only to key on-demand tool payload drill-down.
+    observability_run_id: UUID | None = None
     step_branch_parent_id: UUID | None = None
     first_round_index: int = 1
     created_message_count: int = 2
@@ -534,6 +537,7 @@ class AgentLoop:
                             if tool_name == "knowledge_search"
                             else "tool",
                             "name": tool_name[:100],
+                            "tool_call_id": tc.id[:100],
                             "status": metric_status,
                             "started_at": datetime.fromtimestamp(
                                 tool_started_at, timezone.utc
@@ -563,6 +567,19 @@ class AgentLoop:
             llm_result,
             explicit=isinstance(tool_result, ToolExecutionResult),
         )
+        if ctx.observability_run_id is not None:
+            from app.services.observability_payload import record_tool_payload
+
+            await record_tool_payload(
+                run_id=ctx.observability_run_id,
+                tool_call_id=tc.id,
+                tool_name=tool_name,
+                display_result=display_result,
+                model_result=llm_result,
+                renderer=tool_name if tool_name in KNOWN_OUTPUT_TOOLS else None,
+                conversation_id=ctx.conversation.id,
+                error=metric_error_category if metric_status == "failed" else None,
+            )
 
         return (
             self._build_tool_call_sse(tc),

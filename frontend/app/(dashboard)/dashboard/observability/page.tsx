@@ -31,7 +31,7 @@ import { CHART_AXIS_COLOR, CHART_COLOR_ORDER, CHART_GRID_COLOR, CHART_HOVER_CURS
 import { StatCard } from '@/components/dashboard/stat-card'
 import { formatTime } from '@/lib/utils'
 import { usePermissions } from '@/hooks/use-permissions'
-import { observabilityApi, type AlertEvent, type AlertRule, type DependenciesResponse, type InfrastructureResponse, type ObservabilityMeta, type ObservabilityPeriod, type QueueRow, type QueuesResponse, type RunDetailResponse, type RunSummary, type SummaryResponse } from '@/lib/api/admin/observability'
+import { observabilityApi, type AlertEvent, type AlertRule, type DependenciesResponse, type InfrastructureResponse, type ObservabilityMeta, type ObservabilityPeriod, type QueueRow, type QueuesResponse, type RunDetailResponse, type RunSummary, type SummaryResponse, type ToolPayloadDetail } from '@/lib/api/admin/observability'
 
 const VIEWS = ['overview', 'runs', 'dependencies', 'queues', 'infrastructure', 'alerts'] as const
 type View = typeof VIEWS[number]
@@ -765,9 +765,45 @@ function RunDetail({ detail, loading, error, onClose, expanded, setExpanded }: {
       else next.add(id)
       return next
     })
-  return <Sheet open={Boolean(run || loading || error)} onOpenChange={(open) => !open && onClose()}><SheetContent className="w-full overflow-y-auto sm:max-w-3xl"><SheetHeader><SheetTitle>{run?.resource_name ?? t('details.runTitle')}</SheetTitle><SheetDescription>{run ? `${t(`sources.${run.source}`)} · ${run.run_id}` : t('details.traceDescription')}</SheetDescription></SheetHeader>{loading ? <div className="space-y-3 p-6"><div className="h-16 animate-pulse rounded bg-muted"/><div className="h-32 animate-pulse rounded bg-muted"/></div> : error ? <p role="alert" className="p-6 text-sm text-destructive">{t('states.errorDescription')}</p> : detail && run ? <div className="space-y-5 p-1"><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><StatCard dense title={t('runs.columns.status')} value={run.status}/><StatCard dense title={t('runs.columns.queue')} value={duration(run.queue_duration_ms)}/><StatCard dense title={t('runs.columns.duration')} value={duration(run.total_duration_ms)}/><StatCard dense title={t('runs.columns.tokens')} value={number(run.total_tokens)}/></div><div className="rounded-lg border p-3 text-xs text-muted-foreground">{t('details.traceStatus', { recorded: detail.trace.recorded_count, complete: detail.trace.complete ? t('details.complete') : t('details.incomplete') })}{detail.trace.expired && ` · ${t('details.traceExpired')}`}{detail.trace.truncated && ` · ${t('details.traceTruncated')}`}</div><div className="space-y-1"><h3 className="mb-3 font-medium">{t('details.waterfall')}</h3>{spans.length ? (children.get(null) ?? spans.filter((span) => !spans.some((other) => other.span_id === span.parent_span_id))).map((span) => <SpanTree key={span.span_id} span={span} childrenMap={children} depth={0} timelineStart={timelineStart} timelineDuration={timelineDuration} expanded={expanded} toggle={toggle}/>) : <Empty text={t('details.traceUnavailable')}/>}</div>{run.error_category && <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm"><strong>{t('details.errorCategory')}:</strong> {run.error_category}{run.error_code && ` · ${run.error_code}`}</div>}</div> : null}</SheetContent></Sheet>
+  return <Sheet open={Boolean(run || loading || error)} onOpenChange={(open) => !open && onClose()}><SheetContent className="w-full overflow-y-auto sm:max-w-3xl"><SheetHeader><SheetTitle>{run?.resource_name ?? t('details.runTitle')}</SheetTitle><SheetDescription>{run ? `${t(`sources.${run.source}`)} · ${run.run_id}` : t('details.traceDescription')}</SheetDescription></SheetHeader>{loading ? <div className="space-y-3 p-6"><div className="h-16 animate-pulse rounded bg-muted"/><div className="h-32 animate-pulse rounded bg-muted"/></div> : error ? <p role="alert" className="p-6 text-sm text-destructive">{t('states.errorDescription')}</p> : detail && run ? <div className="space-y-5 p-1"><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><StatCard dense title={t('runs.columns.status')} value={run.status}/><StatCard dense title={t('runs.columns.queue')} value={duration(run.queue_duration_ms)}/><StatCard dense title={t('runs.columns.duration')} value={duration(run.total_duration_ms)}/><StatCard dense title={t('runs.columns.tokens')} value={number(run.total_tokens)}/></div><div className="rounded-lg border p-3 text-xs text-muted-foreground">{t('details.traceStatus', { recorded: detail.trace.recorded_count, complete: detail.trace.complete ? t('details.complete') : t('details.incomplete') })}{detail.trace.expired && ` · ${t('details.traceExpired')}`}{detail.trace.truncated && ` · ${t('details.traceTruncated')}`}</div><div className="space-y-1"><h3 className="mb-3 font-medium">{t('details.waterfall')}</h3>{spans.length ? (children.get(null) ?? spans.filter((span) => !spans.some((other) => other.span_id === span.parent_span_id))).map((span) => <SpanTree key={span.span_id} source={run.source} runId={run.run_id} span={span} childrenMap={children} depth={0} timelineStart={timelineStart} timelineDuration={timelineDuration} expanded={expanded} toggle={toggle}/>) : <Empty text={t('details.traceUnavailable')}/>}</div>{run.error_category && <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm"><strong>{t('details.errorCategory')}:</strong> {run.error_category}{run.error_code && ` · ${run.error_code}`}</div>}</div> : null}</SheetContent></Sheet>
 }
+function SpanPayload({ source, runId, toolCallId }: { source: RunSummary['source']; runId: string; toolCallId: string }) {
+  const t = useTranslations('dashboard.observability.details')
+  const [tab, setTab] = React.useState<'model' | 'display'>('model')
+  const [payload, setPayload] = React.useState<ToolPayloadDetail | null>(null)
+  const [failed, setFailed] = React.useState(false)
+  React.useEffect(() => {
+    let active = true
+    observabilityApi.getRunToolPayload(source, runId, toolCallId)
+      .then((value) => active && setPayload(value))
+      .catch(() => active && setFailed(true))
+    return () => { active = false }
+  }, [source, runId, toolCallId])
+  if (failed) return <p className="px-2 pb-2 text-xs text-destructive">{t('payloadUnavailable')}</p>
+  if (!payload) return <div className="mx-2 mb-2 h-16 animate-pulse rounded bg-muted" />
+  const text = tab === 'model' ? payload.model_input : payload.display
+  return (
+    <div className="mx-2 mb-2 space-y-2 rounded-md border bg-muted/20 p-2">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <Tabs value={tab} onValueChange={(value) => setTab(value as 'model' | 'display')}>
+          <TabsList>
+            <TabsTrigger value="model">{t('modelInput')}</TabsTrigger>
+            <TabsTrigger value="display">{t('rawData')}</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <span>{t('payloadBytes', { model: payload.model_bytes, display: payload.display_bytes })}</span>
+        {payload.eof === false && <Badge variant="outline">{t('notFinished')}</Badge>}
+        {payload.partial && <Badge variant="destructive">{t('partial')}</Badge>}
+        {payload.error && <Badge variant="destructive">{payload.error}</Badge>}
+      </div>
+      {text ? <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs">{text}</pre> : <p className="text-xs text-muted-foreground">{t('payloadNotRecorded')}</p>}
+    </div>
+  )
+}
+
 function SpanTree({
+  source,
+  runId,
   span,
   childrenMap,
   depth,
@@ -776,6 +812,8 @@ function SpanTree({
   expanded,
   toggle,
 }: {
+  source: RunSummary['source']
+  runId: string
   span: RunDetailResponse['spans'][number]
   childrenMap: Map<string | null, RunDetailResponse['spans']>
   depth: number
@@ -785,6 +823,8 @@ function SpanTree({
   toggle: (id: string) => void
 }) {
   const children = childrenMap.get(span.span_id) ?? []
+  const hasPayload =
+    span.kind === 'tool' && typeof span.metadata.tool_call_id === 'string'
   const open = expanded.has(span.span_id)
   const started = span.started_at ? Date.parse(span.started_at) : timelineStart
   const offset = Number.isFinite(started) ? Math.max(0, started - timelineStart) : 0
@@ -803,13 +843,13 @@ function SpanTree({
     <div>
       <button
         type="button"
-        aria-expanded={children.length ? open : undefined}
-        disabled={!children.length}
+        aria-expanded={children.length || hasPayload ? open : undefined}
+        disabled={!children.length && !hasPayload}
         onClick={() => toggle(span.span_id)}
         className="flex w-full items-center gap-2 rounded-md border-b px-2 py-2 text-left hover:bg-muted/50"
         style={{ paddingLeft: `${8 + depth * 18}px` }}
       >
-        {children.length ? (
+        {children.length || hasPayload ? (
           open ? (
             <ChevronDown className="h-3.5 w-3.5" />
           ) : (
@@ -833,10 +873,15 @@ function SpanTree({
           style={{ left: `${left}%`, width: `${width}%` }}
         />
       </div>
+      {hasPayload && open && (
+        <SpanPayload source={source} runId={runId} toolCallId={String(span.metadata.tool_call_id)} />
+      )}
       {open &&
         children.map((child) => (
           <SpanTree
             key={child.span_id}
+            source={source}
+            runId={runId}
             span={child}
             childrenMap={childrenMap}
             depth={depth + 1}

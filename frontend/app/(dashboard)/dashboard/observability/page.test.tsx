@@ -27,7 +27,7 @@ const getRun = mock(async () => ({
   run,
   spans: [
     { span_id: 'root', parent_span_id: null, kind: 'run', name: 'Agent execution', status: 'failed', started_at: run.started_at, finished_at: run.finished_at, duration_ms: 2000, attempt: null, model: null, tool: null, error_category: 'provider', token_usage: { total: 22 }, metadata: {} },
-    { span_id: 'child', parent_span_id: 'root', kind: 'tool', name: 'HTTP request', status: 'completed', started_at: '2026-10-08T10:30:01.250Z', finished_at: '2026-10-08T10:30:01.550Z', duration_ms: 300, attempt: null, model: null, tool: 'http', error_category: null, token_usage: { total: 5 }, metadata: {} },
+    { span_id: 'child', parent_span_id: 'root', kind: 'tool', name: 'HTTP request', status: 'completed', started_at: '2026-10-08T10:30:01.250Z', finished_at: '2026-10-08T10:30:01.550Z', duration_ms: 300, attempt: null, model: null, tool: 'http', error_category: null, token_usage: { total: 5 }, metadata: { tool_call_id: 'call-1', model_bytes: 42, display_bytes: 15, eof: false, has_cursor: true } },
   ],
   trace: { complete: false, expired: false, truncated: true, recorded_count: 2 },
   meta,
@@ -35,6 +35,7 @@ const getRun = mock(async () => ({
 const getDependencies = mock(async (): Promise<DependenciesResponse> => ({ meta, models: [{ id: 'model-1', name: 'gpt-test', provider: 'custom', provider_display_name: 'Test gateway', requests: 4, completed: 3, failed: 1, success_rate: 0.75, p50_ms: 500, p95_ms: 900, first_token_p95_ms: 250, tokens: 80, sample_count: 4 }], tools: [], retrieval: [] }))
 const getQueues = mock(async () => ({ meta, workers: [{ worker_id: 'agent-worker-1', status: 'healthy', queues: ['agent', 'sandbox-1'], last_heartbeat: '2026-10-08T10:59:00Z', active_tasks: 1, reserved_tasks: null, scheduled_tasks: 0 }], queues: [{ name: 'agent', consumers: 1, pending: 2, oldest_wait_ms: 400, observed_at: '2026-10-08T11:00:00Z', state: 'healthy', trend: [{ bucket: '2026-10-08T10:59:00Z', pending: 1 }, { bucket: '2026-10-08T11:00:00Z', pending: 2 }] }] }))
 const getInfrastructure = mock(async (): Promise<InfrastructureResponse> => ({ meta, instances: [{ instance_id: 'api-1', name: 'API east', role: 'api', metric_scope: 'host', cpu_percent: 27.5, memory_percent: null, observed_at: '2026-10-08T11:00:00Z', state: 'healthy' }], dependencies: [], slow_queries: { available: false, reset_at: null, items: [] } }))
+const getRunToolPayload = mock(async () => ({ tool_call_id: 'call-1', tool_name: 'read_asset', display: '{"ref":"a1b2"}', model_input: 'ref=a1b2 · lines 1/1\n<document>\n1│hello\n</document>', display_bytes: 15, model_bytes: 42, model_sha256: 'hash', renderer: 'read_asset', eof: false, has_cursor: true, partial: false, error: null, recorded: true }))
 const getAlerts = mock(async () => ({ items: [alert], next_cursor: null, meta }))
 const getAlertRules = mock(async () => ([{ id: 'rule-1', name: 'Failure rate', threshold: 0.5, enabled: true, evaluation_window_seconds: 300, recovery_window_seconds: 600, updated_at: null }]))
 const acknowledgeAlert = mock(async () => alert)
@@ -103,7 +104,7 @@ mock.module('@/components/ui/select', () => ({
 }))
 mock.module('@/lib/chart-theme', () => ({ CHART_AXIS_COLOR: '#666', CHART_COLOR_ORDER: ['#123', '#456'], CHART_GRID_COLOR: '#ddd', CHART_HOVER_CURSOR: {}, CHART_TOOLTIP_STYLE: {} }))
 mock.module('@/lib/utils', () => ({ formatTime: () => '11:00' }))
-mock.module('@/lib/api/admin/observability', () => ({ observabilityApi: { getSummary, getRuns, getRun, getDependencies, getQueues, getInfrastructure, getAlerts, getAlertRules, acknowledgeAlert, silenceAlert, updateAlertRule } }))
+mock.module('@/lib/api/admin/observability', () => ({ observabilityApi: { getSummary, getRuns, getRun, getRunToolPayload, getDependencies, getQueues, getInfrastructure, getAlerts, getAlertRules, acknowledgeAlert, silenceAlert, updateAlertRule } }))
 
 // Import after registering mocks so the page exercises its real state and effects against deterministic service/UI boundaries.
 const { default: ObservabilityPage } = await import('./page')
@@ -862,3 +863,21 @@ for (const locale of ['en', 'zh'] as const) {
     act(() => renderer.unmount())
   })
 }
+
+test('loads the recorded model input only when a tool span is expanded', async () => {
+  params = new URLSearchParams('tab=runs&period=24h')
+  getRuns.mockImplementationOnce(async () => ({ items: [run], next_cursor: null, meta }))
+  const renderer = await render()
+  expect(getRunToolPayload).not.toHaveBeenCalled()
+  const row = renderer.root.findAllByType('tr')[1]
+  await act(async () => { row.props.onClick(); await Promise.resolve() })
+  const rootToggle = renderer.root.findAllByType('button').find((button) => button.props['aria-expanded'] === false)
+  await act(async () => { rootToggle!.props.onClick(); await Promise.resolve() })
+  expect(getRunToolPayload).not.toHaveBeenCalled()
+  const childToggle = renderer.root.findAllByType('button').find((button) => button.props['aria-expanded'] === false)
+  expect(childToggle).toBeDefined()
+  await act(async () => { childToggle!.props.onClick(); await Promise.resolve() })
+  expect(getRunToolPayload).toHaveBeenCalledWith('agent', 'failed-run', 'call-1')
+  expect(renderer.root.findAllByType('pre').some((node) => node.children.some((child) => typeof child === 'string' && child.includes('1│hello')))).toBe(true)
+  act(() => renderer.unmount())
+})

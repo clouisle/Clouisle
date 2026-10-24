@@ -125,6 +125,7 @@ from .observability import (
     ObservabilityAlertRule,
     ObservabilityAlertEvent,
 )
+from .observability_payload import ObservabilityToolPayload
 
 __all__ = [
     "Asset",
@@ -242,4 +243,5 @@ __all__ = [
     "ObservabilityRun",
     "ObservabilityAlertRule",
     "ObservabilityAlertEvent",
+    "ObservabilityToolPayload",
 ]
