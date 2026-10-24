@@ -35,4 +35,4 @@ Keep production changes limited to Gemini optional media metadata compatibility 
 ## Verification Status
 - Frontend: 2921 passed; functions 95.61%, lines 97.91%; all 524 eligible source files included.
 - Backend: 9260 passed, 4 skipped; line coverage 96.73%, branch coverage 95.13%; unchanged 95% gates passed.
-- Remote push: pending final hook success.
+- Remote push: repair commit `9315645f` pushed to `feature/notification-integrations-factory`; pre-commit and pre-push hooks passed without bypasses.
