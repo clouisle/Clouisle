@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-23T19:49:42.011Z
+// GENERATED — 2026-10-24T18:18:06.008Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
