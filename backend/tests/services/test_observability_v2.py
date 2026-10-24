@@ -665,6 +665,46 @@ async def test_summary_caps_database_sample_and_marks_partial(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_summary_marks_fresh_only_when_the_window_is_fully_covered(monkeypatch):
+    start = datetime(2026, 10, 8, 11, tzinfo=UTC)
+    end = datetime(2026, 10, 8, 12, tzinfo=UTC)
+    rows = [_workflow_observability_row(uuid4()) for _ in range(2)]
+    query = MagicMock()
+    query.order_by.return_value = query
+    query.limit.return_value = query
+    monkeypatch.setattr(
+        observability_v2, "window", lambda _period, _start=None, _end=None: (start, end)
+    )
+    monkeypatch.setattr(
+        observability_v2.ObservabilityRun,
+        "filter",
+        MagicMock(return_value=query),
+    )
+    monkeypatch.setattr(observability_v2, "run_bounded", AsyncMock(return_value=rows))
+    monkeypatch.setattr(
+        observability_v2,
+        "_telemetry_start",
+        AsyncMock(return_value=start - timedelta(minutes=5)),
+    )
+
+    summary = await observability_v2._summary_snapshot("1h", None)
+
+    assert summary["meta"]["state"] == "fresh"
+    assert summary["meta"]["sample_count"] == 2
+
+    # Windows that begin before retained telemetry have an unrecorded gap.
+    monkeypatch.setattr(
+        observability_v2,
+        "_telemetry_start",
+        AsyncMock(return_value=start + timedelta(minutes=5)),
+    )
+
+    summary = await observability_v2._summary_snapshot("1h", None)
+
+    assert summary["meta"]["state"] == "partial"
+
+
+@pytest.mark.asyncio
 async def test_dependency_queries_cap_rows_and_mark_partial_samples(monkeypatch):
     models = [
         {

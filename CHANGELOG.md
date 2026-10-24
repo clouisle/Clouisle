@@ -114,6 +114,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Recorded provider file-upload rejections as upload failures instead of unsupported formats, and kept the provider's original error message, HTTP status and code on the delivery row so failed rows show the real cause. Feishu API errors subclass `ValueError`, so a permission, size or storage rejection previously appeared as `feishu_agent_asset_unsupported`.
 
 #### Admin Observability
+- Made the Overview and Dependencies quality state describe real coverage: `partial` now means the bounded sample was truncated or the window begins before retained telemetry, instead of flagging every non-empty sample as incomplete coverage.
 - Kept the Dependencies view available when tool and retrieval spans have no token counts; those rows now report unavailable token usage instead of failing the response.
 - Migrated `model_name` and `message_started_at` on existing PostgreSQL `observability_runs` tables before Tortoise schema and index generation, preventing API startup and summary-query failures on older databases.
 

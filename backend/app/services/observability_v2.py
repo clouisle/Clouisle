@@ -86,6 +86,50 @@ def meta(
     }
 
 
+_TELEMETRY_START_TTL_SECONDS = 60
+_TELEMETRY_START: tuple[float, datetime | None] | None = None
+
+
+async def _telemetry_start() -> datetime | None:
+    """Earliest retained telemetry sample, cached briefly.
+
+    Telemetry is never backfilled for runs that predate collection, so a
+    window beginning before this timestamp covers an unrecorded period.
+    """
+    global _TELEMETRY_START
+    now = monotonic()
+    if _TELEMETRY_START and _TELEMETRY_START[0] > now:
+        return _TELEMETRY_START[1]
+    try:
+        rows = await run_bounded(
+            ObservabilityRun.filter(submitted_at__isnull=False)
+            .order_by("submitted_at")
+            .limit(1)
+            .values_list("submitted_at", flat=True)
+        )
+    except Exception:
+        logger.debug("Telemetry coverage start unavailable", exc_info=True)
+        return None
+    value = rows[0] if rows else None
+    _TELEMETRY_START = (now + _TELEMETRY_START_TTL_SECONDS, value)
+    return value
+
+
+async def _sample_state(start: datetime, *, available: bool, capped: bool) -> str:
+    """Describe the coverage of a sampled aggregation.
+
+    ``partial`` means a known gap: the read was truncated by its bound, or the
+    window begins before retained telemetry does. ``fresh`` means the sample is
+    present and no such gap is known, not that every run was recorded.
+    """
+    if not available:
+        return "no_data"
+    if capped:
+        return "partial"
+    earliest = await _telemetry_start()
+    return "partial" if earliest is None or start < earliest else "fresh"
+
+
 async def _cached_snapshot(
     key: tuple[Any, ...], producer, ttl: int = _CACHE_TTL_SECONDS
 ):
@@ -543,6 +587,7 @@ async def _summary_snapshot(
     records = await run_bounded(
         query.order_by("-submitted_at", "-id").limit(DB_QUERY_LIMIT + 1)
     )
+    capped = len(records) > DB_QUERY_LIMIT
     records = records[:DB_QUERY_LIMIT]
     agents = [r for r in records if r.source == "agent"]
     workflows = [r for r in records if r.source == "workflow"]
@@ -595,10 +640,10 @@ async def _summary_snapshot(
                 "first_token_p95_ms": all_values["first_token_p95_ms"],
             }
         )
-    # Best-effort terminal collection and lack of legacy backfill make samples partial.
-    state = "partial" if records else "no_data"
     metadata = _meta_for(start, end, len(records), period=period)
-    metadata["state"] = state
+    metadata["state"] = await _sample_state(
+        start, available=bool(records), capped=capped
+    )
     return {
         "meta": metadata,
         "agents": rollup(agents, True),
@@ -954,9 +999,10 @@ async def _dependencies_snapshot(
     metadata = _meta_for(start, end, len(rows), period=period)
     tools = summarize_dependencies(tool_groups)
     retrieval = summarize_dependencies(retrieval_groups)
+    has_samples = bool(models or tools or retrieval)
     metadata["state"] = (
-        "partial"
-        if capped or dependency_capped or models or tools or retrieval
+        await _sample_state(start, available=True, capped=capped or dependency_capped)
+        if has_samples
         else "unavailable"
     )
     return {
