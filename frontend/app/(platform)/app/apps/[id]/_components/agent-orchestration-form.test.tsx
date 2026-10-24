@@ -304,7 +304,6 @@ describe('AgentOrchestrationForm', () => {
     const inputs = find(tree, Input)
     const byBounds = (min: number, max: number) => inputs.find((node) => node.props.min === min && node.props.max === max)!
 
-    ;(byBounds(1000, 500000).props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '999999' } })
     ;(byBounds(1, 50).props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '0' } })
     ;(byBounds(256, 4096).props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '100' } })
     ;(byBounds(500, 30000).props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '99999' } })
@@ -312,7 +311,6 @@ describe('AgentOrchestrationForm', () => {
     render(onUpdate, enabledAgent)
 
     expect(onUpdate).toHaveBeenLastCalledWith(expect.objectContaining({
-      attachment_config: expect.objectContaining({ max_content_length: 500000 }),
       memory_config: expect.objectContaining({ max_memories_per_retrieval: 10 }),
       image_generation_config: expect.objectContaining({ default_width: 256 }),
       video_generation_config: expect.objectContaining({ poll_interval_ms: 30000 }),
@@ -378,7 +376,6 @@ describe('AgentOrchestrationForm', () => {
 
     choose('agentic', 'auto')
     expect(onUpdate.mock.calls.at(-1)?.[0].rag_mode).toBe('auto')
-    enter(1000, 500000, '150000')
     choose('missing-image', 'image-1')
     choose('missing-video', '__default__')
     choose('16:9', '9:16')
@@ -393,7 +390,7 @@ describe('AgentOrchestrationForm', () => {
     expect(payload).toEqual(expect.objectContaining({
       rag_mode: 'auto',
       variables: [{ name: 'region', type: 'text' }],
-      attachment_config: expect.objectContaining({ max_content_length: 150000 }),
+      attachment_config: expect.objectContaining({ allowed_extensions: expect.any(Array) }),
       image_generation_config: expect.objectContaining({ default_model_ref: 'image-1', default_height: 4096, max_images: 1 }),
       video_generation_config: expect.objectContaining({ default_model_ref: null, default_duration: 30, max_duration: 1, default_aspect_ratio: '9:16', poll_timeout_s: 600 }),
     }))

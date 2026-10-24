@@ -21,10 +21,8 @@ from app.llm.types import (
 from app.models.asset import Asset, AssetScopeType
 from app.services.asset import asset_service
 from app.services.asset_access import resolve_authorized_asset_ref
-from app.services.file_parser import FileParseConfig, file_parser_service
 
 MAX_VIEW_BYTES = 50 * 1024 * 1024
-MAX_TEXT_CHARS = 50_000
 MAX_SELECTION_SECONDS = 600
 
 
@@ -93,7 +91,7 @@ async def resolve_view_content(
         if mime_type == "application/pdf"
         else None
     )
-    can_extract = "parse" in asset_service.capabilities(asset)
+    can_extract = "read" in asset_service.capabilities(asset)
     capabilities = input_capabilities or get_effective_input_capabilities(model_config)
     if extracted_text:
         if not can_extract:
@@ -127,6 +125,14 @@ async def resolve_view_content(
         raise InvalidRequestError("Asset exceeds model input byte limit")
     selection_used: dict[str, Any] | None = None
     content: bytes | None = None
+    if modality == ContentType.FILE and selection is None:
+        raise InvalidRequestError(
+            "PDF viewing requires an explicit page range; use read_asset for document text"
+        )
+    if extracted_text and selection is not None:
+        raise InvalidRequestError(
+            "Text reading uses line ranges via read_asset; PDF page selection requires native file input"
+        )
     if selection is not None:
         if not isinstance(selection, dict):
             raise InvalidRequestError("Selection must be an object")
@@ -194,9 +200,10 @@ async def resolve_view_content(
         )
     if materialize:
         storage = await get_upload_storage_backend(UPLOAD_ROOT)
-        content = await asset_service.read_bounded(
-            asset, storage=storage, max_bytes=max_bytes
-        )
+        if not extracted_text:
+            content = await asset_service.read_bounded(
+                asset, storage=storage, max_bytes=max_bytes
+            )
     if materialize and selection_used:
         if "page_start" in selection_used:
             page_start = selection_used["page_start"]
@@ -303,23 +310,15 @@ async def resolve_view_content(
             "selection": selection_used,
         }
     elif modality == ContentType.TEXT and extracted_text:
-        parsed = await file_parser_service.parse_file(
-            content,
-            asset.original_filename,
-            FileParseConfig.model_validate(
-                getattr(agent, "attachment_config", None) or {}
-            ),
-        )
-        text = parsed.content[:MAX_TEXT_CHARS]
+        from app.services.asset_document import read_document
+
+        document = await read_document(asset, storage=storage)
         part = ContentPart(
             type=ContentType.TEXT,
-            text=f"[Extracted text from {asset.display_filename} ({mime_type}); truncated={bool(parsed.truncated or len(parsed.content) > MAX_TEXT_CHARS)}]\n{text}",
+            text=json.dumps(document, ensure_ascii=False),
         )
         modality_name = "text"
-        representation = {
-            "kind": "extracted_text",
-            "truncated": bool(parsed.truncated or len(parsed.content) > MAX_TEXT_CHARS),
-        }
+        representation = {"kind": "extracted_text"}
     else:
         common = {
             "base64": base64.b64encode(content).decode("ascii"),

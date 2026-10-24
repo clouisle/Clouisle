@@ -89,6 +89,10 @@ from app.services.message_branching import (
 )
 from app.services.asset import asset_service
 
+from app.api.v1.endpoints.chat_helpers.asset_tools import (
+    asset_tool_display_names,
+    build_asset_tools,
+)
 from app.api.v1.endpoints.chat_helpers.model_utils import get_model_capabilities
 from app.api.v1.endpoints.chat_rag import (
     perform_rag_retrieval,
@@ -962,154 +966,7 @@ Examples of when to search:
             )
 
     if getattr(agent, "enable_attachments", False):
-        asset_tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "list_assets",
-                    "description": "Discover assets in the current scope before viewing them. Search filenames with query, filter kind, and follow next_cursor until has_more is false. Returned refs work with view_asset and other asset tools. Keep query and kind unchanged when paging.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "maxLength": 200,
-                                "description": "Case-insensitive filename substring; omit to list all.",
-                            },
-                            "kind": {
-                                "type": "string",
-                                "enum": ["image", "audio", "video", "file"],
-                            },
-                            "cursor": {
-                                "type": "string",
-                                "pattern": "^[0-9a-f]{4}$",
-                                "description": "next_cursor from the previous page.",
-                            },
-                            "limit": {
-                                "type": "integer",
-                                "minimum": 1,
-                                "maximum": 30,
-                                "default": 10,
-                            },
-                        },
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "view_asset",
-                    "description": "View an authorized attachment as native multimodal model input when supported.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "ref": {"type": "string", "pattern": "^[0-9a-f]{4}$"},
-                            "extracted_text": {"type": "boolean", "default": False},
-                            "selection": {
-                                "type": "object",
-                                "properties": {
-                                    "start_seconds": {"type": "number", "minimum": 0},
-                                    "end_seconds": {"type": "number", "minimum": 0},
-                                    "page_start": {"type": "integer", "minimum": 1},
-                                    "page_end": {"type": "integer", "minimum": 1},
-                                },
-                            },
-                        },
-                        "required": ["ref"],
-                    },
-                },
-            },
-        ]
-        for asset_tool in asset_tools:
-            append_openai_tool(asset_tool)
-        asset_tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "inspect_asset",
-                    "description": t("asset_tool_inspect_description"),
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "ref": {
-                                "type": "string",
-                                "pattern": "^[0-9a-f]{4}$",
-                                "description": t("asset_tool_ref_description"),
-                            }
-                        },
-                        "required": ["ref"],
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "read_asset",
-                    "description": t("asset_tool_read_description"),
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "ref": {
-                                "type": "string",
-                                "pattern": "^[0-9a-f]{4}$",
-                                "description": t("asset_tool_ref_description"),
-                            },
-                            "max_chars": {
-                                "type": "integer",
-                                "minimum": 1,
-                                "maximum": 50000,
-                                "default": 12000,
-                            },
-                        },
-                        "required": ["ref"],
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "parse_asset",
-                    "description": t("asset_tool_parse_description"),
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "ref": {
-                                "type": "string",
-                                "pattern": "^[0-9a-f]{4}$",
-                                "description": t("asset_tool_ref_description"),
-                            }
-                        },
-                        "required": ["ref"],
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "materialize_asset",
-                    "description": t("asset_tool_materialize_description"),
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "ref": {
-                                "type": "string",
-                                "pattern": "^[0-9a-f]{4}$",
-                                "description": t("asset_tool_ref_description"),
-                            },
-                            "path": {
-                                "type": "string",
-                                "description": t(
-                                    "asset_tool_materialize_path_description"
-                                ),
-                            },
-                        },
-                        "required": ["ref", "path"],
-                    },
-                },
-            },
-        ]
-        for asset_tool in asset_tools:
+        for asset_tool in build_asset_tools():
             append_openai_tool(asset_tool)
 
     if agent.enable_image_generation:
@@ -1266,16 +1123,7 @@ async def get_tool_display_names(
 
     # Add attachment tool display names if attachments are enabled
     if getattr(agent, "enable_attachments", False):
-        display_names.update(
-            {
-                "list_assets": t("asset_tool_list", lang=user_locale),
-                "view_asset": t("asset_tool_view", lang=user_locale),
-                "inspect_asset": t("asset_tool_inspect", lang=user_locale),
-                "read_asset": t("asset_tool_read", lang=user_locale),
-                "parse_asset": t("asset_tool_parse", lang=user_locale),
-                "materialize_asset": t("asset_tool_materialize", lang=user_locale),
-            }
-        )
+        display_names.update(asset_tool_display_names(user_locale))
 
     # Add knowledge_search display name for agentic RAG mode
     if agent.rag_mode == RAGMode.AGENTIC:

@@ -7,7 +7,6 @@ import pytest
 from app.api.v1.endpoints.chat_tools import (
     _get_item_value,
     build_file_content_for_context,
-    build_file_content_for_prompt,
     execute_code_tool,
     execute_http_tool,
     execute_tool_call,
@@ -32,7 +31,7 @@ def _query(result):
 
 
 @pytest.mark.anyio
-async def test_file_content_disabled_empty_legacy_and_prompt_wrapper():
+async def test_file_content_disabled_empty_and_legacy_metadata_only():
     disabled = _agent(enable_attachments=False)
     assert await build_file_content_for_context(disabled, [], [], "en", None, None) == (
         "",
@@ -56,20 +55,20 @@ async def test_file_content_disabled_empty_legacy_and_prompt_wrapper():
     content, updates = await build_file_content_for_context(
         agent, None, [legacy], "en", None, None
     )
-    assert "notes.txt" in content and "hello" in content
+    documents = json.loads(content)["documents"]
+    assert documents == [
+        {
+            "filename": "notes.txt",
+            "mime_type": "text/plain",
+            "size": 5,
+            "reading": (
+                "Use list_assets to discover a ref, then read_asset for bounded "
+                "lines and search_asset to locate text; continue until eof."
+            ),
+        }
+    ]
+    assert "hello" not in content
     assert updates is None
-
-    with patch(
-        "app.api.v1.endpoints.chat_tools.build_file_content_for_context",
-        new=AsyncMock(return_value=("prompt files", [{"cached": True}])),
-    ) as build:
-        assert (
-            await build_file_content_for_prompt(
-                agent, [], [legacy], "en", {"http": 1}, "user"
-            )
-            == "prompt files"
-        )
-    build.assert_awaited_once()
 
 
 def test_file_and_tool_display_helpers():

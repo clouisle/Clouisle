@@ -140,15 +140,83 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Destination path inside the sandbox workspace, e.g. /workspace/report.xlsx.",
         "zh": "沙箱工作区内的目标路径，例如 /workspace/report.xlsx。",
     },
-    "asset_tool_parse": {"en": "Parse Attachment", "zh": "解析附件"},
-    "asset_tool_parse_description": {
-        "en": "Parse a supported attachment on demand while preserving its raw bytes.",
-        "zh": "按需解析支持的附件，同时保留原始文件内容。",
-    },
     "asset_tool_read": {"en": "Read Attachment", "zh": "读取附件"},
     "asset_tool_read_description": {
-        "en": "Read bounded text from an attachment in this conversation.",
-        "zh": "读取当前对话中附件的有限文本内容。",
+        "en": "Read a bounded line range of a document attachment in this conversation. Continue with next_cursor until eof is true to reach the last character.",
+        "zh": "按行范围读取当前对话中文档附件的有限内容。使用 next_cursor 继续读取，直到 eof 为 true 即可读到最后一个字符。",
+    },
+    "asset_tool_search": {"en": "Search Attachment", "zh": "搜索附件"},
+    "asset_tool_search_description": {
+        "en": "Search the full extracted text of a document attachment and return bounded matching snippets with line numbers.",
+        "zh": "搜索文档附件提取出的完整文本，返回带行号的有限匹配片段。",
+    },
+    "asset_tool_start_line_description": {
+        "en": "One-based line number to start reading from.",
+        "zh": "开始读取的起始行号（从 1 开始）。",
+    },
+    "asset_tool_line_count_description": {
+        "en": "Maximum number of lines to return in this page.",
+        "zh": "本页返回的最大行数。",
+    },
+    "asset_tool_query_description": {
+        "en": "Literal text to find inside the document.",
+        "zh": "要在文档中查找的文本。",
+    },
+    "asset_tool_context_lines_description": {
+        "en": "Lines of context to include around each match.",
+        "zh": "每个匹配结果周围包含的上下文行数。",
+    },
+    "asset_tool_limit_description": {
+        "en": "Maximum number of matches to return in this page.",
+        "zh": "本页返回的最大匹配数量。",
+    },
+    "asset_tool_cursor_description": {
+        "en": "next_cursor from a previous read_asset or search_asset result.",
+        "zh": "上一次 read_asset 或 search_asset 结果中的 next_cursor。",
+    },
+    "asset_page_range_required": {
+        "en": "Native PDF viewing requires an explicit page selection; use read_asset or search_asset to read document text.",
+        "zh": "原生查看 PDF 需要显式指定页码范围；请使用 read_asset 或 search_asset 读取文档文本。",
+    },
+    "invalid_document_cursor": {
+        "en": "Invalid or stale document cursor",
+        "zh": "文档游标无效或已过期",
+    },
+    "document_extraction_empty": {
+        "en": "No text could be extracted from this document.",
+        "zh": "无法从该文档中提取文本。",
+    },
+    "document_extraction_decode_failed": {
+        "en": "The extracted document text could not be decoded as UTF-8.",
+        "zh": "提取出的文档文本无法按 UTF-8 解码。",
+    },
+    "asset_document_resource_limit_exceeded": {
+        "en": "The document exceeds the supported extraction size limit.",
+        "zh": "文档超出支持的提取大小限制。",
+    },
+    "asset_document_invalid_cursor": {
+        "en": "Invalid document cursor.",
+        "zh": "文档游标无效。",
+    },
+    "asset_document_stale_cursor": {
+        "en": "The document cursor is stale; restart the read or search.",
+        "zh": "文档游标已过期；请重新开始读取或搜索。",
+    },
+    "asset_document_invalid_range": {
+        "en": "The requested line range is invalid.",
+        "zh": "请求的行范围无效。",
+    },
+    "asset_document_invalid_query": {
+        "en": "The document search query is invalid.",
+        "zh": "文档搜索查询无效。",
+    },
+    "file_download_failed": {
+        "en": "Failed to download the external attachment.",
+        "zh": "下载外部附件失败。",
+    },
+    "asset_document_derived_asset": {
+        "en": "Derived document text cannot be read as an input attachment.",
+        "zh": "派生的文档文本不能作为输入附件读取。",
     },
     "asset_tool_ref_description": {
         "en": "Exact reference from available attachments.",

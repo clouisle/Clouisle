@@ -11,6 +11,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Document attachments now use on-demand persistent text representations and bounded `read_asset` / `search_asset` tools instead of automatic full-text injection. Models can continue through long documents, including oversized lines, with version-bound cursors. The truncating `parse_asset` tool and obsolete Agent text-length settings were removed; native PDF viewing requires explicit page selection. Original Asset permissions, expiry and active-branch visibility apply on every read/search. Complete extraction fails explicitly beyond its resource ceiling rather than silently discarding the tail.
 - Unified SSO login providers, email, Webhook, and manual Feishu directory sync under Integration records and `/site-settings/integrations`, with static capabilities and separate login/settings permission domains.
 - Moved management APIs to `/api/v1/admin/integrations` and public login discovery to `/api/v1/sso/integrations`. Existing login/callback URLs, integration UUIDs, and identity bindings are preserved. Credentials are encrypted and omitted from admin responses.
 - Schema cutover requires a database backup and matching `SECRET_KEY`; rollback restores the matching database/application version. See [upgrade instructions](admin-guide/settings/SSO.md#upgrading-existing-installations). The Feishu integration additionally provides opt-in sign-in (`user_login`); see [Configure Feishu sign-in](admin-guide/settings/SSO.md#configure-feishu-sign-in).

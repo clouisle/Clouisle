@@ -124,12 +124,10 @@ async def submit_chat_run(
         get_or_create_conversation,
         update_message_stats,
     )
-    from app.api.v1.endpoints.chat_helpers import get_streaming_config
     from app.api.v1.endpoints.chat_rag import (
         aggregate_rag_contexts,
         perform_rag_retrieval,
     )
-    from app.api.v1.endpoints.chat_tools import build_file_content_for_context
     from app.schemas.response import BusinessError, ResponseCode
     from app.services.agent_run_store import create_run, transition_run_if_status
     from app.services.agent_run_worker import build_payload
@@ -250,19 +248,6 @@ async def submit_chat_run(
 
     await update_message_stats(agent, token_usage=None)
     effective_locale = await resolve_language(getattr(current_user, "locale", None))
-    streaming_config = get_streaming_config(agent)
-    await build_file_content_for_context(
-        agent=agent,
-        file_urls=[
-            file
-            for file in chat_in.file_urls
-            if not file.asset_id and not file.asset_ref
-        ],
-        legacy_files=chat_in.files,
-        user_locale=effective_locale,
-        tool_timeouts=streaming_config["tool_timeouts"],
-        user=current_user,
-    )
 
     run = await create_run(
         agent_id=agent.id,

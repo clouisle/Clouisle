@@ -314,10 +314,7 @@
       "attachments": {
         "title": "文件与图片",
         "tooltip": "允许用户在对话中附加文件和图片",
-        "description": "附件会保存为 Asset，Agent 可按需查看或解析。仅当所选聊天模型支持视觉时，图片才会直接传给模型理解。",
-        "maxContentLength": "最大内容长度",
-        "maxContentLengthHint": "Agent 显式解析文件时可返回的最大字符数（1,000-500,000）",
-        "characters": "字符",
+        "description": "附件会保存为 Asset，Agent 可按需查看、读取或搜索。仅当所选聊天模型支持视觉时，图片才会直接传给模型理解。",
         "contextHint": "附件会作为 Asset 保留，不会自动解析并写入对话上下文。"
       },
       "userInput": {

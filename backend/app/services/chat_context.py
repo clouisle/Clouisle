@@ -345,11 +345,13 @@ async def _resolve_message_asset_parts(
     model_config: Any,
     input_capabilities: Any,
 ) -> tuple[list[ContentPart], str]:
-    from app.models.asset import AssetScopeType
     from app.services.asset_view import resolve_view_content
 
+    from app.models.asset import AssetScopeType
+    from app.services.asset_access import resolve_authorized_asset_ref
+
     parts: list[ContentPart] = []
-    extracted: list[tuple[str, str]] = []
+    documents: list[dict[str, Any]] = []
     seen: set[str] = set()
     for attachment in attachments:
         source = (
@@ -365,6 +367,25 @@ async def _resolve_message_asset_parts(
         if not ref or ref in seen:
             continue
         seen.add(ref)
+        asset = await resolve_authorized_asset_ref(
+            ref,
+            scope_type=AssetScopeType.CONVERSATION,
+            scope_id=conversation.id,
+            user=user,
+            expected_team_id=getattr(agent, "team_id", None),
+        )
+        mime_type = asset.content_type.split(";", 1)[0].strip().lower()
+        if not mime_type.startswith(("image/", "audio/", "video/")):
+            documents.append(
+                {
+                    "ref": ref,
+                    "filename": asset.display_filename,
+                    "mime_type": mime_type,
+                    "size": asset.size,
+                    "reading": "Use read_asset for bounded lines and search_asset to locate text; continue until eof to read the entire document.",
+                }
+            )
+            continue
         asset, part, marker = await resolve_view_content(
             ref,
             scope_type=AssetScopeType.CONVERSATION,
@@ -374,20 +395,11 @@ async def _resolve_message_asset_parts(
             model_config=model_config,
             input_capabilities=input_capabilities,
         )
-        if part.type == ContentType.TEXT:
-            name = (
-                source.get("filename", asset.display_filename)
-                if isinstance(source, dict)
-                else getattr(source, "filename", asset.display_filename)
-            )
-            extracted.append((name, part.text or ""))
-        else:
+        if part is not None:
             parts.append(part)
-    file_text = "\n\n".join(
-        f'<uploaded_file name="{name}">\n{text}\n</uploaded_file>'
-        for name, text in extracted
-    )
-    return parts, file_text
+    return parts, json.dumps(
+        {"documents": documents}, ensure_ascii=False
+    ) if documents else ""
 
 
 def _build_current_user_content(

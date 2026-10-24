@@ -30,19 +30,24 @@ class AssetViewResult(dict):
         return self["llm_result"]
 
 
-def _asset_modality(mime_type: str):
-    from app.llm.types import ContentType
+def _document_error_json(exc: ValueError, locale: str | None = None) -> str:
+    from app.core.i18n import has_translation, t
 
-    normalized = mime_type.split(";", 1)[0].strip().lower()
-    if normalized.startswith("image/"):
-        return ContentType.IMAGE
-    if normalized.startswith("audio/"):
-        return ContentType.AUDIO
-    if normalized.startswith("video/"):
-        return ContentType.VIDEO
-    if normalized == "application/pdf":
-        return ContentType.FILE
-    return None
+    key = str(exc)
+    return json.dumps(
+        {"error": t(key, lang=locale) if has_translation(key, lang=locale) else key},
+        ensure_ascii=False,
+    )
+
+
+def _document_result_json(ref: str, asset: Any, document: dict[str, Any]) -> str:
+    payload = dict(document)
+    # The model-facing identity is the ref; keep the internal UUID out of the
+    # response and leave room under the service's per-call byte budget.
+    payload.pop("asset_id", None)
+    payload["ref"] = ref
+    payload["citation_id"] = stable_citation_id("asset", asset.id)
+    return json.dumps(payload, ensure_ascii=False)
 
 
 async def _execute_asset_tool(
@@ -60,7 +65,6 @@ async def _execute_asset_tool(
     from app.models.asset import AssetScopeType
     from app.schemas.response import BusinessError
     from app.services.asset import asset_service
-    from app.services.file_parser import FileParseConfig, file_parser_service
     from app.services.upload_storage import get_upload_storage_backend
     from app.api.v1.endpoints.upload import UPLOAD_ROOT
     from app.core.i18n import t
@@ -205,14 +209,109 @@ async def _execute_asset_tool(
                 },
                 ensure_ascii=False,
             )
+        user_locale = getattr(user, "locale", None) if user is not None else None
+        if tool_name in {"read_asset", "search_asset"}:
+            from app.services.asset_document import (
+                read_document,
+                search_document,
+            )
+
+            storage = await get_upload_storage_backend(UPLOAD_ROOT)
+            try:
+                if tool_name == "read_asset":
+                    document = await read_document(
+                        asset,
+                        storage=storage,
+                        start_line=arguments.get("start_line", 1),
+                        line_count=arguments.get("line_count", 100),
+                        cursor=arguments.get("cursor"),
+                    )
+                else:
+                    query = arguments.get("query")
+                    if not isinstance(query, str) or not query:
+                        return json.dumps(
+                            {"error": t("validation_error")}, ensure_ascii=False
+                        )
+                    document = await search_document(
+                        asset,
+                        storage=storage,
+                        query=query,
+                        context_lines=arguments.get("context_lines", 2),
+                        limit=arguments.get("limit", 20),
+                        cursor=arguments.get("cursor"),
+                    )
+            except ValueError as exc:
+                return _document_error_json(exc, user_locale)
+            return _document_result_json(ref, asset, document)
         if tool_name == "view_asset":
             from app.api.v1.endpoints.chat_helpers.model_utils import (
                 resolve_agent_chat_model,
             )
             from app.services.asset_view import resolve_view_content
 
-            chat_model = await resolve_agent_chat_model(agent)
             extracted_text = bool(arguments.get("extracted_text", False))
+            selection = arguments.get("selection")
+            raw_mime_type = asset.content_type.split(";", 1)[0].strip().lower()
+            if extracted_text:
+                if selection is not None:
+                    return json.dumps(
+                        {"error": t("validation_error")}, ensure_ascii=False
+                    )
+                from app.services.asset_document import read_document
+
+                storage = await get_upload_storage_backend(UPLOAD_ROOT)
+                try:
+                    document = await read_document(asset, storage=storage)
+                except ValueError as exc:
+                    return _document_error_json(exc, user_locale)
+                return _document_result_json(ref, asset, document)
+            if not raw_mime_type.startswith(("image/", "audio/", "video/")) and (
+                raw_mime_type != "application/pdf"
+            ):
+                # Documents have no native multimodal input; use the bounded reader.
+                from app.services.asset_document import read_document
+
+                storage = await get_upload_storage_backend(UPLOAD_ROOT)
+                try:
+                    document = await read_document(asset, storage=storage)
+                except ValueError as exc:
+                    return _document_error_json(exc, user_locale)
+                return _document_result_json(ref, asset, document)
+            chat_model = await resolve_agent_chat_model(agent)
+            if raw_mime_type == "application/pdf":
+                page_start = (
+                    selection.get("page_start") if isinstance(selection, dict) else None
+                )
+                page_end = (
+                    selection.get("page_end") if isinstance(selection, dict) else None
+                )
+                if (
+                    type(page_start) is not int
+                    or type(page_end) is not int
+                    or page_start < 1
+                    or page_end < page_start
+                ):
+                    from app.llm.capabilities import (
+                        get_effective_input_capabilities,
+                    )
+                    from app.llm.types import ContentType
+
+                    if (
+                        ContentType.FILE
+                        in get_effective_input_capabilities(chat_model.model).modalities
+                    ):
+                        return json.dumps(
+                            {"error": t("asset_page_range_required")},
+                            ensure_ascii=False,
+                        )
+                    from app.services.asset_document import read_document
+
+                    storage = await get_upload_storage_backend(UPLOAD_ROOT)
+                    try:
+                        document = await read_document(asset, storage=storage)
+                    except ValueError as exc:
+                        return _document_error_json(exc, user_locale)
+                    return _document_result_json(ref, asset, document)
             asset, content_part, marker = await resolve_view_content(
                 ref,
                 scope_type=scope_type,
@@ -222,7 +321,7 @@ async def _execute_asset_tool(
                 model_config=chat_model.model,
                 materialize=False,
                 extracted_text=extracted_text,
-                selection=arguments.get("selection"),
+                selection=selection,
             )
             return AssetViewResult(
                 display_result={
@@ -238,45 +337,6 @@ async def _execute_asset_tool(
                 },
                 llm_result=marker,
             )
-        storage = await get_upload_storage_backend(UPLOAD_ROOT)
-        if tool_name == "read_asset":
-            if "read" not in asset_service.capabilities(asset):
-                return json.dumps(
-                    {"error": t("unsupported_file_type")}, ensure_ascii=False
-                )
-            content = await asset_service.read(asset, storage=storage)
-            max_chars = min(max(int(arguments.get("max_chars", 12000)), 1), 50000)
-            text = content.decode("utf-8", errors="replace")[:max_chars]
-            return json.dumps(
-                {
-                    "ref": ref,
-                    "filename": asset.display_filename,
-                    "content": text,
-                    "citation_id": stable_citation_id("asset", asset.id),
-                },
-                ensure_ascii=False,
-            )
-        if "parse" not in asset_service.capabilities(asset):
-            return json.dumps({"error": t("unsupported_file_type")}, ensure_ascii=False)
-        content = await asset_service.read(asset, storage=storage)
-        parse_config = FileParseConfig.model_validate(
-            getattr(agent, "attachment_config", None) or {}
-        )
-        parsed = await file_parser_service.parse_file(
-            content,
-            asset.original_filename,
-            parse_config,
-        )
-        return json.dumps(
-            {
-                "ref": ref,
-                "filename": parsed.filename,
-                "content": parsed.content,
-                "truncated": parsed.truncated,
-                "citation_id": stable_citation_id("asset", asset.id),
-            },
-            ensure_ascii=False,
-        )
     except RuntimeError as exc:
         logger.warning("Asset tool storage error: %s", exc)
         return json.dumps({"error": t("file_not_found")}, ensure_ascii=False)
@@ -310,7 +370,7 @@ async def execute_tool_call(
         "list_assets",
         "inspect_asset",
         "read_asset",
-        "parse_asset",
+        "search_asset",
         "materialize_asset",
         "view_asset",
     }:
@@ -928,25 +988,6 @@ async def execute_code_tool(
         )
 
 
-async def build_file_content_for_prompt(
-    agent: "Agent",
-    file_urls: list[Any] | None,
-    legacy_files: list[Any] | None,
-    user_locale: str | None,
-    tool_timeouts: dict[str, Any] | None,
-    user: Any,
-) -> str:
-    content, _ = await build_file_content_for_context(
-        agent=agent,
-        file_urls=file_urls,
-        legacy_files=legacy_files,
-        user_locale=user_locale,
-        tool_timeouts=tool_timeouts,
-        user=user,
-    )
-    return content
-
-
 async def build_file_content_for_context(
     agent: "Agent",
     file_urls: list[Any] | None,
@@ -955,32 +996,21 @@ async def build_file_content_for_context(
     tool_timeouts: dict[str, Any] | None,
     user: Any,
 ) -> tuple[str, list[dict[str, Any]] | None]:
-    """Format only deprecated pre-parsed file payloads for the prompt."""
-    from app.services.file_parser import file_parser_service, ParsedFile
-
+    """Describe attachments as references; never inline extracted text."""
     if not agent.enable_attachments:
         return "", None
 
-    parsed_files: list[ParsedFile] = []
-    for file_item in legacy_files or []:
-        parsed_files.append(
-            ParsedFile(
-                filename=_get_item_value(file_item, "filename", ""),
-                content=_get_item_value(file_item, "content", ""),
-                mime_type=_get_item_value(file_item, "mime_type", "text/plain"),
-                size=_get_item_value(file_item, "size", 0),
-                truncated=bool(_get_item_value(file_item, "truncated", False)),
-                original_length=_get_item_value(file_item, "original_length"),
-            )
-        )
+    from app.api.v1.endpoints.chat_helpers.asset_tools import (
+        describe_attachment_references,
+    )
 
-    if not parsed_files:
+    documents = describe_attachment_references(
+        [*(file_urls or []), *(legacy_files or [])]
+    )
+    if not documents:
         return "", None
 
-    return (
-        file_parser_service.format_files_for_prompt(parsed_files, locale=user_locale),
-        None,
-    )
+    return json.dumps({"documents": documents}, ensure_ascii=False), None
 
 
 def _get_item_value(item: Any, key: str, default: Any = None) -> Any:

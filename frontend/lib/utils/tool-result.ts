@@ -114,17 +114,30 @@ export function extractToolCitationSources(
     }]
   }
 
-  if (toolName === 'read_asset' || toolName === 'parse_asset') {
+  if (toolName === 'read_asset' || toolName === 'search_asset') {
     if (!('citation_id' in parsed) || typeof parsed.citation_id !== 'string') return []
+    let content: string | undefined
+    if ('segments' in parsed && Array.isArray(parsed.segments)) {
+      content = parsed.segments
+        .map((segment: unknown) => (segment && typeof segment === 'object' && 'text' in segment && typeof segment.text === 'string' ? segment.text : ''))
+        .filter(Boolean)
+        .join('\n')
+    } else if ('matches' in parsed && Array.isArray(parsed.matches)) {
+      content = parsed.matches
+        .map((match: unknown) => (match && typeof match === 'object' && 'text' in match && typeof match.text === 'string' ? match.text : ''))
+        .filter(Boolean)
+        .join('\n')
+    }
     return [{
       type: 'document',
       citationId: parsed.citation_id,
       title: 'filename' in parsed && typeof parsed.filename === 'string' ? parsed.filename : undefined,
-      content: 'content' in parsed && typeof parsed.content === 'string' ? parsed.content : undefined,
+      content: content || undefined,
       documentId: 'ref' in parsed && typeof parsed.ref === 'string' ? parsed.ref : undefined,
       metadata: {
         ref: 'ref' in parsed ? parsed.ref : undefined,
-        truncated: 'truncated' in parsed ? parsed.truncated : undefined,
+        total_lines: 'total_lines' in parsed ? parsed.total_lines : undefined,
+        eof: 'eof' in parsed ? parsed.eof : undefined,
       },
     }]
   }

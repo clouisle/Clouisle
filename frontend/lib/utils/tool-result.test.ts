@@ -85,25 +85,28 @@ describe('extractToolCitationSources', () => {
       url: 'https://example.test/page2',
       content: 'Page body 2',
     }])
-    expect(extractToolCitationSources('parse_asset', JSON.stringify({
+    expect(extractToolCitationSources('read_asset', JSON.stringify({
       citation_id: 'asset_doc_1',
       ref: 'a1b2',
       filename: 'report.pdf',
-      content: 'Parsed report',
-      truncated: false,
+      total_lines: 12,
+      eof: false,
+      segments: [{ line: 1, text: 'First line', continuation: false }],
     }))).toEqual([{
       type: 'document',
       citationId: 'asset_doc_1',
       documentId: 'a1b2',
       title: 'report.pdf',
-      content: 'Parsed report',
-      metadata: { ref: 'a1b2', truncated: false },
+      content: 'First line',
+      metadata: { ref: 'a1b2', total_lines: 12, eof: false },
     }])
-    expect(extractToolCitationSources('read_asset', {
+    expect(extractToolCitationSources('search_asset', {
       citation_id: 'asset_text_1',
       ref: 'c3d4',
       filename: 'notes.txt',
-      content: 'Notes',
+      total_lines: 3,
+      eof: true,
+      matches: [{ line: 2, text: 'Notes', match_start: 0, match_end: 5, context: [] }],
     })).toEqual([expect.objectContaining({
       type: 'document',
       citationId: 'asset_text_1',

@@ -594,17 +594,68 @@ msgstr "Inspect Attachment"
 msgid "asset_tool_inspect_description"
 msgstr "Inspect metadata and capabilities for an attachment in this conversation."
 
-msgid "asset_tool_parse"
-msgstr "Parse Attachment"
-
-msgid "asset_tool_parse_description"
-msgstr "Parse a supported attachment on demand while preserving its raw bytes."
-
 msgid "asset_tool_read"
 msgstr "Read Attachment"
 
 msgid "asset_tool_read_description"
-msgstr "Read bounded text from an attachment in this conversation."
+msgstr "Read a bounded line range of a document attachment in this conversation. Continue with next_cursor until eof is true to reach the last character."
+
+msgid "asset_tool_search"
+msgstr "Search Attachment"
+
+msgid "asset_tool_search_description"
+msgstr "Search the full extracted text of a document attachment and return bounded matching snippets with line numbers."
+
+msgid "asset_tool_start_line_description"
+msgstr "One-based line number to start reading from."
+
+msgid "asset_tool_line_count_description"
+msgstr "Maximum number of lines to return in this page."
+
+msgid "asset_tool_query_description"
+msgstr "Literal text to find inside the document."
+
+msgid "asset_tool_context_lines_description"
+msgstr "Lines of context to include around each match."
+
+msgid "asset_tool_limit_description"
+msgstr "Maximum number of matches to return in this page."
+
+msgid "asset_tool_cursor_description"
+msgstr "next_cursor from a previous read_asset or search_asset result."
+
+msgid "asset_page_range_required"
+msgstr "Native PDF viewing requires an explicit page selection; use read_asset or search_asset to read document text."
+
+msgid "invalid_document_cursor"
+msgstr "Invalid or stale document cursor"
+
+msgid "document_extraction_empty"
+msgstr "No text could be extracted from this document."
+
+msgid "document_extraction_decode_failed"
+msgstr "The extracted document text could not be decoded as UTF-8."
+
+msgid "asset_document_resource_limit_exceeded"
+msgstr "The document exceeds the supported extraction size limit."
+
+msgid "asset_document_invalid_cursor"
+msgstr "Invalid document cursor."
+
+msgid "asset_document_stale_cursor"
+msgstr "The document cursor is stale; restart the read or search."
+
+msgid "asset_document_invalid_range"
+msgstr "The requested line range is invalid."
+
+msgid "asset_document_invalid_query"
+msgstr "The document search query is invalid."
+
+msgid "file_download_failed"
+msgstr "Failed to download the external attachment."
+
+msgid "asset_document_derived_asset"
+msgstr "Derived document text cannot be read as an input attachment."
 
 msgid "asset_tool_ref_description"
 msgstr "Exact reference from available attachments."

@@ -294,16 +294,6 @@ class AttachmentConfig(BaseModel):
         le=10,
         description="Maximum number of files per message",
     )
-    max_content_length: int = Field(
-        default=100000,  # ~100KB of text
-        ge=1000,
-        le=500000,  # 500KB max
-        description="Maximum parsed content length in characters",
-    )
-    truncate_strategy: str = Field(
-        default="end",
-        description="Truncation strategy: 'end' (keep start), 'start' (keep end), 'middle' (keep start and end)",
-    )
     allowed_extensions: list[str] = Field(
         default_factory=lambda: [
             ".pdf",

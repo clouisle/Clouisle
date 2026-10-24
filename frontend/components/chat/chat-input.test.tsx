@@ -277,8 +277,6 @@ describe('ChatInput', () => {
       fileUploadConfig: {
         max_file_size: 10 * 1024 * 1024,
         max_files: 1,
-        max_content_length: 100,
-        truncate_strategy: 'end',
         allowed_extensions: ['.pdf'],
       },
     })
@@ -291,8 +289,6 @@ describe('ChatInput', () => {
     act(() => tree.update(<ChatInput enableFileUpload fileUploadConfig={{
       max_file_size: 10 * 1024 * 1024,
       max_files: 2,
-      max_content_length: 100,
-      truncate_strategy: 'end',
       allowed_extensions: ['.pdf'],
     }} onFilesChange={onFilesChange} />))
     act(() => {

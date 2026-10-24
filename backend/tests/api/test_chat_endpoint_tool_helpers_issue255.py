@@ -245,12 +245,16 @@ async def test_tool_display_names_localize_asset_tools_when_attachments_enabled(
 ):
     current_agent = agent(enable_attachments=True, tools_config=[])
     monkeypatch.setattr("app.core.i18n.t", lambda key, **_kwargs: f"translated:{key}")
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat_helpers.asset_tools.t",
+        lambda key, **_kwargs: f"translated:{key}",
+    )
 
     names = await chat.get_tool_display_names(current_agent, "en")
 
     assert names["inspect_asset"] == "translated:asset_tool_inspect"
     assert names["read_asset"] == "translated:asset_tool_read"
-    assert names["parse_asset"] == "translated:asset_tool_parse"
+    assert names["search_asset"] == "translated:asset_tool_search"
     assert names["materialize_asset"] == "translated:asset_tool_materialize"
 
 
@@ -263,4 +267,4 @@ async def test_tool_display_names_omit_asset_tools_when_attachments_disabled(
 
     names = await chat.get_tool_display_names(current_agent, "en")
 
-    assert "parse_asset" not in names
+    assert "read_asset" not in names

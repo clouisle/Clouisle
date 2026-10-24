@@ -1,6 +1,12 @@
 # Implementation Plan
 
 ## Active
+- **asset-document-reading** — Completed. See `docs/plan/asset-document-reading.md`.
+  - [x] 1. Complete extraction and persistent text representations
+  - [x] 2. Bounded reads, search and continuation
+  - [x] 3. Tool and chat-context cutover
+  - [x] 4. End-to-end verification and delivery
+
 - **backend-push-gate-repair** — Completed. See `docs/plan/backend-push-gate-repair.md`.
   - [x] 1. Repair backend regression contracts and serialization
   - [x] 2. Verify unchanged backend/frontend coverage gates

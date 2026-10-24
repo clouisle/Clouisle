@@ -225,8 +225,6 @@ export function AgentOrchestrationForm({
     agent.attachment_config || {
       max_file_size: 10 * 1024 * 1024,
       max_files: 5,
-      max_content_length: 100000,
-      truncate_strategy: 'end',
       allowed_extensions: ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls', '.txt', '.md', '.csv', '.json', '.html'],
     }
   )
@@ -267,8 +265,6 @@ export function AgentOrchestrationForm({
       agent.attachment_config || {
         max_file_size: 10 * 1024 * 1024,
         max_files: 5,
-        max_content_length: 100000,
-        truncate_strategy: 'end',
         allowed_extensions: ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls', '.txt', '.md', '.csv', '.json', '.html'],
       }
     )
@@ -681,32 +677,6 @@ export function AgentOrchestrationForm({
 
           {enableAttachments && (
             <div className="space-y-4 pt-2 border-t">
-              <div className="space-y-2">
-                <Label className="text-xs">{t('attachments.maxContentLength')}</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    value={attachmentConfig.max_content_length}
-                    onChange={(e) => {
-                      const value = parseInt(e.target.value) || 100000
-                      setAttachmentConfig({
-                        ...attachmentConfig,
-                        max_content_length: Math.min(Math.max(value, 1000), 500000),
-                      })
-                    }}
-                    className="w-28 h-8 text-sm bg-background"
-                    min={1000}
-                    max={500000}
-                    step={10000}
-                    disabled={!canUpdate}
-                  />
-                  <span className="text-xs text-muted-foreground">{t('attachments.characters')}</span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t('attachments.maxContentLengthHint')}
-                </p>
-              </div>
-
               <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
                 <p className="text-xs text-cyan-700 dark:text-cyan-300">
                   {t('attachments.contextHint')}

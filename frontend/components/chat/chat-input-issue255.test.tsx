@@ -59,7 +59,7 @@ describe('ChatInput attachment interactions', () => {
       files: [],
       onFilesChange,
       enableFileUpload: true,
-      fileUploadConfig: { max_file_size: 2, max_files: 5, max_content_length: 100, truncate_strategy: 'end', allowed_extensions: ['.txt'] },
+      fileUploadConfig: { max_file_size: 2, max_files: 5, allowed_extensions: ['.txt'] },
     })
     const input = tree.root.findByType('input')
     act(() => { input.props.onChange({ target: { files: [attachment('large.txt', 'text/plain', 3)] } }) })

@@ -34,7 +34,7 @@ async def authorize_asset_for_scope(
     expected_team_id: UUID | None = None,
 ) -> Asset:
     """Authorize an Asset against its owner/team and execution scope."""
-    team_id = await _authorized_scope_team_id(
+    team_id = await authorize_asset_scope(
         scope_type=scope_type,
         scope_id=scope_id,
         user=user,
@@ -60,7 +60,7 @@ async def resolve_authorized_asset_ref(
     expected_team_id: UUID | None = None,
 ) -> Asset:
     """Resolve a scope-local ref after authorizing its conversation or run."""
-    team_id = await _authorized_scope_team_id(
+    team_id = await authorize_asset_scope(
         scope_type=scope_type,
         scope_id=scope_id,
         user=user,
@@ -69,13 +69,25 @@ async def resolve_authorized_asset_ref(
     )
     from app.services.asset import asset_service
 
-    return await asset_service.resolve_ref(
+    asset = await asset_service.resolve_ref(
         scope_type=scope_type,
         scope_id=scope_id,
         ref=ref,
         team_id=team_id,
         user_id=user.id if user is not None else None,
     )
+    if scope_type == AssetScopeType.CONVERSATION:
+        from app.models.asset import MessageAsset
+
+        links = MessageAsset.filter(
+            asset_id=asset.id, message__conversation_id=scope_id
+        )
+        if (
+            await links.exists()
+            and not await links.filter(message__is_active=True).exists()
+        ):
+            raise _not_found()
+    return asset
 
 
 async def list_authorized_assets(
@@ -95,7 +107,7 @@ async def list_authorized_assets(
     from app.models.asset import MessageAsset
     from app.services.asset import asset_service
 
-    team_id = await _authorized_scope_team_id(
+    team_id = await authorize_asset_scope(
         scope_type=scope_type,
         scope_id=scope_id,
         user=user,
@@ -174,14 +186,19 @@ async def list_authorized_assets(
     }
 
 
-async def _authorized_scope_team_id(
+async def authorize_asset_scope(
     *,
     scope_type: AssetScopeType,
     scope_id: UUID,
     user: User | None,
-    api_key: APIKey | None,
-    expected_team_id: UUID | None,
+    api_key: APIKey | None = None,
+    expected_team_id: UUID | None = None,
 ) -> UUID | None:
+    """Authorize the execution scope itself and return its team id.
+
+    Call this before any attachment fetch or storage write so network and disk
+    IO only happen for callers allowed to use the conversation/run.
+    """
     if scope_type == AssetScopeType.CONVERSATION:
         conversation = (
             await Conversation.filter(id=scope_id).prefetch_related("agent").first()
@@ -240,11 +257,13 @@ async def authorize_protected_asset(
         )
 
     user, api_key = authenticated
+    from app.models.asset import AssetSource
+
     asset = await Asset.filter(
         storage_key=storage_key,
         status=AssetStatus.AVAILABLE,
     ).first()
-    if asset is None:
+    if asset is None or getattr(asset, "source", None) == AssetSource.DERIVED_TEXT:
         raise _not_found()
 
     refs = await AssetScopeRef.filter(asset_id=asset.id)

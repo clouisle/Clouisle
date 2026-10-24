@@ -1,4 +1,4 @@
-"""Unit tests for inspect_asset / read_asset / parse_asset tools."""
+"""Unit tests for inspect_asset / read_asset / search_asset tools."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def _make_service(asset, capabilities=None):
     svc = MagicMock()
     svc.resolve_ref = AsyncMock(return_value=asset)
     svc.capabilities = MagicMock(
-        return_value=capabilities or ["inspect", "read", "parse", "sandbox"]
+        return_value=capabilities or ["inspect", "read", "search", "sandbox"]
     )
     svc.read = AsyncMock(return_value=b"hello")
     return svc
@@ -147,11 +147,20 @@ async def test_inspect_asset_forbidden_returns_access_denied():
 
 
 @pytest.mark.asyncio
-async def test_read_asset_returns_text():
+async def test_read_asset_returns_bounded_document_page():
     asset = _asset(ctype="text/plain", orig="readme.txt")
-    svc = _make_service(asset, capabilities=["inspect", "read", "sandbox"])
-    svc.read = AsyncMock(return_value=b"hello world")
+    svc = _make_service(asset, capabilities=["inspect", "read", "search", "sandbox"])
     convo_id = str(uuid4())
+    document = {
+        "asset_id": str(asset.id),
+        "filename": "readme.txt",
+        "representation_id": "v1",
+        "start_line": 1,
+        "total_lines": 240,
+        "segments": [{"line": 1, "text": "hello world", "continuation": False}],
+        "next_cursor": "cursor-1",
+        "eof": False,
+    }
 
     with (
         patch("app.services.asset.asset_service", svc),
@@ -159,9 +168,90 @@ async def test_read_asset_returns_text():
             "app.services.upload_storage.get_upload_storage_backend",
             AsyncMock(return_value=object()),
         ),
+        patch(
+            "app.services.asset_document.read_document",
+            new=AsyncMock(return_value=document),
+        ) as read_document,
     ):
         result = await _execute_asset_tool(
             "read_asset",
+            {"ref": "abcd", "start_line": 1, "line_count": 50},
+            agent=_agent(),
+            user=_user(),
+            conversation_id=convo_id,
+        )
+
+    data = json.loads(result)
+    assert data["segments"] == document["segments"]
+    assert data["next_cursor"] == "cursor-1"
+    assert data["eof"] is False
+    assert data["ref"] == "abcd"
+    assert data["citation_id"] == stable_citation_id("asset", asset.id)
+    assert read_document.await_args.kwargs["start_line"] == 1
+    assert read_document.await_args.kwargs["line_count"] == 50
+
+
+@pytest.mark.asyncio
+async def test_search_asset_returns_bounded_matches():
+    asset = _asset(ctype="text/plain", orig="readme.txt")
+    svc = _make_service(asset, capabilities=["inspect", "read", "search", "sandbox"])
+    convo_id = str(uuid4())
+    document = {
+        "asset_id": str(asset.id),
+        "filename": "readme.txt",
+        "representation_id": "v1",
+        "query": "hello",
+        "total_lines": 240,
+        "matches": [
+            {
+                "line": 4,
+                "text": "hello world",
+                "match_start": 0,
+                "match_end": 5,
+                "context": [{"line": 3, "text": "before"}],
+            }
+        ],
+        "next_cursor": None,
+        "eof": True,
+    }
+
+    with (
+        patch("app.services.asset.asset_service", svc),
+        patch(
+            "app.services.upload_storage.get_upload_storage_backend",
+            AsyncMock(return_value=object()),
+        ),
+        patch(
+            "app.services.asset_document.search_document",
+            new=AsyncMock(return_value=document),
+        ) as search_document,
+    ):
+        result = await _execute_asset_tool(
+            "search_asset",
+            {"ref": "abcd", "query": "hello", "context_lines": 1, "limit": 5},
+            agent=_agent(),
+            user=_user(),
+            conversation_id=convo_id,
+        )
+
+    data = json.loads(result)
+    assert data["matches"] == document["matches"]
+    assert data["ref"] == "abcd"
+    assert data["citation_id"] == stable_citation_id("asset", asset.id)
+    assert search_document.await_args.kwargs["query"] == "hello"
+    assert search_document.await_args.kwargs["context_lines"] == 1
+    assert search_document.await_args.kwargs["limit"] == 5
+
+
+@pytest.mark.asyncio
+async def test_search_asset_requires_query():
+    asset = _asset(ctype="text/plain", orig="readme.txt")
+    svc = _make_service(asset)
+    convo_id = str(uuid4())
+
+    with patch("app.services.asset.asset_service", svc):
+        result = await _execute_asset_tool(
+            "search_asset",
             {"ref": "abcd"},
             agent=_agent(),
             user=_user(),
@@ -169,9 +259,7 @@ async def test_read_asset_returns_text():
         )
 
     data = json.loads(result)
-    assert data["content"] == "hello world"
-    assert data["ref"] == "abcd"
-    assert data["citation_id"] == stable_citation_id("asset", asset.id)
+    assert "error" in data
 
 
 @pytest.mark.asyncio
@@ -225,6 +313,136 @@ async def test_view_asset_validates_ref_without_materializing_bytes(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_view_asset_requires_pdf_page_selection(monkeypatch):
+    from app.llm.types import ContentType
+
+    asset = _asset(ctype="application/pdf", orig="plan.pdf")
+    svc = _make_service(asset)
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat_helpers.model_utils.resolve_agent_chat_model",
+        AsyncMock(return_value=SimpleNamespace(model=SimpleNamespace())),
+    )
+    monkeypatch.setattr(
+        "app.llm.capabilities.get_effective_input_capabilities",
+        lambda _model: SimpleNamespace(
+            modalities=frozenset({ContentType.FILE}),
+            mime_types={},
+            limits={},
+        ),
+    )
+
+    with patch("app.services.asset.asset_service", svc):
+        result = await _execute_asset_tool(
+            "view_asset",
+            {"ref": "abcd"},
+            agent=_agent(),
+            user=_user(),
+            conversation_id=str(uuid4()),
+        )
+
+    data = json.loads(result)
+    assert "page selection" in data["error"]
+
+
+@pytest.mark.asyncio
+async def test_view_asset_pdf_without_file_support_falls_back_to_text(monkeypatch):
+    from app.llm.types import ContentType
+
+    asset = _asset(ctype="application/pdf", orig="plan.pdf")
+    svc = _make_service(asset)
+    document = {
+        "asset_id": str(asset.id),
+        "filename": "plan.pdf",
+        "representation_id": "v1",
+        "start_line": 1,
+        "total_lines": 1,
+        "segments": [{"line": 1, "text": "plan", "continuation": False}],
+        "next_cursor": None,
+        "eof": True,
+    }
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat_helpers.model_utils.resolve_agent_chat_model",
+        AsyncMock(return_value=SimpleNamespace(model=SimpleNamespace())),
+    )
+    monkeypatch.setattr(
+        "app.llm.capabilities.get_effective_input_capabilities",
+        lambda _model: SimpleNamespace(
+            modalities=frozenset({ContentType.TEXT}),
+            mime_types={},
+            limits={},
+        ),
+    )
+
+    with (
+        patch("app.services.asset.asset_service", svc),
+        patch(
+            "app.services.upload_storage.get_upload_storage_backend",
+            AsyncMock(return_value=object()),
+        ),
+        patch(
+            "app.services.asset_document.read_document",
+            new=AsyncMock(return_value=document),
+        ),
+    ):
+        result = await _execute_asset_tool(
+            "view_asset",
+            {"ref": "abcd"},
+            agent=_agent(),
+            user=_user(),
+            conversation_id=str(uuid4()),
+        )
+
+    data = json.loads(result)
+    assert data["segments"] == document["segments"]
+
+
+@pytest.mark.asyncio
+async def test_view_asset_extracted_text_returns_bounded_document(monkeypatch):
+    asset = _asset(ctype="text/plain", orig="notes.txt")
+    svc = _make_service(asset)
+    document = {
+        "asset_id": str(asset.id),
+        "filename": "notes.txt",
+        "representation_id": "v1",
+        "start_line": 1,
+        "total_lines": 2,
+        "segments": [{"line": 1, "text": "notes", "continuation": False}],
+        "next_cursor": "cursor-1",
+        "eof": False,
+    }
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.chat_helpers.model_utils.resolve_agent_chat_model",
+        AsyncMock(return_value=SimpleNamespace(model=SimpleNamespace())),
+    )
+    resolve_view = AsyncMock()
+    monkeypatch.setattr("app.services.asset_view.resolve_view_content", resolve_view)
+
+    with (
+        patch("app.services.asset.asset_service", svc),
+        patch(
+            "app.services.upload_storage.get_upload_storage_backend",
+            AsyncMock(return_value=object()),
+        ),
+        patch(
+            "app.services.asset_document.read_document",
+            new=AsyncMock(return_value=document),
+        ),
+    ):
+        result = await _execute_asset_tool(
+            "view_asset",
+            {"ref": "abcd", "extracted_text": True},
+            agent=_agent(),
+            user=_user(),
+            conversation_id=str(uuid4()),
+        )
+
+    data = json.loads(result)
+    assert data["eof"] is False
+    assert data["ref"] == "abcd"
+    resolve_view.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_read_asset_refuses_binary():
     asset = _asset(ctype="image/png", orig="photo.png")
     svc = _make_service(asset, capabilities=["inspect", "vision", "sandbox"])
@@ -232,7 +450,14 @@ async def test_read_asset_refuses_binary():
 
     with (
         patch("app.services.asset.asset_service", svc),
-        patch("app.services.upload_storage.get_upload_storage_backend", AsyncMock()),
+        patch(
+            "app.services.upload_storage.get_upload_storage_backend",
+            AsyncMock(return_value=object()),
+        ),
+        patch(
+            "app.services.asset_document.read_document",
+            new=AsyncMock(side_effect=ValueError("unsupported_file_type")),
+        ),
     ):
         result = await _execute_asset_tool(
             "read_asset",
@@ -247,65 +472,24 @@ async def test_read_asset_refuses_binary():
 
 
 @pytest.mark.asyncio
-async def test_parse_asset_returns_parsed_content():
-    from app.services.file_parser import ParsedFile
-
-    asset = _asset(ctype="text/plain", orig="doc.txt")
-    svc = _make_service(asset)
-    svc.read = AsyncMock(return_value=b"raw bytes")
-    convo_id = str(uuid4())
-
-    fake_parsed = ParsedFile(
-        filename="doc.txt",
-        content="parsed content",
-        mime_type="text/plain",
-        size=14,
-    )
-
-    parse_file = AsyncMock(return_value=fake_parsed)
-    with (
-        patch("app.services.asset.asset_service", svc),
-        patch(
-            "app.services.upload_storage.get_upload_storage_backend",
-            AsyncMock(return_value=object()),
-        ),
-        patch("app.services.file_parser.file_parser_service.parse_file", parse_file),
-    ):
-        result = await _execute_asset_tool(
-            "parse_asset",
-            {"ref": "abcd"},
-            agent=_agent(
-                attachment_config={
-                    "max_file_size": 10 * 1024 * 1024,
-                    "max_content_length": 1234,
-                    "truncate_strategy": "middle",
-                }
-            ),
-            user=_user(),
-            conversation_id=convo_id,
-        )
-
-    data = json.loads(result)
-    assert data["content"] == "parsed content"
-    assert "truncated" in data
-    assert data["citation_id"] == stable_citation_id("asset", asset.id)
-    parse_config = parse_file.await_args.args[2]
-    assert parse_config.max_content_length == 1234
-    assert parse_config.truncate_strategy == "middle"
-
-
-@pytest.mark.asyncio
-async def test_parse_asset_refuses_unsupported():
+async def test_read_asset_maps_document_service_errors():
     asset = _asset(ctype="image/png", orig="photo.png")
     svc = _make_service(asset, capabilities=["inspect", "vision", "sandbox"])
     convo_id = str(uuid4())
 
     with (
         patch("app.services.asset.asset_service", svc),
-        patch("app.services.upload_storage.get_upload_storage_backend", AsyncMock()),
+        patch(
+            "app.services.upload_storage.get_upload_storage_backend",
+            AsyncMock(return_value=object()),
+        ),
+        patch(
+            "app.services.asset_document.read_document",
+            new=AsyncMock(side_effect=ValueError("unsupported_file_type")),
+        ),
     ):
         result = await _execute_asset_tool(
-            "parse_asset",
+            "read_asset",
             {"ref": "abcd"},
             agent=_agent(),
             user=_user(),
@@ -313,7 +497,7 @@ async def test_parse_asset_refuses_unsupported():
         )
 
     data = json.loads(result)
-    assert "error" in data
+    assert data["error"] == "Unsupported file type"
 
 
 @pytest.mark.asyncio
@@ -383,12 +567,30 @@ async def test_read_asset_resolves_workflow_run_ref_without_user():
     run = SimpleNamespace(id=run_id, workflow_id=workflow_id)
     workflow = SimpleNamespace(id=workflow_id, team_id=team_id)
 
+    document = {
+        "asset_id": str(asset.id),
+        "filename": "report.txt",
+        "representation_id": "v1",
+        "start_line": 1,
+        "total_lines": 1,
+        "segments": [{"line": 1, "text": "hello", "continuation": False}],
+        "next_cursor": None,
+        "eof": True,
+    }
+
     with (
         patch.object(WorkflowRun, "get_or_none", AsyncMock(return_value=run)),
         patch.object(Workflow, "get_or_none", AsyncMock(return_value=workflow)),
         patch("app.services.asset.asset_service", svc),
         patch("app.api.v1.endpoints.upload.UPLOAD_ROOT", None),
-        patch("app.services.upload_storage.get_upload_storage_backend", AsyncMock()),
+        patch(
+            "app.services.upload_storage.get_upload_storage_backend",
+            AsyncMock(return_value=object()),
+        ),
+        patch(
+            "app.services.asset_document.read_document",
+            new=AsyncMock(return_value=document),
+        ),
     ):
         result = await _execute_asset_tool(
             "read_asset",
@@ -400,7 +602,7 @@ async def test_read_asset_resolves_workflow_run_ref_without_user():
         )
 
     data = json.loads(result)
-    assert data["content"] == "hello"
+    assert data["segments"] == document["segments"]
     svc.resolve_ref.assert_awaited_once_with(
         scope_type=AssetScopeType.WORKFLOW_RUN,
         scope_id=run_id,

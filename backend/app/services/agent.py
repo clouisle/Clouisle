@@ -6,6 +6,7 @@ Provides chat functionality for agents with tools and knowledge bases.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import AsyncIterator
 from typing import Any, TYPE_CHECKING, cast
@@ -58,6 +59,14 @@ class AgentService:
         workflow_run_id: Any = None,
     ) -> dict[str, Any]:
         """Execute a non-streaming chat and return normalized trace data."""
+        images, files = await self._bind_scoped_attachments(
+            agent=agent,
+            images=images,
+            files=files,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
+        )
         messages = await self._build_messages(
             agent=agent,
             message=message,
@@ -140,6 +149,8 @@ class AgentService:
                     tool_kwargs["conversation_id"] = conversation_id
                 if workflow_run_id is not None:
                     tool_kwargs["workflow_run_id"] = workflow_run_id
+                if user_id is not None:
+                    tool_kwargs["user_id"] = user_id
                 tool_result = await self._execute_tool(**tool_kwargs)
                 artifacts.extend(self._extract_artifacts(tool_result))
                 dialogue.append(
@@ -181,6 +192,14 @@ class AgentService:
         workflow_run_id: Any = None,
     ) -> AsyncIterator[str | dict]:
         """Execute a streaming chat and yield normalized trace events."""
+        images, files = await self._bind_scoped_attachments(
+            agent=agent,
+            images=images,
+            files=files,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
+        )
         messages = await self._build_messages(
             agent=agent,
             message=message,
@@ -263,6 +282,8 @@ class AgentService:
                         tool_kwargs["conversation_id"] = conversation_id
                     if workflow_run_id is not None:
                         tool_kwargs["workflow_run_id"] = workflow_run_id
+                    if user_id is not None:
+                        tool_kwargs["user_id"] = user_id
                     tool_result = await self._execute_tool(**tool_kwargs)
                     artifacts.extend(self._extract_artifacts(tool_result))
                     dialogue.append(
@@ -350,14 +371,14 @@ class AgentService:
                         ),
                     )
                 )
-        file_content = await self._parse_workflow_files(agent, files)
-        if image_parts or file_content:
+        documents = self._describe_workflow_files(agent, files)
+        if image_parts or documents:
             parts = [ContentPart(type=ContentType.TEXT, text=message), *image_parts]
-            if file_content:
+            if documents:
                 parts.append(
                     ContentPart(
                         type=ContentType.TEXT,
-                        text=f"<uploaded_files>\n{file_content}\n</uploaded_files>",
+                        text=json.dumps({"documents": documents}, ensure_ascii=False),
                     )
                 )
             user_content: str | list[ContentPart] = parts
@@ -377,25 +398,248 @@ class AgentService:
         return messages
 
     @staticmethod
-    async def _parse_workflow_files(agent: Agent, files: list[Any] | None) -> str:
+    def _describe_workflow_files(
+        agent: Agent, files: list[Any] | None
+    ) -> list[dict[str, Any]]:
+        """Return attachment references, never inlined extracted text."""
         if not files or not agent.enable_attachments:
-            return ""
-        from app.llm.tools.builtin.file_parser import parse_files
-
-        urls = []
-        for item in files:
-            if isinstance(item, dict) and item.get("url"):
-                urls.append(str(item["url"]))
-            elif item:
-                urls.append(str(item))
-        if not urls:
-            return ""
-        config = agent.attachment_config or {}
-        return await parse_files(
-            urls,
-            max_content_length=int(config.get("max_content_length", 100000)),
-            truncate_strategy=str(config.get("truncate_strategy", "end")),
+            return []
+        from app.api.v1.endpoints.chat_helpers.asset_tools import (
+            describe_attachment_references,
         )
+
+        return describe_attachment_references(files)
+
+    async def _bind_scoped_attachments(
+        self,
+        *,
+        agent: Agent,
+        images: list[Any] | None,
+        files: list[Any] | None,
+        user_id: str | None,
+        conversation_id: Any = None,
+        workflow_run_id: Any = None,
+    ) -> tuple[list[Any] | None, list[Any] | None]:
+        """Bind submitted attachment URLs/ids to refs in the execution scope."""
+        if not getattr(agent, "enable_attachments", False):
+            return images, files
+        if not images and not files:
+            return images, files
+        from uuid import UUID
+
+        from app.models.asset import Asset, AssetScopeType, AssetSource
+        from app.models.user import User
+        from app.schemas.response import BusinessError, ResponseCode
+        from app.services.asset import asset_service
+        from app.services.asset_access import (
+            authorize_asset_for_scope,
+            authorize_asset_scope,
+            resolve_authorized_asset_ref,
+        )
+
+        if conversation_id is not None:
+            scope_type = AssetScopeType.CONVERSATION
+            if user_id is None:
+                raise BusinessError(
+                    code=ResponseCode.PERMISSION_DENIED,
+                    msg_key="access_denied",
+                    status_code=403,
+                )
+            scope_id = UUID(str(conversation_id))
+        elif workflow_run_id is not None:
+            scope_type = AssetScopeType.WORKFLOW_RUN
+            scope_id = UUID(str(workflow_run_id))
+        else:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR, msg_key="validation_error"
+            )
+
+        user = await User.get_or_none(id=user_id) if user_id else None
+        expected_team_id = UUID(str(agent.team_id)) if agent.team_id else None
+        # Authorize the conversation/run before any download or storage write.
+        team_id = await authorize_asset_scope(
+            scope_type=scope_type,
+            scope_id=scope_id,
+            user=user,
+            expected_team_id=expected_team_id,
+        )
+
+        def attachment_url(item: Any) -> str | None:
+            if isinstance(item, dict):
+                nested = item.get("image_url")
+                return item.get("url") or (
+                    nested.get("url") if isinstance(nested, dict) else None
+                )
+            if isinstance(item, str):
+                return item
+            return getattr(item, "url", None)
+
+        async def register_external(url: str) -> Any:
+            from urllib.parse import unquote, urlparse
+
+            import httpx
+
+            from app.api.v1.endpoints.upload import save_generated_upload
+            from app.core.network_security import ensure_external_http_url_allowed
+
+            await ensure_external_http_url_allowed(url)
+            config = getattr(agent, "attachment_config", None) or {}
+            max_bytes = min(
+                max(int(config.get("max_file_size") or 10 * 1024 * 1024), 1),
+                50 * 1024 * 1024,
+            )
+            filename = unquote(urlparse(url).path.rsplit("/", 1)[-1]) or "download"
+            chunks: list[bytes] = []
+            total = 0
+            try:
+                async with httpx.AsyncClient(
+                    timeout=60.0,
+                    follow_redirects=False,
+                    trust_env=False,
+                ) as client:
+                    async with client.stream("GET", url) as response:
+                        response.raise_for_status()
+                        if not response.is_success:
+                            raise BusinessError(msg_key="file_download_failed")
+                        content_type = (
+                            response.headers.get("content-type", "")
+                            .split(";", 1)[0]
+                            .strip()
+                            or "application/octet-stream"
+                        )
+                        async for chunk in response.aiter_bytes():
+                            total += len(chunk)
+                            if total > max_bytes:
+                                raise BusinessError(msg_key="file_too_large")
+                            chunks.append(chunk)
+            except BusinessError:
+                raise
+            except Exception as exc:
+                logger.warning("Failed to download workflow attachment: %s", exc)
+                raise BusinessError(msg_key="file_download_failed") from exc
+            content = b"".join(chunks)
+            if not content:
+                raise BusinessError(msg_key="file_download_failed")
+            upload_info = await save_generated_upload(
+                content=content,
+                category="agent-attachments",
+                content_type=content_type,
+                filename=filename,
+            )
+            return await asset_service.register_bytes(
+                storage_key=upload_info["storage_key"],
+                original_filename=filename,
+                content_type=content_type,
+                content=content,
+                source=AssetSource.UPLOAD,
+                team_id=None if user is not None else team_id,
+                created_by_id=user.id if user is not None else None,
+                provenance={"origin": "external_url", "url": url},
+            )
+
+        async def resolve_asset(item: Any) -> Any:
+            from urllib.parse import unquote, urlparse
+
+            if isinstance(item, dict):
+                ref = item.get("asset_ref")
+                asset_id = item.get("asset_id")
+            elif isinstance(item, str):
+                ref = None
+                asset_id = None
+            else:
+                ref = getattr(item, "asset_ref", None)
+                asset_id = getattr(item, "asset_id", None)
+            if ref:
+                return await resolve_authorized_asset_ref(
+                    ref,
+                    scope_type=scope_type,
+                    scope_id=scope_id,
+                    user=user,
+                    expected_team_id=team_id,
+                )
+            if asset_id:
+                try:
+                    asset_uuid = UUID(str(asset_id))
+                except (TypeError, ValueError) as exc:
+                    raise BusinessError(
+                        code=ResponseCode.VALIDATION_ERROR,
+                        msg_key="validation_error",
+                    ) from exc
+                return await authorize_asset_for_scope(
+                    asset_uuid,
+                    scope_type=scope_type,
+                    scope_id=scope_id,
+                    user=user,
+                    expected_team_id=team_id,
+                )
+            url = attachment_url(item)
+            if not url:
+                raise BusinessError(
+                    code=ResponseCode.VALIDATION_ERROR, msg_key="validation_error"
+                )
+            path = unquote(urlparse(url).path)
+            marker = "/api/v1/upload/files/"
+            if path.startswith(marker):
+                asset = await Asset.filter(storage_key=path[len(marker) :]).first()
+                if asset is None:
+                    raise BusinessError(
+                        code=ResponseCode.NOT_FOUND,
+                        msg_key="file_not_found",
+                        status_code=404,
+                    )
+                return await authorize_asset_for_scope(
+                    asset.id,
+                    scope_type=scope_type,
+                    scope_id=scope_id,
+                    user=user,
+                    expected_team_id=team_id,
+                )
+            if urlparse(url).scheme not in {"http", "https"}:
+                raise BusinessError(
+                    code=ResponseCode.VALIDATION_ERROR, msg_key="validation_error"
+                )
+            return await register_external(url)
+
+        async def bind_items(items: list[Any] | None) -> list[Any] | None:
+            from urllib.parse import quote
+
+            if not items:
+                return items
+            bound: list[Any] = []
+            for item in items:
+                if item is None or item == "":
+                    continue
+                asset = await resolve_asset(item)
+                if asset is None:
+                    raise BusinessError(
+                        code=ResponseCode.VALIDATION_ERROR,
+                        msg_key="validation_error",
+                    )
+                binding = await asset_service.get_or_create_ref(
+                    scope_type=scope_type,
+                    scope_id=scope_id,
+                    asset=asset,
+                )
+                data = dict(item) if isinstance(item, dict) else {}
+                data.update(
+                    {
+                        "asset_ref": binding.ref,
+                        "asset_id": str(asset.id),
+                        "url": f"/api/v1/upload/files/{quote(asset.storage_key, safe='/')}",
+                    }
+                )
+                if not (asset.content_type or "").lower().startswith("image/"):
+                    data.update(
+                        {
+                            "filename": asset.display_filename,
+                            "mime_type": asset.content_type,
+                            "size": asset.size,
+                        }
+                    )
+                bound.append(data)
+            return bound
+
+        return await bind_items(images), await bind_items(files)
 
     @staticmethod
     async def _resolve_model_id(agent: Agent) -> str | None:
@@ -498,6 +742,15 @@ class AgentService:
                         "Failed to get MCP tools for agent from %s: %s", tool_id, e
                     )
 
+        if getattr(agent, "enable_attachments", False):
+            from app.api.v1.endpoints.chat_helpers.asset_tools import (
+                build_asset_tools,
+            )
+
+            tools.extend(
+                ToolDefinition.model_validate(schema) for schema in build_asset_tools()
+            )
+
         if agent.enable_image_generation:
             media_tool = self._get_builtin_tool("generate_image")
             if media_tool:
@@ -547,6 +800,7 @@ class AgentService:
         tool_call: ToolCall,
         conversation_id: Any = None,
         workflow_run_id: Any = None,
+        user_id: str | None = None,
     ) -> Any:
         """Execute a tool call and return the result."""
         from app.llm.tools import tool_registry
@@ -566,6 +820,22 @@ class AgentService:
                 f"Failed to parse tool arguments: {tool_call.function.arguments}"
             )
             return {"error": t("invalid_tool_arguments")}
+        from app.api.v1.endpoints.chat_helpers.asset_tools import ASSET_TOOL_NAMES
+
+        if tool_name in ASSET_TOOL_NAMES:
+            from app.api.v1.endpoints.chat_tools import execute_tool_call
+            from app.models.user import User
+
+            user = await User.get_or_none(id=user_id) if user_id else None
+            asset_kwargs: dict[str, Any] = {
+                "agent": agent,
+                "conversation_id": conversation_id,
+                "workflow_run_id": workflow_run_id,
+            }
+            if user is not None:
+                asset_kwargs["user"] = user
+            return await execute_tool_call(tool_name, arguments, **asset_kwargs)
+
         if tool_name.startswith("mcp_"):
             from app.llm.tools.mcp_client import execute_mcp_tool
 

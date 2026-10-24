@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -125,12 +126,27 @@ class AssetService:
         user_id: UUID | None,
     ) -> Asset:
         asset = await Asset.get_or_none(id=asset_id)
-        if asset is None or asset.status != AssetStatus.AVAILABLE:
+        if (
+            asset is None
+            or asset.status != AssetStatus.AVAILABLE
+            or asset.source == AssetSource.DERIVED_TEXT
+        ):
             raise BusinessError(
                 code=ResponseCode.NOT_FOUND,
                 msg_key="file_not_found",
                 status_code=404,
             )
+        expires_at = getattr(asset, "expires_at", None)
+        if expires_at is not None:
+            now = datetime.now(UTC)
+            if expires_at.tzinfo is None:
+                now = now.replace(tzinfo=None)
+            if expires_at <= now:
+                raise BusinessError(
+                    code=ResponseCode.NOT_FOUND,
+                    msg_key="file_not_found",
+                    status_code=404,
+                )
         if asset.team_id is not None:
             if team_id != asset.team_id:
                 raise self._access_denied()
@@ -314,7 +330,9 @@ class AssetService:
         }:
             capabilities.append("read")
         if file_parser_service.is_supported(asset.original_filename):
-            capabilities.append("parse")
+            if "read" not in capabilities:
+                capabilities.append("read")
+            capabilities.append("search")
         if content_type.startswith("image/"):
             capabilities.extend(["vision", "generate"])
         return capabilities

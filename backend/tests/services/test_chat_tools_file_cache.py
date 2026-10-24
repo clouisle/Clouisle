@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -6,23 +7,14 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.endpoints.chat_tools import build_file_content_for_context
-from app.services.file_parse_cache import (
-    build_parser_hash,
-    read_cached_file,
-    write_cached_file,
-)
-from app.services.file_parser import FileParseConfig, FileParserService, ParsedFile
+from app.services.file_parser import FileParserService
 
 
 def _agent():
     return SimpleNamespace(
         id=uuid4(),
         enable_attachments=True,
-        attachment_config={
-            "parser": {"type": "builtin", "name": "markitdown"},
-            "max_content_length": 100000,
-            "truncate_strategy": "end",
-        },
+        attachment_config={"parser": {"type": "builtin", "name": "markitdown"}},
     )
 
 
@@ -128,137 +120,8 @@ async def test_asset_file_urls_are_not_automatically_parsed():
         user=None,
     )
 
-    assert content == ""
+    documents = json.loads(content)["documents"]
+    assert documents[0]["filename"] == "report.txt"
+    assert documents[0]["mime_type"] == "text/plain"
+    assert documents[0]["size"] == 11
     assert updated_file_urls is None
-
-
-def _configure_cache(tmp_path, monkeypatch):
-    upload_root = tmp_path / "uploads"
-    upload_root.mkdir()
-    file_path = upload_root / "report.txt"
-    file_path.write_text("source", encoding="utf-8")
-    monkeypatch.setattr("app.services.file_parse_cache.UPLOAD_ROOT", upload_root)
-    monkeypatch.setattr(
-        "app.services.file_parse_cache.CACHE_DIR", upload_root / ".cache"
-    )
-    return file_path
-
-
-@pytest.mark.anyio
-async def test_file_parse_cache_miss_for_missing_or_stale_metadata(
-    tmp_path, monkeypatch
-):
-    file_path = _configure_cache(tmp_path, monkeypatch)
-    parser_hash = build_parser_hash(
-        {"name": "markitdown"}, FileParseConfig(max_content_length=10)
-    )
-
-    assert (
-        await read_cached_file(
-            {}, file_path=file_path, url="/report.txt", parser_hash=parser_hash
-        )
-        is None
-    )
-    assert (
-        await read_cached_file(
-            {
-                "parse_cache": {
-                    "status": "success",
-                    "key": "stale",
-                    "parser_hash": parser_hash,
-                }
-            },
-            file_path=file_path,
-            url="/report.txt",
-            parser_hash=parser_hash,
-        )
-        is None
-    )
-
-
-@pytest.mark.anyio
-async def test_file_parse_cache_store_and_hit(tmp_path, monkeypatch):
-    file_path = _configure_cache(tmp_path, monkeypatch)
-    parser_hash = build_parser_hash({"name": "markitdown"}, FileParseConfig())
-    original = {"filename": "report.txt", "url": "/report.txt"}
-    parsed = ParsedFile(
-        filename="report.txt", content="parsed", mime_type="text/plain", size=6
-    )
-
-    updated = await write_cached_file(
-        original,
-        parsed,
-        file_path=file_path,
-        url="/report.txt",
-        parser_hash=parser_hash,
-    )
-
-    assert "parse_cache" not in original
-    assert updated["parse_cache"]["status"] == "success"
-    assert (
-        await read_cached_file(
-            updated,
-            file_path=file_path,
-            url="/report.txt",
-            parser_hash=parser_hash,
-        )
-        == parsed
-    )
-
-
-@pytest.mark.anyio
-async def test_file_parse_cache_corrupt_payload_is_miss(tmp_path, monkeypatch):
-    file_path = _configure_cache(tmp_path, monkeypatch)
-    parser_hash = build_parser_hash({"name": "markitdown"}, FileParseConfig())
-    parsed = ParsedFile(
-        filename="report.txt", content="parsed", mime_type="text/plain", size=6
-    )
-    metadata = await write_cached_file(
-        {}, parsed, file_path=file_path, url="/report.txt", parser_hash=parser_hash
-    )
-    cache_key = metadata["parse_cache"]["key"]
-    cache_path = tmp_path / "uploads" / ".cache" / cache_key[:2] / f"{cache_key}.json"
-    cache_path.write_text("not-json", encoding="utf-8")
-
-    assert (
-        await read_cached_file(
-            metadata,
-            file_path=file_path,
-            url="/report.txt",
-            parser_hash=parser_hash,
-        )
-        is None
-    )
-
-
-@pytest.mark.anyio
-async def test_file_parse_cache_store_propagates_storage_error(tmp_path, monkeypatch):
-    file_path = _configure_cache(tmp_path, monkeypatch)
-    parsed = ParsedFile(
-        filename="report.txt", content="parsed", mime_type="text/plain", size=6
-    )
-
-    async def fail_storage(*args, **kwargs):
-        raise OSError("disk full")
-
-    monkeypatch.setattr("app.services.file_parse_cache.run_in_threadpool", fail_storage)
-
-    with pytest.raises(OSError, match="disk full"):
-        await write_cached_file(
-            {},
-            parsed,
-            file_path=file_path,
-            url="/report.txt",
-            parser_hash="parser-hash",
-        )
-
-
-def test_parser_hash_changes_at_config_boundaries():
-    parser = {"name": "markitdown"}
-
-    assert build_parser_hash(parser, FileParseConfig(max_content_length=0)) != (
-        build_parser_hash(parser, FileParseConfig(max_content_length=1))
-    )
-    assert build_parser_hash(parser, FileParseConfig(truncate_strategy="end")) != (
-        build_parser_hash(parser, FileParseConfig(truncate_strategy="start"))
-    )

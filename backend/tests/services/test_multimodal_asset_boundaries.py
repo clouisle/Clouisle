@@ -26,7 +26,6 @@ from app.models.asset import AssetScopeType
 from app.models.model import ModelProvider, ModelType
 from app.services.asset_view import (
     MAX_SELECTION_SECONDS,
-    MAX_TEXT_CHARS,
     MAX_VIEW_BYTES,
     resolve_view_content,
 )
@@ -464,63 +463,20 @@ async def test_pdf_asset_falls_back_to_extracted_text_without_native_files(
     _patch_resolved_asset(
         monkeypatch, b"pdf-bytes", content_type=PDF_MIME, original_filename="report.pdf"
     )
-    parsed = SimpleNamespace(content="Extracted report body", truncated=False)
+    document = {"segments": [{"line": 1, "text": "Extracted report body"}], "eof": True}
     monkeypatch.setattr(
-        "app.services.file_parser.file_parser_service.parse_file",
-        AsyncMock(return_value=parsed),
+        "app.services.asset_document.read_document",
+        AsyncMock(return_value=document),
     )
     capabilities = _capabilities([ContentType.TEXT])
     _, part, marker = await _call(input_capabilities=capabilities)
 
     assert part.type is ContentType.TEXT
-    assert part.text.startswith(
-        f"[Extracted text from report.pdf ({PDF_MIME}); truncated=False]"
-    )
-    assert part.text.endswith("Extracted report body")
+    assert json.loads(part.text) == document
     payload = json.loads(marker)
     assert payload["modality"] == "text"
     assert payload["extracted_text"] is True
-    assert payload["representation"] == {"kind": "extracted_text", "truncated": False}
-
-
-@pytest.mark.asyncio
-async def test_truncated_extracted_text_is_flagged_in_part_and_marker(monkeypatch):
-    _patch_resolved_asset(
-        monkeypatch, b"pdf-bytes", content_type=PDF_MIME, original_filename="report.pdf"
-    )
-    long_text = "x" * (MAX_TEXT_CHARS + 10)
-    parsed = SimpleNamespace(content=long_text, truncated=True)
-    monkeypatch.setattr(
-        "app.services.file_parser.file_parser_service.parse_file",
-        AsyncMock(return_value=parsed),
-    )
-    capabilities = _capabilities([ContentType.TEXT])
-    _, part, marker = await _call(input_capabilities=capabilities)
-
-    assert "truncated=True" in part.text
-    assert part.text.endswith("x" * MAX_TEXT_CHARS)
-    assert json.loads(marker)["representation"]["truncated"] is True
-
-
-@pytest.mark.asyncio
-async def test_agent_attachment_config_drives_document_parsing(monkeypatch):
-    _patch_resolved_asset(
-        monkeypatch, b"pdf-bytes", content_type=PDF_MIME, original_filename="report.pdf"
-    )
-    parsed = SimpleNamespace(content="body", truncated=False)
-    parse_file = AsyncMock(return_value=parsed)
-    monkeypatch.setattr(
-        "app.services.file_parser.file_parser_service.parse_file", parse_file
-    )
-    capabilities = _capabilities([ContentType.TEXT])
-    agent = _agent(
-        attachment_config={"max_content_length": 77, "truncate_strategy": "start"}
-    )
-    await _call(input_capabilities=capabilities, agent=agent)
-
-    config = parse_file.await_args.args[2]
-    assert config.max_content_length == 77
-    assert config.truncate_strategy == "start"
+    assert payload["representation"] == {"kind": "extracted_text"}
 
 
 @pytest.mark.asyncio
@@ -533,10 +489,11 @@ async def test_office_document_without_native_serializer_is_extracted_as_text(
         content_type=DOCX_MIME,
         original_filename="notes.docx",
     )
-    parsed = SimpleNamespace(content="Notes body", truncated=False)
     monkeypatch.setattr(
-        "app.services.file_parser.file_parser_service.parse_file",
-        AsyncMock(return_value=parsed),
+        "app.services.asset_document.read_document",
+        AsyncMock(
+            return_value={"segments": [{"line": 1, "text": "Notes body"}], "eof": True}
+        ),
     )
     capabilities = _capabilities([ContentType.TEXT])
     _, part, marker = await _call(input_capabilities=capabilities)
@@ -906,3 +863,27 @@ async def test_workflow_scope_skips_the_conversation_branch_check(monkeypatch):
 
     assert part.type is ContentType.IMAGE
     conversation_filter.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_native_pdf_requires_page_selection_instead_of_whole_document(
+    monkeypatch,
+):
+    _patch_resolved_asset(
+        monkeypatch, _pdf(2), content_type=PDF_MIME, original_filename="report.pdf"
+    )
+    capabilities = _capabilities([ContentType.FILE])
+    with pytest.raises(InvalidRequestError, match="explicit page range"):
+        await _call(input_capabilities=capabilities)
+
+
+@pytest.mark.asyncio
+async def test_text_reading_does_not_silently_ignore_pdf_page_selection(monkeypatch):
+    _patch_resolved_asset(
+        monkeypatch, _pdf(2), content_type=PDF_MIME, original_filename="report.pdf"
+    )
+    with pytest.raises(InvalidRequestError, match="line ranges"):
+        await _call(
+            input_capabilities=_capabilities([ContentType.TEXT]),
+            selection={"page_start": 1, "page_end": 1},
+        )

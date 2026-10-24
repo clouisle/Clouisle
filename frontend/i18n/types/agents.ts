@@ -317,9 +317,6 @@ export type AgentsMessages = {
         title: string
         tooltip: string
         description: string
-        maxContentLength: string
-        maxContentLengthHint: string
-        characters: string
         contextHint: string
       }
       userInput: {

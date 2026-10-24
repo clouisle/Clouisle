@@ -97,7 +97,7 @@ async def test_custom_file_parser_without_tool_id_skips_lookup_issue255():
         attachment_config={"parser": {"type": "custom"}},
     )
 
-    result = await build_file_content_for_context(
+    content, updates = await build_file_content_for_context(
         agent=agent,
         file_urls=[{"url": "https://example.test/file.txt"}],
         legacy_files=None,
@@ -106,7 +106,8 @@ async def test_custom_file_parser_without_tool_id_skips_lookup_issue255():
         user=None,
     )
 
-    assert result == ("", None)
+    assert json.loads(content)["documents"][0]["filename"] == "file.txt"
+    assert updates is None
 
 
 @pytest.mark.anyio
@@ -122,7 +123,7 @@ async def test_custom_file_parser_config_is_ignored_for_asset_files_issue255():
             new=AsyncMock(),
         ) as execute_parser,
     ):
-        result = await build_file_content_for_context(
+        content, updates = await build_file_content_for_context(
             agent=agent,
             file_urls=[{"url": "https://example.test/file.txt"}],
             legacy_files=None,
@@ -131,5 +132,6 @@ async def test_custom_file_parser_config_is_ignored_for_asset_files_issue255():
             user=None,
         )
 
-    assert result == ("", None)
+    assert json.loads(content)["documents"][0]["filename"] == "file.txt"
+    assert updates is None
     execute_parser.assert_not_awaited()

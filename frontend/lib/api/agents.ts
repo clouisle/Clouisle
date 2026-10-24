@@ -107,8 +107,6 @@ export interface AgentKnowledgeBaseConfig {
 export interface AttachmentConfig {
   max_file_size: number  // bytes
   max_files: number
-  max_content_length: number  // characters
-  truncate_strategy: 'end' | 'start' | 'middle'
   allowed_extensions: string[]
 }
 
