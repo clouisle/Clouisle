@@ -464,7 +464,7 @@ async def test_workflow_detail_uses_persisted_execution_names(monkeypatch):
     run_id = uuid4()
     row = _workflow_observability_row(run_id)
     workflow_query = MagicMock()
-    workflow_query.values.return_value.first = AsyncMock(
+    workflow_query.first.return_value.values = AsyncMock(
         return_value={"total_nodes": 1}
     )
     node_query = MagicMock()
@@ -507,7 +507,7 @@ async def test_workflow_detail_marks_pruned_execution_rows_expired(monkeypatch):
     run_id = uuid4()
     row = _workflow_observability_row(run_id)
     workflow_query = MagicMock()
-    workflow_query.values.return_value.first = AsyncMock(return_value=None)
+    workflow_query.first.return_value.values = AsyncMock(return_value=None)
     node_filter = MagicMock()
 
     monkeypatch.setattr(
@@ -533,7 +533,7 @@ async def test_workflow_detail_caps_node_rows_and_marks_trace_truncated(monkeypa
     run_id = uuid4()
     row = _workflow_observability_row(run_id)
     workflow_query = MagicMock()
-    workflow_query.values.return_value.first = AsyncMock(
+    workflow_query.first.return_value.values = AsyncMock(
         return_value={"total_nodes": 101}
     )
     node_query = MagicMock()

@@ -101,9 +101,36 @@ class ToolPayloadDetail(BaseModel):
     recorded: bool = False
 
 
+class TrajectoryEntry(BaseModel):
+    id: str
+    parent_id: str | None = None
+    kind: str
+    name: str
+    status: str
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    duration_ms: int | None = None
+    model: str | None = None
+    token_usage: dict[str, int] | None = None
+    tool_call_ids: list[str] = Field(default_factory=list)
+    payload_state: Literal["recorded", "partial", "unrecorded"]
+    preview: str | None = None
+
+
+class TrajectoryDetail(BaseModel):
+    id: str
+    kind: str
+    input: Any = None
+    output: Any = None
+    partial: bool = False
+    recorded: bool = False
+
+
 class RunDetail(BaseModel):
     run: RunSummary
     spans: list[TraceSpan]
+    # Optional for backward compatibility with older responses/clients.
+    trajectory: list[TrajectoryEntry] = Field(default_factory=list)
     trace: TraceInfo
     meta: ObservabilityMeta
 
@@ -372,6 +399,23 @@ async def get_run_tool_payload(
     if payload is None:
         raise HTTPException(status_code=404, detail="Tool payload not recorded")
     return success(data=payload)
+
+
+@router.get(
+    "/runs/{source}/{run_id}/trajectory/{entry_id}",
+    response_model=Response[TrajectoryDetail],
+)
+async def get_run_trajectory_entry(
+    source: Literal["agent", "workflow"],
+    run_id: UUID,
+    entry_id: str,
+    current_user: User = Depends(PermissionChecker(READ)),
+) -> Any:
+    """Load one recorded model, tool or workflow-node snapshot on demand."""
+    data = await service.trajectory_detail(source, run_id, entry_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Trajectory entry not found")
+    return success(data=data)
 
 
 @router.get("/dependencies", response_model=Response[DependenciesPayload])

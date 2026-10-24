@@ -1492,6 +1492,53 @@ async def init_observability_tool_payload_table() -> None:
     )
 
 
+async def init_observability_trajectory_table() -> None:
+    """Create the bounded execution-trajectory table on existing installs."""
+    conn = Tortoise.get_connection("default")
+    if conn.capabilities.dialect != "postgres":
+        return
+    await conn.execute_query(
+        """
+        CREATE TABLE IF NOT EXISTS observability_trajectory_entries (
+            id UUID PRIMARY KEY,
+            run_id UUID NOT NULL,
+            conversation_id UUID,
+            parent_id UUID,
+            sequence BIGINT NOT NULL,
+            kind VARCHAR(32) NOT NULL,
+            name VARCHAR(200) NOT NULL,
+            status VARCHAR(32) NOT NULL,
+            started_at TIMESTAMPTZ,
+            finished_at TIMESTAMPTZ,
+            duration_ms INTEGER,
+            model VARCHAR(200),
+            token_usage JSONB,
+            tool_call_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+            payload_state VARCHAR(16) NOT NULL DEFAULT 'unrecorded',
+            preview VARCHAR(300),
+            input_text TEXT,
+            output_text TEXT,
+            input_bytes INTEGER NOT NULL DEFAULT 0,
+            output_bytes INTEGER NOT NULL DEFAULT 0,
+            partial BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    await conn.execute_query(
+        """
+        CREATE INDEX IF NOT EXISTS idx_observability_trajectory_run_sequence
+        ON observability_trajectory_entries (run_id, sequence)
+        """
+    )
+    await conn.execute_query(
+        """
+        CREATE INDEX IF NOT EXISTS idx_observability_trajectory_created
+        ON observability_trajectory_entries (created_at)
+        """
+    )
+
+
 async def init_observability_run_fields():
     """Add diagnostics fields required by existing run-summary tables."""
     conn = Tortoise.get_connection("default")

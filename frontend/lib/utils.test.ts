@@ -6,6 +6,7 @@ import {
   formatDateTime,
   formatDuration,
   formatTime,
+  isRecord,
   isValidEmail,
 } from './utils'
 
@@ -103,5 +104,14 @@ describe('utility helpers', () => {
     expect(formatDuration(90000)).toBe('2m')
     expect(formatDuration(3600000)).toBe('1h')
     expect(formatDuration(5400000)).toBe('2h')
+  })
+
+  test('narrows plain objects without accepting arrays or null', () => {
+    expect(isRecord({})).toBe(true)
+    expect(isRecord({ nested: { ok: true } })).toBe(true)
+    expect(isRecord([])).toBe(false)
+    expect(isRecord(null)).toBe(false)
+    expect(isRecord('value')).toBe(false)
+    expect(isRecord(1)).toBe(false)
   })
 })

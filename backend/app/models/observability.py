@@ -1,8 +1,9 @@
 """Bounded operational telemetry and durable alert state.
 
-Only allowlisted summaries are stored; run inputs, messages, traces, and errors
-are deliberately excluded. Records are retained for a fixed window by a
-bounded maintenance call.
+This module stores only allowlisted run summaries; run inputs, messages,
+traces, and errors are deliberately excluded. Exact on-demand snapshots live
+in ``observability_payload`` and are never loaded by list queries. Records are
+retained for a fixed window by a bounded maintenance call.
 """
 
 from tortoise import fields, models

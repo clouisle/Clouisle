@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-23T19:49:42.005Z
+// GENERATED — 2026-10-24T18:18:06.003Z
 // Source: i18n/en/dashboard.json
 export type DashboardMessages = {
   dashboard: {
@@ -378,17 +378,134 @@ export type DashboardMessages = {
         evaluationWindow: string
         recoveryWindow: string
       }
-      details: {
-        runTitle: string
-        traceDescription: string
-        traceStatus: string
-        complete: string
-        incomplete: string
-        traceExpired: string
-        traceTruncated: string
-        waterfall: string
-        traceUnavailable: string
-        errorCategory: string
+      runInspector: {
+        back: string
+        title: string
+        refresh: string
+        loadError: string
+        loadErrorHint: string
+        retry: string
+        notFound: string
+        notFoundHint: string
+        invalidSource: string
+        invalidSourceHint: string
+        metrics: {
+          status: string
+          team: string
+          submitted: string
+          started: string
+          finished: string
+          queue: string
+          duration: string
+          firstToken: string
+          tokens: string
+        }
+        trace: {
+          summary: string
+          complete: string
+          incomplete: string
+          expired: string
+          truncated: string
+          error: string
+        }
+        timeline: {
+          title: string
+          description: string
+          input: string
+          nodes: string
+          inputBoundary: string
+          model: string
+          tools: string
+          inputHint: string
+          emptyLane: string
+          untimed: string
+        }
+        steps: {
+          title: string
+          count: string
+          filterName: string
+          filterType: string
+          allTypes: string
+          failuresOnly: string
+          callNumber: string
+          toolNumber: string
+          empty: string
+          noTrajectory: string
+          noTrajectoryHint: string
+          previewUnrecorded: string
+          previewPartial: string
+          legacyTitle: string
+          legacyNotice: string
+          legacyUnrecorded: string
+        }
+        kinds: {
+          model: string
+          tool: string
+          retrieval: string
+          workflow_node: string
+        }
+        inspector: {
+          title: string
+          empty: string
+          legacyEmpty: string
+          summary: string
+          preview: string
+          raw: string
+          rawNote: string
+          stepId: string
+          parent: string
+          root: string
+          kind: string
+          status: string
+          started: string
+          finished: string
+          duration: string
+          model: string
+          modelError: string
+          errorMessage: string
+          modelScope: string
+          fallbackInvocation: string
+          tokens: string
+          toolCalls: string
+          noToolCalls: string
+          payloadState: string
+          recorded: string
+          partialState: string
+          unrecordedState: string
+          payloadPreview: string
+          contextLoading: string
+          contextUnavailable: string
+          noPreview: string
+          loadError: string
+          retry: string
+          unrecorded: string
+          unrecordedHint: string
+          partial: string
+          input: string
+          output: string
+          noData: string
+          messages: string
+          tools: string
+          options: string
+          limits: string
+          limitsNote: string
+          storedUnavailable: string
+          content: string
+          reasoning: string
+          finishReason: string
+          toolArguments: string
+          nodeType: string
+          config: string
+          inputs: string
+          outputs: string
+          modelUsed: string
+          errorType: string
+          legacyToolPayload: string
+          legacyToolHint: string
+          legacyUnavailable: string
+          modelResult: string
+          displayResult: string
+        }
       }
     }
   }

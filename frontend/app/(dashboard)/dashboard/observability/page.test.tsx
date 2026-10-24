@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
+import { setTimeout as scheduleTimeout, clearTimeout as cancelTimeout } from 'node:timers'
 import React from 'react'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 import { format } from 'date-fns'
 import { enUS, zhCN } from 'date-fns/locale'
 import type { DateRange } from 'react-day-picker'
-import type { DependenciesResponse, InfrastructureResponse, RunDetailResponse } from '@/lib/api/admin/observability'
+import type { DependenciesResponse, InfrastructureResponse } from '@/lib/api/admin/observability'
 import enDashboard from '@/i18n/en/dashboard.json'
 import zhDashboard from '@/i18n/zh/dashboard.json'
 const agentRunStatuses = ['queued', 'running', 'stopping', 'completing', 'completed', 'stopped', 'failed', 'interrupted', 'waiting'] as const
@@ -23,37 +24,28 @@ const run = { run_id: 'failed-run', source: 'agent', resource_id: 'agent-1', res
 const alert = { id: 'alert-1', rule_id: 'rule-1', kind: 'failure_rate', severity: 'critical', title: 'Failure rate elevated', detail: 'Agent failures exceeded threshold.', affected_count: 3, status: 'active', opened_at: '2026-10-08T10:45:00Z', resolved_at: null, acknowledged_at: null, silenced_until: null }
 const getSummary = mock(async () => ({ meta, agents: { submitted: 4, completed: 3, failed: 1, success_rate: 0.75, p50_ms: 900, p95_ms: 1800, first_token_p95_ms: 400, tokens: 150 }, workflows: { submitted: 0, completed: 0, failed: 0, success_rate: null, p50_ms: null, p95_ms: null, tokens: 0 }, trend: [{ bucket: '2026-10-08T10:30:00Z', submitted: 4, completed: 3, failed: 1, tokens: 150, p95_ms: 1800, first_token_p95_ms: 400 }], issues: [] }))
 const getRuns = mock(async () => ({ items: [run], next_cursor: 'opaque-cursor', meta }))
-const getRun = mock(async () => ({
-  run,
-  spans: [
-    { span_id: 'root', parent_span_id: null, kind: 'run', name: 'Agent execution', status: 'failed', started_at: run.started_at, finished_at: run.finished_at, duration_ms: 2000, attempt: null, model: null, tool: null, error_category: 'provider', token_usage: { total: 22 }, metadata: {} },
-    { span_id: 'child', parent_span_id: 'root', kind: 'tool', name: 'HTTP request', status: 'completed', started_at: '2026-10-08T10:30:01.250Z', finished_at: '2026-10-08T10:30:01.550Z', duration_ms: 300, attempt: null, model: null, tool: 'http', error_category: null, token_usage: { total: 5 }, metadata: { tool_call_id: 'call-1', model_bytes: 42, display_bytes: 15, eof: false, has_cursor: true } },
-  ],
-  trace: { complete: false, expired: false, truncated: true, recorded_count: 2 },
-  meta,
-}))
 const getDependencies = mock(async (): Promise<DependenciesResponse> => ({ meta, models: [{ id: 'model-1', name: 'gpt-test', provider: 'custom', provider_display_name: 'Test gateway', requests: 4, completed: 3, failed: 1, success_rate: 0.75, p50_ms: 500, p95_ms: 900, first_token_p95_ms: 250, tokens: 80, sample_count: 4 }], tools: [], retrieval: [] }))
 const getQueues = mock(async () => ({ meta, workers: [{ worker_id: 'agent-worker-1', status: 'healthy', queues: ['agent', 'sandbox-1'], last_heartbeat: '2026-10-08T10:59:00Z', active_tasks: 1, reserved_tasks: null, scheduled_tasks: 0 }], queues: [{ name: 'agent', consumers: 1, pending: 2, oldest_wait_ms: 400, observed_at: '2026-10-08T11:00:00Z', state: 'healthy', trend: [{ bucket: '2026-10-08T10:59:00Z', pending: 1 }, { bucket: '2026-10-08T11:00:00Z', pending: 2 }] }] }))
 const getInfrastructure = mock(async (): Promise<InfrastructureResponse> => ({ meta, instances: [{ instance_id: 'api-1', name: 'API east', role: 'api', metric_scope: 'host', cpu_percent: 27.5, memory_percent: null, observed_at: '2026-10-08T11:00:00Z', state: 'healthy' }], dependencies: [], slow_queries: { available: false, reset_at: null, items: [] } }))
-const getRunToolPayload = mock(async () => ({ tool_call_id: 'call-1', tool_name: 'read_asset', display: '{"ref":"a1b2"}', model_input: 'ref=a1b2 · lines 1/1\n<document>\n1│hello\n</document>', display_bytes: 15, model_bytes: 42, model_sha256: 'hash', renderer: 'read_asset', eof: false, has_cursor: true, partial: false, error: null, recorded: true }))
 const getAlerts = mock(async () => ({ items: [alert], next_cursor: null, meta }))
 const getAlertRules = mock(async () => ([{ id: 'rule-1', name: 'Failure rate', threshold: 0.5, enabled: true, evaluation_window_seconds: 300, recovery_window_seconds: 600, updated_at: null }]))
 const acknowledgeAlert = mock(async () => alert)
 const silenceAlert = mock(async () => alert)
 const updateAlertRule = mock(async () => ({ id: 'rule-1', name: 'Failure rate', threshold: 0.7, enabled: true, evaluation_window_seconds: 300, recovery_window_seconds: 600, updated_at: null }))
 const replace = mock<(url: string, options: { scroll: boolean }) => void>(() => {})
+const push = mock<(url: string) => void>(() => {})
 let params = new URLSearchParams('tab=overview&keep=retained')
 
 Object.assign(globalThis, {
-  window: { setInterval: () => 1, clearInterval: () => {}, setTimeout: (callback: () => void) => setTimeout(callback, 0) },
+  window: { setInterval: () => 1, clearInterval: () => {}, setTimeout: (callback: () => void, delay = 0) => scheduleTimeout(callback, delay), clearTimeout: (timer: NodeJS.Timeout) => cancelTimeout(timer) },
   document: { visibilityState: 'visible', addEventListener: () => {}, removeEventListener: () => {} },
 })
 
 mock.module('next-intl', () => ({ useLocale: () => instanceLocale ?? 'en', useTranslations: () => translate }))
-mock.module('next/navigation', () => ({ usePathname: () => '/dashboard/observability', useRouter: () => ({ replace }), useSearchParams: () => params }))
+mock.module('next/navigation', () => ({ usePathname: () => '/dashboard/observability', useRouter: () => ({ replace, push }), useSearchParams: () => params }))
 mock.module('lucide-react', () => {
   const Icon = () => null
-  return { Activity: Icon, AlertTriangle: Icon, Bell: Icon, Boxes: Icon, CalendarIcon: Icon, Check: Icon, CheckCircle2: Icon, ChevronDown: Icon, ChevronRight: Icon, Clock3: Icon, Coins: Icon, Database: Icon, ExternalLink: Icon, Gauge: Icon, RefreshCw: Icon, Server: Icon, Workflow: Icon }
+  return { Activity: Icon, AlertTriangle: Icon, Bell: Icon, Boxes: Icon, CalendarIcon: Icon, Check: Icon, CheckCircle2: Icon, ChevronDown: Icon, ChevronRight: Icon, Clock3: Icon, Coins: Icon, Database: Icon, ExternalLink: Icon, Gauge: Icon, RefreshCw: Icon, Search: Icon, Server: Icon, Workflow: Icon }
 })
 mock.module('recharts', () => {
   const Chart = ({ children }: React.PropsWithChildren) => <div>{children}</div>
@@ -66,8 +58,8 @@ mock.module('@/components/layout/header', () => ({ Header: () => <header /> }))
 mock.module('@/components/ui/badge', () => ({ Badge: ({ children }: React.PropsWithChildren) => <span>{children}</span> }))
 mock.module('@/components/ui/button', () => ({ Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button> }))
 mock.module('@/components/ui/card', () => ({ Card: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>, CardContent: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>, CardDescription: ({ children }: React.PropsWithChildren) => <p>{children}</p>, CardHeader: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>, CardTitle: ({ children }: React.PropsWithChildren) => <h2>{children}</h2> }))
-mock.module('@/components/ui/sheet', () => ({ Sheet: ({ open, children, onOpenChange }: React.PropsWithChildren<{ open: boolean; onOpenChange: (open: boolean) => void }>) => open ? <div><button aria-label="close-run-detail" onClick={() => onOpenChange(false)}/>{children}</div> : null, SheetContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>, SheetDescription: ({ children }: React.PropsWithChildren) => <p>{children}</p>, SheetHeader: ({ children }: React.PropsWithChildren) => <div>{children}</div>, SheetTitle: ({ children }: React.PropsWithChildren) => <h2>{children}</h2> }))
 mock.module('@/components/ui/field', () => ({ Field: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>, FieldLabel: ({ children, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) => <label {...props}>{children}</label> }))
+mock.module('@/components/ui/data-table-faceted-filter', () => ({ DataTableFacetedFilter: ({ title, selectedValues, onSelectionChange }: { title: string; selectedValues: Set<string>; onSelectionChange: (values: Set<string>) => void }) => <button type="button" data-facet={title} data-selected={Array.from(selectedValues).join(',')} onSelectionChange={onSelectionChange}>{title}</button> }))
 const RangePopoverContext = React.createContext<{ open: boolean; onOpenChange: (open: boolean) => void }>({ open: false, onOpenChange: () => {} })
 mock.module('@/components/ui/popover', () => ({
   Popover: ({ children, open, onOpenChange }: React.PropsWithChildren<{ open: boolean; onOpenChange: (open: boolean) => void }>) => <RangePopoverContext.Provider value={{ open, onOpenChange }}>{children}</RangePopoverContext.Provider>,
@@ -104,7 +96,7 @@ mock.module('@/components/ui/select', () => ({
 }))
 mock.module('@/lib/chart-theme', () => ({ CHART_AXIS_COLOR: '#666', CHART_COLOR_ORDER: ['#123', '#456'], CHART_GRID_COLOR: '#ddd', CHART_HOVER_CURSOR: {}, CHART_TOOLTIP_STYLE: {} }))
 mock.module('@/lib/utils', () => ({ formatTime: () => '11:00' }))
-mock.module('@/lib/api/admin/observability', () => ({ observabilityApi: { getSummary, getRuns, getRun, getRunToolPayload, getDependencies, getQueues, getInfrastructure, getAlerts, getAlertRules, acknowledgeAlert, silenceAlert, updateAlertRule } }))
+mock.module('@/lib/api/admin/observability', () => ({ observabilityApi: { getSummary, getRuns, getDependencies, getQueues, getInfrastructure, getAlerts, getAlertRules, acknowledgeAlert, silenceAlert, updateAlertRule } }))
 
 // Import after registering mocks so the page exercises its real state and effects against deterministic service/UI boundaries.
 const { default: ObservabilityPage } = await import('./page')
@@ -166,18 +158,6 @@ test('opens the labeled range field with current window dates and only three foo
   act(() => renderer.unmount())
 })
 
-test('shows an explicit all-status label when the run status filter is empty', async () => {
-  params = new URLSearchParams('tab=runs&period=24h')
-  const renderer = await render()
-  const statusSelect = renderer.root.findAllByProps({ 'data-select-root': true }).find(
-    (select) => select.findAllByProps({ 'aria-label': 'filters.status' }).length > 0,
-  )
-  expect(statusSelect).toBeDefined()
-  const trigger = statusSelect!.findByProps({ 'aria-label': 'filters.status' })
-  expect(trigger.findByProps({ 'data-slot': 'select-value' }).children).toContain('filters.allStatuses')
-  expect(statusSelect!.findByProps({ role: 'option', 'data-value': 'all' }).children).toContain('filters.allStatuses')
-  act(() => renderer.unmount())
-})
 test('applies team filter changes only on submit and preserves unrelated URL parameters', async () => {
   const renderer = await render()
   expect(getSummary).toHaveBeenCalledWith({ period: '1h', team_id: undefined })
@@ -191,65 +171,20 @@ test('applies team filter changes only on submit and preserves unrelated URL par
   act(() => renderer.unmount())
 })
 
-test('applies run filters only when submitted', async () => {
-  params = new URLSearchParams('tab=runs&period=24h')
-  const renderer = await render()
-  expect(getRuns).toHaveBeenCalledTimes(1)
-  const runIdInput = renderer.root.findByProps({ 'aria-label': 'filters.runId' })
-  act(() => runIdInput.props.onChange({ target: { value: 'run-42' } }))
-  expect(getRuns).toHaveBeenCalledTimes(1)
-  const runForm = renderer.root.findAllByType('form').find((form) => form.findAllByProps({ 'aria-label': 'filters.runId' }).length > 0)
-  expect(runForm).toBeDefined()
-  await act(async () => { runForm!.props.onSubmit({ preventDefault: () => {} }); await Promise.resolve() })
-  expect(getRuns).toHaveBeenCalledTimes(2)
-  expect(getRuns).toHaveBeenNthCalledWith(2, expect.objectContaining({ run_id: 'run-42', cursor: undefined, limit: 25 }))
-  act(() => renderer.unmount())
-})
 
-test('uses cursor pages and fetches trace detail only after opening a run', async () => {
+test('navigates to the direct run inspector route and keeps cursor paging on the list', async () => {
   params = new URLSearchParams('tab=runs&period=24h')
   getRuns.mockImplementationOnce(async () => ({ items: [run], next_cursor: 'opaque-cursor', meta }))
   getRuns.mockImplementationOnce(async () => ({ items: [], next_cursor: null, meta }))
   const renderer = await render()
   expect(getRuns).toHaveBeenCalledWith(expect.objectContaining({ period: '24h', cursor: undefined, limit: 25 }))
-  expect(getRun).not.toHaveBeenCalled()
   const row = renderer.root.findAllByType('tr')[1]
-  await act(async () => { row.props.onClick(); await Promise.resolve() })
-  expect(getRun).toHaveBeenCalledWith('agent', 'failed-run')
-  expect(renderer.root.findByType('h3').children).toContain('details.waterfall')
-  expect(renderer.root.findAllByType('div').some((node) => node.children.some((child) => typeof child === 'string' && child.includes('details.traceTruncated')))).toBe(true)
-  expect(renderer.root.findAllByType('span').some((node) => node.children.includes('HTTP request'))).toBe(false)
-  const rootToggle = renderer.root.findAllByType('button').find((button) => button.props['aria-expanded'] === false)
-  expect(rootToggle).toBeDefined()
-  await act(async () => { rootToggle!.props.onClick(); await Promise.resolve() })
-  expect(renderer.root.findAllByType('span').some((node) => node.children.includes('HTTP request'))).toBe(true)
-  const expandedRoot = renderer.root.findAllByType('button').find((button) => button.props['aria-expanded'] === true)
-  expect(expandedRoot).toBeDefined()
-  await act(async () => { expandedRoot!.props.onClick(); await Promise.resolve() })
-  expect(renderer.root.findAllByType('span').some((node) => node.children.includes('HTTP request'))).toBe(false)
+  act(() => row.props.onClick())
+  expect(push).toHaveBeenCalledWith('/dashboard/observability/runs/agent/failed-run?tab=runs&period=24h')
   const loadMore = renderer.root.findAllByType('button').find((button) => button.children.includes('actions.loadMore'))
   expect(loadMore).toBeDefined()
   await act(async () => { loadMore!.props.onClick(); await Promise.resolve() })
   expect(getRuns).toHaveBeenNthCalledWith(2, expect.objectContaining({ cursor: 'opaque-cursor', limit: 25 }))
-  act(() => renderer.unmount())
-})
-
-test('closing a pending trace request prevents late details from reopening the sheet', async () => {
-  params = new URLSearchParams('tab=runs&period=24h')
-  const pending = Promise.withResolvers<RunDetailResponse>()
-  getRun.mockImplementationOnce(() => pending.promise)
-  const renderer = await render()
-  const row = renderer.root.findAllByType('tr')[1]
-  await act(async () => { row.props.onClick(); await Promise.resolve() })
-  const close = renderer.root.findByProps({ 'aria-label': 'close-run-detail' })
-  act(() => close.props.onClick())
-  expect(renderer.root.findAllByProps({ 'aria-label': 'close-run-detail' })).toHaveLength(0)
-
-  await act(async () => {
-    pending.resolve({ run, spans: [], trace: { complete: true, expired: false, truncated: false, recorded_count: 0 }, meta })
-    await Promise.resolve()
-  })
-  expect(renderer.root.findAllByProps({ 'aria-label': 'close-run-detail' })).toHaveLength(0)
   act(() => renderer.unmount())
 })
 
@@ -430,20 +365,6 @@ test('renders dependency samples, provider labels, nullable metrics, and empty g
   act(() => renderer.unmount())
 })
 
-test('shows and clears a run detail error after a rejected trace request', async () => {
-  params = new URLSearchParams('tab=runs&period=24h')
-  getRun.mockRejectedValueOnce(new Error('trace unavailable'))
-  const renderer = await render()
-  const row = renderer.root.findAllByType('tr')[1]
-  await act(async () => { row.props.onClick(); await Promise.resolve(); await Promise.resolve() })
-  expect(getRun).toHaveBeenCalledWith('agent', 'failed-run')
-  expect(renderer.root.findAllByProps({ role: 'alert' })).toHaveLength(1)
-  act(() => renderer.root.findByProps({ 'aria-label': 'close-run-detail' }).props.onClick())
-  expect(renderer.root.findAllByProps({ role: 'alert' })).toHaveLength(0)
-  expect(renderer.root.findAllByProps({ 'aria-label': 'close-run-detail' })).toHaveLength(0)
-  act(() => renderer.unmount())
-})
-
 test('filters alert events, ignores an empty status selection, and reports mutation failures', async () => {
   params = new URLSearchParams('tab=alerts')
   const renderer = await render()
@@ -583,42 +504,28 @@ test('shows dashboard load failures and retries the current view request', async
   act(() => renderer.unmount())
 })
 
-test('applies all run diagnostic filters together and clears pagination on submit', async () => {
+test('applies selected filters immediately but debounces run ID searches', async () => {
   params = new URLSearchParams('tab=runs&period=24h')
   getRuns.mockImplementationOnce(async () => ({ items: [run], next_cursor: 'old-cursor', meta }))
   const renderer = await render()
-  const selects = renderer.root.findAllByProps({ 'data-select-root': true })
-  const source = selects.find((select) => select.findAllByProps({ 'aria-label': 'filters.source' }).length > 0)!
-  const status = selects.find((select) => select.findAllByProps({ 'aria-label': 'filters.status' }).length > 0)!
-  act(() => { source.props.onValueChange('workflow'); status.props.onValueChange('failed') })
-  act(() => {
-    renderer.root.findByProps({ 'aria-label': 'filters.errorCategory' }).props.onChange({ target: { value: 'provider' } })
-    renderer.root.findByProps({ 'aria-label': 'filters.runId' }).props.onChange({ target: { value: 'run-99' } })
+  const source = renderer.root.findByProps({ 'data-facet': 'filters.source' })
+  await act(async () => { source.props.onSelectionChange(new Set(['workflow'])); await Promise.resolve(); await Promise.resolve() })
+  expect(getRuns).toHaveBeenLastCalledWith(expect.objectContaining({ source: 'workflow', cursor: undefined }))
+  await act(async () => { renderer.root.findByProps({ 'data-facet': 'filters.status' }).props.onSelectionChange(new Set(['failed'])); await Promise.resolve(); await Promise.resolve() })
+  const requests = getRuns.mock.calls.length
+  act(() => renderer.root.findByProps({ 'aria-label': 'filters.runId' }).props.onChange({ target: { value: 'run-9' } }))
+  act(() => renderer.root.findByProps({ 'aria-label': 'filters.runId' }).props.onChange({ target: { value: 'run-99' } }))
+  expect(renderer.root.findByProps({ 'aria-label': 'filters.runId' }).props.value).toBe('run-99')
+  expect(getRuns).toHaveBeenCalledTimes(requests)
+  await act(async () => {
+    const { promise, resolve } = Promise.withResolvers<void>()
+    scheduleTimeout(resolve, 350)
+    await promise
   })
-  const form = renderer.root.findAllByType('form').find((item) => item.findAllByProps({ 'aria-label': 'filters.runId' }).length > 0)!
-  await act(async () => { form.props.onSubmit({ preventDefault: () => {} }); await Promise.resolve(); await Promise.resolve() })
-  expect(getRuns).toHaveBeenLastCalledWith(expect.objectContaining({ source: 'workflow', status: 'failed', error_category: 'provider', run_id: 'run-99', cursor: undefined, limit: 25 }))
+  expect(getRuns).toHaveBeenCalledTimes(requests + 1)
+  expect(getRuns).toHaveBeenLastCalledWith(expect.objectContaining({ source: 'workflow', status: 'failed', run_id: 'run-99', cursor: undefined, limit: 25 }))
   act(() => renderer.unmount())
 })
-
-test('shows an expired empty trace and renders orphan spans so partial traces remain inspectable', async () => {
-  params = new URLSearchParams('tab=runs&period=24h')
-  getRun.mockResolvedValueOnce({
-    run,
-    spans: [{ span_id: 'orphan', parent_span_id: 'missing-parent', kind: 'model', name: 'Fallback model call', status: 'completed', started_at: null, finished_at: null, duration_ms: null, attempt: null, model: 'gpt-test', tool: null, error_category: null, token_usage: {}, metadata: {} }],
-    trace: { complete: false, expired: true, truncated: false, recorded_count: 1 },
-    meta,
-  })
-  const renderer = await render()
-  const row = renderer.root.findAllByType('tr')[1]
-  await act(async () => { row.props.onClick(); await Promise.resolve(); await Promise.resolve() })
-  const renderedText = JSON.stringify(renderer.toJSON())
-  expect(renderedText).toContain('details.traceExpired')
-  expect(renderer.root.findAllByType('span').some((node) => node.children.includes('Fallback model call'))).toBe(true)
-  act(() => renderer.unmount())
-})
-
-
 
 function rangeTrigger(renderer: ReactTestRenderer) {
   return renderer.root.findAllByType('button').find((node) => node.props.id === 'obs-range')!
@@ -863,21 +770,3 @@ for (const locale of ['en', 'zh'] as const) {
     act(() => renderer.unmount())
   })
 }
-
-test('loads the recorded model input only when a tool span is expanded', async () => {
-  params = new URLSearchParams('tab=runs&period=24h')
-  getRuns.mockImplementationOnce(async () => ({ items: [run], next_cursor: null, meta }))
-  const renderer = await render()
-  expect(getRunToolPayload).not.toHaveBeenCalled()
-  const row = renderer.root.findAllByType('tr')[1]
-  await act(async () => { row.props.onClick(); await Promise.resolve() })
-  const rootToggle = renderer.root.findAllByType('button').find((button) => button.props['aria-expanded'] === false)
-  await act(async () => { rootToggle!.props.onClick(); await Promise.resolve() })
-  expect(getRunToolPayload).not.toHaveBeenCalled()
-  const childToggle = renderer.root.findAllByType('button').find((button) => button.props['aria-expanded'] === false)
-  expect(childToggle).toBeDefined()
-  await act(async () => { childToggle!.props.onClick(); await Promise.resolve() })
-  expect(getRunToolPayload).toHaveBeenCalledWith('agent', 'failed-run', 'call-1')
-  expect(renderer.root.findAllByType('pre').some((node) => node.children.some((child) => typeof child === 'string' && child.includes('1│hello')))).toBe(true)
-  act(() => renderer.unmount())
-})

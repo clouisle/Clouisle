@@ -13,6 +13,12 @@
   - [x] 3. Documents and notifications
   - [x] 4. Verification and delivery
 
+- **run-execution-trajectory** — Completed. See `docs/plan/run-execution-trajectory.md`.
+  - [x] 1. Runtime model context capture
+  - [x] 2. Correlated trajectory and payload API
+  - [x] 3. Independent execution inspector
+  - [x] 4. Verification and operator documentation
+
 - **builtin-tool-output** — Completed. See `docs/plan/builtin-tool-output.md`.
   - [x] 1. Shared result utils and replay contract
   - [x] 2. Asset, sandbox and persistent web reading outputs
