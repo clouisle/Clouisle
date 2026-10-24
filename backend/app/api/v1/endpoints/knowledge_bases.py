@@ -646,7 +646,9 @@ async def list_knowledge_bases(
     if own_only and not current_user.is_superuser:
         query = query.filter(created_by=current_user)
     if search:
-        query = query.filter(name__icontains=search)
+        query = query.filter(
+            Q(name__icontains=search) | Q(description__icontains=search)
+        )
 
     if status:
         query = query.filter(status__in=status)

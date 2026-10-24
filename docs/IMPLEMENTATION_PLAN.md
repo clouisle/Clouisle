@@ -1,6 +1,18 @@
 # Implementation Plan
 
 ## Active
+- **dashboard-search-debounce** — Completed. See `docs/plan/dashboard-search-debounce.md`.
+  - [x] 1. Activity and audit searches
+  - [x] 2. Applications and capabilities
+  - [x] 3. Knowledge, memories and models
+  - [x] 4. Integrated verification
+
+- **platform-infinite-scroll** — Completed. See `docs/plan/platform-infinite-scroll.md`.
+  - [x] 1. Shared sentinel and truncated lists
+  - [x] 2. Applications and execution logs
+  - [x] 3. Documents and notifications
+  - [x] 4. Verification and delivery
+
 - **builtin-tool-output** — Completed. See `docs/plan/builtin-tool-output.md`.
   - [x] 1. Shared result utils and replay contract
   - [x] 2. Asset, sandbox and persistent web reading outputs

@@ -94,6 +94,7 @@ export function ConversationsTable() {
   const [userFilter, setUserFilter] = React.useState<string[]>([])
   const [userSearch, setUserSearch] = React.useState('')
   const debouncedUserSearch = useDebounce(userSearch, 300)
+  const debouncedSearch = useDebounce(search, 300)
 
   // Filter options
   const [teams, setTeams] = React.useState<Team[]>([])
@@ -143,7 +144,7 @@ export function ConversationsTable() {
       const data = await conversationsApi.listAll({
         page,
         pageSize,
-        search: search || undefined,
+        search: debouncedSearch || undefined,
         team_id: teamFilter.length > 0 ? teamFilter : undefined,
         agent_id: agentFilter.length > 0 ? agentFilter : undefined,
         user_id: userFilter.length > 0 ? userFilter : undefined,
@@ -155,11 +156,20 @@ export function ConversationsTable() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, search, teamFilter, agentFilter, userFilter])
+  }, [page, pageSize, debouncedSearch, teamFilter, agentFilter, userFilter])
 
+  const previousDebouncedSearch = React.useRef(debouncedSearch)
   React.useEffect(() => {
+    const searchChanged = previousDebouncedSearch.current !== debouncedSearch
+    previousDebouncedSearch.current = debouncedSearch
+    if (searchChanged && page !== 1) {
+      // A settled query starts from page 1; skipping this run avoids requesting the
+      // page the query just abandoned.
+      setPage(1)
+      return
+    }
     loadConversations()
-  }, [loadConversations])
+  }, [debouncedSearch, page, loadConversations])
 
   // Selection handlers
   const toggleSelectAll = () => {
@@ -249,10 +259,7 @@ export function ConversationsTable() {
               <Input
                 placeholder={t('searchPlaceholder')}
                 value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value)
-                  setPage(1)
-                }}
+                onChange={(e) => setSearch(e.target.value)}
                 className="pl-8"
               />
             </div>

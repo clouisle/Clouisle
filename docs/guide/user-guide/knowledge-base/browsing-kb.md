@@ -29,9 +29,11 @@ The list shows:
 | **Updated** | Last update time |
 | **Status** | Active, Processing, Error, or Archived |
 
-**Filtering:**
-- Filter by status
-- Search by name
+**Browsing and searching:**
+- Search by name or description; matching results are fetched from the server.
+- Scroll to the bottom to load the next page without losing the knowledge bases already displayed.
+- Changing the search or team starts a fresh list. If loading fails, use **Retry** to request that page again.
+- The document list inside a knowledge base also loads its next page on scroll; processing updates preserve the documents already loaded.
 
 **Sharing badges:**
 - **From {team}**: the knowledge base belongs to another team and is shared with your team (read-only).

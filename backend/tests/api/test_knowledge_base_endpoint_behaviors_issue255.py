@@ -17,6 +17,15 @@ from app.services.retrieval import RetrievalError
 from app.services.vector_store import DimensionMismatchError
 
 
+def _q_leaves(node):
+    if not node.children:
+        return [dict(node.filters)]
+    leaves = []
+    for child in node.children:
+        leaves.extend(_q_leaves(child))
+    return leaves
+
+
 class _Query:
     def __init__(self, result=None, items=(), total=0):
         self.result = result
@@ -342,7 +351,13 @@ async def test_list_knowledge_bases_applies_platform_filters_and_pagination(
         for kw in filter_kwargs or [{}]
     )
     assert {"created_by": user} in filter_kwargs
-    assert {"name__icontains": "hand"} in filter_kwargs
+    assert any(
+        {"name__icontains": "hand"} in _q_leaves(arg)
+        and {"description__icontains": "hand"} in _q_leaves(arg)
+        for args in filter_args
+        for arg in args
+        if hasattr(arg, "children")
+    )
     assert {"status__in": ["active"]} in filter_kwargs
     assert (query.offset_value, query.limit_value) == (5, 5)
     assert result["data"]["total"] == 1

@@ -53,6 +53,8 @@ import { workflowsApi, type WorkflowListItem } from '@/lib/api/workflows'
 import { useTeam } from '@/contexts/team-context'
 import { useRequireTeam } from '@/hooks/use-require-team'
 import { usePermissions } from '@/hooks/use-permissions'
+import { useDebounce } from '@/hooks/use-debounce'
+import { useInfiniteScroll } from '@/hooks/use-infinite-scroll'
 import { AppCreateDialog } from './_components/app-create-dialog'
 import { useCanPerform } from '@/components/permission-guard'
 import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
@@ -81,6 +83,40 @@ interface AppItem {
   created_by_name?: string | null
 }
 
+const PAGE_SIZE = 20
+
+interface SourceState<T> {
+  items: T[]
+  total: number
+  page: number
+}
+
+function sourceHasMore<T>(source: SourceState<T>): boolean {
+  return source.page > 0 && source.items.length < source.total
+}
+
+function appendPage<T extends { id: string }>(
+  source: SourceState<T>,
+  items: T[],
+  total: number | undefined,
+  page: number,
+): SourceState<T> {
+  const seen = new Set(source.items.map((item) => item.id))
+  const nextItems = [...source.items]
+  for (const item of items) {
+    if (seen.has(item.id)) continue
+    seen.add(item.id)
+    nextItems.push(item)
+  }
+  const reachedTotal = items.length === 0
+    || (total === undefined ? items.length < PAGE_SIZE : nextItems.length >= total)
+  return {
+    items: nextItems,
+    total: reachedTotal ? nextItems.length : total ?? nextItems.length,
+    page,
+  }
+}
+
 export default function AppsPage() {
   const t = useTranslations('apps')
   const packageT = useTranslations('packages')
@@ -93,11 +129,22 @@ export default function AppsPage() {
 
   // 没有团队时重定向到首页
   useRequireTeam()
+  const teamId = currentTeam?.id
 
   const [activeTab, setActiveTab] = React.useState<AppType>('all')
   const [searchQuery, setSearchQuery] = React.useState('')
-  const [apps, setApps] = React.useState<AppItem[]>([])
+  const debouncedSearchQuery = useDebounce(searchQuery, 300)
+  const [agentSource, setAgentSource] = React.useState<SourceState<AgentListItem>>({ items: [], total: 0, page: 0 })
+  const [workflowSource, setWorkflowSource] = React.useState<SourceState<WorkflowListItem>>({ items: [], total: 0, page: 0 })
   const [isLoading, setIsLoading] = React.useState(true)
+  const [isLoadingMore, setIsLoadingMore] = React.useState(false)
+  const [loadError, setLoadError] = React.useState<'initial' | 'more' | null>(null)
+  const sourcesRef = React.useRef({
+    agent: { items: [], total: 0, page: 0 } as SourceState<AgentListItem>,
+    workflow: { items: [], total: 0, page: 0 } as SourceState<WorkflowListItem>,
+  })
+  const generationRef = React.useRef(0)
+  const inFlightRef = React.useRef(false)
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false)
   const [initialCreateType, setInitialCreateType] = React.useState<'agent' | 'workflow'>('agent')
   const [importDialogOpen, setImportDialogOpen] = React.useState(false)
@@ -128,72 +175,163 @@ export default function AppsPage() {
     }
   }, [searchParams, router])
 
-  // Fetch all apps (agents + workflows)
-  const fetchApps = React.useCallback(async () => {
-    if (!currentTeam) return
+  const commitSources = React.useCallback((
+    agent: SourceState<AgentListItem>,
+    workflow: SourceState<WorkflowListItem>,
+  ) => {
+    sourcesRef.current = { agent, workflow }
+    setAgentSource(agent)
+    setWorkflowSource(workflow)
+  }, [])
+
+  // Load (or reload) page 1 of both sources. Team, search, and tab changes start
+  // a new generation so responses from the previous generation cannot land.
+  const fetchFirstPage = React.useCallback(async () => {
+    if (!teamId) {
+      generationRef.current += 1
+      inFlightRef.current = false
+      return
+    }
+    const generation = ++generationRef.current
+    const search = debouncedSearchQuery.trim() || undefined
+    inFlightRef.current = true
     setIsLoading(true)
+    setIsLoadingMore(false)
+    setLoadError(null)
+    commitSources(
+      { items: [], total: 0, page: 0 },
+      { items: [], total: 0, page: 0 },
+    )
     try {
-      // Fetch agents and workflows in parallel
       const [agentsData, workflowsData] = await Promise.all([
-        agentsApi.getAgents({ 
-          search: searchQuery || undefined,
-          teamId: currentTeam.id,
+        agentsApi.getAgents({
+          page: 1,
+          pageSize: PAGE_SIZE,
+          search,
+          teamId,
         }),
-        workflowsApi.getWorkflows({ 
-          keyword: searchQuery || undefined,
-          teamId: currentTeam.id,
+        workflowsApi.getWorkflows({
+          page: 1,
+          pageSize: PAGE_SIZE,
+          keyword: search,
+          teamId,
         }),
       ])
-      
-      // Transform agents to unified format
-      const agentItems: AppItem[] = agentsData.items.map((agent: AgentListItem) => ({
+      if (generation !== generationRef.current) return
+      commitSources(
+        { items: agentsData.items, total: agentsData.total ?? agentsData.items.length, page: 1 },
+        { items: workflowsData.items, total: workflowsData.total ?? workflowsData.items.length, page: 1 },
+      )
+    } catch {
+      if (generation !== generationRef.current) return
+      setLoadError('initial')
+    } finally {
+      if (generation === generationRef.current) {
+        inFlightRef.current = false
+        setIsLoading(false)
+      }
+    }
+  }, [commitSources, teamId, debouncedSearchQuery])
+
+  React.useEffect(() => {
+    fetchFirstPage()
+    return () => {
+      // Invalidate this effect's generation so a response settling after a
+      // dependency change or unmount can never commit.
+      generationRef.current += 1
+      inFlightRef.current = false
+    }
+  }, [fetchFirstPage, activeTab])
+
+  const loadMore = React.useCallback(async () => {
+    if (!teamId || inFlightRef.current) return
+    const requestAgents = activeTab !== 'workflow' && sourceHasMore(sourcesRef.current.agent)
+    const requestWorkflows = activeTab !== 'agent' && sourceHasMore(sourcesRef.current.workflow)
+    if (!requestAgents && !requestWorkflows) return
+
+    const generation = generationRef.current
+    const search = debouncedSearchQuery.trim() || undefined
+    const nextAgentPage = sourcesRef.current.agent.page + 1
+    const nextWorkflowPage = sourcesRef.current.workflow.page + 1
+    inFlightRef.current = true
+    setIsLoadingMore(true)
+    setLoadError(null)
+
+    const [agentsPage, workflowsPage] = await Promise.all([
+      requestAgents
+        ? agentsApi
+            .getAgents({ page: nextAgentPage, pageSize: PAGE_SIZE, search, teamId })
+            .then((data) => ({ ok: true as const, data }))
+            .catch(() => ({ ok: false as const, data: null }))
+        : null,
+      requestWorkflows
+        ? workflowsApi
+            .getWorkflows({ page: nextWorkflowPage, pageSize: PAGE_SIZE, keyword: search, teamId })
+            .then((data) => ({ ok: true as const, data }))
+            .catch(() => ({ ok: false as const, data: null }))
+        : null,
+    ])
+
+    if (generation !== generationRef.current) return
+
+    let nextAgent = sourcesRef.current.agent
+    let nextWorkflow = sourcesRef.current.workflow
+    if (agentsPage && agentsPage.ok) {
+      nextAgent = appendPage(nextAgent, agentsPage.data.items, agentsPage.data.total, nextAgentPage)
+    }
+    if (workflowsPage && workflowsPage.ok) {
+      nextWorkflow = appendPage(nextWorkflow, workflowsPage.data.items, workflowsPage.data.total, nextWorkflowPage)
+    }
+    commitSources(nextAgent, nextWorkflow)
+    setLoadError(agentsPage?.ok === false || workflowsPage?.ok === false ? 'more' : null)
+    setIsLoadingMore(false)
+    inFlightRef.current = false
+  }, [activeTab, commitSources, teamId, debouncedSearchQuery])
+
+  const apps = React.useMemo(() => {
+    const merged = [
+      ...agentSource.items.map((agent): AppItem => ({
         id: agent.id,
         name: agent.name,
         description: agent.description,
         icon: agent.icon,
         status: agent.status,
         visibility: agent.visibility,
-        type: 'agent' as const,
+        type: 'agent',
         message_count: agent.message_count,
         created_at: agent.created_at,
         updated_at: agent.updated_at,
         created_by_id: agent.created_by?.id ?? null,
         created_by_name: agent.created_by?.username ?? null,
-      }))
-      
-      // Transform workflows to unified format
-      const workflowItems: AppItem[] = workflowsData.items.map((workflow: WorkflowListItem) => ({
+      })),
+      ...workflowSource.items.map((workflow): AppItem => ({
         id: workflow.id,
         name: workflow.name,
         description: workflow.description,
         icon: workflow.icon,
         status: workflow.status,
         visibility: workflow.visibility,
-        type: 'workflow' as const,
+        type: 'workflow',
         success_count: workflow.success_count,
         fail_count: workflow.fail_count,
         created_at: workflow.created_at,
         updated_at: workflow.updated_at,
         created_by_id: workflow.created_by_id ?? null,
         created_by_name: workflow.created_by_name ?? null,
-      }))
-      
-      // Combine and sort by updated_at
-      const allApps = [...agentItems, ...workflowItems].sort(
-        (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-      )
-      
-      setApps(allApps)
-    } catch {
-      // toast handled by API interceptor
-    } finally {
-      setIsLoading(false)
-    }
-  }, [currentTeam, searchQuery])
-
-  React.useEffect(() => {
-    fetchApps()
-  }, [fetchApps])
+      })),
+    ]
+    // Independent source pages are unioned and re-sorted; without a unified
+    // backend cursor this is the only stable global order over loaded items.
+    const seen = new Set<string>()
+    return merged
+      .filter((app) => {
+        const key = `${app.type}:${app.id}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+  }, [agentSource.items, workflowSource.items])
 
   // Filter apps by type
   const filteredApps = React.useMemo(() => {
@@ -201,6 +339,24 @@ export default function AppsPage() {
     return apps.filter(app => app.type === activeTab)
   }, [apps, activeTab])
   const firstAgentId = filteredApps.find(app => app.type === 'agent')?.id
+
+  const activeSourceHasMore = activeTab === 'all'
+    ? sourceHasMore(agentSource) || sourceHasMore(workflowSource)
+    : activeTab === 'agent' ? sourceHasMore(agentSource) : sourceHasMore(workflowSource)
+
+  const handleRetry = () => {
+    if (loadError === 'initial') {
+      fetchFirstPage()
+    } else {
+      loadMore()
+    }
+  }
+
+  const scrollSentinelRef = useInfiniteScroll({
+    hasMore: activeSourceHasMore && loadError === null,
+    loading: isLoading || isLoadingMore,
+    onLoadMore: loadMore,
+  })
 
   // Handle delete
   const handleDelete = async () => {
@@ -214,7 +370,7 @@ export default function AppsPage() {
       toast.success(t('appDeleted'))
       setDeleteDialogOpen(false)
       setDeletingApp(null)
-      fetchApps()
+      fetchFirstPage()
     } catch {
       // toast handled by API interceptor
     }
@@ -229,7 +385,7 @@ export default function AppsPage() {
         await workflowsApi.duplicateWorkflow(app.id)
       }
       toast.success(t('appDuplicated'))
-      fetchApps()
+      fetchFirstPage()
     } catch {
       // toast handled by API interceptor
     }
@@ -261,7 +417,7 @@ export default function AppsPage() {
         }
       }
       toast.success(app.status === 'published' ? t('appUnpublished') : t('appPublished'))
-      fetchApps()
+      fetchFirstPage()
     } catch {
       // toast handled by API interceptor
     }
@@ -355,13 +511,24 @@ export default function AppsPage() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <AppWindow className="h-12 w-12 text-muted-foreground mb-4" />
-            <CardTitle className="mb-2">{t('noApps')}</CardTitle>
-            <CardDescription className="mb-4">{t('noAppsHint')}</CardDescription>
-            {canCreateApp && (
-              <Button onClick={() => setCreateDialogOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                {t('createFirstApp')}
-              </Button>
+            {loadError ? (
+              <>
+                <CardTitle className="mb-4">{tCommon('loadFailed')}</CardTitle>
+                <Button variant="outline" data-testid="apps-retry" onClick={handleRetry}>
+                  {tCommon('retry')}
+                </Button>
+              </>
+            ) : (
+              <>
+                <CardTitle className="mb-2">{t('noApps')}</CardTitle>
+                <CardDescription className="mb-4">{t('noAppsHint')}</CardDescription>
+                {canCreateApp && (
+                  <Button onClick={() => setCreateDialogOpen(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    {t('createFirstApp')}
+                  </Button>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
@@ -373,7 +540,7 @@ export default function AppsPage() {
             const isIconUrl = app.icon && (app.icon.startsWith('http') || app.icon.startsWith('/'))
             const isFirstAgent = app.type === 'agent' && app.id === firstAgentId
             return (
-              <Card key={app.id} size="sm" className="group relative hover:shadow-md transition-shadow py-0! h-36" data-testid={isFirstAgent ? 'app-card-first' : `app-card-${app.id}`}>
+              <Card key={`${app.type}:${app.id}`} size="sm" className="group relative hover:shadow-md transition-shadow py-0! h-36" data-testid={isFirstAgent ? 'app-card-first' : `app-card-${app.id}`}>
                 <Link href={getAppLink(app)} className="flex flex-col justify-between px-2.5 py-3 h-full">
                   {/* Header */}
                   <div className="flex items-center gap-2">
@@ -549,6 +716,22 @@ export default function AppsPage() {
         </div>
       )}
 
+      <div ref={scrollSentinelRef} data-testid="apps-scroll-sentinel" aria-hidden="true" className="h-px w-full" />
+      {isLoadingMore && (
+        <div className="flex items-center justify-center py-4" data-testid="apps-loading-more">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          <span className="ml-2 text-sm text-muted-foreground">{tCommon('loadingMore')}</span>
+        </div>
+      )}
+      {loadError && filteredApps.length > 0 && (
+        <div className="flex flex-col items-center gap-2 py-4" data-testid="apps-load-error">
+          <p className="text-sm text-muted-foreground">{tCommon('loadFailed')}</p>
+          <Button variant="outline" size="sm" data-testid="apps-retry" onClick={handleRetry}>
+            {tCommon('retry')}
+          </Button>
+        </div>
+      )}
+
       {/* Create Dialog */}
       <AppCreateDialog
         open={createDialogOpen}
@@ -556,7 +739,7 @@ export default function AppsPage() {
         initialType={initialCreateType}
         onSuccess={() => {
           setCreateDialogOpen(false)
-          fetchApps()
+          fetchFirstPage()
         }}
       />
 
@@ -566,7 +749,7 @@ export default function AppsPage() {
           onOpenChange={setImportDialogOpen}
           teamId={currentTeam.id}
           expectedResourceType={expectedImportType}
-          onImported={fetchApps}
+          onImported={fetchFirstPage}
         />
       )}
 

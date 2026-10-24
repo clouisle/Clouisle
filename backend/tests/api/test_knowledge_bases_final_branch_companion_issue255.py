@@ -8,6 +8,15 @@ from app.api.v1.endpoints import knowledge_bases
 from app.schemas.response import BusinessError
 
 
+def _q_leaves(node):
+    if not node.children:
+        return [dict(node.filters)]
+    leaves = []
+    for child in node.children:
+        leaves.extend(_q_leaves(child))
+    return leaves
+
+
 class Query:
     def __init__(self, *, first=None, items=None, count=0):
         self.first_value = first
@@ -129,7 +138,17 @@ async def test_list_covers_filters_memberships_and_model_mapping(monkeypatch, us
             for filter_call in query.filters
         )
     assert {"created_by": user} in query.filters
-    assert {"name__icontains": "guide"} in query.filters
+    search = next(
+        item[0][0]
+        for item in query.filters
+        if isinstance(item, tuple)
+        and item[0]
+        and any("name__icontains" in leaf for leaf in _q_leaves(item[0][0]))
+    )
+    assert _q_leaves(search) == [
+        {"name__icontains": "guide"},
+        {"description__icontains": "guide"},
+    ]
     assert {"status__in": ["active"]} in query.filters
 
 

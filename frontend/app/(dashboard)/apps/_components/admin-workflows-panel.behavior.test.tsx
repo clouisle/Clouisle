@@ -67,7 +67,10 @@ beforeEach(() => {
   listPage.mockResolvedValue({ items: [workflow], total: 1, page: 1, page_size: 10 })
   getFilterOptions.mockResolvedValue(filterOptions)
   getTeams.mockResolvedValue({ items: [{ id: 'team-1', name: 'Core Team' }] })
-  Object.defineProperty(globalThis, 'window', { value: { confirm: mock(() => true) }, configurable: true })
+  Object.defineProperty(globalThis, 'window', {
+    value: { confirm: mock(() => true), setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout },
+    configurable: true,
+  })
 })
 
 afterEach(() => {
@@ -79,6 +82,22 @@ afterEach(() => {
 async function render() {
   await act(async () => { renderer = create(<AdminWorkflowsPanel />); await Promise.resolve() })
   return renderer
+}
+
+async function waitForDebounce() {
+  const { promise, resolve } = Promise.withResolvers<void>()
+  setTimeout(resolve, 350)
+  await act(async () => {
+    await promise
+  })
+}
+
+async function waitForRapidEdit() {
+  const { promise, resolve } = Promise.withResolvers<void>()
+  setTimeout(resolve, 60)
+  await act(async () => {
+    await promise
+  })
 }
 
 describe('AdminWorkflowsPanel behavior', () => {
@@ -99,6 +118,7 @@ describe('AdminWorkflowsPanel behavior', () => {
     await render()
     const search = renderer.root.findAllByType('input').find((input) => input.props.placeholder === 'apps.admin.workflows.searchPlaceholder')!
     await act(async () => search.props.onChange({ target: { value: 'daily' } }))
+    await waitForDebounce()
     const status = renderer.root.findAllByType('button').find((node) => node.props.title === 'common.status')!
     await act(async () => status.props.onSelectionChange(new Set(['draft'])))
     expect(listPage).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'daily', status: ['draft'] }))
@@ -106,6 +126,29 @@ describe('AdminWorkflowsPanel behavior', () => {
     expect(listPage).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, pageSize: 20 }))
     await act(async () => renderer.root.findAllByType('button').find((node) => text(node.props.children).includes('apps.admin.pagination.next'))!.props.onClick())
     expect(listPage).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, pageSize: 20 }))
+  })
+
+  test('collapses rapid search edits into a single page-one request after the debounce delay', async () => {
+    listPage.mockResolvedValue({ items: [workflow], total: 40, page: 1, page_size: 10 })
+    await render()
+
+    await act(async () => renderer.root.findAllByType('button').find((node) => text(node.props.children).includes('apps.admin.pagination.next'))!.props.onClick())
+    expect(listPage).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, search: undefined }))
+    const callsAfterPaging = listPage.mock.calls.length
+
+    const search = () => renderer.root.findAllByType('input').find((input) => input.props.placeholder === 'apps.admin.workflows.searchPlaceholder')!
+    await act(async () => search().props.onChange({ target: { value: 'd' } }))
+    await waitForRapidEdit()
+    await act(async () => search().props.onChange({ target: { value: 'da' } }))
+    await waitForRapidEdit()
+    await act(async () => search().props.onChange({ target: { value: 'dai' } }))
+
+    expect(search().props.value).toBe('dai')
+    expect(listPage.mock.calls.length).toBe(callsAfterPaging)
+
+    await waitForDebounce()
+    expect(listPage.mock.calls.length).toBe(callsAfterPaging + 1)
+    expect(listPage).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, search: 'dai' }))
   })
 
   test('confirms bulk deletion and publishes selected workflows with visible outcomes', async () => {

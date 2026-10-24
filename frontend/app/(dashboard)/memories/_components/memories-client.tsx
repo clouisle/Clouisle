@@ -64,6 +64,7 @@ import {
 import { EntityDialog } from './entity-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
+import { useDebounce } from '@/hooks/use-debounce'
 
 export function MemoriesClient() {
     const t = useTranslations('memories')
@@ -85,6 +86,8 @@ export function MemoriesClient() {
 
     // Filter state
     const [searchQuery, setSearchQuery] = useUrlSearchState()
+    const debouncedSearchQuery = useDebounce(searchQuery, 300)
+    const previousSearchRef = React.useRef(debouncedSearchQuery)
     const [typeFilter, setTypeFilter] = React.useState<Set<string>>(new Set())
 
     // Selection state
@@ -103,7 +106,7 @@ export function MemoriesClient() {
             const data = await memoriesApi.getEntities({
                 page,
                 page_size: pageSize,
-                search: searchQuery || undefined,
+                search: debouncedSearchQuery || undefined,
                 entity_type: typeFilter.size > 0 ? Array.from(typeFilter) : undefined,
             })
             setEntities(data.items)
@@ -113,11 +116,20 @@ export function MemoriesClient() {
         } finally {
             setIsLoading(false)
         }
-    }, [page, pageSize, searchQuery, typeFilter])
+    }, [page, pageSize, debouncedSearchQuery, typeFilter])
 
     React.useEffect(() => {
+        // 防抖后的搜索词变化时回到第一页并清除跨页选择，避免请求旧页码
+        if (previousSearchRef.current !== debouncedSearchQuery) {
+            previousSearchRef.current = debouncedSearchQuery
+            setSelectedEntities(new Set())
+            if (page !== 1) {
+                setPage(1)
+                return
+            }
+        }
         loadEntities()
-    }, [loadEntities])
+    }, [debouncedSearchQuery, page, loadEntities])
 
     // Reset filters
     const resetFilters = () => {
@@ -247,8 +259,6 @@ export function MemoriesClient() {
                             value={searchQuery}
                             onChange={(e) => {
                                 setSearchQuery(e.target.value)
-                                setPage(1)
-                                setSelectedEntities(new Set())
                             }}
                             className="pl-8 w-[200px] h-9"
                         />

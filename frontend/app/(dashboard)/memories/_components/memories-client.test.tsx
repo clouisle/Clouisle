@@ -5,6 +5,8 @@ const element = function Element() {}
 
 let stateValues: unknown[] = []
 let stateIndex = 0
+let refValues: Array<{ current: unknown }> = []
+let refIndex = 0
 let urlSearch = ''
 const effects: Array<() => void | Promise<void>> = []
 const getEntities = mock(() => Promise.resolve(pageData([entity])))
@@ -30,6 +32,11 @@ mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for(
 mock.module('react', () => ({
   useCallback: <T,>(callback: T) => callback,
   useEffect: (effect: () => void | Promise<void>) => effects.push(effect),
+  useRef: <T,>(initial: T) => {
+    const index = refIndex++
+    refValues[index] ??= { current: initial }
+    return refValues[index]
+  },
   useState: <T,>(initial: T) => {
     const index = stateIndex++
     if (stateValues[index] === undefined) stateValues[index] = initial
@@ -55,6 +62,7 @@ mock.module('sonner', () => ({ toast: { success: toastSuccess } }))
 mock.module('@/lib/api/admin/memories', () => ({ memoriesApi: { getEntities, deleteEntity } }))
 mock.module('@/lib/utils', () => ({ formatDateTime: (value: string) => `date:${value}`, cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/hooks/use-url-search-state', () => ({ useUrlSearchState: () => [urlSearch, (value: string) => { urlSearch = value }] }))
+mock.module('@/hooks/use-debounce', () => ({ useDebounce: (value: string) => value }))
 mock.module('@/components/permission-guard', () => ({ PermissionGuard: component('PermissionGuard'), useCanPerform: () => ({ canPerform: () => true }) }))
 mock.module('@/components/ui/button', () => ({ Button }))
 mock.module('@/components/ui/input', () => ({ Input }))
@@ -90,6 +98,7 @@ function pageData(items: typeof entity[]) {
 
 function render() {
   stateIndex = 0
+  refIndex = 0
   effects.length = 0
   return MemoriesClient() as { props: Record<string, unknown> }
 }
@@ -121,6 +130,7 @@ function findByType(node: unknown, type: unknown) {
 
 function reset(apiResult: Promise<unknown> = Promise.resolve(pageData([entity]))) {
   stateValues = []
+  refValues = []
   urlSearch = ''
   getEntities.mockReset()
   getEntities.mockImplementation(() => apiResult)

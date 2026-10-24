@@ -36,6 +36,8 @@ let memoIndex = 0
 let effectDeps: unknown[][] = []
 let effectIndex = 0
 let pendingEffects: Array<() => void | Promise<void>> = []
+let refs: Array<{ current: unknown }> = []
+let refIndex = 0
 let searchValue = ''
 
 const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props })
@@ -46,11 +48,13 @@ function resetHooks() {
   stateIndex = 0
   memoIndex = 0
   effectIndex = 0
+  refIndex = 0
   pendingEffects = []
 }
 
 function resetState() {
   state = []
+  refs = []
   memoValues = []
   memoDeps = []
   effectDeps = []
@@ -100,6 +104,11 @@ mock.module('react', () => ({
         ? (value as (previous: T) => T)(state[index] as T)
         : value
     }] as const
+  },
+  useRef: <T,>(initial: T) => {
+    const index = refIndex++
+    refs[index] ??= { current: initial }
+    return refs[index] as { current: T }
   },
 }))
 mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: translator }))
@@ -165,6 +174,7 @@ mock.module('@/app/(platform)/app/apps/_components/app-create-dialog', () => ({ 
 mock.module('@/hooks/use-url-search-state', () => ({
   useUrlSearchState: () => [searchValue, (value: string) => { searchValue = value }] as const,
 }))
+mock.module('@/hooks/use-debounce', () => ({ useDebounce: (value: string) => value }))
 mock.module('@/lib/api', () => ({
   ApiError: class ApiError extends Error {},
 }))

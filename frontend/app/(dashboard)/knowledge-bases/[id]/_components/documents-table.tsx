@@ -74,6 +74,7 @@ import {
 } from '@/components/ui/tooltip'
 import { DataTableFacetedFilter } from '@/components/ui/data-table-faceted-filter'
 import { useCanPerform } from '@/components/permission-guard'
+import { useDebounce } from '@/hooks/use-debounce'
 
 interface DocumentsTableProps {
   knowledgeBaseId: string
@@ -122,6 +123,8 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   
   // 筛选状态
   const [searchQuery, setSearchQuery] = React.useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery, 300)
+  const previousSearchRef = React.useRef(debouncedSearchQuery)
   const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set())
   const [typeFilter, setTypeFilter] = React.useState<Set<string>>(new Set())
   
@@ -148,7 +151,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
         doc_type?: DocumentType[]
       } = { page, pageSize }
       
-      if (searchQuery) params.search = searchQuery
+      if (debouncedSearchQuery) params.search = debouncedSearchQuery
       if (statusFilter.size > 0) params.status = Array.from(statusFilter) as DocumentStatus[]
       if (typeFilter.size > 0) params.doc_type = Array.from(typeFilter) as DocumentType[]
       
@@ -162,11 +165,19 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
         setIsLoading(false)
       }
     }
-  }, [knowledgeBaseId, page, pageSize, searchQuery, statusFilter, typeFilter])
+  }, [knowledgeBaseId, page, pageSize, debouncedSearchQuery, statusFilter, typeFilter])
   
   React.useEffect(() => {
+    // 防抖后的搜索词变化时先回到第一页，避免请求旧页码
+    if (previousSearchRef.current !== debouncedSearchQuery) {
+      previousSearchRef.current = debouncedSearchQuery
+      if (page !== 1) {
+        setPage(1)
+        return
+      }
+    }
     loadDocuments()
-  }, [loadDocuments, refreshTrigger])
+  }, [debouncedSearchQuery, page, loadDocuments, refreshTrigger])
   
   // 自动刷新处理中的文档 (静默刷新，不显示加载状态)
   React.useEffect(() => {
@@ -182,7 +193,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   // 筛选条件变化时重置到第一页
   React.useEffect(() => {
     setPage(1)
-  }, [searchQuery, statusFilter, typeFilter])
+  }, [statusFilter, typeFilter])
   
   // 检查是否有筛选条件
   const isFiltered = searchQuery || statusFilter.size > 0 || typeFilter.size > 0

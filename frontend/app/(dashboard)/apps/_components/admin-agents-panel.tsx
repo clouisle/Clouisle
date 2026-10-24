@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { Copy, Download, FileEdit, Loader2, MoreHorizontal, Plus, Search, Send, Trash2, Upload, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -40,6 +40,7 @@ import { adminPackagesApi, downloadBlob } from '@/lib/api/packages'
 import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
 import { AppCreateDialog } from '@/app/(platform)/app/apps/_components/app-create-dialog'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
+import { useDebounce } from '@/hooks/use-debounce'
 import { formatDateTime } from '@/lib/utils'
 
 function getErrorMessage(error: unknown) {
@@ -76,6 +77,8 @@ export function AdminAgentsPanel() {
   const [pageSize, setPageSize] = useState(10)
   const [pageData, setPageData] = useState<PageData<AdminAgent> | null>(null)
   const [searchQuery, setSearchQuery] = useUrlSearchState()
+  const debouncedSearchQuery = useDebounce(searchQuery, 300)
+  const previousDebouncedSearchQuery = useRef(debouncedSearchQuery)
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set())
   const [visibilityFilter, setVisibilityFilter] = useState<Set<string>>(new Set())
   const [teamFilter, setTeamFilter] = useState<Set<string>>(new Set())
@@ -109,7 +112,7 @@ export function AdminAgentsPanel() {
         adminAgentsApi.listPage({
           page,
           pageSize,
-          search: searchQuery || undefined,
+          search: debouncedSearchQuery || undefined,
           status: selectedStatuses.length > 0 ? selectedStatuses as AdminAgent['status'][] : undefined,
           visibility: selectedVisibilities.length > 0 ? selectedVisibilities as AdminAgent['visibility'][] : undefined,
           team_id: selectedTeams.length > 0 ? selectedTeams : undefined,
@@ -129,11 +132,17 @@ export function AdminAgentsPanel() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, searchQuery, selectedStatuses, selectedVisibilities, selectedTeams, selectedCreators, t])
+  }, [page, pageSize, debouncedSearchQuery, selectedStatuses, selectedVisibilities, selectedTeams, selectedCreators, t])
 
   useEffect(() => {
+    const searchChanged = previousDebouncedSearchQuery.current !== debouncedSearchQuery
+    previousDebouncedSearchQuery.current = debouncedSearchQuery
+    if (searchChanged && page !== 1) {
+      setPage(1)
+      return
+    }
     loadAgents()
-  }, [loadAgents])
+  }, [debouncedSearchQuery, page, loadAgents])
 
   const totalPages = pageData ? Math.max(1, Math.ceil(pageData.total / pageSize)) : 1
   const isFiltered = Boolean(searchQuery) || statusFilter.size > 0 || visibilityFilter.size > 0 || teamFilter.size > 0 || creatorFilter.size > 0
@@ -234,7 +243,6 @@ export function AdminAgentsPanel() {
             value={searchQuery}
             onChange={(event) => {
               setSearchQuery(event.target.value)
-              setPage(1)
             }}
             className="h-9 w-56 pl-8"
           />

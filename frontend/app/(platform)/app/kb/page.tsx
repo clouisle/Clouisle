@@ -21,6 +21,8 @@ import {
 import { useTeam } from '@/contexts/team-context'
 import { useRequireTeam } from '@/hooks/use-require-team'
 import { usePermissions } from '@/hooks/use-permissions'
+import { useDebounce } from '@/hooks/use-debounce'
+import { useInfiniteScroll } from '@/hooks/use-infinite-scroll'
 import { knowledgeBasesApi, teamsApi, type KnowledgeBase, type UserTeamInfo } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -50,6 +52,8 @@ import { useCanPerform } from '@/components/permission-guard'
 import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
 import { downloadBlob, packagesApi } from '@/lib/api/packages'
 
+const PAGE_SIZE = 20
+
 // 格式化 token 数量
 function formatTokens(tokens: number): string {
   if (tokens >= 1000000) {
@@ -76,8 +80,17 @@ export default function KnowledgeBasePage() {
   useRequireTeam()
   
   const [knowledgeBases, setKnowledgeBases] = React.useState<KnowledgeBase[]>([])
-  const [isLoading, setIsLoading] = React.useState(true)
+  const [page, setPage] = React.useState(1)
+  const [hasMore, setHasMore] = React.useState(false)
+  const [isInitialLoading, setIsInitialLoading] = React.useState(true)
+  const [isLoadingMore, setIsLoadingMore] = React.useState(false)
+  const [loadError, setLoadError] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
+  const debouncedSearch = useDebounce(searchQuery.trim(), 300)
+  const requestIdRef = React.useRef(0)
+  const hasLoadedOnceRef = React.useRef(false)
+  const inFlightRef = React.useRef(false)
+  const failedRequestRef = React.useRef<{ page: number; append: boolean } | null>(null)
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [importDialogOpen, setImportDialogOpen] = React.useState(false)
   const [editingKb, setEditingKb] = React.useState<KnowledgeBase | null>(null)
@@ -88,29 +101,107 @@ export default function KnowledgeBasePage() {
   const [sharingKb, setSharingKb] = React.useState<KnowledgeBase | null>(null)
   const [availableTeams, setAvailableTeams] = React.useState<UserTeamInfo[]>([])
 
-  const fetchKnowledgeBases = React.useCallback(async () => {
-    if (!currentTeam) return
-    
-    try {
-      setIsLoading(true)
-      const data = await knowledgeBasesApi.getKnowledgeBases({
-        teamId: currentTeam.id,
-        includeShared: true,
-      })
-      const teamKbs = data.items.filter(
-        (kb) => kb.team.id === currentTeam.id || kb.is_owned === false
-      )
-      setKnowledgeBases(teamKbs)
-    } catch (error) {
-      console.error('Failed to fetch knowledge bases:', error)
-    } finally {
-      setIsLoading(false)
+  const teamId = currentTeam?.id ?? null
+
+  const fetchPage = React.useCallback(async (pageToLoad: number, append: boolean) => {
+    if (append && inFlightRef.current) return
+
+    const requestId = ++requestIdRef.current
+    inFlightRef.current = true
+    failedRequestRef.current = null
+
+    if (!teamId) {
+      setKnowledgeBases([])
+      setHasMore(false)
+      setIsLoadingMore(false)
+      inFlightRef.current = false
+      return
     }
-  }, [currentTeam])
+
+    setLoadError(false)
+    if (append) {
+      setIsLoadingMore(true)
+    } else {
+      setIsInitialLoading(true)
+      setIsLoadingMore(false)
+      setHasMore(false)
+    }
+
+    try {
+      const data = await knowledgeBasesApi.getKnowledgeBases({
+        teamId,
+        includeShared: true,
+        page: pageToLoad,
+        pageSize: PAGE_SIZE,
+        search: debouncedSearch || undefined,
+      })
+      if (requestId !== requestIdRef.current) return
+
+      const incoming = data.items.filter(
+        (kb) => kb.team.id === teamId || kb.is_owned === false
+      )
+      setKnowledgeBases((previous) => {
+        if (!append) return incoming
+        const merged = [...previous]
+        const seen = new Set(previous.map((kb) => kb.id))
+        for (const kb of incoming) {
+          if (seen.has(kb.id)) continue
+          seen.add(kb.id)
+          merged.push(kb)
+        }
+        return merged
+      })
+      setPage(pageToLoad)
+      setHasMore(pageToLoad * data.page_size < data.total)
+    } catch (error) {
+      if (requestId !== requestIdRef.current) return
+      console.error('Failed to fetch knowledge bases:', error)
+      failedRequestRef.current = { page: pageToLoad, append }
+      setLoadError(true)
+      setHasMore(false)
+      if (!append) {
+        setKnowledgeBases([])
+      }
+    } finally {
+      if (requestId === requestIdRef.current) {
+        inFlightRef.current = false
+        if (append) {
+          setIsLoadingMore(false)
+        } else {
+          hasLoadedOnceRef.current = true
+          setIsInitialLoading(false)
+        }
+      }
+    }
+  }, [teamId, debouncedSearch])
 
   React.useEffect(() => {
-    fetchKnowledgeBases()
-  }, [fetchKnowledgeBases])
+    void fetchPage(1, false)
+    return () => {
+      requestIdRef.current += 1
+    }
+  }, [fetchPage])
+
+  const reload = React.useCallback(() => {
+    void fetchPage(1, false)
+  }, [fetchPage])
+
+  const loadMore = React.useCallback(() => {
+    if (inFlightRef.current || loadError || isLoadingMore || isInitialLoading || !hasMore) return
+    void fetchPage(page + 1, true)
+  }, [fetchPage, hasMore, isInitialLoading, isLoadingMore, loadError, page])
+
+  const sentinelRef = useInfiniteScroll({
+    hasMore: hasMore && !loadError,
+    loading: isInitialLoading || isLoadingMore,
+    onLoadMore: loadMore,
+  })
+
+  const handleRetry = () => {
+    const failed = failedRequestRef.current
+    if (inFlightRef.current || !failed) return
+    void fetchPage(failed.page, failed.append)
+  }
 
   React.useEffect(() => {
     const loadTeams = async () => {
@@ -175,16 +266,12 @@ export default function KnowledgeBasePage() {
       toast.success(kbT('kbDeleted'))
       setDeleteDialogOpen(false)
       setDeletingKb(null)
-      fetchKnowledgeBases()
+      reload()
     } catch {
       // Error handled by API client
     } finally {
       setIsDeleting(false)
     }
-  }
-
-  const handleSuccess = () => {
-    fetchKnowledgeBases()
   }
 
   const isTeamAdmin = Boolean(user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin')
@@ -194,18 +281,8 @@ export default function KnowledgeBasePage() {
   const canDeleteKb = (kb?: KnowledgeBase) => (kb ? kb.is_owned !== false && isTeamAdmin : isTeamAdmin)
   const canShareKb = (kb: KnowledgeBase) => kb.is_owned !== false && isTeamAdmin
 
-  // 过滤知识库
-  const filteredKnowledgeBases = React.useMemo(() => {
-    if (!searchQuery) return knowledgeBases
-    const query = searchQuery.toLowerCase()
-    return knowledgeBases.filter(kb => 
-      kb.name.toLowerCase().includes(query) ||
-      (kb.description && kb.description.toLowerCase().includes(query))
-    )
-  }, [knowledgeBases, searchQuery])
-
   // Loading state
-  if (isLoading) {
+  if (isInitialLoading && !hasLoadedOnceRef.current) {
     return (
       <div className="py-6 px-8 h-full overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
@@ -274,7 +351,7 @@ export default function KnowledgeBasePage() {
         )}
 
         {/* Knowledge Base Cards */}
-        {filteredKnowledgeBases.map((kb) => (
+        {knowledgeBases.map((kb) => (
           <Card key={kb.id} size="sm" className="group relative hover:shadow-md transition-shadow py-0! h-36">
             <Link href={`/app/kb/${kb.id}`} className="flex flex-col justify-between px-2.5 py-4 h-full">
               <div className="flex items-center gap-2">
@@ -389,15 +466,32 @@ export default function KnowledgeBasePage() {
         ))}
       </div>
 
+      {isLoadingMore && (
+        <div className="py-4 text-center text-sm text-muted-foreground">
+          {commonT('loadingMore')}
+        </div>
+      )}
+
+      {loadError && (
+        <div className="flex flex-col items-center gap-2 py-4 text-sm text-muted-foreground">
+          <p>{commonT('loadFailed')}</p>
+          <Button variant="outline" size="sm" onClick={handleRetry}>
+            {commonT('retry')}
+          </Button>
+        </div>
+      )}
+
+      <div ref={sentinelRef} aria-hidden="true" className="h-px" />
+
       {/* Empty State (when no knowledge bases or no search results) */}
-      {knowledgeBases.length === 0 && (
+      {knowledgeBases.length === 0 && !loadError && !searchQuery && (
         <div className="text-center py-12 text-muted-foreground">
           <Database className="h-12 w-12 mx-auto mb-4 opacity-50" />
           <p>{t('kb.noKbs')}</p>
           <p className="text-sm mt-1">{t('kb.createKbHint')}</p>
         </div>
       )}
-      {knowledgeBases.length > 0 && filteredKnowledgeBases.length === 0 && searchQuery && (
+      {knowledgeBases.length === 0 && !loadError && searchQuery && (
         <div className="text-center py-12 text-muted-foreground">
           <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
           <p>{kbT('noSearchResults')}</p>
@@ -412,7 +506,7 @@ export default function KnowledgeBasePage() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         knowledgeBase={editingKb}
-        onSuccess={handleSuccess}
+        onSuccess={reload}
       />
 
       {currentTeam && (
@@ -421,7 +515,7 @@ export default function KnowledgeBasePage() {
           onOpenChange={setImportDialogOpen}
           teamId={currentTeam.id}
           expectedResourceType="knowledge_base"
-          onImported={handleSuccess}
+          onImported={reload}
         />
       )}
 
@@ -432,7 +526,7 @@ export default function KnowledgeBasePage() {
         knowledgeBase={sharingKb}
         currentTeamId={currentTeam?.id || ''}
         availableTeams={availableTeams}
-        onSuccess={fetchKnowledgeBases}
+        onSuccess={reload}
       />
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

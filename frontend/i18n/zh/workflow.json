@@ -233,8 +233,6 @@
     "duration": "执行时长",
     "createdAt": "创建时间",
     "showingRuns": "显示 {from}-{to} 条，共 {total} 条",
-    "prev": "上一页",
-    "next": "下一页",
     "monitor_page": {
       "title": "工作流监控",
       "last7Days": "最近 7 天",

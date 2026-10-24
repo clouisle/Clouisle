@@ -142,7 +142,17 @@ async def test_list_knowledge_bases_filters_and_hydrates_models():
     } in _q_leaves(visibility)
     filters = [kwargs for _name, _args, kwargs in query.calls if _name == "filter"]
     assert any("created_by" in values for values in filters)
-    assert {"name__icontains": "docs"} in filters
+    search = next(
+        args[0]
+        for name, args, _kwargs in query.calls
+        if name == "filter"
+        and args
+        and any("name__icontains" in leaf for leaf in _q_leaves(args[0]))
+    )
+    assert _q_leaves(search) == [
+        {"name__icontains": "docs"},
+        {"description__icontains": "docs"},
+    ]
     assert {"status__in": ["active"]} in filters
     assert result["data"]["items"][0]["embedding_model"]["name"] == "embed"
     assert result["data"]["items"][0]["rerank_model"]["name"] == "rerank"

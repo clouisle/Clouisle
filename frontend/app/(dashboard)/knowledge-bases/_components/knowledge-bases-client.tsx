@@ -72,6 +72,7 @@ import { DeleteKnowledgeBaseDialog } from './delete-knowledge-base-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
+import { useDebounce } from '@/hooks/use-debounce'
 
 export function KnowledgeBasesClient() {
   const t = useTranslations('knowledgeBases')
@@ -91,6 +92,8 @@ export function KnowledgeBasesClient() {
   
   // 筛选状态
   const [searchQuery, setSearchQuery] = useUrlSearchState()
+  const debouncedSearchQuery = useDebounce(searchQuery, 300)
+  const previousSearchRef = React.useRef(debouncedSearchQuery)
   const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set())
   
   // 选择状态
@@ -126,8 +129,8 @@ export function KnowledgeBasesClient() {
         status?: string[]
       } = { page, pageSize }
       
-      if (searchQuery) {
-        params.search = searchQuery
+      if (debouncedSearchQuery) {
+        params.search = debouncedSearchQuery
       }
       
       if (statusFilter.size > 0) {
@@ -142,11 +145,19 @@ export function KnowledgeBasesClient() {
     } finally {
       setIsLoading(false)
     }
-  }, [page, pageSize, searchQuery, statusFilter])
+  }, [page, pageSize, debouncedSearchQuery, statusFilter])
   
   React.useEffect(() => {
+    // 防抖后的搜索词变化时先回到第一页，避免请求旧页码
+    if (previousSearchRef.current !== debouncedSearchQuery) {
+      previousSearchRef.current = debouncedSearchQuery
+      if (page !== 1) {
+        setPage(1)
+        return
+      }
+    }
     loadKnowledgeBases()
-  }, [loadKnowledgeBases])
+  }, [debouncedSearchQuery, page, loadKnowledgeBases])
   
   // 筛选
   const filteredKbs = knowledgeBases
@@ -161,10 +172,10 @@ export function KnowledgeBasesClient() {
     setPage(1)
   }
   
-  // 筛选条件变化时重置到第一页
+  // 状态筛选变化时重置到第一页
   React.useEffect(() => {
     setPage(1)
-  }, [searchQuery, statusFilter])
+  }, [statusFilter])
   
   // 状态选项
   const statusOptions = [

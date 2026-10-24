@@ -94,6 +94,14 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+const SEARCH_DEBOUNCE_WAIT_MS = 350
+
+function waitForSearchDebounce() {
+  const { promise, resolve } = Promise.withResolvers<void>()
+  setTimeout(resolve, SEARCH_DEBOUNCE_WAIT_MS)
+  return promise
+}
+
 async function renderClient() {
   await act(async () => { renderer = create(<KnowledgeBasesClient />) })
   return renderer!
@@ -216,7 +224,10 @@ describe('KnowledgeBasesClient', () => {
     expect(renderer!.root.findAllByType('aside').find((node) => node.props.expectedResourceType === 'knowledge_base')?.props.open).toBe(true)
 
     const search = renderer!.root.findByProps({ placeholder: 'filterKbs' })
-    act(() => search.props.onChange({ target: { value: 'handbook' } }))
+    await act(async () => {
+      search.props.onChange({ target: { value: 'handbook' } })
+      await waitForSearchDebounce()
+    })
     expect(text()).toContain('reset')
     expect(getKnowledgeBases).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'handbook' }))
 
@@ -301,7 +312,10 @@ describe('KnowledgeBasesClient', () => {
     expect(pageButtons()[2].props.disabled).toBe(true)
 
     const search = renderer!.root.findByProps({ placeholder: 'filterKbs' })
-    await act(async () => search.props.onChange({ target: { value: 'handbook' } }))
+    await act(async () => {
+      search.props.onChange({ target: { value: 'handbook' } })
+      await waitForSearchDebounce()
+    })
     expect(getKnowledgeBases).toHaveBeenLastCalledWith({ page: 1, pageSize: 10, search: 'handbook' })
     expect(pageButtons()[0].props.disabled).toBe(true)
 
@@ -318,12 +332,39 @@ describe('KnowledgeBasesClient', () => {
     expect(text()).toContain('Handbook')
 
     const search = renderer!.root.findByProps({ placeholder: 'filterKbs' })
-    await act(async () => search.props.onChange({ target: { value: 'missing' } }))
+    await act(async () => {
+      search.props.onChange({ target: { value: 'missing' } })
+      await waitForSearchDebounce()
+    })
 
     expect(getKnowledgeBases).toHaveBeenLastCalledWith({ page: 1, pageSize: 10, search: 'missing' })
     expect(text()).not.toContain('loading')
     expect(text()).toContain('Handbook')
     expect(text()).not.toContain('noKbs')
+  })
+  test('debounces rapid search edits onto a single first-page request', async () => {
+    getKnowledgeBases.mockResolvedValue({ items: [knowledgeBase], total: 25 })
+    await renderClient()
+
+    const pageButtons = () => renderer!.root.findAllByType('button').filter((node) => node.props.className === 'h-8 w-8')
+    await act(async () => pageButtons()[2].props.onClick())
+    expect(getKnowledgeBases).toHaveBeenLastCalledWith({ page: 2, pageSize: 10 })
+
+    getKnowledgeBases.mockClear()
+    const search = () => renderer!.root.findByProps({ placeholder: 'filterKbs' })
+    act(() => search().props.onChange({ target: { value: 'h' } }))
+    act(() => search().props.onChange({ target: { value: 'ha' } }))
+    act(() => search().props.onChange({ target: { value: 'handbook' } }))
+
+    expect(search().props.value).toBe('handbook')
+    expect(getKnowledgeBases).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await waitForSearchDebounce()
+    })
+
+    expect(getKnowledgeBases).toHaveBeenCalledTimes(1)
+    expect(getKnowledgeBases).toHaveBeenCalledWith({ page: 1, pageSize: 10, search: 'handbook' })
   })
   test('retries loading after an initial knowledge base list request fails', async () => {
     getKnowledgeBases.mockRejectedValueOnce(new Error('offline'))
@@ -334,7 +375,10 @@ describe('KnowledgeBasesClient', () => {
     expect(text()).toContain('noKbs')
     expect(getKnowledgeBases).toHaveBeenCalledTimes(1)
 
-    await act(async () => renderer!.root.findByProps({ placeholder: 'filterKbs' }).props.onChange({ target: { value: 'handbook' } }))
+    await act(async () => {
+      renderer!.root.findByProps({ placeholder: 'filterKbs' }).props.onChange({ target: { value: 'handbook' } })
+      await waitForSearchDebounce()
+    })
 
     expect(getKnowledgeBases).toHaveBeenLastCalledWith({ page: 1, pageSize: 10, search: 'handbook' })
     expect(text()).toContain('Handbook')

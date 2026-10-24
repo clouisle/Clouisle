@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import {
     Table,
@@ -48,6 +48,7 @@ import { AuditLogDrawer } from "./audit-log-drawer";
 import { WorkflowRunDrawer } from "@/app/(dashboard)/activities/_components/workflow-run-drawer";
 import { PermissionGuard } from "@/components/permission-guard";
 import { useUrlSearchState } from "@/hooks/use-url-search-state";
+import { useDebounce } from "@/hooks/use-debounce";
 
 export function AuditLogsTable() {
     const t = useTranslations("auditLogs");
@@ -68,6 +69,7 @@ export function AuditLogsTable() {
     const [search, setSearch] = useUrlSearchState();
     const [statusFilter, setStatusFilter] = useState<string[]>([]);
     const [actionFilter, setActionFilter] = useState<string[]>([]);
+    const debouncedSearch = useDebounce(search, 300);
 
     const loadLogs = async () => {
         try {
@@ -75,7 +77,7 @@ export function AuditLogsTable() {
             const params = {
                 page,
                 page_size: pageSize,
-                search: search || undefined,
+                search: debouncedSearch || undefined,
                 status: statusFilter.length > 0 ? statusFilter : undefined,
                 action: actionFilter.length > 0 ? actionFilter : undefined,
             };
@@ -98,10 +100,19 @@ export function AuditLogsTable() {
         }
     };
 
+    const previousDebouncedSearch = useRef(debouncedSearch);
     useEffect(() => {
+        const searchChanged = previousDebouncedSearch.current !== debouncedSearch;
+        previousDebouncedSearch.current = debouncedSearch;
+        if (searchChanged && page !== 1) {
+            // A settled query starts from page 1; skipping this run avoids requesting
+            // the page the query just abandoned.
+            setPage(1);
+            return;
+        }
         loadLogs();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [page, pageSize, search, statusFilter, actionFilter]);
+    }, [debouncedSearch, page, pageSize, statusFilter, actionFilter]);
 
     useEffect(() => {
         loadActionOptions();
@@ -225,10 +236,7 @@ export function AuditLogsTable() {
                                 <Input
                                     placeholder={t("searchPlaceholder")}
                                     value={search}
-                                    onChange={(e) => {
-                                        setSearch(e.target.value);
-                                        setPage(1);
-                                    }}
+                                    onChange={(e) => setSearch(e.target.value)}
                                     className="pl-8"
                                 />
                             </div>

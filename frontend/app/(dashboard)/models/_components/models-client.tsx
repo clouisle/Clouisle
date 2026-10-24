@@ -70,6 +70,7 @@ import { DeleteModelDialog } from './delete-model-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { useOptionalOnboarding } from '@/components/onboarding/onboarding-provider'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
+import { useDebounce } from '@/hooks/use-debounce'
 
 export function ModelsClient() {
   const t = useTranslations('models')
@@ -89,6 +90,8 @@ export function ModelsClient() {
   
   // 筛选状态
   const [searchQuery, setSearchQuery] = useUrlSearchState()
+  const debouncedSearchQuery = useDebounce(searchQuery, 300)
+  const previousSearchRef = React.useRef(debouncedSearchQuery)
   const [providerFilter, setProviderFilter] = React.useState<Set<string>>(new Set())
   const [typeFilter, setTypeFilter] = React.useState<Set<string>>(new Set())
   const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set())
@@ -134,8 +137,8 @@ export function ModelsClient() {
         search?: string
       } = { page, pageSize }
 
-      if (searchQuery) {
-        params.search = searchQuery
+      if (debouncedSearchQuery) {
+        params.search = debouncedSearchQuery
       }
 
       if (selectedProviders.length > 0) {
@@ -158,11 +161,19 @@ export function ModelsClient() {
     } finally {
       setIsLoading(false)
     }
-  }, [page, pageSize, searchQuery, selectedProviders, selectedTypes, statusFilter])
+  }, [page, pageSize, debouncedSearchQuery, selectedProviders, selectedTypes, statusFilter])
   
   React.useEffect(() => {
+    // 防抖后的搜索词变化时先回到第一页，避免请求旧页码
+    if (previousSearchRef.current !== debouncedSearchQuery) {
+      previousSearchRef.current = debouncedSearchQuery
+      if (page !== 1) {
+        setPage(1)
+        return
+      }
+    }
     loadModels()
-  }, [loadModels])
+  }, [debouncedSearchQuery, page, loadModels])
   
   // 筛选由服务端处理，models 已经是筛选后的结果
   const filteredModels = models

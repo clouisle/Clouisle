@@ -148,7 +148,7 @@ def transaction_context(monkeypatch):
         (
             user(),
             {"own_only": True, "search": "docs", "status": ["active"]},
-            ["q", "created_by", "name__icontains", "status__in"],
+            ["q", "created_by", "q", "status__in"],
         ),
     ],
 )

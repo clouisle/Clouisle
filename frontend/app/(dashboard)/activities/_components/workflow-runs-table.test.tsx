@@ -207,4 +207,27 @@ describe('WorkflowRunsTable', () => {
     await act(async () => nextPage.props.onClick())
     expect(getAllWorkflowRuns).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }))
   })
+
+  test('deletes a single run from its row actions only after confirmation', async () => {
+    getAllWorkflowRuns.mockResolvedValue({
+      items: [{
+        id: 'run-12345678', workflow_id: 'workflow-1', workflow_name: 'Daily report', status: 'success',
+        trigger_type: 'manual', created_at: '2026-01-01T10:00:00Z', total_duration_ms: 1200,
+        executed_nodes: 1, total_nodes: 1,
+      }],
+      total: 1,
+    })
+    const renderer = await render()
+
+    const [rowDelete] = renderer.root.findAllByType('button').filter((button) => button.props.variant === 'destructive')
+    await act(async () => rowDelete.props.onClick())
+    const dialog = renderer.root.findAllByType('div').find((node) => node.props.open === true && typeof node.props.onOpenChange === 'function')!
+    await act(async () => dialog.props.onOpenChange(false))
+    expect(deleteWorkflowRun).not.toHaveBeenCalled()
+
+    await act(async () => rowDelete.props.onClick())
+    await act(async () => renderer.root.findAllByType('button').filter((button) => button.props.variant === 'destructive').at(-1)!.props.onClick())
+    expect(deleteWorkflowRun).toHaveBeenCalledWith('run-12345678')
+    expect(success).toHaveBeenCalledWith('activities.runDetail.deleteSuccess')
+  })
 })

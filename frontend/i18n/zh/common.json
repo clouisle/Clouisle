@@ -2,6 +2,9 @@
   "common": {
     "appName": "云屿",
     "loading": "加载中...",
+    "loadingMore": "正在加载更多...",
+    "loadFailed": "加载失败",
+    "retry": "重试",
     "save": "保存",
     "cancel": "取消",
     "delete": "删除",

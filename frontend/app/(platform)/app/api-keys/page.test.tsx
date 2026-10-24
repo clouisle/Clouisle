@@ -77,6 +77,33 @@ mock.module("./_components/show-key-dialog", () => ({
 
 const { default: APIKeysPage } = await import("./page");
 
+type ObserverCallback = ConstructorParameters<typeof IntersectionObserver>[0];
+
+class FakeIntersectionObserver {
+  static instances: FakeIntersectionObserver[] = [];
+
+  readonly observed: Element[] = [];
+
+  constructor(private readonly callback: ObserverCallback) {
+    FakeIntersectionObserver.instances.push(this);
+  }
+
+  observe(element: Element) {
+    this.observed.push(element);
+  }
+
+  disconnect() {}
+
+  trigger(isIntersecting: boolean) {
+    this.callback(
+      [{ isIntersecting, target: this.observed[0] } as IntersectionObserverEntry],
+      this as unknown as IntersectionObserver,
+    );
+  }
+}
+
+Object.assign(globalThis, { IntersectionObserver: FakeIntersectionObserver });
+
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const apiKey = {
@@ -96,8 +123,9 @@ const apiKey = {
 };
 
 beforeEach(() => {
-  getAPIKeys.mockImplementation(() => Promise.resolve({ items: [] }));
+  getAPIKeys.mockImplementation(() => Promise.resolve({ items: [], total: 0, page: 1, page_size: 20 }));
   getAPIKeys.mockClear();
+  FakeIntersectionObserver.instances = [];
   deactivateAPIKey.mockClear();
   activateAPIKey.mockClear();
   success.mockClear();
@@ -113,7 +141,7 @@ test("loads API keys and presents the empty creation state", async () => {
     renderer = create(<APIKeysPage />);
   });
 
-  expect(getAPIKeys).toHaveBeenCalledWith({ pageSize: 100 });
+  expect(getAPIKeys).toHaveBeenCalledWith({ page: 1, pageSize: 20, search: undefined });
   expect(renderer!.root.findByProps({ "data-testid": "api-keys-page" })).toBeDefined();
   expect(renderer!.root.findByProps({ "data-testid": "api-keys-create-button" })).toBeDefined();
   expect(
@@ -127,8 +155,12 @@ test("loads API keys and presents the empty creation state", async () => {
   act(() => renderer!.unmount());
 });
 
-test("filters keys and clears an empty search result", async () => {
-  getAPIKeys.mockImplementationOnce(() => Promise.resolve({ items: [apiKey] }));
+test("searches server-side after the debounce and clears an empty search result", async () => {
+  getAPIKeys.mockImplementation((params: { search?: string } = {}) => Promise.resolve(
+    params.search
+      ? { items: [], total: 0, page: 1, page_size: 20 }
+      : { items: [apiKey], total: 1, page: 1, page_size: 20 }
+  ));
   let renderer: ReactTestRenderer;
   await act(async () => {
     renderer = create(<APIKeysPage />);
@@ -137,12 +169,41 @@ test("filters keys and clears an empty search result", async () => {
   act(() => {
     renderer!.root.findByType("input").props.onChange({ target: { value: "missing" } });
   });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
+
+  expect(getAPIKeys).toHaveBeenLastCalledWith(expect.objectContaining({ search: "missing", page: 1 }));
   expect(JSON.stringify(renderer!.toJSON())).toContain("noKeysFound");
+
   act(() => {
     renderer!.root.findAllByType("button").find((button) => button.children.join("").includes("clearSearch"))!.props.onClick();
   });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
 
   expect(JSON.stringify(renderer!.toJSON())).toContain("Release key");
+  act(() => renderer!.unmount());
+});
+
+test("appends the next page from the sentinel and stops at the total", async () => {
+  getAPIKeys.mockImplementation((params: { page?: number } = {}) => Promise.resolve(
+    params.page === 2
+      ? { items: [{ ...apiKey, id: "key-2", name: "Second key" }], total: 40, page: 2, page_size: 20 }
+      : { items: [apiKey], total: 40, page: 1, page_size: 20 }
+  ));
+  let renderer: ReactTestRenderer;
+  await act(async () => {
+    renderer = create(<APIKeysPage />);
+  });
+
+  await act(async () => FakeIntersectionObserver.instances[0].trigger(true));
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+  expect(getAPIKeys).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, pageSize: 20 }));
+  expect(JSON.stringify(renderer!.toJSON())).toContain("Second key");
+
+  await act(async () => FakeIntersectionObserver.instances[0].trigger(true));
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  expect(getAPIKeys).toHaveBeenCalledTimes(2);
+
   act(() => renderer!.unmount());
 });
 

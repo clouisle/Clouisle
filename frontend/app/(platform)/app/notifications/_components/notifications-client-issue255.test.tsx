@@ -24,8 +24,7 @@ mock.module('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'dark' }) 
 mock.module('next/dynamic', () => ({ default: () => ({ source }: { source: string }) => <article>{source}</article> }))
 mock.module('lucide-react', () => ({
   Check: () => null,
-  ChevronLeft: () => null,
-  ChevronRight: () => null,
+  Loader2: () => null,
   Megaphone: () => null,
   Search: () => null,
   ShieldAlert: () => null,
@@ -34,6 +33,14 @@ mock.module('lucide-react', () => ({
 }))
 mock.module('@/lib/api', () => ({ notificationsApi: { list, markRead } }))
 mock.module('@/hooks/use-debounce', () => ({ useDebounce: (value: string) => value }))
+const infiniteScrollCalls: Array<{ hasMore: boolean; loading: boolean; onLoadMore: () => void }> = []
+mock.module('@/hooks/use-infinite-scroll', () => ({
+  useInfiniteScroll: (options: { hasMore: boolean; loading: boolean; onLoadMore: () => void }) => {
+    infiniteScrollCalls.length = 0
+    infiniteScrollCalls.push(options)
+    return { current: null }
+  },
+}))
 mock.module('@/lib/notifications/display', () => ({
   getNotificationDisplayMeta: () => ({ kind: 'delivery', isAnnouncement: false, priorityScore: 5 }),
   getPauseActionMeta: () => null,
@@ -76,6 +83,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 const renderers: ReactTestRenderer[] = []
 
 beforeEach(() => {
+  infiniteScrollCalls.length = 0
   list.mockReset()
   list.mockImplementation(async () => ({ items: [item], total: 41, page: 1, page_size: 20 }))
   markRead.mockReset()
@@ -126,11 +134,10 @@ describe('notifications client issue 255 callbacks', () => {
     expect(renderer.root.findByType('article').children).toEqual(['The run stopped.'])
 
     const pagination = renderer.root.findAllByType('button').filter((node) => node.props.className === 'cursor-pointer')
-    await act(async () => pagination.at(-1)!.props.onClick())
+    expect(pagination.every((node) => nodeText(node) !== '1 / 1')).toBe(true)
+    await act(async () => { infiniteScrollCalls.at(-1)!.onLoadMore() })
+    await act(async () => {})
     expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }))
-    const previous = renderer.root.findAllByType('button').find((node) => node.props.className === 'cursor-pointer' && node.props.disabled === false)!
-    await act(async () => previous.props.onClick())
-    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 }))
   })
 
   test('reports list and mark-read failures without firing success callbacks', async () => {

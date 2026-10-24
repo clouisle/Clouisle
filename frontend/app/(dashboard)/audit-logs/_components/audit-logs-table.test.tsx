@@ -58,9 +58,16 @@ const { AuditLogsTable } = await import('./audit-logs-table')
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
+// Captured directly: the renderer copies this stub's keys onto globalThis, so a
+// wrapper that calls the global by name would recurse into itself.
+const nativeSetTimeout = globalThis.setTimeout
+const nativeClearTimeout = globalThis.clearTimeout
+
 globalThis.window = {
   getSelection: () => ({ toString: () => '' }),
   URL: { createObjectURL: () => '', revokeObjectURL: () => {} },
+  setTimeout: nativeSetTimeout,
+  clearTimeout: nativeClearTimeout,
 } as unknown as Window & typeof globalThis
 
 const renderers: ReactTestRenderer[] = []
@@ -73,6 +80,14 @@ async function render() {
   })
   renderers.push(renderer!)
   return renderer!
+}
+
+async function settleSearchDebounce() {
+  await act(async () => {
+    const { promise, resolve } = Promise.withResolvers<void>()
+    setTimeout(resolve, 350)
+    await promise
+  })
 }
 
 afterEach(() => {
@@ -111,6 +126,7 @@ describe('AuditLogsTable', () => {
     expect(tree).toContain('total\\\":2')
 
     await act(async () => renderer.root.findByType('input').props.onChange({ target: { value: 'alex' } }))
+    await settleSearchDebounce()
     expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, search: 'alex' }))
 
     act(() => renderer.root.findAllByType('tr')[1].props.onClick())
@@ -205,5 +221,24 @@ describe('AuditLogsTable', () => {
     expect(click).toHaveBeenCalled()
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:test')
     expect(toastSuccess).toHaveBeenCalledWith('exportSuccess')
+  })
+
+  test('ignores row clicks while a text selection is active', async () => {
+    list.mockResolvedValue({
+      items: [{
+        id: 'log-1', created_at: '2026-01-01T10:00:00Z', status: 'success', action: 'login', operation: 'create',
+        username: 'ada', resource_type: 'session', resource_name: null, ip_address: null,
+      }],
+      total_pages: 1,
+    })
+    const renderer = await render()
+    const originalGetSelection = window.getSelection
+    window.getSelection = (() => ({ toString: () => 'selected' })) as unknown as typeof window.getSelection
+    try {
+      act(() => renderer.root.findAllByType('tr')[1].props.onClick())
+      expect(renderer.root.findAllByType('aside')).toHaveLength(0)
+    } finally {
+      window.getSelection = originalGetSelection
+    }
   })
 })

@@ -97,6 +97,13 @@ beforeAll(async () => {
       if (!sameDeps(slots[index]?.deps, deps)) slots[index] = { value: callback, deps }
       return slots[index].value
     },
+    useRef(initial: unknown) {
+      const index = cursor++
+      const slot = slots[index] ??= { deps: [] }
+      const refSlot = slot as HookSlot & { ref?: { current: unknown } }
+      refSlot.ref ??= { current: initial }
+      return refSlot.ref
+    },
     useEffect(effect: () => void | (() => void), deps?: readonly unknown[]) {
       const index = cursor++
       if (!sameDeps(slots[index]?.deps, deps)) {
@@ -125,7 +132,9 @@ beforeEach(() => {
   permissions = new Set()
   for (const fn of [getDocuments, deleteDocument, processDocument, retryFailedChunks, downloadDocument,
     push, toastSuccess, toastError, open, onRefresh]) fn.mockReset()
-  Object.assign(globalThis, { window: { open } })
+  Object.assign(globalThis, {
+    window: { open, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout },
+  })
   getDocuments.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 10 })
 })
 
@@ -146,6 +155,12 @@ async function flush() {
     tree = render()
   }
   return tree
+}
+
+async function waitForSearchDebounce() {
+  const { promise, resolve } = Promise.withResolvers<void>()
+  setTimeout(resolve, 350)
+  await promise
 }
 
 function resolve(node: ReactNode): ReactNode {
@@ -334,6 +349,31 @@ describe('DocumentsTable', () => {
   })
 
 
+  test('debounces rapid search edits onto a single first-page request', async () => {
+    getDocuments.mockResolvedValue({ items: [baseDocument], total: 25, page: 1, page_size: 10 })
+    let tree = await flush()
+    expect(getDocuments).toHaveBeenCalledTimes(1)
+
+    elements(tree).filter(item => item.type === 'button' && item.props.className === 'h-8 w-8')[2].props.onClick()
+    tree = await flush()
+    expect(getDocuments).toHaveBeenLastCalledWith('kb-1', expect.objectContaining({ page: 2 }))
+
+    getDocuments.mockClear()
+    const input = elements(tree).find(item => item.type === 'input')!
+    input.props.onChange({ target: { value: 'g' } })
+    input.props.onChange({ target: { value: 'gu' } })
+    input.props.onChange({ target: { value: 'guide' } })
+    tree = await flush()
+    expect(elements(tree).find(item => item.type === 'input')!.props.value).toBe('guide')
+    expect(getDocuments).not.toHaveBeenCalled()
+
+    await waitForSearchDebounce()
+    tree = await flush()
+
+    expect(getDocuments).toHaveBeenCalledTimes(1)
+    expect(getDocuments).toHaveBeenCalledWith('kb-1', { page: 1, pageSize: 10, search: 'guide' })
+  })
+
   test('filters, paginates, retries, opens URL sources, and runs bulk actions', async () => {
     permissions = new Set(['kb:update', 'kb:delete'])
     const pending = { ...baseDocument, id: 'doc-pending', name: 'Todo.txt', doc_type: 'txt', status: 'pending', file_path: null, file_size: null }
@@ -346,6 +386,8 @@ describe('DocumentsTable', () => {
     let tree = await flush()
 
     elements(tree).find(item => item.type === 'input')!.props.onChange({ target: { value: 'broken' } })
+    tree = await flush()
+    await waitForSearchDebounce()
     tree = await flush()
     expect(getDocuments).toHaveBeenLastCalledWith('kb-1', expect.objectContaining({ search: 'broken' }))
 

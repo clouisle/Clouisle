@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useTranslations, useLocale } from 'next-intl'
-import { Search, Calendar, ArrowUpDown, MessageSquare, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from 'lucide-react'
+import { Search, Calendar, ArrowUpDown, MessageSquare, Loader2, X } from 'lucide-react'
 import { agentsApi, type Agent, type ConversationListItem, type ConversationWithMessages } from '@/lib/api'
 import { formatDateTime } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -36,10 +36,20 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { useDebounce } from '@/hooks/use-debounce'
+import { useInfiniteScroll } from '@/hooks/use-infinite-scroll'
 import { AgentSidebar } from '../_components/agent-sidebar'
 import { ConversationDrawer } from './_components/conversation-drawer'
 
 const PAGE_SIZE = 20
+
+function dedupeById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false
+    seen.add(item.id)
+    return true
+  })
+}
 
 function getCreatedAfter(dateFilter: string): string | undefined {
   if (dateFilter === 'all') return undefined
@@ -63,6 +73,7 @@ function getCreatedAfter(dateFilter: string): string | undefined {
 
 export default function LogsPage() {
   const t = useTranslations('agents.logs')
+  const tCommon = useTranslations('common')
   const locale = useLocale()
   const router = useRouter()
   const params = useParams()
@@ -72,8 +83,13 @@ export default function LogsPage() {
   const [isLoading, setIsLoading] = React.useState(true)
   const [conversations, setConversations] = React.useState<ConversationListItem[]>([])
   const [totalConversations, setTotalConversations] = React.useState(0)
-  const [currentPage, setCurrentPage] = React.useState(1)
+  const [page, setPage] = React.useState(1)
   const [isLoadingConversations, setIsLoadingConversations] = React.useState(false)
+  const [isLoadingMore, setIsLoadingMore] = React.useState(false)
+  const [loadFailure, setLoadFailure] = React.useState<{ page: number; append: boolean } | null>(null)
+  const requestIdRef = React.useRef(0)
+  const inFlightRef = React.useRef(false)
+  const loadedIdsRef = React.useRef<Set<string> | null>(null)
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = React.useState('')
@@ -104,27 +120,65 @@ export default function LogsPage() {
     }
   }, [agentId, router])
 
-  // Fetch conversations
-  const fetchConversations = React.useCallback(async (page: number = 1) => {
+  // Fetch conversations. Reset requests replace the list; load-more requests append.
+  // Resets always supersede an in-flight request; appends and retries are single-flight.
+  const fetchConversations = React.useCallback(async (targetPage: number, append: boolean = false) => {
     if (!agentId) return
+    if (append && inFlightRef.current) return
+
+    inFlightRef.current = true
+    const requestId = ++requestIdRef.current
+    if (append) {
+      setIsLoadingMore(true)
+    } else {
+      setIsLoadingConversations(true)
+      setLoadFailure(null)
+      setConversations([])
+      setTotalConversations(0)
+      setPage(1)
+      loadedIdsRef.current = new Set()
+    }
 
     try {
-      setIsLoadingConversations(true)
       const search = debouncedSearchQuery.trim()
       const result = await agentsApi.getAgentConversations(agentId, {
-        page,
+        page: targetPage,
         pageSize: PAGE_SIZE,
         search: search || undefined,
         createdAfter: getCreatedAfter(dateFilter),
         sortBy,
       })
-      setConversations(result.items)
-      setTotalConversations(result.total)
-      setCurrentPage(page)
+      if (requestId !== requestIdRef.current) return
+
+      if (append) {
+        const seen = (loadedIdsRef.current ??= new Set<string>())
+        const fresh: ConversationListItem[] = []
+        for (const conversation of result.items) {
+          if (seen.has(conversation.id)) continue
+          seen.add(conversation.id)
+          fresh.push(conversation)
+        }
+        setConversations((previous) => [...previous, ...fresh])
+        // An empty page with a stale total means the list has ended.
+        setTotalConversations(fresh.length === 0 ? seen.size : result.total)
+        setPage(targetPage)
+      } else {
+        const unique = dedupeById(result.items)
+        loadedIdsRef.current = new Set(unique.map((conversation) => conversation.id))
+        setConversations(unique)
+        setTotalConversations(result.total)
+        setPage(targetPage)
+      }
+      setLoadFailure(null)
     } catch {
-      // Error handled by API client
+      if (requestId !== requestIdRef.current) return
+      setLoadFailure({ page: targetPage, append })
     } finally {
-      setIsLoadingConversations(false)
+      if (requestId === requestIdRef.current) {
+        inFlightRef.current = false
+        setIsLoadingConversations(false)
+        setIsLoadingMore(false)
+      }
     }
   }, [agentId, debouncedSearchQuery, dateFilter, sortBy])
 
@@ -154,7 +208,7 @@ export default function LogsPage() {
         setDrawerOpen(false)
       }
       // Refresh the list to get accurate data
-      await fetchConversations(currentPage)
+      await fetchConversations(1)
     } catch {
       // Error handled by API client
     } finally {
@@ -168,11 +222,34 @@ export default function LogsPage() {
 
   React.useEffect(() => {
     if (agent) {
-      fetchConversations()
+      void fetchConversations(1)
+    }
+    return () => {
+      requestIdRef.current += 1
+      inFlightRef.current = false
     }
   }, [agent, fetchConversations])
 
-  const totalPages = Math.ceil(totalConversations / PAGE_SIZE)
+  const hasMore = !loadFailure && conversations.length < totalConversations
+
+  const loadMore = React.useCallback(() => {
+    if (isLoadingConversations || isLoadingMore || loadFailure) return
+    if (conversations.length >= totalConversations) return
+    return fetchConversations(page + 1, true)
+  }, [conversations.length, fetchConversations, isLoadingConversations, isLoadingMore, loadFailure, page, totalConversations])
+
+  const retryLoad = React.useCallback(() => {
+    if (!loadFailure || inFlightRef.current) return
+    const { page: failedPage, append } = loadFailure
+    setLoadFailure(null)
+    return fetchConversations(failedPage, append)
+  }, [fetchConversations, loadFailure])
+
+  const sentinelRef = useInfiniteScroll({
+    hasMore,
+    loading: isLoadingConversations || isLoadingMore,
+    onLoadMore: loadMore,
+  })
 
   if (isLoading || !agent) {
     return (
@@ -265,11 +342,21 @@ export default function LogsPage() {
 
         {/* Table */}
         <div className="flex-1 min-h-0 overflow-auto">
-          {isLoadingConversations ? (
+          {isLoadingConversations && conversations.length === 0 ? (
             <div className="p-6 space-y-3">
               {[...Array(5)].map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
+            </div>
+          ) : loadFailure && conversations.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center py-16">
+              <div className="text-center text-muted-foreground">
+                <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                <p>{tCommon('loadFailed')}</p>
+                <Button variant="outline" size="sm" className="mt-3" onClick={retryLoad}>
+                  {tCommon('retry')}
+                </Button>
+              </div>
             </div>
           ) : conversations.length === 0 ? (
             <div className="flex-1 flex items-center justify-center py-16">
@@ -279,118 +366,89 @@ export default function LogsPage() {
               </div>
             </div>
           ) : (
-            <div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('table.title')}</TableHead>
-                    <TableHead>{t('table.conversationId')}</TableHead>
-                    <TableHead>{t('table.messageCount')}</TableHead>
-                    <TableHead>{t('table.updatedAt')}</TableHead>
-                    <TableHead>{t('table.createdAt')}</TableHead>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('table.title')}</TableHead>
+                  <TableHead>{t('table.conversationId')}</TableHead>
+                  <TableHead>{t('table.messageCount')}</TableHead>
+                  <TableHead>{t('table.updatedAt')}</TableHead>
+                  <TableHead>{t('table.createdAt')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {conversations.map((conv) => (
+                  <TableRow
+                    key={conv.id}
+                    className="group cursor-pointer hover:bg-muted/50"
+                    onClick={() => handleRowClick(conv.id)}
+                  >
+                    <TableCell className="max-w-[300px]">
+                      <div className="flex items-center gap-2">
+                        <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="font-medium truncate">
+                          {conv.title || t('untitledConversation')}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Tooltip>
+                        <TooltipTrigger
+                          type="button"
+                          className="font-mono text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleRowClick(conv.id)
+                          }}
+                          render={<button />}
+                        >
+                          {conv.id.slice(0, 8)}…
+                        </TooltipTrigger>
+                        <TooltipContent>{`${t('table.conversationId')}: ${conv.id}`}</TooltipContent>
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell>{conv.message_count}</TableCell>
+                    <TableCell className="text-muted-foreground" suppressHydrationWarning>
+                      {formatDateTime(conv.updated_at, locale)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground" suppressHydrationWarning>
+                      {formatDateTime(conv.created_at, locale)}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {conversations.map((conv) => (
-                    <TableRow
-                      key={conv.id}
-                      className="group cursor-pointer hover:bg-muted/50"
-                      onClick={() => handleRowClick(conv.id)}
-                    >
-                      <TableCell className="max-w-[300px]">
-                        <div className="flex items-center gap-2">
-                          <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span className="font-medium truncate">
-                            {conv.title || t('untitledConversation')}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Tooltip>
-                          <TooltipTrigger
-                            type="button"
-                            className="font-mono text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleRowClick(conv.id)
-                            }}
-                            render={<button />}
-                          >
-                            {conv.id.slice(0, 8)}…
-                          </TooltipTrigger>
-                          <TooltipContent>{`${t('table.conversationId')}: ${conv.id}`}</TooltipContent>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell>{conv.message_count}</TableCell>
-                      <TableCell className="text-muted-foreground" suppressHydrationWarning>
-                        {formatDateTime(conv.updated_at, locale)}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground" suppressHydrationWarning>
-                        {formatDateTime(conv.created_at, locale)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+
+          {isLoadingMore && (
+            <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>{tCommon('loadingMore')}</span>
             </div>
           )}
+
+          {loadFailure && conversations.length > 0 && !isLoadingMore && (
+            <div className="flex items-center justify-center gap-3 py-4 text-sm text-muted-foreground">
+              <span>{tCommon('loadFailed')}</span>
+              <Button variant="outline" size="sm" onClick={retryLoad}>
+                {tCommon('retry')}
+              </Button>
+            </div>
+          )}
+
+          <div ref={sentinelRef} aria-hidden className="h-px w-full" />
         </div>
 
-        {/* Pagination */}
+        {/* Loaded range */}
         {totalConversations > 0 && (
-          <div className="px-6 py-3 border-t flex items-center justify-between shrink-0">
+          <div className="px-6 py-3 border-t shrink-0">
             <p className="text-sm text-muted-foreground">
               {t('pagination.showing', {
-                from: (currentPage - 1) * PAGE_SIZE + 1,
-                to: Math.min(currentPage * PAGE_SIZE, totalConversations),
+                from: conversations.length > 0 ? 1 : 0,
+                to: conversations.length,
                 total: totalConversations,
               })}
             </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                disabled={currentPage === 1}
-                onClick={() => fetchConversations(1)}
-                aria-label={t('pagination.first')}
-              >
-                <ChevronsLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                disabled={currentPage === 1}
-                onClick={() => fetchConversations(currentPage - 1)}
-                aria-label={t('prev')}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <span className="text-sm text-muted-foreground px-2">
-                {currentPage} / {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                disabled={currentPage === totalPages}
-                onClick={() => fetchConversations(currentPage + 1)}
-                aria-label={t('next')}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                disabled={currentPage === totalPages}
-                onClick={() => fetchConversations(totalPages)}
-                aria-label={t('pagination.last')}
-              >
-                <ChevronsRight className="h-4 w-4" />
-              </Button>
-            </div>
           </div>
         )}
       </div>

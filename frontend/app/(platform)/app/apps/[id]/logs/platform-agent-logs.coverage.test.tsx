@@ -11,6 +11,9 @@ const onOpenChange = mock()
 let params = { id: 'agent-1' }
 let state: unknown[] = []
 let stateIndex = 0
+let refs: { current: unknown }[] = []
+let refIndex = 0
+let infiniteOptions: { hasMore: boolean; loading: boolean; onLoadMore: () => Promise<void> | undefined } | null = null
 
 const Fragment = Symbol('Fragment')
 const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props })
@@ -20,6 +23,11 @@ mock.module('react', () => ({
   useCallback: <T extends (...args: never[]) => unknown>(callback: T) => callback,
   useEffect: (effect: () => void | (() => void)) => { effect() },
   useMemo: <T,>(factory: () => T) => factory(),
+  useRef: <T,>(initial: T) => {
+    const index = refIndex++
+    refs[index] ??= { current: initial }
+    return refs[index] as { current: T }
+  },
   useState: <T,>(initial: T) => {
     const index = stateIndex++
     state[index] ??= initial
@@ -39,6 +47,12 @@ mock.module('next-intl', () => ({
   useTranslations: () => (key: string, values?: Record<string, number>) => values ? `${key}:${values.from}-${values.to}-${values.total}` : key,
 }))
 mock.module('@/hooks/use-debounce', () => ({ useDebounce: <T,>(value: T) => value }))
+mock.module('@/hooks/use-infinite-scroll', () => ({
+  useInfiniteScroll: (options: { hasMore: boolean; loading: boolean; onLoadMore: () => Promise<void> | undefined }) => {
+    infiniteOptions = options
+    return { current: null }
+  },
+}))
 mock.module('@/lib/api', () => ({
   agentsApi: { getAgent, getAgentConversations, getConversation, deleteConversation },
 }))
@@ -83,10 +97,6 @@ mock.module('../_components/agent-sidebar', () => ({ AgentSidebar: element('agen
 mock.module('lucide-react', () => ({
   ArrowUpDown: element('svg'),
   Calendar: element('svg'),
-  ChevronLeft: element('svg'),
-  ChevronRight: element('svg'),
-  ChevronsLeft: element('svg'),
-  ChevronsRight: element('svg'),
   Loader2: element('svg'),
   MessageSquare: element('svg'),
   Search: element('svg'),
@@ -125,6 +135,7 @@ function find(node: ReactNode, predicate: (tree: Tree) => boolean): Tree {
 
 function renderLogsPage() {
   stateIndex = 0
+  refIndex = 0
   return LogsPage()
 }
 
@@ -150,6 +161,8 @@ beforeEach(() => {
   onOpenChange.mockClear()
   params = { id: 'agent-1' }
   state = []
+  refs = []
+  infiniteOptions = null
 })
 
 describe('platform agent logs page', () => {
@@ -160,7 +173,7 @@ describe('platform agent logs page', () => {
     expect(find(page, (tree) => tree.type === 'skeleton')).toBeDefined()
   })
 
-  test('loads conversations, opens a detail, and paginates', async () => {
+  test('loads conversations, opens a detail, and loads the next page when the sentinel intersects', async () => {
     getAgentConversations.mockResolvedValue({
       items: [{
         id: 'conversation-1',
@@ -175,7 +188,7 @@ describe('platform agent logs page', () => {
     })
     getConversation.mockResolvedValue({ id: 'conversation-1', messages: [] })
 
-    let page = await renderLoadedPage()
+    const page = await renderLoadedPage()
     expect(getAgentConversations).toHaveBeenCalledWith('agent-1', {
       page: 1,
       pageSize: 20,
@@ -184,13 +197,13 @@ describe('platform agent logs page', () => {
       sortBy: 'created_at',
     })
     expect(find(page, (tree) => tree.type === 'td' && tree.props.children === 3)).toBeDefined()
+    expect(infiniteOptions?.hasMore).toBe(true)
+    expect(find(page, (tree) => tree.type === 'div' && tree.props['aria-hidden'] === true)).toBeDefined()
 
     await (find(page, (tree) => tree.type === 'tr' && tree.props.onClick).props.onClick as () => Promise<void>)()
     expect(getConversation).toHaveBeenCalledWith('conversation-1')
 
-    page = renderLogsPage()
-    const next = find(page, (tree) => tree.type === 'button' && tree.props['aria-label'] === 'next')
-    await (next.props.onClick as () => Promise<void>)()
+    await infiniteOptions?.onLoadMore()
     expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 2 }))
   })
 
@@ -250,39 +263,53 @@ describe('platform agent logs page', () => {
     }
   })
 
-  test('confirms deletion and refreshes the current conversation page', async () => {
+  test('confirms deletion and refreshes the first conversation page', async () => {
     getAgentConversations.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
     await renderLoadedPage()
-    state[12] = 'conversation-1'
+    state[14] = 'conversation-1'
     const page = renderLogsPage()
 
     await (find(page, (tree) => tree.type === 'alert-dialog-action').props.onClick as () => Promise<void>)()
 
     expect(deleteConversation).toHaveBeenCalledWith('conversation-1')
     expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 1 }))
-    expect(state[12]).toBeNull()
+    expect(state[14]).toBeNull()
   })
 
-  test('keeps the logs page usable when conversation loading fails', async () => {
-    getAgentConversations.mockRejectedValueOnce(new Error('unavailable'))
+  test('shows a manual retry when the initial conversation load fails', async () => {
+    getAgentConversations.mockRejectedValue(new Error('unavailable'))
 
     const page = await renderLoadedPage()
+    await flush()
 
-    expect(find(page, (tree) => tree.type === 'p' && tree.props.children === 'noConversations')).toBeDefined()
+    expect(find(page, (tree) => tree.type === 'p' && tree.props.children === 'loadFailed')).toBeDefined()
+
+    getAgentConversations.mockResolvedValue({
+      items: [{ id: 'conversation-1', title: 'One', message_count: 1, created_at: '', updated_at: '' }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    })
+    const retry = find(page, (tree) => tree.type === 'button' && tree.props.children === 'retry')
+    await (retry.props.onClick as () => Promise<void>)()
+
+    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 1 }))
+    expect((state[2] as Array<{ id: string }>).map((conversation) => conversation.id)).toEqual(['conversation-1'])
+    expect(state[7]).toBeNull()
   })
 
   test('closes a conversation drawer after deleting its selected conversation', async () => {
     getAgentConversations.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
     await renderLoadedPage()
-    state[9] = true
-    state[10] = { id: 'conversation-1', messages: [] }
-    state[12] = 'conversation-1'
+    state[11] = true
+    state[12] = { id: 'conversation-1', messages: [] }
+    state[14] = 'conversation-1'
     const page = renderLogsPage()
 
     await (find(page, (tree) => tree.type === 'alert-dialog-action').props.onClick as () => Promise<void>)()
 
-    expect(state[10]).toBeNull()
-    expect(state[9]).toBe(false)
+    expect(state[12]).toBeNull()
+    expect(state[11]).toBe(false)
   })
   test('opens the drawer when conversation detail cannot be loaded', async () => {
     getAgentConversations.mockResolvedValue({
@@ -297,20 +324,20 @@ describe('platform agent logs page', () => {
     await (find(page, (tree) => tree.type === 'tr' && tree.props.onClick).props.onClick as () => Promise<void>)()
 
     expect(getConversation).toHaveBeenCalledWith('conversation-1')
-    expect(state[9]).toBe(true)
-    expect(state[11]).toBe(false)
+    expect(state[11]).toBe(true)
+    expect(state[13]).toBe(false)
   })
 
   test('closes the delete confirmation when deletion fails', async () => {
     deleteConversation.mockRejectedValueOnce(new Error('unavailable'))
     await renderLoadedPage()
-    state[12] = 'conversation-1'
+    state[14] = 'conversation-1'
     const page = renderLogsPage()
 
     await (find(page, (tree) => tree.type === 'alert-dialog-action').props.onClick as () => Promise<void>)()
 
     expect(deleteConversation).toHaveBeenCalledWith('conversation-1')
-    expect(state[12]).toBeNull()
+    expect(state[14]).toBeNull()
   })
 
 
@@ -329,37 +356,204 @@ describe('platform agent logs page', () => {
     expect(find(page, (tree) => tree.type === 'p' && tree.props.children === 'noSearchResults')).toBeDefined()
   })
 
-  test('uses the pagination first, previous, and last controls for their target pages', async () => {
-    getAgentConversations.mockResolvedValue({ items: [], total: 41, page: 1, page_size: 20 })
-    let page = await renderLoadedPage()
+  test('appends the next page, deduplicates ids, and stops at the total', async () => {
+    const pageOne = {
+      items: [
+        { id: 'conversation-1', title: 'One', message_count: 1, created_at: '', updated_at: '' },
+        { id: 'conversation-2', title: 'Two', message_count: 2, created_at: '', updated_at: '' },
+      ],
+      total: 3,
+      page: 1,
+      page_size: 20,
+    }
+    const pageTwo = {
+      items: [
+        { id: 'conversation-2', title: 'Two', message_count: 2, created_at: '', updated_at: '' },
+        { id: 'conversation-3', title: 'Three', message_count: 3, created_at: '', updated_at: '' },
+        { id: 'conversation-3', title: 'Three', message_count: 3, created_at: '', updated_at: '' },
+      ],
+      total: 3,
+      page: 2,
+      page_size: 20,
+    }
+    getAgentConversations.mockImplementation((_agentId: string, options: { page?: number }) =>
+      Promise.resolve(options.page === 2 ? pageTwo : pageOne)
+    )
 
-    const next = find(page, (tree) => tree.type === 'button' && tree.props['aria-label'] === 'next')
-    await (next.props.onClick as () => Promise<void>)()
-    page = renderLogsPage()
-    expect(find(page, (tree) => tree.type === 'button' && tree.props['aria-label'] === 'prev').props.disabled).toBe(false)
+    await renderLoadedPage()
+    await flush()
+    expect(infiniteOptions?.hasMore).toBe(true)
 
-    const previous = find(page, (tree) => tree.type === 'button' && tree.props['aria-label'] === 'prev')
-    await (previous.props.onClick as () => Promise<void>)()
+    await infiniteOptions?.onLoadMore()
+
+    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 2 }))
+    expect((state[2] as Array<{ id: string }>).map((conversation) => conversation.id)).toEqual([
+      'conversation-1',
+      'conversation-2',
+      'conversation-3',
+    ])
+    expect(state[3]).toBe(3)
+    expect(state[4]).toBe(2)
+
+    renderLogsPage()
+    expect(infiniteOptions?.hasMore).toBe(false)
+  })
+
+  test('suppresses duplicate load-more requests in the same tick', async () => {
+    const pageOne = { items: [], total: 41, page: 1, page_size: 20 }
+    const pageTwo = {
+      items: [{ id: 'conversation-1', title: 'One', message_count: 1, created_at: '', updated_at: '' }],
+      total: 41,
+      page: 2,
+      page_size: 20,
+    }
+    getAgentConversations.mockImplementation((_agentId: string, options: { page?: number }) =>
+      Promise.resolve(options.page === 2 ? pageTwo : pageOne)
+    )
+
+    await renderLoadedPage()
+    await flush()
+
+    const callsBefore = getAgentConversations.mock.calls.length
+    const first = infiniteOptions?.onLoadMore()
+    const second = infiniteOptions?.onLoadMore()
+    await Promise.all([first, second])
+
+    expect(getAgentConversations.mock.calls.length).toBe(callsBefore + 1)
+    expect(state[2]).toHaveLength(1)
+  })
+
+  test('stops paging when a next page adds no new conversations', async () => {
+    const pageOne = {
+      items: [{ id: 'conversation-1', title: 'One', message_count: 1, created_at: '', updated_at: '' }],
+      total: 41,
+      page: 1,
+      page_size: 20,
+    }
+    getAgentConversations.mockImplementation((_agentId: string, options: { page?: number }) =>
+      Promise.resolve(options.page === 2
+        ? { items: [], total: 41, page: 2, page_size: 20 }
+        : pageOne)
+    )
+
+    await renderLoadedPage()
+    await flush()
+    expect(infiniteOptions?.hasMore).toBe(true)
+
+    await infiniteOptions?.onLoadMore()
+
+    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 2 }))
+    expect((state[2] as Array<{ id: string }>).map((conversation) => conversation.id)).toEqual(['conversation-1'])
+    expect(state[3]).toBe(1)
+
+    renderLogsPage()
+    expect(infiniteOptions?.hasMore).toBe(false)
+  })
+
+  test('resets to page one and discards a stale page-two response when a filter changes', async () => {
+    const pageOne = {
+      items: [{ id: 'conversation-old', title: 'Old', message_count: 1, created_at: '', updated_at: '' }],
+      total: 2,
+      page: 1,
+      page_size: 20,
+    }
+    getAgentConversations.mockImplementation(() => Promise.resolve(pageOne))
+    const page = await renderLoadedPage()
+    await flush()
+
+    const stalePage = Promise.withResolvers<{
+      items: Array<{ id: string; title: string; message_count: number; created_at: string; updated_at: string }>
+      total: number
+    }>()
+    getAgentConversations.mockImplementation((_agentId: string, options: { page?: number }) => {
+      if (options.page === 2) return stalePage.promise
+      return Promise.resolve({
+        items: [{ id: 'conversation-new', title: 'New', message_count: 1, created_at: '', updated_at: '' }],
+        total: 1,
+        page: 1,
+        page_size: 20,
+      })
+    })
+
+    const stale = infiniteOptions?.onLoadMore()
+
+    const selects: Tree[] = []
+    const collect = (node: ReactNode) => {
+      const resolved = resolve(node)
+      if (!resolved || typeof resolved !== 'object' || !('type' in resolved)) return
+      const tree = resolved as Tree
+      if (tree.type === 'select') selects.push(tree)
+      const children = tree.props.children
+      for (const child of Array.isArray(children) ? children : [children]) collect(child as ReactNode)
+    }
+    collect(page)
+    ;(selects[0].props.onValueChange as (value: string) => void)('7d')
+    renderLogsPage()
+    await flush()
+
     expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 1 }))
+    expect((state[2] as Array<{ id: string }>).map((conversation) => conversation.id)).toEqual(['conversation-new'])
 
-    page = renderLogsPage()
-    const last = find(page, (tree) => tree.type === 'button' && tree.props['aria-label'] === 'pagination.last')
-    await (last.props.onClick as () => Promise<void>)()
-    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 3 }))
-    page = renderLogsPage()
-    const first = find(page, (tree) => tree.type === 'button' && tree.props['aria-label'] === 'pagination.first')
-    await (first.props.onClick as () => Promise<void>)()
-    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 1 }))
+    stalePage.resolve({
+      items: [{ id: 'conversation-stale', title: 'Stale', message_count: 1, created_at: '', updated_at: '' }],
+      total: 2,
+    })
+    await stale
+    expect((state[2] as Array<{ id: string }>).map((conversation) => conversation.id)).toEqual(['conversation-new'])
+    expect(state[3]).toBe(1)
+  })
+
+  test('keeps loaded conversations after a next-page error and retries manually', async () => {
+    const pageOne = {
+      items: [{ id: 'conversation-1', title: 'One', message_count: 1, created_at: '', updated_at: '' }],
+      total: 2,
+      page: 1,
+      page_size: 20,
+    }
+    const pageTwo = {
+      items: [{ id: 'conversation-2', title: 'Two', message_count: 2, created_at: '', updated_at: '' }],
+      total: 2,
+      page: 2,
+      page_size: 20,
+    }
+    getAgentConversations.mockImplementation((_agentId: string, options: { page?: number }) =>
+      options.page === 2 ? Promise.reject(new Error('unavailable')) : Promise.resolve(pageOne)
+    )
+    await renderLoadedPage()
+    await flush()
+
+    await infiniteOptions?.onLoadMore()
+
+    expect((state[2] as Array<{ id: string }>).map((conversation) => conversation.id)).toEqual(['conversation-1'])
+    expect(state[6]).toBe(false)
+    expect(state[7]).toEqual({ page: 2, append: true })
+
+    const page = renderLogsPage()
+    expect(infiniteOptions?.hasMore).toBe(false)
+    await flush()
+
+    getAgentConversations.mockImplementation((_agentId: string, options: { page?: number }) =>
+      Promise.resolve(options.page === 2 ? pageTwo : pageOne)
+    )
+    const retry = find(page, (tree) => tree.type === 'button' && tree.props.children === 'retry')
+    await (retry.props.onClick as () => Promise<void>)()
+
+    expect(getAgentConversations).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ page: 2 }))
+    expect((state[2] as Array<{ id: string }>).map((conversation) => conversation.id)).toEqual([
+      'conversation-1',
+      'conversation-2',
+    ])
+    expect(state[3]).toBe(2)
   })
 
   test('canceling the delete confirmation closes it without deleting', async () => {
     await renderLoadedPage()
-    state[12] = 'conversation-1'
+    state[14] = 'conversation-1'
     const page = renderLogsPage()
 
     ;(find(page, (tree) => tree.type === 'alert-dialog').props.onOpenChange as (open: boolean) => void)(false)
 
-    expect(state[12]).toBeNull()
+    expect(state[14]).toBeNull()
     expect(deleteConversation).not.toHaveBeenCalled()
   })
 
