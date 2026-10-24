@@ -317,7 +317,6 @@ export type AgentsMessages = {
         title: string
         tooltip: string
         description: string
-        contextHint: string
       }
       userInput: {
         title: string

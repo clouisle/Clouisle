@@ -674,16 +674,6 @@ export function AgentOrchestrationForm({
           <p className="text-xs text-muted-foreground">
             {t('attachments.description')}
           </p>
-
-          {enableAttachments && (
-            <div className="space-y-4 pt-2 border-t">
-              <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
-                <p className="text-xs text-cyan-700 dark:text-cyan-300">
-                  {t('attachments.contextHint')}
-                </p>
-              </div>
-            </div>
-          )}
         </div>
       </ConfigCard>
 
