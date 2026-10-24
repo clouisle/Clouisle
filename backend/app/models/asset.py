@@ -18,6 +18,8 @@ class AssetSource(str, Enum):
     GENERATED_MEDIA = "generated_media"
     SANDBOX_ARTIFACT = "sandbox_artifact"
     WORKFLOW_OUTPUT = "workflow_output"
+    # Private, non-attachable text representation derived from another Asset.
+    DERIVED_TEXT = "derived_text"
 
 
 class AssetStatus(str, Enum):
@@ -25,6 +27,9 @@ class AssetStatus(str, Enum):
     DELETED = "deleted"
     EXPIRED = "expired"
     FAILED = "failed"
+    # Publication-in-progress for private derived representations. Never
+    # returned by asset reads because every query filters AVAILABLE.
+    PENDING = "pending"
 
 
 class AssetScopeType(str, Enum):
@@ -59,6 +64,9 @@ class Asset(models.Model):
     parent_id: UUID | None  # type: ignore[assignment]
 
     storage_key = fields.CharField(max_length=1000, unique=True)
+    # Durable publication identity for derived document text. Unique across
+    # processes; NULL for ordinary uploads and generated media.
+    representation_key = fields.CharField(max_length=200, null=True, unique=True)
     original_filename = fields.CharField(max_length=500)
     display_filename = fields.CharField(max_length=500)
     content_type = fields.CharField(max_length=255)

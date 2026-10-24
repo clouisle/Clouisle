@@ -465,25 +465,18 @@ async def test_existing_visibility_columns_only_change_future_default(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_assets_tables_create_metadata_and_reference_schema(
+async def test_assets_tables_representation_migration_failure_is_required(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     conn = SimpleNamespace(execute_query=AsyncMock())
+    migration = AsyncMock(
+        side_effect=[(1, []), RuntimeError("representation DDL failed")]
+    )
     monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+    monkeypatch.setattr(init_data, "execute_startup_migration_query", migration)
 
-    await init_data.init_assets_tables()
-
-    statements = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
-    assert len(statements) == 7
-    assert any("CREATE TABLE IF NOT EXISTS assets" in s for s in statements)
-    assert any("CHECK (size >= 0)" in s for s in statements)
-    assert any("CREATE TABLE IF NOT EXISTS message_assets" in s for s in statements)
-    assert any("UNIQUE(message_id, asset_id, role)" in s for s in statements)
-    assert any("CREATE TABLE IF NOT EXISTS asset_scope_refs" in s for s in statements)
-    assert any(
-        "UNIQUE(scope_type, scope_id, asset_id)" in s for s in statements
-    ) and any("UNIQUE(scope_type, scope_id, ref)" in s for s in statements)
-    assert sum("CREATE INDEX IF NOT EXISTS" in s for s in statements) == 4
+    with pytest.raises(RuntimeError, match="representation DDL failed"):
+        await init_data.init_assets_tables()
 
 
 @pytest.mark.asyncio

@@ -1296,6 +1296,7 @@ async def init_assets_tables() -> None:
             created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
             parent_id UUID REFERENCES assets(id) ON DELETE SET NULL,
             storage_key VARCHAR(1000) NOT NULL UNIQUE,
+            representation_key VARCHAR(200) UNIQUE,
             original_filename VARCHAR(500) NOT NULL,
             display_filename VARCHAR(500) NOT NULL,
             content_type VARCHAR(255) NOT NULL,
@@ -1317,6 +1318,35 @@ async def init_assets_tables() -> None:
     await conn.execute_query("""
         CREATE INDEX IF NOT EXISTS idx_assets_checksum ON assets(checksum)
     """)
+    # Durable identity for private derived document representations. Existing
+    # installations predate the column; ordinary Assets keep it NULL. Fresh
+    # tables already declare the column UNIQUE above, so only older databases
+    # need the additive DDL (avoiding a duplicate unique index).
+    _, rows = await execute_startup_migration_query(
+        conn,
+        """
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'assets'
+          AND table_schema = 'public'
+          AND column_name = 'representation_key'
+        """,
+    )
+    if not rows:
+        await execute_startup_migration_query(
+            conn,
+            """
+            ALTER TABLE assets
+            ADD COLUMN representation_key VARCHAR(200)
+            """,
+        )
+        await execute_startup_migration_query(
+            conn,
+            """
+            CREATE UNIQUE INDEX uq_assets_representation_key
+            ON assets(representation_key)
+            WHERE representation_key IS NOT NULL
+            """,
+        )
     await conn.execute_query("""
         CREATE TABLE IF NOT EXISTS message_assets (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
