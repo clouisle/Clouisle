@@ -111,6 +111,8 @@ async def test_get_tool_display_names_covers_builtin_custom_and_skill_sources(
     skill = SimpleNamespace(display_name="Skill Display")
     translate = Mock(
         side_effect=lambda key, **_kwargs: {
+            "asset_tool_list": "List Attachments",
+            "asset_tool_view": "View Attachment",
             "asset_tool_inspect": "Inspect Attachment",
             "asset_tool_read": "Read Attachment",
             "asset_tool_parse": "Parse Attachment",
@@ -150,6 +152,8 @@ async def test_get_tool_display_names_covers_builtin_custom_and_skill_sources(
     )
 
     assert await tool_utils.get_tool_display_names(agent, "zh-CN") == {
+        "list_assets": "List Attachments",
+        "view_asset": "View Attachment",
         "inspect_asset": "Inspect Attachment",
         "read_asset": "Read Attachment",
         "parse_asset": "Parse Attachment",

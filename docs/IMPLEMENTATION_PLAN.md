@@ -1,6 +1,11 @@
 # Implementation Plan
 
 ## Active
+- **backend-push-gate-repair** — In progress. See `docs/plan/backend-push-gate-repair.md`.
+  - [x] 1. Repair backend regression contracts and serialization
+  - [x] 2. Verify unchanged backend/frontend coverage gates
+  - [ ] 3. Commit and push with hooks enabled
+
 - **ask-user-custom-answers-and-skip** — In progress. Allow custom text alongside ask_user choices and permit users to explicitly skip every question while preserving a model-visible durable result. See `docs/plan/ask-user-custom-answers-and-skip.md`
   - [ ] 1. Define custom-answer and explicit-skip contract
   - [ ] 2. Extend durable answer submission

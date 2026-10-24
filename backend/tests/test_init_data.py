@@ -435,6 +435,7 @@ async def test_init_db_continues_after_optional_migration_failures(
             init_data, name, AsyncMock(side_effect=RuntimeError(f"{name} failed"))
         )
     monkeypatch.setattr(init_data, "init_model_provider_display_name", AsyncMock())
+    monkeypatch.setattr(init_data, "migrate_model_input_modalities", AsyncMock())
 
     monkeypatch.setattr(init_data.SystemPermissions, "get_all_definitions", lambda: [])
     monkeypatch.setattr(init_data.Permission, "get_or_create", AsyncMock())
@@ -482,6 +483,7 @@ async def test_init_db_fails_when_provider_display_name_migration_fails(
         "init_agent_tools_credentials",
         "init_permission_is_system_field",
         "drop_model_provider_uniqueness",
+        "migrate_model_input_modalities",
     ):
         monkeypatch.setattr(init_data, name, AsyncMock())
 
@@ -545,6 +547,13 @@ async def test_init_db_fails_when_provider_display_name_migration_fails(
             2,
             "ADD COLUMN IF NOT EXISTS provider_display_name",
         ),
+        (init_data.migrate_model_input_modalities, [(0, [])], 1, None),
+        (
+            init_data.migrate_model_input_modalities,
+            [(1, ["models"]), (0, [])],
+            3,
+            "capabilities::jsonb - 'vision'",
+        ),
     ],
 )
 async def test_simple_startup_migrations_cover_absent_existing_and_create_paths(
@@ -582,6 +591,20 @@ async def test_simple_startup_migrations_propagate_schema_change_failure(
 
     with pytest.raises(RuntimeError, match="schema change failed"):
         await migration()
+
+
+@pytest.mark.asyncio
+async def test_model_input_modalities_migration_propagates_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failure = RuntimeError("cannot rewrite model capabilities")
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(side_effect=[(1, ["models"]), failure])
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    with pytest.raises(RuntimeError, match="cannot rewrite model capabilities"):
+        await init_data.migrate_model_input_modalities()
 
 
 @pytest.mark.asyncio

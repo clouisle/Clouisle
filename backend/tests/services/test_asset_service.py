@@ -139,8 +139,8 @@ def test_format_manifest_reports_no_available_attachments():
 
     assert manifest == (
         "<available_assets>\n"
-        "No attachments are available in this conversation. "
-        "Do not call Asset tools or guess refs.\n"
+        "This preview is empty. Use list_assets to discover older available assets. "
+        "Never guess refs.\n"
         "</available_assets>"
     )
 
@@ -346,6 +346,7 @@ async def test_build_conversation_manifest_dedupes_and_backfills(monkeypatch):
         q.prefetch_related = MagicMock(return_value=q)
         q.order_by = MagicMock(return_value=q)
         q.limit = AsyncMock(return_value=rows)
+        q.exists = AsyncMock(return_value=False)
         return q
 
     links = [

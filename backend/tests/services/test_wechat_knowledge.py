@@ -53,7 +53,7 @@ async def vision_model_for(team):
         provider="openai",
         model_id="gpt-4o-mini",
         model_type=ModelType.CHAT.value,
-        capabilities={"vision": True},
+        capabilities={"input_modalities": ["text", "image"]},
     )
     await TeamModel.create(id=uuid4(), team=team, model=model)
     return model

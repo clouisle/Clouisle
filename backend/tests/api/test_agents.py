@@ -233,7 +233,14 @@ async def test_build_agent_outputs_relations_and_sanitizes_media(monkeypatch):
         video_generation_config={"allow_model_override": True},
         visibility=AgentVisibility.PUBLIC,
     )
-    model = SimpleNamespace(name="Model", provider="dummy", model_id="dummy-model")
+    model = SimpleNamespace(
+        name="Model",
+        provider="dummy",
+        model_id="dummy-model",
+        model_type="chat",
+        capabilities={},
+        base_url=None,
+    )
     team_model = SimpleNamespace(id=item.model_id, model=model)
     kb = SimpleNamespace(
         id=uuid4(), name="KB", description=None, icon=None, document_count=3
@@ -890,7 +897,14 @@ async def test_update_agent_persists_remaining_fields(monkeypatch):
     monkeypatch.setattr(agents.Agent, "filter", lambda **_kwargs: Query(None))
     team_model = SimpleNamespace(
         id=model_id,
-        model=SimpleNamespace(name="Model", provider="dummy", model_id="model"),
+        model=SimpleNamespace(
+            name="Model",
+            provider="dummy",
+            model_id="model",
+            model_type="chat",
+            capabilities={},
+            base_url=None,
+        ),
     )
     monkeypatch.setattr(agents.TeamModel, "filter", lambda **_kwargs: Query(team_model))
     monkeypatch.setattr(agents.Agent, "get", lambda **_kwargs: Query(item))

@@ -134,12 +134,15 @@ class GeminiAdapter(BaseChatAdapter):
                                 raise InvalidRequestError(
                                     message=f"{part_type.title()} content is missing"
                                 )
-                            if media.asset_ref:
+                            if getattr(media, "asset_ref", None):
                                 raise InvalidRequestError(
                                     message="Unresolved asset reference cannot be serialized"
                                 )
                             if media.base64:
-                                mime = media.mime_type or f"{part_type}/{media.format}"
+                                media_format = getattr(media, "format", None) or "png"
+                                mime = getattr(media, "mime_type", None) or (
+                                    f"{part_type}/{media_format}"
+                                )
                                 parts.append(
                                     {
                                         "inline_data": {
@@ -152,7 +155,10 @@ class GeminiAdapter(BaseChatAdapter):
                                 parts.append(
                                     {
                                         "file_data": {
-                                            "mime_type": media.mime_type or "image/png",
+                                            "mime_type": getattr(
+                                                media, "mime_type", None
+                                            )
+                                            or "image/png",
                                             "file_uri": media.url,
                                         }
                                     }
@@ -161,7 +167,9 @@ class GeminiAdapter(BaseChatAdapter):
                                 parts.append(
                                     {
                                         "file_data": {
-                                            "mime_type": media.mime_type,
+                                            "mime_type": getattr(
+                                                media, "mime_type", None
+                                            ),
                                             "file_uri": media.url,
                                         }
                                     }

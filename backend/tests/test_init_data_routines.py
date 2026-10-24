@@ -718,6 +718,7 @@ async def test_init_db_seeds_permissions_roles_and_settings_end_to_end(
         "init_clouisle_import_sessions_table",
         "drop_obsolete_retrieval_evaluation_tables",
         "init_model_provider_display_name",
+        "migrate_model_input_modalities",
     ]
     for name in optional_migrations:
         monkeypatch.setattr(init_data, name, AsyncMock())

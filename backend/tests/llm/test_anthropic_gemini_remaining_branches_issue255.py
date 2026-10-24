@@ -6,6 +6,7 @@ import pytest
 
 from app.llm.adapters.chat.anthropic_adapter import AnthropicAdapter
 from app.llm.adapters.chat.gemini_adapter import GeminiAdapter
+from app.llm.errors import InvalidRequestError
 from app.llm.types import FinishReason, FunctionCall, Message, MessageRole, ToolCall
 
 
@@ -82,6 +83,13 @@ def test_remaining_conversion_and_extraction_branches():
     assert converted[-1]["content"] == ""
 
     gemini = adapter(GeminiAdapter)
+    with pytest.raises(InvalidRequestError, match="Image content is missing"):
+        gemini._convert_messages(messages)
+    messages[1].content = [
+        part
+        for part in messages[1].content
+        if not (getattr(part, "type", None) == "image" and part.image is None)
+    ]
     system, converted = gemini._convert_messages(messages)
     assert system == "rules\nmore"
     assert converted[0]["parts"][1]["inline_data"]["mime_type"] == "image/png"

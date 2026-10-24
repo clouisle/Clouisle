@@ -35,6 +35,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from app.api.v1.endpoints.chat_helpers import (
+    get_tool_execution_payloads,
     iter_with_idle_timeout,
 )
 from app.api.v1.endpoints.chat_sse import (
@@ -481,8 +482,7 @@ class AgentLoop:
                     None,
                     record,
                 )
-            display_result = json.dumps(tool_result, ensure_ascii=False)
-            llm_result = display_result
+            display_result, llm_result = get_tool_execution_payloads(tool_result)
             metric_status = "completed"
             if tool_started_at is not None:
                 try:
