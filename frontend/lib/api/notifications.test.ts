@@ -84,7 +84,7 @@ describe('notificationsApi', () => {
       title: 'Maintenance',
       content: 'Scheduled maintenance',
       level: 'medium' as const,
-      notify_channels: ['email', 'slack'] as const,
+      notify_channels: ['email', 'webhook'] as const,
     }
 
     await notificationsApi.adminList(params)

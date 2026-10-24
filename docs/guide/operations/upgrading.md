@@ -10,6 +10,35 @@ Use a maintenance window for upgrades. The supplied Compose file references preb
 - [ ] Confirm the rollback image tag/digest and available backup restore path.
 - [ ] Schedule and announce the maintenance window.
 
+## WeChat polling cutover
+
+This release replaces all-bindings polling with bounded batches on `default`, consumed by ordinary workers. Stop Beat first. If an older dedicated polling worker exists, drain its `wechat_poll` backlog before stopping it; otherwise wait for its 90-second claims to expire and let the new dispatcher recover them. Start the matching API for schema upgrades, then ordinary workers, then Beat. Polling shares worker slots with other tasks; no dedicated service or compatibility queue consumer is deployed.
+
+Agent wakeups now use `app.tasks.wechat_agent.process_claimed_binding_task` with a required ownership token. The former `process_binding_task` message name is not registered, so old one-argument messages cannot execute under the new protocol. Restart all producers and workers together. Old deliveries may be logged as unregistered and discarded; pending receipts and unsent replies remain in PostgreSQL and the enabled recovery task publishes fresh owned wakeups. Do not purge shared Redis queues.
+
+Before enabling WeChat at scale, install these PostgreSQL indexes in autocommit mode (each statement outside a transaction). They are intentionally not part of API startup: concurrent index builds may take longer than startup migration deadlines. `IF NOT EXISTS` does not repair a failed/invalid index; check index validity and retry failed builds before rollout.
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS wechat_poll_due_idx
+ON wechat_knowledge_bindings (poll_next_at, id)
+WHERE status = 'connected' AND purpose IN ('agent', 'knowledge_collection') AND token <> '';
+CREATE INDEX CONCURRENTLY IF NOT EXISTS wechat_agent_recovery_due_idx
+ON wechat_knowledge_bindings (agent_recovery_at, id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS wechat_agent_receipt_pending_idx
+ON wechat_agent_receipts (binding_id) WHERE status IN ('pending', 'submitted');
+CREATE INDEX CONCURRENTLY IF NOT EXISTS integration_delivery_pending_idx
+ON integration_deliveries (provider_type, status, created_at)
+WHERE status IN ('pending', 'sending');
+```
+
+Verify the due-binding and recovery queries with `EXPLAIN (ANALYZE, BUFFERS)` on representative data. Match polling limits across replicas; raising replicas does not raise the global `WECHAT_POLL_MAX_BATCHES` cap. Validate new-message intake, empty-message behavior, Agent replies, feature disable/re-enable and worker-loss recovery before reopening traffic.
+
+## Messaging delivery queue cutover
+
+Feishu and WeChat Agent chat now share one durable outbound table, `integration_deliveries`. On first startup, the API copies rows from `feishu_agent_deliveries` and `wechat_agent_deliveries`, then drops both tables. Deploy the API and every worker (including Celery Beat hosts) to the matching version before accepting traffic or allowing queued work to resume: an older worker would insert into a table that no longer exists. Roll back only together with the database backup taken before the upgrade; restoring the old image alone cannot recreate the dropped queue.
+
+Inspect outcomes afterward on the **Delivery log** page (`/deliveries`), or through `GET /api/v1/admin/deliveries`.
+
 ## Docker Compose Upgrade
 
 Run from the installation directory that contains the active `docker-compose.yml` and `.env` (for the installer default, `/opt/clouisle`). The commands below replace `IMAGE_TAG` in your Compose/environment configuration with the tag you have published; they do not build images locally.
@@ -20,8 +49,7 @@ git pull          # only if this directory is a source checkout; installer insta
 
 # Pull the pinned images and recreate services. This is a stop/recreate operation, not rolling restart.
 docker compose pull
-docker compose up -d --force-recreate
-
+docker compose up -d --force-recreate --remove-orphans
 # Verify every supplied service and the API health endpoint
 docker compose ps
 docker compose logs --tail=50 api worker sandbox-worker beat frontend

@@ -260,7 +260,7 @@ Example Response:
 
 ### Available Integrations
 
-> **Note:** Not implemented / Roadmap. There is no "integration" tool type (Salesforce, HubSpot, Slack apps, GitHub, Jira, etc.). Tool types are limited to `builtin`, `custom` (HTTP, Code, or Database), and `mcp` (MCP server tools). External services are integrated either as HTTP custom tools, MCP servers, or through the notification channel settings (DingTalk, WeChat Work, Feishu, Slack, webhook) in Site Settings.
+> **Note:** Not implemented / Roadmap. There is no "integration" tool type (Salesforce, HubSpot, Slack apps, GitHub, Jira, etc.). Tool types are limited to `builtin`, `custom` (HTTP, Code, or Database), and `mcp` (MCP server tools). External services are integrated either as HTTP custom tools, MCP servers, or through the Email and generic Webhook notification settings in Site Settings.
 
 ## Testing Tools
 

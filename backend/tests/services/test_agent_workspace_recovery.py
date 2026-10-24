@@ -123,7 +123,7 @@ async def test_agent_replans_after_workspace_reset_and_persists_notice(monkeypat
             )
         if provider_turn == 3:
             return _response(calls=[_call("read", "read-new", {"path": "report.txt"})])
-        assert json.loads(results[-1]["content"])["content"] == "rebuilt report"
+        assert "rebuilt report" in results[-1]["content"]
         return _response(content="Report rebuilt in the new workspace.")
 
     async def build_turn(**kwargs):

@@ -3,7 +3,7 @@
 This chart deploys Clouisle on Kubernetes with the current service model:
 
 - `api`
-- `worker`
+- `worker` (consumes `default,agent,knowledge,workflow`, including WeChat poll tasks on `default`)
 - `sandbox-worker`
 - `beat`
 - `frontend`
@@ -74,7 +74,7 @@ helm upgrade --install clouisle deploy/helm/clouisle \
 
 | Value | Default | Description |
 |-------|---------|-------------|
-| `images.backend.repository` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend` | API, worker, and beat image |
+| `images.backend.repository` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-backend` | API, workers, and beat image |
 | `images.sandboxWorker.repository` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-sandbox-worker` | Sandbox worker image |
 | `images.frontend.repository` | `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-frontend` | Frontend image |
 | `config.API_BASE_URL` | `http://api:8000` | Internal API URL |
@@ -113,6 +113,12 @@ The hostPath must be writable by the configured worker UID. Restricted Pod Secur
 ## Beat Replica Safety
 
 `beat.replicas` must remain `1`. The chart fails rendering if this value is changed to avoid duplicate scheduled tasks.
+
+## WeChat Polling
+
+WeChat poll tasks are routed to the `default` queue consumed by the ordinary `worker`. They share its configured Celery concurrency slots with other default-queue tasks; no separate poll worker process, deployment, or queue is created. Keep the `WECHAT_POLL_BATCH_SIZE`, `WECHAT_POLL_CONCURRENCY`, and `WECHAT_POLL_MAX_BATCHES` settings to retain bounded polling.
+
+When upgrading from the dedicated `wechat_poll` queue, temporarily keep the old poll worker running until that queue is drained. Then stop the old worker and deploy the new version, which routes poll tasks to `default`. Do not add a compatibility consumer for the old queue.
 
 ## Validation
 

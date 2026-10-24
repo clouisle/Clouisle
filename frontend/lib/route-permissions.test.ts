@@ -31,8 +31,15 @@ describe('route permissions', () => {
   })
 
   test('uses the most specific configured route', () => {
-    expect(getRequiredPermissionForPath('/site-settings/sso')).toBe('admin:sso:read')
-    expect(getRequiredPermissionForPath('/site-settings/other')).toBe('admin:settings:read')
+    expect(getRequiredPermissionForPath('/site-settings/integrations')).toBe('admin:integrations:login:read')
+    expect(getRoutePermissionConfig('/site-settings/integrations')?.permissionMode).toBe('any')
+  })
+
+  test('allows either integration read domain without requiring general settings access', () => {
+    expect(canAccessRoute('/site-settings/integrations', (permission) => permission === 'admin:integrations:login:read')).toBe(true)
+    expect(canAccessRoute('/site-settings/integrations', (permission) => permission === 'admin:integrations:settings:read')).toBe(true)
+    expect(canAccessRoute('/site-settings/integrations', (permission) => permission === 'admin:settings:read')).toBe(false)
+    expect(canAccessRoute('/site-settings/integrations', () => false)).toBe(false)
   })
 
   test('allows unconfigured routes and checks configured permissions', () => {
@@ -50,5 +57,17 @@ describe('route permissions', () => {
     const hasPermission = (permission: string) => permission === 'apikey:read'
     expect(canAccessRoute('/app/api-keys', hasPermission)).toBe(true)
     expect(canAccessRoute('/app/api-keys', () => false)).toBe(false)
+  })
+  test('gates builtin integration sub-pages on integration settings permission', () => {
+    const routes = [
+      '/site-settings/integrations/email',
+      '/site-settings/integrations/webhook',
+      '/site-settings/integrations/feishu',
+    ]
+    for (const route of routes) {
+      expect(getRequiredPermissionForPath(route)).toBe('admin:integrations:settings:read')
+      expect(canAccessRoute(route, (permission) => permission === 'admin:integrations:settings:read')).toBe(true)
+      expect(canAccessRoute(route, (permission) => permission === 'admin:integrations:login:read')).toBe(false)
+    }
   })
 })

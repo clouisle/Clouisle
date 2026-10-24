@@ -154,7 +154,7 @@ async def test_discover_models_normalizes_safe_remote_metadata(monkeypatch):
     assert rich.context_length == 128000
     assert rich.max_output_tokens == 8192
     assert rich.capabilities == {
-        "vision": True,
+        "input_modalities": ["text", "image"],
         "streaming": False,
         "function_call": True,
         "json_mode": True,

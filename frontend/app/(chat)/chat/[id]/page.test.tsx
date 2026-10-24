@@ -57,8 +57,9 @@ let variableValues: Record<string, unknown> = {}
 let variableAssetIdsChange: ((name: string, assetIds: string | string[] | null) => void) | undefined
 let chatContainerProps: Record<string, unknown> = {}
 let chatInputProps: Record<string, unknown> = {}
-let previewCanvasIsResizing = false
+let intersectionCallback: ((entries: Array<{ isIntersecting: boolean }>) => void) | undefined
 let conversationPanelResizeHandler: ((panelSize: { inPixels: number }) => void) | undefined
+let previewCanvasIsResizing = false
 let pendingAskUserFormProps: Record<string, unknown> = {}
 let faviconHref: string | null = null
 const router = { push }
@@ -183,6 +184,8 @@ const agent = {
   id: 'agent-1', name: 'Safe Agent', description: 'Helpful description', opening_message: '',
   icon: '', avatar_url: '', suggested_questions: ['First question', 'Second question'], variables: [],
  enable_attachments: false, attachment_config: undefined, hide_tool_calls: false, hide_message_actions: false, hide_reasoning: false,
+ input_modalities: ['text', 'image'],
+ enable_citations: false,
   hide_artifact_list: true,
   created_by: { username: 'owner' },
 }
@@ -197,7 +200,7 @@ function render(params: Promise<{ id: string }> = Promise.resolve({ id: 'agent-1
   return renderer!
 }
 async function flush() {
-  await act(async () => { await Promise.resolve(); await Promise.resolve() })
+  await act(async () => { for (let index = 0; index < 8; index++) await Promise.resolve() })
 }
 
 function output() { return JSON.stringify(renderer!.toJSON()) }
@@ -221,7 +224,7 @@ beforeEach(() => {
   variableValues = {}
   variableAssetIdsChange = undefined
   chatContainerProps = {}
-  chatInputProps = {}
+  intersectionCallback = undefined
   pendingAskUserFormProps = {}
   previewCanvasIsResizing = false
   conversationPanelResizeHandler = undefined
@@ -273,7 +276,10 @@ beforeEach(() => {
   Object.defineProperty(globalThis, 'IntersectionObserver', {
     configurable: true,
     value: class {
-      observe = observe
+      constructor(callback: (entries: Array<{ isIntersecting: boolean }>) => void) {
+        intersectionCallback = callback
+      }
+      observe = (target: unknown) => observe(target)
       disconnect = disconnect
     },
   })
@@ -373,6 +379,7 @@ describe('PublicChatPage', () => {
     expect(setConversationId).toHaveBeenCalledWith('conv-1')
     expect(setMessages).toHaveBeenCalledWith([{ id: 'converted-0', role: 'user', content: 'backend message' }])
     expect(renderer!.root.findAllByProps({ 'data-chat-container': true })).toHaveLength(1)
+    expect(chatContainerProps.hideCitations).toBe(true)
     expect(output()).toContain('First chat')
     expect(output()).toContain('untitledChat')
 
@@ -387,6 +394,80 @@ describe('PublicChatPage', () => {
     expect(output()).toContain('First chat')
     expect(output()).toContain('untitledChat')
     expect(renderer!.root.findAllByProps({ 'data-chat-container': true })).toHaveLength(1)
+  })
+  test('clears a failed URL conversation and reports its load error', async () => {
+    query = new URLSearchParams('conversation=missing-conversation')
+    getConversation.mockRejectedValueOnce(new Error('conversation unavailable'))
+
+    render()
+    await flush()
+
+    expect(getConversation).toHaveBeenCalledWith('missing-conversation')
+    expect(historyReplace).toHaveBeenCalledWith({}, '', expect.not.stringContaining('conversation='))
+    expect(toastError).toHaveBeenCalledWith('conversation unavailable')
+    expect(setMessages).not.toHaveBeenCalled()
+  })
+
+  test('loads the next conversation page when the history sentinel intersects', async () => {
+    let resolveFirstPage!: (value: { items: Array<{ id: string; title: string | null }>; total: number }) => void
+    getConversations.mockReset()
+    getConversations.mockImplementationOnce(() => new Promise((resolve) => { resolveFirstPage = resolve }))
+    getConversations.mockResolvedValueOnce({
+      items: [{ id: 'conv-3', title: 'Third chat' }],
+      total: 8,
+    })
+
+    render()
+    await flush()
+    expect(intersectionCallback).toBeUndefined()
+    await act(async () => { resolveFirstPage({ items: conversations, total: 8 }); await Promise.resolve() })
+    await flush()
+    expect(intersectionCallback).toBeDefined()
+
+    await act(async () => {
+      intersectionCallback!([{ isIntersecting: true }])
+      await Promise.resolve()
+    })
+    await flush()
+
+    expect(getConversations).toHaveBeenNthCalledWith(2, 'agent-1', { page: 2, pageSize: 5 })
+    expect(output()).toContain('Third chat')
+  })
+
+  test('does not switch conversation or navigate when its history load fails', async () => {
+    render()
+    await flush()
+    getConversation.mockRejectedValueOnce(new Error('history temporarily unavailable'))
+
+    const target = renderer!.root.findAllByType('div').find((node) => nodeText(node).includes('First chat') && node.props.onClick)!
+    await act(async () => target.props.onClick())
+    await flush()
+
+    expect(getConversation).toHaveBeenCalledWith('conv-1')
+    expect(toastError).toHaveBeenCalledWith('history temporarily unavailable')
+    expect(setConversationId).not.toHaveBeenCalled()
+    expect(historyPush).not.toHaveBeenCalled()
+  })
+
+  test('uploads document attachments before forwarding their metadata with the message', async () => {
+    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_attachments: true })
+    uploadFileWithProgress.mockResolvedValueOnce({ asset_id: 'asset-doc', url: 'https://files.example.test/doc.pdf' })
+    render()
+    await flush()
+    const document = {
+      id: 'doc', name: 'doc.pdf', size: 12, type: 'application/pdf',
+      file: new File(['document'], 'doc.pdf', { type: 'application/pdf' }), isDocument: true,
+    }
+
+    await act(async () => {
+      await (chatInputProps.onSubmit as (message: string, files: unknown[]) => Promise<void>)('summarize', [document])
+    })
+
+    expect(uploadFileWithProgress).toHaveBeenCalledWith(document.file, 'documents', expect.any(Function))
+    expect(sendMessage).toHaveBeenCalledWith('summarize', undefined, [{
+      asset_id: 'asset-doc', filename: 'doc.pdf', url: 'https://files.example.test/doc.pdf',
+      size: 12, mime_type: 'application/pdf',
+    }], [])
   })
 
   test('delays one title refresh for a newly created conversation', async () => {
@@ -684,6 +765,65 @@ describe('PublicChatPage', () => {
     expect(output().match(/Repeated chat/g)).toHaveLength(1)
     expect(output().match(/Other chat/g)).toHaveLength(1)
   })
+
+  test('loads the next conversation page when the history sentinel becomes visible', async () => {
+    let resolveFirstPage!: (value: { items: Array<{ id: string; title: string }>; total: number }) => void
+    getConversations.mockReset()
+    getConversations.mockImplementationOnce(() => new Promise((resolve) => { resolveFirstPage = resolve }))
+    getConversations.mockResolvedValueOnce({
+      items: [{ id: 'page-two-0', title: 'Page two conversation' }],
+      total: 6,
+    })
+    render()
+    await flush()
+    expect(intersectionCallback).toBeUndefined()
+    await act(async () => {
+      resolveFirstPage({
+        items: Array.from({ length: 5 }, (_, index) => ({ id: `page-one-${index}`, title: `Page one ${index}` })),
+        total: 6,
+      })
+      await Promise.resolve()
+    })
+    await flush()
+    expect(intersectionCallback).toBeDefined()
+    expect(getConversations).toHaveBeenCalledWith('agent-1', { page: 1, pageSize: 5 })
+    await act(async () => {
+      intersectionCallback!([{ isIntersecting: true }])
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(getConversations).toHaveBeenLastCalledWith('agent-1', { page: 2, pageSize: 5 })
+    expect(output()).toContain('Page two conversation')
+    expect(output()).toContain('Page one 0')
+  })
+
+  test('loads the configured embed greeting and closes bubble mode on request', async () => {
+    const onClose = mock()
+    getPublicAgent.mockResolvedValueOnce({
+      ...agent,
+      embed_config: { bubble: { greeting: 'Welcome to this chat' } },
+    })
+    act(() => {
+      renderer = create(
+        <PublicChatPage params={Promise.resolve({ id: 'agent-1' })} embedMode agentId="agent-1" mode="bubble" onClose={onClose} />,
+        { createNodeMock: () => ({}) },
+      )
+    })
+    await flush()
+
+    expect(setMessages).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: 'greeting',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'Welcome to this chat' }],
+      }),
+    ])
+    expect(getPublicAgent).toHaveBeenCalledWith('agent-1')
+    const close = renderer!.root.findByProps({ 'aria-label': 'backToHome' })
+    await act(async () => close.props.onClick())
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
   test('does not append an assistant loading placeholder when switching to a conversation with completed reasoning or tool output', async () => {
     getConversations.mockResolvedValueOnce({
       items: [
@@ -843,18 +983,8 @@ describe('PublicChatPage', () => {
     expect(sendMessage).toHaveBeenCalledTimes(1)
   })
 
-  test('converts image attachments and uploads documents with progress', async () => {
+  test('uploads image and document attachments with progress', async () => {
     getPublicAgent.mockResolvedValueOnce({ ...agent, enable_attachments: true })
-    class MockFileReader {
-      result: string | ArrayBuffer | null = null
-      onload: (() => void) | null = null
-      onerror: (() => void) | null = null
-      readAsDataURL(file: File) {
-        this.result = `data:${file.type};base64,c2FmZQ==`
-        this.onload?.()
-      }
-    }
-    Object.defineProperty(globalThis, 'FileReader', { configurable: true, value: MockFileReader })
     render()
     await flush()
 
@@ -863,7 +993,7 @@ describe('PublicChatPage', () => {
     uploadFileWithProgress.mockImplementation(async (file, category, onProgress) => {
       onProgress({ percent: 50 })
       return {
-        asset_id: category === 'images' ? 'image-asset' : 'document-asset',
+        asset_id: category === 'files' ? 'image-asset' : 'document-asset',
         url: `https://files.example.test/${file.name}`,
       }
     })
@@ -872,13 +1002,16 @@ describe('PublicChatPage', () => {
 
     expect(uploadFileWithProgress).toHaveBeenCalledTimes(2)
     expect(uploadFileWithProgress.mock.calls[0][0]).toBe(image.file)
-    expect(uploadFileWithProgress.mock.calls[0][1]).toBe('images')
+    expect(uploadFileWithProgress.mock.calls[0][1]).toBe('files')
     expect(uploadFileWithProgress.mock.calls[1][0]).toBe(documentFile.file)
     expect(uploadFileWithProgress.mock.calls[1][1]).toBe('documents')
     expect(sendMessage).toHaveBeenCalledWith(
       'with files',
-      [{ asset_id: 'image-asset', type: 'image_url', url: 'https://files.example.test/safe.png' }],
-      [{ asset_id: 'document-asset', filename: 'safe.pdf', url: 'https://files.example.test/safe.pdf', size: 4, mime_type: 'application/pdf' }],
+      undefined,
+      [
+        { asset_id: 'image-asset', filename: 'safe.png', url: 'https://files.example.test/safe.png', size: 4, mime_type: 'image/png' },
+        { asset_id: 'document-asset', filename: 'safe.pdf', url: 'https://files.example.test/safe.pdf', size: 4, mime_type: 'application/pdf' },
+      ],
       [],
     )
   })
@@ -897,6 +1030,47 @@ describe('PublicChatPage', () => {
     expect(sendMessage).not.toHaveBeenCalled()
     expect(output()).not.toContain('private storage failure')
     console.error = consoleError
+  })
+
+  test('blocks attachment submission while a chat run is loading', async () => {
+    const consoleError = console.error
+    console.error = mock()
+    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_attachments: true })
+    chatState.isLoading = true
+    render()
+    await flush()
+
+    const image = { id: 'image', name: 'photo.png', size: 4, type: 'image/png', file: new File(['photo'], 'photo.png'), isDocument: false }
+    await act(async () => {
+      await (chatInputProps.onSubmit as (message: string, files: unknown[]) => Promise<void>)('add this image', [image])
+    })
+
+    expect(toastError).toHaveBeenCalledWith('attachmentsDisabledDuringRun')
+    expect(uploadFileWithProgress).not.toHaveBeenCalled()
+    expect(sendMessage).not.toHaveBeenCalled()
+    console.error = consoleError
+  })
+
+  test('includes a selected generated image once when submitting a message', async () => {
+    getPublicAgent.mockResolvedValueOnce({ ...agent, enable_attachments: true })
+    render()
+    await flush()
+
+    const imageReference = { asset_ref: 'generated-image', url: 'https://files.example.test/generated.png' }
+    act(() => {
+      ;(chatContainerProps.onSelectImageReference as (image: typeof imageReference) => void)(imageReference)
+      ;(chatContainerProps.onSelectImageReference as (image: typeof imageReference) => void)(imageReference)
+    })
+    await act(async () => {
+      await (chatInputProps.onSubmit as (message: string) => Promise<void>)('describe image')
+    })
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      'describe image',
+      [{ asset_ref: 'generated-image', type: 'image_url', url: 'https://files.example.test/generated.png' }],
+      undefined,
+      [],
+    )
   })
 
   test('clears invalid conversation queries and handles generic agent failures safely', async () => {

@@ -28,3 +28,11 @@ test('resolves the route ID and renders the dashboard search shell', async () =>
     { type: SearchTestClient, props: { knowledgeBaseId: 'kb-1' } },
   ])
 })
+
+test('provides the knowledge-base ID to the search client', async () => {
+  const tree = await SearchTestPage({ params: Promise.resolve({ id: 'kb-42' }) })
+
+  expect(findAll(tree, SearchTestClient)).toEqual([
+    { type: SearchTestClient, props: { knowledgeBaseId: 'kb-42' } },
+  ])
+})

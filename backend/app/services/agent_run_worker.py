@@ -338,8 +338,8 @@ async def _rebuild_context(
     event_queue: asyncio.Queue[tuple[str, dict[str, Any]] | None],
 ) -> tuple[AgentLoopContext, Message, AgentLoop]:
     """Rebuild the loop context and the user message from the payload."""
+    from app.models.asset import AssetScopeType, MessageAsset
     from app.api.v1.endpoints.chat import (
-        _append_asset_manifest,
         _calculate_model_usage,
         build_max_iterations_terminal_content,
     )
@@ -348,9 +348,7 @@ async def _rebuild_context(
         get_streaming_config,
         append_generated_images,
         collect_conversation_images,
-        append_conversation_image_inventory,
     )
-    from app.api.v1.endpoints.chat_tools import build_file_content_for_context
     from app.llm import model_manager
     from app.llm.token_counter import count_tool_definition_tokens
     from app.services.sandbox.gateway import sandbox_gateway
@@ -373,14 +371,30 @@ async def _rebuild_context(
     effective_locale = await resolve_language(payload.get("locale"))
     set_language(effective_locale)
     tool_display_names = await _load_tool_display_names(agent, effective_locale)
-    file_content, _ = await build_file_content_for_context(
-        agent=agent,
-        file_urls=payload.get("file_urls") or [],
-        legacy_files=payload.get("legacy_files") or [],
-        user_locale=effective_locale,
-        tool_timeouts=streaming_config["tool_timeouts"],
-        user=SimpleNamespace(id=conversation.user_id),
+    from app.models.asset import AssetScopeRef
+
+    message_asset_links = (
+        await MessageAsset.filter(message_id=user_msg.id)
+        .prefetch_related("asset")
+        .order_by("position")
     )
+    current_assets = []
+    for link in message_asset_links:
+        binding = await AssetScopeRef.get_or_none(
+            scope_type=AssetScopeType.CONVERSATION,
+            scope_id=conversation.id,
+            asset_id=link.asset_id,
+        )
+        if binding is not None:
+            current_assets.append(
+                {
+                    "asset_id": str(link.asset_id),
+                    "checksum": link.asset.checksum,
+                    "asset_ref": binding.ref,
+                    "mime_type": link.asset.content_type,
+                    "filename": link.asset.display_filename,
+                }
+            )
     image_pool, image_inventory = collect_conversation_images(
         await _visible_messages(conversation.id),
         current_message_id=user_msg.id,
@@ -421,16 +435,12 @@ async def _rebuild_context(
     if agent.rag_mode == RAGMode.AUTO and rag_contexts:
         from app.api.v1.endpoints.chat_rag import build_rag_prompt
 
-        user_message_text = build_rag_prompt(rag_contexts, user_message_text)
-    user_message_text = await _append_asset_manifest(
-        user_message_text,
-        conversation_id=conversation.id,
-        agent=agent,
-        user=SimpleNamespace(id=conversation.user_id),
-    )
-    image_inventory_text = append_conversation_image_inventory(
-        user_message_text, image_inventory
-    )
+        user_message_text = build_rag_prompt(
+            rag_contexts,
+            user_message_text,
+            enable_citations=getattr(agent, "enable_citations", False),
+        )
+    image_inventory_text = user_message_text
 
     stream = AgentRunStream(UUID(payload["run_id"]))
     await stream.seed_sequence()
@@ -449,7 +459,9 @@ async def _rebuild_context(
         model_context_limit=chat_model.context_length,
         model_max_output_tokens=chat_model.max_output_tokens,
         model_used=chat_model.model_id,
-        model_supports_vision=chat_model.supports_vision,
+        input_capabilities=chat_model.input_capabilities,
+        model_config=chat_model.model,
+        current_images=current_assets or None,
         tools=tools,
         tool_display_names=tool_display_names,
         tool_timeouts=streaming_config["tool_timeouts"],
@@ -458,8 +470,6 @@ async def _rebuild_context(
         idle_timeout=streaming_config["idle_timeout"],
         heartbeat_interval=streaming_config["heartbeat_interval"],
         sandbox_session_id=sandbox_session_id,
-        file_content=file_content,
-        current_images=payload.get("images") or None,
         working_history_override=history_override,
         exclude_message_ids=exclude_message_ids or None,
         image_pool=image_pool,
@@ -477,6 +487,7 @@ async def _rebuild_context(
         iteration_offset=int(payload.get("iteration_offset", 0)),
         streaming=is_streaming,
         collect_dependency_metrics=True,
+        observability_run_id=UUID(payload["run_id"]),
         execute_tool_call=__import__(
             "app.api.v1.endpoints.chat_tools", fromlist=["execute_tool_call"]
         ).execute_tool_call,

@@ -66,6 +66,8 @@ interface AgentSettingsDrawerProps {
   onHideToolCallsChange: (value: boolean) => void
   hideMessageActions: boolean
   onHideTokenStatsChange: (value: boolean) => void
+  enableCitations: boolean
+  onEnableCitationsChange: (value: boolean) => void
   hideReasoning: boolean
   onHideReasoningChange: (value: boolean) => void
   hideArtifactList: boolean
@@ -127,6 +129,8 @@ export function AgentSettingsDrawer({
   onHideToolCallsChange,
   hideMessageActions,
   onHideTokenStatsChange,
+  enableCitations,
+  onEnableCitationsChange,
   hideReasoning,
   onHideReasoningChange,
   hideArtifactList,
@@ -311,6 +315,13 @@ export function AgentSettingsDrawer({
                   <p className="text-xs text-muted-foreground">{ts('hideMessageActionsDesc')}</p>
                 </div>
                 <Switch checked={hideMessageActions} onCheckedChange={onHideTokenStatsChange} disabled={readOnly} />
+              </div>
+              <div data-testid="settings-enable-citations" className="flex items-start justify-between gap-3 rounded-lg border p-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">{ts('enableCitations')}</Label>
+                  <p className="text-xs text-muted-foreground">{ts('enableCitationsDesc')}</p>
+                </div>
+                <Switch checked={enableCitations} onCheckedChange={onEnableCitationsChange} disabled={readOnly} />
               </div>
               <div data-testid="settings-hide-reasoning" className="flex items-start justify-between gap-3 rounded-lg border p-3">
                 <div className="space-y-1">

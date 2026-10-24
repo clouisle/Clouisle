@@ -35,11 +35,13 @@ export interface EmbedAgentInfo {
   opening_message: string | null
   suggested_questions: string[]
   variables: Array<Record<string, unknown>>
+  input_modalities: string[]
   enable_attachments: boolean
   attachment_config: Record<string, unknown> | null
   hide_tool_calls: boolean
   hide_message_actions: boolean
   hide_reasoning: boolean
+  enable_citations: boolean
   hide_artifact_list: boolean
   embed_config: Record<string, unknown>
 }

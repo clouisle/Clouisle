@@ -392,6 +392,15 @@ class SandboxResult(BaseModel):
     deadline_at: float | None = None
     stdout: str = ""
     stderr: str = ""
+    timed_out: bool = False
+    stdout_log: str | None = None
+    stderr_log: str | None = None
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
+    stdout_lines: int | None = None
+    stderr_lines: int | None = None
+    stdout_log_partial: bool = False
+    stderr_log_partial: bool = False
     artifacts: list[SandboxArtifact] = Field(default_factory=list)
     metadata: SandboxExecutionMetadata = Field(default_factory=SandboxExecutionMetadata)
 

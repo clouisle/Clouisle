@@ -11,8 +11,6 @@ import {
   SelectGroup,
   SelectItem,
   SelectLabel,
-  SelectScrollDownButton,
-  SelectScrollUpButton,
   SelectSeparator,
   SelectTrigger,
   SelectValue,
@@ -118,7 +116,11 @@ describe('Select', () => {
     })
     const popup = positioner.props.children as React.ReactElement
     expect(popup.props.className).toContain('custom-content')
-    const list = popup.props.children[1] as React.ReactElement
+    const list = popup.props.children as React.ReactElement
+    expect(list.type).toBe(SelectPrimitive.List)
+    expect(list.props.className).toContain('max-h-[min(18rem,var(--available-height))]')
+    expect(list.props.className).toContain('overflow-y-auto')
+    expect(list.props.className).toContain('overscroll-contain')
     const group = list.props.children as React.ReactElement
     const groupChildren = group.props.children as React.ReactElement[]
     expect(group.props.className).toContain('custom-group')
@@ -131,17 +133,12 @@ describe('Select', () => {
     expect(groupChildren[3].props.children).toBe('Empty')
   })
 
-  test('builds trigger, value, and scroll buttons with defaults and custom classes', () => {
+  test('builds trigger and value with defaults and custom classes', () => {
     const trigger = SelectTrigger({ children: e(SelectValue, { className: 'custom-value', placeholder: 'Pick' }) }) as React.ReactElement
     expect(trigger.props['data-size']).toBe('default')
     expect(trigger.props.className).toContain('data-[size=default]:h-9')
 
     const value = trigger.props.children[0] as React.ReactElement
     expect(value.props.className).toContain('custom-value')
-
-    const scrollUp = SelectScrollUpButton({ className: 'custom-up' }) as React.ReactElement
-    const scrollDown = SelectScrollDownButton({ className: 'custom-down' }) as React.ReactElement
-    expect(scrollUp.props.className).toContain('custom-up')
-    expect(scrollDown.props.className).toContain('custom-down')
   })
 })

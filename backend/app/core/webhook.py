@@ -12,23 +12,27 @@ from typing import Optional
 
 import httpx
 
-from app.models.site_setting import SiteSetting
+from app.services.integration_config import get_builtin_integration, get_runtime_config
 
 logger = logging.getLogger(__name__)
 
 
 async def get_webhook_config() -> dict:
-    """获取 Webhook 配置"""
+    """Load webhook configuration and encrypted credentials."""
+    integration = await get_builtin_integration("webhook")
+    config = get_runtime_config(integration)
+    headers = config.get("webhook_headers", "{}")
     return {
-        "enabled": await SiteSetting.get_value("webhook_enabled", False),
-        "url": await SiteSetting.get_value("webhook_url", ""),
-        "method": await SiteSetting.get_value("webhook_method", "POST"),
-        "headers": await SiteSetting.get_value("webhook_headers", {}),
-        "body_template": await SiteSetting.get_value(
+        "enabled": integration.is_enabled
+        and "notification" in integration.enabled_capabilities,
+        "url": config.get("webhook_url", ""),
+        "method": config.get("webhook_method", "POST"),
+        "headers": json.loads(headers) if isinstance(headers, str) else headers,
+        "body_template": config.get(
             "webhook_body_template",
             '{"title": "{{title}}", "content": "{{content}}", "link_url": "{{link_url}}"}',
         ),
-        "secret": await SiteSetting.get_value("webhook_secret", ""),
+        "secret": config.get("webhook_secret", ""),
     }
 
 

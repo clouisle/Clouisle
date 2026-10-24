@@ -1,4 +1,5 @@
 import builtins
+import json
 from importlib import import_module
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -338,6 +339,7 @@ async def test_execute_tool_handles_invalid_unknown_and_configured_calls():
         arguments={"query": "test", "search_engine": "auto"},
         credentials={"token": "secret"},
         agent=agent,
+        user=None,
         team_id=str(agent.team_id),
     )
 
@@ -509,7 +511,7 @@ async def test_chat_executes_tool_then_returns_final_response_and_usage():
                 "role": "tool",
                 "tool_call_id": "call-1",
                 "tool_name": "demo",
-                "content": "{'ok': True}",
+                "content": json.dumps({"ok": True}),
                 "iteration": 1,
             },
             {
@@ -605,6 +607,7 @@ async def test_execute_tool_with_agent_tool_config_bocha_and_context_branches():
         arguments={"query": "test", "search_engine": "bocha"},
         credentials={"BOCHA_API_KEY": "bocha_key", "TAVILY_API_KEY": "t_key"},
         agent=agent,
+        user=None,
         team_id=str(agent.team_id),
         conversation_id=conv_id,
         workflow_run_id=wf_id,
@@ -654,6 +657,7 @@ async def test_execute_tool_with_agent_tool_config_tavily_and_global_fallback():
         arguments={"query": "test", "search_engine": "tavily"},
         credentials={"TAVILY_API_KEY": "global_tavily"},
         agent=agent,
+        user=None,
         team_id=None,
         agent_tool_config=agent.tools_config[0]["config"],
     )

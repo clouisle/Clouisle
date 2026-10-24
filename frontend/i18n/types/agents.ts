@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-07T17:03:38.837Z
+// GENERATED — 2026-10-23T19:49:42.003Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {
@@ -36,6 +36,8 @@ export type AgentsMessages = {
       hideToolCallsDesc: string
       hideMessageActions: string
       hideMessageActionsDesc: string
+      enableCitations: string
+      enableCitationsDesc: string
       hideReasoning: string
       hideReasoningDesc: string
       hideArtifactList: string
@@ -315,9 +317,6 @@ export type AgentsMessages = {
         title: string
         tooltip: string
         description: string
-        maxContentLength: string
-        maxContentLengthHint: string
-        characters: string
         contextHint: string
       }
       userInput: {

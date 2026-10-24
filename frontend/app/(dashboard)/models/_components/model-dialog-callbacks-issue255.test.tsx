@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
-import type { ReactNode } from 'react'
 
 type Tree = { type: unknown; props: Record<string, unknown> }
 type Setter<T> = (value: T | ((current: T) => T)) => void
@@ -10,7 +9,6 @@ const element = (name: string) => {
   Component.displayName = name
   return Component
 }
-const ui = ({ children }: { children?: ReactNode }) => children
 
 let states: unknown[] = []
 let stateIndex = 0
@@ -58,19 +56,35 @@ mock.module('@/lib/validation', () => ({
   formatValidationSummaryMessage: (field: string, message: string) => `${field}: ${message}`,
 }))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
+mock.module('@/components/ui/checkbox', () => ({ Checkbox: element('checkbox') }))
+mock.module('@/components/ui/switch', () => ({ Switch: element('switch') }))
+mock.module('@/components/ui/dialog', () => ({
+  Dialog: element('dialog'), DialogContent: element('dialog-content'), DialogDescription: element('dialog-description'),
+  DialogFooter: element('dialog-footer'), DialogHeader: element('dialog-header'), DialogTitle: element('dialog-title'),
+}))
+mock.module('@/components/ui/button', () => ({ Button: element('button') }))
+mock.module('@/components/ui/input', () => ({ Input: element('input') }))
+mock.module('@/components/ui/label', () => ({ Label: element('label') }))
+mock.module('@/components/ui/textarea', () => ({ Textarea: element('textarea') }))
+mock.module('@/components/ui/field', () => ({ FieldError: element('field-error') }))
+mock.module('@/components/ui/select', () => ({
+  Select: element('select'), SelectContent: element('select-content'), SelectItem: element('select-item'),
+  SelectTrigger: element('select-trigger'), SelectValue: element('select-value'),
+}))
+mock.module('@/components/ui/combobox', () => ({
+  Combobox: element('combobox'), ComboboxContent: element('combobox-content'), ComboboxEmpty: element('combobox-empty'),
+  ComboboxInput: element('combobox-input'), ComboboxItem: element('combobox-item'), ComboboxList: element('combobox-list'),
+}))
+mock.module('@/components/ui/tabs', () => ({
+  Tabs: element('tabs'), TabsContent: element('tabs-content'), TabsList: element('tabs-list'), TabsTrigger: element('tabs-trigger'),
+}))
+mock.module('@/components/ui/popover', () => ({
+  Popover: element('popover'), PopoverContent: element('popover-content'), PopoverTrigger: element('popover-trigger'),
+}))
+mock.module('@/components/ui/tooltip', () => ({
+  Tooltip: element('tooltip'), TooltipContent: element('tooltip-content'), TooltipTrigger: element('tooltip-trigger'),
+}))
 
-for (const path of ['button', 'dialog', 'input', 'label', 'select', 'combobox', 'switch', 'textarea', 'tabs', 'popover', 'tooltip', 'field']) {
-  const exports: Record<string, unknown> = {}
-  const names: Record<string, string[]> = {
-    button: ['Button'], dialog: ['Dialog', 'DialogContent', 'DialogDescription', 'DialogFooter', 'DialogHeader', 'DialogTitle'],
-    input: ['Input'], label: ['Label'], select: ['Select', 'SelectContent', 'SelectItem', 'SelectTrigger', 'SelectValue'],
-    combobox: ['Combobox', 'ComboboxContent', 'ComboboxEmpty', 'ComboboxInput', 'ComboboxItem', 'ComboboxList'],
-    switch: ['Switch'], textarea: ['Textarea'], tabs: ['Tabs', 'TabsContent', 'TabsList', 'TabsTrigger'],
-    popover: ['Popover', 'PopoverContent', 'PopoverTrigger'], tooltip: ['Tooltip', 'TooltipContent', 'TooltipTrigger'], field: ['FieldError'],
-  }
-  for (const name of names[path]) exports[name] = name === 'Dialog' || name === 'Tabs' || name === 'Popover' || name === 'Tooltip' ? ui : element(name)
-  mock.module(`@/components/ui/${path}`, () => exports)
-}
 
 const { ModelDialog } = await import('./model-dialog')
 
@@ -112,7 +126,7 @@ function validChatState() {
   states[13] = '0.1'
   states[14] = '0.2'
   states[15] = '500'
-  states[16] = true
+  states[16] = ['text']
   states[17] = true
   states[18] = false
   states[19] = true
@@ -174,7 +188,10 @@ describe('ModelDialog issue #255 callbacks', () => {
     await (findAll(tree, (node) => typeof node.props.onSubmit === 'function')[0].props.onSubmit as (event: { preventDefault: () => void }) => Promise<void>)({ preventDefault: () => undefined })
     expect(createModel).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Coverage model', provider: 'openai', model_id: 'gpt-fake',
-      capabilities: { vision: true, function_call: true, streaming: false, json_mode: true },
+      capabilities: expect.objectContaining({
+        input_modalities: ['text'], output_modalities: [],
+        function_call: true, streaming: false, json_mode: true,
+      }),
       default_params: expect.objectContaining({ temperature: 0.7, extra_body: { trace: true }, custom: 1 }),
       config: { region: 'test' },
     }))

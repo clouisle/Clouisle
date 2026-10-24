@@ -389,6 +389,7 @@ describe('ChatContainer issue #255 coverage', () => {
       message: message('a'), isCurrentStreaming: false, loadingLabel: 'Queued', renderPart: () => null, afterContent: undefined,
       onRegenerate: () => {}, onEditMessage: () => {}, onSwitchVersion: () => {}, onSelectImageReference: () => {},
       onOpenCodePreview: () => {}, hideToolCalls: false, hideMessageActions: false, hideReasoning: false,
+      hideCitations: false,
       conversationId: 'conversation', onRequestScrollIntoView: () => {}, setMessageElement: () => {},
     }
     expect(memoCompare?.(shared, shared)).toBe(true)
@@ -406,6 +407,7 @@ describe('ChatContainer issue #255 coverage', () => {
       { ...shared, hideToolCalls: true },
       { ...shared, hideMessageActions: true },
       { ...shared, hideReasoning: true },
+      { ...shared, hideCitations: true },
       { ...shared, conversationId: 'other-conversation' },
       { ...shared, onRequestScrollIntoView: () => {} },
       { ...shared, setMessageElement: () => {} },

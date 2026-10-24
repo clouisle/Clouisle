@@ -240,7 +240,9 @@ async def test_process_with_chunks_covers_processing_and_failed_dispatch(monkeyp
 @pytest.mark.anyio
 async def test_download_and_media_reject_invalid_storage_paths(monkeypatch):
     kb_id, doc_id = uuid4(), uuid4()
-    doc = SimpleNamespace(file_path="outside.txt", doc_type="txt", name="outside.txt")
+    doc = SimpleNamespace(
+        file_path="outside.txt", doc_type="txt", name="outside.txt", metadata=None
+    )
     monkeypatch.setattr(knowledge_bases, "check_kb_access", AsyncMock())
     monkeypatch.setattr(
         knowledge_bases.Document, "filter", lambda **_kwargs: Query(doc)

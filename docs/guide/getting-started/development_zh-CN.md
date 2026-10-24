@@ -109,6 +109,8 @@ uv run --project backend main.py sandbox-worker -c 1
 uv run --project backend main.py sandbox-worker --local-dev -c 1
 ```
 
+本地开发容器使用 Docker 命名卷保留 worker 身份和数据，同一个卷只允许一个 supervisor 持有。如果启动时报 `Another sandbox supervisor already owns this disk`，先通过 `docker ps` 找到现有沙箱 worker，并用 `docker inspect <容器名>` 核对挂载卷。可以复用正常运行的 worker，或先正常停止旧 worker 再启动替代容器。不要删除卷、身份文件或绕过文件锁，避免同一批持久化会话被并发执行。
+
 ## 项目结构
 
 ```

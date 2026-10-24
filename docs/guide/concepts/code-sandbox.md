@@ -28,6 +28,8 @@ The admin audit log records lifecycle events for executable sandbox jobs and the
 
 When filesystem isolation is enabled (`SANDBOX_FILESYSTEM_ISOLATION_ENABLED=true`), the sandbox launcher wraps executions in a dedicated `bwrap` process configured with strict namespace isolation:
 
+Bash commands keep logical `/workspace` paths across the API/Agent-worker boundary. Only the Sandbox Worker maps its physical session directory; caller-host paths such as macOS `/private/tmp` must not be embedded in commands. Bash-generated files and artifact collection therefore use the same session workspace.
+
 ```text
 bwrap \
   --unshare-user --unshare-pid --unshare-ipc --unshare-uts \
@@ -72,10 +74,19 @@ Agents can invoke code tools via function calling. The LLM decides when to run c
 Chat uploads, generated media, and collected sandbox artifacts are durable `Asset`s. Agent tools see four-character `asset_ref` values in `<available_assets>`. A ref is scoped to one conversation or workflow run, not a global file ID or workspace path.
 
 - `materialize_asset(ref, path)` resolves the ref in the active authorized conversation or workflow-run scope and stages verified bytes under `/workspace` in the active sandbox session. Generated images and videos can be staged this way; images can also be supplied as `reference_image_refs` for image generation.
-- `read_asset` returns text only for text MIME types and JSON/XML. `parse_asset` handles supported document types; images are vision inputs. Video and other binary assets must be materialized and processed by sandbox code; available decoders and packages determine supported operations.
+- `read_asset` reads persisted document text in bounded line ranges, including continuation inside oversized lines. `search_asset` performs literal text search with bounded context and continuation. Both authorize the original Asset on every call; continue until `eof` to read all extracted text. Native media stays available through `view_asset`, and `materialize_asset` stages original bytes for sandbox processing. Text extraction does not guarantee OCR or preservation of visual layout.
 - A sandbox output becomes a reusable Asset only when the job collects it as an artifact. Collected artifacts are bound to the active conversation or workflow run; uncollected files remain workspace-only. Sandbox file tools can access session files while the session exists. Collected artifacts appear in the Asset manifest on a later Agent run.
 - `workflow_asset_refs` imports selected workflow-run Assets into a conversation. The server authorizes both the source run and destination conversation before linking them.
 - Cross-scope or cross-team access is not a file conversion. Each operation reauthorizes its source and destination; generated-media and artifact download URLs are protected. In chat, Markdown links to collected sandbox artifacts open in the authenticated file preview; copied URLs still require an authenticated request. Dragging the preview divider collapses the conversation-history sidebar only when the chat panel reaches its 400 px minimum; above that threshold it stays open. Reopen the sidebar with its toggle. During dragging, the preview keeps its current viewport size and applies the new size on release. Never guess refs or reuse paths from another conversation.
+
+### Model-facing tool results
+
+Tool results keep their structured display/citation payloads. The model receives a concise representation instead: document ranges and sandbox files use line-prefixed text, searches use referenced excerpts, and execution tools use status plus output blocks. Snapshot/hashline anchors, Asset refs, citations, task identifiers and continuation cursors are retained. Restored runs use the same model representation; clients do not need to parse model prose.
+
+`fetch_webpage` and `markitdown` persist complete extracted documents as protected scope-local Assets and return bounded previews. Continue with `read_asset` / `search_asset`; these reading tools remain available for those builtins even when user uploads are disabled. Multi-document previews may be omitted to stay within the call budget, but the returned refs remain readable. Unsupported/oversized or undecodable sources fail explicitly, not as silently truncated documents.
+
+Continuation cursors are opaque. Cursor encoding was compressed to reduce model input; cursors issued before this upgrade must be restarted with a line range when rejected. TOON is not required: measured results favored dedicated text for document reads and retained JSON for unknown/configured outputs. See the [encoding evaluation](../../dev/design/app-platform/BUILTIN_TOOL_OUTPUT_EVALUATION.md).
+
 
 ## Configuration
 
@@ -111,6 +122,7 @@ Chat uploads, generated media, and collected sandbox artifacts are durable `Asse
 Sandbox egress is configured in [Settings → Security → Sandbox Egress Allowlist](../admin-guide/settings/system-settings.md#sandbox-egress-allowlist), not by an environment variable. The initial defaults permit `pypi.org`, `files.pythonhosted.org`, `pypi.python.org`, and `registry.npmjs.org`. The saved exact-host policy is read for every job; an empty list blocks external hosts, and custom package indexes must use HTTPS.
 
 AgentRun round boundaries are checkpointed on the session's owning sandbox worker before the run becomes completed, waiting for a user answer, or stopped. Idle runtime directories are evicted after checkpointing and restored on the next task. Persist workspace, checkpoint, identity, lock and cache paths on the same worker-local disk. TTL cleanup permanently deletes session data when a worker can process the cleanup task; an unreachable node's local files cannot be deleted remotely.
+- Bash tool results include a bounded head/tail preview. If output exceeds the sandbox capture limit, execution stops explicitly and the partial preview is labeled; the retained log is available only during its owning sandbox session. Read it by `/workspace/...` path with the sandbox `read` tool, which preserves hashline/snapshot anchors. Session TTL cleanup deletes logs; they are not durable Assets and cannot be read from another session.
 
 The caller fails closed: when `SANDBOX_RUNTIME_ENABLED` is false, code execution returns a failure without running a local fallback. A failed sandbox task also returns failure. The sandbox-worker image installs Bubblewrap and enables isolation; a missing binary or workspace root fails the task instead of launching the payload without isolation.
 

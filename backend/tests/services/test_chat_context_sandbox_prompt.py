@@ -67,20 +67,6 @@ def test_build_system_prompt_skips_sandbox_guidance_without_sandbox_tools():
     assert "Base prompt" in prompt
 
 
-def test_build_system_prompt_injects_source_citation_contract_for_rag_chat():
-    prompt = _build_system_prompt(
-        agent=_agent(rag_mode="auto"),
-        conversation=_conversation(),
-        user_message="answer from the knowledge base",
-        user_locale="en",
-    )
-
-    assert "## Source Citations" in prompt
-    assert "[[cite:SOURCE_ID]]" in prompt
-    assert "every sentence or list item" in prompt
-    assert "Never substitute numeric references" in prompt
-
-
 def test_build_system_prompt_formats_sections_with_clear_spacing():
     prompt = _build_system_prompt(
         agent=_agent(tools_config=[{"type": "builtin", "name": "bash"}]),

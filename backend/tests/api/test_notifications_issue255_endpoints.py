@@ -231,54 +231,11 @@ CHANNEL_CASES = [
         "send_notification_email_task",
     ),
     (
-        NotificationChannel.DINGTALK,
-        "app.core.dingtalk",
-        "get_dingtalk_config",
-        {
-            "enabled": True,
-            "notification_type": "webhook",
-            "webhook_url": "https://example.com",
-        },
-        "send_notification_dingtalk_task",
-    ),
-    (
-        NotificationChannel.WECHAT,
-        "app.core.wechat",
-        "get_wechat_config",
-        {
-            "enabled": True,
-            "notification_type": "app",
-            "corp_id": "corp",
-            "secret": "secret",
-            "agent_id": "agent",
-        },
-        "send_notification_wechat_task",
-    ),
-    (
-        NotificationChannel.FEISHU,
-        "app.core.feishu",
-        "get_feishu_config",
-        {
-            "enabled": True,
-            "notification_type": "app",
-            "app_id": "app",
-            "app_secret": "secret",
-        },
-        "send_notification_feishu_task",
-    ),
-    (
         NotificationChannel.WEBHOOK,
         "app.core.webhook",
         "get_webhook_config",
         {"enabled": True, "url": "https://example.com"},
         "send_notification_webhook_task",
-    ),
-    (
-        NotificationChannel.SLACK,
-        "app.core.slack",
-        "get_slack_config",
-        {"enabled": True, "webhook_url": "https://example.com"},
-        "send_notification_slack_task",
     ),
 ]
 

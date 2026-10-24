@@ -187,7 +187,7 @@ describe('MCP tool dialog', () => {
     expect(input(renderer, 'name').props).toMatchObject({ value: 'existing_server', disabled: true })
     expect(input(renderer, 'http-url').props.value).toBe('https://mcp.test/rpc')
     expect(values(renderer, 'mcpDialog.headerNamePlaceholder').some((node) => node.props.value === 'Authorization')).toBe(true)
-    expect(values(renderer, 'mcpDialog.headerValuePlaceholder').some((node) => node.props.value === 'Bearer fake-token' && node.props.type === 'password')).toBe(true)
+    expect(values(renderer, 'mcpDialog.headerValuePlaceholder').some((node) => node.props.value === 'Bearer fake-token')).toBe(true)
     expect(button(renderer, 'mcpDialog.fetchTools').props.disabled).toBe(false)
 
     change(input(renderer, 'displayName'), 'Renamed server')
@@ -197,6 +197,63 @@ describe('MCP tool dialog', () => {
       mcp_config: { transport: 'http', url: 'https://mcp.test/rpc', headers: { Authorization: 'Bearer fake-token' } },
     }))
   })
+  test('loads and saves SSE configuration with filtered headers and descriptions', async () => {
+    listMcpTools.mockResolvedValueOnce({ tools: [{ name: 'search', description: 'Searches records', parameters: {} }] })
+    const renderer = render()
+    fillIdentity(renderer)
+    transport(renderer, 'sse')
+
+    expect(button(renderer, 'mcpDialog.fetchTools').props.disabled).toBe(true)
+    change(input(renderer, 'url'), 'https://mcp.test/events')
+    const sseTab = () => renderer.root.findAll((node) => node.props?.['data-tab-content'] === 'sse')[0]
+    const sseInputs = (placeholder: string) =>
+      sseTab().findAll((node) => node.type === 'input' && node.props.placeholder === placeholder)
+    change(sseInputs('mcpDialog.headerNamePlaceholder')[0], 'Authorization')
+    change(sseInputs('mcpDialog.headerValuePlaceholder')[0], 'Bearer token')
+    await click(button(renderer, 'mcpDialog.addHeader'))
+    change(sseInputs('mcpDialog.headerNamePlaceholder')[1], '   ')
+    change(sseInputs('mcpDialog.headerValuePlaceholder')[1], 'ignored')
+    await click(button(renderer, 'mcpDialog.fetchTools'))
+    expect(listMcpTools).toHaveBeenCalledWith({ transport: 'sse', url: 'https://mcp.test/events', headers: { Authorization: 'Bearer token' } })
+    expect(toastSuccess).toHaveBeenCalledWith('mcpDialog.toolsLoaded')
+    expect(renderer.root.findAll((node) => node.children.includes('search')).length).toBeGreaterThan(0)
+
+    await click(button(renderer, 'create'))
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      description: '- search: Searches records',
+      mcp_config: { transport: 'sse', url: 'https://mcp.test/events', headers: { Authorization: 'Bearer token' } },
+    }))
+  })
+
+  test('filters empty stdio entries and retains one editable row when removing arguments and environment variables', async () => {
+    const renderer = render()
+    fillIdentity(renderer)
+    change(input(renderer, 'command'), 'runner')
+    change(values(renderer, 'mcpDialog.argumentPlaceholder')[0], '   ')
+    act(() => button(renderer, 'mcpDialog.addArg').props.onClick())
+    change(values(renderer, 'mcpDialog.argumentPlaceholder')[1], '--mode')
+    act(() => button(renderer, 'mcpDialog.addArg').props.onClick())
+    change(values(renderer, 'mcpDialog.argumentPlaceholder')[2], '--discard')
+    act(() => renderer.root.findAllByType('button').filter((node) => node.props.size === 'icon')[2].props.onClick())
+    act(() => renderer.root.findAllByType('button').filter((node) => node.props.size === 'icon')[0].props.onClick())
+
+    change(values(renderer, 'mcpDialog.headerKeyPlaceholder')[0], '   ')
+    act(() => button(renderer, 'mcpDialog.addEnvVar').props.onClick())
+    change(values(renderer, 'mcpDialog.headerKeyPlaceholder')[1], 'MODE')
+    change(values(renderer, 'mcpDialog.headerValuePlaceholder')[1], 'fast')
+    act(() => button(renderer, 'mcpDialog.addEnvVar').props.onClick())
+    change(values(renderer, 'mcpDialog.headerKeyPlaceholder')[2], 'DISCARD')
+    act(() => renderer.root.findAllByType('button').filter((node) => node.props.size === 'icon')[3].props.onClick())
+    act(() => renderer.root.findAllByType('button').filter((node) => node.props.size === 'icon')[2].props.onClick())
+
+    await click(button(renderer, 'create'))
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      mcp_config: { transport: 'stdio', command: 'runner', args: ['--mode'], env: {} },
+    }))
+    expect(values(renderer, 'mcpDialog.argumentPlaceholder')).toHaveLength(1)
+    expect(values(renderer, 'mcpDialog.headerKeyPlaceholder')).toHaveLength(1)
+  })
+
 
   test('maps server field failures, clears configuration errors, and retries tool loading after a generic failure', async () => {
     const failure = new Error('offline')

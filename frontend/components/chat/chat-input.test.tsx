@@ -71,6 +71,24 @@ afterEach(() => {
 })
 
 describe('ChatInput', () => {
+  test('accepts supported audio and video while rejecting undeclared media', () => {
+    const onFilesChange = mock(() => undefined)
+    const tree = renderChatInput({ allowAttachments: true, inputModalities: ['text', 'audio', 'video'], onFilesChange })
+    const audio = new File(['audio'], 'meeting.mp3', { type: 'audio/mpeg' })
+    const video = new File(['video'], 'demo.mp4', { type: 'video/mp4' })
+    const image = new File(['image'], 'secret.png', { type: 'image/png' })
+    act(() => fileInput(tree).props.onChange({ target: { files: [audio, video, image] } }))
+    expect(onFilesChange.mock.calls[0][0].map((item: ChatInputFile) => item.file)).toEqual([audio, video])
+  })
+
+  test('allows configured documents on text-only models', () => {
+    const onFilesChange = mock(() => undefined)
+    const tree = renderChatInput({ inputModalities: ['text'], enableFileUpload: true, onFilesChange })
+    const document = new File(['report'], 'report.pdf', { type: 'application/pdf' })
+    act(() => fileInput(tree).props.onChange({ target: { files: [document] } }))
+    expect(onFilesChange.mock.calls[0][0][0].file).toBe(document)
+  })
+
   test('reports text changes and submits trimmed text with Enter', () => {
     const onChange = mock(() => undefined)
     const onSubmit = mock(() => undefined)
@@ -259,8 +277,6 @@ describe('ChatInput', () => {
       fileUploadConfig: {
         max_file_size: 10 * 1024 * 1024,
         max_files: 1,
-        max_content_length: 100,
-        truncate_strategy: 'end',
         allowed_extensions: ['.pdf'],
       },
     })
@@ -273,8 +289,6 @@ describe('ChatInput', () => {
     act(() => tree.update(<ChatInput enableFileUpload fileUploadConfig={{
       max_file_size: 10 * 1024 * 1024,
       max_files: 2,
-      max_content_length: 100,
-      truncate_strategy: 'end',
       allowed_extensions: ['.pdf'],
     }} onFilesChange={onFilesChange} />))
     act(() => {
@@ -366,4 +380,17 @@ describe('ChatInput', () => {
     act(() => chatInput(disabledTree).props.onPaste({ preventDefault, clipboardData: undefined }))
     expect(preventDefault).toHaveBeenCalledTimes(1)
   })
+
+
+  test('does not submit empty text or attachments when Enter is pressed', () => {
+    const onSubmit = mock(() => undefined)
+    const preventDefault = mock(() => undefined)
+    const tree = renderChatInput({ value: '  ', onSubmit })
+
+    act(() => chatInput(tree).props.onKeyDown({ key: 'Enter', shiftKey: false, preventDefault }))
+
+    expect(preventDefault).toHaveBeenCalledTimes(1)
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
 })

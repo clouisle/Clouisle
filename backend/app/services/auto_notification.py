@@ -7,6 +7,11 @@ from typing import Optional
 from uuid import UUID
 
 from app.core.timezone import now_utc
+from app.integrations.factory import (
+    get_notification_integration,
+    dispatch_notification_task,
+)
+from app.models.site_setting import SiteSetting
 from app.models.notification import (
     AutoNotificationType,
     Notification,
@@ -17,7 +22,6 @@ from app.models.notification import (
     NotificationScope,
     NotificationSource,
 )
-from app.models.site_setting import SiteSetting
 from app.services.notification import create_notification
 
 logger = logging.getLogger(__name__)
@@ -43,30 +47,23 @@ class AutoNotificationService:
     async def get_channels(cls) -> list[NotificationChannel]:
         """获取全局配置的外部渠道"""
         config = await cls.get_config()
-        channel_names = config.get("channels", [])
         channels = []
-        for name in channel_names:
+        for name in config.get("channels", []):
             try:
-                channels.append(NotificationChannel(name))
+                integration = get_notification_integration(name)
             except ValueError:
                 logger.warning(f"Unknown notification channel: {name}")
+                continue
+            channels.append(integration.id)
         return channels
 
     @classmethod
     async def _is_channel_enabled(cls, channel: NotificationChannel) -> bool:
-        """检查渠道是否已配置并启用"""
-        channel_enabled_keys = {
-            NotificationChannel.EMAIL: "smtp_enabled",
-            NotificationChannel.DINGTALK: "dingtalk_enabled",
-            NotificationChannel.WECHAT: "wechat_enabled",
-            NotificationChannel.FEISHU: "feishu_enabled",
-            NotificationChannel.WEBHOOK: "webhook_enabled",
-            NotificationChannel.SLACK: "slack_enabled",
-        }
-        key = channel_enabled_keys.get(channel)
-        if not key:
+        try:
+            integration = get_notification_integration(channel)
+        except ValueError:
             return False
-        return await SiteSetting.get_value(key, False)
+        return await integration.is_enabled()
 
     @classmethod
     async def send(
@@ -143,33 +140,14 @@ class AutoNotificationService:
         channels: list[NotificationChannel],
     ) -> None:
         """触发外部渠道发送"""
-        from app.tasks.notification import (
-            send_notification_dingtalk_task,
-            send_notification_email_task,
-            send_notification_feishu_task,
-            send_notification_slack_task,
-            send_notification_wechat_task,
-            send_notification_webhook_task,
-        )
-
-        channel_tasks = {
-            NotificationChannel.EMAIL: send_notification_email_task,
-            NotificationChannel.DINGTALK: send_notification_dingtalk_task,
-            NotificationChannel.WECHAT: send_notification_wechat_task,
-            NotificationChannel.FEISHU: send_notification_feishu_task,
-            NotificationChannel.WEBHOOK: send_notification_webhook_task,
-            NotificationChannel.SLACK: send_notification_slack_task,
-        }
 
         for channel in channels:
-            # 检查渠道是否已配置并启用
             if not await cls._is_channel_enabled(channel):
                 logger.debug(
                     f"Channel {channel.value} is not enabled, skipping for notification {notification.id}"
                 )
                 continue
 
-            # 创建发送记录
             delivery = await NotificationDelivery.create(
                 notification_id=notification.id,
                 channel=channel,
@@ -177,25 +155,20 @@ class AutoNotificationService:
                 created_at=now_utc(),
                 updated_at=now_utc(),
             )
-
-            # 触发异步任务
-            task_func = channel_tasks.get(channel)
-            if task_func:
-                try:
-                    result = task_func.delay(str(notification.id))
-                    delivery.task_id = result.id
-                    await delivery.save()
-                    logger.info(
-                        f"Triggered {channel.value} notification task for {notification.id}, "
-                        f"task_id={result.id}"
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Failed to trigger {channel.value} notification task: {e}"
-                    )
-                    delivery.status = NotificationDeliveryStatus.FAILED
-                    delivery.error_message = "task_dispatch_failed"
-                    await delivery.save()
+            try:
+                result = dispatch_notification_task(channel, str(notification.id))
+                delivery.task_id = result.id
+                await delivery.save()
+                logger.info(
+                    f"Triggered {channel.value} notification task for {notification.id}, task_id={result.id}"
+                )
+            except Exception as error:
+                logger.error(
+                    f"Failed to trigger {channel.value} notification task: {error}"
+                )
+                delivery.status = NotificationDeliveryStatus.FAILED
+                delivery.error_message = "task_dispatch_failed"
+                await delivery.save()
 
     @classmethod
     async def send_to_user(

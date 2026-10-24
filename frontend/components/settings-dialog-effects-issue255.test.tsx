@@ -24,10 +24,14 @@ mock.module('react', () => ({
   },
   useEffect: () => {},
   useMemo: <T,>(factory: () => T) => factory(),
+  useRef: <T,>(initial: T) => ({ current: initial }),
+  useCallback: <T,>(factory: T) => factory,
 }))
 mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string) => key }))
 mock.module('next/navigation', () => ({ useRouter: () => ({ push: mock(() => {}) }) }))
-mock.module('sonner', () => ({ toast: { success, info: mock(() => {}), warning: mock(() => {}) } }))
+mock.module('./wechat-knowledge', () => ({ WeChatKnowledge: component('WeChatKnowledge') }))
+mock.module('./feishu-agent-settings', () => ({ FeishuAgentSettings: component('FeishuAgentSettings') }))
+mock.module('sonner', () => ({ toast: { success, info: mock(() => {}), warning: mock(() => {}), error: mock(() => {}) } }))
 mock.module('lucide-react', () => ({
   User: component('User'), Shield: component('Shield'), Loader2: component('Loader2'), Link: component('Link'),
   Unlink: component('Unlink'), KeyRound: component('KeyRound'), Download: component('Download'),
@@ -43,6 +47,8 @@ mock.module('@/lib/validation', () => ({
 class ApiError extends Error { code = 0 }
 const api = new Proxy({}, { get: () => mock(() => Promise.resolve({})) })
 mock.module('@/lib/api/client', () => ({ ApiError }))
+class SSOLinkStateError extends Error {}
+mock.module('@/lib/api/sso', () => ({ SSOLinkStateError, ssoLinkState: { read: () => null, clear: () => {} } }))
 mock.module('@/lib/api', () => ({ ApiError, authApi: api, usersApi: api, ssoApi: api, totpApi: api }))
 mock.module('@/contexts/site-settings-context', () => ({ useSiteSettings: () => ({ settings: { allow_account_deletion: true } }) }))
 
@@ -82,9 +88,9 @@ function render(backupCodes: string[]) {
   values[18] = { password: 'delete error' }
   values[25] = { code: 'disable error' }
   values[29] = { code: 'regenerate error' }
-  values[30] = backupCodes
+  values[34] = backupCodes
   index = 0
-  updates = Array.from({ length: 31 }, () => [])
+  updates = Array.from({ length: 40 }, () => [])
   return SettingsDialog({ open: true, onOpenChange: mock(() => {}) }) as Node
 }
 
@@ -124,14 +130,14 @@ test('downloads, copies, closes, and clears remaining dialog state', async () =>
   expect(revokeObjectURL).toHaveBeenCalledWith('blob:codes')
   expect(writeText).toHaveBeenCalledWith('alpha\nbeta')
   expect(success).toHaveBeenCalledWith('setupStep4CodesCopied')
-  expect(updates[27]).toEqual([false])
-  expect(updates[30]).toEqual([[]])
+  expect(updates[31]).toEqual([false])
+  expect(updates[34]).toEqual([[]])
 
   const validationTree = render([])
   expect(buttonHandlers(validationTree, 'cancel').length).toBeGreaterThanOrEqual(3)
   for (const handler of buttonHandlers(validationTree, 'cancel')) handler()
-  expect(updates[21]).toContain('')
-  expect(updates[22]).toContain('')
-  expect(updates[23]).toContain(false)
-  expect(updates[28]).toContain('')
+  expect(updates[25]).toContain('')
+  expect(updates[26]).toContain('')
+  expect(updates[27]).toContain(false)
+  expect(updates[32]).toContain('')
 })

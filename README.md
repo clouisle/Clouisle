@@ -174,7 +174,7 @@ Supports 23 providers out of the box, plus any OpenAI-compatible endpoint.
 - **Audit Logging**: Comprehensive action tracking with before/after field-level diff snapshots and user attribution
 - **Admin Observability**: Comprehensive dashboards tracking token consumption, latency, error rates, and system health
 - **Clouisle Packages**: Standardized `.clouisle` packages for safe, secret-free export/import and cross-environment asset migration (Agents, Workflows, Tools, and KBs)
-- **Notification System**: In-app, email, DingTalk, WeChat Work, Feishu, Slack, and webhook channels
+- **Notification System**: In-app notifications, email, and generic Webhook delivery
 - **API Key Management**: Scoped API keys with expiration, usage tracking, and team access control
 - **Site Settings**: Configurable site-wide settings with localization support (en/zh)
 - **Password Policies**: Configurable expiration, history, and complexity requirements

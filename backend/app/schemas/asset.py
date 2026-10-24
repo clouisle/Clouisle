@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.asset import AssetSource, AssetStatus
 
-AssetCapability = Literal["inspect", "read", "parse", "vision", "generate", "sandbox"]
+AssetCapability = Literal["inspect", "read", "search", "vision", "generate", "sandbox"]
 
 
 class AssetRef(BaseModel):
@@ -19,7 +19,7 @@ class AssetRef(BaseModel):
 class AssetCapabilities(BaseModel):
     inspect: bool = True
     read: bool = False
-    parse: bool = False
+    search: bool = False
     vision: bool = False
     generate: bool = False
     sandbox: bool = False

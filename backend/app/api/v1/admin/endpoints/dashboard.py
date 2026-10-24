@@ -251,8 +251,16 @@ async def get_dashboard_trends(
         )
     end = end or to_utc(now_local)
     timezone_name = getattr(now_local.tzinfo, "key", "UTC")
-    rows = await Tortoise.get_connection("default").execute_query_dict(
-        """
+    date_filter = (
+        "created_at >= $2 AND created_at <= $3"
+        if start is not None
+        else "created_at <= $2"
+    )
+    query_params = [timezone_name]
+    if start is not None:
+        query_params.append(start)
+    query_params.append(end)
+    query = f"""
         SELECT day,
                SUM(new_users) AS new_users,
                SUM(active_users) AS active_users,
@@ -264,14 +272,14 @@ async def get_dashboard_trends(
                    COUNT(*) AS new_users, 0 AS active_users,
                    0 AS new_conversations, 0 AS messages, 0 AS tokens
             FROM users u
-            WHERE ($2 IS NULL OR u.created_at >= $2) AND u.created_at <= $3
+            WHERE {date_filter.replace("created_at", "u.created_at")}
             GROUP BY DATE(timezone($1, u.created_at))
             UNION ALL
             SELECT DATE(timezone($1, c.created_at)) AS day,
                    0 AS new_users, COUNT(DISTINCT c.user_id) AS active_users,
                    COUNT(*) AS new_conversations, 0 AS messages, 0 AS tokens
             FROM conversations c
-            WHERE ($2 IS NULL OR c.created_at >= $2) AND c.created_at <= $3
+            WHERE {date_filter.replace("created_at", "c.created_at")}
             GROUP BY DATE(timezone($1, c.created_at))
             UNION ALL
             SELECT DATE(timezone($1, m.created_at)) AS day,
@@ -284,13 +292,14 @@ async def get_dashboard_trends(
                               THEN (m.token_usage ->> 'completion')::bigint ELSE 0 END
                    ), 0) AS tokens
             FROM messages m
-            WHERE ($2 IS NULL OR m.created_at >= $2) AND m.created_at <= $3
+            WHERE {date_filter.replace("created_at", "m.created_at")}
             GROUP BY DATE(timezone($1, m.created_at))
         ) daily_events
         GROUP BY day
         ORDER BY day
-        """,
-        [timezone_name, start, end],
+        """
+    rows = await Tortoise.get_connection("default").execute_query_dict(
+        query, query_params
     )
 
     buckets: dict[date, dict[str, int]] = {}

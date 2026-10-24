@@ -315,7 +315,11 @@ def _sandbox_applies(agent: Agent, _mode: str) -> bool:
 
 
 def _citations_apply(agent: Agent, mode: str) -> bool:
-    return mode == CHAT_MODE and has_source_citation_capability(agent)
+    return (
+        mode == CHAT_MODE
+        and bool(getattr(agent, "enable_citations", False))
+        and has_source_citation_capability(agent)
+    )
 
 
 def _append_constant(constant: str) -> Callable[[str, Agent, str | None], str]:

@@ -145,6 +145,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
         clean_text: true,
       })
 
+      // Source-managed imports cannot enter the local chunk editing workflow.
       // 如果缓存中已有完整的 Document 实体，直接秒开；否则并发获取
       let docs: (Document | null)[] = []
       if (cachedDocs && cachedDocs.length === targetDocIds.length) {
@@ -165,7 +166,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
       // 初始化每个文档的状态
       const initialState: Record<string, DocumentPreviewState> = {}
       docs.forEach((doc, idx) => {
-        if (doc) {
+        if (doc && !doc.metadata?.feishu_source_id && doc.metadata?.feishu_read_only !== true) {
           initialState[targetDocIds[idx]] = {
             document: doc,
             previewChunks: [],

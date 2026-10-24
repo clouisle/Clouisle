@@ -95,7 +95,7 @@ See [Password Management](../authentication/password-management.md) for details.
 2. Confirm disconnection
 3. The provider is unlinked
 
-> **Note:** There is no user-side "Connect" action — SSO connections are linked automatically during login when the provider email matches your account (see [SSO User Guide](../authentication/sso-user-guide.md)).
+**Linking Feishu:** choose **Link Feishu** in Connected Accounts, finish authorization in the same browser tab, then confirm binding to the current account. The action requires enabled global SSO and Feishu sign-in. Other providers continue to use automatic email matching during login; see [SSO User Guide](../authentication/sso-user-guide.md).
 
 ## Preferences
 

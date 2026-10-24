@@ -10,6 +10,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
+from app.llm.errors import InvalidRequestError
 from app.llm.types import (
     Message,
     MessageRole,
@@ -195,6 +196,38 @@ class AnthropicAdapter(BaseChatAdapter):
                                         },
                                     }
                                 )
+                        elif part_type == "file" and hasattr(part, "file"):
+                            file = part.file
+                            if file is None:
+                                raise InvalidRequestError(
+                                    message="File content is missing"
+                                )
+                            if file.extracted_text:
+                                content_blocks.append(
+                                    {
+                                        "type": "text",
+                                        "text": f"{file.filename or 'Document'}:\n{file.extracted_text}",
+                                    }
+                                )
+                            elif file.mime_type == "application/pdf" and file.base64:
+                                content_blocks.append(
+                                    {
+                                        "type": "document",
+                                        "source": {
+                                            "type": "base64",
+                                            "media_type": "application/pdf",
+                                            "data": file.base64,
+                                        },
+                                    }
+                                )
+                            else:
+                                raise InvalidRequestError(
+                                    message=f"Unsupported Anthropic file MIME type: {file.mime_type}"
+                                )
+                        elif part_type in {"audio", "video"}:
+                            raise InvalidRequestError(
+                                message=f"Anthropic chat input does not support {part_type} in this adapter"
+                            )
                     elif isinstance(part, dict):
                         content_blocks.append(part)
                 content = content_blocks if content_blocks else []  # type: ignore[assignment]

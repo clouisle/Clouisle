@@ -16,7 +16,7 @@ Real-time functionality is implemented with **Server-Sent Events (SSE)** over pl
 - **Event-based framing**: `event:` + `data:` lines
 - **Works with fetch**, `EventSource`-style parsers, `curl -N`, and any HTTP client
 
-If you were looking for push notifications, those are delivered via the notification system (in-app, email, Feishu/Slack/webhook channels), and workflow completion can be tracked by streaming or polling the run.
+If you were looking for push notifications, those are delivered through the notification system (in-app, email, or generic Webhook channels), and workflow completion can be tracked by streaming or polling the run.
 
 ## 1. Streaming Chat (Agent)
 

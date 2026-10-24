@@ -1,4 +1,3 @@
-import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -84,6 +83,7 @@ def test_artifact_result_serializes_download_payload_and_error_output():
     assert result.display_result == {
         "success": False,
         "result": "Generated 1 downloadable link(s) for the assistant response.",
+        "instruction": "Use these Markdown links in your final answer.",
         "count": 1,
         "artifacts": [
             {
@@ -96,21 +96,12 @@ def test_artifact_result_serializes_download_payload_and_error_output():
         ],
         "error": "missing file",
     }
-    assert json.loads(result.llm_result) == {
-        "success": False,
-        "result": None,
-        "markdown_links": ["[数据.csv](/files/data.csv)"],
-        "files": [
-            {
-                "path": "/workspace/数据.csv",
-                "filename": "数据.csv",
-                "url": "/files/data.csv",
-                "size": 2,
-                "content_type": "text/csv",
-            }
-        ],
-        "error": "missing file",
-    }
+    assert result.llm_result.splitlines() == [
+        "Collected 1 file(s).",
+        "- [数据.csv](/files/data.csv) · 2 bytes · text/csv",
+        "Error: missing file",
+        "Use these Markdown links in your final answer.",
+    ]
 
 
 def test_artifact_result_handles_legacy_payload_without_download_url():
@@ -126,13 +117,12 @@ def test_artifact_result_handles_legacy_payload_without_download_url():
         ],
     )
 
-    llm_payload = json.loads(result.llm_result)
     assert result.display_result["count"] == 0
-    assert llm_payload["markdown_links"] == []
-    assert (
-        llm_payload["result"]
-        == "No downloadable links are available for these artifacts."
-    )
+    assert result.llm_result.splitlines() == [
+        "Collected 1 file(s).",
+        "- old.txt",
+        "No downloadable links are available for these artifacts.",
+    ]
 
 
 @pytest.mark.anyio

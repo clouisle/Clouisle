@@ -291,7 +291,7 @@ class Model(models.Model):
     )
     capabilities: dict | None = fields.JSONField(
         null=True,
-        description="Model capabilities (vision, function_call, streaming, etc.)",
+        description="Input/output modalities and model capabilities",
     )
     config: dict | None = fields.JSONField(
         null=True,

@@ -1,5 +1,6 @@
 import builtins
 import importlib
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -58,7 +59,7 @@ async def test_chat_executes_tool_then_aggregates_final_response_usage():
                 "role": "tool",
                 "tool_call_id": "call-1",
                 "tool_name": "search",
-                "content": "{'results': ['match']}",
+                "content": json.dumps({"results": ["match"]}),
                 "iteration": 1,
             },
             {
@@ -74,9 +75,8 @@ async def test_chat_executes_tool_then_aggregates_final_response_usage():
     second_messages = chat.await_args_list[1].kwargs["messages"]
     assert [(message.role, message.content) for message in second_messages] == [
         ("assistant", "I will search."),
-        ("tool", "{'results': ['match']}"),
+        ("tool", json.dumps({"results": ["match"]})),
     ]
-    service._execute_tool.assert_awaited_once_with(agent=agent, tool_call=tool_call)
 
 
 @pytest.mark.anyio
@@ -115,6 +115,7 @@ async def test_execute_tool_forwards_workflow_scope_to_builtin_tool():
         arguments={},
         credentials={},
         agent=agent,
+        user=None,
         team_id=None,
         workflow_run_id="workflow-run-1",
     )
@@ -149,7 +150,7 @@ async def test_chat_resolves_configured_team_model_before_invocation():
 
 
 @pytest.mark.anyio
-async def test_build_messages_uses_images_and_parsed_files_for_enabled_agent():
+async def test_build_messages_uses_images_and_file_references_for_enabled_agent():
     agent = SimpleNamespace(
         system_prompt="",
         rag_mode=RAGMode.OFF,
@@ -158,7 +159,6 @@ async def test_build_messages_uses_images_and_parsed_files_for_enabled_agent():
         model_id=None,
     )
     service = AgentService()
-    service._parse_workflow_files = AsyncMock(return_value="file contents")
 
     messages = await service._build_messages(
         agent,
@@ -172,10 +172,18 @@ async def test_build_messages_uses_images_and_parsed_files_for_enabled_agent():
     assert content[0].text == "Summarize"
     assert content[1].image.url == "https://example.test/image.png"
     assert content[1].image.asset_ref == "image-ref"
-    assert content[2].text == "<uploaded_files>\nfile contents\n</uploaded_files>"
-    service._parse_workflow_files.assert_awaited_once_with(
-        agent, [{"url": "https://example.test/report.pdf"}]
-    )
+    assert json.loads(content[2].text) == {
+        "documents": [
+            {
+                "filename": "report.pdf",
+                "reading": (
+                    "Use list_assets to discover a ref, then read_asset for "
+                    "bounded lines and search_asset to locate text; continue "
+                    "until eof."
+                ),
+            }
+        ]
+    }
 
 
 @pytest.mark.anyio
@@ -245,7 +253,7 @@ async def test_chat_stream_yields_content_tool_calls_usage_and_final_response():
                     "role": "tool",
                     "tool_call_id": "call-1",
                     "tool_name": "search",
-                    "content": "{'results': ['match']}",
+                    "content": json.dumps({"results": ["match"]}),
                     "iteration": 1,
                 },
                 {
@@ -302,7 +310,7 @@ async def test_chat_stream_emits_dialogue_when_tool_limit_is_reached():
                 "role": "tool",
                 "tool_call_id": "call-1",
                 "tool_name": "search",
-                "content": "{'files': [{'url': 'output.csv'}]}",
+                "content": json.dumps({"files": [{"url": "output.csv"}]}),
                 "iteration": 1,
             },
         ],
@@ -400,6 +408,7 @@ async def test_execute_tool_uses_team_credentials_and_reports_execution_errors()
         "arguments": {"query": "docs"},
         "credentials": {"TEST_API_KEY": "mock-key"},
         "agent": agent,
+        "user": None,
         "team_id": "team-1",
     }
 
@@ -423,7 +432,10 @@ async def test_execute_skill_tool_returns_results_and_safe_errors():
         patch(
             "app.services.skill_executor.SkillExecutor.execute",
             new=AsyncMock(
-                return_value=SimpleNamespace(to_dict=lambda: {"summary": "done"})
+                return_value=SimpleNamespace(
+                    to_chat_payload=lambda: {"summary": "done"},
+                    to_dict=lambda: {"summary": "done"},
+                )
             ),
         ) as execute,
     ):
@@ -594,43 +606,51 @@ async def test_build_messages_handles_image_only_content_and_empty_rag_context()
 
 
 @pytest.mark.anyio
-async def test_parse_workflow_files_handles_urls_and_empty_inputs():
+async def test_describe_workflow_files_returns_references_not_text():
     disabled_agent = SimpleNamespace(enable_attachments=False)
     assert (
-        await AgentService._parse_workflow_files(
+        AgentService._describe_workflow_files(
             disabled_agent, [{"url": "https://example.test/ignored"}]
         )
-        == ""
+        == []
     )
 
-    enabled_agent = SimpleNamespace(
-        enable_attachments=True,
-        attachment_config={"max_content_length": "42", "truncate_strategy": "start"},
-    )
-    parse_files = AsyncMock(return_value="parsed")
-    with patch("app.llm.tools.builtin.file_parser.parse_files", parse_files):
-        parsed = await AgentService._parse_workflow_files(
-            enabled_agent,
-            [
-                {"url": "https://example.test/one"},
-                {"name": "missing-url"},
-                "",
-                {"url": "https://example.test/two"},
-            ],
-        )
-        empty = await AgentService._parse_workflow_files(enabled_agent, [None, ""])
-
-    assert parsed == "parsed"
-    assert empty == ""
-    parse_files.assert_awaited_once_with(
+    enabled_agent = SimpleNamespace(enable_attachments=True)
+    documents = AgentService._describe_workflow_files(
+        enabled_agent,
         [
-            "https://example.test/one",
-            "{'name': 'missing-url'}",
-            "https://example.test/two",
+            {"url": "https://example.test/one"},
+            {"name": "missing-url"},
+            "",
+            {"url": "https://example.test/two", "asset_ref": "a1b2"},
         ],
-        max_content_length=42,
-        truncate_strategy="start",
     )
+
+    assert documents == [
+        {
+            "filename": "one",
+            "reading": (
+                "Use list_assets to discover a ref, then read_asset for bounded "
+                "lines and search_asset to locate text; continue until eof."
+            ),
+        },
+        {
+            "filename": "missing-url",
+            "reading": (
+                "Use list_assets to discover a ref, then read_asset for bounded "
+                "lines and search_asset to locate text; continue until eof."
+            ),
+        },
+        {
+            "ref": "a1b2",
+            "filename": "two",
+            "reading": (
+                "Use list_assets to discover a ref, then read_asset for bounded "
+                "lines and search_asset to locate text; continue until eof."
+            ),
+        },
+    ]
+    assert AgentService._describe_workflow_files(enabled_agent, [None, ""]) == []
 
 
 @pytest.mark.anyio
@@ -694,6 +714,7 @@ async def test_execute_tool_falls_back_to_empty_global_credentials():
         arguments={},
         credentials={},
         agent=agent,
+        user=None,
         team_id=None,
     )
 

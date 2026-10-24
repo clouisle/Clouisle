@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-07T17:03:38.842Z
+// GENERATED — 2026-10-23T19:49:42.007Z
 // Source: i18n/en/models.json
 export type ModelsMessages = {
   models: {
@@ -76,8 +76,17 @@ export type ModelsMessages = {
     maxTokens: string
     maxTokensPlaceholder: string
     capabilities: string
-    supportsVision: string
-    supportsVisionHint: string
+    inputModalities: string
+    inputModalitiesHint: string
+    outputModalities: string
+    outputModalitiesHint: string
+    modality: {
+      text: string
+      image: string
+      audio: string
+      video: string
+      file: string
+    }
     supportsFunctionCall: string
     supportsFunctionCallHint: string
     supportsStreaming: string

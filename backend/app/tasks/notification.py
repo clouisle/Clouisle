@@ -3,20 +3,20 @@
 """
 
 import logging
+from urllib.parse import urljoin, urlsplit
 from dataclasses import dataclass
 from uuid import UUID
 
 import markdown  # type: ignore[import-untyped]
 
 from app.core.celery import celery_app
-from app.core.email import send_email
-from app.core.dingtalk import send_dingtalk_notification
-from app.core.wechat import send_wechat_notification
-from app.core.feishu import send_feishu_notification
-from app.core.webhook import send_webhook_notification
-from app.core.slack import send_slack_notification
-from app.core.timezone import now_utc
 from app.core.i18n import t
+from app.core.timezone import now_utc
+from app.models.feishu_user import FeishuUser
+from app.integrations.factory import (
+    NotificationMessage,
+    get_notification_integration,
+)
 from app.models.notification import (
     Notification,
     NotificationScope,
@@ -25,6 +25,7 @@ from app.models.notification import (
     NotificationDeliveryStatus,
 )
 from app.models.site_setting import SiteSetting
+from app.core.config import settings
 from app.models.user import User, TeamMember, Team
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,16 @@ class NotificationContext:
     site_name: str
     team: Team | None = None
     user: User | None = None
+
+
+def _get_absolute_notification_url(link_url: str | None) -> str | None:
+    """Resolve app-relative notification links against the configured public frontend URL."""
+    if not link_url:
+        return None
+    parsed = urlsplit(link_url)
+    if parsed.scheme or parsed.netloc:
+        return link_url
+    return urljoin(f"{settings.FRONTEND_URL.rstrip('/')}/", link_url.lstrip("/"))
 
 
 def _get_event_loop():
@@ -96,6 +107,35 @@ async def _load_notification_context(
         team=team,
         user=user,
     )
+
+
+async def _get_feishu_recipients(notification: Notification) -> list[tuple[str, str]]:
+    """Return active recipients as (Feishu user ID, locale) pairs."""
+    if notification.scope == NotificationScope.GLOBAL:
+        users = await User.filter(is_active=True).all()
+    elif notification.scope == NotificationScope.TEAM and notification.team_id:
+        members = await TeamMember.filter(
+            team_id=notification.team_id
+        ).prefetch_related("user")
+        users = [member.user for member in members if member.user.is_active]
+    elif notification.scope == NotificationScope.USER and notification.user_id:
+        user = await User.filter(id=notification.user_id, is_active=True).first()
+        users = [user] if user else []
+    else:
+        return []
+
+    user_ids = list(dict.fromkeys(user.id for user in users))
+    if not user_ids:
+        return []
+    bindings = await FeishuUser.filter(user_id__in=user_ids).all()
+    binding_by_user_id = {
+        str(binding.user_id): binding.feishu_user_id for binding in bindings
+    }
+    return [
+        (binding_by_user_id[str(user.id)], getattr(user, "locale", "en") or "en")
+        for user in users
+        if str(user.id) in binding_by_user_id
+    ]
 
 
 async def _update_delivery_status(
@@ -364,7 +404,16 @@ async def _send_notification_email(notification_id: UUID):
         # 发送给该语言组的所有收件人
         for email in emails:
             try:
-                result = await send_email(email, subject, body_text, body_html)
+                result = await get_notification_integration(
+                    NotificationChannel.EMAIL
+                ).send(
+                    NotificationMessage(
+                        title=subject,
+                        content=body_text,
+                        recipient=email,
+                        html_content=body_html,
+                    )
+                )
                 if result:
                     success_count += 1
                 else:
@@ -398,187 +447,6 @@ async def _send_notification_email(notification_id: UUID):
         )
     else:
         raise RuntimeError("email_send_failed")
-
-
-@celery_app.task(name="send_notification_dingtalk", bind=True, max_retries=3)
-def send_notification_dingtalk_task(self, notification_id: str):
-    """
-    发送钉钉通知的异步任务
-
-    Args:
-        notification_id: 通知ID
-    """
-    loop = _get_event_loop()
-    try:
-        loop.run_until_complete(_send_notification_dingtalk(UUID(notification_id)))
-    except Exception as exc:
-        # 更新状态为失败
-        loop.run_until_complete(
-            _update_delivery_status(
-                UUID(notification_id),
-                NotificationChannel.DINGTALK,
-                NotificationDeliveryStatus.FAILED,
-                _delivery_error_message(),
-            )
-        )
-        raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
-
-
-async def _send_notification_dingtalk(notification_id: UUID) -> bool:
-    """
-    发送钉钉通知的实际逻辑
-
-    Returns:
-        bool: 是否发送成功
-    """
-    # 更新状态为发送中
-    await _update_delivery_status(
-        notification_id,
-        NotificationChannel.DINGTALK,
-        NotificationDeliveryStatus.SENDING,
-    )
-
-    # 一次性加载所有上下文
-    ctx = await _load_notification_context(notification_id)
-    if not ctx:
-        raise ValueError("notification_not_found")
-
-    # 钉钉通知使用中文（主要面向中国用户）
-    title, content = _build_notification_message(ctx, "zh")
-
-    # 发送钉钉通知
-    result = await send_dingtalk_notification(
-        title=title,
-        content=content,
-        link_url=ctx.notification.link_url,
-    )
-
-    if result:
-        logger.info(f"DingTalk notification sent successfully for {notification_id}")
-        await _update_delivery_status(
-            notification_id,
-            NotificationChannel.DINGTALK,
-            NotificationDeliveryStatus.SUCCESS,
-        )
-        return True
-    else:
-        raise RuntimeError("dingtalk_send_failed")
-
-
-@celery_app.task(name="send_notification_wechat", bind=True, max_retries=3)
-def send_notification_wechat_task(self, notification_id: str):
-    """
-    发送企业微信通知的异步任务
-
-    Args:
-        notification_id: 通知ID
-    """
-    loop = _get_event_loop()
-    try:
-        loop.run_until_complete(_send_notification_wechat(UUID(notification_id)))
-    except Exception as exc:
-        loop.run_until_complete(
-            _update_delivery_status(
-                UUID(notification_id),
-                NotificationChannel.WECHAT,
-                NotificationDeliveryStatus.FAILED,
-                _delivery_error_message(),
-            )
-        )
-        raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
-
-
-async def _send_notification_wechat(notification_id: UUID) -> bool:
-    """
-    发送企业微信通知的实际逻辑
-    """
-    await _update_delivery_status(
-        notification_id,
-        NotificationChannel.WECHAT,
-        NotificationDeliveryStatus.SENDING,
-    )
-
-    ctx = await _load_notification_context(notification_id)
-    if not ctx:
-        raise ValueError("notification_not_found")
-
-    # 企业微信使用中文
-    title, content = _build_notification_message(ctx, "zh")
-
-    result = await send_wechat_notification(
-        title=title,
-        content=content,
-        link_url=ctx.notification.link_url,
-    )
-
-    if result:
-        logger.info(f"WeChat Work notification sent successfully for {notification_id}")
-        await _update_delivery_status(
-            notification_id,
-            NotificationChannel.WECHAT,
-            NotificationDeliveryStatus.SUCCESS,
-        )
-        return True
-    else:
-        raise RuntimeError("wechat_send_failed")
-
-
-@celery_app.task(name="send_notification_feishu", bind=True, max_retries=3)
-def send_notification_feishu_task(self, notification_id: str):
-    """
-    发送飞书通知的异步任务
-
-    Args:
-        notification_id: 通知ID
-    """
-    loop = _get_event_loop()
-    try:
-        loop.run_until_complete(_send_notification_feishu(UUID(notification_id)))
-    except Exception as exc:
-        loop.run_until_complete(
-            _update_delivery_status(
-                UUID(notification_id),
-                NotificationChannel.FEISHU,
-                NotificationDeliveryStatus.FAILED,
-                _delivery_error_message(),
-            )
-        )
-        raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
-
-
-async def _send_notification_feishu(notification_id: UUID) -> bool:
-    """
-    发送飞书通知的实际逻辑
-    """
-    await _update_delivery_status(
-        notification_id,
-        NotificationChannel.FEISHU,
-        NotificationDeliveryStatus.SENDING,
-    )
-
-    ctx = await _load_notification_context(notification_id)
-    if not ctx:
-        raise ValueError("notification_not_found")
-
-    # 飞书使用中文
-    title, content = _build_notification_message(ctx, "zh")
-
-    result = await send_feishu_notification(
-        title=title,
-        content=content,
-        link_url=ctx.notification.link_url,
-    )
-
-    if result:
-        logger.info(f"Feishu notification sent successfully for {notification_id}")
-        await _update_delivery_status(
-            notification_id,
-            NotificationChannel.FEISHU,
-            NotificationDeliveryStatus.SUCCESS,
-        )
-        return True
-    else:
-        raise RuntimeError("feishu_send_failed")
 
 
 @celery_app.task(name="send_notification_webhook", bind=True, max_retries=3)
@@ -621,10 +489,12 @@ async def _send_notification_webhook(notification_id: UUID) -> bool:
     # Webhook 使用英文（通用）
     title, content = _build_notification_message(ctx, "en")
 
-    result = await send_webhook_notification(
-        title=title,
-        content=content,
-        link_url=ctx.notification.link_url,
+    result = await get_notification_integration(NotificationChannel.WEBHOOK).send(
+        NotificationMessage(
+            title=title,
+            content=content,
+            link_url=ctx.notification.link_url,
+        )
     )
 
     if result:
@@ -639,22 +509,16 @@ async def _send_notification_webhook(notification_id: UUID) -> bool:
         raise RuntimeError("webhook_send_failed")
 
 
-@celery_app.task(name="send_notification_slack", bind=True, max_retries=3)
-def send_notification_slack_task(self, notification_id: str):
-    """
-    发送 Slack 通知的异步任务
-
-    Args:
-        notification_id: 通知ID
-    """
+@celery_app.task(name="send_notification_feishu", bind=True, max_retries=3)
+def send_notification_feishu_task(self, notification_id: str):
     loop = _get_event_loop()
     try:
-        loop.run_until_complete(_send_notification_slack(UUID(notification_id)))
+        loop.run_until_complete(_send_notification_feishu(UUID(notification_id)))
     except Exception as exc:
         loop.run_until_complete(
             _update_delivery_status(
                 UUID(notification_id),
-                NotificationChannel.SLACK,
+                NotificationChannel.FEISHU,
                 NotificationDeliveryStatus.FAILED,
                 _delivery_error_message(),
             )
@@ -662,36 +526,62 @@ def send_notification_slack_task(self, notification_id: str):
         raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
 
 
-async def _send_notification_slack(notification_id: UUID) -> bool:
-    """
-    发送 Slack 通知的实际逻辑
-    """
+async def _send_notification_feishu(notification_id: UUID) -> bool:
     await _update_delivery_status(
         notification_id,
-        NotificationChannel.SLACK,
+        NotificationChannel.FEISHU,
         NotificationDeliveryStatus.SENDING,
     )
-
     ctx = await _load_notification_context(notification_id)
     if not ctx:
         raise ValueError("notification_not_found")
 
-    # Slack 使用英文
-    title, content = _build_notification_message(ctx, "en")
-
-    result = await send_slack_notification(
-        title=title,
-        content=content,
-        link_url=ctx.notification.link_url,
-    )
-
-    if result:
-        logger.info(f"Slack notification sent successfully for {notification_id}")
+    recipients = await _get_feishu_recipients(ctx.notification)
+    if not recipients:
         await _update_delivery_status(
             notification_id,
-            NotificationChannel.SLACK,
-            NotificationDeliveryStatus.SUCCESS,
+            NotificationChannel.FEISHU,
+            NotificationDeliveryStatus.SKIPPED,
+            "feishu_no_bound_recipients",
         )
         return True
-    else:
-        raise RuntimeError("slack_send_failed")
+
+    handler = get_notification_integration(NotificationChannel.FEISHU)
+    successes = 0
+    failures = 0
+    for feishu_user_id, locale in recipients:
+        title, content = _build_notification_message(ctx, locale)
+        try:
+            await handler.send(
+                NotificationMessage(
+                    title=title,
+                    content=content,
+                    link_url=_get_absolute_notification_url(ctx.notification.link_url),
+                    link_label=t("email_view_details", lang=locale),
+                    recipient=feishu_user_id,
+                )
+            )
+            successes += 1
+        except Exception:
+            failures += 1
+            logger.exception(
+                "Feishu notification failed for recipient %s", feishu_user_id
+            )
+
+    if successes == 0:
+        raise RuntimeError("feishu_send_failed")
+
+    error_message = None
+    if failures:
+        error_message = t(
+            "notification_delivery_partial_success",
+            success_count=successes,
+            total_count=len(recipients),
+        )
+    await _update_delivery_status(
+        notification_id,
+        NotificationChannel.FEISHU,
+        NotificationDeliveryStatus.SUCCESS,
+        error_message,
+    )
+    return True

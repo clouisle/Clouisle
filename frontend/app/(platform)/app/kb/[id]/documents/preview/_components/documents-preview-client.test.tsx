@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { ReactNode } from 'react'
 
 const push = mock()
-const toast = { success: mock(), error: mock(), loading: mock(() => 'toast-1') }
+const toast = { success: mock(), error: mock(), warning: mock(), loading: mock(() => 'toast-1') }
 const api = {
   getKnowledgeBase: mock(),
   getDocument: mock(),
@@ -75,7 +75,7 @@ mock.module('@/components/ui/textarea', () => ({ Textarea: element('textarea') }
 mock.module('@/components/ui/switch', () => ({
   Switch: ({ checked, onCheckedChange, ...props }: { checked: boolean; onCheckedChange(value: boolean): void }) => ({
     type: 'button',
-    props: { ...props, role: 'switch', 'aria-checked': checked, onClick: () => onCheckedChange(!checked) },
+    props: { ...props, role: 'switch', 'aria-checked': checked, checked, onCheckedChange: () => onCheckedChange(!checked), onChange: () => onCheckedChange(!checked), onClick: () => onCheckedChange(!checked) },
   }),
 }))
 
@@ -168,10 +168,11 @@ const preview = {
 beforeEach(() => {
   state = []
   effects = []
-  push.mockReset()
+  Object.values(api).forEach(fn => fn.mockReset())
   toast.success.mockReset()
   toast.error.mockReset()
-  Object.values(api).forEach(fn => fn.mockReset())
+  toast.warning.mockReset()
+  push.mockReset()
   api.getKnowledgeBase.mockResolvedValue(knowledgeBase)
   api.getDocument.mockResolvedValue(document)
   api.previewChunks.mockResolvedValue(preview)
@@ -314,6 +315,73 @@ describe('DocumentsPreviewClient', () => {
     expect(toast.error).toHaveBeenCalledWith('documentProcessFailed')
   })
 
+  test('shows a loading state while chunk preview is pending', async () => {
+    let resolvePreview!: (value: typeof preview) => void
+    api.previewChunks.mockImplementation(() => new Promise(resolve => { resolvePreview = resolve }))
+    let tree = await load()
+
+    const previewAction = button(tree, 'previewChunks').props.onClick as () => Promise<void>
+    const pending = previewAction()
+    tree = render()
+    expect(text(tree)).toContain('previewing')
+    expect(findAll(tree, node => node.props.className?.toString().includes('animate-spin')).length).toBeGreaterThan(0)
+
+    resolvePreview(preview)
+    await pending
+    expect(text(render())).toContain('Alpha beta')
+  })
+
+  test('switches the selected document and moves selection when its tab is removed', async () => {
+    api.getDocument.mockImplementation((_kb: string, id: string) => Promise.resolve({
+      ...document,
+      id,
+      name: id === 'doc-1' ? 'Guide.pdf' : 'Notes.txt',
+    }))
+    let tree = await load(['doc-1', 'doc-2'])
+
+    const secondTab = findAll(tree, node => node.type === 'button' && text(node).includes('Notes.txt'))[0]
+    expect(secondTab).toBeDefined()
+    ;(secondTab.props.onClick as () => void)()
+    tree = render(['doc-1', 'doc-2'])
+    expect(text(tree)).toContain('Notes.txt')
+
+    const tabs = findAll(tree, node => node.type === 'button' && node.props.role === undefined &&
+      (text(node).includes('Guide.pdf') || text(node).includes('Notes.txt')))
+    const selectedTab = tabs.find(tab => tab.props.className?.toString().includes('bg-background'))
+    expect(text(selectedTab)).toContain('Notes.txt')
+
+    const removeTab = findAll(tree, node => node.type === 'span' && node.props.role === 'button')[1]
+    ;(removeTab.props.onClick as (event: { stopPropagation(): void }) => void)({ stopPropagation() {} })
+    tree = render(['doc-1', 'doc-2'])
+    expect(text(tree)).toContain('Guide.pdf')
+    expect(text(tree)).not.toContain('Notes.txt')
+    expect(findAll(tree, node => node.type === 'button' && text(node).includes('Guide.pdf'))[0]
+      .props.className?.toString()).toContain('bg-background')
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  test('filters source-managed documents from the selectable preview tabs', async () => {
+    api.getDocument.mockImplementation((_kb: string, id: string) => Promise.resolve({
+      ...document,
+      id,
+      name: id,
+      metadata: id === 'source' ? { feishu_source_id: 'source-1' } : {},
+    }))
+    const tree = await load(['source', 'doc-1'])
+
+    expect(text(tree)).toContain('doc-1')
+    expect(text(tree)).not.toContain('source')
+    expect(api.getDocument).toHaveBeenCalledTimes(2)
+  })
+
+  test('redirects back when removing the only remaining eligible tab by click', async () => {
+    const tree = await load()
+    const remove = findAll(tree, node => node.type === 'span' && node.props.role === 'button')[0]
+    ;(remove.props.onClick as (event: { stopPropagation(): void }) => void)({ stopPropagation() {} })
+
+    expect(push).toHaveBeenCalledWith('/app/kb/kb-1')
+  })
+
   test('removes tabs with keyboard and redirects after removing the final document', async () => {
     const tree = await load()
     const remove = findAll(tree, node => node.props.role === 'button' && node.type === 'span')[0]
@@ -336,4 +404,115 @@ describe('DocumentsPreviewClient', () => {
     expect(api.getDocumentFile).toHaveBeenCalledWith('kb-1', 'doc-1')
     ;(filePreview.props.onClose as () => void)()
   })
-})
+  test('applies updated chunk settings to API preview and clears stale chunks', async () => {
+    let tree = await load()
+    await (button(tree, 'previewChunks').props.onClick as () => Promise<void>)()
+    tree = render()
+    expect(text(tree)).toContain('Alpha beta')
+
+    const control = (id: string) => findAll(tree, node => node.props.id === id)[0]
+    ;(control('chunk_size').props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '900' } })
+    tree = render()
+    ;(control('chunk_overlap').props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '25' } })
+    tree = render()
+    ;(control('separator').props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '---' } })
+    tree = render()
+    ;(control('clean_text').props.onClick as () => void)()
+    tree = render()
+    expect(text(tree)).toContain('noPreviewYet')
+    expect(text(tree)).not.toContain('Alpha beta')
+
+    await (button(tree, 'previewChunks').props.onClick as () => Promise<void>)()
+    expect(api.previewChunks).toHaveBeenLastCalledWith('kb-1', 'doc-1', {
+      chunk_size: 900,
+      chunk_overlap: 25,
+      separator: '---',
+      clean_text: false,
+    })
+  })
+
+  test('preview all skips documents already processing', async () => {
+    api.getDocument.mockImplementation((_kb: string, id: string) => Promise.resolve({
+      ...document,
+      id,
+      name: id,
+      status: id === 'working' ? 'processing' : 'pending',
+    }))
+    const tree = await load(['working', 'waiting'])
+    expect(button(tree, 'previewAll (1)')).toBeDefined()
+    await (button(tree, 'previewAll (1)').props.onClick as () => Promise<void>)()
+
+    expect(api.previewChunks).toHaveBeenCalledTimes(1)
+    expect(api.previewChunks).toHaveBeenCalledWith('kb-1', 'waiting', {
+      chunk_size: 700,
+      chunk_overlap: 70,
+      separator: '\n\n',
+      clean_text: true,
+    })
+    expect(toast.success).toHaveBeenCalledWith('batchPreviewGenerated')
+  })
+
+  test('opens the selected document original and requests its file', async () => {
+    api.getDocument.mockImplementation((_kb: string, id: string) => Promise.resolve({
+      ...document,
+      id,
+      name: id === 'doc-1' ? 'Guide.pdf' : 'Notes.txt',
+    }))
+    const tree = await load(['doc-1', 'doc-2'])
+    const secondTab = findAll(tree, node => node.type === 'button' && text(node).includes('Notes.txt'))[0]
+    ;(secondTab.props.onClick as () => void)()
+    const selectedTree = render(['doc-1', 'doc-2'])
+    const previewBtn = findAll(selectedTree, node => node.props['aria-label'] === 'previewOriginal')[0]
+    ;(previewBtn.props.onClick as () => void)()
+    const originalTree = render(['doc-1', 'doc-2'])
+    const filePreview = findAll(originalTree, node => typeof node.props.loadFile === 'function')[0]
+
+    await (filePreview.props.loadFile as () => Promise<Blob>)()
+    expect(api.getDocumentFile).toHaveBeenCalledWith('kb-1', 'doc-2')
+  })
+  test('processes all previewed documents with shared batch metadata and visible progress', async () => {
+    const randomUUID = mock(() => 'batch-123')
+    const originalCrypto = globalThis.crypto
+    Object.defineProperty(globalThis, 'crypto', { configurable: true, value: { randomUUID } })
+    try {
+      api.getDocument.mockImplementation((_kb: string, id: string) => Promise.resolve({
+        ...document,
+        id,
+        name: id,
+      }))
+      let tree = await load(['doc-1', 'doc-2'])
+      await (button(tree, 'previewAll (2)').props.onClick as () => Promise<void>)()
+      tree = render(['doc-1', 'doc-2'])
+      expect(text(tree)).toContain('Alpha beta')
+      await (button(tree, 'startProcessingAll (2)').props.onClick as () => Promise<void>)()
+
+      expect(api.processDocumentWithChunks).toHaveBeenCalledTimes(2)
+      expect(api.processDocumentWithChunks).toHaveBeenCalledWith('kb-1', 'doc-1', [
+        { content: 'Alpha beta', chunk_index: 0 },
+        { content: 'Beta gamma', chunk_index: 1 },
+      ], { batch_id: 'batch-123', batch_total: 2 })
+      expect(api.processDocumentWithChunks).toHaveBeenCalledWith('kb-1', 'doc-2', [
+        { content: 'Alpha beta', chunk_index: 0 },
+        { content: 'Beta gamma', chunk_index: 1 },
+      ], { batch_id: 'batch-123', batch_total: 2 })
+      expect(toast.success).toHaveBeenCalledWith('processStarted:{"count":2}', { id: 'toast-1' })
+      expect(push).toHaveBeenCalledWith('/app/kb/kb-1')
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', { configurable: true, value: originalCrypto })
+    }
+  })
+
+  test('reports partial batch processing failures to the user', async () => {
+    api.getDocument.mockImplementation((_kb: string, id: string) => Promise.resolve({ ...document, id, name: id }))
+    let tree = await load(['doc-1', 'doc-2'])
+    await (button(tree, 'previewAll (2)').props.onClick as () => Promise<void>)()
+    tree = render(['doc-1', 'doc-2'])
+    api.processDocumentWithChunks.mockImplementation((_kb: string, id: string) =>
+      id === 'doc-1' ? Promise.resolve({ ...document, id, status: 'processing' }) : Promise.reject(new Error('failed')))
+
+    await (button(tree, 'startProcessingAll (2)').props.onClick as () => Promise<void>)()
+
+    expect(toast.warning).toHaveBeenCalledWith('processStarted:{"count":1} (processFailed:{"count":1})', { id: 'toast-1' })
+    expect(push).toHaveBeenCalledWith('/app/kb/kb-1')
+  })
+ })

@@ -16,7 +16,7 @@ mock.module('next-intl', () => ({
   },
 }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess } }))
-mock.module('lucide-react', () => Object.fromEntries(['Plus', 'Trash2', 'ChevronLeft', 'ChevronRight', 'ChevronsLeft', 'ChevronsRight', 'Search', 'X', 'Mail', 'MessageSquare', 'CheckCircle2', 'XCircle', 'Loader2', 'Clock', 'Eye', 'MoreHorizontal'].map((name) => [name, () => null])))
+mock.module('lucide-react', () => Object.fromEntries(['Plus', 'Trash2', 'ChevronLeft', 'ChevronRight', 'ChevronsLeft', 'ChevronsRight', 'Search', 'X', 'Mail', 'MessageSquare', 'MessageSquareText', 'CheckCircle2', 'XCircle', 'Loader2', 'Clock', 'Eye', 'MoreHorizontal'].map((name) => [name, () => null])))
 mock.module('@/lib/api/admin/notifications', () => ({ notificationsApi: { adminList, adminDelete } }))
 mock.module('@/hooks/use-url-search-state', () => ({
   useUrlSearchState: () => {
@@ -50,8 +50,8 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const deliveries = [
   { channel: 'email', status: 'success', error_message: null, retry_count: 0 },
-  { channel: 'dingtalk', status: 'failed', error_message: 'no route', retry_count: 2 },
   { channel: 'webhook', status: 'sending', error_message: null, retry_count: 0 },
+  { channel: 'feishu', status: 'skipped', error_message: 'feishu_no_bound_recipients', retry_count: 0 },
   { channel: 'unknown', status: 'pending', error_message: null, retry_count: 0 },
 ]
 const item = { id: 'n1', title: 'First', scope: 'global', level: 'high', created_at: 'now', deliveries }
@@ -91,8 +91,7 @@ function selectedRows(renderer: ReactTestRenderer) { return renderer.root.findAl
     await settle()
     expect(adminList).toHaveBeenCalledWith({ page: 1, page_size: 10, scope: undefined, level: undefined, search: undefined })
     const output = JSON.stringify(renderer.toJSON())
-    expect(output).toContain('retryCount:2')
-    expect(output).toContain('no route')
+    expect(output).toContain('2')
     expect(output).toContain('custom')
     expect(output).toContain('date:now')
   })

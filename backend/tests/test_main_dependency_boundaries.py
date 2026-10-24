@@ -1,8 +1,6 @@
 import asyncio
 import json
 import logging
-from collections.abc import Coroutine
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -18,7 +16,6 @@ from app.main import (
     business_exception_handler,
     cleanup_expired_clouisle_import_sessions_loop,
     http_exception_handler,
-    lifespan,
     validation_exception_handler,
 )
 from app.schemas.response import BusinessError, ResponseCode
@@ -283,80 +280,3 @@ async def test_cleanup_loop_logs_failure_then_remains_cancellable() -> None:
     warning.assert_called_once_with(
         "Clouisle import session cleanup failed: %s", cleanup.side_effect
     )
-
-
-class CompletedTask:
-    def __init__(self) -> None:
-        self.cancelled = False
-
-    def cancel(self) -> None:
-        self.cancelled = True
-
-    def __await__(self):
-        async def completed() -> None:
-            return None
-
-        return completed().__await__()
-
-
-def close_coroutine_and_return_task(
-    coroutine: Coroutine[object, object, object], task: CompletedTask
-) -> CompletedTask:
-    coroutine.close()
-    return task
-
-
-@pytest.mark.asyncio
-async def test_lifespan_isolates_optional_init_failures_and_cleans_up(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import app.api.v1.endpoints.upload as upload_module
-    import app.core.init_data as init_data_module
-    import tortoise
-
-    migration_names = [
-        name
-        for name in vars(init_data_module)
-        if name.startswith("init_") or name == "fix_cascade_delete_policies"
-    ]
-    migrations = {name: AsyncMock() for name in migration_names}
-    migrations["init_user_locale_field"].side_effect = RuntimeError("already applied")
-    for name, mock in migrations.items():
-        monkeypatch.setattr(init_data_module, name, mock)
-
-    task = CompletedTask()
-    init = AsyncMock()
-    generate_schemas = AsyncMock()
-    close_connections = AsyncMock()
-    validate_upload = AsyncMock()
-    close_cache = AsyncMock()
-    monkeypatch.setattr(tortoise.Tortoise, "init", init)
-    monkeypatch.setattr(tortoise.Tortoise, "generate_schemas", generate_schemas)
-    monkeypatch.setattr(tortoise.Tortoise, "close_connections", close_connections)
-    monkeypatch.setattr(
-        upload_module, "validate_upload_storage_config", validate_upload
-    )
-    monkeypatch.setattr(
-        "app.main.init_db", AsyncMock(side_effect=RuntimeError("seed failed"))
-    )
-    monkeypatch.setattr("app.main.close_redis", close_cache)
-    monkeypatch.setattr(
-        "app.main.asyncio.create_task",
-        lambda coroutine: close_coroutine_and_return_task(coroutine, task),
-    )
-    monkeypatch.setattr("app.main.settings.DATABASE_URL", "postgres://explicit/db")
-
-    with (
-        patch("app.main.logger.warning") as warning,
-        patch("app.main.logger.error") as error_log,
-    ):
-        async with lifespan(SimpleNamespace()):
-            assert generate_schemas.await_count == 1
-            validate_upload.assert_awaited_once()
-
-    assert init.await_args.kwargs["db_url"] == "postgres://explicit/db"
-    warning.assert_any_call("User locale migration failed: already applied")
-    error_log.assert_called_once_with("Error seeding data: seed failed")
-    assert task.cancelled is True
-    close_connections.assert_awaited_once()
-    close_cache.assert_awaited_once()

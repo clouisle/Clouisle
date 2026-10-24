@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.integrations.factory import NotificationMessage
 from app.models.notification import (
     NotificationChannel,
     NotificationDeliveryStatus,
@@ -33,6 +34,19 @@ def query(**methods):
         setattr(value, name, AsyncMock(return_value=result))
     value.prefetch_related.return_value = value
     return value
+
+
+@pytest.mark.parametrize(
+    ("link_url", "expected"),
+    [
+        ("/app/notifications/123", "https://clouisle.example/app/notifications/123"),
+        ("https://other.example/path", "https://other.example/path"),
+        (None, None),
+    ],
+)
+def test_absolute_notification_url(link_url, expected):
+    with patch.object(tasks.settings, "FRONTEND_URL", "https://clouisle.example/"):
+        assert tasks._get_absolute_notification_url(link_url) == expected
 
 
 @pytest.mark.anyio
@@ -72,9 +86,8 @@ async def test_update_delivery_status_ignores_missing_delivery():
     orm = query(first=None)
     with patch.object(tasks.NotificationDelivery, "filter", return_value=orm):
         await tasks._update_delivery_status(
-            uuid4(), NotificationChannel.SLACK, NotificationDeliveryStatus.FAILED
+            uuid4(), NotificationChannel.EMAIL, NotificationDeliveryStatus.FAILED
         )
-
     orm.first.assert_awaited_once()
 
 
@@ -125,7 +138,6 @@ async def test_recipients_handle_incomplete_scope_configuration_safely():
             )
             == []
         )
-
     user_filter.assert_not_called()
     member_filter.assert_not_called()
 
@@ -149,11 +161,15 @@ async def test_email_delivery_marks_sending_then_success_for_all_recipients():
                 return_value=[("en@example.test", "en"), ("zh@example.test", "zh")]
             ),
         ),
-        patch.object(tasks, "send_email", new=send_email),
+        patch.object(
+            tasks.get_notification_integration(NotificationChannel.EMAIL),
+            "send",
+            new=send_email,
+        ),
     ):
         await tasks._send_notification_email(item.id)
 
-    assert [email.args[0] for email in send_email.await_args_list] == [
+    assert [call.args[0].recipient for call in send_email.await_args_list] == [
         "en@example.test",
         "zh@example.test",
     ]
@@ -181,10 +197,13 @@ async def test_email_delivery_without_recipients_is_safe_success():
         patch.object(
             tasks, "_get_notification_recipients", new=AsyncMock(return_value=[])
         ),
-        patch.object(tasks, "send_email", new=AsyncMock()) as send_email,
+        patch.object(
+            tasks.get_notification_integration(NotificationChannel.EMAIL),
+            "send",
+            new=AsyncMock(),
+        ) as send_email,
     ):
         await tasks._send_notification_email(item.id)
-
     send_email.assert_not_awaited()
     assert updates.await_args_list[-1] == call(
         item.id, NotificationChannel.EMAIL, NotificationDeliveryStatus.SUCCESS
@@ -216,11 +235,14 @@ async def test_email_delivery_records_partial_success_without_raising():
                 ]
             ),
         ),
-        patch.object(tasks, "send_email", new=AsyncMock(side_effect=[True, False])),
+        patch.object(
+            tasks.get_notification_integration(NotificationChannel.EMAIL),
+            "send",
+            new=AsyncMock(side_effect=[True, False]),
+        ),
         patch.object(tasks, "t", return_value="1/2 delivered"),
     ):
         await tasks._send_notification_email(item.id)
-
     assert updates.await_args_list[-1] == call(
         item.id,
         NotificationChannel.EMAIL,
@@ -230,32 +252,7 @@ async def test_email_delivery_records_partial_success_without_raising():
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("function_name", "sender_name", "channel", "locale"),
-    [
-        (
-            "_send_notification_dingtalk",
-            "send_dingtalk_notification",
-            NotificationChannel.DINGTALK,
-            "zh",
-        ),
-        (
-            "_send_notification_webhook",
-            "send_webhook_notification",
-            NotificationChannel.WEBHOOK,
-            "en",
-        ),
-        (
-            "_send_notification_slack",
-            "send_slack_notification",
-            NotificationChannel.SLACK,
-            "en",
-        ),
-    ],
-)
-async def test_external_delivery_marks_success_with_mocked_channel(
-    function_name, sender_name, channel, locale
-):
+async def test_external_delivery_marks_success_with_mocked_integration():
     item = notification()
     context = tasks.NotificationContext(notification=item, site_name="Clouisle")
     updates = AsyncMock()
@@ -265,38 +262,23 @@ async def test_external_delivery_marks_success_with_mocked_channel(
         patch.object(
             tasks, "_load_notification_context", new=AsyncMock(return_value=context)
         ),
-        patch.object(tasks, sender_name, new=sender),
+        patch.object(
+            tasks.get_notification_integration(NotificationChannel.WEBHOOK),
+            "send",
+            new=sender,
+        ),
         patch.object(
             tasks, "_build_notification_message", return_value=("title", "content")
         ) as message,
     ):
-        assert await getattr(tasks, function_name)(item.id) is True
-
-    message.assert_called_once_with(context, locale)
+        assert await tasks._send_notification_webhook(item.id) is True
+    message.assert_called_once_with(context, "en")
     sender.assert_awaited_once_with(
-        title="title", content="content", link_url=item.link_url
+        NotificationMessage(title="title", content="content", link_url=item.link_url)
     )
     assert updates.await_args_list[-1] == call(
-        item.id, channel, NotificationDeliveryStatus.SUCCESS
+        item.id, NotificationChannel.WEBHOOK, NotificationDeliveryStatus.SUCCESS
     )
-
-
-@pytest.mark.anyio
-async def test_external_delivery_failure_raises_after_sending_transition():
-    item = notification()
-    updates = AsyncMock()
-    with (
-        patch.object(tasks, "_update_delivery_status", new=updates),
-        patch.object(
-            tasks, "_load_notification_context", new=AsyncMock(return_value=None)
-        ),
-    ):
-        with pytest.raises(ValueError, match="notification_not_found"):
-            await tasks._send_notification_slack(item.id)
-
-    assert updates.await_args_list == [
-        call(item.id, NotificationChannel.SLACK, NotificationDeliveryStatus.SENDING)
-    ]
 
 
 def test_email_task_marks_failed_and_retries_after_channel_exception():
@@ -312,22 +294,164 @@ def test_email_task_marks_failed_and_retries_after_channel_exception():
         patch.object(
             tasks,
             "_send_notification_email",
-            new=AsyncMock(side_effect=RuntimeError("channel down")),
+            new=AsyncMock(side_effect=OSError("SMTP unavailable")),
         ),
-        patch.object(tasks, "_update_delivery_status", new=AsyncMock()) as update,
+        patch.object(
+            tasks, "_update_delivery_status", new=AsyncMock()
+        ) as update_status,
+        patch.object(tasks.send_notification_email_task, "retry", retry),
+        patch.object(tasks.send_notification_email_task.request, "retries", 2),
+        pytest.raises(RuntimeError, match="retry scheduled"),
     ):
-        tasks.send_notification_email_task.request.retries = 2
-        tasks.send_notification_email_task.retry = retry
-        with pytest.raises(RuntimeError, match="retry scheduled"):
-            tasks.send_notification_email_task.run(notification_id)
+        tasks.send_notification_email_task.run(notification_id)
 
-    assert update.await_args_list == [
-        call(
-            UUID(notification_id),
-            NotificationChannel.EMAIL,
-            NotificationDeliveryStatus.FAILED,
-            "notification_delivery_failed",
-        )
-    ]
+    update_status.assert_awaited_once_with(
+        UUID(notification_id),
+        NotificationChannel.EMAIL,
+        NotificationDeliveryStatus.FAILED,
+        "notification_delivery_failed",
+    )
     retry.assert_called_once()
     assert retry.call_args.kwargs["countdown"] == 180
+
+
+@pytest.mark.anyio
+async def test_feishu_recipients_follow_scope_and_skip_unbound_or_inactive_users():
+    team_id = uuid4()
+    active = SimpleNamespace(id=uuid4(), is_active=True, locale="zh")
+    inactive = SimpleNamespace(id=uuid4(), is_active=False, locale="en")
+    member_orm = MagicMock()
+    member_orm.prefetch_related = AsyncMock(
+        return_value=[
+            SimpleNamespace(user=active),
+            SimpleNamespace(user=inactive),
+        ]
+    )
+    bindings_orm = query(
+        all=[SimpleNamespace(user_id=active.id, feishu_user_id="ou_active")]
+    )
+
+    with (
+        patch.object(
+            tasks.TeamMember, "filter", return_value=member_orm
+        ) as member_filter,
+        patch.object(
+            tasks.FeishuUser, "filter", return_value=bindings_orm
+        ) as binding_filter,
+    ):
+        recipients = await tasks._get_feishu_recipients(
+            notification(scope=NotificationScope.TEAM, team_id=team_id)
+        )
+
+    member_filter.assert_called_once_with(team_id=team_id)
+    binding_filter.assert_called_once_with(user_id__in=[active.id])
+    assert recipients == [("ou_active", "zh")]
+
+
+@pytest.mark.anyio
+async def test_feishu_recipients_resolve_global_scope_and_deduplicate_linked_users():
+    duplicate_id = uuid4()
+    first = SimpleNamespace(id=duplicate_id, is_active=True, locale="en")
+    second = SimpleNamespace(id=uuid4(), is_active=True, locale="zh")
+    users_query = query(all=[first, second])
+    bindings_query = query(
+        all=[
+            SimpleNamespace(user_id=duplicate_id, feishu_user_id="ou_shared"),
+            SimpleNamespace(user_id=second.id, feishu_user_id="ou_second"),
+        ]
+    )
+    with (
+        patch.object(tasks.User, "filter", return_value=users_query) as user_filter,
+        patch.object(
+            tasks.FeishuUser, "filter", return_value=bindings_query
+        ) as binding_filter,
+    ):
+        recipients = await tasks._get_feishu_recipients(
+            notification(scope=NotificationScope.GLOBAL)
+        )
+
+    user_filter.assert_called_once_with(is_active=True)
+    binding_filter.assert_called_once_with(user_id__in=[duplicate_id, second.id])
+    assert recipients == [("ou_shared", "en"), ("ou_second", "zh")]
+
+
+@pytest.mark.anyio
+async def test_feishu_recipients_reject_user_scope_without_user_id():
+    with patch.object(tasks.User, "filter") as user_filter:
+        recipients = await tasks._get_feishu_recipients(
+            notification(scope=NotificationScope.USER, user_id=None)
+        )
+
+    assert recipients == []
+    user_filter.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_feishu_delivery_sends_to_linked_users_and_records_partial_success():
+    item = notification()
+    context = tasks.NotificationContext(notification=item, site_name="Clouisle")
+    sender = AsyncMock(side_effect=[None, OSError("rejected")])
+    updates = AsyncMock()
+
+    with (
+        patch.object(tasks, "_update_delivery_status", new=updates),
+        patch.object(
+            tasks, "_load_notification_context", new=AsyncMock(return_value=context)
+        ),
+        patch.object(
+            tasks,
+            "_get_feishu_recipients",
+            new=AsyncMock(return_value=[("ou_1", "en"), ("ou_2", "zh")]),
+        ),
+        patch.object(
+            tasks,
+            "get_notification_integration",
+            return_value=SimpleNamespace(send=sender),
+        ) as integration_factory,
+        patch.object(
+            tasks,
+            "_build_notification_message",
+            side_effect=[("title-en", "body-en"), ("标题", "正文")],
+        ),
+    ):
+        assert await tasks._send_notification_feishu(item.id) is True
+
+    integration_factory.assert_called_once_with(NotificationChannel.FEISHU)
+    assert sender.await_args_list[0].args[0] == NotificationMessage(
+        title="title-en",
+        content="body-en",
+        link_url=item.link_url,
+        recipient="ou_1",
+        link_label="View Details",
+    )
+    assert sender.await_args_list[1].args[0].link_label == "查看详情"
+    assert sender.await_args_list[1].args[0].recipient == "ou_2"
+    assert updates.await_args_list[-1].args[:3] == (
+        item.id,
+        NotificationChannel.FEISHU,
+        NotificationDeliveryStatus.SUCCESS,
+    )
+    assert "1/2 recipients succeeded" in updates.await_args_list[-1].args[3]
+
+
+@pytest.mark.anyio
+async def test_feishu_delivery_marks_no_bound_recipients_skipped():
+    item = notification()
+    context = tasks.NotificationContext(notification=item, site_name="Clouisle")
+    updates = AsyncMock()
+    with (
+        patch.object(tasks, "_update_delivery_status", new=updates),
+        patch.object(
+            tasks, "_load_notification_context", new=AsyncMock(return_value=context)
+        ),
+        patch.object(tasks, "_get_feishu_recipients", new=AsyncMock(return_value=[])),
+        patch.object(tasks, "get_notification_integration"),
+    ):
+        assert await tasks._send_notification_feishu(item.id) is True
+
+    assert updates.await_args_list[-1].args == (
+        item.id,
+        NotificationChannel.FEISHU,
+        NotificationDeliveryStatus.SKIPPED,
+        "feishu_no_bound_recipients",
+    )

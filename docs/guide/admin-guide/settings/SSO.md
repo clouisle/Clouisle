@@ -1,123 +1,88 @@
-# SSO Configuration Guide
+# Integrations and SSO Configuration Guide
 
-This guide explains how to configure Single Sign-On (SSO) in Clouisle, with GitHub as a step-by-step example.
+Manage external services in **Site Settings → Integrations** (`/site-settings/integrations`). Login providers, email, Webhook, Feishu and WeChat share one Integration model, with separate capabilities and permission domains. Builtins open their own pages (`/site-settings/integrations/email`, `/webhook`, `/feishu`, `/wechat`); login providers retain their list-page dialog.
 
----
+## Supported capabilities
 
-## Table of Contents
+| Provider type | Supported capabilities | Management domain |
+|---|---|---|
+| `oauth2`, `oidc`, `saml2`, `cas` | `user_login` | Login |
+| `email`, `webhook` | `notification` | Settings |
+| `feishu` | `directory_sync`, `user_login`, `notification`, `agent_chat` | Settings (shared app credentials, transport, directory and notifications); Login (sign-in opt-in); personal settings (replying Agent) |
+| `wechat` | `agent_chat`, `knowledge_collection` | Settings (platform feature availability); personal settings (each user's authorization and connection purpose) |
 
-- [Overview](#overview)
-- [Supported Protocols](#supported-protocols)
-- [Prerequisites](#prerequisites)
-- [Step 1: Enable SSO](#step-1-enable-sso)
-- [Step 2: Create an SSO Provider](#step-2-create-an-sso-provider)
-  - [Example: GitHub OAuth](#example-github-oauth)
-- [Step 3: Test the Connection](#step-3-test-the-connection)
-- [Step 4: Verify Login](#step-4-verify-login)
-- [Provider Configuration Reference](#provider-configuration-reference)
-  - [OAuth2 / OIDC](#oauth2--oidc)
-  - [SAML 2.0](#saml-20)
-  - [CAS](#cas)
-- [Attribute Mapping](#attribute-mapping)
-  - [Dot Notation](#dot-notation)
-  - [JSONPath](#jsonpath)
-- [Site Settings](#site-settings)
-- [API Reference](#api-reference)
-- [Troubleshooting](#troubleshooting)
+Capabilities are statically declared by the backend registry. Feishu and WeChat expose **feature switches, not an integration master switch**. Enable only the required capabilities; changing one does not grant another. Feishu remains a singleton app configured through **Site Settings → Integrations → Feishu**.
 
----
+Feishu directory sync remains manual and one-way. The administrator selects departments and starts each sync; it creates or updates local users, binds each Feishu identity, and creates or updates department teams and memberships. Notifications remain a separate capability. Feishu Agent chat is another explicit capability and routes private text messages through Clouisle's durable AgentRun runtime; it does not run an Agent loop inside Feishu.
 
-## Overview
+Each user selects their own replying Agent in **Personal settings → Feishu** or with `/use`. Candidates are published Agents their mapped Clouisle account can access. Selection is scoped per integration/user; conversations remain isolated per chat/user/Agent. Changes affect later messages only. Group chats and media are not supported.
 
-Clouisle supports SSO authentication, allowing users to log in with external identity providers such as GitHub, Google, Azure AD, Okta, and others. SSO can be used alongside password-based login or as the sole authentication method.
+## Configure Feishu Agent chat
 
-The login flow works as follows:
+Feishu Agent chat reuses the existing Feishu app integration and the durable Clouisle AgentRun runtime. It is an explicit `agent_chat` capability; enabling it does not broaden user access to Agents.
 
-1. User clicks an SSO provider button on the login page
-2. Browser redirects to the provider's authorization page
-3. User authenticates at the provider
-4. Provider redirects back to Clouisle with an authorization code
-5. Clouisle exchanges the code for user information
-6. User is logged in (or a new account is created automatically)
+1. Enable the Feishu bot capability in the Feishu developer console. Grant `im:message.p2p_msg:readonly` (receive private messages), `im:message:send_as_bot` (send bot replies), and `contact:user.base:readonly` (user identity lookup). Subscribe to `im.message.receive_v1` (**Receive messages**). Publish the app version and complete any required administrator approval so the permissions take effect. Group-mention receive permissions do not permit private-message intake.
+2. In **Site Settings → Integrations → Feishu → Agent chat**, choose **HTTP callback** or **Long connection (WebSocket)**. Existing configurations keep callback mode. Match the delivery mode in Feishu Open Platform's **Events & callbacks** settings.
+3. Ask each user to link their identity through Feishu directory sync or sign-in and select an Agent in **Personal settings → Feishu**. There is no administrator-managed global Agent list.
+4. Enable the `agent_chat` feature in **Integration configuration**. Run the existing API, Celery Beat, and an `agent`-queue worker; no new service or receiver command is required.
 
-## Supported Protocols
+The **Agent chat** tab always displays the required app setup checklist, including before the capability or app credentials are configured. It is setup guidance, not an automatic check of granted Feishu permissions.
 
-| Protocol | Use Case | Examples |
-|----------|----------|---------|
-| OAuth2 / OIDC | Most modern providers | GitHub, Google, Azure AD, Okta, Auth0 |
-| SAML 2.0 | Enterprise identity providers | Azure AD, Okta, OneLogin, ADFS |
-| CAS | University / institutional SSO | Apereo CAS |
+In **Personal settings → Feishu**, each user saves a replying Agent and turns on **Enable Agent chat**. This switch applies only to that user and saves immediately. Turning it off retains the choice/history and pauses intake, queued processing and unsent replies; already-started work may finish. The shared administrator capability must also remain enabled.
 
-## Prerequisites
+Personal settings show one setup hint at a time: channel availability, identity binding, selected Agent availability, then selection setup. Detailed pause/switch behavior is available under **How it works**.
 
-- Clouisle deployed and accessible via a public URL (SSO requires callback URLs reachable by the provider)
-- `API_BASE_URL` and `FRONTEND_URL` environment variables set to your actual domain (e.g., `https://example.com`)
-- Admin account with superuser privileges
+On upgrade, existing users retain the Agent from their latest selected session; unused users must choose one. The old global list and per-chat selection marker are removed. Deploy matching API and worker versions and restart workers together after the schema cutover.
 
----
+### Long connection: local or private-network deployments
 
-## Step 1: Enable SSO
+Save **Long connection (WebSocket)** as the event delivery mode. It uses the saved App ID and App Secret; no public callback URL, Verification Token, or Encrypt Key is needed. In Feishu Open Platform, choose long connection event delivery and subscribe to `im.message.receive_v1`.
 
-1. Log in as an admin and navigate to **Site Settings** -> **Security**
-2. In the **SSO Settings** section, toggle **Enable SSO** to on
-3. Configure the global SSO behavior:
+An existing Celery worker consuming `agent` automatically manages the receiver when Agent chat is enabled, long connection mode is saved, and app credentials are configured. Feature disable or callback mode stops it; credential changes replace it. Expiring Redis ownership elects one receiver with failover. The child stops when ownership is lost or its parent exits.
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| Allow Password Login | On | Keep password login available alongside SSO |
-| Auto Create Users | On | Automatically create accounts on first SSO login |
-| Require Approval | Off | Require admin approval for new SSO users |
-| Match by Email | On | Link SSO accounts to existing users by email |
+The Agent chat tab reports the saved receiver state: waiting for a worker, connecting, connected, reconnecting, unconfigured, disabled, or error. The SDK handles heartbeat/reconnection; terminal failures are restarted by the worker with backoff. Keep the API, worker, and Beat running with the same database, Redis, and `SECRET_KEY`. Use a dedicated Feishu app for local debugging to avoid sharing event delivery with production.
 
-4. Click **Save**
+**Connected** confirms only the WebSocket connection, not message permissions or event subscriptions. If the bot does not reply and there are no inbound receipts, check that `im:message.p2p_msg:readonly` is granted in the published app version and that `im.message.receive_v1` is subscribed with long connection delivery. Send a new private message after the changes take effect; do not assume previously unreceived messages will replay.
 
-**Note**: If you disable **Allow Password Login**, at least one superuser must have an SSO connection bound to their account. This prevents locking all admins out of the system.
+### HTTP callback: publicly reachable deployments
 
----
+Save **HTTP callback** as the delivery mode. Configure the matching Verification Token and Encrypt Key, then register `https://<backend-host>/api/v1/integrations/feishu/callback` in Feishu's encrypted event delivery settings. Feishu must be able to reach this URL. Secrets are encrypted at rest and never returned by the settings API. The callback endpoint rejects requests while long connection mode is selected; switching back to callbacks automatically stops the managed receiver.
 
-## Step 2: Create an SSO Provider
+### Bot commands
 
-### Example: GitHub OAuth
+Users can message the bot only in private text chats. `/agents` lists the user's accessible published Agents and `/use <number>` shares the personal-settings selection. `/new` starts a fresh conversation after the active run finishes, `/status` reports progress, `/stop` stops the selected Agent's active run, and `/help` lists commands. Plain text resumes the selected Agent's waiting `ask_user` run.
 
-#### 2.1 Register an OAuth App on GitHub
+The callback API is documented in [Feishu Agent Chat API](../../api-reference/endpoints/feishu-agent.md). Treat it as a Feishu provider callback, not a public application API.
 
-1. Go to GitHub: **Settings** -> **Developer settings** -> **OAuth Apps** -> **New OAuth App**
-2. Fill in the form:
+## Configure WeChat features
 
-| Field | Value |
-|-------|-------|
-| Application name | `Clouisle` (or any name you prefer) |
-| Homepage URL | `https://your-domain.com` |
-| Authorization callback URL | `https://your-domain.com/api/v1/sso/callback/github` |
+Open **Site Settings → Integrations → WeChat iLink** and enable `agent_chat`, `knowledge_collection`, or both. Existing workers and Beat handle polling and processing; no receiver service or command is added. Fresh installations start with both features off. On first upgrade, active authorized personal connections preserve their current purposes as enabled platform features; subsequent administrator choices are not overwritten.
 
-> The callback URL uses the externally reachable backend origin: `{BACKEND_ORIGIN}/api/v1/sso/callback/{provider_name}`. If the frontend proxies `/api/*`, use the frontend's public origin; otherwise use the backend's public origin. The backend derives this from the incoming request/proxy headers; `API_BASE_URL` is an internal service URL and does not select the callback origin.
+Users still authorize their own WeChat identity and select exactly one connection purpose in personal settings. Disabling a feature pauses its new intake, execution and replies without deleting personal credentials, history or pending records. Already-started operations may finish; re-enabling allows pending work to resume. Messages sent while polling is paused remain subject to WeChat's retention policy. See [Connect WeChat](../../user-guide/knowledge-base/wechat-collection.md).
 
-3. Click **Register application**
-4. Copy the **Client ID**
-5. Click **Generate a new client secret** and copy the **Client Secret**
+Personal WeChat settings place authorization and refresh in the header, with compact connection cards and inline purpose actions. Configuration fields use two columns on wider screens and one on narrow screens. Hover over or focus the help icon beside the page title for usage guidance, or beside the image/video recognition model field for model guidance. The settings page does not display Agent activity or collection history; current Agent run status and stop controls remain on the connection card. Backend records are retained.
 
-#### 2.2 Add the Provider in Clouisle
 
-1. Navigate to **Site Settings** -> **SSO**
-2. Click **Add Provider**
-3. Fill in the **Basic Info** tab:
 
-| Field | Value |
-|-------|-------|
-| Provider Name | `github` |
-| Protocol | `OAuth2/OIDC` |
-| Display Name | `GitHub` |
-| Button Text | `Sign in with GitHub` |
-| Icon URL | `https://github.githubassets.com/favicons/favicon-dark.svg` |
-| Enabled | On |
-| Allow Signup | On |
+## Permissions
 
-4. Switch to the **Configuration** tab and enter:
+- `admin:integrations:login:read/update`: view/manage login integrations and the global SSO policy shown on **Site Settings → Security**.
+- `admin:integrations:settings:read/update`: view/manage builtin email, Webhook, Feishu and WeChat feature settings, credentials, tests, synchronization, and Agent chat configuration.
+- Either read domain permits access to the Integrations page and catalog. The instance list is filtered to the caller's domains; edit controls remain separate. Backend authorization is authoritative.
+- Update authorization on the generic `PUT /api/v1/admin/integrations/{id}` is per field. `enabled_capabilities` and `is_enabled` are charged to the domain of the capabilities involved (`user_login` → login; Feishu `directory_sync`, `notification`, and `agent_chat` → settings). A builtin's `config` and `credentials` are charged to settings. Login-facing fields (`button_text`, `display_name`, `icon_url`, `login_config`, `attribute_mapping`) are charged to login whenever the integration type is login-capable. Feishu's specialized Agent-chat configuration API uses the settings domain; the app's existing login opt-in remains a separate login-domain capability.
+- `admin:settings:read/update` still governs unrelated site settings; it is not a replacement for integration permissions.
+
+## Configure GitHub login
+
+1. Deploy Clouisle with an externally reachable backend/proxy URL and a correct `FRONTEND_URL`. Keep a working administrator login available.
+2. In **Site Settings → Security**, configure the global SSO settings: enable SSO, allow password login, automatic account creation, approval, and email matching as appropriate. Their existing `sso_*` setting keys and authentication behavior are unchanged.
+3. Register a GitHub OAuth App under **GitHub Settings → Developer settings → OAuth Apps**. Use `https://your-domain.com/api/v1/sso/callback/github` as its authorization callback URL.
+4. Add a login integration named `github`, with provider type `oauth2`, display name `GitHub`, the `user_login` capability, and the desired button text/icon. Set its enabled state and its own `login_config` (signup, approval, default role).
+5. Enter this non-secret configuration:
 
 ```json
 {
   "client_id": "your-github-client-id",
-  "client_secret": "your-github-client-secret",
   "authorization_url": "https://github.com/login/oauth/authorize",
   "token_url": "https://github.com/login/oauth/access_token",
   "userinfo_url": "https://api.github.com/user",
@@ -125,283 +90,137 @@ The login flow works as follows:
 }
 ```
 
-5. Switch to the **Attribute Mapping** tab and enter:
+Set the integration's separate `attribute_mapping` field to `{"email":"email","username":"login","avatar_url":"avatar_url"}`.
 
-```json
-{
-  "email": "email",
-  "username": "login",
-  "avatar_url": "avatar_url"
-}
-```
+6. Supply the client secret through the credential field (`credentials.client_secret` in the API), not `config`. Save, test, and complete a real login in a separate browser session; the configuration test is not a full login.
 
-> GitHub returns `login` as the username field and `avatar_url` for the profile picture. The default mapping uses `name` and `picture` (OIDC standard claims), which don't match GitHub's response format.
+**Existing callback URLs remain unchanged:** `/api/v1/sso/login/{name}` and `/api/v1/sso/callback/{name}`. The frontend receives the result at `/sso-callback`. Use the externally reachable backend origin, or frontend origin when it proxies `/api/*`; `API_BASE_URL` is internal and does not select that origin. Keep the integration name stable because it is the registered URL slug.
 
-6. Click **Save**
+## Configure Feishu sign-in
 
----
+Feishu web sign-in is an opt-in capability of the Feishu integration. It uses the same app ID and app secret as directory sync; you do not create a second provider.
 
-## Step 3: Test the Connection
+1. In the Feishu developer console, add the card's **Redirect URL** — `https://<backend-host>/api/v1/sso/callback/<integration-name>`, for example `…/api/v1/sso/callback/feishu` — to the app's redirect-URI allowlist. The Feishu card shows this exact value with a copy button; `<backend-host>` is the externally reachable backend/proxy origin, the same origin used for every provider's SSO callback.
+2. Grant the app the login scopes `contact:user.base:readonly contact:user.email:readonly`. Identity comes from the signed-in user's profile and needs no scope, but the email field requires `contact:user.email:readonly`.
+3. In **Site Settings → Integrations → Feishu**, use the integration page's capability section and turn on **Feishu sign-in**, optionally setting the button text. Both capability switches (directory sync and sign-in) are saved together through the generic `PUT /api/v1/admin/integrations/{id}` as `enabled_capabilities`: opening the card requires the settings read domain, and changing the sign-in opt-in requires `admin:integrations:login:update`, so a role enabling it holds both domains (a superuser always can).
+4. Save the app credentials on the same page if not configured yet. They are shared with directory sync; a blank secret field preserves the saved secret.
 
-1. On the **SSO** settings page, find the GitHub provider in the list
-2. Click the **Test Connection** button (flask icon)
-3. A success message confirms the configuration is valid
+The login page advertises Feishu only when global SSO and the `user_login` feature are enabled. Disabling Feishu sign-in stops that feature without changing other enabled features; there is no integration master switch on this page.
 
-The test verifies that Clouisle can construct a valid authorization URL with the provided configuration. It does not perform a full login flow.
+The Feishu subject stored as the external identity `provider_user_id` is the profile `union_id`, falling back to `open_id` when `union_id` is absent, so replacing the app within the same developer account does not break existing connections.
 
----
+A Feishu account whose directory record carries no email receives the same deterministic placeholder address the directory sync uses, `feishu-<sha256(user_id)>@accounts.clouisle.example`, so sign-in and sync converge on one local account instead of creating two. Deriving that address needs the Feishu `user_id`, which requires `contact:user.employee_id:readonly`; without that scope there is no `user_id` for such an account and its first sign-in is rejected rather than creating a placeholder identity.
 
-## Step 4: Verify Login
+### Link Feishu to an existing account
 
-1. Open a new browser or incognito window
-2. Navigate to the login page
-3. You should see a **Sign in with GitHub** button below the password form
-4. Click the button and complete the GitHub authorization
-5. You will be redirected back to Clouisle and logged in
+Sign in to the existing Clouisle account first. Open the avatar menu → **Profile → Account security → Connected Accounts**, then choose **Link Feishu**. Complete Feishu authorization in the same browser tab and confirm the binding. This keeps the current account, password, email, permissions, and login session; it does not create an account or use email matching.
 
-If **Auto Create Users** is enabled, a new user account is created automatically on first login. If **Match by Email** is enabled and a user with the same email already exists, the SSO account is linked to the existing user.
+The link action appears only when global SSO is enabled in **Site Settings → Security** and **Feishu sign-in** is enabled in **Site Settings → Integrations → Feishu**. It reuses the existing registered sign-in callback URL; no additional Feishu redirect URL is required. An identity linked to a different account is rejected rather than reassigned; ask an administrator to resolve an existing directory or account binding.
 
----
+If the verified Feishu email already belongs to another local account, linking is also rejected even when the profile lacks a directory `user_id`. This is an ownership-conflict check, not automatic email matching or account merging.
 
-## Provider Configuration Reference
+Accounts linked through **Account security → Connected Accounts → Link Feishu** are excluded from directory synchronization. Their Feishu members count as skipped: sync does not create duplicate accounts, overwrite their local profile, or add department-team memberships. Existing memberships and the Feishu sign-in/bot link remain intact. Ordinary directory-managed users continue to sync. This ownership choice persists through later sign-ins and capability toggles. Upgrades recover prior manual links from retained successful `link_sso` audit events; records whose audit history was removed cannot be reliably classified retroactively.
 
-### OAuth2 / OIDC
+The authenticated APIs are `GET /api/v1/sso/links/integrations`, `POST /api/v1/sso/links?provider_name=<name>` (returns an authorization URL and a short-lived session ID), and `POST /api/v1/sso/links/complete` with `{"session_id":"..."}`. The provider callback only stages the verified identity. Completion requires the original signed-in owner and consumes the session. The browser also checks its pending session before allowing confirmation.
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `client_id` | Yes | OAuth2 Client ID from the provider |
-| `client_secret` | Yes | OAuth2 Client Secret from the provider |
-| `authorization_url` | Yes | Provider's authorization endpoint |
-| `token_url` | Yes | Provider's token exchange endpoint |
-| `userinfo_url` | Yes | Provider's user info endpoint |
-| `scopes` | No | Space-separated scopes (default: `openid email profile`) |
 
-**Common provider URLs:**
+## Synchronize Feishu knowledge
 
-| Provider | authorization_url | token_url | userinfo_url |
-|----------|-------------------|-----------|--------------|
-| GitHub | `https://github.com/login/oauth/authorize` | `https://github.com/login/oauth/access_token` | `https://api.github.com/user` |
-| Google | `https://accounts.google.com/o/oauth2/v2/auth` | `https://oauth2.googleapis.com/token` | `https://openidconnect.googleapis.com/v1/userinfo` |
-| GitLab | `https://gitlab.com/oauth/authorize` | `https://gitlab.com/oauth/token` | `https://gitlab.com/api/v4/user` |
+System superusers open **Site Settings → Integrations → Feishu** (`/site-settings/integrations/feishu`). The page has separate **Integration configuration**, **Directory sync**, **Notifications**, and **Feishu knowledge sync** tabs. Delegated integration permissions alone do not grant the knowledge tab or its API. Configure the Feishu app and the directory, sign-in, and notification capability switches in **Integration configuration**, where they share one save action; manage department scope and manual sync in **Directory sync**; check connectivity and send test messages in **Notifications**.
 
-### SAML 2.0
+1. Save and enable the existing Feishu app integration. Knowledge sync reuses its app credentials and tenant access token; it does not use a signed-in user's token.
+2. Grant Wiki space/node reads, Docx block reads, Sheets reads, Base table/field/record reads, document exports, and Drive file/media downloads as needed. File metadata uses `drive:drive.metadata:readonly` (or broader Drive access); media downloads require `docs:document.media:download` or the relevant document/Sheets/Base scope. Also grant resource access to the selected space and documents: API scopes alone are insufficient.
+3. Create a destination knowledge base in the intended team. If no embedding model is explicitly selected, imports use the system default embedding model, just like ordinary document processing; that default must exist and be enabled. Add a source, select a visible Feishu space and destination, and choose a sync interval (1–43,200 minutes).
+4. Enable automatic sync or run **Sync now**. Automatic dispatch requires Celery Beat and a worker consuming the `knowledge` queue. Inspect each source's status, last sync time, result counts, errors, and conversion warnings.
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `sp_entity_id` | Yes | Service Provider Entity ID (your Clouisle instance identifier) |
-| `idp_entity_id` | Yes | Identity Provider Entity ID |
-| `sso_url` | Yes | IdP Single Sign-On URL |
-| `x509_cert` | Yes | IdP X.509 certificate (PEM format, without header/footer) |
-| `acs_url` | Yes | Assertion Consumer Service URL (`{BACKEND_ORIGIN}/api/v1/sso/callback/{provider_name}`) |
-| `slo_url` | No | SP Single Logout URL |
-| `idp_slo_url` | No | IdP Single Logout URL |
-| `name_id_format` | No | NameID format (default: `urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified`) |
+The sync page displays Wiki space names and records node titles in new error/warning results. Click a node title to open its Feishu original in a new tab. Historical results without titles display a clickable node ID instead; Feishu still enforces the viewer's original access permissions.
 
-### CAS
+Unsupported source types and file formats are skipped, not failed. Their titles, original-document links, types, and reasons appear under **Skipped (unsupported)** (`last_result.skipped`); `unsupported` remains their count. A run with no actual failures is successful and clears `last_error`, even if it skips unsupported documents. Real read, conversion, or indexing errors still count as failures.
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `server_url` | Yes | CAS server base URL |
-| `service_url` | Yes | Service URL for CAS validation |
-| `version` | No | CAS protocol version: `1`, `2`, or `3` (default: `3`) |
+**Permission boundary:** this imports team knowledge; it does not mirror Feishu user ACLs. Local team/knowledge-base permissions control reading, retrieval, citations, and sharing after import. Confirm the destination audience before enabling sync. Revocation takes effect locally only when a subsequent sync detects it.
 
----
+Supported source types:
 
-## Attribute Mapping
+| Source | Import behavior |
+|---|---|
+| Modern document (`docx`) | Rich text, headings, lists, code, quotes, todos, tables; authenticated image download and embedded attachment text extraction. Date reminders become text with a UTC event time, original millisecond timestamps, creator ID, and notification/all-day flags; they do not schedule local notifications. |
+| Legacy document (`doc`) | Export to DOCX and parse through the existing document processor |
+| Spreadsheet (`sheet`) | Read every grid worksheet in explicit row/column bands, preserving displayed values and source formulas |
+| Base (`bitable`) | Read every accessible table, field definition, and paginated record; include attachment text/images where parseable |
+| Drive file (`file`) | Download and parse PDF, DOC/DOCX, TXT, MD/Markdown, HTML/HTM, CSV, XLS/XLSX, JSON, and PPTX |
+| Mindnote (`mindnote`) | Report unsupported: [Feishu's public API explicitly excludes Mindnote](https://open.feishu.cn/document/server-docs/docs/docs-overview). Export to a supported file and import that file instead. |
 
-Attribute mapping defines how provider user data fields map to Clouisle user fields. The supported Clouisle fields are:
+This is content ingestion, not a pixel-identical backup: Sheets floating images/charts and non-grid resources are not extracted; formulas are retained rather than calculated locally. Unsupported blocks, image/attachment formats, and extraction gaps produce warnings. Images remain local display assets, not OCR-derived searchable text. Downloads and generated content obey the configured knowledge-base upload limit; incomplete or oversized content fails without replacing the old version. Export failures (including partially unauthorized exports) are not promoted. Imported documents remain locally read-only, including chunk edits, deletion, and reprocessing.
 
-| Clouisle Field | Description |
-|----------------|-------------|
-| `email` | User email address |
-| `username` | Username |
-| `avatar_url` | Profile picture URL |
+Each run scans the whole space before removing missing documents. Content changes replace the local index after successful processing while preserving the document ID; unchanged content avoids re-embedding. Download, incomplete scan, or processing failures preserve the previous imported version. Confirmed access denial removes the affected local copy; transient or ambiguous errors do not count as deletion. Restored access permits reimport. Disabling a source stops synchronization but keeps imported documents; deleting a source removes its imported documents and indexes, not unrelated local uploads.
 
-### Dot Notation
+## Delivery log
 
-For simple nested objects, use dot-separated paths:
+**Delivery log** (`/deliveries`, under Monitoring in the sidebar) shows the durable outbound queue shared by Feishu and WeChat Agent chat: provider, event, artifact file name, status, error and the originating `AgentRun`. It requires `admin:integrations:settings:read`.
 
-```json
-{
-  "email": "email",
-  "username": "profile.name",
-  "avatar_url": "profile.picture"
-}
-```
+Select one or more providers and statuses with the same faceted filters as Audit Logs. Search file names (preserved in the page URL) or filter by run ID. The page defaults to 20 rows; choose 10, 20, 50 or 100. Changing a filter resets pagination. `sent` means the provider accepted the reply request, not that the recipient read or downloaded it. Failed rows show the provider's original error text, HTTP status and code; long errors wrap in the table. `pending`, `sending` and `unknown` rows are queue state: a `sending` lease that expires becomes `unknown` and is never resent blindly. Message text, Feishu/WeChat resource keys and credentials are not displayed.
 
-This extracts `data["profile"]["name"]` from the provider response.
+The queue is one provider-neutral table (`integration_deliveries`). Startup copies rows from the former per-provider delivery tables and drops them, so deploy the matching API and worker versions together.
 
-### JSONPath
+## Protocol configuration
 
-For complex data structures (arrays, filters), use JSONPath expressions starting with `$`:
+OAuth2/OIDC retains client IDs, endpoints, scopes, and mapping; SAML2 retains entity IDs, SSO URL, certificate and ACS URL (`/sso/callback/{name}`); CAS retains server URL, service URL and version.
 
-```json
-{
-  "email": "$.emails[0].value",
-  "username": "$.name.givenName",
-  "avatar_url": "$.photos[0].value"
-}
-```
+Attribute mapping supports dot paths such as `profile.name` and JSONPath expressions such as `$.emails[0].value`; the first matching value is used. GitHub's username and avatar fields are `login` and `avatar_url` rather than OIDC's usual `name` and `picture`.
 
-JSONPath is useful when the provider returns data like:
+Login-specific `allow_signup`, `require_approval`, and `default_role_id` are stored in `login_config`, not at the top level. Existing automatic registration, approval, and email-matching behavior is preserved. Disabling password login still requires at least one superuser with a bound identity connection.
 
-```json
-{
-  "emails": [
-    {"value": "user@example.com", "primary": true},
-    {"value": "alias@example.com", "primary": false}
-  ],
-  "name": {"givenName": "John", "familyName": "Doe"},
-  "photos": [{"value": "https://example.com/photo.jpg"}]
-}
-```
+## API reference
 
-When a JSONPath expression matches multiple values, the first match is used.
+Public discovery is `GET /api/v1/sso/integrations`; the removed `/sso/providers` endpoint has no compatibility alias. Only enabled login-capable integrations appear, and discovery returns an empty list when global SSO is disabled. Users disconnect their own identities through `DELETE /api/v1/sso/connections/{id}`.
 
-**Note**: Paths that do not start with `$` are treated as dot notation for backward compatibility. Existing mappings like `{"email": "email"}` continue to work without changes.
+Management uses `/api/v1/admin/integrations`:
 
----
+| Method | Relative path | Purpose |
+|---|---|---|
+| GET | `/types` | Static provider/capability catalog |
+| GET | base path | Domain-filtered instances |
+| POST | base path | Create a non-singleton login integration |
+| PUT / DELETE | `/{id}` | Update an authorized instance; delete login integrations only (singleton deletion forbidden) |
+| POST | `/{id}/test` | Test login integration configuration |
+| GET / PUT | `/login-settings` | Global login policy; existing SSOSettings wire keys (UI: **Site Settings → Security**) |
+| GET / PUT | `/email`, `/webhook` | Builtin configuration |
+| POST | `/email/test`, `/webhook/test` | Builtin delivery tests |
+| GET / PUT | `/feishu/config` | Feishu app configuration |
+| GET | `/feishu/departments` | Browse visible departments |
+| PUT | `/feishu/department-scope` | Save selected departments |
+| POST | `/feishu/sync` | Run manual directory sync |
+| POST | `/feishu/connection-check` | Validate saved app credentials by requesting a tenant token; no directory scope required |
+| GET | `/feishu/test-recipients` | List up to 20 active local accounts linked to Feishu |
+| POST | `/feishu/test-message` | Send a custom message to one explicitly selected linked account; requires Notifications capability |
 
-## Site Settings
+See [SSO and Integrations API](../../api-reference/endpoints/sso.md) for request shapes. Both Feishu capability switches are saved through the generic `PUT /{id}` as `enabled_capabilities`, charged per capability that actually changes (sign-in on the login domain, directory sync on the settings domain), and the sign-in button text is a login-domain field. The `/feishu/*` endpoints stay on the settings domain and handle app credentials, department scope, directory sync, connection checks, and explicit single-recipient notification tests. Admin responses **never return credentials**, decrypted or encrypted. They expose only `credentials_configured` field names and `supported_capabilities`; do not treat a redacted response as a complete backup. Empty credential values preserve saved secrets. Secrets are Fernet-encrypted at rest.
 
-These global settings control SSO behavior across all providers. Configure them in **Site Settings** -> **Security**.
+The Feishu card exposes a connection check and a manual test-message form. A test message is sent only to the selected active account's existing Feishu binding; it does not broadcast and does not create a notification record.
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `sso_enabled` | `false` | Master switch for SSO. When off, no SSO buttons appear on the login page. |
-| `sso_allow_password_login` | `true` | Allow password login when SSO is enabled. Disabling this makes SSO the only login method. |
-| `sso_auto_create_users` | `true` | Automatically create user accounts on first SSO login. |
-| `sso_require_approval` | `false` | New SSO users require admin approval before they can access the system. |
-| `sso_match_by_email` | `true` | Match SSO users to existing accounts by email address. |
+## Upgrading existing installations
 
-Each provider also has its own **Allow Signup** and **Require Approval** settings that can override the global defaults.
+**Back up the database and retain the matching backend `SECRET_KEY` before deploying.** Stop all old-version API processes and workers before schema migration. Perform the cutover, then start API processes and workers using the same new version. **Mixed-version rolling deployment is not supported:** old and new binaries use different table and column names. Transactional/advisory-lock migration protection does not make old processes compatible with the migrated schema.
 
----
+Before schema generation, the idempotent migration renames `sso_providers` to `integrations` and `protocol` to `provider_type`, moves signup policy into `login_config`, adds `user_login`, and separates/encrypts secret configuration. Session and user identity relation columns change from `provider_id` to `integration_id`, while their authentication table names and the external identity field `provider_user_id` remain unchanged.
 
-## API Reference
+**Integration UUIDs, identity connections, external identity IDs, and foreign-key relationships are preserved.** Users do not need to reconnect their identities, and identity providers do not need new callback URLs. Connection response fields become `integration_id`, `integration_name`, `integration_display_name`, and `integration_icon_url`; update API clients previously reading `provider_*` fields.
 
-### Public Endpoints
+Email, Webhook, and Feishu settings are imported into singleton Integration records once. Migrated legacy per-service SiteSetting keys are removed only after persistence; runtime consumers no longer fall back to those keys. Global `sso_*` login policy remains, under the integration category.
 
-```http
-GET /api/v1/sso/providers
-```
+Role grants migrate from `admin:sso:read/update` to `admin:integrations:login:read/update`. Existing `admin:settings:read/update` grants additionally receive the corresponding integration settings-domain grant while retaining unrelated settings access. This does not grant login administrators builtin credential access, or vice versa.
 
-Returns the list of enabled SSO providers (for rendering login buttons).
+Permission grants migrate once; the completion marker prevents a restart from restoring new-domain permissions deliberately revoked by an administrator. Generic `PUT /{id}` for a builtin also requires settings-domain update permission; singleton deletion is forbidden.
 
-```http
-GET /api/v1/sso/login/{provider_name}?redirect=/dashboard
-```
-
-Initiates the SSO login flow. Redirects the browser to the provider's authorization page.
-
-```http
-GET /api/v1/sso/callback/{provider_name}
-```
-
-Handles the provider callback. This URL is used as the redirect/callback URI when registering your app with the provider.
-
-### Admin Endpoints
-
-Admin endpoints are protected by permission checks rather than a hard superuser requirement: listing providers requires `admin:sso:read`, while creating, updating, deleting, and testing providers (as well as disconnecting user SSO connections) require `admin:sso:update`. The `Admin` role has `admin:sso:read`; `admin:sso:update` is limited to Super Admin.
-
-```http
-GET    /api/v1/admin/sso/providers
-POST   /api/v1/admin/sso/providers
-PUT    /api/v1/admin/sso/providers/{provider_id}
-DELETE /api/v1/admin/sso/providers/{provider_id}
-POST   /api/v1/admin/sso/providers/{provider_id}/test
-```
-
-### Create Provider Example
-
-```http
-POST /api/v1/admin/sso/providers
-Content-Type: application/json
-
-{
-  "name": "github",
-  "protocol": "oidc",
-  "display_name": "GitHub",
-  "button_text": "Sign in with GitHub",
-  "icon_url": "https://github.githubassets.com/favicons/favicon-dark.svg",
-  "config": {
-    "client_id": "your-client-id",
-    "client_secret": "your-client-secret",
-    "authorization_url": "https://github.com/login/oauth/authorize",
-    "token_url": "https://github.com/login/oauth/access_token",
-    "userinfo_url": "https://api.github.com/user",
-    "scopes": "read:user user:email"
-  },
-  "attribute_mapping": {
-    "email": "email",
-    "username": "login",
-    "avatar_url": "avatar_url"
-  },
-  "is_enabled": true,
-  "allow_signup": true,
-  "require_approval": false
-}
-```
-
-Response:
-
-```json
-{
-  "code": 0,
-  "data": {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "name": "github",
-    "protocol": "oidc",
-    "display_name": "GitHub",
-    "is_enabled": true,
-    "created_at": "2026/02/09 10:00"
-  },
-  "msg": "success"
-}
-```
-
----
+**Rollback requires restoring the pre-cutover database with the matching application version and encryption key.** Do not simply downgrade binaries against the migrated schema, change `SECRET_KEY`, or attempt to reconstruct credentials from admin responses. If startup migration fails, resolve the reported cause before resuming service; do not manually seed duplicate providers or discard identity rows.
 
 ## Troubleshooting
 
-### SSO buttons not appearing on login page
-
-- Verify **Enable SSO** is turned on in **Site Settings** -> **Security**
-- Verify the provider's **Enabled** toggle is on
-- Check `FRONTEND_URL` and the reverse proxy's forwarded host/proto headers; `API_BASE_URL` does not select the public callback origin
-
-### Callback URL mismatch error
-
-The callback URL registered with the provider must exactly match:
-
-```
-{BACKEND_ORIGIN}/api/v1/sso/callback/{provider_name}
-```
-
-- `{BACKEND_ORIGIN}` is the externally reachable origin used by the backend callback route. Use the frontend public origin when it proxies `/api/*`; otherwise use the backend public origin.
-- `provider_name` is the name you set when creating the provider in Clouisle (e.g., `github`)
-
-### User redirected to error page after SSO login
-
-Check the backend logs for details:
-
-```bash
-# Docker Compose
-docker compose logs api | grep sso
-
-# Kubernetes
-kubectl -n clouisle logs deployment/api | grep sso
-```
-
-Common causes:
-- **SSO session expired**: The user took longer than 10 minutes to complete authentication. Try again.
-- **Invalid client secret**: The `client_secret` in the provider configuration is incorrect.
-- **Scope not authorized**: The requested scopes are not enabled in the provider's OAuth app settings.
-
-### User created but email is empty
-
-The provider may not return the email in the expected field. Check the provider's API documentation and update the attribute mapping. For GitHub, ensure the `read:user user:email` scopes are included, and note that GitHub may return `null` for email if the user has set their email to private.
-
-### "Cannot disconnect the only authentication method"
-
-Users who logged in via SSO without a password cannot disconnect their SSO connection, as it would leave them with no way to log in. Set a password first via the admin panel, then disconnect.
+- Missing login buttons: check global SSO enablement, integration enablement, and the `user_login` capability. For Feishu this is an explicit opt-in, so an enabled integration whose `enabled_capabilities` omit `user_login` shows no button.
+- Feishu callback rejected or no account created: confirm the app registered `https://<backend-host>/api/v1/sso/callback/<integration-name>`, that the login scopes include `contact:user.email:readonly`, and — for accounts without a directory email — `contact:user.employee_id:readonly`, without which there is no `user_id` to derive the placeholder address and the first sign-in is rejected.
+- Callback mismatch: confirm the registered name and externally reachable URL/proxy headers. Do not register a new integrations callback route.
+- Missing configuration controls: check the relevant login or settings permission domain.
+- Feishu department browsing or sync reports that its feature is disabled: save the App ID and App Secret, then enable and save **Directory sync** in Integration configuration. No separate integration master switch is required.
+- A `99991672` sync error lists the missing API scopes for the specific failed endpoint (for example, Bitable read permissions). Request those scopes under Feishu Open Platform → this app → Permissions, publish the app version, obtain administrator approval, and retry. Requirements differ by endpoint.
+- Undecryptable credentials: restore the matching `SECRET_KEY` or re-save credentials using the relevant settings form.
+- Cannot disconnect an identity: an account with no password cannot remove its only authentication method; establish another valid method first.

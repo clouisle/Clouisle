@@ -77,6 +77,15 @@ async def test_issue255_sandbox_result_store_compatibility_branches():
         error=result.error,
         stdout=result.stdout,
         stderr=result.stderr,
+        timed_out=result.timed_out,
+        stdout_log=result.stdout_log,
+        stderr_log=result.stderr_log,
+        stdout_truncated=result.stdout_truncated,
+        stderr_truncated=result.stderr_truncated,
+        stdout_lines=result.stdout_lines,
+        stderr_lines=result.stderr_lines,
+        stdout_log_partial=result.stdout_log_partial,
+        stderr_log_partial=result.stderr_log_partial,
         artifacts=result.artifacts,
     )
 

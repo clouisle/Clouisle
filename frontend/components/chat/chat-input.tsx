@@ -36,8 +36,6 @@ export interface ChatInputFile {
 export interface AttachmentConfig {
   max_file_size: number;  // bytes
   max_files: number;
-  max_content_length: number;  // characters
-  truncate_strategy: 'end' | 'start' | 'middle';
   allowed_extensions: string[];
 }
 
@@ -50,10 +48,13 @@ interface ChatInputProps {
   disabled?: boolean;
   isLoading?: boolean;
   isStreaming?: boolean;
-  /** Enable image attachments (vision) */
   allowAttachments?: boolean;
-  /** Enable document file upload */
+  /** Document upload is enabled by agent attachment configuration independently of model modalities. */
   enableFileUpload?: boolean;
+  /** Model-effective native input modalities that allow media selection. */
+  inputModalities?: string[];
+  /** Model-effective MIME restrictions, when known. */
+  inputMimeTypes?: Record<string, string[]>;
   /** Document file upload configuration */
   fileUploadConfig?: AttachmentConfig | null;
   acceptedFileTypes?: string;
@@ -106,8 +107,10 @@ export function ChatInput({
   disabled = false,
   isLoading = false,
   isStreaming = false,
-  allowAttachments = true,
-  enableFileUpload = false,
+  inputModalities,
+  inputMimeTypes,
+  allowAttachments: allowAttachmentsOverride,
+  enableFileUpload: enableFileUploadOverride,
   fileUploadConfig = null,
   acceptedFileTypes = 'image/*,.pdf,.doc,.docx,.txt,.md',
   maxFiles = 5,
@@ -134,6 +137,20 @@ export function ChatInput({
   const files = controlledFiles ?? internalFiles;
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const setFiles = onFilesChange ?? setInternalFiles;
+  const isAcceptedAttachment = useCallback((file: File) => {
+    if (isDocumentFile(file)) {
+      const extension = '.' + file.name.split('.').pop()?.toLowerCase();
+      return Boolean(enableFileUploadOverride && (fileUploadConfig?.allowed_extensions ?? DOCUMENT_EXTENSIONS).includes(extension));
+    }
+    const modality = file.type.split('/')[0];
+    if (allowAttachmentsOverride === false || !['image', 'audio', 'video'].includes(modality)) return false;
+    if (!(inputModalities ?? ['image']).includes(modality)) return false;
+    const acceptedMimes = inputMimeTypes?.[modality];
+    return !acceptedMimes || acceptedMimes.includes(file.type.toLowerCase());
+  }, [allowAttachmentsOverride, enableFileUploadOverride, fileUploadConfig, inputModalities, inputMimeTypes]);
+  const nativeModalities = new Set(inputModalities ?? ['image']);
+  const allowAttachments = allowAttachmentsOverride ?? ['image', 'audio', 'video'].some((modality) => nativeModalities.has(modality));
+  const enableFileUpload = enableFileUploadOverride ?? false;
   const attachmentsDisabledDuringRun = disabled || isLoading || isStreaming;
 
   const documentMaxFileSize = fileUploadConfig?.max_file_size || GENERAL_UPLOAD_MAX_FILE_SIZE_BYTES;
@@ -197,8 +214,13 @@ export function ChatInput({
       const selectedFiles = Array.from(e.target.files || []);
       if (selectedFiles.length === 0) return;
 
+      const acceptedFiles = selectedFiles.filter((file) => {
+        if (isAcceptedAttachment(file)) return true;
+        setFileError(t('invalidFileType'));
+        return false;
+      });
       const remainingSlots = maxFiles - files.length;
-      const filesToAdd = selectedFiles.slice(0, remainingSlots).filter(validateFileSize);
+      const filesToAdd = acceptedFiles.slice(0, remainingSlots).filter(validateFileSize);
       if (filesToAdd.length === 0) return;
       setFileError(null);
 
@@ -225,7 +247,7 @@ export function ChatInput({
         fileInputRef.current.value = '';
       }
     },
-    [attachmentsDisabledDuringRun, files, maxFiles, onFilesChange, t, validateFileSize]
+    [attachmentsDisabledDuringRun, files, maxFiles, onFilesChange, t, validateFileSize, isAcceptedAttachment]
   );
 
   const removeFile = useCallback((fileId: string) => {
@@ -264,17 +286,8 @@ export function ChatInput({
         const file = item.getAsFile();
         if (!file) continue;
         
-        const isImage = file.type.startsWith('image/');
-        const isDocument = isDocumentFile(file);
-        
-        // Handle images if vision is enabled (and not marked as document)
-        if (isImage && allowAttachments && !isDocument) {
-          pastedFiles.push(file);
-        }
-        // Handle document files if file upload is enabled
-        else if (isDocument && enableFileUpload) {
-          pastedFiles.push(file);
-        }
+        if (isAcceptedAttachment(file)) pastedFiles.push(file);
+        else setFileError(t('invalidFileType'));
       }
 
       if (pastedFiles.length === 0) return;
@@ -303,7 +316,7 @@ export function ChatInput({
         setInternalFiles((prev) => [...prev, ...newFiles]);
       }
     },
-    [attachmentsDisabledDuringRun, allowAttachments, enableFileUpload, files, maxFiles, onFilesChange, t, validateFileSize]
+    [attachmentsDisabledDuringRun, allowAttachments, enableFileUpload, isAcceptedAttachment, files, maxFiles, onFilesChange, t, validateFileSize]
   );
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -336,25 +349,13 @@ export function ChatInput({
       if (e.dataTransfer.files.length > 0) setFileError(t('attachmentsDisabledDuringRun'));
       return;
     }
-    if (!allowAttachments && !enableFileUpload) return;
-
     const droppedFiles = Array.from(e.dataTransfer.files);
     if (droppedFiles.length === 0) return;
-
-    const validFiles: File[] = [];
-    for (const file of droppedFiles) {
-      const isImage = file.type.startsWith('image/');
-      const isDocument = isDocumentFile(file);
-
-      // Accept images if vision is enabled
-      if (isImage && allowAttachments && !isDocument) {
-        validFiles.push(file);
-      }
-      // Accept documents if file upload is enabled
-      else if (isDocument && enableFileUpload) {
-        validFiles.push(file);
-      }
-    }
+    const validFiles = droppedFiles.filter((file) => {
+      if (isAcceptedAttachment(file)) return true;
+      setFileError(t('invalidFileType'));
+      return false;
+    });
 
     if (validFiles.length === 0) return;
 
@@ -378,7 +379,7 @@ export function ChatInput({
     } else {
       setInternalFiles((prev) => [...prev, ...newFiles]);
     }
-  }, [attachmentsDisabledDuringRun, allowAttachments, enableFileUpload, files, maxFiles, onFilesChange, t, validateFileSize]);
+  }, [attachmentsDisabledDuringRun, isAcceptedAttachment, files, maxFiles, onFilesChange, t, validateFileSize]);
 
   const isRunning = isLoading || isStreaming;
   const showStop = isRunning && Boolean(onStop);
@@ -391,13 +392,13 @@ export function ChatInput({
   // Build accepted file types based on enabled features
   const buildAcceptedTypes = () => {
     const types: string[] = [];
-    if (allowAttachments) {
-      types.push('image/*');
+    for (const modality of ['image', 'audio', 'video']) {
+      if (!nativeModalities.has(modality)) continue;
+      const mimes = inputMimeTypes?.[modality];
+      types.push(...(mimes?.length ? mimes : [`${modality}/*`]));
     }
     if (enableFileUpload) {
-      // Use both extensions and MIME types for better browser compatibility
-      const extensions = fileUploadConfig?.allowed_extensions || DOCUMENT_EXTENSIONS;
-      types.push(...extensions);
+      types.push(...(fileUploadConfig?.allowed_extensions || DOCUMENT_EXTENSIONS));
       types.push(...DOCUMENT_MIME_TYPES);
     }
     return types.length > 0 ? types.join(',') : acceptedFileTypes;

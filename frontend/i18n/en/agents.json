@@ -34,6 +34,8 @@
       "hideToolCallsDesc": "Hide tool call details in chat while keeping tools enabled.",
       "hideMessageActions": "Hide Message Actions",
       "hideMessageActionsDesc": "Hide the action toolbar under each message.",
+      "enableCitations": "Enable Citations",
+      "enableCitationsDesc": "When enabled, answers include citations and display their sources.",
       "hideReasoning": "Hide Reasoning",
       "hideReasoningDesc": "Hide the thinking process / chain of thought in chat.",
       "hideArtifactList": "Hide Artifact List",
@@ -312,10 +314,7 @@
       "attachments": {
         "title": "Files and Images",
         "tooltip": "Allow users to attach files and images to the conversation",
-        "description": "Attachments are stored as Assets and the agent can inspect or parse them on demand. Images are sent directly to the model only when the selected chat model supports vision.",
-        "maxContentLength": "Max Content Length",
-        "maxContentLengthHint": "Maximum characters returned when the agent explicitly parses a file (1,000-500,000)",
-        "characters": "chars",
+        "description": "Attachments are stored as Assets and the agent can inspect, read, or search them on demand. Images are sent directly to the model only when the selected chat model supports vision.",
         "contextHint": "Attachments remain available as Assets. They are not automatically parsed into the conversation context."
       },
       "userInput": {

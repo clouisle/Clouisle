@@ -73,6 +73,14 @@ async def lifespan(app: FastAPI):
         modules={"models": ["app.models"]},
         _enable_global_fallback=True,  # Enable global state for compatibility
     )
+    from app.core.integration_migration import (
+        initialize_integrations,
+        migrate_integration_schema,
+    )
+
+    # Authentication configuration must be migrated before ORM schema generation.
+    # Fail startup on a failed cutover rather than serving split configuration.
+    await migrate_integration_schema()
 
     # Run migrations BEFORE generating schemas
     from app.core.init_data import (
@@ -90,15 +98,18 @@ async def lifespan(app: FastAPI):
         init_message_round_fields,
         init_message_branch_parent_field,
         init_message_history_index,
+        init_feishu_placeholder_emails,
         init_conversation_context_summary_columns,
         init_conversation_memory_watermark_column,
         init_assets_tables,
         init_agent_run_fields,
         init_observability_run_error_index,
+        init_observability_tool_payload_table,
         init_observability_run_fields,
         init_agent_user_input_request,
         init_agent_hide_tool_calls_field,
         init_agent_hide_message_actions_reasoning_fields,
+        init_agent_enable_citations_field,
         init_agent_hide_artifact_list_field,
         init_agent_memory_fields,
         init_memory_tables,
@@ -113,7 +124,7 @@ async def lifespan(app: FastAPI):
         init_workflow_run_page_config,
         init_workflow_pause_requests_table,
         drop_model_provider_uniqueness,
-        init_model_provider_display_name,
+        migrate_model_input_modalities,
         revert_channel_id_to_model_id,
         init_kb_rerank_fields,
         init_kb_visibility_fields,
@@ -134,7 +145,6 @@ async def lifespan(app: FastAPI):
         await init_agent_attachment_fields()
     except Exception as e:
         logger.warning(f"Agent attachment migration failed: {e}")
-
     try:
         await init_agent_tools_credentials()
     except Exception as e:
@@ -195,6 +205,11 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Message branch parent migration failed: {e}")
 
     try:
+        await init_feishu_placeholder_emails()
+    except Exception as e:
+        logger.warning(f"Feishu placeholder email migration failed: {e}")
+
+    try:
         await init_message_history_index()
     except Exception as e:
         logger.warning(f"Message history index migration failed: {e}")
@@ -233,6 +248,10 @@ async def lifespan(app: FastAPI):
         logger.warning(
             f"Agent hide_message_actions/hide_reasoning migration failed: {e}"
         )
+    try:
+        await init_agent_enable_citations_field()
+    except Exception as e:
+        logger.warning(f"Agent enable_citations migration failed: {e}")
 
     # Agent APIs require this column, so do not serve an incompatible schema.
     await init_agent_hide_artifact_list_field()
@@ -306,7 +325,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Model provider uniqueness migration failed: {e}")
 
-    await init_model_provider_display_name()
+    await migrate_model_input_modalities()
     try:
         await init_kb_rerank_fields()
     except Exception as e:
@@ -337,8 +356,25 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Retrieval evaluation table cleanup failed: {e}")
 
     await init_observability_run_fields()
+    try:
+        await init_observability_tool_payload_table()
+    except Exception as e:
+        logger.warning(f"Observability tool payload table migration failed: {e}")
+    from app.core.sso_link_migration import migrate_sso_link_sessions
+
+    await migrate_sso_link_sessions()
     # Generate schemas
     await Tortoise.generate_schemas()
+    from app.core.wechat_migration import migrate_wechat_knowledge_schema
+
+    await migrate_wechat_knowledge_schema()
+    from app.core.feishu_agent_migration import migrate_feishu_agent_selection
+
+    await migrate_feishu_agent_selection()
+    from app.core.integration_delivery_migration import migrate_integration_deliveries
+
+    await migrate_integration_deliveries()
+    await initialize_integrations()
     try:
         await init_observability_run_error_index()
     except Exception as e:
@@ -530,7 +566,9 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                         # 隐藏敏感字段
                         if isinstance(request_body, dict):
                             request_body = {
-                                k: "***" if k in ["password", "token", "secret"] else v
+                                k: "***"
+                                if k in ["password", "token", "secret", "verify_code"]
+                                else v
                                 for k, v in request_body.items()
                             }
                     elif "form" in content_type:

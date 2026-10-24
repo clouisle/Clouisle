@@ -40,7 +40,7 @@ class AuditLogService:
     #     计数器（conversation_count、message_count、total_tokens、run_count 等）；
     #     脱敏器 SENSITIVE_FIELDS 键匹配无法覆盖的密钥容器：
     #     Agent.tools_credentials、Tool.credentials/http_config/mcp_config、
-    #     SSOProvider.config、Workflow.trigger_config、Model.api_key、
+    #     Integration.config/credentials、Workflow.trigger_config、Model.api_key、
     #     APIKey.key_prefix/key_hash、User.hashed_password/totp_secret/totp_backup_codes_hash。
     SNAPSHOT_FIELDS: dict[str, tuple[str, ...]] = {
         "agent": (
@@ -54,6 +54,7 @@ class AuditLogService:
             "hide_tool_calls",
             "hide_message_actions",
             "hide_reasoning",
+            "enable_citations",
             "hide_artifact_list",
             "tools_config",
             "enable_attachments",
@@ -150,17 +151,16 @@ class AuditLogService:
             "password_expiration_exempt",
             "totp_enabled",
         ),
-        "sso_provider": (
+        "integration": (
             "name",
-            "protocol",
+            "provider_type",
             "display_name",
             "icon_url",
             "button_text",
             "attribute_mapping",
             "is_enabled",
-            "allow_signup",
-            "require_approval",
-            "default_role_id",
+            "enabled_capabilities",
+            "login_config",
         ),
         "memory_entity": (
             "name",
@@ -208,7 +208,7 @@ class AuditLogService:
             "description",
         ),
         "sso_connection": (
-            "provider_id",
+            "integration_id",
             "provider_user_id",
             "provider_username",
             "provider_email",

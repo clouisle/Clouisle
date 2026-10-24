@@ -212,3 +212,87 @@ async def test_extract_text_resourceizes_docx_embedded_image(tmp_path):
     assert "data:image/png;base64" not in text
     assert f"/api/v1/knowledge-bases/{kb_id}/documents/{document_id}/media/" in text
     assert metadata["media_assets"][0]["content_type"] == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_extract_pptx_preserves_svg_without_raster_fallback(
+    tmp_path, monkeypatch
+):
+    from lxml import etree
+    from pptx import Presentation
+    from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+    from pptx.opc.package import Part
+    from pptx.opc.packuri import PackURI
+    from pptx.util import Inches
+
+    image = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
+        "AAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+    )
+    svg = (
+        b'<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>'
+    )
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[5])
+    slide.shapes.title.text = "Product overview"
+    slide.shapes.add_picture(io.BytesIO(image), 0, Inches(1))
+    picture = slide.shapes.add_picture(io.BytesIO(image), Inches(1), Inches(1))
+    svg_part = Part(
+        PackURI("/ppt/media/vector.svg"),
+        "image/svg+xml",
+        presentation.part.package,
+        svg,
+    )
+    relationship = slide.part.relate_to(svg_part, RT.IMAGE)
+    blip = picture._element.xpath(".//a:blip")[0]
+    embed = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"
+    del blip.attrib[embed]
+    drawing_ns = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    extensions = etree.SubElement(blip, f"{{{drawing_ns}}}extLst")
+    extension = etree.SubElement(
+        extensions,
+        f"{{{drawing_ns}}}ext",
+        uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}",
+    )
+    etree.SubElement(
+        extension,
+        "{http://schemas.microsoft.com/office/drawing/2016/SVG/main}svgBlip",
+        {embed: relationship},
+    )
+    table = slide.shapes.add_table(2, 1, 0, Inches(2), Inches(2), Inches(1)).table
+    table.cell(0, 0).text = "Feature"
+    table.cell(1, 0).text = "Knowledge collection"
+    slide.notes_slide.notes_text_frame.text = "Speaker notes retained"
+    buffer = io.BytesIO()
+    presentation.save(buffer)
+
+    processor = DocumentProcessor(upload_dir=str(tmp_path / "documents"))
+    kb_id, document_id = uuid4(), uuid4()
+
+    async def local_storage(root):
+        return upload_storage.LocalUploadStorage(root)
+
+    monkeypatch.setattr(
+        document_processor_module, "get_upload_storage_backend", local_storage
+    )
+    path = processor.get_storage_path(kb_id, "svg-only.pptx")
+    await processor.save_file(buffer.getvalue(), path)
+    text, metadata = await processor.extract_text(
+        path, "pptx", kb_id=kb_id, document_id=document_id
+    )
+
+    assert "# Product overview" in text
+    assert "Knowledge collection" in text
+    assert "Speaker notes retained" in text
+    assert "data:image" not in text
+    assets = {asset["content_type"]: asset for asset in metadata["media_assets"]}
+    assert set(assets) == {"image/png", "image/svg+xml"}
+    for content_type, expected in (("image/png", image), ("image/svg+xml", svg)):
+        asset = assets[content_type]
+        assert asset["url"] in text
+        assert (
+            processor.get_media_asset_path(
+                kb_id, document_id, asset["filename"]
+            ).read_bytes()
+            == expected
+        )

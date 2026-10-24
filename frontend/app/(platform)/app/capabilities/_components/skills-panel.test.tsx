@@ -161,4 +161,87 @@ describe('SkillsPanel', () => {
     expect(install).toHaveBeenCalledWith('preview-1', { items: [{ package_path: 'skills/reporter', action: 'install' }], is_enabled: true })
     expect(toastSuccess).toHaveBeenCalledWith('platform.skills.import.installed')
   })
+  test('reports a skills loading error and allows the user to retry', async () => {
+    const list = spyOn(skillsApi, 'list')
+      .mockRejectedValueOnce(new Error('Unable to load skills'))
+      .mockResolvedValueOnce({ system: [], team: [skill] })
+
+    const renderer = await render()
+
+    expect(toastError).toHaveBeenCalledWith('Unable to load skills')
+    expect(JSON.stringify(renderer.toJSON())).toContain('platform.skills.noSkills')
+
+    await act(async () => button(renderer, 'platform.skills.refresh').props.onClick())
+
+    expect(list).toHaveBeenCalledTimes(2)
+    expect(JSON.stringify(renderer.toJSON())).toContain('Summarize')
+  })
+
+  test('reports unknown errors when a git preview request fails', async () => {
+    spyOn(skillsApi, 'list').mockResolvedValue({ system: [], team: [] })
+    const previewGit = spyOn(skillsApi, 'previewGit').mockRejectedValue('network unavailable')
+    const renderer = await render()
+
+    act(() => button(renderer, 'platform.skills.import.open').props.onClick())
+    const gitUrl = renderer.root.findAllByType('input').find((item) => item.props.placeholder === 'https://github.com/org/repo.git')!
+    act(() => gitUrl.props.onChange({ target: { value: 'https://github.com/acme/skills.git' } }))
+    await act(async () => renderer.root.findAllByType('button')
+      .filter((item) => text(item.props.children).includes('platform.skills.import.scan')).at(-1)!.props.onClick())
+
+    expect(previewGit).toHaveBeenCalledWith({ team_id: 'team-1', repo_url: 'https://github.com/acme/skills.git', ref: null })
+    expect(toastError).toHaveBeenCalledWith('Unknown error')
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('platform.skills.import.previewTitle')
+  })
+
+  test('rejects zip archives larger than the supported upload limit', async () => {
+    spyOn(skillsApi, 'list').mockResolvedValue({ system: [], team: [] })
+    const previewZip = spyOn(skillsApi, 'previewZip')
+    const renderer = await render()
+
+    act(() => button(renderer, 'platform.skills.import.open').props.onClick())
+    const fileInput = renderer.root.findAllByType('input').find((item) => item.props.type === 'file')!
+    act(() => fileInput.props.onChange({ target: { files: [{ name: 'skills.zip', size: 51 * 1024 * 1024 }] } }))
+
+    expect(toastError).toHaveBeenCalledWith('platform.skills.import.zipTooLarge')
+    expect(button(renderer, 'platform.skills.import.scan').props.disabled).toBe(true)
+    await act(async () => button(renderer, 'platform.skills.import.scan').props.onClick())
+    expect(previewZip).not.toHaveBeenCalled()
+  })
+  test('selecting a conflicting preview package replaces the same-name install and submits update', async () => {
+    spyOn(skillsApi, 'list').mockResolvedValue({ system: [], team: [] })
+    spyOn(skillsApi, 'previewGit').mockResolvedValue({
+      session_id: 'preview-conflict', source_type: 'git', skills: [
+        {
+          package_path: 'skills/new-reporter', name: 'reporter', display_name: 'New Reporter', description: '', version: '2.0.0',
+          category: 'data', valid: true, errors: [], warnings: [], file_count: 1,
+        },
+        {
+          package_path: 'skills/existing-reporter', name: 'reporter', display_name: 'Existing Reporter', description: '', version: '1.0.0',
+          category: 'data', valid: true, errors: [], warnings: [], file_count: 1, conflict: true,
+        },
+      ], invalid: [], warnings: [],
+    })
+    const install = spyOn(skillsApi, 'install').mockResolvedValue({ installed: [], updated: ['reporter'], skipped: [], errors: [] })
+    const renderer = await render()
+
+    act(() => button(renderer, 'platform.skills.import.open').props.onClick())
+    const gitUrl = renderer.root.findAllByType('input').find((item) => item.props.placeholder === 'https://github.com/org/repo.git')!
+    act(() => gitUrl.props.onChange({ target: { value: 'https://github.com/acme/skills.git' } }))
+    await act(async () => renderer.root.findAllByType('button')
+      .filter((item) => text(item.props.children).includes('platform.skills.import.scan')).at(-1)!.props.onClick())
+
+    const checkboxes = renderer.root.findAllByType('input').filter((item) => item.props.type === 'checkbox')
+    expect(checkboxes.map((item) => item.props.checked)).toEqual([true, false])
+    act(() => checkboxes[1]!.props.onCheckedChange(true))
+    expect(checkboxes.map((item) => item.props.checked)).toEqual([false, true])
+    expect(JSON.stringify(renderer.toJSON())).toContain('platform.skills.import.conflict')
+
+    await act(async () => button(renderer, 'platform.skills.import.installSelected').props.onClick())
+
+    expect(install).toHaveBeenCalledWith('preview-conflict', {
+      items: [{ package_path: 'skills/existing-reporter', action: 'update' }], is_enabled: true,
+    })
+    expect(toastSuccess).toHaveBeenCalledWith('platform.skills.import.installed')
+  })
+
 })

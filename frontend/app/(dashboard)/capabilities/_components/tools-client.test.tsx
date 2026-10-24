@@ -83,9 +83,10 @@ mock.module('@/hooks/use-url-search-state', () => ({
   useUrlSearchState: () => ['', mock()],
 }))
 
+let allowedPermissions = new Set(['admin:capability:create', 'admin:capability:execute', 'admin:capability:read', 'admin:capability:update', 'admin:capability:delete'])
 mock.module('@/components/permission-guard', () => ({
-  PermissionGuard: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  useCanPerform: () => ({ canPerform: () => true }),
+  PermissionGuard: ({ children }: { children: React.ReactNode }) => allowedPermissions.has('admin:capability:create') ? <>{children}</> : null,
+  useCanPerform: () => ({ canPerform: (permission: string) => allowedPermissions.has(permission) }),
 }))
 
 const passthrough = (tag = 'div') => {
@@ -228,6 +229,7 @@ function renderWithState(overrides: Record<number, unknown> = {}) {
 
 afterEach(() => {
   push.mockClear()
+  allowedPermissions = new Set(['admin:capability:create', 'admin:capability:execute', 'admin:capability:read', 'admin:capability:update', 'admin:capability:delete'])
 })
 
 describe('dashboard ToolsClient', () => {
@@ -260,5 +262,50 @@ describe('dashboard ToolsClient', () => {
 
     expect(html).toContain('1 tools.toolsSelected')
     expect(html).toContain('confirm bulk delete 1')
+  })
+  test('shows loading and empty states instead of stale tool rows', () => {
+    expect(renderWithState({ 6: true })).toContain('common.loading')
+
+    const html = renderWithState({ 0: [], 9: { total: 0, items: [] } })
+    expect(html).toContain('tools.noTools')
+    expect(html).not.toContain('Time Tool')
+    expect(html).not.toContain('Weather Tool')
+  })
+
+  test('hides capability actions when the user has no capability permissions', () => {
+    allowedPermissions = new Set()
+
+    const html = renderWithState()
+
+    expect(html).not.toContain('tools.createTool')
+    expect(html).not.toContain('tools.runTest')
+    expect((html.match(/data-icon="MoreHorizontal"/g) ?? [])).toHaveLength(0)
+    expect(html).not.toContain('packages.export')
+  })
+
+  test('shows only actions granted by each capability permission', () => {
+    allowedPermissions = new Set(['admin:capability:execute'])
+    let html = renderWithState()
+    expect(html).toContain('tools.runTest')
+    expect(html).not.toContain('tools.createTool')
+    expect((html.match(/data-icon="MoreHorizontal"/g) ?? [])).toHaveLength(2)
+
+    allowedPermissions = new Set(['admin:capability:update'])
+    html = renderWithState()
+    expect(html).toContain('common.edit')
+    expect(html).toContain('tools.duplicate')
+    expect(html).toContain('tools.share.title')
+    expect(html).toContain('tools.enable')
+    expect((html.match(/data-icon="MoreHorizontal"/g) ?? [])).toHaveLength(2)
+
+    allowedPermissions = new Set(['admin:capability:update', 'admin:capability:read'])
+    html = renderWithState()
+    expect(html).toContain('packages.export')
+
+    allowedPermissions = new Set(['admin:capability:delete'])
+    html = renderWithState()
+    expect(html).toContain('common.delete')
+    expect(html).not.toContain('tools.runTest')
+    expect((html.match(/data-icon="MoreHorizontal"/g) ?? [])).toHaveLength(1)
   })
 })

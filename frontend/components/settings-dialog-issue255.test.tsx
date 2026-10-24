@@ -4,6 +4,7 @@ import * as React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { ApiError } from '@/lib/api/client'
+import type { IntegrationLoginPublic } from '@/lib/api/integrations'
 
 const window = new Window()
 globalThis.window = window as unknown as Window & typeof globalThis
@@ -12,6 +13,7 @@ globalThis.navigator = window.navigator as unknown as Navigator
 globalThis.MouseEvent = window.MouseEvent as unknown as typeof MouseEvent
 globalThis.Event = window.Event as unknown as typeof Event
 globalThis.localStorage = window.localStorage as unknown as Storage
+globalThis.sessionStorage = window.sessionStorage as unknown as Storage
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const push = mock<(path: string) => void>()
@@ -23,6 +25,9 @@ const changePassword = mock(() => Promise.resolve())
 const deleteAccount = mock(() => Promise.resolve())
 const sendVerification = mock(() => Promise.resolve())
 const disconnectConnection = mock(() => Promise.resolve())
+const getLinkableIntegrations = mock(() => Promise.resolve([] as IntegrationLoginPublic[]))
+const startLink = mock(() => Promise.resolve({ authorization_url: 'https://accounts.feishu.cn/authorize?state=link-state', session_id: 'link-state' }))
+const completeLink = mock(() => Promise.resolve())
 const disableTotp = mock(() => Promise.resolve())
 const regenerateBackupCodes = mock(() => Promise.resolve({ codes: ['code-one', 'code-two'] }))
 const infoToast = mock<(message: string) => void>()
@@ -44,10 +49,10 @@ let user = {
   auth_source: 'github',
   sso_connections: [{
     id: 'connection-1',
-    provider_id: 'github',
-    provider_name: 'github',
-    provider_display_name: 'GitHub',
-    provider_icon_url: null,
+    integration_id: 'github',
+    integration_name: 'github',
+    integration_provider_type: 'oauth2',
+    integration_icon_url: null,
     provider_user_id: '42',
     provider_username: 'alice',
     provider_email: 'alice@example.com',
@@ -62,6 +67,8 @@ mock.module('next-intl', () => ({
     values ? `${key}:${Object.values(values).join(',')}` : key,
 }))
 mock.module('next/navigation', () => ({ useRouter: () => ({ push }) }))
+mock.module('./wechat-knowledge', () => ({ WeChatKnowledge: () => null }))
+mock.module('./feishu-agent-settings', () => ({ FeishuAgentSettings: () => null }))
 mock.module('sonner', () => ({ toast: { info: infoToast, success: successToast, warning: warningToast } }))
 const Icon = () => null
 mock.module('lucide-react', () => ({
@@ -73,7 +80,7 @@ mock.module('@/lib/api', () => ({
   ApiError,
   authApi: { getCurrentUser, sendVerification },
   usersApi: { getPasswordStatus, updateProfile, changePassword, deleteAccount },
-  ssoApi: { disconnectConnection },
+  ssoApi: { disconnectConnection, getLinkableIntegrations, startLink, completeLink },
   totpApi: { getStatus: getTotpStatus, disable: disableTotp, regenerateBackupCodes },
 }))
 mock.module('@/components/ui/dialog', () => ({
@@ -186,8 +193,12 @@ beforeEach(() => {
   inputHandlers.clear()
   actionHandlers.clear()
   otpHandlers.length = 0
-  for (const fn of [getPasswordStatus, getTotpStatus, updateProfile, changePassword, deleteAccount, sendVerification, disconnectConnection, disableTotp, regenerateBackupCodes, infoToast, successToast, warningToast, push]) fn.mockClear()
+  for (const fn of [getPasswordStatus, getTotpStatus, updateProfile, changePassword, deleteAccount, sendVerification, disconnectConnection, getLinkableIntegrations, startLink, completeLink, disableTotp, regenerateBackupCodes, infoToast, successToast, warningToast, push]) fn.mockClear()
+  getLinkableIntegrations.mockImplementation(() => Promise.resolve([]))
+  startLink.mockImplementation(() => Promise.resolve({ authorization_url: 'https://accounts.feishu.cn/authorize?state=link-state', session_id: 'link-state' }))
+  completeLink.mockImplementation(() => Promise.resolve())
   localStorage.setItem('access_token', 'token')
+  sessionStorage.clear()
 })
 
 afterEach(() => {
@@ -248,7 +259,6 @@ describe('SettingsDialog', () => {
 
     await click('account')
     expect(container.textContent).toContain('connectedAccounts')
-    expect(container.textContent).toContain('GitHub')
     expect(container.textContent).toContain('setPassword')
     expect(container.querySelector('#current')).toBeNull()
     expect(container.textContent).not.toContain('dangerZone')

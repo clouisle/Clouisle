@@ -10,6 +10,7 @@ This section groups internal design documents by topic.
 - [Workflow engine architecture](app-platform/WORKFLOW_ENGINE_ARCHITECTURE.md)
 - [Workflow node spec](app-platform/WORKFLOW_NODE_SPEC.md)
 - [Tool system spec](app-platform/TOOL_SYSTEM_SPEC.md)
+- [Builtin tool output encoding evaluation](app-platform/BUILTIN_TOOL_OUTPUT_EVALUATION.md)
 
 ### AI and data
 - [Section index](ai-data/README.md)
@@ -23,9 +24,9 @@ This section groups internal design documents by topic.
 - [Team model auth spec](access-control/TEAM_MODEL_AUTH_SPEC.md)
 
 ### Notifications
-- [Section index](notifications/README.md)
+- [Notification design and built-in integration factory](notifications/README.md)
 - [Notification spec](notifications/NOTIFICATION_SPEC.md)
-- [External notification channels](notifications/EXTERNAL_NOTIFICATION_CHANNELS.md)
+- [Deprecated external notification channel plan](notifications/EXTERNAL_NOTIFICATION_CHANNELS.md)
 
 ## Notes
 

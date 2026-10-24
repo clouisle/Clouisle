@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -127,9 +127,6 @@ async def test_gets_user_notification_recipients(user_id, user, expected):
     ("function_name", "channel"),
     [
         ("_send_notification_email", NotificationChannel.EMAIL),
-        ("_send_notification_dingtalk", NotificationChannel.DINGTALK),
-        ("_send_notification_wechat", NotificationChannel.WECHAT),
-        ("_send_notification_feishu", NotificationChannel.FEISHU),
         ("_send_notification_webhook", NotificationChannel.WEBHOOK),
     ],
 )
@@ -151,48 +148,3 @@ async def test_delivery_fails_when_notification_context_is_missing(
     updates.assert_awaited_once_with(
         notification_id, channel, NotificationDeliveryStatus.SENDING
     )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("function_name", "sender_name", "channel", "error"),
-    [
-        (
-            "_send_notification_wechat",
-            "send_wechat_notification",
-            NotificationChannel.WECHAT,
-            "wechat_send_failed",
-        ),
-        (
-            "_send_notification_feishu",
-            "send_feishu_notification",
-            NotificationChannel.FEISHU,
-            "feishu_send_failed",
-        ),
-    ],
-)
-async def test_delivery_fails_when_provider_returns_false(
-    function_name, sender_name, channel, error
-):
-    item = notification()
-    context = tasks.NotificationContext(item, "Acme")
-    updates = AsyncMock()
-    sender = AsyncMock(return_value=False)
-
-    with (
-        patch.object(tasks, "_update_delivery_status", new=updates),
-        patch.object(
-            tasks, "_load_notification_context", new=AsyncMock(return_value=context)
-        ),
-        patch.object(
-            tasks, "_build_notification_message", return_value=("title", "body")
-        ),
-        patch.object(tasks, sender_name, new=sender),
-    ):
-        with pytest.raises(RuntimeError, match=error):
-            await getattr(tasks, function_name)(item.id)
-
-    sender.assert_awaited_once_with(title="title", content="body", link_url=None)
-    assert updates.await_args_list == [
-        call(item.id, channel, NotificationDeliveryStatus.SENDING)
-    ]

@@ -14,6 +14,7 @@ import { Loader2 } from 'lucide-react'
 import { FieldError } from '@/components/ui/field'
 import { Textarea } from '@/components/ui/textarea'
 import { siteSettingsApi, type SecuritySettings } from '@/lib/api/admin/site-settings'
+import { integrationsApi, type LoginSettings } from '@/lib/api/admin/integrations'
 import { rolesApi, type Role } from '@/lib/api/admin/roles'
 import { teamsApi } from '@/lib/api/admin/teams'
 import type { Team } from '@/lib/api/teams'
@@ -25,6 +26,7 @@ import {
   formatValidationSummaryMessage
 } from '@/lib/validation'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { LoginSettingsCard } from './_components/login-settings'
 
 const DEFAULT_TEAM_ROLE_OPTIONS: SecuritySettings['default_team_role'][] = ['viewer', 'member', 'admin']
 const NO_DEFAULT_TEAM_VALUE = '__none__'
@@ -33,12 +35,15 @@ export default function SiteSettingsSecurityPage() {
   const t = useTranslations('siteSettings')
   const { canPerform } = useCanPerform()
   const canUpdate = canPerform('admin:settings:update')
-  
+  const canReadLogin = canPerform('admin:integrations:login:read')
+  const canUpdateLogin = canPerform('admin:integrations:login:update')
+
   const [loading, setLoading] = React.useState(true)
   const [settingsLoaded, setSettingsLoaded] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const [roles, setRoles] = React.useState<Role[]>([])
   const [teams, setTeams] = React.useState<Team[]>([])
+  const [loginSettings, setLoginSettings] = React.useState<LoginSettings | null>(null)
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [settings, setSettings] = React.useState<SecuritySettings>({
     allow_registration: true,
@@ -57,11 +62,6 @@ export default function SiteSettingsSecurityPage() {
     max_login_attempts: 5,
     lockout_duration_minutes: 15,
     enable_captcha: false,
-    sso_enabled: false,
-    sso_allow_password_login: true,
-    sso_auto_create_users: true,
-    sso_require_approval: false,
-    sso_match_by_email: true,
     password_expiration_enabled: false,
     password_expiration_days: 90,
     password_expiration_warning_days: 7,
@@ -108,13 +108,15 @@ export default function SiteSettingsSecurityPage() {
     try {
       setLoading(true)
       setSettingsLoaded(false)
-      const [data, rolesData, teamsData] = await Promise.all([
+      const [data, rolesData, teamsData, loginData] = await Promise.all([
         siteSettingsApi.getSecurity(),
         rolesApi.getRoles(),
         teamsApi.getTeams(1, 200),
+        canReadLogin ? integrationsApi.getLoginSettings() : null,
       ])
       setRoles(rolesData.items)
       setTeams(teamsData.items)
+      setLoginSettings(loginData)
       // 确保所有布尔值字段都有明确的值
       setSettings({
         allow_registration: data.allow_registration ?? true,
@@ -133,11 +135,6 @@ export default function SiteSettingsSecurityPage() {
         max_login_attempts: data.max_login_attempts ?? 5,
         lockout_duration_minutes: data.lockout_duration_minutes ?? 15,
         enable_captcha: data.enable_captcha ?? false,
-        sso_enabled: data.sso_enabled ?? false,
-        sso_allow_password_login: data.sso_allow_password_login ?? true,
-        sso_auto_create_users: data.sso_auto_create_users ?? true,
-        sso_require_approval: data.sso_require_approval ?? false,
-        sso_match_by_email: data.sso_match_by_email ?? true,
         password_expiration_enabled: data.password_expiration_enabled ?? false,
         password_expiration_days: data.password_expiration_days ?? 90,
         password_expiration_warning_days: data.password_expiration_warning_days ?? 7,
@@ -156,7 +153,7 @@ export default function SiteSettingsSecurityPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [canReadLogin])
 
   React.useEffect(() => {
     loadSettings()
@@ -285,6 +282,7 @@ export default function SiteSettingsSecurityPage() {
           ))}
         </div>
       )}
+      {canReadLogin && loginSettings && <LoginSettingsCard settings={loginSettings} onSettingsChange={setLoginSettings} canUpdate={canUpdateLogin} />}
       <Card>
         <CardHeader>
           <CardTitle>{t('registration')}</CardTitle>
@@ -765,69 +763,6 @@ export default function SiteSettingsSecurityPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('ssoSettings')}</CardTitle>
-          <CardDescription>{t('ssoSettingsDescription')}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>{t('enableSSO')}</Label>
-              <p className="text-sm text-muted-foreground">{t('enableSSODescription')}</p>
-            </div>
-            <Switch
-              checked={settings.sso_enabled}
-              onCheckedChange={(checked) => updateSetting('sso_enabled', checked)}
-              disabled={!canUpdate}
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>{t('allowPasswordLogin')}</Label>
-              <p className="text-sm text-muted-foreground">{t('allowPasswordLoginDescription')}</p>
-            </div>
-            <Switch
-              checked={settings.sso_allow_password_login}
-              onCheckedChange={(checked) => updateSetting('sso_allow_password_login', checked)}
-              disabled={!settings.sso_enabled || !canUpdate}
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>{t('autoCreateUsers')}</Label>
-              <p className="text-sm text-muted-foreground">{t('autoCreateUsersDescription')}</p>
-            </div>
-            <Switch
-              checked={settings.sso_auto_create_users}
-              onCheckedChange={(checked) => updateSetting('sso_auto_create_users', checked)}
-              disabled={!settings.sso_enabled || !canUpdate}
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>{t('ssoRequireApproval')}</Label>
-              <p className="text-sm text-muted-foreground">{t('ssoRequireApprovalDescription')}</p>
-            </div>
-            <Switch
-              checked={settings.sso_require_approval}
-              onCheckedChange={(checked) => updateSetting('sso_require_approval', checked)}
-              disabled={!settings.sso_enabled || !canUpdate}
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>{t('matchByEmail')}</Label>
-              <p className="text-sm text-muted-foreground">{t('matchByEmailDescription')}</p>
-            </div>
-            <Switch
-              checked={settings.sso_match_by_email}
-              onCheckedChange={(checked) => updateSetting('sso_match_by_email', checked)}
-              disabled={!settings.sso_enabled || !canUpdate}
-            />
-          </div>
-        </CardContent>
-      </Card>
 
       <PermissionGuard permission="admin:settings:update">
         <div className="flex justify-end">

@@ -64,6 +64,7 @@ If your organization has configured SSO, you can log in with your corporate cred
 - OAuth2/OIDC (Google, GitHub, GitLab, etc.)
 - SAML 2.0 (Azure AD, Okta, OneLogin)
 - CAS (University systems)
+- Feishu (shown only when your administrator has enabled Feishu sign-in)
 
 For SSO configuration, see [SSO User Guide](./sso-user-guide.md).
 

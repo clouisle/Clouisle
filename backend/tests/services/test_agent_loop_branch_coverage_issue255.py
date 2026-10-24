@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -119,6 +120,60 @@ def test_agent_loop_helper_paths_keep_tool_protocol_complete():
     malformed = loop._skipped_tool(_tool("", "truncated"), reason="truncated")
     assert malformed[0] == ""
     assert "truncated" in malformed[3]["display_result"]
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_records_explicit_model_result_and_errors(monkeypatch):
+    from app.utils.tool_output import ToolExecutionResult
+
+    async def explicit_tool(_name, _arguments, **_kwargs):
+        return ToolExecutionResult(
+            display_result={"kind": "media.video", "status": "completed"},
+            llm_result="Video ready.",
+        )
+
+    loop = AgentLoop(_context(execute_tool_call=explicit_tool))
+    *_prefix, record = await loop._execute_one_tool(
+        tc=_tool("generate_video", "video-call"),
+        image_pool=[],
+        image_inventory=[],
+    )
+    assert record["llm_result"] == "Video ready."
+    envelope = json.loads(record["persist_result"])
+    assert envelope["kind"] == "tool.result.persisted"
+    assert envelope["llm_result"] == "Video ready."
+
+    async def failing_tool(_name, _arguments, **_kwargs):
+        raise RuntimeError("tool exploded")
+
+    failed_loop = AgentLoop(_context(execute_tool_call=failing_tool))
+    *_prefix, failed = await failed_loop._execute_one_tool(
+        tc=_tool("custom", "failed-call"),
+        image_pool=[],
+        image_inventory=[],
+    )
+    assert failed["persist_result"] is None
+    assert json.loads(failed["display_result"])["error"] == "tool exploded"
+
+    from app.services import agent_round
+
+    persisted = AsyncMock(return_value=2)
+    monkeypatch.setattr(agent_round, "persist_tool_result", persisted)
+    persist_loop = AgentLoop(_context(round_id=uuid4(), working_history_override=[]))
+    base = {
+        "id": "record",
+        "name": "",
+        "arguments": {},
+        "display_result": "DISPLAY",
+        "llm_result": "LLM",
+        "display_name": "",
+    }
+    await persist_loop._persist_tool_record(
+        {**base, "persist_result": "ENVELOPE"}, iteration=1, content="", reasoning=""
+    )
+    await persist_loop._persist_tool_record(base, iteration=1, content="", reasoning="")
+    assert persisted.await_args_list[0].kwargs["content"] == "ENVELOPE"
+    assert persisted.await_args_list[1].kwargs["content"] == "DISPLAY"
 
 
 @pytest.mark.asyncio

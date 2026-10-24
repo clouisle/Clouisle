@@ -3,8 +3,8 @@
 import * as React from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Activity, MessageSquare, Workflow } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Activity, MessageSquare, Users, Workflow } from 'lucide-react'
+import { StatCard } from '@/components/dashboard/stat-card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { conversationsApi, type ConversationStats } from '@/lib/api/admin/conversations'
 import { workflowsApi } from '@/lib/api'
@@ -85,53 +85,34 @@ export function ActivitiesClient() {
 
       {/* Statistics Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{t('stats.totalConversations')}</CardTitle>
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {loading ? '...' : conversationStats?.total_conversations.toLocaleString() ?? 0}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{t('stats.totalWorkflowRuns')}</CardTitle>
-            <Workflow className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {loading ? '...' : workflowStats?.total_runs.toLocaleString() ?? 0}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{t('stats.todayActivities')}</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {loading ? '...' : 0}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{t('stats.activeUsers')}</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {loading ? '...' : conversationStats?.active_users ?? 0}
-            </div>
-          </CardContent>
-        </Card>
+        <StatCard
+          title={t('stats.totalConversations')}
+          value={conversationStats?.total_conversations ?? 0}
+          icon={MessageSquare}
+          tone="blue"
+          isLoading={loading}
+        />
+        <StatCard
+          title={t('stats.totalWorkflowRuns')}
+          value={workflowStats?.total_runs ?? 0}
+          icon={Workflow}
+          tone="purple"
+          isLoading={loading}
+        />
+        <StatCard
+          title={t('stats.todayActivities')}
+          value={0}
+          icon={Activity}
+          tone="green"
+          isLoading={loading}
+        />
+        <StatCard
+          title={t('stats.activeUsers')}
+          value={conversationStats?.active_users ?? 0}
+          icon={Users}
+          tone="orange"
+          isLoading={loading}
+        />
       </div>
 
       {/* Tabs */}

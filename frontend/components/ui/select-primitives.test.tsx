@@ -28,8 +28,6 @@ mock.module('@base-ui/react/select', () => ({
     ItemText: primitive('select-item-text'),
     ItemIndicator: primitive('select-item-indicator'),
     Separator: primitive('select-separator'),
-    ScrollUpArrow: primitive('select-scroll-up'),
-    ScrollDownArrow: primitive('select-scroll-down'),
   },
 }))
 
@@ -40,8 +38,6 @@ const {
   SelectGroup,
   SelectItem,
   SelectLabel,
-  SelectScrollDownButton,
-  SelectScrollUpButton,
   SelectSeparator,
   SelectTrigger,
   SelectValue,
@@ -85,23 +81,5 @@ describe('Select primitive wrappers', () => {
     expect(renderer.root.findByType('select-item-text').children).toEqual(['One'])
     expect(renderer.root.findByType('select-separator').props.className).toContain('custom-separator')
     expect(renderer.root.findByProps({ 'data-slot': 'select-empty' }).props.className).toContain('custom-empty')
-    expect(renderer.root.findAllByType('select-scroll-up')).toHaveLength(1)
-    expect(renderer.root.findAllByType('select-scroll-down')).toHaveLength(1)
-  })
-
-  test('forwards custom scroll button classes', () => {
-    let renderer!: ReturnType<typeof create>
-
-    act(() => {
-      renderer = create(
-        <>
-          <SelectScrollUpButton className="custom-up" />
-          <SelectScrollDownButton className="custom-down" />
-        </>,
-      )
-    })
-
-    expect(renderer.root.findByType('select-scroll-up').props.className).toContain('custom-up')
-    expect(renderer.root.findByType('select-scroll-down').props.className).toContain('custom-down')
   })
 })

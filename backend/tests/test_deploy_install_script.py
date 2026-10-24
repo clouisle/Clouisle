@@ -98,7 +98,27 @@ def test_k8s_installer_generates_a_secret_manifest_and_preserves_output(tmp_path
             "POSTGRES_USER",
             "POSTGRES_DB",
         }
-
     existing = _run_manifest_generator(output_path)
     assert existing.returncode != 0
     assert "Refusing to overwrite existing Kubernetes manifest" in existing.stderr
+
+
+def test_raw_kubernetes_workers_have_isolated_queue_consumers():
+    documents = _generated_documents(PROJECT_ROOT / "deploy" / "k8s" / "clouisle.yaml")
+    workloads = {
+        document["metadata"]["name"]: document
+        for document in documents
+        if document["kind"] == "Deployment"
+    }
+
+    assert workloads["worker"]["spec"]["template"]["spec"]["containers"][0][
+        "command"
+    ] == [
+        "python",
+        "main.py",
+        "worker",
+        "-c",
+        "4",
+        "-Q",
+        "default,agent,knowledge,workflow",
+    ]

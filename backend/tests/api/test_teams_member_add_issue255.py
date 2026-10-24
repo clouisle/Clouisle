@@ -219,7 +219,7 @@ async def test_add_member_accepts_identifier_and_rejects_blank(monkeypatch, perm
 
 
 @pytest.mark.anyio
-async def test_add_member_rejects_admin_without_global_permission(
+async def test_superuser_can_add_team_admin_without_granting_target_global_permission(
     monkeypatch, permission
 ):
     team = SimpleNamespace(id=uuid4(), name="Platform")
@@ -228,14 +228,22 @@ async def test_add_member_rejects_admin_without_global_permission(
     permission.return_value = team
     monkeypatch.setattr(teams.User, "filter", MagicMock(return_value=Query(target)))
     monkeypatch.setattr(teams.TeamMember, "filter", MagicMock(return_value=Query(None)))
-    monkeypatch.setattr(teams.TeamMember, "create", AsyncMock())
+    created = SimpleNamespace(id=uuid4(), role=TeamMemberRole.ADMIN, joined_at=object())
+    create = AsyncMock(return_value=created)
+    monkeypatch.setattr(teams.TeamMember, "create", create)
+    monkeypatch.setattr(teams.AuditLogService, "log", AsyncMock())
+    monkeypatch.setattr(teams.AutoNotificationService, "send_to_user", AsyncMock())
+    monkeypatch.setattr(teams.AutoNotificationService, "send_to_team", AsyncMock())
+    monkeypatch.setattr(teams, "get_default_language", AsyncMock(return_value="en"))
+    monkeypatch.setattr(teams, "resolve_language", AsyncMock(return_value="en"))
+    monkeypatch.setattr(teams, "t", lambda key, **_kwargs: key)
 
-    with pytest.raises(BusinessError) as exc_info:
-        await teams.add_team_member(
-            request=SimpleNamespace(),
-            team_id=team.id,
-            member_in=TeamMemberAdd(user_id=target.id, role=TeamMemberRole.ADMIN),
-            current_user=user(superuser=True),
-        )
+    response = await teams.add_team_member(
+        request=SimpleNamespace(),
+        team_id=team.id,
+        member_in=TeamMemberAdd(user_id=target.id, role=TeamMemberRole.ADMIN),
+        current_user=user(superuser=True),
+    )
 
-    assert exc_info.value.code == ResponseCode.PERMISSION_DENIED
+    assert response["data"]["role"] == TeamMemberRole.ADMIN
+    create.assert_awaited_once_with(team=team, user=target, role=TeamMemberRole.ADMIN)

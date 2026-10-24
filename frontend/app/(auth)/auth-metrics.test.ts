@@ -63,7 +63,7 @@ describe('auth page decision coverage', () => {
     const { getTotpSetupRedirect } = await import('./totp-setup/page')
 
     expect(getTotpSetupRedirect(false, false)).toBe('/login')
-    expect(getTotpSetupRedirect(true, true)).toBe('/')
+    expect(getTotpSetupRedirect(true, true)).toBe('/app')
     expect(getTotpSetupRedirect(true, false)).toBe('/login')
   })
 

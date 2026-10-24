@@ -1,5 +1,7 @@
 import { api } from './client'
 
+import type { IntegrationProviderType } from './integrations'
+
 export interface Token {
   access_token: string
   token_type: string
@@ -12,10 +14,11 @@ export interface Token {
 
 export interface SSOConnection {
   id: string
-  provider_id: string
-  provider_name: string
-  provider_display_name: string
-  provider_icon_url: string | null
+  integration_id: string
+  integration_name: string
+  integration_display_name: string
+  integration_provider_type: IntegrationProviderType
+  integration_icon_url: string | null
   provider_user_id: string
   provider_username: string | null
   provider_email: string | null

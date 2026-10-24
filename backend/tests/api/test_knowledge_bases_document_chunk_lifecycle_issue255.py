@@ -261,6 +261,7 @@ async def test_chunk_create_and_update_cover_vector_paths(
     )
     doc = SimpleNamespace(
         status=DocumentStatus.COMPLETED.value,
+        metadata=None,
         chunk_count=1,
         token_count=4,
         save=AsyncMock(),
@@ -334,7 +335,9 @@ async def test_chunk_update_restores_vector_when_commit_fails(monkeypatch):
         embedding_model_id=None,
         team_id=None,
     )
-    doc = SimpleNamespace(id=doc_id, status=DocumentStatus.COMPLETED.value)
+    doc = SimpleNamespace(
+        id=doc_id, status=DocumentStatus.COMPLETED.value, metadata=None
+    )
     chunk = SimpleNamespace(
         id=chunk_id,
         document_id=doc_id,
@@ -393,7 +396,9 @@ async def test_chunk_update_restores_vector_when_commit_fails(monkeypatch):
 async def test_chunk_create_deletes_vector_when_commit_fails(monkeypatch):
     kb_id, doc_id, chunk_id = uuid4(), uuid4(), uuid4()
     kb = SimpleNamespace(id=kb_id, embedding_model_id=None, team_id=None)
-    doc = SimpleNamespace(id=doc_id, status=DocumentStatus.COMPLETED.value)
+    doc = SimpleNamespace(
+        id=doc_id, status=DocumentStatus.COMPLETED.value, metadata=None
+    )
     chunk = SimpleNamespace(id=chunk_id, document_id=doc_id, save=AsyncMock())
     vectors = SimpleNamespace(
         add_chunk_vector=AsyncMock(return_value=True),

@@ -17,13 +17,7 @@
 
 ## 投递渠道
 
-| 渠道 | 说明 |
-|------|------|
 | `EMAIL` | 邮件 |
-| `DINGTALK` | 钉钉 |
-| `WECHAT` | 企业微信 |
-| `FEISHU` | 飞书 |
-| `SLACK` | Slack |
 | `WEBHOOK` | Webhook |
 
 ## 用户接口

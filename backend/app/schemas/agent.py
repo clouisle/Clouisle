@@ -9,6 +9,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.utils.tool_output import unwrap_persisted_display
+
 
 # ============ Enums ============
 
@@ -294,16 +296,6 @@ class AttachmentConfig(BaseModel):
         le=10,
         description="Maximum number of files per message",
     )
-    max_content_length: int = Field(
-        default=100000,  # ~100KB of text
-        ge=1000,
-        le=500000,  # 500KB max
-        description="Maximum parsed content length in characters",
-    )
-    truncate_strategy: str = Field(
-        default="end",
-        description="Truncation strategy: 'end' (keep start), 'start' (keep end), 'middle' (keep start and end)",
-    )
     allowed_extensions: list[str] = Field(
         default_factory=lambda: [
             ".pdf",
@@ -352,6 +344,9 @@ class AgentCreate(AgentBase):
     )
     hide_reasoning: bool = Field(
         default=False, description="Hide reasoning/chain-of-thought in chat UI"
+    )
+    enable_citations: bool = Field(
+        default=False, description="Enable source citations in chat"
     )
     hide_artifact_list: bool = Field(
         default=False, description="Hide generated artifact lists in chat UI"
@@ -425,6 +420,7 @@ class AgentUpdate(BaseModel):
     hide_tool_calls: bool | None = None
     hide_message_actions: bool | None = None
     hide_reasoning: bool | None = None
+    enable_citations: bool | None = None
     hide_artifact_list: bool | None = None
     tools_config: list[ToolConfig] | None = None
     tools_credentials: dict[str, str] | None = None
@@ -470,11 +466,13 @@ class AgentOut(AgentBase):
     avatar_url: str | None = None
     model_id: UUID | None = None
     model: ModelInfo | None = None
+    input_modalities: list[str] = Field(default_factory=lambda: ["text"])
     system_prompt: str | None = None
     max_iterations: int = 5
     hide_tool_calls: bool = False
     hide_message_actions: bool = False
     hide_reasoning: bool = False
+    enable_citations: bool = False
     hide_artifact_list: bool = False
     tools_config: list[ToolConfig] = []
     tools_credentials: dict[str, str] = {}
@@ -517,12 +515,13 @@ class AgentPublicOut(BaseModel):
     opening_message: str | None = None
     suggested_questions: list[str] = []
     powered_by_text: str | None = None
-    variables: list[dict[str, Any]] = []
+    input_modalities: list[str] = Field(default_factory=lambda: ["text"])
     enable_attachments: bool = False
     attachment_config: dict[str, Any] | None = None
     hide_tool_calls: bool = False
     hide_message_actions: bool = False
     hide_reasoning: bool = False
+    enable_citations: bool = False
     hide_artifact_list: bool = False
     created_by: CreatorInfo | None = None
 
@@ -545,6 +544,7 @@ class EmbedAgentInfo(BaseModel):
     hide_tool_calls: bool = False
     hide_message_actions: bool = False
     hide_reasoning: bool = False
+    enable_citations: bool = False
     hide_artifact_list: bool = False
     embed_config: dict[str, Any] = {}
 
@@ -665,6 +665,12 @@ class MessageRoundStep(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    @model_validator(mode="after")
+    def _unwrap_tool_display(self) -> "MessageRoundStep":
+        if self.role == "tool":
+            self.content = unwrap_persisted_display(self.content)
+        return self
+
 
 class MessageOut(BaseModel):
     """Message response schema"""
@@ -708,6 +714,12 @@ class MessageOut(BaseModel):
     )
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="after")
+    def _unwrap_tool_display(self) -> "MessageOut":
+        if self.role == "tool":
+            self.content = unwrap_persisted_display(self.content)
+        return self
 
 
 class SwitchVersionRequest(BaseModel):

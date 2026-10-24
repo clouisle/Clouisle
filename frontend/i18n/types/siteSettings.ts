@@ -1,7 +1,55 @@
-// GENERATED — 2026-10-07T17:03:38.846Z
+// GENERATED — 2026-10-23T19:49:42.011Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
+    feishuKnowledge: {
+      title: string
+      superuserOnly: string
+      warning: string
+      credentials: string
+      create: string
+      refresh: string
+      loading: string
+      loadingOptions: string
+      loadFailed: string
+      empty: string
+      name: string
+      target: string
+      space: string
+      selectSpace: string
+      selectTarget: string
+      noOptions: string
+      interval: string
+      enabled: string
+      lastSync: string
+      never: string
+      result: string
+      resultScanned: string
+      resultIndexed: string
+      resultUnchanged: string
+      resultFailed: string
+      resultUnsupported: string
+      resultRemoved: string
+      resultErrors: string
+      resultWarnings: string
+      resultNode: string
+      resultType: string
+      resultUnknownError: string
+      edit: string
+      sync: string
+      save: string
+      cancel: string
+      delete: string
+      resultSkipped: string
+      deleteConfirm: string
+      status: {
+        idle: string
+        queued: string
+        running: string
+        success: string
+        error: string
+      }
+    }
     title: string
     description: string
     general: string
@@ -12,11 +60,123 @@ export type SiteSettingsMessages = {
       title: string
       description: string
       email: string
-      dingtalk: string
-      wechat: string
-      feishu: string
       webhook: string
-      slack: string
+      feishu: string
+    }
+    integrations: {
+      title: string
+      description: string
+      capabilities: {
+        user_login: string
+        directory_sync: string
+        notification: string
+        agent_chat: string
+        knowledge_collection: string
+      }
+      email: string
+      webhook: string
+      feishu: string
+      wechat: string
+      wechatDescription: string
+      wechatUnavailable: string
+      wechatFeaturesHint: string
+      wechatFeatureDescriptions: {
+        agent_chat: string
+        knowledge_collection: string
+      }
+      wechatRuntimeHint: string
+      back: string
+      tabConfiguration: string
+      tabDirectory: string
+      tabNotification: string
+      feishuDirectorySyncDisabledHint: string
+      feishuDirectorySyncUnavailable: string
+      feishuNotificationDisabledHint: string
+      feishuDescription: string
+      feishuNotificationDescription: string
+      configure: string
+      secretConfigured: string
+      enabled: string
+      disabled: string
+      feishuAppId: string
+      feishuAppSecret: string
+      feishuAppSecretDesc: string
+      feishuSecretConfigured: string
+      feishuDepartments: string
+      feishuCompany: string
+      feishuDepartmentsDesc: string
+      feishuNoDepartments: string
+      feishuLoadingDepartments: string
+      feishuRefreshDepartments: string
+      feishuDepartmentsFailed: string
+      feishuSaveFailed: string
+      feishuSaveScope: string
+      feishuScopeSaved: string
+      feishuScopeSaveFailed: string
+      feishuSync: string
+      feishuSyncFailed: string
+      feishuSyncResult: string
+      feishuConnectionCheck: string
+      feishuConnectionCheckSuccess: string
+      feishuConnectionCheckFailed: string
+      feishuTestMessage: string
+      feishuTestRecipient: string
+      feishuTestRecipientPlaceholder: string
+      feishuTestTitle: string
+      feishuTestContent: string
+      feishuTestSend: string
+      feishuTestSent: string
+      feishuTestFailed: string
+      feishuNoTestRecipients: string
+      feishuTestRecipientUnavailable: string
+      feishuLogin: string
+      feishuDirectorySyncDescription: string
+      feishuLoginDescription: string
+      feishuAgentChat: string
+      tabAgentChat: string
+      feishuAgentChatDescription: string
+      feishuAgentChatRequirementsTitle: string
+      feishuAgentChatRequirementsIntro: string
+      feishuAgentChatReceivePermission: string
+      feishuAgentChatSendPermission: string
+      feishuAgentChatMediaPermission: string
+      feishuAgentChatIdentityPermission: string
+      feishuAgentChatPublishRequirements: string
+      feishuAgentChatConnectionNotice: string
+      feishuAgentChatDisabledHint: string
+      feishuAgentChatUnavailable: string
+      feishuAgentChatConnectionMode: string
+      feishuAgentChatCallbackMode: string
+      feishuAgentChatLongConnectionMode: string
+      feishuAgentChatLongConnectionDesc: string
+      feishuAgentChatLongConnectionSetup: string
+      feishuAgentChatLongConnectionProcess: string
+      feishuReceiverStatus: string
+      feishuReceiverStates: {
+        disabled: string
+        callback: string
+        unconfigured: string
+        waiting: string
+        starting: string
+        connected: string
+        reconnecting: string
+        error: string
+      }
+      feishuAgentChatVerificationToken: string
+      feishuAgentChatVerificationTokenDesc: string
+      feishuAgentChatEncryptKey: string
+      feishuAgentChatEncryptKeyDesc: string
+      feishuAgentChatSecretsMissing: string
+      feishuAgentChatCallbackUrl: string
+      feishuAgentChatCallbackUrlDesc: string
+      feishuAgentChatPersonalSelection: string
+      feishuAgentChatConfigFailed: string
+      feishuAgentChatSaveFailed: string
+      feishuAgentChatSaved: string
+      feishuButtonText: string
+      feishuButtonTextDesc: string
+      callbackUrl: string
+      callbackUrlDesc: string
     }
     autoNotifications: {
       tab: string
@@ -114,91 +274,6 @@ export type SiteSettingsMessages = {
     }
     storage: string
     memory: string
-    dingtalk: {
-      basicSettings: string
-      basicSettingsDesc: string
-      enabled: string
-      enabledDesc: string
-      notificationType: string
-      notificationTypeDesc: string
-      typeWebhook: string
-      typeApp: string
-      webhookSettings: string
-      webhookSettingsDesc: string
-      webhookUrl: string
-      webhookUrlDesc: string
-      secret: string
-      secretPlaceholder: string
-      secretDesc: string
-      appSettings: string
-      appSettingsDesc: string
-      appKey: string
-      appKeyPlaceholder: string
-      appSecret: string
-      appSecretPlaceholder: string
-      agentId: string
-      agentIdPlaceholder: string
-      viewDocs: string
-      testMessage: string
-      testMessageDesc: string
-      sendTest: string
-      testSent: string
-    }
-    wechat: {
-      basicSettings: string
-      basicSettingsDesc: string
-      enabled: string
-      enabledDesc: string
-      notificationType: string
-      notificationTypeDesc: string
-      typeWebhook: string
-      typeApp: string
-      webhookSettings: string
-      webhookSettingsDesc: string
-      webhookUrl: string
-      webhookUrlDesc: string
-      appSettings: string
-      appSettingsDesc: string
-      corpId: string
-      corpIdPlaceholder: string
-      agentId: string
-      agentIdPlaceholder: string
-      secret: string
-      secretPlaceholder: string
-      viewDocs: string
-      testMessage: string
-      testMessageDesc: string
-      sendTest: string
-      testSent: string
-    }
-    feishu: {
-      basicSettings: string
-      basicSettingsDesc: string
-      enabled: string
-      enabledDesc: string
-      notificationType: string
-      notificationTypeDesc: string
-      typeWebhook: string
-      typeApp: string
-      webhookSettings: string
-      webhookSettingsDesc: string
-      webhookUrl: string
-      webhookUrlDesc: string
-      secret: string
-      secretPlaceholder: string
-      secretDesc: string
-      appSettings: string
-      appSettingsDesc: string
-      appId: string
-      appIdPlaceholder: string
-      appSecret: string
-      appSecretPlaceholder: string
-      viewDocs: string
-      testMessage: string
-      testMessageDesc: string
-      sendTest: string
-      testSent: string
-    }
     webhook: {
       basicSettings: string
       basicSettingsDesc: string
@@ -227,23 +302,6 @@ export type SiteSettingsMessages = {
       sendTest: string
       testSent: string
     }
-    slack: {
-      basicSettings: string
-      basicSettingsDesc: string
-      enabled: string
-      enabledDesc: string
-      webhookSettings: string
-      webhookSettingsDesc: string
-      webhookUrl: string
-      webhookUrlDesc: string
-      viewDocs: string
-      testMessage: string
-      testMessageDesc: string
-      sendTest: string
-      testSent: string
-    }
-    sso: string
-    ssoDescription: string
     saveChanges: string
     save: string
     saveSuccess: string
@@ -420,16 +478,16 @@ export type SiteSettingsMessages = {
     modelEndpointAllowlistOrigins: string
     modelEndpointAllowlistPlaceholder: string
     modelEndpointAllowlistHint: string
-    ssrfAllowedTargets: string
-    ssrfAllowedTargetsDescription: string
-    ssrfAllowedTargetsEntries: string
-    ssrfAllowedTargetsPlaceholder: string
-    ssrfAllowedTargetsHint: string
     sandboxNetworkAllowlist: string
     sandboxNetworkAllowlistDescription: string
     sandboxNetworkAllowlistEntries: string
     sandboxNetworkAllowlistPlaceholder: string
     sandboxNetworkAllowlistHint: string
+    ssrfAllowedTargets: string
+    ssrfAllowedTargetsDescription: string
+    ssrfAllowedTargetsEntries: string
+    ssrfAllowedTargetsPlaceholder: string
+    ssrfAllowedTargetsHint: string
     loginSecurity: string
     loginSecurityDescription: string
     maxLoginAttempts: string

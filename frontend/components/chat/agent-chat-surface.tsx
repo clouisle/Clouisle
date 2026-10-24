@@ -110,6 +110,7 @@ export interface AgentChatSurfaceProps {
   hideToolCalls?: boolean
   hideMessageActions?: boolean
   hideReasoning?: boolean
+  hideCitations?: boolean
   hideArtifactList?: boolean
   conversationId?: string | null
   headerInset?: boolean
@@ -124,6 +125,8 @@ export interface AgentChatSurfaceProps {
   inputDisabled?: boolean
   allowAttachments?: boolean
   enableFileUpload?: boolean
+  inputModalities?: string[]
+  inputMimeTypes?: Record<string, string[]>
   fileUploadConfig?: AttachmentConfig | null
   files?: ChatInputFile[]
   onFilesChange?: (files: ChatInputFile[]) => void
@@ -199,6 +202,7 @@ export function AgentChatSurface({
   hideToolCalls = false,
   hideMessageActions = false,
   hideReasoning = false,
+  hideCitations = false,
   hideArtifactList = false,
   conversationId,
   headerInset = false,
@@ -212,6 +216,8 @@ export function AgentChatSurface({
   inputDisabled = false,
   allowAttachments = false,
   enableFileUpload = false,
+  inputModalities = ['text'],
+  inputMimeTypes,
   fileUploadConfig,
   files,
   onFilesChange,
@@ -305,6 +311,7 @@ export function AgentChatSurface({
         hideToolCalls={hideToolCalls}
         hideMessageActions={hideMessageActions}
         hideReasoning={hideReasoning}
+        hideCitations={hideCitations}
         hideArtifactList={hideArtifactList}
         conversationId={conversationId}
         headerInset={headerInset}
@@ -334,6 +341,8 @@ export function AgentChatSurface({
           isStreaming={isStreaming}
           allowAttachments={allowAttachments}
           enableFileUpload={enableFileUpload}
+          inputModalities={inputModalities}
+          inputMimeTypes={inputMimeTypes}
           fileUploadConfig={fileUploadConfig}
           files={files}
           onFilesChange={onFilesChange}

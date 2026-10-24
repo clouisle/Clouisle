@@ -1,6 +1,23 @@
 # Implementation Plan
 
 ## Active
+- **builtin-tool-output** — Completed. See `docs/plan/builtin-tool-output.md`.
+  - [x] 1. Shared result utils and replay contract
+  - [x] 2. Asset, sandbox and persistent web reading outputs
+  - [x] 3. Search, memory and short-result renderers
+  - [x] 4. Encoding evaluation, regression verification and delivery
+
+- **asset-document-reading** — Completed. See `docs/plan/asset-document-reading.md`.
+  - [x] 1. Complete extraction and persistent text representations
+  - [x] 2. Bounded reads, search and continuation
+  - [x] 3. Tool and chat-context cutover
+  - [x] 4. End-to-end verification and delivery
+
+- **backend-push-gate-repair** — Completed. See `docs/plan/backend-push-gate-repair.md`.
+  - [x] 1. Repair backend regression contracts and serialization
+  - [x] 2. Verify unchanged backend/frontend coverage gates
+  - [x] 3. Commit and push with hooks enabled
+
 - **ask-user-custom-answers-and-skip** — In progress. Allow custom text alongside ask_user choices and permit users to explicitly skip every question while preserving a model-visible durable result. See `docs/plan/ask-user-custom-answers-and-skip.md`
   - [ ] 1. Define custom-answer and explicit-skip contract
   - [ ] 2. Extend durable answer submission

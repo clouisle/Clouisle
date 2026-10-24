@@ -26,6 +26,7 @@ Navigate to **System Settings > Roles** (`/roles`):
 
 ## 1. Security Settings (`/site-settings/security`)
 
+- **SSO Policy**: The global SSO switches — enable SSO, allow password login, auto-create users, require approval, and match by email. These are listed on this page but authorized by the login domain (`admin:integrations:login:read/update`), not `admin:settings:read/update`. Individual sign-in providers are configured on **Site Settings → Integrations** under the same domain; Feishu is the case worth calling out, because it is a singleton integration whose `user_login` capability is an explicit opt-in, so enabling the integration or its directory sync does not by itself advertise a sign-in button.
 - **SSRF Outbound Network Allowlist**: Restrict HTTP request nodes, Webhook triggers, and document URL importers to prevent Server-Side Request Forgery against private subnets.
 - **Enable Human Verification**: A single `enable_captcha` switch that shows human verification on the login and registration pages to defend against automated brute-force attacks. There is no separate verification threshold to configure.
 

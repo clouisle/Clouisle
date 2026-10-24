@@ -32,8 +32,8 @@
 | `admin:knowledge-base:read/test/create/update/delete` | 后台知识库管理 |
 | `admin:settings:read` | 查看站点设置 |
 | `admin:settings:update` | 修改站点设置 |
-| `admin:sso:read` | 查看 SSO 提供商与配置 |
-| `admin:sso:update` | 管理 SSO 提供商与用户 SSO 连接 |
+| `admin:integrations:login:read/update` | 查看/管理登录集成与策略 |
+| `admin:integrations:settings:read/update` | 查看/管理邮件、Webhook、飞书内置集成 |
 | `audit:read` | 查看审计日志 |
 | `audit:export` | 导出审计日志 |
 
@@ -83,8 +83,10 @@
 | `admin:notification:create/delete` | ✓ | ✓ | | | |
 | `admin:settings:read` | ✓ | ✓ | | | |
 | `admin:settings:update` | ✓ | | | | |
-| `admin:sso:read` | ✓ | ✓ | | | |
-| `admin:sso:update` | ✓ | | | | |
+| `admin:integrations:login:read` | ✓ | ✓ | | | |
+| `admin:integrations:login:update` | ✓ | | | | |
+| `admin:integrations:settings:read` | ✓ | ✓ | | | |
+| `admin:integrations:settings:update` | ✓ | | | | |
 | `audit:read` | ✓ | ✓ | | | |
 | `audit:export` | ✓ | ✓ | | | |
 | `team:read` | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -143,9 +145,9 @@
 
 拥有 `admin:dashboard:access` 的 Admin 可在拥有具体 `admin:*` 或 `audit:*` 权限时调用系统范围后台 API。除非端点明确提供团队过滤，不应描述为“仅限管理员所属团队”。
 
-### 4.3 站点设置与 SSO
+### 4.3 站点设置与集成
 
-`admin:settings:read`/`admin:settings:update` 与 `admin:sso:read`/`admin:sso:update` 是独立权限。当前系统角色中 Super Admin 拥有更新权限，Admin 对这些设置只读；自定义角色可另行改变分配。
+其他站点设置保留 `admin:settings:read/update`。集成区分 login 和 settings 两个权限域：`admin:integrations:login:read/update` 与 `admin:integrations:settings:read/update`。任一 read 权限可进入统一页面/目录，列表按授权域过滤，变更须具备对应 update 权限。迁移将原 `admin:sso:*` 授权映射到 login 域，并为已有 settings 授权的角色补充对应内置集成域权限；不隐含跨域授权。
 
 ### 4.4 审计日志归档
 

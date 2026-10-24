@@ -6,9 +6,11 @@ Clouisle uses **3 Docker images** that run as **5 application services**:
 
 | Image | Service(s) | Description |
 |-------|------------|-------------|
-| `clouisle-backend` | `api`, `worker`, `beat` | FastAPI API server, Celery worker, Celery beat scheduler |
+| `clouisle-backend` | `api`, `worker`, `beat` | FastAPI API server, general Celery worker, and Celery beat scheduler |
 | `clouisle-sandbox-worker` | `sandbox-worker` | Sandbox task execution and artifact collection |
 | `clouisle-frontend` | `frontend` | Next.js standalone server running with `node server.js` |
+
+WeChat polling tasks run on the `default` queue consumed by the ordinary `worker`; they share its configured Celery concurrency slots with other default-queue tasks. This requires no additional worker process or queue. Existing `WECHAT_POLL_BATCH_SIZE`, `WECHAT_POLL_CONCURRENCY`, and `WECHAT_POLL_MAX_BATCHES` settings still bound the polling work.
 
 Infrastructure dependencies are **PostgreSQL 17 with pg_search 0.24.3**, **Redis 7**, and **Qdrant 1.18.3**. `registry.cn-shanghai.aliyuncs.com/clouisle/clouisle-postgres-pg-search:0.24.3-pg17-alpine1` is the canonical built-in PostgreSQL image. It is built from `deploy/postgres/Dockerfile` and maintained by Clouisle as an Alpine/musl port.
 
@@ -92,12 +94,17 @@ Compose pulls the published `latest` images listed above by default.
 |---------|------|-------------|
 | `frontend` | 3000 | Next.js standalone server |
 | `api` | 8000 | FastAPI API server |
-| `worker` | — | Celery worker for `default,agent,knowledge,workflow` queues |
+| `worker` | — | Celery worker for `default,agent,knowledge,workflow` queues; WeChat polling uses `default` and shares worker slots |
 | `sandbox-worker` | — | Celery worker for stateless `sandbox` tasks and its own session-affinity queue |
 | `beat` | — | Celery beat scheduler; keep exactly one replica |
 | `db` | 5432 | ParadeDB PostgreSQL 17 with pg_search 0.24.3 |
 | `redis` | 6379 | Redis 7 |
 | `qdrant` | 6333 | Qdrant 1.18.3 vector database |
+
+The ordinary worker consumes `default,agent,knowledge,workflow`. WeChat poll tasks use `default` and share that worker's concurrency slots; retain the `WECHAT_POLL_*` settings to bound poll batches, task concurrency and per-tick batches.
+
+When upgrading from the dedicated `wechat_poll` queue, temporarily keep the old poll worker running until its queue is drained. Then stop that worker and deploy the new version, which routes polling tasks to `default`; do not add or keep a compatibility consumer on the old queue. This avoids leaving old queued tasks stranded while preserving the existing bounded polling behavior.
+
 
 ### Important Internal URLs
 
@@ -144,7 +151,7 @@ docker compose logs -f frontend
 # Restart a single service
 docker compose restart api
 
-# Scale workers
+# Scale ordinary worker capacity, including shared WeChat poll work
 docker compose up -d --scale worker=4
 # Add a separately named sandbox service + volume for additional sandbox capacity.
 
@@ -256,6 +263,9 @@ kubectl -n clouisle wait --for=condition=ready pod -l app=qdrant --timeout=120s
 | 11 | Beat | Deployment, 1 replica, Recreate |
 | 12 | Frontend | Deployment + Service :3000 |
 | 13 | Ingress | `/api` → `api`, `/` → `frontend` |
+The raw Kubernetes and Helm workers consume the same `default,agent,knowledge,workflow` queues. WeChat poll tasks use `default` and share the ordinary worker's configured concurrency slots, with existing `WECHAT_POLL_*` settings preserving bounded polling.
+
+For existing deployments using the dedicated `wechat_poll` queue, temporarily keep the old poll worker running until that queue is drained. Stop it before applying the new deployment; the new version routes polls to `default`. Do not add a compatibility consumer for the old queue.
 
 ### Scaling
 

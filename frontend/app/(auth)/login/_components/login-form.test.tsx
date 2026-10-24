@@ -142,9 +142,9 @@ describe('LoginForm', () => {
 
   test('enforces SSO-only mode and forwards the requested redirect', async () => {
     settings({ sso_enabled: true, sso_allow_password_login: false })
-    spyOn(ssoApi, 'getPublicProviders').mockResolvedValue([{
-      id: 'sso-1', name: 'oidc', display_name: 'Company SSO', button_text: 'Use Company SSO', icon_url: null,
-    }] as Awaited<ReturnType<typeof ssoApi.getPublicProviders>>)
+    spyOn(ssoApi, 'getPublicIntegrations').mockResolvedValue([{
+      id: 'sso-1', name: 'oidc', provider_type: 'oidc', display_name: 'Company SSO', button_text: 'Use Company SSO', icon_url: null,
+    }] as Awaited<ReturnType<typeof ssoApi.getPublicIntegrations>>)
     const initiateLogin = spyOn(ssoApi, 'initiateLogin').mockImplementation(() => {})
     const renderer = render('redirect=/app/admin')
     await act(async () => Promise.resolve())
@@ -152,6 +152,41 @@ describe('LoginForm', () => {
     expect(renderer.root.findAllByType('form')).toHaveLength(0)
     await click(renderer.root, 'Use Company SSO')
     expect(initiateLogin).toHaveBeenCalledWith('oidc', '/app/admin')
+    act(() => renderer.unmount())
+  })
+
+  test('shows the bundled Feishu icon when the login integration has no custom icon', async () => {
+    settings({ sso_enabled: true, sso_allow_password_login: true })
+    spyOn(ssoApi, 'getPublicIntegrations').mockResolvedValue([{
+      id: 'feishu-integration',
+      name: 'feishu',
+      provider_type: 'feishu',
+      display_name: 'Feishu',
+      button_text: 'Sign in with Feishu',
+      icon_url: null,
+    }])
+    const renderer = render()
+    await act(async () => Promise.resolve())
+
+    const icon = renderer.root.findByType('img')
+    expect(icon.props.src).toBe('/integrations/feishu.png')
+    act(() => renderer.unmount())
+  })
+
+  test('localizes the fallback SSO button label', async () => {
+    settings({ sso_enabled: true, sso_allow_password_login: true })
+    spyOn(ssoApi, 'getPublicIntegrations').mockResolvedValue([{
+      id: 'sso-1',
+      name: 'oidc',
+      provider_type: 'oidc',
+      display_name: 'Company SSO',
+      button_text: null,
+      icon_url: null,
+    }])
+    const renderer = render()
+    await act(async () => Promise.resolve())
+
+    expect(button(renderer.root, 'Sign in with Company SSO')).toBeTruthy()
     act(() => renderer.unmount())
   })
 

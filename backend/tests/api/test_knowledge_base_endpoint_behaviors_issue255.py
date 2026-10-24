@@ -464,6 +464,20 @@ async def test_delete_knowledge_base_removes_record_and_audits(monkeypatch):
     access = AsyncMock(return_value=record)
     monkeypatch.setattr(knowledge_bases, "check_kb_access", access)
     monkeypatch.setattr(knowledge_bases.AuditLogService, "log", audit)
+    monkeypatch.setattr(
+        knowledge_bases.FeishuKnowledgeSource,
+        "filter",
+        lambda **kwargs: SimpleNamespace(exists=AsyncMock(return_value=False)),
+    )
+    from app.models.wechat_knowledge import WeChatKnowledgeItem
+
+    monkeypatch.setattr(
+        WeChatKnowledgeItem,
+        "filter",
+        lambda **kwargs: SimpleNamespace(
+            exclude=lambda **_: SimpleNamespace(values_list=AsyncMock(return_value=[]))
+        ),
+    )
 
     result = await knowledge_bases.delete_knowledge_base(
         record.id, SimpleNamespace(), _user()

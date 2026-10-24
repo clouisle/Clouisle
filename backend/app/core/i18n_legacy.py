@@ -140,15 +140,83 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Destination path inside the sandbox workspace, e.g. /workspace/report.xlsx.",
         "zh": "沙箱工作区内的目标路径，例如 /workspace/report.xlsx。",
     },
-    "asset_tool_parse": {"en": "Parse Attachment", "zh": "解析附件"},
-    "asset_tool_parse_description": {
-        "en": "Parse a supported attachment on demand while preserving its raw bytes.",
-        "zh": "按需解析支持的附件，同时保留原始文件内容。",
-    },
     "asset_tool_read": {"en": "Read Attachment", "zh": "读取附件"},
     "asset_tool_read_description": {
-        "en": "Read bounded text from an attachment in this conversation.",
-        "zh": "读取当前对话中附件的有限文本内容。",
+        "en": "Read a bounded line range of a document attachment in this conversation. Continue with next_cursor until eof is true to reach the last character.",
+        "zh": "按行范围读取当前对话中文档附件的有限内容。使用 next_cursor 继续读取，直到 eof 为 true 即可读到最后一个字符。",
+    },
+    "asset_tool_search": {"en": "Search Attachment", "zh": "搜索附件"},
+    "asset_tool_search_description": {
+        "en": "Search the full extracted text of a document attachment and return bounded matching snippets with line numbers.",
+        "zh": "搜索文档附件提取出的完整文本，返回带行号的有限匹配片段。",
+    },
+    "asset_tool_start_line_description": {
+        "en": "One-based line number to start reading from.",
+        "zh": "开始读取的起始行号（从 1 开始）。",
+    },
+    "asset_tool_line_count_description": {
+        "en": "Maximum number of lines to return in this page.",
+        "zh": "本页返回的最大行数。",
+    },
+    "asset_tool_query_description": {
+        "en": "Literal text to find inside the document.",
+        "zh": "要在文档中查找的文本。",
+    },
+    "asset_tool_context_lines_description": {
+        "en": "Lines of context to include around each match.",
+        "zh": "每个匹配结果周围包含的上下文行数。",
+    },
+    "asset_tool_limit_description": {
+        "en": "Maximum number of matches to return in this page.",
+        "zh": "本页返回的最大匹配数量。",
+    },
+    "asset_tool_cursor_description": {
+        "en": "next_cursor from a previous read_asset or search_asset result.",
+        "zh": "上一次 read_asset 或 search_asset 结果中的 next_cursor。",
+    },
+    "asset_page_range_required": {
+        "en": "Native PDF viewing requires an explicit page selection; use read_asset or search_asset to read document text.",
+        "zh": "原生查看 PDF 需要显式指定页码范围；请使用 read_asset 或 search_asset 读取文档文本。",
+    },
+    "invalid_document_cursor": {
+        "en": "Invalid or stale document cursor",
+        "zh": "文档游标无效或已过期",
+    },
+    "document_extraction_empty": {
+        "en": "No text could be extracted from this document.",
+        "zh": "无法从该文档中提取文本。",
+    },
+    "document_extraction_decode_failed": {
+        "en": "The extracted document text could not be decoded as UTF-8.",
+        "zh": "提取出的文档文本无法按 UTF-8 解码。",
+    },
+    "asset_document_resource_limit_exceeded": {
+        "en": "The document exceeds the supported extraction size limit.",
+        "zh": "文档超出支持的提取大小限制。",
+    },
+    "asset_document_invalid_cursor": {
+        "en": "Invalid document cursor.",
+        "zh": "文档游标无效。",
+    },
+    "asset_document_stale_cursor": {
+        "en": "The document cursor is stale; restart the read or search.",
+        "zh": "文档游标已过期；请重新开始读取或搜索。",
+    },
+    "asset_document_invalid_range": {
+        "en": "The requested line range is invalid.",
+        "zh": "请求的行范围无效。",
+    },
+    "asset_document_invalid_query": {
+        "en": "The document search query is invalid.",
+        "zh": "文档搜索查询无效。",
+    },
+    "file_download_failed": {
+        "en": "Failed to download the external attachment.",
+        "zh": "下载外部附件失败。",
+    },
+    "asset_document_derived_asset": {
+        "en": "Derived document text cannot be read as an input attachment.",
+        "zh": "派生的文档文本不能作为输入附件读取。",
     },
     "asset_tool_ref_description": {
         "en": "Exact reference from available attachments.",
@@ -176,8 +244,21 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "批量强制修改密码",
     },
     "audit_log_change_password": {"en": "Change password", "zh": "修改密码"},
+    "audit_log_collect_wechat_content": {
+        "en": "Collect WeChat knowledge content",
+        "zh": "采集微信知识内容",
+    },
+    "audit_log_connect_wechat_binding": {
+        "en": "Authorize WeChat connection",
+        "zh": "授权微信连接",
+    },
     "audit_log_create_agent": {"en": "Create agent", "zh": "创建 Agent"},
     "audit_log_create_api_key": {"en": "Create API key", "zh": "创建 API 密钥"},
+    "audit_log_create_feishu_knowledge_source": {
+        "en": "Create Feishu knowledge synchronization source",
+        "zh": "创建飞书知识库同步源",
+    },
+    "audit_log_create_integration": {"en": "Create integration", "zh": "创建集成"},
     "audit_log_create_kb": {"en": "Create knowledge base", "zh": "创建知识库"},
     "audit_log_create_model": {
         "en": "Create model configuration",
@@ -196,6 +277,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "audit_log_deactivate_user": {"en": "Deactivate user", "zh": "停用用户"},
     "audit_log_delete_agent": {"en": "Delete agent", "zh": "删除 Agent"},
     "audit_log_delete_api_key": {"en": "Delete API key", "zh": "删除 API 密钥"},
+    "audit_log_delete_feishu_knowledge_source": {
+        "en": "Delete Feishu knowledge synchronization source",
+        "zh": "删除飞书知识库同步源",
+    },
+    "audit_log_delete_integration": {"en": "Delete integration", "zh": "删除集成"},
     "audit_log_delete_kb": {"en": "Delete knowledge base", "zh": "删除知识库"},
     "audit_log_delete_memory_entity": {
         "en": "Delete memory entity",
@@ -223,6 +309,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "audit_log_disable_totp": {
         "en": "Disable two-factor authentication",
         "zh": "禁用双因素认证",
+    },
+    "audit_log_disconnect_wechat_binding": {
+        "en": "Disconnect WeChat connection",
+        "zh": "断开微信连接",
     },
     "audit_log_enable_totp": {
         "en": "Enable two-factor authentication",
@@ -253,12 +343,25 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "audit_log_sso_login_failed": {"en": "SSO login failed", "zh": "SSO 登录失败"},
     "audit_log_sso_login_success": {"en": "SSO login", "zh": "SSO 登录"},
+    "audit_log_sync_feishu_knowledge_source": {
+        "en": "Synchronize Feishu knowledge source",
+        "zh": "执行飞书知识库同步",
+    },
+    "audit_log_test_integration_failed": {
+        "en": "Integration configuration check failed",
+        "zh": "集成配置检查失败",
+    },
     "audit_log_unpublish_agent": {"en": "Unpublish agent", "zh": "取消发布 Agent"},
     "audit_log_update_agent": {"en": "Update agent", "zh": "更新 Agent"},
     "audit_log_update_auto_notification_config": {
         "en": "Update auto notification config",
         "zh": "更新自动通知配置",
     },
+    "audit_log_update_feishu_knowledge_source": {
+        "en": "Update Feishu knowledge synchronization source",
+        "zh": "更新飞书知识库同步源",
+    },
+    "audit_log_update_integration": {"en": "Update integration", "zh": "更新集成"},
     "audit_log_update_kb": {"en": "Update knowledge base", "zh": "更新知识库"},
     "audit_log_update_memory_entity": {
         "en": "Update memory entity",
@@ -278,6 +381,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "audit_log_update_team": {"en": "Update team", "zh": "更新团队"},
     "audit_log_update_tool": {"en": "Update tool", "zh": "更新工具"},
     "audit_log_update_user": {"en": "Update user", "zh": "更新用户"},
+    "audit_log_update_wechat_binding": {
+        "en": "Update WeChat collection settings",
+        "zh": "修改微信采集配置",
+    },
     "audit_log_update_workflow": {"en": "Update workflow", "zh": "更新工作流"},
     "audit_log_use_backup_code": {"en": "Use backup code", "zh": "使用备份码"},
     "audit_log_verify_totp_failed": {
@@ -849,18 +956,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Database host is not allowed",
         "zh": "不允许访问该数据库主机",
     },
-    "dingtalk_not_configured": {
-        "en": "DingTalk service is not configured",
-        "zh": "钉钉服务未配置",
-    },
-    "dingtalk_not_enabled": {
-        "en": "DingTalk service is not enabled",
-        "zh": "钉钉服务未启用",
-    },
-    "dingtalk_send_failed": {
-        "en": "Failed to send DingTalk message",
-        "zh": "钉钉消息发送失败",
-    },
     "document_created": {"en": "Document created successfully", "zh": "文档创建成功"},
     "document_deleted": {"en": "Document deleted successfully", "zh": "文档删除成功"},
     "document_is_processing": {
@@ -1062,17 +1157,219 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Embedding model cannot be changed after knowledge base creation",
         "zh": "知识库创建后不可修改嵌入模型",
     },
+    "feishu_agent_agent_none": {"en": "not selected yet", "zh": "尚未选择"},
+    "feishu_agent_agent_unavailable": {
+        "en": "That Agent is not available to you right now.",
+        "zh": "该智能体当前不可用。",
+    },
+    "feishu_agent_agents_footer": {
+        "en": "Send /use <number> to switch the Agent.",
+        "zh": "发送 /使用 <编号> 切换智能体。",
+    },
+    "feishu_agent_agents_header": {
+        "en": "Agents you can use (send /use <number> to switch):",
+        "zh": "你可以使用的智能体（发送 /使用 <编号> 切换）：",
+    },
+    "feishu_agent_answer_invalid_choice": {
+        "en": "Please choose one of: {options}",
+        "zh": "请选择以下之一：{options}",
+    },
+    "feishu_agent_answer_required": {
+        "en": "This question still needs an answer: {question}",
+        "zh": "这个问题仍需要回答：{question}",
+    },
+    "feishu_agent_busy": {
+        "en": "The previous message is still being processed. Please wait for it to finish.",
+        "zh": "上一条消息仍在处理中，请等待完成。",
+    },
+    "feishu_agent_channel_disabled": {
+        "en": "The Feishu channel is no longer active. Open the conversation in the web app.",
+        "zh": "飞书通道已停用，请在网页应用中查看对话。",
+    },
+    "feishu_agent_chat_agent_unavailable": {
+        "en": "This agent is not available for Feishu agent chat. Choose a published agent on an active team that you can access.",
+        "zh": "该智能体不可用于飞书智能体对话。请选择您可访问的、属于有效团队的已发布智能体。",
+    },
+    "feishu_agent_chat_agent_unpublished": {
+        "en": "Only published agents can answer Feishu messages. Publish the agent first.",
+        "zh": "只有已发布的智能体才能回复飞书消息，请先发布该智能体。",
+    },
+    "feishu_agent_help": {
+        "en": "Commands: /agents lists the Agents you can use; /use <number> switches the Agent; /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help.",
+        "zh": "命令：/智能体（/agents）查看可用智能体；/使用（/use）<编号> 切换智能体；/新对话（/new）开始新对话；/停止（/stop）停止任务并取消排队消息；/状态（/status）查看状态；/帮助（/help）查看帮助。",
+    },
+    "feishu_agent_new_conversation": {
+        "en": "Your next message will start a new conversation.",
+        "zh": "下一条消息将开始新的对话。",
+    },
+    "feishu_agent_no_agents": {
+        "en": "No Agent is available to you in Feishu yet. Ask an administrator to publish one.",
+        "zh": "你暂时没有可在飞书中使用的智能体，请联系管理员发布。",
+    },
+    "feishu_agent_no_output": {
+        "en": "The Agent finished without producing a visible reply.",
+        "zh": "Agent 已完成，但没有产生可见回复。",
+    },
+    "feishu_agent_questions_partial": {
+        "en": "Answered {done} of {total} questions. Send the remaining answer.",
+        "zh": "已回答 {total} 个问题中的 {done} 个，请发送剩余答案。",
+    },
+    "feishu_agent_received": {"en": "🤔Thinking...", "zh": "🤔思考中..."},
+    "feishu_agent_answer_text_required": {
+        "en": "Please answer the pending question with text; attachments cannot answer it.",
+        "zh": "请用文字回答当前问题，附件不能作为问题答案。",
+    },
+    "feishu_agent_attachments_disabled": {
+        "en": "This Agent does not accept attachments.",
+        "zh": "当前智能体未启用附件，请先开启附件功能。",
+    },
+    "feishu_agent_too_many_files": {
+        "en": "Too many attachments for this Agent.",
+        "zh": "附件数量超过当前智能体限制。",
+    },
+    "feishu_agent_file_type_unsupported": {
+        "en": "This attachment type is not allowed by the Agent.",
+        "zh": "当前智能体不允许此附件类型。",
+    },
+    "feishu_agent_file_too_large": {
+        "en": "The attachment exceeds the Agent's size limit.",
+        "zh": "附件大小超过当前智能体限制。",
+    },
+    "feishu_agent_media_failed": {
+        "en": "Unable to read the Feishu attachment. Check the bot's message resource permission and try again.",
+        "zh": "无法读取飞书附件，请检查机器人的消息资源读取权限后重试。",
+    },
+    "feishu_agent_run_failed": {
+        "en": "The Agent task did not finish. Open the conversation for details.",
+        "zh": "Agent 任务未完成，请打开对话查看详情。",
+    },
+    "feishu_agent_status": {
+        "en": "Agent: {agent} — Status: {status}",
+        "zh": "智能体：{agent} — 状态：{status}",
+    },
+    "feishu_agent_stopped": {
+        "en": "Stopped. Queued messages were cancelled.",
+        "zh": "已停止，排队中的消息已取消。",
+    },
+    "feishu_agent_use_current": {
+        "en": "Already using {agent}.",
+        "zh": "正在使用 {agent}。",
+    },
+    "feishu_agent_use_invalid": {
+        "en": "That Agent is not in your list. Send /agents to see the ones you can use.",
+        "zh": "该智能体不在你的可用列表中，请发送 /智能体 查看。",
+    },
+    "feishu_agent_use_missing": {
+        "en": "Send /use with the number of an Agent from /agents.",
+        "zh": "请发送 /使用 <编号>，编号来自 /智能体 列表。",
+    },
+    "feishu_agent_use_selected": {
+        "en": "Now using {agent}. Your next message goes to it.",
+        "zh": "已切换到 {agent}，下一条消息将发送给它。",
+    },
+    "feishu_api_error": {
+        "en": "Feishu rejected the request: {error}",
+        "zh": "飞书拒绝了该请求：{error}",
+    },
+    "feishu_directory_sync_disabled": {
+        "en": "Enable the Feishu integration and its directory sync capability before browsing or syncing departments.",
+        "zh": "请先启用飞书集成及其通讯录同步能力，再浏览或同步部门。",
+    },
+    "feishu_document_source_managed": {
+        "en": "This document is managed by Feishu synchronization. Manage it through its synchronization source.",
+        "zh": "该文档由飞书同步管理，请通过同步源管理其内容。",
+    },
+    "feishu_kb_has_sync_sources": {
+        "en": "Delete this knowledge base's Feishu synchronization sources before deleting the knowledge base.",
+        "zh": "请先删除该知识库的飞书同步源，再删除知识库。",
+    },
+    "feishu_knowledge_api_error": {
+        "en": "Feishu knowledge API rejected the request (code {code}, HTTP {status}).",
+        "zh": "飞书知识库接口拒绝了请求（错误码 {code}，HTTP {status}）。",
+    },
+    "feishu_knowledge_connection_failed": {
+        "en": "Unable to connect to Feishu. Check application configuration and network connectivity.",
+        "zh": "无法连接飞书，请检查应用配置和网络连接。",
+    },
+    "feishu_knowledge_conversion_failed": {
+        "en": "Feishu document conversion failed: the content contains unsupported elements or an incomplete document structure. This is not an embedding model configuration error; check the source content.",
+        "zh": "飞书文档内容转换失败：内容包含尚不支持的元素，或文档结构不完整。这不是 Embedding 模型配置错误；请检查原文内容。",
+    },
+    "feishu_knowledge_disabled": {
+        "en": "Enable the Feishu integration and this synchronization source before syncing.",
+        "zh": "请先启用飞书集成及该同步源，再执行同步。",
+    },
+    "feishu_knowledge_missing_api_permissions": {
+        "en": "The Feishu app lacks API permissions (99991672). Required scopes for the failed API: {scopes} (follow the API permission page). Request these permissions under Feishu Open Platform → this app → Permissions, publish the app version, obtain administrator approval, then retry.",
+        "zh": "飞书应用缺少 API 权限（99991672）。当前失败接口要求的权限：{scopes}（以飞书权限页说明为准）。请在飞书开放平台 → 当前应用 → 权限管理申请这些权限，完成版本发布及管理员审批后重试。",
+    },
+    "feishu_knowledge_partial_failure": {
+        "en": "Some documents could not be synchronized. Check the synchronization results.",
+        "zh": "部分文档同步失败，请查看同步结果。",
+    },
+    "feishu_knowledge_processing_failed": {
+        "en": "The imported document could not be indexed. Check the knowledge base embedding configuration.",
+        "zh": "同步文档索引失败，请检查目标知识库的向量模型配置。",
+    },
+    "feishu_knowledge_publish_failed": {
+        "en": "Unable to queue synchronization. Check the task broker and try again.",
+        "zh": "无法提交同步任务，请检查任务队列后重试。",
+    },
+    "feishu_knowledge_required_scopes_unknown": {
+        "en": "Feishu did not return scope names; check the API permission requirements in Open Platform",
+        "zh": "飞书未返回具体权限名称，请查看开放平台中对应接口的权限要求",
+    },
+    "feishu_knowledge_resource_access_denied": {
+        "en": "The Feishu app cannot access the target Wiki space or document. Ask the space administrator to add the app/bot as a member and grant access to the document. API permissions and resource access must be granted separately.",
+        "zh": "飞书应用无权访问目标知识空间或文档。请让知识空间管理员将该应用／机器人添加为成员，并确认其可访问目标文档；API 权限与资源访问权限需要分别授权。",
+    },
+    "feishu_knowledge_source_busy": {
+        "en": "This synchronization source is busy. Wait for the current operation to finish.",
+        "zh": "该同步源正在执行操作，请等待当前操作结束。",
+    },
+    "feishu_knowledge_source_exists": {
+        "en": "This Feishu space is already connected to the selected knowledge base.",
+        "zh": "该飞书知识空间已连接到所选知识库。",
+    },
+    "feishu_knowledge_source_not_found": {
+        "en": "Feishu knowledge synchronization source not found.",
+        "zh": "飞书知识库同步源不存在。",
+    },
+    "feishu_knowledge_space_unavailable": {
+        "en": "The selected Feishu knowledge space is unavailable to the application. Check its resource permissions.",
+        "zh": "飞书应用无法访问所选知识空间，请检查应用的资源访问权限。",
+    },
+    "feishu_knowledge_sync_failed": {
+        "en": "Feishu knowledge synchronization failed. Check the source and try again.",
+        "zh": "飞书知识库同步失败，请检查同步源后重试。",
+    },
+    "feishu_knowledge_target_unavailable": {
+        "en": "The target knowledge base is unavailable or inactive.",
+        "zh": "目标知识库不可用或未启用。",
+    },
+    "feishu_knowledge_unsupported_type": {
+        "en": "Unsupported Feishu content type or file format: {type}. Mindnote has no public content API.",
+        "zh": "不支持的飞书内容类型或文件格式：{type}。思维笔记暂无公开内容读取 API。",
+    },
     "feishu_not_configured": {
-        "en": "Feishu service is not configured",
-        "zh": "飞书服务未配置",
+        "en": "Save the Feishu app ID and app secret before browsing or syncing departments.",
+        "zh": "请先保存飞书 App ID 和 App Secret，再浏览或同步部门。",
     },
-    "feishu_not_enabled": {
-        "en": "Feishu service is not enabled",
-        "zh": "飞书服务未启用",
+    "feishu_notification_not_configured": {
+        "en": "Save the Feishu app ID and app secret, then grant the app permission to send direct messages.",
+        "zh": "请保存飞书 App ID 和 App Secret，并授予应用发送私聊消息的权限。",
     },
-    "feishu_send_failed": {
-        "en": "Failed to send Feishu message",
-        "zh": "飞书消息发送失败",
+    "feishu_notification_not_enabled": {
+        "en": "Enable the Feishu integration and its notifications capability before sending notifications.",
+        "zh": "请先启用飞书集成及其通知能力，再发送通知。",
+    },
+    "feishu_secret_undecryptable": {
+        "en": "The stored Feishu app secret cannot be decrypted. Save the app secret again.",
+        "zh": "已保存的飞书应用密钥无法解密，请重新保存应用密钥。",
+    },
+    "feishu_test_recipient_unavailable": {
+        "en": "Select an active user linked to Feishu.",
+        "zh": "请选择已绑定飞书的启用用户。",
     },
     "fetch_webpage_http_error": {
         "en": "HTTP error: {status_code}",
@@ -1192,6 +1489,31 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "权限不足，无法访问此工具",
     },
     "insufficient_privileges": {"en": "Insufficient privileges", "zh": "权限不足"},
+    "integration_builtin_cannot_delete": {
+        "en": "Builtin integrations cannot be deleted",
+        "zh": "内置集成不能删除",
+    },
+    "integration_config_error_generic": {
+        "en": "Integration configuration check failed",
+        "zh": "集成配置检查失败",
+    },
+    "integration_config_valid": {
+        "en": "Integration configuration is valid",
+        "zh": "集成配置有效",
+    },
+    "integration_feature_disabled": {
+        "en": "This integration feature is disabled. Contact an administrator to enable it.",
+        "zh": "此集成功能已停用，请联系管理员启用。",
+    },
+    "integration_invalid_configuration": {
+        "en": "Invalid integration configuration or capability",
+        "zh": "集成配置或能力无效",
+    },
+    "integration_name_exists": {
+        "en": "Integration name already exists",
+        "zh": "集成名称已存在",
+    },
+    "integration_not_found": {"en": "Integration not found", "zh": "集成未找到"},
     "internal_error": {"en": "Internal server error", "zh": "内部服务错误"},
     "internal_server_error": {"en": "Internal Server Error", "zh": "服务器内部错误"},
     "invalid_api_key": {"en": "Invalid API key", "zh": "无效的 API 密钥"},
@@ -1225,6 +1547,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "invalid_minimax_api_key": {
         "en": "Invalid MiniMax API key",
         "zh": "无效的 MiniMax API Key",
+    },
+    "invalid_notification_channels": {
+        "en": "Unsupported notification channel(s): {channels}",
+        "zh": "不支持的通知渠道：{channels}",
     },
     "invalid_notification_scope": {
         "en": "Invalid notification scope",
@@ -1595,14 +1921,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "model_endpoint_allowlist_invalid": {
         "en": "Enter a valid list of HTTP or HTTPS model endpoint Origins",
         "zh": "请输入有效的 HTTP 或 HTTPS 模型端点 Origin 列表",
-    },
-    "sandbox_network_allowlist_description": {
-        "en": "Exact DNS hostnames permitted for sandbox HTTPS egress",
-        "zh": "沙盒 HTTPS 出网允许访问的精确 DNS 主机名",
-    },
-    "sandbox_network_allowlist_invalid": {
-        "en": "Use up to 200 exact DNS hostnames; IP addresses, wildcards, and invalid hostnames are not allowed",
-        "zh": "最多填写 200 个精确 DNS 主机名；不支持 IP 地址、通配符或无效主机名",
     },
     "model_endpoint_base_url_invalid": {
         "en": "Enter a valid HTTP or HTTPS model Base URL",
@@ -2185,6 +2503,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Run is not waiting for user answers",
         "zh": "运行未处于等待用户输入状态",
     },
+    "run_status_completed": {"en": "Completed", "zh": "已完成"},
+    "run_status_completing": {"en": "Completing", "zh": "完成中"},
+    "run_status_failed": {"en": "Failed", "zh": "失败"},
+    "run_status_idle": {"en": "Idle", "zh": "空闲"},
+    "run_status_interrupted": {"en": "Interrupted", "zh": "已中断"},
+    "run_status_queued": {"en": "Queued", "zh": "排队中"},
+    "run_status_running": {"en": "Running", "zh": "运行中"},
+    "run_status_stopped": {"en": "Stopped", "zh": "已停止"},
+    "run_status_stopping": {"en": "Stopping", "zh": "停止中"},
+    "run_status_waiting": {"en": "Waiting for your answer", "zh": "等待你的回答"},
     "runway_api_error": {"en": "Runway API error", "zh": "Runway API 错误"},
     "runway_endpoint_not_found": {
         "en": "Runway endpoint not found",
@@ -2230,6 +2558,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "sandbox_missing_executable_payload": {
         "en": "Sandbox job has no executable payload",
         "zh": "沙箱任务缺少可执行内容",
+    },
+    "sandbox_network_allowlist_description": {
+        "en": "Exact DNS hostnames permitted for sandbox HTTPS egress",
+        "zh": "沙盒 HTTPS 出网允许访问的精确 DNS 主机名",
+    },
+    "sandbox_network_allowlist_invalid": {
+        "en": "Use up to 200 exact DNS hostnames; IP addresses, wildcards, and invalid hostnames are not allowed",
+        "zh": "最多填写 200 个精确 DNS 主机名；不支持 IP 地址、通配符或无效主机名",
     },
     "sandbox_process_exit_code": {
         "en": "Process exited with code {exit_code}",
@@ -2511,18 +2847,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Skipped must be a boolean",
         "zh": "跳过标识必须是布尔值",
     },
-    "slack_not_configured": {
-        "en": "Slack service is not configured",
-        "zh": "Slack 服务未配置",
-    },
-    "slack_not_enabled": {
-        "en": "Slack service is not enabled",
-        "zh": "Slack 服务未启用",
-    },
-    "slack_send_failed": {
-        "en": "Failed to send Slack message",
-        "zh": "Slack 消息发送失败",
-    },
     "smtp_not_configured": {
         "en": "Email service is not configured",
         "zh": "邮件服务未配置",
@@ -2539,6 +2863,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "CAS 响应解析失败",
     },
     "sso_cas_validation_failed": {"en": "CAS validation failed", "zh": "CAS 校验失败"},
+    "sso_connection_exists": {
+        "en": "This account or Feishu identity is already linked. Unlink it first or contact an administrator.",
+        "zh": "当前账号或飞书身份已有关联，请先解除关联或联系管理员。",
+    },
     "sso_connection_not_found": {
         "en": "SSO connection not found",
         "zh": "SSO 连接未找到",
@@ -2699,14 +3027,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Please agree to the terms and privacy policy before registering",
         "zh": "请先同意用户协议和隐私政策再注册",
     },
-    "test_dingtalk_content": {
-        "en": "This is a test message. If you received this, your DingTalk configuration is working correctly.",
-        "zh": "这是一条测试消息，如果您收到此消息，说明钉钉通知配置正确。",
-    },
-    "test_dingtalk_sent": {
-        "en": "Test DingTalk message sent successfully",
-        "zh": "测试钉钉消息发送成功",
-    },
     "test_email_body_html": {
         "en": '\n<!DOCTYPE html>\n<html>\n<head>\n    <meta charset="utf-8">\n</head>\n<body style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">\n    <h2 style="color: #333;">✅ SMTP Configuration Test Successful</h2>\n    <p>This is a test email from <strong>{site_name}</strong>.</p>\n    <p style="color: #666;">If you received this email, your SMTP configuration is working correctly.</p>\n</body>\n</html>\n',
         "zh": '\n<!DOCTYPE html>\n<html>\n<head>\n    <meta charset="utf-8">\n</head>\n<body style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">\n    <h2 style="color: #333;">✅ SMTP 配置测试成功</h2>\n    <p>这是一封来自 <strong>{site_name}</strong> 的测试邮件。</p>\n    <p style="color: #666;">如果您收到了这封邮件，说明 SMTP 配置正确。</p>\n</body>\n</html>\n',
@@ -2720,25 +3040,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "【{site_name}】Test Email",
         "zh": "【{site_name}】测试邮件",
     },
-    "test_feishu_content": {
-        "en": "This is a test message. If you received this, your Feishu configuration is working correctly.",
-        "zh": "这是一条测试消息，如果您收到此消息，说明飞书通知配置正确。",
-    },
-    "test_feishu_sent": {
-        "en": "Test Feishu message sent successfully",
-        "zh": "测试飞书消息发送成功",
-    },
     "test_notification_title": {
         "en": "【{site_name}】Test Message",
         "zh": "【{site_name}】测试消息",
-    },
-    "test_slack_content": {
-        "en": "This is a test message. If you received this, your Slack configuration is working correctly.",
-        "zh": "这是一条测试消息，如果您收到此消息，说明 Slack 通知配置正确。",
-    },
-    "test_slack_sent": {
-        "en": "Test Slack message sent successfully",
-        "zh": "测试 Slack 消息发送成功",
     },
     "test_webhook_content": {
         "en": "This is a test message. If you received this, your Webhook configuration is working correctly.",
@@ -2747,14 +3051,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "test_webhook_sent": {
         "en": "Test Webhook notification sent successfully",
         "zh": "测试 Webhook 通知发送成功",
-    },
-    "test_wechat_content": {
-        "en": "This is a test message. If you received this, your WeChat Work configuration is working correctly.",
-        "zh": "这是一条测试消息，如果您收到此消息，说明企业微信通知配置正确。",
-    },
-    "test_wechat_sent": {
-        "en": "Test WeChat Work message sent successfully",
-        "zh": "测试企业微信消息发送成功",
     },
     "token_expired": {"en": "Token expired", "zh": "令牌已过期"},
     "token_revoked": {"en": "Token has been revoked", "zh": "令牌已被撤销"},
@@ -3020,6 +3316,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Volcengine video task completed without video output",
         "zh": "火山方舟视频任务已完成，但未返回视频结果",
     },
+    "web_search_blocked_or_empty": {
+        "en": "The search engine returned no usable results (it may be blocking automated requests); try again or choose another engine",
+        "zh": "搜索引擎未返回可用结果（可能拦截了自动请求）；请重试或切换搜索引擎",
+    },
     "web_search_api_error": {
         "en": "Search API error: {status_code}",
         "zh": "搜索 API 错误：{status_code}",
@@ -3045,17 +3345,244 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Webhook trigger is not enabled for this workflow",
         "zh": "此工作流未启用 Webhook 触发",
     },
-    "wechat_not_configured": {
-        "en": "WeChat Work service is not configured",
-        "zh": "企业微信服务未配置",
+    "wechat_agent_agents_footer": {
+        "en": "Send /use <number> to switch. Wait for confirmation before sending your next message. Numbers may change when the list changes.",
+        "zh": "发送 /使用 <编号> 切换，收到成功确认后再发送新消息。列表变化时编号可能改变。",
     },
-    "wechat_not_enabled": {
-        "en": "WeChat Work service is not enabled",
-        "zh": "企业微信服务未启用",
+    "wechat_agent_agents_header": {"en": "Available Agents:", "zh": "可用智能体："},
+    "wechat_agent_answer_invalid_choice": {
+        "en": "Please choose one of: {options}",
+        "zh": "请选择其中一项：{options}",
     },
-    "wechat_send_failed": {
-        "en": "Failed to send WeChat Work message",
-        "zh": "企业微信消息发送失败",
+    "wechat_agent_answer_required": {
+        "en": "This question still needs an answer: {question}",
+        "zh": "这个问题还需要回答：{question}",
+    },
+    "wechat_agent_answer_skipped": {
+        "en": "Questions skipped.",
+        "zh": "已跳过这些问题。",
+    },
+    "wechat_agent_attachments_disabled": {
+        "en": "This Agent does not accept file attachments.",
+        "zh": "此 Agent 未开放文件附件。",
+    },
+    "wechat_agent_binding_disconnected": {
+        "en": "The WeChat connection is no longer active.",
+        "zh": "微信连接已失效。",
+    },
+    "wechat_agent_busy": {
+        "en": "The previous message is still being processed. Please wait for it to finish.",
+        "zh": "上一条消息仍在处理中，请等待完成。",
+    },
+    "wechat_agent_config_missing": {
+        "en": "No Agent is configured for this connection.",
+        "zh": "该连接尚未配置 Agent。",
+    },
+    "wechat_agent_context_missing": {
+        "en": "WeChat reply context is unavailable. View the result in the web conversation.",
+        "zh": "微信回复上下文不可用，请在网页会话中查看结果。",
+    },
+    "wechat_agent_conversation_missing": {
+        "en": "The Agent session has no conversation yet.",
+        "zh": "Agent 会话尚未建立对话。",
+    },
+    "wechat_agent_file_too_large": {
+        "en": "The attachment exceeds the Agent size limit.",
+        "zh": "附件超过 Agent 的大小限制。",
+    },
+    "wechat_agent_file_type_unsupported": {
+        "en": "This attachment type is not allowed by the Agent.",
+        "zh": "此 Agent 不允许该附件类型。",
+    },
+    "wechat_agent_help": {
+        "en": "Commands: /agents lists available Agents; /use <number> switches the Agent when idle; /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help; /skip skips pending questions.",
+        "zh": "命令：/智能体（/agents）查看可用智能体；/使用 <编号>（/use <number>）在空闲时切换智能体；/新对话（/new）开始新对话；/停止（/stop）停止任务并取消排队消息；/状态（/status）查看状态；/帮助（/help）查看帮助；/跳过（/skip）跳过待答问题。",
+    },
+    "wechat_agent_media_failed": {
+        "en": "The attachment could not be downloaded from WeChat. Please send it again.",
+        "zh": "未能从微信下载该附件，请重新发送。",
+    },
+    "wechat_agent_media_unsupported": {
+        "en": "This message type is not supported by the connected Agent.",
+        "zh": "该消息类型暂不支持接入此 Agent。",
+    },
+    "wechat_agent_new_conversation": {
+        "en": "Your next message will start a new conversation.",
+        "zh": "下一条消息将开始新的对话。",
+    },
+    "wechat_agent_no_agents": {
+        "en": "No published Agents are available to you.",
+        "zh": "暂无你有权使用的已发布智能体。",
+    },
+    "wechat_agent_no_output": {
+        "en": "The Agent finished without producing a visible reply.",
+        "zh": "Agent 已完成，但没有产生可见回复。",
+    },
+    "wechat_agent_purpose_inactive": {
+        "en": "This connection is not currently using the Agent application.",
+        "zh": "该连接当前未启用 Agent 应用用途。",
+    },
+    "wechat_agent_questions_partial": {
+        "en": "Answered {done} of {total} questions. Send the remaining answer, or /skip to skip.",
+        "zh": "已回答 {done}/{total} 个问题，请继续回答，或发送 /跳过（/skip）跳过。",
+    },
+    "wechat_agent_received": {"en": "🤔Thinking...", "zh": "🤔思考中..."},
+    "wechat_agent_run_failed": {
+        "en": "The Agent task did not finish. Open the conversation for details.",
+        "zh": "Agent 任务未完成，请打开对话查看详情。",
+    },
+    "wechat_agent_status": {"en": "Status: {status}", "zh": "状态：{status}"},
+    "wechat_agent_stopped": {
+        "en": "Stopped. Queued messages were cancelled.",
+        "zh": "已停止，排队中的消息已取消。",
+    },
+    "wechat_agent_too_many_files": {
+        "en": "There are too many attachments in one message.",
+        "zh": "单条消息的附件数量超过限制。",
+    },
+    "wechat_agent_unknown_command": {
+        "en": "Unknown command. Send /help to see available commands.",
+        "zh": "未知命令，发送 /帮助（/help）查看可用命令。",
+    },
+    "wechat_agent_use_current": {
+        "en": "Already using {agent}. Your conversation and settings are unchanged.",
+        "zh": "正在使用 {agent}，会话与配置不变。",
+    },
+    "wechat_agent_use_invalid": {
+        "en": "That Agent is not in your available list. Send /agents to see the current list.",
+        "zh": "该智能体不在你的可用列表中，请发送 /智能体 查看当前列表。",
+    },
+    "wechat_agent_use_missing": {
+        "en": "Send /use <number>, using a number from /agents.",
+        "zh": "请发送 /使用 <编号>，编号来自 /智能体 列表。",
+    },
+    "wechat_agent_use_selected": {
+        "en": "Now using {agent}. New messages will use it. Its previous conversation is kept; input variables use defaults and speech recognition is not configured. You can adjust these in Personal settings → WeChat iLink.",
+        "zh": "已切换到 {agent}，后续新消息将使用该智能体，并保留它原有的会话。输入变量使用默认值，语音识别模型未配置，可在个人设置 → 微信 iLink 中调整。",
+    },
+    "wechat_agent_use_variables": {
+        "en": "This Agent needs input variables. Configure it in Personal settings → WeChat iLink, then save. Your current Agent is unchanged.",
+        "zh": "该智能体需要配置输入变量，请到个人设置 → 微信 iLink 中填写并保存。当前智能体未改变。",
+    },
+    "wechat_agent_variables_invalid": {
+        "en": "Check the Agent input variables, including required values, types and limits.",
+        "zh": "请检查 Agent 输入变量的必填项、类型和取值限制。",
+    },
+    "wechat_agent_video_unsupported": {
+        "en": "Video input requires an Agent with vision support and a configured speech recognition model for its audio.",
+        "zh": "视频输入需要 Agent 支持视觉识别；有音轨时还需要配置语音识别模型。",
+    },
+    "wechat_agent_vision_required": {
+        "en": "This Agent's chat model does not support image input.",
+        "zh": "此 Agent 的聊天模型不支持图片输入。",
+    },
+    "wechat_already_connected": {
+        "en": "WeChat reports an existing connection but did not issue credentials. Disconnect the previous authorization in WeChat, then authorize again.",
+        "zh": "微信提示已有连接，但未返回授权凭据。请在微信中断开原授权后重新连接。",
+    },
+    "wechat_article_blocked": {
+        "en": "The article requires verification or cannot be accessed. Its verification page was not collected.",
+        "zh": "文章需要验证或无法访问，未将验证提示页加入知识库。",
+    },
+    "wechat_authorization_expired": {
+        "en": "WeChat authorization expired. Authorize again in personal settings.",
+        "zh": "微信授权已失效，请在个人设置中重新授权。",
+    },
+    "wechat_binary_content": {
+        "en": "The file contents do not match the declared document format.",
+        "zh": "文件内容与声明的文档格式不符。",
+    },
+    "wechat_binding_disconnected": {
+        "en": "The WeChat connection has been disconnected.",
+        "zh": "微信连接已断开。",
+    },
+    "wechat_binding_not_found": {
+        "en": "WeChat connection not found.",
+        "zh": "微信连接不存在。",
+    },
+    "wechat_connection_failed": {
+        "en": "Unable to connect to WeChat. Check the deployment network and try again.",
+        "zh": "无法连接微信，请检查部署网络后重试。",
+    },
+    "wechat_empty_content": {
+        "en": "No usable content was extracted; the item was not indexed.",
+        "zh": "未提取到有效内容，该项未建立索引。",
+    },
+    "wechat_ffmpeg_required": {
+        "en": "Audio/video collection requires ffmpeg and ffprobe on the knowledge worker.",
+        "zh": "音视频采集需要在知识库处理进程中安装 ffmpeg 和 ffprobe。",
+    },
+    "wechat_identity_in_use": {
+        "en": "This WeChat identity is already connected to another platform account.",
+        "zh": "该微信身份已连接到另一个平台账户。",
+    },
+    "wechat_index_failed": {
+        "en": "Content extraction completed but indexing failed. Check the knowledge base embedding configuration.",
+        "zh": "内容已提取，但索引失败，请检查知识库的嵌入模型配置。",
+    },
+    "wechat_item_completed": {"en": "Indexed", "zh": "已索引"},
+    "wechat_item_duplicate": {"en": "Already collected", "zh": "已收录"},
+    "wechat_item_error": {"en": "Failed", "zh": "失败"},
+    "wechat_item_pending": {"en": "Processing", "zh": "处理中"},
+    "wechat_kb_inactive": {
+        "en": "The knowledge base is not active. Choose another target.",
+        "zh": "知识库未启用，请选择其他目标。",
+    },
+    "wechat_login_limit": {
+        "en": "Too many pending authorizations. Wait for an existing QR code to expire.",
+        "zh": "待确认授权过多，请等待已有二维码过期后重试。",
+    },
+    "wechat_login_not_found": {
+        "en": "WeChat authorization session not found.",
+        "zh": "微信授权会话不存在。",
+    },
+    "wechat_media_conversion_failed": {
+        "en": "Unable to decode this media file. Check its encoding and try again.",
+        "zh": "无法解码该媒体文件，请检查编码后重试。",
+    },
+    "wechat_media_duration": {
+        "en": "The media duration could not be read or exceeds the 30-minute limit.",
+        "zh": "无法读取媒体时长，或已超过 30 分钟限制。",
+    },
+    "wechat_model_unavailable": {
+        "en": "The recognition model is unavailable or is not authorized for this team.",
+        "zh": "识别模型不可用或未获得目标团队授权。",
+    },
+    "wechat_processing_failed": {
+        "en": "This item could not be processed. Check its format and recognition configuration.",
+        "zh": "无法处理该项，请检查文件格式和识别配置。",
+    },
+    "wechat_purpose_busy": {
+        "en": "A task is still active. Wait for it to finish, or stop the Agent task before changing the purpose.",
+        "zh": "仍有任务在处理，请等待完成，或停止 Agent 任务后再切换用途。",
+    },
+    "wechat_reply_heading": {
+        "en": "Knowledge collection: {name}",
+        "zh": "知识库采集：{name}",
+    },
+    "wechat_stt_required": {
+        "en": "Configure a team-authorized speech recognition model for this connection to collect audio.",
+        "zh": "采集音频需要为该连接配置团队已授权的语音识别模型。",
+    },
+    "wechat_target_unavailable": {
+        "en": "Collection stopped because the target knowledge base is no longer writable. Update the binding in personal settings.",
+        "zh": "目标知识库已无写权限，采集已停止，请在个人设置中修改绑定。",
+    },
+    "wechat_text_encoding": {
+        "en": "Text documents must use UTF-8 encoding. Convert the file before collecting it.",
+        "zh": "文本文件需要使用 UTF-8 编码，请转换后再采集。",
+    },
+    "wechat_type_unsupported": {
+        "en": "This message or file format is not supported for knowledge collection.",
+        "zh": "该消息或文件格式暂不支持知识库采集。",
+    },
+    "wechat_url_invalid": {
+        "en": "The article URL is invalid or too long.",
+        "zh": "文章链接无效或过长。",
+    },
+    "wechat_vision_required": {
+        "en": "Configure a team-authorized vision model for this connection to collect images or video.",
+        "zh": "采集图片或视频需要为该连接配置团队已授权的视觉模型。",
     },
     "welcome_message": {"en": "Welcome to Clouisle API", "zh": "欢迎使用 Clouisle API"},
     "workflow_access_denied": {

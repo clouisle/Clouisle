@@ -6,6 +6,7 @@ import pytest
 
 from app.llm.adapters.chat.anthropic_adapter import AnthropicAdapter
 from app.llm.adapters.chat.gemini_adapter import GeminiAdapter
+from app.llm.errors import InvalidRequestError
 from app.llm.types import FunctionDefinition, Message, MessageRole, ToolDefinition
 
 
@@ -85,6 +86,9 @@ def test_conversion_residual_false_paths():
 
     anthropic = adapter(AnthropicAdapter)
     _, anthropic_messages = anthropic._convert_messages(messages)
+    with pytest.raises(InvalidRequestError, match="Image content is missing"):
+        adapter(GeminiAdapter)._convert_messages(messages)
+    messages[-1].content = [obj(type="ignored"), object(), {}]
     _, gemini_messages = adapter(GeminiAdapter)._convert_messages(messages)
 
     assert anthropic._convert_messages(

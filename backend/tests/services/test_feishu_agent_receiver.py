@@ -1,0 +1,614 @@
+"""SDK WebSocket acknowledgements and durable private-message acceptance."""
+
+import asyncio
+import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+from uuid import uuid4
+
+import pytest
+import pytest_asyncio
+from tortoise.context import TortoiseContext
+
+from app.integrations.credentials import encrypt_secret
+from app.models.agent import Agent, AgentStatus, AgentVisibility
+from app.models.feishu_agent import FeishuAgentPreference, FeishuAgentReceipt
+from app.models.feishu_user import FeishuUser
+from app.models.integration import Integration
+from app.models.user import Team, TeamMember, User
+from app.services import feishu_agent_events as events
+from app.services import feishu_agent_receiver as receiver
+
+
+@pytest_asyncio.fixture
+async def channel(monkeypatch):
+    async with TortoiseContext() as context:
+        await context.init(
+            db_url="sqlite://:memory:", modules={"models": ["app.models"]}
+        )
+        await context.generate_schemas()
+        user = await User.create(
+            username="feishu-owner",
+            email="owner@example.test",
+            hashed_password="unused",
+            is_active=True,
+            approval_status="approved",
+        )
+        team = await Team.create(name="Feishu team")
+        await TeamMember.create(team=team, user=user, role="owner")
+        agent = await Agent.create(
+            name="Support",
+            team=team,
+            created_by=user,
+            status=AgentStatus.PUBLISHED,
+            visibility=AgentVisibility.TEAM,
+        )
+        integration = await Integration.create(
+            name="feishu",
+            provider_type="feishu",
+            display_name="Feishu",
+            enabled_capabilities=["agent_chat"],
+            config={
+                "app_id": "cli_long",
+                "agent_chat_connection_mode": "long_connection",
+            },
+            credentials={"app_secret": encrypt_secret("long-secret")},
+        )
+        await FeishuUser.create(user=user, feishu_user_id="user_1")
+        await FeishuAgentPreference.create(
+            integration=integration, user=user, agent=agent, is_enabled=True
+        )
+        monkeypatch.setattr(events, "_enqueue_receipt", lambda receipt_id: None)
+        yield SimpleNamespace(
+            user=user,
+            agent=agent,
+            integration=integration,
+            config=await receiver._load_config(),
+        )
+
+
+def envelope(*, app_id="cli_long", message_id="om_long", sender="user_1"):
+    return {
+        "schema": "2.0",
+        "header": {
+            "app_id": app_id,
+            "event_type": "im.message.receive_v1",
+            "event_id": str(uuid4()),
+        },
+        "event": {
+            "sender": {"sender_type": "user", "sender_id": {"user_id": sender}},
+            "message": {
+                "chat_id": "oc_long",
+                "chat_type": "p2p",
+                "message_id": message_id,
+                "message_type": "text",
+                "content": json.dumps({"text": "hello"}),
+            },
+        },
+    }
+
+
+async def sdk_ack(payload, config):
+    """Use the installed SDK's actual frame decoder, dispatcher and ACK encoder."""
+    handler = receiver.build_event_handler(config, asyncio.get_running_loop())
+
+    def dispatch():
+        from lark_oapi.ws.client import Client
+        from lark_oapi.ws.const import (
+            HEADER_MESSAGE_ID,
+            HEADER_TRACE_ID,
+            HEADER_SUM,
+            HEADER_SEQ,
+            HEADER_TYPE,
+        )
+        from lark_oapi.ws.pb.pbbp2_pb2 import Frame
+
+        async def handle():
+            client = Client(config.app_id, "not-used", event_handler=handler)
+            sent = []
+
+            async def write(data):
+                reply = Frame()
+                reply.ParseFromString(data)
+                sent.append(json.loads(reply.payload))
+
+            client._write_message = write
+            frame = Frame(
+                SeqID=1,
+                LogID=1,
+                service=1,
+                method=1,
+                payload=json.dumps(payload).encode(),
+            )
+            for key, value in [
+                (HEADER_MESSAGE_ID, "frame-1"),
+                (HEADER_TRACE_ID, "trace-1"),
+                (HEADER_SUM, "1"),
+                (HEADER_SEQ, "0"),
+                (HEADER_TYPE, "event"),
+            ]:
+                header = frame.headers.add()
+                header.key, header.value = key, value
+            await client._handle_data_frame(frame)
+            client._cache._cron.cancel()
+            await asyncio.gather(client._cache._cron, return_exceptions=True)
+            return sent[0]["code"]
+
+        with asyncio.Runner() as runner:
+            return runner.run(handle())
+
+    return await asyncio.to_thread(dispatch)
+
+
+@pytest.mark.asyncio
+async def test_sdk_ack_commits_one_owned_receipt_across_redelivery(channel):
+    payload = envelope()
+    assert await sdk_ack(payload, channel.config) == 200
+    receipt = await FeishuAgentReceipt.get(message_id="om_long")
+    assert receipt.user_id == channel.user.id
+    assert receipt.agent_id == channel.agent.id
+    assert receipt.text == "hello"
+    assert receipt.status == "pending"
+    assert await sdk_ack(payload, channel.config) == 200
+    assert await FeishuAgentReceipt.filter(message_id="om_long").count() == 1
+    # Both transports use the same provider idempotency key.
+    assert await events.receive_message(payload["event"], app_id="cli_long") is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "change",
+    ["app", "mode", "disabled", "capability", "credentials", "unbound", "private"],
+)
+async def test_untrusted_or_no_longer_authorized_message_creates_no_receipt(
+    channel, change
+):
+    payload = envelope()
+    if change == "app":
+        payload["header"]["app_id"] = "cli_foreign"
+    elif change == "mode":
+        await Integration.filter(id=channel.integration.id).update(
+            config={
+                **channel.integration.config,
+                "agent_chat_connection_mode": "callback",
+            }
+        )
+    elif change == "disabled":
+        await Integration.filter(id=channel.integration.id).update(is_enabled=False)
+    elif change == "capability":
+        await Integration.filter(id=channel.integration.id).update(
+            enabled_capabilities=[]
+        )
+    elif change == "credentials":
+        await Integration.filter(id=channel.integration.id).update(
+            credentials={"app_secret": encrypt_secret("changed")}
+        )
+    elif change == "unbound":
+        payload["event"]["sender"]["sender_id"]["user_id"] = "unknown"
+    else:
+        stranger = await User.create(
+            username="stranger", email="stranger@example.test", hashed_password="unused"
+        )
+        await Agent.filter(id=channel.agent.id).update(
+            visibility=AgentVisibility.PRIVATE, created_by_id=stranger.id
+        )
+    assert await sdk_ack(payload, channel.config) == (
+        500 if change == "credentials" else 200
+    )
+    assert not await FeishuAgentReceipt.all().exists()
+
+
+@pytest.mark.asyncio
+async def test_broker_failure_keeps_committed_receipt_recoverable(channel, monkeypatch):
+    def fail_publish(receipt_id):
+        raise ConnectionError("broker unavailable")
+
+    monkeypatch.setattr(events, "_enqueue_receipt", fail_publish)
+    assert await sdk_ack(envelope(), channel.config) == 200
+    assert (await FeishuAgentReceipt.get(message_id="om_long")).status == "pending"
+    assert await sdk_ack(envelope(), channel.config) == 200
+    assert await FeishuAgentReceipt.all().count() == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_commit_produces_retryable_sdk_ack(channel, monkeypatch):
+    original = FeishuAgentReceipt.create
+    monkeypatch.setattr(
+        FeishuAgentReceipt,
+        "create",
+        AsyncMock(side_effect=RuntimeError("database unavailable")),
+    )
+    assert await sdk_ack(envelope(), channel.config) == 500
+    assert not await FeishuAgentReceipt.all().exists()
+    monkeypatch.setattr(FeishuAgentReceipt, "create", original)
+    assert await sdk_ack(envelope(), channel.config) == 200
+    assert (
+        await FeishuAgentReceipt.get(message_id="om_long")
+    ).user_id == channel.user.id
+
+
+@pytest.mark.asyncio
+async def test_intake_timeout_never_acknowledges_an_uncommitted_message(
+    channel, monkeypatch
+):
+    original = FeishuAgentReceipt.create
+    cancelled = asyncio.Event()
+
+    async def stalled_commit(**kwargs):
+        try:
+            await asyncio.Future()
+        finally:
+            cancelled.set()
+
+    monkeypatch.setattr(receiver, "EVENT_TIMEOUT_SECONDS", 0.1)
+    monkeypatch.setattr(FeishuAgentReceipt, "create", stalled_commit)
+    assert await sdk_ack(envelope(), channel.config) == 500
+    await asyncio.wait_for(cancelled.wait(), timeout=1)
+    assert not await FeishuAgentReceipt.all().exists()
+    monkeypatch.setattr(FeishuAgentReceipt, "create", original)
+    monkeypatch.setattr(receiver, "EVENT_TIMEOUT_SECONDS", 3)
+    assert await sdk_ack(envelope(), channel.config) == 200
+    assert (
+        await FeishuAgentReceipt.get(message_id="om_long")
+    ).user_id == channel.user.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ("disabled", "Enable Feishu Agent chat"),
+        ("capability", "Enable Feishu Agent chat"),
+        ("mode", "Enable Feishu Agent chat"),
+        ("app_id", "Save the Feishu App ID"),
+        ("secret", "Save the Feishu App ID"),
+    ],
+)
+async def test_receiver_config_requires_enabled_long_connection(
+    channel, change, message
+):
+    integration = channel.integration
+    if change == "disabled":
+        await Integration.filter(id=integration.id).update(is_enabled=False)
+    elif change == "capability":
+        await Integration.filter(id=integration.id).update(enabled_capabilities=[])
+    elif change == "mode":
+        await Integration.filter(id=integration.id).update(
+            config={**integration.config, "agent_chat_connection_mode": "callback"}
+        )
+    elif change == "app_id":
+        await Integration.filter(id=integration.id).update(
+            config={"agent_chat_connection_mode": "long_connection", "app_id": " "}
+        )
+    else:
+        await Integration.filter(id=integration.id).update(credentials={})
+
+    with pytest.raises(ValueError, match=message):
+        await receiver._load_config()
+
+
+@pytest.mark.asyncio
+async def test_receiver_rejects_malformed_and_foreign_events_before_database_lookup(
+    channel, monkeypatch
+):
+    lookup = AsyncMock(side_effect=AssertionError("unexpected integration lookup"))
+    monkeypatch.setattr(receiver, "get_builtin_integration", lookup)
+    malformed = SimpleNamespace(header=None, event={})
+    foreign_type = SimpleNamespace(
+        header=SimpleNamespace(app_id="cli_long", event_type="other"), event={}
+    )
+    missing_event = SimpleNamespace(
+        header=SimpleNamespace(app_id="cli_long", event_type="im.message.receive_v1"),
+        event=None,
+    )
+
+    assert (
+        await receiver.accept_long_connection_event(malformed, channel.config) is None
+    )
+    assert (
+        await receiver.accept_long_connection_event(foreign_type, channel.config)
+        is None
+    )
+    assert (
+        await receiver.accept_long_connection_event(missing_event, channel.config)
+        is None
+    )
+    lookup.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_owned_receiver_rejects_expired_or_stolen_ownership(channel, monkeypatch):
+    class Redis:
+        def __init__(self, value):
+            self.value = value
+            self.closed = False
+
+        async def get(self, _key):
+            return self.value
+
+        async def aclose(self):
+            self.closed = True
+
+    for value in (None, json.dumps({"owner": "another-worker"})):
+        client = Redis(value)
+        monkeypatch.setattr(receiver, "receiver_redis", lambda: client)
+        config = receiver.ReceiverConfig(
+            channel.config.integration_id,
+            channel.config.app_id,
+            channel.config.encrypted_secret,
+            "this-worker",
+        )
+        event = SimpleNamespace(
+            header=SimpleNamespace(
+                app_id="cli_long", event_type="im.message.receive_v1"
+            ),
+            event=envelope()["event"],
+        )
+        with pytest.raises(RuntimeError, match="ownership expired"):
+            await receiver.accept_long_connection_event(event, config)
+        assert client.closed
+
+
+@pytest.mark.asyncio
+async def test_owned_receiver_accepts_current_config_and_suppresses_revoked_integration(
+    channel, monkeypatch
+):
+    class Redis:
+        async def get(self, _key):
+            return json.dumps({"owner": "worker"})
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr(receiver, "receiver_redis", Redis)
+    received = AsyncMock(return_value="receipt")
+    monkeypatch.setattr(receiver, "receive_message", received)
+    config = receiver.ReceiverConfig(
+        channel.config.integration_id,
+        channel.config.app_id,
+        channel.config.encrypted_secret,
+        "worker",
+    )
+    event = SimpleNamespace(
+        header=SimpleNamespace(app_id="cli_long", event_type="im.message.receive_v1"),
+        event=envelope()["event"],
+    )
+    assert await receiver.accept_long_connection_event(event, config) == "receipt"
+    received.assert_awaited_once_with(event.event, app_id="cli_long")
+
+    received.reset_mock()
+    await Integration.filter(id=channel.integration.id).update(is_enabled=False)
+    assert await receiver.accept_long_connection_event(event, config) is None
+    received.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_owned_receiver_requires_redelivery_after_saved_credentials_advance(
+    channel, monkeypatch
+):
+    class Redis:
+        async def get(self, _key):
+            return json.dumps({"owner": "worker"})
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr(receiver, "receiver_redis", Redis)
+    await Integration.filter(id=channel.integration.id).update(
+        credentials={"app_secret": encrypt_secret("rotated-secret")}
+    )
+    config = receiver.ReceiverConfig(
+        channel.config.integration_id,
+        channel.config.app_id,
+        channel.config.encrypted_secret,
+        "worker",
+    )
+    event = SimpleNamespace(
+        header=SimpleNamespace(app_id="cli_long", event_type="im.message.receive_v1"),
+        event=envelope()["event"],
+    )
+    with pytest.raises(RuntimeError, match="configuration advanced"):
+        await receiver.accept_long_connection_event(event, config)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "stop", ["parent", "configuration", "fingerprint", "ownership"]
+)
+async def test_lifecycle_watcher_stops_when_parent_config_or_lease_changes(
+    channel, monkeypatch, stop
+):
+    class Redis:
+        closed = False
+        refresh_calls = 0
+
+        async def eval(self, *_args):
+            self.refresh_calls += 1
+            return 0 if stop == "ownership" else 1
+
+        async def aclose(self):
+            self.closed = True
+
+    client = Redis()
+    monkeypatch.setattr(receiver, "receiver_redis", lambda: client)
+    monkeypatch.setattr(
+        receiver.os, "getppid", lambda: 999 if stop == "parent" else 100
+    )
+    monkeypatch.setattr(
+        receiver,
+        "configured_receiver",
+        lambda _integration: stop != "configuration",
+    )
+    monkeypatch.setattr(
+        receiver,
+        "receiver_fingerprint",
+        lambda _integration: "changed" if stop == "fingerprint" else "same",
+    )
+    monkeypatch.setattr(
+        receiver, "get_builtin_integration", AsyncMock(return_value=channel.integration)
+    )
+    killed = []
+    monkeypatch.setattr(receiver.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    config = receiver.ReceiverConfig(
+        channel.config.integration_id,
+        channel.config.app_id,
+        channel.config.encrypted_secret,
+        "worker",
+    )
+    await receiver._watch_lifecycle(
+        config, {"fingerprint": "same", "state": "connected"}, 100
+    )
+    assert client.closed
+    assert killed
+    if stop == "parent":
+        assert client.refresh_calls == 0
+    elif stop == "ownership":
+        assert client.refresh_calls == 1
+    else:
+        assert client.refresh_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_refreshes_ownership_while_config_is_current(
+    channel, monkeypatch
+):
+    class Redis:
+        closed = False
+        refresh_calls = 0
+
+        async def eval(self, *_args):
+            self.refresh_calls += 1
+            return 1
+
+        async def aclose(self):
+            self.closed = True
+
+    client = Redis()
+    monkeypatch.setattr(receiver, "receiver_redis", lambda: client)
+    parent_checks = iter((100, 100, 999))
+    monkeypatch.setattr(receiver.os, "getppid", lambda: next(parent_checks))
+    monkeypatch.setattr(receiver, "configured_receiver", lambda _integration: True)
+    monkeypatch.setattr(receiver, "receiver_fingerprint", lambda _integration: "same")
+    monkeypatch.setattr(
+        receiver,
+        "get_builtin_integration",
+        AsyncMock(return_value=channel.integration),
+    )
+    monkeypatch.setattr(receiver.asyncio, "sleep", AsyncMock())
+    killed = []
+    monkeypatch.setattr(receiver.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    config = receiver.ReceiverConfig(
+        channel.config.integration_id,
+        channel.config.app_id,
+        channel.config.encrypted_secret,
+        "worker",
+    )
+
+    await receiver._watch_lifecycle(
+        config, {"fingerprint": "same", "state": "connected"}, 100
+    )
+
+    assert client.refresh_calls == 1
+    assert client.closed
+    assert killed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "missing",
+    [
+        "CLOUISLE_RECEIVER_OWNER",
+        "CLOUISLE_RECEIVER_PARENT",
+        "CLOUISLE_RECEIVER_FINGERPRINT",
+    ],
+)
+async def test_receiver_entrypoint_requires_every_ownership_value(monkeypatch, missing):
+    values = {
+        "CLOUISLE_RECEIVER_OWNER": "worker",
+        "CLOUISLE_RECEIVER_PARENT": "123",
+        "CLOUISLE_RECEIVER_FINGERPRINT": "fingerprint",
+    }
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv(missing)
+
+    with pytest.raises(ValueError, match="managed automatically"):
+        receiver.run_receiver()
+
+
+def test_receiver_empty_secret_stops_before_sdk_start_and_cleans_up(
+    monkeypatch,
+):
+    import sys
+    from types import ModuleType
+
+    sdk_loop, database_loop = asyncio.new_event_loop(), asyncio.new_event_loop()
+    loops = iter((database_loop, sdk_loop))
+    monkeypatch.setattr(receiver.asyncio, "new_event_loop", lambda: next(loops))
+    monkeypatch.setattr(receiver.asyncio, "set_event_loop", lambda _loop: None)
+    monkeypatch.setattr(
+        receiver,
+        "Thread",
+        lambda **_kwargs: SimpleNamespace(start=lambda: None, join=lambda **_kw: None),
+    )
+    monkeypatch.setattr(receiver.signal, "getsignal", lambda _signal: "old")
+    monkeypatch.setattr(receiver.signal, "signal", lambda *_args: None)
+    config = receiver.ReceiverConfig(uuid4(), "cli", "encrypted", "worker")
+    monkeypatch.setattr(receiver, "_initialize", AsyncMock(return_value=config))
+
+    cancellation = []
+
+    class Watcher:
+        def cancel(self):
+            cancellation.append(True)
+            return True
+
+    watcher = Watcher()
+
+    scheduled = []
+
+    def schedule(coroutine, _loop):
+        coroutine.close()
+        scheduled.append(coroutine)
+        if len(scheduled) == 1:
+            return SimpleNamespace(result=lambda **_kwargs: config)
+        return watcher
+
+    watcher.result = lambda **_kwargs: None
+
+    monkeypatch.setattr(receiver.asyncio, "run_coroutine_threadsafe", schedule)
+    monkeypatch.setattr(receiver, "decrypt_secret", lambda _secret: "")
+    monkeypatch.setenv("CLOUISLE_RECEIVER_OWNER", "worker")
+    monkeypatch.setenv("CLOUISLE_RECEIVER_PARENT", "123")
+    monkeypatch.setenv("CLOUISLE_RECEIVER_FINGERPRINT", "fingerprint")
+
+    class SDKClient:
+        def __init__(self, *_args, **_kwargs):
+            raise AssertionError("SDK must not start without an app secret")
+
+    lark = ModuleType("lark_oapi")
+    lark.ws = SimpleNamespace(Client=SDKClient)
+    lark.LogLevel = SimpleNamespace(WARNING=1)
+    ws_module = ModuleType("lark_oapi.ws")
+    ws_module.client = SimpleNamespace(
+        loop=None, logger=SimpleNamespace(addFilter=lambda _f: None)
+    )
+    monkeypatch.setitem(sys.modules, "lark_oapi", lark)
+    monkeypatch.setitem(sys.modules, "lark_oapi.ws", ws_module)
+
+    receiver.run_receiver()
+
+    assert cancellation
+    assert not sdk_loop.is_running()
+    assert not database_loop.is_running()
+
+
+def test_receiver_entrypoint_rejects_missing_worker_ownership(monkeypatch):
+    for name in (
+        "CLOUISLE_RECEIVER_OWNER",
+        "CLOUISLE_RECEIVER_PARENT",
+        "CLOUISLE_RECEIVER_FINGERPRINT",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(ValueError, match="managed automatically"):
+        receiver.run_receiver()

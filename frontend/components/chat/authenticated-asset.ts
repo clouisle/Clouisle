@@ -230,7 +230,7 @@ export function loadAuthenticatedAssetUrl(
 export async function downloadAuthenticatedAsset(
   url: string,
   filename: string,
-  token: string | null = getDefaultAssetToken(),
+  token: string | null = getAuthenticatedAssetToken(),
 ): Promise<void> {
   let objectUrl: string | null = null
   let shouldRevoke = false

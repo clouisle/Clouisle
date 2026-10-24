@@ -41,14 +41,11 @@ class NotificationAuditAction(str, Enum):
 
 
 class NotificationChannel(str, Enum):
-    """通知渠道"""
+    """Notification delivery channels."""
 
     EMAIL = "email"
-    DINGTALK = "dingtalk"
-    WECHAT = "wechat"
-    FEISHU = "feishu"
     WEBHOOK = "webhook"
-    SLACK = "slack"
+    FEISHU = "feishu"
 
 
 class AutoNotificationType(str, Enum):
@@ -103,6 +100,7 @@ class NotificationDeliveryStatus(str, Enum):
     SENDING = "sending"  # 发送中
     SUCCESS = "success"  # 发送成功
     FAILED = "failed"  # 发送失败
+    SKIPPED = "skipped"  # 无符合条件的接收人
 
 
 class Notification(models.Model):

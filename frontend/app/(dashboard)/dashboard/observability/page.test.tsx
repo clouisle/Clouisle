@@ -27,7 +27,7 @@ const getRun = mock(async () => ({
   run,
   spans: [
     { span_id: 'root', parent_span_id: null, kind: 'run', name: 'Agent execution', status: 'failed', started_at: run.started_at, finished_at: run.finished_at, duration_ms: 2000, attempt: null, model: null, tool: null, error_category: 'provider', token_usage: { total: 22 }, metadata: {} },
-    { span_id: 'child', parent_span_id: 'root', kind: 'tool', name: 'HTTP request', status: 'completed', started_at: '2026-10-08T10:30:01.250Z', finished_at: '2026-10-08T10:30:01.550Z', duration_ms: 300, attempt: null, model: null, tool: 'http', error_category: null, token_usage: { total: 5 }, metadata: {} },
+    { span_id: 'child', parent_span_id: 'root', kind: 'tool', name: 'HTTP request', status: 'completed', started_at: '2026-10-08T10:30:01.250Z', finished_at: '2026-10-08T10:30:01.550Z', duration_ms: 300, attempt: null, model: null, tool: 'http', error_category: null, token_usage: { total: 5 }, metadata: { tool_call_id: 'call-1', model_bytes: 42, display_bytes: 15, eof: false, has_cursor: true } },
   ],
   trace: { complete: false, expired: false, truncated: true, recorded_count: 2 },
   meta,
@@ -35,6 +35,7 @@ const getRun = mock(async () => ({
 const getDependencies = mock(async (): Promise<DependenciesResponse> => ({ meta, models: [{ id: 'model-1', name: 'gpt-test', provider: 'custom', provider_display_name: 'Test gateway', requests: 4, completed: 3, failed: 1, success_rate: 0.75, p50_ms: 500, p95_ms: 900, first_token_p95_ms: 250, tokens: 80, sample_count: 4 }], tools: [], retrieval: [] }))
 const getQueues = mock(async () => ({ meta, workers: [{ worker_id: 'agent-worker-1', status: 'healthy', queues: ['agent', 'sandbox-1'], last_heartbeat: '2026-10-08T10:59:00Z', active_tasks: 1, reserved_tasks: null, scheduled_tasks: 0 }], queues: [{ name: 'agent', consumers: 1, pending: 2, oldest_wait_ms: 400, observed_at: '2026-10-08T11:00:00Z', state: 'healthy', trend: [{ bucket: '2026-10-08T10:59:00Z', pending: 1 }, { bucket: '2026-10-08T11:00:00Z', pending: 2 }] }] }))
 const getInfrastructure = mock(async (): Promise<InfrastructureResponse> => ({ meta, instances: [{ instance_id: 'api-1', name: 'API east', role: 'api', metric_scope: 'host', cpu_percent: 27.5, memory_percent: null, observed_at: '2026-10-08T11:00:00Z', state: 'healthy' }], dependencies: [], slow_queries: { available: false, reset_at: null, items: [] } }))
+const getRunToolPayload = mock(async () => ({ tool_call_id: 'call-1', tool_name: 'read_asset', display: '{"ref":"a1b2"}', model_input: 'ref=a1b2 · lines 1/1\n<document>\n1│hello\n</document>', display_bytes: 15, model_bytes: 42, model_sha256: 'hash', renderer: 'read_asset', eof: false, has_cursor: true, partial: false, error: null, recorded: true }))
 const getAlerts = mock(async () => ({ items: [alert], next_cursor: null, meta }))
 const getAlertRules = mock(async () => ([{ id: 'rule-1', name: 'Failure rate', threshold: 0.5, enabled: true, evaluation_window_seconds: 300, recovery_window_seconds: 600, updated_at: null }]))
 const acknowledgeAlert = mock(async () => alert)
@@ -52,7 +53,7 @@ mock.module('next-intl', () => ({ useLocale: () => instanceLocale ?? 'en', useTr
 mock.module('next/navigation', () => ({ usePathname: () => '/dashboard/observability', useRouter: () => ({ replace }), useSearchParams: () => params }))
 mock.module('lucide-react', () => {
   const Icon = () => null
-  return { Activity: Icon, AlertTriangle: Icon, Bell: Icon, Boxes: Icon, CalendarIcon: Icon, Check: Icon, ChevronDown: Icon, ChevronRight: Icon, Clock3: Icon, Database: Icon, ExternalLink: Icon, Gauge: Icon, RefreshCw: Icon, Server: Icon, Workflow: Icon }
+  return { Activity: Icon, AlertTriangle: Icon, Bell: Icon, Boxes: Icon, CalendarIcon: Icon, Check: Icon, CheckCircle2: Icon, ChevronDown: Icon, ChevronRight: Icon, Clock3: Icon, Coins: Icon, Database: Icon, ExternalLink: Icon, Gauge: Icon, RefreshCw: Icon, Server: Icon, Workflow: Icon }
 })
 mock.module('recharts', () => {
   const Chart = ({ children }: React.PropsWithChildren) => <div>{children}</div>
@@ -103,7 +104,7 @@ mock.module('@/components/ui/select', () => ({
 }))
 mock.module('@/lib/chart-theme', () => ({ CHART_AXIS_COLOR: '#666', CHART_COLOR_ORDER: ['#123', '#456'], CHART_GRID_COLOR: '#ddd', CHART_HOVER_CURSOR: {}, CHART_TOOLTIP_STYLE: {} }))
 mock.module('@/lib/utils', () => ({ formatTime: () => '11:00' }))
-mock.module('@/lib/api/admin/observability', () => ({ observabilityApi: { getSummary, getRuns, getRun, getDependencies, getQueues, getInfrastructure, getAlerts, getAlertRules, acknowledgeAlert, silenceAlert, updateAlertRule } }))
+mock.module('@/lib/api/admin/observability', () => ({ observabilityApi: { getSummary, getRuns, getRun, getRunToolPayload, getDependencies, getQueues, getInfrastructure, getAlerts, getAlertRules, acknowledgeAlert, silenceAlert, updateAlertRule } }))
 
 // Import after registering mocks so the page exercises its real state and effects against deterministic service/UI boundaries.
 const { default: ObservabilityPage } = await import('./page')
@@ -372,6 +373,252 @@ for (const locale of ['en', 'zh'] as const) {
     act(() => renderer.unmount())
   })
 }
+test('renders healthy and unavailable queues with worker fallbacks and pending trends', async () => {
+  params = new URLSearchParams('tab=queues')
+  getQueues.mockResolvedValueOnce({
+    meta,
+    workers: [
+      { worker_id: 'worker-healthy', status: 'healthy', queues: ['agent', 'workflow'], last_heartbeat: '2026-10-08T10:59:00Z', active_tasks: 2, reserved_tasks: null, scheduled_tasks: 1 },
+      { worker_id: 'worker-unavailable', status: 'offline', queues: [], last_heartbeat: null, active_tasks: null, reserved_tasks: 0, scheduled_tasks: null },
+    ],
+    queues: [
+      { name: 'agent', consumers: 2, pending: 3, oldest_wait_ms: 1200, observed_at: '2026-10-08T11:00:00Z', state: 'healthy', trend: [{ bucket: '2026-10-08T10:59:00Z', pending: 1 }, { bucket: '2026-10-08T11:00:00Z', pending: 3 }] },
+      { name: 'offline-queue', consumers: null, pending: null, oldest_wait_ms: null, observed_at: null, state: 'unavailable', trend: [] },
+    ],
+  })
+  const renderer = await render()
+  expect(getQueues).toHaveBeenCalledTimes(1)
+  const text = JSON.stringify(renderer.toJSON())
+  expect(text).toContain('worker-healthy')
+  expect(text).toContain('agent, workflow')
+  expect(text).toContain('worker-unavailable')
+  expect(text).toContain('offline')
+  expect(text).toContain('queues.lastHeartbeat')
+  expect(text).toContain('—')
+  expect(text).toContain('status.healthy')
+  expect(text).toContain('queues.consumers')
+  expect(text).toContain('queues.pending')
+  expect(text).toContain('queues.oldestWait')
+  expect(text).toContain('queues.observedAt')
+  expect(renderer.root.findAllByProps({ 'aria-label': 'queues.pendingTrend' })).toHaveLength(1)
+  expect(text).toContain('states.noSamples')
+  act(() => renderer.unmount())
+})
+
+test('renders dependency samples, provider labels, nullable metrics, and empty groups', async () => {
+  params = new URLSearchParams('tab=dependencies')
+  getDependencies.mockResolvedValueOnce({
+    meta,
+    models: [{ id: 'model-2', name: 'Model two', provider: 'custom', provider_display_name: 'Gateway North', requests: 4, completed: 3, failed: 1, success_rate: null, p50_ms: null, p95_ms: 900, first_token_p95_ms: null, tokens: 80, sample_count: null }],
+    tools: [{ name: 'web-search', requests: 2, completed: 2, failed: 0, success_rate: 1, p50_ms: 10, p95_ms: 20, first_token_p95_ms: null, tokens: null, sample_count: 2 }],
+    retrieval: [],
+  })
+  const renderer = await render()
+  expect(getDependencies).toHaveBeenCalledWith({ period: '1h', team_id: undefined })
+  const text = JSON.stringify(renderer.toJSON())
+  expect(text).toContain('Model two')
+  expect(text).toContain('Gateway North')
+  expect(text).toContain('dependencies.samples')
+  expect(text).toContain('dependencies.successRate')
+  expect(text).toContain('dependencies.p50')
+  expect(text).toContain('dependencies.firstTokenP95')
+  expect(text).toContain('—')
+  expect(text).toContain('web-search')
+  expect(text).toContain('dependencies.tokens')
+  expect(text).toContain('dependencies.retrieval')
+  expect(text).toContain('states.noSamples')
+  act(() => renderer.unmount())
+})
+
+test('shows and clears a run detail error after a rejected trace request', async () => {
+  params = new URLSearchParams('tab=runs&period=24h')
+  getRun.mockRejectedValueOnce(new Error('trace unavailable'))
+  const renderer = await render()
+  const row = renderer.root.findAllByType('tr')[1]
+  await act(async () => { row.props.onClick(); await Promise.resolve(); await Promise.resolve() })
+  expect(getRun).toHaveBeenCalledWith('agent', 'failed-run')
+  expect(renderer.root.findAllByProps({ role: 'alert' })).toHaveLength(1)
+  act(() => renderer.root.findByProps({ 'aria-label': 'close-run-detail' }).props.onClick())
+  expect(renderer.root.findAllByProps({ role: 'alert' })).toHaveLength(0)
+  expect(renderer.root.findAllByProps({ 'aria-label': 'close-run-detail' })).toHaveLength(0)
+  act(() => renderer.unmount())
+})
+
+test('filters alert events, ignores an empty status selection, and reports mutation failures', async () => {
+  params = new URLSearchParams('tab=alerts')
+  const renderer = await render()
+  const statusSelect = renderer.root.findAllByProps({ 'data-select-root': true }).find((node) => node.findAllByProps({ 'aria-label': 'filters.alertStatus' }).length > 0)!
+  expect(statusSelect.props['data-selected-value']).toBe('active')
+  act(() => statusSelect.props.onValueChange('resolved'))
+  await act(async () => { await Promise.resolve() })
+  expect(getAlerts).toHaveBeenLastCalledWith({ status: 'resolved', limit: 25, cursor: undefined })
+  expect(renderer.root.findAllByType('strong').some((node) => node.children.includes('Failure rate elevated'))).toBe(true)
+
+  const updatedStatusSelect = renderer.root.findAllByProps({ 'data-select-root': true }).find((node) => node.findAllByProps({ 'aria-label': 'filters.alertStatus' }).length > 0)!
+  const requestCount = getAlerts.mock.calls.length
+  act(() => updatedStatusSelect.props.onValueChange(''))
+  act(() => updatedStatusSelect.props.onValueChange(null as unknown as string))
+  expect(getAlerts).toHaveBeenCalledTimes(requestCount)
+
+  acknowledgeAlert.mockRejectedValueOnce(new Error('acknowledge failed'))
+  const acknowledge = renderer.root.findAllByType('button').find((button) => button.children.includes('alerts.acknowledge'))!
+  await act(async () => { acknowledge.props.onClick(); await Promise.resolve(); await Promise.resolve() })
+  expect(renderer.root.findByProps({ role: 'alert' }).findAllByType('span').some((node) => node.children.includes('states.errorDescription'))).toBe(true)
+  act(() => renderer.unmount())
+})
+
+test('shows empty alerts for read-only users and surfaces rule-save failures for managers', async () => {
+  params = new URLSearchParams('tab=alerts')
+  canManageObservability = false
+  getAlerts.mockResolvedValueOnce({ items: [], next_cursor: null, meta })
+  const readOnly = await render()
+  expect(getAlerts).toHaveBeenCalledWith({ status: 'active', limit: 25, cursor: undefined })
+  expect(readOnly.root.findAll((node) => typeof node.type === 'string').some((node) => node.children.includes('alerts.noEvents'))).toBe(true)
+  expect(readOnly.root.findAllByType('button').some((button) => button.children.includes('alerts.acknowledge') || button.children.includes('actions.save'))).toBe(false)
+  act(() => readOnly.unmount())
+
+  canManageObservability = true
+  const manager = await render()
+  updateAlertRule.mockRejectedValueOnce(new Error('save failed'))
+  const evaluation = manager.root.findByProps({ 'aria-label': 'alerts.evaluationWindow' })
+  act(() => evaluation.props.onChange({ target: { value: '600' } }))
+  const save = manager.root.findAllByType('button').find((button) => button.children.includes('actions.save'))!
+  await act(async () => { save.props.onClick(); await Promise.resolve(); await Promise.resolve() })
+  expect(updateAlertRule).toHaveBeenCalledWith('rule-1', { threshold: 0.5, enabled: true, evaluation_window_seconds: 600, recovery_window_seconds: 600 })
+  expect(manager.root.findByProps({ role: 'alert' }).findAllByType('span').some((node) => node.children.includes('states.errorDescription'))).toBe(true)
+  act(() => manager.unmount())
+})
+test('loads another alert event page when the user requests more', async () => {
+  params = new URLSearchParams('tab=alerts')
+  getAlerts.mockImplementationOnce(async () => ({ items: [alert], next_cursor: 'alert-cursor', meta }))
+  getAlerts.mockImplementationOnce(async () => ({ items: [{ ...alert, id: 'alert-2', title: 'Workflow failures elevated' }], next_cursor: null, meta }))
+  const renderer = await render()
+  const loadMore = renderer.root.findAllByType('button').find((button) => button.children.includes('actions.loadMore'))!
+  expect(loadMore.props.disabled).toBe(false)
+  await act(async () => { loadMore.props.onClick(); await Promise.resolve(); await Promise.resolve() })
+  expect(getAlerts).toHaveBeenLastCalledWith({ status: 'active', limit: 25, cursor: 'alert-cursor' })
+  const visibleTitles = renderer.root.findAllByType('strong').map((node) => node.children.join(''))
+  expect(visibleTitles).toContain('Failure rate elevated')
+  expect(visibleTitles).toContain('Workflow failures elevated')
+  act(() => renderer.unmount())
+})
+
+test('shows acknowledgement and silence timestamps while hiding unavailable alert actions', async () => {
+  params = new URLSearchParams('tab=alerts')
+  getAlerts.mockResolvedValueOnce({
+    items: [
+      { ...alert, acknowledged_at: '2026-10-08T10:50:00Z', silenced_until: '2026-10-08T11:50:00Z' },
+      { ...alert, id: 'resolved-alert', status: 'resolved', resolved_at: '2026-10-08T10:55:00Z' },
+    ],
+    next_cursor: null,
+    meta,
+  })
+  const renderer = await render()
+  const text = JSON.stringify(renderer.toJSON())
+  expect(text).toContain('alerts.silencedUntil')
+  expect(renderer.root.findAllByType('button').filter((button) => button.children.includes('alerts.acknowledge'))).toHaveLength(0)
+  expect(renderer.root.findAllByType('button').filter((button) => button.children.includes('alerts.silence'))).toHaveLength(1)
+  act(() => renderer.unmount())
+})
+
+test('renders empty worker and queue states as unavailable instead of leaving blank panels', async () => {
+  params = new URLSearchParams('tab=queues')
+  getQueues.mockResolvedValueOnce({ meta, workers: [], queues: [] })
+  const renderer = await render()
+  expect(getQueues).toHaveBeenCalledTimes(1)
+  expect(renderer.root.findAllByType('h2').map((node) => node.children.join(''))).toContain('queues.workers')
+  expect(renderer.root.findAllByType('div').filter((node) => node.children.includes('states.unavailableDetail'))).toHaveLength(2)
+  act(() => renderer.unmount())
+})
+test('labels unnamed dependency rows as unavailable and renders retrieval outcomes', async () => {
+  params = new URLSearchParams('tab=dependencies')
+  getDependencies.mockResolvedValueOnce({
+    meta,
+    models: [],
+    tools: [{ name: '', requests: 1, completed: 0, failed: 1, success_rate: 0, p50_ms: 0, p95_ms: 0, first_token_p95_ms: null, tokens: null, sample_count: 1 }],
+    retrieval: [{ name: 'knowledge-search', requests: 3, completed: 2, failed: 1, success_rate: 2 / 3, p50_ms: 120, p95_ms: 1500, first_token_p95_ms: null, tokens: null, sample_count: 3 }],
+  })
+  const renderer = await render()
+  const names = renderer.root.findAllByType('strong').map((node) => node.children.join(''))
+  expect(names).toContain('status.unavailable')
+  expect(names).toContain('knowledge-search')
+  const text = JSON.stringify(renderer.toJSON())
+  expect(text).toContain('dependencies.completedFailed')
+  expect(text).toContain('120 ms')
+  expect(text).toContain('1.50 s')
+  act(() => renderer.unmount())
+})
+
+test('blocks out-of-range alert thresholds and persists rule enable transitions immediately', async () => {
+  params = new URLSearchParams('tab=alerts')
+  const renderer = await render()
+  const threshold = renderer.root.findAllByType('input').find((input) => input.props.type === 'number' && input.props.min === '0')!
+  act(() => threshold.props.onChange({ target: { value: '1.2' } }))
+  const save = renderer.root.findAllByType('button').find((button) => button.children.includes('actions.save'))!
+  expect(save.props.disabled).toBe(true)
+
+  const enabled = renderer.root.findAllByType('input').find((input) => input.props.type === 'checkbox')!
+  await act(async () => { enabled.props.onChange({ target: { checked: false } }); await Promise.resolve(); await Promise.resolve() })
+  expect(updateAlertRule).toHaveBeenCalledWith('rule-1', {
+    threshold: 0.5,
+    enabled: false,
+    evaluation_window_seconds: 300,
+    recovery_window_seconds: 600,
+  })
+  expect(getAlerts).toHaveBeenCalledTimes(2)
+  act(() => renderer.unmount())
+})
+
+
+test('shows dashboard load failures and retries the current view request', async () => {
+  getSummary.mockRejectedValueOnce(new Error('summary unavailable'))
+  const renderer = await render()
+  expect(renderer.root.findByProps({ role: 'alert' }).findAllByType('span').some((node) => node.children.includes('states.errorDescription'))).toBe(true)
+  expect(getSummary).toHaveBeenCalledTimes(1)
+  getSummary.mockResolvedValueOnce({ meta, agents: { submitted: 0, completed: 0, failed: 0, success_rate: null, p50_ms: null, p95_ms: null, first_token_p95_ms: null, tokens: 0 }, workflows: { submitted: 0, completed: 0, failed: 0, success_rate: null, p50_ms: null, p95_ms: null, first_token_p95_ms: null, tokens: 0 }, trend: [], issues: [] })
+  const retry = renderer.root.findAllByType('button').find((button) => button.children.includes('actions.retry'))!
+  await act(async () => { retry.props.onClick(); await Promise.resolve(); await Promise.resolve() })
+  expect(getSummary).toHaveBeenCalledTimes(2)
+  expect(renderer.root.findAllByProps({ role: 'alert' })).toHaveLength(0)
+  act(() => renderer.unmount())
+})
+
+test('applies all run diagnostic filters together and clears pagination on submit', async () => {
+  params = new URLSearchParams('tab=runs&period=24h')
+  getRuns.mockImplementationOnce(async () => ({ items: [run], next_cursor: 'old-cursor', meta }))
+  const renderer = await render()
+  const selects = renderer.root.findAllByProps({ 'data-select-root': true })
+  const source = selects.find((select) => select.findAllByProps({ 'aria-label': 'filters.source' }).length > 0)!
+  const status = selects.find((select) => select.findAllByProps({ 'aria-label': 'filters.status' }).length > 0)!
+  act(() => { source.props.onValueChange('workflow'); status.props.onValueChange('failed') })
+  act(() => {
+    renderer.root.findByProps({ 'aria-label': 'filters.errorCategory' }).props.onChange({ target: { value: 'provider' } })
+    renderer.root.findByProps({ 'aria-label': 'filters.runId' }).props.onChange({ target: { value: 'run-99' } })
+  })
+  const form = renderer.root.findAllByType('form').find((item) => item.findAllByProps({ 'aria-label': 'filters.runId' }).length > 0)!
+  await act(async () => { form.props.onSubmit({ preventDefault: () => {} }); await Promise.resolve(); await Promise.resolve() })
+  expect(getRuns).toHaveBeenLastCalledWith(expect.objectContaining({ source: 'workflow', status: 'failed', error_category: 'provider', run_id: 'run-99', cursor: undefined, limit: 25 }))
+  act(() => renderer.unmount())
+})
+
+test('shows an expired empty trace and renders orphan spans so partial traces remain inspectable', async () => {
+  params = new URLSearchParams('tab=runs&period=24h')
+  getRun.mockResolvedValueOnce({
+    run,
+    spans: [{ span_id: 'orphan', parent_span_id: 'missing-parent', kind: 'model', name: 'Fallback model call', status: 'completed', started_at: null, finished_at: null, duration_ms: null, attempt: null, model: 'gpt-test', tool: null, error_category: null, token_usage: {}, metadata: {} }],
+    trace: { complete: false, expired: true, truncated: false, recorded_count: 1 },
+    meta,
+  })
+  const renderer = await render()
+  const row = renderer.root.findAllByType('tr')[1]
+  await act(async () => { row.props.onClick(); await Promise.resolve(); await Promise.resolve() })
+  const renderedText = JSON.stringify(renderer.toJSON())
+  expect(renderedText).toContain('details.traceExpired')
+  expect(renderer.root.findAllByType('span').some((node) => node.children.includes('Fallback model call'))).toBe(true)
+  act(() => renderer.unmount())
+})
+
+
 
 function rangeTrigger(renderer: ReactTestRenderer) {
   return renderer.root.findAllByType('button').find((node) => node.props.id === 'obs-range')!
@@ -616,3 +863,21 @@ for (const locale of ['en', 'zh'] as const) {
     act(() => renderer.unmount())
   })
 }
+
+test('loads the recorded model input only when a tool span is expanded', async () => {
+  params = new URLSearchParams('tab=runs&period=24h')
+  getRuns.mockImplementationOnce(async () => ({ items: [run], next_cursor: null, meta }))
+  const renderer = await render()
+  expect(getRunToolPayload).not.toHaveBeenCalled()
+  const row = renderer.root.findAllByType('tr')[1]
+  await act(async () => { row.props.onClick(); await Promise.resolve() })
+  const rootToggle = renderer.root.findAllByType('button').find((button) => button.props['aria-expanded'] === false)
+  await act(async () => { rootToggle!.props.onClick(); await Promise.resolve() })
+  expect(getRunToolPayload).not.toHaveBeenCalled()
+  const childToggle = renderer.root.findAllByType('button').find((button) => button.props['aria-expanded'] === false)
+  expect(childToggle).toBeDefined()
+  await act(async () => { childToggle!.props.onClick(); await Promise.resolve() })
+  expect(getRunToolPayload).toHaveBeenCalledWith('agent', 'failed-run', 'call-1')
+  expect(renderer.root.findAllByType('pre').some((node) => node.children.some((child) => typeof child === 'string' && child.includes('1│hello')))).toBe(true)
+  act(() => renderer.unmount())
+})

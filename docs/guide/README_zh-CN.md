@@ -68,6 +68,7 @@
 - [团队角色](user-guide/teams/team-roles.md)
 - [知识库](user-guide/knowledge-base/browsing-kb.md)
 - [上传文档](user-guide/knowledge-base/uploading-documents.md)
+- [微信 iLink](user-guide/knowledge-base/wechat-collection_zh-CN.md)
 - [文档管理](user-guide/knowledge-base/document-management.md)
 - [知识库搜索](user-guide/knowledge-base/searching.md)
 - [文档元数据](user-guide/knowledge-base/document-metadata.md)
@@ -99,7 +100,7 @@
 - [权限](admin-guide/permissions/PERMISSIONS_zh-CN.md)
 - [权限管理](admin-guide/permissions/permission-management.md)
 - [系统设置](admin-guide/settings/system-settings.md)
-- [SSO 设置](admin-guide/settings/SSO_zh-CN.md)
+- [集成与 SSO 设置](admin-guide/settings/SSO_zh-CN.md)
 - [自动通知](admin-guide/settings/AUTO_NOTIFICATIONS_zh-CN.md)
 - [角色权限、安全与系统可观测性](admin-guide/settings/roles-security-observability.md)
 - [审计日志](admin-guide/audit-logs/audit-log-management.md)
@@ -120,16 +121,18 @@
 - [认证与登录 API](api-reference/endpoints/auth.md)
 - [对话 API](api-reference/endpoints/chat.md)
 - [会话统计 API](api-reference/endpoints/conversations.md)
+- [投递记录 API](api-reference/endpoints/deliveries.md)
 - [外部免登嵌入 API](api-reference/endpoints/embed.md)
 - [知识库 API](api-reference/endpoints/knowledge-bases.md)
 - [记忆 API](api-reference/endpoints/memories.md)
 - [模型 API](api-reference/endpoints/models.md)
 - [通知 API](api-reference/endpoints/notifications.md)
+- [飞书 Agent 对话 API](api-reference/endpoints/feishu-agent.md)
 - [资源包 API](api-reference/endpoints/packages.md)
 - [智能 Prompt 生成 API](api-reference/endpoints/prompts.md)
 - [设置 API](api-reference/endpoints/settings.md)
 - [技能 API](api-reference/endpoints/skills.md)
-- [SSO API](api-reference/endpoints/sso.md)
+- [SSO 与集成 API](api-reference/endpoints/sso.md)
 - [团队模型 API](api-reference/endpoints/team-models.md)
 - [团队 API](api-reference/endpoints/teams.md)
 - [工具 API](api-reference/endpoints/tools.md)
@@ -262,7 +265,7 @@
 - **审计日志**：关键操作追踪，支持变更前后字段级差异快照和用户归属信息
 - **管理后台可观测性**：集中查看平台用量、Token 消耗、延迟、错误率与系统监控
 - **Clouisle 资源包**：标准化的 `.clouisle` 资产包，支持零明文凭据安全导出/导入与跨环境迁移（智能体、工作流、工具与知识库）
-- **通知系统**：应用内、邮件、钉钉、企业微信、飞书、Slack 和 Webhook 渠道
+- **通知系统**：应用内通知、邮件和通用 Webhook 通知
 - **API 密钥管理**：作用域 API 密钥，支持过期时间、用量追踪和团队访问控制
 - **站点设置**：可配置的站点设置，支持本地化（英文/中文）
 - **密码策略**：可配置的密码过期、历史记录和复杂度要求
@@ -375,7 +378,7 @@ curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/insta
 - **安全**：密码策略、会话超时、登录限制
 - **注册**：启用/禁用、需要审批、邮箱验证
 - **邮件**：通知的 SMTP 配置
-- **SSO**：配置身份提供商
+- **集成**：配置登录身份源、邮件、Webhook 与飞书通讯录同步
 - **通知**：自动通知规则和渠道
 
 ---

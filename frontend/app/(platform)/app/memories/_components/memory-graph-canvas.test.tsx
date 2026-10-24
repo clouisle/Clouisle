@@ -226,3 +226,20 @@ test('select mode, escape, and batch delete update toolbar and sheet props', asy
   tree = render()
   expect(findByType(tree, GraphToolbar).props).toMatchObject({ selectMode: false, selectedCount: 0 })
 })
+test('selects a related entity from the detail sheet and closes its selection', async () => {
+  reset()
+  let tree = await renderLoaded()
+  const sheet = findByType(tree, EntityDetailSheet)
+
+  ;(sheet.props.onNavigateToEntity as (id: string) => void)('entity-2')
+  tree = render()
+  expect(findByType(tree, EntityDetailSheet).props.entity).toMatchObject({ id: 'entity-2', name: 'Strong tea' })
+
+  ;(findByType(tree, EntityDetailSheet).props.onNavigateToEntity as (id: string) => void)('missing-entity')
+  tree = render()
+  expect(findByType(tree, EntityDetailSheet).props.entity).toMatchObject({ id: 'entity-2', name: 'Strong tea' })
+
+  ;(findByType(tree, EntityDetailSheet).props.onClose as () => void)()
+  tree = render()
+  expect(findByType(tree, EntityDetailSheet).props.entity).toBeNull()
+})

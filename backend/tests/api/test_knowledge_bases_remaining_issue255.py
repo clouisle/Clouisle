@@ -416,6 +416,7 @@ async def test_delete_chunk_updates_stats_and_bulk_reindexes(monkeypatch):
     )
     doc = SimpleNamespace(
         status=DocumentStatus.PENDING.value,
+        metadata=None,
         chunk_count=0,
         token_count=1,
         save=AsyncMock(),

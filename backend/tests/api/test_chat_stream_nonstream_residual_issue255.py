@@ -23,6 +23,17 @@ def _started() -> dict:
     }
 
 
+def _submission(started):
+    """RunSubmission-shaped result of the shared submit service."""
+    return SimpleNamespace(
+        run_id=started["data"].run_id,
+        conversation_id=started["data"].conversation_id,
+        user_message_id=started["data"].user_message_id,
+        status=started["data"].status,
+        stream_url=started["data"].stream_url,
+    )
+
+
 async def _collect(response) -> str:
     chunks = []
     async for chunk in response.body_iterator:
@@ -38,10 +49,10 @@ async def test_nonstream_queues_run_and_uses_canonical_response_adapter(monkeypa
         status=AgentRunStatus.COMPLETED,
     )
     legacy_response = {"data": {"message": {"content": "answer"}}}
-    enqueue = AsyncMock(return_value=started)
+    enqueue = AsyncMock(return_value=_submission(started))
     wait = AsyncMock(return_value=run)
     build_response = AsyncMock(return_value=legacy_response)
-    monkeypatch.setattr(chat, "_enqueue_durable_chat_run", enqueue)
+    monkeypatch.setattr("app.services.agent_submission.submit_chat_run", enqueue)
     monkeypatch.setattr(chat, "_wait_for_agent_run", wait)
     monkeypatch.setattr(chat, "_build_non_stream_run_response", build_response)
 

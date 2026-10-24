@@ -39,17 +39,17 @@
     "viewNotification": "查看",
     "channel": {
       "email": "邮件",
-      "dingtalk": "钉钉",
       "webhook": "Webhook",
-      "slack": "Slack",
-      "wechat": "企业微信"
+      "feishu": "飞书"
     },
     "deliveryStatus": {
       "title": "发送状态",
       "pending": "待发送",
       "sending": "发送中",
       "success": "已发送",
-      "failed": "发送失败"
+      "failed": "发送失败",
+      "skipped": "已跳过：没有已绑定的飞书接收人",
+      "partialSuccess": "已发送给 {success_count}/{total_count} 位接收人"
     },
     "retryCount": "已重试 {count} 次",
     "toast": {
@@ -127,9 +127,8 @@
       "selectScope": "选择范围",
       "notifyChannels": "外部通知渠道",
       "channelEmail": "邮件",
-      "channelSlack": "Slack",
-      "channelDingtalk": "钉钉",
-      "channelWechat": "企业微信"
+      "channelWebhook": "Webhook",
+      "channelFeishu": "飞书"
     }
   }
 }

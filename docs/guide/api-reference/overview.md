@@ -124,7 +124,7 @@ The admin console is a separate, permission-gated API mounted under `/api/v1/adm
 | Permissions | `/api/v1/admin/permissions` |
 | Site settings | `/api/v1/admin/site-settings` |
 | Models | `/api/v1/admin/models` |
-| SSO | `/api/v1/admin/sso` |
+| Integrations | `/api/v1/admin/integrations` |
 | Notifications | `/api/v1/admin/notifications` |
 | Teams | `/api/v1/admin/teams` |
 | Memories | `/api/v1/admin/memories` |

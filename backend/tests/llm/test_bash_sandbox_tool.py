@@ -1,108 +1,79 @@
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
+from app.core.config import settings
 from app.llm.tools.bash import BashSandboxTool
-from app.services.sandbox.models import SandboxResult, SandboxTaskStatus
+from app.services.sandbox.artifacts import SandboxArtifactStore
+from app.services.sandbox.models import (
+    SandboxArtifactLimits,
+    SandboxArtifactSpec,
+    SandboxResult,
+    SandboxTaskStatus,
+)
+from app.services.sandbox.process_launcher import SandboxProcessLauncher
+from app.services.sandbox.workspace import SandboxWorkspaceManager
 
 
-@pytest.mark.anyio
-async def test_execute_maps_workspace_paths_to_session_root_for_command_and_cwd():
-    tool = BashSandboxTool(session_id="session-1", workspace_root="/workspace")
-    fake_result = SandboxResult(
-        job_id="job-1",
-        success=True,
-        status=SandboxTaskStatus.COMPLETED,
-        stdout="ok",
-        stderr="",
+@pytest.mark.asyncio
+async def test_cross_host_bash_file_is_collectable(monkeypatch, tmp_path):
+    """A caller's physical /private/tmp alias must not become a worker path."""
+    from app.llm.tools import bash
+
+    monkeypatch.setattr(settings, "SANDBOX_FILESYSTEM_ISOLATION_ENABLED", True)
+    manager = SandboxWorkspaceManager(root=str(tmp_path / "jobs"))
+    workspace = manager.prepare("worker-session")
+    descriptor = AsyncMock(
+        return_value=type(
+            "Workspace",
+            (),
+            {"root": Path("/private/tmp/caller-only/jobs/sessions/worker-session")},
+        )()
     )
-    workspace = type("Workspace", (), {"root": Path("/tmp/sessions/abc")})()
+    monkeypatch.setattr(bash.sandbox_gateway, "get_session_workspace", descriptor)
 
-    with (
-        patch(
-            "app.llm.tools.bash.sandbox_gateway.get_session_workspace",
-            new=AsyncMock(return_value=workspace),
-        ),
-        patch(
-            "app.llm.tools.bash.sandbox_gateway.submit_and_wait",
-            new=AsyncMock(return_value=fake_result),
-        ) as mock_submit,
-    ):
-        result = await tool.execute(
-            command="python3 /workspace/script.py && ls /workspace/output",
-            cwd="/workspace/subdir",
+    async def execute(job, **kwargs):
+        # Exercise the command in a real process with the worker's logical mount
+        # represented by a temporary directory (Bubblewrap is Linux-only).
+        command = [
+            value.replace("/workspace", str(workspace.root)) for value in job.command
+        ]
+        result = await SandboxProcessLauncher(
+            filesystem_isolation_enabled=False
+        ).launch(command, cwd=str(workspace.root))
+        return SandboxResult(
+            job_id=job.job_id,
+            success=result.exit_code == 0,
+            status=SandboxTaskStatus.COMPLETED,
+            stdout=result.stdout,
+            stderr=result.stderr,
         )
 
-    assert result["success"] is True
-    submitted_job = mock_submit.await_args.args[0]
-    assert submitted_job.command == [
-        "bash",
-        "-c",
-        "python3 /tmp/sessions/abc/script.py && ls /tmp/sessions/abc/output",
-    ]
-    assert submitted_job.cwd == "/workspace/subdir"
-
-
-@pytest.mark.anyio
-async def test_execute_maps_session_root_back_to_workspace_in_output():
-    tool = BashSandboxTool(session_id="session-1", workspace_root="/workspace")
-    workspace = type("Workspace", (), {"root": Path("/tmp/sessions/abc")})()
-    fake_result = SandboxResult(
-        job_id="job-1",
-        success=True,
-        status=SandboxTaskStatus.COMPLETED,
-        stdout="/tmp/sessions/abc/output/report.txt\n",
-        stderr="Trace: /tmp/sessions/abc/script.py\n",
+    monkeypatch.setattr(bash.sandbox_gateway, "submit_and_wait", execute)
+    result = await BashSandboxTool(session_id="session").execute(
+        "printf product-slides > /workspace/introduction.pptx"
     )
+    assert result.display_result["success"]
+    assert result.display_result["status"] == "completed"
+    assert (workspace.root / "introduction.pptx").read_bytes() == b"product-slides"
+    store = SandboxArtifactStore(manager)
+    uploaded = []
 
-    with (
-        patch(
-            "app.llm.tools.bash.sandbox_gateway.get_session_workspace",
-            new=AsyncMock(return_value=workspace),
-        ),
-        patch(
-            "app.llm.tools.bash.sandbox_gateway.submit_and_wait",
-            new=AsyncMock(return_value=fake_result),
-        ),
-    ):
-        result = await tool.execute(command="pwd", cwd="/workspace")
+    async def upload(**kwargs):
+        uploaded.append(kwargs["content"])
+        return {
+            "path": "introduction.pptx",
+            "url": "/download/introduction.pptx",
+            "filename": "introduction.pptx",
+        }
 
-    assert result["stdout"] == "/workspace/output/report.txt\n"
-    assert result["stderr"] == "Trace: /workspace/script.py\n"
-
-
-@pytest.mark.anyio
-async def test_execute_keeps_runtime_cwd_without_double_mapping():
-    tool = BashSandboxTool(session_id="session-1", workspace_root="/workspace")
-    workspace = type("Workspace", (), {"root": Path("/tmp/sessions/abc")})()
-    fake_result = SandboxResult(
-        job_id="job-1",
-        success=True,
-        status=SandboxTaskStatus.COMPLETED,
-        stdout="ok",
-        stderr="",
+    monkeypatch.setattr(store, "_upload_artifact", upload)
+    artifacts = await store.collect(
+        job_id="collect",
+        artifacts=[SandboxArtifactSpec(path="/workspace/introduction.pptx")],
+        workspace=workspace,
+        artifact_limits=SandboxArtifactLimits(),
     )
-
-    with (
-        patch(
-            "app.llm.tools.bash.sandbox_gateway.get_session_workspace",
-            new=AsyncMock(return_value=workspace),
-        ),
-        patch(
-            "app.llm.tools.bash.sandbox_gateway.submit_and_wait",
-            new=AsyncMock(return_value=fake_result),
-        ) as mock_submit,
-    ):
-        await tool.execute(
-            command="python3 /workspace/script.py",
-            cwd="/tmp/sessions/abc",
-        )
-
-    submitted_job = mock_submit.await_args.args[0]
-    assert submitted_job.command == [
-        "bash",
-        "-c",
-        "python3 /tmp/sessions/abc/script.py",
-    ]
-    assert submitted_job.cwd == "/workspace"
+    assert uploaded == [b"product-slides"]
+    assert artifacts[0].url == "/download/introduction.pptx"

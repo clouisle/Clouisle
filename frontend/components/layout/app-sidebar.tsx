@@ -23,6 +23,7 @@ import {
   Wrench,
   Activity,
   FileText,
+  Send,
   Bell,
   User,
   Brain,
@@ -213,14 +214,20 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       icon: FileText,
       permission: ROUTE_PERMISSION_MAP['/audit-logs'],
     },
+    {
+      title: t('deliveries'),
+      url: '/deliveries',
+      icon: Send,
+      permission: ROUTE_PERMISSION_MAP['/deliveries'],
+    },
   ]
 
   const settingsItems = [
     {
       title: t('siteSettings'),
-      url: '/site-settings',
+      url: canAccessRoute('/site-settings', hasPermission, isSuperuser) ? '/site-settings' : '/site-settings/integrations',
       icon: Settings,
-      permission: ROUTE_PERMISSION_MAP['/site-settings'],
+      permission: canAccessRoute('/site-settings', hasPermission, isSuperuser) ? ROUTE_PERMISSION_MAP['/site-settings'] : ROUTE_PERMISSION_MAP['/site-settings/integrations'],
     },
     {
       title: t('helpCenter'),

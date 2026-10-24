@@ -414,4 +414,45 @@ describe('DocumentsPreviewClient', () => {
     expect(api.getDocumentFile).toHaveBeenCalledWith('kb-1', 'doc-1')
     ;(filePreview.props.onClose as () => void)()
   })
+  test('excludes source-managed documents and presents only locally editable documents', async () => {
+    api.getDocument.mockImplementation((_kb: string, id: string) => Promise.resolve({
+      ...document,
+      id,
+      name: `${id}.pdf`,
+      metadata: id === 'feishu' ? { feishu_source_id: 'source-1' }
+        : id === 'read-only' ? { feishu_read_only: true }
+          : undefined,
+    }))
+
+    const tree = await load(['feishu', 'read-only', 'local'])
+
+    expect(text(tree)).toContain('local.pdf')
+    expect(text(tree)).not.toContain('feishu.pdf')
+    expect(text(tree)).not.toContain('read-only.pdf')
+    expect(text(tree)).toContain('1 documentsCount')
+    expect(api.getDocument).toHaveBeenCalledTimes(3)
+  })
+
+  test('selects a document tab and fetches its original file only when requested', async () => {
+    api.getDocument.mockImplementation((_kb: string, id: string) => Promise.resolve({
+      ...document,
+      id,
+      name: `${id}.pdf`,
+    }))
+    api.getDocumentFile.mockResolvedValue(new Blob(['second original'], { type: 'text/plain' }))
+    let tree = await load(['doc-1', 'doc-2'])
+
+    const tabs = findAll(tree, node => node.type === 'button' && ['doc-1.pdf', 'doc-2.pdf'].includes(text(node)))
+    ;(tabs[1].props.onClick as () => void)()
+    tree = render(['doc-1', 'doc-2'])
+
+    const previewButton = findAll(tree, node => node.props['aria-label'] === 'previewOriginal')[0]
+    ;(previewButton.props.onClick as () => void)()
+    tree = render(['doc-1', 'doc-2'])
+    const filePreview = findAll(tree, node => typeof node.props.loadFile === 'function')[0]
+    expect(filePreview.props.file).toMatchObject({ filename: 'doc-2.pdf', mimeType: 'text/plain' })
+    expect(api.getDocumentFile).not.toHaveBeenCalled()
+    await (filePreview.props.loadFile as () => Promise<Blob>)()
+    expect(api.getDocumentFile).toHaveBeenCalledWith('kb-1', 'doc-2')
+  })
 })

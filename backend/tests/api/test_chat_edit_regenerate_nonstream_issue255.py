@@ -299,6 +299,9 @@ async def test_nonstream_builds_user_message_variants(
     conversation = SimpleNamespace(id=uuid4())
     created = AsyncMock(side_effect=StopHere)
 
+    from app.api.v1.endpoints import chat_rag
+    from app.services import message_branching
+
     with (
         patch.object(
             chat_module.AgentKnowledgeBase,
@@ -315,13 +318,13 @@ async def test_nonstream_builds_user_message_variants(
             new=AsyncMock(return_value=conversation),
         ),
         patch.object(
-            chat_module,
+            chat_rag,
             "perform_rag_retrieval",
             new=AsyncMock(return_value=rag_result),
         ) as retrieve,
-        patch.object(chat_module, "aggregate_rag_contexts", return_value=rag_result),
+        patch.object(chat_rag, "aggregate_rag_contexts", return_value=rag_result),
         patch.object(
-            chat_module,
+            message_branching,
             "get_visible_conversation_messages",
             new=AsyncMock(return_value=[]),
         ),

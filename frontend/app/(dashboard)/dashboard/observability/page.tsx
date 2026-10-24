@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Activity, AlertTriangle, Bell, Boxes, CalendarIcon, Check, ChevronDown, ChevronRight, Clock3, Database, ExternalLink, Gauge, RefreshCw, Server, Workflow } from 'lucide-react'
+import { Activity, AlertTriangle, Bell, Boxes, CalendarIcon, Check, CheckCircle2, ChevronDown, ChevronRight, Clock3, Coins, Database, ExternalLink, Gauge, RefreshCw, Server, Workflow } from 'lucide-react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { endOfDay, format, startOfDay } from 'date-fns'
 import { enUS, zhCN } from 'date-fns/locale'
@@ -28,9 +28,10 @@ import {
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CHART_AXIS_COLOR, CHART_COLOR_ORDER, CHART_GRID_COLOR, CHART_HOVER_CURSOR, CHART_TOOLTIP_STYLE } from '@/lib/chart-theme'
+import { StatCard } from '@/components/dashboard/stat-card'
 import { formatTime } from '@/lib/utils'
 import { usePermissions } from '@/hooks/use-permissions'
-import { observabilityApi, type AlertEvent, type AlertRule, type DependenciesResponse, type InfrastructureResponse, type ObservabilityMeta, type ObservabilityPeriod, type QueueRow, type QueuesResponse, type RunDetailResponse, type RunSummary, type SummaryResponse } from '@/lib/api/admin/observability'
+import { observabilityApi, type AlertEvent, type AlertRule, type DependenciesResponse, type InfrastructureResponse, type ObservabilityMeta, type ObservabilityPeriod, type QueueRow, type QueuesResponse, type RunDetailResponse, type RunSummary, type SummaryResponse, type ToolPayloadDetail } from '@/lib/api/admin/observability'
 
 const VIEWS = ['overview', 'runs', 'dependencies', 'queues', 'infrastructure', 'alerts'] as const
 type View = typeof VIEWS[number]
@@ -305,7 +306,7 @@ function QualityState({ meta }: { meta: ObservabilityMeta }) {
   return <div role="status" className={`flex items-start gap-3 rounded-lg border p-3 text-sm ${state === 'stale' || state === 'unavailable' ? 'border-amber-500/30 bg-amber-500/5' : 'border-border bg-muted/30'}`}><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600"/><div><strong>{t(`quality.${state}`, { samples: meta.sample_count })}</strong><p className="mt-0.5 text-muted-foreground">{window} · {sampleTime}</p></div></div>
 }
 
-function Metric({ label, value, hint }: { label: string; value: string | number; hint?: string }) { return <Card><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{value}</p>{hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}</CardContent></Card> }
+
 const number = (value: number | null | undefined) => value == null ? '—' : new Intl.NumberFormat().format(value)
 const duration = (value: number | null | undefined) => value == null ? '—' : value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(2)} s`
 const percent = (value: number | null | undefined) => value == null ? '—' : `${(value * 100).toFixed(1)}%`
@@ -314,7 +315,7 @@ const percentage = (value: number | null) => value == null ? '—' : `${value.to
 function Overview({ data }: { data: SummaryResponse }) {
   const t = useTranslations('dashboard.observability')
   const locale = useLocale()
-  return <div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric label={t('metrics.agentSubmitted')} value={number(data.agents.submitted)} hint={t('metrics.completedFailed', { completed: number(data.agents.completed), failed: number(data.agents.failed) })}/><Metric label={t('metrics.agentSuccessRate')} value={percent(data.agents.success_rate)}/><Metric label={t('metrics.agentP95')} value={duration(data.agents.p95_ms)} hint={t('metrics.firstTokenP95', { value: duration(data.agents.first_token_p95_ms) })}/><Metric label={t('metrics.agentTokens')} value={number(data.agents.tokens)}/><Metric label={t('metrics.workflowSubmitted')} value={number(data.workflows.submitted)} hint={t('metrics.completedFailed', { completed: number(data.workflows.completed), failed: number(data.workflows.failed) })}/><Metric label={t('metrics.workflowSuccessRate')} value={percent(data.workflows.success_rate)}/><Metric label={t('metrics.workflowP95')} value={duration(data.workflows.p95_ms)}/><Metric label={t('metrics.workflowTokens')} value={number(data.workflows.tokens)}/></div>
+  return <div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><StatCard title={t('metrics.agentSubmitted')} value={number(data.agents.submitted)} hint={t('metrics.completedFailed', { completed: number(data.agents.completed), failed: number(data.agents.failed) })} icon={Activity} tone="blue"/><StatCard title={t('metrics.agentSuccessRate')} value={percent(data.agents.success_rate)} icon={CheckCircle2} tone="green"/><StatCard title={t('metrics.agentP95')} value={duration(data.agents.p95_ms)} hint={t('metrics.firstTokenP95', { value: duration(data.agents.first_token_p95_ms) })} icon={Gauge} tone="orange"/><StatCard title={t('metrics.agentTokens')} value={number(data.agents.tokens)} icon={Coins} tone="cyan"/><StatCard title={t('metrics.workflowSubmitted')} value={number(data.workflows.submitted)} hint={t('metrics.completedFailed', { completed: number(data.workflows.completed), failed: number(data.workflows.failed) })} icon={Workflow} tone="purple"/><StatCard title={t('metrics.workflowSuccessRate')} value={percent(data.workflows.success_rate)} icon={CheckCircle2} tone="green"/><StatCard title={t('metrics.workflowP95')} value={duration(data.workflows.p95_ms)} icon={Clock3} tone="orange"/><StatCard title={t('metrics.workflowTokens')} value={number(data.workflows.tokens)} icon={Coins} tone="cyan"/></div>
   <Card><CardHeader><CardTitle>{t('charts.runTrend')}</CardTitle><CardDescription>{t('charts.runTrendDesc')}</CardDescription></CardHeader><CardContent><div className="h-[300px]">{data.trend.length ? <ResponsiveContainer width="100%" height="100%"><AreaChart data={data.trend} margin={{ top: 8, right: 12, bottom: 0, left: -16 }}><CartesianGrid stroke={CHART_GRID_COLOR} vertical={false}/><XAxis dataKey="bucket" tick={{ fill: CHART_AXIS_COLOR, fontSize: 11 }} tickFormatter={(value) => new Date(value).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}/><YAxis tick={{ fill: CHART_AXIS_COLOR, fontSize: 11 }}/><Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={(value) => new Date(String(value)).toLocaleString(locale)} formatter={(value, name, item) => [`${value == null ? '—' : number(Number(value))} · ${t('charts.sampleCoverage', { samples: number(item.payload.submitted) })}`, String(name)]}/><Area type="monotone" dataKey="completed" name={t('charts.completed')} stackId="outcomes" stroke={CHART_COLOR_ORDER[0]} fill={CHART_COLOR_ORDER[0]} fillOpacity={0.18}/><Area type="monotone" dataKey="failed" name={t('charts.failed')} stackId="outcomes" stroke={CHART_COLOR_ORDER[1]} fill={CHART_COLOR_ORDER[1]} fillOpacity={0.2}/><Line type="monotone" dataKey="submitted" name={t('charts.submitted')} stroke={CHART_COLOR_ORDER[2]} strokeWidth={2} dot={false} connectNulls={false}/></AreaChart></ResponsiveContainer> : <Empty text={t('states.noSamples')}/>}</div></CardContent></Card>
   <div className="grid gap-4 xl:grid-cols-2"><Card><CardHeader><CardTitle>{t('charts.latencyTrend')}</CardTitle><CardDescription>{t('charts.latencyTrendDesc')}</CardDescription></CardHeader><CardContent><div className="h-[260px]">{data.trend.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={data.trend} margin={{ top: 8, right: 12, bottom: 0, left: -16 }}><CartesianGrid stroke={CHART_GRID_COLOR} vertical={false}/><XAxis dataKey="bucket" tick={{ fill: CHART_AXIS_COLOR, fontSize: 11 }} tickFormatter={(value) => new Date(value).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}/><YAxis tick={{ fill: CHART_AXIS_COLOR, fontSize: 11 }}/><Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={(value) => new Date(String(value)).toLocaleString(locale)} formatter={(value, name, item) => [`${value == null ? '—' : duration(Number(value))} · ${t('charts.sampleCoverage', { samples: number(item.payload.submitted) })}`, String(name)]}/><Line type="monotone" dataKey="p95_ms" name={t('charts.p95')} stroke={CHART_COLOR_ORDER[0]} strokeWidth={2} dot={false} connectNulls={false}/><Line type="monotone" dataKey="first_token_p95_ms" name={t('charts.firstTokenP95')} stroke={CHART_COLOR_ORDER[2]} strokeWidth={2} dot={false} connectNulls={false}/></LineChart></ResponsiveContainer> : <Empty text={t('states.noSamples')}/>}</div></CardContent></Card><Card><CardHeader><CardTitle>{t('charts.tokenTrend')}</CardTitle><CardDescription>{t('charts.tokenTrendDesc')}</CardDescription></CardHeader><CardContent><div className="h-[260px]">{data.trend.length ? <ResponsiveContainer width="100%" height="100%"><BarChart data={data.trend} margin={{ top: 8, right: 12, bottom: 0, left: -16 }}><CartesianGrid stroke={CHART_GRID_COLOR} vertical={false}/><XAxis dataKey="bucket" tick={{ fill: CHART_AXIS_COLOR, fontSize: 11 }} tickFormatter={(value) => new Date(value).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}/><YAxis tick={{ fill: CHART_AXIS_COLOR, fontSize: 11 }}/><Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={(value) => new Date(String(value)).toLocaleString(locale)} formatter={(value, name, item) => [`${number(Number(value))} · ${t('charts.sampleCoverage', { samples: number(item.payload.submitted) })}`, String(name)]}/><Bar dataKey="tokens" name={t('charts.tokens')} fill={CHART_COLOR_ORDER[1]} radius={[4, 4, 0, 0]}/></BarChart></ResponsiveContainer> : <Empty text={t('states.noSamples')}/>}</div></CardContent></Card></div>
   <div className="grid gap-4 xl:grid-cols-2">{data.issues.map((issue) => <Card key={`${issue.kind}:${issue.title}`} className="border-l-4" style={{ borderLeftColor: issue.severity === 'critical' ? 'hsl(var(--destructive))' : issue.severity === 'warning' ? 'hsl(var(--chart-2))' : 'hsl(var(--primary))' }}><CardContent className="flex items-start justify-between gap-3 p-4"><div><div className="flex items-center gap-2"><Badge variant={issue.severity === 'critical' ? 'destructive' : 'secondary'}>{t(`severity.${issue.severity}`)}</Badge><strong>{issue.title}</strong></div><p className="mt-2 text-sm text-muted-foreground">{issue.detail}</p><p className="mt-2 text-xs text-muted-foreground">{t('issues.affected', { count: issue.affected_count })}</p></div>{issue.href && <a href={issue.href} aria-label={t('actions.openIssue')}><ExternalLink className="h-4 w-4"/></a>}</CardContent></Card>)}</div>{!data.issues.length && <Card><CardContent className="p-4 text-sm text-muted-foreground">{t('issues.none')}</CardContent></Card>}</div>
@@ -764,9 +765,45 @@ function RunDetail({ detail, loading, error, onClose, expanded, setExpanded }: {
       else next.add(id)
       return next
     })
-  return <Sheet open={Boolean(run || loading || error)} onOpenChange={(open) => !open && onClose()}><SheetContent className="w-full overflow-y-auto sm:max-w-3xl"><SheetHeader><SheetTitle>{run?.resource_name ?? t('details.runTitle')}</SheetTitle><SheetDescription>{run ? `${t(`sources.${run.source}`)} · ${run.run_id}` : t('details.traceDescription')}</SheetDescription></SheetHeader>{loading ? <div className="space-y-3 p-6"><div className="h-16 animate-pulse rounded bg-muted"/><div className="h-32 animate-pulse rounded bg-muted"/></div> : error ? <p role="alert" className="p-6 text-sm text-destructive">{t('states.errorDescription')}</p> : detail && run ? <div className="space-y-5 p-1"><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Metric label={t('runs.columns.status')} value={run.status}/><Metric label={t('runs.columns.queue')} value={duration(run.queue_duration_ms)}/><Metric label={t('runs.columns.duration')} value={duration(run.total_duration_ms)}/><Metric label={t('runs.columns.tokens')} value={number(run.total_tokens)}/></div><div className="rounded-lg border p-3 text-xs text-muted-foreground">{t('details.traceStatus', { recorded: detail.trace.recorded_count, complete: detail.trace.complete ? t('details.complete') : t('details.incomplete') })}{detail.trace.expired && ` · ${t('details.traceExpired')}`}{detail.trace.truncated && ` · ${t('details.traceTruncated')}`}</div><div className="space-y-1"><h3 className="mb-3 font-medium">{t('details.waterfall')}</h3>{spans.length ? (children.get(null) ?? spans.filter((span) => !spans.some((other) => other.span_id === span.parent_span_id))).map((span) => <SpanTree key={span.span_id} span={span} childrenMap={children} depth={0} timelineStart={timelineStart} timelineDuration={timelineDuration} expanded={expanded} toggle={toggle}/>) : <Empty text={t('details.traceUnavailable')}/>}</div>{run.error_category && <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm"><strong>{t('details.errorCategory')}:</strong> {run.error_category}{run.error_code && ` · ${run.error_code}`}</div>}</div> : null}</SheetContent></Sheet>
+  return <Sheet open={Boolean(run || loading || error)} onOpenChange={(open) => !open && onClose()}><SheetContent className="w-full overflow-y-auto sm:max-w-3xl"><SheetHeader><SheetTitle>{run?.resource_name ?? t('details.runTitle')}</SheetTitle><SheetDescription>{run ? `${t(`sources.${run.source}`)} · ${run.run_id}` : t('details.traceDescription')}</SheetDescription></SheetHeader>{loading ? <div className="space-y-3 p-6"><div className="h-16 animate-pulse rounded bg-muted"/><div className="h-32 animate-pulse rounded bg-muted"/></div> : error ? <p role="alert" className="p-6 text-sm text-destructive">{t('states.errorDescription')}</p> : detail && run ? <div className="space-y-5 p-1"><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><StatCard dense title={t('runs.columns.status')} value={run.status}/><StatCard dense title={t('runs.columns.queue')} value={duration(run.queue_duration_ms)}/><StatCard dense title={t('runs.columns.duration')} value={duration(run.total_duration_ms)}/><StatCard dense title={t('runs.columns.tokens')} value={number(run.total_tokens)}/></div><div className="rounded-lg border p-3 text-xs text-muted-foreground">{t('details.traceStatus', { recorded: detail.trace.recorded_count, complete: detail.trace.complete ? t('details.complete') : t('details.incomplete') })}{detail.trace.expired && ` · ${t('details.traceExpired')}`}{detail.trace.truncated && ` · ${t('details.traceTruncated')}`}</div><div className="space-y-1"><h3 className="mb-3 font-medium">{t('details.waterfall')}</h3>{spans.length ? (children.get(null) ?? spans.filter((span) => !spans.some((other) => other.span_id === span.parent_span_id))).map((span) => <SpanTree key={span.span_id} source={run.source} runId={run.run_id} span={span} childrenMap={children} depth={0} timelineStart={timelineStart} timelineDuration={timelineDuration} expanded={expanded} toggle={toggle}/>) : <Empty text={t('details.traceUnavailable')}/>}</div>{run.error_category && <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm"><strong>{t('details.errorCategory')}:</strong> {run.error_category}{run.error_code && ` · ${run.error_code}`}</div>}</div> : null}</SheetContent></Sheet>
 }
+function SpanPayload({ source, runId, toolCallId }: { source: RunSummary['source']; runId: string; toolCallId: string }) {
+  const t = useTranslations('dashboard.observability.details')
+  const [tab, setTab] = React.useState<'model' | 'display'>('model')
+  const [payload, setPayload] = React.useState<ToolPayloadDetail | null>(null)
+  const [failed, setFailed] = React.useState(false)
+  React.useEffect(() => {
+    let active = true
+    observabilityApi.getRunToolPayload(source, runId, toolCallId)
+      .then((value) => active && setPayload(value))
+      .catch(() => active && setFailed(true))
+    return () => { active = false }
+  }, [source, runId, toolCallId])
+  if (failed) return <p className="px-2 pb-2 text-xs text-destructive">{t('payloadUnavailable')}</p>
+  if (!payload) return <div className="mx-2 mb-2 h-16 animate-pulse rounded bg-muted" />
+  const text = tab === 'model' ? payload.model_input : payload.display
+  return (
+    <div className="mx-2 mb-2 space-y-2 rounded-md border bg-muted/20 p-2">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <Tabs value={tab} onValueChange={(value) => setTab(value as 'model' | 'display')}>
+          <TabsList>
+            <TabsTrigger value="model">{t('modelInput')}</TabsTrigger>
+            <TabsTrigger value="display">{t('rawData')}</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <span>{t('payloadBytes', { model: payload.model_bytes, display: payload.display_bytes })}</span>
+        {payload.eof === false && <Badge variant="outline">{t('notFinished')}</Badge>}
+        {payload.partial && <Badge variant="destructive">{t('partial')}</Badge>}
+        {payload.error && <Badge variant="destructive">{payload.error}</Badge>}
+      </div>
+      {text ? <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs">{text}</pre> : <p className="text-xs text-muted-foreground">{t('payloadNotRecorded')}</p>}
+    </div>
+  )
+}
+
 function SpanTree({
+  source,
+  runId,
   span,
   childrenMap,
   depth,
@@ -775,6 +812,8 @@ function SpanTree({
   expanded,
   toggle,
 }: {
+  source: RunSummary['source']
+  runId: string
   span: RunDetailResponse['spans'][number]
   childrenMap: Map<string | null, RunDetailResponse['spans']>
   depth: number
@@ -784,6 +823,8 @@ function SpanTree({
   toggle: (id: string) => void
 }) {
   const children = childrenMap.get(span.span_id) ?? []
+  const hasPayload =
+    span.kind === 'tool' && typeof span.metadata.tool_call_id === 'string'
   const open = expanded.has(span.span_id)
   const started = span.started_at ? Date.parse(span.started_at) : timelineStart
   const offset = Number.isFinite(started) ? Math.max(0, started - timelineStart) : 0
@@ -802,13 +843,13 @@ function SpanTree({
     <div>
       <button
         type="button"
-        aria-expanded={children.length ? open : undefined}
-        disabled={!children.length}
+        aria-expanded={children.length || hasPayload ? open : undefined}
+        disabled={!children.length && !hasPayload}
         onClick={() => toggle(span.span_id)}
         className="flex w-full items-center gap-2 rounded-md border-b px-2 py-2 text-left hover:bg-muted/50"
         style={{ paddingLeft: `${8 + depth * 18}px` }}
       >
-        {children.length ? (
+        {children.length || hasPayload ? (
           open ? (
             <ChevronDown className="h-3.5 w-3.5" />
           ) : (
@@ -832,10 +873,15 @@ function SpanTree({
           style={{ left: `${left}%`, width: `${width}%` }}
         />
       </div>
+      {hasPayload && open && (
+        <SpanPayload source={source} runId={runId} toolCallId={String(span.metadata.tool_call_id)} />
+      )}
       {open &&
         children.map((child) => (
           <SpanTree
             key={child.span_id}
+            source={source}
+            runId={runId}
             span={child}
             childrenMap={childrenMap}
             depth={depth + 1}

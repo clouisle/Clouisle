@@ -84,14 +84,17 @@ Clouisle allows you to upload files during chat conversations to:
 
 1. **Validation**: File type and size are checked
 2. **Upload**: File is uploaded to the server
-3. **Parsing**: Text content is extracted (documents) via the parse service
-4. **Attachment**: File is attached to your message
-5. **Analysis**: Agent analyzes the file content
+3. **Attachment**: The original Asset is attached to your message
+4. **On-demand extraction**: The first document read or search prepares and persists the complete extracted text
+5. **Analysis**: The Agent searches and reads bounded ranges, continuing as needed
 
 ### File Parsing
 
-- **Documents**: Text is extracted and converted to Markdown (PDF, DOCX, XLSX, PPTX, TXT, MD, CSV, JSON, HTML)
-- **Images**: Sent as image content for vision-capable agents
+- **Documents**: Supported formats are converted to persistent text on first use. Text is not automatically injected into model context. `read_asset` provides line ranges and continuation, including oversized lines; `search_asset` locates literal text with bounded snippets. A continuation cursor must be followed until `eof` to finish reading.
+- **Images**: Sent as native image content for capable model adapters. Native PDF page viewing remains separate from text line reading.
+- **Extraction limits**: Text extraction is not OCR or a guarantee of layout fidelity. Failed or empty extraction is reported; it is not treated as a successfully read document. A model run can stop before finishing a long file if its execution budget is exhausted.
+- **Per-call bounds**: Reading and search responses are limited to 32 KiB of serialized UTF-8. A large line continues in another segment with the same line number; concatenate those fragments before inserting a newline. Search snippets can be clipped and are not a replacement for reading the matching lines.
+- **Resource limits**: Complete extraction supports up to 5,000,000 extracted characters. Larger or undecodable files fail explicitly rather than returning only a prefix. A concurrent first extraction may report that it is still in progress; call again later.
 
 ## Using Uploaded Files
 
@@ -117,9 +120,9 @@ Clouisle allows you to upload files during chat conversations to:
 
 **How agents use files:**
 
-1. **Content extraction**: Text, tables are extracted (documents) or passed as image content
-2. **Context building**: File content is added to the conversation context
-3. **Response generation**: Agent generates a response based on the file content
+1. **Reference discovery**: Current attachments provide file metadata and scope-local refs; older files can be discovered with `list_assets`.
+2. **Bounded reading**: The Agent uses `search_asset` to locate passages and `read_asset` to read line ranges. Later calls reuse persisted extracted text rather than re-parsing the file.
+3. **Response generation**: Answers are based on the passages actually read. Original Asset permissions and active-branch visibility are checked on every operation.
 
 ### Multiple Files
 

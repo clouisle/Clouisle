@@ -152,9 +152,9 @@ describe('auth forms', () => {
       sso_enabled: true,
       sso_allow_password_login: false,
     } as Awaited<ReturnType<typeof siteSettingsApi.getPublic>>)
-    spyOn(ssoApi, 'getPublicProviders').mockResolvedValue([{
-      id: 'sso-1', name: 'oidc', display_name: 'Company SSO', button_text: 'Use Company SSO', icon_url: null,
-    }] as Awaited<ReturnType<typeof ssoApi.getPublicProviders>>)
+    spyOn(ssoApi, 'getPublicIntegrations').mockResolvedValue([{
+      id: 'sso-1', name: 'oidc', provider_type: 'oidc', display_name: 'Company SSO', button_text: 'Use Company SSO', icon_url: null,
+    }] as Awaited<ReturnType<typeof ssoApi.getPublicIntegrations>>)
     const initiateLogin = spyOn(ssoApi, 'initiateLogin').mockImplementation(() => {})
 
     const renderer = render(<LoginForm />, 'redirect=/app/admin')

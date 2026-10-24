@@ -229,86 +229,6 @@ CHANNEL_FAILURES = [
         "smtp_not_configured",
     ),
     (
-        "app.core.dingtalk",
-        "get_dingtalk_config",
-        NotificationChannel.DINGTALK,
-        {"enabled": False},
-        "dingtalk_not_enabled",
-    ),
-    (
-        "app.core.dingtalk",
-        "get_dingtalk_config",
-        NotificationChannel.DINGTALK,
-        {"enabled": True, "notification_type": "webhook", "webhook_url": ""},
-        "dingtalk_not_configured",
-    ),
-    (
-        "app.core.dingtalk",
-        "get_dingtalk_config",
-        NotificationChannel.DINGTALK,
-        {
-            "enabled": True,
-            "notification_type": "app",
-            "app_key": "",
-            "app_secret": "secret",
-            "agent_id": "agent",
-        },
-        "dingtalk_not_configured",
-    ),
-    (
-        "app.core.wechat",
-        "get_wechat_config",
-        NotificationChannel.WECHAT,
-        {"enabled": False},
-        "wechat_not_enabled",
-    ),
-    (
-        "app.core.wechat",
-        "get_wechat_config",
-        NotificationChannel.WECHAT,
-        {"enabled": True, "notification_type": "webhook", "webhook_url": ""},
-        "wechat_not_configured",
-    ),
-    (
-        "app.core.wechat",
-        "get_wechat_config",
-        NotificationChannel.WECHAT,
-        {
-            "enabled": True,
-            "notification_type": "app",
-            "corp_id": "corp",
-            "secret": "",
-            "agent_id": "agent",
-        },
-        "wechat_not_configured",
-    ),
-    (
-        "app.core.feishu",
-        "get_feishu_config",
-        NotificationChannel.FEISHU,
-        {"enabled": False},
-        "feishu_not_enabled",
-    ),
-    (
-        "app.core.feishu",
-        "get_feishu_config",
-        NotificationChannel.FEISHU,
-        {"enabled": True, "notification_type": "webhook", "webhook_url": ""},
-        "feishu_not_configured",
-    ),
-    (
-        "app.core.feishu",
-        "get_feishu_config",
-        NotificationChannel.FEISHU,
-        {
-            "enabled": True,
-            "notification_type": "app",
-            "app_id": "app",
-            "app_secret": "",
-        },
-        "feishu_not_configured",
-    ),
-    (
         "app.core.webhook",
         "get_webhook_config",
         NotificationChannel.WEBHOOK,
@@ -322,21 +242,22 @@ CHANNEL_FAILURES = [
         {"enabled": True, "url": ""},
         "webhook_not_configured",
     ),
-    (
-        "app.core.slack",
-        "get_slack_config",
-        NotificationChannel.SLACK,
-        {"enabled": False},
-        "slack_not_enabled",
-    ),
-    (
-        "app.core.slack",
-        "get_slack_config",
-        NotificationChannel.SLACK,
-        {"enabled": True, "webhook_url": ""},
-        "slack_not_configured",
-    ),
 ]
+
+
+@pytest.mark.parametrize("channel", ["dingtalk", "wechat", "slack"])
+def test_admin_create_rejects_unsupported_notification_channels(channel):
+    # The rejection reason is asserted by naming the offending value; the enum's
+    # exact wording is pydantic's, not this endpoint's contract.
+    with pytest.raises(ValueError, match=channel):
+        payload(notify_channels=[channel])
+
+
+def test_admin_create_accepts_feishu_notification_channel():
+    assert NotificationChannel.FEISHU.value == "feishu"
+    assert payload(notify_channels=["feishu"]).notify_channels == [
+        NotificationChannel.FEISHU
+    ]
 
 
 @pytest.mark.anyio

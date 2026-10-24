@@ -165,9 +165,12 @@
     "permissions": ["user:read", "agent:create"],
     "sso_connections": [
       {
-        "provider_id": "uuid",
-        "provider_name": "Google",
-        "connected_at": "2024-01-01T00:00:00Z"
+        "integration_id": "uuid",
+        "integration_name": "github",
+        "integration_display_name": "GitHub",
+        "provider_user_id": "external-subject",
+        "first_login": "2024-01-01T00:00:00Z",
+        "last_login": "2024-01-01T00:00:00Z"
       }
     ]
   }
@@ -361,9 +364,9 @@
 
 ## SSO 连接
 
-用户响应中包含 SSO 连接信息：
-- `provider_id`: SSO 提供商 ID
-- `provider_name`: 提供商名称
-- `connected_at`: 连接时间
+用户响应的 `sso_connections` 数组使用统一集成的连接字段（`UserSSOConnectionSchema`）：
+- `integration_id` / `integration_name` / `integration_display_name` / `integration_icon_url`: 集成身份
+- `provider_user_id`: 外部身份标识（各协议的 subject）
+- `first_login` / `last_login`: 首登与末登时间
 
 用户可以通过 SSO API 断开连接。

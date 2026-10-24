@@ -468,11 +468,11 @@ export function PlatformHeader() {
             />
             <DropdownMenuContent align="end" className="w-56">
               {/* User Info */}
-              <div className="flex items-center justify-start gap-2 p-2">
-                <div className="flex flex-col space-y-1 leading-none">
-                  {user?.username && <p className="font-medium">{user.username}</p>}
+              <div className="flex items-center justify-start gap-2 overflow-hidden p-2">
+                <div className="flex min-w-0 flex-col space-y-1 leading-none">
+                  {user?.username && <p className="truncate font-medium">{user.username}</p>}
                   {user?.email && (
-                    <p className="w-auto truncate text-sm text-muted-foreground">
+                    <p className="truncate text-sm text-muted-foreground">
                       {user.email}
                     </p>
                   )}

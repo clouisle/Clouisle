@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import jwt
@@ -432,7 +433,9 @@ async def test_email_endpoint_rejection_matrix(
     monkeypatch, endpoint, smtp, cooldown, expected
 ):
     monkeypatch.setattr(
-        login.SiteSetting, "get_value", settings({"smtp_enabled": smtp})
+        login,
+        "get_builtin_integration",
+        AsyncMock(return_value=SimpleNamespace(is_enabled=smtp)),
     )
     monkeypatch.setattr(login, "check_email_cooldown", AsyncMock(return_value=cooldown))
     schema = {

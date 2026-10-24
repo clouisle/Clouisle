@@ -41,7 +41,7 @@ export function AddKnowledgeBaseButton({ knowledgeBases, selectedIds, onAdd }: A
 
   if (availableKbs.length === 0) {
     return (
-      <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 cursor-not-allowed" disabled>
+      <Button variant="ghost" size="xs" className="gap-1 cursor-not-allowed" disabled>
         <Plus className="h-3 w-3" />
         {t('add')}
       </Button>
@@ -52,7 +52,7 @@ export function AddKnowledgeBaseButton({ knowledgeBases, selectedIds, onAdd }: A
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         render={
-          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 cursor-pointer">
+          <Button variant="ghost" size="xs" className="gap-1 cursor-pointer">
             <Plus className="h-3 w-3" />
             {t('add')}
           </Button>

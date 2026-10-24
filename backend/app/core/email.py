@@ -13,6 +13,7 @@ import aiosmtplib
 from app.core.i18n import normalize_language, t
 from app.core.redis import get_redis
 from app.models.site_setting import SiteSetting
+from app.services.integration_config import get_builtin_integration, get_runtime_config
 
 logger = logging.getLogger(__name__)
 
@@ -32,16 +33,19 @@ def _redis_text(value: bytes | str) -> str:
 
 
 async def get_smtp_config() -> dict:
-    """获取 SMTP 配置"""
+    """Load SMTP configuration from the email integration."""
+    integration = await get_builtin_integration("email")
+    config = get_runtime_config(integration)
     return {
-        "enabled": await SiteSetting.get_value("smtp_enabled", False),
-        "host": await SiteSetting.get_value("smtp_host", ""),
-        "port": await SiteSetting.get_value("smtp_port", 587),
-        "encryption": await SiteSetting.get_value("smtp_encryption", "tls"),
-        "username": await SiteSetting.get_value("smtp_username", ""),
-        "password": await SiteSetting.get_value("smtp_password", ""),
-        "from_name": await SiteSetting.get_value("email_from_name", "Clouisle"),
-        "from_address": await SiteSetting.get_value("email_from_address", ""),
+        "enabled": integration.is_enabled
+        and "notification" in integration.enabled_capabilities,
+        "host": config.get("smtp_host", ""),
+        "port": config.get("smtp_port", 587),
+        "encryption": config.get("smtp_encryption", "tls"),
+        "username": config.get("smtp_username", ""),
+        "password": config.get("smtp_password", ""),
+        "from_name": config.get("email_from_name", "Clouisle"),
+        "from_address": config.get("email_from_address", ""),
     }
 
 

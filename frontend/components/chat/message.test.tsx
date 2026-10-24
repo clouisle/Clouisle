@@ -500,6 +500,26 @@ describe('message behavior', () => {
     expect(html).toContain('chat.message.outputTruncated')
   })
 
+  test('hides inline citations and sources while preserving answer and tool output', () => {
+    const html = renderToStaticMarkup(<Message
+      hideCitations
+      message={{
+        id: 'hidden-citations',
+        role: 'assistant',
+        parts: [
+          { type: 'text', text: 'Answer [[cite:web_source]]', state: 'done' },
+          { type: 'source-url', sourceId: 'web_source', url: 'https://example.test', title: 'Example' },
+          { type: 'tool-result', toolCallId: 'search', toolName: 'search', output: 'Search finished', state: 'done' },
+        ],
+      }}
+    />)
+
+    expect(html).toContain('Answer')
+    expect(html).not.toContain('clouisle-citation=')
+    expect(html).not.toContain('sources:1')
+    expect(html).toContain('Search finished')
+  })
+
   test('lists only sources cited by the assistant answer', () => {
     const cited = renderToStaticMarkup(<Message message={{
       id: 'partially-cited',

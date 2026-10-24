@@ -116,6 +116,11 @@ def patch_settings(monkeypatch, **overrides):
         "get_value",
         AsyncMock(side_effect=lambda key, default=None: values.get(key, default)),
     )
+    monkeypatch.setattr(
+        login,
+        "get_builtin_integration",
+        AsyncMock(return_value=SimpleNamespace(is_enabled=values["smtp_enabled"])),
+    )
 
 
 @pytest.mark.anyio

@@ -631,8 +631,8 @@ Workflow 采用与 Agent 类似的模式：
 
 - 前端路由权限映射依赖权限 code 字符串
 - 没有 `/tools` 路由，工具/Skill 管理与代码编辑器都在 `/capabilities` 下
-- `/site-settings/sso` 当前已绑定 `admin:sso:read`
-- SSO 页面内创建、修改、删除、测试、断开连接等变更操作当前已绑定 `admin:sso:update`
+- `/site-settings/integrations` 接受 login/settings 任一 read 域，实例列表按授权域过滤
+- 登录管理使用 `admin:integrations:login:read/update`，邮件/Webhook/飞书配置与同步使用 `admin:integrations:settings:read/update`；旧 `admin:sso:*` 授权迁移至 login 域
 - Storage 页面中的“归档审计日志”操作当前单独绑定 `audit:export`，不再复用 `admin:settings:update`
 - Dashboard 的 TOTP 统计接口当前绑定 `admin:dashboard:access`
 - 若后端权限定义、角色初始化、前端映射三者不一致，会出现菜单或页面权限漂移

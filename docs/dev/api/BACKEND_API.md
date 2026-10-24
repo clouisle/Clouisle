@@ -1118,7 +1118,7 @@ API 密钥用于程序化访问 API，支持细粒度的权限控制和速率限
 
 | Scope | 数量 | Code |
 |-------|------|------|
-| `admin` | 48 | `admin:dashboard:access`、`admin:user:{read,create,update,delete}`、`admin:role:{read,create,update,delete}`、`admin:permission:{read,create,update,delete}`、`admin:team:{read,create,update,delete}`、`admin:model:{read,create,update,delete}`、`admin:capability:{read,create,update,delete,execute}`、`admin:app:{read,create,update,delete,publish,duplicate}`、`admin:knowledge-base:{read,test,create,update,delete}`、`admin:settings:{read,update}`、`admin:sso:{read,update}`、`admin:conversation:{read,delete}`、`admin:notification:{create,delete}`、`admin:memory:{read,update,delete}` |
+| `admin` | 50 | `admin:dashboard:access`、`admin:user:{read,create,update,delete}`、`admin:role:{read,create,update,delete}`、`admin:permission:{read,create,update,delete}`、`admin:team:{read,create,update,delete}`、`admin:model:{read,create,update,delete}`、`admin:capability:{read,create,update,delete,execute}`、`admin:app:{read,create,update,delete,publish,duplicate}`、`admin:knowledge-base:{read,test,create,update,delete}`、`admin:settings:{read,update}`、`admin:integrations:login:{read,update}`、`admin:integrations:settings:{read,update}`、`admin:conversation:{read,delete}`、`admin:notification:{create,delete}`、`admin:memory:{read,update,delete}` |
 | `audit` | 2 | `audit:read`、`audit:export` |
 | `team` | 5 | `team:read`、`team:create`、`team:update`、`team:delete`、`team:manage` |
 | `agent` | 6 | `agent:read`、`agent:create`、`agent:update`、`agent:delete`、`agent:publish`、`agent:chat` |

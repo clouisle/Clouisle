@@ -49,6 +49,22 @@ class UploadStorageBackend(ABC):
     async def read(self, key: str) -> bytes:
         """Read key content."""
 
+    async def read_limited(self, key: str, max_bytes: int) -> bytes:
+        """Read at most max_bytes plus one byte for an explicit overflow check."""
+        content = await self.read(key)
+        if len(content) > max_bytes:
+            raise ValueError("asset_view_size_limit_exceeded")
+        return content
+
+    @abstractmethod
+    async def read_range(self, key: str, start: int, length: int) -> bytes:
+        """Read ``length`` bytes starting at byte ``start``.
+
+        Implemented by every concrete backend. There is deliberately no
+        full-object fallback: callers rely on this never loading whole files.
+        """
+        raise NotImplementedError
+
     @abstractmethod
     async def response(
         self,
@@ -107,6 +123,22 @@ class LocalUploadStorage(UploadStorageBackend):
     async def read(self, key: str) -> bytes:
         async with aiofiles.open(self._path(key), "rb") as f:
             return await f.read()
+
+    async def read_limited(self, key: str, max_bytes: int) -> bytes:
+        async with aiofiles.open(self._path(key), "rb") as f:
+            content = await f.read(max_bytes + 1)
+        if len(content) > max_bytes:
+            raise ValueError("asset_view_size_limit_exceeded")
+        return content
+
+    async def read_range(self, key: str, start: int, length: int) -> bytes:
+        if type(start) is not int or start < 0:
+            raise ValueError("read_range_start_invalid")
+        if type(length) is not int or length < 1:
+            raise ValueError("read_range_length_invalid")
+        async with aiofiles.open(self._path(key), "rb") as f:
+            await f.seek(start)
+            return await f.read(length)
 
     async def response(
         self,
@@ -230,6 +262,36 @@ class ObjectUploadStorage(UploadStorageBackend):
     async def read(self, key: str) -> bytes:
         async with self._client() as client:
             result = await client.get_object(Bucket=self.config.bucket, Key=key)
+            return await result["Body"].read()
+
+    async def read_limited(self, key: str, max_bytes: int) -> bytes:
+        async with self._client() as client:
+            result = await client.get_object(Bucket=self.config.bucket, Key=key)
+            body = result["Body"]
+            content = await body.read(max_bytes + 1)
+            if len(content) > max_bytes:
+                raise ValueError("asset_view_size_limit_exceeded")
+            return content
+
+    async def read_range(self, key: str, start: int, length: int) -> bytes:
+        if type(start) is not int or start < 0:
+            raise ValueError("read_range_start_invalid")
+        if type(length) is not int or length < 1:
+            raise ValueError("read_range_length_invalid")
+        end = start + length - 1
+        async with self._client() as client:
+            try:
+                result = await client.get_object(
+                    Bucket=self.config.bucket,
+                    Key=key,
+                    Range=f"bytes={start}-{end}",
+                )
+            except ClientError as exc:
+                status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+                error_code = exc.response.get("Error", {}).get("Code")
+                if status == 416 or error_code in {"416", "InvalidRange"}:
+                    return b""
+                raise
             return await result["Body"].read()
 
     async def response(

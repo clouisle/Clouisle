@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -426,6 +426,8 @@ async def test_resolve_conversation_ref_checks_scope_before_asset_lookup(monkeyp
     monkeypatch.setattr(asset_access, "can_access_conversation", can_access)
     monkeypatch.setattr(asset_access, "check_api_key_agent_access", check_api_key)
     monkeypatch.setattr("app.services.asset.asset_service.resolve_ref", resolve_ref)
+    links = SimpleNamespace(exists=AsyncMock(return_value=False))
+    monkeypatch.setattr("app.models.asset.MessageAsset.filter", lambda **_: links)
 
     asset = await asset_access.resolve_authorized_asset_ref(
         "a1b2",
@@ -446,6 +448,52 @@ async def test_resolve_conversation_ref_checks_scope_before_asset_lookup(monkeyp
         team_id=team_id,
         user_id=user.id,
     )
+
+
+@pytest.mark.asyncio
+async def test_resolve_conversation_ref_denies_inactive_branch(monkeypatch):
+    conversation_id = uuid4()
+    team_id = uuid4()
+    user = SimpleNamespace(id=uuid4(), is_superuser=False, roles=[])
+    conversation = SimpleNamespace(
+        id=conversation_id,
+        agent_id=uuid4(),
+        agent=SimpleNamespace(team_id=team_id),
+    )
+    first = SimpleNamespace(first=AsyncMock(return_value=conversation))
+    monkeypatch.setattr(
+        asset_access.Conversation,
+        "filter",
+        lambda **_: SimpleNamespace(prefetch_related=lambda *_: first),
+    )
+    monkeypatch.setattr(
+        asset_access, "can_access_conversation", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(
+        asset_access, "check_api_key_agent_access", AsyncMock(return_value=None)
+    )
+    asset = SimpleNamespace(id=uuid4())
+    monkeypatch.setattr(
+        "app.services.asset.asset_service.resolve_ref",
+        AsyncMock(return_value=asset),
+    )
+    active = SimpleNamespace(exists=AsyncMock(return_value=False))
+    links = SimpleNamespace(
+        exists=AsyncMock(return_value=True),
+        filter=MagicMock(return_value=active),
+    )
+    monkeypatch.setattr("app.models.asset.MessageAsset.filter", lambda **_: links)
+
+    with pytest.raises(BusinessError) as error:
+        await asset_access.resolve_authorized_asset_ref(
+            "a1b2",
+            scope_type=AssetScopeType.CONVERSATION,
+            scope_id=conversation_id,
+            user=user,
+            expected_team_id=team_id,
+        )
+
+    assert error.value.status_code == 404
 
 
 @pytest.mark.asyncio

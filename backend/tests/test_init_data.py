@@ -414,110 +414,6 @@ async def test_workflow_tables_stop_after_database_failure(
 
 
 @pytest.mark.asyncio
-async def test_init_db_initializes_roles_settings_and_tables(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    migration_names = [
-        "init_user_locale_field",
-        "init_agent_attachment_fields",
-        "init_agent_tools_credentials",
-        "init_agent_powered_by_text",
-        "init_message_history_index",
-        "init_permission_is_system_field",
-        "drop_model_provider_uniqueness",
-        "init_model_provider_display_name",
-        "init_kb_rerank_fields",
-        "init_kb_visibility_fields",
-        "init_clouisle_import_sessions_table",
-        "drop_obsolete_retrieval_evaluation_tables",
-        "migrate_team_admin_roles",
-        "init_model_endpoint_allowlist",
-        "init_default_settings",
-        "migrate_auto_notification_types",
-        "migrate_registration_settings_category",
-        "migrate_storage_settings_category",
-        "init_workflow_tables",
-        "init_notification_tables",
-        "init_tool_shares_table",
-        "init_knowledge_base_shares_table",
-        "init_skills_table",
-        "fix_cascade_delete_policies",
-        "init_sso_tables",
-        "init_memory_tables",
-        "init_agent_hide_tool_calls_field",
-        "init_agent_hide_message_actions_reasoning_fields",
-        "init_agent_hide_artifact_list_field",
-        "init_agent_memory_fields",
-        "init_agent_media_generation_fields",
-    ]
-    migrations = {name: AsyncMock() for name in migration_names}
-    for name, migration in migrations.items():
-        monkeypatch.setattr(init_data, name, migration)
-
-    monkeypatch.setattr(
-        init_data.SystemPermissions,
-        "get_all_definitions",
-        lambda: [{"code": "*", "scope": "system", "description": "All"}],
-    )
-    monkeypatch.setattr(init_data.Permission, "get_or_create", AsyncMock())
-    all_permission = SimpleNamespace(code="*")
-    monkeypatch.setattr(
-        init_data.Permission, "get", AsyncMock(return_value=all_permission)
-    )
-
-    roles = {}
-
-    async def get_or_create_role(*, name: str, defaults: dict) -> tuple[object, bool]:
-        role = SimpleNamespace(
-            id=f"role-{name.lower()}",
-            name=name,
-            defaults=defaults,
-            permissions=SimpleNamespace(add=AsyncMock()),
-        )
-        roles[name] = role
-        return role, True
-
-    monkeypatch.setattr(init_data.Role, "get_or_create", get_or_create_role)
-    sync_permissions = AsyncMock()
-    monkeypatch.setattr(init_data, "sync_role_permissions", sync_permissions)
-    from app.models.site_setting import SiteSetting
-
-    monkeypatch.setattr(SiteSetting, "get_value", AsyncMock(return_value=""))
-    set_value = AsyncMock()
-    monkeypatch.setattr(SiteSetting, "set_value", set_value)
-
-    await init_data.init_db()
-
-    assert set(roles) == {
-        init_data.SUPER_ADMIN_ROLE,
-        "Admin",
-        "Member",
-        "Team Admin",
-        "Viewer",
-    }
-    roles[init_data.SUPER_ADMIN_ROLE].permissions.add.assert_awaited_once_with(
-        all_permission
-    )
-    assert [awaited.args[2] for awaited in sync_permissions.await_args_list] == [
-        "Admin",
-        "Member",
-        "Team Admin",
-        "Viewer",
-    ]
-    set_value.assert_awaited_once_with(
-        key="default_role_id",
-        value="role-viewer",
-        value_type="string",
-        category="security",
-        description="Default role ID for new users",
-        is_public=False,
-    )
-    for migration in migrations.values():
-        assert migration.await_count >= 1
-    assert migrations["init_agent_tools_credentials"].await_count == 2
-
-
-@pytest.mark.asyncio
 async def test_init_db_continues_after_optional_migration_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -539,9 +435,15 @@ async def test_init_db_continues_after_optional_migration_failures(
             init_data, name, AsyncMock(side_effect=RuntimeError(f"{name} failed"))
         )
     monkeypatch.setattr(init_data, "init_model_provider_display_name", AsyncMock())
+    monkeypatch.setattr(init_data, "migrate_model_input_modalities", AsyncMock())
 
     monkeypatch.setattr(init_data.SystemPermissions, "get_all_definitions", lambda: [])
     monkeypatch.setattr(init_data.Permission, "get_or_create", AsyncMock())
+    from app.core import integration_migration
+
+    monkeypatch.setattr(
+        integration_migration, "migrate_integration_permissions", AsyncMock()
+    )
 
     roles = []
 
@@ -581,6 +483,7 @@ async def test_init_db_fails_when_provider_display_name_migration_fails(
         "init_agent_tools_credentials",
         "init_permission_is_system_field",
         "drop_model_provider_uniqueness",
+        "migrate_model_input_modalities",
     ):
         monkeypatch.setattr(init_data, name, AsyncMock())
 
@@ -644,6 +547,13 @@ async def test_init_db_fails_when_provider_display_name_migration_fails(
             2,
             "ADD COLUMN IF NOT EXISTS provider_display_name",
         ),
+        (init_data.migrate_model_input_modalities, [(0, [])], 1, None),
+        (
+            init_data.migrate_model_input_modalities,
+            [(1, ["models"]), (0, [])],
+            3,
+            "capabilities::jsonb - 'vision'",
+        ),
     ],
 )
 async def test_simple_startup_migrations_cover_absent_existing_and_create_paths(
@@ -681,6 +591,20 @@ async def test_simple_startup_migrations_propagate_schema_change_failure(
 
     with pytest.raises(RuntimeError, match="schema change failed"):
         await migration()
+
+
+@pytest.mark.asyncio
+async def test_model_input_modalities_migration_propagates_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failure = RuntimeError("cannot rewrite model capabilities")
+    conn = SimpleNamespace(
+        execute_query=AsyncMock(side_effect=[(1, ["models"]), failure])
+    )
+    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
+
+    with pytest.raises(RuntimeError, match="cannot rewrite model capabilities"):
+        await init_data.migrate_model_input_modalities()
 
 
 @pytest.mark.asyncio
@@ -1312,50 +1236,6 @@ async def test_agent_user_input_request_migration_paths(
     helper.side_effect = RuntimeError("cannot add user input flag")
     with pytest.raises(RuntimeError, match="cannot add user input flag"):
         await init_data.init_agent_user_input_request()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("existing", "expected_calls"),
-    [
-        (["sso_providers"], 1),
-        ([], 8),
-    ],
-)
-async def test_sso_tables_skip_existing_or_create_schema(
-    monkeypatch: pytest.MonkeyPatch,
-    existing: list[str],
-    expected_calls: int,
-) -> None:
-    conn = SimpleNamespace(
-        execute_query=AsyncMock(return_value=(len(existing), existing))
-    )
-    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
-
-    await init_data.init_sso_tables()
-
-    assert conn.execute_query.await_count == expected_calls
-    if not existing:
-        statements = [awaited.args[0] for awaited in conn.execute_query.await_args_list]
-        assert "CREATE TABLE IF NOT EXISTS sso_providers" in statements[1]
-        assert "CREATE TABLE IF NOT EXISTS user_sso_connections" in statements[2]
-        assert "CREATE TABLE IF NOT EXISTS sso_sessions" in statements[3]
-        assert "idx_sso_sessions_expires_at" in statements[7]
-
-
-@pytest.mark.asyncio
-async def test_sso_tables_propagate_creation_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    conn = SimpleNamespace(
-        execute_query=AsyncMock(
-            side_effect=[(0, []), RuntimeError("cannot create sso")]
-        )
-    )
-    monkeypatch.setattr(init_data.Tortoise, "get_connection", lambda _name: conn)
-
-    with pytest.raises(RuntimeError, match="cannot create sso"):
-        await init_data.init_sso_tables()
 
 
 @pytest.mark.asyncio

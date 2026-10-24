@@ -190,6 +190,11 @@ def test_nested_recovery_scope_preserves_deadline_and_cancellation(sandbox_runti
 def test_manager_cancellation_stops_real_background_writer(sandbox_runtime):
     r = sandbox_runtime
     binding = r.bind_session()
+    service = manager.SandboxManager(cleanup_workspaces=False)
+    # Environment installation is setup, not part of the writer-cancellation race.
+    service.python_env_manager.ensure_workspace_environment(
+        service.workspace_manager.get_session_root(binding.workspace_id)
+    )
     job = SandboxJob(
         command=[
             sys.executable,
@@ -208,7 +213,6 @@ def test_manager_cancellation_stops_real_background_writer(sandbox_runtime):
             deadline_at=job.deadline_at,
         )
     )
-    service = manager.SandboxManager(cleanup_workspaces=False)
     proof = r.roots["a"] / "sessions" / binding.workspace_id / "proof"
 
     async def scenario():
@@ -293,6 +297,11 @@ def test_worker_lease_loss_stops_real_writer_and_cannot_publish_success(
 ):
     r = sandbox_runtime
     binding = r.bind_session()
+    service = manager.SandboxManager(cleanup_workspaces=False)
+    # Keep the lease-loss window independent of cold venv/ensurepip startup.
+    service.python_env_manager.ensure_workspace_environment(
+        service.workspace_manager.get_session_root(binding.workspace_id)
+    )
     job = SandboxJob(
         command=[
             sys.executable,
@@ -301,7 +310,7 @@ def test_worker_lease_loss_stops_real_writer_and_cannot_publish_success(
         ],
         session_id="session",
         binding=binding,
-        deadline_at=time.time() + 5,
+        deadline_at=time.time() + 30,
     )
     r.run(
         r.results.create_queued_result(
@@ -311,12 +320,11 @@ def test_worker_lease_loss_stops_real_writer_and_cannot_publish_success(
             deadline_at=job.deadline_at,
         )
     )
-    service = manager.SandboxManager(cleanup_workspaces=False)
     proof = r.roots["a"] / "sessions" / binding.workspace_id / "proof"
 
     async def scenario():
         running = asyncio.create_task(service.execute(job))
-        until = time.monotonic() + 3
+        until = time.monotonic() + 10
         while not proof.exists():
             assert time.monotonic() < until
             await asyncio.sleep(0.01)

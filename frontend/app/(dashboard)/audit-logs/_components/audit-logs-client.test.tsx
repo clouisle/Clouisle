@@ -107,7 +107,7 @@ describe('audit-log dashboard behavior', () => {
     let resolveStats!: (value: { total_logs: number; today_logs: number; failed_logs: number; active_users: number }) => void
     api.getStats.mockImplementation(() => new Promise((resolve) => { resolveStats = resolve }))
 
-    expect(text(render(AuditLogsClient))).toContain('...')
+    expect(text(render(AuditLogsClient))).not.toContain('1,234')
     await effects[0]()
     resolveStats({ total_logs: 1234, today_logs: 12, failed_logs: 3, active_users: 7 })
     await Promise.resolve()

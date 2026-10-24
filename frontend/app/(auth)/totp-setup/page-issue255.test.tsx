@@ -74,7 +74,7 @@ describe('TOTPSetupPage issue #255 coverage', () => {
     expect(push).toHaveBeenCalledWith('/login')
   })
 
-  test('completes setup using only mocked APIs and redirects home', async () => {
+  test('completes setup using only mocked APIs and redirects to the app home', async () => {
     localStorage.setItem('temp_token', 'fake-temporary-token')
     getCurrentUser.mockResolvedValue({ id: 'fake-user' })
     await renderPage()
@@ -86,7 +86,7 @@ describe('TOTPSetupPage issue #255 coverage', () => {
     expect(localStorage.getItem('access_token')).toBe('fake-temporary-token')
     expect(getCurrentUser).toHaveBeenCalledTimes(1)
     expect(toastSuccess).toHaveBeenCalledWith('setupStep5Description')
-    expect(push).toHaveBeenCalledWith('/')
+    expect(push).toHaveBeenCalledWith('/app')
   })
 
   test('returns to login on cancellation or completion failure', async () => {

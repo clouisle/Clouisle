@@ -1,0 +1,45 @@
+{
+  "deliveryLog": {
+    "title": "投递记录",
+    "description": "飞书与微信智能体对话的出站消息与产物投递记录。",
+    "searchPlaceholder": "搜索运行 ID 或文件名",
+    "provider": "集成",
+    "providers": {
+      "feishu": "飞书",
+      "wechat": "微信"
+    },
+    "status": "状态",
+    "statuses": {
+      "pending": "待发送",
+      "sending": "发送中",
+      "sent": "已发送",
+      "error": "失败",
+      "unavailable": "不可用",
+      "unknown": "结果未知"
+    },
+    "kinds": {
+      "text": "文本",
+      "markdown": "Markdown",
+      "asset": "产物"
+    },
+    "refresh": "刷新",
+    "rowsPerPage": "每页条数",
+    "pageInfo": "第 {page} / {total} 页",
+    "loading": "加载中…",
+    "empty": "没有符合筛选条件的投递记录。",
+    "loadFailed": "投递记录加载失败。",
+    "columns": {
+      "time": "时间",
+      "provider": "集成",
+      "kind": "类型",
+      "file": "文件 / 事件",
+      "status": "状态",
+      "error": "原始错误",
+      "runId": "运行"
+    },
+    "firstPage": "第一页",
+    "previousPage": "上一页",
+    "nextPage": "下一页",
+    "lastPage": "最后一页"
+  }
+}

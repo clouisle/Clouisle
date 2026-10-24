@@ -39,7 +39,7 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
   const [openingMessage, setOpeningMessage] = React.useState(agent.opening_message || '')
   const [suggestedQuestions, setSuggestedQuestions] = React.useState<string[]>(agent.suggested_questions || [])
   const [visibility, setVisibility] = React.useState(agent.visibility)
-  const [enableMemory, setEnableMemory] = React.useState(agent.enable_memory || false)
+  const [enableMemory, setEnableMemory] = React.useState(agent.enable_memory ?? false)
   const [maxMemoriesPerRetrieval, setMaxMemoriesPerRetrieval] = React.useState(
     agent.memory_config?.max_memories_per_retrieval || 10
   )
@@ -53,6 +53,7 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
   const [teamChatModels, setTeamChatModels] = React.useState<TeamModel[]>([])
   const [knowledgeBases, setKnowledgeBases] = React.useState<KnowledgeBase[]>([])
   const [isLoadingModels, setIsLoadingModels] = React.useState(false)
+  const [enableCitations, setEnableCitations] = React.useState(agent.enable_citations ?? false)
   
   // Load models and knowledge bases
   React.useEffect(() => {
@@ -99,6 +100,7 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
         opening_message: openingMessage || null,
         suggested_questions: suggestedQuestions.filter(q => q.trim()),
         visibility,
+        enable_citations: enableCitations,
         enable_memory: enableMemory,
         memory_config: enableMemory ? {
           max_memories_per_retrieval: maxMemoriesPerRetrieval,
@@ -185,7 +187,13 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
                 />
                 <FieldError>{fieldErrors.description}</FieldError>
               </div>
-              
+              <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+                <div className="space-y-1">
+                  <Label htmlFor="enableCitations">{t('settings.enableCitations')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('settings.enableCitationsDesc')}</p>
+                </div>
+                <Switch id="enableCitations" checked={enableCitations} onCheckedChange={setEnableCitations} />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="visibility">{t('visibility')}</Label>
                 <Select value={visibility} onValueChange={(v) => setVisibility(v as typeof visibility)}>

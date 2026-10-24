@@ -111,12 +111,16 @@ async def test_get_tool_display_names_covers_builtin_custom_and_skill_sources(
     skill = SimpleNamespace(display_name="Skill Display")
     translate = Mock(
         side_effect=lambda key, **_kwargs: {
+            "asset_tool_list": "List Attachments",
+            "asset_tool_view": "View Attachment",
             "asset_tool_inspect": "Inspect Attachment",
             "asset_tool_read": "Read Attachment",
-            "asset_tool_parse": "Parse Attachment",
+            "asset_tool_search": "Search Attachment",
+            "asset_tool_materialize": "Materialize Attachment",
             "tools.translated": "Translated Builtin",
         }[key]
     )
+    monkeypatch.setattr("app.api.v1.endpoints.chat_helpers.asset_tools.t", translate)
     monkeypatch.setattr(tool_utils.Tool, "filter", filter_mock)
     monkeypatch.setattr(
         tool_utils.SkillService,
@@ -150,9 +154,12 @@ async def test_get_tool_display_names_covers_builtin_custom_and_skill_sources(
     )
 
     assert await tool_utils.get_tool_display_names(agent, "zh-CN") == {
+        "list_assets": "List Attachments",
+        "view_asset": "View Attachment",
         "inspect_asset": "Inspect Attachment",
         "read_asset": "Read Attachment",
-        "parse_asset": "Parse Attachment",
+        "search_asset": "Search Attachment",
+        "materialize_asset": "Materialize Attachment",
         "translated": "Translated Builtin",
         "fallback": "Fallback Builtin",
         "unknown": "unknown",

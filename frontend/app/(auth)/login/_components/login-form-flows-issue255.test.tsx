@@ -27,7 +27,7 @@ const sendVerification = mock(async () => {})
 const verifyEmail = mock(async () => {})
 const verifyTOTP = mock(async (): Promise<Record<string, unknown>> => ({ access_token: 'totp-token' }))
 const getPublic = mock(async (): Promise<Settings> => ({ enable_captcha: false, sso_enabled: false, sso_allow_password_login: true }))
-const getPublicProviders = mock(async () => [] as Array<Record<string, unknown>>)
+const getPublicIntegrations = mock(async () => [] as Array<Record<string, unknown>>)
 const initiateLogin = mock(() => {})
 const toastSuccess = mock(() => {})
 const toastInfo = mock(() => {})
@@ -60,7 +60,8 @@ mock.module('@/lib/api', () => ({
   authApi: { login, getCurrentUser, getCaptcha: mock(async () => null), completeCaptchaClick: mock(async () => null), sendVerification, verifyEmail, verifyTOTP },
   usersApi: { updateProfile },
   siteSettingsApi: { getPublic },
-  ssoApi: { getPublicProviders, initiateLogin },
+  ssoApi: { getPublicIntegrations, initiateLogin },
+  getIntegrationIconUrl: () => '/integrations/stub.png',
   ApiError,
 }))
 mock.module('@/lib/validation', () => ({
@@ -111,7 +112,7 @@ beforeEach(() => {
   refs = []
   pushes.length = 0
   storage.clear()
-  for (const fn of [login, getCurrentUser, updateProfile, sendVerification, verifyEmail, verifyTOTP, getPublic, getPublicProviders, initiateLogin, toastSuccess, toastInfo]) fn.mockReset()
+  for (const fn of [login, getCurrentUser, updateProfile, sendVerification, verifyEmail, verifyTOTP, getPublic, getPublicIntegrations, initiateLogin, toastSuccess, toastInfo]) fn.mockReset()
   login.mockImplementation(async () => ({ access_token: 'access-token' }))
   getCurrentUser.mockImplementation(async () => ({ locale: 'en' }))
   updateProfile.mockImplementation(async () => {})
@@ -119,13 +120,13 @@ beforeEach(() => {
   verifyEmail.mockImplementation(async () => {})
   verifyTOTP.mockImplementation(async () => ({ access_token: 'totp-token' }))
   getPublic.mockImplementation(async () => ({ enable_captcha: false, sso_enabled: false, sso_allow_password_login: true }))
-  getPublicProviders.mockImplementation(async () => [])
+  getPublicIntegrations.mockImplementation(async () => [])
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { setItem: (key: string, value: string) => storage.set(key, value) } })
 })
 
 test('validates login errors, clears fields, and initiates configured SSO', async () => {
   getPublic.mockImplementation(async () => ({ enable_captcha: false, sso_enabled: true, sso_allow_password_login: true }))
-  getPublicProviders.mockImplementation(async () => [{ id: 'sso-1', name: 'fake-sso', display_name: 'Fake SSO', button_text: 'Use Fake SSO', icon_url: '/fake.svg' }])
+  getPublicIntegrations.mockImplementation(async () => [{ id: 'sso-1', name: 'fake-sso', display_name: 'Fake SSO', button_text: 'Use Fake SSO', icon_url: '/fake.svg' }])
   login.mockImplementation(async () => { throw new ApiError(422, undefined, { username: 'unknown fake user', password: 'invalid fake password' }) })
 
   let tree = render()

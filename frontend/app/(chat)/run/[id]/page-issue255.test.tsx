@@ -24,6 +24,7 @@ const getPublicAgent = mock(() => Promise.resolve({
   hide_tool_calls: true,
   hide_message_actions: false,
   hide_reasoning: false,
+  enable_citations: false,
   created_by: { username: 'Ada' },
   icon: '✨',
 }))

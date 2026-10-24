@@ -85,6 +85,22 @@ class TraceInfo(BaseModel):
     recorded_count: int
 
 
+class ToolPayloadDetail(BaseModel):
+    tool_call_id: str
+    tool_name: str
+    display: str | None = None
+    model_input: str | None = None
+    display_bytes: int = 0
+    model_bytes: int = 0
+    model_sha256: str | None = None
+    renderer: str | None = None
+    eof: bool | None = None
+    has_cursor: bool = False
+    partial: bool = False
+    error: str | None = None
+    recorded: bool = False
+
+
 class RunDetail(BaseModel):
     run: RunSummary
     spans: list[TraceSpan]
@@ -331,6 +347,31 @@ async def get_run(
     if data is None:
         raise HTTPException(status_code=404, detail="Run not found")
     return success(data=data)
+
+
+@router.get(
+    "/runs/{source}/{run_id}/tools/{tool_call_id}",
+    response_model=Response[ToolPayloadDetail],
+)
+async def get_run_tool_payload(
+    source: Literal["agent", "workflow"],
+    run_id: UUID,
+    tool_call_id: str,
+    current_user: User = Depends(PermissionChecker(READ)),
+) -> Any:
+    """Load one recorded model/display payload pair on demand."""
+    from app.models.observability import ObservabilityRun
+    from app.services.observability_payload import load_tool_payload
+
+    run = await ObservabilityRun.get_or_none(id=run_id, source=source)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if source != "agent":
+        raise HTTPException(status_code=404, detail="Tool payload not recorded")
+    payload = await load_tool_payload(run_id=run_id, tool_call_id=tool_call_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Tool payload not recorded")
+    return success(data=payload)
 
 
 @router.get("/dependencies", response_model=Response[DependenciesPayload])

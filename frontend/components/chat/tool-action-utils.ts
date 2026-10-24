@@ -78,7 +78,19 @@ export function categorizeTool(name: string, input?: Record<string, unknown>, di
     return 'collecting_artifacts'
   }
 
-  // 2. Builtin / system capabilities (exact matches or system tool conventions)
+  // 2. Asset tools keep document actions grouped with file reading/browsing.
+  if (
+    lowerName === 'read_asset' ||
+    lowerName === 'view_asset' ||
+    lowerName === 'inspect_asset' ||
+    lowerName === 'search_asset'
+  ) {
+    return 'reading_file'
+  }
+  if (lowerName === 'list_assets') return 'browsing_dir'
+  if (lowerName === 'materialize_asset') return 'editing_file'
+
+  // 3. Builtin / system capabilities (exact matches or system tool conventions)
   if (MEDIA_PATTERNS.test(combined)) return 'generating_media'
   if (KB_PATTERNS.test(combined)) return 'searching_kb'
   if (DIR_PATTERNS.test(combined)) return 'browsing_dir'
@@ -89,14 +101,14 @@ export function categorizeTool(name: string, input?: Record<string, unknown>, di
   if (FILE_EDIT_PATTERNS.test(combined)) return 'editing_file'
   if (CALC_PATTERNS.test(combined)) return 'calculating'
 
-  // 3. Custom tool parameter characteristics
+  // 4. Custom tool parameter characteristics
   if (input && typeof input === 'object') {
     if ('url' in input || 'endpoint' in input) return 'requesting_custom'
     if ('sql' in input || 'table' in input) return 'querying_custom'
     if ('email' in input || 'message' in input) return 'sending_custom'
   }
 
-  // 4. Custom tool verb prefix detection
+  // 5. Custom tool verb prefix detection
   if (STATUS_PATTERNS.test(combined) || QUERY_PATTERNS.test(combined)) return 'querying_custom'
   if (SEND_PATTERNS.test(combined)) return 'sending_custom'
   if (CREATE_PATTERNS.test(combined)) return 'creating_custom'

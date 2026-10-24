@@ -2,17 +2,25 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 import { ApiError } from '@/lib/api/client'
+import type { LoginSettings } from '@/lib/api/admin/integrations'
 
 const getSecurity = mock(() => Promise.resolve(settings))
 const updateSecurity = mock(() => Promise.resolve({}))
 const getRoles = mock(() => Promise.resolve({ items: roles }))
 const getTeams = mock(() => Promise.resolve({ items: teams }))
+const updateLoginSettings = mock((data: LoginSettings) => Promise.resolve(data))
+const getLoginSettings = mock(() => Promise.resolve(loginPolicy))
 const success = mock(() => {})
 const failure = mock(() => {})
 let canUpdate = true
+let canReadLogin = true
+let canUpdateLogin = true
 
 const roles = [{ id: 'role-1', name: 'Member', description: null, is_system_role: false, permissions: [] }]
 const teams = [{ id: 'team-1', name: 'Platform', description: null }]
+
+const loginPolicy: LoginSettings = { sso_enabled: true, sso_allow_password_login: false, sso_auto_create_users: true, sso_require_approval: false, sso_match_by_email: true }
+let loginSettingsProps: { settings: LoginSettings; canUpdate: boolean } | null = null
 
 const settings = {
   allow_registration: true,
@@ -31,11 +39,6 @@ const settings = {
   max_login_attempts: 5,
   lockout_duration_minutes: 15,
   enable_captcha: false,
-  sso_enabled: false,
-  sso_allow_password_login: true,
-  sso_auto_create_users: true,
-  sso_require_approval: false,
-  sso_match_by_email: true,
   password_expiration_enabled: false,
   password_expiration_days: 90,
   password_expiration_warning_days: 7,
@@ -97,11 +100,30 @@ mock.module('@/components/ui/textarea', () => ({
 mock.module('@/lib/api/admin/site-settings', () => ({
   siteSettingsApi: { getSecurity, updateSecurity },
 }))
+mock.module('@/lib/api/admin/integrations', () => ({
+  integrationsApi: {
+    getLoginSettings,
+    updateLoginSettings,
+  },
+}))
 mock.module('@/lib/api/admin/roles', () => ({ rolesApi: { getRoles } }))
 mock.module('@/lib/api/admin/teams', () => ({ teamsApi: { getTeams } }))
 mock.module('@/components/permission-guard', () => ({
   PermissionGuard: ({ children }: React.PropsWithChildren) => canUpdate ? <>{children}</> : null,
-  useCanPerform: () => ({ canPerform: () => canUpdate }),
+  useCanPerform: () => ({
+    canPerform: (permission: string) =>
+      permission === 'admin:integrations:login:read'
+        ? canReadLogin
+        : permission === 'admin:integrations:login:update'
+          ? canUpdateLogin
+          : canUpdate,
+  }),
+}))
+mock.module('./_components/login-settings', () => ({
+  LoginSettingsCard: (props: { settings: LoginSettings; canUpdate: boolean }) => {
+    loginSettingsProps = props
+    return <div data-sso-policy={String(props.settings.sso_enabled)} data-sso-editable={String(props.canUpdate)} />
+  },
 }))
 
 const { default: SiteSettingsSecurityPage } = await import('./page')
@@ -128,6 +150,8 @@ beforeEach(() => {
   updateSecurity.mockImplementation(() => Promise.resolve({}))
   getRoles.mockImplementation(() => Promise.resolve({ items: roles }))
   getTeams.mockImplementation(() => Promise.resolve({ items: teams }))
+  getLoginSettings.mockImplementation(() => Promise.resolve(loginPolicy))
+  loginSettingsProps = null
 })
 
 afterEach(() => {
@@ -135,6 +159,9 @@ afterEach(() => {
   renderers.length = 0
   mock.clearAllMocks()
   canUpdate = true
+  canReadLogin = true
+  canUpdateLogin = true
+  loginSettingsProps = null
   Object.assign(settings, originalSettings)
 })
 
@@ -325,11 +352,32 @@ describe('SiteSettingsSecurityPage', () => {
   test('keeps controls and dependent settings disabled and hides save without permission', async () => {
     canUpdate = false
     settings.default_team_id = 'team-1'
-    settings.sso_enabled = true
     const renderer = await render()
 
     expect(renderer.root.findAllByType('input').every((node) => node.props.disabled)).toBe(true)
     expect(selects(renderer).every((node) => node.props.disabled)).toBe(true)
     expect(saveButton(renderer)).toBeUndefined()
+  })
+
+  test('loads the global SSO policy for login readers and forwards login edit privilege', async () => {
+    canUpdate = false
+    canUpdateLogin = false
+    const renderer = await render()
+
+    expect(getLoginSettings).toHaveBeenCalledTimes(1)
+    expect(renderer.root.findByProps({ 'data-sso-policy': 'true' })).toBeDefined()
+    expect(renderer.root.findByProps({ 'data-sso-editable': 'false' })).toBeDefined()
+    expect(loginSettingsProps?.settings).toEqual(loginPolicy)
+    expect(saveButton(renderer)).toBeUndefined()
+  })
+
+  test('skips the SSO policy and its request without login read permission', async () => {
+    canReadLogin = false
+    const renderer = await render()
+
+    expect(getLoginSettings).not.toHaveBeenCalled()
+    expect(loginSettingsProps).toBeNull()
+    expect(renderer.root.findAllByProps({ 'data-sso-policy': 'true' })).toHaveLength(0)
+    expect(saveButton(renderer)).toBeDefined()
   })
 })

@@ -42,13 +42,13 @@ async def test_config_and_enabled_rules(config, expected):
 
 @pytest.mark.asyncio
 async def test_get_channels_ignores_unknown_values(caplog):
-    config = {"channels": ["email", "unknown", "slack"]}
+    config = {"channels": ["email", "unknown", "webhook"]}
     with patch.object(
         AutoNotificationService, "get_config", new=AsyncMock(return_value=config)
     ):
         channels = await AutoNotificationService.get_channels()
 
-    assert channels == [NotificationChannel.EMAIL, NotificationChannel.SLACK]
+    assert channels == [NotificationChannel.EMAIL, NotificationChannel.WEBHOOK]
     assert "Unknown notification channel: unknown" in caplog.text
 
 
@@ -147,68 +147,38 @@ async def test_send_propagates_creation_error_without_audit():
 
 
 @pytest.mark.asyncio
-async def test_trigger_external_channels_handles_disabled_success_and_error():
+async def test_trigger_external_channels_uses_factory_and_handles_dispatch_failure():
     notification = SimpleNamespace(id=uuid4())
-    successful_delivery = SimpleNamespace(save=AsyncMock())
-    failed_delivery = SimpleNamespace(save=AsyncMock())
-    task = Mock()
-    task.delay.side_effect = [
-        SimpleNamespace(id="task-id"),
-        RuntimeError("broker down"),
-    ]
+    deliveries = [SimpleNamespace(save=AsyncMock()), SimpleNamespace(save=AsyncMock())]
+    task_result = SimpleNamespace(id="task-id")
+    dispatch = Mock(side_effect=[task_result, RuntimeError("broker down")])
 
     with (
         patch.object(
             AutoNotificationService,
             "_is_channel_enabled",
-            new=AsyncMock(side_effect=[False, True, True]),
+            new=AsyncMock(side_effect=[True, True]),
         ),
         patch.object(
-            NotificationDelivery,
-            "create",
-            new=AsyncMock(side_effect=[successful_delivery, failed_delivery]),
-        ) as create_delivery,
-        patch("app.tasks.notification.send_notification_email_task", task),
-        patch("app.tasks.notification.send_notification_slack_task", task),
+            NotificationDelivery, "create", new=AsyncMock(side_effect=deliveries)
+        ) as create,
+        patch(
+            "app.services.auto_notification.dispatch_notification_task",
+            dispatch,
+        ),
     ):
         await AutoNotificationService._trigger_external_channels(
-            notification,
-            [
-                NotificationChannel.WEBHOOK,
-                NotificationChannel.EMAIL,
-                NotificationChannel.SLACK,
-            ],
+            notification, [NotificationChannel.EMAIL, NotificationChannel.WEBHOOK]
         )
 
-    assert create_delivery.await_count == 2
-    assert successful_delivery.task_id == "task-id"
-    successful_delivery.save.assert_awaited_once()
-    assert failed_delivery.status is NotificationDeliveryStatus.FAILED
-    assert failed_delivery.error_message == "task_dispatch_failed"
-    failed_delivery.save.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("channel", "setting", "value", "expected"),
-    [
-        (NotificationChannel.EMAIL, "smtp_enabled", True, True),
-        (NotificationChannel.SLACK, "slack_enabled", False, False),
-    ],
-)
-async def test_channel_enabled_uses_channel_setting(channel, setting, value, expected):
-    with patch.object(
-        SiteSetting, "get_value", new=AsyncMock(return_value=value)
-    ) as get:
-        assert await AutoNotificationService._is_channel_enabled(channel) is expected
-    get.assert_awaited_once_with(setting, False)
-
-
-@pytest.mark.asyncio
-async def test_unknown_channel_is_disabled_without_setting_lookup():
-    with patch.object(SiteSetting, "get_value", new=AsyncMock()) as get:
-        assert await AutoNotificationService._is_channel_enabled("unknown") is False  # type: ignore[arg-type]
-    get.assert_not_awaited()
+    assert create.await_count == 2
+    assert [call.args for call in dispatch.call_args_list] == [
+        (NotificationChannel.EMAIL, str(notification.id)),
+        (NotificationChannel.WEBHOOK, str(notification.id)),
+    ]
+    assert deliveries[0].task_id == "task-id"
+    assert deliveries[1].status is NotificationDeliveryStatus.FAILED
+    assert deliveries[1].error_message == "task_dispatch_failed"
 
 
 @pytest.mark.asyncio

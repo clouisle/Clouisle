@@ -9,7 +9,43 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Builtin tool outputs now separate complete structured display data from concise model text through shared utilities. Document and sandbox reads preserve line/snapshot anchors; referenced search, memory and short results omit redundant presentation fields. Explicit model summaries survive durable replay without leaking storage envelopes into public message results. Web/document URL readers persist full extracted text for scoped continuation instead of truncating it. TOON remains an evaluated alternative, not a global format or runtime dependency.
+- Document attachments now use on-demand persistent text representations and bounded `read_asset` / `search_asset` tools instead of automatic full-text injection. Models can continue through long documents, including oversized lines, with version-bound cursors. The truncating `parse_asset` tool and obsolete Agent text-length settings were removed; native PDF viewing requires explicit page selection. Original Asset permissions, expiry and active-branch visibility apply on every read/search. Complete extraction fails explicitly beyond its resource ceiling rather than silently discarding the tail.
+- Unified SSO login providers, email, Webhook, and manual Feishu directory sync under Integration records and `/site-settings/integrations`, with static capabilities and separate login/settings permission domains.
+- Moved management APIs to `/api/v1/admin/integrations` and public login discovery to `/api/v1/sso/integrations`. Existing login/callback URLs, integration UUIDs, and identity bindings are preserved. Credentials are encrypted and omitted from admin responses.
+- Schema cutover requires a database backup and matching `SECRET_KEY`; rollback restores the matching database/application version. See [upgrade instructions](admin-guide/settings/SSO.md#upgrading-existing-installations). The Feishu integration additionally provides opt-in sign-in (`user_login`); see [Configure Feishu sign-in](admin-guide/settings/SSO.md#configure-feishu-sign-in).
+- Added Feishu notifications as an opt-in integration capability. Admins can send test messages to an explicitly selected linked user; notification delivery runs asynchronously and reports per-channel status for bound active recipients.
+- Team ownership transfers now write an audit event with the old/new owner and identify the acting administrator, including super administrators.
+- Super administrators bypass global permission checks and may grant team-admin membership to any user; regular operators can grant the team-admin role only to users with `team:manage`.
+- Fixed a `NameError` in Feishu's scheduled recovery task, restoring recovery of persisted receipts and unsent replies after their receipts complete.
+- Made WeChat polling/recovery and Feishu Agent recovery schedules follow administrator feature switches without restarting Beat (normally within two seconds). Feishu Wiki dispatch runs only with an enabled integration and at least one enabled source, independently of other capabilities. Restart Beat once when upgrading to load the new scheduler; already queued tasks keep their feature checks.
+- Routed bounded, oldest-due WeChat polling batches through the ordinary worker deployment instead of a dedicated polling worker. Durable claims, global backlog limits and shared HTTP connections remain; idle/replayed polls do not create Agent tasks, and recovery remains fair across bindings and completed-receipt outboxes. Follow the maintenance-window cutover and concurrent-index instructions before enabling at scale.
+- Added an always-visible bilingual Feishu Agent chat setup checklist naming the required permissions, event subscription and publication/approval steps; clarified that WebSocket connectivity does not confirm message readiness.
+- Moved Feishu replying-Agent selection to Personal settings → Feishu, shared with `/use`. Admin integration settings now manage transport only. Existing session choices migrate per user; switching does not reroute accepted messages or active runs.
+- Added an immediately saved personal Feishu Agent chat switch, independent of shared channel availability. Turning off preserves selection/history and pauses intake, queued processing and unsent replies.
+- Simplified personal Feishu settings with a prioritized setup hint and a help-icon tooltip beside the replying-Agent label, separate from save actions; clarified automatic switch saving, paused-message handling, per-Agent conversation reuse and bilingual commands.
+- Expanded personal Feishu and WeChat instruction tooltips to describe each bot's supported commands and what they do.
+- Added Account security → Connected Accounts → Link Feishu for existing accounts, with explicit authorization, same-tab confirmation, owner-scoped completion and identity-conflict rejection; corrected the earlier binding guidance.
+- Excluded self-service Feishu account links from directory user/profile and department-membership synchronization, preventing duplicate imports while preserving ordinary directory-managed users. Link provenance survives sign-in; upgrades recover previous manual links from retained binding audit events.
+- Compacted personal WeChat settings with header authorization/refresh, inline actions and responsive forms. Removed Agent activity and collection history panels and their requests; current-run status, stop controls and backend history remain.
+- Aligned personal Feishu and WeChat settings card styling, spacing, action sizes and save-button order without changing channel behavior.
+- Fixed WeChat Agent first-run dispatch being delayed by the retry backoff. Terminal receipt completion, reply outbox creation and session release now commit atomically, so a failed outbox write remains recoverable instead of silently losing the model reply. Restart all ordinary Celery workers after upgrading; already completed historical receipts without final deliveries require explicit reconciliation and are not automatically resent.
+- WeChat Agent chat now combines adjacent ordinary messages from one `getupdates` response into one prompt, including text and attachments, with one run and one reply. Original message identities remain deduplicated; merged receipts share the run without producing duplicate replies. Commands split groups, waiting structured answers keep their existing handling, and separate responses are never combined. No extra waiting window or database migration is required; restart ordinary workers to load the change.
+- Fixed silent rejection of Feishu file, image and rich-text messages. Accepted resources now become private conversation Assets and durable Agent inputs, with attachment limits and explicit failure replies. Upgrade the receipt schema via API startup and restart ordinary workers/receivers; resend previously ignored messages.
+- Feishu and WeChat replies now split at paragraph, line and sentence boundaries within the existing 3500-byte UTF-8 limit. Long Markdown tables repeat headers and separator rows; oversized cells continue in column-preserving rows, and long code blocks repeat language fences. Headers too large to fit fall back to bounded plain-text splitting. Restart ordinary workers to load the change; inbound grouping is unchanged.
+- Chat input attachments and `view_asset` now resolve through authorized private Asset storage. Supported image, audio, video and PDF inputs are serialized according to the selected adapter's actual modality and MIME capabilities; parseable documents use extracted text when native file input is unavailable. Durable tool replay stores only asset references and metadata, then reloads and reauthorizes content before another model turn.
+- Fixed Agent context planning rejecting `model_config`; model configuration now flows through both planning and finalized-context entrypoints to asset input preparation.
+- Added Agent `list_assets` filename search, media-type filters and cursor pagination so older conversation assets remain discoverable beyond the initial preview. Scope authorization, active-branch visibility and asset availability are enforced before metadata is returned.
+- Removed automatic asset-directory previews from Agent input. Asset discovery is now on demand through `list_assets`, with 10 results per page by default and a maximum of 30; larger histories use filename search and cursor pagination.
+
 ### Added
+
+#### Integrations
+- Added optional Feishu WebSocket long connections managed automatically by existing Agent-queue workers, with live receiver status, dynamic feature/configuration changes and singleton failure recovery. No extra service or receiver command is required; HTTP callbacks remain supported.
+- Added WeChat iLink integration settings with independent Agent chat and knowledge collection feature switches. Personal bindings remain user-owned; disabled features preserve history, pending work and unsent replies.
+- Added WeChat Agent listing and switching commands (`/agents`, `/use`, `/智能体`, `/使用`) with shared personal selection, idle guards, required-variable guidance and preserved per-Agent conversations.
 
 #### Chat and File Previews
 - Added a unified artifact list with file counts, expandable results, authenticated downloads, and shared previews for common document, media, and code formats.
@@ -40,6 +76,9 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - RAG context remains `null` when retrieval did not run and `[]` when retrieval ran but returned no contexts.
 
 ### Fixed
+
+#### Integrations
+- Added the missing Chinese and English Agent chat capability labels so the integrations page renders Feishu capability badges without missing-message errors.
 
 #### Asset Access and Previews
 - Protected generated images, generated videos, and sandbox artifacts with scope-aware authorization and authenticated client downloads.
@@ -241,7 +280,7 @@ First public release of Clouisle - an enterprise-grade knowledge base and AI Age
 - **General**: Site name, description, URL, icon
 - **Default Language**: Configurable default language for system messages
 - **Security**: Registration, password policy, session, login security
-- **Notifications**: Email (SMTP), DingTalk, WeChat Work, Feishu, Slack, Webhook
+- **Notifications**: Email (SMTP) and generic Webhook delivery, plus in-app notifications
 - **Auto Notifications**: Configurable system event notifications
 - **SSO**: OIDC, SAML, CAS provider configuration
 - **Storage**: Audit log retention and archiving

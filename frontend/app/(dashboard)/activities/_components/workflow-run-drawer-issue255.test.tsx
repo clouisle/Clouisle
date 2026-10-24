@@ -36,7 +36,7 @@ let allowed = true
 mock.module('react', () => ({ default: hooks, ...hooks }))
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: component('Fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: component('Fragment') }))
-mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string) => key }))
+mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: (namespace: string) => (key: string) => `${namespace}.${key}` }))
 mock.module('sonner', () => ({ toast }))
 mock.module('lucide-react', () => Object.fromEntries(['CheckCircle', 'XCircle', 'Clock', 'Loader', 'Ban', 'AlertTriangle', 'ChevronDown', 'ChevronRight', 'SkipForward', 'Trash2'].map((name) => [name, component(name)])))
 mock.module('@/lib/api', () => ({ workflowsApi: { getWorkflowRun, getRunNodeExecutions, deleteWorkflowRun } }))
@@ -130,9 +130,7 @@ describe('dashboard workflow run drawer issue #255 coverage', () => {
     render()
     await flush()
     const tree = render()
-    const badges = descendants(tree).filter((item) => item.type === 'Badge')
-    expect(badges.some((item) => text(item).includes('waiting'))).toBe(true)
-    expect(badges.some((item) => text(item).includes('pending'))).toBe(false)
+    expect(descendants(tree).some((item) => item.type === 'Badge' && text(item).includes('workflow.waiting'))).toBe(true)
   })
   test('allows expanding trace details with partial token metrics', async () => {
     getRunNodeExecutions.mockResolvedValue([{
@@ -155,6 +153,54 @@ describe('dashboard workflow run drawer issue #255 coverage', () => {
     )
     expect(traceToggle).toBeDefined()
   })
+  test('shows the loading indicator until both detail requests resolve', async () => {
+    const { promise: runPromise, resolve: resolveRun } = Promise.withResolvers<typeof run>()
+    getWorkflowRun.mockImplementation(() => runPromise as never)
+    render()
+    expect(descendants(render()).some((item) => item.type === 'Loader' && String(item.props.className).includes('animate-spin'))).toBe(true)
+
+    resolveRun(run)
+    await flush()
+    expect(text(render())).toContain('run-complete-123')
+  })
+
+  test('shows persisted run outputs in the outputs tab', async () => {
+    getWorkflowRun.mockResolvedValue({ ...run, outputs: { answer: 'finished' } } as never)
+    render()
+    await flush()
+    const outputTab = descendants(render()).find((item) => item.type === 'TabsContent' && item.props.value === 'outputs')!
+    expect(text(outputTab)).toContain('"answer": "finished"')
+  })
+
+  test('shows the empty-output message when a run has no outputs', async () => {
+    render()
+    await flush()
+    const outputTab = descendants(render()).find((item) => item.type === 'TabsContent' && item.props.value === 'outputs')!
+    expect(text(outputTab)).toContain('runDetail.noOutputs')
+  })
+
+  test('renders successful execution status and formatted aggregate token usage', async () => {
+    getWorkflowRun.mockResolvedValue({ ...run, status: 'success', total_token_usage: { input: 1200, output: 34 }, error_message: null } as never)
+    render()
+    await flush()
+    const tree = render()
+    expect(descendants(tree).some((item) => item.type === 'Badge' && text(item).includes('workflow.completed'))).toBe(true)
+    expect(text(tree)).toContain('1,234')
+    expect(text(tree)).not.toContain('runDetail.errorInfo')
+  })
+
+  test('closes the delete confirmation without deleting when cancelled', async () => {
+    render()
+    await flush()
+    let tree = render()
+    descendants(tree).find((item) => item.type === 'Button' && text(item).includes('runDetail.deleteRun'))!.props.onClick()
+    tree = render()
+    const dialog = descendants(tree).find((item) => item.type === 'AlertDialog')!
+    expect(dialog.props.open).toBe(true)
+    dialog.props.onOpenChange(false)
+    expect(states[3]).toBe(false)
+    expect(deleteWorkflowRun).not.toHaveBeenCalled()
+  })
 
 
   test('keeps the trace tab informative when the run has no persisted node executions', async () => {
@@ -171,13 +217,11 @@ describe('dashboard workflow run drawer issue #255 coverage', () => {
     render()
     await flush()
     let tree = render()
-    descendants(tree).find((item) => item.type === 'Button' && text(item).includes('deleteRun'))!.props.onClick()
+    descendants(tree).find((item) => item.type === 'Button' && text(item).includes('activities.runDetail.deleteRun'))!.props.onClick()
     tree = render()
-    expect(descendants(tree).find((item) => item.type === 'AlertDialog')!.props.open).toBe(true)
-
     await descendants(tree).find((item) => item.type === 'AlertDialogAction')!.props.onClick()
     expect(deleteWorkflowRun).toHaveBeenCalledWith('run-complete-123')
-    expect(toast.success).toHaveBeenCalledWith('runDetail.deleteSuccess')
+    expect(toast.success).toHaveBeenCalledWith('activities.runDetail.deleteSuccess')
     expect(onDelete).toHaveBeenCalled()
     expect(onOpenChange).toHaveBeenCalledWith(false)
     expect(states[3]).toBe(false)

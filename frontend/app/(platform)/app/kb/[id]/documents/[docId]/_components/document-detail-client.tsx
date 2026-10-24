@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { FeishuDocumentSource, isFeishuManaged } from '@/components/knowledge-bases/feishu-document-source'
 import { useLocale, useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -155,7 +156,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
   )
   const isTeamAdmin = Boolean(user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin')
   const isKbOwner = Boolean(user?.id && knowledgeBase?.created_by?.id === user.id)
-  const canUpdateDoc = Boolean(isOwned && (isTeamAdmin || isKbOwner))
+  const canUpdateDoc = Boolean(!isFeishuManaged(document) && isOwned && (isTeamAdmin || isKbOwner))
   const loadOriginalFile = React.useCallback(() => {
     return knowledgeBasesApi.getDocumentFile(knowledgeBaseId, documentId)
   }, [knowledgeBaseId, documentId])
@@ -558,6 +559,8 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                 <TooltipContent>{document.name}</TooltipContent>
               </Tooltip>
             </div>
+            <FeishuDocumentSource document={document} />
+            {isFeishuManaged(document) && <p className="mt-1 text-xs text-muted-foreground">{t('feishuReadOnly')}</p>}
             <p className="text-sm text-muted-foreground truncate mt-0.5">
               {knowledgeBase.name} · {formatSize(document.file_size || 0)}
               {isCompleted && ` · ${document.chunk_count} ${t('chunks')}`}
@@ -1098,7 +1101,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                 {/* 开始处理按钮 */}
                 <Button
                   onClick={handleProcess}
-                  disabled={isProcessing || isPreviewing}
+                  disabled={!canUpdateDoc || isProcessing || isPreviewing}
                   className="w-full"
                   size="lg"
                 >

@@ -9,7 +9,7 @@ import { TOTPSetupWizardForced } from '@/components/totp-setup-wizard-forced'
 
 export function getTotpSetupRedirect(hasTempToken: boolean, setupSucceeded: boolean): string {
   if (!hasTempToken) return '/login'
-  return setupSucceeded ? '/' : '/login'
+  return setupSucceeded ? '/app' : '/login'
 }
 
 export default function TOTPSetupPage() {

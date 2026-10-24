@@ -125,6 +125,56 @@ describe('dashboard user administration semantic behavior', () => {
     expect(actions.some(label => label.includes('deactivate'))).toBe(false)
     expect(actions.some(label => label.includes('delete'))).toBe(false)
   })
+  test('shows identity, account state, password flags, and SSO provider details', () => {
+    const renderer = render(<UserTable users={[{
+      ...user,
+      username: 'Ada Lovelace',
+      is_active: false,
+      force_password_change: true,
+      password_expiration_exempt: true,
+      sso_connections: [{
+        id: 'sso-1',
+        integration_provider_type: 'google',
+        integration_icon_url: null,
+        integration_display_name: 'Google Workspace',
+        provider_email: 'ada@workspace.example',
+      }],
+    }]} />)
+
+    const row = renderer.root.findAllByType('tr').at(-1)!
+    const spans = row.findAllByType('span').map(node => node.children.join(''))
+    expect(spans).toContain('Ada Lovelace')
+    expect(spans).toContain('inactive')
+    expect(spans).toContain('forcePasswordChange')
+    expect(spans).toContain('passwordExempt')
+    expect(row.findAllByType('p').map(node => node.children.join(''))).toEqual([
+      'Google Workspace', 'ada@workspace.example',
+    ])
+    expect(row.findAllByType('button').some(node => node.children.includes('activate'))).toBe(true)
+  })
+
+  test('activates an inactive user and reports the selected row', async () => {
+    const inactive = { ...user, is_active: false }
+    const onStatusChange = mock(() => {})
+    usersApi.activateUser.mockResolvedValueOnce(inactive)
+    const renderer = render(<UserTable users={[inactive]} onStatusChange={onStatusChange} />)
+
+    await act(async () => button(renderer, 'activate').props.onClick())
+
+    expect(usersApi.activateUser).toHaveBeenCalledWith('user-1')
+    expect(onStatusChange).toHaveBeenCalledWith(inactive)
+    expect(toast.success).toHaveBeenCalledWith('userActivated')
+  })
+
+  test('forwards a permitted user to the delete action', () => {
+    const onDelete = mock(() => {})
+    const renderer = render(<UserTable users={[user]} onDelete={onDelete} />)
+
+    act(() => button(renderer, 'delete').props.onClick())
+
+    expect(onDelete).toHaveBeenCalledWith(user)
+  })
+
 
   test('sends the selected user through status and edit actions', async () => {
     const onEdit = mock(() => {})

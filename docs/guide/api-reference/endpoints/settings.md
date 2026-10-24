@@ -374,7 +374,7 @@ PUT /api/v1/admin/site-settings/auto-notifications
 
 ```json
 {
-  "channels": ["email", "dingtalk", "wechat", "feishu", "webhook", "slack"]
+  "channels": ["email", "webhook"]
 }
 ```
 
@@ -386,7 +386,7 @@ PUT /api/v1/admin/site-settings/auto-notifications
 {
   "code": 0,
   "data": {
-    "channels": ["email", "dingtalk", "wechat"]
+    "channels": ["email", "webhook"]
   },
   "msg": "success"
 }
@@ -394,17 +394,13 @@ PUT /api/v1/admin/site-settings/auto-notifications
 
 ## Test Notification Channels (admin)
 
-Send test notifications through the configured channels.
+Send test notifications through builtin integrations. These endpoints moved out of SiteSettings and require `admin:integrations:settings:update`; configuration and credential handling are documented in [Integrations API](sso.md#admin-integrations).
 
 ### Endpoints
 
 ```
-POST /api/v1/admin/site-settings/test-email
-POST /api/v1/admin/site-settings/test-dingtalk
-POST /api/v1/admin/site-settings/test-wechat
-POST /api/v1/admin/site-settings/test-feishu
-POST /api/v1/admin/site-settings/test-webhook
-POST /api/v1/admin/site-settings/test-slack
+POST /api/v1/admin/integrations/email/test
+POST /api/v1/admin/integrations/webhook/test
 ```
 
 `test-email` accepts a body with the target recipient:
@@ -420,7 +416,7 @@ The other endpoints take no body.
 ### Request Example
 
 ```bash
-curl -X POST "https://your-domain.com/api/v1/admin/site-settings/test-email" \
+curl -X POST "https://your-domain.com/api/v1/admin/integrations/email/test" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{

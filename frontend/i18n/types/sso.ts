@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-07T17:03:38.846Z
+// GENERATED — 2026-10-23T19:49:42.011Z
 // Source: i18n/en/sso.json
 export type SsoMessages = {
   sso: {
@@ -55,6 +55,9 @@ export type SsoMessages = {
     enabledHint: string
     allowSignupHint: string
     requireApprovalHint: string
+    credentialsJson: string
+    credentialsHint: string
+    invalidCredentialsJson: string
     configurationJson: string
     configurationHint: string
     attributeMappingJson: string
@@ -77,5 +80,14 @@ export type SsoMessages = {
     disconnectSuccess: string
     disconnectError: string
     cannotDisconnect: string
+    linkAccounts: string
+    linkAccountsDescription: string
+    linkableFeishu: string
+    linkableEmpty: string
+    linkableLoadFailed: string
+    linkProvider: string
+    linkStarting: string
+    linkStartFailed: string
+    linkAlreadyLinked: string
   }
 }

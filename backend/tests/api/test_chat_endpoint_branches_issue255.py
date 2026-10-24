@@ -624,3 +624,99 @@ async def test_post_run_answer_value_error_converts_to_business_error(
     assert exc_info.value.msg_key == expected_key
     for k, v in expected_kwargs.items():
         assert exc_info.value.kwargs.get(k) == v
+
+
+class _AsyncEmpty:
+    def __await__(self):
+        async def _resolve():
+            return []
+
+        return _resolve().__await__()
+
+
+@pytest.mark.asyncio
+async def test_get_agent_tools_without_knowledge_associations_omits_search_tool(
+    monkeypatch,
+):
+    from app.models.agent import RAGMode
+
+    monkeypatch.setattr(
+        chat.AgentKnowledgeBase,
+        "filter",
+        lambda **_kwargs: SimpleNamespace(
+            prefetch_related=lambda *_args: _AsyncEmpty()
+        ),
+    )
+    agent = SimpleNamespace(
+        id=uuid4(),
+        tools_config=[],
+        enable_memory=False,
+        enable_user_input_request=False,
+        rag_mode=RAGMode.AGENTIC,
+        enable_attachments=False,
+        enable_image_generation=False,
+        enable_video_generation=False,
+    )
+
+    assert await chat.get_agent_tools(agent) == []
+
+
+@pytest.mark.asyncio
+async def test_get_agent_tools_ignores_skill_without_identifier():
+    from app.models.agent import RAGMode
+
+    agent = SimpleNamespace(
+        id=uuid4(),
+        tools_config=[{"type": "skill"}],
+        enable_memory=False,
+        enable_user_input_request=False,
+        rag_mode=RAGMode.OFF,
+        enable_attachments=False,
+        enable_image_generation=False,
+        enable_video_generation=False,
+    )
+
+    assert await chat.get_agent_tools(agent) == []
+
+
+@pytest.mark.asyncio
+async def test_get_tool_display_names_uses_mcp_prefix_without_server_roundtrip(
+    monkeypatch,
+):
+    tool_id = uuid4()
+    mcp_tool = SimpleNamespace(
+        name="docs", display_name="Documentation", mcp_config={"url": "local"}
+    )
+    query = SimpleNamespace(first=AsyncMock(return_value=mcp_tool))
+    monkeypatch.setattr("app.models.tool.Tool.filter", lambda **_kwargs: query)
+    agent = SimpleNamespace(
+        id=uuid4(),
+        tools_config=[{"type": "mcp", "server_id": tool_id}],
+        rag_mode="off",
+        enable_image_generation=False,
+        enable_video_generation=False,
+        enable_memory=False,
+    )
+
+    names = await chat.get_tool_display_names(agent, enumerate_mcp_tools=False)
+
+    assert names["mcp_docs_"] == "Documentation/"
+
+
+@pytest.mark.asyncio
+async def test_get_tool_display_names_omits_mcp_tool_without_configuration(
+    monkeypatch,
+):
+    tool_id = uuid4()
+    query = SimpleNamespace(first=AsyncMock(return_value=None))
+    monkeypatch.setattr("app.models.tool.Tool.filter", lambda **_kwargs: query)
+    agent = SimpleNamespace(
+        id=uuid4(),
+        tools_config=[{"type": "mcp", "tool_id": tool_id}],
+        rag_mode="off",
+        enable_image_generation=False,
+        enable_video_generation=False,
+        enable_memory=False,
+    )
+
+    assert await chat.get_tool_display_names(agent) == {}

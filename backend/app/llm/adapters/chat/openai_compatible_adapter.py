@@ -9,6 +9,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
+from app.llm.errors import InvalidRequestError
 from app.llm.types import (
     Message,
     MessageRole,
@@ -17,6 +18,11 @@ from app.llm.types import (
     ToolDefinition,
     FinishReason,
     Usage,
+    ContentType,
+    MediaContent,
+    AudioContent,
+    FileContent,
+    VideoContent,
 )
 
 from .base import BaseChatAdapter, extract_cached_tokens, usage_from_openai_usage
@@ -89,6 +95,82 @@ class OpenAICompatibleAdapter(BaseChatAdapter):
 
         return None
 
+    def _is_openrouter(self) -> bool:
+        from app.llm.capabilities import is_openrouter_url
+
+        return self._provider_hint == "custom" and is_openrouter_url(self.base_url)
+
+    @staticmethod
+    def _payload_data_uri(content: MediaContent) -> str:
+        if content.asset_ref:
+            raise InvalidRequestError(
+                message="Unresolved asset reference cannot be serialized"
+            )
+        if not content.mime_type:
+            raise InvalidRequestError(message="Media MIME type is required")
+        if content.base64:
+            return f"data:{content.mime_type};base64,{content.base64}"
+        if content.url:
+            return content.url
+        raise InvalidRequestError(message="Media payload is missing")
+
+    def _openrouter_audio_part(self, audio: AudioContent | None) -> dict[str, Any]:
+        if audio is None:
+            raise InvalidRequestError(message="Audio content is missing")
+        mime = audio.mime_type or f"audio/{audio.format}"
+        formats = {
+            "audio/wav": "wav",
+            "audio/mp3": "mp3",
+            "audio/mpeg": "mp3",
+            "audio/aiff": "aiff",
+            "audio/aac": "aac",
+            "audio/ogg": "ogg",
+            "audio/flac": "flac",
+            "audio/mp4": "m4a",
+            "audio/x-m4a": "m4a",
+        }
+        if mime not in formats or not audio.base64 or audio.asset_ref:
+            raise InvalidRequestError(
+                message=f"Unsupported or missing OpenRouter audio payload: {mime}"
+            )
+        return {
+            "type": "input_audio",
+            "input_audio": {"data": audio.base64, "format": formats[mime]},
+        }
+
+    def _openrouter_video_part(self, video: VideoContent | None) -> dict[str, Any]:
+        if video is None:
+            raise InvalidRequestError(message="Video content is missing")
+        mime = video.mime_type or f"video/{video.format}"
+        if mime not in {"video/mp4", "video/mpeg", "video/mov", "video/webm"}:
+            raise InvalidRequestError(
+                message=f"Unsupported OpenRouter video MIME type: {mime}"
+            )
+        return {
+            "type": "video_url",
+            "video_url": {"url": self._payload_data_uri(video)},
+        }
+
+    def _openrouter_file_part(self, file: FileContent | None) -> dict[str, Any]:
+        if file is None:
+            raise InvalidRequestError(message="File content is missing")
+        if file.extracted_text:
+            return {
+                "type": "text",
+                "text": f"{file.filename or 'Document'}:\n{file.extracted_text}",
+            }
+        if file.mime_type != "application/pdf":
+            raise InvalidRequestError(
+                message=f"Unsupported OpenRouter file MIME type: {file.mime_type}"
+            )
+        return {
+            "type": "file",
+            "file": {
+                "filename": file.filename or "document.pdf",
+                "file_data": self._payload_data_uri(file),
+            },
+        }
+
     def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
         """转换消息格式为 OpenAI 格式"""
         openai_messages: list[dict[str, Any]] = []
@@ -112,30 +194,77 @@ class OpenAICompatibleAdapter(BaseChatAdapter):
                             )
                         elif part_type == "image" and hasattr(part, "image"):
                             img = part.image
-                            if img is not None and img.base64:
-                                img_format = (
-                                    img.format
-                                    if hasattr(img, "format") and img.format
-                                    else "png"
+                            if img is None:
+                                raise InvalidRequestError(
+                                    message="Image content is missing"
                                 )
-                                data_url = (
-                                    f"data:image/{img_format};base64,{img.base64}"
+                            mime = img.mime_type or f"image/{img.format}"
+                            if mime not in {
+                                "image/png",
+                                "image/jpeg",
+                                "image/gif",
+                                "image/webp",
+                            }:
+                                raise InvalidRequestError(
+                                    message=f"Unsupported image MIME type: {mime}"
                                 )
-                                processed_content.append(
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {"url": data_url},
-                                    }
+                            if img.base64:
+                                url = f"data:{mime};base64,{img.base64}"
+                            elif img.url:
+                                url = img.url
+                            else:
+                                raise InvalidRequestError(
+                                    message="Image payload is missing"
                                 )
-                            elif img is not None and img.url:
-                                processed_content.append(
-                                    {"type": "image_url", "image_url": {"url": img.url}}
+                            processed_content.append(
+                                {"type": "image_url", "image_url": {"url": url}}
+                            )
+                        elif part_type == "audio" and hasattr(part, "audio"):
+                            if not self._is_openrouter():
+                                raise InvalidRequestError(
+                                    message="Audio input is unsupported by this OpenAI-compatible adapter"
                                 )
+                            processed_content.append(
+                                self._openrouter_audio_part(part.audio)
+                            )
+                        elif part_type == "video" and hasattr(part, "video"):
+                            if not self._is_openrouter():
+                                raise InvalidRequestError(
+                                    message="Video input is unsupported by this OpenAI-compatible adapter"
+                                )
+                            processed_content.append(
+                                self._openrouter_video_part(part.video)
+                            )
+                        elif part_type == "file" and hasattr(part, "file"):
+                            if not self._is_openrouter():
+                                raise InvalidRequestError(
+                                    message="File input is unsupported by this OpenAI-compatible adapter"
+                                )
+                            processed_content.append(
+                                self._openrouter_file_part(part.file)
+                            )
                     elif isinstance(part, dict):
                         processed_content.append(part)
+                    else:
+                        raise InvalidRequestError(
+                            message="Invalid multimodal content part"
+                        )
                 content = processed_content if processed_content else ""
 
             role_value = msg.role.value if hasattr(msg.role, "value") else msg.role
+            if (
+                role_value == MessageRole.TOOL.value
+                and isinstance(msg.content, list)
+                and any(
+                    getattr(part, "type", None) != ContentType.TEXT
+                    and getattr(getattr(part, "type", None), "value", None)
+                    != ContentType.TEXT.value
+                    for part in msg.content
+                )
+            ):
+                raise InvalidRequestError(
+                    message="Tool result messages may contain text only; append asset content in a user message"
+                )
             msg_dict: dict[str, Any] = {
                 "role": role_value,
                 "content": content if content else "",

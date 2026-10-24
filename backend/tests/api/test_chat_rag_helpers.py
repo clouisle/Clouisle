@@ -51,15 +51,19 @@ def test_aggregate_rag_contexts_keeps_highest_scoring_duplicate():
 def test_build_rag_prompt_handles_empty_and_non_empty_contexts():
     assert build_rag_prompt([], "Question") == "Question"
 
-    prompt = build_rag_prompt(
-        [
-            {
-                "knowledge_base_name": "Policies",
-                "content": "Leave policy",
-                "score": 0.8,
-            }
-        ],
-        "Question",
+    contexts = [
+        {
+            "knowledge_base_name": "Policies",
+            "content": "Leave policy",
+            "score": 0.8,
+            "citation_id": "rag_test",
+        }
+    ]
+    prompt_without_citations = build_rag_prompt(contexts, "Question")
+    prompt_with_citations = build_rag_prompt(
+        contexts, "Question", enable_citations=True
     )
-    assert "[Knowledge Base: Policies]\nLeave policy" in prompt
-    assert "User Question: Question" in prompt
+    assert "[Source ID: rag_test]" not in prompt_without_citations
+    assert "[Knowledge Base: Policies]\nLeave policy" in prompt_without_citations
+    assert "[Source ID: rag_test]\n[Knowledge Base: Policies]" in prompt_with_citations
+    assert "User Question: Question" in prompt_with_citations

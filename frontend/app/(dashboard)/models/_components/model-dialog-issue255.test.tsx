@@ -183,7 +183,9 @@ function selectValue(renderer: ReactTestRenderer, value: string, occurrence = 0)
 }
 
 function switchValue(renderer: ReactTestRenderer, index: number, checked: boolean) {
-  act(() => renderer.root.findAllByProps({ type: 'checkbox' })[index].props.onChange({ target: { checked } }))
+  const inputs = renderer.root.findAllByProps({ type: 'checkbox' })
+  const switches = inputs.filter((item) => item.props['aria-hidden'] === undefined)
+  act(() => switches[index].props.onChange({ target: { checked } }))
 }
 
 function buttonWithText(renderer: ReactTestRenderer, text: string) {
@@ -277,6 +279,31 @@ describe('model management dialog', () => {
     }))
     expect(onSuccess).toHaveBeenCalledTimes(1)
   })
+  test('preserves input modality MIME and byte limits on edit', async () => {
+    const renderer = render({
+      model: {
+        id: 'model-1', name: 'Existing', provider: 'openai', model_id: 'gpt-existing', model_type: 'chat',
+        base_url: 'https://old.test', is_enabled: true, is_default: false,
+        capabilities: {
+          input_modalities: ['text', 'image'],
+          output_modalities: ['text'],
+          input_limits: { image: { mime_types: ['image/png'], max_bytes: 1024 } },
+        },
+      } as React.ComponentProps<typeof ModelDialog>['model'],
+    })
+
+    change(renderer, 'name', 'Renamed')
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
+
+    expect(updateModel).toHaveBeenCalledWith('model-1', expect.objectContaining({
+      capabilities: expect.objectContaining({
+        input_modalities: ['text', 'image'],
+        output_modalities: ['text'],
+        input_limits: { image: { mime_types: ['image/png'], max_bytes: 1024 } },
+      }),
+    }))
+    expect(updateModel.mock.calls[0]?.[1]?.capabilities).not.toHaveProperty('vision')
+  })
 
   test('constructs a rich chat payload from parameters, capabilities, and extension JSON', async () => {
     const renderer = render()
@@ -301,9 +328,8 @@ describe('model management dialog', () => {
     switchValue(renderer, 0, false)
     switchValue(renderer, 1, true)
     switchValue(renderer, 2, true)
-    switchValue(renderer, 3, true)
-    switchValue(renderer, 4, false)
-    switchValue(renderer, 5, true)
+    switchValue(renderer, 3, false)
+    switchValue(renderer, 4, true)
 
     await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }))
 
@@ -316,7 +342,7 @@ describe('model management dialog', () => {
         presence_penalty: 0.3, max_tokens: 4096, reasoning_effort: 'high',
         extra_body: { metadata: { tier: 'gold' } },
       },
-      capabilities: { vision: true, function_call: true, streaming: false, json_mode: true },
+      capabilities: { input_modalities: ['text'], output_modalities: [], function_call: true, streaming: false, json_mode: true },
       config: { region: 'us-east' }, is_enabled: false, is_default: true,
     })
   })
