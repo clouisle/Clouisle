@@ -129,12 +129,11 @@ test('keeps a saved engine that is no longer enabled visible without rewriting i
   expect(onConfigChange).not.toHaveBeenCalled()
 })
 
-test('keeps the variable source for the engine parameter', async () => {
-  await renderTool([{ ...engineMapping, source: 'variable', variableRef: '{{start.searchEngine}}', variableRefNodeLabel: 'Start' }])
+test('engine routing has no variable or constant toggle', async () => {
+  await renderTool([queryMapping, { ...engineMapping, source: 'variable', variableRef: '{{start.searchEngine}}', variableRefNodeLabel: 'Start' }])
 
-  expect(document.querySelector('[role="combobox"]')).toBeNull()
-  expect(document.body.textContent).toContain('Start / searchEngine')
-
-  const sourceToggles = Array.from(document.querySelectorAll('button')).filter((button) => button.textContent === 'configCommon.constant')
-  expect(sourceToggles).toHaveLength(1)
+  expect(document.querySelector('[role="combobox"]')?.textContent).toContain('Site default')
+  const sourceToggles = Array.from(document.querySelectorAll('button')).filter((button) =>
+    button.textContent === 'configCommon.constant' || button.textContent === 'configCommon.variable')
+  expect(sourceToggles.map((button) => button.textContent)).toEqual(['configCommon.variable', 'configCommon.constant'])
 })

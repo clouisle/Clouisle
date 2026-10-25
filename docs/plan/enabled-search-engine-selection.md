@@ -42,5 +42,6 @@
 - Frontend regression: 33 tests passed across the shared select, Agent tool selector, workflow configuration and tool API client. TypeScript and targeted ESLint passed.
 - Standalone smoke: actual authenticated HTTP route and site flag parsing returned only enabled provider names, returned `[]` when all disabled, and exposed no configuration secrets.
 - Follow-up fix: the workflow editor never received a `search_engine` mapping because the backend tool catalog intentionally exposes only model-facing `query`/`num_results`. Tool nodes now add the optional engine routing control to both new and saved `web_search` nodes; a real component smoke selected `web_search` and saved `search_engine = searxng` while retaining `query`.
+- The engine control is site routing configuration rather than a model parameter: it intentionally has no variable/constant switch. Stale variable-source engine mappings are normalized to the dropdown in the editor without writing the workflow until the user changes it.
 - Initial DOM fixture failures came from importing Base UI before DOM initialization and a fresh mocked team object on every render; corrected test fixtures without changing production behavior.
 - No application servers or browser sessions were started. DOM interaction was verified in happy-dom; browser layout was not inspected.

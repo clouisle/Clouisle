@@ -142,19 +142,31 @@ export function ToolNodeConfig({
   const safeConfig: ToolNodeConfig = {
     ...defaultToolNodeConfig,
     ...config,
-    parameterMappings: config.parameterMappings || [],
+    parameterMappings: [...(config.parameterMappings || [])],
   }
-  // Engine routing is workflow configuration, not a model-facing tool parameter.
-  if (safeConfig.toolType === 'builtin' && safeConfig.toolName === 'web_search' &&
-      !safeConfig.parameterMappings.some(mapping => mapping.name === 'search_engine')) {
-    safeConfig.parameterMappings = [...safeConfig.parameterMappings, {
-      name: 'search_engine',
-      type: 'string',
-      required: false,
-      source: 'constant',
-      constantValue: 'auto',
-    }]
+  // 引擎路由是站点配置，不是模型填写参数，因此补充/规范为固定选项且不区分变量与常量。
+  if (safeConfig.toolType === 'builtin' && safeConfig.toolName === 'web_search') {
+    const engineIndex = safeConfig.parameterMappings.findIndex(mapping => mapping.name === 'search_engine')
+    if (engineIndex === -1) {
+      safeConfig.parameterMappings.push({
+        name: 'search_engine',
+        type: 'string',
+        required: false,
+        source: 'constant',
+        constantValue: 'auto',
+      })
+    } else {
+      const engine = safeConfig.parameterMappings[engineIndex]
+      safeConfig.parameterMappings[engineIndex] = {
+        ...engine,
+        source: 'constant',
+        constantValue: engine.constantValue || 'auto',
+        variableRef: undefined,
+        variableRefNodeLabel: undefined,
+      }
+    }
   }
+
 
   // 加载工具列表
   React.useEffect(() => {
@@ -764,7 +776,9 @@ export function ToolNodeConfig({
             <span className="text-muted-foreground ml-1">({safeConfig.parameterMappings.length})</span>
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-2 space-y-2">
-            {safeConfig.parameterMappings.map(mapping => (
+            {safeConfig.parameterMappings.map(mapping => {
+              const isEngineMapping = selectedTool?.type === 'builtin' && selectedTool.name === 'web_search' && mapping.name === 'search_engine'
+              return (
               <div key={mapping.name} className="bg-muted/30 rounded-lg p-2.5 space-y-2">
                 {/* 参数头部 */}
                 <div className="flex items-center justify-between">
@@ -782,45 +796,49 @@ export function ToolNodeConfig({
                   <p className="text-[10px] text-muted-foreground">{mapping.description}</p>
                 )}
                 
-                {/* 值来源选择 */}
-                <div className="flex gap-2">
-                  <Button
-                    variant={mapping.source === 'variable' ? 'default' : 'outline'}
-                    size="sm"
-                    className="h-6 text-[10px] flex-1"
-                    onClick={() => handleUpdateMapping(mapping.name, { source: 'variable' })}
-                  >
-                    {t('configCommon.variable')}
-                  </Button>
-                  <Button
-                    variant={mapping.source === 'constant' ? 'default' : 'outline'}
-                    size="sm"
-                    className="h-6 text-[10px] flex-1"
-                    onClick={() => handleUpdateMapping(mapping.name, { source: 'constant', variableRef: undefined, variableRefNodeLabel: undefined })}
-                  >
-                    {t('configCommon.constant')}
-                  </Button>
-                </div>
-                
-                {/* 值输入 */}
-                {mapping.source === 'variable' ? (
-                  renderVariableSelector(mapping)
-                ) : selectedTool?.type === 'builtin' && selectedTool.name === 'web_search' && mapping.name === 'search_engine' ? (
+                {isEngineMapping ? (
                   <WebSearchEngineSelect
                     value={mapping.constantValue || 'auto'}
                     onValueChange={(value) => handleUpdateMapping(mapping.name, { constantValue: value })}
                     className="text-xs"
                   />
                 ) : (
-                  <Input
-                    value={mapping.constantValue || ''}
-                    onChange={(e) => handleUpdateMapping(mapping.name, { constantValue: e.target.value })}
-                    placeholder={t('configCommon.enterValueFor', { name: mapping.name })}
-                    className="h-8 text-xs"
-                  />
+                  <>
+                    {/* 值来源选择 */}
+                    <div className="flex gap-2">
+                      <Button
+                        variant={mapping.source === 'variable' ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-6 text-[10px] flex-1"
+                        onClick={() => handleUpdateMapping(mapping.name, { source: 'variable' })}
+                      >
+                        {t('configCommon.variable')}
+                      </Button>
+                      <Button
+                        variant={mapping.source === 'constant' ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-6 text-[10px] flex-1"
+                        onClick={() => handleUpdateMapping(mapping.name, { source: 'constant', variableRef: undefined, variableRefNodeLabel: undefined })}
+                      >
+                        {t('configCommon.constant')}
+                      </Button>
+                    </div>
+
+                    {/* 值输入 */}
+                    {mapping.source === 'variable' ? (
+                      renderVariableSelector(mapping)
+                    ) : (
+                      <Input
+                        value={mapping.constantValue || ''}
+                        onChange={(e) => handleUpdateMapping(mapping.name, { constantValue: e.target.value })}
+                        placeholder={t('configCommon.enterValueFor', { name: mapping.name })}
+                        className="h-8 text-xs"
+                      />
+                    )}
+                  </>
                 )}
               </div>
-            ))}
+            )})}
           </CollapsibleContent>
         </Collapsible>
       )}

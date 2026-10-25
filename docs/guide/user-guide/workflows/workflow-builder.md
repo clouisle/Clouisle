@@ -144,7 +144,7 @@ Output Variable: kb_results
 
 Tool parameter mappings use their declared `type` before execution, for both constants and resolved variables. Integer text such as `"3"` becomes an integer; `number` accepts finite numeric values; booleans use `true`/`false`; arrays and objects use JSON. Native values must match the declared type. Invalid values fail the tool node before invocation. String values and older mappings without a declared type remain unchanged.
 
-For the built-in `web_search` tool, choose a constant `search_engine` from the dropdown: it offers **auto** (the site default) and only the providers enabled by the administrator. Variable mappings remain available. Existing saved selections are not silently replaced if the administrator later disables that provider; execution reports the configuration error.
+For the built-in `web_search` tool, choose `search_engine` directly from the dropdown: it offers **auto** (the site default) and only the providers enabled by the administrator. It is site routing configuration, so it has no variable/constant source switch. Existing saved selections are not silently replaced if the administrator later disables that provider; execution reports the configuration error.
 
 **Example - HTTP Node:**
 ```yaml
