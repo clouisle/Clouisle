@@ -3322,6 +3322,34 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Search API error: {status_code}",
         "zh": "搜索 API 错误：{status_code}",
     },
+    "web_search_not_configured": {
+        "en": "Site web search is not configured; contact the site administrator",
+        "zh": "站点尚未配置网页搜索，请联系站点管理员",
+    },
+    "web_search_engine_disabled": {
+        "en": "The site search provider {engine} is disabled",
+        "zh": "站点搜索服务 {engine} 已停用",
+    },
+    "web_search_engine_not_configured": {
+        "en": "The site search provider {engine} is missing required configuration",
+        "zh": "站点搜索服务 {engine} 缺少必要配置",
+    },
+    "web_search_default_engine_disabled": {
+        "en": "The default search provider must be enabled",
+        "zh": "默认搜索服务必须处于启用状态",
+    },
+    "web_search_default_engine_invalid": {
+        "en": "Select a valid site default search provider",
+        "zh": "请选择有效的站点默认搜索服务",
+    },
+    "web_search_credentials_unreadable": {
+        "en": "The saved search credential cannot be decrypted; replace it in site configuration",
+        "zh": "无法解密已保存的搜索凭证，请在站点配置中替换",
+    },
+    "web_search_site_managed": {
+        "en": "Web search is managed through the dedicated site administrator configuration",
+        "zh": "网页搜索由站点管理员在专用配置入口集中管理",
+    },
     "web_search_api_key_not_configured": {
         "en": "Web search requires a Tavily or Bocha API key; configure search credentials before using this tool",
         "zh": "网页搜索需要 Tavily 或博查 API Key；请先配置搜索凭证",

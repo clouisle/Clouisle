@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Removed keyless Bing RSS and DuckDuckGo web search after unreliable upstream results. Web search now requires a Tavily or Bocha API key; auto mode selects configured Tavily first, then Bocha, and missing credentials fail before any search request. Saved retired-provider Agent choices migrate to auto.
+- Centralized Tavily/Bocha web search in administrator-managed site configuration with an explicit default and enable switches. API keys are encrypted/write-only, Agent/team overrides are removed, and legacy private credentials are archived encrypted without promotion. Bing/DuckDuckGo remain removed; search failures never silently change providers.
 
 ### Added
 

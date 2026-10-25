@@ -34,7 +34,7 @@ def config(team_id):
     now = datetime.now(UTC)
     return SimpleNamespace(
         id=uuid4(),
-        tool_name="web_search",
+        tool_name="weather",
         team_id=team_id,
         credentials={},
         created_at=now,
@@ -62,22 +62,20 @@ async def test_get_tool_config_creates_builtin_team_default():
             return_value=object(),
         ),
     ):
-        response = await get_tool_config(
-            "web_search", team_id=team_id, current_user=user
-        )
+        response = await get_tool_config("weather", team_id=team_id, current_user=user)
 
     access.assert_awaited_once_with(team_id, user)
     create.assert_awaited_once_with(
-        tool_name="web_search", team_id=team_id, credentials={}
+        tool_name="weather", team_id=team_id, credentials={}
     )
-    assert response["data"]["tool_name"] == "web_search"
+    assert response["data"]["tool_name"] == "weather"
 
     global_config = config(None)
     with patch(
         "app.models.tool_config.ToolConfig.filter", return_value=Query(global_config)
     ):
         response = await get_tool_config(
-            "web_search",
+            "weather",
             team_id=None,
             current_user=SimpleNamespace(is_superuser=True),
         )

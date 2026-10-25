@@ -284,6 +284,59 @@ export interface ToolConfig {
   updated_at: string
 }
 
+// ============ Web Search Types ============
+
+export type WebSearchEngine = 'auto' | 'tavily' | 'bocha'
+export type WebSearchDefaultEngine = Exclude<WebSearchEngine, 'auto'>
+
+/**
+ * Site-wide web search settings. Secrets are never returned — only readiness flags.
+ */
+export interface WebSearchConfig {
+  default_engine: WebSearchDefaultEngine
+  tavily_enabled: boolean
+  bocha_enabled: boolean
+  tavily_api_key_configured: boolean
+  bocha_api_key_configured: boolean
+  legacy_credentials_present: boolean
+}
+
+/**
+ * Secret fields follow PATCH semantics:
+ * - omitted / null: keep the saved secret
+ * - empty string: clear the saved secret
+ * - non-empty string: replace the saved secret
+ */
+export interface WebSearchConfigUpdate {
+  default_engine: WebSearchDefaultEngine
+  tavily_enabled: boolean
+  bocha_enabled: boolean
+  tavily_api_key?: string | null
+  bocha_api_key?: string | null
+}
+
+export interface WebSearchTestRequest {
+  query: string
+  engine?: WebSearchEngine
+}
+
+export interface WebSearchResultItem {
+  title: string
+  url: string
+  content?: string
+  score?: number | null
+  citation_id?: string | number
+}
+
+export interface WebSearchTestResponse {
+  success: boolean
+  query?: string
+  answer?: string | null
+  error?: string
+  search_engine?: WebSearchEngine
+  results?: WebSearchResultItem[]
+}
+
 // ============ Tool Sharing Types ============
 
 export interface ToolShareInput {

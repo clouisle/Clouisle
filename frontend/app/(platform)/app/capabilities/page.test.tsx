@@ -106,7 +106,7 @@ mock.module('@/components/ui/dropdown-menu', () => ({
 mock.module('lucide-react', () => ({
   Wrench: element('svg'), Plus: element('svg'), RefreshCw: element('svg'), Loader2: element('svg'),
   Globe: element('svg'), Code: element('svg'), Plug: element('svg'), Database: element('svg'), ChevronDown: element('svg'),
-  PackageOpen: element('svg'), Upload: element('svg'), Search: element('svg'),
+  PackageOpen: element('svg'), Upload: element('svg'), Search: element('svg'), Info: element('svg'),
 }))
 mock.module('./_components/tool-card', () => ({ ToolCard: ({ tool, ...props }: { tool: { display_name: string } } & Record<string, unknown>) => ({ type: 'article', props: { ...props, children: tool.display_name } }) }))
 

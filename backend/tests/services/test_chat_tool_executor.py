@@ -1,6 +1,6 @@
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -177,49 +177,6 @@ class TestChatToolExecutor:
             },
             "arguments": {"command": "pwd"},
         }
-
-    @pytest.mark.anyio
-    async def test_execute_builtin_tool_uses_stored_credentials(self):
-        async def handler(query, credentials=None, **_kwargs):
-            return {"query": query, "credentials": credentials}
-
-        tool_info = ToolInfo(
-            name="web_search",
-            description="Search the web",
-            parameters=[],
-            handler=handler,
-        )
-        previous_tool = tool_registry.get_tool("web_search")
-        tool_registry._tools["web_search"] = tool_info
-        try:
-            with patch("app.models.tool_config.ToolConfig.filter") as mock_filter:
-                team_query = MagicMock()
-                team_query.first = AsyncMock(
-                    return_value=SimpleNamespace(
-                        credentials={"TAVILY_API_KEY": "team-key"}
-                    )
-                )
-                mock_filter.return_value = team_query
-
-                result = await execute_tool_call(
-                    "web_search",
-                    {"query": "latest news"},
-                    agent=SimpleNamespace(team_id="team-1"),
-                )
-        finally:
-            if previous_tool is not None:
-                tool_registry._tools["web_search"] = previous_tool
-            else:
-                tool_registry._tools.pop("web_search", None)
-
-        assert result == {
-            "query": "latest news",
-            "credentials": {"TAVILY_API_KEY": "team-key"},
-        }
-        assert mock_filter.call_args_list == [
-            call(tool_name="web_search", team_id="team-1"),
-            call(tool_name="web_search", team_id=None),
-        ]
 
     @pytest.mark.anyio
     async def test_execute_bash_routes_to_sandbox_tool(self):

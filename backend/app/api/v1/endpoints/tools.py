@@ -79,6 +79,15 @@ logger = logging.getLogger(__name__)
 SANDBOX_BUILTIN_TOOLS = {"artifact", "bash", "edit", "read", "write"}
 
 
+def _reject_legacy_search_config(tool_name: str) -> None:
+    if tool_name == "web_search":
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="web_search_site_managed",
+            status_code=400,
+        )
+
+
 def _serialize_runtime_artifacts(
     artifacts: list[SandboxArtifact | Any],
 ) -> list[SandboxArtifactSchema]:
@@ -993,7 +1002,7 @@ async def test_tool(
             credentials = {}
 
             # 优先从团队配置获取，其次从全局配置获取
-            if team_id:
+            if team_id and request.name != "web_search":
                 tool_config = await ToolConfig.filter(
                     tool_name=request.name, team_id=team_id
                 ).first()
@@ -1001,19 +1010,12 @@ async def test_tool(
                     credentials = tool_config.credentials or {}
 
             # 如果团队配置不存在，尝试获取全局配置
-            if not credentials:
+            if not credentials and request.name != "web_search":
                 global_config = await ToolConfig.filter(
                     tool_name=request.name, team_id=None
                 ).first()
                 if global_config:
                     credentials = global_config.credentials or {}
-
-            # 如果还是没有配置，尝试从环境变量获取（兜底）
-            if not credentials:
-                from app.core.config import settings
-
-                if hasattr(settings, "TAVILY_API_KEY") and settings.TAVILY_API_KEY:
-                    credentials["TAVILY_API_KEY"] = settings.TAVILY_API_KEY
 
             result = await tool_registry.execute(
                 request.name, request.arguments, credentials=credentials
@@ -1447,7 +1449,11 @@ async def list_tool_configs(
     from app.schemas.tool_config import ToolConfigOut
 
     return success(
-        data=[ToolConfigOut.model_validate(c).model_dump() for c in configs],
+        data=[
+            ToolConfigOut.model_validate(c).model_dump()
+            for c in configs
+            if c.tool_name != "web_search"
+        ],
         msg_key="success",
     )
 
@@ -1462,6 +1468,8 @@ async def get_tool_config(
     获取指定工具的配置
     """
     from app.models.tool_config import ToolConfig
+
+    _reject_legacy_search_config(tool_name)
 
     if team_id:
         await check_team_access(team_id, current_user)
@@ -1521,6 +1529,7 @@ async def create_tool_config(
     from app.schemas.tool_config import ToolConfigCreate, ToolConfigOut
 
     config_data = ToolConfigCreate(**data)
+    _reject_legacy_search_config(config_data.tool_name)
 
     if team_id:
         await check_team_access(team_id, current_user, require_admin=True)
@@ -1584,6 +1593,7 @@ async def update_tool_config(
     from app.schemas.tool_config import ToolConfigUpdate, ToolConfigOut
 
     config_data = ToolConfigUpdate(**data)
+    _reject_legacy_search_config(tool_name)
 
     if team_id:
         await check_team_access(team_id, current_user, require_admin=True)
@@ -1637,6 +1647,8 @@ async def delete_tool_config(
     删除工具配置
     """
     from app.models.tool_config import ToolConfig
+
+    _reject_legacy_search_config(tool_name)
 
     if team_id:
         await check_team_access(team_id, current_user, require_admin=True)

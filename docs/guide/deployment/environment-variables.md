@@ -595,7 +595,7 @@ The dispatcher runs every three seconds while a platform WeChat feature is enabl
 
 ### TAVILY_API_KEY
 
-**Description**: Tavily web search API key (used by the built-in `web_search` tool). Only used as a fallback when no admin-managed search credentials exist.
+**Description**: Legacy Tavily bootstrap credential. On the first site-search migration it is imported only when no global Tavily credential exists; subsequent runtime searches do not read this variable. Rotate keys in the administrator's Web Search configuration instead. Existing Agent/team keys are never promoted to site scope.
 
 **Required**: No
 

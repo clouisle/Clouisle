@@ -171,6 +171,13 @@ export {
   type ToolShareInput,
   type ToolSharePermission,
   type ToolShareListResponse,
+  type WebSearchEngine,
+  type WebSearchDefaultEngine,
+  type WebSearchConfig,
+  type WebSearchConfigUpdate,
+  type WebSearchTestRequest,
+  type WebSearchResultItem,
+  type WebSearchTestResponse,
 } from './tools'
 
 export {

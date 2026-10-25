@@ -53,6 +53,11 @@ from app.schemas.tool import (
     ToolType,
     ToolUpdateInput,
 )
+from app.schemas.web_search import (
+    WebSearchConfigOut,
+    WebSearchConfigUpdate,
+    WebSearchTestInput,
+)
 from app.services.error_messages import resolve_user_visible_error
 from app.services.sandbox.compiler import compile_code_config_job
 from app.services.sandbox.gateway import sandbox_gateway
@@ -398,13 +403,13 @@ async def test_tool(
             from app.models.tool_config import ToolConfig
 
             credentials = {}
-            if team_id:
+            if team_id and request.name != "web_search":
                 tool_config = await ToolConfig.filter(
                     tool_name=request.name, team_id=team_id
                 ).first()
                 if tool_config:
                     credentials = tool_config.credentials or {}
-            if not credentials:
+            if not credentials and request.name != "web_search":
                 global_config = await ToolConfig.filter(
                     tool_name=request.name, team_id=None
                 ).first()
@@ -642,6 +647,44 @@ async def execute_code_directly(
     )
 
 
+@router.get("/web-search/config", response_model=Response[WebSearchConfigOut])
+async def get_site_web_search_config(
+    current_user: User = Depends(deps.PermissionChecker("admin:capability:read")),
+) -> Any:
+    from app.services.web_search_config import get_web_search_config
+
+    return success(data=await get_web_search_config())
+
+
+@router.put("/web-search/config", response_model=Response[WebSearchConfigOut])
+async def update_site_web_search_config(
+    data: WebSearchConfigUpdate,
+    current_user: User = Depends(deps.PermissionChecker("admin:capability:update")),
+) -> Any:
+    from app.services.web_search_config import save_web_search_config
+
+    return success(data=await save_web_search_config(data))
+
+
+@router.post("/web-search/test", response_model=Response[dict])
+async def test_site_web_search_config(
+    data: WebSearchTestInput,
+    current_user: User = Depends(deps.PermissionChecker("admin:capability:execute")),
+) -> Any:
+    from app.llm.tools.builtin.web_search import web_search
+
+    return success(data=await web_search(data.query, search_engine=data.engine))
+
+
+def _reject_legacy_search_config(tool_name: str) -> None:
+    if tool_name == "web_search":
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="web_search_site_managed",
+            status_code=400,
+        )
+
+
 @router.get("/config", response_model=Response[list[dict]])
 async def list_tool_configs(
     team_id: UUID | None = None,
@@ -652,7 +695,11 @@ async def list_tool_configs(
 
     configs = await ToolConfig.filter(team_id=team_id).all()
     return success(
-        data=[ToolConfigOut.model_validate(config).model_dump() for config in configs]
+        data=[
+            ToolConfigOut.model_validate(config).model_dump()
+            for config in configs
+            if config.tool_name != "web_search"
+        ]
     )
 
 
@@ -665,6 +712,7 @@ async def get_tool_config(
     from app.models.tool_config import ToolConfig
     from app.schemas.tool_config import ToolConfigOut
 
+    _reject_legacy_search_config(tool_name)
     config = await ToolConfig.filter(tool_name=tool_name, team_id=team_id).first()
     if not config:
         if team_id and tool_registry.get_tool(tool_name):
@@ -690,6 +738,7 @@ async def create_tool_config(
     from app.schemas.tool_config import ToolConfigCreate, ToolConfigOut
 
     config_data = ToolConfigCreate(**data)
+    _reject_legacy_search_config(config_data.tool_name)
     existing = await ToolConfig.filter(
         tool_name=config_data.tool_name, team_id=team_id
     ).first()
@@ -721,6 +770,7 @@ async def update_tool_config(
     from app.schemas.tool_config import ToolConfigOut, ToolConfigUpdate
 
     config_data = ToolConfigUpdate(**data)
+    _reject_legacy_search_config(tool_name)
     config = await ToolConfig.filter(tool_name=tool_name, team_id=team_id).first()
     if not config:
         raise BusinessError(
@@ -743,6 +793,8 @@ async def delete_tool_config(
     current_user: User = Depends(deps.PermissionChecker("admin:capability:delete")),
 ) -> Any:
     from app.models.tool_config import ToolConfig
+
+    _reject_legacy_search_config(tool_name)
 
     config = await ToolConfig.filter(tool_name=tool_name, team_id=team_id).first()
     if not config:

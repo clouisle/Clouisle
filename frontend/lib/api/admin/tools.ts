@@ -17,6 +17,10 @@ import type {
   ToolShareInput,
   ToolShareListResponse,
   ToolUpdateInput,
+  WebSearchConfig,
+  WebSearchConfigUpdate,
+  WebSearchTestRequest,
+  WebSearchTestResponse,
 } from '../tools'
 
 export const adminToolsApi = {
@@ -78,6 +82,15 @@ export const adminToolsApi = {
     const params = teamId ? { team_id: teamId } : {}
     return api.get<ToolConfig[]>('/admin/tools/config', { params })
   },
+
+  getWebSearchConfig: async (): Promise<WebSearchConfig> =>
+    api.get<WebSearchConfig>('/admin/tools/web-search/config'),
+
+  updateWebSearchConfig: async (data: WebSearchConfigUpdate): Promise<WebSearchConfig> =>
+    api.put<WebSearchConfig>('/admin/tools/web-search/config', data),
+
+  testWebSearchConfig: async (request: WebSearchTestRequest): Promise<WebSearchTestResponse> =>
+    api.post<WebSearchTestResponse>('/admin/tools/web-search/test', request, { timeout: 120000 }),
 
   getConfig: async (toolName: string, teamId?: string): Promise<ToolConfig> => {
     const params = teamId ? { team_id: teamId } : {}

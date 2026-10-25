@@ -284,7 +284,7 @@ Key configuration options (see `.env.example` for full list):
 | `API_BASE_URL` | Public API URL for the backend |
 | `FRONTEND_URL` | Frontend URL for CORS and redirects |
 | `NEXT_PUBLIC_API_URL` | API URL consumed by the frontend |
-| `TAVILY_API_KEY` | Web search API key (optional) |
+| `TAVILY_API_KEY` | Legacy one-time import into site-managed search; use admin UI for subsequent configuration |
 | `SANDBOX_RUNTIME_ENABLED` | Enable sandboxed code execution |
 
 ### Site Settings

@@ -29,6 +29,47 @@ export type ToolsMessages = {
     toolDisabled: string
     toolDuplicated: string
     runTest: string
+    webSearch: {
+      title: string
+      description: string
+      defaultEngine: string
+      defaultEngineHint: string
+      defaultEngineDisabled: string
+      tavily: string
+      bocha: string
+      providerEnabled: string
+      providerEnabledHint: string
+      tavilyApiKey: string
+      bochaApiKey: string
+      tavilyKeyPlaceholder: string
+      bochaKeyPlaceholder: string
+      keyConfigured: string
+      keyMissing: string
+      clearKey: string
+      undoClear: string
+      willClear: string
+      newKeyHint: string
+      legacyWarning: string
+      testTitle: string
+      testDescription: string
+      testQuery: string
+      testQueryPlaceholder: string
+      testEngine: string
+      engineAuto: string
+      engineTavily: string
+      engineBocha: string
+      runTest: string
+      testing: string
+      testSucceeded: string
+      testFailed: string
+      testQueryRequired: string
+      testNoResults: string
+      loadFailed: string
+      saveFailed: string
+      saved: string
+      cancel: string
+      save: string
+    }
     share: {
       title: string
       description: string

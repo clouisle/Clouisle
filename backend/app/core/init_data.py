@@ -705,37 +705,6 @@ async def init_agent_tools_credentials():
     logger.info("Agent tools_credentials migration complete")
 
 
-async def migrate_agent_web_search_engine() -> None:
-    """Replace retired search engines in saved Agent tool configurations."""
-    conn = Tortoise.get_connection("default")
-    await execute_startup_migration_query(
-        conn,
-        """
-        UPDATE agents
-        SET tools_config = (
-            SELECT jsonb_agg(
-                CASE
-                    WHEN tool->>'type' = 'builtin'
-                        AND tool->>'name' = 'web_search'
-                        AND tool #>> '{config,engine}' IN ('bing', 'duckduckgo', 'ddg')
-                    THEN jsonb_set(tool, '{config,engine}', '"auto"'::jsonb)
-                    ELSE tool
-                END ORDER BY position
-            )
-            FROM jsonb_array_elements(tools_config) WITH ORDINALITY
-                AS configured(tool, position)
-        )
-        WHERE jsonb_typeof(tools_config) = 'array'
-            AND EXISTS (
-                SELECT 1 FROM jsonb_array_elements(tools_config) AS tool
-                WHERE tool->>'type' = 'builtin'
-                    AND tool->>'name' = 'web_search'
-                    AND tool #>> '{config,engine}' IN ('bing', 'duckduckgo', 'ddg')
-            )
-        """,
-    )
-
-
 async def init_agent_powered_by_text():
     """
     Add powered_by_text column to existing agents tables.
@@ -3624,7 +3593,6 @@ async def init_db():
 
     # 6. Initialize agent tools_credentials field
     await init_agent_tools_credentials()
-    await migrate_agent_web_search_engine()
 
     # 7. Initialize tool_shares table
     await init_tool_shares_table()

@@ -78,21 +78,24 @@ Type: Builtin
 Category: Search
 Status: Enabled
 
-Configuration:
-  TAVILY_API_KEY: ...
-  BOCHA_API_KEY: ...
+Site Configuration:
+  default_engine: tavily
+  tavily_enabled: true
+  bocha_enabled: false
+  tavily_api_key: ... # write-only
 ```
 
-Web Search requires a **Tavily** (`TAVILY_API_KEY`) or **Bocha** (`BOCHA_API_KEY`) credential. Auto mode chooses Tavily first, then Bocha based on configured keys; without either key it fails before making a search request. A provider failure is returned directly, without switching to a keyless service. Agent-specific keys can inherit missing credentials from team/global configuration; Tavily also supports the environment-variable fallback. Query parameters (`num_results`, default 5, maximum 10) are passed by the agent at call time. Bing and DuckDuckGo are not supported; saved Agent selections for these retired providers migrate to auto at startup.
+Site administrators manage search in **Capabilities → Tools → Web Search → Configure**, without selecting a team. Enable a provider and explicitly choose the site default. Secrets are encrypted; the form shows whether a key is configured but never reads it back. Leave a secret unchanged to preserve it, replace it to rotate, or clear it explicitly. Agents only choose an enabled provider or inherit the site default; they cannot store search keys or override endpoints. Missing/disabled providers and provider failures are explicit errors, with no fallback to another account.
 
 **Update Configuration:**
-1. Select tool
-2. Click **Configure**
-3. Update API credentials
-4. Test tool
-5. Save changes
+1. Open Web Search configuration in the administrator dashboard.
+2. Enable Tavily or Bocha and enter its API key.
+3. Choose the site default and save changes.
+4. Test the saved configuration with a representative query and inspect relevance, not merely nonempty results.
 
 > **Note:** Web search requires API credentials. There are no per-tool limits (calls per day/agent/minute) or timeout settings for built-in tools.
+
+On upgrade, existing global search keys remain global and are encrypted. Legacy Agent/team keys are archived encrypted, not activated site-wide. Administrators must configure the intended shared account; the configuration response signals archived credentials without exposing them. `TAVILY_API_KEY` is imported only on the first migration when no global key exists, not read on each request.
 
 ## Custom Tools
 
@@ -524,7 +527,7 @@ code_result = api.post("/api/v1/admin/tools/execute-code", json={
 })
 ```
 
-> **Note:** `POST /api/v1/tools/web_search/call` and `GET /api/v1/tools/web_search/usage` do not exist. Tool configuration (e.g. `TAVILY_API_KEY`) is managed via `GET/POST/PUT/DELETE /api/v1/admin/tools/config[/{tool_name}]`.
+> **Note:** `POST /api/v1/tools/web_search/call` and `GET /api/v1/tools/web_search/usage` do not exist. Search uses dedicated `GET/PUT /api/v1/admin/tools/web-search/config` and `POST /api/v1/admin/tools/web-search/test` endpoints; generic config APIs reject `web_search`.
 
 ## Related Documentation
 

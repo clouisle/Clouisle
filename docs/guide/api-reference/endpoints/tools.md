@@ -853,7 +853,7 @@ The copy is created in the same team with visibility `private` and `is_enabled=f
 
 ## Tool Configuration
 
-Store credentials (API keys, tokens) for builtin or database tools, either globally (superuser only) or per team.
+Store credentials for other tools globally (superuser only) or per team. `web_search` is excluded from these generic configuration APIs: search credentials are site-managed, write-only and encrypted. Use the dedicated administrator API below.
 
 ### List Tool Configurations
 
@@ -881,9 +881,9 @@ POST /api/v1/tools/config?team_id={team_id}
 
 ```json
 {
-  "tool_name": "web_search",
+  "tool_name": "external_lookup",
   "credentials": {
-    "TAVILY_API_KEY": "tvly-..."
+    "API_KEY": "secret-value"
   }
 }
 ```
@@ -897,7 +897,7 @@ PUT /api/v1/tools/config/{tool_name}?team_id={team_id}
 ```json
 {
   "credentials": {
-    "TAVILY_API_KEY": "tvly-updated"
+    "API_KEY": "replacement-value"
   }
 }
 ```
@@ -912,7 +912,7 @@ DELETE /api/v1/tools/config/{tool_name}?team_id={team_id}
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `tool_name` | string | Yes | Tool name (path parameter), e.g. `web_search` |
+| `tool_name` | string | Yes | Tool name (path parameter), excluding site-managed `web_search` |
 | `team_id` | string | No | Team UUID query parameter. Omit for the global configuration |
 
 With `team_id`, team admin rights are required for create/update/delete and team membership for read; without `team_id`, only superusers may read or write the global configuration. Reading a team configuration for a known builtin tool name creates an empty configuration automatically; an unknown name returns 404.
@@ -926,10 +926,10 @@ With `team_id`, team admin rights are required for create/update/delete and team
   "code": 0,
   "data": {
     "id": "cfg-001",
-    "tool_name": "web_search",
+    "tool_name": "external_lookup",
     "team_id": "team-123",
     "credentials": {
-      "TAVILY_API_KEY": "tvly-..."
+      "API_KEY": "secret-value"
     },
     "created_at": "2026-02-11T16:00:00Z",
     "updated_at": "2026-02-11T16:00:00Z"
@@ -939,6 +939,16 @@ With `team_id`, team admin rights are required for create/update/delete and team
 ```
 
 **Success (200 OK)** — delete returns `data: null` with `msg: "Tool configuration deleted successfully"`.
+
+## Site-managed Web Search
+
+`GET /api/v1/admin/tools/web-search/config` requires `admin:capability:read`. It returns the default engine, provider enable flags, and `*_api_key_configured` booleans, never the raw keys.
+
+`PUT /api/v1/admin/tools/web-search/config` requires `admin:capability:update`. Set `default_engine` to `tavily` or `bocha`, `tavily_enabled`/`bocha_enabled` as booleans, and optional `tavily_api_key`/`bocha_api_key`. Omitted or null secrets preserve the saved value; empty strings clear it; nonempty strings replace it. Configuration is global and takes no `team_id`.
+
+`POST /api/v1/admin/tools/web-search/test` requires `admin:capability:execute` and accepts `{"query":"Shanghai weather", "engine":"auto"}`. It tests saved site settings and returns normalized search results. `auto` uses the explicit site default; disabled/unconfigured providers fail without fallback.
+
+Existing global search credentials are encrypted during migration. Agent/team credentials are archived encrypted and cease to apply; `legacy_credentials_present` signals that administrator action may be needed. No private account is automatically promoted to a site account.
 
 ## Get Tool Usage
 

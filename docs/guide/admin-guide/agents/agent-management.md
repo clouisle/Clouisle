@@ -243,10 +243,10 @@ Knowledge base order can be adjusted by editing the agent; the ordering is defin
 **Web Search:**
 ```yaml
 Enabled: true
-Requires: TAVILY_API_KEY
+Provider: inherit site default # or select an enabled site provider
 ```
 
-Web Search is powered by Tavily. The API key is stored in the tool configuration (`TAVILY_API_KEY`); per-query parameters such as `max_results` are controlled by the agent at call time.
+Web Search credentials are configured centrally by site administrators. Agents choose a provider or inherit the site default; API keys and endpoints are not Agent settings. Per-query parameters such as `num_results` are controlled by the agent at call time.
 
 **Custom Tools:**
 ```yaml

@@ -230,6 +230,7 @@
       },
       "noSearchResults": "No tools found",
       "requiresConfig": "Requires configuration",
+      "webSearchManaged": "Web search is configured centrally by site administrators. Team-level search keys are no longer used.",
       "parameters": "Parameters",
       "noParameters": "No parameters required",
       "required": "Required",
@@ -311,11 +312,7 @@
       },
       "configDialog": {
         "title": "Configure {name}",
-        "description": "Set up API keys and credentials for this tool",
-        "tavilyApiKeyLabel": "Tavily API Key",
-        "tavilyApiKeyDescription": "Get your API key from Tavily (optional, falls back to zero-config search if empty)",
-        "bochaApiKeyLabel": "Bocha API Key",
-        "bochaApiKeyDescription": "Get your API key from Bocha.ai (optional, optimized for Chinese content)"
+        "description": "Set up API keys and credentials for this tool"
       },
       "httpDialog": {
         "createTitle": "Create HTTP Tool",

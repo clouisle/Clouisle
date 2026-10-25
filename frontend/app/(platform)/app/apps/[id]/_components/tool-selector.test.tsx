@@ -211,7 +211,11 @@ describe('ToolSelector', () => {
       requires_config: false,
       config_fields: [],
     }
-    const webSearchConfig: ToolConfig = { type: 'builtin', name: 'web_search', config: { engine: 'auto' } }
+    const webSearchConfig: ToolConfig = {
+      type: 'builtin',
+      name: 'web_search',
+      config: { engine: 'auto', include_answer: true, api_key: 'legacy-agent-key' },
+    }
     const renderSearchItem = () => {
       stateIndex = 0
       const parent = ToolSelector({
@@ -231,13 +235,10 @@ describe('ToolSelector', () => {
 
     const saveBtn = find(tree, (node) => typeof node.props.onClick === 'function' && text(node).includes('config.save'))
     ;(saveBtn.props.onClick as () => void)()
-    expect(onChange).toHaveBeenCalledWith([
-      expect.objectContaining({
-        type: 'builtin',
-        name: 'web_search',
-        config: expect.objectContaining({ engine: 'bocha', api_key: undefined }),
-      }),
-    ])
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const savedConfigs = onChange.mock.calls[0][0] as ToolConfig[]
+    expect(savedConfigs[0]).toMatchObject({ type: 'builtin', name: 'web_search' })
+    expect(savedConfigs[0].config).toEqual({ engine: 'bocha' })
 
     // hover delete button
     const deleteBtn = find(tree, (node) => typeof node.props.onMouseEnter === 'function')

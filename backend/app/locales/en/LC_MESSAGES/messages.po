@@ -2757,6 +2757,27 @@ msgstr "Parser error"
 msgid "verification_code_invalid"
 msgstr "Invalid verification code"
 
+msgid "web_search_not_configured"
+msgstr "Site web search is not configured; contact the site administrator"
+
+msgid "web_search_engine_disabled"
+msgstr "The site search provider {engine} is disabled"
+
+msgid "web_search_engine_not_configured"
+msgstr "The site search provider {engine} is missing required configuration"
+
+msgid "web_search_default_engine_disabled"
+msgstr "The default search provider must be enabled"
+
+msgid "web_search_default_engine_invalid"
+msgstr "Select a valid site default search provider"
+
+msgid "web_search_credentials_unreadable"
+msgstr "The saved search credential cannot be decrypted; replace it in site configuration"
+
+msgid "web_search_site_managed"
+msgstr "Web search is managed through the dedicated site administrator configuration"
+
 msgid "web_search_unsupported_engine"
 msgstr "Unsupported search engine: {search_engine}"
 

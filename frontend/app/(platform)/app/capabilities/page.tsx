@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, Database, ChevronDown, PackageOpen, Upload } from 'lucide-react'
+import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, Database, ChevronDown, PackageOpen, Upload, Info } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
@@ -479,6 +479,16 @@ export default function CapabilitiesPage() {
               )}
             </div>
           </div>
+
+          {tools.some((tool) => tool.type === 'builtin' && tool.name === 'web_search') && (
+            <div
+              className="flex items-start gap-2 rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground"
+              data-testid="web-search-managed-notice"
+            >
+              <Info className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>{t('tools.webSearchManaged')}</p>
+            </div>
+          )}
 
           {loading ? (
             <div className="flex items-center justify-center py-12">

@@ -250,6 +250,19 @@ class ToolConfig(BaseModel):
     skill_id: str | None = Field(None, description="Skill ID")
     config: dict[str, Any] | None = Field(None, description="Tool-specific config")
 
+    @model_validator(mode="after")
+    def restrict_web_search_config(self):
+        if self.type == "builtin" and self.name == "web_search":
+            config = self.config or {}
+            if set(config) - {"engine"}:
+                raise ValueError(
+                    "Web search credentials and endpoint are managed by the site administrator"
+                )
+            if config.get("engine", "auto") not in {"auto", "tavily", "bocha"}:
+                raise ValueError("Unsupported search engine")
+            self.config = {"engine": config.get("engine", "auto")}
+        return self
+
 
 class VariableDefinition(BaseModel):
     """Variable definition for agent"""
@@ -355,6 +368,19 @@ class AgentCreate(AgentBase):
     tools_credentials: dict[str, str] = Field(
         default_factory=dict, description="Tools credentials (API keys, tokens, etc.)"
     )
+
+    @model_validator(mode="after")
+    def reject_search_credentials(self):
+        if {
+            "TAVILY_API_KEY",
+            "BOCHA_API_KEY",
+            "SEARXNG_AUTH_TOKEN",
+        } & self.tools_credentials.keys():
+            raise ValueError(
+                "Web search credentials are managed by the site administrator"
+            )
+        return self
+
     enable_attachments: bool = Field(
         default=False, description="Enable file and image attachments"
     )
@@ -424,6 +450,19 @@ class AgentUpdate(BaseModel):
     hide_artifact_list: bool | None = None
     tools_config: list[ToolConfig] | None = None
     tools_credentials: dict[str, str] | None = None
+
+    @model_validator(mode="after")
+    def reject_search_credentials(self):
+        if (
+            self.tools_credentials
+            and {"TAVILY_API_KEY", "BOCHA_API_KEY", "SEARXNG_AUTH_TOKEN"}
+            & self.tools_credentials.keys()
+        ):
+            raise ValueError(
+                "Web search credentials are managed by the site administrator"
+            )
+        return self
+
     enable_attachments: bool | None = None
     attachment_config: AttachmentConfig | None = None
     enable_user_input_request: bool | None = None

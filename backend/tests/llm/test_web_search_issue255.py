@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from app.llm.tools.builtin import web_search as subject
+from app.schemas.response import BusinessError
 from app.services.citations import stable_citation_id
 
 
@@ -47,15 +48,23 @@ def http_error(status_code=503):
 async def test_web_search_dispatches_tavily_and_rejects_other_engines(monkeypatch):
     tavily = AsyncMock(return_value={"success": True})
     translate = Mock(side_effect=lambda key, **kwargs: (key, kwargs))
+    runtime = AsyncMock(return_value=("tavily", {"TAVILY_API_KEY": "site-key"}))
     monkeypatch.setattr(subject, "_tavily_search", tavily)
+    monkeypatch.setattr(subject, "get_web_search_runtime", runtime)
     monkeypatch.setattr(subject, "t", translate)
 
-    assert await subject.web_search(
-        "cloud", 3, search_engine="tavily", credentials={"token": "x"}
-    ) == {"success": True, "search_engine": "tavily"}
+    assert await subject.web_search("cloud", 3, search_engine="tavily") == {
+        "success": True,
+        "search_engine": "tavily",
+    }
+
+    runtime.side_effect = BusinessError(
+        msg_key="web_search_unsupported_engine", search_engine="other"
+    )
     unsupported = await subject.web_search("cloud", search_engine="other")
 
-    tavily.assert_awaited_once_with("cloud", 3, {"token": "x"})
+    runtime.assert_any_await("tavily")
+    tavily.assert_awaited_once_with("cloud", 3, {"TAVILY_API_KEY": "site-key"})
     assert unsupported == {
         "query": "cloud",
         "error": ("web_search_unsupported_engine", {"search_engine": "other"}),

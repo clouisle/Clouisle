@@ -232,6 +232,7 @@ export type PlatformMessages = {
       }
       noSearchResults: string
       requiresConfig: string
+      webSearchManaged: string
       parameters: string
       noParameters: string
       required: string
@@ -314,10 +315,6 @@ export type PlatformMessages = {
       configDialog: {
         title: string
         description: string
-        tavilyApiKeyLabel: string
-        tavilyApiKeyDescription: string
-        bochaApiKeyLabel: string
-        bochaApiKeyDescription: string
       }
       httpDialog: {
         createTitle: string

@@ -2757,6 +2757,27 @@ msgstr "解析错误"
 msgid "verification_code_invalid"
 msgstr "验证码无效"
 
+msgid "web_search_not_configured"
+msgstr "站点尚未配置网页搜索，请联系站点管理员"
+
+msgid "web_search_engine_disabled"
+msgstr "站点搜索服务 {engine} 已停用"
+
+msgid "web_search_engine_not_configured"
+msgstr "站点搜索服务 {engine} 缺少必要配置"
+
+msgid "web_search_default_engine_disabled"
+msgstr "默认搜索服务必须处于启用状态"
+
+msgid "web_search_default_engine_invalid"
+msgstr "请选择有效的站点默认搜索服务"
+
+msgid "web_search_credentials_unreadable"
+msgstr "无法解密已保存的搜索凭证，请在站点配置中替换"
+
+msgid "web_search_site_managed"
+msgstr "网页搜索由站点管理员在专用配置入口集中管理"
+
 msgid "web_search_unsupported_engine"
 msgstr "不支持的搜索引擎：{search_engine}"
 

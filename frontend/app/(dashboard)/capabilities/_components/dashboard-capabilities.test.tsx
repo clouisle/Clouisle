@@ -190,6 +190,7 @@ mock.module('@/app/(platform)/app/capabilities/_components/mcp-tool-dialog', () 
 mock.module('./delete-tool-dialog', () => ({ DeleteToolDialog: ({ open }: { open: boolean }) => open ? <div>delete-dialog</div> : null }))
 mock.module('@/app/(platform)/app/capabilities/_components/tool-test-panel', () => ({ ToolTestPanel: ({ tool }: { tool: { name: string } | null }) => tool ? <div>test:{tool.name}</div> : null }))
 mock.module('@/app/(platform)/app/capabilities/_components/tool-config-dialog', () => ({ ToolConfigDialog: ({ open, onSave }: { open: boolean; onSave: (config: Record<string, string>) => Promise<void> }) => open ? <button onClick={() => onSave({ api_key: 'secret' })}>config-dialog</button> : null }))
+mock.module('./web-search-config-dialog', () => ({ WebSearchConfigDialog: ({ open, onOpenChange }: { open: boolean; onOpenChange: (value: boolean) => void }) => open ? <button onClick={() => onOpenChange(false)}>web-search-dialog</button> : null }))
 mock.module('@/components/packages/import-package-dialog', () => ({ ImportPackageDialog: ({ open }: { open: boolean }) => open ? <div>import-package</div> : null }))
 mock.module('@/lib/validation', () => ({
   clearValidationError: (errors: Record<string, string>, key: string) => { const next = { ...errors }; delete next[key]; return next },
@@ -368,7 +369,7 @@ describe('dashboard capability clients', () => {
 
   test('ToolsClient runs custom tool actions and builtin configuration callbacks', async () => {
     const customTool = { ...tool, id: 'custom-1', name: 'http_lookup', display_name: 'HTTP Lookup', type: 'custom' as const, custom_type: 'http' as const, is_enabled: false }
-    const builtinTool = { ...tool, id: undefined, name: 'web_search', display_name: 'Web Search', requires_config: true }
+    const builtinTool = { ...tool, id: undefined, name: 'web_search', display_name: 'Web Search', requires_config: false }
     spyOn(teamsApiMock, 'getTeams').mockResolvedValue(teamsPage)
     spyOn(adminToolsApiMock, 'listPage').mockResolvedValue({ items: [customTool, builtinTool], total: 2, page: 1, pageSize: 10 })
     spyOn(adminToolsApiMock, 'getFilterOptions').mockResolvedValue({ categories: [], creators: [], teams: [] })
@@ -398,9 +399,10 @@ describe('dashboard capability clients', () => {
 
     const editButtons = [...container.querySelectorAll('button')].filter((item) => item.textContent?.includes('common.edit'))
     click(editButtons.at(-1) as HTMLButtonElement)
-    await act(async () => button(container, 'config-dialog').click())
-    expect(createConfig).toHaveBeenCalledWith('web_search', { api_key: 'secret' }, 'team-1')
-    expect(toastSuccess).toHaveBeenCalledWith('tools.configSaved')
+    await act(async () => await Promise.resolve())
+    expect(container.textContent).toContain('web-search-dialog')
+    expect(container.textContent).not.toContain('config-dialog')
+    expect(createConfig).not.toHaveBeenCalled()
   })
 
   test('AdminSkillsPanel loads skills and installs selected git preview entries', async () => {

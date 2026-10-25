@@ -220,33 +220,6 @@ async def test_list_tools_legacy_skips_shared_query_when_disabled():
 
 
 @pytest.mark.anyio
-async def test_test_tool_uses_environment_credentials_for_builtin_tool():
-    builtin = object()
-    request = ToolExecuteRequest(name="web_search", arguments={"query": "docs"})
-    with (
-        patch(
-            "app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=builtin
-        ),
-        patch(
-            "app.models.tool_config.ToolConfig.filter", return_value=QueryResult(None)
-        ),
-        patch("app.core.config.settings.TAVILY_API_KEY", "env-key", create=True),
-        patch(
-            "app.api.v1.endpoints.tools.tool_registry.execute",
-            new=AsyncMock(return_value={"answer": "ok"}),
-        ) as execute,
-    ):
-        response = await execute_test_tool(
-            request, team_id=uuid4(), current_user=user()
-        )
-
-    assert response["data"].success is True
-    execute.assert_awaited_once_with(
-        "web_search", {"query": "docs"}, credentials={"TAVILY_API_KEY": "env-key"}
-    )
-
-
-@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("custom_tool", "expected_error"),
     [

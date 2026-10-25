@@ -11,7 +11,6 @@ import pytest
 
 from app.api.v1.endpoints.chat_tools import (
     execute_tool_call,
-    _get_builtin_tool_credentials,
 )
 from app.models.agent_run import AgentRunInputKind, AgentRunInputStatus, AgentRunStatus
 from app.models.tool import CustomToolType, ToolType
@@ -24,7 +23,6 @@ from app.services.agent_run_store import (
 )
 from app.llm.tools.builtin.rss import _clean_html_text, read_rss_feed
 from app.llm.tools.builtin.web_search import (
-    web_search,
     fetch_webpage,
 )
 
@@ -67,54 +65,6 @@ async def test_execute_tool_call_database_custom_type():
             )
             err_data = json.loads(err_str)
             assert "error" in err_data
-
-
-@pytest.mark.anyio
-async def test_get_builtin_tool_credentials_branches():
-    # 1. agent.tools_config override with api_key and engine
-    agent = SimpleNamespace(
-        tools_config=[
-            {
-                "name": "web_search",
-                "config": {
-                    "api_key": "bocha_key",
-                    "engine": "bocha",
-                    "TAVILY_API_KEY": "t_key",
-                },
-            }
-        ]
-    )
-    with patch("app.models.tool_config.ToolConfig.filter") as mock_filter:
-        team_q = MagicMock()
-        team_q.first = AsyncMock(return_value=None)
-        mock_filter.return_value = team_q
-
-        creds = await _get_builtin_tool_credentials(
-            "web_search", agent=agent, agent_tool_config=agent.tools_config[0]["config"]
-        )
-        assert creds["BOCHA_API_KEY"] == "bocha_key"
-        assert creds["TAVILY_API_KEY"] == "t_key"
-
-    # 2. agent.tools_config override with engine = tavily
-    agent_tavily = SimpleNamespace(
-        tools_config=[
-            {
-                "name": "web_search",
-                "config": {"api_key": "tavily_key", "engine": "tavily"},
-            }
-        ]
-    )
-    with patch("app.models.tool_config.ToolConfig.filter") as mock_filter:
-        team_q = MagicMock()
-        team_q.first = AsyncMock(return_value=None)
-        mock_filter.return_value = team_q
-
-        creds = await _get_builtin_tool_credentials(
-            "web_search",
-            agent=agent_tavily,
-            agent_tool_config=agent_tavily.tools_config[0]["config"],
-        )
-        assert creds["TAVILY_API_KEY"] == "tavily_key"
 
 
 @pytest.mark.anyio
@@ -417,17 +367,6 @@ async def test_read_rss_feed_branches():
 
 @pytest.mark.anyio
 async def test_web_search_and_fetch_webpage_branches():
-    # 1. Auto without credentials fails instead of using keyless search.
-    res = await web_search("python", search_engine="auto")
-    assert res["success"] is False
-    assert res["results"] == []
-    assert "API key" in res["error"]
-
-    # 2. web_search bocha without api_key
-    res_bocha = await web_search("python", search_engine="bocha", credentials={})
-    assert res_bocha["success"] is False
-    assert "Bocha API key is not configured" in str(res_bocha.get("error", ""))
-
     # 3. fetch_webpage persists a complete non-HTML document
     from app.services import asset_url_import
     from app.schemas.response import BusinessError

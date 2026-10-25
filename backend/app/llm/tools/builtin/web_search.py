@@ -2,7 +2,7 @@
 网页搜索工具
 
 提供网页搜索功能，支持多种搜索引擎。
-网页搜索需要配置 Tavily 或博查 API Key。
+搜索引擎与 API Key 由站点管理员统一配置；工具调用方不能传入或覆盖凭证。
 """
 
 import asyncio
@@ -16,6 +16,7 @@ import trafilatura
 from app.core.i18n import t
 from app.schemas.response import BusinessError
 from app.services.citations import stable_citation_id, with_web_citation_ids
+from app.services.web_search_config import get_web_search_runtime
 from ..registry import tool_registry, ToolParameter, ToolConcurrency
 
 logger = logging.getLogger(__name__)
@@ -25,52 +26,46 @@ async def web_search(
     query: str,
     num_results: int = 5,
     search_engine: str = "auto",
-    credentials: dict[str, str] | None = None,
 ) -> dict:
     """
     搜索网页。
 
-    支持多引擎架构：
-    - auto: 优先使用已配置 API Key 的 Tavily，其次使用博查；未配置时返回错误。
-    - tavily: 使用 Tavily 搜索（需要 TAVILY_API_KEY）。
-    - bocha: 使用国内博查 AI 搜索（需要 BOCHA_API_KEY）。
+    Provider selection and credentials are site-managed. The tool never reads
+    caller-supplied credentials, and there is no fallback between providers:
+    - auto: use the site administrator's configured default engine.
+    - tavily: use the site Tavily configuration (must be enabled).
+    - bocha: use the site Bocha configuration (must be enabled).
 
     Args:
         query: 搜索关键词或问题
         num_results: 返回结果数量，默认 5，最大 10
-        search_engine: 搜索引擎，支持 'auto', 'tavily', 'bocha'
-        credentials: 凭证信息（可包含 TAVILY_API_KEY, BOCHA_API_KEY 等）
+        search_engine: 站点已启用的搜索引擎：'auto', 'tavily', 'bocha'
 
     Returns:
         包含标准搜索结果与引用 ID 的结构化字典
     """
-    engine = (search_engine or "auto").strip().lower()
-    is_auto = engine == "auto"
-    creds = credentials or {}
+    requested = (search_engine or "auto").strip().lower()
     num_results = max(1, min(num_results, 10))
 
-    if is_auto:
-        # 根据可用凭证自动选择：Tavily -> Bocha
-        if creds.get("TAVILY_API_KEY"):
-            engine = "tavily"
-        elif creds.get("BOCHA_API_KEY"):
-            engine = "bocha"
-        else:
-            return {
-                "query": query,
-                "error": t("web_search_api_key_not_configured"),
-                "success": False,
-                "results": [],
-            }
-
-    if engine == "tavily":
-        result = await _tavily_search(query, num_results, creds)
-    elif engine == "bocha":
-        result = await _bocha_search(query, num_results, creds)
-    else:
+    try:
+        engine, provider_config = await get_web_search_runtime(requested)
+    except BusinessError as exc:
         return {
             "query": query,
-            "error": t("web_search_unsupported_engine", search_engine=search_engine),
+            "error": _translate_business_error(exc),
+            "success": False,
+            "results": [],
+        }
+
+    if engine == "tavily":
+        result = await _tavily_search(query, num_results, provider_config)
+    elif engine == "bocha":
+        result = await _bocha_search(query, num_results, provider_config)
+    else:
+        # get_web_search_runtime only resolves configured providers.
+        return {
+            "query": query,
+            "error": t("web_search_unsupported_engine", search_engine=engine),
             "success": False,
             "results": [],
         }
