@@ -144,6 +144,17 @@ export function ToolNodeConfig({
     ...config,
     parameterMappings: config.parameterMappings || [],
   }
+  // Engine routing is workflow configuration, not a model-facing tool parameter.
+  if (safeConfig.toolType === 'builtin' && safeConfig.toolName === 'web_search' &&
+      !safeConfig.parameterMappings.some(mapping => mapping.name === 'search_engine')) {
+    safeConfig.parameterMappings = [...safeConfig.parameterMappings, {
+      name: 'search_engine',
+      type: 'string',
+      required: false,
+      source: 'constant',
+      constantValue: 'auto',
+    }]
+  }
 
   // 加载工具列表
   React.useEffect(() => {

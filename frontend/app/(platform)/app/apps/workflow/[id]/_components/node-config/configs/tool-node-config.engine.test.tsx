@@ -24,7 +24,7 @@ const webSearch: Tool = {
   icon: '',
   parameters: [
     { name: 'query', type: 'string', required: true },
-    { name: 'search_engine', type: 'string', required: false, default: 'auto' },
+    { name: 'num_results', type: 'integer', required: false, default: 5 },
   ],
   is_enabled: true,
   requires_config: true,
@@ -100,8 +100,8 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-test('choosing an enabled engine updates the persisted mapping constant', async () => {
-  const onConfigChange = await renderTool([queryMapping, engineMapping])
+test.each([[[]], [[queryMapping]]])('search nodes missing the engine mapping expose and persist a choice', async (mappings) => {
+  const onConfigChange = await renderTool(mappings)
 
   expect(document.querySelector('[role="combobox"]')?.textContent).toContain('Site default')
   const options = await openEngineMenu()
@@ -114,7 +114,7 @@ test('choosing an enabled engine updates the persisted mapping constant', async 
     toolType: 'builtin',
     outputVariable: 'result',
     parameterMappings: [
-      queryMapping,
+      ...mappings,
       expect.objectContaining({ name: 'search_engine', source: 'constant', constantValue: 'tavily' }),
     ],
   }))
