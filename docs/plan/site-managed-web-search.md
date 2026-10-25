@@ -47,7 +47,7 @@ Success criteria: one administrator configuration surface; explicit default and 
 - Rollback requires restoring archived credentials deliberately; no runtime compatibility aliases are retained.
 
 ## Status
-- In progress on `feat/site-managed-web-search`.
+- Completed on `feat/site-managed-web-search`: `81f4fc4` centralizes Tavily/Bocha; `8de04a2` adds configured SearXNG. Changes are committed locally, not pushed.
 - Stage 1 verified: 263 focused backend tests and 53 frontend tests passed; TypeScript, targeted ESLint, Ruff and backend catalog/legacy sync checks passed.
 - Real ORM smoke: SQLite configuration save/read/rotation/default selection/clear and public web_search with HTTP transport fixtures passed. PostgreSQL temporary-table migration preserved global account, encrypted/archive private credentials without promotion, sanitized Agent config and repeated idempotently; transaction rolled back.
 - No application services or browser sessions started. Live authenticated commercial-provider calls not exercised.

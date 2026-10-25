@@ -1,10 +1,10 @@
 # Implementation Plan
 
 ## Active
-- **site-managed-web-search** — In progress. See `docs/plan/site-managed-web-search.md`.
+- **site-managed-web-search** — Completed. See `docs/plan/site-managed-web-search.md`.
   - [x] 1. Centralize Tavily/Bocha site configuration and migrate credentials
   - [x] 2. Add configured SearXNG with safe Base URL handling
-  - [ ] 3. Integrated verification and operator documentation
+  - [x] 3. Integrated verification and operator documentation
 
 - **keyed-web-search-only** — Completed. See `docs/plan/keyed-web-search-only.md`.
   - [x] 1. Remove keyless providers and migrate saved selections
