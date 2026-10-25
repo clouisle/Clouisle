@@ -25,7 +25,7 @@ from ..registry import tool_registry, ToolParameter, ToolConcurrency
 
 logger = logging.getLogger(__name__)
 
-SEARXNG_TIMEOUT_SECONDS = 15
+SEARXNG_TIMEOUT_SECONDS = 30
 
 
 async def web_search(

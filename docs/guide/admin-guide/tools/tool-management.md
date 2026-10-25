@@ -112,6 +112,8 @@ search:
 
 The instance must be reachable from API and task-worker processes that execute searches. Private IPs/internal hostnames must be explicitly approved through the existing SSRF allowed-target settings; cloud metadata targets remain blocked. Use a resolvable internal FQDN or explicitly allowlist the private IP; a bare Docker service name cannot be added as a hostname rule by the existing allowlist validator. Search requests recheck SSRF policy and do not follow redirects.
 
+SearXNG uses a 30-second HTTPX timeout for connection/read/write/pool operations, not a strict total-duration deadline. Requests are not retried and do not fall back to another provider.
+
 Save first, then test with `上海天气 今天`, a multiword technical query and a `site:` query. Inspect result relevance as well as connectivity. A 403 may mean JSON output is disabled or the gateway rejected access. SearXNG engine availability/relevance depends on the instance's upstream engines; Clouisle does not promise that every query/operator is supported.
 
 
