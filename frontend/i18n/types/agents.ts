@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-24T18:18:06.001Z
+// GENERATED — 2026-10-25T15:35:03.703Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {
@@ -280,6 +280,7 @@ export type AgentsMessages = {
           engineBocha: string
           engineTavily: string
           engineSearxng: string
+          engineDeepseek: string
           cancel: string
           save: string
         }

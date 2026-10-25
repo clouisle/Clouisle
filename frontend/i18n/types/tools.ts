@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-24T18:18:06.009Z
+// GENERATED — 2026-10-25T15:35:03.708Z
 // Source: i18n/en/tools.json
 export type ToolsMessages = {
   tools: {
@@ -38,12 +38,16 @@ export type ToolsMessages = {
       tavily: string
       bocha: string
       searxng: string
+      deepseek: string
       providerEnabled: string
       providerEnabledHint: string
       tavilyApiKey: string
       bochaApiKey: string
+      deepseekApiKey: string
       tavilyKeyPlaceholder: string
       bochaKeyPlaceholder: string
+      deepseekKeyPlaceholder: string
+      deepseekKeyHint: string
       searxngBaseUrl: string
       searxngBaseUrlPlaceholder: string
       searxngBaseUrlHint: string
@@ -70,6 +74,7 @@ export type ToolsMessages = {
       engineTavily: string
       engineBocha: string
       engineSearxng: string
+      engineDeepseek: string
       runTest: string
       testing: string
       testSucceeded: string

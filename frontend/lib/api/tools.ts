@@ -286,7 +286,7 @@ export interface ToolConfig {
 
 // ============ Web Search Types ============
 
-export type WebSearchEngine = 'auto' | 'tavily' | 'bocha' | 'searxng'
+export type WebSearchEngine = 'auto' | 'tavily' | 'bocha' | 'searxng' | 'deepseek'
 export type WebSearchDefaultEngine = Exclude<WebSearchEngine, 'auto'>
 
 /**
@@ -297,9 +297,11 @@ export interface WebSearchConfig {
   tavily_enabled: boolean
   bocha_enabled: boolean
   searxng_enabled: boolean
+  deepseek_enabled: boolean
   searxng_base_url: string
   tavily_api_key_configured: boolean
   bocha_api_key_configured: boolean
+  deepseek_api_key_configured: boolean
   searxng_auth_token_configured: boolean
   legacy_credentials_present: boolean
 }
@@ -315,9 +317,11 @@ export interface WebSearchConfigUpdate {
   tavily_enabled: boolean
   bocha_enabled: boolean
   searxng_enabled: boolean
+  deepseek_enabled: boolean
   searxng_base_url: string
   tavily_api_key?: string | null
   bocha_api_key?: string | null
+  deepseek_api_key?: string | null
   searxng_auth_token?: string | null
 }
 

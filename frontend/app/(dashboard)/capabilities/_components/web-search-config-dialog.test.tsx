@@ -75,9 +75,11 @@ const savedConfig: WebSearchConfig = {
   tavily_enabled: true,
   bocha_enabled: false,
   searxng_enabled: false,
+  deepseek_enabled: false,
   searxng_base_url: 'https://search.example.test/searxng',
   tavily_api_key_configured: true,
   bocha_api_key_configured: false,
+  deepseek_api_key_configured: true,
   searxng_auth_token_configured: true,
   legacy_credentials_present: true,
 }
@@ -130,7 +132,7 @@ function onInput(container: HTMLElement, selector: string, value: string) {
   act(() => props.onChange({ target: { value } }))
 }
 
-function toggleProvider(container: HTMLElement, provider: 'tavily' | 'bocha' | 'searxng', checked: boolean) {
+function toggleProvider(container: HTMLElement, provider: 'tavily' | 'bocha' | 'searxng' | 'deepseek', checked: boolean) {
   const label = `tools.webSearch.${provider} tools.webSearch.providerEnabled`
   const input = container.querySelector(`input[aria-label="${label}"]`) as HTMLInputElement | null
   if (!input) throw new Error(`Missing provider switch ${label}`)
@@ -166,10 +168,12 @@ describe('WebSearchConfigDialog', () => {
       tavily_enabled: true,
       bocha_enabled: false,
       searxng_enabled: false,
+      deepseek_enabled: false,
       searxng_base_url: 'https://search.example.test/searxng',
     })
     expect(payload).not.toHaveProperty('tavily_api_key')
     expect(payload).not.toHaveProperty('bocha_api_key')
+    expect(payload).not.toHaveProperty('deepseek_api_key')
     expect(payload).not.toHaveProperty('searxng_auth_token')
     expect(toastSuccess).toHaveBeenCalledWith('tools.webSearch.saved')
   })
@@ -200,6 +204,38 @@ describe('WebSearchConfigDialog', () => {
       tavily_api_key: 'tvly-new',
       bocha_api_key: 'sk-new',
     })
+  })
+
+  test('enables DeepSeek as default and saves only its entered key', async () => {
+    const container = await renderDialog()
+
+    toggleProvider(container, 'deepseek', true)
+    onInput(container, '#web-search-deepseek-api-key', '  sk-deepseek  ')
+    act(() => (container.querySelectorAll('button[data-select-value="deepseek"]')[0] as HTMLButtonElement).click())
+    await act(async () => button(container, 'tools.webSearch.save').click())
+
+    expect(updateWebSearchConfig.mock.calls[0][0]).toMatchObject({
+      default_engine: 'deepseek',
+      deepseek_enabled: true,
+      deepseek_api_key: 'sk-deepseek',
+    })
+    expect(updateWebSearchConfig.mock.calls[0][0]).not.toHaveProperty('tavily_api_key')
+  })
+
+  test('refuses a disabled DeepSeek default and clears its saved key explicitly', async () => {
+    const container = await renderDialog()
+
+    // Tavily is enabled in the saved config, so an enabled provider exists.
+    act(() => (container.querySelectorAll('button[data-select-value="deepseek"]')[0] as HTMLButtonElement).click())
+    await act(async () => button(container, 'tools.webSearch.save').click())
+    expect(container.textContent).toContain('tools.webSearch.defaultEngineDisabled')
+    expect(updateWebSearchConfig).not.toHaveBeenCalled()
+
+    toggleProvider(container, 'deepseek', true)
+    const clearButtons = [...container.querySelectorAll('button')].filter((item) => item.textContent?.includes('tools.webSearch.clearKey'))
+    act(() => clearButtons.at(-2)!.click())
+    await act(async () => button(container, 'tools.webSearch.save').click())
+    expect(updateWebSearchConfig.mock.calls[0][0]).toMatchObject({ deepseek_api_key: '' })
   })
 
   test('enables SearXNG as default and saves a trimmed URL and bearer token', async () => {

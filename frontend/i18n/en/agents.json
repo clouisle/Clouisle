@@ -278,6 +278,7 @@
           "engineBocha": "Bocha AI (Optimized for Chinese)",
           "engineTavily": "Tavily Search (High Accuracy AI Search)",
           "engineSearxng": "SearXNG (Self-hosted)",
+          "engineDeepseek": "DeepSeek Search",
           "cancel": "Cancel",
           "save": "Save"
         },

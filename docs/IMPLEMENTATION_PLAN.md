@@ -1,6 +1,11 @@
 # Implementation Plan
 
 ## Active
+- **deepseek-search-provider** — Completed. See `docs/plan/deepseek-search-provider.md`.
+  - [x] 1. Site configuration, encrypted key and runtime dispatch
+  - [x] 2. Admin dialog, enabled-engine selectors and localization
+  - [x] 3. Documentation and integrated verification
+
 - **enabled-search-engine-selection** — Completed. See `docs/plan/enabled-search-engine-selection.md`.
   - [x] 1. Safe enabled-engine availability API
   - [x] 2. Agent and workflow search-engine selectors

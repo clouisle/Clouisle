@@ -82,6 +82,7 @@ Site Configuration:
   default_engine: tavily
   tavily_enabled: true
   bocha_enabled: false
+  deepseek_enabled: false
   tavily_api_key: ... # write-only
 ```
 
@@ -91,13 +92,17 @@ Agent orchestration and workflow `web_search` tool nodes share an enabled-only e
 
 **Update Configuration:**
 1. Open Web Search configuration in the administrator dashboard.
-2. Enable Tavily/Bocha and enter its API key, or enable the administrator-configured SearXNG instance.
+2. Enable Tavily, Bocha or DeepSeek and enter its API key, or enable the administrator-configured SearXNG instance.
 3. Choose the site default and save changes.
 4. Test the saved configuration with a representative query and inspect relevance, not merely nonempty results.
 
-> **Note:** Tavily/Bocha require API credentials. SearXNG requires a configured instance, not a random public fallback. There are no per-tool limits (calls per day/agent/minute) or timeout settings for built-in tools.
+> **Note:** Tavily, Bocha and DeepSeek require API credentials. SearXNG requires a configured instance, not a random public fallback. There are no per-tool limits (calls per day/agent/minute) or timeout settings for built-in tools.
 
 On upgrade, existing global search keys remain global and are encrypted. Legacy Agent/team keys are archived encrypted, not activated site-wide. Administrators must configure the intended shared account; the configuration response signals archived credentials without exposing them. `TAVILY_API_KEY` is imported only on the first migration when no global key exists, not read on each request.
+
+#### DeepSeek Search
+
+Enable DeepSeek and paste a DeepSeek API key. Clouisle calls DeepSeek's own Search API (`https://api.deepseek.com/v1/tools/search`) with that key; it does not route searches through a DeepSeek chat model. Searches are billed by DeepSeek per successful request, independently of the number of returned results, and share the account-level Search QPS limit. Result text uses DeepSeek's long `summary` so the model receives useful snippets without downloading full pages.
 
 #### SearXNG instance
 

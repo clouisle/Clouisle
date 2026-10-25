@@ -402,6 +402,7 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
     bocha: t('config.engineBocha'),
     tavily: t('config.engineTavily'),
     searxng: t('config.engineSearxng'),
+    deepseek: t('config.engineDeepseek'),
   }
 
   return (

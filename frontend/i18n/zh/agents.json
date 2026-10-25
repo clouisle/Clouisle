@@ -278,6 +278,7 @@
           "engineBocha": "博查 AI (Bocha - 中文优化)",
           "engineTavily": "Tavily Search (高精度 AI 搜索)",
           "engineSearxng": "SearXNG（自托管）",
+          "engineDeepseek": "DeepSeek 搜索",
           "cancel": "取消",
           "save": "保存"
         },

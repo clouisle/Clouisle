@@ -181,7 +181,7 @@ Supports 23 providers out of the box, plus any OpenAI-compatible endpoint.
 
 ### Tool System
 
-- **Built-in Tools**: Time/date, datetime formatting, calculator, unit conversion, site-managed web search (Tavily/Bocha or configured SearXNG), webpage fetch, RSS reader, file parsing (MarkItDown), image/video generation, artifacts, and sandboxed bash/read/write/edit
+- **Built-in Tools**: Time/date, datetime formatting, calculator, unit conversion, site-managed web search (Tavily/Bocha/DeepSeek or configured SearXNG), webpage fetch, RSS reader, file parsing (MarkItDown), image/video generation, artifacts, and sandboxed bash/read/write/edit
 - **Custom Tools**: Configurable HTTP API tools with authentication (API key, Bearer, Basic) and variable mapping
 - **MCP Integration**: Model Context Protocol for standardized tool capabilities and resource access
 - **Sandboxed Execution**: Secure, isolated Python/JavaScript execution with resource limits — a dedicated worker runs tasks inside Bubblewrap user and mount namespaces; workers need `CAP_SYS_ADMIN`, `CAP_SETFCAP`, `CAP_NET_ADMIN`, and an unconfined seccomp profile.

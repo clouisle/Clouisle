@@ -29,6 +29,7 @@ export function WebSearchEngineSelect({ value, onValueChange, className }: WebSe
     tavily: t('engineTavily'),
     bocha: t('engineBocha'),
     searxng: t('engineSearxng'),
+    deepseek: t('engineDeepseek'),
   }
 
   return (

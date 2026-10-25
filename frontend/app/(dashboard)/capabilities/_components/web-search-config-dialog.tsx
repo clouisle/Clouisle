@@ -32,8 +32,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-const DEFAULT_ENGINES: WebSearchDefaultEngine[] = ['tavily', 'bocha', 'searxng']
-const TEST_ENGINES: WebSearchEngine[] = ['auto', 'tavily', 'bocha', 'searxng']
+const DEFAULT_ENGINES: WebSearchDefaultEngine[] = ['tavily', 'bocha', 'searxng', 'deepseek']
+const TEST_ENGINES: WebSearchEngine[] = ['auto', 'tavily', 'bocha', 'searxng', 'deepseek']
 
 type WebSearchConfigApi = Pick<
   typeof adminToolsApi,
@@ -153,12 +153,15 @@ export function WebSearchConfigDialog({
   const [tavilyEnabled, setTavilyEnabled] = useState(false)
   const [bochaEnabled, setBochaEnabled] = useState(false)
   const [searxngEnabled, setSearxngEnabled] = useState(false)
+  const [deepseekEnabled, setDeepseekEnabled] = useState(false)
   const [searxngBaseUrl, setSearxngBaseUrl] = useState('')
   const [tavilyApiKey, setTavilyApiKey] = useState('')
   const [bochaApiKey, setBochaApiKey] = useState('')
+  const [deepseekApiKey, setDeepseekApiKey] = useState('')
   const [searxngAuthToken, setSearxngAuthToken] = useState('')
   const [clearTavilyApiKey, setClearTavilyApiKey] = useState(false)
   const [clearBochaApiKey, setClearBochaApiKey] = useState(false)
+  const [clearDeepseekApiKey, setClearDeepseekApiKey] = useState(false)
   const [clearSearxngAuthToken, setClearSearxngAuthToken] = useState(false)
 
   const [isSaving, setIsSaving] = useState(false)
@@ -177,6 +180,7 @@ export function WebSearchConfigDialog({
     setTavilyEnabled(next.tavily_enabled)
     setBochaEnabled(next.bocha_enabled)
     setSearxngEnabled(next.searxng_enabled)
+    setDeepseekEnabled(next.deepseek_enabled)
     setSearxngBaseUrl(next.searxng_base_url)
   }
 
@@ -192,9 +196,11 @@ export function WebSearchConfigDialog({
     setSaveError(null)
     setTavilyApiKey('')
     setBochaApiKey('')
+    setDeepseekApiKey('')
     setSearxngAuthToken('')
     setClearTavilyApiKey(false)
     setClearBochaApiKey(false)
+    setClearDeepseekApiKey(false)
     setClearSearxngAuthToken(false)
     setTestQuery('')
     setTestEngine('auto')
@@ -223,13 +229,14 @@ export function WebSearchConfigDialog({
   const isEngineEnabled = (engine: WebSearchDefaultEngine): boolean => {
     if (engine === 'tavily') return tavilyEnabled
     if (engine === 'bocha') return bochaEnabled
+    if (engine === 'deepseek') return deepseekEnabled
     return searxngEnabled
   }
 
   const handleSave = async () => {
     setSaveError(null)
 
-    const anyProviderEnabled = tavilyEnabled || bochaEnabled || searxngEnabled
+    const anyProviderEnabled = tavilyEnabled || bochaEnabled || searxngEnabled || deepseekEnabled
     if (anyProviderEnabled && !isEngineEnabled(defaultEngine)) {
       setSaveError(t('defaultEngineDisabled'))
       return
@@ -257,6 +264,7 @@ export function WebSearchConfigDialog({
       tavily_enabled: tavilyEnabled,
       bocha_enabled: bochaEnabled,
       searxng_enabled: searxngEnabled,
+      deepseek_enabled: deepseekEnabled,
       searxng_base_url: searxngBaseUrl.trim(),
     }
 
@@ -264,6 +272,8 @@ export function WebSearchConfigDialog({
     else if (clearTavilyApiKey) payload.tavily_api_key = ''
     if (bochaApiKey.trim()) payload.bocha_api_key = bochaApiKey.trim()
     else if (clearBochaApiKey) payload.bocha_api_key = ''
+    if (deepseekApiKey.trim()) payload.deepseek_api_key = deepseekApiKey.trim()
+    else if (clearDeepseekApiKey) payload.deepseek_api_key = ''
     if (searxngAuthToken.trim()) payload.searxng_auth_token = searxngAuthToken.trim()
     else if (clearSearxngAuthToken) payload.searxng_auth_token = ''
 
@@ -275,9 +285,11 @@ export function WebSearchConfigDialog({
       applyConfig(updated)
       setTavilyApiKey('')
       setBochaApiKey('')
+      setDeepseekApiKey('')
       setSearxngAuthToken('')
       setClearTavilyApiKey(false)
       setClearBochaApiKey(false)
+      setClearDeepseekApiKey(false)
       setClearSearxngAuthToken(false)
       toast.success(t('saved'))
       onSaved?.()
@@ -316,6 +328,7 @@ export function WebSearchConfigDialog({
     if (engine === 'auto') return t('engineAuto')
     if (engine === 'tavily') return t('engineTavily')
     if (engine === 'bocha') return t('engineBocha')
+    if (engine === 'deepseek') return t('engineDeepseek')
     return t('engineSearxng')
   }
 
@@ -407,6 +420,23 @@ export function WebSearchConfigDialog({
                 onChange={setBochaApiKey}
                 onClearRequestedChange={setClearBochaApiKey}
               />
+
+              <ProviderToggle
+                label={t('deepseek')}
+                checked={deepseekEnabled}
+                onCheckedChange={setDeepseekEnabled}
+              />
+              <SecretField
+                id="web-search-deepseek-api-key"
+                label={t('deepseekApiKey')}
+                placeholder={t('deepseekKeyPlaceholder')}
+                value={deepseekApiKey}
+                configured={Boolean(config?.deepseek_api_key_configured)}
+                clearRequested={clearDeepseekApiKey}
+                onChange={setDeepseekApiKey}
+                onClearRequestedChange={setClearDeepseekApiKey}
+              />
+              <p className="text-[11px] text-muted-foreground">{t('deepseekKeyHint')}</p>
 
               <ProviderToggle
                 label={t('searxng')}
