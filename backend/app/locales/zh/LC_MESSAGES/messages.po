@@ -3485,6 +3485,24 @@ msgstr "智能体：{agent} — 状态：{status}"
 msgid "feishu_agent_received"
 msgstr "🤔思考中..."
 
+msgid "feishu_agent_answer_text_required"
+msgstr "请用文字回答当前问题，附件不能作为问题答案。"
+
+msgid "feishu_agent_attachments_disabled"
+msgstr "当前智能体未启用附件，请先开启附件功能。"
+
+msgid "feishu_agent_too_many_files"
+msgstr "附件数量超过当前智能体限制。"
+
+msgid "feishu_agent_file_type_unsupported"
+msgstr "当前智能体不允许此附件类型。"
+
+msgid "feishu_agent_file_too_large"
+msgstr "附件大小超过当前智能体限制。"
+
+msgid "feishu_agent_media_failed"
+msgstr "无法读取飞书附件，请检查机器人的消息资源读取权限后重试。"
+
 msgid "feishu_agent_busy"
 msgstr "上一条消息仍在处理中，请等待完成。"
 

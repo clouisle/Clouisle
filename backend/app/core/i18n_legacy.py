@@ -126,11 +126,56 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Archive task started successfully",
         "zh": "归档任务已启动",
     },
+    "asset_document_derived_asset": {
+        "en": "Derived document text cannot be read as an input attachment.",
+        "zh": "派生的文档文本不能作为输入附件读取。",
+    },
+    "asset_document_invalid_cursor": {
+        "en": "Invalid document cursor.",
+        "zh": "文档游标无效。",
+    },
+    "asset_document_invalid_query": {
+        "en": "The document search query is invalid.",
+        "zh": "文档搜索查询无效。",
+    },
+    "asset_document_invalid_range": {
+        "en": "The requested line range is invalid.",
+        "zh": "请求的行范围无效。",
+    },
+    "asset_document_resource_limit_exceeded": {
+        "en": "The document exceeds the supported extraction size limit.",
+        "zh": "文档超出支持的提取大小限制。",
+    },
+    "asset_document_stale_cursor": {
+        "en": "The document cursor is stale; restart the read or search.",
+        "zh": "文档游标已过期；请重新开始读取或搜索。",
+    },
+    "asset_page_range_required": {
+        "en": "Native PDF viewing requires an explicit page selection; use read_asset or search_asset to read document text.",
+        "zh": "原生查看 PDF 需要显式指定页码范围；请使用 read_asset 或 search_asset 读取文档文本。",
+    },
+    "asset_tool_context_lines_description": {
+        "en": "Lines of context to include around each match.",
+        "zh": "每个匹配结果周围包含的上下文行数。",
+    },
+    "asset_tool_cursor_description": {
+        "en": "next_cursor from a previous read_asset or search_asset result.",
+        "zh": "上一次 read_asset 或 search_asset 结果中的 next_cursor。",
+    },
     "asset_tool_inspect": {"en": "Inspect Attachment", "zh": "查看附件"},
     "asset_tool_inspect_description": {
         "en": "Inspect metadata and capabilities for an attachment in this conversation.",
         "zh": "查看当前对话中附件的元数据和可用操作。",
     },
+    "asset_tool_limit_description": {
+        "en": "Maximum number of matches to return in this page.",
+        "zh": "本页返回的最大匹配数量。",
+    },
+    "asset_tool_line_count_description": {
+        "en": "Maximum number of lines to return in this page.",
+        "zh": "本页返回的最大行数。",
+    },
+    "asset_tool_list": {"en": "Find Attachments", "zh": "查找历史附件"},
     "asset_tool_materialize": {"en": "Materialize Attachment", "zh": "物化附件"},
     "asset_tool_materialize_description": {
         "en": "Write the raw bytes of a conversation attachment into the sandbox workspace so it can be read, edited, or collected as a download link. Only works when a sandbox session is available.",
@@ -140,10 +185,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Destination path inside the sandbox workspace, e.g. /workspace/report.xlsx.",
         "zh": "沙箱工作区内的目标路径，例如 /workspace/report.xlsx。",
     },
+    "asset_tool_query_description": {
+        "en": "Literal text to find inside the document.",
+        "zh": "要在文档中查找的文本。",
+    },
     "asset_tool_read": {"en": "Read Attachment", "zh": "读取附件"},
     "asset_tool_read_description": {
         "en": "Read a bounded line range of a document attachment in this conversation. Continue with next_cursor until eof is true to reach the last character.",
         "zh": "按行范围读取当前对话中文档附件的有限内容。使用 next_cursor 继续读取，直到 eof 为 true 即可读到最后一个字符。",
+    },
+    "asset_tool_ref_description": {
+        "en": "Exact reference from available attachments.",
+        "zh": "从可用附件列表中使用精确引用。",
     },
     "asset_tool_search": {"en": "Search Attachment", "zh": "搜索附件"},
     "asset_tool_search_description": {
@@ -154,74 +207,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "One-based line number to start reading from.",
         "zh": "开始读取的起始行号（从 1 开始）。",
     },
-    "asset_tool_line_count_description": {
-        "en": "Maximum number of lines to return in this page.",
-        "zh": "本页返回的最大行数。",
-    },
-    "asset_tool_query_description": {
-        "en": "Literal text to find inside the document.",
-        "zh": "要在文档中查找的文本。",
-    },
-    "asset_tool_context_lines_description": {
-        "en": "Lines of context to include around each match.",
-        "zh": "每个匹配结果周围包含的上下文行数。",
-    },
-    "asset_tool_limit_description": {
-        "en": "Maximum number of matches to return in this page.",
-        "zh": "本页返回的最大匹配数量。",
-    },
-    "asset_tool_cursor_description": {
-        "en": "next_cursor from a previous read_asset or search_asset result.",
-        "zh": "上一次 read_asset 或 search_asset 结果中的 next_cursor。",
-    },
-    "asset_page_range_required": {
-        "en": "Native PDF viewing requires an explicit page selection; use read_asset or search_asset to read document text.",
-        "zh": "原生查看 PDF 需要显式指定页码范围；请使用 read_asset 或 search_asset 读取文档文本。",
-    },
-    "invalid_document_cursor": {
-        "en": "Invalid or stale document cursor",
-        "zh": "文档游标无效或已过期",
-    },
-    "document_extraction_empty": {
-        "en": "No text could be extracted from this document.",
-        "zh": "无法从该文档中提取文本。",
-    },
-    "document_extraction_decode_failed": {
-        "en": "The extracted document text could not be decoded as UTF-8.",
-        "zh": "提取出的文档文本无法按 UTF-8 解码。",
-    },
-    "asset_document_resource_limit_exceeded": {
-        "en": "The document exceeds the supported extraction size limit.",
-        "zh": "文档超出支持的提取大小限制。",
-    },
-    "asset_document_invalid_cursor": {
-        "en": "Invalid document cursor.",
-        "zh": "文档游标无效。",
-    },
-    "asset_document_stale_cursor": {
-        "en": "The document cursor is stale; restart the read or search.",
-        "zh": "文档游标已过期；请重新开始读取或搜索。",
-    },
-    "asset_document_invalid_range": {
-        "en": "The requested line range is invalid.",
-        "zh": "请求的行范围无效。",
-    },
-    "asset_document_invalid_query": {
-        "en": "The document search query is invalid.",
-        "zh": "文档搜索查询无效。",
-    },
-    "file_download_failed": {
-        "en": "Failed to download the external attachment.",
-        "zh": "下载外部附件失败。",
-    },
-    "asset_document_derived_asset": {
-        "en": "Derived document text cannot be read as an input attachment.",
-        "zh": "派生的文档文本不能作为输入附件读取。",
-    },
-    "asset_tool_ref_description": {
-        "en": "Exact reference from available attachments.",
-        "zh": "从可用附件列表中使用精确引用。",
-    },
+    "asset_tool_view": {"en": "View Attachment", "zh": "读取多模态附件"},
     "audit_log_activate_user": {"en": "Activate user", "zh": "激活用户"},
     "audit_log_admin_disable_totp": {
         "en": "Admin disable user 2FA",
@@ -958,6 +944,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "document_created": {"en": "Document created successfully", "zh": "文档创建成功"},
     "document_deleted": {"en": "Document deleted successfully", "zh": "文档删除成功"},
+    "document_extraction_decode_failed": {
+        "en": "The extracted document text could not be decoded as UTF-8.",
+        "zh": "提取出的文档文本无法按 UTF-8 解码。",
+    },
+    "document_extraction_empty": {
+        "en": "No text could be extracted from this document.",
+        "zh": "无法从该文档中提取文本。",
+    },
     "document_is_processing": {
         "en": "Document is currently being processed, please wait",
         "zh": "文档正在处理中，请稍候",
@@ -1178,6 +1172,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "This question still needs an answer: {question}",
         "zh": "这个问题仍需要回答：{question}",
     },
+    "feishu_agent_answer_text_required": {
+        "en": "Please answer the pending question with text; attachments cannot answer it.",
+        "zh": "请用文字回答当前问题，附件不能作为问题答案。",
+    },
+    "feishu_agent_attachments_disabled": {
+        "en": "This Agent does not accept attachments.",
+        "zh": "当前智能体未启用附件，请先开启附件功能。",
+    },
     "feishu_agent_busy": {
         "en": "The previous message is still being processed. Please wait for it to finish.",
         "zh": "上一条消息仍在处理中，请等待完成。",
@@ -1194,9 +1196,21 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Only published agents can answer Feishu messages. Publish the agent first.",
         "zh": "只有已发布的智能体才能回复飞书消息，请先发布该智能体。",
     },
+    "feishu_agent_file_too_large": {
+        "en": "The attachment exceeds the Agent's size limit.",
+        "zh": "附件大小超过当前智能体限制。",
+    },
+    "feishu_agent_file_type_unsupported": {
+        "en": "This attachment type is not allowed by the Agent.",
+        "zh": "当前智能体不允许此附件类型。",
+    },
     "feishu_agent_help": {
         "en": "Commands: /agents lists the Agents you can use; /use <number> switches the Agent; /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help.",
         "zh": "命令：/智能体（/agents）查看可用智能体；/使用（/use）<编号> 切换智能体；/新对话（/new）开始新对话；/停止（/stop）停止任务并取消排队消息；/状态（/status）查看状态；/帮助（/help）查看帮助。",
+    },
+    "feishu_agent_media_failed": {
+        "en": "Unable to read the Feishu attachment. Check the bot's message resource permission and try again.",
+        "zh": "无法读取飞书附件，请检查机器人的消息资源读取权限后重试。",
     },
     "feishu_agent_new_conversation": {
         "en": "Your next message will start a new conversation.",
@@ -1215,30 +1229,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "已回答 {total} 个问题中的 {done} 个，请发送剩余答案。",
     },
     "feishu_agent_received": {"en": "🤔Thinking...", "zh": "🤔思考中..."},
-    "feishu_agent_answer_text_required": {
-        "en": "Please answer the pending question with text; attachments cannot answer it.",
-        "zh": "请用文字回答当前问题，附件不能作为问题答案。",
-    },
-    "feishu_agent_attachments_disabled": {
-        "en": "This Agent does not accept attachments.",
-        "zh": "当前智能体未启用附件，请先开启附件功能。",
-    },
-    "feishu_agent_too_many_files": {
-        "en": "Too many attachments for this Agent.",
-        "zh": "附件数量超过当前智能体限制。",
-    },
-    "feishu_agent_file_type_unsupported": {
-        "en": "This attachment type is not allowed by the Agent.",
-        "zh": "当前智能体不允许此附件类型。",
-    },
-    "feishu_agent_file_too_large": {
-        "en": "The attachment exceeds the Agent's size limit.",
-        "zh": "附件大小超过当前智能体限制。",
-    },
-    "feishu_agent_media_failed": {
-        "en": "Unable to read the Feishu attachment. Check the bot's message resource permission and try again.",
-        "zh": "无法读取飞书附件，请检查机器人的消息资源读取权限后重试。",
-    },
     "feishu_agent_run_failed": {
         "en": "The Agent task did not finish. Open the conversation for details.",
         "zh": "Agent 任务未完成，请打开对话查看详情。",
@@ -1250,6 +1240,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "feishu_agent_stopped": {
         "en": "Stopped. Queued messages were cancelled.",
         "zh": "已停止，排队中的消息已取消。",
+    },
+    "feishu_agent_too_many_files": {
+        "en": "Too many attachments for this Agent.",
+        "zh": "附件数量超过当前智能体限制。",
     },
     "feishu_agent_use_current": {
         "en": "Already using {agent}.",
@@ -1380,6 +1374,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "不支持的 URL 协议，仅支持 HTTP/HTTPS 链接",
     },
     "file_deleted": {"en": "File deleted successfully", "zh": "文件删除成功"},
+    "file_download_failed": {
+        "en": "Failed to download the external attachment.",
+        "zh": "下载外部附件失败。",
+    },
     "file_header": {"en": "## File: {filename}", "zh": "## 文件: {filename}"},
     "file_header_indexed": {
         "en": "## File {index}: {filename}",
@@ -1525,6 +1523,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "invalid_dashscope_api_key": {
         "en": "Invalid DashScope API key",
         "zh": "无效的 DashScope API Key",
+    },
+    "invalid_document_cursor": {
+        "en": "Invalid or stale document cursor",
+        "zh": "文档游标无效或已过期",
     },
     "invalid_document_type": {
         "en": "Invalid document type. Supported: PDF, DOCX, TXT, MD, HTML, CSV, XLSX, JSON",
@@ -3316,13 +3318,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Volcengine video task completed without video output",
         "zh": "火山方舟视频任务已完成，但未返回视频结果",
     },
-    "web_search_blocked_or_empty": {
-        "en": "The search engine returned no usable results (it may be blocking automated requests); try again or choose another engine",
-        "zh": "搜索引擎未返回可用结果（可能拦截了自动请求）；请重试或切换搜索引擎",
-    },
     "web_search_api_error": {
         "en": "Search API error: {status_code}",
         "zh": "搜索 API 错误：{status_code}",
+    },
+    "web_search_blocked_or_empty": {
+        "en": "The search engine returned no usable results (it may be blocking automated requests); try again or choose another engine",
+        "zh": "搜索引擎未返回可用结果（可能拦截了自动请求）；请重试或切换搜索引擎",
     },
     "web_search_unsupported_engine": {
         "en": "Unsupported search engine: {search_engine}",

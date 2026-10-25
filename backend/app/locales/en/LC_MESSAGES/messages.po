@@ -3485,6 +3485,24 @@ msgstr "Agent: {agent} — Status: {status}"
 msgid "feishu_agent_received"
 msgstr "🤔Thinking..."
 
+msgid "feishu_agent_answer_text_required"
+msgstr "Please answer the pending question with text; attachments cannot answer it."
+
+msgid "feishu_agent_attachments_disabled"
+msgstr "This Agent does not accept attachments."
+
+msgid "feishu_agent_too_many_files"
+msgstr "Too many attachments for this Agent."
+
+msgid "feishu_agent_file_type_unsupported"
+msgstr "This attachment type is not allowed by the Agent."
+
+msgid "feishu_agent_file_too_large"
+msgstr "The attachment exceeds the Agent's size limit."
+
+msgid "feishu_agent_media_failed"
+msgstr "Unable to read the Feishu attachment. Check the bot's message resource permission and try again."
+
 msgid "feishu_agent_busy"
 msgstr "The previous message is still being processed. Please wait for it to finish."
 
