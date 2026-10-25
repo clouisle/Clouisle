@@ -2,17 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import {
-  MessageSquare,
-  Layers,
-  ArrowUpDown,
-  Volume2,
-  Mic,
-  Image,
-  Video,
-  Infinity,
-  TrendingUp,
-} from 'lucide-react'
+import { Infinity, TrendingUp } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
@@ -24,36 +14,8 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import type { TeamModel } from '@/lib/api'
-
-// 模型类型图标映射
-const modelTypeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-  chat: MessageSquare,
-  embedding: Layers,
-  rerank: ArrowUpDown,
-  decision: TrendingUp,
-  tts: Volume2,
-  stt: Mic,
-  text_to_image: Image,
-  text_to_video: Video,
-}
-
-// 供应商颜色映射
-const providerColors: Record<string, string> = {
-  openai: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-  anthropic: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
-  google: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-  xai: 'bg-neutral-500/10 text-neutral-600 dark:text-neutral-400',
-  azure_openai: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
-  deepseek: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
-  moonshot: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
-  zhipu: 'bg-red-500/10 text-red-600 dark:text-red-400',
-  qwen: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
-  baichuan: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-  minimax: 'bg-pink-500/10 text-pink-600 dark:text-pink-400',
-  typesafe: 'bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400',
-  ollama: 'bg-gray-500/10 text-gray-600 dark:text-gray-400',
-  custom: 'bg-slate-500/10 text-slate-600 dark:text-slate-400',
-}
+import { ProviderIcon } from '@/components/model-provider'
+import { getProviderTint } from '@/lib/model-provider'
 
 interface ModelCardProps {
   teamModel: TeamModel
@@ -73,8 +35,7 @@ export function ModelCard({ teamModel, onClick }: ModelCardProps) {
   }, [t])
 
   const { model } = teamModel
-  const TypeIcon = modelTypeIcons[model.model_type] || MessageSquare
-  const providerColor = providerColors[model.provider] || providerColors.custom
+  const providerColor = getProviderTint(model.provider, model.model_id)
   
   // 计算配额使用百分比
   const dailyTokenPercent = teamModel.daily_token_limit 
@@ -104,7 +65,12 @@ export function ModelCard({ teamModel, onClick }: ModelCardProps) {
         {/* 顶部：图标、名称、状态 */}
         <div className="flex items-start gap-2">
           <div className={cn("rounded p-1.5 shrink-0", providerColor)}>
-            <TypeIcon className="h-4 w-4" />
+            <ProviderIcon
+              provider={model.provider}
+              label={model.provider_display_name || getProviderName(model.provider)}
+              modelId={model.model_id}
+              size={16}
+            />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">

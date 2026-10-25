@@ -12,6 +12,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { useTeam } from '@/contexts/team-context'
 import { teamModelsApi, type TeamModel } from '@/lib/api'
+import { ProviderIcon, ProviderLabel } from '@/components/model-provider'
 import { isValidVariableName } from '../utils'
 import { VariableSelector } from '../variable-selector'
 import { PromptTextarea } from '../components/prompt-textarea'
@@ -157,8 +158,28 @@ export function MediaGenerationNodeConfig({
               'flex items-center justify-between w-full h-9 px-3 rounded-md border bg-background text-sm cursor-pointer hover:bg-muted/50 transition-colors',
               !safeConfig.modelId && 'text-muted-foreground'
             )}>
-              <span className="truncate">
-                {selectedModel ? selectedModel.model.name : t('configCommon.selectModel')}
+              <span className="flex min-w-0 items-center gap-2">
+                {selectedModel && (
+                  <ProviderIcon
+                    provider={selectedModel.model.provider}
+                    label={selectedModel.model.provider_display_name || selectedModel.model.provider}
+                    modelId={selectedModel.model.model_id}
+                    size={14}
+                  />
+                )}
+                <span className="truncate">
+                  {selectedModel ? selectedModel.model.name : t('configCommon.selectModel')}
+                </span>
+                {selectedModel && (
+                  <ProviderLabel
+                    provider={selectedModel.model.provider}
+                    displayName={selectedModel.model.provider_display_name}
+                    modelId={selectedModel.model.model_id}
+                    size={12}
+                    showIcon={false}
+                    className="max-w-24 text-xs text-muted-foreground"
+                  />
+                )}
               </span>
               <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
             </div>
@@ -204,6 +225,12 @@ export function MediaGenerationNodeConfig({
                             setModelSearch('')
                           }}
                         >
+                          <ProviderIcon
+                            provider={tm.model.provider}
+                            label={tm.model.provider_display_name || tm.model.provider}
+                            modelId={tm.model.model_id}
+                            size={16}
+                          />
                           <div className="flex-1 min-w-0">
                             <div className="text-sm font-medium truncate">{tm.model.name}</div>
                             <div className="text-xs text-muted-foreground truncate">{tm.model.model_id}</div>

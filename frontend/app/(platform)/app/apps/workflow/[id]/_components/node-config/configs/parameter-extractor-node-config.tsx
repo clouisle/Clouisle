@@ -14,6 +14,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { cn } from '@/lib/utils'
 import { useTeam } from '@/contexts/team-context'
 import { teamModelsApi, type TeamModel } from '@/lib/api'
+import { ProviderIcon, ProviderLabel } from '@/components/model-provider'
 import { isValidVariableName } from '../utils'
 import { extractVariableDisplayName } from '../types'
 import type { AvailableVariable } from '../types'
@@ -89,6 +90,11 @@ export function ParameterExtractorNodeConfig({
     if (tm) return tm.model.name
     return safeConfig.modelId // 如果找不到，显示原始 ID
   }, [safeConfig.modelId, teamChatModels])
+
+  const selectedModel = React.useMemo(
+    () => teamChatModels.find((tm) => tm.id === safeConfig.modelId) ?? null,
+    [safeConfig.modelId, teamChatModels],
+  )
 
   // 过滤变量（根据搜索词和当前提取方式支持的源变量类型）
   const filterVariables = (search: string) => {
@@ -334,6 +340,24 @@ export function ParameterExtractorNodeConfig({
                       <Loader2 className="h-3 w-3 animate-spin" />
                       {t('configCommon.loading')}
                     </span>
+                  ) : selectedModel ? (
+                    <span className="flex min-w-0 items-center gap-2">
+                      <ProviderIcon
+                        provider={selectedModel.model.provider}
+                        label={selectedModel.model.provider_display_name || selectedModel.model.provider}
+                        modelId={selectedModel.model.model_id}
+                        size={12}
+                      />
+                      <span className="truncate">{selectedModelName}</span>
+                      <ProviderLabel
+                        provider={selectedModel.model.provider}
+                        displayName={selectedModel.model.provider_display_name}
+                        modelId={selectedModel.model.model_id}
+                        size={12}
+                        showIcon={false}
+                        className="text-muted-foreground"
+                      />
+                    </span>
                   ) : (
                     selectedModelName || t('configCommon.selectModel')
                   )}
@@ -343,7 +367,16 @@ export function ParameterExtractorNodeConfig({
                 {teamChatModels.length > 0 ? (
                   teamChatModels.map((tm) => (
                     <SelectItem key={tm.id} value={tm.id} className="text-xs">
-                      {tm.model.name}
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="truncate">{tm.model.name}</span>
+                        <ProviderLabel
+                          provider={tm.model.provider}
+                          displayName={tm.model.provider_display_name}
+                          modelId={tm.model.model_id}
+                          size={12}
+                          className="text-muted-foreground"
+                        />
+                      </span>
                     </SelectItem>
                   ))
                 ) : (

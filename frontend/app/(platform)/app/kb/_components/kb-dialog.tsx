@@ -38,6 +38,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { FieldError } from '@/components/ui/field'
+import { ProviderIcon, ProviderLabel } from '@/components/model-provider'
 
 interface KnowledgeBaseDialogProps {
   open: boolean
@@ -125,6 +126,11 @@ export function KnowledgeBaseDialog({
     return null
   }, [embeddingModelId, teamEmbeddingModels, knowledgeBase])
 
+  const selectedEmbeddingModel = React.useMemo(() => {
+    const tm = teamEmbeddingModels.find(m => m.model_id === embeddingModelId)
+    return tm?.model ?? knowledgeBase?.embedding_model ?? null
+  }, [embeddingModelId, teamEmbeddingModels, knowledgeBase])
+
   const selectedRerankModelName = React.useMemo(() => {
     if (!rerankModelId) return null
     const tm = teamRerankModels.find(m => m.model_id === rerankModelId)
@@ -133,6 +139,12 @@ export function KnowledgeBaseDialog({
       return knowledgeBase.rerank_model.name
     }
     return null
+  }, [rerankModelId, teamRerankModels, knowledgeBase])
+
+  const selectedRerankModel = React.useMemo(() => {
+    if (!rerankModelId) return null
+    const tm = teamRerankModels.find(m => m.model_id === rerankModelId)
+    return tm?.model ?? knowledgeBase?.rerank_model ?? null
   }, [rerankModelId, teamRerankModels, knowledgeBase])
   
   // 初始化表单
@@ -328,14 +340,43 @@ export function KnowledgeBaseDialog({
               >
                 <SelectTrigger id="embeddingModel" className="w-full">
                   <SelectValue>
-                    {selectedModelName || t('selectEmbeddingModel')}
+                    {selectedEmbeddingModel ? (
+                      <span className="flex min-w-0 items-center gap-2">
+                        <ProviderIcon
+                          provider={selectedEmbeddingModel.provider}
+                          label={selectedEmbeddingModel.provider_display_name || selectedEmbeddingModel.provider}
+                          modelId={selectedEmbeddingModel.model_id}
+                          size={14}
+                        />
+                        <span className="truncate">{selectedModelName}</span>
+                        <ProviderLabel
+                          provider={selectedEmbeddingModel.provider}
+                          displayName={selectedEmbeddingModel.provider_display_name}
+                          modelId={selectedEmbeddingModel.model_id}
+                          size={12}
+                          showIcon={false}
+                          className="text-xs text-muted-foreground"
+                        />
+                      </span>
+                    ) : (
+                      selectedModelName || t('selectEmbeddingModel')
+                    )}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent side="bottom" alignItemWithTrigger={false}>
                   {teamEmbeddingModels.length > 0 ? (
                     teamEmbeddingModels.map((tm) => (
                       <SelectItem key={tm.model_id} value={tm.model_id}>
-                        {tm.model.name}
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate">{tm.model.name}</span>
+                          <ProviderLabel
+                            provider={tm.model.provider}
+                            displayName={tm.model.provider_display_name}
+                            modelId={tm.model.model_id}
+                            size={12}
+                            className="text-xs text-muted-foreground"
+                          />
+                        </span>
                       </SelectItem>
                     ))
                   ) : (
@@ -361,7 +402,27 @@ export function KnowledgeBaseDialog({
               >
                 <SelectTrigger id="rerankModel" className="w-full">
                   <SelectValue>
-                    {selectedRerankModelName || t('selectRerankModel')}
+                    {selectedRerankModel ? (
+                      <span className="flex min-w-0 items-center gap-2">
+                        <ProviderIcon
+                          provider={selectedRerankModel.provider}
+                          label={selectedRerankModel.provider_display_name || selectedRerankModel.provider}
+                          modelId={selectedRerankModel.model_id}
+                          size={14}
+                        />
+                        <span className="truncate">{selectedRerankModelName}</span>
+                        <ProviderLabel
+                          provider={selectedRerankModel.provider}
+                          displayName={selectedRerankModel.provider_display_name}
+                          modelId={selectedRerankModel.model_id}
+                          size={12}
+                          showIcon={false}
+                          className="text-xs text-muted-foreground"
+                        />
+                      </span>
+                    ) : (
+                      selectedRerankModelName || t('selectRerankModel')
+                    )}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent side="bottom" alignItemWithTrigger={false}>
@@ -369,7 +430,16 @@ export function KnowledgeBaseDialog({
                   {teamRerankModels.length > 0 ? (
                     teamRerankModels.map((tm) => (
                       <SelectItem key={tm.model_id} value={tm.model_id}>
-                        {tm.model.name}
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate">{tm.model.name}</span>
+                          <ProviderLabel
+                            provider={tm.model.provider}
+                            displayName={tm.model.provider_display_name}
+                            modelId={tm.model.model_id}
+                            size={12}
+                            className="text-xs text-muted-foreground"
+                          />
+                        </span>
                       </SelectItem>
                     ))
                   ) : (

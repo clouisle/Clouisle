@@ -35,6 +35,7 @@ import {
   ComboboxList,
 } from '@/components/ui/combobox'
 import { Switch } from '@/components/ui/switch'
+import { ProviderIcon } from '@/components/model-provider'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Tabs,
@@ -1125,7 +1126,19 @@ export function ModelDialog({
                     )}
                     disabled={isEditing || !modelType}
                   >
-                    {provider ? getProviderName(provider) : t('selectProvider')}
+                    <span className="flex min-w-0 items-center gap-2">
+                      {provider && (
+                        <ProviderIcon
+                          provider={provider}
+                          label={getProviderName(provider)}
+                          modelId={modelId}
+                          size={14}
+                        />
+                      )}
+                      <span className="truncate">
+                        {provider ? getProviderName(provider) : t('selectProvider')}
+                      </span>
+                    </span>
                     <svg className="ml-2 h-4 w-4 shrink-0 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
@@ -1158,6 +1171,11 @@ export function ModelDialog({
                                   )}
                                 >
                                   {provider === code && <Check className="h-3 w-3 shrink-0" />}
+                                  <ProviderIcon
+                                    provider={code}
+                                    label={getProviderName(code)}
+                                    size={14}
+                                  />
                                   <span className="truncate">{getProviderName(code)}</span>
                                 </button>
                               )}
@@ -1195,6 +1213,11 @@ export function ModelDialog({
                                   )}
                                 >
                                   {provider === code && <Check className="h-3 w-3 shrink-0" />}
+                                  <ProviderIcon
+                                    provider={code}
+                                    label={getProviderName(code)}
+                                    size={14}
+                                  />
                                   <span className="truncate">{getProviderName(code)}</span>
                                 </button>
                               )}
@@ -1232,6 +1255,11 @@ export function ModelDialog({
                                   )}
                                 >
                                   {provider === code && <Check className="h-3 w-3 shrink-0" />}
+                                  <ProviderIcon
+                                    provider={code}
+                                    label={getProviderName(code)}
+                                    size={14}
+                                  />
                                   <span className="truncate">{getProviderName(code)}</span>
                                 </button>
                               )}

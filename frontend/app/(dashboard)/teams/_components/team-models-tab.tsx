@@ -57,6 +57,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { PermissionGuard } from '@/components/permission-guard'
+import { ProviderLabel } from '@/components/model-provider'
 import { usePermissions } from '@/hooks/use-permissions'
 
 interface TeamModelsTabProps {
@@ -350,8 +351,14 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
                         />
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium truncate">{model.name}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {model.provider_display_name || model.provider} / {model.model_id}
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <ProviderLabel
+                              provider={model.provider}
+                              displayName={model.provider_display_name}
+                              modelId={model.model_id}
+                              size={12}
+                            />
+                            <span className="truncate">/ {model.model_id}</span>
                           </div>
                         </div>
                         <Badge variant="outline" className="text-xs shrink-0">
@@ -403,8 +410,14 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
                   <TableCell>
                     <div>
                       <div className="font-medium">{tm.model.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {tm.model.provider_display_name || tm.model.provider} / {tm.model.model_id}
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <ProviderLabel
+                          provider={tm.model.provider}
+                          displayName={tm.model.provider_display_name}
+                          modelId={tm.model.model_id}
+                          size={12}
+                        />
+                        <span className="truncate">/ {tm.model.model_id}</span>
                       </div>
                     </div>
                   </TableCell>

@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { Bot, ChevronDown, MessageSquare, AlertCircle } from 'lucide-react'
+import { Bot, ChevronDown, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTeam } from '@/contexts/team-context'
 import { Input } from '@/components/ui/input'
@@ -37,6 +37,8 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { ProviderIcon, ProviderLabel } from '@/components/model-provider'
+import { getProviderTint } from '@/lib/model-provider'
 import { teamModelsApi, type Agent, type AgentVisibility, type TeamModel } from '@/lib/api'
 
 interface AgentSettingsDrawerProps {
@@ -249,10 +251,23 @@ export function AgentSettingsDrawer({
                   <DropdownMenuTrigger disabled={readOnly} className="w-full inline-flex items-center justify-between gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground h-9 px-3">
                     {selectedModel ? (
                       <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-5 h-5 rounded bg-green-100 text-green-700 flex items-center justify-center shrink-0">
-                          <MessageSquare className="h-3 w-3" />
+                        <div className={cn("w-5 h-5 rounded flex items-center justify-center shrink-0", getProviderTint(selectedModel.provider, selectedModel.model_id))}>
+                          <ProviderIcon
+                            provider={selectedModel.provider}
+                            label={selectedModel.provider_display_name || selectedModel.provider}
+                            modelId={selectedModel.model_id}
+                            size={13}
+                          />
                         </div>
                         <span className="truncate">{selectedModel.name}</span>
+                        <ProviderLabel
+                          provider={selectedModel.provider}
+                          displayName={selectedModel.provider_display_name}
+                          modelId={selectedModel.model_id}
+                          size={12}
+                          showIcon={false}
+                          className="max-w-24 text-xs text-muted-foreground"
+                        />
                       </div>
                     ) : (
                       <span className="text-muted-foreground">{t('selectModel')}</span>
@@ -267,10 +282,25 @@ export function AgentSettingsDrawer({
                           onClick={() => onModelChange(tm.id)}
                           className="flex items-center gap-2"
                         >
-                          <div className="w-5 h-5 rounded bg-green-100 text-green-700 flex items-center justify-center">
-                            <MessageSquare className="h-3 w-3" />
+                          <div className={cn("w-5 h-5 rounded flex items-center justify-center shrink-0", getProviderTint(tm.model.provider, tm.model.model_id))}>
+                            <ProviderIcon
+                              provider={tm.model.provider}
+                              label={tm.model.provider_display_name || tm.model.provider}
+                              modelId={tm.model.model_id}
+                              size={13}
+                            />
                           </div>
-                          <span className="flex-1 truncate">{tm.model.name}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="truncate">{tm.model.name}</div>
+                            <ProviderLabel
+                              provider={tm.model.provider}
+                              displayName={tm.model.provider_display_name}
+                              modelId={tm.model.model_id}
+                              size={12}
+                              showIcon={false}
+                              className="text-xs text-muted-foreground"
+                            />
+                          </div>
                           {tm.id === modelId && (
                             <Badge variant="outline" className="text-[10px]">
                               {ts('current')}

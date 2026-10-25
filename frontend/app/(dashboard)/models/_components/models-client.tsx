@@ -68,6 +68,7 @@ import {
 import { ModelDialog } from './model-dialog'
 import { DeleteModelDialog } from './delete-model-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { ProviderLabel } from '@/components/model-provider'
 import { useOptionalOnboarding } from '@/components/onboarding/onboarding-provider'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
 import { useDebounce } from '@/hooks/use-debounce'
@@ -491,7 +492,14 @@ export function ModelsClient() {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>{model.provider_display_name || getProviderName(model.provider)}</TableCell>
+                  <TableCell>
+                    <ProviderLabel
+                      provider={model.provider}
+                      displayName={model.provider_display_name}
+                      modelId={model.model_id}
+                      size={14}
+                    />
+                  </TableCell>
                   <TableCell>
                     <Badge variant="outline">{getTypeName(model.model_type)}</Badge>
                   </TableCell>
