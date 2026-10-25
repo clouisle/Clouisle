@@ -13,6 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { useTeam } from '@/contexts/team-context'
 import { teamModelsApi, type TeamModel } from '@/lib/api'
+import { ProviderIcon } from '@/components/model-provider'
 import { defaultDecisionNodeConfig, type DecisionNodeConfig, type DecisionQuestionType } from '../../nodes/decision-node'
 import type { AvailableVariable } from '../types'
 import { PromptTextarea } from '../components/prompt-textarea'
@@ -89,7 +90,17 @@ export function DecisionNodeConfig({ config, variables, onConfigChange }: Props)
               'flex h-9 w-full cursor-pointer items-center justify-between rounded-md border bg-background px-3 text-sm transition-colors hover:bg-muted/50',
               !safe.modelId && 'text-muted-foreground'
             )}>
-              <span className="truncate">{isLoadingModels ? t('configCommon.loading') : selectedModelLabel}</span>
+              <span className="flex min-w-0 items-center gap-2">
+                {selectedModel && (
+                  <ProviderIcon
+                    provider={selectedModel.model.provider}
+                    label={selectedModel.model.provider_display_name || selectedModel.model.provider}
+                    modelId={selectedModel.model.model_id}
+                    size={14}
+                  />
+                )}
+                <span className="truncate">{isLoadingModels ? t('configCommon.loading') : selectedModelLabel}</span>
+              </span>
               {isLoadingModels ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" /> : <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />}
             </div>
           </PopoverTrigger>
@@ -128,8 +139,19 @@ export function DecisionNodeConfig({ config, variables, onConfigChange }: Props)
                             setModelSearch('')
                           }}
                         >
-                          <span className="block truncate text-sm font-medium">{model.model.name}</span>
-                          <span className="block truncate text-xs text-muted-foreground">{model.model.model_id}</span>
+                          <span className="flex items-start gap-2">
+                            <ProviderIcon
+                              provider={model.model.provider}
+                              label={model.model.provider_display_name || model.model.provider}
+                              modelId={model.model.model_id}
+                              size={16}
+                              className="mt-0.5"
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium">{model.model.name}</span>
+                              <span className="block truncate text-xs text-muted-foreground">{model.model.model_id}</span>
+                            </span>
+                          </span>
                         </button>
                       ))}
                     </div>

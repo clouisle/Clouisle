@@ -27,6 +27,7 @@ import { knowledgeBasesApi, type KnowledgeBase, type KnowledgeBaseStats } from '
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { ProviderLabel } from '@/components/model-provider'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { DocumentsTable, UploadDocumentDialog, ImportUrlDialog } from './_components'
 import { KnowledgeBaseDialog } from '../_components/kb-dialog'
@@ -323,9 +324,13 @@ export default function KnowledgeBaseDetailPage({
                   <span className="min-w-0 truncate text-foreground/90">
                     {knowledgeBase.embedding_model.name}
                   </span>
-                  <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                    {knowledgeBase.embedding_model.provider_display_name || knowledgeBase.embedding_model.provider}
-                  </span>
+                  <ProviderLabel
+                    provider={knowledgeBase.embedding_model.provider}
+                    displayName={knowledgeBase.embedding_model.provider_display_name}
+                    modelId={knowledgeBase.embedding_model.model_id}
+                    size={12}
+                    className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                  />
                 </div>
               )}
               {knowledgeBase.rerank_model && (
@@ -335,9 +340,13 @@ export default function KnowledgeBaseDetailPage({
                   <span className="min-w-0 truncate text-foreground/90">
                     {knowledgeBase.rerank_model.name}
                   </span>
-                  <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                    {knowledgeBase.rerank_model.provider_display_name || knowledgeBase.rerank_model.provider}
-                  </span>
+                  <ProviderLabel
+                    provider={knowledgeBase.rerank_model.provider}
+                    displayName={knowledgeBase.rerank_model.provider_display_name}
+                    modelId={knowledgeBase.rerank_model.model_id}
+                    size={12}
+                    className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                  />
                 </div>
               )}
             </div>

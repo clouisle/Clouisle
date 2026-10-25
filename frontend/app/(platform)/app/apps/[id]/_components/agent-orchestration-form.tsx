@@ -51,6 +51,7 @@ import { KnowledgeBaseSelector, AddKnowledgeBaseButton } from './knowledge-base-
 import { ToolSelector, AddToolButton, useTools } from './tool-selector'
 import { PromptEditor } from './prompt-editor'
 import { PromptGenerateDialog } from '@/components/ai-elements/prompt-generate-dialog'
+import { ProviderLabel } from '@/components/model-provider'
 
 interface ConfigCardProps {
   icon: React.ElementType
@@ -828,7 +829,16 @@ export function AgentOrchestrationForm({
                     </SelectItem>
                     {imageModels.map((teamModel) => (
                       <SelectItem key={teamModel.id} value={teamModel.model.id}>
-                        {getMediaModelOptionLabel(teamModel)}
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate">{getMediaModelOptionLabel(teamModel)}</span>
+                          <ProviderLabel
+                            provider={teamModel.model.provider}
+                            displayName={teamModel.model.provider_display_name}
+                            modelId={teamModel.model.model_id}
+                            size={12}
+                            className="text-xs text-muted-foreground"
+                          />
+                        </span>
                       </SelectItem>
                     ))}
                     {imageGenerationConfig.default_model_ref &&
@@ -969,7 +979,16 @@ export function AgentOrchestrationForm({
                     </SelectItem>
                     {videoModels.map((teamModel) => (
                       <SelectItem key={teamModel.id} value={teamModel.model.id}>
-                        {getMediaModelOptionLabel(teamModel)}
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate">{getMediaModelOptionLabel(teamModel)}</span>
+                          <ProviderLabel
+                            provider={teamModel.model.provider}
+                            displayName={teamModel.model.provider_display_name}
+                            modelId={teamModel.model.model_id}
+                            size={12}
+                            className="text-xs text-muted-foreground"
+                          />
+                        </span>
                       </SelectItem>
                     ))}
                     {videoGenerationConfig.default_model_ref &&

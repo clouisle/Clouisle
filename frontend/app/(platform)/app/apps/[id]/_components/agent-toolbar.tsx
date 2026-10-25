@@ -18,6 +18,7 @@ import {
 import type { Agent } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { ProviderIcon, ProviderLabel } from '@/components/model-provider'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -90,8 +91,21 @@ export function AgentToolbar({
         <h2 className="whitespace-nowrap font-semibold text-sm">{t('title')}</h2>
         {agent.model && (
           <Badge variant="secondary" className="hidden text-xs font-normal gap-1 lg:flex">
-            <MessageSquare className="h-3 w-3" />
+            <ProviderIcon
+              provider={agent.model.provider}
+              label={agent.model.provider_display_name || agent.model.provider}
+              modelId={agent.model.model_id}
+              size={12}
+            />
             {agent.model.name}
+            <ProviderLabel
+              provider={agent.model.provider}
+              displayName={agent.model.provider_display_name}
+              modelId={agent.model.model_id}
+              size={12}
+              showIcon={false}
+              className="text-muted-foreground"
+            />
           </Badge>
         )}
       </div>

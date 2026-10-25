@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FieldError } from '@/components/ui/field'
+import { ProviderIcon, ProviderLabel } from '@/components/model-provider'
 import { normalizeValidationErrors, clearValidationError } from '@/lib/validation'
 import {
   Select,
@@ -85,6 +86,11 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
     if (agent.model?.name) return agent.model.name
     return null
   }, [modelId, teamChatModels, agent])
+
+  const selectedModel = React.useMemo(
+    () => teamChatModels.find((tm) => tm.id === modelId)?.model ?? agent.model ?? null,
+    [modelId, teamChatModels, agent.model],
+  )
   
   // Handle form submit
   const handleSubmit = async (e: React.FormEvent) => {
@@ -280,14 +286,43 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
                 >
                   <SelectTrigger id="model" className="w-full">
                     <SelectValue>
-                      {selectedModelName || t('selectModel')}
+                      {selectedModel ? (
+                        <span className="flex min-w-0 items-center gap-2">
+                          <ProviderIcon
+                            provider={selectedModel.provider}
+                            label={selectedModel.provider_display_name || selectedModel.provider}
+                            modelId={selectedModel.model_id}
+                            size={14}
+                          />
+                          <span className="truncate">{selectedModelName}</span>
+                          <ProviderLabel
+                            provider={selectedModel.provider}
+                            displayName={selectedModel.provider_display_name}
+                            modelId={selectedModel.model_id}
+                            size={12}
+                            showIcon={false}
+                            className="text-xs text-muted-foreground"
+                          />
+                        </span>
+                      ) : (
+                        selectedModelName || t('selectModel')
+                      )}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {teamChatModels.length > 0 ? (
                       teamChatModels.map((tm) => (
                         <SelectItem key={tm.id} value={tm.id}>
-                          {tm.model.name}
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className="truncate">{tm.model.name}</span>
+                            <ProviderLabel
+                              provider={tm.model.provider}
+                              displayName={tm.model.provider_display_name}
+                              modelId={tm.model.model_id}
+                              size={12}
+                              className="text-xs text-muted-foreground"
+                            />
+                          </span>
                         </SelectItem>
                       ))
                     ) : (

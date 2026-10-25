@@ -239,3 +239,10 @@
 - **agent-chat-parity** — Aligned non-streaming agent chat request semantics with the streaming path for file parsing, vision inputs, history overrides, and tool metadata/timeouts.
 
 - **backend-babel-i18n-migration** — Introduced a Babel-backed backend i18n runtime with compatibility fallback so existing `t()`, `msg_key`, `BusinessError`, and `ResponseCode` flows stayed compatible during migration.
+
+- **model-provider-icons** — Complete. Render a shared provider icon and localized provider label on every model display surface (admin table/dialog, catalog cards, KB/agent/workflow selectors), with `provider_display_name` precedence, model-family inference for custom gateways, and a monogram fallback. See `docs/plan/model-provider-icons.md`
+  - [x] 1. Shared provider icon/label primitives and vendored assets
+  - [x] 2. Admin model table, dialog, and team authorization surfaces
+  - [x] 3. Platform catalog, team page, and knowledge base surfaces
+  - [x] 4. Agent and workflow model pickers
+  - [x] 5. Tests, coverage, lint, and regression verification

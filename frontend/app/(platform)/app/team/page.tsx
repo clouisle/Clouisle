@@ -42,6 +42,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { ProviderIcon, ProviderLabel } from '@/components/model-provider'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select,
@@ -529,13 +530,25 @@ export default function PlatformTeamPage() {
                           <div className="flex items-start justify-between">
                             <div>
                               <div className="font-semibold text-sm flex items-center gap-2">
+                                <ProviderIcon
+                                  provider={tm.model.provider}
+                                  label={tm.model.provider_display_name || tm.model.provider}
+                                  modelId={tm.model.model_id}
+                                  size={16}
+                                />
                                 {tm.model.name}
                                 <Badge variant="secondary" className="text-[10px] px-1.5 py-0 capitalize">
                                   {tm.model.model_type}
                                 </Badge>
                               </div>
-                              <div className="text-xs text-muted-foreground mt-0.5">
-                                {tm.model.provider_display_name || tm.model.provider} · {tm.model.model_id}
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                                <ProviderLabel
+                                  provider={tm.model.provider}
+                                  displayName={tm.model.provider_display_name}
+                                  modelId={tm.model.model_id}
+                                  size={12}
+                                />
+                                <span className="truncate">· {tm.model.model_id}</span>
                               </div>
                             </div>
                             <Badge variant={tm.is_enabled ? 'default' : 'outline'} className="text-[10px]">
