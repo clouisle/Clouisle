@@ -303,6 +303,45 @@ async def test_model_mutations_report_missing_model(monkeypatch, function, kwarg
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("payload", "initial", "expected"),
+    [
+        ({}, {"existing": True}, {"existing": True}),
+        ({"default_params": None}, {"existing": True}, None),
+        ({"default_params": {}}, {"existing": True}, {}),
+        (
+            {"default_params": {"extra_body": {"metadata": {"tier": "gold"}}}},
+            None,
+            {"extra_body": {"metadata": {"tier": "gold"}}},
+        ),
+    ],
+)
+async def test_update_model_persists_default_params_presence_and_value(
+    monkeypatch, payload, initial, expected
+):
+    item = model(default_params=initial)
+
+    async def update_from_dict(values):
+        for key, value in values.items():
+            setattr(item, key, value)
+
+    item.update_from_dict = AsyncMock(side_effect=update_from_dict)
+    monkeypatch.setattr(models.Model, "filter", MagicMock(return_value=Query(item)))
+    monkeypatch.setattr(models.Model, "get", MagicMock(return_value=Query(item)))
+
+    response = await models.update_model(
+        item.id, ModelUpdate(**payload), current_user=SimpleNamespace()
+    )
+
+    assert item.default_params == expected
+    assert (
+        item.update_from_dict.await_args.args[0].get("default_params", expected)
+        == expected
+    )
+    assert response["data"].id == item.id
+
+
+@pytest.mark.anyio
 async def test_update_model_clears_key_sets_default_and_saves(monkeypatch):
     item = model()
     default_query = Query()

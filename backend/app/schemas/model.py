@@ -202,6 +202,7 @@ class ModelUpdate(BaseModel):
     max_output_tokens: Optional[int] = Field(None, ge=1)
     input_price: Optional[Decimal] = Field(None, ge=0, decimal_places=6)
     output_price: Optional[Decimal] = Field(None, ge=0, decimal_places=6)
+    default_params: Optional[dict[str, Any]] = None
     capabilities: Optional[dict[str, Any]] = Field(
         None,
         description="Input/output modalities and model capabilities; input_modalities uses text, image, audio, video, file",

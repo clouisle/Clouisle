@@ -489,6 +489,7 @@ export function ModelDialog({
       const caps = model.capabilities || {}
       setInputModalities(Array.isArray(caps.input_modalities) ? caps.input_modalities as string[] : ['text'])
       setOutputModalities(Array.isArray(caps.output_modalities) ? caps.output_modalities as string[] : [])
+      setSupportsFunctionCall(!!caps.function_call)
       setSupportsStreaming(caps.streaming !== false)
       setSupportsJsonMode(!!caps.json_mode)
       
