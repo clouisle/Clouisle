@@ -53,10 +53,17 @@ const renderers: ReactTestRenderer[] = []
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 function render(overrides: Partial<React.ComponentProps<typeof WebhookSettingsTab>> = {}) {
-  const onSettingsChange = mock(() => {})
+  const onSettingsChange = mock((next: WebhookSettings) => overrides.onSettingsChange?.(next))
+  function SettingsParent() {
+    const [currentSettings, setCurrentSettings] = React.useState(overrides.settings ?? settings)
+    return <WebhookSettingsTab canUpdate {...overrides} settings={currentSettings} onSettingsChange={(next) => {
+      onSettingsChange(next)
+      setCurrentSettings(next)
+    }} />
+  }
   let renderer: ReactTestRenderer
   act(() => {
-    renderer = create(<WebhookSettingsTab settings={settings} onSettingsChange={onSettingsChange} canUpdate {...overrides} />)
+    renderer = create(<SettingsParent />)
   })
   renderers.push(renderer!)
   return { renderer: renderer!, onSettingsChange }
@@ -79,25 +86,46 @@ describe('WebhookSettingsTab', () => {
     expect(renderer.root.findByProps({ id: 'webhook-headers' }).props.value).toBe('')
     expect(JSON.stringify(renderer.toJSON())).toContain('integrations.secretConfigured')
     await act(async () => button(renderer, 'save').props.onClick())
-    expect(updateWebhook).toHaveBeenCalledWith(hiddenSettings)
+    const savedSettings = updateWebhook.mock.calls[0][0]
+    expect(savedSettings).toMatchObject({
+      webhook_enabled: hiddenSettings.webhook_enabled,
+      webhook_url: hiddenSettings.webhook_url,
+      webhook_method: hiddenSettings.webhook_method,
+      webhook_body_template: hiddenSettings.webhook_body_template,
+      webhook_secret: '',
+    })
+    expect(savedSettings).not.toHaveProperty('webhook_headers')
+  })
+
+  test('submits explicit empty headers after clearing the editor', async () => {
+    const hiddenSettings = { ...settings, webhook_headers: {}, webhook_secret: '' }
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook').mockResolvedValue(hiddenSettings)
+    const { renderer } = render({ settings: hiddenSettings, credentialsConfigured: ['webhook_headers'] })
+
+    act(() => renderer.root.findByProps({ id: 'webhook-headers' }).props.onChange({ target: { value: '' } }))
+    await act(async () => button(renderer, 'save').props.onClick())
+
+    expect(updateWebhook.mock.calls[0][0]).toHaveProperty('webhook_headers', {})
   })
 
   test('updates endpoint fields and saves or sends tests', async () => {
     const updateWebhook = spyOn(integrationsApi, 'updateWebhook').mockResolvedValue(settings)
     const sendTestWebhook = spyOn(integrationsApi, 'sendTestWebhook').mockResolvedValue()
-    const { renderer, onSettingsChange } = render()
+    const { renderer } = render()
 
     act(() => renderer.root.findByProps({ id: 'webhook-url' }).props.onChange({ target: { value: 'https://example.com/next' } }))
-    act(() => renderer.root.findByProps({ value: 'POST' }).props.onValueChange('GET'))
+    act(() => renderer.root.findByProps({ 'data-select-value': 'POST' }).props['data-on-value-change']('GET'))
     act(() => renderer.root.findByProps({ id: 'webhook-headers' }).props.onChange({ target: { value: '{"X-Test":"1"}' } }))
-    expect(onSettingsChange).toHaveBeenCalledWith({ ...settings, webhook_url: 'https://example.com/next' })
-    expect(onSettingsChange).toHaveBeenCalledWith({ ...settings, webhook_method: 'GET' })
-    expect(onSettingsChange).toHaveBeenCalledWith({ ...settings, webhook_headers: { 'X-Test': '1' } })
 
     await act(async () => button(renderer, 'webhook.sendTest').props.onClick())
     await act(async () => button(renderer, 'save').props.onClick())
     expect(sendTestWebhook).toHaveBeenCalled()
-    expect(updateWebhook).toHaveBeenCalledWith(settings)
+    expect(updateWebhook).toHaveBeenCalledWith({
+      ...settings,
+      webhook_url: 'https://example.com/next',
+      webhook_method: 'GET',
+      webhook_headers: { 'X-Test': '1' },
+    })
     expect(success).toHaveBeenCalledWith('webhook.testSent')
     expect(success).toHaveBeenCalledWith('saveSuccess')
   })
@@ -121,11 +149,19 @@ describe('WebhookSettingsTab', () => {
     act(() => renderer.root.findByProps({ id: 'webhook-secret' }).props.onChange({ target: { value: 'new-secret' } }))
     act(() => renderer.root.findByProps({ id: 'webhook-headers' }).props.onChange({ target: { value: '{"X-Token":"abc"}' } }))
 
-    expect(onSettingsChange).toHaveBeenCalledWith({ ...settings, webhook_url: 'https://hooks.example/new' })
-    expect(onSettingsChange).toHaveBeenCalledWith({ ...settings, webhook_secret: 'new-secret' })
-    expect(onSettingsChange).toHaveBeenCalledWith({ ...settings, webhook_headers: { 'X-Token': 'abc' } })
+    expect(onSettingsChange).toHaveBeenNthCalledWith(1, { ...settings, webhook_url: 'https://hooks.example/new' })
+    expect(onSettingsChange).toHaveBeenNthCalledWith(2, { ...settings, webhook_url: 'https://hooks.example/new', webhook_secret: 'new-secret' })
+    expect(onSettingsChange).toHaveBeenNthCalledWith(3, { ...settings, webhook_url: 'https://hooks.example/new', webhook_secret: 'new-secret', webhook_headers: { 'X-Token': 'abc' } })
+    expect(settings.webhook_url).toBe('https://example.com/webhook')
+    expect(settings.webhook_secret).toBe('secret')
+    expect(settings.webhook_headers).toEqual({ Authorization: 'Bearer test' })
     await act(async () => button(renderer, 'save').props.onClick())
-    expect(updateWebhook).toHaveBeenCalledWith(settings)
+    expect(updateWebhook).toHaveBeenCalledWith({
+      ...settings,
+      webhook_url: 'https://hooks.example/new',
+      webhook_secret: 'new-secret',
+      webhook_headers: { 'X-Token': 'abc' },
+    })
   })
 
   test('maps server validation errors to visible field feedback', async () => {
@@ -135,7 +171,7 @@ describe('WebhookSettingsTab', () => {
     const { renderer } = render()
 
     await act(async () => button(renderer, 'save').props.onClick())
-    expect(updateWebhook).toHaveBeenCalledWith(settings)
+    expect(updateWebhook.mock.calls[0][0]).not.toHaveProperty('webhook_headers')
     expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(true)
     expect(consoleError).toHaveBeenCalledTimes(1)
   })
@@ -145,7 +181,7 @@ describe('WebhookSettingsTab', () => {
     const { renderer } = render()
 
     await act(async () => button(renderer, 'save').props.onClick())
-    expect(updateWebhook).toHaveBeenCalledWith(settings)
+    expect(updateWebhook.mock.calls[0][0]).not.toHaveProperty('webhook_headers')
     expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(false)
     expect(consoleError).toHaveBeenCalledTimes(1)
   })
@@ -158,7 +194,7 @@ describe('WebhookSettingsTab', () => {
     const { renderer } = render()
 
     await act(async () => button(renderer, 'save').props.onClick())
-    expect(updateWebhook).toHaveBeenCalledWith(settings)
+    expect(updateWebhook.mock.calls[0][0]).not.toHaveProperty('webhook_headers')
     expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(true)
 
     await act(async () => button(renderer, 'webhook.sendTest').props.onClick())
@@ -176,7 +212,14 @@ describe('WebhookSettingsTab', () => {
     expect(button(renderer, 'webhook.sendTest').props.disabled).toBe(true)
     await act(async () => button(renderer, 'save').props.onClick())
 
-    expect(updateWebhook).toHaveBeenCalledWith(disabledSettings)
+    expect(updateWebhook.mock.calls[0][0]).toMatchObject({
+      webhook_enabled: disabledSettings.webhook_enabled,
+      webhook_url: disabledSettings.webhook_url,
+      webhook_method: disabledSettings.webhook_method,
+      webhook_body_template: disabledSettings.webhook_body_template,
+      webhook_secret: disabledSettings.webhook_secret,
+    })
+    expect(updateWebhook.mock.calls[0][0]).not.toHaveProperty('webhook_headers')
     expect(sendTestWebhook).not.toHaveBeenCalled()
     expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(false)
   })

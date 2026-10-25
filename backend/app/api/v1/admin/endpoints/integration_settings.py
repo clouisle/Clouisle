@@ -166,8 +166,7 @@ async def update_webhook_settings(
     secrets = {"webhook_secret": values.pop("webhook_secret", "")}
     if "webhook_headers" in values:
         headers = values.pop("webhook_headers")
-        if headers:
-            secrets["webhook_headers"] = json.dumps(headers)
+        secrets["webhook_headers"] = json.dumps(headers)
     integration = await update_builtin_config("webhook", values, secrets, enabled)
     await _audit_builtin(request, current_user, integration, values)
     return await get_webhook_settings(current_user)

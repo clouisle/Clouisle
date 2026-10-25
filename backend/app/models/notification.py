@@ -46,6 +46,9 @@ class NotificationChannel(str, Enum):
     EMAIL = "email"
     WEBHOOK = "webhook"
     FEISHU = "feishu"
+    DINGTALK = "dingtalk"
+    WECHAT = "wechat"
+    SLACK = "slack"
 
 
 class AutoNotificationType(str, Enum):

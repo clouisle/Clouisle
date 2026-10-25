@@ -150,6 +150,59 @@ async def test_builtin_settings_move_once_without_overwriting_later_edits(databa
 
 
 @pytest.mark.asyncio
+async def test_plaintext_feishu_secret_migrates_once_without_overwriting(database):
+    await SiteSetting.set_value("feishu_app_id", "cli-legacy")
+    await SiteSetting.set_value("feishu_app_secret", "plain-feishu-secret")
+
+    await initialize_integrations()
+
+    feishu = await Integration.get(provider_type="feishu")
+    assert decrypt_secret(feishu.credentials["app_secret"]) == "plain-feishu-secret"
+    assert not await SiteSetting.filter(key="feishu_app_secret").exists()
+
+    await initialize_integrations()
+    migrated = await Integration.get(id=feishu.id)
+    assert migrated.credentials == feishu.credentials
+
+
+@pytest.mark.asyncio
+async def test_encrypted_feishu_secret_takes_precedence_over_plaintext(database):
+    await SiteSetting.set_value("feishu_app_id", "cli-legacy")
+    await SiteSetting.set_value("feishu_app_secret", "plain-secret")
+    await SiteSetting.set_value(
+        "feishu_app_secret_encrypted", encrypt_secret("encrypted-secret")
+    )
+
+    await initialize_integrations()
+
+    feishu = await Integration.get(provider_type="feishu")
+    assert decrypt_secret(feishu.credentials["app_secret"]) == "encrypted-secret"
+
+
+@pytest.mark.asyncio
+async def test_existing_feishu_integration_and_legacy_settings_are_preserved(database):
+    existing = await Integration.create(
+        name="feishu",
+        provider_type="feishu",
+        display_name="Administrator Feishu",
+        is_enabled=False,
+        enabled_capabilities=[],
+        config={"app_id": "admin-config"},
+        credentials={"app_secret": encrypt_secret("admin-secret")},
+    )
+    await SiteSetting.set_value("feishu_app_id", "ambiguous-legacy-id")
+    await SiteSetting.set_value("feishu_app_secret", "ambiguous-legacy-secret")
+
+    await initialize_integrations()
+
+    unchanged = await Integration.get(id=existing.id)
+    assert unchanged.config == {"app_id": "admin-config"}
+    assert decrypt_secret(unchanged.credentials["app_secret"]) == "admin-secret"
+    assert await SiteSetting.filter(key="feishu_app_secret").exists()
+    assert await SiteSetting.filter(key="feishu_app_id").exists()
+
+
+@pytest.mark.asyncio
 async def test_permission_migration_preserves_separate_admin_domains(database):
     login_role = await Role.create(name="Login managers")
     settings_role = await Role.create(name="Settings readers")

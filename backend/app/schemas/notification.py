@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import ConfigDict, BaseModel, Field
@@ -64,7 +64,13 @@ class NotificationAdminCreate(BaseModel):
     data: Optional[dict] = None
     link_url: Optional[str] = None
     expires_at: Optional[datetime] = None
-    notify_channels: list[NotificationChannel] = Field(default_factory=list)
+    notify_channels: list[
+        Literal[
+            NotificationChannel.EMAIL,
+            NotificationChannel.WEBHOOK,
+            NotificationChannel.FEISHU,
+        ]
+    ] = Field(default_factory=list)
 
 
 class NotificationReadRequest(BaseModel):

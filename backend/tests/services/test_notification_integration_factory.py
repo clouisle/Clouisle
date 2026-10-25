@@ -1,4 +1,5 @@
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, call
+from uuid import uuid4
 
 import pytest
 
@@ -138,6 +139,55 @@ async def test_feishu_notification_requires_enabled_capability_and_credentials(
     assert (
         await handler.validate_configuration() == "feishu_notification_not_configured"
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason", ["disabled", "capability_removed"])
+async def test_feishu_queued_delivery_rechecks_notification_capability_before_client(
+    monkeypatch, reason
+):
+    from types import SimpleNamespace
+
+    from app.integrations import feishu as feishu_module
+    from app.integrations.registry import IntegrationCapability
+    from app.models.integration import Integration
+    from app.models.notification import NotificationDeliveryStatus
+    from app.tasks import notification as tasks
+
+    integration = SimpleNamespace(
+        is_enabled=reason != "disabled",
+        enabled_capabilities=[]
+        if reason == "capability_removed"
+        else [IntegrationCapability.NOTIFICATION],
+        config={"app_id": "cli_test"},
+        credentials={"app_secret": "encrypted"},
+    )
+    monkeypatch.setattr(Integration, "get_or_none", AsyncMock(return_value=integration))
+    client = Mock()
+    monkeypatch.setattr(feishu_module, "FeishuClient", client)
+    monkeypatch.setattr(
+        tasks,
+        "_load_notification_context",
+        AsyncMock(return_value=SimpleNamespace(notification=SimpleNamespace())),
+    )
+    monkeypatch.setattr(
+        tasks, "_get_feishu_recipients", AsyncMock(return_value=[("ou_123", "en")])
+    )
+    update_status = AsyncMock()
+    monkeypatch.setattr(tasks, "_update_delivery_status", update_status)
+    notification_id = uuid4()
+
+    with pytest.raises(ValueError, match="feishu_notification_not_enabled"):
+        await tasks._send_notification_feishu(notification_id)
+
+    client.assert_not_called()
+    assert update_status.await_args_list == [
+        call(
+            notification_id,
+            NotificationChannel.FEISHU,
+            NotificationDeliveryStatus.SENDING,
+        )
+    ]
 
 
 @pytest.mark.asyncio

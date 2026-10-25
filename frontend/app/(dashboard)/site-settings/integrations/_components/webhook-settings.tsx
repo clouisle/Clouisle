@@ -43,6 +43,7 @@ export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate, cred
   const [headersText, setHeadersText] = React.useState(
     credentialsConfigured.includes('webhook_headers') && Object.keys(settings.webhook_headers).length === 0 ? '' : JSON.stringify(settings.webhook_headers || {}, null, 2)
   )
+  const [headersTouched, setHeadersTouched] = React.useState(false)
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
 
   const errorPathMap = React.useMemo(
@@ -74,6 +75,7 @@ export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate, cred
   }
 
   const handleHeadersChange = (text: string) => {
+    setHeadersTouched(true)
     setHeadersText(text)
     setFieldErrors((prev) => clearValidationError(prev, 'webhook_headers'))
     try {
@@ -115,7 +117,11 @@ export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate, cred
     setFieldErrors({})
     try {
       setSaving(true)
-      await integrationsApi.updateWebhook(settings)
+      const update: Partial<WebhookSettings> = { ...settings }
+      if (!headersTouched) {
+        delete update.webhook_headers
+      }
+      await integrationsApi.updateWebhook(update)
       toast.success(t('saveSuccess'))
     } catch (error) {
       const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)

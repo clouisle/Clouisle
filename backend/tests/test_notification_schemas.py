@@ -3,7 +3,9 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 from pydantic import ValidationError
+from tortoise import Tortoise
 
 from app.models.notification import (
     NotificationChannel,
@@ -15,10 +17,21 @@ from app.models.notification import (
 )
 from app.schemas.notification import (
     NotificationAdminCreate,
+    NotificationDeliveryOut,
     NotificationOut,
     NotificationReadRequest,
     NotificationUnreadCount,
 )
+
+
+@pytest_asyncio.fixture
+async def notification_database():
+    await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
+    await Tortoise.generate_schemas()
+    try:
+        yield
+    finally:
+        await Tortoise.close_connections()
 
 
 def test_notification_admin_create_defaults_and_validates_required_text():
@@ -81,6 +94,35 @@ def test_notification_out_reads_attributes_and_nested_deliveries():
     assert result.is_read is True
     assert result.deliveries[0].channel is NotificationChannel.EMAIL
     assert result.deliveries[0].status is NotificationDeliveryStatus.SUCCESS
+
+
+@pytest.mark.asyncio
+async def test_notification_delivery_reads_historical_channel_values(
+    notification_database,
+):
+    from app.models.notification import Notification, NotificationDelivery
+
+    notification = await Notification.create(
+        scope=NotificationScope.GLOBAL,
+        type="history.compatibility",
+        source=NotificationSource.SYSTEM,
+        title="Historical notification",
+        content="Previously delivered",
+        level=NotificationLevel.MEDIUM,
+    )
+
+    for value in ("dingtalk", "wechat", "slack"):
+        delivery = await NotificationDelivery.create(
+            notification=notification, channel=value
+        )
+        restored = await NotificationDelivery.get(id=delivery.id)
+        assert restored.channel.value == value
+        assert (
+            NotificationDeliveryOut.model_validate(restored).model_dump(mode="json")[
+                "channel"
+            ]
+            == value
+        )
 
 
 def test_notification_read_request_and_unread_count_defaults():

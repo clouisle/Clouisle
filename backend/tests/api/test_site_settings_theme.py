@@ -743,6 +743,52 @@ async def test_webhook_settings_encrypt_headers_and_preserve_blank_secrets(monke
 
 
 @pytest.mark.asyncio
+async def test_webhook_omitted_and_empty_headers_have_distinct_updates(monkeypatch):
+    integration = SimpleNamespace(
+        id=uuid4(),
+        name="webhook",
+        is_enabled=True,
+        config={"webhook_url": "https://example.com/hook"},
+        credentials={"webhook_secret": "encrypted", "webhook_headers": "encrypted"},
+    )
+    update = AsyncMock(return_value=integration)
+    monkeypatch.setattr(integration_settings, "update_builtin_config", update)
+    monkeypatch.setattr(
+        integration_settings,
+        "get_builtin_integration",
+        AsyncMock(return_value=integration),
+    )
+    monkeypatch.setattr(integration_settings.AuditLogService, "log", AsyncMock())
+    current_user = SimpleNamespace(id=uuid4())
+
+    await integration_settings.update_webhook_settings(
+        request=MagicMock(),
+        data=integration_settings.WebhookSettings(
+            webhook_url="https://new.example/hook"
+        ),
+        current_user=current_user,
+    )
+    assert update.await_args_list[0].args == (
+        "webhook",
+        {"webhook_url": "https://new.example/hook"},
+        {"webhook_secret": ""},
+        None,
+    )
+
+    await integration_settings.update_webhook_settings(
+        request=MagicMock(),
+        data=integration_settings.WebhookSettings(webhook_headers={}),
+        current_user=current_user,
+    )
+    assert update.await_args_list[1].args == (
+        "webhook",
+        {},
+        {"webhook_secret": "", "webhook_headers": "{}"},
+        None,
+    )
+
+
+@pytest.mark.asyncio
 async def test_saved_login_policy_remains_visible_to_public_login_page(monkeypatch):
     from app.api.v1.endpoints import site_settings as public_settings
 

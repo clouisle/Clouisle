@@ -400,6 +400,15 @@ async def test_feishu_delivery_sends_to_linked_users_and_records_partial_success
         ),
         patch.object(
             tasks,
+            "Integration",
+        ) as integration_model,
+        patch.object(
+            tasks,
+            "active_features",
+            return_value={"notification"},
+        ),
+        patch.object(
+            tasks,
             "_get_feishu_recipients",
             new=AsyncMock(return_value=[("ou_1", "en"), ("ou_2", "zh")]),
         ),
@@ -414,6 +423,7 @@ async def test_feishu_delivery_sends_to_linked_users_and_records_partial_success
             side_effect=[("title-en", "body-en"), ("标题", "正文")],
         ),
     ):
+        integration_model.get_or_none = AsyncMock(return_value=SimpleNamespace())
         assert await tasks._send_notification_feishu(item.id) is True
 
     integration_factory.assert_called_once_with(NotificationChannel.FEISHU)
@@ -444,9 +454,12 @@ async def test_feishu_delivery_marks_no_bound_recipients_skipped():
         patch.object(
             tasks, "_load_notification_context", new=AsyncMock(return_value=context)
         ),
+        patch.object(tasks, "Integration") as integration_model,
+        patch.object(tasks, "active_features", return_value={"notification"}),
         patch.object(tasks, "_get_feishu_recipients", new=AsyncMock(return_value=[])),
         patch.object(tasks, "get_notification_integration"),
     ):
+        integration_model.get_or_none = AsyncMock(return_value=SimpleNamespace())
         assert await tasks._send_notification_feishu(item.id) is True
 
     assert updates.await_args_list[-1].args == (

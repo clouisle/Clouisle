@@ -24,6 +24,11 @@ DELIVERY_TASKS = [
         "_send_notification_webhook",
         NotificationChannel.WEBHOOK,
     ),
+    (
+        tasks.send_notification_feishu_task,
+        "_send_notification_feishu",
+        NotificationChannel.FEISHU,
+    ),
 ]
 
 CHANNEL_SENDERS = [
@@ -68,6 +73,53 @@ def test_delivery_task_marks_failed_and_retries(task, worker_name, channel):
         "notification_delivery_failed",
     )
     retry.assert_called_once_with(exc=error, countdown=120)
+
+
+@pytest.mark.parametrize("disabled", [True, False])
+def test_feishu_task_rechecks_current_capability_and_records_failure(disabled):
+    notification_id = uuid4()
+    integration = SimpleNamespace(
+        is_enabled=not disabled,
+        enabled_capabilities=["notification"] if disabled else [],
+    )
+    task = tasks.send_notification_feishu_task
+    with (
+        patch.object(
+            tasks.Integration, "get_or_none", AsyncMock(return_value=integration)
+        ),
+        patch.object(
+            tasks,
+            "_load_notification_context",
+            AsyncMock(return_value=SimpleNamespace(notification=SimpleNamespace())),
+        ),
+        patch.object(tasks, "_get_feishu_recipients", AsyncMock()) as recipients,
+        patch.object(tasks, "get_notification_integration") as factory,
+        patch.object(tasks, "_update_delivery_status", AsyncMock()) as update_status,
+        patch.object(
+            task, "retry", side_effect=RuntimeError("retry scheduled")
+        ) as retry,
+        patch.object(task.request, "retries", 0),
+        pytest.raises(RuntimeError, match="retry scheduled"),
+    ):
+        task.run(str(notification_id))
+
+    recipients.assert_not_awaited()
+    factory.assert_not_called()
+    assert update_status.await_args_list == [
+        call(
+            notification_id,
+            NotificationChannel.FEISHU,
+            NotificationDeliveryStatus.SENDING,
+        ),
+        call(
+            notification_id,
+            NotificationChannel.FEISHU,
+            NotificationDeliveryStatus.FAILED,
+            "notification_delivery_failed",
+        ),
+    ]
+    assert str(retry.call_args.kwargs["exc"]) == "feishu_notification_not_enabled"
+    assert retry.call_args.kwargs["countdown"] == 60
 
 
 @pytest.mark.asyncio

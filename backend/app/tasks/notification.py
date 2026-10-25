@@ -26,7 +26,10 @@ from app.models.notification import (
 )
 from app.models.site_setting import SiteSetting
 from app.core.config import settings
+from app.models.integration import Integration
 from app.models.user import User, TeamMember, Team
+from app.services.integration_features import active_features
+from app.integrations.registry import IntegrationCapability
 
 logger = logging.getLogger(__name__)
 
@@ -535,6 +538,10 @@ async def _send_notification_feishu(notification_id: UUID) -> bool:
     ctx = await _load_notification_context(notification_id)
     if not ctx:
         raise ValueError("notification_not_found")
+
+    integration = await Integration.get_or_none(provider_type="feishu")
+    if IntegrationCapability.NOTIFICATION.value not in active_features(integration):
+        raise ValueError("feishu_notification_not_enabled")
 
     recipients = await _get_feishu_recipients(ctx.notification)
     if not recipients:

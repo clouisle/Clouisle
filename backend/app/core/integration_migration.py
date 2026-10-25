@@ -171,11 +171,16 @@ async def initialize_integrations() -> None:
                 credentials = {}
                 if settings.get("feishu_app_secret_encrypted"):
                     credentials["app_secret"] = settings["feishu_app_secret_encrypted"]
+                elif settings.get("feishu_app_secret"):
+                    credentials["app_secret"] = encrypt_secret(
+                        str(settings["feishu_app_secret"])
+                    )
                 enabled = bool(config["app_id"] and credentials)
                 keys = [
                     "feishu_app_id",
                     "feishu_department_scope",
                     "feishu_app_secret_encrypted",
+                    "feishu_app_secret",
                 ]
             elif provider_type == "wechat":
                 config, credentials, keys = {}, {}, []
@@ -238,7 +243,8 @@ async def initialize_integrations() -> None:
                     credentials=credentials,
                     using_db=connection,
                 )
-            await SiteSetting.filter(key__in=keys).using_db(connection).delete()
+            if provider_type != "feishu" or existing is None:
+                await SiteSetting.filter(key__in=keys).using_db(connection).delete()
         await (
             SiteSetting.filter(category="sso")
             .using_db(connection)
