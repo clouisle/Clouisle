@@ -3322,9 +3322,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Search API error: {status_code}",
         "zh": "搜索 API 错误：{status_code}",
     },
-    "web_search_blocked_or_empty": {
-        "en": "The search engine returned no usable results (it may be blocking automated requests); try again or choose another engine",
-        "zh": "搜索引擎未返回可用结果（可能拦截了自动请求）；请重试或切换搜索引擎",
+    "web_search_api_key_not_configured": {
+        "en": "Web search requires a Tavily or Bocha API key; configure search credentials before using this tool",
+        "zh": "网页搜索需要 Tavily 或博查 API Key；请先配置搜索凭证",
     },
     "web_search_unsupported_engine": {
         "en": "Unsupported search engine: {search_engine}",

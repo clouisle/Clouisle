@@ -224,9 +224,9 @@ describe('ToolSelector', () => {
     }
     let tree = renderSearchItem()
     const engineSelect = find(tree, (node) => node.type === 'select')
-    const bingOption = find(tree, (node) => node.type === 'select-item' && node.props.value === 'bing')
-    expect(text(bingOption)).toBe('config.engineBing')
-    ;(engineSelect.props.onValueChange as (value: string) => void)('bing')
+    const bochaOption = find(tree, (node) => node.type === 'select-item' && node.props.value === 'bocha')
+    expect(text(bochaOption)).toBe('config.engineBocha')
+    ;(engineSelect.props.onValueChange as (value: string) => void)('bocha')
     tree = renderSearchItem()
 
     const saveBtn = find(tree, (node) => typeof node.props.onClick === 'function' && text(node).includes('config.save'))
@@ -235,7 +235,7 @@ describe('ToolSelector', () => {
       expect.objectContaining({
         type: 'builtin',
         name: 'web_search',
-        config: expect.objectContaining({ engine: 'bing', api_key: undefined }),
+        config: expect.objectContaining({ engine: 'bocha', api_key: undefined }),
       }),
     ])
 

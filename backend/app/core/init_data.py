@@ -717,8 +717,8 @@ async def migrate_agent_web_search_engine() -> None:
                 CASE
                     WHEN tool->>'type' = 'builtin'
                         AND tool->>'name' = 'web_search'
-                        AND tool #>> '{config,engine}' IN ('duckduckgo', 'ddg')
-                    THEN jsonb_set(tool, '{config,engine}', '"bing"'::jsonb)
+                        AND tool #>> '{config,engine}' IN ('bing', 'duckduckgo', 'ddg')
+                    THEN jsonb_set(tool, '{config,engine}', '"auto"'::jsonb)
                     ELSE tool
                 END ORDER BY position
             )
@@ -730,7 +730,7 @@ async def migrate_agent_web_search_engine() -> None:
                 SELECT 1 FROM jsonb_array_elements(tools_config) AS tool
                 WHERE tool->>'type' = 'builtin'
                     AND tool->>'name' = 'web_search'
-                    AND tool #>> '{config,engine}' IN ('duckduckgo', 'ddg')
+                    AND tool #>> '{config,engine}' IN ('bing', 'duckduckgo', 'ddg')
             )
         """,
     )

@@ -83,7 +83,7 @@ Configuration:
   BOCHA_API_KEY: ...
 ```
 
-Web Search can use **Tavily** (`TAVILY_API_KEY`) or **Bocha** (`BOCHA_API_KEY`); if neither key is configured, auto mode uses keyless **Bing RSS** search. Auto mode also uses Bing when the selected keyed provider fails; an explicitly selected Tavily or Bocha provider reports its own failure. Agents can select Bing directly without credentials. Query parameters (e.g. `num_results`, default 5, maximum 10) are passed by the agent at call time. Bing's public endpoint may block automated requests or return no usable results; these are reported as failures, not successful empty searches. There is no Google Custom Search configuration.
+Web Search requires a **Tavily** (`TAVILY_API_KEY`) or **Bocha** (`BOCHA_API_KEY`) credential. Auto mode chooses Tavily first, then Bocha based on configured keys; without either key it fails before making a search request. A provider failure is returned directly, without switching to a keyless service. Agent-specific keys can inherit missing credentials from team/global configuration; Tavily also supports the environment-variable fallback. Query parameters (`num_results`, default 5, maximum 10) are passed by the agent at call time. Bing and DuckDuckGo are not supported; saved Agent selections for these retired providers migrate to auto at startup.
 
 **Update Configuration:**
 1. Select tool
@@ -92,7 +92,7 @@ Web Search can use **Tavily** (`TAVILY_API_KEY`) or **Bocha** (`BOCHA_API_KEY`);
 4. Test tool
 5. Save changes
 
-> **Note:** Bing web search does not require configuration; Tavily and Bocha require API keys. There are no per-tool limits (calls per day/agent/minute) or timeout settings for built-in tools.
+> **Note:** Web search requires API credentials. There are no per-tool limits (calls per day/agent/minute) or timeout settings for built-in tools.
 
 ## Custom Tools
 

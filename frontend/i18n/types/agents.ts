@@ -277,7 +277,6 @@ export type AgentsMessages = {
           engine: string
           engineHint: string
           engineAuto: string
-          engineBing: string
           engineBocha: string
           engineTavily: string
           apiKey: string

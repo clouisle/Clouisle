@@ -1,7 +1,12 @@
 # Implementation Plan
 
 ## Active
-- **bing-keyless-web-search** — Completed. See `docs/plan/bing-keyless-web-search.md`.
+- **keyed-web-search-only** — Completed. See `docs/plan/keyed-web-search-only.md`.
+  - [x] 1. Remove keyless providers and migrate saved selections
+  - [x] 2. Update selector, translations and behavior contracts
+  - [x] 3. Verify explicit failures and update operator docs
+
+- **bing-keyless-web-search** — Superseded by `keyed-web-search-only` after unrelated live results. See `docs/plan/bing-keyless-web-search.md`.
   - [x] 1. Backend provider and saved Agent configuration cutover
   - [x] 2. Frontend engine selector and documentation cutover
   - [x] 3. Behavior tests and real-search verification

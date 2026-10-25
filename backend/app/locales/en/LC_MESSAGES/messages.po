@@ -2760,8 +2760,8 @@ msgstr "Invalid verification code"
 msgid "web_search_unsupported_engine"
 msgstr "Unsupported search engine: {search_engine}"
 
-msgid "web_search_blocked_or_empty"
-msgstr "The search engine returned no usable results (it may be blocking automated requests); try again or choose another engine"
+msgid "web_search_api_key_not_configured"
+msgstr "Web search requires a Tavily or Bocha API key; configure search credentials before using this tool"
 
 msgid "web_search_api_error"
 msgstr "Search API error: {status_code}"

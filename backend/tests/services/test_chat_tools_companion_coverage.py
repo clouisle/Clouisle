@@ -417,22 +417,11 @@ async def test_read_rss_feed_branches():
 
 @pytest.mark.anyio
 async def test_web_search_and_fetch_webpage_branches():
-    # 1. web_search auto fallback: tavily fails -> Bing succeeds
-    with (
-        patch(
-            "app.llm.tools.builtin.web_search._tavily_search",
-            new=AsyncMock(return_value={"success": False}),
-        ),
-        patch(
-            "app.llm.tools.builtin.web_search._bing_search",
-            new=AsyncMock(
-                return_value={"success": True, "results": [{"title": "Bing"}]}
-            ),
-        ),
-    ):
-        res = await web_search("python", search_engine="auto")
-        assert res["success"] is True
-        assert res["search_engine"] == "bing"
+    # 1. Auto without credentials fails instead of using keyless search.
+    res = await web_search("python", search_engine="auto")
+    assert res["success"] is False
+    assert res["results"] == []
+    assert "API key" in res["error"]
 
     # 2. web_search bocha without api_key
     res_bocha = await web_search("python", search_engine="bocha", credentials={})

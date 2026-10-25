@@ -2,16 +2,14 @@
 网页搜索工具
 
 提供网页搜索功能，支持多种搜索引擎。
-免 Key 搜索使用 Bing；Tavily 和 Bocha 需要配置 API Key。
+网页搜索需要配置 Tavily 或博查 API Key。
 """
 
 import asyncio
 import logging
 from pathlib import Path
-import re
 from typing import Any
 
-from bs4 import BeautifulSoup
 import httpx
 import trafilatura
 
@@ -33,15 +31,14 @@ async def web_search(
     搜索网页。
 
     支持多引擎架构：
-    - auto: 优先使用已配置 API Key 的商业搜索引擎（Tavily、Bocha 等），若未配置则自动使用免 Key 搜索。
+    - auto: 优先使用已配置 API Key 的 Tavily，其次使用博查；未配置时返回错误。
     - tavily: 使用 Tavily 搜索（需要 TAVILY_API_KEY）。
     - bocha: 使用国内博查 AI 搜索（需要 BOCHA_API_KEY）。
-    - bing: 使用 Bing RSS 免配置、零 Key 网页搜索。
 
     Args:
         query: 搜索关键词或问题
         num_results: 返回结果数量，默认 5，最大 10
-        search_engine: 搜索引擎，支持 'auto', 'tavily', 'bocha', 'bing'
+        search_engine: 搜索引擎，支持 'auto', 'tavily', 'bocha'
         credentials: 凭证信息（可包含 TAVILY_API_KEY, BOCHA_API_KEY 等）
 
     Returns:
@@ -53,33 +50,23 @@ async def web_search(
     num_results = max(1, min(num_results, 10))
 
     if is_auto:
-        # 根据可用凭证自动路由优先级：Tavily -> Bocha -> 零配置搜索兜底
+        # 根据可用凭证自动选择：Tavily -> Bocha
         if creds.get("TAVILY_API_KEY"):
             engine = "tavily"
         elif creds.get("BOCHA_API_KEY"):
             engine = "bocha"
         else:
-            engine = "bing"
+            return {
+                "query": query,
+                "error": t("web_search_api_key_not_configured"),
+                "success": False,
+                "results": [],
+            }
 
     if engine == "tavily":
         result = await _tavily_search(query, num_results, creds)
-        # 若 Tavily 因为未配 Key 或网络异常失败，且是 auto 模式发起的，则尝试零配置搜索兜底
-        if not result.get("success") and is_auto:
-            logger.info(
-                "Tavily search failed or key missing, falling back to zero-key search"
-            )
-            result = await _bing_search(query, num_results)
-            engine = "bing"
     elif engine == "bocha":
         result = await _bocha_search(query, num_results, creds)
-        if not result.get("success") and is_auto:
-            logger.info(
-                "Bocha search failed or key missing, falling back to zero-key search"
-            )
-            result = await _bing_search(query, num_results)
-            engine = "bing"
-    elif engine == "bing":
-        result = await _bing_search(query, num_results)
     else:
         return {
             "query": query,
@@ -218,97 +205,6 @@ async def _bocha_search(
         }
     except Exception as e:
         logger.error("Bocha search error: %s", e)
-        return {
-            "query": query,
-            "error": t("tool_execution_failed"),
-            "success": False,
-            "results": [],
-        }
-
-
-_CJK_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
-
-
-def _parse_bing_rss(xml_text: str, max_results: int) -> list[dict[str, Any]]:
-    """解析 Bing RSS 搜索结果。"""
-    soup = BeautifulSoup(xml_text, "xml")
-    results: list[dict[str, Any]] = []
-
-    for item in soup.find_all("item"):
-        link_node = item.find("link")
-        url = link_node.get_text(strip=True) if link_node else ""
-        if not url.startswith(("http://", "https://")):
-            continue
-
-        title_node = item.find("title")
-        title = title_node.get_text(strip=True) if title_node else ""
-        description_node = item.find("description")
-        description_html = description_node.get_text() if description_node else ""
-        snippet = (
-            BeautifulSoup(description_html, "html.parser").get_text(" ", strip=True)
-            if description_html
-            else ""
-        )
-
-        results.append({"title": title, "url": url, "content": snippet})
-        if len(results) >= max_results:
-            break
-
-    return results
-
-
-async def _bing_search(query: str, num_results: int) -> dict:
-    """使用 Bing RSS 免 Key 搜索。"""
-    market = "zh-CN" if _CJK_PATTERN.search(query) else "en-US"
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept": "application/rss+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": f"{market},en;q=0.8",
-    }
-
-    try:
-        async with httpx.AsyncClient(
-            timeout=15.0,
-            follow_redirects=True,
-            headers=headers,
-        ) as client:
-            response = await client.get(
-                "https://www.bing.com/search",
-                params={
-                    "q": query,
-                    "format": "rss",
-                    "count": str(num_results),
-                    "mkt": market,
-                },
-            )
-            response.raise_for_status()
-            xml_text = response.text
-
-        results = await asyncio.to_thread(_parse_bing_rss, xml_text, num_results)
-        if not results:
-            return {
-                "query": query,
-                "error": t("web_search_blocked_or_empty"),
-                "success": False,
-                "results": [],
-            }
-        return {
-            "query": query,
-            "results": with_web_citation_ids(results),
-            "success": True,
-        }
-    except httpx.TimeoutException:
-        return {
-            "query": query,
-            "error": t("tool_execution_timeout"),
-            "success": False,
-            "results": [],
-        }
-    except Exception as e:
-        logger.error("Bing search error: %s", e)
         return {
             "query": query,
             "error": t("tool_execution_failed"),

@@ -409,7 +409,6 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
 
   const engineLabels: Record<string, string> = {
     auto: t('config.engineAuto'),
-    bing: t('config.engineBing'),
     bocha: t('config.engineBocha'),
     tavily: t('config.engineTavily'),
   }
@@ -524,7 +523,6 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="auto">{t('config.engineAuto')}</SelectItem>
-                    <SelectItem value="bing">{t('config.engineBing')}</SelectItem>
                     <SelectItem value="bocha">{t('config.engineBocha')}</SelectItem>
                     <SelectItem value="tavily">{t('config.engineTavily')}</SelectItem>
                   </SelectContent>

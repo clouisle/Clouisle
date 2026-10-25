@@ -51,7 +51,7 @@ System-provided tools that are ready to use without configuration.
 | `format_datetime` | Format date/time strings | Time |
 | `calculate` | Evaluate mathematical expressions | Math |
 | `unit_convert` | Convert between units | Math |
-| `web_search` | Search the web (keyless Bing, or Tavily/Bocha with an API key) | Search |
+| `web_search` | Search the web (Tavily or Bocha API key required) | Search |
 | `fetch_webpage` | Fetch and extract webpage content | Web |
 | `rss_feed_reader` | Fetch and parse RSS or Atom feeds into a structured article list | Web |
 

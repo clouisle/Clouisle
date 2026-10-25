@@ -1,5 +1,7 @@
 # Keyless Bing Web Search Design Document
 
+> Superseded by [keyed web search only](keyed-web-search-only.md). The exact query `上海天气 今天` returned unrelated content; prior nonempty-result checks did not establish relevance. Bing RSS is removed, not retained as a fallback. The design below records the rejected implementation.
+
 ## Background & Goals
 - DuckDuckGo HTML search returned HTTP 202 anti-bot pages in live checks. Remove its implementation and configuration option rather than retaining a fallback chain.
 - Use Bing RSS without an API key; retain Tavily and Bocha priority and existing citation/result contracts.
