@@ -12,6 +12,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { WebSearchEngineSelect } from '@/components/tools/web-search-engine-select'
 import { cn } from '@/lib/utils'
 import { useTeam } from '@/contexts/team-context'
 import { toolsApi, isPresetToolCategory, type Tool, type ToolCategory, type PresetToolCategory, type McpToolInfo } from '@/lib/api'
@@ -793,6 +794,12 @@ export function ToolNodeConfig({
                 {/* 值输入 */}
                 {mapping.source === 'variable' ? (
                   renderVariableSelector(mapping)
+                ) : selectedTool?.type === 'builtin' && selectedTool.name === 'web_search' && mapping.name === 'search_engine' ? (
+                  <WebSearchEngineSelect
+                    value={mapping.constantValue || 'auto'}
+                    onValueChange={(value) => handleUpdateMapping(mapping.name, { constantValue: value })}
+                    className="text-xs"
+                  />
                 ) : (
                   <Input
                     value={mapping.constantValue || ''}

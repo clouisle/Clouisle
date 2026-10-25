@@ -3,6 +3,7 @@ import { beforeEach, expect, mock, test } from 'bun:test'
 interface TreeNode { type?: unknown, props: Record<string, unknown> }
 const jsx = (type: unknown, props: Record<string, unknown> = {}) => ({ type, props })
 const component = function Component() {}
+const WebSearchEngineSelect = function WebSearchEngineSelect() {}
 const AlertCircle = function AlertCircle() {}
 const stateValues = new Map<number, unknown>()
 const setters = Array.from({ length: 11 }, () => mock(() => {}))
@@ -43,6 +44,7 @@ for (const [path, names] of [
   ['@/components/ui/tabs', ['Tabs', 'TabsList', 'TabsTrigger']],
 ] as const) mock.module(path, () => Object.fromEntries(names.map(name => [name, component])))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
+mock.module('@/components/tools/web-search-engine-select', () => ({ WebSearchEngineSelect }))
 mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam }) }))
 mock.module('@/lib/api', () => ({
   toolsApi: { list, listMcpTools },
