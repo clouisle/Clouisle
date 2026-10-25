@@ -233,6 +233,7 @@
       "webSearchManaged": "网页搜索由站点管理员统一配置，团队级搜索密钥已不再使用。",
       "webSearchConfigure": "配置搜索",
       "parameters": "参数",
+      "searchEngine": "搜索引擎",
       "noParameters": "此工具无需参数",
       "required": "必填",
       "selectOption": "选择一个选项",

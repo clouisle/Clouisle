@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Play, Loader2, CheckCircle, XCircle, Clock, Copy, Check, RefreshCw, Database } from 'lucide-react'
+import { WebSearchEngineSelect } from '@/components/tools/web-search-engine-select'
 
 interface ToolTestApi {
   listMcpTools: typeof toolsApi.listMcpTools
@@ -71,6 +72,8 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
   const [mcpTools, setMcpTools] = useState<McpToolInfo[]>([])
   const [selectedMcpTool, setSelectedMcpTool] = useState<string>('')
   const [loadingMcpTools, setLoadingMcpTools] = useState(false)
+  const [searchEngine, setSearchEngine] = useState('auto')
+  const isWebSearch = tool?.type === 'builtin' && tool.name === 'web_search'
 
   // 加载 MCP 工具列表
   const loadMcpTools = async () => {
@@ -109,6 +112,7 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
       setResult(null)
       setMcpTools([])
       setSelectedMcpTool('')
+      setSearchEngine('auto')
     }
     onOpenChange(isOpen)
   }
@@ -164,6 +168,9 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
             }
           }
         })
+        if (isWebSearch) {
+          typedArgs.search_engine = searchEngine
+        }
       }
 
       const response = await api.test({
@@ -323,6 +330,20 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
                   }}
                 />
               ))}
+            </div>
+          )}
+
+          {isWebSearch && (
+            <div className="space-y-1.5">
+              <Label htmlFor="web-search-test-engine" className="text-xs font-medium">
+                {t('searchEngine')}
+              </Label>
+              <WebSearchEngineSelect
+                value={searchEngine}
+                onValueChange={setSearchEngine}
+                className="w-full"
+                triggerId="web-search-test-engine"
+              />
             </div>
           )}
 

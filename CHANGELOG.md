@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added an enabled-only search engine selector to the `web_search` tool test page, submitted as `search_engine`; the previous test form could only send the site default.
 - Added a site search configuration entry to the platform Capabilities page for administrators; the shared dialog offers the same default provider, enable switches and write-only credentials as the dashboard, including previously missing DeepSeek settings.
 - Added DeepSeek's Search API as a site-managed web search provider: an encrypted write-only API key, an explicit enable flag and default selection, enabled-provider discovery, and Agent/workflow engine choices. Results use DeepSeek's long summary as model-facing text; searches do not fall back to another provider.
 - Added site-managed SearXNG JSON search with reverse-proxy Base URL support, optional encrypted HTTPS bearer authentication, SSRF validation at save/use and refused redirects. Changing an instance with a saved token requires explicitly replacing or clearing that token. Administrators can test saved search configuration without exposing secrets to Agents.

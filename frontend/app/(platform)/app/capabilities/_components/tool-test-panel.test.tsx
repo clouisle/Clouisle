@@ -12,7 +12,15 @@ mock.module('next/image', () => ({
   default: ({ alt, src }: { alt: string; src: string }) => <img alt={alt} src={src} />,
 }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
-mock.module('@/lib/api', () => ({ toolsApi: { listMcpTools: mock(), test: mock() } }))
+mock.module('@/lib/api', () => ({ toolsApi: { listMcpTools: mock(), test: mock(), getWebSearchEngines: mock(async () => ['tavily']) } }))
+mock.module('@/components/tools/web-search-engine-select', () => ({
+  WebSearchEngineSelect: ({ value, onValueChange }: { value: string; onValueChange: (value: string) => void }) => (
+    <select aria-label="search-engine" value={value} onChange={(event) => onValueChange(event.target.value)}>
+      <option value="auto">auto</option>
+      <option value="tavily">tavily</option>
+    </select>
+  ),
+}))
 mock.module('@/lib/validation', () => ({
   normalizeValidationErrors: (error: { fields?: Record<string, string> }) => error.fields ?? {},
   clearValidationError: (errors: Record<string, string>, key: string) =>
@@ -124,6 +132,27 @@ describe('tool test panel', () => {
   test('renders nothing at the null-tool boundary', () => {
     const api = { listMcpTools: mock(), test: mock() }
     expect(render(null, api).toJSON()).toBeNull()
+  })
+
+  test('passes the chosen enabled engine when testing web search', async () => {
+    const api = { listMcpTools: mock(), test: mock(async () => ({ success: true, result: {} })) }
+    const renderer = render({
+      ...baseTool,
+      type: 'builtin',
+      name: 'web_search',
+      parameters: [{ name: 'query', type: 'string', required: true }],
+    }, api)
+
+    change(renderer, 'query', 'weather')
+    const engine = renderer.root.findByProps({ 'aria-label': 'search-engine' })
+    expect(engine.props.value).toBe('auto')
+    act(() => engine.props.onChange({ target: { value: 'tavily' } }))
+    await act(async () => runButton(renderer).props.onClick())
+
+    expect(api.test).toHaveBeenCalledWith(
+      { name: 'web_search', arguments: { query: 'weather', search_engine: 'tavily' } },
+      'team-1',
+    )
   })
 
   test('converts regular and code-tool inputs before execution and shows loading and rich success output', async () => {

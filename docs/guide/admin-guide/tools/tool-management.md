@@ -121,6 +121,8 @@ The instance must be reachable from API and task-worker processes that execute s
 
 SearXNG uses a 30-second HTTPX timeout for connection/read/write/pool operations, not a strict total-duration deadline. Requests are not retried and do not fall back to another provider.
 
+The tool test page exposes a search-engine selector for `web_search`; it lists only enabled providers plus the site default and submits the choice as `search_engine`.
+
 Save first, then test with `上海天气 今天`, a multiword technical query and a `site:` query. Inspect result relevance as well as connectivity. A 403 may mean JSON output is disabled or the gateway rejected access. SearXNG engine availability/relevance depends on the instance's upstream engines; Clouisle does not promise that every query/operator is supported.
 
 

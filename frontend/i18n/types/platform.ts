@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-25T15:39:35.267Z
+// GENERATED — 2026-10-25T15:43:14.283Z
 // Source: i18n/en/platform.json
 export type PlatformMessages = {
   platform: {
@@ -235,6 +235,7 @@ export type PlatformMessages = {
       webSearchManaged: string
       webSearchConfigure: string
       parameters: string
+      searchEngine: string
       noParameters: string
       required: string
       selectOption: string
