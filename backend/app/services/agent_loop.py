@@ -772,6 +772,7 @@ class AgentLoop:
             agent=ctx.agent,
             conversation=ctx.conversation,
             user_message=ctx.user_message,
+            current_user_message_id=ctx.current_user_message_id,
             user_locale=ctx.user_locale,
             history_override=ctx.working_history_override,
             input_capabilities=ctx.input_capabilities,

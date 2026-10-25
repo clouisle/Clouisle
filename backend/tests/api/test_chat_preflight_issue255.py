@@ -153,7 +153,11 @@ async def test_public_agent_info_returns_minimal_projection(monkeypatch):
     current_agent.opening_message = "Hello"
     current_agent.suggested_questions = None
     current_agent.powered_by_text = "Acme Inc"
-    current_agent.variables = None
+    current_agent.variables = [
+        {"name": "source", "type": "file", "fileConfig": {"accept": [".csv"]}}
+    ]
+    current_agent.system_prompt = "private system instructions"
+    current_agent.tools_credentials = {"secret": "private"}
     current_agent.enable_attachments = True
     current_agent.attachment_config = {"max_files": 2}
     current_agent.hide_tool_calls = False
@@ -174,7 +178,11 @@ async def test_public_agent_info_returns_minimal_projection(monkeypatch):
     assert result["data"].powered_by_text == "Acme Inc"
     assert result["data"].created_by.username == "owner"
     assert result["data"].hide_artifact_list is True
+    assert result["data"].variables == [
+        {"name": "source", "type": "file", "fileConfig": {"accept": [".csv"]}}
+    ]
     assert not hasattr(result["data"], "system_prompt")
+    assert not hasattr(result["data"], "tools_credentials")
 
 
 @pytest.mark.anyio

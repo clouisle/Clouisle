@@ -91,9 +91,13 @@ def test_mutable_defaults_are_not_shared():
 
     first.tools_config.append(ToolConfig(type="builtin"))
     first.suggested_questions.append("Question")
+    first_public = AgentPublicOut(id=uuid4(), name="First")
+    second_public = AgentPublicOut(id=uuid4(), name="Second")
+    first_public.variables.append({"name": "first"})
 
     assert second.tools_config == []
     assert second.suggested_questions == []
+    assert second_public.variables == []
     assert ConversationCreate().variables == {}
     assert RegenerateRequest().variables == {}
 
@@ -248,6 +252,7 @@ def test_public_embed_and_list_outputs_accept_orm_objects():
     )
 
     assert public.suggested_questions == []
+    assert public.variables == []
     assert embed.embed_config == {}
     assert listed.team.name == "Team"
 

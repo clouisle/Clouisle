@@ -1286,6 +1286,7 @@ async def get_public_agent_info(
             input_modalities=sorted(
                 (await get_model_capabilities(agent)).get("input_modalities", ["text"])
             ),
+            variables=agent.variables or [],
             enable_attachments=agent.enable_attachments,
             attachment_config=agent.attachment_config,
             hide_tool_calls=agent.hide_tool_calls,

@@ -92,6 +92,60 @@ def _context(**overrides: object) -> AgentLoopContext:
     return context
 
 
+@pytest.mark.asyncio
+async def test_agent_loop_context_kwargs_forwards_current_message_id():
+    from tortoise.context import TortoiseContext
+    from app.models.agent import Agent, Conversation, Message as StoredMessage
+    from app.models.user import Team, User
+    from app.services.chat_context import build_context_plan
+
+    message_id = uuid4()
+    async with TortoiseContext() as db:
+        await db.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
+        await db.generate_schemas()
+        user = await User.create(
+            id=uuid4(),
+            username="context-owner",
+            email="context-owner@example.test",
+            hashed_password="unused",
+            is_active=True,
+            approval_status="approved",
+        )
+        team = await Team.create(id=uuid4(), name="context-team")
+        agent = await Agent.create(
+            id=uuid4(), name="context-agent", team=team, created_by=user
+        )
+        conversation = await Conversation.create(id=uuid4(), agent=agent, user=user)
+        await StoredMessage.create(
+            id=message_id,
+            conversation=conversation,
+            role="user",
+            content="stored original",
+        )
+        context = _context(
+            agent=agent,
+            conversation=conversation,
+            user=user,
+            current_user_message_id=message_id,
+            user_message="enriched current text",
+            model_id="stub-model",
+            model_context_limit=10000,
+            model_max_output_tokens=1000,
+            input_capabilities=None,
+            model_config=None,
+            include_current_user_message=True,
+            working_history_override=None,
+        )
+        kwargs = AgentLoop(context)._context_kwargs(0)
+        assert kwargs["current_user_message_id"] == message_id
+        plan = await build_context_plan(**kwargs)
+        user_contents = [m.content for m in plan.messages if m.role == MessageRole.USER]
+        assert user_contents == ["enriched current text"]
+        assert "stored original" not in str([m.content for m in plan.messages])
+        stored_message = await StoredMessage.get(id=message_id)
+        assert stored_message.content == "stored original"
+
+
 async def _consume_loop(loop: AgentLoop) -> list[str | None]:
     return [event async for event in loop.run()]
 

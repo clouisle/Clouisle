@@ -516,6 +516,7 @@ class AgentPublicOut(BaseModel):
     suggested_questions: list[str] = []
     powered_by_text: str | None = None
     input_modalities: list[str] = Field(default_factory=lambda: ["text"])
+    variables: list[dict[str, Any]] = Field(default_factory=list)
     enable_attachments: bool = False
     attachment_config: dict[str, Any] | None = None
     hide_tool_calls: bool = False

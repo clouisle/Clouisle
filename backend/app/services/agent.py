@@ -13,6 +13,7 @@ from typing import Any, TYPE_CHECKING, cast
 
 from app.core.i18n import t
 from app.llm import model_manager
+from app.llm.capabilities import get_effective_input_capabilities
 from app.services.error_messages import resolve_user_visible_error
 from app.llm.types import (
     ContentPart,
@@ -76,6 +77,9 @@ class AgentService:
             user_locale=user_locale,
             images=images,
             files=files,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
         )
         team_id = str(agent.team_id) if agent.team_id else None
         model_id = await self._resolve_model_id(agent)
@@ -212,6 +216,9 @@ class AgentService:
             user_locale=user_locale,
             images=images,
             files=files,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
         )
         team_id = str(agent.team_id) if agent.team_id else None
         model_id = await self._resolve_model_id(agent)
@@ -340,6 +347,9 @@ class AgentService:
         user_locale: str | None = None,
         images: list[Any] | None = None,
         files: list[Any] | None = None,
+        user_id: str | None = None,
+        conversation_id: Any = None,
+        workflow_run_id: Any = None,
     ) -> list[Message]:
         """Build system, history, and current multimodal user messages."""
         messages: list[Message] = []
@@ -378,6 +388,45 @@ class AgentService:
                         ),
                     )
                 )
+        if (
+            image_parts
+            and getattr(agent, "enable_attachments", False)
+            and (conversation_id is not None or workflow_run_id is not None)
+        ):
+            from uuid import UUID
+
+            from app.models.asset import AssetScopeType
+            from app.models.user import User
+            from app.services.asset_view import resolve_view_content
+
+            model_id = await self._resolve_model_id(agent)
+            if agent.team_id:
+                model_config, _team_model = await model_manager.resolve_team_chat_model(
+                    str(agent.team_id), model_id=model_id
+                )
+            else:
+                model_config = await model_manager._get_model_config(model_id)
+            input_capabilities = get_effective_input_capabilities(model_config)
+            user = await User.get_or_none(id=user_id) if user_id else None
+            scope_type = (
+                AssetScopeType.CONVERSATION
+                if conversation_id is not None
+                else AssetScopeType.WORKFLOW_RUN
+            )
+            scope_id = UUID(
+                str(conversation_id if conversation_id is not None else workflow_run_id)
+            )
+            for index, image_part in enumerate(image_parts):
+                _asset, part, _marker = await resolve_view_content(
+                    image_part.image.asset_ref,
+                    scope_type=scope_type,
+                    scope_id=scope_id,
+                    user=user,
+                    model_config=model_config,
+                    agent=agent,
+                    input_capabilities=input_capabilities,
+                )
+                image_parts[index] = part
         documents = self._describe_workflow_files(agent, files)
         if image_parts or documents:
             parts = [ContentPart(type=ContentType.TEXT, text=message), *image_parts]
