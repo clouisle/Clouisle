@@ -950,6 +950,20 @@ With `team_id`, team admin rights are required for create/update/delete and team
 
 Existing global search credentials are encrypted during migration. Agent/team credentials are archived encrypted and cease to apply; `legacy_credentials_present` signals that administrator action may be needed. No private account is automatically promoted to a site account.
 
+### Available Engines
+
+`GET /api/v1/tools/web-search/engines` requires `tool:read` and does not require an administrator role. It returns only the provider identifiers the site has enabled so agent and workflow configuration forms can offer valid choices.
+
+```json
+{
+  "code": 0,
+  "data": ["tavily", "searxng"],
+  "msg": "success"
+}
+```
+
+`data` is an ordered array containing only `tavily`, `bocha` and/or `searxng`. `auto` is never included: clients offer it separately as the explicit site-default routing choice. Credentials, secret-configured flags and the SearXNG base URL are never returned. A site with no configuration, or with every provider disabled, returns `[]`. Availability is informational only — execution still re-validates the selected provider's enable flag and credentials.
+
 ## Get Tool Usage
 
 > **Note:** Not implemented / Roadmap. There is no per-tool usage statistics endpoint.

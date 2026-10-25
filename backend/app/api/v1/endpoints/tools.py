@@ -33,6 +33,10 @@ from app.services.audit_log import AuditLogService
 from app.services.sandbox.compiler import compile_code_config_job
 from app.services.sandbox.gateway import sandbox_gateway
 from app.services.sandbox.models import SandboxJobSource
+from app.services.web_search_config import (
+    ENGINE_ENABLED_FIELDS,
+    get_web_search_config,
+)
 from app.schemas.response import (
     Response,
     ResponseCode,
@@ -662,6 +666,24 @@ async def list_file_parsers(
         )
 
     return success(data=parsers, msg_key="success")
+
+
+@router.get("/web-search/engines", response_model=Response[list[str]])
+async def list_web_search_engines(
+    current_user: User = Depends(deps.PermissionChecker("tool:read")),
+) -> Any:
+    """获取站点已启用的网页搜索提供方标识。
+
+    仅返回站点管理员启用的提供方标识；``auto``、凭据、密钥配置状态和
+    SearXNG 地址都不会离开管理员配置接口。
+    """
+    config = await get_web_search_config()
+    enabled_engines = [
+        engine
+        for engine, enabled_field in ENGINE_ENABLED_FIELDS.items()
+        if getattr(config, enabled_field)
+    ]
+    return success(data=enabled_engines, msg_key="success")
 
 
 @router.post("/mcp/list-tools", response_model=Response[McpToolsListResponse])
