@@ -1,6 +1,31 @@
 # Implementation Plan
 
 ## Active
+- **deepseek-search-provider** — Completed. See `docs/plan/deepseek-search-provider.md`.
+  - [x] 1. Site configuration, encrypted key and runtime dispatch
+  - [x] 2. Admin dialog, enabled-engine selectors and localization
+  - [x] 3. Documentation and integrated verification
+
+- **enabled-search-engine-selection** — Completed. See `docs/plan/enabled-search-engine-selection.md`.
+  - [x] 1. Safe enabled-engine availability API
+  - [x] 2. Agent and workflow search-engine selectors
+  - [x] 3. Verification and documentation
+
+- **site-managed-web-search** — Completed. See `docs/plan/site-managed-web-search.md`.
+  - [x] 1. Centralize Tavily/Bocha site configuration and migrate credentials
+  - [x] 2. Add configured SearXNG with safe Base URL handling
+  - [x] 3. Integrated verification and operator documentation
+
+- **keyed-web-search-only** — Completed. See `docs/plan/keyed-web-search-only.md`.
+  - [x] 1. Remove keyless providers and migrate saved selections
+  - [x] 2. Update selector, translations and behavior contracts
+  - [x] 3. Verify explicit failures and update operator docs
+
+- **bing-keyless-web-search** — Superseded by `keyed-web-search-only` after unrelated live results. See `docs/plan/bing-keyless-web-search.md`.
+  - [x] 1. Backend provider and saved Agent configuration cutover
+  - [x] 2. Frontend engine selector and documentation cutover
+  - [x] 3. Behavior tests and real-search verification
+
 - **dashboard-search-debounce** — Completed. See `docs/plan/dashboard-search-debounce.md`.
   - [x] 1. Activity and audit searches
   - [x] 2. Applications and capabilities

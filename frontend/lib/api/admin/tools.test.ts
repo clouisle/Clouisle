@@ -116,6 +116,31 @@ describe('adminToolsApi', () => {
     expect(del).toHaveBeenCalledWith('/admin/tools/config/lookup', { params: {} })
   })
 
+  it('maps site web search config and test routes without team scope', async () => {
+    const update = {
+      default_engine: 'bocha' as const,
+      tavily_enabled: true,
+      bocha_enabled: true,
+      deepseek_enabled: false,
+      searxng_enabled: false,
+      deepseek_api_key_configured: false,
+      searxng_base_url: '',
+      tavily_api_key: '',
+    }
+
+    await adminToolsApi.getWebSearchConfig()
+    await adminToolsApi.updateWebSearchConfig(update)
+    await adminToolsApi.testWebSearchConfig({ query: 'clouisle', engine: 'auto' })
+
+    expect(get).toHaveBeenCalledWith('/admin/tools/web-search/config')
+    expect(put).toHaveBeenCalledWith('/admin/tools/web-search/config', update)
+    expect(post).toHaveBeenCalledWith(
+      '/admin/tools/web-search/test',
+      { query: 'clouisle', engine: 'auto' },
+      { timeout: 120000 }
+    )
+  })
+
   it('maps admin share operations and propagates errors', async () => {
     const share = { team_id: 'team-2', permission: 'manage' as const }
     await adminToolsApi.shareTool('tool-1', share)

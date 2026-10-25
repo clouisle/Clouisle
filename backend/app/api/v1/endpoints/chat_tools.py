@@ -796,25 +796,15 @@ async def _get_builtin_tool_credentials(
     agent: "Agent | None",
     agent_tool_config: dict[str, Any] | None = None,
 ) -> dict[str, str]:
+    if tool_name == "web_search":
+        return {}
+
     from app.models.tool_config import ToolConfig
 
     credentials: dict[str, str] = {}
     team_id = getattr(agent, "team_id", None) if agent else None
 
-    # 1. 优先读取 Agent 级别的独立 Key 配置（实现精准计费与隔离）
-    if agent_tool_config:
-        if agent_tool_config.get("api_key"):
-            engine = agent_tool_config.get("engine", "tavily")
-            if engine == "tavily":
-                credentials["TAVILY_API_KEY"] = agent_tool_config["api_key"]
-            elif engine == "bocha":
-                credentials["BOCHA_API_KEY"] = agent_tool_config["api_key"]
-        if agent_tool_config.get("TAVILY_API_KEY"):
-            credentials["TAVILY_API_KEY"] = agent_tool_config["TAVILY_API_KEY"]
-        if agent_tool_config.get("BOCHA_API_KEY"):
-            credentials["BOCHA_API_KEY"] = agent_tool_config["BOCHA_API_KEY"]
-
-    # 2. 若 Agent 未配置对应 Key，读取团队级别默认配置
+    # Team settings override global credentials for other builtin tools.
     if team_id:
         tool_config = await ToolConfig.filter(
             tool_name=tool_name, team_id=team_id
@@ -824,18 +814,12 @@ async def _get_builtin_tool_credentials(
                 if k not in credentials and v:
                     credentials[k] = v
 
-    # 3. 读取全局配置，合并缺失字段
+    # Merge missing global credentials.
     global_config = await ToolConfig.filter(tool_name=tool_name, team_id=None).first()
     if global_config and global_config.credentials:
         for k, v in global_config.credentials.items():
             if k not in credentials and v:
                 credentials[k] = v
-    # 4. 读取环境变量
-    if "TAVILY_API_KEY" not in credentials and tool_name == "web_search":
-        from app.core.config import settings
-
-        if settings.TAVILY_API_KEY:
-            credentials["TAVILY_API_KEY"] = settings.TAVILY_API_KEY
 
     return credentials
 

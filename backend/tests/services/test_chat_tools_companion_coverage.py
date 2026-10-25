@@ -11,7 +11,6 @@ import pytest
 
 from app.api.v1.endpoints.chat_tools import (
     execute_tool_call,
-    _get_builtin_tool_credentials,
 )
 from app.models.agent_run import AgentRunInputKind, AgentRunInputStatus, AgentRunStatus
 from app.models.tool import CustomToolType, ToolType
@@ -24,9 +23,6 @@ from app.services.agent_run_store import (
 )
 from app.llm.tools.builtin.rss import _clean_html_text, read_rss_feed
 from app.llm.tools.builtin.web_search import (
-    _clean_ddg_href,
-    _parse_ddg_html,
-    web_search,
     fetch_webpage,
 )
 
@@ -69,54 +65,6 @@ async def test_execute_tool_call_database_custom_type():
             )
             err_data = json.loads(err_str)
             assert "error" in err_data
-
-
-@pytest.mark.anyio
-async def test_get_builtin_tool_credentials_branches():
-    # 1. agent.tools_config override with api_key and engine
-    agent = SimpleNamespace(
-        tools_config=[
-            {
-                "name": "web_search",
-                "config": {
-                    "api_key": "bocha_key",
-                    "engine": "bocha",
-                    "TAVILY_API_KEY": "t_key",
-                },
-            }
-        ]
-    )
-    with patch("app.models.tool_config.ToolConfig.filter") as mock_filter:
-        team_q = MagicMock()
-        team_q.first = AsyncMock(return_value=None)
-        mock_filter.return_value = team_q
-
-        creds = await _get_builtin_tool_credentials(
-            "web_search", agent=agent, agent_tool_config=agent.tools_config[0]["config"]
-        )
-        assert creds["BOCHA_API_KEY"] == "bocha_key"
-        assert creds["TAVILY_API_KEY"] == "t_key"
-
-    # 2. agent.tools_config override with engine = tavily
-    agent_tavily = SimpleNamespace(
-        tools_config=[
-            {
-                "name": "web_search",
-                "config": {"api_key": "tavily_key", "engine": "tavily"},
-            }
-        ]
-    )
-    with patch("app.models.tool_config.ToolConfig.filter") as mock_filter:
-        team_q = MagicMock()
-        team_q.first = AsyncMock(return_value=None)
-        mock_filter.return_value = team_q
-
-        creds = await _get_builtin_tool_credentials(
-            "web_search",
-            agent=agent_tavily,
-            agent_tool_config=agent_tavily.tools_config[0]["config"],
-        )
-        assert creds["TAVILY_API_KEY"] == "tavily_key"
 
 
 @pytest.mark.anyio
@@ -358,41 +306,10 @@ async def test_agent_run_store_pending_inputs_branches():
 
 
 # ==================== rss and web_search branch tests ====================
-def test_clean_html_text_and_ddg_href_branches():
+def test_clean_html_text_branches():
     assert _clean_html_text(None) == ""
     assert _clean_html_text("") == ""
     assert _clean_html_text("<p>Hello &amp; World</p>") == "Hello & World"
-
-    assert _clean_ddg_href(None) == ""
-    assert _clean_ddg_href("") == ""
-    assert _clean_ddg_href("//example.com/path") == "https://example.com/path"
-    assert (
-        _clean_ddg_href(
-            "https://duckduckgo.com/l/?uddg=https%3A%2F%2Ftarget.org%2Fpage&rut=1"
-        )
-        == "https://target.org/page"
-    )
-
-
-def test_parse_ddg_html_branches():
-    html_sample = """
-    <div class="result badge--ad">Sponsored Ad</div>
-    <div class="result"><div class="no-anchor">No link</div></div>
-    <div class="result"><a class="result__a" href="javascript:void(0)">JS link</a></div>
-    <div class="result">
-        <a class="result__a" href="https://news.ycombinator.com">Hacker News</a>
-        <div class="result__snippet">Tech news and discussions</div>
-    </div>
-    <div class="result">
-        <a class="result__a" href="https://example.com">Example</a>
-        <a class="result__snippet" href="https://example.com">Example snippet</a>
-    </div>
-    """
-    results = _parse_ddg_html(html_sample, max_results=1)
-    assert len(results) == 1
-    assert results[0]["title"] == "Hacker News"
-    assert results[0]["url"] == "https://news.ycombinator.com"
-    assert results[0]["content"] == "Tech news and discussions"
 
 
 @pytest.mark.anyio
@@ -450,28 +367,6 @@ async def test_read_rss_feed_branches():
 
 @pytest.mark.anyio
 async def test_web_search_and_fetch_webpage_branches():
-    # 1. web_search auto fallback: tavily fails -> duckduckgo succeeds
-    with (
-        patch(
-            "app.llm.tools.builtin.web_search._tavily_search",
-            new=AsyncMock(return_value={"success": False}),
-        ),
-        patch(
-            "app.llm.tools.builtin.web_search._duckduckgo_search",
-            new=AsyncMock(
-                return_value={"success": True, "results": [{"title": "DDG"}]}
-            ),
-        ),
-    ):
-        res = await web_search("python", search_engine="auto")
-        assert res["success"] is True
-        assert res["search_engine"] == "duckduckgo"
-
-    # 2. web_search bocha without api_key
-    res_bocha = await web_search("python", search_engine="bocha", credentials={})
-    assert res_bocha["success"] is False
-    assert "Bocha API key is not configured" in str(res_bocha.get("error", ""))
-
     # 3. fetch_webpage persists a complete non-HTML document
     from app.services import asset_url_import
     from app.schemas.response import BusinessError

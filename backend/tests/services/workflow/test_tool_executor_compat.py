@@ -5,8 +5,171 @@ Compatibility tests for the workflow tool executor.
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import json
 
-from app.services.workflow.executors.tool import ToolNodeExecutor
+import httpx
+
+from app.services.workflow.executors.tool import ToolNodeExecutor, _convert_tool_input
+from app.llm.tools.builtin import web_search as search_module
+from app.llm.tools.registry import ToolRegistry
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("source", ["constant", "variable"])
+async def test_workflow_search_uses_integer_result_limit(source):
+    registry = ToolRegistry()
+    registry.register(name="web_search", description="search")(search_module.web_search)
+    node = {
+        "data": {
+            "toolConfig": {
+                "toolType": "builtin",
+                "toolName": "web_search",
+                "parameterMappings": [
+                    {
+                        "name": "query",
+                        "type": "string",
+                        "source": "constant",
+                        "constantValue": "cloud",
+                    },
+                    {
+                        "name": "num_results",
+                        "type": "integer",
+                        "source": source,
+                        "constantValue": "3",
+                        "variableRef": "{{start.limit}}",
+                    },
+                ],
+            }
+        }
+    }
+    context = MagicMock(resolve_variable_ref=AsyncMock(return_value="3"))
+    real_client = httpx.AsyncClient
+
+    def respond(request):
+        limit = json.loads(request.content)["max_results"]
+        assert type(limit) is int
+        assert limit == 3
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "title": "Cloud",
+                        "url": "https://example.test/cloud",
+                        "content": "Cloud article",
+                    }
+                ]
+            },
+        )
+
+    with (
+        patch("app.services.tool.tool_registry", registry),
+        patch.object(
+            search_module,
+            "get_web_search_runtime",
+            AsyncMock(return_value=("tavily", {"TAVILY_API_KEY": "test-key"})),
+        ),
+        patch.object(
+            search_module.httpx,
+            "AsyncClient",
+            lambda **kwargs: real_client(
+                transport=httpx.MockTransport(respond), **kwargs
+            ),
+        ),
+    ):
+        result = await ToolNodeExecutor().execute(
+            node, context, MagicMock(id="run-1", workflow_id=None)
+        )
+
+    assert result.success is True
+    assert result.outputs["result"]["success"] is True
+    assert result.outputs["result"]["results"][0]["url"] == "https://example.test/cloud"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("value", ["abc", "3.5", True, 3.5, [], None])
+async def test_invalid_workflow_tool_integer_fails_before_execution(value):
+    node = {
+        "data": {
+            "toolConfig": {
+                "toolType": "builtin",
+                "toolName": "web_search",
+                "outputVariable": "answer",
+                "parameterMappings": [
+                    {
+                        "name": "num_results",
+                        "type": "integer",
+                        "source": "constant",
+                        "constantValue": value,
+                    }
+                ],
+            }
+        }
+    }
+    with patch(
+        "app.services.tool.ToolExecutor.execute_builtin_tool", new_callable=AsyncMock
+    ) as execute:
+        result = await ToolNodeExecutor().execute(
+            node, MagicMock(), MagicMock(workflow_id=None)
+        )
+
+    assert result.success is False
+    assert result.outputs["status"] == "error"
+    assert result.outputs["answer"] is None
+    execute.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("value", "parameter_type", "expected"),
+    [
+        (" 5 ", "integer", 5),
+        ("-2", "integer", -2),
+        (0, "integer", 0),
+        ("1e2", "number", 100.0),
+        (2.5, "number", 2.5),
+        ("false", "boolean", False),
+        ("true", "boolean", True),
+        (False, "boolean", False),
+        ('[1, "x"]', "array", [1, "x"]),
+        ('{"x": 1}', "object", {"x": 1}),
+        ([1, 2], "array", [1, 2]),
+        ({"x": False}, "object", {"x": False}),
+        ("003", "string", "003"),
+        ("", "string", ""),
+        ("10", "", "10"),
+    ],
+)
+def test_tool_input_conversion_preserves_declared_types(
+    value, parameter_type, expected
+):
+    converted = _convert_tool_input(value, parameter_type)
+    assert converted == expected
+    assert type(converted) is type(expected)
+
+
+@pytest.mark.parametrize(
+    ("value", "parameter_type"),
+    [
+        ("NaN", "number"),
+        (float("inf"), "number"),
+        (True, "number"),
+        ("yes", "boolean"),
+        ("1", "boolean"),
+        ("{}", "array"),
+        ("[]", "object"),
+        ("{invalid}", "object"),
+        ("null", "object"),
+        (5, "string"),
+        (["a"], "string"),
+        ({"a": 1}, "string"),
+    ],
+)
+def test_tool_input_conversion_rejects_invalid_declared_values(value, parameter_type):
+    from app.services.workflow.errors import WorkflowError
+
+    with pytest.raises(WorkflowError) as exc_info:
+        _convert_tool_input(value, parameter_type)
+    assert exc_info.value.msg_key == "invalid_tool_arguments"
 
 
 class TestToolNodeExecutorCompatibility:

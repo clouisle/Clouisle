@@ -247,8 +247,8 @@ GET /api/v1/tools/builtin
       "icon": "🔍",
       "parameters": [],
       "is_enabled": true,
-      "requires_config": true,
-      "config_fields": ["TAVILY_API_KEY"],
+      "requires_config": false,
+      "config_fields": [],
       "custom_type": null,
       "is_owned": true,
       "visibility": "private"
@@ -853,7 +853,7 @@ The copy is created in the same team with visibility `private` and `is_enabled=f
 
 ## Tool Configuration
 
-Store credentials (API keys, tokens) for builtin or database tools, either globally (superuser only) or per team.
+Store credentials for other tools globally (superuser only) or per team. `web_search` is excluded from these generic configuration APIs: search credentials are site-managed, write-only and encrypted. Use the dedicated administrator API below.
 
 ### List Tool Configurations
 
@@ -881,9 +881,9 @@ POST /api/v1/tools/config?team_id={team_id}
 
 ```json
 {
-  "tool_name": "web_search",
+  "tool_name": "external_lookup",
   "credentials": {
-    "TAVILY_API_KEY": "tvly-..."
+    "API_KEY": "secret-value"
   }
 }
 ```
@@ -897,7 +897,7 @@ PUT /api/v1/tools/config/{tool_name}?team_id={team_id}
 ```json
 {
   "credentials": {
-    "TAVILY_API_KEY": "tvly-updated"
+    "API_KEY": "replacement-value"
   }
 }
 ```
@@ -912,7 +912,7 @@ DELETE /api/v1/tools/config/{tool_name}?team_id={team_id}
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `tool_name` | string | Yes | Tool name (path parameter), e.g. `web_search` |
+| `tool_name` | string | Yes | Tool name (path parameter), excluding site-managed `web_search` |
 | `team_id` | string | No | Team UUID query parameter. Omit for the global configuration |
 
 With `team_id`, team admin rights are required for create/update/delete and team membership for read; without `team_id`, only superusers may read or write the global configuration. Reading a team configuration for a known builtin tool name creates an empty configuration automatically; an unknown name returns 404.
@@ -926,10 +926,10 @@ With `team_id`, team admin rights are required for create/update/delete and team
   "code": 0,
   "data": {
     "id": "cfg-001",
-    "tool_name": "web_search",
+    "tool_name": "external_lookup",
     "team_id": "team-123",
     "credentials": {
-      "TAVILY_API_KEY": "tvly-..."
+      "API_KEY": "secret-value"
     },
     "created_at": "2026-02-11T16:00:00Z",
     "updated_at": "2026-02-11T16:00:00Z"
@@ -939,6 +939,32 @@ With `team_id`, team admin rights are required for create/update/delete and team
 ```
 
 **Success (200 OK)** — delete returns `data: null` with `msg: "Tool configuration deleted successfully"`.
+
+## Site-managed Web Search
+
+`GET /api/v1/admin/tools/web-search/config` requires `admin:capability:read`. It returns `default_engine`, provider enable flags, `searxng_base_url`, and configured-secret booleans (`tavily_api_key_configured`, `bocha_api_key_configured`, `deepseek_api_key_configured`, `searxng_auth_token_configured`), never raw secrets.
+
+`PUT /api/v1/admin/tools/web-search/config` requires `admin:capability:update`. Set `default_engine` to `tavily`, `bocha`, `searxng` or `deepseek`, provider enable flags (`tavily_enabled`, `bocha_enabled`, `searxng_enabled`, `deepseek_enabled`), and `searxng_base_url`. Optional secrets are `tavily_api_key`, `bocha_api_key`, `deepseek_api_key` and `searxng_auth_token`. Omitted or null secrets preserve the saved value; empty strings clear it; nonempty strings replace it. Configuration is global and takes no `team_id`. SearXNG Base URL preserves subpaths, rejects query/fragment/userinfo and a `/search` suffix, and is checked against SSRF policy; bearer authentication requires HTTPS. Enable JSON format on the SearXNG instance. No request redirects are followed.
+
+DeepSeek uses the DeepSeek Search API (`POST https://api.deepseek.com/v1/tools/search`) with the saved site key as a Bearer token. `count` follows the requested result limit (1–50), `need_content` is `false`, and each result uses `summary` (or `snippet` when empty) as its text. The endpoint bills successful requests per call.
+
+`POST /api/v1/admin/tools/web-search/test` requires `admin:capability:execute` and accepts `{"query":"Shanghai weather", "engine":"auto"}`. It tests saved site settings and returns normalized search results. `auto` uses the explicit site default; disabled/unconfigured providers fail without fallback.
+
+Existing global search credentials are encrypted during migration. Agent/team credentials are archived encrypted and cease to apply; `legacy_credentials_present` signals that administrator action may be needed. No private account is automatically promoted to a site account.
+
+### Available Engines
+
+`GET /api/v1/tools/web-search/engines` requires `tool:read` and does not require an administrator role. It returns only the provider identifiers the site has enabled so agent and workflow configuration forms can offer valid choices.
+
+```json
+{
+  "code": 0,
+  "data": ["tavily", "searxng"],
+  "msg": "success"
+}
+```
+
+`data` is an ordered array containing only `tavily`, `bocha`, `searxng` and/or `deepseek`. `auto` is never included: clients offer it separately as the explicit site-default routing choice. Credentials, secret-configured flags and the SearXNG base URL are never returned. A site with no configuration, or with every provider disabled, returns `[]`. Availability is informational only — execution still re-validates the selected provider's enable flag and credentials.
 
 ## Get Tool Usage
 

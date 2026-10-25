@@ -208,6 +208,9 @@ class ToolExecutor:
         1. Team-specific config
         2. Global config
         """
+        if tool_name == "web_search":
+            return {}
+
         credentials = {}
 
         # Try team-specific config first

@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Centralized Tavily/Bocha web search in administrator-managed site configuration with an explicit default and enable switches. API keys are encrypted/write-only, Agent/team overrides are removed, and legacy private credentials are archived encrypted without promotion. Bing/DuckDuckGo remain removed; search failures never silently change providers.
+- Fixed workflow tool nodes ignoring declared parameter types: numeric, boolean and JSON mappings are converted before invocation, and invalid values fail the node instead of reaching tool handlers as incompatible strings. This fixes `web_search` failing when a workflow supplies a string result limit.
+- Agent orchestration now offers only site-enabled search engines, and workflow `web_search` nodes provide the same engine dropdown for site routing (no variable/constant switch), including nodes saved before the control existed. Existing unavailable selections remain unchanged; runtime configuration checks still apply.
+
 ### Added
+
+- Added an enabled-only search engine selector to the `web_search` tool test page, submitted as `search_engine`; the previous test form could only send the site default.
+- Added a site search configuration entry to the platform Capabilities page for administrators; the shared dialog offers the same default provider, enable switches and write-only credentials as the dashboard, including previously missing DeepSeek settings.
+- Added DeepSeek's Search API as a site-managed web search provider: an encrypted write-only API key, an explicit enable flag and default selection, enabled-provider discovery, and Agent/workflow engine choices. Results use DeepSeek's long summary as model-facing text; searches do not fall back to another provider.
+- Added site-managed SearXNG JSON search with reverse-proxy Base URL support, optional encrypted HTTPS bearer authentication, SSRF validation at save/use and refused redirects. Changing an instance with a saved token requires explicitly replacing or clearing that token. Administrators can test saved search configuration without exposing secrets to Agents.
 
 #### Messaging Integration Features
 - Replaced the per-provider Feishu and WeChat delivery tables with one provider-neutral `integration_deliveries` queue; startup copies existing rows and drops the legacy tables, so deploy API and workers together.

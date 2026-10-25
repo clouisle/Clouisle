@@ -379,6 +379,9 @@ async def lifespan(app: FastAPI):
     from app.core.integration_delivery_migration import migrate_integration_deliveries
 
     await migrate_integration_deliveries()
+    from app.core.web_search_migration import migrate_site_web_search
+
+    await migrate_site_web_search()
     await initialize_integrations()
     try:
         await init_observability_run_error_index()

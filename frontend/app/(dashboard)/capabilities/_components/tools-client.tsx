@@ -96,6 +96,7 @@ import { DeleteToolDialog } from './delete-tool-dialog'
 import { ToolShareDialog } from './tool-share-dialog'
 import { ToolTestPanel } from '@/app/(platform)/app/capabilities/_components/tool-test-panel'
 import { ToolConfigDialog } from '@/app/(platform)/app/capabilities/_components/tool-config-dialog'
+import { WebSearchConfigDialog } from '@/components/tools/web-search-config-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
 import { adminPackagesApi, downloadBlob } from '@/lib/api/packages'
@@ -168,6 +169,7 @@ export function ToolsClient() {
     const [sharingTool, setSharingTool] = React.useState<Tool | null>(null)
     const [configDialogOpen, setConfigDialogOpen] = React.useState(false)
     const [configuringTool, setConfiguringTool] = React.useState<Tool | null>(null)
+    const [webSearchDialogOpen, setWebSearchDialogOpen] = React.useState(false)
     const [testingTool, setTestingTool] = React.useState<Tool | null>(null)
     const [importDialogOpen, setImportDialogOpen] = React.useState(false)
 
@@ -347,6 +349,12 @@ export function ToolsClient() {
 
     // 编辑工具
     const handleEdit = async (tool: Tool) => {
+        // 网页搜索由站点统一配置，不再使用团队或工具级配置
+        if (tool.type === 'builtin' && tool.name === 'web_search') {
+            setWebSearchDialogOpen(true)
+            return
+        }
+
         if (!tool.id) {
             if (tool.requires_config) {
                 handleConfigureTool(tool)
@@ -787,7 +795,7 @@ export function ToolsClient() {
                                         <TableCell>
                                             {((canPerform('admin:capability:execute')) ||
                                                 (tool.type !== 'builtin' && tool.id && (canPerform('admin:capability:read') || canPerform('admin:capability:update') || canPerform('admin:capability:delete'))) ||
-                                                (tool.type === 'builtin' && tool.requires_config && canPerform('admin:capability:update'))) && (
+                                                (tool.type === 'builtin' && (tool.requires_config || tool.name === 'web_search') && canPerform('admin:capability:update'))) && (
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
                                                             <MoreHorizontal className="h-4 w-4" />
@@ -968,6 +976,14 @@ export function ToolsClient() {
                 onOpenChange={setConfigDialogOpen}
                 onSave={handleSaveConfig}
             />
+
+            {webSearchDialogOpen && (
+                <WebSearchConfigDialog
+                    open={webSearchDialogOpen}
+                    onOpenChange={setWebSearchDialogOpen}
+                    onSaved={loadTools}
+                />
+            )}
 
             <ToolTestPanel
                 tool={testingTool}

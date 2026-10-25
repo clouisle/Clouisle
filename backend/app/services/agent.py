@@ -941,19 +941,6 @@ class AgentService:
                     agent_tool_config = tc.get("config") or {}
                     break
 
-        # 1. 优先读取 Agent 级别的独立 Key 配置
-        if agent_tool_config:
-            if agent_tool_config.get("api_key"):
-                engine = agent_tool_config.get("engine", "tavily")
-                if engine == "tavily":
-                    credentials["TAVILY_API_KEY"] = agent_tool_config["api_key"]
-                elif engine == "bocha":
-                    credentials["BOCHA_API_KEY"] = agent_tool_config["api_key"]
-            if agent_tool_config.get("TAVILY_API_KEY"):
-                credentials["TAVILY_API_KEY"] = agent_tool_config["TAVILY_API_KEY"]
-            if agent_tool_config.get("BOCHA_API_KEY"):
-                credentials["BOCHA_API_KEY"] = agent_tool_config["BOCHA_API_KEY"]
-
         # 2. 搜索引擎由 agent 编排配置严格决定，不交由模型决定
         if tool_name == "web_search":
             arguments["search_engine"] = agent_tool_config.get("engine") or "auto"
@@ -963,7 +950,7 @@ class AgentService:
         logger.info(f"[TOOL EXEC] Arguments: {arguments}")
 
         # Try to get team-specific config first
-        if team_id:
+        if team_id and tool_name != "web_search":
             tool_config = await ToolConfig.filter(
                 tool_name=tool_name, team_id=team_id
             ).first()
@@ -973,7 +960,7 @@ class AgentService:
                         credentials[k] = v
 
         # If no team config, try global config
-        if not credentials:
+        if not credentials and tool_name != "web_search":
             global_config = await ToolConfig.filter(
                 tool_name=tool_name, team_id=None
             ).first()

@@ -7,6 +7,7 @@ Handles external tool calls and agent invocations.
 import asyncio
 import json
 import logging
+import math
 from typing import TYPE_CHECKING, Any
 
 from app.core.network_security import (
@@ -18,7 +19,7 @@ from app.services.error_messages import resolve_user_visible_error
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
 from ..stream import StreamManager
-from ..errors import translate_public_workflow_error
+from ..errors import WorkflowError, translate_public_workflow_error
 from ..types import NodeOutputDecl, TypeSpec, WorkflowValue
 
 if TYPE_CHECKING:
@@ -26,6 +27,37 @@ if TYPE_CHECKING:
     from ..context import ExecutionContext
 
 logger = logging.getLogger(__name__)
+
+
+def _convert_tool_input(value: WorkflowValue, parameter_type: str) -> WorkflowValue:
+    """Convert text mappings without truncating or changing native typed values."""
+    expected = {
+        "string": (str,),
+        "integer": (int,),
+        "number": (int, float),
+        "boolean": (bool,),
+        "array": (list,),
+        "object": (dict,),
+    }.get(parameter_type)
+    if expected is None:
+        return value
+    try:
+        if isinstance(value, str):
+            if parameter_type == "integer":
+                value = int(value)
+            elif parameter_type == "number":
+                value = float(value)
+            elif parameter_type in {"boolean", "array", "object"}:
+                value = json.loads(value)
+        if type(value) not in expected:
+            raise ValueError
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise WorkflowError(
+            "invalid_tool_arguments", msg_key="invalid_tool_arguments"
+        ) from exc
+    return value
 
 
 @NodeExecutorRegistry.register("tool")
@@ -98,6 +130,13 @@ class ToolNodeExecutor(NodeExecutor):
         start_time = time.time()
 
         try:
+            for mapping in input_mappings:
+                name = mapping.get("name")
+                if name in inputs:
+                    inputs[name] = _convert_tool_input(
+                        inputs[name], mapping.get("type", "")
+                    )
+
             # Execute tool
             if tool_type == "builtin" and tool_name:
                 result = await tool_executor.execute_builtin_tool(

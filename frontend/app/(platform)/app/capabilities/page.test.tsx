@@ -106,7 +106,7 @@ mock.module('@/components/ui/dropdown-menu', () => ({
 mock.module('lucide-react', () => ({
   Wrench: element('svg'), Plus: element('svg'), RefreshCw: element('svg'), Loader2: element('svg'),
   Globe: element('svg'), Code: element('svg'), Plug: element('svg'), Database: element('svg'), ChevronDown: element('svg'),
-  PackageOpen: element('svg'), Upload: element('svg'), Search: element('svg'),
+  PackageOpen: element('svg'), Upload: element('svg'), Search: element('svg'), Info: element('svg'), Settings: element('svg'),
 }))
 mock.module('./_components/tool-card', () => ({ ToolCard: ({ tool, ...props }: { tool: { display_name: string } } & Record<string, unknown>) => ({ type: 'article', props: { ...props, children: tool.display_name } }) }))
 
@@ -119,6 +119,7 @@ mock.module('./_components/mcp-tool-dialog', () => ({ McpToolDialog: component('
 mock.module('./_components/database-tool-dialog', () => ({ DatabaseToolDialog: component('database-dialog') }))
 mock.module('./_components/tool-share-dialog', () => ({ ToolShareDialog: component('share-dialog') }))
 mock.module('@/components/packages/import-package-dialog', () => ({ ImportPackageDialog: component('import-dialog') }))
+mock.module('@/components/tools/web-search-config-dialog', () => ({ WebSearchConfigDialog: component('web-search-dialog') }))
 
 const { default: CapabilitiesPage } = await import('./page')
 
@@ -301,6 +302,30 @@ describe('CapabilitiesPage', () => {
     ;(clock.props.onShare as (tool: typeof configurable) => void)(configurable)
     expect(toastError).toHaveBeenCalledWith('tools.error.cannotDeleteBuiltin')
     expect(toastError).toHaveBeenCalledWith('tools.error.cannotShareBuiltin')
+  })
+
+  test('opens site search configuration from the real capabilities entry when permitted', async () => {
+    const webSearch = { ...builtin, name: 'web_search', display_name: 'Web Search', category: 'search', requires_config: true }
+    list.mockResolvedValue({ builtin: [webSearch], custom: [], mcp: [] })
+    permissions = new Set(['tool:read', 'admin:capability:read'])
+    render()
+    await settle()
+
+    let tree = render()
+    expect(findAll(tree, (node) => node.type === 'web-search-dialog')).toHaveLength(0)
+    ;(find(tree, (node) => String(node.props.children).includes('tools.webSearchConfigure')).props.onClick as () => void)()
+    tree = render()
+    const dialog = find(tree, (node) => node.type === 'web-search-dialog')
+    expect(dialog.props.open).toBe(true)
+    const saved = dialog.props.onSaved as () => Promise<void>
+    await saved()
+    expect(list).toHaveBeenCalledTimes(2)
+
+    permissions = new Set(['tool:read'])
+    hooks = []
+    tree = render()
+    expect(findAll(tree, (node) => String(node.props.children).includes('tools.webSearchConfigure'))).toHaveLength(0)
+    expect(findAll(tree, (node) => node.type === 'web-search-dialog')).toHaveLength(0)
   })
 
   test('routes tool actions through test, code, mcp, and unknown-detail flows', async () => {

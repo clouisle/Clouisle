@@ -998,6 +998,13 @@ def _tool_fields(payload: dict[str, Any]) -> dict[str, Any]:
 def _agent_fields(payload: dict[str, Any], mapping: dict[str, UUID]) -> dict[str, Any]:
     tools_config = copy.deepcopy(payload.get("tools_config") or [])
     for config in tools_config:
+        if config.get("type") == "builtin" and config.get("name") == "web_search":
+            engine = (config.get("config") or {}).get("engine", "auto")
+            config["config"] = {
+                "engine": engine
+                if engine in {"auto", "tavily", "bocha", "searxng", "deepseek"}
+                else "auto"
+            }
         tool_id = config.get("tool_id")
         if tool_id and tool_id in mapping:
             config["tool_id"] = str(mapping[tool_id])

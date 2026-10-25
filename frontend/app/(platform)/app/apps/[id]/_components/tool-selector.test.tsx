@@ -26,6 +26,9 @@ mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam: n
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.flat().filter(Boolean).join(' ') }))
 
 const element = (tag: string) => ({ children, ...props }: { children?: ReactNode }) => ({ type: tag, props: { ...props, children } })
+mock.module('@/components/tools/web-search-engine-select', () => ({
+  WebSearchEngineSelect: element('select'),
+}))
 mock.module('next/image', () => ({ default: element('img') }))
 mock.module('@/components/ui/button', () => ({ Button: element('button') }))
 mock.module('@/components/ui/tooltip', () => ({ Tooltip: element('tooltip'), TooltipContent: element('tooltip-content'), TooltipTrigger: element('button') }))
@@ -211,38 +214,35 @@ describe('ToolSelector', () => {
       requires_config: false,
       config_fields: [],
     }
-    const webSearchConfig: ToolConfig = { type: 'builtin', name: 'web_search', config: { engine: 'auto' } }
-    stateIndex = 0
-    const tree = ToolSelector({
-      toolsConfig: [webSearchConfig],
-      availableTools: [webSearchTool, dbTool],
-      onChange,
-    })
-
-    // click settings button to open modal
-    const settingsBtn = find(tree, (node) => typeof node.props.onClick === 'function' && node.props.title === 'config.settings')
-    expect(settingsBtn).toBeDefined()
-    // change engine in dialog
+    const webSearchConfig: ToolConfig = {
+      type: 'builtin',
+      name: 'web_search',
+      config: { engine: 'auto', include_answer: true, api_key: 'legacy-agent-key' },
+    }
+    const renderSearchItem = () => {
+      stateIndex = 0
+      const parent = ToolSelector({
+        toolsConfig: [webSearchConfig],
+        availableTools: [webSearchTool, dbTool],
+        onChange,
+      }) as unknown as Tree
+      const item = (parent.props.children as Tree[])[0]
+      return resolve(item as unknown as ReactNode) as ReactNode
+    }
+    let tree = renderSearchItem()
+    const settings = find(tree, (node) => node.type === 'button' && typeof node.props.onClick === 'function' && node.props.size === 'icon')
+    ;(settings.props.onClick as (event: { stopPropagation: () => void }) => void)({ stopPropagation: () => {} })
+    tree = renderSearchItem()
     const engineSelect = find(tree, (node) => node.type === 'select')
-    if (engineSelect) {
-      ;(engineSelect.props.onValueChange as (v: string) => void)('bocha')
-    }
-    const apiKeyInput = find(tree, (node) => node.type === 'input' && node.props.value !== undefined)
-    if (apiKeyInput) {
-      ;(apiKeyInput.props.onChange as (e: { target: { value: string } }) => void)({ target: { value: 'sk-test' } })
-    }
+    ;(engineSelect.props.onValueChange as (value: string) => void)('bocha')
+    tree = renderSearchItem()
 
-    // click save button in dialog
     const saveBtn = find(tree, (node) => typeof node.props.onClick === 'function' && text(node).includes('config.save'))
-    expect(saveBtn).toBeDefined()
     ;(saveBtn.props.onClick as () => void)()
-    expect(onChange).toHaveBeenCalledWith([
-      expect.objectContaining({
-        type: 'builtin',
-        name: 'web_search',
-        config: expect.objectContaining({ engine: 'auto' }),
-      }),
-    ])
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const savedConfigs = onChange.mock.calls[0][0] as ToolConfig[]
+    expect(savedConfigs[0]).toMatchObject({ type: 'builtin', name: 'web_search' })
+    expect(savedConfigs[0].config).toEqual({ engine: 'bocha' })
 
     // hover delete button
     const deleteBtn = find(tree, (node) => typeof node.props.onMouseEnter === 'function')

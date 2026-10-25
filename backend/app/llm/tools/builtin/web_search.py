@@ -2,99 +2,86 @@
 网页搜索工具
 
 提供网页搜索功能，支持多种搜索引擎。
-注意：实际使用需要配置搜索 API Key。
+搜索引擎与 API Key 由站点管理员统一配置；工具调用方不能传入或覆盖凭证。
 """
 
 import asyncio
 import logging
 from pathlib import Path
-import urllib.parse
 from typing import Any
+from urllib.parse import urlparse
 
-from bs4 import BeautifulSoup
 import httpx
 import trafilatura
 
 from app.core.i18n import t
 from app.schemas.response import BusinessError
 from app.services.citations import stable_citation_id, with_web_citation_ids
+from app.services.web_search_config import (
+    build_searxng_search_url,
+    get_web_search_runtime,
+)
 from ..registry import tool_registry, ToolParameter, ToolConcurrency
 
 logger = logging.getLogger(__name__)
+
+SEARXNG_TIMEOUT_SECONDS = 30
 
 
 async def web_search(
     query: str,
     num_results: int = 5,
     search_engine: str = "auto",
-    credentials: dict[str, str] | None = None,
 ) -> dict:
     """
     搜索网页。
 
-    支持多引擎架构：
-    - auto: 优先使用已配置 API Key 的商业搜索引擎（Tavily、Bocha 等），若未配置则自动使用免 Key 的 DuckDuckGo。
-    - tavily: 使用 Tavily 搜索（需要 TAVILY_API_KEY）。
-    - bocha: 使用国内博查 AI 搜索（需要 BOCHA_API_KEY）。
-    - duckduckgo / ddg: 免配置、零 Key 网页搜索。
+    Provider selection and credentials are site-managed. The tool never reads
+    caller-supplied credentials, and there is no fallback between providers:
+    - auto: use the site administrator's configured default engine.
+    - tavily: use the site Tavily configuration (must be enabled).
+    - bocha: use the site Bocha configuration (must be enabled).
 
     Args:
         query: 搜索关键词或问题
         num_results: 返回结果数量，默认 5，最大 10
-        search_engine: 搜索引擎，支持 'auto', 'tavily', 'bocha', 'duckduckgo'
-        credentials: 凭证信息（可包含 TAVILY_API_KEY, BOCHA_API_KEY 等）
+        search_engine: 站点已启用的搜索引擎：'auto', 'tavily', 'bocha'
 
     Returns:
         包含标准搜索结果与引用 ID 的结构化字典
     """
-    engine = (search_engine or "auto").strip().lower()
-    is_auto = engine == "auto"
-    creds = credentials or {}
+    requested = (search_engine or "auto").strip().lower()
     num_results = max(1, min(num_results, 10))
 
-    if is_auto:
-        # 根据可用凭证自动路由优先级：Tavily -> Bocha -> DuckDuckGo 零配置兜底
-        if creds.get("TAVILY_API_KEY"):
-            engine = "tavily"
-        elif creds.get("BOCHA_API_KEY"):
-            engine = "bocha"
-        else:
-            engine = "duckduckgo"
-
-    if engine == "tavily":
-        result = await _tavily_search(query, num_results, creds)
-        # 若 Tavily 因为未配 Key 或网络异常失败，且是 auto 模式发起的，则尝试 DuckDuckGo 兜底
-        if not result.get("success") and is_auto:
-            logger.info(
-                "Tavily search failed or key missing, falling back to DuckDuckGo"
-            )
-            fallback_res = await _duckduckgo_search(query, num_results)
-            fallback_res["search_engine"] = "duckduckgo"
-            return fallback_res
-        result["search_engine"] = "tavily"
-        return result
-    elif engine == "bocha":
-        result = await _bocha_search(query, num_results, creds)
-        if not result.get("success") and is_auto:
-            logger.info(
-                "Bocha search failed or key missing, falling back to DuckDuckGo"
-            )
-            fallback_res = await _duckduckgo_search(query, num_results)
-            fallback_res["search_engine"] = "duckduckgo"
-            return fallback_res
-        result["search_engine"] = "bocha"
-        return result
-    elif engine in ("duckduckgo", "ddg"):
-        res = await _duckduckgo_search(query, num_results)
-        res["search_engine"] = "duckduckgo"
-        return res
-    else:
+    try:
+        engine, provider_config = await get_web_search_runtime(requested)
+    except BusinessError as exc:
         return {
             "query": query,
-            "error": t("web_search_unsupported_engine", search_engine=search_engine),
+            "error": _translate_business_error(exc),
             "success": False,
             "results": [],
         }
+
+    if engine == "tavily":
+        result = await _tavily_search(query, num_results, provider_config)
+    elif engine == "bocha":
+        result = await _bocha_search(query, num_results, provider_config)
+    elif engine == "searxng":
+        result = await _searxng_search(query, num_results, provider_config)
+    elif engine == "deepseek":
+        result = await _deepseek_search(query, num_results, provider_config)
+    else:
+        # get_web_search_runtime only resolves configured providers.
+        return {
+            "query": query,
+            "error": t("web_search_unsupported_engine", search_engine=engine),
+            "success": False,
+            "results": [],
+        }
+
+    result["search_engine"] = engine
+    return result
 
 
 async def _tavily_search(
@@ -231,117 +218,220 @@ async def _bocha_search(
         }
 
 
-def _clean_ddg_href(href: str | None) -> str:
-    """解析 DuckDuckGo 结果中的重定向链接。"""
-    if not href:
-        return ""
-    if href.startswith("//"):
-        href = f"https:{href}"
-    if "uddg=" in href:
-        try:
-            parsed = urllib.parse.urlparse(href)
-            params = urllib.parse.parse_qs(parsed.query)
-            if "uddg" in params and params["uddg"]:
-                return params["uddg"][0]
-        except Exception:
-            pass
-    return href
+async def _deepseek_search(
+    query: str, num_results: int, credentials: dict[str, str] | None = None
+) -> dict:
+    """使用 DeepSeek 自研搜索引擎（Search API）。
 
-
-def _parse_ddg_html(html_text: str, max_results: int) -> list[dict[str, Any]]:
-    """解析 DuckDuckGo HTML 搜索页面结果。"""
-    soup = BeautifulSoup(html_text, "html.parser")
-    results: list[dict[str, Any]] = []
-
-    for item in soup.find_all("div", class_="result"):
-        # 排除广告赞助卡片
-        classes = item.get("class", [])
-        if any("badge--ad" in c or "result--ad" in c for c in classes):
-            continue
-
-        title_node = item.find("a", class_="result__a")
-        if not title_node:
-            continue
-
-        raw_href = title_node.get("href")
-        url = _clean_ddg_href(raw_href)
-        if not url.startswith(("http://", "https://")):
-            continue
-
-        title = title_node.get_text(strip=True)
-        snippet_node = item.find("a", class_="result__snippet") or item.find(
-            "div", class_="result__snippet"
-        )
-        snippet = snippet_node.get_text(strip=True) if snippet_node else ""
-
-        results.append(
-            {
-                "title": title,
-                "url": url,
-                "content": snippet,
-            }
-        )
-        if len(results) >= max_results:
-            break
-
-    return results
-
-
-async def _duckduckgo_search(query: str, num_results: int) -> dict:
-    """使用 DuckDuckGo 免配置搜索（纯 HTTP 实现，完全跨平台且安全）。"""
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-    }
+    ``summary`` 长度约 600–800 字符且面向模型阅读，作为结果正文；缺失时回退
+    ``snippet``。不请求 ``content``，避免为每条结果传输整页正文。
+    https://api-docs.deepseek.com/zh-cn/guides/search
+    """
+    api_key = credentials.get("DEEPSEEK_API_KEY") if credentials else None
+    if not api_key:
+        logger.warning("No DeepSeek API key found in credentials")
+        return {
+            "query": query,
+            "error": t("deepseek_api_key_not_configured"),
+            "success": False,
+            "results": [],
+        }
 
     try:
-        async with httpx.AsyncClient(
-            timeout=15.0,
-            follow_redirects=True,
-            headers=headers,
-        ) as client:
+        async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
-                "https://html.duckduckgo.com/html/",
-                data={"q": query},
+                "https://api.deepseek.com/v1/tools/search",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "query": query,
+                    "count": num_results,
+                    "need_content": False,
+                },
             )
             response.raise_for_status()
-            html_text = response.text
+            data = response.json()
 
-        results = await asyncio.to_thread(_parse_ddg_html, html_text, num_results)
-        if not results:
-            # DuckDuckGo answers anti-bot challenges with a 200/202 page that has
-            # no result nodes. Reporting success here would tell the model the
-            # search ran and legitimately found nothing.
+        raw_results = data.get("results") if isinstance(data, dict) else None
+        if not isinstance(raw_results, list):
+            logger.error("DeepSeek search response is missing a results list")
             return {
                 "query": query,
-                "error": t("web_search_blocked_or_empty"),
+                "error": t("tool_execution_failed"),
                 "success": False,
                 "results": [],
             }
+
+        results = [
+            {
+                "title": item.get("title", ""),
+                "url": item.get("url", ""),
+                "content": item.get("summary", "") or item.get("snippet", ""),
+                "score": item.get("rerank_score"),
+            }
+            for item in raw_results
+            if isinstance(item, dict)
+        ]
         return {
             "query": query,
             "results": with_web_citation_ids(results),
             "success": True,
         }
-    except httpx.TimeoutException:
+    except httpx.HTTPStatusError as e:
+        logger.error("DeepSeek search HTTP error: %s", e)
         return {
             "query": query,
-            "error": t("tool_execution_timeout"),
+            "error": t("web_search_api_error", status_code=e.response.status_code),
             "success": False,
             "results": [],
         }
     except Exception as e:
-        logger.error("DuckDuckGo search error: %s", e)
+        logger.error("DeepSeek search error: %s", e)
         return {
             "query": query,
             "error": t("tool_execution_failed"),
             "success": False,
             "results": [],
         }
+
+
+async def _searxng_search(
+    query: str, num_results: int, credentials: dict[str, str] | None = None
+) -> dict:
+    """使用站点配置的 SearXNG 实例搜索（需要实例启用 JSON 输出）。"""
+    config = credentials or {}
+    base_url = str(config.get("SEARXNG_BASE_URL") or "").strip()
+    if not base_url:
+        logger.warning("SearXNG base URL is missing from the site configuration")
+        return {
+            "query": query,
+            "error": t("web_search_engine_not_configured", engine="searxng"),
+            "success": False,
+            "results": [],
+        }
+
+    headers = {"Accept": "application/json"}
+    token = config.get("SEARXNG_AUTH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=SEARXNG_TIMEOUT_SECONDS, follow_redirects=False
+        ) as client:
+            response = await client.post(
+                build_searxng_search_url(base_url),
+                data={"q": query, "format": "json"},
+                headers=headers,
+            )
+    except httpx.TimeoutException:
+        logger.error("SearXNG search timed out")
+        return {
+            "query": query,
+            "error": t("web_search_searxng_timeout"),
+            "success": False,
+            "results": [],
+        }
+    except Exception as exc:
+        # Never log provider payloads: upstream errors can echo configuration.
+        logger.error("SearXNG search error: %s", type(exc).__name__)
+        return {
+            "query": query,
+            "error": t("tool_execution_failed"),
+            "success": False,
+            "results": [],
+        }
+
+    if 300 <= response.status_code < 400:
+        logger.error(
+            "SearXNG search refused a redirect (status=%s)", response.status_code
+        )
+        return {
+            "query": query,
+            "error": t("web_search_searxng_redirect"),
+            "success": False,
+            "results": [],
+        }
+    if response.status_code == 403:
+        logger.error("SearXNG search is forbidden (status=403)")
+        return {
+            "query": query,
+            "error": t("web_search_searxng_forbidden"),
+            "success": False,
+            "results": [],
+        }
+    if response.status_code >= 400:
+        logger.error("SearXNG search HTTP error: %s", response.status_code)
+        return {
+            "query": query,
+            "error": t("web_search_api_error", status_code=response.status_code),
+            "success": False,
+            "results": [],
+        }
+
+    try:
+        data = response.json()
+    except ValueError:
+        logger.error("SearXNG search returned invalid JSON")
+        return {
+            "query": query,
+            "error": t("web_search_searxng_invalid_response"),
+            "success": False,
+            "results": [],
+        }
+
+    raw_results = data.get("results") if isinstance(data, dict) else None
+    if not isinstance(raw_results, list):
+        logger.error("SearXNG search response is missing a results list")
+        return {
+            "query": query,
+            "error": t("web_search_searxng_invalid_response"),
+            "success": False,
+            "results": [],
+        }
+
+    results = []
+    for item in raw_results:
+        if not isinstance(item, dict):
+            continue
+        url_value = item.get("url")
+        if not isinstance(url_value, str):
+            continue
+        url = url_value.strip()
+        try:
+            parsed = urlparse(url)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                continue
+        except ValueError:
+            continue
+        title = item.get("title")
+        content = item.get("content")
+        results.append(
+            {
+                "title": title.strip() if isinstance(title, str) else "",
+                "url": url,
+                "content": content.strip() if isinstance(content, str) else "",
+            }
+        )
+        if len(results) >= num_results:
+            break
+
+    if not results:
+        logger.warning("SearXNG search returned no usable results")
+        return {
+            "query": query,
+            "error": t("web_search_searxng_empty_results"),
+            "success": False,
+            "results": [],
+        }
+
+    return {
+        "query": query,
+        "results": with_web_citation_ids(results),
+        "success": True,
+    }
 
 
 def _extract_readable_content(html: str, url: str) -> tuple[str, str | None]:

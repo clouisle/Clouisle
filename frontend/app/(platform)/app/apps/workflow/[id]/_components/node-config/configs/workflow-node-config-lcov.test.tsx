@@ -47,6 +47,7 @@ for (const [path, names] of [
   ['@/components/ui/tooltip', ['Tooltip', 'TooltipContent', 'TooltipProvider', 'TooltipTrigger']],
 ] as const) mock.module(path, () => Object.fromEntries(names.map((name) => [name, component])))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
+mock.module('@/components/tools/web-search-engine-select', () => ({ WebSearchEngineSelect: component }))
 mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam }) }))
 mock.module('@/lib/api/agents', () => ({ agentsApi: { getAgents: mock(async () => ({ items: [] })) } }))
 mock.module('@/lib/api/knowledge-bases', () => ({ knowledgeBasesApi: { getKnowledgeBases: mock(async () => ({ items: [] })) } }))

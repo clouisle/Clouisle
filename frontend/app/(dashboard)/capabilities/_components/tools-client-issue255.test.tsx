@@ -124,6 +124,9 @@ mock.module('@/components/packages/import-package-dialog', () => ({ ImportPackag
 mock.module('@/app/(platform)/app/capabilities/_components/tool-config-dialog', () => ({
   ToolConfigDialog: ({ open, onSave }: { open: boolean; onSave: (v: Record<string, string>) => Promise<void> }) => <div data-dialog="config" data-open={String(open)}><button onClick={() => void onSave({ token: 'secret' }).catch(() => undefined)}>config-save</button></div>,
 }))
+mock.module('@/components/tools/web-search-config-dialog', () => ({
+  WebSearchConfigDialog: ({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) => <div data-dialog="web-search" data-open={String(open)}><button onClick={() => onOpenChange(false)}>web-search-close</button></div>,
+}))
 mock.module('@/app/(platform)/app/capabilities/_components/tool-test-panel', () => ({
   ToolTestPanel: ({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) => <div data-dialog="test" data-open={String(open)}><button onClick={() => onOpenChange(false)}>test-close</button></div>,
 }))

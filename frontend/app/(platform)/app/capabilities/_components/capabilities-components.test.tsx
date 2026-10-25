@@ -8,6 +8,7 @@ const toolsApi = {
   shareTool: mock(async () => undefined),
   unshareTool: mock(async () => undefined),
   listMcpTools: mock(async () => ({ tools: [] })),
+  getWebSearchEngines: mock(async () => ['tavily']),
   test: mock(async () => ({ success: true, result: { ok: true } })),
 }
 
@@ -88,7 +89,7 @@ import { ToolTestPanel } from './tool-test-panel'
 
 const baseTool = {
   id: 'tool-1',
-  name: 'web_search',
+  name: 'configurable_tool',
   display_name: 'Web Search',
   description: 'Search the web',
   icon: '🔎',
@@ -152,7 +153,21 @@ describe('platform capability component smoke coverage', () => {
 
     expect(html).toContain('configDialog.title:Web Search')
     expect(html).toContain('TAVILY_API_KEY')
-    expect(html).toContain('tvly-xxxxxxxxxx')
+    expect(html).not.toContain('tvly-xxxxxxxxxx')
+  })
+
+  test('does not render raw web search credential fields in the generic dialog', () => {
+    const html = renderToString(
+      <ToolConfigDialog
+        tool={{ ...baseTool, name: 'web_search', config_fields: ['TAVILY_API_KEY'] } as never}
+        open
+        onOpenChange={() => undefined}
+        onSave={async () => undefined}
+      />
+    )
+
+    expect(html).not.toContain('TAVILY_API_KEY')
+    expect(html).not.toContain('BOCHA_API_KEY')
   })
 
   test('validates, reveals, saves, and reports config dialog API errors', async () => {
@@ -346,6 +361,7 @@ describe('platform capability component smoke coverage', () => {
         <ToolTestPanel
           tool={{
             ...baseTool,
+            name: 'web_search',
             parameters: [
               { name: 'query', type: 'string', required: true, description: 'Search query' },
               { name: 'limit', type: 'integer', required: false, default: 5 },
@@ -375,7 +391,7 @@ describe('platform capability component smoke coverage', () => {
 
     expect(toolsApi.test).toHaveBeenLastCalledWith({
       name: 'web_search',
-      arguments: { query: 'cats', limit: 3, enabled: true, tags: ['a'], payload: { x: 1 } },
+      arguments: { query: 'cats', limit: 3, enabled: true, tags: ['a'], payload: { x: 1 }, search_engine: 'auto' },
     }, 'team-1')
     expect(nodeText(renderer!.toJSON())).toContain('done')
   })

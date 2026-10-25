@@ -24,13 +24,7 @@ import { isPresetToolCategory, type PresetToolCategory, type Skill, type Tool, t
 import { useTeam } from '@/contexts/team-context'
 import { cn } from '@/lib/utils'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { WebSearchEngineSelect } from '@/components/tools/web-search-engine-select'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
@@ -391,27 +385,24 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
   const displayName = tool?.display_name || config.name || config.tool_id || config.server_id || t('unknownTool')
   const isWebSearch = config.type === 'builtin' && config.name === 'web_search'
   const searchEngine = typeof config.config?.engine === 'string' ? config.config.engine : 'auto'
-  const apiKey = typeof config.config?.api_key === 'string' ? config.config.api_key : ''
 
   const [tempEngine, setTempEngine] = React.useState<string>(searchEngine)
-  const [tempApiKey, setTempApiKey] = React.useState<string>(apiKey)
 
   const handleSaveConfig = () => {
     if (onUpdateConfig) {
-      onUpdateConfig({
-        ...(config.config || {}),
-        engine: tempEngine,
-        api_key: tempApiKey.trim() ? tempApiKey.trim() : undefined,
-      })
+      // The Agent tool config only stores the engine choice. Provider
+      // credentials are site-managed and extra fields are rejected.
+      onUpdateConfig({ engine: tempEngine })
     }
     setConfigOpen(false)
   }
 
   const engineLabels: Record<string, string> = {
     auto: t('config.engineAuto'),
-    duckduckgo: t('config.engineDuckDuckGo'),
     bocha: t('config.engineBocha'),
     tavily: t('config.engineTavily'),
+    searxng: t('config.engineSearxng'),
+    deepseek: t('config.engineDeepseek'),
   }
 
   return (
@@ -476,7 +467,6 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
               onClick={(e) => {
                 e.stopPropagation()
                 setTempEngine(typeof config.config?.engine === 'string' ? config.config.engine : 'auto')
-                setTempApiKey(typeof config.config?.api_key === 'string' ? config.config.api_key : '')
                 setConfigOpen(true)
               }}
             >
@@ -516,38 +506,15 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
             <div className="space-y-4 py-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium">{t('config.engine')}</Label>
-                <Select value={tempEngine} onValueChange={(val) => setTempEngine(val || 'auto')}>
-                  <SelectTrigger className="w-full text-xs">
-                    <SelectValue>
-                      {engineLabels[tempEngine] || engineLabels.auto}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="auto">{t('config.engineAuto')}</SelectItem>
-                    <SelectItem value="duckduckgo">{t('config.engineDuckDuckGo')}</SelectItem>
-                    <SelectItem value="bocha">{t('config.engineBocha')}</SelectItem>
-                    <SelectItem value="tavily">{t('config.engineTavily')}</SelectItem>
-                  </SelectContent>
-                </Select>
+                {configOpen && (
+                  <WebSearchEngineSelect
+                    value={tempEngine}
+                    onValueChange={setTempEngine}
+                    className="w-full text-xs"
+                    ariaLabel={t('config.engine')}
+                  />
+                )}
                 <p className="text-[11px] text-muted-foreground">{t('config.engineHint')}</p>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">{t('config.apiKey')}</Label>
-                <Input
-                  type="password"
-                  value={tempApiKey}
-                  onChange={(e) => setTempApiKey(e.target.value)}
-                  placeholder={
-                    tempEngine === 'bocha'
-                      ? 'sk-xxxxxxxxxx'
-                      : tempEngine === 'tavily'
-                        ? 'tvly-xxxxxxxxxx'
-                        : 'API Key (Optional)'
-                  }
-                  className="text-xs"
-                />
-                <p className="text-[11px] text-muted-foreground">{t('config.apiKeyHint')}</p>
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">

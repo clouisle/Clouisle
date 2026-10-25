@@ -2757,17 +2757,65 @@ msgstr "Parser error"
 msgid "verification_code_invalid"
 msgstr "Invalid verification code"
 
+msgid "web_search_searxng_base_url_invalid"
+msgstr "Enter the SearXNG instance root URL without /search, credentials, query parameters or a fragment"
+
+msgid "web_search_searxng_base_url_required"
+msgstr "Configure a SearXNG instance Base URL before enabling it"
+
+msgid "web_search_searxng_https_required"
+msgstr "SearXNG bearer authentication requires an HTTPS Base URL"
+
+msgid "web_search_searxng_token_confirmation_required"
+msgstr "Changing the SearXNG instance requires replacing or clearing its saved bearer token"
+
+msgid "web_search_searxng_timeout"
+msgstr "The configured SearXNG instance timed out"
+
+msgid "web_search_searxng_redirect"
+msgstr "The SearXNG instance returned a redirect; configure its final Base URL"
+
+msgid "web_search_searxng_forbidden"
+msgstr "SearXNG denied access; check gateway authentication and enable JSON output in the instance"
+
+msgid "web_search_searxng_invalid_response"
+msgstr "The SearXNG instance did not return a valid JSON search response"
+
+msgid "web_search_searxng_empty_results"
+msgstr "The SearXNG instance returned no usable search results"
+
+msgid "web_search_not_configured"
+msgstr "Site web search is not configured; contact the site administrator"
+
+msgid "web_search_engine_disabled"
+msgstr "The site search provider {engine} is disabled"
+
+msgid "web_search_engine_not_configured"
+msgstr "The site search provider {engine} is missing required configuration"
+
+msgid "web_search_default_engine_disabled"
+msgstr "The default search provider must be enabled"
+
+msgid "web_search_default_engine_invalid"
+msgstr "Select a valid site default search provider"
+
+msgid "web_search_credentials_unreadable"
+msgstr "The saved search credential cannot be decrypted; replace it in site configuration"
+
+msgid "web_search_site_managed"
+msgstr "Web search is managed through the dedicated site administrator configuration"
+
 msgid "web_search_unsupported_engine"
 msgstr "Unsupported search engine: {search_engine}"
-
-msgid "web_search_blocked_or_empty"
-msgstr "The search engine returned no usable results (it may be blocking automated requests); try again or choose another engine"
 
 msgid "web_search_api_error"
 msgstr "Search API error: {status_code}"
 
 msgid "bocha_api_key_not_configured"
 msgstr "Bocha API key is not configured"
+
+msgid "deepseek_api_key_not_configured"
+msgstr "DeepSeek API key is not configured"
 
 msgid "fetch_webpage_http_error"
 msgstr "HTTP error: {status_code}"

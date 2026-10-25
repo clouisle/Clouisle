@@ -26,7 +26,7 @@ interface ToolConfigDialogProps {
   savedConfig?: Record<string, string>
 }
 
-// 工具配置说明
+// 工具配置说明（网页搜索由站点统一管理，不再出现在通用配置弹窗）
 const TOOL_CONFIG_INFO: Record<string, {
   fields: Array<{
     key: string
@@ -35,26 +35,7 @@ const TOOL_CONFIG_INFO: Record<string, {
     description: string
     link?: string
   }>
-}> = {
-  web_search: {
-    fields: [
-      {
-        key: 'TAVILY_API_KEY',
-        label: 'configDialog.tavilyApiKeyLabel',
-        placeholder: 'tvly-xxxxxxxxxx',
-        description: 'configDialog.tavilyApiKeyDescription',
-        link: 'https://tavily.com/',
-      },
-      {
-        key: 'BOCHA_API_KEY',
-        label: 'configDialog.bochaApiKeyLabel',
-        placeholder: 'sk-xxxxxxxxxx',
-        description: 'configDialog.bochaApiKeyDescription',
-        link: 'https://bocha.ai/',
-      },
-    ],
-  },
-}
+}> = {}
 
 export function ToolConfigDialog({
   tool,
@@ -66,12 +47,15 @@ export function ToolConfigDialog({
   const t = useTranslations('platform.tools')
   const tCommon = useTranslations('common')
 
-  const fields = useMemo(() => (tool?.config_fields?.length
-    ? tool.config_fields.map((key) => {
-        const found = TOOL_CONFIG_INFO[tool.name]?.fields.find((f) => f.key === key)
-        return found || { key, label: key, placeholder: '', description: '' }
-      })
-    : TOOL_CONFIG_INFO[tool?.name || '']?.fields) || [], [tool?.config_fields, tool?.name])
+  const fields = useMemo(() => {
+    if (tool?.name === 'web_search') return []
+    return (tool?.config_fields?.length
+      ? tool.config_fields.map((key) => {
+          const found = TOOL_CONFIG_INFO[tool.name]?.fields.find((f) => f.key === key)
+          return found || { key, label: key, placeholder: '', description: '' }
+        })
+      : TOOL_CONFIG_INFO[tool?.name || '']?.fields) || []
+  }, [tool?.config_fields, tool?.name])
 
   const [config, setConfig] = useState<Record<string, string>>({})
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})

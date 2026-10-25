@@ -78,21 +78,53 @@ Type: Builtin
 Category: Search
 Status: Enabled
 
-Configuration:
-  TAVILY_API_KEY: ...
-  BOCHA_API_KEY: ...
+Site Configuration:
+  default_engine: tavily
+  tavily_enabled: true
+  bocha_enabled: false
+  deepseek_enabled: false
+  tavily_api_key: ... # write-only
 ```
 
-Web Search can use **Tavily** (`TAVILY_API_KEY`) or **Bocha** (`BOCHA_API_KEY`); if neither key is configured it falls back to keyless **DuckDuckGo** search. Query parameters (e.g. `max_results`) are passed by the agent at call time. There is no Google Custom Search configuration.
+Site administrators manage search from the **Configure search** button on the platform **Capabilities** page, or from **Capabilities → Tools → Web Search → Configure** in the dashboard, without selecting a team. Enable a provider and explicitly choose the site default. Secrets are encrypted; the form shows whether a key is configured but never reads it back. Leave a secret unchanged to preserve it, replace it to rotate, or clear it explicitly. Agents only choose an enabled provider or inherit the site default; they cannot store search keys or override endpoints. Missing/disabled providers and provider failures are explicit errors, with no fallback to another account.
+
+Agent orchestration and workflow `web_search` tool nodes share an enabled-only engine selector. **Auto** inherits the site default. Disabled providers are not offered; an existing saved selection is retained rather than silently changed. Execution rechecks the site configuration, so disabling a provider also blocks previously saved selections.
 
 **Update Configuration:**
-1. Select tool
-2. Click **Configure**
-3. Update API credentials
-4. Test tool
-5. Save changes
+1. Open Web Search configuration in the administrator dashboard.
+2. Enable Tavily, Bocha or DeepSeek and enter its API key, or enable the administrator-configured SearXNG instance.
+3. Choose the site default and save changes.
+4. Test the saved configuration with a representative query and inspect relevance, not merely nonempty results.
 
-> **Note:** Built-in tools other than `web_search` do not require configuration. There are no per-tool limits (calls per day/agent/minute) or timeout settings for built-in tools.
+> **Note:** Tavily, Bocha and DeepSeek require API credentials. SearXNG requires a configured instance, not a random public fallback. There are no per-tool limits (calls per day/agent/minute) or timeout settings for built-in tools.
+
+On upgrade, existing global search keys remain global and are encrypted. Legacy Agent/team keys are archived encrypted, not activated site-wide. Administrators must configure the intended shared account; the configuration response signals archived credentials without exposing them. `TAVILY_API_KEY` is imported only on the first migration when no global key exists, not read on each request.
+
+#### DeepSeek Search
+
+Enable DeepSeek and paste a DeepSeek API key. Clouisle calls DeepSeek's own Search API (`https://api.deepseek.com/v1/tools/search`) with that key; it does not route searches through a DeepSeek chat model. Searches are billed by DeepSeek per successful request, independently of the number of returned results, and share the account-level Search QPS limit. Result text uses DeepSeek's long `summary` so the model receives useful snippets without downloading full pages.
+
+#### SearXNG instance
+
+In the same site dialog, enter the instance root **Base URL**, for example `https://search.example.com` or `https://example.com/searxng/`. The server appends `/search`, preserving the reverse-proxy prefix. Do not include `/search`, query parameters, fragments or embedded username/password. An optional gateway bearer token is stored encrypted and requires HTTPS; no token is needed for an unauthenticated instance.
+
+Enable JSON output in the instance's `settings.yml`:
+
+```yaml
+search:
+  formats:
+    - html
+    - json
+```
+
+The instance must be reachable from API and task-worker processes that execute searches. Private IPs/internal hostnames must be explicitly approved through the existing SSRF allowed-target settings; cloud metadata targets remain blocked. Use a resolvable internal FQDN or explicitly allowlist the private IP; a bare Docker service name cannot be added as a hostname rule by the existing allowlist validator. Search requests recheck SSRF policy and do not follow redirects.
+
+SearXNG uses a 30-second HTTPX timeout for connection/read/write/pool operations, not a strict total-duration deadline. Requests are not retried and do not fall back to another provider.
+
+The tool test page exposes a search-engine selector for `web_search`; it lists only enabled providers plus the site default and submits the choice as `search_engine`.
+
+Save first, then test with `上海天气 今天`, a multiword technical query and a `site:` query. Inspect result relevance as well as connectivity. A 403 may mean JSON output is disabled or the gateway rejected access. SearXNG engine availability/relevance depends on the instance's upstream engines; Clouisle does not promise that every query/operator is supported.
+
 
 ## Custom Tools
 
@@ -524,7 +556,7 @@ code_result = api.post("/api/v1/admin/tools/execute-code", json={
 })
 ```
 
-> **Note:** `POST /api/v1/tools/web_search/call` and `GET /api/v1/tools/web_search/usage` do not exist. Tool configuration (e.g. `TAVILY_API_KEY`) is managed via `GET/POST/PUT/DELETE /api/v1/admin/tools/config[/{tool_name}]`.
+> **Note:** `POST /api/v1/tools/web_search/call` and `GET /api/v1/tools/web_search/usage` do not exist. Search uses dedicated `GET/PUT /api/v1/admin/tools/web-search/config` and `POST /api/v1/admin/tools/web-search/test` endpoints; generic config APIs reject `web_search`.
 
 ## Related Documentation
 

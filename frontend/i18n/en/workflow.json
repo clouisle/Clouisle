@@ -1125,6 +1125,7 @@
       "noMatchingTools": "No matching tools found",
       "noAvailableTools": "No available tools",
       "mcpTool": "MCP Tool",
+      "searchEngine": "Search engine",
       "connectingMcpServer": "Connecting to MCP server...",
       "selectMcpTool": "Select MCP tool ({count} available)",
       "searchMcpTools": "Search MCP tools...",

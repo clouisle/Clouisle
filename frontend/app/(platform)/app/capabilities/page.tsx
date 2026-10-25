@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, Database, ChevronDown, PackageOpen, Upload } from 'lucide-react'
+import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, Database, ChevronDown, PackageOpen, Upload, Info, Settings } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
@@ -36,6 +36,7 @@ import {
 import { useTeam } from '@/contexts/team-context'
 import { useRequireTeam } from '@/hooks/use-require-team'
 import { SkillsPanel, ToolList, ToolTestPanel } from './_components'
+import { WebSearchConfigDialog } from '@/components/tools/web-search-config-dialog'
 import { ToolConfigDialog } from './_components/tool-config-dialog'
 import { HttpToolDialog } from './_components/http-tool-dialog'
 import { DatabaseToolDialog } from './_components/database-tool-dialog'
@@ -79,6 +80,7 @@ export default function CapabilitiesPage() {
   // Config dialog (for builtin tools)
   const [configDialogOpen, setConfigDialogOpen] = useState(false)
   const [configuringTool, setConfiguringTool] = useState<Tool | null>(null)
+  const [webSearchDialogOpen, setWebSearchDialogOpen] = useState(false)
 
   // HTTP tool dialog
   const [httpDialogOpen, setHttpDialogOpen] = useState(false)
@@ -480,6 +482,29 @@ export default function CapabilitiesPage() {
             </div>
           </div>
 
+          {tools.some((tool) => tool.type === 'builtin' && tool.name === 'web_search') && (
+            <div
+              className="flex items-center justify-between gap-3 rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground"
+              data-testid="web-search-managed-notice"
+            >
+              <div className="flex items-start gap-2">
+                <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>{t('tools.webSearchManaged')}</p>
+              </div>
+              {canPerform('admin:capability:read') && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setWebSearchDialogOpen(true)}
+                >
+                  <Settings className="mr-1.5 h-3.5 w-3.5" />
+                  {t('tools.webSearchConfigure')}
+                </Button>
+              )}
+            </div>
+          )}
+
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -556,6 +581,14 @@ export default function CapabilitiesPage() {
         expectedResourceType="tool"
         onImported={() => loadTools()}
       />
+
+      {webSearchDialogOpen && (
+        <WebSearchConfigDialog
+          open={webSearchDialogOpen}
+          onOpenChange={setWebSearchDialogOpen}
+          onSaved={loadTools}
+        />
+      )}
 
       {/* 工具测试面板 */}
       <ToolTestPanel

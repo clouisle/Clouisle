@@ -1,6 +1,6 @@
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -10,7 +10,6 @@ from app.api.v1.endpoints.chat_helpers.general import (
     collect_conversation_images,
 )
 from app.api.v1.endpoints.chat_tools import (
-    _get_builtin_tool_credentials,
     build_file_content_for_context,
     execute_code_tool,
     execute_tool_call,
@@ -50,27 +49,6 @@ async def test_knowledge_search_requires_agent_context_issue255():
     result = json.loads(await execute_tool_call("knowledge_search", {"query": "x"}))
 
     assert result["error"]
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("api_key", "expected"),
-    [("fallback-key", {"TAVILY_API_KEY": "fallback-key"}), ("", {})],
-)
-async def test_builtin_credentials_cover_tavily_setting_fallback_issue255(
-    api_key, expected
-):
-    query = MagicMock()
-    query.first = AsyncMock(return_value=None)
-
-    with (
-        patch("app.models.tool_config.ToolConfig.filter", return_value=query),
-        patch("app.core.config.settings.TAVILY_API_KEY", api_key),
-    ):
-        credentials = await _get_builtin_tool_credentials("web_search", agent=None)
-
-    assert credentials == expected
-    query.first.assert_awaited_once()
 
 
 @pytest.mark.anyio

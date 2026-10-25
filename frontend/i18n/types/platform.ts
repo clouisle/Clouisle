@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-24T18:18:06.006Z
+// GENERATED — 2026-10-25T16:46:30.981Z
 // Source: i18n/en/platform.json
 export type PlatformMessages = {
   platform: {
@@ -232,7 +232,10 @@ export type PlatformMessages = {
       }
       noSearchResults: string
       requiresConfig: string
+      webSearchManaged: string
+      webSearchConfigure: string
       parameters: string
+      searchEngine: string
       noParameters: string
       required: string
       selectOption: string
@@ -314,10 +317,6 @@ export type PlatformMessages = {
       configDialog: {
         title: string
         description: string
-        tavilyApiKeyLabel: string
-        tavilyApiKeyDescription: string
-        bochaApiKeyLabel: string
-        bochaApiKeyDescription: string
       }
       httpDialog: {
         createTitle: string

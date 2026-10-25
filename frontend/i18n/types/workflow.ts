@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-24T18:18:06.011Z
+// GENERATED — 2026-10-25T16:46:30.986Z
 // Source: i18n/en/workflow.json
 export type WorkflowMessages = {
   workflow: {
@@ -1127,6 +1127,7 @@ export type WorkflowMessages = {
       noMatchingTools: string
       noAvailableTools: string
       mcpTool: string
+      searchEngine: string
       connectingMcpServer: string
       selectMcpTool: string
       searchMcpTools: string
