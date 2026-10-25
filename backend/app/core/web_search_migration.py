@@ -10,7 +10,12 @@ from app.integrations.credentials import decrypt_secret, encrypt_secret
 
 logger = logging.getLogger(__name__)
 SECRET_PREFIX = "enc:v1:"
-SEARCH_KEYS = {"TAVILY_API_KEY", "BOCHA_API_KEY", "SEARXNG_AUTH_TOKEN"}
+SEARCH_KEYS = {
+    "TAVILY_API_KEY",
+    "BOCHA_API_KEY",
+    "SEARXNG_AUTH_TOKEN",
+    "DEEPSEEK_API_KEY",
+}
 
 
 async def migrate_site_web_search() -> None:
@@ -64,7 +69,7 @@ async def migrate_site_web_search() -> None:
                 if tool.get("type") == "builtin" and tool.get("name") == "web_search":
                     config = tool.get("config") or {}
                     engine = config.get("engine", "auto")
-                    if engine not in {"auto", "tavily", "bocha", "searxng"}:
+                    if engine not in {"auto", "tavily", "bocha", "searxng", "deepseek"}:
                         engine = "auto"
                     next_tool = {**tool, "config": {"engine": engine}}
                     if config != next_tool["config"]:

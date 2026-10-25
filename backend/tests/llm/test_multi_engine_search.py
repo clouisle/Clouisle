@@ -164,6 +164,89 @@ async def test_bocha_request_uses_only_the_site_key(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_deepseek_request_uses_only_the_site_key(monkeypatch):
+    install_runtime(
+        monkeypatch, engine="deepseek", config={"DEEPSEEK_API_KEY": "site-deepseek"}
+    )
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "rerank_score": 2.4,
+                        "title": "DeepSeek Article",
+                        "url": "https://example.test/deepseek",
+                        "snippet": "Short snippet",
+                        "summary": "Model-facing long summary",
+                        "content": "",
+                    },
+                    {
+                        "title": "Snippet only",
+                        "url": "https://example.test/deepseek-2",
+                        "snippet": "Fallback snippet",
+                    },
+                ]
+            },
+        )
+
+    requests = install_transport(monkeypatch, handler)
+
+    result = await subject.web_search(
+        "DeepSeek 发布", num_results=2, search_engine="deepseek"
+    )
+
+    assert len(requests) == 1
+    assert requests[0].url == "https://api.deepseek.com/v1/tools/search"
+    assert requests[0].headers["authorization"] == "Bearer site-deepseek"
+    body = json.loads(requests[0].content)
+    assert body == {
+        "query": "DeepSeek 发布",
+        "count": 2,
+        "need_content": False,
+    }
+    assert result["success"] is True
+    assert result["search_engine"] == "deepseek"
+    assert result["results"][0]["content"] == "Model-facing long summary"
+    assert result["results"][0]["score"] == 2.4
+    assert result["results"][1]["content"] == "Fallback snippet"
+    assert result["results"][0]["citation_id"].startswith("web_")
+
+
+@pytest.mark.anyio
+async def test_deepseek_malformed_response_is_explicit(monkeypatch):
+    install_runtime(
+        monkeypatch, engine="deepseek", config={"DEEPSEEK_API_KEY": "site-deepseek"}
+    )
+
+    requests = install_transport(
+        monkeypatch, lambda request: httpx.Response(200, json={"results": "no"})
+    )
+
+    result = await subject.web_search("cloud", search_engine="deepseek")
+
+    assert len(requests) == 1
+    assert result["success"] is False
+    assert result["results"] == []
+
+
+@pytest.mark.anyio
+async def test_deepseek_billing_failure_is_explicit(monkeypatch):
+    install_runtime(
+        monkeypatch, engine="deepseek", config={"DEEPSEEK_API_KEY": "site-deepseek"}
+    )
+    monkeypatch.setattr(subject, "t", lambda key, **kwargs: (key, kwargs))
+    requests = install_transport(monkeypatch, lambda request: httpx.Response(402))
+
+    result = await subject.web_search("cloud", search_engine="deepseek")
+
+    assert len(requests) == 1
+    assert result["success"] is False
+    assert result["error"] == ("web_search_api_error", {"status_code": 402})
+
+
+@pytest.mark.anyio
 async def test_provider_failure_does_not_fall_back_to_another_provider(monkeypatch):
     install_runtime(
         monkeypatch, engine="tavily", config={"TAVILY_API_KEY": "site-tavily"}

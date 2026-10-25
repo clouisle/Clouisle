@@ -2814,6 +2814,9 @@ msgstr "搜索 API 错误：{status_code}"
 msgid "bocha_api_key_not_configured"
 msgstr "博查搜索 API Key 未配置"
 
+msgid "deepseek_api_key_not_configured"
+msgstr "DeepSeek API Key 未配置"
+
 msgid "fetch_webpage_http_error"
 msgstr "HTTP 错误：{status_code}"
 

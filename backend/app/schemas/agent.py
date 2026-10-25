@@ -263,6 +263,7 @@ class ToolConfig(BaseModel):
                 "tavily",
                 "bocha",
                 "searxng",
+                "deepseek",
             }:
                 raise ValueError("Unsupported search engine")
             self.config = {"engine": config.get("engine", "auto")}

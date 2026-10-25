@@ -30,6 +30,7 @@ def _update(**overrides) -> WebSearchConfigUpdate:
         "tavily_enabled": True,
         "bocha_enabled": False,
         "searxng_enabled": False,
+        "deepseek_enabled": False,
     }
     values.update(overrides)
     return WebSearchConfigUpdate(**values)
@@ -220,8 +221,10 @@ async def test_get_config_without_a_row_reports_disabled_defaults(monkeypatch):
         "tavily_enabled": False,
         "bocha_enabled": False,
         "searxng_enabled": False,
+        "deepseek_enabled": False,
         "tavily_api_key_configured": False,
         "bocha_api_key_configured": False,
+        "deepseek_api_key_configured": False,
         "searxng_base_url": "",
         "searxng_auth_token_configured": False,
         "legacy_credentials_present": False,
@@ -542,6 +545,7 @@ def _searxng_update(**overrides):
         "tavily_enabled": False,
         "bocha_enabled": False,
         "searxng_enabled": True,
+        "deepseek_enabled": False,
         "searxng_base_url": SEARXNG_BASE,
     }
     values.update(overrides)

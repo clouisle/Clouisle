@@ -69,6 +69,8 @@ async def web_search(
         result = await _bocha_search(query, num_results, provider_config)
     elif engine == "searxng":
         result = await _searxng_search(query, num_results, provider_config)
+    elif engine == "deepseek":
+        result = await _deepseek_search(query, num_results, provider_config)
     else:
         # get_web_search_runtime only resolves configured providers.
         return {
@@ -208,6 +210,85 @@ async def _bocha_search(
         }
     except Exception as e:
         logger.error("Bocha search error: %s", e)
+        return {
+            "query": query,
+            "error": t("tool_execution_failed"),
+            "success": False,
+            "results": [],
+        }
+
+
+async def _deepseek_search(
+    query: str, num_results: int, credentials: dict[str, str] | None = None
+) -> dict:
+    """使用 DeepSeek 自研搜索引擎（Search API）。
+
+    ``summary`` 长度约 600–800 字符且面向模型阅读，作为结果正文；缺失时回退
+    ``snippet``。不请求 ``content``，避免为每条结果传输整页正文。
+    https://api-docs.deepseek.com/zh-cn/guides/search
+    """
+    api_key = credentials.get("DEEPSEEK_API_KEY") if credentials else None
+    if not api_key:
+        logger.warning("No DeepSeek API key found in credentials")
+        return {
+            "query": query,
+            "error": t("deepseek_api_key_not_configured"),
+            "success": False,
+            "results": [],
+        }
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                "https://api.deepseek.com/v1/tools/search",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "query": query,
+                    "count": num_results,
+                    "need_content": False,
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        raw_results = data.get("results") if isinstance(data, dict) else None
+        if not isinstance(raw_results, list):
+            logger.error("DeepSeek search response is missing a results list")
+            return {
+                "query": query,
+                "error": t("tool_execution_failed"),
+                "success": False,
+                "results": [],
+            }
+
+        results = [
+            {
+                "title": item.get("title", ""),
+                "url": item.get("url", ""),
+                "content": item.get("summary", "") or item.get("snippet", ""),
+                "score": item.get("rerank_score"),
+            }
+            for item in raw_results
+            if isinstance(item, dict)
+        ]
+        return {
+            "query": query,
+            "results": with_web_citation_ids(results),
+            "success": True,
+        }
+    except httpx.HTTPStatusError as e:
+        logger.error("DeepSeek search HTTP error: %s", e)
+        return {
+            "query": query,
+            "error": t("web_search_api_error", status_code=e.response.status_code),
+            "success": False,
+            "results": [],
+        }
+    except Exception as e:
+        logger.error("DeepSeek search error: %s", e)
         return {
             "query": query,
             "error": t("tool_execution_failed"),

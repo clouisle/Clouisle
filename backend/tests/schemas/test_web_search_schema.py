@@ -17,6 +17,7 @@ def _config(**overrides):
         "tavily_enabled": True,
         "bocha_enabled": False,
         "searxng_enabled": False,
+        "deepseek_enabled": False,
     }
     values.update(overrides)
     return values
@@ -84,6 +85,7 @@ def test_config_update_requires_explicit_flags():
             default_engine="tavily",
             tavily_enabled=False,
             bocha_enabled=False,
+            searxng_enabled=False,
         )
 
 
@@ -100,7 +102,7 @@ def test_test_input_bounds_query(query):
         WebSearchTestInput(query=query)
 
 
-@pytest.mark.parametrize("engine", ["auto", "tavily", "bocha", "searxng"])
+@pytest.mark.parametrize("engine", ["auto", "tavily", "bocha", "searxng", "deepseek"])
 def test_test_input_accepts_only_site_engines(engine):
     assert WebSearchTestInput(query="q", engine=engine).engine == engine
 

@@ -53,20 +53,23 @@ ENGINE_ENABLED_FIELDS: dict[str, str] = {
     "tavily": "tavily_enabled",
     "bocha": "bocha_enabled",
     "searxng": "searxng_enabled",
+    "deepseek": "deepseek_enabled",
 }
 ENGINE_SECRET_FIELDS: dict[str, str] = {
     "tavily": "TAVILY_API_KEY",
     "bocha": "BOCHA_API_KEY",
     "searxng": "SEARXNG_AUTH_TOKEN",
+    "deepseek": "DEEPSEEK_API_KEY",
 }
 # SearXNG's bearer token is optional; the other providers cannot work without
 # their API key.
-ENGINE_REQUIRED_SECRETS: frozenset[str] = frozenset({"tavily", "bocha"})
+ENGINE_REQUIRED_SECRETS: frozenset[str] = frozenset({"tavily", "bocha", "deepseek"})
 # Update-field name for each provider secret.
 SECRET_UPDATE_FIELDS: dict[str, str] = {
     "tavily": "tavily_api_key",
     "bocha": "bocha_api_key",
     "searxng": "searxng_auth_token",
+    "deepseek": "deepseek_api_key",
 }
 
 _FALLBACK_ENGINE = WEB_SEARCH_ENGINES[0]
@@ -186,8 +189,10 @@ def _to_output(credentials: dict[str, Any]) -> WebSearchConfigOut:
         tavily_enabled=_as_flag(credentials.get(ENGINE_ENABLED_FIELDS["tavily"])),
         bocha_enabled=_as_flag(credentials.get(ENGINE_ENABLED_FIELDS["bocha"])),
         searxng_enabled=_as_flag(credentials.get(ENGINE_ENABLED_FIELDS["searxng"])),
+        deepseek_enabled=_as_flag(credentials.get(ENGINE_ENABLED_FIELDS["deepseek"])),
         tavily_api_key_configured=_stored_secret(credentials, "tavily") is not None,
         bocha_api_key_configured=_stored_secret(credentials, "bocha") is not None,
+        deepseek_api_key_configured=_stored_secret(credentials, "deepseek") is not None,
         searxng_base_url=_stored_searxng_base_url(credentials) or "",
         searxng_auth_token_configured=(
             _stored_secret(credentials, "searxng") is not None
@@ -317,6 +322,9 @@ async def save_web_search_config(
         credentials[ENGINE_ENABLED_FIELDS["bocha"]] = _flag_value(data.bocha_enabled)
         credentials[ENGINE_ENABLED_FIELDS["searxng"]] = _flag_value(
             data.searxng_enabled
+        )
+        credentials[ENGINE_ENABLED_FIELDS["deepseek"]] = _flag_value(
+            data.deepseek_enabled
         )
 
         if data.searxng_base_url is not None:

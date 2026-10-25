@@ -402,6 +402,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Bocha API key is not configured",
         "zh": "博查搜索 API Key 未配置",
     },
+    "deepseek_api_key_not_configured": {
+        "en": "DeepSeek API key is not configured",
+        "zh": "DeepSeek API Key 未配置",
+    },
     "builtin_tool_artifact": {"en": "Create Download Link", "zh": "生成下载链接"},
     "builtin_tool_artifact_description": {
         "en": "Collect existing files or directories from /workspace and return fresh Markdown download links plus preview metadata. Call this only after verifying final user-facing files. If write, edit, or bash changes a collected file, call artifact again because earlier URLs are stale snapshots. Include the newest returned Markdown links in the final response body. Relative paths are interpreted from /workspace.",

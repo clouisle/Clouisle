@@ -1002,7 +1002,7 @@ def _agent_fields(payload: dict[str, Any], mapping: dict[str, UUID]) -> dict[str
             engine = (config.get("config") or {}).get("engine", "auto")
             config["config"] = {
                 "engine": engine
-                if engine in {"auto", "tavily", "bocha", "searxng"}
+                if engine in {"auto", "tavily", "bocha", "searxng", "deepseek"}
                 else "auto"
             }
         tool_id = config.get("tool_id")
