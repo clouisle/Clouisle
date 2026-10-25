@@ -887,6 +887,97 @@ async def test_empty_canonical_output_sends_explicit_notice(world):
 
 
 @pytest.mark.asyncio
+async def test_finalization_rolls_back_receipt_and_first_delivery_on_later_insert_failure(
+    world, monkeypatch
+):
+    long_answer = "a" * (runtime.TEXT_CHUNK_LIMIT * 2 + 1)
+    receipt, run = await _terminal_run(world, canonical_text=long_answer)
+    run = await AgentRun.get(id=run.id)
+    await FeishuAgentReceipt.filter(id=receipt.id).update(status="submitted")
+    receipt = await FeishuAgentReceipt.get(id=receipt.id)
+    await IntegrationDelivery.filter(receipt_id=receipt.id).delete()
+    session = await session_for(world)
+    await FeishuAgentSession.filter(id=session.id).update(active_run_id=run.id)
+    session.active_run_id = run.id
+
+    create_delivery = runtime._create_delivery
+    calls = 0
+
+    async def fail_on_second_delivery(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("injected second delivery insert failure")
+        await create_delivery(*args, **kwargs)
+
+    monkeypatch.setattr(runtime, "_create_delivery", fail_on_second_delivery)
+    with pytest.raises(RuntimeError, match="injected"):
+        await runtime._finalize_receipt(receipt, session, run)
+
+    rolled_back = await FeishuAgentReceipt.get(id=receipt.id)
+    assert rolled_back.status == "submitted"
+    assert not await IntegrationDelivery.filter(receipt_id=receipt.id).exists()
+    assert (await FeishuAgentSession.get(id=session.id)).active_run_id == run.id
+
+    monkeypatch.setattr(runtime, "_create_delivery", create_delivery)
+    await runtime._finalize_receipt(
+        await FeishuAgentReceipt.get(id=receipt.id), session, run
+    )
+
+    completed = await FeishuAgentReceipt.get(id=receipt.id)
+    assert completed.status == "completed"
+    assert (
+        await IntegrationDelivery.filter(
+            receipt_id=receipt.id, event_key="final"
+        ).count()
+        == 3
+    )
+    assert (await FeishuAgentSession.get(id=session.id)).active_run_id is None
+
+
+@pytest.mark.asyncio
+async def test_failed_terminal_receipt_and_error_delivery_finalize_together(world):
+    receipt = await receipt_for(world, message_id="om_failed_atomic")
+    await runtime.process_pending()
+    run = await AgentRun.get(id=world.submission.run.id)
+    await AgentRun.filter(id=run.id).update(status=AgentRunStatus.FAILED)
+    run.status = AgentRunStatus.FAILED
+    await FeishuAgentReceipt.filter(id=receipt.id).update(status="submitted")
+    receipt = await FeishuAgentReceipt.get(id=receipt.id)
+
+    await runtime._finalize_receipt(receipt, await session_for(world), run)
+
+    finalized = await FeishuAgentReceipt.get(id=receipt.id)
+    delivery = await IntegrationDelivery.get(receipt_id=receipt.id, event_key="final")
+    assert finalized.status == "error"
+    assert delivery.status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_stopped_terminal_receipt_clears_pointer_without_delivery(world):
+    receipt = await receipt_for(world, message_id="om_stopped_atomic")
+    await runtime.process_pending()
+    run = await AgentRun.get(id=world.submission.run.id)
+    await AgentRun.filter(id=run.id).update(status=AgentRunStatus.STOPPED)
+    run.status = AgentRunStatus.STOPPED
+    session = await session_for(world)
+    await FeishuAgentSession.filter(id=session.id).update(active_run_id=run.id)
+    session.active_run_id = run.id
+    await FeishuAgentReceipt.filter(id=receipt.id).update(status="submitted")
+    receipt = await FeishuAgentReceipt.get(id=receipt.id)
+
+    await runtime._finalize_receipt(receipt, session, run)
+
+    finalized = await FeishuAgentReceipt.get(id=receipt.id)
+    assert finalized.status == "completed"
+    assert finalized.error == "feishu_agent_stopped"
+    assert not await IntegrationDelivery.filter(
+        receipt_id=receipt.id, event_key="final"
+    ).exists()
+    assert (await FeishuAgentSession.get(id=session.id)).active_run_id is None
+
+
+@pytest.mark.asyncio
 async def test_concurrent_finalization_queues_the_answer_once(world):
     receipt = await receipt_for(world, message_id="om_once")
     await runtime.process_pending()

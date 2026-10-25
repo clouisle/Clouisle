@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import httpx
 import pytest
 
 from app.api.v1.admin.endpoints import feishu
@@ -698,4 +699,84 @@ async def test_directory_sync_of_one_subteam_includes_ancestor_and_excludes_sibl
         "0",
         "dept-a",
     ]
-    assert client.list_users.await_args.args[0] == ["0", "dept-a"]
+    assert client.list_users.await_args.args[0] == ["dept-a"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("root_denied", [False, True])
+async def test_subteam_sync_queries_only_scoped_users_with_real_client(
+    monkeypatch, root_denied
+):
+    from app.integrations import feishu as feishu_transport
+
+    dept_a = SimpleNamespace(department_id="dept-a", children=[])
+    dept_b = SimpleNamespace(department_id="dept-b", children=[])
+    company = SimpleNamespace(department_id="0", children=[dept_a, dept_b])
+    queried_departments = []
+
+    async def handler(request):
+        if request.url.path.endswith("/tenant_access_token/internal"):
+            return httpx.Response(200, json={"code": 0, "tenant_access_token": "token"})
+        assert request.url.path.endswith("/users/find_by_department")
+        department_id = request.url.params["department_id"]
+        queried_departments.append(department_id)
+        if department_id == "0" and root_denied:
+            return httpx.Response(
+                403, json={"code": 41050, "msg": "no user authority error"}
+            )
+        return httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "items": [
+                        {
+                            "user_id": f"user-{department_id}",
+                            "open_id": f"open-{department_id}",
+                            "name": f"Employee {department_id}",
+                            "department_ids": [department_id],
+                        }
+                    ],
+                    "has_more": False,
+                },
+            },
+        )
+
+    original_client = httpx.AsyncClient
+    transport = httpx.MockTransport(handler)
+    monkeypatch.setattr(
+        feishu_transport.httpx,
+        "AsyncClient",
+        lambda **kwargs: original_client(transport=transport, **kwargs),
+    )
+    client = feishu_transport.FeishuClient.__new__(feishu_transport.FeishuClient)
+    client.app_id = "app"
+    client.app_secret = "secret"
+    client.list_departments = AsyncMock(return_value=[company])
+    monkeypatch.setattr(feishu, "_configured_client", AsyncMock(return_value=client))
+    monkeypatch.setattr(
+        feishu,
+        "get_builtin_integration",
+        AsyncMock(return_value=SimpleNamespace(config={"department_ids": ["dept-a"]})),
+    )
+    sync_users = AsyncMock(
+        return_value=SimpleNamespace(created=1, updated=0, skipped=0)
+    )
+    sync_teams = AsyncMock(return_value=2)
+    monkeypatch.setattr(feishu, "sync_directory_users", sync_users)
+    monkeypatch.setattr(feishu, "sync_department_teams", sync_teams)
+
+    response = await feishu.sync_contacts(
+        request=MagicMock(), current_user=SimpleNamespace(id=uuid4())
+    )
+
+    assert response["data"]["created"] == 1
+    assert queried_departments == ["dept-a"]
+    members = sync_users.await_args.args[0]
+    assert [member.user_id for member in members] == ["user-dept-a"]
+    assert members[0].department_ids == frozenset({"dept-a"})
+    assert [item.department_id for item in sync_teams.await_args.args[0]] == [
+        "0",
+        "dept-a",
+    ]
+    assert sync_teams.await_args.args[1] == members

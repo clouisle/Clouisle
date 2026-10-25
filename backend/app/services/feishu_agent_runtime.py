@@ -394,13 +394,19 @@ async def _active_run(session: FeishuAgentSession | None) -> AgentRun | None:
 
 
 async def _clear_active_run(
-    session: FeishuAgentSession | None, run: AgentRun | None
+    session: FeishuAgentSession | None,
+    run: AgentRun | None,
+    *,
+    using_db=None,
 ) -> None:
     """Clear the session pointer only once the run is really terminal."""
     if session is None or run is None or run.status not in TERMINAL_RUN_STATUSES:
         return
     if session.active_run_id == run.id:
-        await FeishuAgentSession.filter(id=session.id).update(active_run_id=None)
+        query = FeishuAgentSession.filter(id=session.id)
+        if using_db is not None:
+            query = query.using_db(using_db)
+        await query.update(active_run_id=None)
         session.active_run_id = None
 
 
@@ -414,6 +420,7 @@ async def _create_delivery(
     error: str | None = None,
     kind: str = "text",
     asset=None,
+    using_db=None,
 ) -> None:
     """Idempotent outbound row; its deterministic uuid dedups the provider."""
     await IntegrationDelivery.get_or_create(
@@ -421,6 +428,7 @@ async def _create_delivery(
         receipt_id=receipt.id,
         event_key=event_key,
         sequence=sequence,
+        using_db=using_db,
         defaults={
             "integration_id": receipt.integration_id,
             "user_id": receipt.user_id,
@@ -898,79 +906,89 @@ async def _finalize_receipt(
     session: FeishuAgentSession | None,
     run: AgentRun,
 ) -> None:
-    """Map a terminal run to its outbound delivery rows."""
-    # Resolve the recipient locale before any localized text is produced: the
-    # failure branch emits text without the full authorization path, so the
-    # process-context language may still belong to an unrelated message.
+    """Atomically persist a terminal receipt, its outbox, and session state."""
+    # Resolve recipient locale and all potentially slow/ fallible output before
+    # opening the transaction. In particular, asset authorization/storage work
+    # must not hold a database lock or leave a completed receipt on failure.
     recipient = await User.filter(id=receipt.user_id).first()
     set_language(getattr(recipient, "locale", None) or "en")
 
+    status = "completed"
+    error = None
+    deliveries: list[tuple[str, int, str, str, str, Any]] = []
     if run.status == AgentRunStatus.STOPPED:
         # The stop command already told the user; never imply a reply was sent.
-        await _consume(receipt, error="feishu_agent_stopped")
-        await _clear_active_run(session, run)
-        return
-    if run.status in (AgentRunStatus.FAILED, AgentRunStatus.INTERRUPTED):
-        # A lost or failed worker produced no trustworthy canonical output, so
-        # only the generic localized failure is sent, never a partial result.
-        await FeishuAgentReceipt.filter(id=receipt.id).update(
-            status="error", error="feishu_agent_run_failed", updated_at=utcnow()
-        )
-        await _reply_text(receipt, t("feishu_agent_run_failed"), key="final")
-        await _clear_active_run(session, run)
-        return
-    if not await _delivery_authorized(receipt):
+        error = "feishu_agent_stopped"
+    elif run.status in (AgentRunStatus.FAILED, AgentRunStatus.INTERRUPTED):
+        # A lost or failed worker produced no trustworthy canonical output.
+        status = "error"
+        error = "feishu_agent_run_failed"
+        deliveries = [
+            ("final", sequence, chunk, "text", "pending", None)
+            for sequence, chunk in enumerate(
+                _split_text_chunks(t("feishu_agent_run_failed"))
+            )
+        ]
+    elif not await _delivery_authorized(receipt):
         # The run finished, but the reply must never look like it was sent.
-        key = "feishu_agent_channel_disabled"
-        await _consume(receipt, error=key)
-        await _create_delivery(
-            receipt,
-            event_key="final",
-            sequence=0,
-            text=t(key),
-            status="unavailable",
-            error=key,
-        )
-        await _clear_active_run(session, run)
-        return
-    chunks = await _canonical_chunks(run)
-    # Claim finalization once: two recovery passes can observe the same
-    # terminal run, and without this claim both would append the same outbox
-    # rows. A duplicate event key would also re-send the answer.
-    claimed = await FeishuAgentReceipt.filter(id=receipt.id, status="submitted").update(
-        status="completed", error=None, updated_at=utcnow()
-    )
-    if not claimed:
-        await _clear_active_run(session, run)
-        return
-    assets: list = []
-    agent = await Agent.filter(id=run.agent_id).first()
-    if agent is not None:
-        from app.services.channel_artifacts import resolve_run_assets
+        error = "feishu_agent_channel_disabled"
+        deliveries = [
+            (
+                "final",
+                0,
+                t(error),
+                "text",
+                "unavailable",
+                None,
+            )
+        ]
+    else:
+        chunks = await _canonical_chunks(run)
+        assets: list = []
+        agent = await Agent.filter(id=run.agent_id).first()
+        if agent is not None:
+            from app.services.channel_artifacts import resolve_run_assets
 
-        assets = await resolve_run_assets(run, agent, recipient)
-    if not chunks and not assets:
-        # A completed run with no visible content still owes the user an
-        # explicit answer instead of an empty outbox.
-        await _reply_text(receipt, t("feishu_agent_no_output"), key="final")
-    for sequence, chunk in enumerate(chunks):
-        await _create_delivery(
-            receipt,
-            event_key="final",
-            sequence=sequence,
-            text=chunk,
-            kind="markdown",
+            assets = await resolve_run_assets(run, agent, recipient)
+        if not chunks and not assets:
+            chunks = _split_text_chunks(t("feishu_agent_no_output"))
+        deliveries.extend(
+            ("final", sequence, chunk, "markdown", "pending", None)
+            for sequence, chunk in enumerate(chunks)
         )
-    for sequence, asset in enumerate(assets):
-        await _create_delivery(
-            receipt,
-            event_key="final-asset",
-            sequence=sequence,
-            text=asset.display_filename,
-            kind="asset",
-            asset=asset,
+        deliveries.extend(
+            (
+                "final-asset",
+                sequence,
+                asset.display_filename,
+                "asset",
+                "pending",
+                asset,
+            )
+            for sequence, asset in enumerate(assets)
         )
-    await _clear_active_run(session, run)
+
+    async with in_transaction() as db:
+        claimed = (
+            await FeishuAgentReceipt.filter(id=receipt.id, status="submitted")
+            .using_db(db)
+            .update(status=status, error=error, updated_at=utcnow())
+        )
+        if not claimed:
+            return
+        for event_key, sequence, text, kind, delivery_status, asset in deliveries:
+            await _create_delivery(
+                receipt,
+                event_key=event_key,
+                sequence=sequence,
+                text=text,
+                kind=kind,
+                status=delivery_status,
+                error=error if delivery_status == "unavailable" else None,
+                asset=asset,
+                using_db=db,
+            )
+        await _clear_active_run(session, run, using_db=db)
 
 
 async def _delivery_authorized(receipt: FeishuAgentReceipt) -> bool:

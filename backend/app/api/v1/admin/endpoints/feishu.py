@@ -488,7 +488,11 @@ async def sync_contacts(
                     if FEISHU_COMPANY_DEPARTMENT_ID in selected_ids
                     else []
                 )
-                + [department.department_id for department in selected_departments]
+                + [
+                    department.department_id
+                    for department in selected_departments
+                    if department.department_id != FEISHU_COMPANY_DEPARTMENT_ID
+                ]
             )
         )
         members = await client.list_users(user_department_ids)

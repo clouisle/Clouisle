@@ -1,8 +1,8 @@
-"""Feishu event callback: signature, framing, challenge, and intake guards.
+"""Feishu event callback: SDK encryption, challenge, and intake guards.
 
 The callback is unauthenticated, so these tests pin the properties that make
 it safe: bounded bodies, constant-time signature verification before any
-runtime state is touched, length-framed decryption with app-id binding, and
+runtime state is touched, JSON decryption with header app-id binding, and
 acknowledgement of anything the runtime rejects.
 """
 
@@ -17,6 +17,9 @@ from uuid import uuid4
 import pytest
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from lark_oapi.core.model import RawRequest
+from lark_oapi.core.utils.decryptor import AESCipher
+from lark_oapi.event.dispatcher_handler import EventDispatcherHandler
 
 from app.api.v1.endpoints import feishu_agent
 from app.integrations.credentials import encrypt_secret
@@ -25,8 +28,6 @@ from app.integrations.registry import IntegrationCapability
 APP_ID = "cli_test_app"
 VERIFICATION_TOKEN = "feishu-verification-token"
 ENCRYPT_KEY = "kF2xY7pQ9rT4vW6zA1bC3dE5gH8jK0mN2sU4wX6yZ1a="
-AES_KEY = base64.b64decode(ENCRYPT_KEY)
-assert len(AES_KEY) == 32, len(AES_KEY)
 
 
 def _integration(**overrides):
@@ -78,7 +79,7 @@ def _request(body: bytes, **headers) -> SimpleNamespace:
     )
 
 
-def _sign(body: bytes, **headers) -> dict:
+def _sign(body: bytes, *, encrypt_key: str = ENCRYPT_KEY, **headers) -> dict:
     signed = {
         "X-Lark-Request-Timestamp": str(int(time.time())),
         "X-Lark-Request-Nonce": "nonce-1",
@@ -88,7 +89,7 @@ def _sign(body: bytes, **headers) -> dict:
         (
             signed["X-Lark-Request-Timestamp"]
             + signed["X-Lark-Request-Nonce"]
-            + ENCRYPT_KEY
+            + encrypt_key
         ).encode()
         + body
     ).hexdigest()
@@ -96,21 +97,26 @@ def _sign(body: bytes, **headers) -> dict:
     return signed
 
 
-def _encrypt(
-    payload: dict, *, app_id: str = APP_ID, prefix: bytes | None = None
+def _encrypt_plaintext(
+    plaintext: bytes,
+    *,
+    iv: bytes = b"\x33" * 16,
+    encrypt_key: str = ENCRYPT_KEY,
 ) -> str:
-    """Encrypt exactly the way Feishu does: random16 || len4 || JSON || app_id."""
-    body = json.dumps(payload).encode()
-    plaintext = (
-        (prefix if prefix is not None else b"\x11" * 16)
-        + len(body).to_bytes(4, "big")
-        + body
-        + app_id.encode()
-    )
+    """Use the installed Lark SDK's SHA256(key), prepended-IV wire format."""
+    key = hashlib.sha256(encrypt_key.encode()).digest()
     padder = padding.PKCS7(128).padder()
     padded = padder.update(plaintext) + padder.finalize()
-    encryptor = Cipher(algorithms.AES(AES_KEY), modes.CBC(AES_KEY[:16])).encryptor()
-    return base64.b64encode(encryptor.update(padded) + encryptor.finalize()).decode()
+    encryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).encryptor()
+    ciphertext = iv + encryptor.update(padded) + encryptor.finalize()
+    encrypted = base64.b64encode(ciphertext).decode()
+    assert AESCipher(encrypt_key).decrypt(ciphertext) == plaintext
+    return encrypted
+
+
+def _encrypt(payload: dict, *, encrypt_key: str = ENCRYPT_KEY) -> str:
+    """Feishu encrypts the JSON directly, without an inner binary frame."""
+    return _encrypt_plaintext(json.dumps(payload).encode(), encrypt_key=encrypt_key)
 
 
 def _success_payload() -> dict:
@@ -153,6 +159,34 @@ async def test_challenge_echoes_after_signature_verification(monkeypatch):
     response = await feishu_agent.feishu_event_callback(request)
 
     assert json.loads(response.body) == {"challenge": "abc123"}
+
+
+@pytest.mark.asyncio
+async def test_encrypted_challenge_matches_installed_sdk_dispatcher(monkeypatch):
+    _install(monkeypatch)
+    payload = {
+        "type": "url_verification",
+        "challenge": "sdk-challenge",
+        "token": VERIFICATION_TOKEN,
+    }
+    body = json.dumps({"encrypt": _encrypt(payload)}).encode()
+    headers = _sign(body)
+    sdk_request = RawRequest()
+    sdk_request.uri = "/feishu/callback"
+    sdk_request.headers = headers
+    sdk_request.body = body
+    handler = EventDispatcherHandler.builder(ENCRYPT_KEY, VERIFICATION_TOKEN).build()
+
+    sdk_response = handler.do(sdk_request)
+    assert sdk_response.status_code == 200
+    assert json.loads(sdk_response.content) == {"challenge": "sdk-challenge"}
+
+    response = await feishu_agent.feishu_event_callback(
+        SimpleNamespace(headers=headers, body=AsyncMock(return_value=body))
+    )
+
+    assert response.status_code == 200
+    assert json.loads(response.body) == json.loads(sdk_response.content)
 
 
 @pytest.mark.asyncio
@@ -297,30 +331,77 @@ async def test_encrypted_event_decrypts_and_queues_the_runtime(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_encrypted_payload_bound_to_another_app_is_rejected(monkeypatch):
+@pytest.mark.parametrize("field", ["app_id", "token"])
+async def test_encrypted_event_rejects_mismatched_header_before_runtime(
+    monkeypatch, field
+):
     _install(monkeypatch)
-    envelope = _event_payload()
-    body = json.dumps({"encrypt": _encrypt(envelope, app_id="cli_other")}).encode()
+    envelope = _event_payload(header={field: "wrong"})
+    body = json.dumps({"encrypt": _encrypt(envelope)}).encode()
     request = SimpleNamespace(headers=_sign(body), body=AsyncMock(return_value=body))
+    receive = AsyncMock()
+    monkeypatch.setattr(feishu_agent, "receive_message", receive)
 
     response = await feishu_agent.feishu_event_callback(request)
 
     assert response.status_code == 403
+    receive.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_decrypted_length_field_must_match_the_payload(monkeypatch):
+@pytest.mark.parametrize("token", [VERIFICATION_TOKEN, "wrong"])
+async def test_encrypted_challenge_checks_token(monkeypatch, token):
     _install(monkeypatch)
-    inner = json.dumps(_event_payload()).encode()
-    plaintext = (
-        b"\x22" * 16 + (len(inner) + 64).to_bytes(4, "big") + inner + APP_ID.encode()
+    body = json.dumps(
+        {"encrypt": _encrypt({"challenge": "abc123", "token": token})}
+    ).encode()
+    request = SimpleNamespace(headers=_sign(body), body=AsyncMock(return_value=body))
+
+    response = await feishu_agent.feishu_event_callback(request)
+
+    assert response.status_code == (200 if token == VERIFICATION_TOKEN else 403)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("guard", ["signature", "timestamp"])
+async def test_encrypted_event_rejects_invalid_request_authentication(
+    monkeypatch, guard
+):
+    _install(monkeypatch)
+    body = json.dumps({"encrypt": _encrypt(_event_payload())}).encode()
+    headers = _sign(
+        body,
+        **(
+            {"X-Lark-Request-Timestamp": str(int(time.time()) - 3600)}
+            if guard == "timestamp"
+            else {}
+        ),
     )
-    padder = padding.PKCS7(128).padder()
-    padded = padder.update(plaintext) + padder.finalize()
-    encryptor = Cipher(algorithms.AES(AES_KEY), modes.CBC(AES_KEY[:16])).encryptor()
-    encrypted = base64.b64encode(
-        encryptor.update(padded) + encryptor.finalize()
-    ).decode()
+    if guard == "signature":
+        headers["X-Lark-Signature"] = "0" * 64
+    receive = AsyncMock()
+    monkeypatch.setattr(feishu_agent, "receive_message", receive)
+
+    response = await feishu_agent.feishu_event_callback(
+        SimpleNamespace(headers=headers, body=AsyncMock(return_value=body))
+    )
+
+    assert response.status_code == 403
+    receive.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "encrypted",
+    [
+        "not base64!",
+        base64.b64encode(b"short").decode(),
+        base64.b64encode(b"\0" * 33).decode(),
+        base64.b64encode(b"\0" * 32).decode(),
+    ],
+)
+async def test_malformed_encrypted_payload_is_rejected(monkeypatch, encrypted):
+    _install(monkeypatch)
     body = json.dumps({"encrypt": encrypted}).encode()
     request = SimpleNamespace(headers=_sign(body), body=AsyncMock(return_value=body))
 
@@ -330,56 +411,108 @@ async def test_decrypted_length_field_must_match_the_payload(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_real_feishu_plaintext_layout_decrypts(monkeypatch):
-    """random16 || uint32_be(len) || JSON || app_id, with a non-zero prefix."""
+async def test_sdk_dispatcher_accepts_encrypted_event_json(monkeypatch):
+    """The real SDK parses the same decrypted JSON and delivers its message."""
     _install(monkeypatch)
     envelope = _event_payload()
-    body = json.dumps({"encrypt": _encrypt(envelope, prefix=bytes(range(16)))}).encode()
-    request = SimpleNamespace(headers=_sign(body), body=AsyncMock(return_value=body))
-    runtime = SimpleNamespace(accept_message=AsyncMock(return_value="receipt-9"))
-    task = MagicMock(delay=MagicMock())
-    monkeypatch.setitem(
-        __import__("sys").modules, "app.services.feishu_agent_runtime", runtime
+    body = json.dumps({"encrypt": _encrypt(envelope)}).encode()
+    headers = _sign(body)
+    sdk_request = RawRequest()
+    sdk_request.uri = "/feishu/callback"
+    sdk_request.headers = headers
+    sdk_request.body = body
+    sdk_events = []
+    handler = (
+        EventDispatcherHandler.builder(ENCRYPT_KEY, VERIFICATION_TOKEN)
+        .register_p2_im_message_receive_v1(sdk_events.append)
+        .build()
     )
-    monkeypatch.setitem(
-        __import__("sys").modules,
-        "app.tasks.feishu_agent",
-        SimpleNamespace(process_message_task=task),
+
+    sdk_response = handler.do(sdk_request)
+    assert sdk_response.status_code == 200
+    assert len(sdk_events) == 1
+    assert sdk_events[0].header.app_id == APP_ID
+    assert (
+        sdk_events[0].event.message.message_id
+        == envelope["event"]["message"]["message_id"]
+    )
+    receive = AsyncMock()
+    monkeypatch.setattr(feishu_agent, "receive_message", receive)
+
+    response = await feishu_agent.feishu_event_callback(
+        SimpleNamespace(headers=headers, body=AsyncMock(return_value=body))
     )
 
-    response = await feishu_agent.feishu_event_callback(request)
-
-    assert json.loads(response.body) == _success_payload()
-    task.delay.assert_called_once_with("receipt-9")
-    assert runtime.accept_message.await_args.args[0]["app_id"] == APP_ID
+    assert response.status_code == 200
+    receive.assert_awaited_once_with(envelope["event"], app_id=APP_ID)
 
 
-def test_encrypt_key_without_padding_still_decodes():
-    """Feishu issues a 43-character key with no trailing '='."""
+@pytest.mark.parametrize("plaintext", [b"[]", b"not JSON", b'"text"', b"\xff"])
+def test_decrypted_payload_must_be_a_json_object(plaintext):
+    encrypted = _encrypt_plaintext(plaintext)
+    with pytest.raises(ValueError):
+        feishu_agent._decrypt(encrypted, ENCRYPT_KEY)
+
+
+def test_legacy_unprefixed_iv_ciphertext_is_rejected():
+    """Do not retain the incorrect AES-key/derived-IV wire format."""
+    plaintext = b"\x11" * 16 + (2).to_bytes(4, "big") + b"{}" + APP_ID.encode()
+    key = base64.b64decode(ENCRYPT_KEY)
+    padder = padding.PKCS7(128).padder()
+    padded = padder.update(plaintext) + padder.finalize()
+    encryptor = Cipher(algorithms.AES(key), modes.CBC(key[:16])).encryptor()
+    legacy = base64.b64encode(encryptor.update(padded) + encryptor.finalize()).decode()
+
+    with pytest.raises(ValueError):
+        feishu_agent._decrypt(legacy, ENCRYPT_KEY)
+
+
+def test_sdk_rejects_binary_framing_after_decryption():
+    body = json.dumps(_event_payload()).encode()
+    framed = b"\x11" * 16 + len(body).to_bytes(4, "big") + body + APP_ID.encode()
+    encrypted = _encrypt_plaintext(framed)
+
+    with pytest.raises(ValueError):
+        json.loads(AESCipher(ENCRYPT_KEY).decrypt_str(encrypted))
+    with pytest.raises(ValueError):
+        feishu_agent._decrypt(encrypted, ENCRYPT_KEY)
+
+
+def test_encrypt_key_without_padding_is_hashed_as_given():
+    """Trailing '=' is part of the UTF-8 key, not optional base64 padding."""
     unpadded = ENCRYPT_KEY.rstrip("=")
     envelope = _event_payload()
-    body = json.dumps({"encrypt": _encrypt(envelope)}).encode()
+    encrypted = _encrypt(envelope, encrypt_key=unpadded)
+    body = json.dumps({"encrypt": encrypted}).encode()
 
     assert len(unpadded) == 43
     assert (
-        feishu_agent._decrypt(
-            json.loads(body)["encrypt"], unpadded, expected_app_id=APP_ID
-        )["header"]["app_id"]
+        feishu_agent._decrypt(json.loads(body)["encrypt"], unpadded)["header"]["app_id"]
         == APP_ID
     )
 
 
 @pytest.mark.asyncio
-async def test_encrypt_key_is_base64_decoded_not_hashed(monkeypatch):
+async def test_encrypt_key_is_hashed_as_utf8_by_sdk(monkeypatch):
     _install(monkeypatch)
+    monkeypatch.setattr(
+        feishu_agent,
+        "_agent_chat_secrets",
+        AsyncMock(return_value=("raw-encrypt-key", VERIFICATION_TOKEN)),
+    )
     envelope = _event_payload()
-    body = json.dumps({"encrypt": _encrypt(envelope)}).encode()
-    request = SimpleNamespace(headers=_sign(body), body=AsyncMock(return_value=body))
+    body = json.dumps(
+        {"encrypt": _encrypt(envelope, encrypt_key="raw-encrypt-key")}
+    ).encode()
+    request = SimpleNamespace(
+        headers=_sign(body, encrypt_key="raw-encrypt-key"),
+        body=AsyncMock(return_value=body),
+    )
     runtime = SimpleNamespace(accept_message=AsyncMock(return_value=None))
-    task = MagicMock(delay=MagicMock())
     monkeypatch.setitem(
         __import__("sys").modules, "app.services.feishu_agent_runtime", runtime
     )
+    task = MagicMock(delay=MagicMock())
     monkeypatch.setitem(
         __import__("sys").modules,
         "app.tasks.feishu_agent",
@@ -515,12 +648,13 @@ def test_signature_comparison_is_constant_time():
     )
 
 
-def test_encrypt_key_must_decode_to_32_bytes():
-    short_key = base64.b64encode(b"too-short").decode()
-    with pytest.raises(ValueError, match="32 bytes"):
-        feishu_agent._decrypt("AAAA", short_key, expected_app_id=APP_ID)
+def test_encrypt_key_must_be_accepted_as_utf8_sdk_key():
+    """The SDK hashes any Encrypt Key string rather than base64-decoding it."""
+    encrypted = _encrypt({}, encrypt_key="short-key")
+    decrypted = feishu_agent._decrypt(encrypted, "short-key")
+    assert decrypted == {}
 
 
-def test_non_base64_encrypt_key_is_rejected():
-    with pytest.raises(ValueError, match="not valid base64"):
-        feishu_agent._decrypt("AAAA", "not base64 at all!", expected_app_id=APP_ID)
+def test_non_base64_encrypt_key_is_supported_by_sdk():
+    encrypted = _encrypt({}, encrypt_key="not base64 at all!")
+    assert feishu_agent._decrypt(encrypted, "not base64 at all!") == {}

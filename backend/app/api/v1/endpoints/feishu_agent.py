@@ -27,8 +27,8 @@ import logging
 import time
 from typing import Any
 
-from cryptography.hazmat.primitives import padding
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from lark_oapi.core.utils.decryptor import AESCipher
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
@@ -48,8 +48,6 @@ MAX_BODY_BYTES = 64 * 1024
 # Callback timestamps are tolerated only while they are still fresh, which
 # stops a captured request from being replayed later.
 MAX_TIMESTAMP_SKEW_SECONDS = 300
-# The decrypted plaintext starts with 16 random bytes before the length field.
-RANDOM_PREFIX_BYTES = 16
 
 
 def _rejected(message: str, msg_key: str = "access_denied") -> JSONResponse:
@@ -110,58 +108,24 @@ def _verify_signature(
     return hmac.compare_digest(signature.lower(), expected)
 
 
-def _decrypt(
-    encrypted: str, encrypt_key: str, *, expected_app_id: str
-) -> dict[str, Any]:
-    """Decrypt a Feishu ``encrypt`` envelope.
+def _decrypt(encrypted: str, encrypt_key: str) -> dict[str, Any]:
+    """Decrypt Lark's IV-prefixed AES-CBC ciphertext into a JSON object.
 
-    The Encrypt Key is the raw 32-byte AES key, not a passphrase: it is the
-    base64 string Feishu issues (which may arrive without ``=`` padding) and
-    it is never hashed.  The CBC initialisation vector is the first 16 bytes
-    of that key; the ciphertext carries no prepended IV.
-
-    The decrypted plaintext is::
-
-        random(16) || uint32_be(json_len) || JSON || app_id
-
-    The 16-byte prefix is discarded, the declared length bounds the JSON, and
-    the trailing app id is compared, so a truncated or re-pointed payload is
-    refused instead of being parsed.
+    The SDK hashes the UTF-8 Encrypt Key with SHA-256. Its event dispatcher
+    parses the decrypted plaintext directly as JSON, without an inner frame.
+    The callback validates the JSON token and event header app id afterwards.
     """
-    try:
-        normalized = encrypt_key + "=" * (-len(encrypt_key) % 4)
-        aes_key = base64.b64decode(normalized, validate=True)
-    except (ValueError, binascii.Error) as exc:
-        raise ValueError("callback encrypt key is not valid base64") from exc
-    if len(aes_key) != 32:
-        raise ValueError("callback encrypt key must decode to 32 bytes")
     try:
         ciphertext = base64.b64decode(encrypted, validate=True)
     except (ValueError, binascii.Error) as exc:
         raise ValueError("callback payload is not valid base64") from exc
-    if not ciphertext or len(ciphertext) % 16 != 0:
+    if len(ciphertext) < 32 or len(ciphertext) % 16 != 0:
         raise ValueError("callback payload length is invalid")
-    decryptor = Cipher(algorithms.AES(aes_key), modes.CBC(aes_key[:16])).decryptor()
-    padded = decryptor.update(ciphertext) + decryptor.finalize()
-    unpadder = padding.PKCS7(128).unpadder()
     try:
-        plaintext = unpadder.update(padded) + unpadder.finalize()
+        plaintext = AESCipher(encrypt_key).decrypt(ciphertext)
     except ValueError as exc:
-        raise ValueError("callback payload padding is invalid") from exc
-    # random(16) || uint32_be(len) || JSON || app_id
-    if len(plaintext) < RANDOM_PREFIX_BYTES + 4:
-        raise ValueError("callback payload is truncated")
-    declared = int.from_bytes(
-        plaintext[RANDOM_PREFIX_BYTES : RANDOM_PREFIX_BYTES + 4], "big"
-    )
-    body_start = RANDOM_PREFIX_BYTES + 4
-    if declared <= 0 or body_start + declared + len(expected_app_id) > len(plaintext):
-        raise ValueError("callback payload length is invalid")
-    body = plaintext[body_start : body_start + declared]
-    app_id = plaintext[body_start + declared :].decode("utf-8", "replace").strip("\x00")
-    if not app_id or not hmac.compare_digest(app_id.encode(), expected_app_id.encode()):
-        raise ValueError("callback payload app id mismatch")
-    payload = _parse_json(body)
+        raise ValueError("callback payload decryption failed") from exc
+    payload = _parse_json(plaintext)
     if "encrypt" in payload:
         raise ValueError("callback payload is doubly encrypted")
     return payload
@@ -247,9 +211,7 @@ async def feishu_event_callback(request: Request):
         return _rejected("callback app id is not configured", "validation_error")
     if payload.get("encrypt"):
         try:
-            payload = _decrypt(
-                str(payload["encrypt"]), encrypt_key, expected_app_id=configured_app_id
-            )
+            payload = _decrypt(str(payload["encrypt"]), encrypt_key)
         except ValueError as exc:
             return _rejected(str(exc), "validation_error")
 
