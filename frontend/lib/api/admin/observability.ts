@@ -81,9 +81,54 @@ export interface TraceSpan {
   metadata: Record<string, unknown>
 }
 
+export interface ToolPayloadDetail {
+  tool_call_id: string
+  tool_name: string
+  display: string | null
+  model_input: string | null
+  display_bytes: number
+  model_bytes: number
+  model_sha256: string | null
+  renderer: string | null
+  eof: boolean | null
+  has_cursor: boolean
+  partial: boolean
+  error: string | null
+  recorded: boolean
+}
+
+export type TrajectoryPayloadState = 'recorded' | 'partial' | 'unrecorded'
+
+export interface TrajectoryEntry {
+  id: string
+  parent_id: string | null
+  kind: string
+  name: string
+  status: string
+  started_at: string | null
+  finished_at: string | null
+  duration_ms: number | null
+  model: string | null
+  token_usage: Record<string, number> | null
+  tool_call_ids: string[]
+  payload_state: TrajectoryPayloadState | string
+  preview: string | null
+}
+
+export interface TrajectoryEntryDetail {
+  id: string
+  kind: string
+  input: unknown
+  output: unknown
+  partial: boolean
+  recorded: boolean
+}
+
 export interface RunDetailResponse {
   run: RunSummary
   spans: TraceSpan[]
+  /** Ordered execution snapshots. Always present from current APIs; optional for older responses. */
+  trajectory?: TrajectoryEntry[]
   trace: { complete: boolean; expired: boolean; truncated: boolean; recorded_count: number }
   meta: ObservabilityMeta
 }
@@ -222,6 +267,10 @@ export const observabilityApi = {
     api.get<RunsResponse>(withParams('/admin/observability/runs', params)),
   getRun: (source: ObservabilitySource, runId: string): Promise<RunDetailResponse> =>
     api.get<RunDetailResponse>(`/admin/observability/runs/${source}/${encodeURIComponent(runId)}`),
+  getRunToolPayload: (source: ObservabilitySource, runId: string, toolCallId: string): Promise<ToolPayloadDetail> =>
+    api.get<ToolPayloadDetail>(`/admin/observability/runs/${source}/${encodeURIComponent(runId)}/tools/${encodeURIComponent(toolCallId)}`),
+  getTrajectoryEntry: (source: ObservabilitySource, runId: string, entryId: string): Promise<TrajectoryEntryDetail> =>
+    api.get<TrajectoryEntryDetail>(`/admin/observability/runs/${source}/${encodeURIComponent(runId)}/trajectory/${encodeURIComponent(entryId)}`),
   getDependencies: (params: { period?: ObservabilityPeriod; start_time?: string; end_time?: string; team_id?: string } = {}): Promise<DependenciesResponse> =>
     api.get<DependenciesResponse>(withParams('/admin/observability/dependencies', params)),
   getQueues: (): Promise<QueuesResponse> => api.get<QueuesResponse>('/admin/observability/queues'),

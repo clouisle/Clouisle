@@ -683,7 +683,7 @@ export default function PublicChatPage({
     }
 
     // Process images and files
-    let images: ChatImageContent[] | undefined = agent?.enable_attachments && selectedImageRefs.length > 0
+    const images: ChatImageContent[] | undefined = agent?.enable_attachments && selectedImageRefs.length > 0
       ? selectedImageRefs
       : undefined
     let fileUrls: ChatFileUrl[] | undefined
@@ -722,31 +722,28 @@ export default function PublicChatPage({
 
       try {
         setIsUploading(true)
-        if (agent.enable_attachments) {
-          const imageFiles = filesToProcess.filter(f => f.type.startsWith('image/') && !f.isDocument)
-          if (imageFiles.length > 0) {
-            const uploaded = await uploadFiles(imageFiles, 'images')
-            images = [
-              ...(images || []),
-              ...uploaded.map(({ result }) => ({
-                asset_id: result.asset_id,
-                type: 'image_url' as const,
-                url: result.url,
-              })),
-            ]
-          }
-
-          const documentFiles = filesToProcess.filter(f => f.isDocument)
-          if (documentFiles.length > 0) {
-            const uploaded = await uploadFiles(documentFiles, 'documents')
-            fileUrls = uploaded.map(({ file, result }) => ({
-              asset_id: result.asset_id,
-              filename: file.name,
-              url: result.url,
-              size: file.size,
-              mime_type: file.type,
-            }))
-          }
+        const nativeFiles = filesToProcess.filter(f => !f.isDocument);
+        const documentFiles = filesToProcess.filter(f => f.isDocument);
+        if (nativeFiles.length > 0) {
+          const uploaded = await uploadFiles(nativeFiles, 'files')
+          fileUrls = uploaded.map(({ file, result }) => ({
+            asset_id: result.asset_id,
+            filename: file.name,
+            url: result.url,
+            size: file.size,
+            mime_type: file.type,
+          }))
+        }
+        if (documentFiles.length > 0) {
+          if (!agent.enable_attachments) throw new Error('Document attachments are disabled')
+          const uploaded = await uploadFiles(documentFiles, 'documents')
+          fileUrls = [...(fileUrls || []), ...uploaded.map(({ file, result }) => ({
+            asset_id: result.asset_id,
+            filename: file.name,
+            url: result.url,
+            size: file.size,
+            mime_type: file.type,
+          }))]
         }
       } catch (err) {
         console.error('Failed to upload files:', err)
@@ -931,9 +928,11 @@ export default function PublicChatPage({
         disabled={runStatus === 'waiting'}
         isLoading={chatLoading}
         isStreaming={isStreaming}
-        allowAttachments={agent.enable_attachments}
+        allowAttachments={agent.enable_attachments && (agent.input_modalities ?? []).some((modality) => ['image', 'audio', 'video'].includes(modality))}
         enableFileUpload={agent.enable_attachments}
+        inputModalities={agent.input_modalities}
         fileUploadConfig={agent.attachment_config}
+        maxFiles={agent.attachment_config?.max_files}
         files={files}
         onFilesChange={setFiles}
         isUploading={isUploading}
@@ -1241,6 +1240,7 @@ export default function PublicChatPage({
               hideToolCalls={agent.hide_tool_calls}
               hideMessageActions={agent.hide_message_actions}
               hideReasoning={agent.hide_reasoning}
+              hideCitations={!agent.enable_citations}
               hideArtifactList={agent.hide_artifact_list}
               conversationId={conversationId}
               headerInset={showHeader}

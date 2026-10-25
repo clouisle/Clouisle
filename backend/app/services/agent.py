@@ -6,12 +6,14 @@ Provides chat functionality for agents with tools and knowledge bases.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import AsyncIterator
 from typing import Any, TYPE_CHECKING, cast
 
 from app.core.i18n import t
 from app.llm import model_manager
+from app.llm.capabilities import get_effective_input_capabilities
 from app.services.error_messages import resolve_user_visible_error
 from app.llm.types import (
     ContentPart,
@@ -26,6 +28,7 @@ from app.models.agent import Agent, AgentKnowledgeBase, RAGMode
 from app.models.tool import Tool
 from app.schemas.response import BusinessError
 from app.services.system_prompt import WORKFLOW_MODE, build_system_prompt
+from app.utils.tool_output import get_tool_execution_payloads
 
 if TYPE_CHECKING:
     from app.llm.types.chat import ToolCall
@@ -58,6 +61,14 @@ class AgentService:
         workflow_run_id: Any = None,
     ) -> dict[str, Any]:
         """Execute a non-streaming chat and return normalized trace data."""
+        images, files = await self._bind_scoped_attachments(
+            agent=agent,
+            images=images,
+            files=files,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
+        )
         messages = await self._build_messages(
             agent=agent,
             message=message,
@@ -66,6 +77,9 @@ class AgentService:
             user_locale=user_locale,
             images=images,
             files=files,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
         )
         team_id = str(agent.team_id) if agent.team_id else None
         model_id = await self._resolve_model_id(agent)
@@ -140,21 +154,26 @@ class AgentService:
                     tool_kwargs["conversation_id"] = conversation_id
                 if workflow_run_id is not None:
                     tool_kwargs["workflow_run_id"] = workflow_run_id
+                if user_id is not None:
+                    tool_kwargs["user_id"] = user_id
                 tool_result = await self._execute_tool(**tool_kwargs)
+                display_result, model_result = get_tool_execution_payloads(
+                    tool_result, tool_call.function.name
+                )
                 artifacts.extend(self._extract_artifacts(tool_result))
                 dialogue.append(
                     {
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "tool_name": tool_call.function.name,
-                        "content": str(tool_result),
+                        "content": display_result,
                         "iteration": current_turn,
                     }
                 )
                 messages.append(
                     Message(
                         role=MessageRole.TOOL,
-                        content=str(tool_result),
+                        content=model_result,
                         tool_call_id=tool_call.id,
                     )
                 )
@@ -181,6 +200,14 @@ class AgentService:
         workflow_run_id: Any = None,
     ) -> AsyncIterator[str | dict]:
         """Execute a streaming chat and yield normalized trace events."""
+        images, files = await self._bind_scoped_attachments(
+            agent=agent,
+            images=images,
+            files=files,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
+        )
         messages = await self._build_messages(
             agent=agent,
             message=message,
@@ -189,6 +216,9 @@ class AgentService:
             user_locale=user_locale,
             images=images,
             files=files,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
         )
         team_id = str(agent.team_id) if agent.team_id else None
         model_id = await self._resolve_model_id(agent)
@@ -263,21 +293,26 @@ class AgentService:
                         tool_kwargs["conversation_id"] = conversation_id
                     if workflow_run_id is not None:
                         tool_kwargs["workflow_run_id"] = workflow_run_id
+                    if user_id is not None:
+                        tool_kwargs["user_id"] = user_id
                     tool_result = await self._execute_tool(**tool_kwargs)
+                    display_result, model_result = get_tool_execution_payloads(
+                        tool_result, tool_call.function.name
+                    )
                     artifacts.extend(self._extract_artifacts(tool_result))
                     dialogue.append(
                         {
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "tool_name": tool_call.function.name,
-                            "content": str(tool_result),
+                            "content": display_result,
                             "iteration": current_turn,
                         }
                     )
                     messages.append(
                         Message(
                             role=MessageRole.TOOL,
-                            content=str(tool_result),
+                            content=model_result,
                             tool_call_id=tool_call.id,
                         )
                     )
@@ -312,6 +347,9 @@ class AgentService:
         user_locale: str | None = None,
         images: list[Any] | None = None,
         files: list[Any] | None = None,
+        user_id: str | None = None,
+        conversation_id: Any = None,
+        workflow_run_id: Any = None,
     ) -> list[Message]:
         """Build system, history, and current multimodal user messages."""
         messages: list[Message] = []
@@ -350,14 +388,53 @@ class AgentService:
                         ),
                     )
                 )
-        file_content = await self._parse_workflow_files(agent, files)
-        if image_parts or file_content:
+        if (
+            image_parts
+            and getattr(agent, "enable_attachments", False)
+            and (conversation_id is not None or workflow_run_id is not None)
+        ):
+            from uuid import UUID
+
+            from app.models.asset import AssetScopeType
+            from app.models.user import User
+            from app.services.asset_view import resolve_view_content
+
+            model_id = await self._resolve_model_id(agent)
+            if agent.team_id:
+                model_config, _team_model = await model_manager.resolve_team_chat_model(
+                    str(agent.team_id), model_id=model_id
+                )
+            else:
+                model_config = await model_manager._get_model_config(model_id)
+            input_capabilities = get_effective_input_capabilities(model_config)
+            user = await User.get_or_none(id=user_id) if user_id else None
+            scope_type = (
+                AssetScopeType.CONVERSATION
+                if conversation_id is not None
+                else AssetScopeType.WORKFLOW_RUN
+            )
+            scope_id = UUID(
+                str(conversation_id if conversation_id is not None else workflow_run_id)
+            )
+            for index, image_part in enumerate(image_parts):
+                _asset, part, _marker = await resolve_view_content(
+                    image_part.image.asset_ref,
+                    scope_type=scope_type,
+                    scope_id=scope_id,
+                    user=user,
+                    model_config=model_config,
+                    agent=agent,
+                    input_capabilities=input_capabilities,
+                )
+                image_parts[index] = part
+        documents = self._describe_workflow_files(agent, files)
+        if image_parts or documents:
             parts = [ContentPart(type=ContentType.TEXT, text=message), *image_parts]
-            if file_content:
+            if documents:
                 parts.append(
                     ContentPart(
                         type=ContentType.TEXT,
-                        text=f"<uploaded_files>\n{file_content}\n</uploaded_files>",
+                        text=json.dumps({"documents": documents}, ensure_ascii=False),
                     )
                 )
             user_content: str | list[ContentPart] = parts
@@ -377,25 +454,208 @@ class AgentService:
         return messages
 
     @staticmethod
-    async def _parse_workflow_files(agent: Agent, files: list[Any] | None) -> str:
+    def _describe_workflow_files(
+        agent: Agent, files: list[Any] | None
+    ) -> list[dict[str, Any]]:
+        """Return attachment references, never inlined extracted text."""
         if not files or not agent.enable_attachments:
-            return ""
-        from app.llm.tools.builtin.file_parser import parse_files
-
-        urls = []
-        for item in files:
-            if isinstance(item, dict) and item.get("url"):
-                urls.append(str(item["url"]))
-            elif item:
-                urls.append(str(item))
-        if not urls:
-            return ""
-        config = agent.attachment_config or {}
-        return await parse_files(
-            urls,
-            max_content_length=int(config.get("max_content_length", 100000)),
-            truncate_strategy=str(config.get("truncate_strategy", "end")),
+            return []
+        from app.api.v1.endpoints.chat_helpers.asset_tools import (
+            describe_attachment_references,
         )
+
+        return describe_attachment_references(files)
+
+    async def _bind_scoped_attachments(
+        self,
+        *,
+        agent: Agent,
+        images: list[Any] | None,
+        files: list[Any] | None,
+        user_id: str | None,
+        conversation_id: Any = None,
+        workflow_run_id: Any = None,
+    ) -> tuple[list[Any] | None, list[Any] | None]:
+        """Bind submitted attachment URLs/ids to refs in the execution scope."""
+        if not getattr(agent, "enable_attachments", False):
+            return images, files
+        if not images and not files:
+            return images, files
+        from uuid import UUID
+
+        from app.models.asset import AssetScopeType
+        from app.models.user import User
+        from app.schemas.response import BusinessError, ResponseCode
+        from app.services.asset import asset_service
+        from app.services.asset_access import (
+            authorize_asset_for_scope,
+            authorize_asset_scope,
+            resolve_authorized_asset_ref,
+        )
+
+        if conversation_id is not None:
+            scope_type = AssetScopeType.CONVERSATION
+            if user_id is None:
+                raise BusinessError(
+                    code=ResponseCode.PERMISSION_DENIED,
+                    msg_key="access_denied",
+                    status_code=403,
+                )
+            scope_id = UUID(str(conversation_id))
+        elif workflow_run_id is not None:
+            scope_type = AssetScopeType.WORKFLOW_RUN
+            scope_id = UUID(str(workflow_run_id))
+        else:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR, msg_key="validation_error"
+            )
+
+        user = await User.get_or_none(id=user_id) if user_id else None
+        expected_team_id = UUID(str(agent.team_id)) if agent.team_id else None
+        # Authorize the conversation/run before any download or storage write.
+        team_id = await authorize_asset_scope(
+            scope_type=scope_type,
+            scope_id=scope_id,
+            user=user,
+            expected_team_id=expected_team_id,
+        )
+
+        def attachment_url(item: Any) -> str | None:
+            if isinstance(item, dict):
+                nested = item.get("image_url")
+                return item.get("url") or (
+                    nested.get("url") if isinstance(nested, dict) else None
+                )
+            if isinstance(item, str):
+                return item
+            return getattr(item, "url", None)
+
+        async def resolve_asset(item: Any) -> tuple[Any, str | None]:
+            if isinstance(item, dict):
+                ref = item.get("asset_ref")
+                asset_id = item.get("asset_id")
+            elif isinstance(item, str):
+                ref = None
+                asset_id = None
+            else:
+                ref = getattr(item, "asset_ref", None)
+                asset_id = getattr(item, "asset_id", None)
+            if ref:
+                return (
+                    await resolve_authorized_asset_ref(
+                        ref,
+                        scope_type=scope_type,
+                        scope_id=scope_id,
+                        user=user,
+                        expected_team_id=team_id,
+                    ),
+                    ref,
+                )
+            if asset_id:
+                try:
+                    asset_uuid = UUID(str(asset_id))
+                except (TypeError, ValueError) as exc:
+                    raise BusinessError(
+                        code=ResponseCode.VALIDATION_ERROR,
+                        msg_key="validation_error",
+                    ) from exc
+                return (
+                    await authorize_asset_for_scope(
+                        asset_uuid,
+                        scope_type=scope_type,
+                        scope_id=scope_id,
+                        user=user,
+                        expected_team_id=team_id,
+                    ),
+                    None,
+                )
+            url = attachment_url(item)
+            if not url:
+                raise BusinessError(
+                    code=ResponseCode.VALIDATION_ERROR, msg_key="validation_error"
+                )
+            from app.services.asset_url_import import (
+                InternalDocument,
+                load_url_document,
+                persist_scoped_document,
+            )
+
+            config = getattr(agent, "attachment_config", None) or {}
+            max_bytes = min(
+                max(int(config.get("max_file_size") or 10 * 1024 * 1024), 1),
+                50 * 1024 * 1024,
+            )
+            document = await load_url_document(
+                url,
+                scope_type=scope_type,
+                scope_id=scope_id,
+                user=user,
+                expected_team_id=team_id,
+                max_bytes=max_bytes,
+            )
+            if isinstance(document, InternalDocument):
+                return document.asset, document.ref
+            scoped = await persist_scoped_document(
+                document.content,
+                filename=document.filename,
+                content_type=document.content_type,
+                scope_type=scope_type,
+                scope_id=scope_id,
+                user=user,
+                expected_team_id=team_id,
+                provenance={
+                    "origin": "external_url",
+                    "url": None if url.startswith("data:") else url,
+                    "final_url": None
+                    if document.final_url.startswith("data:")
+                    else document.final_url,
+                },
+            )
+            return scoped.asset, scoped.ref
+
+        async def bind_items(items: list[Any] | None) -> list[Any] | None:
+            from urllib.parse import quote
+
+            if not items:
+                return items
+            bound: list[Any] = []
+            for item in items:
+                if item is None or item == "":
+                    continue
+                asset, existing_ref = await resolve_asset(item)
+                if asset is None:
+                    raise BusinessError(
+                        code=ResponseCode.VALIDATION_ERROR,
+                        msg_key="validation_error",
+                    )
+                if existing_ref is None:
+                    existing_ref = (
+                        await asset_service.get_or_create_ref(
+                            scope_type=scope_type,
+                            scope_id=scope_id,
+                            asset=asset,
+                        )
+                    ).ref
+                data = dict(item) if isinstance(item, dict) else {}
+                data.update(
+                    {
+                        "asset_ref": existing_ref,
+                        "asset_id": str(asset.id),
+                        "url": f"/api/v1/upload/files/{quote(asset.storage_key, safe='/')}",
+                    }
+                )
+                if not (asset.content_type or "").lower().startswith("image/"):
+                    data.update(
+                        {
+                            "filename": asset.display_filename,
+                            "mime_type": asset.content_type,
+                            "size": asset.size,
+                        }
+                    )
+                bound.append(data)
+            return bound
+
+        return await bind_items(images), await bind_items(files)
 
     @staticmethod
     async def _resolve_model_id(agent: Agent) -> str | None:
@@ -498,6 +758,19 @@ class AgentService:
                         "Failed to get MCP tools for agent from %s: %s", tool_id, e
                     )
 
+        from app.api.v1.endpoints.chat_helpers.asset_tools import (
+            asset_tool_names_for_agent,
+            build_asset_tools,
+        )
+
+        asset_tool_names = asset_tool_names_for_agent(agent)
+        if asset_tool_names:
+            tools.extend(
+                ToolDefinition.model_validate(schema)
+                for schema in build_asset_tools()
+                if schema["function"]["name"] in asset_tool_names
+            )
+
         if agent.enable_image_generation:
             media_tool = self._get_builtin_tool("generate_image")
             if media_tool:
@@ -547,6 +820,7 @@ class AgentService:
         tool_call: ToolCall,
         conversation_id: Any = None,
         workflow_run_id: Any = None,
+        user_id: str | None = None,
     ) -> Any:
         """Execute a tool call and return the result."""
         from app.llm.tools import tool_registry
@@ -566,6 +840,22 @@ class AgentService:
                 f"Failed to parse tool arguments: {tool_call.function.arguments}"
             )
             return {"error": t("invalid_tool_arguments")}
+        from app.api.v1.endpoints.chat_helpers.asset_tools import ASSET_TOOL_NAMES
+
+        if tool_name in ASSET_TOOL_NAMES:
+            from app.api.v1.endpoints.chat_tools import execute_tool_call
+            from app.models.user import User
+
+            user = await User.get_or_none(id=user_id) if user_id else None
+            asset_kwargs: dict[str, Any] = {
+                "agent": agent,
+                "conversation_id": conversation_id,
+                "workflow_run_id": workflow_run_id,
+            }
+            if user is not None:
+                asset_kwargs["user"] = user
+            return await execute_tool_call(tool_name, arguments, **asset_kwargs)
+
         if tool_name.startswith("mcp_"):
             from app.llm.tools.mcp_client import execute_mcp_tool
 
@@ -624,7 +914,7 @@ class AgentService:
                     config=skill_config,
                     tenant_id=str(agent.team_id) if agent.team_id else None,
                 )
-                return result.to_dict()
+                return result.to_chat_payload()
             except Exception as e:
                 logger.exception("Skill execution error: %s", e)
                 return {"error": resolve_user_visible_error(str(e))}
@@ -703,11 +993,15 @@ class AgentService:
 
         # Execute the tool
         try:
+            from app.models.user import User
+
+            user = await User.get_or_none(id=user_id) if user_id else None
             result = await tool_registry.execute(
                 name=tool_name,
                 arguments=arguments,
                 credentials=credentials,
                 agent=agent,
+                user=user,
                 team_id=str(agent.team_id) if agent.team_id else None,
                 **extra_kwargs,
                 **scope_context,

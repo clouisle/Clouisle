@@ -18,6 +18,8 @@ import { apiKeysApi, type APIKey } from '@/lib/api'
 import { RoutePermissionGuard } from '@/components/auth/permission-guard'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { formatDateTime } from '@/lib/utils'
+import { useDebounce } from '@/hooks/use-debounce'
+import { useInfiniteScroll } from '@/hooks/use-infinite-scroll'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -32,6 +34,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { APIKeyDialog } from './_components/api-key-dialog'
 import { ShowKeyDialog } from './_components/show-key-dialog'
 import { DeleteAPIKeyDialog } from './_components/delete-api-key-dialog'
+
+const PAGE_SIZE = 20
+
 function APIKeysContent() {
   const t = useTranslations('apiKeys')
   const commonT = useTranslations('common')
@@ -40,8 +45,17 @@ function APIKeysContent() {
 
   // 数据状态
   const [apiKeys, setApiKeys] = React.useState<APIKey[]>([])
-  const [isLoading, setIsLoading] = React.useState(true)
+  const [page, setPage] = React.useState(1)
+  const [hasMore, setHasMore] = React.useState(false)
+  const [isInitialLoading, setIsInitialLoading] = React.useState(true)
+  const [isLoadingMore, setIsLoadingMore] = React.useState(false)
+  const [loadError, setLoadError] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
+  const debouncedSearch = useDebounce(searchQuery.trim(), 300)
+  const requestIdRef = React.useRef(0)
+  const hasLoadedOnceRef = React.useRef(false)
+  const inFlightRef = React.useRef(false)
+  const failedRequestRef = React.useRef<{ page: number; append: boolean } | null>(null)
 
   // Dialog 状态
   const [keyDialogOpen, setKeyDialogOpen] = React.useState(false)
@@ -51,35 +65,85 @@ function APIKeysContent() {
   const [newAPIKey, setNewAPIKey] = React.useState<string | null>(null)
 
   // 加载 API Key 列表
-  const loadAPIKeys = React.useCallback(async () => {
-    setIsLoading(true)
-    try {
-      const data = await apiKeysApi.getAPIKeys({ pageSize: 100 })
-      setApiKeys(data.items)
-    } catch {
-      // 错误已由 API 客户端处理
-    } finally {
-      setIsLoading(false)
+  const loadPage = React.useCallback(async (pageToLoad: number, append: boolean) => {
+    if (append && inFlightRef.current) return
+
+    const requestId = ++requestIdRef.current
+    inFlightRef.current = true
+    failedRequestRef.current = null
+    setLoadError(false)
+    if (append) {
+      setIsLoadingMore(true)
+    } else {
+      setIsInitialLoading(true)
+      setIsLoadingMore(false)
+      setHasMore(false)
     }
-  }, [])
 
-  React.useEffect(() => {
-    loadAPIKeys()
-  }, [loadAPIKeys])
+    try {
+      const data = await apiKeysApi.getAPIKeys({
+        page: pageToLoad,
+        pageSize: PAGE_SIZE,
+        search: debouncedSearch || undefined,
+      })
+      if (requestId !== requestIdRef.current) return
 
-  // 筛选
-  const filteredKeys = React.useMemo(() => {
-    return apiKeys.filter(key => {
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase()
-        if (!key.name.toLowerCase().includes(query) &&
-            !key.key_prefix.toLowerCase().includes(query)) {
-          return false
+      setApiKeys((previous) => {
+        if (!append) return data.items
+        const merged = [...previous]
+        const seen = new Set(previous.map((key) => key.id))
+        for (const key of data.items) {
+          if (seen.has(key.id)) continue
+          seen.add(key.id)
+          merged.push(key)
+        }
+        return merged
+      })
+      setPage(pageToLoad)
+      setHasMore(pageToLoad * data.page_size < data.total)
+    } catch {
+      if (requestId !== requestIdRef.current) return
+      // 错误已由 API 客户端处理
+      failedRequestRef.current = { page: pageToLoad, append }
+      setLoadError(true)
+      setHasMore(false)
+      if (!append) setApiKeys([])
+    } finally {
+      if (requestId === requestIdRef.current) {
+        inFlightRef.current = false
+        if (append) {
+          setIsLoadingMore(false)
+        } else {
+          hasLoadedOnceRef.current = true
+          setIsInitialLoading(false)
         }
       }
-      return true
-    })
-  }, [apiKeys, searchQuery])
+    }
+  }, [debouncedSearch])
+
+  React.useEffect(() => {
+    void loadPage(1, false)
+    return () => {
+      requestIdRef.current += 1
+    }
+  }, [loadPage])
+
+  const loadMore = React.useCallback(() => {
+    if (inFlightRef.current || loadError || isLoadingMore || isInitialLoading || !hasMore) return
+    void loadPage(page + 1, true)
+  }, [hasMore, isInitialLoading, isLoadingMore, loadError, loadPage, page])
+
+  const sentinelRef = useInfiniteScroll({
+    hasMore: hasMore && !loadError,
+    loading: isInitialLoading || isLoadingMore,
+    onLoadMore: loadMore,
+  })
+
+  const handleRetry = () => {
+    const failed = failedRequestRef.current
+    if (inFlightRef.current || !failed) return
+    void loadPage(failed.page, failed.append)
+  }
 
   // 打开创建 Dialog
   const handleCreate = () => {
@@ -109,7 +173,7 @@ function APIKeysContent() {
         await apiKeysApi.activateAPIKey(apiKey.id)
         toast.success(t('keyActivated'))
       }
-      loadAPIKeys()
+      void loadPage(1, false)
     } catch {
       // 错误已由 API 客户端处理
     }
@@ -117,7 +181,7 @@ function APIKeysContent() {
 
   // Dialog 成功回调
   const handleDialogSuccess = (key?: string) => {
-    loadAPIKeys()
+    void loadPage(1, false)
     if (key) {
       setNewAPIKey(key)
       setShowKeyDialogOpen(true)
@@ -140,7 +204,7 @@ function APIKeysContent() {
 
 
   // Loading state
-  if (isLoading) {
+  if (isInitialLoading && !hasLoadedOnceRef.current) {
     return (
       <div className="py-6 px-8 h-full overflow-y-auto" data-testid="api-keys-page">
         <div className="flex items-center justify-between mb-6">
@@ -186,7 +250,27 @@ function APIKeysContent() {
         />
       </div>
 
-      {apiKeys.length === 0 ? (
+      {loadError && (
+        <div className="flex flex-col items-center gap-2 py-4 text-sm text-muted-foreground">
+          <p>{commonT('loadFailed')}</p>
+          <Button variant="outline" size="sm" onClick={handleRetry}>
+            {commonT('retry')}
+          </Button>
+        </div>
+      )}
+
+      {!loadError && apiKeys.length === 0 && searchQuery && (
+        <div className="text-center py-12 text-muted-foreground">
+          <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
+          <p>{t('noKeysFound')}</p>
+          <Button variant="outline" className="mt-4" onClick={() => setSearchQuery('')}>
+            <X className="mr-2 h-4 w-4" />
+            {commonT('clearSearch')}
+          </Button>
+        </div>
+      )}
+
+      {!loadError && apiKeys.length === 0 && !searchQuery && (
         <div className="text-center py-12 text-muted-foreground">
           <Key className="h-12 w-12 mx-auto mb-4 opacity-50" />
           <p>{t('noKeys')}</p>
@@ -198,18 +282,11 @@ function APIKeysContent() {
             </Button>
           </PermissionGuard>
         </div>
-      ) : filteredKeys.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
-          <p>{t('noKeysFound')}</p>
-          <Button variant="outline" className="mt-4" onClick={() => setSearchQuery('')}>
-            <X className="mr-2 h-4 w-4" />
-            {commonT('clearSearch')}
-          </Button>
-        </div>
-      ) : (
+      )}
+
+      {apiKeys.length > 0 && (
         <div className="space-y-2">
-          {filteredKeys.map((apiKey) => {
+          {apiKeys.map((apiKey) => {
             const now = new Date()
             const isExpired = apiKey.expires_at && new Date(apiKey.expires_at) < now
 
@@ -314,6 +391,14 @@ function APIKeysContent() {
           })}
         </div>
       )}
+
+      {isLoadingMore && (
+        <div className="py-4 text-center text-sm text-muted-foreground">
+          {commonT('loadingMore')}
+        </div>
+      )}
+
+      <div ref={sentinelRef} aria-hidden="true" className="h-px" />
 
       {/* 创建/编辑 Dialog */}
       <APIKeyDialog

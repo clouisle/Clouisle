@@ -131,6 +131,9 @@ describe("Tool", () => {
   });
 
   it("surfaces missing Tool context to an error boundary", () => {
+    // The thrown context error is the assertion target; React logs it by design.
+    const originalError = console.error;
+    console.error = mock(() => {});
     const container = render(
       <ErrorBoundary>
         <ToolHeader type="tool-weather" state="output-error" />
@@ -138,5 +141,6 @@ describe("Tool", () => {
     );
 
     expect(container.querySelector('[role="alert"]')?.textContent).toBe("Tool components must be used within Tool");
+    console.error = originalError;
   });
 });

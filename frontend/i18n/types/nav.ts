@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-07T17:03:38.842Z
+// GENERATED — 2026-10-24T18:18:06.005Z
 // Source: i18n/en/nav.json
 export type NavMessages = {
   nav: {
@@ -30,5 +30,6 @@ export type NavMessages = {
     auditLogs: string
     observability: string
     memories: string
+    deliveries: string
   }
 }

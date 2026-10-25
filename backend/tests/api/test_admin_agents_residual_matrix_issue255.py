@@ -75,6 +75,7 @@ def _agent(**overrides):
         "hide_tool_calls": False,
         "hide_message_actions": False,
         "hide_reasoning": False,
+        "enable_citations": False,
         "tools_config": [],
         "enable_attachments": False,
         "enable_user_input_request": False,
@@ -227,6 +228,7 @@ async def test_update_agent_applies_optional_fields_and_replaces_knowledge_bases
         hide_tool_calls=True,
         hide_message_actions=False,
         hide_reasoning=False,
+        enable_citations=False,
         opening_message="Hello",
         suggested_questions=["Why?"],
         visibility="private",
@@ -289,7 +291,7 @@ async def test_update_agent_applies_optional_fields_and_replaces_knowledge_bases
     assert item.embed_config == {"theme": "dark"}
     item.save.assert_awaited_once()
     create_kb.assert_awaited_once()
-    assert len(audit.await_args.kwargs["metadata"]["fields_updated"]) == 28
+    assert len(audit.await_args.kwargs["metadata"]["fields_updated"]) == 29
     assert audit.await_args.kwargs["changes"]["before"]["knowledge_bases"] == []
     assert audit.await_args.kwargs["changes"]["after"]["knowledge_bases"] == [
         {

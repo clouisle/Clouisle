@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { FeishuDocumentSource, isFeishuManaged } from '@/components/knowledge-bases/feishu-document-source'
 import { useLocale, useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -142,6 +143,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
       setIsLoading(false)
     }
   }, [knowledgeBaseId, documentId, router])
+  const canUpdateDoc = !isFeishuManaged(document)
 
   const loadOriginalFile = React.useCallback(() => {
     return adminKnowledgeBasesApi.getDocumentFile(knowledgeBaseId, documentId)
@@ -547,6 +549,8 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                 <TooltipContent>{document.name}</TooltipContent>
               </Tooltip>
             </div>
+            <FeishuDocumentSource document={document} />
+            {isFeishuManaged(document) && <p className="mt-1 text-xs text-muted-foreground">{t('feishuReadOnly')}</p>}
             <p className="text-sm text-muted-foreground truncate mt-0.5">
               {knowledgeBase.name} · {formatSize(document.file_size || 0)}
               {isCompleted && ` · ${document.chunk_count} ${t('chunks')}`}
@@ -567,13 +571,14 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
               {t('previewOriginal')}
             </Button>
           )}
-          {(isCompleted || isFailed) && (
+          {canUpdateDoc && (isCompleted || isFailed) && (
             <Button variant="outline" size="sm" onClick={handleReprocess}>
               <RefreshCw className="h-4 w-4 mr-2" />
               {t('reprocess')}
             </Button>
           )}
           <Button
+            disabled={!canUpdateDoc}
             variant="ghost"
             size="icon"
             className="text-destructive hover:text-destructive"
@@ -697,7 +702,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                     </p>
                   )}
                 </div>
-                <Button variant="outline" size="sm" onClick={handleRetryFailedChunks}>
+                <Button variant="outline" size="sm" onClick={handleRetryFailedChunks} disabled={!canUpdateDoc}>
                   <RotateCcw className="h-4 w-4 mr-2" />
                   {t('retryFailedChunks')}
                 </Button>
@@ -715,7 +720,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                 <div className="flex flex-col items-center justify-center h-full text-center p-8">
                   <FileText className="h-12 w-12 text-muted-foreground mb-4" />
                   <h3 className="text-lg font-medium mb-2">{t('noChunks')}</h3>
-                  {isCompleted && (
+                  {isCompleted && canUpdateDoc && (
                     <Button variant="outline" onClick={() => addNewChunk(-1)} disabled={isSaving}>
                       <Plus className="h-4 w-4 mr-2" />
                       {t('addFirstChunk')}
@@ -755,7 +760,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                             data-chunk-editor={chunk.id}
                             className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
                           >
-                            {chunk.status === 'failed' && !chunk.isEditing && (
+                            {canUpdateDoc && chunk.status === 'failed' && !chunk.isEditing && (
                               <Tooltip>
                                 <TooltipTrigger
                                   render={
@@ -814,7 +819,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                               </>
                             ) : (
                               <>
-                                {isCompleted && (
+                                {isCompleted && canUpdateDoc && (
                                   <Tooltip>
                                     <TooltipTrigger
                                       render={
@@ -832,7 +837,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                                     <TooltipContent>{t('insertChunkAfter')}</TooltipContent>
                                   </Tooltip>
                                 )}
-                                {isCompleted && (
+                                {isCompleted && canUpdateDoc && (
                                   <Tooltip>
                                     <TooltipTrigger
                                       render={
@@ -876,11 +881,11 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                             />
                           ) : (
                             <div
-                              role="button"
-                              tabIndex={0}
-                              className="cursor-pointer hover:bg-muted/50 rounded p-2 -m-2 transition-colors"
-                              onClick={() => isCompleted && startEditing(chunk.id)}
-                              onKeyDown={(e) => { if (isCompleted && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); startEditing(chunk.id) } }}
+                              role={canUpdateDoc ? 'button' : undefined}
+                              tabIndex={canUpdateDoc ? 0 : undefined}
+                              className="rounded p-2 -m-2 transition-colors"
+                              onClick={() => canUpdateDoc && isCompleted && startEditing(chunk.id)}
+                              onKeyDown={(e) => { if (canUpdateDoc && isCompleted && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); startEditing(chunk.id) } }}
                             >
                               <ChunkMarkdown source={chunk.content} />
                             </div>
@@ -984,7 +989,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                     ...prev,
                     chunk_size: parseInt(e.target.value) || 1000
                   }))}
-                  disabled={!isPending}
+                  disabled={!isPending || !canUpdateDoc}
                 />
                 <p className="text-xs text-muted-foreground">
                   {t('chunkSizeHint')}
@@ -1002,7 +1007,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                     ...prev,
                     chunk_overlap: parseInt(e.target.value) || 100
                   }))}
-                  disabled={!isPending}
+                  disabled={!isPending || !canUpdateDoc}
                 />
                 <p className="text-xs text-muted-foreground">
                   {t('chunkOverlapHint')}
@@ -1020,7 +1025,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                     ...prev,
                     separator: e.target.value
                   }))}
-                  disabled={!isPending}
+                  disabled={!isPending || !canUpdateDoc}
                 />
                 <p className="text-xs text-muted-foreground">
                   {t('separatorHint')}
@@ -1041,7 +1046,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                     ...prev,
                     clean_text: checked
                   }))}
-                  disabled={!isPending}
+                  disabled={!isPending || !canUpdateDoc}
                 />
               </div>
             </div>
@@ -1081,7 +1086,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                 {/* 开始处理按钮 */}
                 <Button
                   onClick={handleProcess}
-                  disabled={isProcessing || isPreviewing}
+                  disabled={!canUpdateDoc || isProcessing || isPreviewing}
                   className="w-full"
                   size="lg"
                 >

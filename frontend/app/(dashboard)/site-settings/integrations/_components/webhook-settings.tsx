@@ -1,0 +1,325 @@
+'use client'
+
+import * as React from 'react'
+import { useTranslations } from 'next-intl'
+import { toast } from 'sonner'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
+import { Loader2 } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { FieldError } from '@/components/ui/field'
+import { integrationsApi, type WebhookSettings } from '@/lib/api/admin/integrations'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
+
+interface WebhookSettingsTabProps {
+  settings: WebhookSettings
+  onSettingsChange: (settings: WebhookSettings) => void
+  canUpdate: boolean
+  credentialsConfigured?: string[]
+}
+
+export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate, credentialsConfigured = [] }: WebhookSettingsTabProps) {
+  const t = useTranslations('siteSettings')
+  const tCommon = useTranslations('common')
+  const tLogin = useTranslations('sso')
+  const [saving, setSaving] = React.useState(false)
+  const [sendingTest, setSendingTest] = React.useState(false)
+  const [headersText, setHeadersText] = React.useState(
+    credentialsConfigured.includes('webhook_headers') && Object.keys(settings.webhook_headers).length === 0 ? '' : JSON.stringify(settings.webhook_headers || {}, null, 2)
+  )
+  const [headersTouched, setHeadersTouched] = React.useState(false)
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
+
+  const errorPathMap = React.useMemo(
+    () => ({
+      webhook_enabled: 'webhook_enabled',
+      webhook_url: 'webhook_url',
+      webhook_method: 'webhook_method',
+      webhook_headers: 'webhook_headers',
+      webhook_body_template: 'webhook_body_template',
+      webhook_secret: 'webhook_secret',
+      'settings.webhook_enabled': 'webhook_enabled',
+      'settings.webhook_url': 'webhook_url',
+      'settings.webhook_method': 'webhook_method',
+      'settings.webhook_headers': 'webhook_headers',
+      'settings.webhook_body_template': 'webhook_body_template',
+      'settings.webhook_secret': 'webhook_secret',
+    }),
+    []
+  )
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['webhook_url', 'webhook_headers', 'webhook_body_template']),
+    [fieldErrors]
+  )
+
+  const updateSetting = <K extends keyof WebhookSettings>(key: K, value: WebhookSettings[K]) => {
+    onSettingsChange({ ...settings, [key]: value })
+    setFieldErrors((prev) => clearValidationError(prev, key))
+  }
+
+  const handleHeadersChange = (text: string) => {
+    setHeadersTouched(true)
+    setHeadersText(text)
+    setFieldErrors((prev) => clearValidationError(prev, 'webhook_headers'))
+    try {
+      const parsed = text.trim() ? JSON.parse(text) : {}
+      updateSetting('webhook_headers', parsed)
+    } catch {
+      // Invalid JSON, don't update
+    }
+  }
+
+  const validateSettings = () => {
+    const nextErrors: Record<string, string> = {}
+
+    if (!settings.webhook_enabled) {
+      return nextErrors
+    }
+
+    if (!settings.webhook_url.trim()) {
+      nextErrors.webhook_url = t('required')
+    }
+
+    try {
+      if (headersText.trim()) JSON.parse(headersText)
+    } catch {
+      nextErrors.webhook_headers = tCommon('invalidJSON')
+    }
+
+    return nextErrors
+  }
+
+  const handleSave = async () => {
+    if (!canUpdate) return
+    const nextErrors = validateSettings()
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
+      return
+    }
+
+    setFieldErrors({})
+    try {
+      setSaving(true)
+      const update: Partial<WebhookSettings> = { ...settings }
+      if (!headersTouched) {
+        delete update.webhook_headers
+      }
+      await integrationsApi.updateWebhook(update)
+      toast.success(t('saveSuccess'))
+    } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
+      console.error('Failed to save webhook settings:', error)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleSendTest = async () => {
+    if (!canUpdate) return
+    const nextErrors = validateSettings()
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
+      return
+    }
+
+    setFieldErrors({})
+    try {
+      setSendingTest(true)
+      await integrationsApi.sendTestWebhook()
+      toast.success(t('webhook.testSent'))
+    } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors((prev) => ({ ...prev, ...errors }))
+      }
+      console.error('Failed to send test webhook:', error)
+    } finally {
+      setSendingTest(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {summaryEntries.length > 0 && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+          {summaryEntries.map(([field, message]) => (
+            <FieldError key={field}>{formatValidationSummaryMessage(field, message)}</FieldError>
+          ))}
+        </div>
+      )}
+      {/* 基础设置 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('webhook.basicSettings')}</CardTitle>
+          <CardDescription>{t('webhook.basicSettingsDesc')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>{t('webhook.enabled')}</Label>
+              <p className="text-sm text-muted-foreground">{t('webhook.enabledDesc')}</p>
+            </div>
+            <Switch
+              checked={settings.webhook_enabled}
+              onCheckedChange={(checked) => updateSetting('webhook_enabled', checked)}
+              disabled={!canUpdate}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Webhook 配置 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('webhook.endpointSettings')}</CardTitle>
+          <CardDescription>{t('webhook.endpointSettingsDesc')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="webhook-url">{t('webhook.url')}</Label>
+            <Input
+              id="webhook-url"
+              type="url"
+              placeholder="https://example.com/webhook"
+              value={settings.webhook_url}
+              onChange={(e) => updateSetting('webhook_url', e.target.value)}
+              disabled={!canUpdate}
+              aria-invalid={!!fieldErrors.webhook_url}
+            />
+            <FieldError>{fieldErrors.webhook_url}</FieldError>
+            <p className="text-sm text-muted-foreground">{t('webhook.urlDesc')}</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>{t('webhook.method')}</Label>
+            <Select
+              value={settings.webhook_method}
+              onValueChange={(value) => value && updateSetting('webhook_method', value as 'POST' | 'GET')}
+              disabled={!canUpdate}
+            >
+              <SelectTrigger className="min-w-[180px]">
+                <SelectValue>{settings.webhook_method}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="POST">POST</SelectItem>
+                <SelectItem value="GET">GET</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="webhook-secret">{t('webhook.secret')}</Label>
+            <Input
+              id="webhook-secret"
+              type="password"
+              placeholder={t('webhook.secretPlaceholder')}
+              value={settings.webhook_secret}
+              onChange={(e) => updateSetting('webhook_secret', e.target.value)}
+              disabled={!canUpdate}
+            />
+            <p className="text-sm text-muted-foreground">{t('webhook.secretDesc')}</p>
+            <p className="text-xs text-muted-foreground">{tLogin('credentialsHint')}{credentialsConfigured.includes('webhook_secret') ? ` (${t('integrations.secretConfigured')})` : ''}</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 高级配置 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('webhook.advancedSettings')}</CardTitle>
+          <CardDescription>{t('webhook.advancedSettingsDesc')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="webhook-headers">{t('webhook.headers')}</Label>
+            <Textarea
+              id="webhook-headers"
+              placeholder='{"Authorization": "Bearer xxx"}'
+              value={headersText}
+              onChange={(e) => handleHeadersChange(e.target.value)}
+              className="font-mono text-sm"
+              rows={4}
+              disabled={!canUpdate}
+              aria-invalid={!!fieldErrors.webhook_headers}
+            />
+            <FieldError>{fieldErrors.webhook_headers}</FieldError>
+            <p className="text-sm text-muted-foreground">{t('webhook.headersDesc')}</p>
+            <p className="text-xs text-muted-foreground">{tLogin('credentialsHint')}{credentialsConfigured.includes('webhook_headers') ? ` (${t('integrations.secretConfigured')})` : ''}</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="webhook-body-template">{t('webhook.bodyTemplate')}</Label>
+            <Textarea
+              id="webhook-body-template"
+              placeholder='{"title": "{{title}}", "content": "{{content}}", "link_url": "{{link_url}}"}'
+              value={settings.webhook_body_template}
+              onChange={(e) => updateSetting('webhook_body_template', e.target.value)}
+              className="font-mono text-sm"
+              rows={6}
+              disabled={!canUpdate}
+            />
+            <p className="text-sm text-muted-foreground">{t('webhook.bodyTemplateDesc')}</p>
+            <div className="rounded-md bg-muted p-3 text-sm">
+              <p className="font-medium mb-2">{t('webhook.availablePlaceholders')}</p>
+              <ul className="space-y-1 text-muted-foreground">
+                <li><code className="bg-background px-1 rounded">{'{{title}}'}</code> - {t('webhook.placeholderTitle')}</li>
+                <li><code className="bg-background px-1 rounded">{'{{content}}'}</code> - {t('webhook.placeholderContent')}</li>
+                <li><code className="bg-background px-1 rounded">{'{{link_url}}'}</code> - {t('webhook.placeholderLinkUrl')}</li>
+              </ul>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 测试消息 */}
+      {canUpdate && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('webhook.testMessage')}</CardTitle>
+            <CardDescription>{t('webhook.testMessageDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              onClick={handleSendTest}
+              disabled={sendingTest || !settings.webhook_enabled}
+              variant="outline"
+            >
+              {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {t('webhook.sendTest')}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 保存按钮 */}
+      {canUpdate && (
+        <div className="flex justify-end">
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('save')}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}

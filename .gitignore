@@ -80,3 +80,5 @@ backend/celerybeat-schedule-wal
 backend/check_dashboard_data.py
 backend/fix_stats.py
 
+# Local task notes
+/TODO.md

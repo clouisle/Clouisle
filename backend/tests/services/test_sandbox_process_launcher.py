@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.services.sandbox.egress_proxy import SandboxEgressProxy
 from app.services.sandbox.process_launcher import (
     SandboxIsolationError,
+    SandboxOutputLimitError,
     SandboxProcessLauncher,
 )
 
@@ -82,6 +83,34 @@ async def test_launch_bounds_memory_for_large_child_output() -> None:
     assert result.stdout == "x" * 1024 + marker
     assert result.stderr == "x" * 1024 + marker
     assert peak - baseline < 8 * 1024 * 1024
+
+
+@pytest.mark.asyncio
+async def test_launch_stops_process_when_log_limit_is_reached(tmp_path) -> None:
+    late_write = tmp_path / "late-write"
+    code = (
+        "import os, time\n"
+        "from pathlib import Path\n"
+        "chunk = b'x' * 65536\n"
+        "for _ in range(200):\n"
+        "    os.write(1, chunk)\n"
+        "time.sleep(0.5)\n"
+        f"Path({str(late_write)!r}).write_text('unsafe')\n"
+    )
+    launcher = SandboxProcessLauncher(filesystem_isolation_enabled=False)
+
+    with pytest.raises(SandboxOutputLimitError, match="execution log limit") as info:
+        await launcher.launch(
+            [sys.executable, "-c", code],
+            log_dir=str(tmp_path / "logs"),
+            log_stem="exec-limit",
+        )
+
+    assert info.value.stream == "stdout"
+    assert info.value.log_path is not None
+    assert Path(info.value.log_path).exists()
+    await asyncio.sleep(0.6)
+    assert not late_write.exists()
 
 
 @pytest.mark.asyncio
@@ -272,27 +301,22 @@ def test_proxy_bridge_drops_capabilities_before_payload() -> None:
 async def test_launch_terminates_timed_out_process(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    async def wait_forever():
+        await asyncio.sleep(60)
+
     process = Mock(stdout=asyncio.StreamReader(), stderr=asyncio.StreamReader())
-    process.wait = AsyncMock()
+    process.wait = AsyncMock(side_effect=wait_forever)
     create_process = AsyncMock(return_value=process)
     terminate = AsyncMock()
 
-    async def timeout(awaitable, *, timeout):
-        if hasattr(awaitable, "cancel"):
-            awaitable.cancel()
-        else:
-            awaitable.close()
-        raise asyncio.TimeoutError
-
     monkeypatch.setattr(asyncio, "create_subprocess_exec", create_process)
-    monkeypatch.setattr(asyncio, "wait_for", timeout)
     launcher = SandboxProcessLauncher(filesystem_isolation_enabled=False)
     monkeypatch.setattr(launcher, "_terminate_process_group", terminate)
 
-    result = await launcher.launch(["python"], timeout_seconds=2.5)
+    result = await launcher.launch(["python"], timeout_seconds=0.05)
 
     assert result.exit_code == -1
-    assert result.stderr == "Execution timeout (2.5s)"
+    assert result.stderr == "Execution timeout (0.05s)"
     assert result.timed_out is True
     terminate.assert_awaited_once_with(process)
 
@@ -375,3 +399,38 @@ async def test_session_tool_cannot_leave_background_writer(tmp_path):
     assert result.stdout.strip() == "tool finished"
     await asyncio.sleep(0.6)
     assert not late_write.exists()
+
+
+@pytest.mark.asyncio
+async def test_limit_cancels_reader_still_waiting_on_stderr(tmp_path) -> None:
+    code = (
+        "import os, subprocess, sys, time\n"
+        "subprocess.Popen([sys.executable, '-c', "
+        "'import time; time.sleep(5); print(1)', ], stderr=sys.stderr)\n"
+        "chunk = b'x' * 65536\n"
+        "for _ in range(200):\n"
+        "    os.write(1, chunk)\n"
+        "time.sleep(5)\n"
+    )
+    launcher = SandboxProcessLauncher(filesystem_isolation_enabled=False)
+
+    with pytest.raises(SandboxOutputLimitError):
+        await launcher.launch(
+            [sys.executable, "-c", code],
+            log_dir=str(tmp_path / "logs"),
+            log_stem="exec-limit-stderr",
+        )
+
+
+@pytest.mark.asyncio
+async def test_cancellation_before_process_start_skips_termination(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def cancel(*args, **kwargs):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", cancel)
+    launcher = SandboxProcessLauncher(filesystem_isolation_enabled=False)
+
+    with pytest.raises(asyncio.CancelledError):
+        await launcher.launch(["python"])

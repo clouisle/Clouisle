@@ -94,6 +94,30 @@ def test_model_update_tracks_explicit_null_fields():
     assert clear_api_key.api_key is None
 
 
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ({}, {}),
+        ({"default_params": None}, {"default_params": None}),
+        ({"default_params": {}}, {"default_params": {}}),
+        (
+            {"default_params": {"extra_body": {"metadata": {"tier": "gold"}}}},
+            {"default_params": {"extra_body": {"metadata": {"tier": "gold"}}}},
+        ),
+    ],
+)
+def test_model_update_preserves_default_params_presence_and_value(values, expected):
+    update = ModelUpdate(**values)
+
+    assert update.model_dump(exclude_unset=True) == expected
+
+
+@pytest.mark.parametrize("value", [[], "{}", 1, True])
+def test_model_update_rejects_non_object_default_params(value):
+    with pytest.raises(ValidationError):
+        ModelUpdate(default_params=value)
+
+
 def test_model_responses_read_attributes_and_keep_quota_defaults():
     model_id = uuid4()
     now = datetime(2026, 1, 1)

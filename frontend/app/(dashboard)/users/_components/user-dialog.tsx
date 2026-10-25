@@ -4,8 +4,9 @@ import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { usersApi, type UserCreateData, type UserUpdateData, type User } from '@/lib/api/admin/users'
-import { ssoApi } from '@/lib/api/admin/sso'
+import { integrationsApi } from '@/lib/api/admin/integrations'
 import type { SSOConnection } from '@/lib/api/auth'
+import { getIntegrationIconUrl } from '@/lib/api/integrations'
 import { rolesApi, type Role } from '@/lib/api/admin/roles'
 import {
   clearValidationError,
@@ -80,7 +81,7 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
   const authT = useTranslations('auth')
   const tSSO = useTranslations('sso')
   const { canPerform } = useCanPerform()
-  const canManageSSO = canPerform('admin:sso:update')
+  const canManageSSO = canPerform('admin:integrations:login:update')
 
   const isEditing = !!user
 
@@ -148,7 +149,7 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
     if (!user) return
     try {
       setDisconnectingId(connectionId)
-      await ssoApi.adminDisconnectConnection(connectionId)
+      await integrationsApi.adminDisconnectConnection(connectionId)
       toast.success(tSSO('disconnectSuccess'))
       const updated = await usersApi.getUser(user.id)
       setCurrentUser(updated)
@@ -328,19 +329,19 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
                     className="flex items-center justify-between rounded-md border px-3 py-2"
                   >
                     <div className="flex items-center gap-3">
-                      {connection.provider_icon_url ? (
+                      {getIntegrationIconUrl(connection.integration_provider_type, connection.integration_icon_url) ? (
                         <img
-                          src={connection.provider_icon_url}
-                          alt={connection.provider_display_name}
+                          src={getIntegrationIconUrl(connection.integration_provider_type, connection.integration_icon_url)!}
+                          alt={connection.integration_display_name}
                           className="h-6 w-6 rounded"
                         />
                       ) : (
                         <LinkIcon className="h-5 w-5 text-muted-foreground" />
                       )}
                       <div>
-                        <div className="text-sm font-medium">{connection.provider_display_name}</div>
+                        <div className="text-sm font-medium break-words">{connection.integration_display_name}</div>
                         {connection.provider_email && (
-                          <div className="text-xs text-muted-foreground">{connection.provider_email}</div>
+                          <div className="text-xs text-muted-foreground break-all">{connection.provider_email}</div>
                         )}
                       </div>
                     </div>

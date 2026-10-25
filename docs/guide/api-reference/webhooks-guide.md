@@ -13,16 +13,16 @@ Clouisle supports two webhook integrations:
 
 ### Configuration
 
-Outbound webhook settings live in the **site settings** (admin UI, category `webhook`):
+Configure the singleton Webhook Integration in **Site Settings → Integrations**, via `GET/PUT /api/v1/admin/integrations/webhook`. Viewing/updating requires `admin:integrations:settings:read/update`. Headers and HMAC secret are encrypted credentials, not returned by admin reads; blank secrets preserve stored values.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `webhook_enabled` | `false` | Master switch |
+| `is_enabled` | `false` | Integration master switch |
 | `webhook_url` | `""` | Target URL (required when enabled) |
 | `webhook_method` | `POST` | `POST` or `GET` |
-| `webhook_headers` | `{}` | Custom headers (JSON) |
+| `webhook_headers` | `{}` | Encrypted JSON-serialized header credential |
 | `webhook_body_template` | `{"title": "{{title}}", "content": "{{content}}", "link_url": "{{link_url}}"}` | Body template; placeholders `{{title}}`, `{{content}}`, `{{link_url}}` are substituted and JSON-escaped |
-| `webhook_secret` | `""` | HMAC signing secret (optional) |
+| `webhook_secret` | `""` | Encrypted optional HMAC credential |
 
 **Flow:**
 
@@ -77,10 +77,10 @@ Use the **raw request body** (before any JSON parsing) for verification.
 
 ### Test the Webhook
 
-**Endpoint:** `POST /api/v1/admin/site-settings/test-webhook` (requires `admin:settings:update`)
+**Endpoint:** `POST /api/v1/admin/integrations/webhook/test` (requires `admin:integrations:settings:update`)
 
 ```bash
-curl -X POST "https://your-domain.com/api/v1/admin/site-settings/test-webhook" \
+curl -X POST "https://your-domain.com/api/v1/admin/integrations/webhook/test" \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
 ```
 
@@ -228,7 +228,7 @@ app.post('/webhooks/clouisle', express.raw({ type: () => true }), (req, res) => 
 - Respond 2xx quickly; treat delivery as asynchronous
 - Make the receiver idempotent (initial attempt + up to 3 retries)
 - Use a dedicated API key restricted to the target workflow for inbound triggers
-- Test with `POST /api/v1/admin/site-settings/test-webhook` before relying on it
+- Test with `POST /api/v1/admin/integrations/webhook/test` before relying on it
 
 **❌ Don't:**
 - Expect event-type subscription lists or per-webhook secrets — only the single site URL with one secret exists

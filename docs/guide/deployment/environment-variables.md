@@ -579,6 +579,18 @@ CELERY_VISIBILITY_TIMEOUT_SECONDS=3600
 KB_PROCESSING_RECOVERY_AFTER_SECONDS=600
 ```
 
+### WeChat polling limits
+
+Set the same limits on ordinary worker replicas. Polling uses their existing `default` queue; `python main.py worker` consumes it by default. No dedicated polling worker is required. Polling and other tasks share worker slots.
+
+| Variable | Default | Allowed range | Meaning |
+| --- | --- | --- | --- |
+| `WECHAT_POLL_BATCH_SIZE` | `64` | `1–512` | Maximum bindings claimed in one finite polling batch |
+| `WECHAT_POLL_CONCURRENCY` | `16` | `1–128` | Maximum simultaneous requests in each executing batch; also caps its shared HTTP connection pool |
+| `WECHAT_POLL_MAX_BATCHES` | `8` | `1–128` | Deployment-wide bound on claimed queued/running batches, not a per-worker multiplier |
+
+The dispatcher runs every three seconds while a platform WeChat feature is enabled. It claims oldest-due bindings in PostgreSQL and publishes only identifiers and an ownership token. Batch work is cancelled after 30 seconds; Celery enforces 40-second soft and 45-second hard limits, below the 90-second claim lease. A crashed or unpublished batch becomes eligible again after lease expiry; stale deliveries cannot execute a replacement claim. Increasing replicas increases execution capacity only up to the global in-flight batch cap. No upstream throughput or fixed user-capacity guarantee is implied.
+
 ## External API Keys
 
 ### TAVILY_API_KEY

@@ -32,7 +32,12 @@ mock.module('lucide-react', () => ({
   X: () => null,
 }))
 mock.module('sonner', () => ({ toast: { error: toastError, success: toastSuccess } }))
-mock.module('@/hooks/use-url-search-state', () => ({ useUrlSearchState: () => [query, setQuery] }))
+mock.module('@/hooks/use-url-search-state', () => ({
+  useUrlSearchState: () => {
+    const [, rerender] = React.useState(0)
+    return [query, (value: string) => { setQuery(value); rerender((n) => n + 1) }] as const
+  },
+}))
 mock.module('@/components/permission-guard', () => ({ PermissionGuard: ({ children }: { children: React.ReactNode }) => <>{children}</> }))
 mock.module('@/components/ui/badge', () => ({ Badge: ({ children }: { children: React.ReactNode }) => <span>{children}</span> }))
 mock.module('@/components/ui/button', () => ({
@@ -124,6 +129,18 @@ async function render() {
   return renderer!
 }
 
+async function waitForDebounce() {
+  const { promise, resolve } = Promise.withResolvers<void>()
+  setTimeout(resolve, 350)
+  await act(async () => { await promise })
+}
+
+async function waitForRapidEdit() {
+  const { promise, resolve } = Promise.withResolvers<void>()
+  setTimeout(resolve, 60)
+  await act(async () => { await promise })
+}
+
 const button = (renderer: ReactTestRenderer, label: string) => renderer.root.findAllByType('button').find((item) => text(item.props.children).includes(label))!
 
 function mockList(items = [skill]) {
@@ -157,6 +174,33 @@ describe('AdminSkillsPanel', () => {
     expect(adminSkillsApi.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: ['enabled'] }))
     act(() => button(renderer, 'common.reset').props.onClick())
     expect(setQuery).toHaveBeenCalledWith('')
+  })
+
+  test('collapses rapid search edits into a single page-one request after the debounce delay', async () => {
+    spyOn(teamsApi, 'getTeams').mockResolvedValue({ items: [{ id: 'team-1', name: 'Team One' }] })
+    const list = spyOn(adminSkillsApi, 'list').mockResolvedValue({ items: [skill], total: 25, page: 1, page_size: 10, pages: 3 })
+    spyOn(adminSkillsApi, 'getFilterOptions').mockResolvedValue(filters)
+
+    const renderer = await render()
+    const paging = () => renderer.root.findAllByType('button').filter((item) => item.props.className === 'h-8 w-8')
+
+    await act(async () => { paging()[2]!.props.onClick() })
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }))
+    const callsAfterPaging = list.mock.calls.length
+
+    const search = () => renderer.root.findByProps({ placeholder: 'platform.skills.searchPlaceholder' })
+    act(() => search().props.onChange({ target: { value: 'd' } }))
+    await waitForRapidEdit()
+    act(() => search().props.onChange({ target: { value: 'da' } }))
+    await waitForRapidEdit()
+    act(() => search().props.onChange({ target: { value: 'dai' } }))
+
+    expect(search().props.value).toBe('dai')
+    expect(list.mock.calls.length).toBe(callsAfterPaging)
+
+    await waitForDebounce()
+    expect(list.mock.calls.length).toBe(callsAfterPaging + 1)
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, search: 'dai' }))
   })
 
   test('previews git packages and installs the selected non-conflicting skill', async () => {

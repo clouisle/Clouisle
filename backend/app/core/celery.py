@@ -19,12 +19,19 @@ from app.services.sandbox.worker_heartbeat import (
     start_worker_heartbeat,
     stop_worker_heartbeat,
 )
+from app.services.integration_receivers import (
+    start_integration_receivers,
+    stop_integration_receivers,
+)
 
 logger = logging.getLogger(__name__)
 
 worker_ready.connect(start_worker_heartbeat, weak=False)
 worker_shutting_down.connect(stop_worker_heartbeat, weak=False)
 worker_shutdown.connect(stop_worker_heartbeat, weak=False)
+worker_ready.connect(start_integration_receivers, weak=False)
+worker_shutting_down.connect(stop_integration_receivers, weak=False)
+worker_shutdown.connect(stop_integration_receivers, weak=False)
 
 # Redis URL for Celery broker and result backend
 if settings.REDIS_PASSWORD:
@@ -39,6 +46,11 @@ celery_app = Celery(
     backend=f"{REDIS_URL}/1",
     include=[
         "app.tasks.knowledge_base",
+        "app.tasks.feishu_knowledge",
+        "app.tasks.wechat_knowledge",
+        "app.tasks.wechat_agent",
+        "app.tasks.wechat_poll",
+        "app.tasks.feishu_agent",
         "app.tasks.usage",
         "app.tasks.workflow",
         "app.tasks.audit_log",
@@ -59,6 +71,7 @@ celery_app.conf.update(
     result_serializer="json",
     timezone=settings.TIMEZONE,
     enable_utc=True,
+    beat_scheduler="app.core.integration_scheduler:IntegrationScheduler",
     task_default_queue="default",
     # Task execution settings
     task_acks_late=True,
@@ -83,6 +96,11 @@ celery_app.conf.update(
 # Optional: Configure task routes
 celery_app.conf.task_routes = {
     "app.tasks.knowledge_base.*": {"queue": "knowledge"},
+    "app.tasks.feishu_knowledge.*": {"queue": "knowledge"},
+    "app.tasks.wechat_knowledge.*": {"queue": "knowledge"},
+    "app.tasks.wechat_agent.*": {"queue": "agent"},
+    "app.tasks.wechat_poll.*": {"queue": "default"},
+    "app.tasks.feishu_agent.*": {"queue": "agent"},
     "app.tasks.usage.*": {"queue": "default"},
     "app.tasks.workflow.*": {"queue": "workflow"},
     "app.tasks.notification.*": {"queue": "default"},
@@ -99,12 +117,8 @@ celery_app.conf.task_routes = {
     "tasks.check_password_expiration": {"queue": "default"},
     "tasks.reset_daily_usage": {"queue": "default"},
     "tasks.reset_monthly_usage": {"queue": "default"},
-    "send_notification_dingtalk": {"queue": "default"},
     "send_notification_email": {"queue": "default"},
-    "send_notification_wechat": {"queue": "default"},
-    "send_notification_feishu": {"queue": "default"},
     "send_notification_webhook": {"queue": "default"},
-    "send_notification_slack": {"queue": "default"},
 }
 
 # Beat schedule for periodic tasks

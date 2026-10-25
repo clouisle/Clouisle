@@ -301,6 +301,8 @@ async def _send_doc_indexed_notification(
     user_locale: str | None = None,
 ) -> None:
     """Send notification when document is indexed successfully."""
+    if (document.metadata or {}).get("feishu_staging"):
+        return
     try:
         # Send to uploader if available, otherwise to team
         if document.uploaded_by_id:
@@ -567,6 +569,8 @@ async def _send_doc_failed_notification(
     user_locale: str | None = None,
 ) -> None:
     """Send notification when document processing fails."""
+    if (document.metadata or {}).get("feishu_staging"):
+        return
     try:
         if document.uploaded_by_id:
             user = getattr(document, "uploaded_by", None)
@@ -814,7 +818,7 @@ async def _process_document(document_id: str, task_id: str | None) -> dict[str, 
         # Update KB statistics
         kb.total_chunks += len(created_chunks)
         kb.total_tokens += total_tokens
-        await kb.save()
+        await kb.save(update_fields=["total_chunks", "total_tokens"])
         logger.info(
             f"KB {kb.id} stats updated: chunks={kb.total_chunks}, tokens={kb.total_tokens}"
         )

@@ -8,8 +8,6 @@ import { usePermissions } from '@/hooks/use-permissions'
 import {
   Calendar,
   Activity,
-  ChevronLeft,
-  ChevronRight,
   ArrowLeft,
   ExternalLink,
   FileText,
@@ -53,9 +51,19 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { useDebounce } from '@/hooks/use-debounce'
+import { useInfiniteScroll } from '@/hooks/use-infinite-scroll'
 import { WorkflowRunDrawer } from '@/app/(dashboard)/activities/_components/workflow-run-drawer'
 
 const PAGE_SIZE = 20
+
+function dedupeById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false
+    seen.add(item.id)
+    return true
+  })
+}
 
 function getCreatedAfter(dateFilter: string): string | undefined {
   if (dateFilter === 'all') return undefined
@@ -130,6 +138,7 @@ export default function WorkflowLogsPage() {
   const params = useParams()
   const router = useRouter()
   const t = useTranslations('workflow')
+  const tCommon = useTranslations('common')
   const locale = useLocale()
 
   const workflowId = params.id as string
@@ -138,8 +147,13 @@ export default function WorkflowLogsPage() {
   const [isLoading, setIsLoading] = React.useState(true)
   const [runs, setRuns] = React.useState<WorkflowRunListItem[]>([])
   const [totalRuns, setTotalRuns] = React.useState(0)
-  const [currentPage, setCurrentPage] = React.useState(1)
+  const [page, setPage] = React.useState(1)
   const [isLoadingRuns, setIsLoadingRuns] = React.useState(false)
+  const [isLoadingMore, setIsLoadingMore] = React.useState(false)
+  const [loadFailure, setLoadFailure] = React.useState<{ page: number; append: boolean } | null>(null)
+  const requestIdRef = React.useRef(0)
+  const inFlightRef = React.useRef(false)
+  const loadedIdsRef = React.useRef<Set<string> | null>(null)
   const { currentTeam } = useTeam()
   const { user } = usePermissions()
 
@@ -172,25 +186,64 @@ export default function WorkflowLogsPage() {
     }
   }, [workflowId, router])
 
-  // Fetch workflow runs
-  const fetchRuns = React.useCallback(async (page: number = 1) => {
-    try {
+  // Fetch workflow runs. Reset requests replace the list; load-more requests append.
+  // Resets always supersede an in-flight request; appends and retries are single-flight.
+  const fetchRuns = React.useCallback(async (targetPage: number, append: boolean = false) => {
+    if (append && inFlightRef.current) return
+
+    inFlightRef.current = true
+    const requestId = ++requestIdRef.current
+    if (append) {
+      setIsLoadingMore(true)
+    } else {
       setIsLoadingRuns(true)
+      setLoadFailure(null)
+      setRuns([])
+      setTotalRuns(0)
+      setPage(1)
+      loadedIdsRef.current = new Set()
+    }
+
+    try {
       const search = debouncedSearchQuery.trim()
       const result = await workflowsApi.getWorkflowRuns(workflowId, {
-        page,
+        page: targetPage,
         pageSize: PAGE_SIZE,
         status: statusFilter !== 'all' ? statusFilter as 'pending' | 'running' | 'success' | 'failed' | 'cancelled' | 'timeout' : undefined,
         search: search || undefined,
         createdAfter: getCreatedAfter(dateFilter),
       })
-      setRuns(result.items)
-      setTotalRuns(result.total)
-      setCurrentPage(page)
+      if (requestId !== requestIdRef.current) return
+
+      if (append) {
+        const seen = (loadedIdsRef.current ??= new Set<string>())
+        const fresh: WorkflowRunListItem[] = []
+        for (const run of result.items) {
+          if (seen.has(run.id)) continue
+          seen.add(run.id)
+          fresh.push(run)
+        }
+        setRuns((previous) => [...previous, ...fresh])
+        // An empty page with a stale total means the list has ended.
+        setTotalRuns(fresh.length === 0 ? seen.size : result.total)
+        setPage(targetPage)
+      } else {
+        const unique = dedupeById(result.items)
+        loadedIdsRef.current = new Set(unique.map((run) => run.id))
+        setRuns(unique)
+        setTotalRuns(result.total)
+        setPage(targetPage)
+      }
+      setLoadFailure(null)
     } catch {
-      // Error handled by API client
+      if (requestId !== requestIdRef.current) return
+      setLoadFailure({ page: targetPage, append })
     } finally {
-      setIsLoadingRuns(false)
+      if (requestId === requestIdRef.current) {
+        inFlightRef.current = false
+        setIsLoadingRuns(false)
+        setIsLoadingMore(false)
+      }
     }
   }, [workflowId, statusFilter, dateFilter, debouncedSearchQuery])
 
@@ -205,11 +258,34 @@ export default function WorkflowLogsPage() {
 
   React.useEffect(() => {
     if (workflow) {
-      fetchRuns()
+      void fetchRuns(1)
+    }
+    return () => {
+      requestIdRef.current += 1
+      inFlightRef.current = false
     }
   }, [workflow, fetchRuns])
 
-  const totalPages = Math.ceil(totalRuns / PAGE_SIZE)
+  const hasMore = !loadFailure && runs.length < totalRuns
+
+  const loadMore = React.useCallback(() => {
+    if (isLoadingRuns || isLoadingMore || loadFailure) return
+    if (runs.length >= totalRuns) return
+    return fetchRuns(page + 1, true)
+  }, [fetchRuns, isLoadingMore, isLoadingRuns, loadFailure, page, runs.length, totalRuns])
+
+  const retryLoad = React.useCallback(() => {
+    if (!loadFailure || inFlightRef.current) return
+    const { page: failedPage, append } = loadFailure
+    setLoadFailure(null)
+    return fetchRuns(failedPage, append)
+  }, [fetchRuns, loadFailure])
+
+  const sentinelRef = useInfiniteScroll({
+    hasMore,
+    loading: isLoadingRuns || isLoadingMore,
+    onLoadMore: loadMore,
+  })
 
   if (isLoading || !workflow) {
     return (
@@ -356,11 +432,21 @@ export default function WorkflowLogsPage() {
 
         {/* Table */}
         <div className="flex-1 min-h-0 overflow-auto px-6">
-          {isLoadingRuns ? (
+          {isLoadingRuns && runs.length === 0 ? (
             <div className="py-6 space-y-3">
               {[...Array(5)].map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
+            </div>
+          ) : loadFailure && runs.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center py-16">
+              <div className="text-center text-muted-foreground">
+                <Activity className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                <p>{tCommon('loadFailed')}</p>
+                <Button variant="outline" size="sm" className="mt-3" onClick={retryLoad}>
+                  {tCommon('retry')}
+                </Button>
+              </div>
             </div>
           ) : runs.length === 0 ? (
             <div className="flex-1 flex items-center justify-center py-16">
@@ -409,41 +495,36 @@ export default function WorkflowLogsPage() {
               </TableBody>
             </Table>
           )}
+
+          {isLoadingMore && (
+            <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
+              <LoaderIcon className="h-4 w-4 animate-spin" />
+              <span>{tCommon('loadingMore')}</span>
+            </div>
+          )}
+
+          {loadFailure && runs.length > 0 && !isLoadingMore && (
+            <div className="flex items-center justify-center gap-3 py-4 text-sm text-muted-foreground">
+              <span>{tCommon('loadFailed')}</span>
+              <Button variant="outline" size="sm" onClick={retryLoad}>
+                {tCommon('retry')}
+              </Button>
+            </div>
+          )}
+
+          <div ref={sentinelRef} aria-hidden className="h-px w-full" />
         </div>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="px-6 py-3 border-t flex items-center justify-between shrink-0">
+        {/* Loaded range */}
+        {totalRuns > 0 && (
+          <div className="px-6 py-3 border-t shrink-0">
             <p className="text-sm text-muted-foreground">
               {t('showingRuns', {
-                from: (currentPage - 1) * PAGE_SIZE + 1,
-                to: Math.min(currentPage * PAGE_SIZE, totalRuns),
+                from: runs.length > 0 ? 1 : 0,
+                to: runs.length,
                 total: totalRuns,
               })}
             </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={currentPage === 1}
-                onClick={() => fetchRuns(currentPage - 1)}
-              >
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                {t('prev')}
-              </Button>
-              <span className="text-sm text-muted-foreground px-2">
-                {currentPage} / {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={currentPage === totalPages}
-                onClick={() => fetchRuns(currentPage + 1)}
-              >
-                {t('next')}
-                <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
-            </div>
           </div>
         )}
       </div>
@@ -454,7 +535,7 @@ export default function WorkflowLogsPage() {
           open={drawerOpen}
           onOpenChange={setDrawerOpen}
           onDelete={() => {
-            fetchRuns(currentPage)
+            void fetchRuns(1)
             setDrawerOpen(false)
           }}
         />

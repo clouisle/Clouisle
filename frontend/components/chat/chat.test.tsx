@@ -44,6 +44,7 @@ describe('Chat', () => {
     const input = find(tree, 'ChatInput')
 
     expect(container.props).toMatchObject({ messages, isStreaming: false, autoScroll: true })
+    expect(container.props).toMatchObject({ hideCitations: false })
     expect(input.props).toMatchObject({
       disabled: false,
       isLoading: false,

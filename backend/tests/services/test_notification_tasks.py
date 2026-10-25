@@ -4,6 +4,10 @@ from uuid import uuid4
 
 import pytest
 
+from app.integrations.factory import (
+    NotificationChannel as IntegrationChannel,
+    NotificationMessage,
+)
 from app.models.notification import (
     NotificationChannel,
     NotificationDeliveryStatus,
@@ -133,7 +137,11 @@ async def test_send_notification_email_marks_no_recipient_as_success():
         patch.object(
             tasks, "_get_notification_recipients", new=AsyncMock(return_value=[])
         ),
-        patch.object(tasks, "send_email", new=AsyncMock()) as send_email,
+        patch.object(
+            tasks.get_notification_integration(IntegrationChannel.EMAIL),
+            "send",
+            new=AsyncMock(),
+        ) as send_email,
     ):
         assert await tasks._send_notification_email(item.id) is None
 
@@ -171,16 +179,35 @@ async def test_send_notification_email_groups_locales_and_records_partial_succes
         ) as build_message,
         patch.object(tasks, "_build_email_text", return_value="text"),
         patch.object(tasks, "_build_email_html", return_value="html"),
-        patch.object(tasks, "send_email", new=send_email),
+        patch.object(
+            tasks.get_notification_integration(IntegrationChannel.EMAIL),
+            "send",
+            new=send_email,
+        ),
         patch.object(tasks, "t", return_value="2 of 3 delivered") as translate,
     ):
         await tasks._send_notification_email(item.id)
 
     assert build_message.call_args_list == [call(context, "en"), call(context, "zh")]
-    assert send_email.await_args_list == [
-        call("one@example.test", "【Clouisle】Deployment complete", "text", "html"),
-        call("two@example.test", "【Clouisle】Deployment complete", "text", "html"),
-        call("three@example.test", "【Clouisle】Deployment complete", "text", "html"),
+    assert [item.args[0] for item in send_email.await_args_list] == [
+        NotificationMessage(
+            title="【Clouisle】Deployment complete",
+            content="text",
+            recipient="one@example.test",
+            html_content="html",
+        ),
+        NotificationMessage(
+            title="【Clouisle】Deployment complete",
+            content="text",
+            recipient="two@example.test",
+            html_content="html",
+        ),
+        NotificationMessage(
+            title="【Clouisle】Deployment complete",
+            content="text",
+            recipient="three@example.test",
+            html_content="html",
+        ),
     ]
     translate.assert_called_once_with(
         "notification_delivery_partial_success", success_count=2, total_count=3
@@ -213,7 +240,11 @@ async def test_send_notification_email_raises_when_every_send_fails():
         ),
         patch.object(tasks, "_build_email_text", return_value="text"),
         patch.object(tasks, "_build_email_html", return_value="html"),
-        patch.object(tasks, "send_email", new=AsyncMock(return_value=False)),
+        patch.object(
+            tasks.get_notification_integration(IntegrationChannel.EMAIL),
+            "send",
+            new=AsyncMock(return_value=False),
+        ),
     ):
         with pytest.raises(RuntimeError, match="email_send_failed"):
             await tasks._send_notification_email(item.id)

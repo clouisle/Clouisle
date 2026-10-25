@@ -1,13 +1,13 @@
+import json
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 
 from app.llm.types import ContentType, MessageRole
-from app.models.agent import MessageRole as ConversationMessageRole
 from app.services import chat_context
 from app.services.chat_context import (
-    _build_file_content_for_user_message,
     _build_messages_with_file_content,
     _build_system_prompt,
 )
@@ -46,7 +46,7 @@ def test_file_content_placeholder_is_not_injected_into_system_prompt():
 
 
 @pytest.mark.anyio
-async def test_current_upload_content_is_appended_to_current_user_message():
+async def test_current_text_file_content_is_appended_to_current_user_message():
     messages, _, _ = await _build_messages_with_file_content(
         agent=_agent(),
         conversation=_conversation(),
@@ -55,239 +55,104 @@ async def test_current_upload_content_is_appended_to_current_user_message():
         user_locale="en",
         history_override=[],
         current_images=None,
-        model_supports_vision=False,
+        input_capabilities=SimpleNamespace(modalities=frozenset({ContentType.TEXT})),
+        model_config=None,
         current_user_message_id=None,
         include_current_user_message=True,
         exclude_message_ids=None,
         history_before_message_created_at=None,
     )
-
     assert messages[-1].role == MessageRole.USER
     assert messages[-1].content == (
         "Please summarize this.\n\n<uploaded_files>\nReport content\n</uploaded_files>"
     )
 
 
-@pytest.mark.anyio
-async def test_non_vision_upload_content_uses_reference_labels_without_image_parts():
-    messages, _, _ = await _build_messages_with_file_content(
-        agent=_agent(),
+@pytest.mark.asyncio
+async def test_prepare_context_with_model_configuration_keeps_user_input():
+    from app.llm.capabilities import get_effective_input_capabilities
+    from app.models.model import ModelProvider, ModelType
+
+    model = SimpleNamespace(
+        provider=ModelProvider.OPENAI,
+        model_type=ModelType.CHAT,
+        base_url=None,
+        capabilities={"input_modalities": ["text"]},
+    )
+    agent = _agent()
+    agent.context_compression_config = {"enabled": False}
+    context = await chat_context.prepare_model_context(
+        agent=agent,
         conversation=_conversation(),
-        user_message="Use the last image as a drawing reference.",
-        file_content=None,
-        user_locale="en",
+        user_message="Summarize the report",
+        model_id="configured-model",
+        model_config=model,
+        input_capabilities=get_effective_input_capabilities(model),
+        model_context_limit=8192,
+        model_max_output_tokens=1024,
         history_override=[],
-        current_images=[
-            {"url": "data:image/png;base64,first"},
-            {"url": "data:image/png;base64,last"},
-        ],
-        model_supports_vision=False,
-        current_user_message_id=None,
-        include_current_user_message=True,
-        exclude_message_ids=None,
-        history_before_message_created_at=None,
+    )
+    assert context.messages[-1].role == MessageRole.USER
+    assert context.messages[-1].content == "Summarize the report"
+
+
+@pytest.mark.asyncio
+async def test_rehydrate_view_asset_preserves_extracted_text_representation(
+    monkeypatch,
+):
+    from app.llm.types import ContentPart, ContentType
+
+    conversation = _conversation()
+    user = SimpleNamespace(id=uuid4())
+    agent = _agent()
+    asset_id = uuid4()
+    marker = {
+        "version": 1,
+        "kind": "asset.view",
+        "ref": "scoped-ref",
+        "asset_id": str(asset_id),
+        "scope_type": "conversation",
+        "scope_id": str(conversation.id),
+        "checksum": "abc",
+        "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "wire_mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "modality": "text",
+        "extracted_text": True,
+        "selection": None,
+        "representation": {"kind": "extracted_text", "truncated": False},
+    }
+    asset = SimpleNamespace(
+        id=asset_id,
+        checksum="abc",
+        content_type=marker["mime_type"],
+        display_filename="report.docx",
+    )
+    part = ContentPart(type=ContentType.TEXT, text="Extracted document body")
+    resolve = AsyncMock(
+        return_value=(
+            asset,
+            part,
+            json.dumps(
+                {
+                    **marker,
+                    "asset_id": str(uuid4()),
+                    "scope_type": "conversation",
+                    "scope_id": str(conversation.id),
+                }
+            ),
+        )
+    )
+    monkeypatch.setattr("app.services.asset_view.resolve_view_content", resolve)
+
+    replayed = await chat_context._rehydrate_asset_view_marker(
+        json.dumps(marker),
+        tool_name="view_asset",
+        user=user,
+        conversation=conversation,
+        agent=agent,
+        model_config=SimpleNamespace(),
     )
 
-    assert messages[-1].role == MessageRole.USER
-    assert messages[-1].content == (
-        "Use the last image as a drawing reference.\n\n"
-        "Uploaded image #1: available as a reference image.\n"
-        "Uploaded image #2: available as a reference image."
-    )
-
-
-@pytest.mark.anyio
-async def test_vision_upload_content_preserves_image_parts():
-    messages, _, _ = await _build_messages_with_file_content(
-        agent=_agent(),
-        conversation=_conversation(),
-        user_message="Describe this.",
-        file_content="Document content",
-        user_locale="en",
-        history_override=[],
-        current_images=[{"url": "data:image/png;base64,abc"}],
-        model_supports_vision=True,
-        current_user_message_id=None,
-        include_current_user_message=True,
-        exclude_message_ids=None,
-        history_before_message_created_at=None,
-    )
-
-    content = messages[-1].content
-    assert isinstance(content, list)
-    assert content[0].type == ContentType.TEXT
-    assert content[0].text == "Describe this."
-    assert content[1].type == ContentType.TEXT
-    assert content[1].text == "Uploaded image #1:"
-    assert content[2].type == ContentType.IMAGE
-    assert content[3].type == ContentType.TEXT
-    assert content[3].text == "<uploaded_files>\nDocument content\n</uploaded_files>"
-
-
-def test_large_vision_image_is_compressed():
-    import base64
-    import io
-
-    from PIL import Image
-
-    source = io.BytesIO()
-    Image.new("RGB", (3000, 2000), "red").save(source, format="PNG")
-
-    content = chat_context.build_vision_content(
-        "Describe this.",
-        [
-            {
-                "url": f"data:image/png;base64,{base64.b64encode(source.getvalue()).decode()}"
-            }
-        ],
-    )
-
-    image = content[2].image
-    assert image is not None
-    assert image.format == "jpeg"
-    assert image.base64 is not None
-    with Image.open(io.BytesIO(base64.b64decode(image.base64))) as normalized:
-        assert max(normalized.size) == 2048
-
-
-@pytest.mark.anyio
-async def test_history_override_file_urls_append_parsed_content(monkeypatch):
-    calls = []
-
-    async def fake_build_file_content_for_context(**kwargs):
-        calls.append(kwargs)
-        return "Historical document", [{"url": "/api/v1/upload/files/docs/a.txt"}]
-
-    monkeypatch.setattr(
-        "app.api.v1.endpoints.chat_tools.build_file_content_for_context",
-        fake_build_file_content_for_context,
-    )
-
-    messages, _, _ = await _build_messages_with_file_content(
-        agent=_agent(),
-        conversation=_conversation(),
-        user_message="Follow up",
-        file_content=None,
-        user_locale="en",
-        history_override=[
-            {
-                "role": "user",
-                "content": "Earlier question",
-                "file_urls": [{"url": "/api/v1/upload/files/docs/a.txt"}],
-            }
-        ],
-        current_images=None,
-        model_supports_vision=False,
-        current_user_message_id=None,
-        include_current_user_message=True,
-        exclude_message_ids=None,
-        history_before_message_created_at=None,
-        tool_timeouts={"download": 3},
-        user=SimpleNamespace(id="user-1"),
-    )
-
-    assert messages[1].content == (
-        "Earlier question\n\n<uploaded_files>\nHistorical document\n</uploaded_files>"
-    )
-    assert messages[2].content == "Follow up"
-    assert calls[0]["tool_timeouts"] == {"download": 3}
-    assert calls[0]["user"].id == "user-1"
-
-
-@pytest.mark.anyio
-async def test_historical_message_cache_metadata_is_saved(monkeypatch):
-    updated_file_urls = [
-        {
-            "url": "/api/v1/upload/files/docs/a.txt",
-            "parse_cache": {"status": "success", "key": "cache-key"},
-        }
-    ]
-
-    async def fake_build_file_content_for_context(**kwargs):
-        return "Cached historical document", updated_file_urls
-
-    monkeypatch.setattr(
-        "app.api.v1.endpoints.chat_tools.build_file_content_for_context",
-        fake_build_file_content_for_context,
-    )
-
-    class FakeMessage:
-        def __init__(self):
-            self.file_urls = [{"url": "/api/v1/upload/files/docs/a.txt"}]
-            self.saved_update_fields = None
-
-        async def save(self, update_fields=None):
-            self.saved_update_fields = update_fields
-
-    source_message = FakeMessage()
-
-    content = await _build_file_content_for_user_message(
-        agent=_agent(),
-        file_urls=source_message.file_urls,
-        user_locale="en",
-        tool_timeouts=None,
-        user=None,
-        source_message=source_message,
-    )
-
-    assert content == "Cached historical document"
-    assert source_message.file_urls == updated_file_urls
-    assert source_message.saved_update_fields == ["file_urls"]
-
-
-@pytest.mark.anyio
-async def test_historical_db_message_file_urls_append_parsed_content(monkeypatch):
-    async def fake_build_file_content_for_context(**kwargs):
-        return "DB document", kwargs["file_urls"]
-
-    monkeypatch.setattr(
-        "app.api.v1.endpoints.chat_tools.build_file_content_for_context",
-        fake_build_file_content_for_context,
-    )
-
-    async def _noop_save(update_fields=None):
-        return None
-
-    class FakeQuery:
-        def filter(self, **kwargs):
-            return self
-
-        def exclude(self, **kwargs):
-            return self
-
-        async def order_by(self, *args):
-            return [
-                SimpleNamespace(
-                    id=uuid4(),
-                    role=ConversationMessageRole.USER,
-                    content="Historical question",
-                    file_urls=[{"url": "/api/v1/upload/files/docs/a.txt"}],
-                    round_id=None,
-                    round_role=None,
-                    save=_noop_save,
-                )
-            ]
-
-    monkeypatch.setattr(
-        chat_context.ConversationMessage, "filter", lambda **kwargs: FakeQuery()
-    )
-
-    messages, _, _ = await _build_messages_with_file_content(
-        agent=_agent(),
-        conversation=_conversation(),
-        user_message="Follow up",
-        file_content=None,
-        user_locale="en",
-        history_override=None,
-        current_images=None,
-        model_supports_vision=False,
-        current_user_message_id=None,
-        include_current_user_message=False,
-        exclude_message_ids=None,
-        history_before_message_created_at=None,
-    )
-
-    assert messages[1].content == (
-        "Historical question\n\n<uploaded_files>\nDB document\n</uploaded_files>"
-    )
-    assert messages[2].content == "Follow up"
+    assert replayed[-1] == part
+    assert resolve.await_args.kwargs["extracted_text"] is True
+    assert resolve.await_args.kwargs["selection"] is None

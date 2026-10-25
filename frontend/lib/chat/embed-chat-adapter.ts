@@ -52,11 +52,13 @@ function mapAgentInfo(info: EmbedAgentInfo): PublicAgent {
     opening_message: info.opening_message,
     suggested_questions: info.suggested_questions,
     variables: normalizeVariables(info.variables),
+    input_modalities: info.input_modalities,
     enable_attachments: info.enable_attachments,
     attachment_config: (info.attachment_config as AttachmentConfig | null) ?? null,
     hide_tool_calls: info.hide_tool_calls,
     hide_message_actions: info.hide_message_actions,
     hide_reasoning: info.hide_reasoning,
+    enable_citations: info.enable_citations,
     hide_artifact_list: info.hide_artifact_list,
     embed_config: info.embed_config,
   }

@@ -185,4 +185,49 @@ describe('WorkflowRunsTable', () => {
     expect(deleteWorkflowRun).toHaveBeenCalledWith('run-87654321')
     expect(success).toHaveBeenCalledWith('activities.runDetail.deleteSuccess')
   })
+  test('selects and clears the current page and moves through paginated results', async () => {
+    getAllWorkflowRuns.mockResolvedValue({
+      items: [
+        { id: 'run-page-one', workflow_id: 'workflow-1', workflow_name: 'First page', status: 'success', trigger_type: 'manual', created_at: '2026-01-01T10:00:00Z' },
+        { id: 'run-page-two', workflow_id: 'workflow-1', workflow_name: 'First page second', status: 'success', trigger_type: 'manual', created_at: '2026-01-01T10:01:00Z' },
+      ],
+      total: 25,
+    })
+    const renderer = await render()
+    const checkboxes = () => renderer.root.findAllByType('input').filter((input) => input.props.onCheckedChange)
+    const headerCheckbox = checkboxes()[0]!
+
+    act(() => headerCheckbox.props.onCheckedChange())
+    expect(renderer.root.findAllByType('button').some((button) => text(button.props.children).includes('activities.runDetail.deleteSelected:{"count":2}'))).toBe(true)
+
+    act(() => checkboxes()[0]!.props.onCheckedChange())
+    expect(renderer.root.findAllByType('button').some((button) => text(button.props.children).includes('deleteSelected'))).toBe(false)
+
+    const nextPage = renderer.root.findAllByType('button').filter((button) => button.props.onClick && button.props.className === 'h-8 w-8')[2]!
+    await act(async () => nextPage.props.onClick())
+    expect(getAllWorkflowRuns).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }))
+  })
+
+  test('deletes a single run from its row actions only after confirmation', async () => {
+    getAllWorkflowRuns.mockResolvedValue({
+      items: [{
+        id: 'run-12345678', workflow_id: 'workflow-1', workflow_name: 'Daily report', status: 'success',
+        trigger_type: 'manual', created_at: '2026-01-01T10:00:00Z', total_duration_ms: 1200,
+        executed_nodes: 1, total_nodes: 1,
+      }],
+      total: 1,
+    })
+    const renderer = await render()
+
+    const [rowDelete] = renderer.root.findAllByType('button').filter((button) => button.props.variant === 'destructive')
+    await act(async () => rowDelete.props.onClick())
+    const dialog = renderer.root.findAllByType('div').find((node) => node.props.open === true && typeof node.props.onOpenChange === 'function')!
+    await act(async () => dialog.props.onOpenChange(false))
+    expect(deleteWorkflowRun).not.toHaveBeenCalled()
+
+    await act(async () => rowDelete.props.onClick())
+    await act(async () => renderer.root.findAllByType('button').filter((button) => button.props.variant === 'destructive').at(-1)!.props.onClick())
+    expect(deleteWorkflowRun).toHaveBeenCalledWith('run-12345678')
+    expect(success).toHaveBeenCalledWith('activities.runDetail.deleteSuccess')
+  })
 })

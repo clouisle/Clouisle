@@ -8,7 +8,74 @@ from enum import Enum
 from typing import Any, Optional
 from uuid import UUID
 
-from pydantic import ConfigDict, BaseModel, Field
+from pydantic import ConfigDict, BaseModel, Field, field_validator
+import re
+
+
+_MODEL_MODALITIES = frozenset({"text", "image", "audio", "video", "file"})
+_MIME_TYPE_RE = re.compile(r"^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$")
+
+
+def validate_model_capabilities(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Validate canonical modality declarations while retaining extension keys."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("capabilities must be an object")
+
+    capabilities = dict(value)
+    legacy_vision = capabilities.pop("vision", None)
+    if "input_modalities" not in capabilities and isinstance(legacy_vision, bool):
+        capabilities["input_modalities"] = (
+            ["text", "image"] if legacy_vision else ["text"]
+        )
+
+    for key in ("input_modalities", "output_modalities"):
+        modalities = capabilities.get(key)
+        if modalities is None and key not in capabilities:
+            continue
+        if not isinstance(modalities, list) or any(
+            not isinstance(modality, str) or modality not in _MODEL_MODALITIES
+            for modality in modalities
+        ):
+            raise ValueError(
+                f"{key} must be a list of text, image, audio, video, or file"
+            )
+
+    input_limits = capabilities.get("input_limits")
+    if input_limits is not None:
+        if not isinstance(input_limits, dict):
+            raise ValueError("input_limits must be an object")
+        for modality, limits in input_limits.items():
+            if modality not in _MODEL_MODALITIES:
+                raise ValueError(f"input_limits.{modality} has an unsupported modality")
+            if not isinstance(limits, dict):
+                raise ValueError(f"input_limits.{modality} must be an object")
+            max_bytes = limits.get("max_bytes")
+            if max_bytes is not None and (
+                not isinstance(max_bytes, int)
+                or isinstance(max_bytes, bool)
+                or max_bytes <= 0
+            ):
+                raise ValueError(
+                    f"input_limits.{modality}.max_bytes must be a positive integer"
+                )
+            mime_types = limits.get("mime_types")
+            if mime_types is not None and (
+                not isinstance(mime_types, list)
+                or any(
+                    not isinstance(mime, str) or not _MIME_TYPE_RE.fullmatch(mime)
+                    for mime in mime_types
+                )
+            ):
+                raise ValueError(
+                    f"input_limits.{modality}.mime_types must be a list of valid MIME types or null"
+                )
+    return capabilities
+
+
+def _validate_capabilities_field(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    return validate_model_capabilities(value)
 
 
 class ModelProvider(str, Enum):
@@ -108,7 +175,11 @@ class ModelCreate(BaseModel):
         None, description="Default inference parameters"
     )
     capabilities: Optional[dict[str, Any]] = Field(
-        None, description="Model capabilities"
+        None,
+        description="Input/output modalities and model capabilities; input_modalities uses text, image, audio, video, file",
+    )
+    _validate_capabilities = field_validator("capabilities", mode="before")(
+        _validate_capabilities_field
     )
     config: Optional[dict[str, Any]] = Field(
         None, description="Additional configuration"
@@ -132,7 +203,13 @@ class ModelUpdate(BaseModel):
     input_price: Optional[Decimal] = Field(None, ge=0, decimal_places=6)
     output_price: Optional[Decimal] = Field(None, ge=0, decimal_places=6)
     default_params: Optional[dict[str, Any]] = None
-    capabilities: Optional[dict[str, Any]] = None
+    capabilities: Optional[dict[str, Any]] = Field(
+        None,
+        description="Input/output modalities and model capabilities; input_modalities uses text, image, audio, video, file",
+    )
+    _validate_capabilities = field_validator("capabilities", mode="before")(
+        _validate_capabilities_field
+    )
     config: Optional[dict[str, Any]] = None
     is_enabled: Optional[bool] = None
     is_default: Optional[bool] = None
@@ -220,7 +297,7 @@ class ModelDiscoveryItem(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     context_length: Optional[int] = Field(None, ge=1)
     max_output_tokens: Optional[int] = Field(None, ge=1)
-    capabilities: Optional[dict[str, bool]] = None
+    capabilities: Optional[dict[str, Any]] = None
 
 
 class ModelDiscoveryResponse(BaseModel):

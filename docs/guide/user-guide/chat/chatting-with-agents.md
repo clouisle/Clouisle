@@ -27,6 +27,26 @@ There is no global Chat/Conversations page or global **New Chat** picker. Each a
 2. Use the conversation controls in that page to continue a recent conversation or start a new one.
 3. Type your message and send it.
 
+## 通过飞书机器人与 Agent 对话
+
+如果管理员启用了飞书 Agent 对话，请在 **个人设置 → 飞书** 中选择回复自己的智能体并点击 **保存**；开启对话后，也可以私聊机器人发送 `/智能体`（`/agents`）查看自己有权访问的已发布 Agent，再用 `/使用 <编号>`（`/use <编号>`）切换。网页和飞书命令共用当前用户的选择，不影响其他用户。同一飞书聊天中，每个智能体单独保留会话，切回后继续之前的对话；切换只影响后续接收的消息，已接收消息和任务保留原绑定。未选择时不会自动使用管理员指定的 Agent。当前运行结束后，可用 `/新对话`（`/new`）为所选 Agent 开启新对话。
+
+首次使用请先保存智能体，再打开 **启用智能体对话**。开关自动保存，仅影响本人。关闭后不接收新消息（包括命令），已接收但尚未处理的消息和待发送回复暂停，重新开启后继续处理；智能体选择和历史保留。关闭不会停止已开始的任务或撤回已发送的回复，关闭期间收到的新消息不会保存或补处理。需回到个人设置重新启用。
+
+发送 `/status`（`/状态`）查看运行状态，发送 `/stop`（`/停止`）停止当前运行，发送 `/help`（`/帮助`）查看命令。Agent 通过 `ask_user` 等待回答时，在同一聊天发送文本会恢复原有运行，而不是创建新运行。机器人仅支持私聊文本；不处理群聊、附件和其他媒体，也不会通过机器人读取另一个聊天的历史记录。
+
+飞书消息使用你已绑定且活跃的 Clouisle 账号，并遵循正常 Agent/team 权限。管理员仅配置共享通道，不再配置全局 Agent 名单。Agent 运行和对话仍保存在 Clouisle；飞书仅作为消息传输通道。
+
+## Chat through the Feishu bot
+
+If your administrator enabled Feishu Agent chat, choose your replying Agent in **Personal settings → Feishu** and click **Save**. Once chat is enabled, you can also message the bot with `/agents` (`/智能体`) and `/use <number>` (`/使用 <number>`). Both interfaces share your personal selection and cannot affect another user's selection. Each Agent keeps its own conversation within the same Feishu chat; switching back continues that conversation. Switching affects subsequently accepted messages only; accepted messages and runs retain their original binding. No Agent is selected automatically for a new user. `/new` (`/新对话`) starts a fresh conversation after the current run finishes.
+
+For first use, save an Agent and turn on **Enable Agent chat**. The switch saves automatically and affects only you. Turning it off rejects new messages, including commands, and pauses previously accepted messages awaiting processing and replies awaiting delivery; turning it back on resumes pending work. Your Agent selection and history are preserved. Turning it off does not stop tasks already started or recall sent replies. New messages received while off are not saved for later processing. Return to personal settings to re-enable chat.
+
+Use `/status` (`/状态`) to check progress, `/stop` (`/停止`) to stop the current run, and `/help` (`/帮助`) for commands. When an Agent is waiting for an `ask_user` answer, send a text response in that same chat; it resumes the waiting run rather than starting a new one. The bot supports private text chats only: group messages, attachments, and other media are not processed. Feishu does not expose another chat's history through the bot.
+
+Feishu messages use your linked active Clouisle account and normal Agent/team permissions. Administrators configure the shared transport, not a global Agent list. Agent runs and conversations remain Clouisle records; Feishu is only the transport.
+
 ## Chat Interface
 
 ### Layout
@@ -81,9 +101,17 @@ If the agent supports file uploads (attachments enabled):
 1. Click the **📎 Attach** button
 2. Select file(s) from your computer
 3. Supported formats depend on the agent's attachment configuration (PDF, DOCX, TXT, MD, CSV, XLSX, PPTX, images, etc.)
-4. Wait for the file to upload/parse
+4. Wait for the original file to finish uploading
 5. Add your message or question about the file
 6. Click **Send**
+
+
+Chat attachments are kept as scoped Asset references in conversation history. Documents are not automatically inserted into model context, including PDFs. The Agent uses `read_asset` to read bounded line ranges and `search_asset` to locate text. Complete extracted text is prepared on first use and persisted for subsequent reads; a continuation cursor allows the Agent to reach the end without returning the whole document at once. Each operation reauthorizes the original Asset and its conversation branch.
+
+Images, audio, and video retain native model input when the selected adapter supports their modality and MIME type. For documents, line numbers refer to extracted text, not PDF pages. Explicit native PDF viewing uses bounded page selections; audio/video time selections require FFmpeg. Empty or failed extraction is reported rather than presented as a complete document; scanned images and complex layouts may require native viewing. A full-document task is not complete until reading reaches `eof`; model execution budgets may prevent completing that in one run.
+
+The Agent discovers older files with `list_assets`, using an optional case-insensitive filename `query` and `kind` (`image`, `audio`, `video`, or `file`). Results include scope-local refs and metadata, never file bytes or download credentials. Pages contain 10 items by default (maximum 30). When `has_more` is true, repeat the query and kind with `next_cursor`; use `read_asset`/`search_asset` for document text or `view_asset` for native media. Discovery excludes unavailable/expired assets and files attached only to inactive branches, and cannot search another conversation.
+
 
 **Upload limits:**
 - All chat uploads are limited to **10 MB per file** (server-enforced)

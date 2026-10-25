@@ -5,8 +5,10 @@ The auto notification feature allows administrators to configure automatic notif
 ## Overview
 
 - **In-app Notifications**: All enabled auto notifications create in-app notifications
-- **External Channels**: Can be configured to send via email, DingTalk, WeChat Work, Feishu, Slack, Webhook
+- **External Channels**: Configure email, Webhook, and Feishu direct messages
 - **Global Configuration**: External channels are globally configured and apply to all enabled notification types
+
+Feishu requires its separate **Notifications** capability and a configured Feishu app. Sends run asynchronously through Celery and update per-channel delivery status; users must have a Feishu directory binding. Unlinked or inactive recipients are not sent a direct message. A partial delivery records a localized success/total count; if every recipient fails, the task retries under the notification worker's existing retry policy.
 
 ## Notification Types
 
@@ -92,10 +94,10 @@ These are valid notification types, but the default seeded `enabled_types` list 
 
 1. Go to **Site Settings** → **Notification Settings** → **Auto Notifications** tab
 2. Check notification types to enable
-3. Select external notification channels (must be enabled in respective channel settings first)
+3. Select email, Webhook, and/or Feishu channels after enabling them in their settings
 4. Save configuration
 
-The endpoint is `GET/PUT /api/v1/admin/site-settings/auto-notifications`. It accepts the notification types listed above and the channels `email`, `dingtalk`, `wechat`, `feishu`, `webhook`, and `slack`. The default configuration has no external channels enabled; its seeded enabled types include `workflow.pause_pending` but not the password-expiration types.
+The endpoint is `GET/PUT /api/v1/admin/site-settings/auto-notifications`. It accepts the notification types listed above and the channels `email`, `webhook`, and `feishu`. The default configuration has no external channels enabled; its seeded enabled types include `workflow.pause_pending` but not the password-expiration types.
 
 ### API Configuration
 
@@ -116,7 +118,7 @@ Response example:
       "user.activated",
       "security.login_anomaly"
     ],
-    "channels": ["email", "dingtalk"]
+    "channels": ["email", "webhook", "feishu"]
   },
   "msg": "success"
 }
@@ -135,7 +137,7 @@ Content-Type: application/json
     "user.activated",
     "security.login_anomaly"
   ],
-  "channels": ["email"]
+  "channels": ["email", "webhook", "feishu"]
 }
 ```
 
@@ -146,13 +148,12 @@ Auto notifications support the following external channels:
 | Channel | Configuration | Description |
 |---------|---------------|-------------|
 | `email` | SMTP settings | Email notifications |
-| `dingtalk` | DingTalk robot Webhook | DingTalk group notifications |
-| `wechat` | WeChat Work robot Webhook | WeChat Work group notifications |
-| `feishu` | Feishu robot Webhook | Feishu group notifications |
-| `slack` | Slack Webhook | Slack channel notifications |
 | `webhook` | Custom Webhook URL | Generic HTTP callback |
+| `feishu` | Feishu integration with Notifications capability and linked users | Markdown-rendered direct messages |
 
-**Note**: External channels must be configured and enabled in their respective settings pages before they can be used in auto notifications.
+Feishu integration and its **Notifications** capability must be enabled before it can be used in automatic notifications.
+
+**Note**: Email and Webhook must be configured and enabled in Site Settings before they can be used in auto notifications.
 
 ## Notification Content
 
@@ -199,7 +200,7 @@ Business Module → AutoNotificationService → In-app Notification
                                          ↓
                                   External Channel Task (Celery)
                                          ↓
-                           Email/DingTalk/WeChat/Feishu/Slack/Webhook
+                           Email/Webhook
 ```
 
 ### Core Components
@@ -314,4 +315,4 @@ The following notification types are enabled by default:
 - `security.account_locked`
 - `security.password_changed`
 
-External channels are not enabled by default and require manual configuration by administrators.
+External channels are not enabled by default and require manual configuration by administrators. For Feishu, enable the **Notifications** capability on the Feishu integration and include Feishu in the manual or automatic notification channel selection.

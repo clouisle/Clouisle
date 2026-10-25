@@ -300,16 +300,13 @@ def aggregate_rag_contexts(rag_contexts: list[dict[str, Any]]) -> list[dict[str,
     return with_rag_citation_ids(aggregated)
 
 
-def build_rag_prompt(rag_contexts: list[dict[str, Any]], user_message: str) -> str:
-    """Build user message with RAG context.
-
-    Args:
-        rag_contexts: List of aggregated retrieval results
-        user_message: Original user message
-
-    Returns:
-        Enhanced prompt with RAG context
-    """
+def build_rag_prompt(
+    rag_contexts: list[dict[str, Any]],
+    user_message: str,
+    *,
+    enable_citations: bool = False,
+) -> str:
+    """Build a user prompt with optional citation instructions and labels."""
     if not rag_contexts:
         return user_message
 
@@ -317,23 +314,27 @@ def build_rag_prompt(rag_contexts: list[dict[str, Any]], user_message: str) -> s
 
     references = []
     for ctx in rag_contexts:
-        references.append(
-            "\n".join(
-                (
-                    f"citation_id: {ctx['citation_id']}",
-                    f"source: {ctx['kb_name']} - {ctx['document_name']}",
-                    "content:",
-                    ctx["content"],
-                )
+        reference_lines = []
+        if enable_citations:
+            reference_lines.append(f"citation_id: {ctx['citation_id']}")
+        reference_lines.extend(
+            (
+                f"source: {ctx['kb_name']} - {ctx['document_name']}",
+                "content:",
+                ctx["content"],
             )
         )
+        references.append("\n".join(reference_lines))
 
     context_text = "\n\n---\n\n".join(references)
-
-    return f"""The following reference materials may help answer the user's question. Use only relevant material.
+    citation_instructions = ""
+    if enable_citations:
+        citation_instructions = f"""
 
 If the answer uses a factual statement from a reference, every sentence or list item containing that statement MUST end with the exact source marker `{CITATION_MARKER_TEMPLATE}`, replacing `SOURCE_ID` with that reference's `citation_id`.
-Do not use numeric references such as `[1]` or `[39]`. Never invent, alter, translate, shorten, or renumber a citation ID.
+Do not use numeric references such as `[1]` or `[39]`. Never invent, alter, translate, shorten, or renumber a citation ID."""
+
+    return f"""The following reference materials may help answer the user's question. Use only relevant material.{citation_instructions}
 
 Reference Materials:
 

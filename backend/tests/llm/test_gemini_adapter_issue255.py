@@ -105,7 +105,7 @@ def test_convert_messages_and_tools_cover_multimodal_and_fallbacks():
     assert contents[0]["parts"] == [
         {"text": "look"},
         {"inline_data": {"mime_type": "image/jpeg", "data": "aGVsbG8="}},
-        {"file_data": {"file_uri": "gs://bucket/image.png"}},
+        {"file_data": {"mime_type": "image/png", "file_uri": "gs://bucket/image.png"}},
     ]
     assert contents[1]["parts"][-1] == {"function_call": {"name": "search", "args": {}}}
     assert contents[2]["parts"][0]["function_response"] == {

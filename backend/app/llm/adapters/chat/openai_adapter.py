@@ -8,6 +8,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
+from app.llm.errors import InvalidRequestError
 from app.llm.types import (
     Message,
     ChatResponse,
@@ -55,31 +56,90 @@ class OpenAIAdapter(BaseChatAdapter):
                             )
                         elif part_type == "image" and hasattr(part, "image"):
                             img = part.image
-                            if img is not None and img.base64:
-                                img_format = (
-                                    img.format
-                                    if hasattr(img, "format") and img.format
-                                    else "png"
+                            if (
+                                img is None
+                                or getattr(img, "asset_ref", None)
+                                or not (
+                                    getattr(img, "base64", None)
+                                    or getattr(img, "url", None)
                                 )
-                                data_url = (
-                                    f"data:image/{img_format};base64,{img.base64}"
+                            ):
+                                raise InvalidRequestError(
+                                    message="Image payload is missing or unresolved"
                                 )
-                                processed_content.append(
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {"url": data_url},
-                                    }
+                            mime = (
+                                getattr(img, "mime_type", None)
+                                or f"image/{getattr(img, 'format', 'png')}"
+                            )
+                            if mime not in {
+                                "image/png",
+                                "image/jpeg",
+                                "image/gif",
+                                "image/webp",
+                            }:
+                                raise InvalidRequestError(
+                                    message=f"Unsupported image MIME type: {mime}"
                                 )
-                            elif img is not None and img.url:
-                                processed_content.append(
-                                    {"type": "image_url", "image_url": {"url": img.url}}
+                            image_url = getattr(img, "url", None)
+                            image_base64 = getattr(img, "base64", None)
+                            if image_base64:
+                                url = f"data:{mime};base64,{image_base64}"
+                            elif image_url:
+                                from urllib.parse import urlsplit
+
+                                if image_url.startswith("data:"):
+                                    header, separator, _encoded = image_url.partition(
+                                        ","
+                                    )
+                                    if not separator or ";base64" not in header.lower():
+                                        raise InvalidRequestError(
+                                            message="Image data URL must use base64 encoding"
+                                        )
+                                    data_mime = header[5:].split(";", 1)[0].lower()
+                                    if data_mime != mime:
+                                        raise InvalidRequestError(
+                                            message="Image data URL MIME does not match declared image MIME"
+                                        )
+                                    url = image_url
+                                else:
+                                    parsed_url = urlsplit(image_url)
+                                    if (
+                                        parsed_url.scheme not in {"http", "https"}
+                                        or not parsed_url.hostname
+                                    ):
+                                        raise InvalidRequestError(
+                                            message="Image URL must be absolute HTTP(S) or a base64 data URL"
+                                        )
+                                    url = image_url
+                            else:
+                                raise InvalidRequestError(
+                                    message="Image payload is missing or unresolved"
                                 )
+                            processed_content.append(
+                                {"type": "image_url", "image_url": {"url": url}}
+                            )
                         elif part_type == "image_url" and hasattr(part, "image_url"):
                             processed_content.append(
                                 {"type": "image_url", "image_url": part.image_url}
                             )
+                        elif part_type == "file" and hasattr(part, "file"):
+                            raise InvalidRequestError(
+                                message="File input is unsupported by OpenAI chat adapter"
+                            )
+                        elif part_type in {"audio", "video"}:
+                            raise InvalidRequestError(
+                                message=f"{part_type.title()} input is unsupported by OpenAI chat adapter"
+                            )
+                        else:
+                            raise InvalidRequestError(
+                                message=f"Unsupported content part: {part_type}"
+                            )
                     elif isinstance(part, dict):
                         processed_content.append(part)
+                    else:
+                        raise InvalidRequestError(
+                            message="Invalid multimodal content part"
+                        )
                 content = processed_content if processed_content else ""
 
             role_value = msg.role.value if hasattr(msg.role, "value") else msg.role

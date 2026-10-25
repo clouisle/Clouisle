@@ -100,6 +100,7 @@ import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
 import { adminPackagesApi, downloadBlob } from '@/lib/api/packages'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
+import { useDebounce } from '@/hooks/use-debounce'
 
 // 工具类型图标映射
 const toolTypeIcons: Record<ToolType, React.ReactNode> = {
@@ -144,6 +145,8 @@ export function ToolsClient() {
 
     // 筛选状态
     const [searchQuery, setSearchQuery] = useUrlSearchState()
+    const debouncedSearchQuery = useDebounce(searchQuery, 300)
+    const previousDebouncedSearchQuery = React.useRef(debouncedSearchQuery)
     const [typeFilter, setTypeFilter] = React.useState<Set<string>>(new Set())
     const [categoryFilter, setCategoryFilter] = React.useState<Set<string>>(new Set())
     const [enabledFilter, setEnabledFilter] = React.useState<Set<string>>(new Set())
@@ -197,7 +200,7 @@ export function ToolsClient() {
                 adminToolsApi.listPage({
                     page,
                     pageSize,
-                    search: searchQuery || undefined,
+                    search: debouncedSearchQuery || undefined,
                     type: selectedTypes.length > 0 ? selectedTypes : undefined,
                     category: selectedCategories.length > 0 ? selectedCategories : undefined,
                     status: selectedStatuses.length > 0 ? selectedStatuses : undefined,
@@ -216,11 +219,17 @@ export function ToolsClient() {
         } finally {
             setIsLoading(false)
         }
-    }, [page, pageSize, searchQuery, selectedTypes, selectedCategories, selectedStatuses, selectedTeams, selectedCreators])
+    }, [page, pageSize, debouncedSearchQuery, selectedTypes, selectedCategories, selectedStatuses, selectedTeams, selectedCreators])
 
     React.useEffect(() => {
+        const searchChanged = previousDebouncedSearchQuery.current !== debouncedSearchQuery
+        previousDebouncedSearchQuery.current = debouncedSearchQuery
+        if (searchChanged && page !== 1) {
+            setPage(1)
+            return
+        }
         loadTools()
-    }, [loadTools])
+    }, [debouncedSearchQuery, page, loadTools])
 
     const filteredTools = tools
     const totalPages = pageData ? Math.ceil(pageData.total / pageSize) : 1

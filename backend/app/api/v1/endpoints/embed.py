@@ -203,6 +203,7 @@ async def get_embed_agent_info(
             hide_tool_calls=agent.hide_tool_calls,
             hide_message_actions=agent.hide_message_actions,
             hide_reasoning=agent.hide_reasoning,
+            enable_citations=getattr(agent, "enable_citations", False),
             hide_artifact_list=getattr(agent, "hide_artifact_list", False),
             embed_config=agent.embed_config or {},
         ),

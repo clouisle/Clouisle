@@ -22,6 +22,7 @@ const fakeEditor = {
   getAttribute: () => null,
 }
 
+let execCommand: ReturnType<typeof mock>
 let stateSlots: unknown[] = []
 let hookIndex = 0
 let effects: Array<() => void> = []
@@ -106,6 +107,7 @@ beforeEach(() => {
   hookIndex = 0
   effects = []
   selectionRange = null
+  execCommand = mock(() => true)
   fakeEditor.childNodes = []
   fakeEditor.innerHTML = ''
 
@@ -114,8 +116,7 @@ beforeEach(() => {
     document: {
       addEventListener: mock(() => {}),
       removeEventListener: mock(() => {}),
-      createRange: () => ({ setStart: mock(() => {}), collapse: mock(() => {}) }),
-      execCommand: mock(() => true),
+      execCommand,
     },
     window: {
       getSelection: () => ({
@@ -310,5 +311,72 @@ describe('PromptVariableEditor', () => {
     ;(editorFrom(tree).props.onCompositionEnd as () => void)()
     ;({ tree } = renderEditor({ onChange, noVariablesText: 'No variables' }))
     expect(textContent(tree)).toContain('User name')
+  })
+  it('moves through matching suggestions with arrow keys and inserts the highlighted item with Tab', () => {
+    let { tree, onChange } = renderEditor({})
+    let editor = editorFrom(tree)
+
+    inputText(editor, '{{')
+    ;({ tree, onChange } = renderEditor({ onChange }))
+    editor = editorFrom(tree)
+
+    const preventDefault = mock(() => {})
+    ;(editor.props.onKeyDown as (event: Record<string, unknown>) => void)({ key: 'ArrowDown', preventDefault })
+    ;({ tree, onChange } = renderEditor({ onChange }))
+    editor = editorFrom(tree)
+
+    const selectedSuggestion = findAll(tree, (element) => element.props['data-suggestion-index'] === 1)[0]
+    expect(selectedSuggestion.props.className).toContain('bg-accent')
+
+    ;(editor.props.onKeyDown as (event: Record<string, unknown>) => void)({ key: 'Tab', preventDefault })
+
+    expect(preventDefault).toHaveBeenCalledTimes(2)
+    expect(onChange).toHaveBeenLastCalledWith('{{order.total}}')
+    expect(fakeEditor.innerHTML).toContain('Order total')
+  })
+
+  it('handles paste as plain text and prevents editing and paste in read-only mode', () => {
+    const { tree } = renderEditor()
+    const editor = editorFrom(tree)
+    const preventDefault = mock(() => {})
+    const clipboardData = { getData: mock(() => 'pasted {{user.name}}') }
+
+    ;(editor.props.onPaste as (event: Record<string, unknown>) => void)({ preventDefault, clipboardData })
+
+    expect(preventDefault).toHaveBeenCalledTimes(1)
+    expect(clipboardData.getData).toHaveBeenCalledWith('text/plain')
+    expect(execCommand).toHaveBeenCalledWith('insertText', false, 'pasted {{user.name}}')
+
+    const readOnlyTree = renderEditor({ readOnly: true }).tree
+    const readOnlyEditor = findAll(readOnlyTree, (element) => element.props.contentEditable === false)[0]
+    const readOnlyPastePreventDefault = mock(() => {})
+
+    expect(readOnlyEditor).toBeTruthy()
+    expect(readOnlyEditor.props.onInput).toBeUndefined()
+    expect(readOnlyEditor.props.onKeyDown).toBeUndefined()
+    ;(readOnlyEditor.props.onPaste as (event: Record<string, unknown>) => void)({ preventDefault: readOnlyPastePreventDefault })
+    expect(readOnlyPastePreventDefault).toHaveBeenCalledTimes(1)
+  })
+
+  it('omits undefined-variable warnings unless enabled and shows only unique unresolved references', () => {
+    const value = '{{missing}} {{user.name}} {{another.missing}} {{missing}}'
+
+    const hiddenWarnings = renderEditor({ value, showUndefinedWarnings: false }).tree
+    expect(textContent(hiddenWarnings)).not.toContain('{{missing}}')
+    expect(textContent(hiddenWarnings)).not.toContain('{{another.missing}}')
+
+    const visibleWarnings = renderEditor({ value, showUndefinedWarnings: true }).tree
+    expect(buttonsWith(visibleWarnings, '{{missing}}')).toHaveLength(1)
+    expect(buttonsWith(visibleWarnings, '{{another.missing}}')).toHaveLength(1)
+    expect(buttonsWith(visibleWarnings, '{{user.name}}')).toHaveLength(0)
+  })
+
+  it('shows the fallback no-results message and does not offer creation without a callback', () => {
+    let { tree } = renderEditor({ noVariablesText: 'Nothing available', allowCreateVariable: true })
+    inputText(editorFrom(tree), '{{unknown')
+    ;({ tree } = renderEditor({ noVariablesText: 'Nothing available', allowCreateVariable: true }))
+
+    expect(textContent(tree)).toContain('Nothing available')
+    expect(buttonsWith(tree, 'unknown')).toHaveLength(0)
   })
 })

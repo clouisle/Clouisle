@@ -2,6 +2,9 @@
   "common": {
     "appName": "Clouisle",
     "loading": "Loading...",
+    "loadingMore": "Loading more...",
+    "loadFailed": "Failed to load",
+    "retry": "Retry",
     "save": "Save",
     "cancel": "Cancel",
     "delete": "Delete",

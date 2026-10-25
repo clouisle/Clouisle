@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-07T17:03:38.849Z
+// GENERATED — 2026-10-24T18:18:06.011Z
 // Source: i18n/en/workflow.json
 export type WorkflowMessages = {
   workflow: {
@@ -235,8 +235,6 @@ export type WorkflowMessages = {
     duration: string
     createdAt: string
     showingRuns: string
-    prev: string
-    next: string
     monitor_page: {
       title: string
       last7Days: string

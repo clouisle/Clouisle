@@ -167,6 +167,16 @@ async function render() {
   return container
 }
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+async function settleDebounce() {
+  const { promise, resolve } = Promise.withResolvers<void>()
+  setTimeout(resolve, 350)
+  await act(async () => { await promise })
+}
+async function waitForRapidEdit() {
+  const { promise, resolve } = Promise.withResolvers<void>()
+  setTimeout(resolve, 60)
+  await act(async () => { await promise })
+}
 async function click(container: HTMLElement, text: string, occurrence = 0) {
   const matches = [...container.querySelectorAll('button')].filter((node) => node.textContent?.includes(text))
   await act(async () => { matches[occurrence]!.click(); await tick() })
@@ -187,12 +197,36 @@ describe('ToolsClient issue #255 coverage', () => {
 
     const input = container.querySelector('input[placeholder="tools.searchPlaceholder"]')!
     await act(async () => { enter(input, 'needle'); await tick() })
+    await settleDebounce()
     for (const value of ['builtin', 'search', 'enabled', 'team-1', 'ada']) await click(container, `:${value}`)
     expect(api.listPage).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'needle', type: ['builtin'], category: ['search'], status: ['enabled'], team_id: ['team-1'], creator: ['ada'], page: 1 }))
 
     await click(container, 'common.reset')
+    await settleDebounce()
     expect(search).toBe('')
     expect(api.listPage).toHaveBeenLastCalledWith(expect.objectContaining({ search: undefined, type: undefined, category: undefined, status: undefined, team_id: undefined, creator: undefined }))
+  })
+
+  it('collapses rapid search edits into a single page-one request after the debounce delay', async () => {
+    const container = await render()
+    const pagination = [...container.querySelectorAll<HTMLButtonElement>('button.h-8.w-8')].slice(-4)
+    await act(async () => { pagination[2]!.click(); await tick() })
+    expect(api.listPage).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, search: undefined }))
+    const callsAfterPaging = api.listPage.mock.calls.length
+
+    const input = () => container.querySelector('input[placeholder="tools.searchPlaceholder"]') as HTMLInputElement
+    await act(async () => { enter(input(), 'n'); await tick() })
+    await waitForRapidEdit()
+    await act(async () => { enter(input(), 'ne'); await tick() })
+    await waitForRapidEdit()
+    await act(async () => { enter(input(), 'neo'); await tick() })
+
+    expect(input().value).toBe('neo')
+    expect(api.listPage.mock.calls.length).toBe(callsAfterPaging)
+
+    await settleDebounce()
+    expect(api.listPage.mock.calls.length).toBe(callsAfterPaging + 1)
+    expect(api.listPage).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, search: 'neo' }))
   })
 
   it('selects eligible tools, clears selection, and bulk deletes success and failure', async () => {

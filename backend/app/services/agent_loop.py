@@ -25,6 +25,7 @@ branch activation, stats updates. Those remain route-level concerns.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -35,7 +36,6 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from app.api.v1.endpoints.chat_helpers import (
-    get_tool_execution_payloads,
     iter_with_idle_timeout,
 )
 from app.api.v1.endpoints.chat_sse import (
@@ -43,8 +43,14 @@ from app.api.v1.endpoints.chat_sse import (
     build_tool_call_sse_event,
     build_tool_result_sse_event,
 )
-from app.api.v1.endpoints.chat_tools import execute_tool_call
+from app.api.v1.endpoints.chat_tools import AssetViewResult, execute_tool_call
 from app.llm.tools.interaction import ToolInteractionRequest
+from app.utils.tool_output import (
+    KNOWN_OUTPUT_TOOLS,
+    ToolExecutionResult,
+    get_tool_execution_payloads,
+    persistable_model_result,
+)
 from app.llm.types import ChatStreamChunk, FinishReason, StopReason
 from app.services import agent_round
 from app.services.sandbox.recovery import (
@@ -91,8 +97,8 @@ class AgentLoopContext:
     model_used: str | None
     # final user message text (with image inventory appended)
     user_message: str = ""
-    model_supports_vision: bool = False
-    # tools
+    input_capabilities: Any = None
+    model_config: Any = None
     tools: list[Any] | None = None
     tool_display_names: dict[str, str] = field(default_factory=dict)
     tool_timeouts: dict[str, Any] = field(default_factory=dict)
@@ -105,7 +111,6 @@ class AgentLoopContext:
     deadline_seconds: float | None = None
     # request prep outputs
     sandbox_session_id: str | None = None
-    file_content: str | None = None
     current_images: list[Any] | None = None
     working_history_override: list[dict[str, Any]] | None = None
     image_pool: list[Any] = field(default_factory=list)
@@ -150,6 +155,8 @@ class AgentLoopContext:
     # persistence granularity
     persist_step_per_tool: bool = False
     collect_dependency_metrics: bool = False
+    # Observability run id, used only to key on-demand tool payload drill-down.
+    observability_run_id: UUID | None = None
     step_branch_parent_id: UUID | None = None
     first_round_index: int = 1
     created_message_count: int = 2
@@ -191,12 +198,12 @@ def _safe_arguments(arguments: str | dict | None) -> dict[str, Any]:
         return {}
 
 
-def _include_workspace_reset(result: str, notices: list[dict[str, Any]]) -> str:
-    """Keep recovery information in the persisted tool protocol, not just logs."""
+def _include_workspace_reset_result(result: str, notices: list[dict[str, Any]]) -> str:
+    """Append recovery control data without discarding the tool's own output."""
     try:
         payload = json.loads(result)
     except (TypeError, ValueError):
-        payload = result
+        payload = {"result": result}
     if not isinstance(payload, dict):
         payload = {"result": payload}
     payload["workspace_reset"] = notices[-1]
@@ -268,6 +275,10 @@ class AgentLoop:
         self._round_index = context.first_round_index
         self._consecutive_pause_turns = 0
         self._deadline_at: float | None = None
+        # Current model trajectory entry id; tool entries link to it.
+        self._current_model_entry_id: UUID | None = None
+        # Finalizer for the in-flight model turn (cancellation safety).
+        self._active_model_finalizer: Any = None
         self._last_event_time = (
             context.initial_last_event_time
             if context.initial_last_event_time is not None
@@ -399,6 +410,17 @@ class AgentLoop:
         display_name = ctx.tool_display_names.get(tool_name, tool_name)
         tool_runner = ctx.execute_tool_call or execute_tool_call
         reset_notices: list[dict[str, Any]] = []
+        trajectory_arguments = arguments
+        trajectory_started_at: float | None = None
+        trajectory_started_clock = 0.0
+        if ctx.observability_run_id is not None:
+            trajectory_started_at = time.time()
+            trajectory_started_clock = time.monotonic()
+            # Preserve the exact request arguments before the tool mutates them.
+            try:
+                trajectory_arguments = json.loads(json.dumps(arguments))
+            except (TypeError, ValueError):
+                pass
         collect_dependency_metric = (
             ctx.collect_dependency_metrics and tool_name != "ask_user"
         )
@@ -406,6 +428,8 @@ class AgentLoop:
         tool_started_clock = time.monotonic() if collect_dependency_metric else 0.0
         metric_status = "in_progress"
         metric_error_category: str | None = None
+        persist_result: str | None = None
+        tool_result: Any = None
         try:
             with (
                 capture_workspace_resets() as reset_notices,
@@ -448,9 +472,48 @@ class AgentLoop:
                     },
                 )
 
-            display_result, llm_result = get_tool_execution_payloads(tool_result)
+            if isinstance(tool_result, AssetViewResult):
+                llm_result = tool_result.llm_result
+                record = {
+                    "id": tc.id,
+                    "name": tool_name,
+                    "arguments": arguments,
+                    "persist_result": json.dumps(
+                        {
+                            "kind": "asset.view.persisted",
+                            "version": 1,
+                            "display": tool_result.display_result,
+                            "marker": tool_result.llm_result,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    "llm_result": llm_result,
+                    "display_result": json.dumps(
+                        tool_result.display_result, ensure_ascii=False
+                    ),
+                    "display_name": display_name,
+                }
+                metric_status = "completed"
+                return (
+                    self._build_tool_call_sse(tc),
+                    build_tool_result_sse_event(
+                        tool_call_id=tc.id,
+                        tool_name=tool_name,
+                        tool_display_name=display_name,
+                        display_result=json.dumps(
+                            tool_result.display_result, ensure_ascii=False
+                        ),
+                    ),
+                    None,
+                    record,
+                )
+            display_result, llm_result = get_tool_execution_payloads(
+                tool_result, tool_name
+            )
             metric_status = "completed"
-            if tool_started_at is not None:
+            # Error detection also matters for trajectory capture when
+            # dependency metrics are disabled.
+            if tool_started_at is not None or ctx.observability_run_id is not None:
                 try:
                     parsed_result = json.loads(display_result)
                 except (TypeError, ValueError):
@@ -492,6 +555,7 @@ class AgentLoop:
                             if tool_name == "knowledge_search"
                             else "tool",
                             "name": tool_name[:100],
+                            "tool_call_id": tc.id[:100],
                             "status": metric_status,
                             "started_at": datetime.fromtimestamp(
                                 tool_started_at, timezone.utc
@@ -505,10 +569,67 @@ class AgentLoop:
                             "error_category": metric_error_category,
                         }
                     )
+            if ctx.observability_run_id is not None and trajectory_started_at:
+                try:
+                    from app.services.observability_trajectory import (
+                        record_tool_call,
+                    )
+
+                    finished_clock = time.monotonic()
+                    await record_tool_call(
+                        run_id=ctx.observability_run_id,
+                        conversation_id=ctx.conversation.id,
+                        parent_id=self._current_model_entry_id,
+                        tool_call_id=tc.id,
+                        tool_name=tool_name,
+                        arguments=trajectory_arguments,
+                        status=(
+                            metric_status
+                            if metric_status != "in_progress"
+                            else "interrupted"
+                        ),
+                        started_at=trajectory_started_at,
+                        finished_at=trajectory_started_at
+                        + (finished_clock - trajectory_started_clock),
+                        duration_ms=max(
+                            0,
+                            int((finished_clock - trajectory_started_clock) * 1000),
+                        ),
+                        kind="retrieval" if tool_name == "knowledge_search" else "tool",
+                    )
+                except Exception:
+                    # Telemetry must never override the tool's own result or
+                    # exception in this finally block.
+                    logger.debug("Tool trajectory dropped", exc_info=True)
 
         if reset_notices:
-            display_result = _include_workspace_reset(display_result, reset_notices)
-            llm_result = _include_workspace_reset(llm_result, reset_notices)
+            display_result = _include_workspace_reset_result(
+                display_result, reset_notices
+            )
+            # Recovery control data must remain machine-readable for replanning,
+            # so this rare event keeps the structured payload instead of the
+            # compact prose used for ordinary results.
+            llm_result = display_result
+
+        persist_result = persistable_model_result(
+            tool_name,
+            display_result,
+            llm_result,
+            explicit=isinstance(tool_result, ToolExecutionResult),
+        )
+        if ctx.observability_run_id is not None:
+            from app.services.observability_payload import record_tool_payload
+
+            await record_tool_payload(
+                run_id=ctx.observability_run_id,
+                tool_call_id=tc.id,
+                tool_name=tool_name,
+                display_result=display_result,
+                model_result=llm_result,
+                renderer=tool_name if tool_name in KNOWN_OUTPUT_TOOLS else None,
+                conversation_id=ctx.conversation.id,
+                error=metric_error_category if metric_status == "failed" else None,
+            )
 
         return (
             self._build_tool_call_sse(tc),
@@ -523,6 +644,7 @@ class AgentLoop:
                 "id": tc.id,
                 "name": tool_name,
                 "arguments": arguments,
+                "persist_result": persist_result,
                 "display_result": display_result,
                 "llm_result": llm_result,
                 "display_name": display_name,
@@ -626,7 +748,7 @@ class AgentLoop:
         tool_index = self._next_round_index()
         await agent_round.persist_tool_result(
             conversation=ctx.conversation,
-            content=record["display_result"],
+            content=record.get("persist_result") or record["display_result"],
             tool_call_id=record["id"],
             tool_name=record["name"],
             round_id=ctx.round_id,
@@ -650,12 +772,11 @@ class AgentLoop:
             agent=ctx.agent,
             conversation=ctx.conversation,
             user_message=ctx.user_message,
-            file_content=ctx.file_content,
+            current_user_message_id=ctx.current_user_message_id,
             user_locale=ctx.user_locale,
             history_override=ctx.working_history_override,
-            current_images=ctx.current_images,
-            model_supports_vision=ctx.model_supports_vision,
-            current_user_message_id=ctx.current_user_message_id,
+            input_capabilities=ctx.input_capabilities,
+            model_config=self.context.model_config,
             include_current_user_message=ctx.include_current_user_message,
             exclude_message_ids=ctx.exclude_message_ids,
             history_before_message_created_at=ctx.history_before_message_created_at,
@@ -667,8 +788,105 @@ class AgentLoop:
             tokenizer_model_id=ctx.tokenizer_model_id,
             model_context_limit=ctx.model_context_limit,
             model_max_output_tokens=ctx.model_max_output_tokens,
-            provider=ctx.model_provider,
+            current_images=ctx.current_images,
         )
+
+    async def _begin_model_trajectory(
+        self, messages_for_llm: list[dict[str, Any]], *, fallback: bool = False
+    ) -> Any:
+        """Snapshot the request at the boundary, before history can mutate."""
+        ctx = self.context
+        if ctx.observability_run_id is None:
+            self._current_model_entry_id = None
+            return None
+        try:
+            from app.services.observability_trajectory import (
+                record_model_request,
+                safe_model_options,
+            )
+
+            handle = await record_model_request(
+                run_id=ctx.observability_run_id,
+                conversation_id=ctx.conversation.id if ctx.conversation else None,
+                model=ctx.tokenizer_model_id or ctx.model_used or ctx.model_id,
+                provider=ctx.model_provider,
+                model_id=ctx.model_id,
+                streaming=bool(
+                    ctx.streaming and ctx.team_chat_stream is not None and not fallback
+                ),
+                messages=messages_for_llm,
+                tools=ctx.tools,
+                options=safe_model_options(ctx.model_config),
+                # Configured budgets, not verified effective provider values.
+                limits={
+                    "context_limit": ctx.model_context_limit,
+                    "configured_max_output_tokens": ctx.model_max_output_tokens,
+                },
+                fallback=fallback,
+            )
+        except Exception:
+            logger.debug("Model request trajectory dropped", exc_info=True)
+            handle = None
+        self._current_model_entry_id = handle.entry_id if handle else None
+        return handle
+
+    async def _finish_model_trajectory(
+        self,
+        handle: Any,
+        *,
+        status: str,
+        content: str,
+        reasoning: str,
+        tool_calls: list[Any],
+        finish_reason: str | None,
+        usage: Any,
+        error: str | None = None,
+    ) -> None:
+        """Persist the actual response without affecting the model turn."""
+        if handle is None:
+            return
+        try:
+            from app.services.observability_trajectory import finish_model_call
+
+            token_usage: dict[str, int] | None = None
+            if usage is not None:
+                token_usage = {
+                    "prompt": int(getattr(usage, "prompt_tokens", 0) or 0),
+                    "completion": int(getattr(usage, "completion_tokens", 0) or 0),
+                    "total": int(getattr(usage, "total_tokens", 0) or 0),
+                }
+                for key, attribute in (
+                    ("cache_read", "cache_read_tokens"),
+                    ("cache_creation", "cache_creation_tokens"),
+                ):
+                    value = int(getattr(usage, attribute, 0) or 0)
+                    if value:
+                        token_usage[key] = value
+            await finish_model_call(
+                handle,
+                status=status,
+                content=content,
+                reasoning=reasoning,
+                tool_calls=tool_calls,
+                finish_reason=finish_reason,
+                token_usage=token_usage,
+                error=error,
+            )
+        except Exception:
+            # Telemetry must never alter model-turn outcomes.
+            logger.debug("Model response trajectory dropped", exc_info=True)
+
+    async def _finalize_active_model(self, status: str, error: str | None) -> None:
+        finalizer = self._active_model_finalizer
+        if finalizer is None:
+            return
+        self._active_model_finalizer = None
+        try:
+            await finalizer(status, error)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.debug("Model trajectory finalization dropped", exc_info=True)
 
     async def run(self) -> AsyncIterator[str | None]:
         start_time = time.time()
@@ -677,7 +895,14 @@ class AgentLoop:
         try:
             async for output in self._run(start_time):
                 yield output
-        except Exception:
+        except asyncio.CancelledError:
+            await self._finalize_active_model("cancelled", "cancelled")
+            raise
+        except GeneratorExit:
+            await self._finalize_active_model("cancelled", "closed")
+            raise
+        except Exception as exc:
+            await self._finalize_active_model("failed", f"{type(exc).__name__}: {exc}")
             # Capture partial state so the caller's error handlers can persist
             # reasoning/content produced before the failure.
             if self.result.duration_ms == 0:
@@ -823,6 +1048,30 @@ class AgentLoop:
             client_disconnected = False
             pause_turn_pending = False
 
+            model_state: dict[str, Any] = {
+                "handle": await self._begin_model_trajectory(messages_for_llm),
+                "finalized": False,
+                "finish_reason": None,
+            }
+
+            async def finalize_model(status: str, error: str | None = None) -> None:
+                if model_state["finalized"]:
+                    return
+                model_state["finalized"] = True
+                self._active_model_finalizer = None
+                await self._finish_model_trajectory(
+                    model_state["handle"],
+                    status=status,
+                    content=iteration_content,
+                    reasoning=iteration_reasoning,
+                    tool_calls=collected_tool_calls,
+                    finish_reason=model_state["finish_reason"],
+                    usage=stream_usage,
+                    error=error,
+                )
+
+            self._active_model_finalizer = finalize_model
+
             # ---- one model turn ---------------------------------------------
             if ctx.streaming and ctx.team_chat_stream is not None:
                 stream = ctx.team_chat_stream(
@@ -831,10 +1080,24 @@ class AgentLoop:
                     model_id=ctx.model_id,
                     tools=ctx.tools,
                 )
-                async for chunk in iter_with_idle_timeout(
-                    stream,
-                    timeout_seconds=ctx.idle_timeout,
-                    activity_predicate=None,
+
+                async def guarded_stream(iterator: Any) -> AsyncIterator[Any]:
+                    try:
+                        async for item in iterator:
+                            yield item
+                    except asyncio.CancelledError:
+                        await finalize_model("cancelled", "cancelled")
+                        raise
+                    except Exception as exc:
+                        await finalize_model("failed", f"{type(exc).__name__}: {exc}")
+                        raise
+
+                async for chunk in guarded_stream(
+                    iter_with_idle_timeout(
+                        stream,
+                        timeout_seconds=ctx.idle_timeout,
+                        activity_predicate=None,
+                    )
                 ):
                     if chunk.usage:
                         stream_usage = chunk.usage
@@ -902,6 +1165,9 @@ class AgentLoop:
                     ):
                         pause_turn_pending = True
                     if chunk.finish_reason:
+                        model_state["finish_reason"] = str(
+                            getattr(chunk.finish_reason, "value", chunk.finish_reason)
+                        )
                         if reasoning_started and not full_content:
                             event = self._emit(REASONING_END, {})
                             if event:
@@ -920,13 +1186,37 @@ class AgentLoop:
                     and not client_disconnected
                 ):
                     assert ctx.team_chat is not None
-                    fallback_response = await ctx.team_chat(
-                        team_id=str(ctx.agent.team_id),
-                        messages=messages_for_llm,
-                        model_id=ctx.model_id,
-                        tools=ctx.tools,
+                    # The fallback is a distinct provider invocation; finalize
+                    # the empty stream separately instead of conflating it.
+                    await finalize_model("empty")
+                    model_state.update(
+                        handle=await self._begin_model_trajectory(
+                            messages_for_llm, fallback=True
+                        ),
+                        finalized=False,
+                        finish_reason=None,
                     )
+                    self._active_model_finalizer = finalize_model
+                    try:
+                        fallback_response = await ctx.team_chat(
+                            team_id=str(ctx.agent.team_id),
+                            messages=messages_for_llm,
+                            model_id=ctx.model_id,
+                            tools=ctx.tools,
+                        )
+                    except asyncio.CancelledError:
+                        await finalize_model("cancelled", "cancelled")
+                        raise
+                    except Exception as exc:
+                        await finalize_model("failed", f"{type(exc).__name__}: {exc}")
+                        raise
                     used_fallback = True
+                    fallback_finish = getattr(fallback_response, "finish_reason", None)
+                    model_state["finish_reason"] = (
+                        str(getattr(fallback_finish, "value", fallback_finish))
+                        if fallback_finish is not None
+                        else None
+                    )
                     stream_usage = getattr(fallback_response, "usage", None)
                     collected_tool_calls = (
                         getattr(fallback_response, "tool_calls", None) or []
@@ -952,11 +1242,24 @@ class AgentLoop:
                         if event:
                             yield event
             elif ctx.team_chat is not None:
-                response = await ctx.team_chat(
-                    team_id=str(ctx.agent.team_id),
-                    messages=messages_for_llm,
-                    model_id=ctx.model_id,
-                    tools=ctx.tools,
+                try:
+                    response = await ctx.team_chat(
+                        team_id=str(ctx.agent.team_id),
+                        messages=messages_for_llm,
+                        model_id=ctx.model_id,
+                        tools=ctx.tools,
+                    )
+                except asyncio.CancelledError:
+                    await finalize_model("cancelled", "cancelled")
+                    raise
+                except Exception as exc:
+                    await finalize_model("failed", f"{type(exc).__name__}: {exc}")
+                    raise
+                response_finish = getattr(response, "finish_reason", None)
+                model_state["finish_reason"] = (
+                    str(getattr(response_finish, "value", response_finish))
+                    if response_finish is not None
+                    else None
                 )
                 stream_usage = getattr(response, "usage", None)
                 if (
@@ -969,6 +1272,14 @@ class AgentLoop:
                 iteration_reasoning = getattr(response, "reasoning_content", "") or ""
                 full_content += iteration_content
                 full_reasoning += iteration_reasoning
+
+            await finalize_model(
+                "cancelled"
+                if client_disconnected
+                else "paused"
+                if pause_turn_pending
+                else "completed"
+            )
 
             # ---- deadline guard after the turn ------------------------------
             if ctx.deadline_seconds is not None and (
@@ -1246,7 +1557,8 @@ class AgentLoop:
                             continue
                         await agent_round.persist_tool_result(
                             conversation=ctx.conversation,
-                            content=p_data["display_result"],
+                            content=p_data.get("persist_result")
+                            or p_data["display_result"],
                             tool_call_id=p_data["id"],
                             tool_name=p_data["name"],
                             round_id=ctx.round_id,

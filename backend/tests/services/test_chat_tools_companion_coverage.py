@@ -472,49 +472,135 @@ async def test_web_search_and_fetch_webpage_branches():
     assert res_bocha["success"] is False
     assert "Bocha API key is not configured" in str(res_bocha.get("error", ""))
 
-    # 3. fetch_webpage non-http URL truncation
-    fake_conv = SimpleNamespace(text_content="A" * 100, title="Doc")
-    with patch("markitdown.MarkItDown.convert", return_value=fake_conv):
-        res_doc = await fetch_webpage("data:text/plain;base64,abc", max_length=10)
+    # 3. fetch_webpage persists a complete non-HTML document
+    from app.services import asset_url_import
+    from app.schemas.response import BusinessError
+
+    preview = {
+        "filename": "payload.txt",
+        "start_line": 1,
+        "total_lines": 1,
+        "segments": [{"line": 1, "text": "A" * 100, "continuation": False}],
+        "next_cursor": None,
+        "eof": True,
+    }
+    persisted = SimpleNamespace(asset=SimpleNamespace(id=uuid4()), ref="abcd")
+    with (
+        patch.object(
+            asset_url_import,
+            "resolve_document_scope",
+            return_value=(asset_url_import.AssetScopeType.CONVERSATION, uuid4()),
+        ),
+        patch.object(
+            asset_url_import,
+            "load_url_document",
+            new=AsyncMock(
+                return_value=asset_url_import.ExternalDocument(
+                    content=b"A" * 100,
+                    content_type="text/plain",
+                    filename="payload.txt",
+                    url="data:text/plain;base64,abc",
+                    final_url="data:text/plain;base64,abc",
+                )
+            ),
+        ),
+        patch.object(
+            asset_url_import,
+            "persist_scoped_document",
+            new=AsyncMock(return_value=persisted),
+        ) as persist,
+        patch(
+            "app.llm.tools.builtin.web_search._read_preview",
+            new=AsyncMock(return_value=preview),
+        ),
+    ):
+        res_doc = await fetch_webpage("data:text/plain;base64,abc")
         assert res_doc["success"] is True
-        assert len(res_doc["content"]) == 13  # 10 chars + '...'
+        assert res_doc["segments"][0]["text"] == "A" * 100
+        assert persist.await_args.args[0] == b"A" * 100
 
-    # 4. fetch_webpage non-http with response status code error
-    class CustomErr(Exception):
-        response = SimpleNamespace(status_code=403)
-
-    with patch("markitdown.MarkItDown.convert", side_effect=CustomErr("forbidden")):
+    # 4. fetch_webpage rejects unsupported schemes without network IO
+    with (
+        patch.object(
+            asset_url_import,
+            "resolve_document_scope",
+            return_value=(asset_url_import.AssetScopeType.CONVERSATION, uuid4()),
+        ),
+        patch.object(
+            asset_url_import,
+            "load_url_document",
+            new=AsyncMock(
+                side_effect=BusinessError(msg_key="fetch_webpage_unsupported_scheme")
+            ),
+        ),
+    ):
         res_err = await fetch_webpage("file:///restricted.pdf")
         assert res_err["success"] is False
 
-    # 5. fetch_webpage http 404
-    mock_resp = MagicMock()
-    mock_resp.status_code = 404
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        client = AsyncMock()
-        client.get.return_value = mock_resp
-        client.__aenter__.return_value = client
-        mock_client_cls.return_value = client
-
+    # 5. fetch_webpage maps HTTP failures
+    with (
+        patch.object(
+            asset_url_import,
+            "resolve_document_scope",
+            return_value=(asset_url_import.AssetScopeType.CONVERSATION, uuid4()),
+        ),
+        patch.object(
+            asset_url_import,
+            "load_url_document",
+            new=AsyncMock(
+                side_effect=BusinessError(
+                    msg_key="fetch_webpage_http_error", status_code=404
+                )
+            ),
+        ),
+    ):
         res_404 = await fetch_webpage("https://example.com/notfound")
         assert res_404["success"] is False
+        assert "404" in res_404["error"]
 
-    # 6. fetch_webpage http success with max_length truncation
-    mock_resp_ok = MagicMock()
-    mock_resp_ok.status_code = 200
-    mock_resp_ok.text = "<html><body>Long article text here</body></html>"
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        client = AsyncMock()
-        client.get.return_value = mock_resp_ok
-        client.__aenter__.return_value = client
-        mock_client_cls.return_value = client
-
-        with patch(
+    # 6. fetch_webpage returns the bounded preview and continuation fields
+    preview = dict(
+        preview,
+        filename="article.md",
+        total_lines=40,
+        next_cursor="next",
+        eof=False,
+    )
+    with (
+        patch.object(
+            asset_url_import,
+            "resolve_document_scope",
+            return_value=(asset_url_import.AssetScopeType.CONVERSATION, uuid4()),
+        ),
+        patch.object(
+            asset_url_import,
+            "load_url_document",
+            new=AsyncMock(
+                return_value=asset_url_import.ExternalDocument(
+                    content=b"<html><body>Long article text here</body></html>",
+                    content_type="text/html",
+                    filename="article",
+                    url="https://example.com/article",
+                    final_url="https://example.com/article",
+                )
+            ),
+        ),
+        patch.object(
+            asset_url_import,
+            "persist_scoped_document",
+            new=AsyncMock(return_value=persisted),
+        ),
+        patch(
             "app.llm.tools.builtin.web_search._extract_readable_content",
             return_value=("Extracted " * 20, "Title"),
-        ):
-            res_trunc = await fetch_webpage(
-                "https://example.com/article", max_length=15
-            )
-            assert res_trunc["success"] is True
-            assert res_trunc["content"].endswith("...")
+        ),
+        patch(
+            "app.llm.tools.builtin.web_search._read_preview",
+            new=AsyncMock(return_value=preview),
+        ),
+    ):
+        res_doc = await fetch_webpage("https://example.com/article")
+        assert res_doc["success"] is True
+        assert res_doc["next_cursor"] == "next"
+        assert res_doc["eof"] is False
+        assert res_doc["total_lines"] == 40

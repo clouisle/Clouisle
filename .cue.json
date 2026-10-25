@@ -9,6 +9,9 @@
         },
         "worker": {
             "command": "uv run --project backend main.py worker"
+        },
+        "beat": {
+            "command": "uv run --project backend main.py beat"
         }
     }
 }

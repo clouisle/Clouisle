@@ -38,3 +38,25 @@ async def read(key: str) -> bytes:
         raise
     except httpx.HTTPError as exc:
         raise UploadGatewayError("Unable to read upload through api gateway") from exc
+
+
+async def read_limited(key: str, max_bytes: int) -> bytes:
+    """Read at most max_bytes plus one byte through the internal gateway."""
+    try:
+        async with client() as gateway:
+            async with gateway.stream(
+                "GET", "/internal/uploads/read", params={"key": key}
+            ) as response:
+                if response.status_code == 404:
+                    raise FileNotFoundError(key)
+                response.raise_for_status()
+                content = bytearray()
+                async for chunk in response.aiter_bytes():
+                    content.extend(chunk)
+                    if len(content) > max_bytes:
+                        raise ValueError("asset_view_size_limit_exceeded")
+                return bytes(content)
+    except FileNotFoundError:
+        raise
+    except httpx.HTTPError as exc:
+        raise UploadGatewayError("Unable to read upload through api gateway") from exc

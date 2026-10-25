@@ -54,11 +54,14 @@ const routePermissionMap: Record<string, string | string[]> = {
   '/dashboard/observability': 'observability:read',
   '/notifications': 'notifications:read',
   '/audit-logs': 'audit_logs:read',
+  '/deliveries': 'admin:integrations:settings:read',
   '/site-settings': 'settings:read',
+  '/site-settings/integrations': ['admin:integrations:login:read', 'admin:integrations:settings:read'],
 }
 
 const canAccessRoute = (url: string, hasPermission: (permission: string) => boolean) => {
   const required = routePermissionMap[url]
+  if (url === '/site-settings/integrations' && Array.isArray(required)) return required.some(hasPermission)
   return !required || (Array.isArray(required) ? required.every(hasPermission) : hasPermission(required))
 }
 
@@ -112,7 +115,7 @@ const Icon = () => <svg />
 mock.module('lucide-react', () => ({
   Activity: Icon, AppWindow: Icon, Bell: Icon, Bot: Icon, Brain: Icon, ChevronUp: Icon,
   Database: Icon, FileText: Icon, HelpCircle: Icon, Key: Icon, KeyRound: Icon,
-  LayoutDashboard: Icon, LogOut: Icon, Settings: Icon, Shield: Icon, User: Icon,
+  LayoutDashboard: Icon, LogOut: Icon, Settings: Icon, Shield: Icon, Send: Icon, User: Icon,
   Users: Icon, UsersRound: Icon, Wrench: Icon,
 }))
 
@@ -156,6 +159,15 @@ afterEach(() => {
 })
 
 describe('AppSidebar', () => {
+  test('routes login-only admins directly to their accessible integration management page', async () => {
+    allowedPermissions.clear()
+    allowedPermissions.add('admin:integrations:login:read')
+    pathname = '/site-settings/integrations'
+    const renderer = await renderSidebar()
+    expect(renderer.root.findByProps({ href: '/site-settings/integrations' })).toBeDefined()
+    expect(renderer.root.findAllByProps({ href: '/site-settings' })).toHaveLength(0)
+  })
+
   test('shows permitted navigation and marks the current nested route active', async () => {
     const renderer = await renderSidebar()
     const output = JSON.stringify(renderer.toJSON())
@@ -166,6 +178,14 @@ describe('AppSidebar', () => {
     expect(output).not.toContain('activities')
     expect(output).not.toContain('users')
     expect(renderer.root.findByProps({ href: '/knowledge-bases' }).findByProps({ 'data-active': true })).toBeTruthy()
+  })
+
+  test('shows the delivery log to integration settings readers with dashboard access', async () => {
+    canAccessDashboard = true
+    allowedPermissions.add('admin:integrations:settings:read')
+    const renderer = await renderSidebar()
+    expect(renderer.root.findByProps({ href: '/deliveries' })).toBeDefined()
+    canAccessDashboard = false
   })
 
   test('loads the user and opens profile settings', async () => {

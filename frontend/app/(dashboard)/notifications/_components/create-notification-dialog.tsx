@@ -463,31 +463,40 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
                 </div>
                 <div className="flex items-center gap-2">
                   <Checkbox
-                    id="channel-dingtalk"
-                    checked={notifyChannels.includes('dingtalk')}
+                    id="channel-webhook"
+                    checked={notifyChannels.includes('webhook')}
                     onCheckedChange={(checked) => {
-                      if (checked) {
-                        setNotifyChannels([...notifyChannels, 'dingtalk'])
-                      } else {
-                        setNotifyChannels(notifyChannels.filter(c => c !== 'dingtalk'))
-                      }
+                      setNotifyChannels(checked
+                        ? [...notifyChannels, 'webhook']
+                        : notifyChannels.filter((channel) => channel !== 'webhook'))
                       setFieldErrors((prev) => clearValidationError(prev, 'notify_channels'))
                     }}
                   />
-                  <label
-                    htmlFor="channel-dingtalk"
-                    className="text-sm leading-none cursor-pointer"
-                  >
-                    {t('admin.channelDingtalk')}
+                  <label htmlFor="channel-webhook" className="text-sm leading-none cursor-pointer">
+                    {t('admin.channelWebhook')}
+                  </label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="channel-feishu"
+                    checked={notifyChannels.includes('feishu')}
+                    onCheckedChange={(checked) => {
+                      setNotifyChannels(checked
+                        ? [...notifyChannels, 'feishu']
+                        : notifyChannels.filter((channel) => channel !== 'feishu'))
+                      setFieldErrors((prev) => clearValidationError(prev, 'notify_channels'))
+                    }}
+                  />
+                  <label htmlFor="channel-feishu" className="text-sm leading-none cursor-pointer">
+                    {t('admin.channelFeishu')}
                   </label>
                 </div>
               </div>
             </div>
-
-            <Button onClick={handleCreate} disabled={isSubmitting}>
-              {t('admin.submit')}
-            </Button>
           </div>
+          <Button onClick={handleCreate} disabled={isSubmitting}>
+            {t('admin.submit')}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

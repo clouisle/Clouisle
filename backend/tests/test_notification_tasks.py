@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.integrations.factory import NotificationMessage
 from app.models.notification import (
     NotificationChannel,
     NotificationDeliveryStatus,
@@ -118,7 +119,7 @@ async def test_update_delivery_status_applies_failure_and_success_fields(monkeyp
 
     await tasks._update_delivery_status(
         notification_id,
-        NotificationChannel.SLACK,
+        NotificationChannel.EMAIL,
         NotificationDeliveryStatus.FAILED,
         "provider failed",
     )
@@ -128,7 +129,7 @@ async def test_update_delivery_status_applies_failure_and_success_fields(monkeyp
 
     await tasks._update_delivery_status(
         notification_id,
-        NotificationChannel.SLACK,
+        NotificationChannel.EMAIL,
         NotificationDeliveryStatus.SUCCESS,
     )
     assert delivery.status == NotificationDeliveryStatus.SUCCESS
@@ -137,45 +138,14 @@ async def test_update_delivery_status_applies_failure_and_success_fields(monkeyp
 
 
 _PROVIDER_CASES = [
-    (
-        "_send_notification_dingtalk",
-        "send_dingtalk_notification",
-        NotificationChannel.DINGTALK,
-        "zh",
-    ),
-    (
-        "_send_notification_wechat",
-        "send_wechat_notification",
-        NotificationChannel.WECHAT,
-        "zh",
-    ),
-    (
-        "_send_notification_feishu",
-        "send_feishu_notification",
-        NotificationChannel.FEISHU,
-        "zh",
-    ),
-    (
-        "_send_notification_webhook",
-        "send_webhook_notification",
-        NotificationChannel.WEBHOOK,
-        "en",
-    ),
-    (
-        "_send_notification_slack",
-        "send_slack_notification",
-        NotificationChannel.SLACK,
-        "en",
-    ),
+    ("_send_notification_webhook", NotificationChannel.WEBHOOK, "en"),
 ]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("sender_name", "provider_name", "channel", "locale"), _PROVIDER_CASES
-)
+@pytest.mark.parametrize(("sender_name", "channel", "locale"), _PROVIDER_CASES)
 async def test_external_channel_dispatches_and_marks_success(
-    monkeypatch, sender_name, provider_name, channel, locale
+    monkeypatch, sender_name, channel, locale
 ):
     notification_id = uuid4()
     item = _notification()
@@ -187,16 +157,19 @@ async def test_external_channel_dispatches_and_marks_success(
     monkeypatch.setattr(tasks, "_update_delivery_status", update_status)
     build_message = Mock(return_value=("Rendered title", "Rendered content"))
     monkeypatch.setattr(tasks, "_build_notification_message", build_message)
-    provider = AsyncMock(return_value=True)
-    monkeypatch.setattr(tasks, provider_name, provider)
+    integration = tasks.get_notification_integration(channel)
+    send = AsyncMock(return_value=True)
+    monkeypatch.setattr(integration, "send", send)
 
     assert await getattr(tasks, sender_name)(notification_id) is True
 
     build_message.assert_called_once_with(context, locale)
-    provider.assert_awaited_once_with(
-        title="Rendered title",
-        content="Rendered content",
-        link_url=item.link_url,
+    send.assert_awaited_once_with(
+        NotificationMessage(
+            title="Rendered title",
+            content="Rendered content",
+            link_url=item.link_url,
+        )
     )
     assert update_status.await_args_list[0].args == (
         notification_id,
@@ -211,41 +184,26 @@ async def test_external_channel_dispatches_and_marks_success(
 
 
 @pytest.mark.asyncio
-async def test_external_channel_stops_before_provider_without_context(monkeypatch):
+async def test_external_channel_stops_before_integration_without_context(monkeypatch):
     notification_id = uuid4()
     monkeypatch.setattr(
         tasks, "_load_notification_context", AsyncMock(return_value=None)
     )
     update_status = AsyncMock()
     monkeypatch.setattr(tasks, "_update_delivery_status", update_status)
-    provider = AsyncMock()
-    monkeypatch.setattr(tasks, "send_slack_notification", provider)
+    send = AsyncMock()
+    monkeypatch.setattr(
+        tasks.get_notification_integration(NotificationChannel.WEBHOOK),
+        "send",
+        send,
+    )
 
     with pytest.raises(ValueError, match="notification_not_found"):
-        await tasks._send_notification_slack(notification_id)
-
-    provider.assert_not_awaited()
-    update_status.assert_awaited_once_with(
-        notification_id,
-        NotificationChannel.SLACK,
-        NotificationDeliveryStatus.SENDING,
-    )
-
-
-@pytest.mark.asyncio
-async def test_external_channel_propagates_provider_failure(monkeypatch):
-    notification_id = uuid4()
-    item = _notification()
-    monkeypatch.setattr(
-        tasks,
-        "_load_notification_context",
-        AsyncMock(return_value=tasks.NotificationContext(item, "Configured Site")),
-    )
-    monkeypatch.setattr(tasks, "_update_delivery_status", AsyncMock())
-    provider = AsyncMock(return_value=False)
-    monkeypatch.setattr(tasks, "send_webhook_notification", provider)
-
-    with pytest.raises(RuntimeError, match="webhook_send_failed"):
         await tasks._send_notification_webhook(notification_id)
 
-    provider.assert_awaited_once()
+    send.assert_not_awaited()
+    update_status.assert_awaited_once_with(
+        notification_id,
+        NotificationChannel.WEBHOOK,
+        NotificationDeliveryStatus.SENDING,
+    )

@@ -92,7 +92,7 @@ async def test_process_document_covers_validation_settings_and_dispatch_fallback
         await knowledge_bases.process_document(kb_id, doc_id, request, None, user)
     assert exc.value.code == ResponseCode.DOCUMENT_NOT_FOUND
 
-    non_pending = SimpleNamespace(status=DocumentStatus.COMPLETED.value)
+    non_pending = SimpleNamespace(status=DocumentStatus.COMPLETED.value, metadata=None)
     monkeypatch.setattr(
         knowledge_bases.Document,
         "filter",
@@ -236,7 +236,7 @@ async def test_update_document_chunk_covers_resource_and_vector_paths(
         total_tokens=20,
         save=AsyncMock(),
     )
-    doc = SimpleNamespace(token_count=10, save=AsyncMock())
+    doc = SimpleNamespace(token_count=10, metadata=None, save=AsyncMock())
     chunk = SimpleNamespace(
         id=chunk_id,
         chunk_index=3,

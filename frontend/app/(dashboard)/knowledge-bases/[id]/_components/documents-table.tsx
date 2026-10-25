@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { FeishuDocumentSource, isFeishuManaged } from '@/components/knowledge-bases/feishu-document-source'
 import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import {
@@ -73,6 +74,7 @@ import {
 } from '@/components/ui/tooltip'
 import { DataTableFacetedFilter } from '@/components/ui/data-table-faceted-filter'
 import { useCanPerform } from '@/components/permission-guard'
+import { useDebounce } from '@/hooks/use-debounce'
 
 interface DocumentsTableProps {
   knowledgeBaseId: string
@@ -121,6 +123,8 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   
   // 筛选状态
   const [searchQuery, setSearchQuery] = React.useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery, 300)
+  const previousSearchRef = React.useRef(debouncedSearchQuery)
   const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set())
   const [typeFilter, setTypeFilter] = React.useState<Set<string>>(new Set())
   
@@ -147,7 +151,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
         doc_type?: DocumentType[]
       } = { page, pageSize }
       
-      if (searchQuery) params.search = searchQuery
+      if (debouncedSearchQuery) params.search = debouncedSearchQuery
       if (statusFilter.size > 0) params.status = Array.from(statusFilter) as DocumentStatus[]
       if (typeFilter.size > 0) params.doc_type = Array.from(typeFilter) as DocumentType[]
       
@@ -161,11 +165,19 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
         setIsLoading(false)
       }
     }
-  }, [knowledgeBaseId, page, pageSize, searchQuery, statusFilter, typeFilter])
+  }, [knowledgeBaseId, page, pageSize, debouncedSearchQuery, statusFilter, typeFilter])
   
   React.useEffect(() => {
+    // 防抖后的搜索词变化时先回到第一页，避免请求旧页码
+    if (previousSearchRef.current !== debouncedSearchQuery) {
+      previousSearchRef.current = debouncedSearchQuery
+      if (page !== 1) {
+        setPage(1)
+        return
+      }
+    }
     loadDocuments()
-  }, [loadDocuments, refreshTrigger])
+  }, [debouncedSearchQuery, page, loadDocuments, refreshTrigger])
   
   // 自动刷新处理中的文档 (静默刷新，不显示加载状态)
   React.useEffect(() => {
@@ -181,7 +193,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   // 筛选条件变化时重置到第一页
   React.useEffect(() => {
     setPage(1)
-  }, [searchQuery, statusFilter, typeFilter])
+  }, [statusFilter, typeFilter])
   
   // 检查是否有筛选条件
   const isFiltered = searchQuery || statusFilter.size > 0 || typeFilter.size > 0
@@ -207,6 +219,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
     { value: 'pdf', label: 'PDF' },
     { value: 'docx', label: 'DOCX' },
     { value: 'doc', label: 'DOC' },
+    { value: 'pptx', label: 'PPTX' },
     { value: 'txt', label: 'TXT' },
     { value: 'markdown', label: 'Markdown' },
     { value: 'html', label: 'HTML' },
@@ -222,10 +235,10 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   
   // 选择操作
   const toggleSelectAll = () => {
-    if (selectedDocs.size === documents.length) {
+    if (documents.filter(doc => !isFeishuManaged(doc)).every(doc => selectedDocs.has(doc.id))) {
       setSelectedDocs(new Set())
     } else {
-      setSelectedDocs(new Set(documents.map(d => d.id)))
+      setSelectedDocs(new Set(documents.filter(d => !isFeishuManaged(d)).map(d => d.id)))
     }
   }
   
@@ -464,7 +477,8 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
             <TableRow className="bg-muted/50 hover:bg-muted/50">
               <TableHead className="w-10">
                 <Checkbox
-                  checked={selectedDocs.size === documents.length && documents.length > 0}
+                  checked={documents.some(doc => !isFeishuManaged(doc)) && documents.filter(doc => !isFeishuManaged(doc)).every(doc => selectedDocs.has(doc.id))}
+                  disabled={!documents.some(doc => !isFeishuManaged(doc))}
                   onCheckedChange={toggleSelectAll}
                 />
               </TableHead>
@@ -500,18 +514,20 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                   <TableCell>
                     <Checkbox
                       checked={selectedDocs.has(doc.id)}
+                      disabled={isFeishuManaged(doc)}
                       onCheckedChange={() => toggleSelectDoc(doc.id)}
                     />
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      {docTypeIcons[doc.doc_type] || <FileText className="h-4 w-4" />}
+                    <div className="flex min-w-0 items-center gap-2">
+                      {docTypeIcons[doc.doc_type] || <FileText className="h-4 w-4 shrink-0" />}
                       <Tooltip>
                         <TooltipTrigger render={<span />} className="font-medium truncate max-w-50 cursor-default">
                           {doc.name}
                         </TooltipTrigger>
                         <TooltipContent>{doc.name}</TooltipContent>
                       </Tooltip>
+                      <FeishuDocumentSource document={doc} />
                     </div>
                     {doc.error_message && (
                       <Tooltip>
@@ -525,8 +541,8 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="uppercase text-xs">
-                      {doc.doc_type}
+                    <Badge variant="outline" className="text-xs">
+                      {typeOptions.find(option => option.value === doc.doc_type)?.label ?? doc.doc_type.toUpperCase()}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
@@ -546,7 +562,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                         <span className="sr-only">{t('common.openMenu')}</span>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-48">
-                        {doc.status === 'pending' && canUpdateKb && (
+                        {doc.status === 'pending' && canUpdateKb && !isFeishuManaged(doc) && (
                           <>
                             <DropdownMenuItem onClick={() => handleConfigure(doc)}>
                               <Settings2 className="mr-2 h-4 w-4" />
@@ -567,14 +583,14 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                           </DropdownMenuItem>
                         )}
 
-                        {(doc.status === 'error' || doc.status === 'completed') && canUpdateKb && (
+                        {(doc.status === 'error' || doc.status === 'completed') && canUpdateKb && !isFeishuManaged(doc) && (
                           <DropdownMenuItem onClick={() => handleReprocess(doc)}>
                             <RefreshCw className="mr-2 h-4 w-4" />
                             {t('reprocess')}
                           </DropdownMenuItem>
                         )}
 
-                        {doc.status === 'error' && canUpdateKb && (
+                        {doc.status === 'error' && canUpdateKb && !isFeishuManaged(doc) && (
                           <DropdownMenuItem onClick={() => handleRetryFailedChunks(doc)}>
                             <RotateCcw className="mr-2 h-4 w-4" />
                             {t('retryFailedChunks')}
@@ -595,7 +611,14 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                           </DropdownMenuItem>
                         )}
 
-                        {canDeleteKb && (
+                        {isFeishuManaged(doc) && typeof doc.metadata?.feishu_source_url === 'string' && /^https?:\/\//i.test(doc.metadata.feishu_source_url) && (
+                          <DropdownMenuItem onClick={() => window.open(doc.metadata!.feishu_source_url as string, '_blank', 'noopener,noreferrer')}>
+                            <ExternalLink className="mr-2 h-4 w-4" />
+                            {t('feishuOriginal')}
+                          </DropdownMenuItem>
+                        )}
+
+                        {canDeleteKb && !isFeishuManaged(doc) && (
                           <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem

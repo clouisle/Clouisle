@@ -1,23 +1,26 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from tortoise import fields, models
 
 if TYPE_CHECKING:
-    from app.models.sso_provider import SSOProvider
+    from app.models.integration import Integration
     from app.models.user import User
 
 
 class UserSSOConnection(models.Model):
     """Links users to their SSO provider accounts"""
 
+    user_id: UUID
+
     id = fields.UUIDField(primary_key=True)
     user: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
         "models.User", related_name="sso_connections", on_delete=fields.CASCADE
     )
-    provider: fields.ForeignKeyRelation["SSOProvider"] = fields.ForeignKeyField(
-        "models.SSOProvider", related_name="user_connections", on_delete=fields.CASCADE
+    integration: fields.ForeignKeyRelation["Integration"] = fields.ForeignKeyField(
+        "models.Integration", related_name="user_connections", on_delete=fields.CASCADE
     )
 
     # Provider-specific user identifier
@@ -26,6 +29,8 @@ class UserSSOConnection(models.Model):
     )
     provider_username = fields.CharField(max_length=255, null=True)
     provider_email = fields.CharField(max_length=255, null=True)
+    # Account-security links are not managed by directory synchronization.
+    self_service_linked = fields.BooleanField(default=False)
 
     # Additional provider data (JSON)
     provider_data: dict = fields.JSONField(
@@ -38,7 +43,7 @@ class UserSSOConnection(models.Model):
 
     class Meta:
         table = "user_sso_connections"
-        unique_together = (("provider", "provider_user_id"),)
+        unique_together = (("integration", "provider_user_id"),)
 
     def __str__(self):
-        return f"{self.user} - {self.provider}"
+        return f"{self.user} - {self.integration}"

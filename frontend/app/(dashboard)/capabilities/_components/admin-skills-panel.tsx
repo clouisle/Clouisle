@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Eye, FileArchive, GitBranch, Loader2, PackageOpen, Plus, RefreshCw, Search, X } from 'lucide-react'
@@ -43,6 +43,7 @@ import { ApiError, type PageData, type SkillInstallAction, type SkillImportPrevi
 import { adminSkillsApi, teamsApi as adminTeamsApi, type AdminSkill } from '@/lib/api/admin'
 import type { Team } from '@/lib/api/teams'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
+import { useDebounce } from '@/hooks/use-debounce'
 
 interface PreviewSelection {
   checked: boolean
@@ -137,6 +138,8 @@ export function AdminSkillsPanel() {
   const [pageSize, setPageSize] = useState(10)
   const [pageData, setPageData] = useState<PageData<AdminSkill> | null>(null)
   const [searchQuery, setSearchQuery] = useUrlSearchState()
+  const debouncedSearchQuery = useDebounce(searchQuery, 300)
+  const previousDebouncedSearchQuery = useRef(debouncedSearchQuery)
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set())
   const [sourceFilter, setSourceFilter] = useState<Set<string>>(new Set())
   const [teamFilter, setTeamFilter] = useState<Set<string>>(new Set())
@@ -172,7 +175,7 @@ export function AdminSkillsPanel() {
         adminSkillsApi.list({
           page,
           pageSize,
-          search: searchQuery || undefined,
+          search: debouncedSearchQuery || undefined,
           include_system: true,
           status: selectedStatuses.length > 0 ? selectedStatuses : undefined,
           source_type: selectedSources.length > 0 ? selectedSources : undefined,
@@ -191,12 +194,21 @@ export function AdminSkillsPanel() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, searchQuery, selectedStatuses, selectedSources, selectedTeams, selectedCreators])
+  }, [page, pageSize, debouncedSearchQuery, selectedStatuses, selectedSources, selectedTeams, selectedCreators])
 
   useEffect(() => {
     loadTeams()
+  }, [loadTeams])
+
+  useEffect(() => {
+    const searchChanged = previousDebouncedSearchQuery.current !== debouncedSearchQuery
+    previousDebouncedSearchQuery.current = debouncedSearchQuery
+    if (searchChanged && page !== 1) {
+      setPage(1)
+      return
+    }
     loadSkills()
-  }, [loadTeams, loadSkills])
+  }, [debouncedSearchQuery, page, loadSkills])
 
   const openImportDialog = () => {
     setTargetTeamId('system')
@@ -401,7 +413,6 @@ export function AdminSkillsPanel() {
             value={searchQuery}
             onChange={(event) => {
               setSearchQuery(event.target.value)
-              setPage(1)
             }}
             className="h-9 w-50 pl-8"
           />

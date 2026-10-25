@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useLocale, useTranslations } from 'next-intl'
-import { Check, ChevronLeft, ChevronRight, Megaphone, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
+import { Check, Loader2, Megaphone, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
 import { notificationsApi, type NotificationItem, type NotificationLevel, type NotificationScope } from '@/lib/api'
 import { PauseRequestActions } from '@/components/chat/pause-request-actions'
 import { Button } from '@/components/ui/button'
@@ -29,6 +29,7 @@ import {
 import dynamic from 'next/dynamic'
 import { useTheme } from 'next-themes'
 import { useDebounce } from '@/hooks/use-debounce'
+import { useInfiniteScroll } from '@/hooks/use-infinite-scroll'
 import { getNotificationDisplayMeta, getPauseActionMeta, type NotificationDisplayKind } from '@/lib/notifications/display'
 
 const MDPreview = dynamic(() => import('@uiw/react-md-editor').then(mod => mod.default.Markdown), {
@@ -62,6 +63,9 @@ function NotificationMarkdownSkeleton() {
 
 const LEVELS: NotificationLevel[] = ['low', 'medium', 'high']
 const SCOPES: NotificationScope[] = ['global', 'team', 'user']
+const PAGE_SIZE = 20
+
+type NotificationLoadOperation = 'first' | 'more' | 'refresh'
 
 const KIND_ICON: Record<NotificationDisplayKind, React.ComponentType<{ className?: string }>> = {
   announcement: Megaphone,
@@ -93,13 +97,16 @@ interface NotificationsClientProps {
 
 export function NotificationsClient({ onReadUpdated }: NotificationsClientProps) {
   const t = useTranslations('notifications')
+  const commonT = useTranslations('common')
   const locale = useLocale()
   const { resolvedTheme } = useTheme()
 
   const [items, setItems] = React.useState<NotificationItem[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
-  const [page, setPage] = React.useState(1)
-  const [pageSize] = React.useState(20)
+  const [isLoadingMore, setIsLoadingMore] = React.useState(false)
+  const [isRefreshing, setIsRefreshing] = React.useState(false)
+  const [failedOperation, setFailedOperation] = React.useState<NotificationLoadOperation | null>(null)
+  const loadFailed = failedOperation !== null
   const [total, setTotal] = React.useState(0)
   const [scopeFilter, setScopeFilter] = React.useState<Set<string>>(new Set())
   const [levelFilter, setLevelFilter] = React.useState<Set<string>>(new Set())
@@ -126,61 +133,183 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
     setValues(lastValue ? new Set([lastValue]) : new Set())
   }
 
-  const fetchList = React.useCallback(async () => {
+  const requestSeqRef = React.useRef(0)
+  const pendingCountRef = React.useRef(0)
+  const loadedPagesRef = React.useRef(0)
+  const totalRef = React.useRef(0)
+
+  const buildListParams = React.useCallback((page: number) => {
+    const scope = Array.from(scopeFilter)[0] as NotificationScope | undefined
+    const level = Array.from(levelFilter)[0] as NotificationLevel | undefined
+    return {
+      page,
+      page_size: PAGE_SIZE,
+      scope: scope || undefined,
+      level: level || undefined,
+      search: debouncedSearchQuery || undefined,
+      unread_only: readFilter.has('unread'),
+    }
+  }, [scopeFilter, levelFilter, readFilter, debouncedSearchQuery])
+
+  // 重新加载第一页：筛选/搜索变化或首次进入
+  const loadFirstPage = React.useCallback(async () => {
+    const seq = ++requestSeqRef.current
+    pendingCountRef.current = 1
+    setIsLoading(true)
+    setIsLoadingMore(false)
+    setIsRefreshing(false)
+    setFailedOperation(null)
+    // 新筛选条件读取失败时不能沿用旧筛选的条目和游标
+    loadedPagesRef.current = 0
+    totalRef.current = 0
+    setItems([])
+    setTotal(0)
     try {
-      setIsLoading(true)
-      const unreadOnly = readFilter.has('unread')
-      const scope = Array.from(scopeFilter)[0] as NotificationScope | undefined
-      const level = Array.from(levelFilter)[0] as NotificationLevel | undefined
-      const baseParams = {
-        page_size: pageSize,
-        scope: scope || undefined,
-        level: level || undefined,
-        search: debouncedSearchQuery || undefined,
-        unread_only: unreadOnly,
-      }
-
-      if (unreadOnly) {
-        // Fetch all pages so the user sees the complete unread set.
-        const allItems: NotificationItem[] = []
-        let currentPage = 1
-        let totalCount = 0
-
-        while (true) {
-          const result = await notificationsApi.list({ ...baseParams, page: currentPage })
-          allItems.push(...result.items)
-          totalCount = result.total
-          if (allItems.length >= totalCount) break
-          currentPage += 1
-        }
-        setItems(allItems)
-        setTotal(totalCount)
-      } else {
-        const result = await notificationsApi.list({ ...baseParams, page })
-        setItems(result.items)
-        setTotal(result.total)
-      }
+      const result = await notificationsApi.list(buildListParams(1))
+      if (seq !== requestSeqRef.current) return
+      setItems(result.items)
+      setTotal(result.total)
+      totalRef.current = result.total
+      loadedPagesRef.current = 1
     } catch (error) {
       console.error('Failed to fetch notifications:', error)
+      if (seq === requestSeqRef.current) setFailedOperation('first')
     } finally {
-      setIsLoading(false)
+      if (seq === requestSeqRef.current) {
+        pendingCountRef.current = 0
+        setIsLoading(false)
+      }
     }
-  }, [page, pageSize, scopeFilter, levelFilter, readFilter, debouncedSearchQuery])
+  }, [buildListParams])
+
+  // 滚动到底部时增量加载，不再一次性拉取所有未读页
+  const loadMore = React.useCallback(async () => {
+    if (pendingCountRef.current > 0 || loadedPagesRef.current === 0) return
+    if (items.length >= totalRef.current) return
+
+    const seq = requestSeqRef.current
+    const nextPage = loadedPagesRef.current + 1
+    pendingCountRef.current += 1
+    setIsLoadingMore(true)
+    setFailedOperation(null)
+    try {
+      const result = await notificationsApi.list(buildListParams(nextPage))
+      if (seq !== requestSeqRef.current) return
+      const seen = new Set(items.map(item => item.id))
+      const appended: NotificationItem[] = []
+      for (const item of result.items) {
+        if (seen.has(item.id)) continue
+        seen.add(item.id)
+        appended.push(item)
+      }
+      const nextTotal = result.items.length === 0 ? items.length : result.total
+      setItems([...items, ...appended])
+      totalRef.current = nextTotal
+      setTotal(nextTotal)
+      loadedPagesRef.current = nextPage
+    } catch (error) {
+      console.error('Failed to fetch notifications:', error)
+      if (seq === requestSeqRef.current) setFailedOperation('more')
+    } finally {
+      if (seq === requestSeqRef.current) {
+        pendingCountRef.current = Math.max(pendingCountRef.current - 1, 0)
+        setIsLoadingMore(false)
+      }
+    }
+  }, [items, buildListParams])
+
+  // 已读状态变化后刷新已加载窗口：未读集合收缩时不会跳过条目。
+  // force=true 会接管在途的追加请求（旧响应按 seq 丢弃），保证变更后的窗口刷新一定执行。
+  const refreshLoadedPages = React.useCallback(async (options?: { force?: boolean }) => {
+    const force = options?.force ?? false
+    const pages = loadedPagesRef.current
+    if (pages === 0) {
+      await loadFirstPage()
+      return
+    }
+    if (!force && pendingCountRef.current > 0) return
+
+    const seq = force ? ++requestSeqRef.current : requestSeqRef.current
+    pendingCountRef.current = force ? 1 : pendingCountRef.current + 1
+    if (force) {
+      setIsLoading(false)
+      setIsLoadingMore(false)
+    }
+    setIsRefreshing(true)
+    setFailedOperation(null)
+    try {
+      const merged: NotificationItem[] = []
+      const seen = new Set<string>()
+      let latestTotal = totalRef.current
+      let nextLoadedPages = 1
+
+      for (let page = 1; page <= pages; page += 1) {
+        const result = await notificationsApi.list(buildListParams(page))
+        if (seq !== requestSeqRef.current) return
+        latestTotal = result.total
+        if (result.items.length === 0) {
+          nextLoadedPages = Math.max(page - 1, 1)
+          break
+        }
+        nextLoadedPages = page
+        for (const item of result.items) {
+          if (seen.has(item.id)) continue
+          seen.add(item.id)
+          merged.push(item)
+        }
+      }
+
+      setItems(merged)
+      loadedPagesRef.current = nextLoadedPages
+      totalRef.current = latestTotal
+      setTotal(latestTotal)
+    } catch (error) {
+      console.error('Failed to fetch notifications:', error)
+      if (seq === requestSeqRef.current) setFailedOperation('refresh')
+    } finally {
+      if (seq === requestSeqRef.current) {
+        pendingCountRef.current = Math.max(pendingCountRef.current - 1, 0)
+        setIsRefreshing(false)
+      }
+    }
+  }, [buildListParams, loadFirstPage])
+
+  const retryLoad = React.useCallback(() => {
+    const operation = failedOperation
+    setFailedOperation(null)
+    if (operation === 'more' && loadedPagesRef.current > 0) {
+      void loadMore()
+      return
+    }
+    if (operation === 'refresh' && loadedPagesRef.current > 0) {
+      void refreshLoadedPages({ force: true })
+      return
+    }
+    void loadFirstPage()
+  }, [failedOperation, loadFirstPage, loadMore, refreshLoadedPages])
 
   React.useEffect(() => {
-    fetchList()
-  }, [fetchList])
+    void loadFirstPage()
+  }, [loadFirstPage])
 
-  React.useEffect(() => {
-    setPage(1)
-  }, [scopeFilter, levelFilter, readFilter, debouncedSearchQuery])
+  React.useEffect(() => () => {
+    // 卸载后到达的响应不再写入状态
+    requestSeqRef.current += 1
+  }, [])
+
+  const hasMore = items.length < total
+  const sentinelRef = useInfiniteScroll({
+    hasMore: hasMore && !loadFailed,
+    loading: isLoading || isLoadingMore || isRefreshing,
+    onLoadMore: () => { void loadMore() },
+  })
 
   const handleMarkRead = async (id: string) => {
     try {
       await notificationsApi.markRead({ notification_ids: [id] })
       toast.success(t('toast.readUpdated'))
       onReadUpdated?.()
-      await fetchList()
+      await refreshLoadedPages({ force: true })
     } catch (error) {
       console.error('Failed to mark read:', error)
     }
@@ -191,7 +320,7 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
       await notificationsApi.markRead({ mark_all: true })
       toast.success(t('toast.readUpdated'))
       onReadUpdated?.()
-      await fetchList()
+      await refreshLoadedPages({ force: true })
     } catch (error) {
       console.error('Failed to mark all read:', error)
     }
@@ -199,10 +328,9 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
 
   const handleInlineResolved = async () => {
     onReadUpdated?.()
-    await fetchList()
+    await refreshLoadedPages({ force: true })
   }
 
-  const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const openDetail = (item: NotificationItem) => {
     setSelectedItem(item)
     setDetailOpen(true)
@@ -291,6 +419,17 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
                   </TableCell>
                 </TableRow>
               ))
+            ) : loadFailed && items.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <span className="text-muted-foreground">{commonT('loadFailed')}</span>
+                    <Button variant="outline" size="sm" onClick={retryLoad}>
+                      {commonT('retry')}
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
             ) : items.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center text-muted-foreground">
@@ -356,26 +495,21 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
         </Table>
       </div>
 
-      {!readFilter.has('unread') && (
-        <div className="flex items-center justify-end gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-            disabled={page <= 1}
-            className="cursor-pointer"
-          >
-            <ChevronLeft className="size-4" />
-          </Button>
-          <span className="text-sm text-muted-foreground">{page} / {totalPages}</span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-            disabled={page >= totalPages}
-            className="cursor-pointer"
-          >
-            <ChevronRight className="size-4" />
+      {/* 无限滚动：哨兵始终挂载，滚动到底部自动加载下一页 */}
+      <div ref={sentinelRef} aria-hidden className="h-px w-full" />
+
+      {isLoadingMore && (
+        <div className="flex items-center justify-center gap-2 py-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          {commonT('loadingMore')}
+        </div>
+      )}
+
+      {loadFailed && items.length > 0 && (
+        <div className="flex items-center justify-center gap-2 py-2 text-sm text-muted-foreground">
+          <span>{commonT('loadFailed')}</span>
+          <Button variant="outline" size="sm" onClick={retryLoad}>
+            {commonT('retry')}
           </Button>
         </div>
       )}

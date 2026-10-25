@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { FeishuDocumentSource, isFeishuManaged } from '@/components/knowledge-bases/feishu-document-source'
 import { useLocale, useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import {
@@ -15,10 +16,6 @@ import {
   XCircle,
   Loader2,
   Clock,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Search,
   X,
   Settings2,
@@ -28,7 +25,9 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { knowledgeBasesApi, type Document, type PageData, type DocumentStatus, type DocumentType } from '@/lib/api'
+import { knowledgeBasesApi, type Document, type DocumentStatus, type DocumentType } from '@/lib/api'
+import { useInfiniteScroll } from '@/hooks/use-infinite-scroll'
+import { useDebounce } from '@/hooks/use-debounce'
 import { formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -42,13 +41,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -87,7 +79,7 @@ const docTypeIcons: Record<string, React.ReactNode> = {
   docx: <FileType className="h-4 w-4 text-blue-500" />,
   doc: <FileType className="h-4 w-4 text-blue-500" />,
   txt: <FileText className="h-4 w-4 text-gray-500" />,
-  md: <FileText className="h-4 w-4 text-gray-500" />,
+  markdown: <FileText className="h-4 w-4 text-gray-500" />,
   html: <FileType className="h-4 w-4 text-orange-500" />,
   csv: <FileType className="h-4 w-4 text-green-500" />,
   xlsx: <FileType className="h-4 w-4 text-green-600" />,
@@ -97,6 +89,9 @@ const docTypeIcons: Record<string, React.ReactNode> = {
 }
 
 const BULK_ACTION_CONCURRENCY = 3
+const DOCUMENT_PAGE_SIZE = 10
+
+type DocumentLoadOperation = 'first' | 'more' | 'refresh'
 
 async function runBulkActions<T>(items: T[], action: (item: T) => Promise<unknown>) {
   for (let index = 0; index < items.length; index += BULK_ACTION_CONCURRENCY) {
@@ -115,13 +110,16 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
   
   // 数据状态
   const [documents, setDocuments] = React.useState<Document[]>([])
+  const [total, setTotal] = React.useState(0)
   const [isLoading, setIsLoading] = React.useState(true)
-  const [page, setPage] = React.useState(1)
-  const [pageSize, setPageSize] = React.useState(10)
-  const [pageData, setPageData] = React.useState<PageData<Document> | null>(null)
+  const [isLoadingMore, setIsLoadingMore] = React.useState(false)
+  const [isRefreshing, setIsRefreshing] = React.useState(false)
+  const [failedOperation, setFailedOperation] = React.useState<DocumentLoadOperation | null>(null)
+  const loadFailed = failedOperation !== null
   
   // 筛选状态
   const [searchQuery, setSearchQuery] = React.useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery.trim(), 300)
   const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set())
   const [typeFilter, setTypeFilter] = React.useState<Set<string>>(new Set())
   
@@ -134,55 +132,190 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
   const [selectedDoc, setSelectedDoc] = React.useState<Document | null>(null)
   const [isBulkActionLoading, setIsBulkActionLoading] = React.useState(false)
 
-  // 加载文档列表
-  const loadDocuments = React.useCallback(async (showLoading = true) => {
-    if (showLoading) {
-      setIsLoading(true)
-    }
-    try {
-      const params: {
-        page: number
-        pageSize: number
-        search?: string
-        status?: DocumentStatus[]
-        doc_type?: DocumentType[]
-      } = { page, pageSize }
+  const requestSeqRef = React.useRef(0)
+  const pendingCountRef = React.useRef(0)
+  const loadedPagesRef = React.useRef(0)
+  const totalRef = React.useRef(0)
 
-      if (searchQuery) params.search = searchQuery
-      if (statusFilter.size === 1) params.status = [Array.from(statusFilter)[0] as DocumentStatus]
-      if (typeFilter.size === 1) params.doc_type = [Array.from(typeFilter)[0] as DocumentType]
-      
-      const data = await knowledgeBasesApi.getDocuments(knowledgeBaseId, params)
+  const buildPageParams = React.useCallback((page: number) => {
+    const params: {
+      page: number
+      pageSize: number
+      search?: string
+      status?: DocumentStatus[]
+      doc_type?: DocumentType[]
+    } = { page, pageSize: DOCUMENT_PAGE_SIZE }
+
+    if (debouncedSearchQuery) params.search = debouncedSearchQuery
+    if (statusFilter.size === 1) params.status = [Array.from(statusFilter)[0] as DocumentStatus]
+    if (typeFilter.size === 1) params.doc_type = [Array.from(typeFilter)[0] as DocumentType]
+
+    return params
+  }, [debouncedSearchQuery, statusFilter, typeFilter])
+
+  // 重新加载第一页：筛选变化、刷新触发或首次进入
+  const loadFirstPage = React.useCallback(async () => {
+    const seq = ++requestSeqRef.current
+    pendingCountRef.current = 1
+    setIsLoading(true)
+    setIsLoadingMore(false)
+    setIsRefreshing(false)
+    setFailedOperation(null)
+    // 新筛选条件读取失败时不能沿用旧筛选的条目和游标
+    loadedPagesRef.current = 0
+    totalRef.current = 0
+    setDocuments([])
+    setTotal(0)
+    try {
+      const data = await knowledgeBasesApi.getDocuments(knowledgeBaseId, buildPageParams(1))
+      if (seq !== requestSeqRef.current) return
       setDocuments(data.items)
-      setPageData(data)
+      setTotal(data.total)
+      totalRef.current = data.total
+      loadedPagesRef.current = 1
     } catch {
       // 错误已由 API 客户端处理
+      if (seq === requestSeqRef.current) setFailedOperation('first')
     } finally {
-      if (showLoading) {
+      if (seq === requestSeqRef.current) {
+        pendingCountRef.current = 0
         setIsLoading(false)
       }
     }
-  }, [knowledgeBaseId, page, pageSize, searchQuery, statusFilter, typeFilter])
-  
-  React.useEffect(() => {
-    loadDocuments()
-  }, [loadDocuments, refreshTrigger])
-  
-  // 自动刷新处理中的文档
-  React.useEffect(() => {
-    const hasProcessing = documents.some(doc => doc.status === 'processing' || doc.status === 'pending')
-    if (hasProcessing) {
-      const timer = setInterval(() => {
-        loadDocuments(false)
-      }, 5000)
-      return () => clearInterval(timer)
+  }, [knowledgeBaseId, buildPageParams])
+
+  // 滚动到底部时追加下一页
+  const loadMore = React.useCallback(async () => {
+    if (pendingCountRef.current > 0 || loadedPagesRef.current === 0) return
+    if (documents.length >= totalRef.current) return
+
+    const seq = requestSeqRef.current
+    const nextPage = loadedPagesRef.current + 1
+    pendingCountRef.current += 1
+    setIsLoadingMore(true)
+    setFailedOperation(null)
+    try {
+      const data = await knowledgeBasesApi.getDocuments(knowledgeBaseId, buildPageParams(nextPage))
+      if (seq !== requestSeqRef.current) return
+      const seen = new Set(documents.map(doc => doc.id))
+      const appended: Document[] = []
+      for (const doc of data.items) {
+        if (seen.has(doc.id)) continue
+        seen.add(doc.id)
+        appended.push(doc)
+      }
+      const nextTotal = data.items.length === 0 ? documents.length : data.total
+      setDocuments([...documents, ...appended])
+      totalRef.current = nextTotal
+      setTotal(nextTotal)
+      loadedPagesRef.current = nextPage
+    } catch {
+      // 错误已由 API 客户端处理；失败不推进页码，避免跳过数据
+      if (seq === requestSeqRef.current) setFailedOperation('more')
+    } finally {
+      if (seq === requestSeqRef.current) {
+        pendingCountRef.current = Math.max(pendingCountRef.current - 1, 0)
+        setIsLoadingMore(false)
+      }
     }
-  }, [documents, loadDocuments])
-  
-  // 筛选条件变化时重置到第一页
+  }, [documents, knowledgeBaseId, buildPageParams])
+
+  // 刷新所有已加载页，保留用户已经追加的文档。
+  // force=true 用于文档状态变更后刷新：即使有追加请求在途也接管本轮读取，旧响应按 seq 丢弃。
+  const refreshLoadedPages = React.useCallback(async (options?: { force?: boolean }) => {
+    const force = options?.force ?? false
+    const pages = loadedPagesRef.current
+    if (pages === 0) {
+      await loadFirstPage()
+      return
+    }
+    // 轮询保持让位给在途的追加请求，避免每 5 秒取消用户正在进行的滚动加载
+    if (!force && pendingCountRef.current > 0) return
+
+    const seq = force ? ++requestSeqRef.current : requestSeqRef.current
+    pendingCountRef.current = force ? 1 : pendingCountRef.current + 1
+    if (force) {
+      setIsLoading(false)
+      setIsLoadingMore(false)
+    }
+    setIsRefreshing(true)
+    setFailedOperation(null)
+    try {
+      const merged: Document[] = []
+      const seen = new Set<string>()
+      let latestTotal = totalRef.current
+      let nextLoadedPages = 1
+
+      for (let page = 1; page <= pages; page += 1) {
+        const data = await knowledgeBasesApi.getDocuments(knowledgeBaseId, buildPageParams(page))
+        if (seq !== requestSeqRef.current) return
+        latestTotal = data.total
+        if (data.items.length === 0) {
+          nextLoadedPages = Math.max(page - 1, 1)
+          break
+        }
+        nextLoadedPages = page
+        for (const doc of data.items) {
+          if (seen.has(doc.id)) continue
+          seen.add(doc.id)
+          merged.push(doc)
+        }
+      }
+
+      setDocuments(merged)
+      loadedPagesRef.current = nextLoadedPages
+      totalRef.current = latestTotal
+      setTotal(latestTotal)
+    } catch {
+      // 错误已由 API 客户端处理
+      if (seq === requestSeqRef.current) setFailedOperation('refresh')
+    } finally {
+      if (seq === requestSeqRef.current) {
+        pendingCountRef.current = Math.max(pendingCountRef.current - 1, 0)
+        setIsRefreshing(false)
+      }
+    }
+  }, [knowledgeBaseId, buildPageParams, loadFirstPage])
+
+  const retryLoad = React.useCallback(() => {
+    const operation = failedOperation
+    setFailedOperation(null)
+    if (operation === 'more' && loadedPagesRef.current > 0) {
+      void loadMore()
+      return
+    }
+    if (operation === 'refresh' && loadedPagesRef.current > 0) {
+      void refreshLoadedPages({ force: true })
+      return
+    }
+    void loadFirstPage()
+  }, [failedOperation, loadFirstPage, loadMore, refreshLoadedPages])
+
   React.useEffect(() => {
-    setPage(1)
-  }, [searchQuery, statusFilter, typeFilter])
+    void loadFirstPage()
+  }, [loadFirstPage, refreshTrigger])
+
+  React.useEffect(() => () => {
+    // 卸载后到达的响应不再写入状态
+    requestSeqRef.current += 1
+  }, [])
+
+  const hasMore = documents.length < total
+  const sentinelRef = useInfiniteScroll({
+    hasMore: hasMore && !loadFailed,
+    loading: isLoading || isLoadingMore || isRefreshing,
+    onLoadMore: () => { void loadMore() },
+  })
+
+  // 自动刷新处理中的文档：刷新全部已加载页，不清空已追加内容；失败后停止自动轮询
+  const hasProcessing = documents.some(doc => doc.status === 'processing' || doc.status === 'pending')
+  React.useEffect(() => {
+    if (!hasProcessing || loadFailed) return
+    const timer = setInterval(() => {
+      void refreshLoadedPages()
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [hasProcessing, loadFailed, refreshLoadedPages])
   
   // 检查是否有筛选条件
   const isFiltered = searchQuery || statusFilter.size > 0 || typeFilter.size > 0
@@ -192,7 +325,6 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
     setSearchQuery('')
     setStatusFilter(new Set())
     setTypeFilter(new Set())
-    setPage(1)
   }
   
   // 状态选项
@@ -208,8 +340,9 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
     { value: 'pdf', label: 'PDF' },
     { value: 'docx', label: 'DOCX' },
     { value: 'doc', label: 'DOC' },
+    { value: 'pptx', label: 'PPTX' },
     { value: 'txt', label: 'TXT' },
-    { value: 'md', label: 'Markdown' },
+    { value: 'markdown', label: 'Markdown' },
     { value: 'html', label: 'HTML' },
     { value: 'csv', label: 'CSV' },
     { value: 'xlsx', label: 'XLSX' },
@@ -218,15 +351,12 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
     { value: 'url', label: 'URL' },
   ]
   
-  // 计算分页信息
-  const totalPages = pageData ? Math.ceil(pageData.total / pageSize) : 1
-  
   // 选择操作
   const toggleSelectAll = () => {
-    if (selectedDocs.size === documents.length) {
+    if (documents.filter(doc => !isFeishuManaged(doc)).every(doc => selectedDocs.has(doc.id))) {
       setSelectedDocs(new Set())
     } else {
-      setSelectedDocs(new Set(documents.map(d => d.id)))
+      setSelectedDocs(new Set(documents.filter(d => !isFeishuManaged(d)).map(d => d.id)))
     }
   }
   
@@ -268,7 +398,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
     try {
       await knowledgeBasesApi.retryFailedChunks(knowledgeBaseId, doc.id)
       toast.success(t('retryStarted'))
-      await loadDocuments(false)
+      await refreshLoadedPages({ force: true })
     } catch {
       // 错误已由 API 客户端处理
     }
@@ -283,7 +413,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
       await runBulkActions(pendingDocs, doc => knowledgeBasesApi.processDocument(knowledgeBaseId, doc.id))
       toast.success(t('processStarted', { count: pendingDocs.length }))
       setSelectedDocs(new Set())
-      await loadDocuments(false)
+      await refreshLoadedPages({ force: true })
     } catch {
       // 错误已由 API 客户端处理
     } finally {
@@ -300,7 +430,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
       await runBulkActions(failedDocs, doc => knowledgeBasesApi.retryFailedChunks(knowledgeBaseId, doc.id))
       toast.success(t('retryStarted'))
       setSelectedDocs(new Set())
-      await loadDocuments(false)
+      await refreshLoadedPages({ force: true })
     } catch {
       // 错误已由 API 客户端处理
     } finally {
@@ -318,7 +448,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
     try {
       await knowledgeBasesApi.processDocument(knowledgeBaseId, doc.id)
       toast.success(t('processStartedSingle'))
-      await loadDocuments(false)
+      await refreshLoadedPages({ force: true })
     } catch {
       // 错误已由 API 客户端处理
     }
@@ -470,7 +600,8 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
               {!readOnly && (
                 <TableHead className="w-10">
                   <Checkbox
-                    checked={selectedDocs.size === documents.length && documents.length > 0}
+                    checked={documents.some(doc => !isFeishuManaged(doc)) && documents.filter(doc => !isFeishuManaged(doc)).every(doc => selectedDocs.has(doc.id))}
+                    disabled={!documents.some(doc => !isFeishuManaged(doc))}
                     onCheckedChange={toggleSelectAll}
                   />
                 </TableHead>
@@ -491,6 +622,17 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
                   {commonT('loading')}
                 </TableCell>
               </TableRow>
+            ) : loadFailed && documents.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={readOnly ? 7 : 8} className="h-24 text-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <p className="text-muted-foreground">{commonT('loadFailed')}</p>
+                    <Button variant="outline" size="sm" onClick={retryLoad}>
+                      {commonT('retry')}
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
             ) : documents.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={readOnly ? 7 : 8} className="h-24 text-center text-muted-foreground">
@@ -507,19 +649,21 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
                     <TableCell>
                       <Checkbox
                         checked={selectedDocs.has(doc.id)}
+                        disabled={isFeishuManaged(doc)}
                         onCheckedChange={() => toggleSelectDoc(doc.id)}
                       />
                     </TableCell>
                   )}
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      {docTypeIcons[doc.doc_type] || <FileText className="h-4 w-4" />}
+                    <div className="flex min-w-0 items-center gap-2">
+                      {docTypeIcons[doc.doc_type] || <FileText className="h-4 w-4 shrink-0" />}
                       <Tooltip>
                         <TooltipTrigger render={<span />} className="font-medium truncate max-w-50 cursor-default">
                           {doc.name}
                         </TooltipTrigger>
                         <TooltipContent>{doc.name}</TooltipContent>
                       </Tooltip>
+                      <FeishuDocumentSource document={doc} />
                     </div>
                     {doc.error_message && (
                       <Tooltip>
@@ -533,8 +677,8 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="uppercase text-xs">
-                      {doc.doc_type}
+                    <Badge variant="outline" className="text-xs">
+                      {typeOptions.find(option => option.value === doc.doc_type)?.label ?? doc.doc_type.toUpperCase()}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
@@ -554,7 +698,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
                         <span className="sr-only">{t('common.openMenu')}</span>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-48">
-                        {doc.status === 'pending' && canUpdateKb && (
+                        {doc.status === 'pending' && canUpdateKb && !isFeishuManaged(doc) && (
                           <>
                             <DropdownMenuItem onClick={() => handleConfigure(doc)}>
                               <Settings2 className="mr-2 h-4 w-4" />
@@ -575,14 +719,14 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
                           </DropdownMenuItem>
                         )}
 
-                        {(doc.status === 'error' || doc.status === 'completed') && canUpdateKb && (
+                        {(doc.status === 'error' || doc.status === 'completed') && canUpdateKb && !isFeishuManaged(doc) && (
                           <DropdownMenuItem onClick={() => handleReprocess(doc)}>
                             <RefreshCw className="mr-2 h-4 w-4" />
                             {t('reprocess')}
                           </DropdownMenuItem>
                         )}
 
-                        {doc.status === 'error' && canUpdateKb && (
+                        {doc.status === 'error' && canUpdateKb && !isFeishuManaged(doc) && (
                           <DropdownMenuItem onClick={() => handleRetryFailedChunks(doc)}>
                             <RotateCcw className="mr-2 h-4 w-4" />
                             {t('retryFailedChunks')}
@@ -602,8 +746,14 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
                             {t('viewSourceUrl')}
                           </DropdownMenuItem>
                         )}
+                        {isFeishuManaged(doc) && typeof doc.metadata?.feishu_source_url === 'string' && /^https?:\/\//i.test(doc.metadata.feishu_source_url) && (
+                          <DropdownMenuItem onClick={() => window.open(doc.metadata!.feishu_source_url as string, '_blank', 'noopener,noreferrer')}>
+                            <ExternalLink className="mr-2 h-4 w-4" />
+                            {t('feishuOriginal')}
+                          </DropdownMenuItem>
+                        )}
 
-                        {canDeleteKb && (
+                        {canDeleteKb && !isFeishuManaged(doc) && (
                           <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -625,43 +775,22 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
         </Table>
       </div>
       
-      {/* 分页 */}
-      {pageData && pageData.total > 0 && (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Select value={String(pageSize)} onValueChange={(v) => { if (v) { setPageSize(Number(v)); setPage(1) } }}>
-              <SelectTrigger size="sm" className="w-17.5">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent side="top" alignItemWithTrigger={false}>
-                <SelectItem value="10">10</SelectItem>
-                <SelectItem value="20">20</SelectItem>
-                <SelectItem value="50">50</SelectItem>
-              </SelectContent>
-            </Select>
-            <span>{t('rowsPerPage')}</span>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">
-              {t('pageInfo', { page, total: totalPages })}
-            </span>
-            
-            <div className="flex items-center gap-1">
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(1)} disabled={page === 1}>
-                <ChevronsLeft className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(totalPages)} disabled={page >= totalPages}>
-                <ChevronsRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
+      {/* 无限滚动：哨兵始终挂载，滚动到底部自动加载下一页 */}
+      <div ref={sentinelRef} aria-hidden className="h-px w-full" />
+
+      {isLoadingMore && (
+        <div className="flex items-center justify-center gap-2 py-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {commonT('loadingMore')}
+        </div>
+      )}
+
+      {loadFailed && documents.length > 0 && (
+        <div className="flex items-center justify-center gap-2 py-2 text-sm text-muted-foreground">
+          <span>{commonT('loadFailed')}</span>
+          <Button variant="outline" size="sm" onClick={retryLoad}>
+            {commonT('retry')}
+          </Button>
         </div>
       )}
       

@@ -94,7 +94,10 @@ beforeEach(() => {
   listPage.mockResolvedValue(page())
   getFilterOptions.mockResolvedValue(filters)
   getTeams.mockResolvedValue({ items: [{ id: 'team-1', name: 'Core Team' }] })
-  Object.defineProperty(globalThis, 'window', { value: { confirm: mock(() => true) }, configurable: true })
+  Object.defineProperty(globalThis, 'window', {
+    value: { confirm: mock(() => true), setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout },
+    configurable: true,
+  })
 })
 
 afterEach(() => {
@@ -110,6 +113,14 @@ async function render() {
   return renderer
 }
 
+async function waitForDebounce() {
+  const { promise, resolve } = Promise.withResolvers<void>()
+  setTimeout(resolve, 350)
+  await act(async () => {
+    await promise
+  })
+}
+
 function buttons(label: string) {
   return renderer.root.findAllByType('button').filter((button) => text(button.props.children).includes(label))
 }
@@ -121,6 +132,7 @@ describe('AdminWorkflowsPanel', () => {
     expect(listPage).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 10 }))
 
     await act(async () => renderer.root.findAllByType('input').find((input) => input.props.placeholder === 'apps.admin.workflows.searchPlaceholder')!.props.onChange({ target: { value: 'daily' } }))
+    await waitForDebounce()
     const filters = renderer.root.findAllByType('button').filter((button) => button.props.onSelectionChange)
     await act(async () => filters.find((button) => button.props.title === 'common.status')!.props.onSelectionChange(new Set(['draft'])))
     expect(listPage).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'daily', status: ['draft'] }))
@@ -129,6 +141,7 @@ describe('AdminWorkflowsPanel', () => {
     expect(listPage).toHaveBeenLastCalledWith(expect.objectContaining({ pageSize: 20 }))
 
     await act(async () => buttons('apps.admin.actions.reset')[0].props.onClick())
+    await waitForDebounce()
     expect(listPage).toHaveBeenLastCalledWith(expect.objectContaining({ search: undefined, status: undefined }))
   })
 

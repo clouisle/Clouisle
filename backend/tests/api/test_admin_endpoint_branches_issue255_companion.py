@@ -274,7 +274,11 @@ def test_user_status_branches(active, approval, expected):
 
 @pytest.mark.asyncio
 async def test_user_email_remaining_branches(monkeypatch):
-    monkeypatch.setattr(users.SiteSetting, "get_value", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        users,
+        "get_builtin_integration",
+        AsyncMock(return_value=SimpleNamespace(is_enabled=True)),
+    )
     monkeypatch.setattr(
         users, "check_bulk_email_rate", AsyncMock(return_value=(True, 0, 3))
     )

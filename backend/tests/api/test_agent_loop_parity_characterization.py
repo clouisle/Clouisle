@@ -58,6 +58,17 @@ def _started() -> dict:
     }
 
 
+def _submission(started):
+    """RunSubmission-shaped result of the shared submit service."""
+    return SimpleNamespace(
+        run_id=started["data"].run_id,
+        conversation_id=started["data"].conversation_id,
+        user_message_id=started["data"].user_message_id,
+        status=started["data"].status,
+        stream_url=started["data"].stream_url,
+    )
+
+
 async def _collect_stream(response) -> str:
     chunks = []
     async for chunk in response.body_iterator:
@@ -111,11 +122,11 @@ async def test_chat_nonstream_adapts_the_shared_durable_run(monkeypatch):
         id=started["data"].run_id,
         status=AgentRunStatus.COMPLETED,
     )
-    enqueue = AsyncMock(return_value=started)
+    enqueue = AsyncMock(return_value=_submission(started))
     wait = AsyncMock(return_value=run)
     legacy_response = {"legacy": True}
     build_response = AsyncMock(return_value=legacy_response)
-    monkeypatch.setattr(chat_api, "_enqueue_durable_chat_run", enqueue)
+    monkeypatch.setattr("app.services.agent_submission.submit_chat_run", enqueue)
     monkeypatch.setattr(chat_api, "_wait_for_agent_run", wait)
     monkeypatch.setattr(chat_api, "_build_non_stream_run_response", build_response)
 
@@ -204,7 +215,7 @@ def _edit_environment(monkeypatch):
 async def test_edit_prepares_branch_then_queues_existing_messages(monkeypatch):
     env = _edit_environment(monkeypatch)
     started = _started()
-    enqueue = AsyncMock(return_value=started)
+    enqueue = AsyncMock(return_value=_submission(started))
     stream_response = object()
     monkeypatch.setattr(chat_api, "_enqueue_existing_message_run", enqueue)
     monkeypatch.setattr(
@@ -312,7 +323,7 @@ def _regenerate_environment(monkeypatch):
 async def test_regenerate_prepares_new_version_then_queues_run(monkeypatch):
     env = _regenerate_environment(monkeypatch)
     started = _started()
-    enqueue = AsyncMock(return_value=started)
+    enqueue = AsyncMock(return_value=_submission(started))
     stream_response = object()
     monkeypatch.setattr(chat_api, "_enqueue_existing_message_run", enqueue)
     monkeypatch.setattr(

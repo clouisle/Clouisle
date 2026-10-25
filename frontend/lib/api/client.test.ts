@@ -18,7 +18,7 @@ function restoreGlobal(name: 'window' | 'document' | 'localStorage' | 'fetch', d
 function useBrowserState(token?: string, locale?: string): Map<string, string> {
   const storage = new Map<string, string>(token ? [['access_token', token]] : [])
   Object.defineProperties(globalThis, {
-    window: { configurable: true, value: { location: { pathname: '/', search: '', href: '' } } },
+    window: { configurable: true, value: { location: { origin: 'http://localhost', pathname: '/', search: '', href: '' } } },
     document: { configurable: true, value: { cookie: locale ? `locale=${locale}` : '' } },
     localStorage: {
       configurable: true,
@@ -187,6 +187,20 @@ describe('API response behavior', () => {
     expect(technical.message).toBe('Request failed')
   })
 
+  test.each([200, 502])('preserves long localized permission guidance on HTTP %s', async (status) => {
+    useBrowserState(undefined, 'zh')
+    const message = '飞书应用缺少 API 权限（99991672）。该接口要求的权限：wiki:space:retrieve, wiki:wiki:readonly, wiki:wiki（以飞书权限页的任一或全部要求为准）。请在飞书开放平台 → 当前应用 → 权限管理申请权限，完成版本发布及管理员审批后重试；知识空间列表只需 wiki:space:retrieve、wiki:wiki:readonly、wiki:wiki 中任一项。'
+    axiosInstance.defaults.adapter = async (config) => {
+      const response = { config, data: { code: 1002, data: null, msg: message }, headers: {}, status, statusText: '' }
+      if (status >= 400) throw new AxiosError('Request failed', 'ERR_BAD_RESPONSE', config, undefined, response)
+      return response
+    }
+    const error = await api.get('/admin/integrations/feishu/knowledge/spaces', { silent: true }).catch(value => value)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error.message).toBe(message)
+  })
+
+
   test('maps timeout and plain HTTP failures to stable ApiError messages', async () => {
     axiosInstance.defaults.adapter = async (config) => {
       throw new AxiosError('timeout', 'ECONNABORTED', config)
@@ -243,7 +257,10 @@ describe('API response behavior', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(storage.has('access_token')).toBe(false)
-    expect(window.location.href).toBe('/login?redirect=%2Fprojects%3Fpage%3D2')
+    const destination = new URL(window.location.href)
+    expect(destination.origin).toBe(window.location.origin)
+    expect(destination.pathname).toBe('/login')
+    expect(destination.searchParams.get('redirect')).toBe('/projects?page=2')
   })
 
   test('propagates request interceptor failures', async () => {

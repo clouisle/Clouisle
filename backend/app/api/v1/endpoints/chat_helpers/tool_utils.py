@@ -83,14 +83,19 @@ async def get_tool_display_names(
     tool_map = {str(t.id): t for t in all_tools}
 
     display_names: dict[str, str] = {}
-    if getattr(agent, "enable_attachments", False):
-        display_names.update(
-            {
-                "inspect_asset": t("asset_tool_inspect", lang=user_locale),
-                "read_asset": t("asset_tool_read", lang=user_locale),
-                "parse_asset": t("asset_tool_parse", lang=user_locale),
-            }
-        )
+    from app.api.v1.endpoints.chat_helpers.asset_tools import (
+        asset_tool_display_names,
+        asset_tool_names_for_agent,
+    )
+
+    enabled_asset_tools = asset_tool_names_for_agent(agent)
+    display_names.update(
+        {
+            name: label
+            for name, label in asset_tool_display_names(user_locale).items()
+            if name in enabled_asset_tools
+        }
+    )
     for config in tools_config:
         if config.get("type") == "builtin":
             tool_name = config.get("name")

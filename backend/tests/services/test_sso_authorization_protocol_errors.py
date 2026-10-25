@@ -15,9 +15,9 @@ class _ConnectionQuery:
 
 
 def test_get_provider_instance_rejects_unsupported_protocol() -> None:
-    provider = SimpleNamespace(protocol="ldap")
+    provider = SimpleNamespace(provider_type="ldap")
 
-    with pytest.raises(ValueError, match="Unsupported protocol: ldap"):
+    with pytest.raises(ValueError, match="Unknown integration type: ldap"):
         sso_service.SSOService.get_provider_instance(provider)
 
 
@@ -34,7 +34,7 @@ async def test_find_or_create_user_rejects_registration_when_signup_disabled(
     monkeypatch.setattr(
         sso_service.UserSSOConnection, "filter", lambda **_kwargs: _ConnectionQuery()
     )
-    provider = SimpleNamespace(allow_signup=False)
+    provider = SimpleNamespace(login_config={"allow_signup": False})
 
     with pytest.raises(BusinessError) as exc_info:
         await sso_service.SSOService.find_or_create_user(

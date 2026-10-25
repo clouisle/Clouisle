@@ -118,6 +118,23 @@ test('updates query, retrieval, and output settings for a selected knowledge bas
   expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({ topK: 10 }))
   expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({ threshold: 0.7 }))
 })
+test('selects a query variable and clears stale constant input', () => {
+  const onConfigChange = mock(() => {})
+  states = [true, true, true, [{ id: 'kb-1', name: 'Product docs' }], false, true, '']
+  const tree = render({ knowledgeBaseId: 'kb-1', querySource: 'variable', queryConstantValue: 'old query' }, {
+    onConfigChange,
+    openVariablePopover: 'query-input',
+  })
+
+  descendants(tree).find(node => node.type === 'button' && typeof node.props.onClick === 'function' && text(node).includes('Question'))!.props.onClick!()
+
+  expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({
+    querySource: 'variable',
+    queryVariableRef: '{{input.question}}',
+    queryVariableRefNodeLabel: 'Input',
+    queryConstantValue: undefined,
+  }))
+})
 
 test('filters, clears, and edits constant query configuration', () => {
   const kb = { id: 'kb-1', name: 'Product docs', description: 'Published docs' }

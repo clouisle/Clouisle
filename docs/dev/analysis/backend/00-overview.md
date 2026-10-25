@@ -45,7 +45,7 @@ API 分为两个路由组，均挂载在 `/api/v1/` 下。
 | `site_settings.py` | `/api/v1/admin/site-settings` | 站点配置（全量读写） |
 | `models.py` | `/api/v1/admin/models` | 模型 CRUD、测试、设为默认 |
 | `teams.py` | `/api/v1/admin/teams` | 全量团队列表、创建、删除 |
-| `sso.py` | `/api/v1/admin/sso` | SSO 提供商 CRUD、断开任意用户连接 |
+| `integrations.py` | `/api/v1/admin/integrations` | 统一集成目录、按域过滤列表、登录身份源 CRUD；内置服务配置使用 settings 域 |
 | `notifications.py` | `/api/v1/admin/notifications` | 创建、删除、全量通知列表 |
 
 ## 认证模式
@@ -55,7 +55,7 @@ API 分为两个路由组，均挂载在 `/api/v1/` 下。
 适用于登录、注册、SSO 等公开端点：
 - `/login/*` - 登录相关
 - `/register` - 用户注册
-- `/sso/providers` - SSO 提供商列表
+- `/sso/integrations` - 已启用的登录集成列表
 - `/sso/login/*`, `/sso/callback/*` - SSO 流程
 - `/models/providers`, `/models/types` - 模型元数据
 - `/site-settings/public` - 公开站点设置
@@ -90,10 +90,10 @@ async def create_item(
 
 ### 4. 超级管理员
 
-使用 `deps.get_current_active_superuser` 依赖（主要用于 admin 路由组中的 SSO 管理接口）：
+使用 `deps.get_current_active_superuser` 依赖（例如初始化引导、部分仅超管可见的运维接口）：
 ```python
-@router.get("/providers")
-async def list_providers(
+@router.get("/bootstrap-status")
+async def bootstrap_status(
     current_user: User = Depends(deps.get_current_active_superuser)
 ):
     ...

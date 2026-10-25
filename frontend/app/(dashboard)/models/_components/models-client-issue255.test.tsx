@@ -79,7 +79,7 @@ beforeEach(() => {
   for (const fn of [updateModel, setDefault, testConnection, deleteModel]) { fn.mockReset(); fn.mockResolvedValue({}) }
   for (const fn of [toastSuccess, toastLoading, toastError, toastDismiss]) fn.mockClear()
   toastLoading.mockReturnValue('toast-1')
-  Object.defineProperty(globalThis, 'window', { value: { confirm: mock(() => true) }, configurable: true })
+  Object.defineProperty(globalThis, 'window', { value: { confirm: mock(() => true), setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }, configurable: true })
 })
 afterEach(() => { for (const renderer of renderers) act(() => renderer.unmount()); renderers.length = 0 })
 
@@ -90,6 +90,13 @@ function render() {
   return renderer!
 }
 async function settle() { await act(async () => {}) }
+async function settleSearchDebounce() {
+  await act(async () => {
+    const { promise, resolve } = Promise.withResolvers<void>()
+    setTimeout(resolve, 350)
+    await promise
+  })
+}
 function buttons(renderer: ReactTestRenderer, name: string) { return renderer.root.findAllByType('button').filter((button) => button.findAll((node) => node.children.includes(name)).length > 0) }
 function checkbox(renderer: ReactTestRenderer, index: number) { return renderer.root.findAllByProps({ type: 'checkbox' })[index] }
 function selectedRows(renderer: ReactTestRenderer) { return renderer.root.findAllByProps({ 'data-state': 'selected' }).filter((node) => typeof node.type === 'string') }
@@ -130,13 +137,14 @@ describe('models client issue 255 coverage', () => {
     act(() => filters[0].props.onSelectionChange(new Set(['openai'])))
     act(() => filters[1].props.onSelectionChange(new Set(['chat'])))
     act(() => filters[2].props.onSelectionChange(new Set(['enabled'])))
-    await settle()
+    await settleSearchDebounce()
     expect(getModels).toHaveBeenLastCalledWith({ page: 1, pageSize: 10, search: 'gpt', provider: ['openai'], model_type: ['chat'], is_enabled: true })
 
     act(() => filters[2].props.onSelectionChange(new Set(['disabled'])))
     await settle()
     expect(getModels).toHaveBeenLastCalledWith(expect.objectContaining({ is_enabled: false }))
     await click(renderer, 'reset')
+    await settleSearchDebounce()
     await settle()
     expect(getModels).toHaveBeenLastCalledWith({ page: 1, pageSize: 10 })
   })
@@ -220,9 +228,10 @@ describe('models client issue 255 coverage', () => {
 
     getModels.mockResolvedValue(page([{ ...model, model_type: 'text_to_video' }]))
     act(() => renderer.root.findByProps({ placeholder: 'filterModels' }).props.onChange({ target: { value: 'video' } }))
+    await settleSearchDebounce()
     await settle()
     const confirm = mock(() => false)
-    Object.defineProperty(globalThis, 'window', { value: { confirm }, configurable: true })
+    Object.defineProperty(globalThis, 'window', { value: { confirm, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }, configurable: true })
     await click(renderer, 'testConnection', 0); await settle()
     expect(confirm).toHaveBeenCalledWith('videoTestCostWarning')
 

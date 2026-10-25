@@ -5,12 +5,21 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from app.sso.providers import oidc as oidc_module
+from app.integrations.credentials import encrypt_secret
 from app.sso.providers.cas import CASProvider
 from app.sso.providers.oidc import OIDCProvider
 
 
 def provider(config: dict) -> SimpleNamespace:
-    return SimpleNamespace(config=config, attribute_mapping={})
+    runtime_config = dict(config)
+    credentials = {}
+    if "client_secret" in runtime_config:
+        credentials["client_secret"] = encrypt_secret(
+            runtime_config.pop("client_secret")
+        )
+    return SimpleNamespace(
+        config=runtime_config, credentials=credentials, attribute_mapping={}
+    )
 
 
 class AsyncClient:

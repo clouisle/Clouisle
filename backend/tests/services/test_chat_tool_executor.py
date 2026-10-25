@@ -9,8 +9,8 @@ from app.api.v1.endpoints.chat_helpers.tool_executor import (
     execute_tool_call as execute_helper_tool_call,
 )
 from app.api.v1.endpoints.chat_tools import execute_tool_call
-from app.llm.tools.builtin.media import ToolExecutionResult
 from app.llm.tools.registry import ToolInfo, tool_registry
+from app.utils.tool_output import ToolExecutionResult
 
 
 class TestChatToolExecutor:

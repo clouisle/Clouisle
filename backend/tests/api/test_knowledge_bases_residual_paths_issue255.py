@@ -233,9 +233,12 @@ def test_list_knowledge_bases_filters_memberships_search_status_and_models(
             knowledge_bases.KnowledgeBaseVisibility.PUBLIC.value,
         ],
     } in _q_leaves(visibility)
-    assert kb_query.filters[1:] == [
-        {"created_by": current_user},
+    assert kb_query.filters[1] == {"created_by": current_user}
+    search_args, search_kwargs = kb_query.filters[2]
+    assert search_kwargs == {}
+    assert _q_leaves(search_args[0]) == [
         {"name__icontains": "hand"},
+        {"description__icontains": "hand"},
     ]
     assert kb_query.offset_value == 3
     assert kb_query.limit_value == 3

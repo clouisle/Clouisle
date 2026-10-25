@@ -46,7 +46,7 @@ describe('AuditLogsClient', () => {
 
     expect(renderer.root.findByType('h1').children).toEqual(['title'])
     expect(renderer.root.findByProps({ 'aria-label': 'audit log table' })).toBeDefined()
-    expect(text(renderer)).toContain('...')
+    expect(text(renderer)).toContain('animate-pulse')
 
     await act(async () => resolveStats({ total_logs: 0, today_logs: 0, failed_logs: 0, active_users: 0 }))
   })
@@ -73,7 +73,7 @@ describe('AuditLogsClient', () => {
 
     const renderer = await render()
 
-    expect(text(renderer)).not.toContain('...')
-    expect(renderer.root.findAllByType('div').filter((node) => node.children.length === 1 && node.children[0] === '0')).toHaveLength(4)
+    expect(text(renderer)).not.toContain('animate-pulse')
+    expect(renderer.root.findAllByType('p').filter((node) => node.children.length === 1 && node.children[0] === '0')).toHaveLength(4)
   })
 })

@@ -66,6 +66,7 @@ def test_global_permission_accepts_exact_and_wildcard_codes():
     assert not deps.user_has_global_permission(
         user(roles=[role("admin:users")]), "admin:teams"
     )
+    assert deps.user_has_global_permission(user(is_superuser=True), "any:permission")
 
 
 @pytest.mark.anyio

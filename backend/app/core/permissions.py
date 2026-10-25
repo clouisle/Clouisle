@@ -84,9 +84,11 @@ class SystemPermissions:
     ADMIN_SETTINGS_READ = "admin:settings:read"
     ADMIN_SETTINGS_UPDATE = "admin:settings:update"
 
-    # ============ Admin SSO Management ============
-    ADMIN_SSO_READ = "admin:sso:read"
-    ADMIN_SSO_UPDATE = "admin:sso:update"
+    # ============ Admin Integration Management ============
+    ADMIN_INTEGRATIONS_LOGIN_READ = "admin:integrations:login:read"
+    ADMIN_INTEGRATIONS_LOGIN_UPDATE = "admin:integrations:login:update"
+    ADMIN_INTEGRATIONS_SETTINGS_READ = "admin:integrations:settings:read"
+    ADMIN_INTEGRATIONS_SETTINGS_UPDATE = "admin:integrations:settings:update"
 
     # ============ Admin Conversation Management ============
     ADMIN_CONVERSATION_READ = "admin:conversation:read"
@@ -385,16 +387,26 @@ class SystemPermissions:
                 "scope": "admin",
                 "description": "Update system settings and test integrations",
             },
-            # Admin SSO Management
+            # Admin Integration Management
             {
-                "code": cls.ADMIN_SSO_READ,
+                "code": cls.ADMIN_INTEGRATIONS_LOGIN_READ,
                 "scope": "admin",
-                "description": "View SSO providers and configuration",
+                "description": "View user login integrations and policy",
             },
             {
-                "code": cls.ADMIN_SSO_UPDATE,
+                "code": cls.ADMIN_INTEGRATIONS_LOGIN_UPDATE,
                 "scope": "admin",
-                "description": "Manage SSO providers and user SSO connections",
+                "description": "Manage user login integrations and connections",
+            },
+            {
+                "code": cls.ADMIN_INTEGRATIONS_SETTINGS_READ,
+                "scope": "admin",
+                "description": "View notification and directory integrations",
+            },
+            {
+                "code": cls.ADMIN_INTEGRATIONS_SETTINGS_UPDATE,
+                "scope": "admin",
+                "description": "Manage notification and directory integrations",
             },
             # Admin Conversation Management
             {

@@ -1,6 +1,41 @@
 # Implementation Plan
 
 ## Active
+- **dashboard-search-debounce** — Completed. See `docs/plan/dashboard-search-debounce.md`.
+  - [x] 1. Activity and audit searches
+  - [x] 2. Applications and capabilities
+  - [x] 3. Knowledge, memories and models
+  - [x] 4. Integrated verification
+
+- **platform-infinite-scroll** — Completed. See `docs/plan/platform-infinite-scroll.md`.
+  - [x] 1. Shared sentinel and truncated lists
+  - [x] 2. Applications and execution logs
+  - [x] 3. Documents and notifications
+  - [x] 4. Verification and delivery
+
+- **run-execution-trajectory** — Completed. See `docs/plan/run-execution-trajectory.md`.
+  - [x] 1. Runtime model context capture
+  - [x] 2. Correlated trajectory and payload API
+  - [x] 3. Independent execution inspector
+  - [x] 4. Verification and operator documentation
+
+- **builtin-tool-output** — Completed. See `docs/plan/builtin-tool-output.md`.
+  - [x] 1. Shared result utils and replay contract
+  - [x] 2. Asset, sandbox and persistent web reading outputs
+  - [x] 3. Search, memory and short-result renderers
+  - [x] 4. Encoding evaluation, regression verification and delivery
+
+- **asset-document-reading** — Completed. See `docs/plan/asset-document-reading.md`.
+  - [x] 1. Complete extraction and persistent text representations
+  - [x] 2. Bounded reads, search and continuation
+  - [x] 3. Tool and chat-context cutover
+  - [x] 4. End-to-end verification and delivery
+
+- **backend-push-gate-repair** — Completed. See `docs/plan/backend-push-gate-repair.md`.
+  - [x] 1. Repair backend regression contracts and serialization
+  - [x] 2. Verify unchanged backend/frontend coverage gates
+  - [x] 3. Commit and push with hooks enabled
+
 - **ask-user-custom-answers-and-skip** — In progress. Allow custom text alongside ask_user choices and permit users to explicitly skip every question while preserving a model-visible durable result. See `docs/plan/ask-user-custom-answers-and-skip.md`
   - [ ] 1. Define custom-answer and explicit-skip contract
   - [ ] 2. Extend durable answer submission
@@ -23,6 +58,15 @@
   - [ ] 7. Sparse settings merge and Retrieval Lab validation
   - [ ] 8. Verified dual-architecture PostgreSQL deployment image
   - [ ] 9. Full validation and evidence
+
+- **pr-473-review-fixes** — Completed (13 confirmed issues and candidate #14 fixed; #15 remains unconfirmed, parser unchanged). See `docs/plan/pr-473-review-fixes.md`
+  - [x] 1. Detailed design, evidence thresholds, and agent ownership
+  - [x] 2. Feishu callback compatibility and atomic delivery finalization (#1, #4; verify #14)
+  - [x] 3. Integration migration, notification compatibility, webhook clearing, and send-time gates (#5–#7, #10)
+  - [x] 4. Agent asset/context/public contracts and HTML candidate comparison (#2, #3, #8; verify #15)
+  - [x] 5. Model update and edit hydration (#9, #13)
+  - [x] 6. Infinite-scroll generations and WeChat draft preservation (#11, #12)
+  - [x] 7. Full validation and evidence-based disposition
 
 - **postgres-pg-search-alpine-image** — In progress. ARM64 passed at 426,942,814 bytes; native amd64 and release-manifest evidence remain required before adoption. See `docs/plan/postgres-pg-search-alpine-image.md`
   - [x] 1. Reproducible Alpine source build

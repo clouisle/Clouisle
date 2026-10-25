@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     # Celery
     CELERY_VISIBILITY_TIMEOUT_SECONDS: int = 3600
     KB_PROCESSING_RECOVERY_AFTER_SECONDS: int = 600
+    WECHAT_POLL_BATCH_SIZE: int = Field(default=64, ge=1, le=512)
+    WECHAT_POLL_CONCURRENCY: int = Field(default=16, ge=1, le=128)
+    WECHAT_POLL_MAX_BATCHES: int = Field(default=8, ge=1, le=128)
 
     # Vector DB (Qdrant)
     VECTOR_BACKEND: str = "qdrant"

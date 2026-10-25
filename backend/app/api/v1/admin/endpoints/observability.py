@@ -85,9 +85,52 @@ class TraceInfo(BaseModel):
     recorded_count: int
 
 
+class ToolPayloadDetail(BaseModel):
+    tool_call_id: str
+    tool_name: str
+    display: str | None = None
+    model_input: str | None = None
+    display_bytes: int = 0
+    model_bytes: int = 0
+    model_sha256: str | None = None
+    renderer: str | None = None
+    eof: bool | None = None
+    has_cursor: bool = False
+    partial: bool = False
+    error: str | None = None
+    recorded: bool = False
+
+
+class TrajectoryEntry(BaseModel):
+    id: str
+    parent_id: str | None = None
+    kind: str
+    name: str
+    status: str
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    duration_ms: int | None = None
+    model: str | None = None
+    token_usage: dict[str, int] | None = None
+    tool_call_ids: list[str] = Field(default_factory=list)
+    payload_state: Literal["recorded", "partial", "unrecorded"]
+    preview: str | None = None
+
+
+class TrajectoryDetail(BaseModel):
+    id: str
+    kind: str
+    input: Any = None
+    output: Any = None
+    partial: bool = False
+    recorded: bool = False
+
+
 class RunDetail(BaseModel):
     run: RunSummary
     spans: list[TraceSpan]
+    # Optional for backward compatibility with older responses/clients.
+    trajectory: list[TrajectoryEntry] = Field(default_factory=list)
     trace: TraceInfo
     meta: ObservabilityMeta
 
@@ -330,6 +373,48 @@ async def get_run(
     data = await service.run_detail(source, run_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Run not found")
+    return success(data=data)
+
+
+@router.get(
+    "/runs/{source}/{run_id}/tools/{tool_call_id}",
+    response_model=Response[ToolPayloadDetail],
+)
+async def get_run_tool_payload(
+    source: Literal["agent", "workflow"],
+    run_id: UUID,
+    tool_call_id: str,
+    current_user: User = Depends(PermissionChecker(READ)),
+) -> Any:
+    """Load one recorded model/display payload pair on demand."""
+    from app.models.observability import ObservabilityRun
+    from app.services.observability_payload import load_tool_payload
+
+    run = await ObservabilityRun.get_or_none(id=run_id, source=source)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if source != "agent":
+        raise HTTPException(status_code=404, detail="Tool payload not recorded")
+    payload = await load_tool_payload(run_id=run_id, tool_call_id=tool_call_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Tool payload not recorded")
+    return success(data=payload)
+
+
+@router.get(
+    "/runs/{source}/{run_id}/trajectory/{entry_id}",
+    response_model=Response[TrajectoryDetail],
+)
+async def get_run_trajectory_entry(
+    source: Literal["agent", "workflow"],
+    run_id: UUID,
+    entry_id: str,
+    current_user: User = Depends(PermissionChecker(READ)),
+) -> Any:
+    """Load one recorded model, tool or workflow-node snapshot on demand."""
+    data = await service.trajectory_detail(source, run_id, entry_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Trajectory entry not found")
     return success(data=data)
 
 

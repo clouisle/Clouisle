@@ -478,11 +478,21 @@ def _sqlite_dashboard_database(monkeypatch):
 
     class Connection:
         async def execute_query_dict(self, sql, params):
+            assert "$2 IS NULL" not in sql
+            assert isinstance(params, list)
+            assert all(value is not None for value in params)
             for key in ("prompt", "completion"):
                 sql = sql.replace(
                     f"(m.token_usage ->> '{key}')::bigint",
                     f"CAST((m.token_usage ->> '{key}') AS INTEGER)",
                 )
+            sql = sql.format(
+                date_filter=(
+                    "created_at >= $2 AND created_at <= $3"
+                    if len(params) == 3
+                    else "created_at <= $2"
+                )
+            )
             values = {
                 str(index): value.isoformat() if isinstance(value, datetime) else value
                 for index, value in enumerate(params, 1)

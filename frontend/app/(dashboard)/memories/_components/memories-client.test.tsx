@@ -5,6 +5,8 @@ const element = function Element() {}
 
 let stateValues: unknown[] = []
 let stateIndex = 0
+let refValues: Array<{ current: unknown }> = []
+let refIndex = 0
 let urlSearch = ''
 const effects: Array<() => void | Promise<void>> = []
 const getEntities = mock(() => Promise.resolve(pageData([entity])))
@@ -16,6 +18,7 @@ function component() {
 }
 
 const Input = component('Input')
+const Select = component('Select')
 const Checkbox = component('Checkbox')
 const Button = component('Button')
 const DataTableFacetedFilter = component('DataTableFacetedFilter')
@@ -29,6 +32,11 @@ mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for(
 mock.module('react', () => ({
   useCallback: <T,>(callback: T) => callback,
   useEffect: (effect: () => void | Promise<void>) => effects.push(effect),
+  useRef: <T,>(initial: T) => {
+    const index = refIndex++
+    refValues[index] ??= { current: initial }
+    return refValues[index]
+  },
   useState: <T,>(initial: T) => {
     const index = stateIndex++
     if (stateValues[index] === undefined) stateValues[index] = initial
@@ -54,6 +62,7 @@ mock.module('sonner', () => ({ toast: { success: toastSuccess } }))
 mock.module('@/lib/api/admin/memories', () => ({ memoriesApi: { getEntities, deleteEntity } }))
 mock.module('@/lib/utils', () => ({ formatDateTime: (value: string) => `date:${value}`, cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/hooks/use-url-search-state', () => ({ useUrlSearchState: () => [urlSearch, (value: string) => { urlSearch = value }] }))
+mock.module('@/hooks/use-debounce', () => ({ useDebounce: (value: string) => value }))
 mock.module('@/components/permission-guard', () => ({ PermissionGuard: component('PermissionGuard'), useCanPerform: () => ({ canPerform: () => true }) }))
 mock.module('@/components/ui/button', () => ({ Button }))
 mock.module('@/components/ui/input', () => ({ Input }))
@@ -63,7 +72,7 @@ mock.module('@/components/ui/table', () => ({
   Table: component('Table'), TableBody: component('TableBody'), TableCell: component('TableCell'),
   TableHead: component('TableHead'), TableHeader: component('TableHeader'), TableRow: component('TableRow'),
 }))
-mock.module('@/components/ui/select', () => ({ Select: component('Select'), SelectContent: component('SelectContent'), SelectItem: component('SelectItem'), SelectTrigger: component('SelectTrigger'), SelectValue: component('SelectValue') }))
+mock.module('@/components/ui/select', () => ({ Select, SelectContent: component('SelectContent'), SelectItem: component('SelectItem'), SelectTrigger: component('SelectTrigger'), SelectValue: component('SelectValue') }))
 mock.module('@/components/ui/dropdown-menu', () => ({ DropdownMenu: component('DropdownMenu'), DropdownMenuContent: component('DropdownMenuContent'), DropdownMenuItem, DropdownMenuTrigger: component('DropdownMenuTrigger') }))
 mock.module('@/components/ui/data-table-faceted-filter', () => ({ DataTableFacetedFilter }))
 mock.module('@/components/ui/tooltip', () => ({ Tooltip: component('Tooltip'), TooltipContent: component('TooltipContent'), TooltipTrigger: component('TooltipTrigger') }))
@@ -89,6 +98,7 @@ function pageData(items: typeof entity[]) {
 
 function render() {
   stateIndex = 0
+  refIndex = 0
   effects.length = 0
   return MemoriesClient() as { props: Record<string, unknown> }
 }
@@ -120,6 +130,7 @@ function findByType(node: unknown, type: unknown) {
 
 function reset(apiResult: Promise<unknown> = Promise.resolve(pageData([entity]))) {
   stateValues = []
+  refValues = []
   urlSearch = ''
   getEntities.mockReset()
   getEntities.mockImplementation(() => apiResult)
@@ -211,4 +222,52 @@ test('selects rows, clears selection, and confirms bulk delete boundary', async 
   expect(deleteEntity).toHaveBeenCalledWith('memory-1')
   expect(deleteEntity).toHaveBeenCalledWith('memory-2')
   expect(toastSuccess).toHaveBeenCalledWith('common.deleteSuccess')
+})
+test('shows the empty state for a successful empty response', async () => {
+  reset(Promise.resolve(pageData([])))
+  render()
+  await load()
+
+  const tree = render()
+  expect(text(tree)).toContain('common.noData')
+  expect(text(tree)).not.toContain('Likes tea')
+  expect(getEntities).toHaveBeenCalledWith(expect.objectContaining({ page: 1, page_size: 20 }))
+})
+
+test('refreshes the list after deleting an entity', async () => {
+  reset()
+  getEntities.mockImplementationOnce(() => Promise.resolve(pageData([entity])))
+  getEntities.mockImplementationOnce(() => Promise.resolve(pageData([])))
+  render()
+  await load()
+
+  let tree = render()
+  findAll(tree, (node) => node.type === DropdownMenuItem)[1].props.onClick()
+  tree = render()
+  await findAll(tree, (node) => node.type === AlertDialogAction)[0].props.onClick()
+
+  expect(deleteEntity).toHaveBeenCalledWith('memory-1')
+  expect(getEntities).toHaveBeenCalledTimes(2)
+  expect(text(render())).toContain('common.noData')
+})
+
+test('changes page size and requests the selected pagination page', async () => {
+  reset(Promise.resolve({ items: [entity], total: 45, page: 1, page_size: 20 }))
+  render()
+  await load()
+  let tree = render()
+
+  findByType(tree, Select).props.onValueChange('10')
+  render()
+  await load()
+  expect(getEntities).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, page_size: 10 }))
+
+  tree = render()
+  const pageForwardButton = findAll(tree, (node) => node.type === Button && typeof node.props.onClick === 'function')[2]
+  pageForwardButton.props.onClick()
+  render()
+  await load()
+
+  expect(getEntities).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, page_size: 10 }))
+  expect(text(render())).toContain('common.page 2 common.of 5')
 })

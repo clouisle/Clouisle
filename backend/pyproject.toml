@@ -34,7 +34,7 @@ dependencies = [
     # MCP (Model Context Protocol)
     "mcp>=1.27.0",
     # Document processing
-    "markitdown[docx,pdf,pptx,xls,xlsx]>=0.1.6",
+    "markitdown[docx,pdf,pptx,xls,xlsx]>=0.1.8",
     "jieba>=0.42.1",
     # Token counting
     "tiktoken>=0.12.0",
@@ -66,6 +66,8 @@ dependencies = [
     "asyncmy>=0.2.14",
     "motor>=3.7.1",
     "sqlglot>=26.0.0",
+    "lark-oapi==1.7.5",
+    "pypdf>=6.21.2",
 ]
 
 [tool.uv]

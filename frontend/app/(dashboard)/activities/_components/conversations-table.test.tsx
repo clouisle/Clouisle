@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import React from 'react'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
@@ -97,15 +97,21 @@ function buttons(renderer: ReactTestRenderer, label: string) {
   return renderer.root.findAllByType('button').filter((button) => text(button.props.children).includes(label))
 }
 
+beforeEach(() => {
+  listAll.mockResolvedValue({ items: [conversation], total: 1 })
+})
+
 afterEach(() => {
   for (const renderer of renderers) act(() => renderer.unmount())
   renderers.length = 0
   search = ''
   for (const fn of [listAll, getDetail, batchDelete, getTeams, getAgents, getUsers, setSearch, success]) fn.mockReset?.()
+  listAll.mockResolvedValue({ items: [conversation], total: 1 })
   getTeams.mockResolvedValue({ items: [] })
   getAgents.mockResolvedValue({ items: [] })
   getUsers.mockResolvedValue({ items: [] })
   batchDelete.mockResolvedValue(undefined)
+  setSearch.mockImplementation((value: string) => { search = value })
 })
 
 describe('ConversationsTable', () => {
@@ -167,5 +173,37 @@ describe('ConversationsTable', () => {
     await act(async () => renderer.root.findAllByType('button').find((button) => button.props.className?.includes('text-destructive'))!.props.onClick())
     await act(async () => buttons(renderer, 'common.delete').at(-1)!.props.onClick())
     expect(batchDelete).toHaveBeenCalledWith(['conversation-1', 'conversation-2'])
+  })
+  test('moves between pages and returns to the first page when page size changes', async () => {
+    listAll.mockResolvedValue({ items: [conversation], total: 45 })
+    const renderer = await render()
+    expect(listAll).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, pageSize: 20 }))
+    expect(text(renderer.toJSON())).toContain('activities.pageInfo:{"page":1,"total":3}')
+
+    await act(async () => renderer.root.findAllByType('button').filter((button) => button.props.onClick && button.props.className === 'h-8 w-8')[3].props.onClick())
+    expect(listAll).toHaveBeenLastCalledWith(expect.objectContaining({ page: 3, pageSize: 20 }))
+    expect(text(renderer.toJSON())).toContain('activities.pageInfo:{"page":3,"total":3}')
+
+    await act(async () => renderer.root.findByType('select').props.onValueChange('50'))
+    expect(listAll).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, pageSize: 50 }))
+    expect(text(renderer.toJSON())).toContain('activities.pageInfo:{"page":1,"total":1}')
+  })
+
+  test('keeps the list usable after detail and deletion failures', async () => {
+    listAll.mockResolvedValue({ items: [conversation], total: 1 })
+    getDetail.mockRejectedValueOnce(new Error('detail unavailable'))
+    batchDelete.mockRejectedValueOnce(new Error('delete unavailable'))
+    const error = spyOn(console, 'error').mockImplementation(() => {})
+    const renderer = await render()
+
+    await act(async () => renderer.root.findAllByType('tr')[1].props.onClick())
+    expect(renderer.root.findByProps({ role: 'dialog' }).props['aria-label']).toBe('empty')
+    expect(error).toHaveBeenCalledWith('Failed to load conversation detail:', expect.any(Error))
+
+    await act(async () => buttons(renderer, 'common.delete')[0].props.onClick())
+    await act(async () => buttons(renderer, 'common.delete').at(-1)!.props.onClick())
+    expect(batchDelete).toHaveBeenCalledWith(['conversation-1'])
+    expect(error).toHaveBeenCalledWith('Failed to delete conversations:', expect.any(Error))
+    expect(renderer.root.findAllByType('tr')).toHaveLength(2)
   })
 })

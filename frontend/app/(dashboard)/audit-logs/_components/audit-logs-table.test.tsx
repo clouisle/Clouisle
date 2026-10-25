@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import React from 'react'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
@@ -58,9 +58,16 @@ const { AuditLogsTable } = await import('./audit-logs-table')
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
+// Captured directly: the renderer copies this stub's keys onto globalThis, so a
+// wrapper that calls the global by name would recurse into itself.
+const nativeSetTimeout = globalThis.setTimeout
+const nativeClearTimeout = globalThis.clearTimeout
+
 globalThis.window = {
   getSelection: () => ({ toString: () => '' }),
   URL: { createObjectURL: () => '', revokeObjectURL: () => {} },
+  setTimeout: nativeSetTimeout,
+  clearTimeout: nativeClearTimeout,
 } as unknown as Window & typeof globalThis
 
 const renderers: ReactTestRenderer[] = []
@@ -73,6 +80,14 @@ async function render() {
   })
   renderers.push(renderer!)
   return renderer!
+}
+
+async function settleSearchDebounce() {
+  await act(async () => {
+    const { promise, resolve } = Promise.withResolvers<void>()
+    setTimeout(resolve, 350)
+    await promise
+  })
 }
 
 afterEach(() => {
@@ -111,6 +126,7 @@ describe('AuditLogsTable', () => {
     expect(tree).toContain('total\\\":2')
 
     await act(async () => renderer.root.findByType('input').props.onChange({ target: { value: 'alex' } }))
+    await settleSearchDebounce()
     expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, search: 'alex' }))
 
     act(() => renderer.root.findAllByType('tr')[1].props.onClick())
@@ -118,6 +134,69 @@ describe('AuditLogsTable', () => {
 
     await act(async () => renderer.root.findAllByType('button').find((node) => node.props.onClick && node.props.disabled === false)!.props.onClick())
     expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, search: 'alex' }))
+  })
+  test('omits empty filters, resets filters and page size to the first page', async () => {
+    list.mockResolvedValue({ items: [], total_pages: 3 })
+    const renderer = await render()
+
+    expect(list).toHaveBeenLastCalledWith({ page: 1, page_size: 20, search: undefined, status: undefined, action: undefined })
+    const statusFilter = renderer.root.findAllByType('button').find((node) => node.props.options?.some((option: { value: string }) => option.value === 'failed'))!
+    await act(async () => statusFilter.props.onSelectionChange(new Set(['failed'])))
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, status: ['failed'], action: undefined }))
+
+    const pageSize = renderer.root.findByType('select')
+    await act(async () => pageSize.props.onValueChange('50'))
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, page_size: 50, status: ['failed'] }))
+
+    const reset = renderer.root.findAllByType('button').find((node) => node.children.includes('reset'))!
+    await act(async () => reset.props.onClick())
+    expect(list).toHaveBeenLastCalledWith({ page: 1, page_size: 50, search: undefined, status: undefined, action: undefined })
+    expect(JSON.stringify(renderer.toJSON())).toContain('noLogs')
+  })
+
+  test('shows the empty state after a list request fails', async () => {
+    const error = spyOn(console, 'error').mockImplementation(() => {})
+    list.mockRejectedValue(new Error('unavailable'))
+
+    const renderer = await render()
+
+    expect(JSON.stringify(renderer.toJSON())).toContain('noLogs')
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('loading')
+    expect(error).toHaveBeenCalledWith('Failed to load audit logs:', expect.any(Error))
+  })
+
+  test('does not show export success when the export request fails', async () => {
+    const error = spyOn(console, 'error').mockImplementation(() => {})
+    list.mockResolvedValue({ items: [], total_pages: 0 })
+    exportLogs.mockRejectedValue(new Error('unavailable'))
+
+    const renderer = await render()
+    await act(async () => renderer.root.findAllByType('button').find((node) => node.children.includes('exportCSV'))!.props.onClick())
+
+    expect(exportLogs).toHaveBeenCalledWith({ search: undefined, status: undefined, action: undefined }, 'csv')
+    expect(toastSuccess).not.toHaveBeenCalled()
+    expect(error).toHaveBeenCalledWith('Failed to export audit logs:', expect.any(Error))
+  })
+
+  test('exports JSON using the active search filter', async () => {
+    list.mockResolvedValue({ items: [], total_pages: 0 })
+    exportLogs.mockResolvedValue(new Blob(['{}']))
+    globalThis.window.URL.createObjectURL = mock(() => 'blob:json')
+    globalThis.window.URL.revokeObjectURL = mock()
+    const anchor = { href: '', download: '', click: mock() }
+    globalThis.document = {
+      createElement: () => anchor,
+      body: { appendChild: () => anchor, removeChild: () => anchor },
+    } as unknown as Document
+
+    const renderer = await render()
+    await act(async () => renderer.root.findByType('input').props.onChange({ target: { value: 'admin' } }))
+    await act(async () => renderer.root.findAllByType('button').find((node) => node.children.includes('exportJSON'))!.props.onClick())
+
+    expect(exportLogs).toHaveBeenCalledWith({ search: 'admin', status: undefined, action: undefined }, 'json')
+    expect(anchor.download).toContain('.json')
+    expect(anchor.click).toHaveBeenCalled()
+    expect(toastSuccess).toHaveBeenCalledWith('exportSuccess')
   })
 
   test('exports CSV and confirms completion', async () => {
@@ -142,5 +221,24 @@ describe('AuditLogsTable', () => {
     expect(click).toHaveBeenCalled()
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:test')
     expect(toastSuccess).toHaveBeenCalledWith('exportSuccess')
+  })
+
+  test('ignores row clicks while a text selection is active', async () => {
+    list.mockResolvedValue({
+      items: [{
+        id: 'log-1', created_at: '2026-01-01T10:00:00Z', status: 'success', action: 'login', operation: 'create',
+        username: 'ada', resource_type: 'session', resource_name: null, ip_address: null,
+      }],
+      total_pages: 1,
+    })
+    const renderer = await render()
+    const originalGetSelection = window.getSelection
+    window.getSelection = (() => ({ toString: () => 'selected' })) as unknown as typeof window.getSelection
+    try {
+      act(() => renderer.root.findAllByType('tr')[1].props.onClick())
+      expect(renderer.root.findAllByType('aside')).toHaveLength(0)
+    } finally {
+      window.getSelection = originalGetSelection
+    }
   })
 })

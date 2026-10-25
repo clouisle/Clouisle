@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Messaging Integration Features
+- Replaced the per-provider Feishu and WeChat delivery tables with one provider-neutral `integration_deliveries` queue; startup copies existing rows and drops the legacy tables, so deploy API and workers together.
+- Added a standalone **Delivery log** page (`/deliveries`, Monitoring navigation) and `GET /api/v1/admin/deliveries` to inspect shared outbound delivery outcomes by provider, status, run ID or file name, following the audit-log search/select/pagination layout.
+- Aligned Delivery log with Audit Logs using shared multi-select faceted filters, one URL-backed search field for full run IDs or file-name substrings, page-size controls and loading state; original provider errors wrap directly in the table instead of requiring hover.
+- Added WeChat iLink to site integrations with independent Agent chat and knowledge collection feature switches; personal QR authorization and connection purposes remain user-owned. Disabled features pause intake, execution and unsent replies without deleting durable state.
+- Made Feishu long connections automatic in existing Agent-queue workers, with singleton ownership, live connection status, dynamic mode/credential changes and failure recovery. No extra service or receiver command is required; HTTP callbacks remain supported.
+- Fixed the Feishu Celery recovery task's import scope so scheduled recovery can advance persisted receipts and completed-receipt outbox replies without a `NameError`.
+- Replaced unconditional WeChat/Feishu Beat entries with database-reconciled schedules: feature changes add/remove the corresponding tasks within the normal two-second refresh window without restarting Beat. Feishu Wiki dispatch follows enabled source records independently of login/directory/notification/Agent switches. Database refresh failures pause integration dispatch while ordinary maintenance continues; queued work retains execution-time guards.
+- Replaced all-binding WeChat polling with oldest-due, durable bounded batches routed to ordinary workers across Compose, Helm and Kubernetes. Added deployment-wide backpressure, stale-generation/claim fencing, finite batch deadlines and shared per-batch HTTP pools with request-local authentication. Empty/replayed polls no longer wake business tasks; empty changed cursors still commit. Agent recovery scans bindings fairly and coalesces queued/running wakeups, including completed-receipt outbox work.
+- Final Feishu Agent answers now use interactive cards with Markdown; artifact discovery recovers the tool-result round from AgentRun when a canonical message lacks its round ID.
+- Added an always-visible bilingual Feishu Agent chat setup checklist with private-message receive/send and identity permissions, event subscription, and publication/approval requirements; clarified that a connected WebSocket does not confirm message readiness.
+- Clarified bilingual Feishu artifact upload permission guidance, including file-only upload scopes, app publication and administrator approval, and a fresh file-generation verification step.
+- Moved Feishu replying-Agent selection to each user's personal settings, shared with `/use`; removed the admin global list, preserved accepted-run bindings, and migrated existing session selections without assigning administrator defaults to unused users.
+- Added a per-user Feishu Agent chat switch that preserves Agent selection/history while pausing intake, queued processing and unsent replies; re-enabling resumes pending work without affecting other users.
+- Simplified personal Feishu settings with one prioritized setup hint and compact controls; moved usage help to the replying-Agent label's hover/focus tooltip, separate from save actions, and clarified automatic switch saving, paused-message handling, per-Agent conversation reuse and bilingual commands.
+- Compacted personal WeChat settings with authorization/refresh in the header, smaller connection cards, inline purpose actions and responsive two-column forms. Removed Agent activity and collection history panels and their requests; retained current-run status, stop controls, help-icon tooltips and backend records.
+- Aligned personal Feishu and WeChat settings with compact configuration cards, consistent spacing, small action buttons and secondary-before-primary save actions, preserving each channel's controls and help tooltips.
+- Added WeChat iLink `/agents` (`/智能体`) and `/use <number>` (`/使用 <编号>`) commands, sharing personal configuration and published-Agent authorization, refusing busy switches, preserving accepted-message bindings and per-Agent conversations, with durable bilingual replies.
+- Expanded personal Feishu and WeChat instruction tooltips to document each channel's available bot commands and behavior.
+- Added an explicit Feishu identity binding flow under Account security for existing accounts, using owner-scoped expiring OAuth sessions, same-tab confirmation, and conflict checks without email matching or changing the current login.
+
+#### Personal WeChat Knowledge Collection
+
+- Added personal ClawBot QR authorization independent of feature configuration; connections may remain unused, with optional knowledge collection configured and disabled separately without disconnecting.
+- Added Celery Beat-driven WeChat polling on the existing `agent` queue, encrypted credentials and receipts, target snapshots, replay protection, PostgreSQL processing locks and knowledge-queue recovery; no standalone receiver is required.
+- Added automatic text, link and document collection, team-authorized image/audio extraction and time-labelled video frame sampling; all received attachments have independent outcomes and guarded original downloads.
+- Added English/Chinese personal settings, explicit extraction/index failures and cautious reply acceptance reporting; native article cards and real-account delivery remain upstream-dependent.
+- Packaged ffmpeg in backend images; WeChat intake reuses the deployed worker and Beat services in Compose, Helm and Kubernetes.
+- Added an idempotent startup migration for existing WeChat binding tables missing `disconnected_at`; API startup fails rather than serving an incompatible schema if the upgrade fails.
+- Preserved original document types, filenames and downloads for WeChat file collection; URL submissions remain links, while Markdown is only an internal extraction format. Existing collected file/link records are restored at startup without rebuilding their indexes.
+- Removed the WeChat collection button and dialog from knowledge-base detail pages; personal settings remain the collection configuration entry point.
+- Named the personal settings tab “WeChat iLink” (“微信 iLink”), distinguishing the overall connection entry from its current knowledge collection capability.
+- Split connection credentials from saved purpose settings; each connection activates exactly one of none, knowledge collection, or a single Agent application.
+- Upgraded MarkItDown to 0.1.8 to process PPTX files containing embedded SVG images without raster fallbacks, preserving slide text and embedded media instead of failing with `no embedded image`.
+- Added owner-authorized WeChat Agent configuration, durable private conversations and input snapshots, queued messages, interactive answers and run controls using the existing AgentRun runtime.
+- Added WeChat Agent input mapping for text, images, files, voice transcripts and video, plus native outbound image/video/file delivery through the iLink CDN and durable per-message delivery outcomes that are never blind-resent after an ambiguous send.
+- Extracted the durable chat submission pipeline into `agent_submission`, shared by the web chat routes and the WeChat Agent runtime so both commit the run, the input row and their mapping before publishing.
+- Documented the separate Sandbox Worker dependency for WeChat Agent tools and existing-session checkpointing, including isolated Linux-container startup on macOS and diagnosis of recovery/checkpoint timeouts.
+- Fixed isolated Bash tools rewriting `/workspace` to caller-host physical paths, which misplaced generated files when macOS callers and Linux sandbox workers used different `/tmp` aliases and made artifact collection report missing files.
+- Added deduplicated WeChat Agent receipt acknowledgements before attachment preparation and run submission, while preserving command/question replies and the existing busy notice for queued messages.
+
 #### Admin Observability
 
 - Rebuilt the admin observability console with six focused views for run outcomes, on-demand traces, model/tool/retrieval dependencies, queues, infrastructure, and alerts.
@@ -45,6 +86,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+#### Admin Dashboards
+
+- Unified the Activity Log, Audit Log, and Observability statistic cards with the dashboard's shared data card: muted small titles, large values, and tinted 48px icon tiles. The card is now one shared component, and the observability run-detail panel keeps a compact variant.
+
 #### Admin Observability
 
 - Aligned console tabs and filters with the shared dashboard Tabs, Select, and Input components; standardized control heights.
@@ -65,7 +110,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### Feishu Agent Channel
+- Recorded provider file-upload rejections as upload failures instead of unsupported formats, and kept the provider's original error message, HTTP status and code on the delivery row so failed rows show the real cause. Feishu API errors subclass `ValueError`, so a permission, size or storage rejection previously appeared as `feishu_agent_asset_unsupported`.
+
 #### Admin Observability
+- Made the Overview and Dependencies quality state describe real coverage: `partial` now means the bounded sample was truncated or the window begins before retained telemetry, instead of flagging every non-empty sample as incomplete coverage.
 - Kept the Dependencies view available when tool and retrieval spans have no token counts; those rows now report unavailable token usage instead of failing the response.
 - Migrated `model_name` and `message_started_at` on existing PostgreSQL `observability_runs` tables before Tortoise schema and index generation, preventing API startup and summary-query failures on older databases.
 
@@ -88,6 +137,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Chat Experience
 - Kept agent conversations pinned to the latest message as soon as a send begins, before streaming starts.
 - Deduplicated overlapping Agent conversation pages and preserved the loaded pagination position when refreshing the chat sidebar.
+
+#### WeChat Agent
+- Kept a failed `/skip` on a waiting run from falling through and being interpreted as a user answer.
 
 #### Dependency Compatibility
 - Adapted Redis, MCP, SMTP, sandbox session, React, Radix, TypeScript, and ICU message-format integrations to their refreshed APIs while preserving exception tracebacks.

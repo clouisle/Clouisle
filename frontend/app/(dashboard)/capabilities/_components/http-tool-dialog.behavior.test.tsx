@@ -14,7 +14,7 @@ mock.module('lucide-react', () => ({
 }))
 mock.module('@/components/ui/button', () => ({ Button: ({ children, ...props }: React.ComponentProps<'button'>) => <button {...props}>{children}</button> }))
 mock.module('@/components/ui/collapsible', () => ({
-  Collapsible: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Collapsible: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   CollapsibleContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   CollapsibleTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }))
@@ -72,6 +72,8 @@ function render(props: Partial<React.ComponentProps<typeof HttpToolDialog>> = {}
 
 const button = (renderer: ReactTestRenderer, label: string) => renderer.root.findAllByType('button').find((item) => text(item.props.children).includes(label))!
 const input = (renderer: ReactTestRenderer, props: Record<string, unknown>) => renderer.root.findAllByType('input').find((item) => Object.entries(props).every(([key, value]) => item.props[key] === value))!
+const pairInputs = (renderer: ReactTestRenderer, placeholder: 'Key' | 'Value') =>
+  renderer.root.findAll((node) => node.type === 'input' && node.props.placeholder === placeholder)
 
 function changeInput(renderer: ReactTestRenderer, props: Record<string, unknown>, value: string) {
   act(() => input(renderer, props).props.onChange({ target: { value } }))
@@ -96,10 +98,15 @@ describe('HttpToolDialog', () => {
     changeInput(renderer, { id: 'description' }, 'Fetches weather')
     changeInput(renderer, { id: 'category' }, 'network')
     changeInput(renderer, { placeholder: 'tools.httpDialog.urlPlaceholder' }, 'https://api.example.test/weather')
-    act(() => renderer.root.findAllByProps({ placeholder: 'Key' })[0]!.props.onChange({ target: { value: 'Authorization' } }))
-    act(() => renderer.root.findAllByProps({ placeholder: 'Value' })[0]!.props.onChange({ target: { value: 'Bearer test' } }))
-    act(() => renderer.root.findAllByProps({ placeholder: 'Key' })[1]!.props.onChange({ target: { value: 'city' } }))
-    act(() => renderer.root.findAllByProps({ placeholder: 'Value' })[1]!.props.onChange({ target: { value: '{{city}}' } }))
+    act(() => button(renderer, 'tools.httpDialog.addHeader').props.onClick())
+    act(() => button(renderer, 'tools.httpDialog.addParam').props.onClick())
+    const keyInputs = () => pairInputs(renderer, 'Key')
+    const valueInputs = () => pairInputs(renderer, 'Value')
+    expect(keyInputs()).toHaveLength(4)
+    act(() => keyInputs()[0]!.props.onChange({ target: { value: 'Authorization' } }))
+    act(() => valueInputs()[0]!.props.onChange({ target: { value: 'Bearer test' } }))
+    act(() => keyInputs()[2]!.props.onChange({ target: { value: 'city' } }))
+    act(() => valueInputs()[2]!.props.onChange({ target: { value: '{{city}}' } }))
 
     await act(async () => button(renderer, 'common.create').props.onClick())
 
@@ -112,14 +119,14 @@ describe('HttpToolDialog', () => {
       is_enabled: true,
       type: 'custom',
       custom_type: 'http',
-      http_config: {
+      http_config: expect.objectContaining({
         method: 'GET',
         url: 'https://api.example.test/weather',
-        headers: { city: '{{city}}' },
-        query_params: {},
+        headers: { Authorization: 'Bearer test' },
+        query_params: { city: '{{city}}' },
         body_template: undefined,
         timeout: 30,
-      },
+      }),
     }))
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
@@ -176,15 +183,15 @@ describe('HttpToolDialog', () => {
     changeInput(renderer, { id: 'displayName' }, 'Create event')
     changeInput(renderer, { placeholder: 'tools.httpDialog.urlPlaceholder' }, 'https://api.example.test/events')
 
+    const keyInputs = () => pairInputs(renderer, 'Key')
+    const valueInputs = () => pairInputs(renderer, 'Value')
     act(() => button(renderer, 'tools.httpDialog.addHeader').props.onClick())
     act(() => button(renderer, 'tools.httpDialog.addParam').props.onClick())
-    const keys = renderer.root.findAllByProps({ placeholder: 'Key' })
-    const values = renderer.root.findAllByProps({ placeholder: 'Value' })
-    act(() => keys[1].props.onChange({ target: { value: 'X-Request' } }))
-    act(() => values[1].props.onChange({ target: { value: 'request-1' } }))
-    act(() => keys[2].props.onChange({ target: { value: 'limit' } }))
-    act(() => values[2].props.onChange({ target: { value: '10' } }))
-
+    expect(keyInputs()).toHaveLength(4)
+    act(() => keyInputs()[1]!.props.onChange({ target: { value: 'X-Request' } }))
+    act(() => valueInputs()[1]!.props.onChange({ target: { value: 'request-1' } }))
+    act(() => keyInputs()[3]!.props.onChange({ target: { value: 'limit' } }))
+    act(() => valueInputs()[3]!.props.onChange({ target: { value: '10' } }))
     act(() => renderer.root.findByProps({ 'data-value': 'POST' }).props.onClick())
     act(() => renderer.root.findByType('textarea').props.onChange({ target: { value: '{"event":"created"}' } }))
     await act(async () => button(renderer, 'common.create').props.onClick())
@@ -192,16 +199,24 @@ describe('HttpToolDialog', () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       http_config: expect.objectContaining({
         method: 'POST',
+        headers: { 'X-Request': 'request-1' },
+        query_params: { limit: '10' },
         body_template: '{"event":"created"}',
       }),
     }))
-    render({
+    const { renderer: emptyConfigRenderer, onSave: emptyConfigSave } = render({
       tool: {
         id: 'empty-config', name: 'empty_config', display_name: 'Empty config', description: '', icon: '', category: 'api', is_enabled: true,
         type: 'custom', custom_type: 'http', parameters: [],
         http_config: { method: 'GET', url: 'https://api.example.test', headers: undefined, query_params: undefined },
       } as React.ComponentProps<typeof HttpToolDialog>['tool'],
     })
+    changeInput(emptyConfigRenderer, { id: 'displayName' }, 'Empty config updated')
+    await act(async () => button(emptyConfigRenderer, 'common.save').props.onClick())
+
+    expect(emptyConfigSave).toHaveBeenCalledWith(expect.objectContaining({
+      http_config: expect.objectContaining({ headers: {}, query_params: {} }),
+    }))
   })
 
  })

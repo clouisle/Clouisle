@@ -39,17 +39,17 @@
     "viewNotification": "View",
     "channel": {
       "email": "Email",
-      "dingtalk": "DingTalk",
       "webhook": "Webhook",
-      "slack": "Slack",
-      "wechat": "WeChat"
+      "feishu": "Feishu"
     },
     "deliveryStatus": {
       "title": "Delivery Status",
       "pending": "Pending",
       "sending": "Sending",
       "success": "Sent",
-      "failed": "Failed"
+      "failed": "Failed",
+      "skipped": "Skipped — no linked Feishu recipients",
+      "partialSuccess": "Sent to {success_count} of {total_count} recipients"
     },
     "retryCount": "Retried {count} times",
     "toast": {
@@ -127,9 +127,8 @@
       "selectScope": "Select scope",
       "notifyChannels": "External Notification Channels",
       "channelEmail": "Email",
-      "channelSlack": "Slack",
-      "channelDingtalk": "DingTalk",
-      "channelWechat": "WeChat Work"
+      "channelWebhook": "Webhook",
+      "channelFeishu": "Feishu"
     }
   }
 }

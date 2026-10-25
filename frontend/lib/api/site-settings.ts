@@ -140,11 +140,6 @@ export interface SecuritySettings {
   max_login_attempts: number
   lockout_duration_minutes: number
   enable_captcha: boolean
-  sso_enabled: boolean
-  sso_allow_password_login: boolean
-  sso_auto_create_users: boolean
-  sso_require_approval: boolean
-  sso_match_by_email: boolean
   // Password expiration
   password_expiration_enabled: boolean
   password_expiration_days: number
@@ -170,33 +165,6 @@ export interface EmailSettings {
   email_from_address: string
 }
 
-export interface DingTalkSettings {
-  dingtalk_enabled: boolean
-  dingtalk_notification_type: 'webhook' | 'app'
-  dingtalk_webhook_url: string
-  dingtalk_secret: string
-  dingtalk_app_key: string
-  dingtalk_app_secret: string
-  dingtalk_agent_id: string
-}
-
-export interface WeChatSettings {
-  wechat_enabled: boolean
-  wechat_notification_type: 'webhook' | 'app'
-  wechat_webhook_url: string
-  wechat_corp_id: string
-  wechat_agent_id: string
-  wechat_secret: string
-}
-
-export interface FeishuSettings {
-  feishu_enabled: boolean
-  feishu_notification_type: 'webhook' | 'app'
-  feishu_webhook_url: string
-  feishu_secret: string
-  feishu_app_id: string
-  feishu_app_secret: string
-}
 
 export interface WebhookSettings {
   webhook_enabled: boolean
@@ -205,11 +173,6 @@ export interface WebhookSettings {
   webhook_headers: Record<string, string>
   webhook_body_template: string
   webhook_secret: string
-}
-
-export interface SlackSettings {
-  slack_enabled: boolean
-  slack_webhook_url: string
 }
 
 export interface StorageSettings {

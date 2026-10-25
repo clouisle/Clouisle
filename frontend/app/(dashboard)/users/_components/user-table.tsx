@@ -6,6 +6,7 @@ import { MoreHorizontal, Pencil, Trash2, UserCheck, UserX, Link as LinkIcon } fr
 import { toast } from 'sonner'
 import { usersApi, type User } from '@/lib/api/admin/users'
 import { formatDateTime } from '@/lib/utils'
+import { getIntegrationIconUrl } from '@/lib/api/integrations'
 import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
@@ -128,21 +129,21 @@ function UserTableRow({ user, onEdit, onDelete, onStatusChange }: UserTableRowPr
                     {user.sso_connections.map((conn) => (
                       <Tooltip key={conn.id}>
                         <TooltipTrigger>
-                          {conn.provider_icon_url ? (
+                          {getIntegrationIconUrl(conn.integration_provider_type, conn.integration_icon_url) ? (
                             <img
-                              src={conn.provider_icon_url}
-                              alt={conn.provider_display_name}
+                              src={getIntegrationIconUrl(conn.integration_provider_type, conn.integration_icon_url)!}
+                              alt={conn.integration_display_name}
                               className="h-4 w-4 rounded"
                             />
                           ) : (
                             <LinkIcon className="h-4 w-4 text-muted-foreground" />
                           )}
                         </TooltipTrigger>
-                        <TooltipContent>
-                          <div className="text-xs">
-                            <p className="font-medium">{conn.provider_display_name}</p>
+                        <TooltipContent className="max-w-xs">
+                          <div className="text-xs break-words">
+                            <p className="font-medium break-words">{conn.integration_display_name}</p>
                             {conn.provider_email && (
-                              <p className="text-muted-foreground">{conn.provider_email}</p>
+                              <p className="text-muted-foreground break-all">{conn.provider_email}</p>
                             )}
                           </div>
                         </TooltipContent>

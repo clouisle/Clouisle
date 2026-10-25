@@ -4,8 +4,8 @@ export type NotificationScope = 'global' | 'team' | 'user'
 export type NotificationSource = 'system' | 'user' | 'biz'
 export type NotificationLevel = 'low' | 'medium' | 'high'
 export type NotificationStatus = 'active'
-export type NotificationChannel = 'email' | 'dingtalk' | 'webhook' | 'slack' | 'wechat'
-export type NotificationDeliveryStatus = 'pending' | 'sending' | 'success' | 'failed'
+export type NotificationChannel = 'email' | 'webhook' | 'feishu'
+export type NotificationDeliveryStatus = 'pending' | 'sending' | 'success' | 'failed' | 'skipped'
 
 export interface NotificationDelivery {
   channel: NotificationChannel

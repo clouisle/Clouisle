@@ -126,12 +126,27 @@ class AssetService:
         user_id: UUID | None,
     ) -> Asset:
         asset = await Asset.get_or_none(id=asset_id)
-        if asset is None or asset.status != AssetStatus.AVAILABLE:
+        if (
+            asset is None
+            or asset.status != AssetStatus.AVAILABLE
+            or asset.source == AssetSource.DERIVED_TEXT
+        ):
             raise BusinessError(
                 code=ResponseCode.NOT_FOUND,
                 msg_key="file_not_found",
                 status_code=404,
             )
+        expires_at = getattr(asset, "expires_at", None)
+        if expires_at is not None:
+            now = datetime.now(UTC)
+            if expires_at.tzinfo is None:
+                now = now.replace(tzinfo=None)
+            if expires_at <= now:
+                raise BusinessError(
+                    code=ResponseCode.NOT_FOUND,
+                    msg_key="file_not_found",
+                    status_code=404,
+                )
         if asset.team_id is not None:
             if team_id != asset.team_id:
                 raise self._access_denied()
@@ -218,7 +233,9 @@ class AssetService:
         limit: int = 12,
     ) -> list[dict[str, Any]]:
         links = (
-            await MessageAsset.filter(message__conversation_id=conversation_id)
+            await MessageAsset.filter(
+                message__conversation_id=conversation_id, message__is_active=True
+            )
             .prefetch_related("asset")
             .order_by("-message__created_at", "position")
             .limit(limit)
@@ -267,6 +284,18 @@ class AssetService:
             for binding in bindings:
                 if binding.asset_id in seen:
                     continue
+                if (
+                    await MessageAsset.filter(
+                        asset_id=binding.asset_id,
+                        message__conversation_id=conversation_id,
+                    ).exists()
+                    and not await MessageAsset.filter(
+                        asset_id=binding.asset_id,
+                        message__conversation_id=conversation_id,
+                        message__is_active=True,
+                    ).exists()
+                ):
+                    continue
                 try:
                     asset = await self.get_authorized(
                         binding.asset_id,
@@ -301,7 +330,9 @@ class AssetService:
         }:
             capabilities.append("read")
         if file_parser_service.is_supported(asset.original_filename):
-            capabilities.append("parse")
+            if "read" not in capabilities:
+                capabilities.append("read")
+            capabilities.append("search")
         if content_type.startswith("image/"):
             capabilities.extend(["vision", "generate"])
         return capabilities
@@ -311,8 +342,8 @@ class AssetService:
         if not manifest:
             return (
                 "<available_assets>\n"
-                "No attachments are available in this conversation. "
-                "Do not call Asset tools or guess refs.\n"
+                "This preview is empty. Use list_assets to discover older available assets. "
+                "Never guess refs.\n"
                 "</available_assets>"
             )
         lines = [
@@ -320,6 +351,8 @@ class AssetService:
             (
                 "Use the exact 4-character ref with Asset tools or "
                 "reference_image_refs for image generation. Do not guess refs."
+                " This is a limited preview, not the full catalogue. Use list_assets with query/kind "
+                "and next_cursor to find older files, then view_asset(ref) to inspect their content."
             ),
         ]
         for item in manifest:
@@ -345,10 +378,26 @@ class AssetService:
             raise RuntimeError("Stored Asset content does not match its metadata")
         return content
 
-    async def mark_deleted(self, asset: Asset) -> None:
-        asset.status = AssetStatus.DELETED
-        asset.deleted_at = datetime.now(UTC)
-        await asset.save(update_fields=["status", "deleted_at", "updated_at"])
+    async def read_bounded(
+        self,
+        asset: Asset,
+        *,
+        storage: UploadStorageBackend,
+        max_bytes: int,
+    ) -> bytes:
+        """Read checksum-verified asset bytes without exceeding max_bytes."""
+        if asset.size > max_bytes:
+            raise ValueError("asset_view_size_limit_exceeded")
+        read_limited = getattr(storage, "read_limited", None)
+        if read_limited is None:
+            raise RuntimeError("Upload storage does not support bounded reads")
+        content = await read_limited(asset.storage_key, max_bytes)
+        if (
+            len(content) != asset.size
+            or hashlib.sha256(content).hexdigest() != asset.checksum
+        ):
+            raise RuntimeError("Stored Asset content does not match its metadata")
+        return content
 
     @staticmethod
     def _access_denied() -> BusinessError:

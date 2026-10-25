@@ -202,8 +202,8 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
     <>
       <Button
         variant="ghost"
-        size="sm"
-        className="h-7 text-xs gap-1 cursor-pointer"
+        size="xs"
+        className="gap-1 cursor-pointer"
         onClick={() => setOpen(true)}
       >
         <Plus className="h-3 w-3" />

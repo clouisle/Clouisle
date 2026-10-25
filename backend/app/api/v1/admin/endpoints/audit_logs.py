@@ -310,6 +310,26 @@ AUDIT_ACTION_OPTIONS: list[AuditLogActionOption] = [
         fallback_label="Delete SSO Provider",
     ),
     AuditLogActionOption(
+        value="create_integration",
+        translation_key="auditLogs.actioncreate_integration",
+        fallback_label="Create Integration",
+    ),
+    AuditLogActionOption(
+        value="update_integration",
+        translation_key="auditLogs.actionupdate_integration",
+        fallback_label="Update Integration",
+    ),
+    AuditLogActionOption(
+        value="delete_integration",
+        translation_key="auditLogs.actiondelete_integration",
+        fallback_label="Delete Integration",
+    ),
+    AuditLogActionOption(
+        value="test_integration_failed",
+        translation_key="auditLogs.actiontest_integration_failed",
+        fallback_label="Integration Configuration Check Failed",
+    ),
+    AuditLogActionOption(
         value="update_auto_notification_config",
         translation_key="auditLogs.actionupdate_auto_notification_config",
         fallback_label="Update Auto Notification Config",
@@ -728,6 +748,31 @@ AUDIT_ACTION_OPTIONS: list[AuditLogActionOption] = [
         value="delete_knowledge_base",
         translation_key="auditLogs.actiondelete_knowledge_base",
         fallback_label="Delete Knowledge Base",
+    ),
+    AuditLogActionOption(
+        value="submit_workflow_pause_request",
+        translation_key="auditLogs.actionsubmit_workflow_pause_request",
+        fallback_label="Submit Workflow Pause Request",
+    ),
+    AuditLogActionOption(
+        value="create_feishu_knowledge_source",
+        translation_key="auditLogs.actioncreate_feishu_knowledge_source",
+        fallback_label="Create Feishu Knowledge Source",
+    ),
+    AuditLogActionOption(
+        value="update_feishu_knowledge_source",
+        translation_key="auditLogs.actionupdate_feishu_knowledge_source",
+        fallback_label="Update Feishu Knowledge Source",
+    ),
+    AuditLogActionOption(
+        value="sync_feishu_knowledge_source",
+        translation_key="auditLogs.actionsync_feishu_knowledge_source",
+        fallback_label="Sync Feishu Knowledge Source",
+    ),
+    AuditLogActionOption(
+        value="delete_feishu_knowledge_source",
+        translation_key="auditLogs.actiondelete_feishu_knowledge_source",
+        fallback_label="Delete Feishu Knowledge Source",
     ),
     AuditLogActionOption(
         value="sandbox_task_cancelled",

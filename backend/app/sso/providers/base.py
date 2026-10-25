@@ -1,15 +1,16 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Tuple
 
-from app.models.sso_provider import SSOProvider
+from app.models.integration import Integration
+from app.services.integration_config import get_runtime_config
 
 
 class BaseSSOProvider(ABC):
     """Base class for all SSO providers"""
 
-    def __init__(self, provider: SSOProvider):
+    def __init__(self, provider: Integration):
         self.provider = provider
-        self.config = provider.config
+        self.config = get_runtime_config(provider)
 
     @abstractmethod
     async def get_authorization_url(

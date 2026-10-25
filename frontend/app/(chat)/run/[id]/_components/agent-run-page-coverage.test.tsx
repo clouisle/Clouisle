@@ -81,6 +81,7 @@ const metadata = {
   hide_tool_calls: false,
   hide_message_actions: false,
   hide_reasoning: false,
+  enable_citations: false,
   created_by: { username: 'owner' },
 }
 
@@ -135,7 +136,11 @@ mock.module('next/navigation', () => ({ useRouter: () => router, useSearchParams
 mock.module('next-intl', () => ({ useTranslations: () => translate }))
 mock.module('next/image', () => ({ default: () => null }))
 mock.module('lucide-react', () => ({ AlertCircle: () => null, ChevronDown: () => null, ChevronUp: () => null, Loader2: () => null, RefreshCw: () => null, Sparkles: () => null }))
-mock.module('@/lib/api', () => ({ ApiError: MockApiError, publicAgentsApi: { getPublicAgent } }))
+mock.module('@/lib/api', () => ({
+  ApiError: MockApiError,
+  publicAgentsApi: { getPublicAgent },
+  uploadApi: { uploadFileWithProgress: mock(async () => ({ url: '/file' })) },
+}))
 mock.module('@/components/ui/button', () => ({ Button }))
 mock.module('@/components/ui/alert', () => ({ Alert, AlertDescription, AlertTitle }))
 mock.module('@/components/chat', () => ({ AgentChatEmptyState, AgentChatSurface, useVariableForm }))

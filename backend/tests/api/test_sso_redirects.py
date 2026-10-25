@@ -34,7 +34,7 @@ def frontend_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sso_endpoints.SiteSetting, "get_value", fake_get_value)
 
 
-def assert_redirect(response, error_code: str, redirect: str = "/dashboard") -> None:
+def assert_redirect(response, error_code: str, redirect: str = "/app") -> None:
     assert response.status_code in {302, 303, 307}
     assert response.headers["location"] == (
         f"http://frontend/sso-callback?error={error_code}&redirect={redirect}"
@@ -70,7 +70,7 @@ async def test_sso_login_missing_provider_redirects(
     async def fake_get_or_none(**kwargs):
         return None
 
-    monkeypatch.setattr(sso_endpoints.SSOProvider, "get_or_none", fake_get_or_none)
+    monkeypatch.setattr(sso_endpoints.Integration, "get_or_none", fake_get_or_none)
 
     response = await sso_endpoints.sso_login("missing", make_request(), redirect=None)
 
@@ -84,7 +84,7 @@ async def test_sso_callback_missing_provider_redirects(
     async def fake_get_or_none(**kwargs):
         return None
 
-    monkeypatch.setattr(sso_endpoints.SSOProvider, "get_or_none", fake_get_or_none)
+    monkeypatch.setattr(sso_endpoints.Integration, "get_or_none", fake_get_or_none)
 
     response = await sso_endpoints.sso_callback("missing", make_request())
 
@@ -96,9 +96,11 @@ async def test_sso_callback_missing_session_id_redirects(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def fake_get_or_none(**kwargs):
-        return SimpleNamespace(name="oidc", protocol="oidc")
+        return SimpleNamespace(
+            name="oidc", provider_type="oidc", enabled_capabilities=["user_login"]
+        )
 
-    monkeypatch.setattr(sso_endpoints.SSOProvider, "get_or_none", fake_get_or_none)
+    monkeypatch.setattr(sso_endpoints.Integration, "get_or_none", fake_get_or_none)
 
     response = await sso_endpoints.sso_callback("oidc", make_request(), state=None)
 
@@ -109,7 +111,9 @@ async def test_sso_callback_missing_session_id_redirects(
 async def test_sso_callback_provider_exception_redirects(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    provider = SimpleNamespace(name="oidc", protocol="oidc")
+    provider = SimpleNamespace(
+        name="oidc", provider_type="oidc", enabled_capabilities=["user_login"]
+    )
     session = SimpleNamespace(
         code_verifier="verifier",
         redirect_url="/app",
@@ -133,7 +137,7 @@ async def test_sso_callback_provider_exception_redirects(
         return None
 
     monkeypatch.setattr(
-        sso_endpoints.SSOProvider, "get_or_none", fake_provider_get_or_none
+        sso_endpoints.Integration, "get_or_none", fake_provider_get_or_none
     )
     monkeypatch.setattr(
         sso_endpoints.SSOSession, "get_or_none", fake_session_get_or_none

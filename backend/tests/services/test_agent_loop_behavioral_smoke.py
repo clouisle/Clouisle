@@ -39,7 +39,15 @@ from app.services.agent_loop import AgentLoop, AgentLoopContext, ContextTurn
 
 
 def _tool(name, call_id):
-    return ToolCall(id=call_id, function=FunctionCall(name=name, arguments="{}"))
+    return ToolCall(
+        id=call_id,
+        function=FunctionCall(
+            name=name,
+            arguments=json.dumps({"ref": "asset-ref"})
+            if name == "view_asset"
+            else "{}",
+        ),
+    )
 
 
 def _resp(*, content="", tool_calls=None, reasoning=None):

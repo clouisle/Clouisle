@@ -31,9 +31,8 @@ def _fake_chat_resolution():
         model_id=str(uuid4()),
         tokenizer_model_id="stub-model",
         provider="stub",
-        context_length=8192,
         max_output_tokens=1024,
-        supports_vision=False,
+        input_capabilities=SimpleNamespace(modalities=frozenset()),
     )
 
 
@@ -416,6 +415,11 @@ async def test_public_info_endpoint_returns_minimal_creator_payload(monkeypatch)
     )
     monkeypatch.setattr(
         chat_module, "get_public_agent", AsyncMock(return_value=current_agent)
+    )
+    monkeypatch.setattr(
+        chat_module,
+        "get_model_capabilities",
+        AsyncMock(return_value={"input_modalities": ["text"]}),
     )
     result = await chat_module.get_public_agent_info(current_agent.id, user())
     assert result["code"] == ResponseCode.SUCCESS

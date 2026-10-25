@@ -14,7 +14,6 @@ from app.models.notification import (
     NotificationAuditAction,
     NotificationScope,
     NotificationDelivery,
-    NotificationChannel,
     NotificationDeliveryStatus,
 )
 from app.models.user import Team, TeamMember, User
@@ -490,159 +489,25 @@ async def admin_create_notification(
             status_code=400,
         )
 
-    # 校验外部通知渠道配置
     if payload.notify_channels:
-        # 校验邮件渠道
-        if NotificationChannel.EMAIL in payload.notify_channels:
-            from app.core.email import get_smtp_config
+        from app.integrations.factory import get_notification_integration
 
-            smtp_config = await get_smtp_config()
-
-            if not smtp_config["enabled"]:
+        for channel in payload.notify_channels:
+            try:
+                integration = get_notification_integration(channel)
+            except ValueError:
                 raise BusinessError(
                     code=ResponseCode.BAD_REQUEST,
-                    msg_key="smtp_not_enabled",
+                    msg_key="invalid_notification_channels",
+                    channels=channel.value,
                     status_code=400,
                 )
 
-            if not smtp_config["host"] or not smtp_config["from_address"]:
+            configuration_error = await integration.validate_configuration()
+            if configuration_error:
                 raise BusinessError(
                     code=ResponseCode.BAD_REQUEST,
-                    msg_key="smtp_not_configured",
-                    status_code=400,
-                )
-
-        # 校验钉钉渠道
-        if NotificationChannel.DINGTALK in payload.notify_channels:
-            from app.core.dingtalk import get_dingtalk_config
-
-            dingtalk_config = await get_dingtalk_config()
-
-            if not dingtalk_config["enabled"]:
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="dingtalk_not_enabled",
-                    status_code=400,
-                )
-
-            # Webhook 方式需要配置 webhook_url
-            if dingtalk_config["notification_type"] == "webhook":
-                if not dingtalk_config["webhook_url"]:
-                    raise BusinessError(
-                        code=ResponseCode.BAD_REQUEST,
-                        msg_key="dingtalk_not_configured",
-                        status_code=400,
-                    )
-            # 企业应用方式需要配置 app_key, app_secret, agent_id
-            elif dingtalk_config["notification_type"] == "app":
-                if (
-                    not dingtalk_config["app_key"]
-                    or not dingtalk_config["app_secret"]
-                    or not dingtalk_config["agent_id"]
-                ):
-                    raise BusinessError(
-                        code=ResponseCode.BAD_REQUEST,
-                        msg_key="dingtalk_not_configured",
-                        status_code=400,
-                    )
-
-        # 校验企业微信渠道
-        if NotificationChannel.WECHAT in payload.notify_channels:
-            from app.core.wechat import get_wechat_config
-
-            wechat_config = await get_wechat_config()
-
-            if not wechat_config["enabled"]:
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="wechat_not_enabled",
-                    status_code=400,
-                )
-
-            if wechat_config["notification_type"] == "webhook":
-                if not wechat_config["webhook_url"]:
-                    raise BusinessError(
-                        code=ResponseCode.BAD_REQUEST,
-                        msg_key="wechat_not_configured",
-                        status_code=400,
-                    )
-            elif wechat_config["notification_type"] == "app":
-                if (
-                    not wechat_config["corp_id"]
-                    or not wechat_config["secret"]
-                    or not wechat_config["agent_id"]
-                ):
-                    raise BusinessError(
-                        code=ResponseCode.BAD_REQUEST,
-                        msg_key="wechat_not_configured",
-                        status_code=400,
-                    )
-
-        # 校验飞书渠道
-        if NotificationChannel.FEISHU in payload.notify_channels:
-            from app.core.feishu import get_feishu_config
-
-            feishu_config = await get_feishu_config()
-
-            if not feishu_config["enabled"]:
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="feishu_not_enabled",
-                    status_code=400,
-                )
-
-            if feishu_config["notification_type"] == "webhook":
-                if not feishu_config["webhook_url"]:
-                    raise BusinessError(
-                        code=ResponseCode.BAD_REQUEST,
-                        msg_key="feishu_not_configured",
-                        status_code=400,
-                    )
-            elif feishu_config["notification_type"] == "app":
-                if not feishu_config["app_id"] or not feishu_config["app_secret"]:
-                    raise BusinessError(
-                        code=ResponseCode.BAD_REQUEST,
-                        msg_key="feishu_not_configured",
-                        status_code=400,
-                    )
-
-        # 校验通用 Webhook 渠道
-        if NotificationChannel.WEBHOOK in payload.notify_channels:
-            from app.core.webhook import get_webhook_config
-
-            webhook_config = await get_webhook_config()
-
-            if not webhook_config["enabled"]:
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="webhook_not_enabled",
-                    status_code=400,
-                )
-
-            if not webhook_config["url"]:
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="webhook_not_configured",
-                    status_code=400,
-                )
-
-        # 校验 Slack 渠道
-        if NotificationChannel.SLACK in payload.notify_channels:
-            from app.core.slack import get_slack_config
-
-            slack_config = await get_slack_config()
-
-            if not slack_config["enabled"]:
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="slack_not_enabled",
-                    status_code=400,
-                )
-
-            if not slack_config["webhook_url"]:
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="slack_not_configured",
+                    msg_key=configuration_error,
                     status_code=400,
                 )
 
@@ -669,91 +534,18 @@ async def admin_create_notification(
     if payload.notify_channels:
         logger.info(f"Sending notifications to channels: {payload.notify_channels}")
 
-        if NotificationChannel.EMAIL in payload.notify_channels:
-            from app.tasks.notification import send_notification_email_task
+        from app.integrations.factory import dispatch_notification_task
 
-            # 创建发送记录
+        for channel in payload.notify_channels:
             delivery = await NotificationDelivery.create(
                 notification_id=notification.id,
-                channel=NotificationChannel.EMAIL,
+                channel=channel,
                 status=NotificationDeliveryStatus.PENDING,
             )
-            logger.info(f"Triggering email notification task for {notification.id}")
-            task_result = send_notification_email_task.delay(str(notification.id))
-            delivery.task_id = task_result.id
-            await delivery.save()
-            deliveries.append(delivery)
-
-        if NotificationChannel.DINGTALK in payload.notify_channels:
-            from app.tasks.notification import send_notification_dingtalk_task
-
-            # 创建发送记录
-            delivery = await NotificationDelivery.create(
-                notification_id=notification.id,
-                channel=NotificationChannel.DINGTALK,
-                status=NotificationDeliveryStatus.PENDING,
-            )
-            logger.info(f"Triggering dingtalk notification task for {notification.id}")
-            task_result = send_notification_dingtalk_task.delay(str(notification.id))
-            delivery.task_id = task_result.id
-            await delivery.save()
             logger.info(
-                f"DingTalk task submitted: {task_result.id}, state: {task_result.state}"
+                f"Triggering {channel.value} notification task for {notification.id}"
             )
-            deliveries.append(delivery)
-
-        if NotificationChannel.WECHAT in payload.notify_channels:
-            from app.tasks.notification import send_notification_wechat_task
-
-            delivery = await NotificationDelivery.create(
-                notification_id=notification.id,
-                channel=NotificationChannel.WECHAT,
-                status=NotificationDeliveryStatus.PENDING,
-            )
-            logger.info(f"Triggering wechat notification task for {notification.id}")
-            task_result = send_notification_wechat_task.delay(str(notification.id))
-            delivery.task_id = task_result.id
-            await delivery.save()
-            deliveries.append(delivery)
-
-        if NotificationChannel.FEISHU in payload.notify_channels:
-            from app.tasks.notification import send_notification_feishu_task
-
-            delivery = await NotificationDelivery.create(
-                notification_id=notification.id,
-                channel=NotificationChannel.FEISHU,
-                status=NotificationDeliveryStatus.PENDING,
-            )
-            logger.info(f"Triggering feishu notification task for {notification.id}")
-            task_result = send_notification_feishu_task.delay(str(notification.id))
-            delivery.task_id = task_result.id
-            await delivery.save()
-            deliveries.append(delivery)
-
-        if NotificationChannel.WEBHOOK in payload.notify_channels:
-            from app.tasks.notification import send_notification_webhook_task
-
-            delivery = await NotificationDelivery.create(
-                notification_id=notification.id,
-                channel=NotificationChannel.WEBHOOK,
-                status=NotificationDeliveryStatus.PENDING,
-            )
-            logger.info(f"Triggering webhook notification task for {notification.id}")
-            task_result = send_notification_webhook_task.delay(str(notification.id))
-            delivery.task_id = task_result.id
-            await delivery.save()
-            deliveries.append(delivery)
-
-        if NotificationChannel.SLACK in payload.notify_channels:
-            from app.tasks.notification import send_notification_slack_task
-
-            delivery = await NotificationDelivery.create(
-                notification_id=notification.id,
-                channel=NotificationChannel.SLACK,
-                status=NotificationDeliveryStatus.PENDING,
-            )
-            logger.info(f"Triggering slack notification task for {notification.id}")
-            task_result = send_notification_slack_task.delay(str(notification.id))
+            task_result = dispatch_notification_task(channel, str(notification.id))
             delivery.task_id = task_result.id
             await delivery.save()
             deliveries.append(delivery)

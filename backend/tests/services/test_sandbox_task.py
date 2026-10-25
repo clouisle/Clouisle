@@ -9,8 +9,14 @@ from app.tasks import sandbox as tasks
 
 def test_run_sandbox_job_task_returns_lightweight_real_execution_ack(sandbox_runtime):
     r = sandbox_runtime
+    job_id = str(uuid4())
+    manager = tasks.SandboxManager()
+    workspace = manager.workspace_manager.prepare(job_id)
+    manager.python_env_manager.ensure_workspace_environment(workspace.root)
     job = SandboxJob(
-        command=[sys.executable, "-c", "print('ok')"], deadline_at=time.time() + 5
+        job_id=job_id,
+        command=[sys.executable, "-c", "print('ok')"],
+        deadline_at=time.time() + 30,
     )
     payload = job.model_dump(mode="json")
     r.run(r.results.create_queued_result(job.job_id, deadline_at=job.deadline_at))
@@ -64,13 +70,18 @@ def test_session_task_audit_attributes_actor_and_team(sandbox_runtime):
 
 def test_run_sandbox_job_task_records_process_failure(sandbox_runtime):
     r = sandbox_runtime
+    job_id = str(uuid4())
+    manager = tasks.SandboxManager()
+    workspace = manager.workspace_manager.prepare(job_id)
+    manager.python_env_manager.ensure_workspace_environment(workspace.root)
     job = SandboxJob(
+        job_id=job_id,
         command=[
             sys.executable,
             "-c",
             "import sys; sys.stderr.write('boom'); sys.exit(1)",
         ],
-        deadline_at=time.time() + 5,
+        deadline_at=time.time() + 30,
     )
     r.run(r.results.create_queued_result(job.job_id, deadline_at=job.deadline_at))
     ack = tasks.run_sandbox_job_task.run(job.model_dump(mode="json"))

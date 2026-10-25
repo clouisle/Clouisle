@@ -21,6 +21,7 @@ from app.llm import model_manager
 from app.llm.adapters.media_utils import parse_image_data_url
 from app.models.model import ModelType
 from app.schemas.response import BusinessError, ResponseCode
+from app.utils.tool_output import ToolExecutionResult
 from app.services.error_messages import exception_to_user_message
 from app.llm.types import (
     GeneratedImage,
@@ -322,21 +323,6 @@ async def _resolve_start_image_reference(
         workflow_run_id=workflow_run_id,
     )
     return reference_images[0] if reference_images else None
-
-
-class ToolExecutionResult(dict):
-    """Structured tool result for UI persistence and LLM replay."""
-
-    def __init__(self, *, display_result: dict[str, Any], llm_result: str) -> None:
-        super().__init__(display_result=display_result, llm_result=llm_result)
-
-    @property
-    def display_result(self) -> dict[str, Any]:
-        return self["display_result"]
-
-    @property
-    def llm_result(self) -> str:
-        return self["llm_result"]
 
 
 async def normalize_image_generation_response(
@@ -929,7 +915,6 @@ def register_media_tools() -> None:
 
 __all__ = [
     "PENDING_VIDEO_STATUSES",
-    "ToolExecutionResult",
     "build_image_llm_result",
     "build_image_tool_result",
     "build_media_tool_execution_result",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -91,6 +92,60 @@ def _context(**overrides: object) -> AgentLoopContext:
     return context
 
 
+@pytest.mark.asyncio
+async def test_agent_loop_context_kwargs_forwards_current_message_id():
+    from tortoise.context import TortoiseContext
+    from app.models.agent import Agent, Conversation, Message as StoredMessage
+    from app.models.user import Team, User
+    from app.services.chat_context import build_context_plan
+
+    message_id = uuid4()
+    async with TortoiseContext() as db:
+        await db.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
+        await db.generate_schemas()
+        user = await User.create(
+            id=uuid4(),
+            username="context-owner",
+            email="context-owner@example.test",
+            hashed_password="unused",
+            is_active=True,
+            approval_status="approved",
+        )
+        team = await Team.create(id=uuid4(), name="context-team")
+        agent = await Agent.create(
+            id=uuid4(), name="context-agent", team=team, created_by=user
+        )
+        conversation = await Conversation.create(id=uuid4(), agent=agent, user=user)
+        await StoredMessage.create(
+            id=message_id,
+            conversation=conversation,
+            role="user",
+            content="stored original",
+        )
+        context = _context(
+            agent=agent,
+            conversation=conversation,
+            user=user,
+            current_user_message_id=message_id,
+            user_message="enriched current text",
+            model_id="stub-model",
+            model_context_limit=10000,
+            model_max_output_tokens=1000,
+            input_capabilities=None,
+            model_config=None,
+            include_current_user_message=True,
+            working_history_override=None,
+        )
+        kwargs = AgentLoop(context)._context_kwargs(0)
+        assert kwargs["current_user_message_id"] == message_id
+        plan = await build_context_plan(**kwargs)
+        user_contents = [m.content for m in plan.messages if m.role == MessageRole.USER]
+        assert user_contents == ["enriched current text"]
+        assert "stored original" not in str([m.content for m in plan.messages])
+        stored_message = await StoredMessage.get(id=message_id)
+        assert stored_message.content == "stored original"
+
+
 async def _consume_loop(loop: AgentLoop) -> list[str | None]:
     return [event async for event in loop.run()]
 
@@ -119,6 +174,60 @@ def test_agent_loop_helper_paths_keep_tool_protocol_complete():
     malformed = loop._skipped_tool(_tool("", "truncated"), reason="truncated")
     assert malformed[0] == ""
     assert "truncated" in malformed[3]["display_result"]
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_records_explicit_model_result_and_errors(monkeypatch):
+    from app.utils.tool_output import ToolExecutionResult
+
+    async def explicit_tool(_name, _arguments, **_kwargs):
+        return ToolExecutionResult(
+            display_result={"kind": "media.video", "status": "completed"},
+            llm_result="Video ready.",
+        )
+
+    loop = AgentLoop(_context(execute_tool_call=explicit_tool))
+    *_prefix, record = await loop._execute_one_tool(
+        tc=_tool("generate_video", "video-call"),
+        image_pool=[],
+        image_inventory=[],
+    )
+    assert record["llm_result"] == "Video ready."
+    envelope = json.loads(record["persist_result"])
+    assert envelope["kind"] == "tool.result.persisted"
+    assert envelope["llm_result"] == "Video ready."
+
+    async def failing_tool(_name, _arguments, **_kwargs):
+        raise RuntimeError("tool exploded")
+
+    failed_loop = AgentLoop(_context(execute_tool_call=failing_tool))
+    *_prefix, failed = await failed_loop._execute_one_tool(
+        tc=_tool("custom", "failed-call"),
+        image_pool=[],
+        image_inventory=[],
+    )
+    assert failed["persist_result"] is None
+    assert json.loads(failed["display_result"])["error"] == "tool exploded"
+
+    from app.services import agent_round
+
+    persisted = AsyncMock(return_value=2)
+    monkeypatch.setattr(agent_round, "persist_tool_result", persisted)
+    persist_loop = AgentLoop(_context(round_id=uuid4(), working_history_override=[]))
+    base = {
+        "id": "record",
+        "name": "",
+        "arguments": {},
+        "display_result": "DISPLAY",
+        "llm_result": "LLM",
+        "display_name": "",
+    }
+    await persist_loop._persist_tool_record(
+        {**base, "persist_result": "ENVELOPE"}, iteration=1, content="", reasoning=""
+    )
+    await persist_loop._persist_tool_record(base, iteration=1, content="", reasoning="")
+    assert persisted.await_args_list[0].kwargs["content"] == "ENVELOPE"
+    assert persisted.await_args_list[1].kwargs["content"] == "DISPLAY"
 
 
 @pytest.mark.asyncio

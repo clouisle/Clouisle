@@ -166,6 +166,7 @@ export function WorkflowRunsTable() {
   const [userFilter, setUserFilter] = React.useState<string[]>([])
   const [userSearch, setUserSearch] = React.useState('')
   const debouncedUserSearch = useDebounce(userSearch, 300)
+  const debouncedSearch = useDebounce(search, 300)
 
   // Filter options
   const [teams, setTeams] = React.useState<Team[]>([])
@@ -215,7 +216,7 @@ export function WorkflowRunsTable() {
       const params = {
         page,
         pageSize,
-        search: search || undefined,
+        search: debouncedSearch || undefined,
         teamId: teamFilter.length > 0 ? teamFilter : undefined,
         workflowId: workflowFilter.length > 0 ? workflowFilter : undefined,
         status: statusFilter.length > 0 ? (statusFilter as RunStatus[]) : undefined,
@@ -230,11 +231,20 @@ export function WorkflowRunsTable() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, search, teamFilter, workflowFilter, statusFilter, triggerTypeFilter, userFilter])
+  }, [page, pageSize, debouncedSearch, teamFilter, workflowFilter, statusFilter, triggerTypeFilter, userFilter])
 
+  const previousDebouncedSearch = React.useRef(debouncedSearch)
   React.useEffect(() => {
+    const searchChanged = previousDebouncedSearch.current !== debouncedSearch
+    previousDebouncedSearch.current = debouncedSearch
+    if (searchChanged && page !== 1) {
+      // A settled query starts from page 1; skipping this run avoids requesting the
+      // page the query just abandoned.
+      setPage(1)
+      return
+    }
     loadRuns()
-  }, [loadRuns])
+  }, [debouncedSearch, page, loadRuns])
 
   // Selection handlers
   const toggleSelectAll = () => {
@@ -330,10 +340,7 @@ export function WorkflowRunsTable() {
               <Input
                 placeholder={t('filters.workflow')}
                 value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value)
-                  setPage(1)
-                }}
+                onChange={(e) => setSearch(e.target.value)}
                 className="pl-8"
               />
             </div>

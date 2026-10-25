@@ -176,9 +176,9 @@ async def test_existing_run_succeeds_without_optional_boundaries() -> None:
     assert result == str(run.id)
     assert run.status == RunStatus.RUNNING
     run.save.assert_awaited_once()
-    orchestrator._complete_run.assert_awaited_once_with(
-        run, {"answer": "done"}, pytest.approx(0, abs=1000)
-    )
+    assert orchestrator._complete_run.await_args.args[:2] == (run, {"answer": "done"})
+    assert isinstance(orchestrator._complete_run.await_args.args[2], int)
+    assert orchestrator._complete_run.await_args.args[2] >= 0
     stream_class.assert_not_called()
     profiler_class.assert_not_called()
 

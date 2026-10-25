@@ -79,28 +79,6 @@ async def test_small_async_helpers_cover_remaining_database_boundaries(monkeypat
     trace_query.exists.assert_awaited_once()
 
 
-@pytest.mark.anyio
-async def test_build_messages_forwards_to_context_builder(monkeypatch):
-    expected = [object()]
-    build = AsyncMock(return_value=expected)
-    monkeypatch.setattr(chat, "build_model_messages", build)
-    current_agent = object()
-    conversation = object()
-
-    assert await chat.build_messages(current_agent, conversation, "hello") is expected
-    build.assert_awaited_once_with(
-        agent=current_agent,
-        conversation=conversation,
-        user_message="hello",
-        file_content=None,
-        user_locale=None,
-        history_override=None,
-        current_images=None,
-        model_supports_vision=False,
-        current_user_message_id=None,
-    )
-
-
 def test_error_extraction_empty_provider_message():
     error = Exception("failed - {'error': {'message': ''}}")
     assert chat._extract_llm_error_message(error) == str(error)

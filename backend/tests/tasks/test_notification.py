@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.integrations.factory import NotificationMessage
 from app.models.notification import (
     NotificationChannel,
     NotificationDeliveryStatus,
@@ -19,61 +20,21 @@ DELIVERY_TASKS = [
         NotificationChannel.EMAIL,
     ),
     (
-        tasks.send_notification_dingtalk_task,
-        "_send_notification_dingtalk",
-        NotificationChannel.DINGTALK,
-    ),
-    (
-        tasks.send_notification_wechat_task,
-        "_send_notification_wechat",
-        NotificationChannel.WECHAT,
+        tasks.send_notification_webhook_task,
+        "_send_notification_webhook",
+        NotificationChannel.WEBHOOK,
     ),
     (
         tasks.send_notification_feishu_task,
         "_send_notification_feishu",
         NotificationChannel.FEISHU,
     ),
-    (
-        tasks.send_notification_webhook_task,
-        "_send_notification_webhook",
-        NotificationChannel.WEBHOOK,
-    ),
-    (
-        tasks.send_notification_slack_task,
-        "_send_notification_slack",
-        NotificationChannel.SLACK,
-    ),
 ]
 
 CHANNEL_SENDERS = [
     (
-        tasks._send_notification_dingtalk,
-        "send_dingtalk_notification",
-        NotificationChannel.DINGTALK,
-        "zh",
-    ),
-    (
-        tasks._send_notification_wechat,
-        "send_wechat_notification",
-        NotificationChannel.WECHAT,
-        "zh",
-    ),
-    (
-        tasks._send_notification_feishu,
-        "send_feishu_notification",
-        NotificationChannel.FEISHU,
-        "zh",
-    ),
-    (
         tasks._send_notification_webhook,
-        "send_webhook_notification",
         NotificationChannel.WEBHOOK,
-        "en",
-    ),
-    (
-        tasks._send_notification_slack,
-        "send_slack_notification",
-        NotificationChannel.SLACK,
         "en",
     ),
 ]
@@ -114,10 +75,64 @@ def test_delivery_task_marks_failed_and_retries(task, worker_name, channel):
     retry.assert_called_once_with(exc=error, countdown=120)
 
 
+@pytest.mark.parametrize("disabled", [True, False])
+def test_feishu_task_rechecks_current_capability_and_records_failure(disabled):
+    notification_id = uuid4()
+    integration = SimpleNamespace(
+        is_enabled=not disabled,
+        enabled_capabilities=["notification"] if disabled else [],
+    )
+    task = tasks.send_notification_feishu_task
+    with (
+        patch.object(
+            tasks.Integration, "get_or_none", AsyncMock(return_value=integration)
+        ),
+        patch.object(
+            tasks,
+            "_load_notification_context",
+            AsyncMock(return_value=SimpleNamespace(notification=SimpleNamespace())),
+        ),
+        patch.object(tasks, "_get_feishu_recipients", AsyncMock()) as recipients,
+        patch.object(tasks, "get_notification_integration") as factory,
+        patch.object(tasks, "_update_delivery_status", AsyncMock()) as update_status,
+        patch.object(
+            task, "retry", side_effect=RuntimeError("retry scheduled")
+        ) as retry,
+        patch.object(task.request, "retries", 0),
+        pytest.raises(RuntimeError, match="retry scheduled"),
+    ):
+        task.run(str(notification_id))
+
+    recipients.assert_not_awaited()
+    factory.assert_not_called()
+    assert update_status.await_args_list == [
+        call(
+            notification_id,
+            NotificationChannel.FEISHU,
+            NotificationDeliveryStatus.SENDING,
+        ),
+        call(
+            notification_id,
+            NotificationChannel.FEISHU,
+            NotificationDeliveryStatus.FAILED,
+            "notification_delivery_failed",
+        ),
+    ]
+    assert str(retry.call_args.kwargs["exc"]) == "feishu_notification_not_enabled"
+    assert retry.call_args.kwargs["countdown"] == 60
+
+
 @pytest.mark.asyncio
 async def test_send_email_skips_delivery_when_there_are_no_recipients():
     notification_id = uuid4()
-    ctx = SimpleNamespace(notification=SimpleNamespace())
+    ctx = SimpleNamespace(
+        notification=SimpleNamespace(
+            scope=NotificationScope.GLOBAL,
+            title="Title",
+            content="Body",
+            link_url=None,
+        )
+    )
 
     with (
         patch.object(
@@ -129,7 +144,11 @@ async def test_send_email_skips_delivery_when_there_are_no_recipients():
         patch.object(
             tasks, "_get_notification_recipients", new=AsyncMock(return_value=[])
         ),
-        patch.object(tasks, "send_email", new=AsyncMock()) as send_email,
+        patch.object(
+            tasks.get_notification_integration(NotificationChannel.EMAIL),
+            "send",
+            new=AsyncMock(),
+        ) as send_email,
     ):
         await tasks._send_notification_email(notification_id)
 
@@ -178,7 +197,9 @@ async def test_send_email_records_partial_success():
             ),
         ),
         patch.object(
-            tasks, "send_email", new=AsyncMock(side_effect=[True, False])
+            tasks.get_notification_integration(NotificationChannel.EMAIL),
+            "send",
+            new=AsyncMock(side_effect=[True, False]),
         ) as send_email,
         patch.object(tasks, "t", return_value="1 of 2 delivered") as translate,
     ):
@@ -224,7 +245,9 @@ async def test_send_email_raises_when_every_delivery_fails():
             new=AsyncMock(return_value=[("bad@example.com", "en")]),
         ),
         patch.object(
-            tasks, "send_email", new=AsyncMock(side_effect=OSError("smtp down"))
+            tasks.get_notification_integration(NotificationChannel.EMAIL),
+            "send",
+            new=AsyncMock(side_effect=OSError("smtp down")),
         ),
         pytest.raises(RuntimeError, match="email_send_failed"),
     ):
@@ -238,10 +261,8 @@ async def test_send_email_raises_when_every_delivery_fails():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("worker", "sender_name", "channel", "locale"), CHANNEL_SENDERS
-)
-async def test_channel_delivery_success(worker, sender_name, channel, locale):
+@pytest.mark.parametrize(("worker", "channel", "locale"), CHANNEL_SENDERS)
+async def test_channel_delivery_success(worker, channel, locale):
     notification_id = uuid4()
     ctx = SimpleNamespace(
         notification=SimpleNamespace(link_url="https://example.com"),
@@ -257,13 +278,21 @@ async def test_channel_delivery_success(worker, sender_name, channel, locale):
         patch.object(
             tasks, "_build_notification_message", return_value=("Title", "Body")
         ) as build,
-        patch.object(tasks, sender_name, new=AsyncMock(return_value=True)) as sender,
+        patch.object(
+            tasks.get_notification_integration(channel),
+            "send",
+            new=AsyncMock(return_value=True),
+        ) as sender,
     ):
         assert await worker(notification_id) is True
 
     build.assert_called_once_with(ctx, locale)
     sender.assert_awaited_once_with(
-        title="Title", content="Body", link_url="https://example.com"
+        NotificationMessage(
+            title="Title",
+            content="Body",
+            link_url="https://example.com",
+        )
     )
     assert update_status.await_args_list == [
         call(notification_id, channel, NotificationDeliveryStatus.SENDING),
@@ -272,7 +301,7 @@ async def test_channel_delivery_success(worker, sender_name, channel, locale):
 
 
 @pytest.mark.asyncio
-async def test_channel_delivery_raises_when_sender_returns_false():
+async def test_webhook_delivery_raises_when_sender_returns_false():
     notification_id = uuid4()
     ctx = SimpleNamespace(notification=SimpleNamespace(link_url=None))
 
@@ -285,11 +314,13 @@ async def test_channel_delivery_raises_when_sender_returns_false():
             tasks, "_build_notification_message", return_value=("Title", "Body")
         ),
         patch.object(
-            tasks, "send_slack_notification", new=AsyncMock(return_value=False)
+            tasks.get_notification_integration(NotificationChannel.WEBHOOK),
+            "send",
+            new=AsyncMock(return_value=False),
         ),
-        pytest.raises(RuntimeError, match="slack_send_failed"),
+        pytest.raises(RuntimeError, match="webhook_send_failed"),
     ):
-        await tasks._send_notification_slack(notification_id)
+        await tasks._send_notification_webhook(notification_id)
 
 
 @pytest.mark.asyncio

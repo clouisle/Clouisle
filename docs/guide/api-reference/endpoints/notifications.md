@@ -237,7 +237,7 @@ Requires the `admin:notification:create` permission.
 | `data` | object | No | Arbitrary payload |
 | `link_url` | string | No | Optional in-app link |
 | `expires_at` | string (ISO 8601) | No | Expiry timestamp |
-| `notify_channels` | array of string | No | Delivery channels: `email`, `dingtalk`, `wechat`, `feishu`, `webhook`, `slack` |
+| `notify_channels` | array of string | No | Delivery channels: `email`, `webhook` |
 
 Returns the created notification object (`200 OK`).
 

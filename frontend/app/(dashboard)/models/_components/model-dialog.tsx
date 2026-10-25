@@ -5,6 +5,9 @@ import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { Eye, EyeOff, Loader2, CheckCircle2, XCircle, Zap, Check } from 'lucide-react'
 
+import { Checkbox } from '@/components/ui/checkbox'
+
+
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -311,8 +314,7 @@ export function ModelDialog({
   const [presencePenalty, setPresencePenalty] = React.useState('')
   const [maxTokens, setMaxTokens] = React.useState('')
   
-  // 能力
-  const [supportsVision, setSupportsVision] = React.useState(false)
+  const [inputModalities, setInputModalities] = React.useState<string[]>(['text'])
   const [supportsFunctionCall, setSupportsFunctionCall] = React.useState(false)
   const [supportsStreaming, setSupportsStreaming] = React.useState(true)
   const [supportsJsonMode, setSupportsJsonMode] = React.useState(false)
@@ -412,6 +414,7 @@ export function ModelDialog({
     message: string
   } | null>(null)
   const [providerDisplayName, setProviderDisplayName] = React.useState('')
+  const [outputModalities, setOutputModalities] = React.useState<string[]>([])
   const discoveredModelIds = React.useMemo(
     () => discoveredModels.map((item) => item.id),
     [discoveredModels]
@@ -484,7 +487,8 @@ export function ModelDialog({
       )
 
       const caps = model.capabilities || {}
-      setSupportsVision(!!caps.vision)
+      setInputModalities(Array.isArray(caps.input_modalities) ? caps.input_modalities as string[] : ['text'])
+      setOutputModalities(Array.isArray(caps.output_modalities) ? caps.output_modalities as string[] : [])
       setSupportsFunctionCall(!!caps.function_call)
       setSupportsStreaming(caps.streaming !== false)
       setSupportsJsonMode(!!caps.json_mode)
@@ -527,7 +531,8 @@ export function ModelDialog({
       setFrequencyPenalty('')
       setPresencePenalty('')
       setMaxTokens('')
-      setSupportsVision(false)
+      setInputModalities(['text'])
+      setOutputModalities([])
       setSupportsFunctionCall(false)
       setSupportsStreaming(true)
       setSupportsJsonMode(false)
@@ -739,7 +744,8 @@ export function ModelDialog({
     }
     if (discoveredModel.capabilities) {
       const capabilities = discoveredModel.capabilities
-      if ('vision' in capabilities) setSupportsVision(capabilities.vision)
+      if (Array.isArray(capabilities.input_modalities)) setInputModalities(capabilities.input_modalities as unknown as string[])
+      if (Array.isArray(capabilities.output_modalities)) setOutputModalities(capabilities.output_modalities as unknown as string[])
       if ('function_call' in capabilities) setSupportsFunctionCall(capabilities.function_call)
       if ('streaming' in capabilities) setSupportsStreaming(capabilities.streaming)
       if ('json_mode' in capabilities) setSupportsJsonMode(capabilities.json_mode)
@@ -960,14 +966,19 @@ export function ModelDialog({
       if (provider === 'qwen' && qwenEnableSearch) defaultParams.enable_search = true
       if (showExtraBody && extraBodyResult.data) defaultParams.extra_body = extraBodyResult.data
 
-      let capabilities: Record<string, boolean> | null = null
+      let capabilities: Record<string, unknown> | null = null
       if (modelType === 'chat') {
-        capabilities = {}
-        if (supportsVision) capabilities.vision = true
+        const currentCapabilities = model?.capabilities || discoveredModelsById.get(selectedDiscoveredModel)?.capabilities || {}
+        capabilities = { ...currentCapabilities }
+        delete capabilities.vision
+        capabilities.input_modalities = inputModalities
+        capabilities.output_modalities = outputModalities
         if (supportsFunctionCall) capabilities.function_call = true
+        else delete capabilities.function_call
         if (!supportsStreaming) capabilities.streaming = false
+        else delete capabilities.streaming
         if (supportsJsonMode) capabilities.json_mode = true
-        if (Object.keys(capabilities).length === 0) capabilities = null
+        else delete capabilities.json_mode
       }
 
       const config: Record<string, unknown> = {
@@ -2048,34 +2059,53 @@ export function ModelDialog({
       {isChatOnly(modelType) && (
         <div className="space-y-4">
           <SectionTitle>{t('capabilities')}</SectionTitle>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-medium">{t('supportsVision')}</Label>
-                <p className="text-xs text-muted-foreground">{t('supportsVisionHint')}</p>
+          <div className="space-y-3">
+            <div className="space-y-2 rounded-lg border p-3 bg-muted/30">
+              <Label className="text-sm font-medium">{t('inputModalities')}</Label>
+              <p className="text-xs text-muted-foreground">{t('inputModalitiesHint')}</p>
+              <div className="grid grid-cols-2 gap-2">
+                {['text', 'image', 'audio', 'video', 'file'].map((modality) => (
+                  <label key={modality} className="flex items-center gap-2 text-sm">
+                    <Checkbox checked={inputModalities.includes(modality)} disabled={modality === 'text'} onCheckedChange={(checked) => setInputModalities((current) => checked === true ? [...new Set([...current, modality])] : current.filter((item) => item !== modality))} />
+                    {t(`modality.${modality}`)}
+                  </label>
+                ))}
               </div>
-              <Switch checked={supportsVision} onCheckedChange={setSupportsVision} />
             </div>
-            <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-medium">{t('supportsFunctionCall')}</Label>
-                <p className="text-xs text-muted-foreground">{t('supportsFunctionCallHint')}</p>
+            <div className="space-y-2 rounded-lg border p-3 bg-muted/30">
+              <Label className="text-sm font-medium">{t('outputModalities')}</Label>
+              <p className="text-xs text-muted-foreground">{t('outputModalitiesHint')}</p>
+              <div className="grid grid-cols-2 gap-2">
+                {['text', 'image', 'audio', 'video', 'file'].map((modality) => (
+                  <label key={modality} className="flex items-center gap-2 text-sm">
+                    <Checkbox checked={outputModalities.includes(modality)} onCheckedChange={(checked) => setOutputModalities((current) => checked === true ? [...new Set([...current, modality])] : current.filter((item) => item !== modality))} />
+                    {t(`modality.${modality}`)}
+                  </label>
+                ))}
               </div>
-              <Switch checked={supportsFunctionCall} onCheckedChange={setSupportsFunctionCall} />
             </div>
-            <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-medium">{t('supportsStreaming')}</Label>
-                <p className="text-xs text-muted-foreground">{t('supportsStreamingHint')}</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">{t('supportsFunctionCall')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('supportsFunctionCallHint')}</p>
+                </div>
+                <Switch checked={supportsFunctionCall} onCheckedChange={setSupportsFunctionCall} />
               </div>
-              <Switch checked={supportsStreaming} onCheckedChange={setSupportsStreaming} />
-            </div>
-            <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-medium">{t('supportsJsonMode')}</Label>
-                <p className="text-xs text-muted-foreground">{t('supportsJsonModeHint')}</p>
+              <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">{t('supportsStreaming')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('supportsStreamingHint')}</p>
+                </div>
+                <Switch checked={supportsStreaming} onCheckedChange={setSupportsStreaming} />
               </div>
-              <Switch checked={supportsJsonMode} onCheckedChange={setSupportsJsonMode} />
+              <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">{t('supportsJsonMode')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('supportsJsonModeHint')}</p>
+                </div>
+                <Switch checked={supportsJsonMode} onCheckedChange={setSupportsJsonMode} />
+              </div>
             </div>
           </div>
         </div>

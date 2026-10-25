@@ -109,6 +109,8 @@ uv run --project backend main.py sandbox-worker -c 1
 uv run --project backend main.py sandbox-worker --local-dev -c 1
 ```
 
+The local-dev container retains its worker identity and data in a Docker named volume. Only one supervisor may own that volume. If startup reports `Another sandbox supervisor already owns this disk`, use `docker ps` to locate the existing sandbox worker and inspect its mounts with `docker inspect <container>`. Reuse the healthy worker, or stop that worker gracefully before starting its replacement. Do not delete the volume, remove the identity files, or bypass the lock; these protect retained sessions from concurrent execution.
+
 ## Project Structure
 
 ```

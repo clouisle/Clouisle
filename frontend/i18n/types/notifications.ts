@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-07T17:03:38.842Z
+// GENERATED — 2026-10-24T18:18:06.005Z
 // Source: i18n/en/notifications.json
 export type NotificationsMessages = {
   notifications: {
@@ -41,10 +41,8 @@ export type NotificationsMessages = {
     viewNotification: string
     channel: {
       email: string
-      dingtalk: string
       webhook: string
-      slack: string
-      wechat: string
+      feishu: string
     }
     deliveryStatus: {
       title: string
@@ -52,6 +50,8 @@ export type NotificationsMessages = {
       sending: string
       success: string
       failed: string
+      skipped: string
+      partialSuccess: string
     }
     retryCount: string
     toast: {
@@ -129,9 +129,8 @@ export type NotificationsMessages = {
       selectScope: string
       notifyChannels: string
       channelEmail: string
-      channelSlack: string
-      channelDingtalk: string
-      channelWechat: string
+      channelWebhook: string
+      channelFeishu: string
     }
   }
 }

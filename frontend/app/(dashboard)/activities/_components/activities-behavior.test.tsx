@@ -102,12 +102,21 @@ describe('dashboard activity behavior', () => {
   test('loads activity statistics with independent fallbacks and renders both listings', async () => {
     getStats.mockRejectedValueOnce(new Error('unavailable'))
     const renderer = render(<ActivitiesClient />)
-    expect(JSON.stringify(renderer.toJSON())).toContain('...')
+    expect(JSON.stringify(renderer.toJSON())).toContain('animate-pulse')
     await flush()
     const output = JSON.stringify(renderer.toJSON())
     expect(output).toContain('0')
     expect(output).toContain('7')
     expect(output).toContain('workflow-table')
+  })
+
+  test('renders the activity statistics on the summary cards', async () => {
+    const renderer = render(<ActivitiesClient />)
+    await flush()
+    const output = JSON.stringify(renderer.toJSON())
+    expect(output).toContain('12')
+    expect(output).toContain('7')
+    expect(output).toContain('3')
   })
 
   test('lists conversations, opens details, and recovers from an empty failed reload', async () => {

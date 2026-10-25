@@ -114,6 +114,33 @@ mock.module('@/components/packages/import-package-dialog', () => ({
 
 const { default: KnowledgeBasePage } = await import('./page')
 
+type ObserverCallback = ConstructorParameters<typeof IntersectionObserver>[0]
+
+class FakeIntersectionObserver {
+  static instances: FakeIntersectionObserver[] = []
+
+  readonly observed: Element[] = []
+
+  constructor(private readonly callback: ObserverCallback) {
+    FakeIntersectionObserver.instances.push(this)
+  }
+
+  observe(element: Element) {
+    this.observed.push(element)
+  }
+
+  disconnect() {}
+
+  trigger(isIntersecting: boolean) {
+    this.callback(
+      [{ isIntersecting, target: this.observed[0] } as IntersectionObserverEntry],
+      this as unknown as IntersectionObserver,
+    )
+  }
+}
+
+Object.assign(globalThis, { IntersectionObserver: FakeIntersectionObserver })
+
 type KnowledgeBase = {
   id: string
   name: string
@@ -164,11 +191,16 @@ beforeEach(() => {
   actionParam = null
   searchString = ''
   Object.defineProperty(globalThis, 'window', {
-    value: { location: { pathname: '/app/kb' } },
+    value: {
+      location: { pathname: '/app/kb' },
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout,
+    },
     configurable: true,
   })
   getKnowledgeBases.mockReset()
-  getKnowledgeBases.mockResolvedValue({ items: [] })
+  getKnowledgeBases.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+  FakeIntersectionObserver.instances = []
   deleteKnowledgeBase.mockReset()
   deleteKnowledgeBase.mockResolvedValue({})
   exportPackage.mockReset()
@@ -197,8 +229,8 @@ describe('platform knowledge base page', () => {
   })
 
   test('shows list loading before rendering the current team knowledge bases', async () => {
-    let resolveList!: (value: { items: KnowledgeBase[] }) => void
-    getKnowledgeBases.mockReturnValue(new Promise((resolve) => { resolveList = resolve }))
+    const deferred = Promise.withResolvers<{ items: KnowledgeBase[]; total: number; page: number; page_size: number }>()
+    getKnowledgeBases.mockReturnValue(deferred.promise)
 
     let renderer!: ReactTestRenderer
     await act(async () => {
@@ -206,7 +238,7 @@ describe('platform knowledge base page', () => {
     })
     expect(text(renderer)).toContain('h-40')
 
-    resolveList!({ items: [kb(), kb({ id: 'kb-2', name: 'Other Team', team: { id: 'team-2' } })] })
+    deferred.resolve({ items: [kb(), kb({ id: 'kb-2', name: 'Other Team', team: { id: 'team-2' } })], total: 2, page: 1, page_size: 20 })
     await flush()
 
     expect(text(renderer)).toContain('Product Docs')
@@ -217,7 +249,7 @@ describe('platform knowledge base page', () => {
     act(() => renderer.unmount())
   })
 
-  test('falls back to the empty state after a list error', async () => {
+  test('surfaces a manual retry after a list error without looping', async () => {
     const consoleError = mock(() => undefined)
     const previous = console.error
     console.error = consoleError
@@ -226,23 +258,46 @@ describe('platform knowledge base page', () => {
     const renderer = await renderPage()
 
     expect(consoleError).toHaveBeenCalled()
-    expect(text(renderer)).toContain('kb.noKbs')
-    expect(text(renderer)).toContain('kb.createKbHint')
+    expect(text(renderer)).toContain('loadFailed')
+    expect(text(renderer)).toContain('retry')
+    expect(text(renderer)).not.toContain('kb.noKbs')
+
+    const observer = FakeIntersectionObserver.instances[0]
+    act(() => observer.trigger(true))
+    await flush()
+    expect(getKnowledgeBases).toHaveBeenCalledTimes(1)
+
+    getKnowledgeBases.mockResolvedValue({ items: [kb()], total: 1, page: 1, page_size: 20 })
+    await act(async () => buttons(renderer).find((button) => button.children.join('').includes('retry'))!.props.onClick())
+    await flush()
+
+    expect(getKnowledgeBases).toHaveBeenCalledTimes(2)
+    expect(text(renderer)).toContain('Product Docs')
 
     console.error = previous
     act(() => renderer.unmount())
   })
 
-  test('filters results and clears an empty search', async () => {
-    getKnowledgeBases.mockResolvedValue({ items: [kb(), kb({ id: 'kb-2', name: 'Runbooks', description: null })] })
+  test('searches server-side after the debounce and clears an empty search', async () => {
+    getKnowledgeBases.mockImplementation((params: { search?: string } = {}) => Promise.resolve(
+      params.search
+        ? { items: [], total: 0, page: 1, page_size: 20 }
+        : { items: [kb(), kb({ id: 'kb-2', name: 'Runbooks', description: null })], total: 2, page: 1, page_size: 20 }
+    ))
     const renderer = await renderPage()
 
     await act(async () => input(renderer).props.onChange({ target: { value: 'missing' } }))
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)) })
+    await flush()
+
+    expect(getKnowledgeBases).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'missing', page: 1 }))
     expect(text(renderer)).toContain('noSearchResults')
     expect(text(renderer)).not.toContain('Product Docs')
 
     const clear = buttons(renderer).find((button) => button.children.join('').includes('clearFilters'))
     await act(async () => clear!.props.onClick())
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)) })
+    await flush()
 
     expect(text(renderer)).toContain('Product Docs')
     expect(text(renderer)).toContain('Runbooks')
@@ -251,7 +306,7 @@ describe('platform knowledge base page', () => {
   })
 
   test('opens create, import, edit, export, and delete actions', async () => {
-    getKnowledgeBases.mockResolvedValue({ items: [kb()] })
+    getKnowledgeBases.mockResolvedValue({ items: [kb()], total: 1, page: 1, page_size: 20 })
     const renderer = await renderPage()
 
     await act(async () => renderer.root.findByProps({ 'data-testid': 'kb-create-card' }).props.onClick())
@@ -295,7 +350,7 @@ describe('platform knowledge base page', () => {
       is_owned: true,
       shared_with_count: 2,
     })
-    getKnowledgeBases.mockResolvedValue({ items: [sharedKb, ownedWithShares] })
+    getKnowledgeBases.mockResolvedValue({ items: [sharedKb, ownedWithShares], total: 2, page: 1, page_size: 20 })
     const renderer = await renderPage()
 
     const renderedText = JSON.stringify(renderer.toJSON())
@@ -308,6 +363,100 @@ describe('platform knowledge base page', () => {
     await act(async () => shareItem?.props.onClick({ preventDefault() {} }))
 
     expect(renderer.root.findByProps({ 'data-testid': 'share-dialog' }).props['data-open']).toBe(true)
+    act(() => renderer.unmount())
+  })
+
+  test('appends the next page only after a fresh intersect entry, dedupes, and stops at the total', async () => {
+    getKnowledgeBases.mockImplementation((params: { page?: number } = {}) => {
+      if (params.page === 3) {
+        return Promise.resolve({ items: [kb({ id: 'kb-4', name: 'Playbooks 2' })], total: 60, page: 3, page_size: 20 })
+      }
+      if (params.page === 2) {
+        return Promise.resolve({ items: [kb({ id: 'kb-2', name: 'Runbooks' }), kb({ id: 'kb-3', name: 'Playbooks' })], total: 60, page: 2, page_size: 20 })
+      }
+      return Promise.resolve({ items: [kb(), kb({ id: 'kb-2', name: 'Runbooks' })], total: 60, page: 1, page_size: 20 })
+    })
+    const renderer = await renderPage()
+
+    await act(async () => FakeIntersectionObserver.instances[0].trigger(true))
+    await flush()
+
+    expect(getKnowledgeBases).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, pageSize: 20 }))
+    expect(text(renderer)).toContain('Playbooks')
+    expect(text(renderer).split('Runbooks')).toHaveLength(2)
+    expect(getKnowledgeBases).toHaveBeenCalledTimes(2)
+
+    await act(async () => FakeIntersectionObserver.instances.at(-1)!.trigger(false))
+    await flush()
+    expect(getKnowledgeBases).toHaveBeenCalledTimes(2)
+
+    await act(async () => FakeIntersectionObserver.instances.at(-1)!.trigger(true))
+    await flush()
+    expect(getKnowledgeBases).toHaveBeenLastCalledWith(expect.objectContaining({ page: 3, pageSize: 20 }))
+    expect(text(renderer)).toContain('Playbooks 2')
+
+    await act(async () => FakeIntersectionObserver.instances.at(-1)!.trigger(true))
+    await flush()
+    expect(getKnowledgeBases).toHaveBeenCalledTimes(3)
+
+    act(() => renderer.unmount())
+  })
+
+  test('discards a stale append when a new search starts', async () => {
+    const stalePage = Promise.withResolvers<{ items: KnowledgeBase[]; total: number; page: number; page_size: number }>()
+    getKnowledgeBases.mockImplementation((params: { page?: number; search?: string } = {}) => {
+      if (params.search === 'fresh') {
+        return Promise.resolve({ items: [kb({ id: 'kb-9', name: 'Fresh KB' })], total: 1, page: 1, page_size: 20 })
+      }
+      if (params.page === 2) return stalePage.promise
+      return Promise.resolve({ items: [kb()], total: 40, page: 1, page_size: 20 })
+    })
+    const renderer = await renderPage()
+
+    await act(async () => FakeIntersectionObserver.instances[0].trigger(true))
+    await flush()
+
+    await act(async () => input(renderer).props.onChange({ target: { value: 'fresh' } }))
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)) })
+    await flush()
+
+    stalePage.resolve({ items: [kb({ id: 'kb-8', name: 'Stale KB' })], total: 40, page: 2, page_size: 20 })
+    await flush()
+
+    expect(text(renderer)).toContain('Fresh KB')
+    expect(text(renderer)).not.toContain('Stale KB')
+    expect(text(renderer)).not.toContain('Product Docs')
+
+    act(() => renderer.unmount())
+  })
+
+  test('retries the failed append page even when the rendered list is empty', async () => {
+    const consoleError = mock(() => undefined)
+    const previous = console.error
+    console.error = consoleError
+    let pageTwoAttempts = 0
+    getKnowledgeBases.mockImplementation((params: { page?: number } = {}) => {
+      if (params.page === 1) {
+        return Promise.resolve({ items: [kb({ id: 'foreign', name: 'Other Team KB', team: { id: 'team-2' } })], total: 40, page: 1, page_size: 20 })
+      }
+      pageTwoAttempts += 1
+      if (pageTwoAttempts === 1) return Promise.reject(new Error('offline'))
+      return Promise.resolve({ items: [kb({ id: 'kb-2', name: 'Runbooks' })], total: 40, page: 2, page_size: 20 })
+    })
+    const renderer = await renderPage()
+    expect(text(renderer)).not.toContain('Other Team KB')
+
+    await act(async () => FakeIntersectionObserver.instances.at(-1)!.trigger(true))
+    await flush()
+    expect(text(renderer)).toContain('loadFailed')
+
+    await act(async () => buttons(renderer).find((button) => button.children.join('').includes('retry'))!.props.onClick())
+    await flush()
+
+    expect(getKnowledgeBases).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }))
+    expect(text(renderer)).toContain('Runbooks')
+
+    console.error = previous
     act(() => renderer.unmount())
   })
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -40,6 +41,8 @@ TERMINAL_SUMMARY_GRACE_SECONDS = 60
 DB_QUERY_LIMIT = 5000
 MAX_DEPENDENCY_METRICS_PER_RUN = 128
 DEPENDENCY_RUN_LIMIT = 1000
+# Bounded number of ordered trajectory summaries returned with one run.
+TRAJECTORY_ENTRY_LIMIT = 500
 _CACHE_TTL_SECONDS = 10
 _CACHE_MAX_ENTRIES = 128
 _SNAPSHOT_CACHE: dict[tuple[Any, ...], tuple[float, Any]] = {}
@@ -84,6 +87,50 @@ def meta(
         "state": "partial" if partial else ("fresh" if count else "no_data"),
         "sample_count": count,
     }
+
+
+_TELEMETRY_START_TTL_SECONDS = 60
+_TELEMETRY_START: tuple[float, datetime | None] | None = None
+
+
+async def _telemetry_start() -> datetime | None:
+    """Earliest retained telemetry sample, cached briefly.
+
+    Telemetry is never backfilled for runs that predate collection, so a
+    window beginning before this timestamp covers an unrecorded period.
+    """
+    global _TELEMETRY_START
+    now = monotonic()
+    if _TELEMETRY_START and _TELEMETRY_START[0] > now:
+        return _TELEMETRY_START[1]
+    try:
+        rows = await run_bounded(
+            ObservabilityRun.filter(submitted_at__isnull=False)
+            .order_by("submitted_at")
+            .limit(1)
+            .values_list("submitted_at", flat=True)
+        )
+    except Exception:
+        logger.debug("Telemetry coverage start unavailable", exc_info=True)
+        return None
+    value = rows[0] if rows else None
+    _TELEMETRY_START = (now + _TELEMETRY_START_TTL_SECONDS, value)
+    return value
+
+
+async def _sample_state(start: datetime, *, available: bool, capped: bool) -> str:
+    """Describe the coverage of a sampled aggregation.
+
+    ``partial`` means a known gap: the read was truncated by its bound, or the
+    window begins before retained telemetry does. ``fresh`` means the sample is
+    present and no such gap is known, not that every run was recorded.
+    """
+    if not available:
+        return "no_data"
+    if capped:
+        return "partial"
+    earliest = await _telemetry_start()
+    return "partial" if earliest is None or start < earliest else "fresh"
 
 
 async def _cached_snapshot(
@@ -543,6 +590,7 @@ async def _summary_snapshot(
     records = await run_bounded(
         query.order_by("-submitted_at", "-id").limit(DB_QUERY_LIMIT + 1)
     )
+    capped = len(records) > DB_QUERY_LIMIT
     records = records[:DB_QUERY_LIMIT]
     agents = [r for r in records if r.source == "agent"]
     workflows = [r for r in records if r.source == "workflow"]
@@ -595,10 +643,10 @@ async def _summary_snapshot(
                 "first_token_p95_ms": all_values["first_token_p95_ms"],
             }
         )
-    # Best-effort terminal collection and lack of legacy backfill make samples partial.
-    state = "partial" if records else "no_data"
     metadata = _meta_for(start, end, len(records), period=period)
-    metadata["state"] = state
+    metadata["state"] = await _sample_state(
+        start, available=bool(records), capped=capped
+    )
     return {
         "meta": metadata,
         "agents": rollup(agents, True),
@@ -638,6 +686,309 @@ def _percentile(values: list[int], fraction: float) -> int | None:
     return int(interpolated + 0.5)
 
 
+def _trajectory_payload_state(
+    payloads: dict[str, dict[str, Any]], tool_call_id: str | None
+) -> str:
+    metadata = payloads.get(tool_call_id or "")
+    if metadata is None:
+        return "unrecorded"
+    return "partial" if metadata.get("partial") else "recorded"
+
+
+def _combined_payload_state(input_recorded: bool, output_state: str) -> str:
+    """Combine request-argument availability with the external tool output.
+
+    An oversized/dropped input cannot produce ``recorded`` even when the tool
+    payload itself was stored; a missing output likewise keeps it ``partial``
+    as long as any side was captured.
+    """
+    if input_recorded and output_state == "recorded":
+        return "recorded"
+    if input_recorded or output_state != "unrecorded":
+        return "partial"
+    return "unrecorded"
+
+
+async def _agent_trajectory(
+    run_id: UUID,
+    payloads: dict[str, dict[str, Any]],
+    metrics: list[Any],
+) -> tuple[list[dict[str, Any]], bool]:
+    """Ordered entries for an agent run, including unrecorded history."""
+    from app.services.observability_trajectory import trajectory_entries
+
+    try:
+        entries = await trajectory_entries(run_id, TRAJECTORY_ENTRY_LIMIT + 1)
+    except Exception:
+        logger.debug("Trajectory listing unavailable", exc_info=True)
+        entries = []
+    truncated = len(entries) > TRAJECTORY_ENTRY_LIMIT
+    entries = entries[:TRAJECTORY_ENTRY_LIMIT]
+    # Only executed tool/retrieval entries prove that a metric was captured;
+    # a model entry merely references tool-call ids in its response.
+    covered_calls = {
+        str(call_id)
+        for entry in entries
+        if entry["kind"] in {"tool", "retrieval"}
+        for call_id in entry.get("tool_call_ids") or []
+    }
+    covered_ids = {entry["id"] for entry in entries}
+    legacy: list[dict[str, Any]] = []
+    for metric in metrics:
+        if not isinstance(metric, dict):
+            continue
+        kind = metric.get("kind")
+        name = metric.get("name")
+        span_id = str(metric.get("span_id") or "") or None
+        # Match the span-validation rules used for TraceSpan: malformed
+        # metrics without identity/kind/name are ignored, not given fake ids.
+        if not span_id or kind not in {"tool", "retrieval"} or not name:
+            continue
+        tool_call_id = str(metric.get("tool_call_id") or "") or None
+        if (tool_call_id and tool_call_id in covered_calls) or span_id in covered_ids:
+            continue
+        legacy.append(
+            {
+                "id": span_id,
+                "parent_id": None,
+                "kind": str(kind),
+                "name": str(name),
+                "status": str(
+                    getattr(metric.get("status"), "value", metric.get("status"))
+                    or "unknown"
+                ),
+                "started_at": metric.get("started_at"),
+                "finished_at": metric.get("finished_at"),
+                "duration_ms": metric.get("duration_ms"),
+                "model": None,
+                "token_usage": None,
+                "tool_call_ids": [tool_call_id] if tool_call_id else [],
+                # Legacy spans never captured request arguments; an existing
+                # tool payload is still only partial context.
+                "payload_state": _combined_payload_state(
+                    False,
+                    _trajectory_payload_state(payloads, tool_call_id),
+                ),
+                "preview": None,
+            }
+        )
+    for entry in entries:
+        input_recorded = bool(entry.pop("_input_recorded", False))
+        if entry["kind"] in {"tool", "retrieval"}:
+            tool_call_id = (entry.get("tool_call_ids") or [None])[0]
+            entry["payload_state"] = _combined_payload_state(
+                input_recorded,
+                _trajectory_payload_state(payloads, tool_call_id),
+            )
+    merged = legacy + entries
+    # Stable sort by actual start time; rows without timing stay last. Ties
+    # keep capture order (legacy metrics precede modern entries).
+    merged.sort(
+        key=lambda entry: (
+            entry.get("started_at") is None,
+            entry.get("started_at") or "",
+        )
+    )
+    if len(merged) > TRAJECTORY_ENTRY_LIMIT:
+        # Keep the most recent tail; the oldest entries are still addressable
+        # by dependency spans/ids and the trace is marked truncated.
+        truncated = True
+        merged = merged[-TRAJECTORY_ENTRY_LIMIT:]
+    return merged, truncated
+
+
+def _workflow_trajectory(node_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Workflow nodes keep their execution semantics as trajectory entries."""
+    entries = []
+    for node in node_rows:
+        token_usage = {
+            key: int(node[value])
+            for key, value in (
+                ("prompt", "prompt_tokens"),
+                ("completion", "completion_tokens"),
+                ("total", "total_tokens"),
+            )
+            if node.get(value) is not None
+        }
+        node_name = " ".join(str(node["node_name"]).split())
+        node_type = " ".join(str(node["node_type"]).split())
+        entries.append(
+            {
+                "id": str(node["id"]),
+                "parent_id": None,
+                "kind": "workflow_node",
+                "name": str(node["node_name"]),
+                "status": str(getattr(node["status"], "value", node["status"])),
+                "started_at": node["started_at"].isoformat()
+                if node["started_at"]
+                else None,
+                "finished_at": node["finished_at"].isoformat()
+                if node["finished_at"]
+                else None,
+                "duration_ms": node["execution_duration_ms"],
+                "model": node["model_used"],
+                "token_usage": token_usage or None,
+                "tool_call_ids": [],
+                # Summaries deliberately avoid loading node input/output
+                # bodies; completeness is resolved by the detail call.
+                "payload_state": "partial",
+                "preview": f"{node_type}: {node_name}"[:200],
+            }
+        )
+    return entries
+
+
+async def trajectory_detail(
+    source: str, run_id: UUID, entry_id: str
+) -> dict[str, Any] | None:
+    """Load one trajectory payload, scoped to its run and source."""
+    row = await ObservabilityRun.get_or_none(id=run_id, source=source)
+    if row is None:
+        return None
+    try:
+        entry_uuid = UUID(str(entry_id))
+    except (TypeError, ValueError):
+        return None
+    if source == "agent":
+        from app.services.observability_payload import load_tool_payload
+        from app.services.observability_trajectory import entry_payload, load_entry
+
+        entry = await load_entry(run_id, entry_uuid)
+        if entry is not None:
+            if entry.kind in {"tool", "retrieval"}:
+                try:
+                    input_value = (
+                        json.loads(entry.input_text)
+                        if entry.input_text is not None
+                        else None
+                    )
+                except (TypeError, ValueError):
+                    input_value = entry.input_text
+                tool_call_id = (entry.tool_call_ids or [None])[0]
+                payload = (
+                    await load_tool_payload(run_id=run_id, tool_call_id=tool_call_id)
+                    if tool_call_id
+                    else None
+                )
+                output: Any = payload or {
+                    "status": entry.status,
+                    "duration_ms": entry.duration_ms,
+                }
+                input_recorded = entry.input_text is not None
+                payload_recorded = bool(payload and payload.get("recorded"))
+                partial = (
+                    entry.partial
+                    or not input_recorded
+                    or payload is None
+                    or bool(payload and payload.get("partial"))
+                )
+                return {
+                    "id": str(entry.id),
+                    "kind": entry.kind,
+                    "input": input_value,
+                    "output": output,
+                    "partial": partial,
+                    "recorded": input_recorded and payload_recorded and not partial,
+                }
+            input_value, output_value, partial, recorded = entry_payload(entry)
+            return {
+                "id": str(entry.id),
+                "kind": entry.kind,
+                "input": input_value,
+                "output": output_value,
+                "partial": partial,
+                "recorded": recorded,
+            }
+        # Historical runs: only dependency-metric spans were recorded.
+        metric = next(
+            (
+                item
+                for item in row.dependency_metrics or []
+                if isinstance(item, dict)
+                and str(item.get("span_id") or "") == str(entry_id)
+            ),
+            None,
+        )
+        if metric is None:
+            return None
+        kind = str(metric.get("kind") or "unknown")
+        tool_call_id = str(metric.get("tool_call_id") or "") or None
+        payload = (
+            await load_tool_payload(run_id=run_id, tool_call_id=tool_call_id)
+            if tool_call_id
+            else None
+        )
+        return {
+            "id": str(entry_id),
+            "kind": kind,
+            "input": (
+                {"tool_call_id": tool_call_id, "name": metric.get("name")}
+                if tool_call_id
+                else None
+            ),
+            "output": payload
+            or {
+                "status": metric.get("status"),
+                "duration_ms": metric.get("duration_ms"),
+                "error_category": metric.get("error_category"),
+            },
+            # Legacy metrics never stored the request arguments, so neither
+            # input nor output completeness can be claimed.
+            "partial": True,
+            "recorded": False,
+        }
+
+    from app.models.workflow import NodeExecution
+
+    node = await NodeExecution.get_or_none(id=entry_uuid, run_id=run_id)
+    if node is None:
+        return None
+    token_usage = {
+        key: int(value)
+        for key, value in (
+            ("prompt", node.prompt_tokens),
+            ("completion", node.completion_tokens),
+            ("total", node.total_tokens),
+        )
+        if value is not None
+    }
+    has_input = node.inputs is not None or node.config_snapshot is not None
+    has_output = node.outputs is not None
+    # External storage keys exist but no loader is wired here; claiming the
+    # payload is recorded would fabricate availability.
+    storage_unavailable = bool(node.inputs_storage_key or node.outputs_storage_key)
+    recorded = has_input and has_output and not storage_unavailable
+    return {
+        "id": str(node.id),
+        "kind": "workflow_node",
+        "input": {
+            "node_type": node.node_type,
+            "node_name": node.node_name,
+            "config": node.config_snapshot,
+            "inputs": node.inputs,
+            **(
+                {"inputs_storage_key": node.inputs_storage_key}
+                if node.inputs_storage_key
+                else {}
+            ),
+        },
+        "output": {
+            "outputs": node.outputs,
+            "model_used": node.model_used,
+            "token_usage": token_usage or None,
+            "error_type": node.error_type,
+            "error_message": node.error_message,
+            **(
+                {"outputs_storage_key": node.outputs_storage_key}
+                if node.outputs_storage_key
+                else {}
+            ),
+        },
+        "partial": (has_input or has_output or storage_unavailable) and not recorded,
+        "recorded": recorded,
+    }
+
+
 async def run_detail(source: str, run_id: UUID) -> dict[str, Any] | None:
     row = await ObservabilityRun.get_or_none(id=run_id, source=source)
     if row is None:
@@ -665,7 +1016,14 @@ async def run_detail(source: str, run_id: UUID) -> dict[str, Any] | None:
     trace_complete = False
     trace_expired = False
     trace_truncated = bool(row.dependency_metrics_truncated)
+    trajectory: list[dict[str, Any]] = []
     if source == "agent":
+        from app.services.observability_payload import payload_metadata
+
+        try:
+            payloads = await payload_metadata(run_id)
+        except Exception:
+            payloads = {}
         for metric in row.dependency_metrics or []:
             if not isinstance(metric, dict):
                 continue
@@ -692,13 +1050,24 @@ async def run_detail(source: str, run_id: UUID) -> dict[str, Any] | None:
                     "tool": str(name) if kind == "tool" else None,
                     "error_category": metric.get("error_category"),
                     "token_usage": None,
-                    "metadata": {},
+                    "metadata": {
+                        **(
+                            {"tool_call_id": str(metric.get("tool_call_id"))}
+                            if metric.get("tool_call_id")
+                            else {}
+                        ),
+                        **payloads.get(str(metric.get("tool_call_id") or ""), {}),
+                    },
                 }
             )
+        trajectory, trajectory_truncated = await _agent_trajectory(
+            run_id, payloads, row.dependency_metrics or []
+        )
+        trace_truncated = trace_truncated or trajectory_truncated
     if source == "workflow":
         from app.models.workflow import NodeExecution, WorkflowRun
 
-        workflow_run = await WorkflowRun.filter(id=run_id).values("total_nodes").first()
+        workflow_run = await WorkflowRun.filter(id=run_id).first().values("total_nodes")
         if workflow_run is None:
             trace_expired = True
         else:
@@ -730,6 +1099,7 @@ async def run_detail(source: str, run_id: UUID) -> dict[str, Any] | None:
             node_rows = node_rows[:100]
             expected_nodes = int(workflow_run.get("total_nodes") or 0)
             trace_complete = not truncated and len(node_rows) == expected_nodes
+            trajectory = _workflow_trajectory(node_rows)
             for node in node_rows:
                 token_usage = {
                     key: int(node[value])
@@ -771,6 +1141,7 @@ async def run_detail(source: str, run_id: UUID) -> dict[str, Any] | None:
     return {
         "run": _summary(row),
         "spans": spans,
+        "trajectory": trajectory,
         "trace": {
             "complete": trace_complete,
             "expired": trace_expired,
@@ -941,9 +1312,10 @@ async def _dependencies_snapshot(
     metadata = _meta_for(start, end, len(rows), period=period)
     tools = summarize_dependencies(tool_groups)
     retrieval = summarize_dependencies(retrieval_groups)
+    has_samples = bool(models or tools or retrieval)
     metadata["state"] = (
-        "partial"
-        if capped or dependency_capped or models or tools or retrieval
+        await _sample_state(start, available=True, capped=capped or dependency_capped)
+        if has_samples
         else "unavailable"
     )
     return {
@@ -1510,6 +1882,38 @@ async def silence_alert(alert_id: UUID, duration_seconds: int) -> dict[str, Any]
     return _alert_event(row) if row else None
 
 
+async def _retain_expired_trajectory(cutoff: datetime) -> int:
+    """Delete expired trajectory rows in bounded id batches.
+
+    Trajectory rows are only readable through a run summary, but cleanup does
+    not need to join runs: every row older than the cutoff is expired, so
+    deleting by primary key keeps each statement bounded and guarantees
+    eventual cleanup even when the oldest rows still have summaries.
+    """
+    from app.models.observability_payload import ObservabilityTrajectoryEntry
+
+    deleted_total = 0
+    try:
+        for _ in range(RETENTION_BATCHES_PER_CYCLE):
+            row_ids = await run_bounded(
+                ObservabilityTrajectoryEntry.filter(created_at__lt=cutoff)
+                .order_by("created_at")
+                .limit(RETENTION_BATCH_SIZE)
+                .values_list("id", flat=True)
+            )
+            if not row_ids:
+                break
+            deleted_total += int(
+                await ObservabilityTrajectoryEntry.filter(id__in=list(row_ids)).delete()
+            )
+            if len(row_ids) < RETENTION_BATCH_SIZE:
+                break
+    except Exception:
+        # Telemetry cleanup must never break the maintenance leader loop.
+        logger.debug("Trajectory retention cleanup failed", exc_info=True)
+    return deleted_total
+
+
 async def retain() -> int:
     """Delete expired rows in bounded batches; safe for periodic controller invocation."""
     cutoff = utcnow() - timedelta(days=RETENTION_DAYS)
@@ -1523,10 +1927,15 @@ async def retain() -> int:
         )
         if not run_ids:
             break
+        from app.models.observability_payload import ObservabilityToolPayload
+
+        await ObservabilityToolPayload.filter(run_id__in=list(run_ids)).delete()
         deleted = int(await ObservabilityRun.filter(id__in=list(run_ids)).delete())
         deleted_runs += deleted
         if deleted < 1 or len(run_ids) < RETENTION_BATCH_SIZE:
             break
+
+    deleted_trajectory = await _retain_expired_trajectory(cutoff)
 
     deleted_alerts = 0
     for _ in range(RETENTION_BATCHES_PER_CYCLE):
@@ -1546,4 +1955,4 @@ async def retain() -> int:
         deleted_alerts += deleted
         if deleted < 1 or len(alert_ids) < RETENTION_BATCH_SIZE:
             break
-    return deleted_runs + deleted_alerts
+    return deleted_runs + deleted_alerts + deleted_trajectory

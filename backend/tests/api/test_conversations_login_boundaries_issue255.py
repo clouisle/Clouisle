@@ -207,7 +207,11 @@ async def test_login_edges_for_disabled_captcha_logout_email_and_reset_token():
         response = await login.logout(request(), token="bad-token")
     assert response["code"] == ResponseCode.SUCCESS
 
-    with patch.object(login.SiteSetting, "get_value", AsyncMock(return_value=False)):
+    with patch.object(
+        login,
+        "get_builtin_integration",
+        AsyncMock(return_value=SimpleNamespace(is_enabled=False)),
+    ):
         with pytest.raises(BusinessError) as exc:
             await login.send_verification(
                 data=SendVerificationRequest(email="a@example.com", purpose="register"),

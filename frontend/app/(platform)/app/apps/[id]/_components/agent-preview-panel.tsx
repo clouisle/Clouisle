@@ -13,16 +13,7 @@ import {
   useVariableForm,
   type ChatInputFile,
 } from '@/components/chat'
-import { useChat, type ChatError, type ChatImageContent, getErrorMsgKey } from '@/hooks/use-chat'
-// Helper function to convert File to base64 data URL
-async function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
+import { useChat, type ChatError, getErrorMsgKey } from '@/hooks/use-chat'
 
 interface AgentPreviewPanelProps {
   agent: Agent
@@ -94,7 +85,7 @@ export function AgentPreviewPanel({ agent, onClose }: AgentPreviewPanelProps) {
 
   // Handle submit - check if required variables are filled
   const handleSubmit = async (message: string, submittedFiles?: ChatInputFile[]) => {
-    if (!message.trim()) return
+    if (!message.trim() && !(submittedFiles ?? files).length) return
     if (needsVariableInput && !validateVariables()) {
       setVariablesOpen(true)
       return
@@ -104,84 +95,40 @@ export function AgentPreviewPanel({ agent, onClose }: AgentPreviewPanelProps) {
     // Use submittedFiles from param or current files state
     const filesToProcess = submittedFiles || files
     
-    // Separate image files (for vision) and document files (for file upload)
-    let images: ChatImageContent[] | undefined
     let fileUrls: ChatFileUrl[] | undefined
-    
-    if (filesToProcess && filesToProcess.length > 0) {
-      // Process both images and documents when attachments are enabled
-      if (agent.enable_attachments) {
-        const imageFiles = filesToProcess.filter(f => f.type.startsWith('image/') && !f.isDocument)
-        if (imageFiles.length > 0) {
-          images = await Promise.all(
-            imageFiles.map(async (f) => ({
-              type: 'image_url' as const,
-              url: await fileToDataUrl(f.file),
-            }))
-          )
-        }
-
-        const documentFiles = filesToProcess.filter(f => f.isDocument)
-        if (documentFiles.length > 0) {
-          try {
-            setIsUploading(true)
-
-            // Upload documents with progress tracking
-            const uploadPromises = documentFiles.map(async (f) => {
-              // Update file progress
-              const updateProgress = (progress: { percent: number }) => {
-                setFiles(prev => prev.map(file =>
-                  file.id === f.id
-                    ? { ...file, isUploading: true, uploadProgress: progress.percent }
-                    : file
-                ))
-              }
-
-              // Mark as uploading
-              setFiles(prev => prev.map(file =>
-                file.id === f.id
-                  ? { ...file, isUploading: true, uploadProgress: 0 }
-                  : file
-              ))
-
-              const result = await uploadApi.uploadFileWithProgress(
-                f.file,
-                'documents',
-                updateProgress
-              )
-
-              // Mark as complete
-              setFiles(prev => prev.map(file =>
-                file.id === f.id
-                  ? { ...file, isUploading: false, uploadProgress: 100 }
-                  : file
-              ))
-
-              return {
-                filename: f.name,
-                url: result.url,
-                size: f.size,
-                mime_type: f.type,
-              }
-            })
-            fileUrls = await Promise.all(uploadPromises)
-          } catch (err) {
-            console.error('Failed to upload files:', err)
-            showUploadValidationError(err, tCommon)
-            // Reset upload state on error
-            setFiles(prev => prev.map(file => ({
-              ...file,
-              isUploading: false,
-              uploadProgress: undefined
-            })))
-          } finally {
-            setIsUploading(false)
+    if (filesToProcess.length > 0) {
+      if (!agent.enable_attachments) return
+      setIsUploading(true)
+      try {
+        fileUrls = await Promise.all(filesToProcess.map(async (item) => {
+          const updateProgress = (progress: { percent: number }) => {
+            setFiles(prev => prev.map(file =>
+              file.id === item.id ? { ...file, isUploading: true, uploadProgress: progress.percent } : file
+            ))
           }
-        }
+          setFiles(prev => prev.map(file =>
+            file.id === item.id ? { ...file, isUploading: true, uploadProgress: 0 } : file
+          ))
+          const result = await uploadApi.uploadFileWithProgress(
+            item.file,
+            item.isDocument ? 'documents' : 'files',
+            updateProgress
+          )
+          setFiles(prev => prev.map(file =>
+            file.id === item.id ? { ...file, isUploading: false, uploadProgress: 100 } : file
+          ))
+          return { asset_id: result.asset_id, filename: item.name, url: result.url, size: item.size, mime_type: item.type }
+        }))
+      } catch (error) {
+        console.error('Failed to upload files:', error)
+        showUploadValidationError(error, tCommon)
+        setFiles(prev => prev.map(file => ({ ...file, isUploading: false, uploadProgress: undefined })))
+        return
+      } finally {
+        setIsUploading(false)
       }
     }
-    
-    await sendMessage(message, images, fileUrls, Object.values(variableAssetIds).flatMap((value) => Array.isArray(value) ? value : [value]))
+    await sendMessage(message, undefined, fileUrls, Object.values(variableAssetIds).flatMap((value) => Array.isArray(value) ? value : [value]))
     setInput('')
     setFiles([])
   }
@@ -256,6 +203,7 @@ export function AgentPreviewPanel({ agent, onClose }: AgentPreviewPanelProps) {
         hideToolCalls={agent.hide_tool_calls}
         hideMessageActions={agent.hide_message_actions}
         hideReasoning={agent.hide_reasoning}
+        hideCitations={!agent.enable_citations}
         hideArtifactList={agent.hide_artifact_list}
         conversationId={conversationId}
         onRegenerate={regenerate}
@@ -280,6 +228,7 @@ export function AgentPreviewPanel({ agent, onClose }: AgentPreviewPanelProps) {
         inputDisabled={(isLoading && !isStreaming) || runStatus === 'waiting'}
         allowAttachments={agent.enable_attachments}
         enableFileUpload={agent.enable_attachments}
+        inputModalities={agent.input_modalities ?? ['text']}
         fileUploadConfig={agent.attachment_config}
         files={files}
         onFilesChange={setFiles}

@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-07T17:03:38.837Z
+// GENERATED — 2026-10-24T18:18:06.001Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {
@@ -36,6 +36,8 @@ export type AgentsMessages = {
       hideToolCallsDesc: string
       hideMessageActions: string
       hideMessageActionsDesc: string
+      enableCitations: string
+      enableCitationsDesc: string
       hideReasoning: string
       hideReasoningDesc: string
       hideArtifactList: string
@@ -315,10 +317,6 @@ export type AgentsMessages = {
         title: string
         tooltip: string
         description: string
-        maxContentLength: string
-        maxContentLengthHint: string
-        characters: string
-        contextHint: string
       }
       userInput: {
         title: string
@@ -409,8 +407,6 @@ export type AgentsMessages = {
       }
       pagination: {
         showing: string
-        first: string
-        last: string
       }
       drawer: {
         conversationDetail: string
@@ -437,8 +433,6 @@ export type AgentsMessages = {
       deleteConfirmTitle: string
       deleteConfirmDescription: string
       cancel: string
-      prev: string
-      next: string
     }
     apiAccess: {
       title: string

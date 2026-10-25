@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { FieldError } from '@/components/ui/field'
 import { Label } from '@/components/ui/label'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
-import { authApi, usersApi, siteSettingsApi, ssoApi, ApiError, type CaptchaPointerPoint, type CaptchaResponse, type SSOProvider } from '@/lib/api'
+import { authApi, usersApi, siteSettingsApi, ssoApi, ApiError, getIntegrationIconUrl, type CaptchaPointerPoint, type CaptchaResponse, type IntegrationLoginPublic } from '@/lib/api'
 import { clearValidationError, formatValidationSummaryMessage, getValidationSummaryEntries } from '@/lib/validation'
 import { Loader2, Mail, ArrowLeft, ChevronDown } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
@@ -54,7 +54,7 @@ export function LoginForm() {
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [loading, setLoading] = React.useState(false)
   const [captchaLoading, setCaptchaLoading] = React.useState(false)
-  const [ssoProviders, setSsoProviders] = React.useState<SSOProvider[]>([])
+  const [ssoProviders, setSsoProviders] = React.useState<IntegrationLoginPublic[]>([])
   const [ssoEnabled, setSsoEnabled] = React.useState(false)
   const [passwordLoginAllowed, setPasswordLoginAllowed] = React.useState(true)
   const [unverifiedEmail, setUnverifiedEmail] = React.useState('')
@@ -141,7 +141,7 @@ export function LoginForm() {
 
         // 加载 SSO 提供商
         if (settings.sso_enabled) {
-          const providers = await ssoApi.getPublicProviders()
+          const providers = await ssoApi.getPublicIntegrations()
           setSsoProviders(providers)
         }
       } catch {
@@ -759,24 +759,23 @@ export function LoginForm() {
       {/* SSO 提供商按钮 */}
       {ssoProviders.length > 0 && (
         <div className="space-y-3">
-          {ssoProviders.map((provider) => (
-            <Button
-              key={provider.id}
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={() => handleSSOLogin(provider.name)}
-            >
-              {provider.icon_url && (
-                <img
-                  src={provider.icon_url}
-                  alt={provider.display_name}
-                  className="mr-2 h-4 w-4"
-                />
-              )}
-              {provider.button_text || `Sign in with ${provider.display_name}`}
-            </Button>
-          ))}
+          {ssoProviders.map((provider) => {
+            const iconUrl = getIntegrationIconUrl(provider.provider_type, provider.icon_url)
+            return (
+              <Button
+                key={provider.id}
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => handleSSOLogin(provider.name)}
+              >
+                {iconUrl && (
+                  <img src={iconUrl} alt={provider.display_name} className="mr-2 h-4 w-4" />
+                )}
+                {provider.button_text || t('signInWithProvider', { provider: provider.display_name })}
+              </Button>
+            )
+          })}
         </div>
       )}
 

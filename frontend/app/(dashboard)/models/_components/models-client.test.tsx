@@ -96,6 +96,14 @@ function render() {
   return renderer
 }
 
+const SEARCH_DEBOUNCE_WAIT_MS = 350
+
+function waitForSearchDebounce() {
+  const { promise, resolve } = Promise.withResolvers<void>()
+  setTimeout(resolve, SEARCH_DEBOUNCE_WAIT_MS)
+  return promise
+}
+
 function buttonsNamed(name: string) {
   return renderer.root.findAllByType('button').filter((button) => button.children.includes(name))
 }
@@ -163,9 +171,38 @@ test('recovers from a failed list request on the next search', async () => {
   expect(textCount('noModels')).toBeGreaterThan(0)
 
   const search = renderer.root.findAllByType('input').find((input) => input.props.placeholder === 'filterModels')!
-  await act(async () => search.props.onChange({ target: { value: 'recovered' } }))
+  await act(async () => {
+    search.props.onChange({ target: { value: 'recovered' } })
+    await waitForSearchDebounce()
+  })
   expect(textCount('Recovered model')).toBeGreaterThan(0)
   expect(getModels).toHaveBeenLastCalledWith({ page: 1, pageSize: 10, search: 'recovered' })
+})
+
+test('debounces rapid search edits onto a single first-page request', async () => {
+  getModels.mockResolvedValue({ items: [model], total: 25, page: 1, page_size: 10 })
+  render()
+  await act(async () => {})
+
+  const pageButtons = () => renderer.root.findAllByType('button').filter((button) => button.props.className === 'h-8 w-8')
+  await act(async () => pageButtons()[2].props.onClick())
+  expect(getModels).toHaveBeenLastCalledWith({ page: 2, pageSize: 10 })
+
+  getModels.mockClear()
+  const search = () => renderer.root.findAllByType('input').find((input) => input.props.placeholder === 'filterModels')!
+  act(() => search().props.onChange({ target: { value: 'g' } }))
+  act(() => search().props.onChange({ target: { value: 'gp' } }))
+  act(() => search().props.onChange({ target: { value: 'gpt' } }))
+
+  expect(search().props.value).toBe('gpt')
+  expect(getModels).not.toHaveBeenCalled()
+
+  await act(async () => {
+    await waitForSearchDebounce()
+  })
+
+  expect(getModels).toHaveBeenCalledTimes(1)
+  expect(getModels).toHaveBeenCalledWith({ page: 1, pageSize: 10, search: 'gpt' })
 })
 
 test('sets defaults, tests connections, paginates, and bulk deletes selected models', async () => {
@@ -175,7 +212,10 @@ test('sets defaults, tests connections, paginates, and bulk deletes selected mod
   ]))
   testConnection.mockResolvedValueOnce({ success: true, latency_ms: 42 }).mockResolvedValueOnce({ success: false, message: 'no route ' })
   const confirm = mock(() => false)
-  Object.defineProperty(globalThis, 'window', { value: { confirm }, configurable: true })
+  Object.defineProperty(globalThis, 'window', {
+    value: { confirm, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout },
+    configurable: true,
+  })
   render()
   await act(async () => {})
 

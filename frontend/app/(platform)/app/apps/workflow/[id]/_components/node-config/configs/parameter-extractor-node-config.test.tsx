@@ -125,7 +125,19 @@ mock.module('../../nodes/parameter-extractor-node', () => ({
   },
   getExtractionMethodConfig: () => methods,
   extractedParamTypeConfig: typeConfig,
-  generateJsonSchema: (parameters: Config['parameters']) => ({ properties: parameters.map(parameter => parameter.name) }),
+  generateJsonSchema: (parameters: Config['parameters']) => ({
+    name: 'extracted_parameters',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: Object.fromEntries(parameters.map(parameter => [parameter.name, {
+        description: parameter.description || undefined,
+        type: parameter.type,
+      }])),
+      required: parameters.filter(parameter => parameter.required).map(parameter => parameter.name),
+      additionalProperties: false,
+    },
+  }),
 }))
 
 const { ParameterExtractorNodeConfig } = await import('./parameter-extractor-node-config')
@@ -304,6 +316,53 @@ describe('ParameterExtractorNodeConfig', () => {
       parameters: [expect.objectContaining({ jsonPath: '$.value' })],
     }))
   })
+  test('edits descriptions, enum values, array item types, and defaults', () => {
+    const parameter = { id: 'param-1', name: 'value', type: 'string' as const, description: '', required: false }
+    const llmTree = render({ ...baseConfig, parameters: [parameter] })
+    const description = find(llmTree, node => node.type === 'input' && node.props.placeholder === 'configParameterExtractor.descriptionPlaceholder')
+    description.props.onChange({ target: { value: 'A useful value' } })
+    expect(onConfigChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      parameters: [expect.objectContaining({ id: 'param-1', description: 'A useful value' })],
+    }))
+
+    const enumInput = find(llmTree, node => node.type === 'input' && node.props.placeholder === 'configParameterExtractor.enumPlaceholder')
+    enumInput.props.onChange({ target: { value: 'red, blue, , green ' } })
+    expect(onConfigChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      parameters: [expect.objectContaining({ id: 'param-1', enum: ['red', 'blue', 'green'] })],
+    }))
+
+    const defaultInput = find(llmTree, node => node.type === 'input' && node.props.placeholder === 'configCommon.none')
+    defaultInput.props.onChange({ target: { value: 'fallback' } })
+    expect(onConfigChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      parameters: [expect.objectContaining({ id: 'param-1', defaultValue: 'fallback' })],
+    }))
+
+    const arrayTree = render({ ...baseConfig, parameters: [{ ...parameter, type: 'array' }] })
+    find(arrayTree, node => node.type === 'select' && node.props.value === 'string').props.onValueChange('number')
+    expect(onConfigChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      parameters: [expect.objectContaining({ id: 'param-1', arrayItemType: 'number' })],
+    }))
+  })
+
+  test('renders a JSON schema preview and falls back to an unknown saved model ID', () => {
+    const parameter = { id: 'param-1', name: 'answer', type: 'string' as const, description: 'Answer', required: true }
+    const tree = render({ ...baseConfig, modelId: 'removed-model', parameters: [parameter] })
+    expect(JSON.stringify(tree)).toContain('removed-model')
+    const schema = find(tree, node => node.type === 'pre')
+    expect(schema.props.children).toContain('"required": [\n      "answer"\n    ]')
+    expect(schema.props.children).toContain('"description": "Answer"')
+  })
+
+  test('uses extraction-method default types when adding parameters', () => {
+    const config = { ...baseConfig, extractionMethod: 'regex' as const }
+    const tree = render(config)
+    const addButton = find(tree, node => node.type === 'button' && findAll(node.props.children as ReactNode, child => child.type === 'plus').length > 0)
+    addButton.props.onClick()
+    expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({
+      parameters: [expect.objectContaining({ type: 'string', name: 'param1', required: false })],
+    }))
+  })
+  
 
   test('toggles structured output and only shows its schema preview when enabled', () => {
     const parameter = { id: 'param-1', name: 'answer', type: 'string' as const, description: 'Answer', required: true }

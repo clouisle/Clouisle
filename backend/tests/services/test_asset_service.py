@@ -61,6 +61,7 @@ async def test_get_authorized_enforces_team_and_status(monkeypatch):
         team_id=TEAM_ID,
         created_by_id=USER_ID,
         status=AssetStatus.AVAILABLE,
+        source=AssetSource.UPLOAD,
     )
     monkeypatch.setattr(
         asset_module.Asset, "get_or_none", AsyncMock(return_value=asset)
@@ -79,6 +80,14 @@ async def test_get_authorized_enforces_team_and_status(monkeypatch):
     assert error.value.status_code == 403
 
     asset.status = AssetStatus.EXPIRED
+    with pytest.raises(BusinessError) as error:
+        await asset_module.AssetService().get_authorized(
+            ASSET_ID, team_id=TEAM_ID, user_id=USER_ID
+        )
+    assert error.value.status_code == 404
+
+    asset.status = AssetStatus.AVAILABLE
+    asset.source = AssetSource.DERIVED_TEXT
     with pytest.raises(BusinessError) as error:
         await asset_module.AssetService().get_authorized(
             ASSET_ID, team_id=TEAM_ID, user_id=USER_ID
@@ -139,8 +148,8 @@ def test_format_manifest_reports_no_available_attachments():
 
     assert manifest == (
         "<available_assets>\n"
-        "No attachments are available in this conversation. "
-        "Do not call Asset tools or guess refs.\n"
+        "This preview is empty. Use list_assets to discover older available assets. "
+        "Never guess refs.\n"
         "</available_assets>"
     )
 
@@ -197,6 +206,7 @@ async def test_get_authorized_denies_wrong_creator_and_allows_owner(monkeypatch)
         team_id=None,
         created_by_id=USER_ID,
         status=AssetStatus.AVAILABLE,
+        source=AssetSource.UPLOAD,
     )
     monkeypatch.setattr(
         asset_module.Asset, "get_or_none", AsyncMock(return_value=asset)
@@ -270,6 +280,7 @@ async def test_resolve_ref_delegates_to_authorization(monkeypatch):
         team_id=TEAM_ID,
         created_by_id=USER_ID,
         status=AssetStatus.AVAILABLE,
+        source=AssetSource.UPLOAD,
     )
     binding = SimpleNamespace(asset_id=ASSET_ID)
     monkeypatch.setattr(
@@ -293,23 +304,24 @@ async def test_resolve_ref_delegates_to_authorization(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("content_type", "filename", "expected_read", "expected_parse"),
+    ("content_type", "filename", "expected_read", "expected_search"),
     [
         ("text/plain", "notes.txt", True, True),
-        ("application/pdf", "plan.pdf", False, True),
+        ("application/pdf", "plan.pdf", True, True),
         ("application/json", "data.json", True, True),
         ("image/png", "photo.png", False, False),
     ],
 )
 def test_capabilities_classifies_content_types(
-    content_type, filename, expected_read, expected_parse
+    content_type, filename, expected_read, expected_search
 ):
     capabilities = asset_module.AssetService.capabilities(
         SimpleNamespace(content_type=content_type, original_filename=filename)
     )
 
     assert ("read" in capabilities) is expected_read
-    assert ("parse" in capabilities) is expected_parse
+    assert ("search" in capabilities) is expected_search
+    assert "parse" not in capabilities
     if content_type.startswith("image/"):
         assert "vision" in capabilities
         assert "generate" in capabilities
@@ -346,6 +358,7 @@ async def test_build_conversation_manifest_dedupes_and_backfills(monkeypatch):
         q.prefetch_related = MagicMock(return_value=q)
         q.order_by = MagicMock(return_value=q)
         q.limit = AsyncMock(return_value=rows)
+        q.exists = AsyncMock(return_value=False)
         return q
 
     links = [
@@ -396,11 +409,11 @@ def test_format_manifest_renders_item_rows():
             "type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "size": 2048,
             "origin": "upload",
-            "capabilities": ["inspect", "read", "parse", "sandbox"],
+            "capabilities": ["inspect", "read", "search", "sandbox"],
         }
     ]
 
     rendered = asset_module.AssetService.format_manifest(manifest)
 
     assert "a1b2 | report.xlsx | " in rendered
-    assert "2048B | upload | inspect,read,parse,sandbox" in rendered
+    assert "2048B | upload | inspect,read,search,sandbox" in rendered

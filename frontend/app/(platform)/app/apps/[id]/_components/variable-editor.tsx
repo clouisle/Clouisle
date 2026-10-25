@@ -97,7 +97,7 @@ export function AddVariableButton({ onAdd }: AddVariableButtonProps) {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         render={
-          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 cursor-pointer">
+          <Button variant="ghost" size="xs" className="gap-1 cursor-pointer">
             <Plus className="h-3 w-3" />
             {t('add')}
           </Button>

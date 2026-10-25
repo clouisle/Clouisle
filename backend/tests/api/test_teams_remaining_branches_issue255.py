@@ -246,7 +246,10 @@ async def test_transfer_ownership_missing_team(monkeypatch):
 
     with pytest.raises(BusinessError) as exc_info:
         await teams.transfer_ownership(
-            team_id=uuid4(), new_owner_id=uuid4(), current_user=current_user
+            request=MagicMock(headers={}, client=None),
+            team_id=uuid4(),
+            new_owner_id=uuid4(),
+            current_user=current_user,
         )
 
     assert_error(exc_info, ResponseCode.TEAM_NOT_FOUND, 404)
@@ -266,7 +269,10 @@ async def test_transfer_ownership_requires_current_owner(monkeypatch):
 
     with pytest.raises(BusinessError) as exc_info:
         await teams.transfer_ownership(
-            team_id=item.id, new_owner_id=uuid4(), current_user=current_user
+            request=MagicMock(headers={}, client=None),
+            team_id=item.id,
+            new_owner_id=uuid4(),
+            current_user=current_user,
         )
 
     assert_error(exc_info, ResponseCode.TEAM_OWNER_REQUIRED, 403)
@@ -283,7 +289,10 @@ async def test_transfer_ownership_rejects_missing_new_member(monkeypatch):
 
     with pytest.raises(BusinessError) as exc_info:
         await teams.transfer_ownership(
-            team_id=item.id, new_owner_id=uuid4(), current_user=current_user
+            request=MagicMock(headers={}, client=None),
+            team_id=item.id,
+            new_owner_id=uuid4(),
+            current_user=current_user,
         )
 
     assert_error(exc_info, ResponseCode.TEAM_MEMBER_NOT_FOUND, 404)
@@ -429,6 +438,7 @@ async def test_transfer_ownership_rejects_unprivileged_new_owner(monkeypatch):
 
     with pytest.raises(BusinessError) as exc_info:
         await teams.transfer_ownership(
+            request=MagicMock(headers={}, client=None),
             team_id=item.id,
             new_owner_id=new_owner.id,
             current_user=current_user,

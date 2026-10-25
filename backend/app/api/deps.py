@@ -261,6 +261,8 @@ async def get_current_user_optional(
 
 
 def user_has_global_permission(user: User, required_permission: str) -> bool:
+    if user.is_superuser:
+        return True
     for role in user.roles:
         for permission in role.permissions:
             if permission.code == required_permission or permission.code == "*":

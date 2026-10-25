@@ -235,6 +235,7 @@ async def create_agent(
         hide_tool_calls=agent_in.hide_tool_calls,
         hide_message_actions=agent_in.hide_message_actions,
         hide_reasoning=agent_in.hide_reasoning,
+        enable_citations=agent_in.enable_citations,
         hide_artifact_list=agent_in.hide_artifact_list,
         tools_config=[tool.model_dump() for tool in agent_in.tools_config],
         enable_attachments=agent_in.enable_attachments,
@@ -358,6 +359,9 @@ async def update_agent(
     if agent_in.hide_reasoning is not None:
         agent.hide_reasoning = agent_in.hide_reasoning
         updated_fields.append("hide_reasoning")
+    if agent_in.enable_citations is not None:
+        agent.enable_citations = agent_in.enable_citations
+        updated_fields.append("enable_citations")
     if agent_in.hide_artifact_list is not None:
         agent.hide_artifact_list = agent_in.hide_artifact_list
         updated_fields.append("hide_artifact_list")
@@ -658,6 +662,7 @@ async def duplicate_agent(
         hide_tool_calls=agent.hide_tool_calls,
         hide_message_actions=agent.hide_message_actions,
         hide_reasoning=agent.hide_reasoning,
+        enable_citations=getattr(agent, "enable_citations", False),
         hide_artifact_list=getattr(agent, "hide_artifact_list", False),
         tools_config=agent.tools_config,
         enable_attachments=agent.enable_attachments,

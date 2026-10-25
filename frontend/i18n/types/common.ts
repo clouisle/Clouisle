@@ -1,9 +1,12 @@
-// GENERATED — 2026-10-07T17:03:38.839Z
+// GENERATED — 2026-10-24T18:18:06.003Z
 // Source: i18n/en/common.json
 export type CommonMessages = {
   common: {
     appName: string
     loading: string
+    loadingMore: string
+    loadFailed: string
+    retry: string
     save: string
     cancel: string
     delete: string

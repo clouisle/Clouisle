@@ -150,7 +150,11 @@ async def test_login_email_flows_preserve_enumeration_and_update_only_registrati
     user = SimpleNamespace(email_verified=False, save=AsyncMock())
 
     with (
-        patch.object(login.SiteSetting, "get_value", AsyncMock(return_value=True)),
+        patch.object(
+            login,
+            "get_builtin_integration",
+            AsyncMock(return_value=SimpleNamespace(is_enabled=True)),
+        ),
         patch.object(login, "check_email_cooldown", AsyncMock(return_value=(True, 0))),
         patch.object(login.User, "filter", return_value=Query()),
         patch.object(

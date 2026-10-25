@@ -7,7 +7,6 @@ import pytest
 from app.models.notification import (
     AutoNotificationType,
     NotificationChannel,
-    NotificationDeliveryStatus,
 )
 from app.services.auto_notification import AutoNotificationService
 
@@ -111,55 +110,32 @@ async def test_send_creates_audit_and_dispatches_configured_channels():
 
 
 @pytest.mark.asyncio
-async def test_external_channels_skip_disabled_and_record_dispatch_results():
-    from app.tasks import notification as notification_tasks
-
+async def test_external_channels_dispatch_through_integration_factory():
     notification = SimpleNamespace(id=uuid4())
-    successful = SimpleNamespace(
-        task_id=None, status=None, error_message=None, save=AsyncMock()
-    )
-    failed = SimpleNamespace(
-        task_id=None, status=None, error_message=None, save=AsyncMock()
-    )
-    delivery_create = AsyncMock(side_effect=[successful, failed])
-    email_task = MagicMock()
-    email_task.delay.return_value = SimpleNamespace(id="task-1")
-    slack_task = MagicMock()
-    slack_task.delay.side_effect = RuntimeError("broker unavailable")
+    delivery = SimpleNamespace(task_id=None, save=AsyncMock())
+    task_result = SimpleNamespace(id="factory-task")
+    dispatch = MagicMock(return_value=task_result)
 
     with (
         patch.object(
             AutoNotificationService,
             "_is_channel_enabled",
-            new=AsyncMock(side_effect=[False, True, True]),
+            new=AsyncMock(return_value=True),
         ),
         patch(
             "app.services.auto_notification.NotificationDelivery.create",
-            new=delivery_create,
+            new=AsyncMock(return_value=delivery),
+        ) as create_delivery,
+        patch(
+            "app.services.auto_notification.dispatch_notification_task",
+            dispatch,
         ),
-        patch.object(notification_tasks, "send_notification_email_task", email_task),
-        patch.object(notification_tasks, "send_notification_slack_task", slack_task),
     ):
         await AutoNotificationService._trigger_external_channels(
-            notification,
-            [
-                NotificationChannel.WEBHOOK,
-                NotificationChannel.EMAIL,
-                NotificationChannel.SLACK,
-            ],
+            notification, [NotificationChannel.EMAIL]
         )
 
-    assert (
-        delivery_create.await_args_list[0].kwargs["channel"]
-        == NotificationChannel.EMAIL
-    )
-    assert (
-        delivery_create.await_args_list[0].kwargs["status"]
-        == NotificationDeliveryStatus.PENDING
-    )
-    email_task.delay.assert_called_once_with(str(notification.id))
-    assert successful.task_id == "task-1"
-    successful.save.assert_awaited_once()
-    assert failed.status == NotificationDeliveryStatus.FAILED
-    assert failed.error_message == "task_dispatch_failed"
-    failed.save.assert_awaited_once()
+    create_delivery.assert_awaited_once()
+    dispatch.assert_called_once_with(NotificationChannel.EMAIL, str(notification.id))
+    assert delivery.task_id == "factory-task"
+    delivery.save.assert_awaited_once()

@@ -1,4 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
+from app.integrations.credentials import encrypt_secret
 
 import pytest
 
@@ -6,9 +8,8 @@ from app.core import email
 
 
 @pytest.mark.asyncio
-async def test_get_smtp_config_reads_site_settings():
+async def test_get_smtp_config_reads_encrypted_integration_credentials():
     values = {
-        "smtp_enabled": True,
         "smtp_host": "smtp.example.test",
         "smtp_port": 465,
         "smtp_encryption": "ssl",
@@ -17,9 +18,16 @@ async def test_get_smtp_config_reads_site_settings():
         "email_from_name": "Clouisle Test",
         "email_from_address": "sender@example.test",
     }
+    password = values.pop("smtp_password")
+    integration = SimpleNamespace(
+        config=values,
+        credentials={"smtp_password": encrypt_secret(password)},
+        is_enabled=True,
+        enabled_capabilities=["notification"],
+    )
     with patch(
-        "app.core.email.SiteSetting.get_value",
-        new=AsyncMock(side_effect=lambda key, default: values.get(key, default)),
+        "app.core.email.get_builtin_integration",
+        new=AsyncMock(return_value=integration),
     ):
         assert await email.get_smtp_config() == {
             "enabled": True,

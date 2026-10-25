@@ -4,6 +4,7 @@ File parsing service using MarkItDown.
 Provides file parsing functionality with configurable truncation.
 """
 
+import asyncio
 import logging
 import mimetypes
 import tempfile
@@ -14,6 +15,31 @@ from pydantic import BaseModel, Field
 from app.core.i18n import t
 
 logger = logging.getLogger(__name__)
+
+# Version of the complete-text normalization used for persisted Asset
+# representations. Bump when extraction output can change so stored
+# representations are never silently reused across incompatible parsers.
+EXTRACTION_VERSION = "2"
+
+# Hard ceiling for one complete extraction. The limit is explicit so a
+# pathological source file fails clearly instead of exhausting worker memory.
+MAX_EXTRACTED_CHARS = 5_000_000
+
+# Formats whose text is already UTF-8 (or BOM-marked UTF-16/UTF-8) and must
+# never go through MarkItDown, which could silently reflow them.
+PLAIN_TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json"}
+
+_BOM_UTF16 = (b"\xff\xfe", b"\xfe\xff")
+
+
+class ExtractedFile(BaseModel):
+    """A complete extraction result, without any truncation."""
+
+    filename: str
+    text: str
+    mime_type: str
+    size: int
+    title: str | None = None
 
 
 class FileParseConfig(BaseModel):
@@ -63,6 +89,8 @@ class FileParserService:
         ".json": "application/json",
         ".html": "text/html",
         ".htm": "text/html",
+        ".xml": "application/xml",
+        ".rtf": "application/rtf",
     }
     SUPPORTED_TEMP_SUFFIXES = {
         ".pdf": ".pdf",
@@ -78,6 +106,8 @@ class FileParserService:
         ".json": ".json",
         ".html": ".html",
         ".htm": ".htm",
+        ".xml": ".xml",
+        ".rtf": ".rtf",
     }
 
     def __init__(self):
@@ -104,6 +134,101 @@ class FileParserService:
         ext = Path(filename).suffix.lower()
         return self.SUPPORTED_EXTENSIONS.get(
             ext, mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        )
+
+    @staticmethod
+    def _normalize_newlines(text: str) -> str:
+        """Normalize CRLF/CR so persisted line positions are deterministic."""
+        return text.replace("\r\n", "\n").replace("\r", "\n")
+
+    @staticmethod
+    def _decode_plain_text(file_content: bytes, *, strict: bool) -> str:
+        """Decode text formats without silently discarding invalid bytes."""
+        try:
+            text = file_content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            if strict:
+                if file_content.startswith(_BOM_UTF16):
+                    try:
+                        return file_content.decode("utf-16")
+                    except UnicodeDecodeError as exc:
+                        raise ValueError("document_extraction_decode_failed") from exc
+                raise ValueError("document_extraction_decode_failed") from None
+            # Legacy truncating parse tolerated malformed text.
+            text = file_content.decode("utf-8", errors="ignore")
+        return text
+
+    def _convert_to_text(
+        self,
+        file_content: bytes,
+        filename: str,
+        *,
+        strict: bool,
+    ) -> tuple[str, str | None]:
+        """Convert source bytes to text.
+
+        Newline normalization is applied only by the complete extraction path.
+        Synchronous by design: callers run it in a thread so document
+        conversion never blocks the event loop.
+        """
+        ext = Path(filename).suffix.lower()
+        if not self.is_supported(filename):
+            raise ValueError("unsupported_file_type")
+
+        if ext in PLAIN_TEXT_EXTENSIONS:
+            return self._decode_plain_text(file_content, strict=strict), None
+
+        md = self._get_markitdown()
+        with tempfile.NamedTemporaryFile(
+            suffix=self.SUPPORTED_TEMP_SUFFIXES[ext], delete=False
+        ) as tmp:
+            tmp.write(file_content)
+            tmp_path = tmp.name
+
+        try:
+            try:
+                result = md.convert(tmp_path)
+            except Exception as exc:
+                if not strict:
+                    # Legacy truncating parse preserves the parser's own
+                    # exception type for existing callers/tests.
+                    raise
+                raise ValueError("document_processing_failed_generic") from exc
+            text = result.text_content
+            title = result.title
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+        return text, title
+
+    def extract_text(self, file_content: bytes, filename: str) -> tuple[str, str]:
+        """Extract the complete normalized text of one file.
+
+        Returns ``(text, title)``. Raises a stable ``ValueError`` key for
+        unsupported, undecodable, empty, or oversized extractions. This path
+        never truncates and never discards undecodable bytes.
+        """
+        text, title = self._convert_to_text(file_content, filename, strict=True)
+        text = self._normalize_newlines(text)
+        if not text.strip():
+            raise ValueError("document_extraction_empty")
+        if len(text) > MAX_EXTRACTED_CHARS:
+            raise ValueError("asset_document_resource_limit_exceeded")
+        return text, title or ""
+
+    async def extract_file(
+        self,
+        file_content: bytes,
+        filename: str,
+    ) -> ExtractedFile:
+        """Complete extraction with conversion kept off the event loop."""
+        mime_type = self.get_mime_type(filename)
+        text, title = await asyncio.to_thread(self.extract_text, file_content, filename)
+        return ExtractedFile(
+            filename=filename,
+            text=text,
+            mime_type=mime_type,
+            size=len(file_content),
+            title=title or None,
         )
 
     def truncate_content(
@@ -177,39 +302,16 @@ class FileParserService:
 
         # Validate file type
         if not self.is_supported(filename):
-            ext = Path(filename).suffix.lower()
             raise ValueError("unsupported_file_type")
 
         mime_type = self.get_mime_type(filename)
         file_size = len(file_content)
 
-        # Parse using MarkItDown
-        ext = Path(filename).suffix.lower()
-
-        # For plain text files, read directly
-        if ext in {".txt", ".md", ".csv", ".json"}:
-            try:
-                text = file_content.decode("utf-8")
-            except UnicodeDecodeError:
-                text = file_content.decode("utf-8", errors="ignore")
-            title = None
-        else:
-            # Use MarkItDown for other formats
-            md = self._get_markitdown()
-
-            with tempfile.NamedTemporaryFile(
-                suffix=self.SUPPORTED_TEMP_SUFFIXES[ext], delete=False
-            ) as tmp:
-                tmp.write(file_content)
-                tmp_path = tmp.name
-
-            try:
-                result = md.convert(tmp_path)
-                text = result.text_content
-                title = result.title
-            finally:
-                # Clean up temp file
-                Path(tmp_path).unlink(missing_ok=True)
+        # Legacy truncating parse keeps its lenient decoding and only ever
+        # returns at most ``max_content_length`` characters.
+        text, title = await asyncio.to_thread(
+            self._convert_to_text, file_content, filename, strict=False
+        )
 
         # Apply truncation
         truncated_text, was_truncated, original_length = self.truncate_content(

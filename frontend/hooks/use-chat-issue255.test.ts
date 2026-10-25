@@ -283,7 +283,49 @@ describe('useChat issue 255 branches', () => {
       expect(render(options).messages[0].metadata).toMatchObject({ isLoading: false, isError: true })
     }
   })
+  test('ignores blank sends and resets visible conversation state', async () => {
+    const onConversationChange = mock()
+    const options = { agentId: 'agent-1', initialMessages: [{ id: 'initial', role: 'assistant', parts: [{ type: 'text', text: 'welcome' }] }] as Message[], onConversationChange }
+    render(options).setConversationId('conversation-1')
 
+    await render(options).sendMessage('   ')
+    expect(chatStream).not.toHaveBeenCalled()
+    expect(render(options).messages).toHaveLength(1)
+
+    render(options).reset()
+    const reset = render(options)
+    expect(reset.messages).toHaveLength(1)
+    expect(reset.messages[0].id).toBe('initial')
+    expect(reset.conversationId).toBeNull()
+    expect(reset.status).toBe('idle')
+  })
+
+  test('switches to a requested message version and reloads conversation messages', async () => {
+    const id = '22222222-2222-2222-2222-222222222222'
+    const options = { agentId: 'agent-1', conversationId: 'conversation-1' }
+    setMessages([{ id, role: 'assistant', parts: [{ type: 'text', text: 'old' }] }] as Message[], options)
+    agentsApi.getMessageVersions.mockResolvedValue([{ id: 'version-1' }, { id: 'version-2' }])
+    agentsApi.switchMessageVersion.mockResolvedValue(undefined)
+    getConversation.mockResolvedValue({ messages: [{ id: 'reloaded', role: 'assistant', parts: [{ type: 'text', text: 'new version' }] }] })
+
+    await render(options).switchVersion(id, 1)
+
+    expect(agentsApi.getMessageVersions).toHaveBeenCalledWith('agent-1', id)
+    expect(agentsApi.switchMessageVersion).toHaveBeenCalledWith('agent-1', id, 'version-2')
+    expect(render(options).messages[0].id).toBe('reloaded')
+  })
+
+  test('does not switch an out-of-range version or call the switch API', async () => {
+    const id = '22222222-2222-2222-2222-222222222222'
+    const options = { agentId: 'agent-1' }
+    setMessages([{ id, role: 'assistant', parts: [{ type: 'text', text: 'current' }] }] as Message[], options)
+    agentsApi.getMessageVersions.mockResolvedValue([{ id: 'version-1' }])
+
+    await render(options).switchVersion(id, 2)
+
+    expect(agentsApi.switchMessageVersion).not.toHaveBeenCalled()
+    expect(render(options).messages[0].parts).toEqual([{ type: 'text', text: 'current' }])
+  })
   test('exposes stable public error keys', () => {
     expect(getErrorMsgKey({ message: 'ignored', msgKey: 'custom.key' })).toBe('custom.key')
     expect(getErrorMsgKey({ message: 'model_vision_not_supported' })).toBe('modelVisionNotSupported')

@@ -246,4 +246,84 @@ describe('ChunkEditorDialog', () => {
     expect(text(tree)).toContain('noChunks')
     expect(text(tree)).toContain('addFirstChunk')
   })
+  test('canceling an edit restores the original chunk content', async () => {
+    getDocumentChunks.mockResolvedValue(page)
+    let tree = await flush()
+
+    find(tree, element => element.type === 'p' && text(element) === 'Original content').props.onClick()
+    tree = render()
+    find(tree, element => element.type === 'textarea').props.onChange({ target: { value: 'Draft content' } })
+    tree = render()
+    find(tree, element => element.type === 'button' && elements(element).some(child => child.type === 'reset-icon')).props.onClick()
+    tree = render()
+
+    expect(find(tree, element => element.type === 'p' && text(element) === 'Original content')).toBeDefined()
+    expect(elements(tree).some(element => element.type === 'textarea')).toBe(false)
+    expect(updateChunk).not.toHaveBeenCalled()
+  })
+  test('does not submit unchanged content and exits edit mode', async () => {
+    getDocumentChunks.mockResolvedValue(page)
+    let tree = await flush()
+
+    find(tree, element => element.type === 'p' && text(element) === 'Original content').props.onClick()
+    tree = render()
+    find(tree, element => element.type === 'textarea').props.onChange({ target: { value: 'Original content' } })
+    tree = render()
+    await find(tree, element => element.type === 'button' && elements(element).some(child => child.type === 'save-icon')).props.onClick()
+    tree = render()
+
+    expect(updateChunk).not.toHaveBeenCalled()
+    expect(elements(tree).some(element => element.type === 'textarea')).toBe(false)
+    expect(find(tree, element => element.type === 'p' && text(element) === 'Original content')).toBeDefined()
+  })
+
+  test('keeps the dialog open and does not refresh the document when saving fails', async () => {
+    getDocumentChunks.mockResolvedValue(page)
+    updateChunk.mockRejectedValue(new Error('save failed'))
+    const onDocumentUpdated = mock()
+    const onOpenChange = mock()
+    let tree = await flush({ onDocumentUpdated, onOpenChange })
+
+    find(tree, element => element.type === 'p' && text(element) === 'Original content').props.onClick()
+    tree = render({ onDocumentUpdated, onOpenChange })
+    find(tree, element => element.type === 'textarea').props.onChange({ target: { value: 'Retry content' } })
+    tree = render({ onDocumentUpdated, onOpenChange })
+    await find(tree, element => element.type === 'button' && elements(element).some(child => child.type === 'save-icon')).props.onClick()
+    tree = render({ onDocumentUpdated, onOpenChange })
+
+    expect(find(tree, element => element.type === 'textarea').props.value).toBe('Retry content')
+    expect(onDocumentUpdated).not.toHaveBeenCalled()
+    expect(onOpenChange).not.toHaveBeenCalled()
+  })
+
+  test('closes the dialog without saving when canceled', async () => {
+    getDocumentChunks.mockResolvedValue(page)
+    const onOpenChange = mock()
+    let tree = await flush({ onOpenChange })
+
+    find(tree, element => element.type === 'p' && text(element) === 'Original content').props.onClick()
+    tree = render({ onOpenChange })
+    find(tree, element => element.type === 'textarea').props.onChange({ target: { value: 'Draft content' } })
+    tree = render({ onOpenChange })
+    find(tree, element => element.type === 'button' && text(element) === 'close').props.onClick()
+
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(updateChunk).not.toHaveBeenCalled()
+  })
+
+
+
+  test('adds the first chunk to an empty document at index minus one', async () => {
+    getDocumentChunks.mockResolvedValue({ ...page, items: [], total: 0 })
+    const createChunk = (await import('@/lib/api')).adminKnowledgeBasesApi.createChunk as ReturnType<typeof mock>
+    createChunk.mockResolvedValue(chunk)
+    const tree = await flush()
+
+    expect(text(tree)).toContain('noChunks')
+    find(tree, element => element.type === 'button' && text(element).includes('addFirstChunk')).props.onClick()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(createChunk).toHaveBeenCalledWith('kb-1', 'doc-1', { content: 'newChunkPlaceholder' }, -1)
+  })
 })

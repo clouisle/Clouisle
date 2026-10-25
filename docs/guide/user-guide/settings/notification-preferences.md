@@ -23,11 +23,7 @@ Every user sees their notifications in the notification center and at `/app/noti
 Administrators configure external delivery channels globally for automatic notification types. Available channels:
 
 - **Email** (requires SMTP configuration)
-- **DingTalk**
-- **WeChat**
-- **Feishu**
-- **Webhook** (generic webhook)
-- **Slack**
+- **Webhook** (generic HTTP callback)
 
 A channel only sends notifications when it is both selected in the global config and enabled/configured by the administrator. If no channels are configured, notifications stay in-app only.
 
@@ -57,7 +53,7 @@ Additional types (e.g. `workflow.run_success`, `agent.published`, `agent.unpubli
 
 ### Configuration Location
 
-Admins configure this under **Admin Dashboard → Site Settings → Notifications → Auto Notifications** (and the corresponding channel tabs: Email, DingTalk, WeChat, Feishu, Webhook, Slack).
+Admins configure notification types and delivery channels under **Admin Dashboard → Site Settings → Notifications → Auto Notifications**. Email and Webhook delivery settings are under **Site Settings → Integrations**.
 
 ## What Users Can Do
 
@@ -86,7 +82,7 @@ See [Notifications](../profile/notifications.md) for details.
 - Review security notifications immediately
 
 **For administrators:**
-- Enable external channels only after configuring them (SMTP, DingTalk, etc.)
+- Enable external channels only after configuring them (SMTP or Webhook)
 - Choose enabled types deliberately to avoid notification noise
 
 ## Related Documentation

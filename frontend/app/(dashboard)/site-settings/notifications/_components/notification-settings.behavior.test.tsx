@@ -39,43 +39,21 @@ mock.module('@/components/ui/select', () => ({
 }))
 
 import { ApiError } from '@/lib/api/client'
-import { siteSettingsApi, type WebhookSettings } from '@/lib/api/admin/site-settings'
+import { siteSettingsApi } from '@/lib/api/admin/site-settings'
 import { AutoNotificationsSettingsTab } from './auto-notifications-settings'
-import { WebhookSettingsTab } from './webhook-settings'
-
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const renderers: ReactTestRenderer[] = []
-const enabledChannels = {
-  email: true, dingtalk: false, wechat: false, feishu: false, webhook: true, slack: false,
-}
-const webhookSettings: WebhookSettings = {
-  webhook_enabled: true,
-  webhook_url: 'https://hooks.example.test/notify',
-  webhook_method: 'POST',
-  webhook_headers: { Authorization: 'Bearer test' },
-  webhook_body_template: '{"title":"{{title}}"}',
-  webhook_secret: 'secret',
-}
 
 async function renderAuto(canUpdate = true) {
   let renderer: ReactTestRenderer
   await act(async () => {
-    renderer = create(<AutoNotificationsSettingsTab enabledChannels={enabledChannels} canUpdate={canUpdate} />)
+    renderer = create(<AutoNotificationsSettingsTab canUpdate={canUpdate} />)
   })
   renderers.push(renderer!)
   return renderer!
 }
 
-function renderWebhook(settings: WebhookSettings = webhookSettings) {
-  const onSettingsChange = mock(() => {})
-  let renderer: ReactTestRenderer
-  act(() => {
-    renderer = create(<WebhookSettingsTab settings={settings} onSettingsChange={onSettingsChange} canUpdate />)
-  })
-  renderers.push(renderer!)
-  return { renderer: renderer!, onSettingsChange }
-}
 
 const button = (renderer: ReactTestRenderer, label: string) =>
   renderer.root.findAllByType('button').find((node) => node.children.includes(label))!
@@ -92,24 +70,26 @@ afterEach(() => {
 })
 
 describe('AutoNotificationsSettingsTab', () => {
-  test('loads config, exposes only enabled providers, and saves user changes', async () => {
+  test('loads config, exposes only supported providers, and saves user changes', async () => {
     spyOn(siteSettingsApi, 'getAutoNotifications').mockResolvedValue({
-      channels: ['email'], enabled_types: ['team.member_added'],
+      channels: ['email', 'dingtalk', 'wechat', 'feishu', 'slack'],
+      enabled_types: ['team.member_added'],
     })
     const update = spyOn(siteSettingsApi, 'updateAutoNotifications').mockResolvedValue({
-      channels: ['email', 'webhook'], enabled_types: [],
+      channels: ['email', 'webhook', 'feishu'], enabled_types: [],
     })
     const renderer = await renderAuto()
 
     expect(renderer.root.findByProps({ id: 'global-email' }).props.checked).toBe(true)
-    expect(renderer.root.findAllByProps({ id: 'global-dingtalk' })).toHaveLength(0)
+    expect(renderer.root.findByProps({ id: 'global-webhook' }).props.checked).toBe(false)
+    expect(renderer.root.findAll((node) => typeof node.props.id === 'string' && node.props.id.startsWith('global-')).map((node) => node.props.id)).toEqual(['global-email', 'global-email', 'global-webhook', 'global-webhook', 'global-feishu', 'global-feishu'])
 
     act(() => renderer.root.findByProps({ id: 'global-webhook' }).props.onCheckedChange())
     const firstType = renderer.root.findAll((node) => node.props.checked === true && node.props.onCheckedChange && !node.props.id)[0]
     act(() => firstType.props.onCheckedChange(false))
     await act(async () => button(renderer, 'save').props.onClick())
 
-    expect(update).toHaveBeenCalledWith({ channels: ['email', 'webhook'], enabled_types: [] })
+    expect(update).toHaveBeenCalledWith({ channels: ['email', 'feishu', 'webhook'], enabled_types: [] })
     expect(success).toHaveBeenCalledWith('saveSuccess')
   })
 
@@ -128,61 +108,3 @@ describe('AutoNotificationsSettingsTab', () => {
   })
 })
 
-describe('WebhookSettingsTab', () => {
-  test('validates locally before crossing the provider boundary', async () => {
-    const update = spyOn(siteSettingsApi, 'updateWebhook')
-    const sendTest = spyOn(siteSettingsApi, 'sendTestWebhook')
-    const { renderer } = renderWebhook({ ...webhookSettings, webhook_url: '' })
-
-    await act(async () => button(renderer, 'save').props.onClick())
-    await act(async () => button(renderer, 'webhook.sendTest').props.onClick())
-
-    expect(update).not.toHaveBeenCalled()
-    expect(sendTest).not.toHaveBeenCalled()
-    expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(true)
-  })
-
-  test('saves settings and tests the provider only through mocked API methods', async () => {
-    const update = spyOn(siteSettingsApi, 'updateWebhook').mockResolvedValue({})
-    const sendTest = spyOn(siteSettingsApi, 'sendTestWebhook').mockResolvedValue()
-    const { renderer } = renderWebhook()
-
-    await act(async () => button(renderer, 'save').props.onClick())
-    await act(async () => button(renderer, 'webhook.sendTest').props.onClick())
-
-    expect(update).toHaveBeenCalledWith(webhookSettings)
-    expect(sendTest).toHaveBeenCalledTimes(1)
-    expect(success).toHaveBeenCalledWith('saveSuccess')
-    expect(success).toHaveBeenCalledWith('webhook.testSent')
-  })
-
-  test('surfaces provider validation failures without reporting success', async () => {
-    spyOn(siteSettingsApi, 'updateWebhook').mockRejectedValue(new ApiError(1001, 'invalid', {
-      errors: { 'settings.webhook_url': ['URL is rejected'] },
-    }))
-    const { renderer } = renderWebhook()
-
-    await act(async () => button(renderer, 'save').props.onClick())
-
-    expect(renderer.root.findByProps({ children: 'URL is rejected' })).toBeDefined()
-    expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(true)
-    expect(success).not.toHaveBeenCalled()
-  })
-})
-
-describe('AutoNotificationsSettingsTab workflow types', () => {
-  test('exposes the pause-pending approval switch under workflow', async () => {
-    spyOn(siteSettingsApi, 'getAutoNotifications').mockResolvedValue({
-      channels: [], enabled_types: [],
-    })
-    spyOn(siteSettingsApi, 'updateAutoNotifications').mockResolvedValue({
-      channels: [], enabled_types: [],
-    })
-    const renderer = await renderAuto()
-
-    // The type is rendered with its label and a toggle; the toggle behaviour
-    // itself is covered by the save test above.
-    const labels = renderer.root.findAllByProps({ children: 'autoNotifications.types.workflow_pause_pending' })
-    expect(labels.length).toBeGreaterThan(0)
-  })
-})

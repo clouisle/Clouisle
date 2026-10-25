@@ -2,10 +2,15 @@
 Tests for builtin RSS feed reader and enhanced fetch_webpage readability extraction.
 """
 
+import uuid
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import pytest
 
 from app.llm.tools.builtin import rss as rss_subject
 from app.llm.tools.builtin import web_search as web_subject
+from app.schemas.response import BusinessError
 from app.services.citations import stable_citation_id
 
 
@@ -105,6 +110,8 @@ async def test_rss_feed_reader_http_error(monkeypatch):
 
 @pytest.mark.anyio
 async def test_fetch_webpage_readability_extraction(monkeypatch):
+    from app.services import asset_url_import
+
     sample_html = """<!DOCTYPE html>
     <html>
       <head><title>Test Article Page</title></head>
@@ -118,28 +125,142 @@ async def test_fetch_webpage_readability_extraction(monkeypatch):
       </body>
     </html>
     """
+    url = "https://example.com/article"
 
-    class FakeResponse:
-        status_code = 200
-        text = sample_html
-
-    class FakeClient:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        async def get(self, url):
-            return FakeResponse()
-
-    monkeypatch.setattr(web_subject.httpx, "AsyncClient", lambda **kwargs: FakeClient())
-
-    result = await web_subject.fetch_webpage(
-        "https://example.com/article", max_length=5000
+    monkeypatch.setattr(
+        asset_url_import,
+        "resolve_document_scope",
+        lambda **_: (
+            asset_url_import.AssetScopeType.CONVERSATION,
+            uuid.uuid4(),
+        ),
     )
+    monkeypatch.setattr(
+        asset_url_import,
+        "load_url_document",
+        AsyncMock(
+            return_value=asset_url_import.ExternalDocument(
+                content=sample_html.encode("utf-8"),
+                content_type="text/html",
+                filename="article",
+                url=url,
+                final_url=url,
+                charset="utf-8",
+            )
+        ),
+    )
+    persisted = SimpleNamespace(asset=SimpleNamespace(id="asset"), ref="abcd")
+    persist = AsyncMock(return_value=persisted)
+    monkeypatch.setattr(asset_url_import, "persist_scoped_document", persist)
+    monkeypatch.setattr(
+        web_subject,
+        "_read_preview",
+        AsyncMock(
+            return_value={
+                "filename": "article.md",
+                "start_line": 1,
+                "total_lines": 2,
+                "segments": [
+                    {"line": 1, "text": "Test Article Page", "continuation": False},
+                    {
+                        "line": 2,
+                        "text": "This is the main body content of the article.",
+                        "continuation": False,
+                    },
+                ],
+                "next_cursor": None,
+                "eof": True,
+            }
+        ),
+    )
+
+    result = await web_subject.fetch_webpage(url)
 
     assert result["success"] is True
     assert "Test Article Page" in (result["title"] or "")
-    assert "This is the main body content" in result["content"]
-    assert "Copyright 2026" not in result["content"]
+    preview_text = "\n".join(segment["text"] for segment in result["segments"])
+    assert "This is the main body content" in preview_text
+    assert "Copyright 2026" not in preview_text
+    assert result["ref"] == "abcd"
+    assert result["citation_id"] == stable_citation_id("web", url)
+    assert result["eof"] is True
+    assert result["total_lines"] == 2
+    markdown = persist.await_args.args[0].decode("utf-8")
+    assert "This is the main body content" in markdown
+    assert "Copyright 2026" not in markdown
+    assert persist.await_args.kwargs["filename"] == "article.md"
+    assert persist.await_args.kwargs["content_type"] == "text/markdown"
+    assert persist.await_args.kwargs["provenance"]["url"] == url
+
+
+@pytest.mark.anyio
+async def test_fetch_webpage_requires_scope_before_network(monkeypatch):
+    from app.services import asset_url_import
+
+    load = AsyncMock(side_effect=AssertionError("network must not run"))
+    monkeypatch.setattr(
+        asset_url_import,
+        "resolve_document_scope",
+        lambda **_: (_ for _ in ()).throw(BusinessError(msg_key="validation_error")),
+    )
+    monkeypatch.setattr(asset_url_import, "load_url_document", load)
+
+    result = await web_subject.fetch_webpage("https://example.com/article")
+
+    assert result["success"] is False
+    assert result["url"] == "https://example.com/article"
+    load.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_fetch_webpage_reuses_internal_protected_asset(monkeypatch):
+    from app.services import asset_url_import
+
+    url = "/api/v1/upload/files/agent-attachments/2026/10/uploaded.md"
+
+    monkeypatch.setattr(
+        asset_url_import,
+        "resolve_document_scope",
+        lambda **_: (
+            asset_url_import.AssetScopeType.CONVERSATION,
+            uuid.uuid4(),
+        ),
+    )
+    monkeypatch.setattr(
+        asset_url_import,
+        "load_url_document",
+        AsyncMock(
+            return_value=asset_url_import.InternalDocument(
+                asset=SimpleNamespace(
+                    display_filename="uploaded.md",
+                    provenance={"title": "Uploaded"},
+                ),
+                ref="cafe",
+                url=url,
+            )
+        ),
+    )
+    persist = AsyncMock(side_effect=AssertionError("must not persist"))
+    monkeypatch.setattr(asset_url_import, "persist_scoped_document", persist)
+    monkeypatch.setattr(
+        web_subject,
+        "_read_preview",
+        AsyncMock(
+            return_value={
+                "filename": "uploaded.md",
+                "start_line": 1,
+                "total_lines": 1,
+                "segments": [{"line": 1, "text": "hello", "continuation": False}],
+                "next_cursor": None,
+                "eof": True,
+            }
+        ),
+    )
+
+    result = await web_subject.fetch_webpage(url)
+
+    assert result["success"] is True
+    assert result["ref"] == "cafe"
+    assert result["title"] == "Uploaded"
+    assert result["segments"][0]["text"] == "hello"
+    persist.assert_not_awaited()

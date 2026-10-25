@@ -122,7 +122,7 @@ def test_request_conversion_covers_multimodal_tools_and_fallbacks():
     assert contents[0]["parts"] == [
         {"text": "look"},
         {"inline_data": {"mime_type": "image/jpeg", "data": "aGVsbG8="}},
-        {"file_data": {"file_uri": "gs://bucket/image.png"}},
+        {"file_data": {"mime_type": "image/png", "file_uri": "gs://bucket/image.png"}},
     ]
     assert contents[1]["parts"][-1] == {"function_call": {"name": "lookup", "args": {}}}
     assert contents[2]["parts"][0]["function_response"] == {
@@ -264,10 +264,7 @@ def test_conversion_and_response_empty_sdk_shapes_and_finish_mappings():
             ),
             Message.model_construct(
                 role=MessageRole.USER,
-                content=[
-                    ContentPart(type=ContentType.IMAGE, image=None),
-                    {"text": "dict text"},
-                ],
+                content=[{"type": "image", "image": None}, {"text": "dict text"}],
             ),
             Message(
                 role=MessageRole.ASSISTANT,

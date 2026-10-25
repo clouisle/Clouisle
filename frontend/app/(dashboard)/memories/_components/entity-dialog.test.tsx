@@ -1,5 +1,8 @@
 import { afterEach, beforeAll, describe, expect, mock, spyOn, test } from 'bun:test'
 import React from 'react'
+import type { ApiError as ApiErrorType } from '@/lib/api/client'
+import type { memoriesApi as MemoriesApiType } from '@/lib/api/admin/memories'
+import type { EntityDialog as EntityDialogType } from './entity-dialog'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const canPerform = mock(() => true)
@@ -45,12 +48,14 @@ mock.module('@/components/ui/alert-dialog', () => ({
   AlertDialogTitle: ({ children }: { children: React.ReactNode }) => <h3>{children}</h3>,
 }))
 
-let EntityDialog: typeof import('./entity-dialog').EntityDialog
-let memoriesApi: typeof import('@/lib/api/admin/memories').memoriesApi
+let EntityDialog: typeof EntityDialogType
+let memoriesApi: typeof MemoriesApiType
+let ApiError: typeof ApiErrorType
 
 beforeAll(async () => {
   ;({ EntityDialog } = await import('./entity-dialog'))
   ;({ memoriesApi } = await import('@/lib/api/admin/memories'))
+  ;({ ApiError } = await import('@/lib/api/client'))
 })
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
@@ -111,5 +116,45 @@ describe('EntityDialog', () => {
     expect(update).not.toHaveBeenCalled()
     expect(JSON.stringify(renderer.toJSON())).toContain('invalidJSON')
     expect(renderer.root.findAllByType('button')).toHaveLength(4)
+  })
+
+  test('shows server field validation errors and clears each error when its field changes', async () => {
+    spyOn(memoriesApi, 'updateEntity').mockRejectedValue(
+      new ApiError(1001, 'Validation failed', { errors: { description: ['Too short'], properties: 'Invalid shape' } })
+    )
+    const renderer = await render()
+    const fields = renderer.root.findAllByType('textarea')
+
+    await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault: mock(() => {}) }))
+
+    expect(fields[0].props['aria-invalid']).toBe(true)
+    expect(fields[1].props['aria-invalid']).toBe(true)
+    expect(JSON.stringify(renderer.toJSON())).toContain('Too short')
+    expect(JSON.stringify(renderer.toJSON())).toContain('Invalid shape')
+
+    act(() => fields[0].props.onChange({ target: { value: 'A longer description' } }))
+
+    expect(fields[0].props['aria-invalid']).toBe(false)
+    expect(fields[1].props['aria-invalid']).toBe(true)
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('Too short')
+    expect(JSON.stringify(renderer.toJSON())).toContain('Invalid shape')
+  })
+
+  test('confirms relation deletion and reloads the entity relations', async () => {
+    const renderer = await render()
+    const getEntity = memoriesApi.getEntity
+    const deleteRelation = spyOn(memoriesApi, 'deleteRelation').mockResolvedValue(undefined)
+
+    const relationDeleteButton = renderer.root.findAllByType('button')[0]
+    act(() => relationDeleteButton.props.onClick())
+    expect(JSON.stringify(renderer.toJSON())).toContain('confirmDelete')
+
+    await act(async () => {
+      renderer.root.findAllByType('button').find((button) => button.children.includes('delete'))?.props.onClick()
+    })
+
+    expect(deleteRelation).toHaveBeenCalledWith('relation-1')
+    expect(getEntity).toHaveBeenCalledTimes(2)
+    expect(JSON.stringify(renderer.toJSON())).toContain('Bun')
   })
 })

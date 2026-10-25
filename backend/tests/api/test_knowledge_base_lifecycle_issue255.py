@@ -8,6 +8,7 @@ from tortoise.expressions import Q
 from app.api.v1.endpoints import knowledge_bases
 from app.models.knowledge_base import DocumentStatus
 from app.schemas.knowledge_base import DocumentUpdate, KnowledgeBaseUpdate
+from app.models.wechat_knowledge import WeChatKnowledgeItem
 
 
 @pytest.fixture(autouse=True)
@@ -141,7 +142,17 @@ async def test_list_knowledge_bases_filters_and_hydrates_models():
     } in _q_leaves(visibility)
     filters = [kwargs for _name, _args, kwargs in query.calls if _name == "filter"]
     assert any("created_by" in values for values in filters)
-    assert {"name__icontains": "docs"} in filters
+    search = next(
+        args[0]
+        for name, args, _kwargs in query.calls
+        if name == "filter"
+        and args
+        and any("name__icontains" in leaf for leaf in _q_leaves(args[0]))
+    )
+    assert _q_leaves(search) == [
+        {"name__icontains": "docs"},
+        {"description__icontains": "docs"},
+    ]
     assert {"status__in": ["active"]} in filters
     assert result["data"]["items"][0]["embedding_model"]["name"] == "embed"
     assert result["data"]["items"][0]["rerank_model"]["name"] == "rerank"
@@ -178,6 +189,20 @@ async def test_knowledge_base_detail_update_and_delete_lifecycle(
             knowledge_bases, "kb_with_model_info", AsyncMock(return_value={"id": kb_id})
         ),
         patch.object(knowledge_bases.KnowledgeBase, "filter", return_value=Query()),
+        patch.object(
+            knowledge_bases.FeishuKnowledgeSource,
+            "filter",
+            return_value=SimpleNamespace(exists=AsyncMock(return_value=False)),
+        ),
+        patch.object(
+            WeChatKnowledgeItem,
+            "filter",
+            return_value=MagicMock(
+                exclude=MagicMock(
+                    return_value=MagicMock(values_list=AsyncMock(return_value=[]))
+                )
+            ),
+        ),
         patch.object(knowledge_bases.KnowledgeBase, "get", return_value=get_query),
         patch.object(
             knowledge_bases,
@@ -222,7 +247,7 @@ async def test_knowledge_base_detail_update_and_delete_lifecycle(
 @pytest.mark.anyio
 async def test_document_list_detail_and_update_branches():
     kb_id, doc_id = uuid4(), uuid4()
-    doc = SimpleNamespace(id=doc_id, name="old", save=AsyncMock())
+    doc = SimpleNamespace(id=doc_id, name="old", metadata=None, save=AsyncMock())
     list_query = Query([doc], total=4)
     detail_query = Query(first=doc)
     reloaded_query = Query(first=doc)

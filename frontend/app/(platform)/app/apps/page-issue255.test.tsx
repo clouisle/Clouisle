@@ -4,8 +4,9 @@ import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
-const getAgents = mock(() => Promise.resolve({ items: [] as AppRecord[] }))
-const getWorkflows = mock(() => Promise.resolve({ items: [] as AppRecord[] }))
+type PageArgs = { page?: number; pageSize?: number; search?: string; keyword?: string; teamId?: string }
+const getAgents = mock((...args: [PageArgs?]) => { void args; return Promise.resolve({ items: [] as AppRecord[], total: 0, page: 1, page_size: 20 }) })
+const getWorkflows = mock((...args: [PageArgs?]) => { void args; return Promise.resolve({ items: [] as AppRecord[], total: 0, page: 1, page_size: 20 }) })
 const deleteAgent = mock(() => Promise.resolve({}))
 const deleteWorkflow = mock(() => Promise.resolve({}))
 const duplicateAgent = mock(() => Promise.resolve({}))
@@ -25,6 +26,7 @@ const success = mock(() => undefined)
 let currentTeam: { id: string; role: string } | null = { id: 'team-1', role: 'member' }
 let user: { id: string; is_superuser?: boolean } | null = { id: 'user-1' }
 let search = ''
+let intersectionCallback: ((entries: IntersectionObserverEntry[]) => void) | null = null
 
 mock.module('next-intl', () => ({
   useTranslations: () => (key: string, values?: { name?: string }) => values?.name ? `${key} ${values.name}` : key,
@@ -41,6 +43,7 @@ mock.module('sonner', () => ({ toast: { success } }))
 mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam }) }))
 mock.module('@/hooks/use-require-team', () => ({ useRequireTeam: requireTeam }))
 mock.module('@/hooks/use-permissions', () => ({ usePermissions: () => ({ user }) }))
+mock.module('@/hooks/use-debounce', () => ({ useDebounce: <T,>(value: T) => value }))
 mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform }) }))
 mock.module('@/lib/api/agents', () => ({
   agentsApi: { getAgents, deleteAgent, duplicateAgent, publishAgent, unpublishAgent },
@@ -144,6 +147,19 @@ async function click(node: { props: { onClick?: (event: { preventDefault: () => 
     await flushPromises()
   })
 }
+async function intersect() {
+  await act(async () => {
+    intersectionCallback?.([{ isIntersecting: true } as IntersectionObserverEntry])
+    await flushPromises()
+  })
+  await flushPromises()
+}
+async function leaveViewport() {
+  await act(async () => {
+    intersectionCallback?.([{ isIntersecting: false } as IntersectionObserverEntry])
+    await flushPromises()
+  })
+}
 const text = (renderer: ReactTestRenderer) => JSON.stringify(renderer.toJSON())
 const buttons = (renderer: ReactTestRenderer) => renderer.root.findAllByType('button')
 const nodeText = (node: { children?: unknown[] }): string => (node.children ?? []).map((child) => typeof child === 'string' ? child : nodeText(child as { children?: unknown[] })).join('')
@@ -153,10 +169,22 @@ beforeEach(() => {
   currentTeam = { id: 'team-1', role: 'member' }
   user = { id: 'user-1' }
   search = ''
+  intersectionCallback = null
+  Object.defineProperty(globalThis, 'IntersectionObserver', {
+    configurable: true,
+    value: class {
+      constructor(callback: (entries: IntersectionObserverEntry[]) => void) {
+        intersectionCallback = callback
+      }
+      observe = () => undefined
+      unobserve = () => undefined
+      disconnect = () => undefined
+    },
+  })
   Object.defineProperty(globalThis, 'window', { value: { location: { pathname: '/app/apps' } }, configurable: true })
   for (const fn of [getAgents, getWorkflows, deleteAgent, deleteWorkflow, duplicateAgent, duplicateWorkflow, publishAgent, unpublishAgent, publishWorkflow, unpublishWorkflow, exportPackage, downloadBlob, replace, push, requireTeam, canPerform, success]) fn.mockReset()
-  getAgents.mockResolvedValue({ items: [] })
-  getWorkflows.mockResolvedValue({ items: [] })
+  getAgents.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+  getWorkflows.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
   deleteAgent.mockResolvedValue({})
   deleteWorkflow.mockResolvedValue({})
   duplicateAgent.mockResolvedValue({})
@@ -179,25 +207,29 @@ describe('platform apps page', () => {
     act(() => renderer.unmount())
 
     currentTeam = { id: 'team-7', role: 'member' }
-    getAgents.mockResolvedValue({ items: [agent()] })
-    getWorkflows.mockResolvedValue({ items: [workflow()] })
+    getAgents.mockResolvedValue({ items: [agent()], total: 1, page: 1, page_size: 20 })
+    getWorkflows.mockResolvedValue({ items: [workflow()], total: 1, page: 1, page_size: 20 })
     renderer = await renderPage()
-    expect(getAgents).toHaveBeenCalledWith({ search: undefined, teamId: 'team-7' })
-    expect(getWorkflows).toHaveBeenCalledWith({ keyword: undefined, teamId: 'team-7' })
+    expect(getAgents).toHaveBeenCalledWith({ page: 1, pageSize: 20, search: undefined, teamId: 'team-7' })
+    expect(getWorkflows).toHaveBeenCalledWith({ page: 1, pageSize: 20, keyword: undefined, teamId: 'team-7' })
     expect(text(renderer).indexOf('Sales Agent')).toBeLessThan(text(renderer).indexOf('Billing Flow'))
 
     await act(async () => renderer.root.findByType('input').props.onChange({ target: { value: 'billing' } }))
     await flushPromises()
-    expect(getAgents).toHaveBeenLastCalledWith({ search: 'billing', teamId: 'team-7' })
-    expect(getWorkflows).toHaveBeenLastCalledWith({ keyword: 'billing', teamId: 'team-7' })
+    expect(getAgents).toHaveBeenLastCalledWith({ page: 1, pageSize: 20, search: 'billing', teamId: 'team-7' })
+    expect(getWorkflows).toHaveBeenLastCalledWith({ page: 1, pageSize: 20, keyword: 'billing', teamId: 'team-7' })
     act(() => renderer.unmount())
   })
 
-  test('settles on the empty state when either list API fails', async () => {
-    getAgents.mockRejectedValue(new Error('offline'))
+  test('shows a manual retry when the initial load fails and recovers on demand', async () => {
+    getAgents.mockRejectedValueOnce(new Error('offline'))
     const renderer = await renderPage()
+    expect(text(renderer)).toContain('loadFailed')
+    expect(text(renderer)).not.toContain('noApps')
+
+    await click(renderer.root.findByProps({ 'data-testid': 'apps-retry' }))
+    expect(getAgents).toHaveBeenCalledTimes(2)
     expect(text(renderer)).toContain('noApps')
-    expect(text(renderer)).toContain('noAppsHint')
     act(() => renderer.unmount())
   })
 
@@ -208,7 +240,10 @@ describe('platform apps page', () => {
     expect(renderer.root.findByProps({ 'data-testid': 'create-dialog' }).props).toMatchObject({ 'data-open': true, 'data-type': 'workflow' })
     expect(replace).toHaveBeenCalledWith('/app/apps?tab=agent&keep=yes', { scroll: false })
 
-    await act(async () => renderer.root.findByProps({ 'data-testid': 'tabs' }).props['data-change']('workflow'))
+    await act(async () => {
+      renderer.root.findByProps({ 'data-testid': 'tabs' }).props['data-change']('workflow')
+      await flushPromises()
+    })
     expect(push).toHaveBeenCalledWith('?tab=workflow', { scroll: false })
     act(() => renderer.update(<AppsPage />))
     expect(push).toHaveBeenCalledWith('?tab=workflow', { scroll: false })
@@ -217,12 +252,15 @@ describe('platform apps page', () => {
 
   test('filters tabs and renders all card variants, links, icons, stats, and empty filters', async () => {
     currentTeam = { id: 'team-1', role: 'admin' }
-    getAgents.mockResolvedValue({ items: [agent({ icon: '/agent.png' }), agent({ id: 'agent-2', name: 'Emoji Agent', icon: '✨', description: null, created_by: null })] })
-    getWorkflows.mockResolvedValue({ items: [workflow()] })
+    getAgents.mockResolvedValue({ items: [agent({ icon: '/agent.png' }), agent({ id: 'agent-2', name: 'Emoji Agent', icon: '✨', description: null, created_by: null })], total: 2, page: 1, page_size: 20 })
+    getWorkflows.mockResolvedValue({ items: [workflow()], total: 1, page: 1, page_size: 20 })
     const renderer = await renderPage()
     expect(text(renderer)).toContain('Sales Agent')
     expect(text(renderer)).toContain('Emoji Agent')
     expect(text(renderer)).toContain('Billing Flow')
+    expect(renderer.root.findAll((node) => node.type === 'div' && node.props['data-testid'] === 'app-card-first')).toHaveLength(1)
+    expect(renderer.root.findAll((node) => node.type === 'button' && node.props['data-testid'] === 'app-actions-button-first')).toHaveLength(1)
+    expect(renderer.root.findAll((node) => node.type === 'button' && node.props['data-testid'] === 'app-chat-button-first')).toHaveLength(1)
     expect(text(renderer)).toContain('conversations')
     expect(text(renderer)).toContain('messages')
     expect(text(renderer)).toContain('runs')
@@ -233,9 +271,15 @@ describe('platform apps page', () => {
     expect(renderer.root.findByProps({ href: '/chat/agent-1' })).toBeTruthy()
     expect(renderer.root.findByProps({ href: '/run/workflow-1?type=workflow' })).toBeTruthy()
 
-    await act(async () => renderer.root.findByProps({ 'data-testid': 'tabs' }).props['data-change']('agent'))
+    await act(async () => {
+      renderer.root.findByProps({ 'data-testid': 'tabs' }).props['data-change']('agent')
+      await flushPromises()
+    })
     expect(text(renderer)).not.toContain('Billing Flow')
-    await act(async () => renderer.root.findByProps({ 'data-testid': 'tabs' }).props['data-change']('workflow'))
+    await act(async () => {
+      renderer.root.findByProps({ 'data-testid': 'tabs' }).props['data-change']('workflow')
+      await flushPromises()
+    })
     expect(text(renderer)).not.toContain('Sales Agent')
     await act(async () => renderer.root.findByProps({ 'data-testid': 'tabs' }).props['data-change']('all'))
     expect(text(renderer)).toContain('Sales Agent')
@@ -342,6 +386,130 @@ describe('platform apps page', () => {
     renderer = await renderPage()
     expect(text(renderer)).not.toContain('apps-create-button')
     expect(text(renderer)).not.toContain('createFirstApp')
+    act(() => renderer.unmount())
+  })
+
+  test('appends page 2 for both sources, dedups, and stops once each source reaches its total', async () => {
+    getAgents.mockImplementation(async ({ page }: PageArgs = {}) => page === 1
+      ? { items: [agent({ updated_at: '2026-01-05' }), agent({ id: 'agent-2', name: 'Second Agent', updated_at: '2026-01-04' })], total: 4, page: 1, page_size: 20 }
+      : { items: [agent({ id: 'agent-2', name: 'Second Agent', updated_at: '2026-01-04' }), agent({ id: 'agent-3', name: 'Third Agent', updated_at: '2026-01-03' }), agent({ id: 'agent-4', name: 'Fourth Agent', updated_at: '2026-01-01' })], total: 4, page: 2, page_size: 20 })
+    getWorkflows.mockImplementation(async ({ page }: PageArgs = {}) => page === 1
+      ? { items: [workflow({ updated_at: '2026-01-06' })], total: 2, page: 1, page_size: 20 }
+      : { items: [workflow({ id: 'workflow-2', name: 'Billing Flow 2', updated_at: '2026-01-02' })], total: 2, page: 2, page_size: 20 })
+    const renderer = await renderPage()
+    expect(renderer.root.findByProps({ 'data-testid': 'apps-scroll-sentinel' })).toBeTruthy()
+    expect(getWorkflows).toHaveBeenCalledTimes(1)
+
+    await intersect()
+    expect(getAgents).toHaveBeenLastCalledWith({ page: 2, pageSize: 20, search: undefined, teamId: 'team-1' })
+    expect(getWorkflows).toHaveBeenLastCalledWith({ page: 2, pageSize: 20, keyword: undefined, teamId: 'team-1' })
+    const rendered = text(renderer)
+    expect(rendered).toContain('Third Agent')
+    expect(rendered).toContain('Fourth Agent')
+    expect(rendered).toContain('Billing Flow 2')
+    expect((rendered.match(/Second Agent/g) ?? []).length).toBe(1)
+    expect(rendered.indexOf('Third Agent')).toBeLessThan(rendered.indexOf('Billing Flow 2'))
+
+    await intersect()
+    expect(getAgents).toHaveBeenCalledTimes(2)
+    expect(getWorkflows).toHaveBeenCalledTimes(2)
+    act(() => renderer.unmount())
+  })
+
+  test('typed tabs advance only their own source and restart at page 1 after a tab change', async () => {
+    getAgents.mockImplementation(async ({ page }: PageArgs = {}) => page === 1
+      ? { items: [agent()], total: 2, page: 1, page_size: 20 }
+      : { items: [agent({ id: 'agent-2', name: 'Agent Two' })], total: 2, page: 2, page_size: 20 })
+    getWorkflows.mockImplementation(async ({ page }: PageArgs = {}) => page === 1
+      ? { items: [workflow()], total: 2, page: 1, page_size: 20 }
+      : { items: [workflow({ id: 'workflow-2', name: 'Flow Two' })], total: 2, page: 2, page_size: 20 })
+    const renderer = await renderPage()
+
+    await act(async () => {
+      renderer.root.findByProps({ 'data-testid': 'tabs' }).props['data-change']('agent')
+      await flushPromises()
+    })
+    expect(getAgents).toHaveBeenLastCalledWith({ page: 1, pageSize: 20, search: undefined, teamId: 'team-1' })
+    getAgents.mockClear()
+    getWorkflows.mockClear()
+
+    await intersect()
+    expect(getAgents).toHaveBeenCalledWith({ page: 2, pageSize: 20, search: undefined, teamId: 'team-1' })
+    expect(getWorkflows).not.toHaveBeenCalled()
+    act(() => renderer.unmount())
+  })
+
+  test('a typed tab with an exhausted source does not pull the other source', async () => {
+    getAgents.mockResolvedValue({ items: [agent()], total: 5, page: 1, page_size: 20 })
+    getWorkflows.mockResolvedValue({ items: [workflow()], total: 1, page: 1, page_size: 20 })
+    const renderer = await renderPage()
+
+    await act(async () => {
+      renderer.root.findByProps({ 'data-testid': 'tabs' }).props['data-change']('workflow')
+      await flushPromises()
+    })
+    getAgents.mockClear()
+    getWorkflows.mockClear()
+
+    await intersect()
+    expect(getWorkflows).not.toHaveBeenCalled()
+    expect(getAgents).not.toHaveBeenCalled()
+    act(() => renderer.unmount())
+  })
+
+  test('discards a stale page response after a search reset and restarts at page 1', async () => {
+    const pendingPage2 = Promise.withResolvers<{ items: AppRecord[]; total: number; page: number; page_size: number }>()
+    getAgents.mockImplementation(({ page, search: keyword }: PageArgs = {}) => {
+      if (keyword === 'billing') {
+        return Promise.resolve({ items: [agent({ id: 'agent-new', name: 'Billing Agent' })], total: 1, page: 1, page_size: 20 })
+      }
+      if (page === 1) {
+        return Promise.resolve({ items: [agent()], total: 2, page: 1, page_size: 20 })
+      }
+      return pendingPage2.promise
+    })
+    getWorkflows.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+    const renderer = await renderPage()
+
+    await intersect()
+    await leaveViewport()
+
+    await act(async () => {
+      renderer.root.findByType('input').props.onChange({ target: { value: 'billing' } })
+      await flushPromises()
+    })
+    expect(getAgents).toHaveBeenLastCalledWith({ page: 1, pageSize: 20, search: 'billing', teamId: 'team-1' })
+    expect(text(renderer)).toContain('Billing Agent')
+
+    await act(async () => {
+      pendingPage2.resolve({ items: [agent({ id: 'agent-stale', name: 'Stale Agent' })], total: 2, page: 2, page_size: 20 })
+      await flushPromises()
+    })
+    expect(text(renderer)).not.toContain('Stale Agent')
+    expect(text(renderer)).toContain('Billing Agent')
+    act(() => renderer.unmount())
+  })
+
+  test('a failed next page exposes retry without auto retrying on further intersections', async () => {
+    let page2Attempts = 0
+    getAgents.mockImplementation(async ({ page }: PageArgs = {}) => {
+      if (page === 1) return { items: [agent()], total: 5, page: 1, page_size: 20 }
+      page2Attempts += 1
+      throw new Error('offline')
+    })
+    getWorkflows.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+    const renderer = await renderPage()
+
+    await intersect()
+    expect(page2Attempts).toBe(1)
+    expect(text(renderer)).toContain('loadFailed')
+    expect(renderer.root.findByProps({ 'data-testid': 'apps-retry' })).toBeTruthy()
+
+    await intersect()
+    expect(page2Attempts).toBe(1)
+
+    await click(renderer.root.findByProps({ 'data-testid': 'apps-retry' }))
+    expect(page2Attempts).toBe(2)
     act(() => renderer.unmount())
   })
 })

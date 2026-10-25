@@ -108,6 +108,7 @@
       "stop": "停止",
       "attachFile": "附加文件",
       "fileTooLarge": "文件大小超过限制 {maxSize}MB",
+      "invalidFileType": "当前智能体或模型不支持此文件类型",
       "maxFilesReached": "最多只能上传 {max} 个文件",
       "dropFiles": "拖放文件到此处",
       "steeringQueued": "已发送指令到进行中的任务",

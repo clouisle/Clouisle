@@ -211,3 +211,8 @@ export function formatTime(
     : TIME
   return d.toLocaleTimeString(pick(effective, ZH_LOCALE, EN_LOCALE), fmt)
 }
+
+/** Narrow an unknown JSON-like value to a plain object without asserting its fields. */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}

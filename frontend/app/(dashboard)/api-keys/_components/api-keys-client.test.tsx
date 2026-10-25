@@ -15,7 +15,7 @@ const deactivateAPIKey = mock(() => Promise.resolve(apiKey))
 const deleteAPIKey = mock(() => Promise.resolve(apiKey))
 const getUsers = mock(() => Promise.resolve({ items: [user], total: 1, page: 1, page_size: 100 }))
 const toastSuccess = mock(() => {})
-
+let allowedPermissions: Record<string, true> = { 'apikey:create': true, 'apikey:update': true, 'apikey:delete': true }
 function component() {
   return function Component() {}
 }
@@ -33,6 +33,7 @@ const ShowKeyDialog = component()
 const TooltipTrigger = component()
 const AlertDialog = component()
 const AlertDialogAction = component()
+const TableRow = component()
 
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
@@ -65,13 +66,13 @@ mock.module('@/lib/api/admin/users', () => ({ usersApi: { getUsers } }))
 mock.module('@/lib/utils', () => ({ formatDateTime: (value: string) => `date:${value}` }))
 mock.module('@/hooks/use-url-search-state', () => ({ useUrlSearchState: () => [urlSearch, (value: string) => { urlSearch = value }] }))
 mock.module('@/hooks/use-debounce', () => ({ useDebounce: (value: unknown) => value }))
-mock.module('@/components/permission-guard', () => ({ PermissionGuard: component(), useCanPerform: () => ({ canPerform: () => true }) }))
+mock.module('@/components/permission-guard', () => ({ PermissionGuard: component(), useCanPerform: () => ({ canPerform: (permission: string) => permission in allowedPermissions }) }))
 mock.module('@/components/ui/button', () => ({ Button }))
 mock.module('@/components/ui/input', () => ({ Input }))
 mock.module('@/components/ui/badge', () => ({ Badge }))
 mock.module('@/components/ui/checkbox', () => ({ Checkbox }))
 mock.module('@/components/ui/table', () => ({
-  Table: component(), TableBody: component(), TableCell: component(), TableHead: component(), TableHeader: component(), TableRow: component(),
+  Table: component(), TableBody: component(), TableCell: component(), TableHead: component(), TableHeader: component(), TableRow,
 }))
 mock.module('@/components/ui/select', () => ({
   Select, SelectContent: component(), SelectItem: component(), SelectTrigger: component(), SelectValue: component(),
@@ -148,6 +149,7 @@ beforeEach(() => {
   deactivateAPIKey.mockImplementation(() => Promise.resolve(apiKey))
   deleteAPIKey.mockReset()
   deleteAPIKey.mockImplementation(() => Promise.resolve(apiKey))
+  allowedPermissions = { 'apikey:create': true, 'apikey:update': true, 'apikey:delete': true }
   toastSuccess.mockReset()
 })
 
@@ -233,16 +235,16 @@ test('selects all rows, clears all rows, deselects one row, and marks expired ke
   expect(text(tree)).toContain('apiKeys.expired')
 
   const checkboxes = findAll(tree, (node) => node.type === Checkbox)
-  checkboxes[0].props.onCheckedChange()
+  checkboxes[0].props.onCheckedChange(true)
   tree = render()
   expect(text(tree)).toContain('2 apiKeys.keysSelected')
 
-  findAll(tree, (node) => node.type === Checkbox)[0].props.onCheckedChange()
+  findAll(tree, (node) => node.type === Checkbox)[0].props.onCheckedChange(false)
   expect(text(render())).not.toContain('apiKeys.keysSelected')
 
-  findAll(render(), (node) => node.type === Checkbox)[0].props.onCheckedChange()
+  findAll(render(), (node) => node.type === Checkbox)[0].props.onCheckedChange(true)
   tree = render()
-  findAll(tree, (node) => node.type === Checkbox)[1].props.onCheckedChange()
+  findAll(tree, (node) => node.type === Checkbox)[1].props.onCheckedChange(true)
   expect(text(render())).toContain('1 apiKeys.keysSelected')
 })
 
@@ -269,7 +271,7 @@ test('toggles one key and runs bulk activate, deactivate, and delete actions', a
   expect(deactivateAPIKey).toHaveBeenCalledWith('key-1')
   expect(toastSuccess).toHaveBeenCalledWith('apiKeys.keyDeactivated')
 
-  findAll(tree, (node) => node.type === Checkbox)[1].props.onCheckedChange()
+  findAll(tree, (node) => node.type === Checkbox)[1].props.onCheckedChange(true)
   tree = render()
   expect(text(tree)).toContain('1 apiKeys.keysSelected')
 
@@ -278,13 +280,13 @@ test('toggles one key and runs bulk activate, deactivate, and delete actions', a
   expect(activateAPIKey).toHaveBeenCalledWith('key-1')
   expect(toastSuccess).toHaveBeenCalledWith('apiKeys.bulkActivated.1')
 
-  findAll(render(), (node) => node.type === Checkbox)[1].props.onCheckedChange()
+  findAll(render(), (node) => node.type === Checkbox)[1].props.onCheckedChange(false)
   tree = render()
   await findAll(tree, (node) => node.type === TooltipTrigger)[1].props.onClick()
   expect(deactivateAPIKey).toHaveBeenCalledTimes(2)
   expect(toastSuccess).toHaveBeenCalledWith('apiKeys.bulkDeactivated.1')
 
-  findAll(render(), (node) => node.type === Checkbox)[1].props.onCheckedChange()
+  findAll(render(), (node) => node.type === Checkbox)[1].props.onCheckedChange(true)
   tree = render()
   findAll(tree, (node) => node.type === TooltipTrigger)[2].props.onClick()
   tree = render()
@@ -292,4 +294,95 @@ test('toggles one key and runs bulk activate, deactivate, and delete actions', a
   await findByType(tree, AlertDialogAction).props.onClick()
   expect(deleteAPIKey).toHaveBeenCalledWith('key-1')
   expect(toastSuccess).toHaveBeenCalledWith('apiKeys.bulkDeleted.1')
+})
+
+test('paginates, changes page size, and renders optional key details', async () => {
+  const keys = Array.from({ length: 25 }, (_, index) => ({
+    ...apiKey,
+    id: `key-${index + 1}`,
+    name: `Key ${index + 1}`,
+    user: undefined,
+    rate_limit: 0,
+    expires_at: null,
+    last_used_at: null,
+  }))
+  getAPIKeys.mockImplementation(() => Promise.resolve({ items: keys.slice(0, 10), total: 25, page: 1, page_size: 10 }))
+  render()
+  await load()
+  let tree = render()
+  expect(text(tree)).toContain('apiKeys.unlimited')
+  expect(text(tree)).toContain('apiKeys.neverUsed')
+  expect(text(tree)).toContain('apiKeys.never')
+  expect(text(tree)).toContain('-')
+
+  const pageButtons = findAll(tree, (node) => node.type === Button)
+  pageButtons[pageButtons.length - 2].props.onClick()
+  tree = render()
+  await load()
+  tree = render()
+  const lastPageButton = findAll(tree, (node) => node.type === Button).at(-1)!
+  lastPageButton.props.onClick()
+  render()
+  await load()
+  expect(getAPIKeys).toHaveBeenLastCalledWith(expect.objectContaining({ page: 3, pageSize: 10 }))
+
+  tree = render()
+  findAll(tree, (node) => node.type === Button).at(-4)!.props.onClick()
+  render()
+  await load()
+  expect(getAPIKeys).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, pageSize: 10 }))
+
+  tree = render()
+  findByType(tree, Select).props.onValueChange('20')
+
+  render()
+  await load()
+  expect(getAPIKeys).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, pageSize: 20 }))
+})
+
+test('respects action permissions and keeps the list usable when mutations fail', async () => {
+  allowedPermissions = {}
+  render()
+  await load()
+  let tree = render()
+  expect(findAll(tree, (node) => node.type === DropdownMenuItem)).toHaveLength(0)
+  findAll(tree, (node) => node.type === Checkbox)[1].props.onCheckedChange()
+  tree = render()
+  expect(findAll(tree, (node) => node.type === TableRow && node.props['data-state'] === 'selected')).toHaveLength(1)
+  expect(text(tree)).not.toContain('apiKeys.keysSelected')
+  expect(findAll(tree, (node) => node.type === TooltipTrigger)).toHaveLength(0)
+
+  allowedPermissions = { 'apikey:update': true, 'apikey:delete': true }
+  tree = render()
+  deactivateAPIKey.mockImplementationOnce(() => Promise.reject(new Error('cannot deactivate')))
+  findAll(tree, (node) => node.type === DropdownMenuItem)[1].props.onClick()
+  await Promise.resolve()
+  expect(toastSuccess).not.toHaveBeenCalled()
+
+  tree = render()
+  deleteAPIKey.mockImplementationOnce(() => Promise.reject(new Error('cannot delete')))
+  activateAPIKey.mockImplementationOnce(() => Promise.reject(new Error('cannot activate')))
+  await findAll(tree, (node) => node.type === TooltipTrigger)[0].props.onClick()
+  expect(toastSuccess).not.toHaveBeenCalled()
+  deactivateAPIKey.mockImplementationOnce(() => Promise.reject(new Error('cannot bulk deactivate')))
+  await findAll(tree, (node) => node.type === TooltipTrigger)[1].props.onClick()
+  expect(toastSuccess).not.toHaveBeenCalled()
+  await findAll(tree, (node) => node.type === TooltipTrigger)[2].props.onClick()
+  tree = render()
+  await findByType(tree, AlertDialogAction).props.onClick()
+  expect(findByType(render(), AlertDialog).props.open).toBe(false)
+  expect(toastSuccess).not.toHaveBeenCalled()
+  tree = render()
+  const bulkActionBar = findAll(tree, (node) => node.type === 'div' && node.props.className === 'fixed bottom-8 left-1/2 -translate-x-1/2 z-50')[0]
+  findAll(bulkActionBar, (node) => node.type === Button && node.props.size === 'icon')[0].props.onClick()
+  expect(text(render())).not.toContain('apiKeys.keysSelected')
+})
+test('keeps key listing available when stats or owner-filter loading fails', async () => {
+  getStats.mockImplementationOnce(() => Promise.reject(new Error('stats unavailable')))
+  getUsers.mockImplementationOnce(() => Promise.reject(new Error('users unavailable')))
+  render()
+  await load()
+  expect(text(render())).toContain('Production key')
+  expect(getStats).toHaveBeenCalledTimes(1)
+  expect(getUsers).toHaveBeenCalledTimes(1)
 })

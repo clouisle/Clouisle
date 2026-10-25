@@ -10,10 +10,12 @@ from pydantic import BaseModel, Field
 class MediaContent(BaseModel):
     """通用媒体内容"""
 
-    url: str | None = Field(default=None, description="远程 URL")
-    base64: str | None = Field(default=None, description="Base64 编码数据")
-    file_path: str | None = Field(default=None, description="本地文件路径")
+    url: str | None = Field(default=None, description="Remote URL")
+    base64: str | None = Field(default=None, description="Base64 encoded data")
+    file_path: str | None = Field(default=None, description="Local file path")
     asset_ref: str | None = Field(default=None, description="Scoped Asset reference")
+    mime_type: str | None = Field(default=None, description="MIME type")
+    filename: str | None = Field(default=None, description="Original filename")
 
     def has_content(self) -> bool:
         """是否有内容"""
@@ -26,6 +28,17 @@ class ImageContent(MediaContent):
     width: int | None = Field(default=None, description="宽度")
     height: int | None = Field(default=None, description="高度")
     format: str = Field(default="png", description="图像格式 (png, jpg, webp)")
+
+
+class FileContent(MediaContent):
+    """A file payload or explicitly extracted text, supplied ephemerally."""
+
+    extracted_text: str | None = Field(
+        default=None, description="Extracted document text"
+    )
+
+    def has_content(self) -> bool:
+        return bool(self.extracted_text) or super().has_content()
 
 
 class VideoContent(MediaContent):
@@ -51,6 +64,7 @@ class ContentType(str, Enum):
     IMAGE = "image"
     VIDEO = "video"
     AUDIO = "audio"
+    FILE = "file"
 
 
 class ContentPart(BaseModel):
@@ -61,6 +75,7 @@ class ContentPart(BaseModel):
     image: ImageContent | None = None
     video: VideoContent | None = None
     audio: AudioContent | None = None
+    file: FileContent | None = None
 
 
 class Usage(BaseModel):

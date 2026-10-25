@@ -8,8 +8,8 @@ let pathname = '/dashboard'
 
 const iconNames = [
   'Activity', 'BarChart3', 'Bell', 'Bot', 'Brain', 'Database', 'FileText', 'Key',
-  'KeyRound', 'LayoutDashboard', 'Palette', 'Search', 'Settings', 'Shield', 'Users',
-  'UsersRound', 'Wrench',
+  'KeyRound', 'LayoutDashboard', 'Palette', 'Search', 'Send', 'Settings', 'Shield', 'Users',
+  'UsersRound', 'Wrench', 'Globe', 'Mail', 'Plug',
 ]
 
 mock.module('next/navigation', () => ({

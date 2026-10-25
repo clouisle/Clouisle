@@ -29,6 +29,7 @@ import {
 import type { DashboardActivitySummary, DashboardStats } from '@/lib/api/admin/dashboard'
 import type { TOTPStatsResponse } from '@/lib/api/admin/users'
 import { CHART_AXIS_COLOR, CHART_COLOR_ORDER, CHART_GRID_COLOR, CHART_HOVER_CURSOR } from '@/lib/chart-theme'
+import { formatCompactNumber, StatCard } from '@/components/dashboard/stat-card'
 
 interface TrendData {
   date: string
@@ -49,50 +50,7 @@ interface OverviewTabProps {
 
 const COLORS = CHART_COLOR_ORDER
 
-function formatNumber(num: number): string {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + 'M'
-  }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'K'
-  }
-  return num.toString()
-}
-
-function useCountUp(value: number, isLoading: boolean) {
-  const [displayValue, setDisplayValue] = React.useState(0)
-
-  React.useEffect(() => {
-    if (isLoading) {
-      setDisplayValue(0)
-      return
-    }
-
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || value === 0) {
-      setDisplayValue(value)
-      return
-    }
-
-    const duration = 900
-    const startedAt = performance.now()
-    let frameId = 0
-
-    const tick = (now: number) => {
-      const progress = Math.min((now - startedAt) / duration, 1)
-      const easedProgress = 1 - Math.pow(1 - progress, 3)
-      setDisplayValue(Math.round(value * easedProgress))
-
-      if (progress < 1) {
-        frameId = requestAnimationFrame(tick)
-      }
-    }
-
-    frameId = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(frameId)
-  }, [isLoading, value])
-
-  return displayValue
-}
+const formatNumber = formatCompactNumber
 
 interface TooltipPayloadItem {
   name: string
@@ -132,53 +90,6 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   return null
 }
 
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  isLoading,
-  color = 'primary',
-}: {
-  title: string
-  value: number | string
-  icon: React.ElementType
-  isLoading: boolean
-  color?: string
-}) {
-  const colorClasses = {
-    primary: 'bg-primary/10 text-primary',
-    blue: 'bg-blue-500/10 text-blue-500',
-    purple: 'bg-purple-500/10 text-purple-500',
-    green: 'bg-green-500/10 text-green-500',
-    orange: 'bg-orange-500/10 text-orange-500',
-    cyan: 'bg-cyan-500/10 text-cyan-500',
-  }
-  const animatedValue = useCountUp(typeof value === 'number' ? value : 0, isLoading)
-  const displayValue = typeof value === 'number' ? formatNumber(animatedValue) : value
-
-  return (
-    <Card size="sm" className="hover:shadow-md transition-shadow">
-      <CardContent className="py-0">
-        <div className="flex items-start justify-between">
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            {isLoading ? (
-              <div className="h-9 w-32 bg-muted animate-pulse rounded" />
-            ) : (
-              <p className="text-3xl font-bold tracking-tight">
-                {displayValue}
-              </p>
-            )}
-          </div>
-          <div className={`h-12 w-12 rounded-xl flex items-center justify-center ${colorClasses[color as keyof typeof colorClasses] || colorClasses.primary}`}>
-            <Icon className="h-6 w-6" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
 export function OverviewTab({ stats, activitySummary, trendsData, isLoading, totpStats }: OverviewTabProps) {
   const t = useTranslations('dashboard.home')
   const passwordExpiration = stats.password_expiration
@@ -192,28 +103,36 @@ export function OverviewTab({ stats, activitySummary, trendsData, isLoading, tot
           value={stats.overview.total_users}
           icon={Users}
           isLoading={isLoading}
-          color="blue"
+          compact
+          animate
+          tone="blue"
         />
         <StatCard
           title={t('stats.dau')}
           value={stats.active_users.dau}
           icon={Activity}
           isLoading={isLoading}
-          color="green"
+          compact
+          animate
+          tone="green"
         />
         <StatCard
           title={t('stats.conversations')}
           value={activitySummary.conversations}
           icon={MessageSquare}
           isLoading={isLoading}
-          color="purple"
+          compact
+          animate
+          tone="purple"
         />
         <StatCard
           title={t('stats.tokens')}
           value={activitySummary.tokens}
           icon={Coins}
           isLoading={isLoading}
-          color="orange"
+          compact
+          animate
+          tone="orange"
         />
       </div>
 

@@ -582,23 +582,80 @@ msgstr "... [{count} lines omitted] ..."
 msgid "bash_output_repeated_lines"
 msgstr "[repeated {count} times]"
 
+msgid "asset_tool_list"
+msgstr "Find Attachments"
+
+msgid "asset_tool_view"
+msgstr "View Attachment"
+
 msgid "asset_tool_inspect"
 msgstr "Inspect Attachment"
 
 msgid "asset_tool_inspect_description"
 msgstr "Inspect metadata and capabilities for an attachment in this conversation."
 
-msgid "asset_tool_parse"
-msgstr "Parse Attachment"
-
-msgid "asset_tool_parse_description"
-msgstr "Parse a supported attachment on demand while preserving its raw bytes."
-
 msgid "asset_tool_read"
 msgstr "Read Attachment"
 
 msgid "asset_tool_read_description"
-msgstr "Read bounded text from an attachment in this conversation."
+msgstr "Read a bounded line range of a document attachment in this conversation. Continue with next_cursor until eof is true to reach the last character."
+
+msgid "asset_tool_search"
+msgstr "Search Attachment"
+
+msgid "asset_tool_search_description"
+msgstr "Search the full extracted text of a document attachment and return bounded matching snippets with line numbers."
+
+msgid "asset_tool_start_line_description"
+msgstr "One-based line number to start reading from."
+
+msgid "asset_tool_line_count_description"
+msgstr "Maximum number of lines to return in this page."
+
+msgid "asset_tool_query_description"
+msgstr "Literal text to find inside the document."
+
+msgid "asset_tool_context_lines_description"
+msgstr "Lines of context to include around each match."
+
+msgid "asset_tool_limit_description"
+msgstr "Maximum number of matches to return in this page."
+
+msgid "asset_tool_cursor_description"
+msgstr "next_cursor from a previous read_asset or search_asset result."
+
+msgid "asset_page_range_required"
+msgstr "Native PDF viewing requires an explicit page selection; use read_asset or search_asset to read document text."
+
+msgid "invalid_document_cursor"
+msgstr "Invalid or stale document cursor"
+
+msgid "document_extraction_empty"
+msgstr "No text could be extracted from this document."
+
+msgid "document_extraction_decode_failed"
+msgstr "The extracted document text could not be decoded as UTF-8."
+
+msgid "asset_document_resource_limit_exceeded"
+msgstr "The document exceeds the supported extraction size limit."
+
+msgid "asset_document_invalid_cursor"
+msgstr "Invalid document cursor."
+
+msgid "asset_document_stale_cursor"
+msgstr "The document cursor is stale; restart the read or search."
+
+msgid "asset_document_invalid_range"
+msgstr "The requested line range is invalid."
+
+msgid "asset_document_invalid_query"
+msgstr "The document search query is invalid."
+
+msgid "file_download_failed"
+msgstr "Failed to download the external attachment."
+
+msgid "asset_document_derived_asset"
+msgstr "Derived document text cannot be read as an input attachment."
 
 msgid "asset_tool_ref_description"
 msgstr "Exact reference from available attachments."
@@ -981,15 +1038,6 @@ msgstr "Could not validate credentials"
 msgid "current_password_incorrect"
 msgstr "Current password is incorrect"
 
-msgid "dingtalk_not_configured"
-msgstr "DingTalk service is not configured"
-
-msgid "dingtalk_not_enabled"
-msgstr "DingTalk service is not enabled"
-
-msgid "dingtalk_send_failed"
-msgstr "Failed to send DingTalk message"
-
 msgid "document_created"
 msgstr "Document created successfully"
 
@@ -1158,14 +1206,6 @@ msgstr "This domain is not allowed to embed this resource"
 msgid "embed_not_enabled"
 msgstr "Embedding is not enabled for this resource"
 
-msgid "feishu_not_configured"
-msgstr "Feishu service is not configured"
-
-msgid "feishu_not_enabled"
-msgstr "Feishu service is not enabled"
-
-msgid "feishu_send_failed"
-msgstr "Failed to send Feishu message"
 
 msgid "file_deleted"
 msgstr "File deleted successfully"
@@ -1202,9 +1242,40 @@ msgstr "File too large"
 
 msgid "file_uploaded"
 msgstr "File uploaded successfully"
+msgid "invalid_notification_channels"
+msgstr "Unsupported notification channel(s): {channels}"
+
 
 msgid "files_parsed"
 msgstr "Files parsed successfully"
+
+msgid "feishu_api_error"
+msgstr "Feishu rejected the request: {error}"
+
+msgid "feishu_directory_sync_disabled"
+msgstr "Enable the Feishu integration and its directory sync capability before browsing or syncing departments."
+
+msgid "feishu_not_configured"
+msgstr "Save the Feishu app ID and app secret before browsing or syncing departments."
+
+msgid "feishu_secret_undecryptable"
+msgstr "The stored Feishu app secret cannot be decrypted. Save the app secret again."
+
+msgid "feishu_notification_not_enabled"
+msgstr "Enable the Feishu integration and its notifications capability before sending notifications."
+
+msgid "feishu_notification_not_configured"
+msgstr "Save the Feishu app ID and app secret, then grant the app permission to send direct messages."
+
+msgid "feishu_agent_chat_agent_unavailable"
+msgstr "This agent is not available for Feishu agent chat. Choose a published agent on an active team that you can access."
+
+msgid "feishu_agent_chat_agent_unpublished"
+msgstr "Only published agents can answer Feishu messages. Publish the agent first."
+
+
+msgid "feishu_test_recipient_unavailable"
+msgstr "Select an active user linked to Feishu."
 
 msgid "force_password_change_required"
 msgstr "You are required to change your password before continuing."
@@ -2186,14 +2257,6 @@ msgstr "Your session has expired due to a new login from another device"
 msgid "setting_not_found"
 msgstr "Setting '{key}' not found"
 
-msgid "slack_not_configured"
-msgstr "Slack service is not configured"
-
-msgid "slack_not_enabled"
-msgstr "Slack service is not enabled"
-
-msgid "slack_send_failed"
-msgstr "Failed to send Slack message"
 
 msgid "smtp_not_configured"
 msgstr "Email service is not configured"
@@ -2260,6 +2323,9 @@ msgstr "SSO provider not found"
 
 msgid "sso_registration_disabled"
 msgstr "SSO registration is disabled"
+
+msgid "sso_connection_exists"
+msgstr "This account or Feishu identity is already linked. Unlink it first or contact an administrator."
 
 msgid "sso_session_expired"
 msgstr "SSO session expired"
@@ -2330,11 +2396,6 @@ msgstr "Team owner permission required"
 msgid "team_updated"
 msgstr "Team updated successfully"
 
-msgid "test_dingtalk_content"
-msgstr "This is a test message. If you received this, your DingTalk configuration is working correctly."
-
-msgid "test_dingtalk_sent"
-msgstr "Test DingTalk message sent successfully"
 
 msgid "test_email_body_html"
 msgstr "\n<!DOCTYPE html>\n<html>\n<head>\n    <meta charset=\"utf-8\">\n</head>\n<body style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\">\n    <h2 style=\"color: #333;\">✅ SMTP Configuration Test Successful</h2>\n    <p>This is a test email from <strong>{site_name}</strong>.</p>\n    <p style=\"color: #666;\">If you received this email, your SMTP configuration is working correctly.</p>\n</body>\n</html>\n"
@@ -2348,20 +2409,10 @@ msgstr "Test email sent successfully"
 msgid "test_email_subject"
 msgstr "【{site_name}】Test Email"
 
-msgid "test_feishu_content"
-msgstr "This is a test message. If you received this, your Feishu configuration is working correctly."
-
-msgid "test_feishu_sent"
-msgstr "Test Feishu message sent successfully"
 
 msgid "test_notification_title"
 msgstr "【{site_name}】Test Message"
 
-msgid "test_slack_content"
-msgstr "This is a test message. If you received this, your Slack configuration is working correctly."
-
-msgid "test_slack_sent"
-msgstr "Test Slack message sent successfully"
 
 msgid "test_webhook_content"
 msgstr "This is a test message. If you received this, your Webhook configuration is working correctly."
@@ -2369,11 +2420,6 @@ msgstr "This is a test message. If you received this, your Webhook configuration
 msgid "test_webhook_sent"
 msgstr "Test Webhook notification sent successfully"
 
-msgid "test_wechat_content"
-msgstr "This is a test message. If you received this, your WeChat Work configuration is working correctly."
-
-msgid "test_wechat_sent"
-msgstr "Test WeChat Work message sent successfully"
 
 msgid "token_expired"
 msgstr "Token expired"
@@ -2714,6 +2760,9 @@ msgstr "Invalid verification code"
 msgid "web_search_unsupported_engine"
 msgstr "Unsupported search engine: {search_engine}"
 
+msgid "web_search_blocked_or_empty"
+msgstr "The search engine returned no usable results (it may be blocking automated requests); try again or choose another engine"
+
 msgid "web_search_api_error"
 msgstr "Search API error: {status_code}"
 
@@ -2773,14 +2822,6 @@ msgstr "Webhook token regenerated successfully"
 msgid "webhook_trigger_disabled"
 msgstr "Webhook trigger is not enabled for this workflow"
 
-msgid "wechat_not_configured"
-msgstr "WeChat Work service is not configured"
-
-msgid "wechat_not_enabled"
-msgstr "WeChat Work service is not enabled"
-
-msgid "wechat_send_failed"
-msgstr "Failed to send WeChat Work message"
 
 msgid "welcome_message"
 msgstr "Welcome to Clouisle API"
@@ -3094,3 +3135,424 @@ msgstr "Answer required for {question_id}"
 msgid "answer_must_be_string"
 msgstr "Answer must be a non-empty string for {question_id}"
 
+msgid "integration_not_found"
+msgstr "Integration not found"
+
+msgid "integration_name_exists"
+msgstr "Integration name already exists"
+
+msgid "integration_invalid_configuration"
+msgstr "Invalid integration configuration or capability"
+
+msgid "integration_builtin_cannot_delete"
+msgstr "Builtin integrations cannot be deleted"
+
+msgid "integration_config_valid"
+msgstr "Integration configuration is valid"
+
+msgid "integration_config_error_generic"
+msgstr "Integration configuration check failed"
+
+msgid "audit_log_create_integration"
+msgstr "Create integration"
+
+msgid "audit_log_update_integration"
+msgstr "Update integration"
+
+msgid "audit_log_delete_integration"
+msgstr "Delete integration"
+
+msgid "audit_log_test_integration_failed"
+msgstr "Integration configuration check failed"
+
+
+msgid "feishu_document_source_managed"
+msgstr "This document is managed by Feishu synchronization. Manage it through its synchronization source."
+
+msgid "feishu_kb_has_sync_sources"
+msgstr "Delete this knowledge base's Feishu synchronization sources before deleting the knowledge base."
+
+msgid "feishu_knowledge_api_error"
+msgstr "Feishu knowledge API rejected the request (code {code}, HTTP {status})."
+
+msgid "feishu_knowledge_sync_failed"
+msgstr "Feishu knowledge synchronization failed. Check the source and try again."
+
+msgid "feishu_knowledge_connection_failed"
+msgstr "Unable to connect to Feishu. Check application configuration and network connectivity."
+
+msgid "feishu_knowledge_processing_failed"
+msgstr "The imported document could not be indexed. Check the knowledge base embedding configuration."
+
+msgid "feishu_knowledge_conversion_failed"
+msgstr "Feishu document conversion failed: the content contains unsupported elements or an incomplete document structure. This is not an embedding model configuration error; check the source content."
+
+msgid "feishu_knowledge_disabled"
+msgstr "Enable the Feishu integration and this synchronization source before syncing."
+
+msgid "feishu_knowledge_source_not_found"
+msgstr "Feishu knowledge synchronization source not found."
+
+msgid "feishu_knowledge_publish_failed"
+msgstr "Unable to queue synchronization. Check the task broker and try again."
+
+msgid "feishu_knowledge_target_unavailable"
+msgstr "The target knowledge base is unavailable or inactive."
+
+msgid "feishu_knowledge_unsupported_type"
+msgstr "Unsupported Feishu content type or file format: {type}. Mindnote has no public content API."
+
+msgid "feishu_knowledge_partial_failure"
+msgstr "Some documents could not be synchronized. Check the synchronization results."
+
+msgid "feishu_knowledge_source_busy"
+msgstr "This synchronization source is busy. Wait for the current operation to finish."
+
+msgid "feishu_knowledge_source_exists"
+msgstr "This Feishu space is already connected to the selected knowledge base."
+
+msgid "feishu_knowledge_space_unavailable"
+msgstr "The selected Feishu knowledge space is unavailable to the application. Check its resource permissions."
+
+msgid "audit_log_create_feishu_knowledge_source"
+msgstr "Create Feishu knowledge synchronization source"
+
+msgid "audit_log_update_feishu_knowledge_source"
+msgstr "Update Feishu knowledge synchronization source"
+
+msgid "audit_log_sync_feishu_knowledge_source"
+msgstr "Synchronize Feishu knowledge source"
+
+msgid "audit_log_delete_feishu_knowledge_source"
+msgstr "Delete Feishu knowledge synchronization source"
+
+msgid "feishu_knowledge_missing_api_permissions"
+msgstr "The Feishu app lacks API permissions (99991672). Required scopes for the failed API: {scopes} (follow the API permission page). Request these permissions under Feishu Open Platform → this app → Permissions, publish the app version, obtain administrator approval, then retry."
+
+msgid "feishu_knowledge_required_scopes_unknown"
+msgstr "Feishu did not return scope names; check the API permission requirements in Open Platform"
+
+msgid "feishu_knowledge_resource_access_denied"
+msgstr "The Feishu app cannot access the target Wiki space or document. Ask the space administrator to add the app/bot as a member and grant access to the document. API permissions and resource access must be granted separately."
+
+msgid "wechat_kb_inactive"
+msgstr "The knowledge base is not active. Choose another target."
+
+msgid "wechat_model_unavailable"
+msgstr "The recognition model is unavailable or is not authorized for this team."
+
+msgid "wechat_login_limit"
+msgstr "Too many pending authorizations. Wait for an existing QR code to expire."
+
+msgid "wechat_connection_failed"
+msgstr "Unable to connect to WeChat. Check the deployment network and try again."
+
+msgid "wechat_login_not_found"
+msgstr "WeChat authorization session not found."
+
+msgid "wechat_already_connected"
+msgstr "WeChat reports an existing connection but did not issue credentials. Disconnect the previous authorization in WeChat, then authorize again."
+
+msgid "wechat_identity_in_use"
+msgstr "This WeChat identity is already connected to another platform account."
+
+msgid "integration_feature_disabled"
+msgstr "This integration feature is disabled. Contact an administrator to enable it."
+
+msgid "wechat_binding_not_found"
+msgstr "WeChat connection not found."
+
+msgid "wechat_binding_disconnected"
+msgstr "The WeChat connection has been disconnected."
+
+msgid "wechat_authorization_expired"
+msgstr "WeChat authorization expired. Authorize again in personal settings."
+
+msgid "wechat_media_conversion_failed"
+msgstr "Unable to decode this media file. Check its encoding and try again."
+
+msgid "wechat_vision_required"
+msgstr "Configure a team-authorized vision model for this connection to collect images or video."
+
+msgid "wechat_stt_required"
+msgstr "Configure a team-authorized speech recognition model for this connection to collect audio."
+
+msgid "wechat_empty_content"
+msgstr "No usable content was extracted; the item was not indexed."
+
+msgid "wechat_ffmpeg_required"
+msgstr "Audio/video collection requires ffmpeg and ffprobe on the knowledge worker."
+
+msgid "wechat_media_duration"
+msgstr "The media duration could not be read or exceeds the 30-minute limit."
+
+msgid "wechat_url_invalid"
+msgstr "The article URL is invalid or too long."
+
+msgid "wechat_article_blocked"
+msgstr "The article requires verification or cannot be accessed. Its verification page was not collected."
+
+msgid "wechat_type_unsupported"
+msgstr "This message or file format is not supported for knowledge collection."
+
+msgid "wechat_index_failed"
+msgstr "Content extraction completed but indexing failed. Check the knowledge base embedding configuration."
+
+msgid "wechat_processing_failed"
+msgstr "This item could not be processed. Check its format and recognition configuration."
+
+msgid "wechat_target_unavailable"
+msgstr "Collection stopped because the target knowledge base is no longer writable. Update the binding in personal settings."
+
+msgid "wechat_reply_heading"
+msgstr "Knowledge collection: {name}"
+
+msgid "wechat_item_completed"
+msgstr "Indexed"
+
+msgid "wechat_item_duplicate"
+msgstr "Already collected"
+
+msgid "wechat_item_error"
+msgstr "Failed"
+
+msgid "wechat_item_pending"
+msgstr "Processing"
+
+msgid "wechat_text_encoding"
+msgstr "Text documents must use UTF-8 encoding. Convert the file before collecting it."
+
+msgid "wechat_binary_content"
+msgstr "The file contents do not match the declared document format."
+
+msgid "audit_log_connect_wechat_binding"
+msgstr "Authorize WeChat connection"
+
+msgid "audit_log_update_wechat_binding"
+msgstr "Update WeChat collection settings"
+
+msgid "audit_log_disconnect_wechat_binding"
+msgstr "Disconnect WeChat connection"
+
+msgid "audit_log_collect_wechat_content"
+msgstr "Collect WeChat knowledge content"
+
+msgid "wechat_purpose_busy"
+msgstr "A task is still active. Wait for it to finish, or stop the Agent task before changing the purpose."
+
+msgid "wechat_agent_variables_invalid"
+msgstr "Check the Agent input variables, including required values, types and limits."
+
+msgid "wechat_agent_media_unsupported"
+msgstr "This message type is not supported by the connected Agent."
+
+msgid "wechat_agent_video_unsupported"
+msgstr "Video input requires an Agent with vision support and a configured speech recognition model for its audio."
+
+msgid "wechat_agent_attachments_disabled"
+msgstr "This Agent does not accept file attachments."
+
+msgid "wechat_agent_file_too_large"
+msgstr "The attachment exceeds the Agent size limit."
+
+msgid "wechat_agent_file_type_unsupported"
+msgstr "This attachment type is not allowed by the Agent."
+
+msgid "wechat_agent_too_many_files"
+msgstr "There are too many attachments in one message."
+
+msgid "wechat_agent_conversation_missing"
+msgstr "The Agent session has no conversation yet."
+
+msgid "wechat_agent_context_missing"
+msgstr "WeChat reply context is unavailable. View the result in the web conversation."
+
+msgid "wechat_agent_binding_disconnected"
+msgstr "The WeChat connection is no longer active."
+
+
+msgid "wechat_agent_help"
+msgstr "Commands: /agents lists available Agents; /use <number> switches the Agent when idle; /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help; /skip skips pending questions."
+
+msgid "wechat_agent_agents_header"
+msgstr "Available Agents:"
+
+msgid "wechat_agent_agents_footer"
+msgstr "Send /use <number> to switch. Wait for confirmation before sending your next message. Numbers may change when the list changes."
+
+msgid "wechat_agent_no_agents"
+msgstr "No published Agents are available to you."
+
+msgid "wechat_agent_use_missing"
+msgstr "Send /use <number>, using a number from /agents."
+
+msgid "wechat_agent_use_invalid"
+msgstr "That Agent is not in your available list. Send /agents to see the current list."
+
+msgid "wechat_agent_use_current"
+msgstr "Already using {agent}. Your conversation and settings are unchanged."
+
+msgid "wechat_agent_use_selected"
+msgstr "Now using {agent}. New messages will use it. Its previous conversation is kept; input variables use defaults and speech recognition is not configured. You can adjust these in Personal settings → WeChat iLink."
+
+msgid "wechat_agent_use_variables"
+msgstr "This Agent needs input variables. Configure it in Personal settings → WeChat iLink, then save. Your current Agent is unchanged."
+
+msgid "wechat_agent_status"
+msgstr "Status: {status}"
+
+msgid "wechat_agent_new_conversation"
+msgstr "Your next message will start a new conversation."
+
+msgid "wechat_agent_stopped"
+msgstr "Stopped. Queued messages were cancelled."
+
+msgid "wechat_agent_answer_required"
+msgstr "This question still needs an answer: {question}"
+
+msgid "wechat_agent_answer_invalid_choice"
+msgstr "Please choose one of: {options}"
+
+msgid "wechat_agent_questions_partial"
+msgstr "Answered {done} of {total} questions. Send the remaining answer, or /skip to skip."
+
+msgid "wechat_agent_run_failed"
+msgstr "The Agent task did not finish. Open the conversation for details."
+
+msgid "wechat_agent_received"
+msgstr "🤔Thinking..."
+
+msgid "wechat_agent_purpose_inactive"
+msgstr "This connection is not currently using the Agent application."
+
+msgid "wechat_agent_config_missing"
+msgstr "No Agent is configured for this connection."
+
+msgid "wechat_agent_busy"
+msgstr "The previous message is still being processed. Please wait for it to finish."
+
+msgid "wechat_agent_unknown_command"
+msgstr "Unknown command. Send /help to see available commands."
+
+msgid "wechat_agent_answer_skipped"
+msgstr "Questions skipped."
+
+msgid "wechat_agent_no_output"
+msgstr "The Agent finished without producing a visible reply."
+
+msgid "wechat_agent_vision_required"
+msgstr "This Agent's chat model does not support image input."
+
+msgid "run_status_idle"
+msgstr "Idle"
+
+msgid "run_status_queued"
+msgstr "Queued"
+
+msgid "run_status_running"
+msgstr "Running"
+
+msgid "run_status_stopping"
+msgstr "Stopping"
+
+msgid "run_status_completing"
+msgstr "Completing"
+
+msgid "run_status_completed"
+msgstr "Completed"
+
+msgid "run_status_stopped"
+msgstr "Stopped"
+
+msgid "run_status_failed"
+msgstr "Failed"
+
+msgid "run_status_interrupted"
+msgstr "Interrupted"
+
+msgid "run_status_waiting"
+msgstr "Waiting for your answer"
+
+msgid "wechat_agent_media_failed"
+msgstr "The attachment could not be downloaded from WeChat. Please send it again."
+
+msgid "feishu_agent_help"
+msgstr "Commands: /agents lists the Agents you can use; /use <number> switches the Agent; /new starts a new conversation; /stop stops the task and cancels queued messages; /status shows status; /help shows help."
+
+msgid "feishu_agent_status"
+msgstr "Agent: {agent} — Status: {status}"
+
+msgid "feishu_agent_received"
+msgstr "🤔Thinking..."
+
+msgid "feishu_agent_answer_text_required"
+msgstr "Please answer the pending question with text; attachments cannot answer it."
+
+msgid "feishu_agent_attachments_disabled"
+msgstr "This Agent does not accept attachments."
+
+msgid "feishu_agent_too_many_files"
+msgstr "Too many attachments for this Agent."
+
+msgid "feishu_agent_file_type_unsupported"
+msgstr "This attachment type is not allowed by the Agent."
+
+msgid "feishu_agent_file_too_large"
+msgstr "The attachment exceeds the Agent's size limit."
+
+msgid "feishu_agent_media_failed"
+msgstr "Unable to read the Feishu attachment. Check the bot's message resource permission and try again."
+
+msgid "feishu_agent_busy"
+msgstr "The previous message is still being processed. Please wait for it to finish."
+
+msgid "feishu_agent_new_conversation"
+msgstr "Your next message will start a new conversation."
+
+msgid "feishu_agent_stopped"
+msgstr "Stopped. Queued messages were cancelled."
+
+msgid "feishu_agent_run_failed"
+msgstr "The Agent task did not finish. Open the conversation for details."
+
+msgid "feishu_agent_no_output"
+msgstr "The Agent finished without producing a visible reply."
+
+msgid "feishu_agent_answer_required"
+msgstr "This question still needs an answer: {question}"
+
+msgid "feishu_agent_answer_invalid_choice"
+msgstr "Please choose one of: {options}"
+
+msgid "feishu_agent_questions_partial"
+msgstr "Answered {done} of {total} questions. Send the remaining answer."
+
+msgid "feishu_agent_agents_header"
+msgstr "Agents you can use (send /use <number> to switch):"
+
+msgid "feishu_agent_agents_footer"
+msgstr "Send /use <number> to switch the Agent."
+
+msgid "feishu_agent_no_agents"
+msgstr "No Agent is available to you in Feishu yet. Ask an administrator to publish one."
+
+msgid "feishu_agent_agent_none"
+msgstr "not selected yet"
+
+msgid "feishu_agent_agent_unavailable"
+msgstr "That Agent is not available to you right now."
+
+msgid "feishu_agent_channel_disabled"
+msgstr "The Feishu channel is no longer active. Open the conversation in the web app."
+
+msgid "feishu_agent_use_missing"
+msgstr "Send /use with the number of an Agent from /agents."
+
+msgid "feishu_agent_use_invalid"
+msgstr "That Agent is not in your list. Send /agents to see the ones you can use."
+
+msgid "feishu_agent_use_current"
+msgstr "Already using {agent}."
+
+msgid "feishu_agent_use_selected"
+msgstr "Now using {agent}. Your next message goes to it."

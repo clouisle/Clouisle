@@ -17,6 +17,26 @@ STARTUP_MIGRATION_LOCK_TIMEOUT = "2s"
 STARTUP_MIGRATION_QUERY_TIMEOUT_SECONDS = 3
 
 
+async def migrate_model_input_modalities() -> None:
+    """Migrate legacy model vision booleans to canonical input modalities."""
+    conn = Tortoise.get_connection("default")
+    _, tables = await conn.execute_query(
+        "SELECT table_name FROM information_schema.tables WHERE table_name = 'models' AND table_schema = 'public'"
+    )
+    if not tables:
+        return
+    await conn.execute_query(
+        """UPDATE models SET capabilities = jsonb_set(
+            COALESCE(capabilities::jsonb, '{}'::jsonb), '{input_modalities}',
+            CASE WHEN COALESCE((capabilities::jsonb ->> 'vision')::boolean, FALSE)
+                 THEN '[\"text\",\"image\"]'::jsonb ELSE '[\"text\"]'::jsonb END,
+            true) WHERE capabilities IS NULL OR NOT (capabilities::jsonb ? 'input_modalities')"""
+    )
+    await conn.execute_query(
+        "UPDATE models SET capabilities = capabilities::jsonb - 'vision' WHERE capabilities::jsonb ? 'vision'"
+    )
+
+
 async def init_model_endpoint_allowlist() -> None:
     """Seed the endpoint allowlist once from defaults and existing models."""
     from app.core.model_endpoint_policy import (
@@ -1276,6 +1296,7 @@ async def init_assets_tables() -> None:
             created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
             parent_id UUID REFERENCES assets(id) ON DELETE SET NULL,
             storage_key VARCHAR(1000) NOT NULL UNIQUE,
+            representation_key VARCHAR(200) UNIQUE,
             original_filename VARCHAR(500) NOT NULL,
             display_filename VARCHAR(500) NOT NULL,
             content_type VARCHAR(255) NOT NULL,
@@ -1297,6 +1318,35 @@ async def init_assets_tables() -> None:
     await conn.execute_query("""
         CREATE INDEX IF NOT EXISTS idx_assets_checksum ON assets(checksum)
     """)
+    # Durable identity for private derived document representations. Existing
+    # installations predate the column; ordinary Assets keep it NULL. Fresh
+    # tables already declare the column UNIQUE above, so only older databases
+    # need the additive DDL (avoiding a duplicate unique index).
+    _, rows = await execute_startup_migration_query(
+        conn,
+        """
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'assets'
+          AND table_schema = 'public'
+          AND column_name = 'representation_key'
+        """,
+    )
+    if not rows:
+        await execute_startup_migration_query(
+            conn,
+            """
+            ALTER TABLE assets
+            ADD COLUMN representation_key VARCHAR(200)
+            """,
+        )
+        await execute_startup_migration_query(
+            conn,
+            """
+            CREATE UNIQUE INDEX uq_assets_representation_key
+            ON assets(representation_key)
+            WHERE representation_key IS NOT NULL
+            """,
+        )
     await conn.execute_query("""
         CREATE TABLE IF NOT EXISTS message_assets (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1403,6 +1453,89 @@ async def init_agent_run_fields():
             ADD COLUMN IF NOT EXISTS message_started_at TIMESTAMPTZ,
             ADD COLUMN IF NOT EXISTS first_token_ms INTEGER
         """,
+    )
+
+
+async def init_observability_tool_payload_table() -> None:
+    """Create the on-demand tool payload table on existing installations."""
+    conn = Tortoise.get_connection("default")
+    if conn.capabilities.dialect != "postgres":
+        return
+    await conn.execute_query(
+        """
+        CREATE TABLE IF NOT EXISTS observability_tool_payloads (
+            id UUID PRIMARY KEY,
+            run_id UUID NOT NULL,
+            conversation_id UUID,
+            tool_call_id VARCHAR(100) NOT NULL,
+            tool_name VARCHAR(100) NOT NULL,
+            display_text TEXT,
+            model_text TEXT,
+            display_bytes INTEGER NOT NULL DEFAULT 0,
+            model_bytes INTEGER NOT NULL DEFAULT 0,
+            model_sha256 VARCHAR(64),
+            renderer VARCHAR(64),
+            eof BOOLEAN,
+            has_cursor BOOLEAN NOT NULL DEFAULT FALSE,
+            partial BOOLEAN NOT NULL DEFAULT FALSE,
+            error VARCHAR(200),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (run_id, tool_call_id)
+        )
+        """
+    )
+    await conn.execute_query(
+        """
+        CREATE INDEX IF NOT EXISTS idx_observability_tool_payloads_run_created
+        ON observability_tool_payloads (run_id, created_at)
+        """
+    )
+
+
+async def init_observability_trajectory_table() -> None:
+    """Create the bounded execution-trajectory table on existing installs."""
+    conn = Tortoise.get_connection("default")
+    if conn.capabilities.dialect != "postgres":
+        return
+    await conn.execute_query(
+        """
+        CREATE TABLE IF NOT EXISTS observability_trajectory_entries (
+            id UUID PRIMARY KEY,
+            run_id UUID NOT NULL,
+            conversation_id UUID,
+            parent_id UUID,
+            sequence BIGINT NOT NULL,
+            kind VARCHAR(32) NOT NULL,
+            name VARCHAR(200) NOT NULL,
+            status VARCHAR(32) NOT NULL,
+            started_at TIMESTAMPTZ,
+            finished_at TIMESTAMPTZ,
+            duration_ms INTEGER,
+            model VARCHAR(200),
+            token_usage JSONB,
+            tool_call_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+            payload_state VARCHAR(16) NOT NULL DEFAULT 'unrecorded',
+            preview VARCHAR(300),
+            input_text TEXT,
+            output_text TEXT,
+            input_bytes INTEGER NOT NULL DEFAULT 0,
+            output_bytes INTEGER NOT NULL DEFAULT 0,
+            partial BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    await conn.execute_query(
+        """
+        CREATE INDEX IF NOT EXISTS idx_observability_trajectory_run_sequence
+        ON observability_trajectory_entries (run_id, sequence)
+        """
+    )
+    await conn.execute_query(
+        """
+        CREATE INDEX IF NOT EXISTS idx_observability_trajectory_created
+        ON observability_trajectory_entries (created_at)
+        """
     )
 
 
@@ -2000,103 +2133,6 @@ async def fix_cascade_delete_policies():
         await conn.execute_query("RESET lock_timeout")
 
 
-async def init_sso_tables():
-    """
-    Initialize SSO (Single Sign-On) related tables if they don't exist.
-    This handles the migration for the SSO feature.
-    """
-    logger.info("Initializing SSO tables...")
-
-    conn = Tortoise.get_connection("default")
-
-    # Check if sso_providers table exists
-    _, rows = await conn.execute_query("""
-        SELECT table_name FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'sso_providers'
-    """)
-
-    if rows:
-        logger.info("SSO tables already exist, skipping creation")
-        return
-
-    logger.info("Creating SSO tables...")
-
-    # Create sso_providers table
-    await conn.execute_query("""
-        CREATE TABLE IF NOT EXISTS sso_providers (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            name VARCHAR(100) UNIQUE NOT NULL,
-            protocol VARCHAR(20) NOT NULL,
-            display_name VARCHAR(100) NOT NULL,
-            icon_url VARCHAR(512),
-            button_text VARCHAR(50),
-            config JSONB NOT NULL,
-            attribute_mapping JSONB NOT NULL DEFAULT '{}',
-            is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-            allow_signup BOOLEAN NOT NULL DEFAULT TRUE,
-            require_approval BOOLEAN NOT NULL DEFAULT FALSE,
-            default_role_id UUID,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            created_by_id UUID REFERENCES users(id) ON DELETE SET NULL
-        )
-    """)
-    logger.info("Created sso_providers table")
-
-    # Create user_sso_connections table
-    await conn.execute_query("""
-        CREATE TABLE IF NOT EXISTS user_sso_connections (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            provider_id UUID NOT NULL REFERENCES sso_providers(id) ON DELETE CASCADE,
-            provider_user_id VARCHAR(255) NOT NULL,
-            provider_username VARCHAR(255),
-            provider_email VARCHAR(255),
-            provider_data JSONB NOT NULL DEFAULT '{}',
-            first_login TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            last_login TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            UNIQUE (provider_id, provider_user_id)
-        )
-    """)
-    logger.info("Created user_sso_connections table")
-
-    # Create sso_sessions table
-    await conn.execute_query("""
-        CREATE TABLE IF NOT EXISTS sso_sessions (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            session_id VARCHAR(255) UNIQUE NOT NULL,
-            provider_id UUID NOT NULL REFERENCES sso_providers(id) ON DELETE CASCADE,
-            code_verifier VARCHAR(255),
-            nonce VARCHAR(255),
-            redirect_url VARCHAR(512),
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            expires_at TIMESTAMPTZ NOT NULL
-        )
-    """)
-    logger.info("Created sso_sessions table")
-
-    # Create indexes for better performance
-    await conn.execute_query("""
-        CREATE INDEX IF NOT EXISTS idx_user_sso_connections_user_id
-        ON user_sso_connections(user_id)
-    """)
-    await conn.execute_query("""
-        CREATE INDEX IF NOT EXISTS idx_user_sso_connections_provider_id
-        ON user_sso_connections(provider_id)
-    """)
-    await conn.execute_query("""
-        CREATE INDEX IF NOT EXISTS idx_sso_sessions_session_id
-        ON sso_sessions(session_id)
-    """)
-    await conn.execute_query("""
-        CREATE INDEX IF NOT EXISTS idx_sso_sessions_expires_at
-        ON sso_sessions(expires_at)
-    """)
-    logger.info("Created SSO indexes")
-
-    logger.info("SSO tables initialization complete")
-
-
 async def migrate_registration_settings_category():
     """
     Migrate registration settings from 'general' category to 'security' category.
@@ -2345,6 +2381,24 @@ async def init_agent_hide_message_actions_reasoning_fields():
 
     logger.info(
         "Agent hide_message_actions and hide_reasoning fields added successfully"
+    )
+
+
+async def init_agent_enable_citations_field():
+    """Add the Agent citation preference column."""
+    conn = Tortoise.get_connection("default")
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+    """)
+    if not tables:
+        return
+    await execute_startup_migration_query(
+        conn,
+        """
+        ALTER TABLE agents
+        ADD COLUMN IF NOT EXISTS enable_citations BOOLEAN NOT NULL DEFAULT FALSE
+        """,
     )
 
 
@@ -3143,6 +3197,61 @@ async def drop_obsolete_retrieval_evaluation_tables():
     )
 
 
+FEISHU_PLACEHOLDER_EMAIL_UPDATE_SQL = """
+UPDATE users
+SET email = REPLACE(email, '{legacy}', '{current}')
+WHERE auth_source = 'feishu'
+  AND email LIKE '%{legacy}'
+"""
+
+
+async def init_feishu_placeholder_emails() -> None:
+    """
+    Rewrite Feishu placeholder addresses that used the RFC 2606 `.invalid` domain.
+
+    `.invalid` is rejected by pydantic's ``EmailStr``, so any endpoint serializing such a
+    user (for example the admin user list) failed with a ResponseValidationError. The
+    rewrite keeps the deterministic local part and only swaps the reserved domain.
+    Idempotent; safe on every startup.
+    """
+    from app.services.feishu_directory import (
+        LEGACY_PLACEHOLDER_EMAIL_DOMAIN,
+        PLACEHOLDER_EMAIL_DOMAIN,
+    )
+
+    conn = Tortoise.get_connection("default")
+    dialect = getattr(getattr(conn, "capabilities", None), "dialect", "")
+    is_sqlite = dialect == "sqlite" or "sqlite" in conn.__class__.__name__.lower()
+
+    if is_sqlite:
+        _, tables = await conn.execute_query(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'"
+        )
+    else:
+        _, tables = await conn.execute_query(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_name = 'users' AND table_schema = 'public'"
+        )
+    if not tables:
+        logger.info(
+            "Users table does not exist yet, skipping Feishu placeholder migration"
+        )
+        return
+
+    result = await conn.execute_query(
+        feishu_placeholder_email_update_sql(
+            LEGACY_PLACEHOLDER_EMAIL_DOMAIN, PLACEHOLDER_EMAIL_DOMAIN
+        )
+    )
+    logger.info("Feishu placeholder email migration complete: %s", result)
+
+
+def feishu_placeholder_email_update_sql(legacy_domain: str, current_domain: str) -> str:
+    return FEISHU_PLACEHOLDER_EMAIL_UPDATE_SQL.format(
+        legacy=legacy_domain, current=current_domain
+    )
+
+
 async def init_db():
     """
     Initialize database with default permissions and roles.
@@ -3174,6 +3283,7 @@ async def init_db():
             f"Agent powered_by_text migration failed (may be first run): {e}"
         )
 
+    await migrate_model_input_modalities()
     try:
         await init_message_history_index()
     except Exception as e:
@@ -3230,6 +3340,9 @@ async def init_db():
                 "is_system": True,
             },
         )
+    from app.core.integration_migration import migrate_integration_permissions
+
+    await migrate_integration_permissions()
 
     # 2. Initialize System Roles
     logger.info("Initializing roles...")
@@ -3281,7 +3394,8 @@ async def init_db():
         "admin:knowledge-base:update",
         "admin:knowledge-base:delete",
         "admin:settings:read",
-        "admin:sso:read",
+        "admin:integrations:login:read",
+        "admin:integrations:settings:read",
         "audit:read",
         "audit:export",
         "admin:conversation:read",
@@ -3491,9 +3605,6 @@ async def init_db():
     # 8. Fix CASCADE delete policies
     await fix_cascade_delete_policies()
 
-    # 9. Initialize SSO tables
-    await init_sso_tables()
-
     # 10. Initialize memory tables
     await init_memory_tables()
 
@@ -3503,7 +3614,10 @@ async def init_db():
     # 11.1 Initialize agent hide_message_actions and hide_reasoning fields
     await init_agent_hide_message_actions_reasoning_fields()
 
-    # 11.2 Initialize agent hide_artifact_list field
+    # 11.2 Initialize agent citation preference
+    await init_agent_enable_citations_field()
+
+    # 11.3 Initialize agent hide_artifact_list field
     await init_agent_hide_artifact_list_field()
 
     # 12. Initialize agent memory fields

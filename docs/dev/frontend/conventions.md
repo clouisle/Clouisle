@@ -14,6 +14,7 @@ Use the shared client from `frontend/lib/api/client.ts`.
 - Auth errors (`2000-2999`) redirect to login automatically.
 - Validation errors (`1001`) should be handled with `error.getFieldErrors()`.
 - Use `silent: true` if a request should suppress global toasts.
+- Preserve localized, user-facing backend error guidance regardless of message length; permission scopes and recovery steps can exceed 200 characters. Message keys and technical details still fall back to generic errors. Verify both HTTP error responses and HTTP 200 business errors.
 
 ### File downloads
 
@@ -39,6 +40,20 @@ Check `e.nativeEvent.isComposing` in keyboard handlers before responding to Ente
 ### Decimal input
 
 Prefer `type="text"` with `inputMode="decimal"` and regex validation instead of `type="number"` when decimal input must work reliably across browsers.
+
+### Dashboard server search
+
+Main server-backed searches in the dashboard activity, audit, application, capability, knowledge-base, document, memory and model lists use `useDebounce(rawSearch, 300)`. Keep input display immediate; use the debounced term for API parameters and search-driven page resets. When a new term settles on a later page, reset to page 1 before fetching so no abandoned-page request is issued. Discrete filters and pagination remain immediate. Existing 500 ms search integrations retain their durations.
+
+Audit export is an explicit action and uses the current typed search term, even if the table's 300 ms search delay has not yet elapsed.
+
+### Platform paginated lists
+
+Platform `/app` application, knowledge-base, API-key, document, notification, and execution-log lists load subsequent server pages when their bottom sentinel becomes visible. Use `useInfiniteScroll` from `@/hooks/use-infinite-scroll`; keep the sentinel mounted within the scrollable content and preserve existing rows during append requests. Dashboard tables retain their pagination controls.
+
+Search and filter changes restart at page 1; server-backed text search is debounced by 300 ms. Invalidate obsolete requests when query context changes or the component unmounts. Suppress observer loading after a failed request and provide an explicit retry of the failed operation. Stop at the server total and deduplicate records by identity.
+
+Document processing refreshes the loaded window, rather than dropping appended pages. Notification mutations refresh the loaded window to avoid skipping shifted unread records. The applications all-tab merges independently paginated Agent and Workflow sources: sorting covers the loaded union, not a globally ordered cross-resource cursor.
 
 ## Hydration
 

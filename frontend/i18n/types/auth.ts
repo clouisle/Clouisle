@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-07T17:03:38.839Z
+// GENERATED — 2026-10-24T18:18:06.002Z
 // Source: i18n/en/auth.json
 export type AuthMessages = {
   auth: {
@@ -85,6 +85,7 @@ export type AuthMessages = {
     passwordResetComplete: string
     passwordResetSuccessMessage: string
     orContinueWith: string
+    signInWithProvider: string
     ssoOnlyMode: string
     ssoCallbackInactiveTitle: string
     ssoCallbackInactiveDescription: string
@@ -92,6 +93,18 @@ export type AuthMessages = {
     ssoCallbackFailedDescription: string
     ssoCallbackProcessing: string
     ssoCallbackBackToLogin: string
+    ssoLinkCallbackTitle: string
+    ssoLinkCallbackDescription: string
+    ssoLinkCallbackProcessing: string
+    ssoLinkCallbackConfirm: string
+    ssoLinkCallbackSuccessTitle: string
+    ssoLinkCallbackSuccessDescription: string
+    ssoLinkCallbackReturnToApp: string
+    ssoLinkCallbackInvalidTitle: string
+    ssoLinkCallbackInvalidDescription: string
+    ssoLinkCallbackBackToSettings: string
+    ssoLinkCallbackFailedTitle: string
+    ssoLinkCallbackFailedDescription: string
     invalidEmail: string
     verificationTokenMissing: string
     verificationTokenInvalid: string

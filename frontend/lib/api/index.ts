@@ -265,10 +265,8 @@ export {
   type WorkflowRunStats,
 } from './workflows'
 
-export {
-  ssoApi,
-  type SSOProvider,
-} from './sso'
+export { ssoApi } from './sso'
+export { getIntegrationIconUrl, type Integration, type IntegrationLoginPublic, type IntegrationCreate, type IntegrationUpdate, type IntegrationType, type IntegrationCapability, type IntegrationProviderType, type LoginSettings } from './integrations'
 
 export {
   notificationsApi,

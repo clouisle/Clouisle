@@ -17,6 +17,12 @@ describe('tool-action-utils', () => {
   test('categorizes builtin tools into semantic actions', () => {
     expect(categorizeTool('read_file')).toBe('reading_file')
     expect(categorizeTool('cat_file')).toBe('reading_file')
+    expect(categorizeTool('read_asset')).toBe('reading_file')
+    expect(categorizeTool('search_asset')).toBe('reading_file')
+    expect(categorizeTool('inspect_asset')).toBe('reading_file')
+    expect(categorizeTool('view_asset')).toBe('reading_file')
+    expect(categorizeTool('list_assets')).toBe('browsing_dir')
+    expect(categorizeTool('materialize_asset')).toBe('editing_file')
     expect(categorizeTool('write_file')).toBe('editing_file')
     expect(categorizeTool('list_dir')).toBe('browsing_dir')
     expect(categorizeTool('browse_dir')).toBe('browsing_dir')

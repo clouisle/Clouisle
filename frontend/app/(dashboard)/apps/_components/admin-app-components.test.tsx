@@ -36,6 +36,8 @@ let memoIndex = 0
 let effectDeps: unknown[][] = []
 let effectIndex = 0
 let pendingEffects: Array<() => void | Promise<void>> = []
+let refs: Array<{ current: unknown }> = []
+let refIndex = 0
 let searchValue = ''
 
 const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props })
@@ -46,11 +48,13 @@ function resetHooks() {
   stateIndex = 0
   memoIndex = 0
   effectIndex = 0
+  refIndex = 0
   pendingEffects = []
 }
 
 function resetState() {
   state = []
+  refs = []
   memoValues = []
   memoDeps = []
   effectDeps = []
@@ -101,6 +105,11 @@ mock.module('react', () => ({
         : value
     }] as const
   },
+  useRef: <T,>(initial: T) => {
+    const index = refIndex++
+    refs[index] ??= { current: initial }
+    return refs[index] as { current: T }
+  },
 }))
 mock.module('next-intl', () => ({ useLocale: () => 'en', useTranslations: translator }))
 mock.module('sonner', () => ({ toast: { success: toastSuccess, error: toastError } }))
@@ -141,17 +150,18 @@ mock.module('@/components/ui/select', () => ({
   SelectValue: element('select-value'),
 }))
 mock.module('@/components/ui/dropdown-menu', () => ({
-  DropdownMenu: element('dropdown'),
+  DropdownMenu: element('dropdown-menu'),
+  DropdownMenuTrigger: element('dropdown-trigger'),
   DropdownMenuContent: element('dropdown-content'),
-  DropdownMenuItem: ({ render, children, ...props }: Record<string, unknown>) => render ?? { type: 'dropdown-item', props: { ...props, children } },
-  DropdownMenuTrigger: ({ render }: { render: ReactNode }) => render,
+  DropdownMenuItem: element('dropdown-item'),
+  DropdownMenuSeparator: element('dropdown-separator'),
 }))
 mock.module('@/components/ui/tooltip', () => ({
   Tooltip: element('tooltip'),
   TooltipContent: element('tooltip-content'),
   TooltipTrigger: ({ render }: { render: ReactNode }) => render,
 }))
-mock.module('@/components/ui/checkbox', () => ({ Checkbox: element('checkbox') }))
+mock.module('@/components/ui/checkbox', () => ({ Checkbox: ({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: () => void }) => ({ type: 'checkbox', props: { checked, onChange: onCheckedChange, onCheckedChange } }) }))
 mock.module('@/components/ui/data-table-faceted-filter', () => ({
   DataTableFacetedFilter: ({ title, options, onSelectionChange }: { title: string; options: Array<{ value: string }>; onSelectionChange: (values: Set<string>) => void }) => ({
     type: 'filter',
@@ -164,6 +174,7 @@ mock.module('@/app/(platform)/app/apps/_components/app-create-dialog', () => ({ 
 mock.module('@/hooks/use-url-search-state', () => ({
   useUrlSearchState: () => [searchValue, (value: string) => { searchValue = value }] as const,
 }))
+mock.module('@/hooks/use-debounce', () => ({ useDebounce: (value: string) => value }))
 mock.module('@/lib/api', () => ({
   ApiError: class ApiError extends Error {},
 }))
@@ -380,7 +391,7 @@ describe('admin app panels', () => {
     expect(confirmMock).toHaveBeenCalledWith('agents.deleteConfirm:{"name":"Support Bot"}')
     expect(agentDelete).toHaveBeenCalledWith('agent-1')
 
-    ;(find(tree, (node) => node.type === 'checkbox').props.onCheckedChange as () => void)()
+    ;(find(tree, (node) => node.type === 'checkbox').props.onChange as () => void)()
     tree = await renderPanel(() => AdminAgentsPanel())
     const bulkButtons = findAll(tree, (node) => node.type === 'button' && node.props.className === 'h-8 w-8' && typeof node.props.onClick === 'function')
     await (bulkButtons[1].props.onClick as () => Promise<void>)()
@@ -389,6 +400,29 @@ describe('admin app panels', () => {
     expect(agentUnpublish).toHaveBeenCalledWith('agent-2')
     await (find(tree, (node) => node.type === 'button' && String(node.props.className).includes('text-destructive')).props.onClick as () => Promise<void>)()
     expect(agentDelete).toHaveBeenCalledWith('agent-2')
+  })
+
+  test('reports list and row-action API failures to the user', async () => {
+    agentListPage.mockRejectedValueOnce(new Error('Unable to load agents'))
+
+    let tree = await settledPanel(() => AdminAgentsPanel())
+    expect(toastError).toHaveBeenCalledWith('Unable to load agents')
+    expect(JSON.stringify(tree)).toContain('empty')
+
+    agentListPage.mockResolvedValue({
+      items: [{ id: 'agent-1', name: 'Support Bot', status: 'draft', visibility: 'team', team: null, created_by: null, conversation_count: 0, message_count: 0, updated_at: '2026-01-01T00:00:00Z' }],
+      total: 1,
+      page: 1,
+      page_size: 10,
+    })
+    searchValue = 'retry'
+    tree = await settledPanel(() => AdminAgentsPanel())
+    agentPublish.mockRejectedValueOnce(new Error('Unable to publish agent'))
+
+    const publishItem = find(tree, (node) => node.type === 'dropdown-item' && typeof node.props.onClick === 'function')
+    await (publishItem.props.onClick as () => Promise<void>)()
+    expect(toastError).toHaveBeenCalledWith('Unable to publish agent')
+    expect(toastSuccess).not.toHaveBeenCalled()
   })
 
   test('loads workflows, forwards trigger filters, and exports a workflow package', async () => {

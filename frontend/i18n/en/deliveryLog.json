@@ -1,0 +1,45 @@
+{
+  "deliveryLog": {
+    "title": "Delivery log",
+    "description": "Durable outbound replies and artifacts for Feishu and WeChat Agent chat.",
+    "searchPlaceholder": "Search run ID or file name",
+    "provider": "Provider",
+    "providers": {
+      "feishu": "Feishu",
+      "wechat": "WeChat"
+    },
+    "status": "Status",
+    "statuses": {
+      "pending": "Pending",
+      "sending": "Sending",
+      "sent": "Sent",
+      "error": "Error",
+      "unavailable": "Unavailable",
+      "unknown": "Unknown"
+    },
+    "kinds": {
+      "text": "Text",
+      "markdown": "Markdown",
+      "asset": "Artifact"
+    },
+    "refresh": "Refresh",
+    "rowsPerPage": "Rows per page",
+    "pageInfo": "Page {page} of {total}",
+    "loading": "Loading…",
+    "empty": "No delivery records match these filters.",
+    "loadFailed": "Failed to load delivery records.",
+    "columns": {
+      "time": "Time",
+      "provider": "Provider",
+      "kind": "Type",
+      "file": "File / event",
+      "status": "Status",
+      "error": "Original error",
+      "runId": "Run"
+    },
+    "firstPage": "First page",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "lastPage": "Last page"
+  }
+}

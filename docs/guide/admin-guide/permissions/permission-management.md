@@ -27,7 +27,7 @@ System level (Super Admin/Admin dashboard APIs)
   ├── App management (`admin:app:*`)
   ├── Capability management (`admin:capability:*`)
   ├── Knowledge-base management (`admin:knowledge-base:*`)
-  ├── SSO management (`admin:sso:*`)
+  ├── Integration management (`admin:integrations:login:*`, `admin:integrations:settings:*`)
   └── Audit logs (`audit:read`, `audit:export`)
 
 Team-scoped platform APIs
@@ -49,7 +49,7 @@ Dashboard permissions authorize system-wide admin APIs for Super Admin/Admin use
 - `admin:capability:*` - Manage tools and skills across teams
 - `admin:knowledge-base:*` - Manage knowledge bases from admin
 - `admin:settings:read/update` - View/modify site settings
-- `admin:sso:read/update` - View/manage SSO
+- `admin:integrations:login:read/update` - View/manage login integrations; `admin:integrations:settings:read/update` - View/manage builtin integrations
 - `admin:conversation:*` - Manage conversations
 - `admin:memory:*` - Manage memory records
 - `admin:notification:*` - Manage notifications
@@ -112,7 +112,8 @@ Permissions:
   - admin:capability:read/create/update/delete/execute
   - admin:knowledge-base:read/test/create/update/delete
   - admin:settings:read
-  - admin:sso:read
+  - admin:integrations:login:read
+  - admin:integrations:settings:read
   - admin:conversation:read/delete
   - admin:notification:create/delete
   - admin:memory:read

@@ -13,6 +13,8 @@ import {
 import { cn } from "@/lib/utils";
 import type { FileUIPart, UIMessage } from "ai";
 import { FileTypeIcon } from "@/components/file-type-icon";
+import { AuthenticatedImage } from '@/components/chat/authenticated-media';
+import { downloadAuthenticatedAsset } from '@/components/chat/authenticated-asset';
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -352,6 +354,7 @@ export function MessageAttachment({
   ...props
 }: MessageAttachmentProps) {
   const filename = data.filename || "";
+  const anchorProps = props as React.AnchorHTMLAttributes<HTMLAnchorElement>;
   const mediaType =
     data.mediaType?.startsWith("image/") && data.url ? "image" : "file";
   const isImage = mediaType === "image";
@@ -366,7 +369,7 @@ export function MessageAttachment({
         )}
         {...props}
       >
-        <img
+        <AuthenticatedImage
           alt={filename || "attachment"}
           className="size-full object-cover"
           height={100}
@@ -403,7 +406,16 @@ export function MessageAttachment({
               "group inline-flex items-center gap-1.5 px-2 py-1 rounded-md border bg-muted/50 text-xs hover:bg-muted transition-colors cursor-pointer",
               className
             )}
-            {...(props as React.AnchorHTMLAttributes<HTMLAnchorElement>)}
+            {...anchorProps}
+            onClick={(event) => {
+              anchorProps.onClick?.(event);
+              if (event.defaultPrevented) return;
+              event.preventDefault();
+              if (!data.url) return;
+              void downloadAuthenticatedAsset(data.url, filename).catch((error) => {
+                console.error('Failed to download attachment:', error);
+              });
+            }}
           >
             <FileTypeIcon filename={filename} mimeType={data.mediaType} className="size-3.5 shrink-0" />
             <span className="truncate max-w-32">{filename || "Attachment"}</span>

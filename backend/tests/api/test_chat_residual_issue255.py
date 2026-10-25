@@ -22,6 +22,17 @@ def _started() -> dict:
     }
 
 
+def _submission(started):
+    """RunSubmission-shaped result of the shared submit service."""
+    return SimpleNamespace(
+        run_id=started["data"].run_id,
+        conversation_id=started["data"].conversation_id,
+        user_message_id=started["data"].user_message_id,
+        status=started["data"].status,
+        stream_url=started["data"].stream_url,
+    )
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("error_code", "expected_code", "expected_status"),
@@ -41,9 +52,9 @@ async def test_chat_maps_worker_failures_to_business_error(
         error_code=error_code,
         canonical_message_id=None,
     )
-    enqueue = AsyncMock(return_value=started)
+    enqueue = AsyncMock(return_value=_submission(started))
     wait = AsyncMock(return_value=run)
-    monkeypatch.setattr(chat_endpoint, "_enqueue_durable_chat_run", enqueue)
+    monkeypatch.setattr("app.services.agent_submission.submit_chat_run", enqueue)
     monkeypatch.setattr(chat_endpoint, "_wait_for_agent_run", wait)
 
     with pytest.raises(BusinessError) as exc_info:

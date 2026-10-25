@@ -1,5 +1,5 @@
 import React from 'react'
-import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const push = mock(() => undefined)
@@ -64,8 +64,7 @@ const icon = (name: string) => {
   return Icon
 }
 mock.module('lucide-react', () => ({
-  Calendar: icon('Calendar'), Activity: icon('Activity'), ChevronLeft: icon('ChevronLeft'),
-  ChevronRight: icon('ChevronRight'), ArrowLeft: icon('ArrowLeft'), ExternalLink: icon('ExternalLink'),
+  Calendar: icon('Calendar'), Activity: icon('Activity'), ArrowLeft: icon('ArrowLeft'), ExternalLink: icon('ExternalLink'),
   FileText: icon('FileText'), LayoutGrid: icon('LayoutGrid'), GitBranch: icon('GitBranch'),
   CheckCircle: icon('CheckCircle'), XCircle: icon('XCircle'), Clock: icon('Clock'), Ban: icon('Ban'),
   AlertTriangle: icon('AlertTriangle'), Search: icon('Search'), X: icon('X'), Loader2: icon('Loader2'),
@@ -87,6 +86,32 @@ mock.module('@/app/(dashboard)/activities/_components/workflow-run-drawer', () =
 }))
 
 let WorkflowLogsPage: React.ComponentType
+const originalIntersectionObserver = globalThis.IntersectionObserver
+
+class TestIntersectionObserver {
+  static instances: TestIntersectionObserver[] = []
+  readonly root = null
+  readonly rootMargin = ''
+  readonly thresholds: number[] = []
+  private readonly callback: IntersectionObserverCallback
+
+  constructor(callback: IntersectionObserverCallback) {
+    this.callback = callback
+    TestIntersectionObserver.instances.push(this)
+  }
+
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  takeRecords() { return [] }
+
+  trigger(isIntersecting: boolean) {
+    this.callback(
+      [{ isIntersecting } as IntersectionObserverEntry],
+      this as unknown as IntersectionObserver,
+    )
+  }
+}
 
 async function flush() {
   await act(async () => { await Promise.resolve(); await Promise.resolve() })
@@ -103,10 +128,16 @@ function text(renderer: ReactTestRenderer) {
 }
 
 beforeAll(async () => {
-  ({ default: WorkflowLogsPage } = await import('./page'))
+  Object.assign(globalThis, { IntersectionObserver: TestIntersectionObserver })
+  ;({ default: WorkflowLogsPage } = await import('./page'))
+})
+
+afterAll(() => {
+  Object.assign(globalThis, { IntersectionObserver: originalIntersectionObserver })
 })
 
 beforeEach(() => {
+  TestIntersectionObserver.instances = []
   push.mockClear()
   getWorkflow.mockClear()
   getWorkflowRuns.mockClear()
@@ -145,7 +176,7 @@ describe('WorkflowLogsPage', () => {
     expect(getWorkflowRuns).toHaveBeenLastCalledWith(workflow.id, expect.objectContaining({ page: 1 }))
   })
 
-  test('filters, searches, paginates, recovers after a run error, and renders empty state', async () => {
+  test('filters, searches, loads more when the sentinel intersects, recovers after a run error, and renders empty state', async () => {
     const renderer = await render()
     const selects = () => renderer.root.findAll((node) => node.type === 'section' && node.props['data-select'])
 
@@ -165,11 +196,78 @@ describe('WorkflowLogsPage', () => {
     const dateRequest = getWorkflowRuns.mock.calls.at(-1)?.[1]
     expect(dateRequest.createdAfter).toBeString()
     expect(Date.now() - new Date(dateRequest.createdAfter as string).getTime()).toBeGreaterThan(6 * 24 * 60 * 60 * 1000)
+    await flush()
 
-    const next = renderer.root.findAllByType('button').find((node) => node.children.includes('next'))!
-    await act(async () => next.props.onClick())
+    const secondRun = { ...run, id: 'run-two-123456789' }
+    getWorkflowRuns.mockResolvedValueOnce({ items: [secondRun], total: 2, page: 2, page_size: 20, pages: 1 })
+    const observer = TestIntersectionObserver.instances.at(-1)!
+    await act(async () => { observer.trigger(true) })
+    await flush()
+
     expect(getWorkflowRuns).toHaveBeenLastCalledWith(workflow.id, expect.objectContaining({ page: 2 }))
-    expect(renderer.root.findAllByType('span').some((node) => node.children.join('') === '2 / 2')).toBe(true)
+    expect(text(renderer)).toContain('run-two-')
+  })
+
+  test('keeps loaded runs after a next-page failure and retries manually', async () => {
+    getWorkflowRuns.mockImplementation(async () => ({ ...pageOne, total: 41 }))
+    const renderer = await render()
+    await flush()
+
+    getWorkflowRuns.mockRejectedValueOnce(new Error('temporary next-page failure'))
+    const observer = TestIntersectionObserver.instances.at(-1)!
+    await act(async () => { observer.trigger(true) })
+    await flush()
+
+    expect(getWorkflowRuns).toHaveBeenLastCalledWith(workflow.id, expect.objectContaining({ page: 2 }))
+    expect(text(renderer)).toContain('run-1234')
+    expect(text(renderer)).not.toContain('temporary next-page failure')
+
+    const secondRun = { ...run, id: 'run-retried-123456789' }
+    getWorkflowRuns.mockResolvedValueOnce({ items: [secondRun], total: 2, page: 2, page_size: 20, pages: 1 })
+    const retry = renderer.root.findAllByType('button').find((node) => node.children.includes('retry'))!
+    await act(async () => retry.props.onClick())
+    await flush()
+
+    expect(getWorkflowRuns).toHaveBeenLastCalledWith(workflow.id, expect.objectContaining({ page: 2 }))
+    expect(text(renderer)).toContain('run-retr')
+  })
+
+  test('shows a manual retry when the initial run load fails', async () => {
+    getWorkflowRuns.mockRejectedValueOnce(new Error('initial run failure'))
+    const renderer = await render()
+    await flush()
+    await flush()
+
+    expect(text(renderer)).toContain('loadFailed')
+    expect(text(renderer)).not.toContain('initial run failure')
+
+    const retry = renderer.root.findAllByType('button').find((node) => node.children.includes('retry'))!
+    await act(async () => retry.props.onClick())
+    await flush()
+
+    expect(getWorkflowRuns).toHaveBeenLastCalledWith(workflow.id, expect.objectContaining({ page: 1 }))
+    expect(text(renderer)).toContain('run-1234')
+  })
+
+  test('stops auto-paging when a next page returns no new runs', async () => {
+    getWorkflowRuns.mockImplementation(async (_id: string, options: { page?: number }) =>
+      options.page === 2
+        ? { items: [], total: 41, page: 2, page_size: 20, pages: 1 }
+        : { ...pageOne, total: 41 }
+    )
+    const renderer = await render()
+    await flush()
+
+    const observer = TestIntersectionObserver.instances.at(-1)!
+    await act(async () => { observer.trigger(true) })
+    await flush()
+
+    expect(getWorkflowRuns).toHaveBeenLastCalledWith(workflow.id, expect.objectContaining({ page: 2 }))
+    expect(text(renderer)).toContain('run-1234')
+
+    const callCount = getWorkflowRuns.mock.calls.length
+    await flush()
+    expect(getWorkflowRuns.mock.calls.length).toBe(callCount)
   })
 
   test('redirects when workflow loading fails and does not request runs', async () => {

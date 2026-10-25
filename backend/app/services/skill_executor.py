@@ -7,7 +7,7 @@ import re
 from pathlib import PurePosixPath
 from typing import Any
 
-from app.llm.tools.builtin.media import ToolExecutionResult
+from app.utils.tool_output import ToolExecutionResult
 from app.models.skill import Skill
 from app.schemas.response import BusinessError, ResponseCode
 from app.services.sandbox.gateway import sandbox_gateway

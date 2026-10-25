@@ -84,9 +84,32 @@ from .notification import (
     NotificationChannel,
     NotificationDeliveryStatus,
 )
-from .sso_provider import SSOProvider
+from .integration import Integration
 from .user_sso_connection import UserSSOConnection
 from .sso_session import SSOSession
+from .feishu_department import FeishuDepartment
+from .feishu_user import FeishuUser
+from .feishu_knowledge import FeishuKnowledgeSource, FeishuKnowledgeDocument
+from .wechat_knowledge import (
+    WeChatKnowledgeBinding,
+    WeChatKnowledgeLogin,
+    WeChatKnowledgeReceipt,
+    WeChatKnowledgeItem,
+    WeChatKnowledgeContent,
+    WeChatKnowledgeCollection,
+    WeChatPollBatch,
+)
+from .wechat_agent import (
+    WeChatAgentConfig,
+    WeChatAgentSession,
+    WeChatAgentReceipt,
+)
+from .feishu_agent import (
+    FeishuAgentPreference,
+    FeishuAgentReceipt,
+    FeishuAgentSession,
+)
+from .integration_delivery import IntegrationDelivery
 from .memory import MemoryEntity, MemoryRelation, EntityType, RelationType
 from .password_history import PasswordHistory
 from .agent_run import (
@@ -102,6 +125,10 @@ from .observability import (
     ObservabilityAlertRule,
     ObservabilityAlertEvent,
 )
+from .observability_payload import (
+    ObservabilityToolPayload,
+    ObservabilityTrajectoryEntry,
+)
 
 __all__ = [
     "Asset",
@@ -113,6 +140,24 @@ __all__ = [
     "User",
     "Role",
     "Permission",
+    "FeishuDepartment",
+    "FeishuUser",
+    "FeishuKnowledgeSource",
+    "FeishuKnowledgeDocument",
+    "WeChatKnowledgeBinding",
+    "WeChatKnowledgeLogin",
+    "WeChatKnowledgeReceipt",
+    "WeChatKnowledgeItem",
+    "WeChatKnowledgeContent",
+    "WeChatKnowledgeCollection",
+    "WeChatPollBatch",
+    "WeChatAgentConfig",
+    "WeChatAgentSession",
+    "WeChatAgentReceipt",
+    "FeishuAgentPreference",
+    "FeishuAgentSession",
+    "FeishuAgentReceipt",
+    "IntegrationDelivery",
     "Team",
     "TeamMember",
     "ScopedRoleAssignment",
@@ -184,7 +229,7 @@ __all__ = [
     "NotificationAuditAction",
     "NotificationChannel",
     "NotificationDeliveryStatus",
-    "SSOProvider",
+    "Integration",
     "UserSSOConnection",
     "SSOSession",
     "MemoryEntity",
@@ -201,4 +246,6 @@ __all__ = [
     "ObservabilityRun",
     "ObservabilityAlertRule",
     "ObservabilityAlertEvent",
+    "ObservabilityToolPayload",
+    "ObservabilityTrajectoryEntry",
 ]

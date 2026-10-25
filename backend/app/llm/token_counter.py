@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 # differently, but omitting images makes the preflight budget unsafe.
 IMAGE_TOKEN_ESTIMATE = 1024
 
+# Conservative per-item budget for non-image media whose vendor token cost is
+# not exposed by our adapters. Avoid tokenizing or counting Base64 payloads.
+NON_IMAGE_MEDIA_TOKEN_ESTIMATE = 4096
+
 # Mapping of model providers/families to tiktoken encodings
 MODEL_ENCODING_MAP = {
     # OpenAI models
@@ -173,10 +177,19 @@ def count_message_tokens(
                     for item in value:
                         if not isinstance(item, dict):
                             continue
-                        if item.get("type") in {"image", "image_url", "input_image"}:
+                        item_type = item.get("type")
+                        if item_type in {"image", "image_url", "input_image"}:
                             total_tokens += IMAGE_TOKEN_ESTIMATE
-                        elif item.get("type") == "text":
+                        elif item_type == "text":
                             total_tokens += len(encoding.encode(item.get("text", "")))
+                        elif item_type in {
+                            "input_audio",
+                            "audio",
+                            "video",
+                            "file",
+                            "input_file",
+                        }:
+                            total_tokens += NON_IMAGE_MEDIA_TOKEN_ESTIMATE
                 if key == "name":
                     total_tokens += tokens_per_name
 
@@ -196,10 +209,19 @@ def count_message_tokens(
                 for item in content:
                     if not isinstance(item, dict):
                         continue
-                    if item.get("type") == "text":
+                    item_type = item.get("type")
+                    if item_type == "text":
                         total_content += item.get("text", "")
-                    elif item.get("type") in {"image", "image_url", "input_image"}:
+                    elif item_type in {"image", "image_url", "input_image"}:
                         total_content += " " * (IMAGE_TOKEN_ESTIMATE * 4)
+                    elif item_type in {
+                        "input_audio",
+                        "audio",
+                        "video",
+                        "file",
+                        "input_file",
+                    }:
+                        total_content += " " * (NON_IMAGE_MEDIA_TOKEN_ESTIMATE * 4)
             if include_tool_calls and isinstance(msg.get("tool_calls"), list):
                 total_content += _serialize_token_payload(msg["tool_calls"])
         return max(len(total_content) // 4, 1)

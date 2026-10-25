@@ -34,6 +34,8 @@
       "hideToolCallsDesc": "在对话中隐藏工具调用详情，但不禁用工具执行。",
       "hideMessageActions": "隐藏消息操作栏",
       "hideMessageActionsDesc": "隐藏每条消息下方的操作栏。",
+      "enableCitations": "启用引用来源",
+      "enableCitationsDesc": "开启后在回答中标注引用并展示来源",
       "hideReasoning": "隐藏思考过程",
       "hideReasoningDesc": "在对话中隐藏思维链/思考过程。",
       "hideArtifactList": "隐藏产物列表",
@@ -312,11 +314,7 @@
       "attachments": {
         "title": "文件与图片",
         "tooltip": "允许用户在对话中附加文件和图片",
-        "description": "附件会保存为 Asset，Agent 可按需查看或解析。仅当所选聊天模型支持视觉时，图片才会直接传给模型理解。",
-        "maxContentLength": "最大内容长度",
-        "maxContentLengthHint": "Agent 显式解析文件时可返回的最大字符数（1,000-500,000）",
-        "characters": "字符",
-        "contextHint": "附件会作为 Asset 保留，不会自动解析并写入对话上下文。"
+        "description": "附件会保存为 Asset，Agent 可按需查看、读取或搜索。仅当所选聊天模型支持视觉时，图片才会直接传给模型理解。"
       },
       "userInput": {
         "title": "交互式提问",
@@ -406,9 +404,7 @@
         "createdAt": "创建时间"
       },
       "pagination": {
-        "showing": "显示 {from}-{to} 条，共 {total} 条",
-        "first": "第一页",
-        "last": "最后一页"
+        "showing": "显示 {from}-{to} 条，共 {total} 条"
       },
       "drawer": {
         "conversationDetail": "会话详情",
@@ -434,9 +430,7 @@
       "delete": "删除",
       "deleteConfirmTitle": "删除会话",
       "deleteConfirmDescription": "确定要删除这个会话吗？此操作无法撤销，所有消息记录将被永久删除。",
-      "cancel": "取消",
-      "prev": "上一页",
-      "next": "下一页"
+      "cancel": "取消"
     },
     "apiAccess": {
       "title": "访问 API",

@@ -3,7 +3,8 @@
 import * as React from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Activity, AlertTriangle, Bell, Boxes, CalendarIcon, Check, ChevronDown, ChevronRight, Clock3, Database, ExternalLink, Gauge, RefreshCw, Server, Workflow } from 'lucide-react'
+import { useDebounce } from '@/hooks/use-debounce'
+import { Activity, AlertTriangle, Bell, Boxes, CalendarIcon, Check, CheckCircle2, ChevronDown, Clock3, Coins, Database, ExternalLink, Gauge, RefreshCw, Search, Server, Workflow } from 'lucide-react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { endOfDay, format, startOfDay } from 'date-fns'
 import { enUS, zhCN } from 'date-fns/locale'
@@ -16,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { DataTableFacetedFilter } from '@/components/ui/data-table-faceted-filter'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
@@ -25,12 +27,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CHART_AXIS_COLOR, CHART_COLOR_ORDER, CHART_GRID_COLOR, CHART_HOVER_CURSOR, CHART_TOOLTIP_STYLE } from '@/lib/chart-theme'
+import { StatCard } from '@/components/dashboard/stat-card'
 import { formatTime } from '@/lib/utils'
 import { usePermissions } from '@/hooks/use-permissions'
-import { observabilityApi, type AlertEvent, type AlertRule, type DependenciesResponse, type InfrastructureResponse, type ObservabilityMeta, type ObservabilityPeriod, type QueueRow, type QueuesResponse, type RunDetailResponse, type RunSummary, type SummaryResponse } from '@/lib/api/admin/observability'
+import { observabilityApi, type AlertEvent, type AlertRule, type DependenciesResponse, type InfrastructureResponse, type ObservabilityMeta, type ObservabilityPeriod, type QueueRow, type QueuesResponse, type RunSummary, type SummaryResponse } from '@/lib/api/admin/observability'
 
 const VIEWS = ['overview', 'runs', 'dependencies', 'queues', 'infrastructure', 'alerts'] as const
 type View = typeof VIEWS[number]
@@ -81,31 +83,19 @@ export default function ObservabilityPage() {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState(false)
   const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
-  const [runFilter, setRunFilter] = React.useState({ source: 'all', status: '', error_category: '', run_id: '' })
+  const [runFilter, setRunFilter] = React.useState({ source: 'all', status: '', run_id: '' })
+  const debouncedRunId = useDebounce(runFilter.run_id, 300)
   const [cursor, setCursor] = React.useState<string | undefined>()
   const [runPages, setRunPages] = React.useState<Array<{ items: RunSummary[]; next_cursor: string | null }>>([])
   const [alertStatus, setAlertStatus] = React.useState<'active' | 'resolved' | 'all'>('active')
   const [alertPages, setAlertPages] = React.useState<Array<{ items: AlertEvent[]; next_cursor: string | null }>>([])
-  const [detail, setDetailState] = React.useState<RunDetailResponse | null>(null)
-  const [detailLoading, setDetailLoading] = React.useState(false)
-  const [detailError, setDetailError] = React.useState(false)
   const [silenceDuration, setSilenceDuration] = React.useState(3600)
   const [mutationBusy, setMutationBusy] = React.useState<string | null>(null)
-  const [expandedSpans, setExpandedSpans] = React.useState<Set<string>>(new Set())
   const requestId = React.useRef(0)
   const busy = React.useRef(false)
   const pendingLoad = React.useRef(false)
   const cursorRef = React.useRef<string | undefined>(undefined)
   const loadRef = React.useRef<((manual?: boolean) => Promise<void>) | null>(null)
-  const detailRequestId = React.useRef(0)
-  const setDetail = React.useCallback((next: RunDetailResponse | null) => {
-    if (next === null) {
-      detailRequestId.current++
-      setDetailLoading(false)
-      setDetailError(false)
-    }
-    setDetailState(next)
-  }, [])
 
   const updateQuery = React.useCallback((updates: Record<string, string | null>) => {
     const params = new URLSearchParams(searchString)
@@ -140,7 +130,7 @@ export default function ObservabilityPage() {
       let result: PageData
       if (view === 'overview') result = await observabilityApi.getSummary({ period, ...(startTime && endTime ? { start_time: startTime, end_time: endTime } : {}), team_id: teamId || undefined })
       else if (view === 'runs') {
-        const response = await observabilityApi.getRuns({ period, ...(startTime && endTime ? { start_time: startTime, end_time: endTime } : {}), team_id: teamId || undefined, source: runFilter.source as 'all' | 'agent' | 'workflow', status: runFilter.status || undefined, error_category: runFilter.error_category || undefined, run_id: runFilter.run_id || undefined, cursor: cursorRef.current, limit: 25 })
+        const response = await observabilityApi.getRuns({ period, ...(startTime && endTime ? { start_time: startTime, end_time: endTime } : {}), team_id: teamId || undefined, source: runFilter.source as 'all' | 'agent' | 'workflow', status: runFilter.status || undefined, run_id: debouncedRunId || undefined, cursor: cursorRef.current, limit: 25 })
         result = { runs: response.items, next_cursor: response.next_cursor, meta: response.meta }
       } else if (view === 'dependencies') result = await observabilityApi.getDependencies({ period, ...(startTime && endTime ? { start_time: startTime, end_time: endTime } : {}), team_id: teamId || undefined })
       else if (view === 'queues') result = await observabilityApi.getQueues()
@@ -161,7 +151,7 @@ export default function ObservabilityPage() {
       busy.current = false
       if (pendingLoad.current) { pendingLoad.current = false; window.setTimeout(() => loadRef.current?.(), 0) }
     }
-  }, [alertStatus, period, startTime, endTime, invalidRange, runFilter, teamId, view])
+  }, [alertStatus, period, startTime, endTime, invalidRange, runFilter.source, runFilter.status, debouncedRunId, teamId, view])
 
   const refresh = React.useCallback((manual = false) => {
     requestId.current++
@@ -188,7 +178,6 @@ export default function ObservabilityPage() {
 
   React.useEffect(() => {
     const requestIdRef = requestId
-    const detailRequestIdRef = detailRequestId
     const loadRefRef = loadRef
     const pendingLoadRef = pendingLoad
     const timer = window.setInterval(() => { if (!busy.current && document.visibilityState === 'visible') void refresh() }, 30000)
@@ -198,21 +187,15 @@ export default function ObservabilityPage() {
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', visibility)
       requestIdRef.current++
-      detailRequestIdRef.current++
       pendingLoadRef.current = false
       loadRefRef.current = null
     }
   }, [refresh])
 
-  const openRun = async (run: RunSummary) => {
-    setDetail(null); setDetailError(false); setDetailLoading(true)
-    const id = ++detailRequestId.current
-    try {
-      const response = await observabilityApi.getRun(run.source, run.run_id)
-      if (id === detailRequestId.current) setDetail(response)
-    } catch {
-      if (id === detailRequestId.current) setDetailError(true)
-    } finally { if (id === detailRequestId.current) setDetailLoading(false) }
+  const openRun = (run: RunSummary) => {
+    const params = new URLSearchParams(searchString)
+    params.set('tab', 'runs')
+    router.push(`/dashboard/observability/runs/${run.source}/${encodeURIComponent(run.run_id)}?${params.toString()}`)
   }
 
   const mutateAlert = async (alert: AlertEvent, action: 'acknowledge' | 'silence') => {
@@ -277,13 +260,13 @@ export default function ObservabilityPage() {
     {currentMeta && <QualityState meta={currentMeta} />}
     {loading && !data ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><Card className="h-32 animate-pulse bg-muted/40"/><Card className="h-32 animate-pulse bg-muted/40"/><Card className="h-32 animate-pulse bg-muted/40"/><Card className="h-32 animate-pulse bg-muted/40"/></div> : <>
       {view === 'overview' && data && 'agents' in data && <Overview data={data} />}
-      {view === 'runs' && <RunDiagnostics items={runPages.flatMap((page) => page.items)} nextCursor={runPages.at(-1)?.next_cursor ?? null} loading={loading} onFilter={(next) => { setRunFilter(next); cursorRef.current = undefined; setCursor(undefined); setRunPages([]) }} filter={runFilter} onNext={(next) => { cursorRef.current = next; setCursor(next) }} onOpen={openRun} />}
+      {view === 'runs' && <RunDiagnostics items={runPages.flatMap((page) => page.items)} nextCursor={runPages.at(-1)?.next_cursor ?? null} loading={loading} onFilter={setRunFilter} filter={runFilter} onNext={(next) => { cursorRef.current = next; setCursor(next) }} onOpen={openRun} />}
       {view === 'dependencies' && dependencyData && <Dependencies data={dependencyData} />}
       {view === 'queues' && queueData && <Queues data={queueData} />}
       {view === 'infrastructure' && infrastructureData && <Infrastructure data={infrastructureData} />}
       {view === 'alerts' && alertData && <Alerts canManage={canManageObservability} data={alertData} status={alertStatus} setStatus={(status) => { setAlertStatus(status); cursorRef.current = undefined; setCursor(undefined); setAlertPages([]) }} pages={alertPages} nextCursor={alertPages.at(-1)?.next_cursor ?? null} onNext={(next) => { cursorRef.current = next; setCursor(next) }} onMutate={mutateAlert} onSaveRule={saveRule} busy={mutationBusy} silenceDuration={silenceDuration} setSilenceDuration={setSilenceDuration} />}
     </>}
-  </div></main><RunDetail detail={detail} loading={detailLoading} error={detailError} onClose={() => setDetail(null)} expanded={expandedSpans} setExpanded={setExpandedSpans} /></div></RoutePermissionGuard>
+  </div></main></div></RoutePermissionGuard>
 }
 
 function ViewIcon({ view }: { view: View }) {
@@ -305,7 +288,7 @@ function QualityState({ meta }: { meta: ObservabilityMeta }) {
   return <div role="status" className={`flex items-start gap-3 rounded-lg border p-3 text-sm ${state === 'stale' || state === 'unavailable' ? 'border-amber-500/30 bg-amber-500/5' : 'border-border bg-muted/30'}`}><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600"/><div><strong>{t(`quality.${state}`, { samples: meta.sample_count })}</strong><p className="mt-0.5 text-muted-foreground">{window} · {sampleTime}</p></div></div>
 }
 
-function Metric({ label, value, hint }: { label: string; value: string | number; hint?: string }) { return <Card><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{value}</p>{hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}</CardContent></Card> }
+
 const number = (value: number | null | undefined) => value == null ? '—' : new Intl.NumberFormat().format(value)
 const duration = (value: number | null | undefined) => value == null ? '—' : value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(2)} s`
 const percent = (value: number | null | undefined) => value == null ? '—' : `${(value * 100).toFixed(1)}%`
@@ -314,95 +297,44 @@ const percentage = (value: number | null) => value == null ? '—' : `${value.to
 function Overview({ data }: { data: SummaryResponse }) {
   const t = useTranslations('dashboard.observability')
   const locale = useLocale()
-  return <div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric label={t('metrics.agentSubmitted')} value={number(data.agents.submitted)} hint={t('metrics.completedFailed', { completed: number(data.agents.completed), failed: number(data.agents.failed) })}/><Metric label={t('metrics.agentSuccessRate')} value={percent(data.agents.success_rate)}/><Metric label={t('metrics.agentP95')} value={duration(data.agents.p95_ms)} hint={t('metrics.firstTokenP95', { value: duration(data.agents.first_token_p95_ms) })}/><Metric label={t('metrics.agentTokens')} value={number(data.agents.tokens)}/><Metric label={t('metrics.workflowSubmitted')} value={number(data.workflows.submitted)} hint={t('metrics.completedFailed', { completed: number(data.workflows.completed), failed: number(data.workflows.failed) })}/><Metric label={t('metrics.workflowSuccessRate')} value={percent(data.workflows.success_rate)}/><Metric label={t('metrics.workflowP95')} value={duration(data.workflows.p95_ms)}/><Metric label={t('metrics.workflowTokens')} value={number(data.workflows.tokens)}/></div>
+  return <div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><StatCard title={t('metrics.agentSubmitted')} value={number(data.agents.submitted)} hint={t('metrics.completedFailed', { completed: number(data.agents.completed), failed: number(data.agents.failed) })} icon={Activity} tone="blue"/><StatCard title={t('metrics.agentSuccessRate')} value={percent(data.agents.success_rate)} icon={CheckCircle2} tone="green"/><StatCard title={t('metrics.agentP95')} value={duration(data.agents.p95_ms)} hint={t('metrics.firstTokenP95', { value: duration(data.agents.first_token_p95_ms) })} icon={Gauge} tone="orange"/><StatCard title={t('metrics.agentTokens')} value={number(data.agents.tokens)} icon={Coins} tone="cyan"/><StatCard title={t('metrics.workflowSubmitted')} value={number(data.workflows.submitted)} hint={t('metrics.completedFailed', { completed: number(data.workflows.completed), failed: number(data.workflows.failed) })} icon={Workflow} tone="purple"/><StatCard title={t('metrics.workflowSuccessRate')} value={percent(data.workflows.success_rate)} icon={CheckCircle2} tone="green"/><StatCard title={t('metrics.workflowP95')} value={duration(data.workflows.p95_ms)} icon={Clock3} tone="orange"/><StatCard title={t('metrics.workflowTokens')} value={number(data.workflows.tokens)} icon={Coins} tone="cyan"/></div>
   <Card><CardHeader><CardTitle>{t('charts.runTrend')}</CardTitle><CardDescription>{t('charts.runTrendDesc')}</CardDescription></CardHeader><CardContent><div className="h-[300px]">{data.trend.length ? <ResponsiveContainer width="100%" height="100%"><AreaChart data={data.trend} margin={{ top: 8, right: 12, bottom: 0, left: -16 }}><CartesianGrid stroke={CHART_GRID_COLOR} vertical={false}/><XAxis dataKey="bucket" tick={{ fill: CHART_AXIS_COLOR, fontSize: 11 }} tickFormatter={(value) => new Date(value).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}/><YAxis tick={{ fill: CHART_AXIS_COLOR, fontSize: 11 }}/><Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={(value) => new Date(String(value)).toLocaleString(locale)} formatter={(value, name, item) => [`${value == null ? '—' : number(Number(value))} · ${t('charts.sampleCoverage', { samples: number(item.payload.submitted) })}`, String(name)]}/><Area type="monotone" dataKey="completed" name={t('charts.completed')} stackId="outcomes" stroke={CHART_COLOR_ORDER[0]} fill={CHART_COLOR_ORDER[0]} fillOpacity={0.18}/><Area type="monotone" dataKey="failed" name={t('charts.failed')} stackId="outcomes" stroke={CHART_COLOR_ORDER[1]} fill={CHART_COLOR_ORDER[1]} fillOpacity={0.2}/><Line type="monotone" dataKey="submitted" name={t('charts.submitted')} stroke={CHART_COLOR_ORDER[2]} strokeWidth={2} dot={false} connectNulls={false}/></AreaChart></ResponsiveContainer> : <Empty text={t('states.noSamples')}/>}</div></CardContent></Card>
   <div className="grid gap-4 xl:grid-cols-2"><Card><CardHeader><CardTitle>{t('charts.latencyTrend')}</CardTitle><CardDescription>{t('charts.latencyTrendDesc')}</CardDescription></CardHeader><CardContent><div className="h-[260px]">{data.trend.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={data.trend} margin={{ top: 8, right: 12, bottom: 0, left: -16 }}><CartesianGrid stroke={CHART_GRID_COLOR} vertical={false}/><XAxis dataKey="bucket" tick={{ fill: CHART_AXIS_COLOR, fontSize: 11 }} tickFormatter={(value) => new Date(value).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}/><YAxis tick={{ fill: CHART_AXIS_COLOR, fontSize: 11 }}/><Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={(value) => new Date(String(value)).toLocaleString(locale)} formatter={(value, name, item) => [`${value == null ? '—' : duration(Number(value))} · ${t('charts.sampleCoverage', { samples: number(item.payload.submitted) })}`, String(name)]}/><Line type="monotone" dataKey="p95_ms" name={t('charts.p95')} stroke={CHART_COLOR_ORDER[0]} strokeWidth={2} dot={false} connectNulls={false}/><Line type="monotone" dataKey="first_token_p95_ms" name={t('charts.firstTokenP95')} stroke={CHART_COLOR_ORDER[2]} strokeWidth={2} dot={false} connectNulls={false}/></LineChart></ResponsiveContainer> : <Empty text={t('states.noSamples')}/>}</div></CardContent></Card><Card><CardHeader><CardTitle>{t('charts.tokenTrend')}</CardTitle><CardDescription>{t('charts.tokenTrendDesc')}</CardDescription></CardHeader><CardContent><div className="h-[260px]">{data.trend.length ? <ResponsiveContainer width="100%" height="100%"><BarChart data={data.trend} margin={{ top: 8, right: 12, bottom: 0, left: -16 }}><CartesianGrid stroke={CHART_GRID_COLOR} vertical={false}/><XAxis dataKey="bucket" tick={{ fill: CHART_AXIS_COLOR, fontSize: 11 }} tickFormatter={(value) => new Date(value).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}/><YAxis tick={{ fill: CHART_AXIS_COLOR, fontSize: 11 }}/><Tooltip cursor={CHART_HOVER_CURSOR} contentStyle={CHART_TOOLTIP_STYLE} labelFormatter={(value) => new Date(String(value)).toLocaleString(locale)} formatter={(value, name, item) => [`${number(Number(value))} · ${t('charts.sampleCoverage', { samples: number(item.payload.submitted) })}`, String(name)]}/><Bar dataKey="tokens" name={t('charts.tokens')} fill={CHART_COLOR_ORDER[1]} radius={[4, 4, 0, 0]}/></BarChart></ResponsiveContainer> : <Empty text={t('states.noSamples')}/>}</div></CardContent></Card></div>
   <div className="grid gap-4 xl:grid-cols-2">{data.issues.map((issue) => <Card key={`${issue.kind}:${issue.title}`} className="border-l-4" style={{ borderLeftColor: issue.severity === 'critical' ? 'hsl(var(--destructive))' : issue.severity === 'warning' ? 'hsl(var(--chart-2))' : 'hsl(var(--primary))' }}><CardContent className="flex items-start justify-between gap-3 p-4"><div><div className="flex items-center gap-2"><Badge variant={issue.severity === 'critical' ? 'destructive' : 'secondary'}>{t(`severity.${issue.severity}`)}</Badge><strong>{issue.title}</strong></div><p className="mt-2 text-sm text-muted-foreground">{issue.detail}</p><p className="mt-2 text-xs text-muted-foreground">{t('issues.affected', { count: issue.affected_count })}</p></div>{issue.href && <a href={issue.href} aria-label={t('actions.openIssue')}><ExternalLink className="h-4 w-4"/></a>}</CardContent></Card>)}</div>{!data.issues.length && <Card><CardContent className="p-4 text-sm text-muted-foreground">{t('issues.none')}</CardContent></Card>}</div>
 }
 
-function RunDiagnostics({ items, nextCursor, loading, onFilter, filter, onNext, onOpen }: { items: RunSummary[]; nextCursor: string | null; loading: boolean; filter: { source: string; status: string; error_category: string; run_id: string }; onFilter: (filter: { source: string; status: string; error_category: string; run_id: string }) => void; onNext: (cursor: string) => void; onOpen: (run: RunSummary) => void }) {
+function RunDiagnostics({ items, nextCursor, loading, onFilter, filter, onNext, onOpen }: { items: RunSummary[]; nextCursor: string | null; loading: boolean; filter: { source: string; status: string; run_id: string }; onFilter: (filter: { source: string; status: string; run_id: string }) => void; onNext: (cursor: string) => void; onOpen: (run: RunSummary) => void }) {
   const t = useTranslations('dashboard.observability')
-  const [draftFilter, setDraftFilter] = React.useState(filter)
-  React.useEffect(() => setDraftFilter(filter), [filter])
-  const changeFilter = (key: keyof typeof draftFilter, value: string) => setDraftFilter((current) => ({ ...current, [key]: value }))
-  const submitFilter = (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); onFilter(draftFilter) }
+  const changeFilter = (key: keyof typeof filter, value: string) => onFilter({ ...filter, [key]: value })
   const sourceOptions = [
-    { value: 'all', label: t('filters.allSources') },
     { value: 'agent', label: t('sources.agent') },
     { value: 'workflow', label: t('sources.workflow') },
   ]
   const statusOptions = [
-    { value: 'all', label: t('filters.allStatuses') },
     ...(['completed', 'failed', 'running', 'queued', 'cancelled'] as const).map((value) => ({
       value,
       label: t(`status.${value}`),
     })),
   ]
-  const selectedSourceLabel =
-    sourceOptions.find((option) => option.value === draftFilter.source)?.label ??
-    sourceOptions[0].label
-  const selectedStatus = draftFilter.status || 'all'
-  const selectedStatusLabel =
-    statusOptions.find((option) => option.value === selectedStatus)?.label ??
-    statusOptions[0].label
+  const selectFilter = (key: 'source' | 'status', values: Set<string>) => {
+    const next = Array.from(values).find((value) => value !== filter[key])
+    changeFilter(key, next ?? (key === 'source' ? 'all' : ''))
+  }
   return (
     <Card>
-      <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <CardHeader className="gap-4">
         <div>
           <CardTitle>{t('runs.title')}</CardTitle>
           <CardDescription>{t('runs.description')}</CardDescription>
         </div>
-        <form className="flex flex-wrap items-end gap-2" onSubmit={submitFilter}>
-          <Select
-            value={draftFilter.source}
-            onValueChange={(value) => value && changeFilter('source', value)}
-          >
-            <SelectTrigger aria-label={t('filters.source')} className="w-36">
-              <SelectValue>{selectedSourceLabel}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {sourceOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={selectedStatus}
-            onValueChange={(value) =>
-              changeFilter('status', !value || value === 'all' ? '' : value)
-            }
-          >
-            <SelectTrigger aria-label={t('filters.status')} className="w-36">
-              <SelectValue>{selectedStatusLabel}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {statusOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Input
-            aria-label={t('filters.errorCategory')}
-            value={draftFilter.error_category}
-            onChange={(event) => changeFilter('error_category', event.target.value)}
-            placeholder={t('filters.errorCategory')}
-            className="w-36"
-          />
-          <Input
-            aria-label={t('filters.runId')}
-            value={draftFilter.run_id}
-            onChange={(event) => changeFilter('run_id', event.target.value)}
-            placeholder={t('filters.runId')}
-            className="w-36"
-          />
-          <Button type="submit" disabled={loading}>
-            {t('actions.apply')}
-          </Button>
-        </form>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-full sm:w-72">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input aria-label={t('filters.runId')} value={filter.run_id} onChange={(event) => changeFilter('run_id', event.target.value)} placeholder={t('filters.runId')} className="h-9 pl-8" />
+          </div>
+          <DataTableFacetedFilter title={t('filters.source')} options={sourceOptions} selectedValues={new Set(filter.source === 'all' ? [] : [filter.source])} onSelectionChange={(values) => selectFilter('source', values)} />
+          <DataTableFacetedFilter title={t('filters.status')} options={statusOptions} selectedValues={new Set(filter.status ? [filter.status] : [])} onSelectionChange={(values) => selectFilter('status', values)} />
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="overflow-x-auto">
@@ -420,8 +352,17 @@ function RunDiagnostics({ items, nextCursor, loading, onFilter, filter, onNext, 
               {items.map((run) => (
                 <tr
                   key={`${run.source}:${run.run_id}`}
-                  className="cursor-pointer border-b transition-colors hover:bg-muted/50"
+                  role="link"
+                  tabIndex={0}
+                  aria-label={`${t('runs.title')}: ${run.resource_name}`}
+                  className="cursor-pointer border-b transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
                   onClick={() => onOpen(run)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      onOpen(run)
+                    }
+                  }}
                 >
                   <td className="px-3 py-3">
                     <Badge variant="outline">{t(`sources.${run.source}`)}</Badge>
@@ -740,112 +681,4 @@ function RuleEditor({ rule, busy, onSave }: { rule: AlertRule; busy: boolean; on
   )
 }
 
-function RunDetail({ detail, loading, error, onClose, expanded, setExpanded }: { detail: RunDetailResponse | null; loading: boolean; error: boolean; onClose: () => void; expanded: Set<string>; setExpanded: React.Dispatch<React.SetStateAction<Set<string>>> }) {
-  const t = useTranslations('dashboard.observability')
-  const run = detail?.run
-  const spans = detail?.spans ?? []
-  const children = new Map<string | null, RunDetailResponse['spans']>()
-  const timelineValues: number[] = []
-  for (const span of spans) {
-    const started = span.started_at ? Date.parse(span.started_at) : Number.NaN
-    const finished = span.finished_at ? Date.parse(span.finished_at) : Number.NaN
-    if (Number.isFinite(started)) timelineValues.push(started)
-    if (Number.isFinite(finished)) timelineValues.push(finished)
-    else if (Number.isFinite(started) && span.duration_ms != null) timelineValues.push(started + span.duration_ms)
-    const key = span.parent_span_id
-    children.set(key, [...(children.get(key) ?? []), span])
-  }
-  const timelineStart = timelineValues.length ? Math.min(...timelineValues) : 0
-  const timelineDuration = Math.max(1, (timelineValues.length ? Math.max(...timelineValues) : timelineStart) - timelineStart)
-  const toggle = (id: string) =>
-    setExpanded((previous) => {
-      const next = new Set(previous)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  return <Sheet open={Boolean(run || loading || error)} onOpenChange={(open) => !open && onClose()}><SheetContent className="w-full overflow-y-auto sm:max-w-3xl"><SheetHeader><SheetTitle>{run?.resource_name ?? t('details.runTitle')}</SheetTitle><SheetDescription>{run ? `${t(`sources.${run.source}`)} · ${run.run_id}` : t('details.traceDescription')}</SheetDescription></SheetHeader>{loading ? <div className="space-y-3 p-6"><div className="h-16 animate-pulse rounded bg-muted"/><div className="h-32 animate-pulse rounded bg-muted"/></div> : error ? <p role="alert" className="p-6 text-sm text-destructive">{t('states.errorDescription')}</p> : detail && run ? <div className="space-y-5 p-1"><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Metric label={t('runs.columns.status')} value={run.status}/><Metric label={t('runs.columns.queue')} value={duration(run.queue_duration_ms)}/><Metric label={t('runs.columns.duration')} value={duration(run.total_duration_ms)}/><Metric label={t('runs.columns.tokens')} value={number(run.total_tokens)}/></div><div className="rounded-lg border p-3 text-xs text-muted-foreground">{t('details.traceStatus', { recorded: detail.trace.recorded_count, complete: detail.trace.complete ? t('details.complete') : t('details.incomplete') })}{detail.trace.expired && ` · ${t('details.traceExpired')}`}{detail.trace.truncated && ` · ${t('details.traceTruncated')}`}</div><div className="space-y-1"><h3 className="mb-3 font-medium">{t('details.waterfall')}</h3>{spans.length ? (children.get(null) ?? spans.filter((span) => !spans.some((other) => other.span_id === span.parent_span_id))).map((span) => <SpanTree key={span.span_id} span={span} childrenMap={children} depth={0} timelineStart={timelineStart} timelineDuration={timelineDuration} expanded={expanded} toggle={toggle}/>) : <Empty text={t('details.traceUnavailable')}/>}</div>{run.error_category && <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm"><strong>{t('details.errorCategory')}:</strong> {run.error_category}{run.error_code && ` · ${run.error_code}`}</div>}</div> : null}</SheetContent></Sheet>
-}
-function SpanTree({
-  span,
-  childrenMap,
-  depth,
-  timelineStart,
-  timelineDuration,
-  expanded,
-  toggle,
-}: {
-  span: RunDetailResponse['spans'][number]
-  childrenMap: Map<string | null, RunDetailResponse['spans']>
-  depth: number
-  timelineStart: number
-  timelineDuration: number
-  expanded: Set<string>
-  toggle: (id: string) => void
-}) {
-  const children = childrenMap.get(span.span_id) ?? []
-  const open = expanded.has(span.span_id)
-  const started = span.started_at ? Date.parse(span.started_at) : timelineStart
-  const offset = Number.isFinite(started) ? Math.max(0, started - timelineStart) : 0
-  const elapsed =
-    span.duration_ms ??
-    (span.finished_at && span.started_at
-      ? Date.parse(span.finished_at) - Date.parse(span.started_at)
-      : 0)
-  const left = Math.min(100, (offset / timelineDuration) * 100)
-  const width = Math.max(
-    elapsed > 0 ? 1 : 0.5,
-    Math.min(100 - left, (Math.max(0, elapsed) / timelineDuration) * 100),
-  )
-
-  return (
-    <div>
-      <button
-        type="button"
-        aria-expanded={children.length ? open : undefined}
-        disabled={!children.length}
-        onClick={() => toggle(span.span_id)}
-        className="flex w-full items-center gap-2 rounded-md border-b px-2 py-2 text-left hover:bg-muted/50"
-        style={{ paddingLeft: `${8 + depth * 18}px` }}
-      >
-        {children.length ? (
-          open ? (
-            <ChevronDown className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5" />
-          )
-        ) : (
-          <span className="w-3.5" />
-        )}
-        <Badge variant="outline">{span.kind}</Badge>
-        <span className="min-w-0 flex-1 truncate text-sm">{span.name}</span>
-        <span className="text-xs text-muted-foreground">
-          {duration(span.duration_ms)}
-        </span>
-        <Badge variant={span.status === 'failed' ? 'destructive' : 'secondary'}>
-          {span.status}
-        </Badge>
-      </button>
-      <div className="relative ml-6 mt-1 h-2 overflow-hidden rounded bg-muted">
-        <div
-          className="absolute inset-y-0 rounded bg-primary/70"
-          style={{ left: `${left}%`, width: `${width}%` }}
-        />
-      </div>
-      {open &&
-        children.map((child) => (
-          <SpanTree
-            key={child.span_id}
-            span={child}
-            childrenMap={childrenMap}
-            depth={depth + 1}
-            timelineStart={timelineStart}
-            timelineDuration={timelineDuration}
-            expanded={expanded}
-            toggle={toggle}
-          />
-        ))}
-    </div>
-  )
-}
 function Empty({ text }: { text: string }) { return <div className="flex min-h-24 items-center justify-center rounded-lg border border-dashed px-4 text-center text-sm text-muted-foreground">{text}</div> }

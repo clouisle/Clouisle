@@ -19,7 +19,7 @@ mock.module('next-intl', () => ({
 mock.module('sonner', () => ({ toast: { success } }))
 mock.module('@/lib/api/admin/users', () => ({ usersApi: { createUser, updateUser, getUser } }))
 mock.module('@/lib/api/admin/roles', () => ({ rolesApi: { getRoles } }))
-mock.module('@/lib/api/admin/sso', () => ({ ssoApi: { adminDisconnectConnection } }))
+mock.module('@/lib/api/admin/integrations', () => ({ integrationsApi: { adminDisconnectConnection } }))
 mock.module('@/components/permission-guard', () => ({ useCanPerform: () => ({ canPerform: () => canManageSSO }) }))
 mock.module('@/lib/utils', () => ({ isValidEmail: (email: string) => email.includes('@') }))
 mock.module('@/lib/validation', () => ({
@@ -77,13 +77,19 @@ beforeEach(() => {
   onSuccess.mockClear()
 })
 
-test('loads roles and saves edited user data', async () => {
+test('loads roles, selects a role, and saves edited user data', async () => {
   updateUser.mockResolvedValue(user)
-  const renderer = render(true)
+  let renderer!: ReactTestRenderer
+  act(() => {
+    renderer = create(<UserDialog open onOpenChange={onOpenChange} user={{ ...user, roles: [] } as never} onSuccess={onSuccess} />)
+  })
 
   await act(async () => {})
   expect(getRoles).toHaveBeenCalledWith(1, 100)
   expect(input(renderer, 'username').props.value).toBe('Ada')
+  expect(JSON.stringify(renderer.toJSON())).toContain('Administrator')
+  const roleCheckbox = renderer.root.findAllByType('input').find((node) => node.props.id === 'role-role-1')!
+  await act(async () => roleCheckbox.props.onChange())
   await submit(renderer)
 
   expect(updateUser).toHaveBeenCalledWith('user-1', { email: 'ada@example.test', is_active: true, roles: ['admin'] })
@@ -171,8 +177,8 @@ test('disconnects an SSO account and refreshes the user', async () => {
   const connectedUser = {
     ...user,
     sso_connections: [{
-      id: 'connection-1', provider_display_name: 'Corporate', provider_email: 'ada@example.test',
-      provider_icon_url: null,
+      id: 'connection-1', integration_provider_type: 'oidc', integration_display_name: 'Corporate', provider_email: 'ada@example.test',
+      integration_icon_url: null,
     }],
   }
   adminDisconnectConnection.mockResolvedValue(undefined)

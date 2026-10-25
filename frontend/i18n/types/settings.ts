@@ -1,8 +1,119 @@
-// GENERATED — 2026-10-07T17:03:38.845Z
+// GENERATED — 2026-10-24T18:18:06.007Z
 // Source: i18n/en/settings.json
 export type SettingsMessages = {
   settings: {
     title: string
+    feishu: {
+      title: string
+      description: string
+      enable: string
+      enableHint: string
+      selectBeforeEnable: string
+      help: string
+      refresh: string
+      loading: string
+      disabled: string
+      unlinked: string
+      agent: string
+      choose: string
+      unavailable: string
+      empty: string
+      switchHint: string
+      clear: string
+      save: string
+      saved: string
+      failed: string
+    }
+    wechat: {
+      title: string
+      description: string
+      help: string
+      modelHelp: string
+      purposeTitle: string
+      purposeHint: string
+      purposeNone: string
+      purposeKnowledgeCollection: string
+      purposeAgent: string
+      purposeLabel: string
+      purposeSelect: string
+      purposeBusy: string
+      featuresDisabled: string
+      featurePaused: string
+      agentSelect: string
+      noAgents: string
+      agentVariables: string
+      agentVariablesHint: string
+      agentInactive: string
+      agentStt: string
+      agentInput: string
+      agentRunStatus: string
+      stop: string
+      runStatus: {
+        queued: string
+        running: string
+        stopping: string
+        completing: string
+        completed: string
+        stopped: string
+        failed: string
+        interrupted: string
+        waiting: string
+      }
+      variablesRequired: string
+      variablesOptional: string
+      variablePlaceholder: string
+      variableNumberInvalid: string
+      variableOptionInvalid: string
+      variableTooLong: string
+      save: string
+      saved: string
+      cancel: string
+      bindingRule: string
+      loading: string
+      failed: string
+      refresh: string
+      empty: string
+      targetMissing: string
+      connectionError: string
+      change: string
+      connect: string
+      disabled: string
+      target: string
+      selectTarget: string
+      noTargets: string
+      modelHint: string
+      vision: string
+      stt: string
+      notConfigured: string
+      collectionActive: string
+      collectionInactive: string
+      collectionHint: string
+      connections: string
+      lastReceived: string
+      never: string
+      showQr: string
+      qrLabel: string
+      bound: string
+      verifyCode: string
+      verify: string
+      closeQr: string
+      disconnect: string
+      disconnectHint: string
+      replyHint: string
+      status: {
+        connected: string
+        disconnected: string
+        error: string
+      }
+      login: {
+        wait: string
+        scaned: string
+        confirmed: string
+        expired: string
+        need_verifycode: string
+        verify_code_blocked: string
+      }
+    }
     description: string
     cancel: string
     profile: string

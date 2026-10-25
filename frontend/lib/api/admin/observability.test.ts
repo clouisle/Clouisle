@@ -36,8 +36,12 @@ describe('observabilityApi', () => {
 
   test('loads trace detail separately and safely encodes run identifiers', async () => {
     await observabilityApi.getRun('agent', 'run/id ?')
+    await observabilityApi.getRunToolPayload('agent', 'run/id ?', 'call/1 ?')
+    await observabilityApi.getTrajectoryEntry('workflow', 'run/id ?', 'entry/1 ?')
 
-    expect(get).toHaveBeenCalledWith('/admin/observability/runs/agent/run%2Fid%20%3F')
+    expect(get).toHaveBeenNthCalledWith(1, '/admin/observability/runs/agent/run%2Fid%20%3F')
+    expect(get).toHaveBeenNthCalledWith(2, '/admin/observability/runs/agent/run%2Fid%20%3F/tools/call%2F1%20%3F')
+    expect(get).toHaveBeenNthCalledWith(3, '/admin/observability/runs/workflow/run%2Fid%20%3F/trajectory/entry%2F1%20%3F')
   })
 
   test('uses cursor pagination and status filter for alert events and rules', async () => {

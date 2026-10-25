@@ -1,0 +1,874 @@
+"""Feishu Open Platform client for administrator-driven directory sync."""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from dataclasses import dataclass, field
+import json
+import re
+from typing import Any
+from urllib.parse import quote
+
+import httpx
+
+from app.integrations.credentials import decrypt_secret
+
+API_BASE = "https://open.feishu.cn/open-apis"
+TIMEOUT = httpx.Timeout(20.0, connect=5.0)
+PAGE_SIZE = 50
+# Feishu rejects these sizes before storing anything.
+IMAGE_MAX_BYTES = 10 * 1024 * 1024
+FILE_MAX_BYTES = 30 * 1024 * 1024
+REPLY_MEDIA_TYPES = frozenset({"image", "file", "media"})
+
+# User-authorized (web login) endpoints. Overridable per integration so a
+# deployment can point at a Lark tenant or a test double.
+DEFAULT_AUTHORIZATION_URL = "https://accounts.feishu.cn/open-apis/authen/v1/authorize"
+DEFAULT_TOKEN_URL = "https://accounts.feishu.cn/oauth/v3/token"
+DEFAULT_USERINFO_URL = "https://open.feishu.cn/open-apis/authen/v1/user_info"
+# `user_info` needs no scope for identity, but the email field requires this one.
+DEFAULT_LOGIN_SCOPES = "contact:user.base:readonly contact:user.email:readonly"
+
+
+@dataclass
+class FeishuDepartment:
+    department_id: str
+    name: str
+    parent_department_id: str | None
+    children: list["FeishuDepartment"] = field(default_factory=list)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "department_id": self.department_id,
+            "name": self.name,
+            "parent_department_id": self.parent_department_id,
+            "children": [child.as_dict() for child in self.children],
+        }
+
+
+@dataclass(frozen=True)
+class FeishuDirectoryUser:
+    user_id: str
+    open_id: str
+    union_id: str | None
+    name: str
+    email: str | None
+    avatar_url: str | None
+    department_ids: frozenset[str] = frozenset()
+
+
+class FeishuAPIError(ValueError):
+    """The Feishu Open Platform rejected an API request.
+
+    `message` stays short enough for the administrator UI to display; `detail`
+    carries the raw response for server logs.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        detail: str | None = None,
+        code: int | None = None,
+        status_code: int | None = None,
+        required_scopes: tuple[str, ...] = (),
+    ):
+        super().__init__(message)
+        self.detail = detail
+        self.code = code
+        self.status_code = status_code
+        self.resource_scope: str | None = None
+        self.required_scopes = required_scopes
+
+    @property
+    def permission_denied(self) -> bool:
+        return self.code != 99991672 and (
+            self.status_code == 403 or self.code in (131006, 1770032)
+        )
+
+
+def _short(value: object, limit: int = 120) -> str:
+    text = str(value).strip().replace("\n", " ")
+    return text[:limit]
+
+
+def _error_message(response: httpx.Response) -> tuple[str, str]:
+    """Build a displayable message plus a log-only detail from a Feishu error response."""
+    raw = response.text[:1024]
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    if isinstance(body, dict):
+        code = body.get("code")
+        msg = body.get("msg")
+        if msg:
+            return (
+                f"Feishu API HTTP {response.status_code} (code {code}): {_short(msg)}",
+                raw,
+            )
+    return (
+        f"Feishu API HTTP {response.status_code} for {response.request.url.path}",
+        raw,
+    )
+
+
+def _required_scopes(body: Any, path: str) -> tuple[str, ...]:
+    """Expose only validated scope identifiers, never raw provider messages."""
+    if not isinstance(body, dict) or body.get("code") != 99991672:
+        return ()
+    error = body.get("error")
+    violations = (
+        error.get("permission_violations", []) if isinstance(error, dict) else []
+    )
+    scopes = []
+    if isinstance(violations, list):
+        for violation in violations[:30]:
+            scope = violation.get("subject") if isinstance(violation, dict) else None
+            if (
+                isinstance(scope, str)
+                and re.fullmatch(r"[a-z][a-z0-9_]*(?::[a-z][a-z0-9_.]*){1,4}", scope)
+                and len(scope) <= 100
+            ):
+                if scope not in scopes:
+                    scopes.append(scope)
+    if not scopes:
+        known_scopes = {
+            "/im/v1/images": ("im:resource:upload", "im:resource"),
+            "/im/v1/files": ("im:resource:upload", "im:resource"),
+            "/wiki/v2/spaces": (
+                "wiki:space:retrieve",
+                "wiki:wiki:readonly",
+                "wiki:wiki",
+            ),
+            "/wiki/v2/spaces/": (
+                "wiki:node:retrieve",
+                "wiki:wiki:readonly",
+                "wiki:wiki",
+            ),
+            "/bitable/v1/apps/": (
+                "bitable:app:readonly",
+                "bitable:app",
+                "base:table:read",
+            ),
+        }
+        for prefix, candidates in known_scopes.items():
+            if path.startswith(prefix):
+                scopes = list(candidates)
+                break
+    return tuple(scopes)
+
+
+class FeishuClient:
+    def __init__(self, app_id: str, encrypted_app_secret: str):
+        self.app_id = app_id.strip()
+        self.app_secret = decrypt_secret(encrypted_app_secret)
+        self._knowledge_request_at = 0.0
+
+    async def _request(
+        self, client: httpx.AsyncClient, method: str, path: str, **kwargs: Any
+    ) -> dict[str, Any]:
+        response = await client.request(method, path, **kwargs)
+        if response.status_code >= 400:
+            message, detail = _error_message(response)
+            error_body = None
+            try:
+                error_body = response.json()
+                code = error_body.get("code") if isinstance(error_body, dict) else None
+            except ValueError:
+                code = None
+            raise FeishuAPIError(
+                message,
+                detail=detail,
+                code=code,
+                status_code=response.status_code,
+                required_scopes=_required_scopes(error_body, path),
+            )
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise FeishuAPIError(
+                f"Feishu API HTTP {response.status_code} returned a non-JSON body",
+                detail=response.text[:1024],
+            ) from exc
+        if not isinstance(body, dict) or body.get("code") != 0:
+            code = body.get("code") if isinstance(body, dict) else "invalid response"
+            msg = body.get("msg", "") if isinstance(body, dict) else ""
+            raise FeishuAPIError(
+                f"Feishu API error {code}: {_short(msg)}",
+                detail=str(body)[:1024],
+                code=code if isinstance(code, int) else None,
+                required_scopes=_required_scopes(body, path),
+            )
+        return body
+
+    async def _token(self, client: httpx.AsyncClient) -> str:
+        body = await self._request(
+            client,
+            "POST",
+            "/auth/v3/tenant_access_token/internal",
+            json={"app_id": self.app_id, "app_secret": self.app_secret},
+        )
+        token = body.get("tenant_access_token")
+        if not isinstance(token, str) or not token:
+            raise FeishuAPIError("Feishu did not return a tenant access token")
+        return token
+
+    async def check_connection(self) -> None:
+        """Verify app credentials by requesting a tenant access token."""
+        async with httpx.AsyncClient(
+            base_url=API_BASE,
+            timeout=TIMEOUT,
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
+            await self._token(client)
+
+    async def send_user_message(
+        self,
+        feishu_user_id: str,
+        title: str,
+        content: str,
+        link_url: str | None = None,
+        link_label: str | None = None,
+    ) -> None:
+        """Send a direct message, using a native card button for optional links."""
+        card: dict[str, Any] = {
+            "schema": "2.0",
+            "config": {"wide_screen_mode": True},
+            "body": {
+                "elements": [
+                    {"tag": "markdown", "content": content},
+                ]
+            },
+        }
+        if link_url:
+            card["body"]["elements"].append(
+                {
+                    "tag": "button",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": link_label or "View details",
+                    },
+                    "type": "primary",
+                    "url": link_url,
+                }
+            )
+
+        async with httpx.AsyncClient(
+            base_url=API_BASE,
+            timeout=TIMEOUT,
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
+            token = await self._token(client)
+            await self._request(
+                client,
+                "POST",
+                "/im/v1/messages",
+                params={"receive_id_type": "user_id"},
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "receive_id": feishu_user_id,
+                    "msg_type": "interactive",
+                    "content": json.dumps(card, ensure_ascii=False),
+                },
+            )
+
+    async def reply_text(self, message_id: str, text: str, *, uuid: str) -> None:
+        """Reply to one inbound bot message with provider-side deduplication."""
+        if (
+            not message_id
+            or len(message_id) > 255
+            or not text
+            or len(text.encode("utf-8")) > 150 * 1024
+            or not uuid
+            or len(uuid) > 50
+        ):
+            raise ValueError("Invalid Feishu reply parameters")
+        async with httpx.AsyncClient(
+            base_url=API_BASE,
+            timeout=TIMEOUT,
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
+            token = await self._token(client)
+            await self._request(
+                client,
+                "POST",
+                f"/im/v1/messages/{quote(message_id, safe='')}/reply",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "msg_type": "text",
+                    "content": json.dumps({"text": text}, ensure_ascii=False),
+                    "uuid": uuid,
+                },
+            )
+
+    async def reply_markdown(self, message_id: str, text: str, *, uuid: str) -> None:
+        """Reply using a Feishu interactive card with a Markdown element."""
+        if (
+            not message_id
+            or len(message_id) > 255
+            or not text
+            or len(text.encode("utf-8")) > 150 * 1024
+            or not uuid
+            or len(uuid) > 50
+        ):
+            raise ValueError("Invalid Feishu Markdown reply parameters")
+        card = {
+            "schema": "2.0",
+            "config": {"wide_screen_mode": True},
+            "body": {"elements": [{"tag": "markdown", "content": text}]},
+        }
+        async with httpx.AsyncClient(
+            base_url=API_BASE,
+            timeout=TIMEOUT,
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
+            token = await self._token(client)
+            await self._request(
+                client,
+                "POST",
+                f"/im/v1/messages/{quote(message_id, safe='')}/reply",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "msg_type": "interactive",
+                    "content": json.dumps(card, ensure_ascii=False),
+                    "uuid": uuid,
+                },
+            )
+
+    async def upload_image(
+        self, content: bytes, *, filename: str, content_type: str
+    ) -> str:
+        """Upload bytes as a message image and return the image key."""
+        if not content or len(content) > IMAGE_MAX_BYTES:
+            raise ValueError("Invalid Feishu image size")
+        if not filename or not content_type:
+            raise ValueError("Invalid Feishu image parameters")
+        async with self._transport() as client:
+            token = await self._token(client)
+            body = await self._request(
+                client,
+                "POST",
+                "/im/v1/images",
+                headers={"Authorization": f"Bearer {token}"},
+                data={"image_type": "message"},
+                files={"image": (filename, content, content_type)},
+            )
+        key = (body.get("data") or {}).get("image_key")
+        if not isinstance(key, str) or not key.strip():
+            raise FeishuAPIError("Feishu did not return an image key")
+        return key
+
+    async def upload_file(
+        self,
+        content: bytes,
+        *,
+        filename: str,
+        content_type: str,
+        file_type: str = "stream",
+    ) -> str:
+        """Upload bytes as a message file and return the file key."""
+        if not content or len(content) > FILE_MAX_BYTES:
+            raise ValueError("Invalid Feishu file size")
+        if not filename or not content_type or not file_type:
+            raise ValueError("Invalid Feishu file parameters")
+        async with self._transport() as client:
+            token = await self._token(client)
+            body = await self._request(
+                client,
+                "POST",
+                "/im/v1/files",
+                headers={"Authorization": f"Bearer {token}"},
+                data={"file_type": file_type, "file_name": filename},
+                files={"file": (filename, content, content_type)},
+            )
+        key = (body.get("data") or {}).get("file_key")
+        if not isinstance(key, str) or not key.strip():
+            raise FeishuAPIError("Feishu did not return a file key")
+        return key
+
+    async def reply_media(
+        self, message_id: str, *, msg_type: str, key: str, uuid: str
+    ) -> None:
+        """Reply with an uploaded image, file, or native video."""
+        if (
+            not message_id
+            or len(message_id) > 255
+            or msg_type not in REPLY_MEDIA_TYPES
+            or not key
+            or len(key) > 255
+            or not uuid
+            or len(uuid) > 50
+        ):
+            raise ValueError("Invalid Feishu media reply parameters")
+        content = {"image_key": key} if msg_type == "image" else {"file_key": key}
+        async with self._transport() as client:
+            token = await self._token(client)
+            await self._request(
+                client,
+                "POST",
+                f"/im/v1/messages/{quote(message_id, safe='')}/reply",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "msg_type": msg_type,
+                    "content": json.dumps(content),
+                    "uuid": uuid,
+                },
+            )
+
+    async def download_message_resource(
+        self, message_id: str, resource_key: str, *, kind: str, max_bytes: int
+    ) -> tuple[bytes, str, str]:
+        """Download only resources addressed through the authenticated message API."""
+        if kind not in ("file", "image") or max_bytes <= 0:
+            raise ValueError("Invalid Feishu resource parameters")
+        async with self._transport() as client:
+            token = await self._token(client)
+            path = f"/im/v1/messages/{quote(message_id, safe='')}/resources/{quote(resource_key, safe='')}"
+            async with client.stream(
+                "GET",
+                path,
+                params={"type": kind},
+                headers={"Authorization": f"Bearer {token}"},
+            ) as response:
+                if 300 <= response.status_code < 400:
+                    raise FeishuAPIError("Feishu resource redirect refused")
+                if response.status_code >= 400:
+                    await response.aread()
+                    message, detail = _error_message(response)
+                    raise FeishuAPIError(
+                        message, detail=detail, status_code=response.status_code
+                    )
+                content = bytearray()
+                async for chunk in response.aiter_bytes():
+                    if len(content) + len(chunk) > max_bytes:
+                        from app.services.feishu_agent_runtime import channel_error
+
+                        raise channel_error("feishu_agent_file_too_large")
+                    content.extend(chunk)
+                mime = response.headers.get(
+                    "content-type", "application/octet-stream"
+                ).split(";")[0]
+                return bytes(content), "", mime
+
+    def _transport(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            base_url=API_BASE,
+            timeout=TIMEOUT,
+            follow_redirects=False,
+            trust_env=False,
+        )
+
+    async def list_departments(self) -> list[FeishuDepartment]:
+        async with httpx.AsyncClient(
+            base_url=API_BASE,
+            timeout=TIMEOUT,
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
+            token = await self._token(client)
+            headers = {"Authorization": f"Bearer {token}"}
+            tenant_body = await self._request(
+                client,
+                "GET",
+                "/tenant/v2/tenant/query",
+                headers=headers,
+            )
+            tenant_data = tenant_body.get("data")
+            tenant = (
+                tenant_data.get("tenant") if isinstance(tenant_data, dict) else None
+            )
+            tenant_name = tenant.get("name") if isinstance(tenant, dict) else None
+            company_name = (
+                tenant_name.strip()
+                if isinstance(tenant_name, str) and tenant_name.strip()
+                else None
+            )
+            if company_name is None:
+                raise FeishuAPIError("Feishu did not return the tenant name")
+            departments: dict[str, FeishuDepartment] = {}
+            pending = ["0"]
+            while pending:
+                parent_id = pending.pop()
+                page_token: str | None = None
+                while True:
+                    params: dict[str, Any] = {
+                        "department_id_type": "open_department_id",
+                        "page_size": PAGE_SIZE,
+                        "fetch_child": "false",
+                    }
+                    if page_token:
+                        params["page_token"] = page_token
+                    body = await self._request(
+                        client,
+                        "GET",
+                        f"/contact/v3/departments/{quote(parent_id, safe='')}/children",
+                        headers=headers,
+                        params=params,
+                    )
+                    payload = body.get("data")
+                    if not isinstance(payload, dict):
+                        raise FeishuAPIError("Invalid Feishu department response")
+                    for item in payload.get("items", []):
+                        if not isinstance(item, dict):
+                            continue
+                        department_id = item.get("open_department_id")
+                        name = item.get("name")
+                        if (
+                            not isinstance(department_id, str)
+                            or not department_id
+                            or not isinstance(name, str)
+                        ):
+                            continue
+                        parent = item.get("parent_department_id")
+                        department = FeishuDepartment(
+                            department_id=department_id,
+                            name=name,
+                            parent_department_id=parent
+                            if isinstance(parent, str) and parent
+                            else parent_id,
+                        )
+                        departments[department_id] = department
+                        pending.append(department_id)
+                    page_token = payload.get("page_token")
+                    if not payload.get("has_more") or not page_token:
+                        break
+            roots: list[FeishuDepartment] = []
+            for department in departments.values():
+                parent = departments.get(department.parent_department_id or "")
+                if parent:
+                    parent.children.append(department)
+                else:
+                    roots.append(department)
+            return [FeishuDepartment("0", company_name, None, roots)]
+
+    async def list_users(self, department_ids: list[str]) -> list[FeishuDirectoryUser]:
+        async with httpx.AsyncClient(
+            base_url=API_BASE,
+            timeout=TIMEOUT,
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
+            token = await self._token(client)
+            headers = {"Authorization": f"Bearer {token}"}
+            users: dict[str, FeishuDirectoryUser] = {}
+            for department_id in department_ids:
+                page_token: str | None = None
+                while True:
+                    params: dict[str, Any] = {
+                        "department_id_type": "open_department_id",
+                        "user_id_type": "user_id",
+                        "department_id": department_id,
+                        "page_size": PAGE_SIZE,
+                    }
+                    if page_token:
+                        params["page_token"] = page_token
+                    body = await self._request(
+                        client,
+                        "GET",
+                        "/contact/v3/users/find_by_department",
+                        headers=headers,
+                        params=params,
+                    )
+                    payload = body.get("data")
+                    if not isinstance(payload, dict):
+                        raise FeishuAPIError("Invalid Feishu user response")
+                    for item in payload.get("items", []):
+                        if not isinstance(item, dict):
+                            continue
+                        user_id, open_id, name = (
+                            item.get("user_id"),
+                            item.get("open_id"),
+                            item.get("name"),
+                        )
+                        if not isinstance(open_id, str) or not open_id:
+                            continue
+                        if not isinstance(user_id, str) or not user_id:
+                            raise FeishuAPIError(
+                                "Feishu returned no user_id; grant "
+                                "'contact:user.employee_id:readonly' to read user IDs"
+                            )
+                        if not isinstance(name, str) or not name:
+                            continue
+                        avatar = item.get("avatar")
+                        avatar_url = None
+                        if isinstance(avatar, dict):
+                            avatar_url = next(
+                                (
+                                    avatar[key]
+                                    for key in (
+                                        "avatar_240",
+                                        "avatar_72",
+                                        "avatar_40",
+                                        "avatar_origin",
+                                    )
+                                    if isinstance(avatar.get(key), str) and avatar[key]
+                                ),
+                                None,
+                            )
+                        email = item.get("email")
+                        raw_department_ids = item.get("department_ids")
+                        member_department_ids = (
+                            frozenset(
+                                value
+                                for value in raw_department_ids
+                                if isinstance(value, str) and value
+                            )
+                            if isinstance(raw_department_ids, list)
+                            else frozenset()
+                        )
+                        existing = users.get(user_id)
+                        users[user_id] = FeishuDirectoryUser(
+                            user_id=user_id,
+                            open_id=open_id,
+                            union_id=item.get("union_id")
+                            if isinstance(item.get("union_id"), str)
+                            else None,
+                            name=name,
+                            email=email.strip().lower()
+                            if isinstance(email, str) and email.strip()
+                            else None,
+                            avatar_url=avatar_url,
+                            department_ids=(
+                                existing.department_ids if existing else frozenset()
+                            )
+                            | member_department_ids
+                            | {department_id},
+                        )
+                    page_token = payload.get("page_token")
+                    if not payload.get("has_more") or not page_token:
+                        break
+            return list(users.values())
+
+    async def _wiki_pages(
+        self,
+        client: httpx.AsyncClient,
+        headers: dict[str, str],
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """A failed or malformed page must never look like a complete inventory."""
+        items: list[dict[str, Any]] = []
+        tokens: set[str] = set()
+        query: dict[str, Any] = {"page_size": PAGE_SIZE, **(params or {})}
+        while True:
+            interval = 0.61 if path.startswith("/wiki/") else 0.21
+            delay = self._knowledge_request_at + interval - time.monotonic()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            self._knowledge_request_at = time.monotonic()
+            body = await self._request(
+                client, "GET", path, headers=headers, params=query
+            )
+            data = body.get("data")
+            if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+                raise FeishuAPIError("Feishu returned an invalid Wiki/document page")
+            if any(not isinstance(item, dict) for item in data["items"]):
+                raise FeishuAPIError("Feishu returned an invalid Wiki/document item")
+            if not isinstance(data.get("has_more"), bool):
+                raise FeishuAPIError("Feishu did not confirm pagination completion")
+            items.extend(data["items"])
+            if not data.get("has_more"):
+                return items
+            token = data.get("page_token")
+            if not isinstance(token, str) or not token or token in tokens:
+                raise FeishuAPIError("Feishu pagination did not advance; scan aborted")
+            tokens.add(token)
+            query["page_token"] = token
+
+    async def list_wiki_spaces(self) -> list[dict[str, str]]:
+        async with httpx.AsyncClient(
+            base_url=API_BASE, timeout=TIMEOUT, follow_redirects=False, trust_env=False
+        ) as client:
+            token = await self._token(client)
+            items = await self._wiki_pages(
+                client, {"Authorization": f"Bearer {token}"}, "/wiki/v2/spaces"
+            )
+        spaces = []
+        for item in items:
+            if not isinstance(item.get("space_id"), str) or not item["space_id"]:
+                raise FeishuAPIError("Feishu returned a Wiki space without an ID")
+            spaces.append(
+                {"space_id": item["space_id"], "name": str(item.get("name", ""))}
+            )
+        return spaces
+
+    async def list_wiki_nodes(self, space_id: str) -> list[dict[str, Any]]:
+        """Walk every child page, including empty permission-filtered pages."""
+        async with httpx.AsyncClient(
+            base_url=API_BASE, timeout=TIMEOUT, follow_redirects=False, trust_env=False
+        ) as client:
+            headers = {"Authorization": f"Bearer {await self._token(client)}"}
+            pending: list[str | None] = [None]
+            visited: set[str] = set()
+            nodes: list[dict[str, Any]] = []
+            while pending:
+                parent = pending.pop()
+                try:
+                    children = await self._wiki_pages(
+                        client,
+                        headers,
+                        f"/wiki/v2/spaces/{quote(space_id, safe='')}/nodes",
+                        params={"parent_node_token": parent} if parent else None,
+                    )
+                except FeishuAPIError as exc:
+                    # A denied subtree is an incomplete scan, not evidence that
+                    # every document in this source lost access.
+                    exc.resource_scope = "wiki_node" if parent else "wiki_space"
+                    raise
+                for node in children:
+                    node_token = node.get("node_token")
+                    if not isinstance(node_token, str) or not node_token:
+                        raise FeishuAPIError(
+                            "Feishu returned a Wiki node without a token"
+                        )
+                    if node_token in visited:
+                        raise FeishuAPIError(
+                            "Feishu Wiki contains a repeated node; scan aborted"
+                        )
+                    visited.add(node_token)
+                    if not node.get("obj_token") or not node.get("obj_type"):
+                        raise FeishuAPIError(
+                            "Feishu returned a Wiki node without its object"
+                        )
+                    if not isinstance(node.get("has_child"), bool):
+                        raise FeishuAPIError(
+                            "Feishu did not confirm Wiki child inventory"
+                        )
+                    nodes.append(node)
+                    if node.get("has_child"):
+                        pending.append(node_token)
+            return nodes
+
+    async def get_docx_blocks(self, document_id: str) -> list[dict[str, Any]]:
+        async with httpx.AsyncClient(
+            base_url=API_BASE, timeout=TIMEOUT, follow_redirects=False, trust_env=False
+        ) as client:
+            headers = {"Authorization": f"Bearer {await self._token(client)}"}
+            return await self._wiki_pages(
+                client,
+                headers,
+                f"/docx/v1/documents/{quote(document_id, safe='')}/blocks",
+                params={"document_revision_id": -1, "page_size": 500},
+            )
+
+
+# --- User-authorized web login ------------------------------------------------
+
+
+def build_authorization_url(
+    *,
+    app_id: str,
+    redirect_uri: str,
+    state: str,
+    code_challenge: str,
+    scopes: str = DEFAULT_LOGIN_SCOPES,
+    authorization_url: str = DEFAULT_AUTHORIZATION_URL,
+) -> str:
+    """Authorization page the browser is redirected to; Feishu returns `code`."""
+    query = httpx.QueryParams(
+        {
+            "client_id": app_id,
+            "response_type": "code",
+            "redirect_uri": redirect_uri,
+            "scope": scopes,
+            "state": state,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+        }
+    )
+    return f"{authorization_url}?{query}"
+
+
+def _login_body(response: httpx.Response, operation: str) -> dict[str, Any]:
+    if response.status_code >= 400:
+        message, detail = _error_message(response)
+        raise FeishuAPIError(f"{operation} failed: {message}", detail=detail)
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise FeishuAPIError(
+            f"Feishu {operation} returned a non-JSON body",
+            detail=response.text[:1024],
+        ) from exc
+    if not isinstance(body, dict):
+        raise FeishuAPIError(
+            f"Feishu {operation} returned an unexpected body", detail=str(body)[:1024]
+        )
+    code = body.get("code")
+    if code not in (0, None):
+        reason = (
+            body.get("error_description") or body.get("msg") or body.get("error") or ""
+        )
+        raise FeishuAPIError(
+            f"Feishu {operation} error {code}: {_short(reason)}",
+            detail=str(body)[:1024],
+        )
+    return body
+
+
+async def exchange_user_access_token(
+    *,
+    token_url: str,
+    app_id: str,
+    app_secret: str,
+    code: str,
+    redirect_uri: str,
+    code_verifier: str,
+) -> str:
+    """Trade the authorization code for a `user_access_token`."""
+    async with httpx.AsyncClient(
+        timeout=TIMEOUT, follow_redirects=False, trust_env=False
+    ) as client:
+        response = await client.post(
+            token_url,
+            data={
+                "grant_type": "authorization_code",
+                "client_id": app_id,
+                "client_secret": app_secret,
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "code_verifier": code_verifier,
+            },
+            headers={"Accept": "application/json"},
+        )
+
+    body = _login_body(response, "token exchange")
+    # `accounts.feishu.cn/oauth/v3/token` returns `access_token` at the top level;
+    # the older `authen/v1/access_token` nests the token under `data`.
+    candidates = [body.get("access_token")]
+    nested = body.get("data")
+    if isinstance(nested, dict):
+        candidates += [nested.get("access_token"), nested.get("user_access_token")]
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate:
+            return candidate
+    raise FeishuAPIError(
+        "Feishu did not return a user access token", detail=str(body)[:1024]
+    )
+
+
+async def fetch_user_info(
+    *, userinfo_url: str, user_access_token: str
+) -> dict[str, Any]:
+    """User profile authorized by `user_access_token`."""
+    async with httpx.AsyncClient(
+        timeout=TIMEOUT, follow_redirects=False, trust_env=False
+    ) as client:
+        response = await client.get(
+            userinfo_url,
+            headers={
+                "Authorization": f"Bearer {user_access_token}",
+                "Accept": "application/json",
+            },
+        )
+
+    body = _login_body(response, "user info")
+    data = body.get("data")
+    return data if isinstance(data, dict) else body

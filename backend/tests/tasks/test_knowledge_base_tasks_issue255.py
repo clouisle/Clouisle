@@ -26,6 +26,7 @@ async def test_indexed_notification_uses_team_locale_and_swallows_failure(monkey
         id=uuid4(),
         uploaded_by_id=None,
         name="guide.pdf",
+        metadata=None,
         knowledge_base_id=uuid4(),
     )
     send = AsyncMock(side_effect=RuntimeError("notification unavailable"))

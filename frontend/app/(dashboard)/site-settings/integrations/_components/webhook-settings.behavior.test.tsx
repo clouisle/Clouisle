@@ -1,0 +1,249 @@
+import { ApiError } from '@/lib/api/client'
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import React from 'react'
+import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
+
+const success = mock(() => {})
+
+mock.module('next-intl', () => ({
+  useTranslations: () => (key: string) => key,
+}))
+
+mock.module('sonner', () => ({ toast: { success } }))
+mock.module('lucide-react', () => ({ Loader2: () => null }))
+
+mock.module('@/components/ui/card', () => ({
+  Card: ({ children }: React.PropsWithChildren) => <section>{children}</section>,
+  CardContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  CardDescription: ({ children }: React.PropsWithChildren) => <p>{children}</p>,
+  CardHeader: ({ children }: React.PropsWithChildren) => <header>{children}</header>,
+  CardTitle: ({ children }: React.PropsWithChildren) => <h2>{children}</h2>,
+}))
+mock.module('@/components/ui/input', () => ({ Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} /> }))
+mock.module('@/components/ui/textarea', () => ({ Textarea: (props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...props} /> }))
+mock.module('@/components/ui/label', () => ({ Label: ({ children, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) => <label {...props}>{children}</label> }))
+mock.module('@/components/ui/button', () => ({ Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button> }))
+mock.module('@/components/ui/switch', () => ({
+  Switch: ({ checked, onCheckedChange, ...props }: { checked: boolean; onCheckedChange: (checked: boolean) => void; disabled?: boolean }) => (
+    <input aria-label="webhook-enabled" checked={checked} onChange={(event) => onCheckedChange(event.target.checked)} type="checkbox" {...props} />
+  ),
+}))
+mock.module('@/components/ui/select', () => ({
+  Select: ({ children, value, onValueChange }: React.PropsWithChildren<{ value?: string; onValueChange?: (value: string) => void }>) => <div data-select-value={value} data-on-value-change={onValueChange}>{children}</div>,
+  SelectContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  SelectItem: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  SelectTrigger: ({ children, ...props }: React.HTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,
+  SelectValue: ({ children }: React.PropsWithChildren) => <>{children}</>,
+}))
+mock.module('@/components/ui/field', () => ({ FieldError: ({ children }: React.PropsWithChildren) => children ? <p role="alert">{children}</p> : null }))
+
+import { integrationsApi, type WebhookSettings } from '@/lib/api/admin/integrations'
+import { WebhookSettingsTab } from './webhook-settings'
+
+const settings: WebhookSettings = {
+  webhook_enabled: true,
+  webhook_url: 'https://example.com/webhook',
+  webhook_method: 'POST',
+  webhook_headers: { Authorization: 'Bearer test' },
+  webhook_body_template: '{"title":"{{title}}"}',
+  webhook_secret: 'secret',
+}
+
+const renderers: ReactTestRenderer[] = []
+globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
+function render(overrides: Partial<React.ComponentProps<typeof WebhookSettingsTab>> = {}) {
+  const onSettingsChange = mock((next: WebhookSettings) => overrides.onSettingsChange?.(next))
+  function SettingsParent() {
+    const [currentSettings, setCurrentSettings] = React.useState(overrides.settings ?? settings)
+    return <WebhookSettingsTab canUpdate {...overrides} settings={currentSettings} onSettingsChange={(next) => {
+      onSettingsChange(next)
+      setCurrentSettings(next)
+    }} />
+  }
+  let renderer: ReactTestRenderer
+  act(() => {
+    renderer = create(<SettingsParent />)
+  })
+  renderers.push(renderer!)
+  return { renderer: renderer!, onSettingsChange }
+}
+
+const button = (renderer: ReactTestRenderer, label: string) => renderer.root.findAllByType('button').find((item) => item.children.includes(label))!
+
+afterEach(() => {
+  for (const renderer of renderers) act(() => renderer.unmount())
+  renderers.length = 0
+  mock.restore()
+  success.mockClear()
+})
+
+describe('WebhookSettingsTab', () => {
+  test('keeps configured encrypted headers hidden and preserves them on an unchanged save', async () => {
+    const hiddenSettings = { ...settings, webhook_headers: {}, webhook_secret: '' }
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook').mockResolvedValue(hiddenSettings)
+    const { renderer } = render({ settings: hiddenSettings, credentialsConfigured: ['webhook_headers', 'webhook_secret'] })
+    expect(renderer.root.findByProps({ id: 'webhook-headers' }).props.value).toBe('')
+    expect(JSON.stringify(renderer.toJSON())).toContain('integrations.secretConfigured')
+    await act(async () => button(renderer, 'save').props.onClick())
+    const savedSettings = updateWebhook.mock.calls[0][0]
+    expect(savedSettings).toMatchObject({
+      webhook_enabled: hiddenSettings.webhook_enabled,
+      webhook_url: hiddenSettings.webhook_url,
+      webhook_method: hiddenSettings.webhook_method,
+      webhook_body_template: hiddenSettings.webhook_body_template,
+      webhook_secret: '',
+    })
+    expect(savedSettings).not.toHaveProperty('webhook_headers')
+  })
+
+  test('submits explicit empty headers after clearing the editor', async () => {
+    const hiddenSettings = { ...settings, webhook_headers: {}, webhook_secret: '' }
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook').mockResolvedValue(hiddenSettings)
+    const { renderer } = render({ settings: hiddenSettings, credentialsConfigured: ['webhook_headers'] })
+
+    act(() => renderer.root.findByProps({ id: 'webhook-headers' }).props.onChange({ target: { value: '' } }))
+    await act(async () => button(renderer, 'save').props.onClick())
+
+    expect(updateWebhook.mock.calls[0][0]).toHaveProperty('webhook_headers', {})
+  })
+
+  test('updates endpoint fields and saves or sends tests', async () => {
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook').mockResolvedValue(settings)
+    const sendTestWebhook = spyOn(integrationsApi, 'sendTestWebhook').mockResolvedValue()
+    const { renderer } = render()
+
+    act(() => renderer.root.findByProps({ id: 'webhook-url' }).props.onChange({ target: { value: 'https://example.com/next' } }))
+    act(() => renderer.root.findByProps({ 'data-select-value': 'POST' }).props['data-on-value-change']('GET'))
+    act(() => renderer.root.findByProps({ id: 'webhook-headers' }).props.onChange({ target: { value: '{"X-Test":"1"}' } }))
+
+    await act(async () => button(renderer, 'webhook.sendTest').props.onClick())
+    await act(async () => button(renderer, 'save').props.onClick())
+    expect(sendTestWebhook).toHaveBeenCalled()
+    expect(updateWebhook).toHaveBeenCalledWith({
+      ...settings,
+      webhook_url: 'https://example.com/next',
+      webhook_method: 'GET',
+      webhook_headers: { 'X-Test': '1' },
+    })
+    expect(success).toHaveBeenCalledWith('webhook.testSent')
+    expect(success).toHaveBeenCalledWith('saveSuccess')
+  })
+
+  test('validates required URL and invalid header JSON', async () => {
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook')
+    const { renderer } = render({ settings: { ...settings, webhook_url: '' } })
+
+    act(() => renderer.root.findByProps({ id: 'webhook-headers' }).props.onChange({ target: { value: '{bad' } }))
+    await act(async () => button(renderer, 'save').props.onClick())
+
+    expect(updateWebhook).not.toHaveBeenCalled()
+    expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(true)
+    expect(renderer.root.findByProps({ id: 'webhook-headers' }).props['aria-invalid']).toBe(true)
+  })
+  test('emits field changes without mutating controlled settings props', async () => {
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook').mockResolvedValue(settings)
+    const { renderer, onSettingsChange } = render()
+
+    act(() => renderer.root.findByProps({ id: 'webhook-url' }).props.onChange({ target: { value: 'https://hooks.example/new' } }))
+    act(() => renderer.root.findByProps({ id: 'webhook-secret' }).props.onChange({ target: { value: 'new-secret' } }))
+    act(() => renderer.root.findByProps({ id: 'webhook-headers' }).props.onChange({ target: { value: '{"X-Token":"abc"}' } }))
+
+    expect(onSettingsChange).toHaveBeenNthCalledWith(1, { ...settings, webhook_url: 'https://hooks.example/new' })
+    expect(onSettingsChange).toHaveBeenNthCalledWith(2, { ...settings, webhook_url: 'https://hooks.example/new', webhook_secret: 'new-secret' })
+    expect(onSettingsChange).toHaveBeenNthCalledWith(3, { ...settings, webhook_url: 'https://hooks.example/new', webhook_secret: 'new-secret', webhook_headers: { 'X-Token': 'abc' } })
+    expect(settings.webhook_url).toBe('https://example.com/webhook')
+    expect(settings.webhook_secret).toBe('secret')
+    expect(settings.webhook_headers).toEqual({ Authorization: 'Bearer test' })
+    await act(async () => button(renderer, 'save').props.onClick())
+    expect(updateWebhook).toHaveBeenCalledWith({
+      ...settings,
+      webhook_url: 'https://hooks.example/new',
+      webhook_secret: 'new-secret',
+      webhook_headers: { 'X-Token': 'abc' },
+    })
+  })
+
+  test('maps server validation errors to visible field feedback', async () => {
+    const error = new ApiError(1001, 'Invalid', { errors: { webhook_url: 'invalid URL' } })
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook').mockRejectedValue(error)
+    const consoleError = spyOn(console, 'error').mockImplementation(() => {})
+    const { renderer } = render()
+
+    await act(async () => button(renderer, 'save').props.onClick())
+    expect(updateWebhook.mock.calls[0][0]).not.toHaveProperty('webhook_headers')
+    expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(true)
+    expect(consoleError).toHaveBeenCalledTimes(1)
+  })
+  test('does not fabricate field errors for opaque save failures', async () => {
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook').mockRejectedValue(new Error('offline'))
+    const consoleError = spyOn(console, 'error').mockImplementation(() => {})
+    const { renderer } = render()
+
+    await act(async () => button(renderer, 'save').props.onClick())
+    expect(updateWebhook.mock.calls[0][0]).not.toHaveProperty('webhook_headers')
+    expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(false)
+    expect(consoleError).toHaveBeenCalledTimes(1)
+  })
+
+  test('maps save and test API validation errors to fields', async () => {
+    const error = new ApiError(1001, 'Invalid', { errors: { webhook_url: 'invalid URL' } })
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook').mockRejectedValue(error)
+    const sendTestWebhook = spyOn(integrationsApi, 'sendTestWebhook').mockRejectedValue(error)
+    const consoleError = spyOn(console, 'error').mockImplementation(() => {})
+    const { renderer } = render()
+
+    await act(async () => button(renderer, 'save').props.onClick())
+    expect(updateWebhook.mock.calls[0][0]).not.toHaveProperty('webhook_headers')
+    expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(true)
+
+    await act(async () => button(renderer, 'webhook.sendTest').props.onClick())
+    expect(sendTestWebhook).toHaveBeenCalledTimes(1)
+    expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(true)
+    expect(consoleError).toHaveBeenCalledTimes(2)
+  })
+
+  test('allows disabled webhooks to save without URL validation and disables test action', async () => {
+    const disabledSettings = { ...settings, webhook_enabled: false, webhook_url: '' }
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook').mockResolvedValue(disabledSettings)
+    const sendTestWebhook = spyOn(integrationsApi, 'sendTestWebhook').mockResolvedValue()
+    const { renderer } = render({ settings: disabledSettings })
+
+    expect(button(renderer, 'webhook.sendTest').props.disabled).toBe(true)
+    await act(async () => button(renderer, 'save').props.onClick())
+
+    expect(updateWebhook.mock.calls[0][0]).toMatchObject({
+      webhook_enabled: disabledSettings.webhook_enabled,
+      webhook_url: disabledSettings.webhook_url,
+      webhook_method: disabledSettings.webhook_method,
+      webhook_body_template: disabledSettings.webhook_body_template,
+      webhook_secret: disabledSettings.webhook_secret,
+    })
+    expect(updateWebhook.mock.calls[0][0]).not.toHaveProperty('webhook_headers')
+    expect(sendTestWebhook).not.toHaveBeenCalled()
+    expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(false)
+  })
+
+  test('does not call save or test APIs when validation fails', async () => {
+    const updateWebhook = spyOn(integrationsApi, 'updateWebhook')
+    const sendTestWebhook = spyOn(integrationsApi, 'sendTestWebhook')
+    const { renderer } = render({ settings: { ...settings, webhook_url: '' } })
+
+    await act(async () => button(renderer, 'save').props.onClick())
+    await act(async () => button(renderer, 'webhook.sendTest').props.onClick())
+
+    expect(updateWebhook).not.toHaveBeenCalled()
+    expect(sendTestWebhook).not.toHaveBeenCalled()
+    expect(renderer.root.findByProps({ id: 'webhook-url' }).props['aria-invalid']).toBe(true)
+    expect(renderer.root.findAllByProps({ role: 'alert' }).length).toBeGreaterThan(0)
+  })
+  test('hides update actions and disables controls for read-only viewers', () => {
+    const { renderer } = render({ canUpdate: false })
+
+    expect(renderer.root.findByProps({ 'aria-label': 'webhook-enabled' }).props.disabled).toBe(true)
+    expect(renderer.root.findByProps({ id: 'webhook-url' }).props.disabled).toBe(true)
+    expect(renderer.root.findByProps({ id: 'webhook-headers' }).props.disabled).toBe(true)
+    expect(renderer.root.findAllByType('button').some((item) => item.children.includes('save'))).toBe(false)
+    expect(renderer.root.findAllByType('button').some((item) => item.children.includes('webhook.sendTest'))).toBe(false)
+  })
+})

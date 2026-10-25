@@ -97,6 +97,13 @@ beforeAll(async () => {
       if (!sameDeps(slots[index]?.deps, deps)) slots[index] = { value: callback, deps }
       return slots[index].value
     },
+    useRef(initial: unknown) {
+      const index = cursor++
+      const slot = slots[index] ??= { deps: [] }
+      const refSlot = slot as HookSlot & { ref?: { current: unknown } }
+      refSlot.ref ??= { current: initial }
+      return refSlot.ref
+    },
     useEffect(effect: () => void | (() => void), deps?: readonly unknown[]) {
       const index = cursor++
       if (!sameDeps(slots[index]?.deps, deps)) {
@@ -125,7 +132,9 @@ beforeEach(() => {
   permissions = new Set()
   for (const fn of [getDocuments, deleteDocument, processDocument, retryFailedChunks, downloadDocument,
     push, toastSuccess, toastError, open, onRefresh]) fn.mockReset()
-  Object.assign(globalThis, { window: { open } })
+  Object.assign(globalThis, {
+    window: { open, setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout },
+  })
   getDocuments.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 10 })
 })
 
@@ -146,6 +155,12 @@ async function flush() {
     tree = render()
   }
   return tree
+}
+
+async function waitForSearchDebounce() {
+  const { promise, resolve } = Promise.withResolvers<void>()
+  setTimeout(resolve, 350)
+  await promise
 }
 
 function resolve(node: ReactNode): ReactNode {
@@ -245,6 +260,119 @@ describe('DocumentsTable', () => {
     expect(toastSuccess).toHaveBeenCalledWith('documentDeleted')
     expect(onRefresh).toHaveBeenCalledTimes(1)
   })
+  test('keeps the current rows after a load failure and reloads on refresh trigger', async () => {
+    getDocuments.mockResolvedValueOnce({ items: [baseDocument], total: 1, page: 1, page_size: 10 })
+      .mockRejectedValueOnce(new Error('temporary outage'))
+      .mockResolvedValueOnce({ items: [{ ...baseDocument, name: 'Updated.pdf' }], total: 1, page: 1, page_size: 10 })
+
+    let tree = await flush()
+    expect(text(tree)).toContain('Guide.pdf')
+
+    await flush()
+    tree = render()
+    expect(text(tree)).toContain('Guide.pdf')
+
+    cursor = 0
+    tree = DocumentsTable({ knowledgeBaseId: 'kb-1', refreshTrigger: 1, onRefresh })
+    while (effects.length) {
+      const pending = effects.splice(0)
+      pending.forEach(effect => effect())
+      await Promise.resolve()
+      await Promise.resolve()
+      tree = render()
+    }
+    expect(getDocuments).toHaveBeenCalledTimes(3)
+    expect(text(tree)).toContain('Updated.pdf')
+  })
+
+  test('selects and clears all eligible documents and confirms bulk deletion feedback', async () => {
+    permissions = new Set(['kb:delete'])
+    getDocuments.mockResolvedValue({
+      items: [baseDocument, { ...baseDocument, id: 'doc-2', name: 'Second.pdf' }],
+      total: 2, page: 1, page_size: 10,
+    })
+    deleteDocument.mockResolvedValue({})
+
+    let tree = await flush()
+    const checkboxes = elements(tree).filter(item => item.type === 'checkbox')
+    checkboxes[0].props.onCheckedChange()
+    tree = render()
+    expect(text(tree)).toContain('2   documentsSelected')
+
+    elements(tree).filter(item => item.type === 'checkbox')[0].props.onCheckedChange()
+    tree = render()
+    expect(text(tree)).not.toContain('documentsSelected')
+
+    elements(tree).filter(item => item.type === 'checkbox')[0].props.onCheckedChange()
+    tree = render()
+    expect(text(tree)).toContain('2   documentsSelected')
+
+    const clearSelection = elements(tree).find(item => item.type === 'button' && item.props.className === 'h-8 w-8' && item.props.variant === 'ghost')
+    clearSelection!.props.onClick()
+    tree = render()
+    expect(text(tree)).not.toContain('documentsSelected')
+
+    const rowCheckboxes = elements(tree).filter(item => item.type === 'checkbox')
+    rowCheckboxes[1].props.onCheckedChange()
+    tree = render()
+    elements(tree).filter(item => item.type === 'checkbox')[2].props.onCheckedChange()
+    tree = render()
+    expect(text(tree)).toContain('2   documentsSelected')
+
+    const destructiveBulkButton = elements(tree).find(item => item.type === 'button' && String(item.props.className).includes('text-destructive'))
+    destructiveBulkButton!.props.onClick()
+    tree = render()
+    expect(text(tree)).toContain('confirmBulkDocumentsDelete:2')
+    await find(tree, 'alert-action', 'delete').props.onClick()
+
+    expect(deleteDocument).toHaveBeenCalledTimes(2)
+    expect(toastSuccess).toHaveBeenCalledWith('bulkDocumentsDeleted:2')
+    expect(onRefresh).toHaveBeenCalledTimes(1)
+    expect(text(render())).not.toContain('documentsSelected')
+  })
+
+  test('reports successful downloads and retries failed chunks with refreshed data', async () => {
+    permissions = new Set(['kb:update'])
+    const failed = { ...baseDocument, status: 'error', error_message: 'chunk failure' }
+    getDocuments.mockResolvedValue({ items: [failed], total: 1, page: 1, page_size: 10 })
+    downloadDocument.mockResolvedValue({})
+    retryFailedChunks.mockResolvedValue({})
+
+    const tree = await flush()
+    await find(tree, 'dropdown-item', 'downloadOriginal').props.onClick()
+    expect(toastSuccess).toHaveBeenCalledWith('downloadStarted')
+
+    await find(tree, 'dropdown-item', 'retryFailedChunks').props.onClick()
+    expect(retryFailedChunks).toHaveBeenCalledWith('kb-1', 'doc-1')
+    expect(toastSuccess).toHaveBeenCalledWith('retryStarted')
+    expect(getDocuments).toHaveBeenCalledTimes(2)
+  })
+
+
+  test('debounces rapid search edits onto a single first-page request', async () => {
+    getDocuments.mockResolvedValue({ items: [baseDocument], total: 25, page: 1, page_size: 10 })
+    let tree = await flush()
+    expect(getDocuments).toHaveBeenCalledTimes(1)
+
+    elements(tree).filter(item => item.type === 'button' && item.props.className === 'h-8 w-8')[2].props.onClick()
+    tree = await flush()
+    expect(getDocuments).toHaveBeenLastCalledWith('kb-1', expect.objectContaining({ page: 2 }))
+
+    getDocuments.mockClear()
+    const input = elements(tree).find(item => item.type === 'input')!
+    input.props.onChange({ target: { value: 'g' } })
+    input.props.onChange({ target: { value: 'gu' } })
+    input.props.onChange({ target: { value: 'guide' } })
+    tree = await flush()
+    expect(elements(tree).find(item => item.type === 'input')!.props.value).toBe('guide')
+    expect(getDocuments).not.toHaveBeenCalled()
+
+    await waitForSearchDebounce()
+    tree = await flush()
+
+    expect(getDocuments).toHaveBeenCalledTimes(1)
+    expect(getDocuments).toHaveBeenCalledWith('kb-1', { page: 1, pageSize: 10, search: 'guide' })
+  })
 
   test('filters, paginates, retries, opens URL sources, and runs bulk actions', async () => {
     permissions = new Set(['kb:update', 'kb:delete'])
@@ -258,6 +386,8 @@ describe('DocumentsTable', () => {
     let tree = await flush()
 
     elements(tree).find(item => item.type === 'input')!.props.onChange({ target: { value: 'broken' } })
+    tree = await flush()
+    await waitForSearchDebounce()
     tree = await flush()
     expect(getDocuments).toHaveBeenLastCalledWith('kb-1', expect.objectContaining({ search: 'broken' }))
 
@@ -309,5 +439,18 @@ describe('DocumentsTable', () => {
     await find(tree, 'alert-action', 'delete').props.onClick()
     expect(deleteDocument).toHaveBeenCalledWith('kb-1', 'doc-pending')
     expect(deleteDocument).toHaveBeenCalledWith('kb-1', 'doc-error')
+  })
+  test('keeps Feishu imports readable but excludes them from local mutation and bulk selection', async () => {
+    permissions = new Set(['admin:knowledge-base:update', 'admin:knowledge-base:delete'])
+    getDocuments.mockResolvedValue({ items: [{ ...baseDocument, metadata: { feishu_source_id: 'source', feishu_read_only: true, feishu_source_url: 'https://example.feishu.cn/wiki/node' } }], total: 1, page: 1, page_size: 10 })
+    const tree = await flush()
+    expect(elements(tree).filter(item => item.type === 'badge').map(text)).toContain('feishuImported')
+    const actions = elements(tree).filter(item => item.type === 'dropdown-item').map(text)
+    expect(actions.some(label => label.includes('feishuOriginal'))).toBe(true)
+    expect(elements(tree).some(item => item.type === 'a' && item.props.href === 'https://example.feishu.cn/wiki/node')).toBe(false)
+    expect(actions.some(label => label.includes('viewChunks'))).toBe(true)
+    expect(actions.some(label => label.includes('reprocess') || label === 'delete')).toBe(false)
+    const checkboxes = elements(tree).filter(item => item.type === 'checkbox')
+    expect(checkboxes.every(item => item.props.disabled === true)).toBe(true)
   })
 })

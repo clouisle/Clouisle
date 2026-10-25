@@ -295,4 +295,57 @@ describe('TeamModelsTab', () => {
     getModels.mockResolvedValue({ items: [model('model-1', 'GPT Team')] })
     expect(textContent(await load())).toContain('allModelsAuthorized')
   })
+  test('filters available models by provider, selects all filtered results, and clears selection', async () => {
+    permissions = new Set(['admin:model:update', 'admin:model:read'])
+    getModels.mockResolvedValue({ items: [
+      model('m1', 'Alpha', true),
+      { ...model('m2', 'Beta', true), provider: 'anthropic', provider_display_name: null },
+      { ...model('m3', 'Gamma', true), model_id: 'claude-3' },
+    ] })
+    await load()
+    states[3] = true
+    let tree = render()
+    const search = findAll(tree, (element) => element.type === 'input' && element.props.placeholder === 'searchModels')[0]
+    search.props.onChange({ target: { value: 'anthropic' } })
+    tree = render()
+
+    expect(textContent(tree)).toContain('Beta')
+    expect(textContent(tree)).not.toContain('Alpha')
+    expect(textContent(tree)).not.toContain('Gamma')
+
+    const selectAll = findAll(tree, (element) => element.type === 'input' && element.props.type === 'checkbox')[0]
+    selectAll.props.onChange()
+    tree = render()
+    expect(textContent(tree)).toContain('selectedCount:{"count":1}')
+    findAll(tree, (element) => element.type === 'input' && element.props.type === 'checkbox')[0].props.onChange()
+    expect(textContent(render())).toContain('selectedCount:{"count":0}')
+    expect(batchAddTeamModels).not.toHaveBeenCalled()
+  })
+
+  test('confirms revoking a model authorization and reports success', async () => {
+    getTeamModels.mockResolvedValue([teamModel()])
+    const tree = await load()
+    clickByText(tree, 'trash')
+    const confirmation = render()
+    expect(textContent(confirmation)).toContain('revokeModelAuthConfirm')
+    expect(textContent(confirmation)).toContain('GPT Team')
+
+    clickByText(confirmation, 'revoke')
+    await Promise.resolve()
+
+    expect(removeTeamModel).toHaveBeenCalledWith('team-1', 'model-1')
+    expect(toastSuccess).toHaveBeenCalledWith('modelAuthRevoked')
+  })
+
+  test('keeps edit dialog open and suppresses success feedback when saving fails', async () => {
+    getTeamModels.mockResolvedValue([teamModel()])
+    updateTeamModel.mockRejectedValue(new Error('offline'))
+    const tree = await load()
+    clickByText(tree, 'settings')
+    clickByText(render(), 'save')
+    await Promise.resolve()
+
+    expect(textContent(render())).toContain('editModelAuth')
+    expect(toastSuccess).not.toHaveBeenCalled()
+  })
 })

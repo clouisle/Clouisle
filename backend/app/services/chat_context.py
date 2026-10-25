@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import io
 import json
 import logging
 from collections.abc import Sequence
@@ -13,17 +11,14 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from PIL import Image, UnidentifiedImageError
 
 from app.llm.errors import ContextLengthError
-from app.llm.adapters.media_utils import parse_image_data_url
-from app.llm.token_counter import count_message_tokens, count_tokens
 from app.schemas.response import BusinessError
+from app.llm.token_counter import count_message_tokens, count_tokens
 from app.llm.types import (
     ContentPart,
     ContentType,
     FunctionCall,
-    ImageContent,
     Message,
     MessageRole,
     ToolCall,
@@ -205,72 +200,6 @@ def _append_message(
         meta.append(entry)
 
 
-def _normalize_vision_image(data: str, image_format: str | None) -> tuple[str, str]:
-    try:
-        with Image.open(io.BytesIO(base64.b64decode(data))) as image:
-            if max(image.size) <= 2048 and len(data) <= 1_000_000:
-                return data, image_format or "png"
-
-            image.thumbnail((2048, 2048))
-            normalized_image: Image.Image = image
-            if image.mode not in ("RGB", "L"):
-                background = Image.new("RGB", image.size, "white")
-                if "A" in image.getbands():
-                    background.paste(image, mask=image.getchannel("A"))
-                else:
-                    background.paste(image)
-                normalized_image = background
-
-            output = io.BytesIO()
-            normalized_image.save(output, format="JPEG", quality=85, optimize=True)
-            return base64.b64encode(output.getvalue()).decode(), "jpeg"
-    except (OSError, ValueError, UnidentifiedImageError):
-        return data, image_format or "png"
-
-
-def build_vision_content(text: str, images: Sequence[Any]) -> list[ContentPart]:
-    """Build multimodal content for vision-capable models."""
-    content_parts: list[ContentPart] = [ContentPart(type=ContentType.TEXT, text=text)]
-    for index, img in enumerate(images, start=1):
-        img_url = getattr(img, "url", None)
-        if not img_url and isinstance(img, dict):
-            img_url = img.get("url")
-        if not img_url:
-            continue
-
-        content_parts.append(
-            ContentPart(type=ContentType.TEXT, text=f"Uploaded image #{index}:")
-        )
-        parsed_data_url = parse_image_data_url(img_url)
-        if parsed_data_url:
-            data_part, image_format = _normalize_vision_image(*parsed_data_url)
-            content_parts.append(
-                ContentPart(
-                    type=ContentType.IMAGE,
-                    image=ImageContent(base64=data_part, format=image_format),
-                )
-            )
-        else:
-            content_parts.append(
-                ContentPart(
-                    type=ContentType.IMAGE,
-                    image=ImageContent(url=img_url),
-                )
-            )
-    return content_parts
-
-
-def build_uploaded_image_reference_text(images: Sequence[Any]) -> str:
-    labels: list[str] = []
-    for index, image in enumerate(images, start=1):
-        has_image = bool(getattr(image, "url", None) or getattr(image, "base64", None))
-        if isinstance(image, dict):
-            has_image = bool(image.get("url") or image.get("base64"))
-        if has_image:
-            labels.append(f"Uploaded image #{index}: available as a reference image.")
-    return "\n".join(labels)
-
-
 def _safe_json_loads(value: str | None) -> dict[str, Any] | None:
     if not value:
         return None
@@ -327,13 +256,15 @@ def summarize_tool_result_for_llm(
     tool_name: str | None,
     stored_content: str,
 ) -> str:
+    from app.utils.tool_output import render_tool_output
+
     payload = _safe_json_loads(stored_content)
     if not payload:
         return stored_content
     return (
         _build_media_llm_summary(tool_name, payload)
         or _build_skill_llm_summary(payload)
-        or stored_content
+        or render_tool_output(tool_name, payload)
     )
 
 
@@ -407,21 +338,80 @@ def _build_system_prompt(
     )
 
 
+async def _resolve_message_asset_parts(
+    attachments: Sequence[Any],
+    *,
+    conversation: Conversation,
+    user: Any,
+    agent: Agent,
+    model_config: Any,
+    input_capabilities: Any,
+) -> tuple[list[ContentPart], str]:
+    from app.services.asset_view import resolve_view_content
+
+    from app.models.asset import AssetScopeType
+    from app.services.asset_access import resolve_authorized_asset_ref
+
+    parts: list[ContentPart] = []
+    documents: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for attachment in attachments:
+        source = (
+            attachment.get("image", attachment)
+            if isinstance(attachment, dict)
+            else attachment
+        )
+        ref = (
+            source.get("asset_ref")
+            if isinstance(source, dict)
+            else getattr(source, "asset_ref", None)
+        )
+        if not ref or ref in seen:
+            continue
+        seen.add(ref)
+        asset = await resolve_authorized_asset_ref(
+            ref,
+            scope_type=AssetScopeType.CONVERSATION,
+            scope_id=conversation.id,
+            user=user,
+            expected_team_id=getattr(agent, "team_id", None),
+        )
+        mime_type = asset.content_type.split(";", 1)[0].strip().lower()
+        if not mime_type.startswith(("image/", "audio/", "video/")):
+            documents.append(
+                {
+                    "ref": ref,
+                    "filename": asset.display_filename,
+                    "mime_type": mime_type,
+                    "size": asset.size,
+                    "reading": "Use read_asset for bounded lines and search_asset to locate text; continue until eof to read the entire document.",
+                }
+            )
+            continue
+        asset, part, marker = await resolve_view_content(
+            ref,
+            scope_type=AssetScopeType.CONVERSATION,
+            scope_id=conversation.id,
+            user=user,
+            agent=agent,
+            model_config=model_config,
+            input_capabilities=input_capabilities,
+        )
+        if part is not None:
+            parts.append(part)
+    return parts, json.dumps(
+        {"documents": documents}, ensure_ascii=False
+    ) if documents else ""
+
+
 def _build_current_user_content(
     user_message: str,
     current_images: Sequence[Any] | None,
-    model_supports_vision: bool,
+    input_capabilities: Any,
+    resolved_parts: Sequence[ContentPart] = (),
 ) -> str | list[ContentPart]:
-    if current_images and model_supports_vision:
-        return build_vision_content(user_message, current_images)
-    if current_images:
-        image_reference_text = build_uploaded_image_reference_text(current_images)
-        if image_reference_text:
-            return (
-                f"{user_message}\n\n{image_reference_text}"
-                if user_message
-                else image_reference_text
-            )
+    if resolved_parts:
+        return [ContentPart(type=ContentType.TEXT, text=user_message), *resolved_parts]
     return user_message
 
 
@@ -469,6 +459,84 @@ async def _build_file_content_for_user_message(
             source_message.file_urls = updated_file_urls
             await source_message.save(update_fields=["file_urls"])
     return content
+
+
+async def _rehydrate_asset_view_marker(
+    marker_content: str,
+    *,
+    tool_name: str | None,
+    user: Any,
+    conversation: Conversation,
+    agent: Agent,
+    model_config: Any,
+) -> list[ContentPart] | None:
+    if tool_name != "view_asset":
+        return None
+    try:
+        persisted = json.loads(marker_content)
+    except (TypeError, ValueError):
+        return None
+    if (
+        isinstance(persisted, dict)
+        and persisted.get("kind") == "asset.view.persisted"
+        and persisted.get("version") == 1
+    ):
+        marker_content = persisted.get("marker")
+    if not isinstance(marker_content, str):
+        return None
+    try:
+        marker = json.loads(marker_content)
+    except (TypeError, ValueError):
+        return None
+    if (
+        not isinstance(marker, dict)
+        or marker.get("kind") != "asset.view"
+        or marker.get("version") != 1
+    ):
+        return None
+    if not isinstance(marker.get("ref"), str) or not isinstance(
+        marker.get("checksum"), str
+    ):
+        return None
+    from app.models.asset import AssetScopeType
+    from app.services.asset_view import resolve_view_content
+
+    if marker.get("scope_type") != AssetScopeType.CONVERSATION.value or marker.get(
+        "scope_id"
+    ) != str(conversation.id):
+        raise BusinessError(code=4040, msg_key="file_not_found", status_code=404)
+
+    asset, part, resolved_marker = await resolve_view_content(
+        marker["ref"],
+        scope_type=AssetScopeType.CONVERSATION,
+        scope_id=conversation.id,
+        user=user,
+        model_config=model_config,
+        agent=agent,
+        extracted_text=bool(marker.get("extracted_text")),
+        selection=marker.get("selection"),
+    )
+    resolved = json.loads(resolved_marker)
+    if (
+        str(asset.id) != marker.get("asset_id")
+        or asset.checksum != marker["checksum"]
+        or asset.content_type.split(";", 1)[0].strip().lower()
+        != str(marker.get("mime_type", "")).lower()
+        or resolved.get("wire_mime_type") != marker.get("wire_mime_type")
+        or resolved.get("modality") != marker.get("modality")
+        or resolved.get("representation", {}).get("kind")
+        != marker.get("representation", {}).get("kind")
+        or part is None
+        or part.type.value != marker.get("modality")
+    ):
+        raise BusinessError(code=4040, msg_key="file_not_found", status_code=404)
+    return [
+        ContentPart(
+            type=ContentType.TEXT,
+            text=f"Viewed attachment {asset.display_filename} ({part.type.value}).",
+        ),
+        part,
+    ]
 
 
 def _build_assistant_tool_calls(
@@ -557,8 +625,9 @@ async def _build_messages_with_file_content(
     user_locale: str | None,
     history_override: Sequence[Any] | None,
     current_images: Sequence[Any] | None,
-    model_supports_vision: bool,
-    current_user_message_id: UUID | None,
+    input_capabilities: Any,
+    model_config: Any,
+    current_user_message_id: UUID | None = None,
     include_current_user_message: bool,
     exclude_message_ids: Sequence[UUID] | None,
     history_before_message_created_at: datetime | None,
@@ -582,6 +651,24 @@ async def _build_messages_with_file_content(
     protected_indexes: set[int] = set()
     meta: list[dict[str, Any]] = []
     valid_tool_call_ids: set[str] = set()
+    deferred_asset_parts: list[ContentPart] = []
+
+    def flush_asset_parts() -> None:
+        if not deferred_asset_parts:
+            return
+        _append_message(
+            messages,
+            protected_indexes,
+            Message(role=MessageRole.USER, content=list(deferred_asset_parts)),
+            protect=protected_round_id is not None,
+            meta=meta,
+            round_id=protected_round_id,
+            round_role="user_input",
+            is_round_canonical=False,
+            source_role="asset_view",
+        )
+        deferred_asset_parts.clear()
+
     system_prompt_content = _build_system_prompt(
         agent=agent,
         conversation=conversation,
@@ -610,15 +697,28 @@ async def _build_messages_with_file_content(
             source_role="summary",
         )
 
-    current_content = _append_file_content_to_user_content(
-        _build_current_user_content(
-            user_message=user_message,
-            current_images=current_images,
-            model_supports_vision=model_supports_vision,
-        ),
-        file_content,
+    current_attachments = list(current_images or ())
+    (
+        resolved_current_parts,
+        extracted_current_files,
+    ) = await _resolve_message_asset_parts(
+        current_attachments,
+        conversation=conversation,
+        user=user,
+        agent=agent,
+        model_config=model_config,
+        input_capabilities=input_capabilities,
     )
-
+    current_content = _build_current_user_content(
+        user_message=user_message,
+        current_images=current_images,
+        input_capabilities=input_capabilities,
+        resolved_parts=resolved_current_parts,
+    )
+    current_content = _append_file_content_to_user_content(
+        current_content,
+        "\n\n".join(filter(None, [file_content, extracted_current_files])),
+    )
     if history_override is not None and not active_round_delta:
         has_current_round_user_in_override = any(
             _normalize_override_role(_get_override_value(hist_msg, "role")) == "user"
@@ -631,6 +731,8 @@ async def _build_messages_with_file_content(
         current_user_inserted = False
         for hist_msg in history_override:
             role = _normalize_override_role(_get_override_value(hist_msg, "role"))
+            if role != "tool":
+                flush_asset_parts()
             content = _get_override_value(hist_msg, "content")
             protect = _matches_protected_round(
                 _get_override_value(hist_msg, "round_id"),
@@ -660,11 +762,22 @@ async def _build_messages_with_file_content(
             if role == "user":
                 override_file_content = await _build_file_content_for_user_message(
                     agent=agent,
-                    file_urls=_get_override_value(hist_msg, "file_urls"),
+                    file_urls=[],
                     legacy_files=_get_override_value(hist_msg, "files"),
                     user_locale=user_locale,
                     tool_timeouts=tool_timeouts,
                     user=user,
+                )
+                override_parts, extracted_files = await _resolve_message_asset_parts(
+                    _get_override_value(hist_msg, "file_urls", []) or [],
+                    conversation=conversation,
+                    user=user,
+                    agent=agent,
+                    model_config=model_config,
+                    input_capabilities=input_capabilities,
+                )
+                override_file_content = "\n\n".join(
+                    filter(None, [override_file_content, extracted_files])
                 )
                 _append_message(
                     messages,
@@ -672,7 +785,12 @@ async def _build_messages_with_file_content(
                     Message(
                         role=MessageRole.USER,
                         content=_append_file_content_to_user_content(
-                            content or "",
+                            [
+                                ContentPart(type=ContentType.TEXT, text=content or ""),
+                                *override_parts,
+                            ]
+                            if override_parts
+                            else (content or ""),
                             override_file_content,
                         ),
                     ),
@@ -720,16 +838,31 @@ async def _build_messages_with_file_content(
                 )
             elif role == "tool":
                 tool_call_id = _get_override_value(hist_msg, "tool_call_id")
+                tool_name = _get_override_value(hist_msg, "tool_name")
                 if tool_call_id and tool_call_id in valid_tool_call_ids:
+                    replay_parts = await _rehydrate_asset_view_marker(
+                        content or "",
+                        tool_name=tool_name,
+                        conversation=conversation,
+                        user=user,
+                        agent=agent,
+                        model_config=model_config,
+                    )
                     _append_message(
                         messages,
                         protected_indexes,
                         Message(
                             role=MessageRole.TOOL,
-                            name=_get_override_value(hist_msg, "tool_name"),
-                            content=summarize_tool_result_for_llm(
-                                _get_override_value(hist_msg, "tool_name"),
-                                content or "",
+                            name=tool_name,
+                            content=json.dumps(
+                                json.loads(content or "{}").get(
+                                    "display", {"kind": "asset.view"}
+                                ),
+                                ensure_ascii=False,
+                            )
+                            if replay_parts
+                            else summarize_tool_result_for_llm(
+                                tool_name, content or ""
                             ),
                             tool_call_id=tool_call_id,
                         ),
@@ -741,11 +874,13 @@ async def _build_messages_with_file_content(
                             "is_round_canonical": _get_override_value(
                                 hist_msg, "is_round_canonical"
                             ),
-                            "tool_call_id": tool_call_id,
                             "source_role": "tool",
                             "source_message_id": None,
                         },
                     )
+                    if replay_parts:
+                        deferred_asset_parts.extend(replay_parts)
+        flush_asset_parts()
         if not current_user_inserted and not has_current_round_user_in_override:
             _append_message(
                 messages,
@@ -787,25 +922,17 @@ async def _build_messages_with_file_content(
             for message in history
             if not _matches_protected_round(message.round_id, protected_round_id)
         ]
-    historical_file_content_tasks = {
-        msg.id: asyncio.create_task(
-            _build_file_content_for_user_message(
-                agent=agent,
-                file_urls=msg.file_urls,
-                user_locale=user_locale,
-                tool_timeouts=tool_timeouts,
-                user=user,
-                source_message=msg,
-            )
-        )
+    current_user_inserted = any(
+        msg.role == ConversationMessageRole.USER
+        and current_user_message_id
+        and msg.id == current_user_message_id
+        and include_current_user_message
         for msg in history
-        if msg.role == ConversationMessageRole.USER
-        and not (current_user_message_id and msg.id == current_user_message_id)
-    }
-
-    current_user_inserted = False
+    )
     for msg in history:
         protect = _matches_protected_round(msg.round_id, protected_round_id)
+        if msg.role != ConversationMessageRole.TOOL:
+            flush_asset_parts()
         if msg.role == ConversationMessageRole.USER:
             if current_user_message_id and msg.id == current_user_message_id:
                 if include_current_user_message:
@@ -825,15 +952,49 @@ async def _build_messages_with_file_content(
                     )
                     current_user_inserted = True
                 continue
-            historical_file_content = await historical_file_content_tasks[msg.id]
+            historical_attachments = list(msg.file_urls or [])
+            from app.models.asset import AssetScopeRef, AssetScopeType, MessageAsset
+
+            links = (
+                await MessageAsset.filter(message_id=msg.id)
+                .prefetch_related("asset")
+                .order_by("position")
+            )
+            for link in links:
+                binding = await AssetScopeRef.get_or_none(
+                    scope_type=AssetScopeType.CONVERSATION,
+                    scope_id=conversation.id,
+                    asset_id=link.asset_id,
+                )
+                if binding is not None:
+                    historical_attachments.append(
+                        {
+                            "asset_ref": binding.ref,
+                            "filename": link.asset.display_filename,
+                            "mime_type": link.asset.content_type,
+                        }
+                    )
+            historical_parts, extracted_files = await _resolve_message_asset_parts(
+                historical_attachments,
+                conversation=conversation,
+                user=user,
+                agent=agent,
+                model_config=model_config,
+                input_capabilities=input_capabilities,
+            )
             _append_message(
                 messages,
                 protected_indexes,
                 Message(
                     role=MessageRole.USER,
                     content=_append_file_content_to_user_content(
-                        msg.content,
-                        historical_file_content,
+                        [
+                            ContentPart(type=ContentType.TEXT, text=msg.content),
+                            *historical_parts,
+                        ]
+                        if historical_parts
+                        else msg.content,
+                        extracted_files,
                     ),
                 ),
                 protect=protect,
@@ -874,13 +1035,26 @@ async def _build_messages_with_file_content(
             and msg.tool_call_id
             and msg.tool_call_id in valid_tool_call_ids
         ):
+            replay_parts = await _rehydrate_asset_view_marker(
+                msg.content,
+                tool_name=msg.tool_name,
+                conversation=conversation,
+                user=user,
+                agent=agent,
+                model_config=model_config,
+            )
             _append_message(
                 messages,
                 protected_indexes,
                 Message(
                     role=MessageRole.TOOL,
                     name=msg.tool_name,
-                    content=summarize_tool_result_for_llm(msg.tool_name, msg.content),
+                    content=json.dumps(
+                        json.loads(msg.content).get("display", {"kind": "asset.view"}),
+                        ensure_ascii=False,
+                    )
+                    if replay_parts
+                    else summarize_tool_result_for_llm(msg.tool_name, msg.content),
                     tool_call_id=msg.tool_call_id,
                 ),
                 protect=protect,
@@ -892,6 +1066,19 @@ async def _build_messages_with_file_content(
                 source_role="tool",
                 source_message_id=msg.id,
             )
+            if replay_parts:
+                marker = json.loads(msg.content)
+                current_message_parts = (
+                    current_content if isinstance(current_content, list) else []
+                )
+                already_in_current = any(
+                    getattr(getattr(part, part.type.value, None), "asset_ref", None)
+                    == marker.get("ref")
+                    for part in current_message_parts
+                )
+                if not already_in_current:
+                    deferred_asset_parts.extend(replay_parts)
+    flush_asset_parts()
     if (
         active_round_delta
         and include_current_user_message
@@ -922,6 +1109,8 @@ async def _build_messages_with_file_content(
     if active_round_delta:
         for hist_msg in history_override or ():
             role = _normalize_override_role(_get_override_value(hist_msg, "role"))
+            if role != "tool":
+                flush_asset_parts()
             round_role = _get_override_value(hist_msg, "round_role")
             if role == "user" and round_role != "user_input":
                 continue
@@ -980,32 +1169,41 @@ async def _build_messages_with_file_content(
                 )
             elif role == "tool":
                 tool_call_id = _get_override_value(hist_msg, "tool_call_id")
+                tool_name = _get_override_value(hist_msg, "tool_name")
                 if tool_call_id and tool_call_id in valid_tool_call_ids:
+                    replay_parts = await _rehydrate_asset_view_marker(
+                        content,
+                        tool_name=tool_name,
+                        conversation=conversation,
+                        user=user,
+                        agent=agent,
+                        model_config=model_config,
+                    )
                     _append_message(
                         messages,
                         protected_indexes,
                         Message(
                             role=MessageRole.TOOL,
-                            name=_get_override_value(hist_msg, "tool_name"),
-                            content=summarize_tool_result_for_llm(
-                                _get_override_value(hist_msg, "tool_name"),
-                                content,
-                            ),
+                            name=tool_name,
+                            content=content
+                            if replay_parts
+                            else summarize_tool_result_for_llm(tool_name, content),
                             tool_call_id=tool_call_id,
                         ),
                         protect=protect,
                         meta=meta,
-                        **{
-                            "round_id": _get_override_value(hist_msg, "round_id"),
-                            "round_role": _get_override_value(hist_msg, "round_role"),
-                            "is_round_canonical": _get_override_value(
-                                hist_msg, "is_round_canonical"
-                            ),
-                            "tool_call_id": tool_call_id,
-                            "source_role": "tool",
-                            "source_message_id": None,
-                        },
+                        round_id=_get_override_value(hist_msg, "round_id"),
+                        round_role=_get_override_value(hist_msg, "round_role"),
+                        is_round_canonical=_get_override_value(
+                            hist_msg, "is_round_canonical"
+                        ),
+                        tool_call_id=tool_call_id,
+                        source_role="tool",
+                        source_message_id=None,
                     )
+                    if replay_parts:
+                        deferred_asset_parts.extend(replay_parts)
+    flush_asset_parts()
 
     return messages, protected_indexes, meta
 
@@ -1019,7 +1217,8 @@ async def build_model_messages(
     user_locale: str | None = None,
     history_override: Sequence[Any] | None = None,
     current_images: Sequence[Any] | None = None,
-    model_supports_vision: bool = False,
+    model_config: Any = None,
+    input_capabilities: Any = None,
     current_user_message_id: UUID | None = None,
     include_current_user_message: bool = False,
     exclude_message_ids: Sequence[UUID] | None = None,
@@ -1037,7 +1236,8 @@ async def build_model_messages(
         user_locale=user_locale,
         history_override=history_override,
         current_images=current_images,
-        model_supports_vision=model_supports_vision,
+        input_capabilities=input_capabilities,
+        model_config=model_config,
         current_user_message_id=current_user_message_id,
         include_current_user_message=include_current_user_message,
         exclude_message_ids=exclude_message_ids,
@@ -1613,7 +1813,8 @@ async def build_context_plan(
     user_locale: str | None = None,
     history_override: Sequence[Any] | None = None,
     current_images: Sequence[Any] | None = None,
-    model_supports_vision: bool = False,
+    input_capabilities: Any = None,
+    model_config: Any = None,
     current_user_message_id: UUID | None = None,
     include_current_user_message: bool = False,
     exclude_message_ids: Sequence[UUID] | None = None,
@@ -1679,8 +1880,9 @@ async def build_context_plan(
         user_locale=user_locale,
         history_override=history_override,
         current_images=current_images,
-        model_supports_vision=model_supports_vision,
         current_user_message_id=current_user_message_id,
+        input_capabilities=input_capabilities,
+        model_config=model_config,
         include_current_user_message=include_current_user_message,
         exclude_message_ids=exclude_message_ids,
         history_before_message_created_at=history_before_message_created_at,
@@ -1845,7 +2047,8 @@ async def prepare_model_context(
     user_locale: str | None = None,
     history_override: Sequence[Any] | None = None,
     current_images: Sequence[Any] | None = None,
-    model_supports_vision: bool = False,
+    model_config: Any = None,
+    input_capabilities: Any = None,
     current_user_message_id: UUID | None = None,
     include_current_user_message: bool = False,
     exclude_message_ids: Sequence[UUID] | None = None,
@@ -1869,8 +2072,9 @@ async def prepare_model_context(
         user_locale=user_locale,
         history_override=history_override,
         current_images=current_images,
-        model_supports_vision=model_supports_vision,
         current_user_message_id=current_user_message_id,
+        input_capabilities=input_capabilities,
+        model_config=model_config,
         include_current_user_message=include_current_user_message,
         exclude_message_ids=exclude_message_ids,
         history_before_message_created_at=history_before_message_created_at,

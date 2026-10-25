@@ -26,6 +26,7 @@ Navigate to **System Settings > Roles** (`/roles`):
 
 ## 1. Security Settings (`/site-settings/security`)
 
+- **SSO Policy**: The global SSO switches — enable SSO, allow password login, auto-create users, require approval, and match by email. These are listed on this page but authorized by the login domain (`admin:integrations:login:read/update`), not `admin:settings:read/update`. Individual sign-in providers are configured on **Site Settings → Integrations** under the same domain; Feishu is the case worth calling out, because it is a singleton integration whose `user_login` capability is an explicit opt-in, so enabling the integration or its directory sync does not by itself advertise a sign-in button.
 - **SSRF Outbound Network Allowlist**: Restrict HTTP request nodes, Webhook triggers, and document URL importers to prevent Server-Side Request Forgery against private subnets.
 - **Enable Human Verification**: A single `enable_captcha` switch that shows human verification on the login and registration pages to defend against automated brute-force attacks. There is no separate verification threshold to configure.
 
@@ -34,7 +35,7 @@ Navigate to **System Settings > Roles** (`/roles`):
 The console has six views. Use them to move from an overall signal to the run or dependency that needs attention:
 
 - **Overview**: Agent and workflow throughput, success rates, latency, tokens, and recent trends.
-- **Runs**: Filter run summaries and load a trace only when a run is opened. Agent traces include tool and knowledge retrieval calls; workflow traces include recorded node executions.
+- **Runs**: Filter compact run summaries, then open an independently addressable execution inspector. Its timeline and ordered trajectory select the same step; the side inspector shows recorded model context, responses, tool results or workflow node data without expanding the whole execution tree.
 - **Dependencies**: Compare model, tool, and retrieval request counts, success rates, and latency percentiles. Model rows include first-token latency and token totals; tool and retrieval token counts are unavailable and display as `—`.
 - **Queues**: Inspect worker activity, active queues, pending depth, and oldest wait time.
 - **Infrastructure**: Review API container/Pod identities with explicitly host-scoped CPU and memory samples, dependency health, and available PostgreSQL slow-query statistics.
@@ -57,6 +58,8 @@ Identity defaults to hostname, hashed for `instance_id`; display name defaults t
 `GET /api/v1/admin/observability/infrastructure` requires `admin:dashboard:access`. Its `instances` array now contains `instance_id`, `name`, `role: api`, `metric_scope: host`, nullable `cpu_percent`/`memory_percent`, `observed_at`, and `state` (`healthy`, `warning`, `unavailable`, `stale`, or `offline`). Missing metrics remain unavailable, never fabricated as zero; fresh CPU at least 70% or memory at least 80% marks the instance as warning.
 
 Agent tool and retrieval spans are collected for durable AgentRuns after this instrumentation is deployed. Each run retains at most 128 dependency spans; the run detail marks traces that exceed the cap. This data is not backfilled for older runs. Workflow detail is bounded to 100 node spans and reports when the trace is incomplete.
+
+The execution inspector is an operator diagnostic surface, not a replacement chat history. Model context must come from the invocation snapshot: current Agent prompts and settings are never used to reconstruct a historical request. Unrecorded or oversized content is explicitly unavailable/partial. Context can include user messages, history, retrieved documents and tool results; grant `admin:dashboard:access` only to operators authorized to inspect that content. Transport credentials must not be included in capture. Provider-private reasoning is not reconstructed.
 
 Run summaries are best-effort telemetry, while AgentRun records are authoritative. If a terminal AgentRun still appears active in Runs, API maintenance reconciles its summary every minute in batches of at most 100. Runs become eligible 60 seconds after their recorded finish time and only within the 30-day telemetry retention window. Reconciliation restores status, timing, model, and token fields from the run and its final message, preserving captured dependency spans. It does not change active AgentRuns or replay model/tool calls. A larger backlog can take multiple maintenance cycles to clear; missing or expired historical summary rows are not recreated.
 

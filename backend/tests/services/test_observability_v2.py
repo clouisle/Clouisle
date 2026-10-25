@@ -464,7 +464,7 @@ async def test_workflow_detail_uses_persisted_execution_names(monkeypatch):
     run_id = uuid4()
     row = _workflow_observability_row(run_id)
     workflow_query = MagicMock()
-    workflow_query.values.return_value.first = AsyncMock(
+    workflow_query.first.return_value.values = AsyncMock(
         return_value={"total_nodes": 1}
     )
     node_query = MagicMock()
@@ -507,7 +507,7 @@ async def test_workflow_detail_marks_pruned_execution_rows_expired(monkeypatch):
     run_id = uuid4()
     row = _workflow_observability_row(run_id)
     workflow_query = MagicMock()
-    workflow_query.values.return_value.first = AsyncMock(return_value=None)
+    workflow_query.first.return_value.values = AsyncMock(return_value=None)
     node_filter = MagicMock()
 
     monkeypatch.setattr(
@@ -533,7 +533,7 @@ async def test_workflow_detail_caps_node_rows_and_marks_trace_truncated(monkeypa
     run_id = uuid4()
     row = _workflow_observability_row(run_id)
     workflow_query = MagicMock()
-    workflow_query.values.return_value.first = AsyncMock(
+    workflow_query.first.return_value.values = AsyncMock(
         return_value={"total_nodes": 101}
     )
     node_query = MagicMock()
@@ -665,6 +665,46 @@ async def test_summary_caps_database_sample_and_marks_partial(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_summary_marks_fresh_only_when_the_window_is_fully_covered(monkeypatch):
+    start = datetime(2026, 10, 8, 11, tzinfo=UTC)
+    end = datetime(2026, 10, 8, 12, tzinfo=UTC)
+    rows = [_workflow_observability_row(uuid4()) for _ in range(2)]
+    query = MagicMock()
+    query.order_by.return_value = query
+    query.limit.return_value = query
+    monkeypatch.setattr(
+        observability_v2, "window", lambda _period, _start=None, _end=None: (start, end)
+    )
+    monkeypatch.setattr(
+        observability_v2.ObservabilityRun,
+        "filter",
+        MagicMock(return_value=query),
+    )
+    monkeypatch.setattr(observability_v2, "run_bounded", AsyncMock(return_value=rows))
+    monkeypatch.setattr(
+        observability_v2,
+        "_telemetry_start",
+        AsyncMock(return_value=start - timedelta(minutes=5)),
+    )
+
+    summary = await observability_v2._summary_snapshot("1h", None)
+
+    assert summary["meta"]["state"] == "fresh"
+    assert summary["meta"]["sample_count"] == 2
+
+    # Windows that begin before retained telemetry have an unrecorded gap.
+    monkeypatch.setattr(
+        observability_v2,
+        "_telemetry_start",
+        AsyncMock(return_value=start + timedelta(minutes=5)),
+    )
+
+    summary = await observability_v2._summary_snapshot("1h", None)
+
+    assert summary["meta"]["state"] == "partial"
+
+
+@pytest.mark.asyncio
 async def test_dependency_queries_cap_rows_and_mark_partial_samples(monkeypatch):
     models = [
         {
@@ -740,10 +780,15 @@ async def test_retention_batches_expired_rows_and_preserves_active_alerts(monkey
     )
     monkeypatch.setattr(observability_v2, "RETENTION_BATCH_SIZE", 2)
     monkeypatch.setattr(observability_v2, "RETENTION_BATCHES_PER_CYCLE", 2)
+    payload_delete = MagicMock(delete=AsyncMock(return_value=0))
+    payload_filter = MagicMock(return_value=payload_delete)
+    from app.models.observability_payload import ObservabilityToolPayload
+
     monkeypatch.setattr(observability_v2.ObservabilityRun, "filter", run_filter)
     monkeypatch.setattr(
         observability_v2.ObservabilityAlertEvent, "filter", alert_filter
     )
+    monkeypatch.setattr(ObservabilityToolPayload, "filter", payload_filter)
 
     deleted = await observability_v2.retain()
 
@@ -753,6 +798,7 @@ async def test_retention_batches_expired_rows_and_preserves_active_alerts(monkey
     assert alert_select.values_list.await_count == 1
     assert alert_filter.call_args_list[0].kwargs["status"] == "resolved"
     alert_delete.delete.assert_awaited_once()
+    assert payload_filter.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -2431,10 +2477,15 @@ async def test_retention_stops_after_batch_limit_when_all_batches_are_full(
             self.deleted_batches += 1
             return batch_size
 
-    run_query, alert_query = Query(), Query()
+    run_query, alert_query, payload_query = Query(), Query(), Query()
+    from app.models.observability_payload import ObservabilityToolPayload
+
     monkeypatch.setattr(observability_v2, "RETENTION_BATCHES_PER_CYCLE", 2)
     monkeypatch.setattr(
         observability_v2.ObservabilityRun, "filter", lambda **_kwargs: run_query
+    )
+    monkeypatch.setattr(
+        ObservabilityToolPayload, "filter", lambda **_kwargs: payload_query
     )
     monkeypatch.setattr(
         observability_v2.ObservabilityAlertEvent,
@@ -2445,3 +2496,4 @@ async def test_retention_stops_after_batch_limit_when_all_batches_are_full(
     assert await observability_v2.retain() == 4 * batch_size
     assert (run_query.batch_reads, run_query.deleted_batches) == (2, 2)
     assert (alert_query.batch_reads, alert_query.deleted_batches) == (2, 2)
+    assert payload_query.deleted_batches == 2

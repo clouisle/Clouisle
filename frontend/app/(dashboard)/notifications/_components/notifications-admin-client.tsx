@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations, useLocale } from 'next-intl'
-import { Plus, Trash2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, X, Mail, MessageSquare, CheckCircle2, XCircle, Loader2, Clock, Eye, MoreHorizontal } from 'lucide-react'
+import { Plus, Trash2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, X, Mail, MessageSquareText, CheckCircle2, XCircle, Loader2, Clock, Eye, MoreHorizontal } from 'lucide-react'
 import { notificationsApi, type NotificationItem } from '@/lib/api/admin/notifications'
 import type { NotificationLevel, NotificationScope, NotificationDelivery } from '@/lib/api/notifications'
 import { Button } from '@/components/ui/button'
@@ -40,8 +40,8 @@ function DeliveryStatusIcon({ delivery }: { delivery: NotificationDelivery }) {
 
   const channelIcon = delivery.channel === 'email' ? (
     <Mail className="h-3.5 w-3.5" />
-  ) : delivery.channel === 'dingtalk' ? (
-    <MessageSquare className="h-3.5 w-3.5" />
+  ) : delivery.channel === 'feishu' ? (
+    <MessageSquareText className="h-3.5 w-3.5" />
   ) : null
 
   const statusIcon = delivery.status === 'success' ? (
@@ -50,6 +50,8 @@ function DeliveryStatusIcon({ delivery }: { delivery: NotificationDelivery }) {
     <XCircle className="h-3 w-3 text-destructive" />
   ) : delivery.status === 'sending' ? (
     <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />
+  ) : delivery.status === 'skipped' ? (
+    <XCircle className="h-3 w-3 text-muted-foreground" />
   ) : (
     <Clock className="h-3 w-3 text-muted-foreground" />
   )

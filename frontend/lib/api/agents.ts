@@ -107,8 +107,6 @@ export interface AgentKnowledgeBaseConfig {
 export interface AttachmentConfig {
   max_file_size: number  // bytes
   max_files: number
-  max_content_length: number  // characters
-  truncate_strategy: 'end' | 'start' | 'middle'
   allowed_extensions: string[]
 }
 
@@ -168,10 +166,12 @@ export interface Agent {
   avatar_url?: string | null
   model_id?: string | null
   model?: ModelInfo | null
+  input_modalities?: string[]
   system_prompt?: string | null
   max_iterations: number
   hide_tool_calls: boolean
   hide_message_actions: boolean
+  enable_citations: boolean
   hide_reasoning: boolean
   hide_artifact_list: boolean
   tools_config: ToolConfig[]
@@ -230,6 +230,7 @@ export interface AgentCreateInput {
   hide_tool_calls?: boolean
   hide_message_actions?: boolean
   hide_reasoning?: boolean
+  enable_citations?: boolean
   hide_artifact_list?: boolean
   tools_config?: ToolConfig[]
   knowledge_base_configs?: AgentKnowledgeBaseConfig[]
@@ -262,6 +263,7 @@ export interface AgentUpdateInput {
   hide_tool_calls?: boolean
   hide_message_actions?: boolean
   hide_reasoning?: boolean
+  enable_citations?: boolean
   hide_artifact_list?: boolean
   tools_config?: ToolConfig[]
   knowledge_base_configs?: AgentKnowledgeBaseConfig[]
@@ -1355,10 +1357,12 @@ export interface PublicAgent {
   suggested_questions: string[]
   powered_by_text?: string | null
   variables: VariableDefinition[]
+  input_modalities: string[]
   enable_attachments: boolean
   attachment_config?: AttachmentConfig | null
   hide_tool_calls: boolean
   hide_message_actions: boolean
+  enable_citations: boolean
   hide_reasoning: boolean
   hide_artifact_list: boolean
   embed_config?: Record<string, unknown> | null

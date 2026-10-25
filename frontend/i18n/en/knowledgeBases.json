@@ -1,5 +1,6 @@
 {
   "knowledgeBases": {
+    "feishuImported": "Feishu · source managed", "feishuOriginal": "View Feishu document", "feishuReadOnly": "This document is managed by Feishu synchronization. Edit the original in Feishu; local edits, reprocessing, and deletion are unavailable.",
     "common": {
       "openMenu": "Open menu"
     },
