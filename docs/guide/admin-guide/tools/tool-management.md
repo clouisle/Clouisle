@@ -86,7 +86,7 @@ Site Configuration:
   tavily_api_key: ... # write-only
 ```
 
-Site administrators manage search in **Capabilities → Tools → Web Search → Configure**, without selecting a team. Enable a provider and explicitly choose the site default. Secrets are encrypted; the form shows whether a key is configured but never reads it back. Leave a secret unchanged to preserve it, replace it to rotate, or clear it explicitly. Agents only choose an enabled provider or inherit the site default; they cannot store search keys or override endpoints. Missing/disabled providers and provider failures are explicit errors, with no fallback to another account.
+Site administrators manage search from the **Configure search** button on the platform **Capabilities** page, or from **Capabilities → Tools → Web Search → Configure** in the dashboard, without selecting a team. Enable a provider and explicitly choose the site default. Secrets are encrypted; the form shows whether a key is configured but never reads it back. Leave a secret unchanged to preserve it, replace it to rotate, or clear it explicitly. Agents only choose an enabled provider or inherit the site default; they cannot store search keys or override endpoints. Missing/disabled providers and provider failures are explicit errors, with no fallback to another account.
 
 Agent orchestration and workflow `web_search` tool nodes share an enabled-only engine selector. **Auto** inherits the site default. Disabled providers are not offered; an existing saved selection is retained rather than silently changed. Execution rechecks the site configuration, so disabling a provider also blocks previously saved selections.
 

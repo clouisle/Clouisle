@@ -231,6 +231,7 @@
       "noSearchResults": "未找到工具",
       "requiresConfig": "需要配置",
       "webSearchManaged": "网页搜索由站点管理员统一配置，团队级搜索密钥已不再使用。",
+      "webSearchConfigure": "配置搜索",
       "parameters": "参数",
       "noParameters": "此工具无需参数",
       "required": "必填",

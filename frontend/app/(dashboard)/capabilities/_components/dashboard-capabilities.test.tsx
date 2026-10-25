@@ -190,7 +190,7 @@ mock.module('@/app/(platform)/app/capabilities/_components/mcp-tool-dialog', () 
 mock.module('./delete-tool-dialog', () => ({ DeleteToolDialog: ({ open }: { open: boolean }) => open ? <div>delete-dialog</div> : null }))
 mock.module('@/app/(platform)/app/capabilities/_components/tool-test-panel', () => ({ ToolTestPanel: ({ tool }: { tool: { name: string } | null }) => tool ? <div>test:{tool.name}</div> : null }))
 mock.module('@/app/(platform)/app/capabilities/_components/tool-config-dialog', () => ({ ToolConfigDialog: ({ open, onSave }: { open: boolean; onSave: (config: Record<string, string>) => Promise<void> }) => open ? <button onClick={() => onSave({ api_key: 'secret' })}>config-dialog</button> : null }))
-mock.module('./web-search-config-dialog', () => ({ WebSearchConfigDialog: ({ open, onOpenChange }: { open: boolean; onOpenChange: (value: boolean) => void }) => open ? <button onClick={() => onOpenChange(false)}>web-search-dialog</button> : null }))
+mock.module('@/components/tools/web-search-config-dialog', () => ({ WebSearchConfigDialog: ({ open, onOpenChange }: { open: boolean; onOpenChange: (value: boolean) => void }) => open ? <button onClick={() => onOpenChange(false)}>web-search-dialog</button> : null }))
 mock.module('@/components/packages/import-package-dialog', () => ({ ImportPackageDialog: ({ open }: { open: boolean }) => open ? <div>import-package</div> : null }))
 mock.module('@/lib/validation', () => ({
   clearValidationError: (errors: Record<string, string>, key: string) => { const next = { ...errors }; delete next[key]; return next },
