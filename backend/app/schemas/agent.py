@@ -381,6 +381,7 @@ class AgentCreate(AgentBase):
             "TAVILY_API_KEY",
             "BOCHA_API_KEY",
             "SEARXNG_AUTH_TOKEN",
+            "DEEPSEEK_API_KEY",
         } & self.tools_credentials.keys():
             raise ValueError(
                 "Web search credentials are managed by the site administrator"
@@ -461,7 +462,12 @@ class AgentUpdate(BaseModel):
     def reject_search_credentials(self):
         if (
             self.tools_credentials
-            and {"TAVILY_API_KEY", "BOCHA_API_KEY", "SEARXNG_AUTH_TOKEN"}
+            and {
+                "TAVILY_API_KEY",
+                "BOCHA_API_KEY",
+                "SEARXNG_AUTH_TOKEN",
+                "DEEPSEEK_API_KEY",
+            }
             & self.tools_credentials.keys()
         ):
             raise ValueError(
