@@ -51,7 +51,7 @@
 | `format_datetime` | 格式化日期时间字符串 | 时间 |
 | `calculate` | 计算数学表达式 | 数学 |
 | `unit_convert` | 单位转换 | 数学 |
-| `web_search` | 网页搜索（需要 Tavily API 密钥） | 搜索 |
+| `web_search` | 网页搜索（免 Key Bing，或配置 API Key 使用 Tavily／博查） | 搜索 |
 | `fetch_webpage` | 获取并提取网页内容 | 网页 |
 | `rss_feed_reader` | 抓取并解析 RSS 或 Atom 订阅源，返回结构化文章列表 | 网页 |
 

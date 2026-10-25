@@ -1,6 +1,11 @@
 # Implementation Plan
 
 ## Active
+- **bing-keyless-web-search** — Completed. See `docs/plan/bing-keyless-web-search.md`.
+  - [x] 1. Backend provider and saved Agent configuration cutover
+  - [x] 2. Frontend engine selector and documentation cutover
+  - [x] 3. Behavior tests and real-search verification
+
 - **dashboard-search-debounce** — Completed. See `docs/plan/dashboard-search-debounce.md`.
   - [x] 1. Activity and audit searches
   - [x] 2. Applications and capabilities

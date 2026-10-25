@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Replaced DuckDuckGo web search with keyless Bing RSS, including the Agent engine selector and an idempotent migration of saved Agent engine choices. Auto mode keeps Tavily/Bocha priority and falls back directly to Bing; public-endpoint blocking, empty results and timeouts remain explicit failures.
+
 ### Added
 
 #### Messaging Integration Features

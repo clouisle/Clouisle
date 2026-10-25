@@ -249,7 +249,7 @@ def test_web_search_omits_provider_routing_and_keeps_hits_compact():
                 },
             ],
             "success": True,
-            "search_engine": "duckduckgo",
+            "search_engine": "bing",
         },
     )
 
@@ -262,7 +262,7 @@ def test_web_search_omits_provider_routing_and_keeps_hits_compact():
         "https://b.test",
         "y",
     ]
-    assert "duckduckgo" not in rendered
+    assert "bing" not in rendered
     assert "title=" not in rendered
 
 

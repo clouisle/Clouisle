@@ -2,13 +2,13 @@
 网页搜索工具
 
 提供网页搜索功能，支持多种搜索引擎。
-注意：实际使用需要配置搜索 API Key。
+免 Key 搜索使用 Bing；Tavily 和 Bocha 需要配置 API Key。
 """
 
 import asyncio
 import logging
 from pathlib import Path
-import urllib.parse
+import re
 from typing import Any
 
 from bs4 import BeautifulSoup
@@ -33,15 +33,15 @@ async def web_search(
     搜索网页。
 
     支持多引擎架构：
-    - auto: 优先使用已配置 API Key 的商业搜索引擎（Tavily、Bocha 等），若未配置则自动使用免 Key 的 DuckDuckGo。
+    - auto: 优先使用已配置 API Key 的商业搜索引擎（Tavily、Bocha 等），若未配置则自动使用免 Key 搜索。
     - tavily: 使用 Tavily 搜索（需要 TAVILY_API_KEY）。
     - bocha: 使用国内博查 AI 搜索（需要 BOCHA_API_KEY）。
-    - duckduckgo / ddg: 免配置、零 Key 网页搜索。
+    - bing: 使用 Bing RSS 免配置、零 Key 网页搜索。
 
     Args:
         query: 搜索关键词或问题
         num_results: 返回结果数量，默认 5，最大 10
-        search_engine: 搜索引擎，支持 'auto', 'tavily', 'bocha', 'duckduckgo'
+        search_engine: 搜索引擎，支持 'auto', 'tavily', 'bocha', 'bing'
         credentials: 凭证信息（可包含 TAVILY_API_KEY, BOCHA_API_KEY 等）
 
     Returns:
@@ -53,41 +53,33 @@ async def web_search(
     num_results = max(1, min(num_results, 10))
 
     if is_auto:
-        # 根据可用凭证自动路由优先级：Tavily -> Bocha -> DuckDuckGo 零配置兜底
+        # 根据可用凭证自动路由优先级：Tavily -> Bocha -> 零配置搜索兜底
         if creds.get("TAVILY_API_KEY"):
             engine = "tavily"
         elif creds.get("BOCHA_API_KEY"):
             engine = "bocha"
         else:
-            engine = "duckduckgo"
+            engine = "bing"
 
     if engine == "tavily":
         result = await _tavily_search(query, num_results, creds)
-        # 若 Tavily 因为未配 Key 或网络异常失败，且是 auto 模式发起的，则尝试 DuckDuckGo 兜底
+        # 若 Tavily 因为未配 Key 或网络异常失败，且是 auto 模式发起的，则尝试零配置搜索兜底
         if not result.get("success") and is_auto:
             logger.info(
-                "Tavily search failed or key missing, falling back to DuckDuckGo"
+                "Tavily search failed or key missing, falling back to zero-key search"
             )
-            fallback_res = await _duckduckgo_search(query, num_results)
-            fallback_res["search_engine"] = "duckduckgo"
-            return fallback_res
-        result["search_engine"] = "tavily"
-        return result
+            result = await _bing_search(query, num_results)
+            engine = "bing"
     elif engine == "bocha":
         result = await _bocha_search(query, num_results, creds)
         if not result.get("success") and is_auto:
             logger.info(
-                "Bocha search failed or key missing, falling back to DuckDuckGo"
+                "Bocha search failed or key missing, falling back to zero-key search"
             )
-            fallback_res = await _duckduckgo_search(query, num_results)
-            fallback_res["search_engine"] = "duckduckgo"
-            return fallback_res
-        result["search_engine"] = "bocha"
-        return result
-    elif engine in ("duckduckgo", "ddg"):
-        res = await _duckduckgo_search(query, num_results)
-        res["search_engine"] = "duckduckgo"
-        return res
+            result = await _bing_search(query, num_results)
+            engine = "bing"
+    elif engine == "bing":
+        result = await _bing_search(query, num_results)
     else:
         return {
             "query": query,
@@ -95,6 +87,9 @@ async def web_search(
             "success": False,
             "results": [],
         }
+
+    result["search_engine"] = engine
+    return result
 
 
 async def _tavily_search(
@@ -231,71 +226,47 @@ async def _bocha_search(
         }
 
 
-def _clean_ddg_href(href: str | None) -> str:
-    """解析 DuckDuckGo 结果中的重定向链接。"""
-    if not href:
-        return ""
-    if href.startswith("//"):
-        href = f"https:{href}"
-    if "uddg=" in href:
-        try:
-            parsed = urllib.parse.urlparse(href)
-            params = urllib.parse.parse_qs(parsed.query)
-            if "uddg" in params and params["uddg"]:
-                return params["uddg"][0]
-        except Exception:
-            pass
-    return href
+_CJK_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 
 
-def _parse_ddg_html(html_text: str, max_results: int) -> list[dict[str, Any]]:
-    """解析 DuckDuckGo HTML 搜索页面结果。"""
-    soup = BeautifulSoup(html_text, "html.parser")
+def _parse_bing_rss(xml_text: str, max_results: int) -> list[dict[str, Any]]:
+    """解析 Bing RSS 搜索结果。"""
+    soup = BeautifulSoup(xml_text, "xml")
     results: list[dict[str, Any]] = []
 
-    for item in soup.find_all("div", class_="result"):
-        # 排除广告赞助卡片
-        classes = item.get("class", [])
-        if any("badge--ad" in c or "result--ad" in c for c in classes):
-            continue
-
-        title_node = item.find("a", class_="result__a")
-        if not title_node:
-            continue
-
-        raw_href = title_node.get("href")
-        url = _clean_ddg_href(raw_href)
+    for item in soup.find_all("item"):
+        link_node = item.find("link")
+        url = link_node.get_text(strip=True) if link_node else ""
         if not url.startswith(("http://", "https://")):
             continue
 
-        title = title_node.get_text(strip=True)
-        snippet_node = item.find("a", class_="result__snippet") or item.find(
-            "div", class_="result__snippet"
+        title_node = item.find("title")
+        title = title_node.get_text(strip=True) if title_node else ""
+        description_node = item.find("description")
+        description_html = description_node.get_text() if description_node else ""
+        snippet = (
+            BeautifulSoup(description_html, "html.parser").get_text(" ", strip=True)
+            if description_html
+            else ""
         )
-        snippet = snippet_node.get_text(strip=True) if snippet_node else ""
 
-        results.append(
-            {
-                "title": title,
-                "url": url,
-                "content": snippet,
-            }
-        )
+        results.append({"title": title, "url": url, "content": snippet})
         if len(results) >= max_results:
             break
 
     return results
 
 
-async def _duckduckgo_search(query: str, num_results: int) -> dict:
-    """使用 DuckDuckGo 免配置搜索（纯 HTTP 实现，完全跨平台且安全）。"""
+async def _bing_search(query: str, num_results: int) -> dict:
+    """使用 Bing RSS 免 Key 搜索。"""
+    market = "zh-CN" if _CJK_PATTERN.search(query) else "en-US"
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Accept": "application/rss+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": f"{market},en;q=0.8",
     }
 
     try:
@@ -304,18 +275,20 @@ async def _duckduckgo_search(query: str, num_results: int) -> dict:
             follow_redirects=True,
             headers=headers,
         ) as client:
-            response = await client.post(
-                "https://html.duckduckgo.com/html/",
-                data={"q": query},
+            response = await client.get(
+                "https://www.bing.com/search",
+                params={
+                    "q": query,
+                    "format": "rss",
+                    "count": str(num_results),
+                    "mkt": market,
+                },
             )
             response.raise_for_status()
-            html_text = response.text
+            xml_text = response.text
 
-        results = await asyncio.to_thread(_parse_ddg_html, html_text, num_results)
+        results = await asyncio.to_thread(_parse_bing_rss, xml_text, num_results)
         if not results:
-            # DuckDuckGo answers anti-bot challenges with a 200/202 page that has
-            # no result nodes. Reporting success here would tell the model the
-            # search ran and legitimately found nothing.
             return {
                 "query": query,
                 "error": t("web_search_blocked_or_empty"),
@@ -335,7 +308,7 @@ async def _duckduckgo_search(query: str, num_results: int) -> dict:
             "results": [],
         }
     except Exception as e:
-        logger.error("DuckDuckGo search error: %s", e)
+        logger.error("Bing search error: %s", e)
         return {
             "query": query,
             "error": t("tool_execution_failed"),

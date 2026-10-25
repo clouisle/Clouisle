@@ -212,35 +212,30 @@ describe('ToolSelector', () => {
       config_fields: [],
     }
     const webSearchConfig: ToolConfig = { type: 'builtin', name: 'web_search', config: { engine: 'auto' } }
-    stateIndex = 0
-    const tree = ToolSelector({
-      toolsConfig: [webSearchConfig],
-      availableTools: [webSearchTool, dbTool],
-      onChange,
-    })
-
-    // click settings button to open modal
-    const settingsBtn = find(tree, (node) => typeof node.props.onClick === 'function' && node.props.title === 'config.settings')
-    expect(settingsBtn).toBeDefined()
-    // change engine in dialog
+    const renderSearchItem = () => {
+      stateIndex = 0
+      const parent = ToolSelector({
+        toolsConfig: [webSearchConfig],
+        availableTools: [webSearchTool, dbTool],
+        onChange,
+      }) as unknown as Tree
+      const item = (parent.props.children as Tree[])[0]
+      return resolve(item as unknown as ReactNode) as ReactNode
+    }
+    let tree = renderSearchItem()
     const engineSelect = find(tree, (node) => node.type === 'select')
-    if (engineSelect) {
-      ;(engineSelect.props.onValueChange as (v: string) => void)('bocha')
-    }
-    const apiKeyInput = find(tree, (node) => node.type === 'input' && node.props.value !== undefined)
-    if (apiKeyInput) {
-      ;(apiKeyInput.props.onChange as (e: { target: { value: string } }) => void)({ target: { value: 'sk-test' } })
-    }
+    const bingOption = find(tree, (node) => node.type === 'select-item' && node.props.value === 'bing')
+    expect(text(bingOption)).toBe('config.engineBing')
+    ;(engineSelect.props.onValueChange as (value: string) => void)('bing')
+    tree = renderSearchItem()
 
-    // click save button in dialog
     const saveBtn = find(tree, (node) => typeof node.props.onClick === 'function' && text(node).includes('config.save'))
-    expect(saveBtn).toBeDefined()
     ;(saveBtn.props.onClick as () => void)()
     expect(onChange).toHaveBeenCalledWith([
       expect.objectContaining({
         type: 'builtin',
         name: 'web_search',
-        config: expect.objectContaining({ engine: 'auto' }),
+        config: expect.objectContaining({ engine: 'bing', api_key: undefined }),
       }),
     ])
 

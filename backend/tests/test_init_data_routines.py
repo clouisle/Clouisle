@@ -712,6 +712,7 @@ async def test_init_db_seeds_permissions_roles_and_settings_end_to_end(
         "drop_obsolete_retrieval_evaluation_tables",
         "init_model_provider_display_name",
         "migrate_model_input_modalities",
+        "migrate_agent_web_search_engine",
     ]
     for name in optional_migrations:
         monkeypatch.setattr(init_data, name, AsyncMock())
