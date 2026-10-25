@@ -371,6 +371,9 @@ export interface ToolShareListResponse {
 // ============ API Functions ============
 
 export const toolsApi = {
+  getWebSearchEngines: async (): Promise<WebSearchDefaultEngine[]> =>
+    api.get<WebSearchDefaultEngine[]>('/tools/web-search/engines'),
+
   /**
    * 获取单个团队的工具列表（兼容现有平台页）
    */

@@ -26,6 +26,9 @@ mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam: n
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.flat().filter(Boolean).join(' ') }))
 
 const element = (tag: string) => ({ children, ...props }: { children?: ReactNode }) => ({ type: tag, props: { ...props, children } })
+mock.module('@/components/tools/web-search-engine-select', () => ({
+  WebSearchEngineSelect: element('select'),
+}))
 mock.module('next/image', () => ({ default: element('img') }))
 mock.module('@/components/ui/button', () => ({ Button: element('button') }))
 mock.module('@/components/ui/tooltip', () => ({ Tooltip: element('tooltip'), TooltipContent: element('tooltip-content'), TooltipTrigger: element('button') }))
@@ -227,11 +230,10 @@ describe('ToolSelector', () => {
       return resolve(item as unknown as ReactNode) as ReactNode
     }
     let tree = renderSearchItem()
+    const settings = find(tree, (node) => node.type === 'button' && typeof node.props.onClick === 'function' && node.props.size === 'icon')
+    ;(settings.props.onClick as (event: { stopPropagation: () => void }) => void)({ stopPropagation: () => {} })
+    tree = renderSearchItem()
     const engineSelect = find(tree, (node) => node.type === 'select')
-    const bochaOption = find(tree, (node) => node.type === 'select-item' && node.props.value === 'bocha')
-    expect(text(bochaOption)).toBe('config.engineBocha')
-    const searxngOption = find(tree, (node) => node.type === 'select-item' && node.props.value === 'searxng')
-    expect(text(searxngOption)).toBe('config.engineSearxng')
     ;(engineSelect.props.onValueChange as (value: string) => void)('bocha')
     tree = renderSearchItem()
 

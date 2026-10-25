@@ -24,13 +24,7 @@ import { isPresetToolCategory, type PresetToolCategory, type Skill, type Tool, t
 import { useTeam } from '@/contexts/team-context'
 import { cn } from '@/lib/utils'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { WebSearchEngineSelect } from '@/components/tools/web-search-engine-select'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
@@ -511,19 +505,13 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
             <div className="space-y-4 py-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium">{t('config.engine')}</Label>
-                <Select value={tempEngine} onValueChange={(val) => setTempEngine(val || 'auto')}>
-                  <SelectTrigger className="w-full text-xs">
-                    <SelectValue>
-                      {engineLabels[tempEngine] || engineLabels.auto}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="auto">{t('config.engineAuto')}</SelectItem>
-                    <SelectItem value="bocha">{t('config.engineBocha')}</SelectItem>
-                    <SelectItem value="tavily">{t('config.engineTavily')}</SelectItem>
-                    <SelectItem value="searxng">{t('config.engineSearxng')}</SelectItem>
-                  </SelectContent>
-                </Select>
+                {configOpen && (
+                  <WebSearchEngineSelect
+                    value={tempEngine}
+                    onValueChange={setTempEngine}
+                    className="w-full text-xs"
+                  />
+                )}
                 <p className="text-[11px] text-muted-foreground">{t('config.engineHint')}</p>
               </div>
             </div>
