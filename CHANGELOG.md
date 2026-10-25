@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added site-managed SearXNG JSON search with reverse-proxy Base URL support, optional encrypted HTTPS bearer authentication, SSRF validation at save/use and refused redirects. Changing an instance with a saved token requires explicitly replacing or clearing that token. Administrators can test saved search configuration without exposing secrets to Agents.
+
 #### Messaging Integration Features
 - Replaced the per-provider Feishu and WeChat delivery tables with one provider-neutral `integration_deliveries` queue; startup copies existing rows and drops the legacy tables, so deploy API and workers together.
 - Added a standalone **Delivery log** page (`/deliveries`, Monitoring navigation) and `GET /api/v1/admin/deliveries` to inspect shared outbound delivery outcomes by provider, status, run ID or file name, following the audit-log search/select/pagination layout.

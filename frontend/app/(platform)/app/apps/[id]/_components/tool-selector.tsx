@@ -407,6 +407,7 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
     auto: t('config.engineAuto'),
     bocha: t('config.engineBocha'),
     tavily: t('config.engineTavily'),
+    searxng: t('config.engineSearxng'),
   }
 
   return (
@@ -520,6 +521,7 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
                     <SelectItem value="auto">{t('config.engineAuto')}</SelectItem>
                     <SelectItem value="bocha">{t('config.engineBocha')}</SelectItem>
                     <SelectItem value="tavily">{t('config.engineTavily')}</SelectItem>
+                    <SelectItem value="searxng">{t('config.engineSearxng')}</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-[11px] text-muted-foreground">{t('config.engineHint')}</p>

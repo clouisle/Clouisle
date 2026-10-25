@@ -3,7 +3,7 @@ import { Window } from 'happy-dom'
 import * as React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { WebSearchConfig } from '@/lib/api'
+import type { WebSearchConfig, WebSearchTestResponse } from '@/lib/api'
 
 const window = new Window({ url: 'http://localhost' })
 Object.assign(globalThis, {
@@ -74,8 +74,11 @@ const savedConfig: WebSearchConfig = {
   default_engine: 'tavily',
   tavily_enabled: true,
   bocha_enabled: false,
+  searxng_enabled: false,
+  searxng_base_url: 'https://search.example.test/searxng',
   tavily_api_key_configured: true,
   bocha_api_key_configured: false,
+  searxng_auth_token_configured: true,
   legacy_credentials_present: true,
 }
 
@@ -127,6 +130,16 @@ function onInput(container: HTMLElement, selector: string, value: string) {
   act(() => props.onChange({ target: { value } }))
 }
 
+function toggleProvider(container: HTMLElement, provider: 'tavily' | 'bocha' | 'searxng', checked: boolean) {
+  const label = `tools.webSearch.${provider} tools.webSearch.providerEnabled`
+  const input = container.querySelector(`input[aria-label="${label}"]`) as HTMLInputElement | null
+  if (!input) throw new Error(`Missing provider switch ${label}`)
+  const propsKey = Object.keys(input).find((key) => key.startsWith('__reactProps$'))
+  if (!propsKey) throw new Error(`Missing React props for ${label}`)
+  const props = (input as unknown as Record<string, { onChange: (event: { currentTarget: { checked: boolean } }) => void }>)[propsKey]
+  act(() => props.onChange({ currentTarget: { checked } }))
+}
+
 describe('WebSearchConfigDialog', () => {
   test('loads the saved site config, keeps secrets blank, and shows the legacy warning', async () => {
     const container = await renderDialog()
@@ -134,8 +147,11 @@ describe('WebSearchConfigDialog', () => {
     expect(getWebSearchConfig).toHaveBeenCalledTimes(1)
     expect(container.textContent).toContain('tools.webSearch.legacyWarning')
     expect(container.textContent).toContain('tools.webSearch.keyConfigured')
+    expect(container.textContent).toContain('tools.webSearch.searxngUrlChangeHint')
     expect((container.querySelector('#web-search-tavily-api-key') as HTMLInputElement).value).toBe('')
     expect((container.querySelector('#web-search-bocha-api-key') as HTMLInputElement).value).toBe('')
+    expect((container.querySelector('#web-search-searxng-auth-token') as HTMLInputElement).value).toBe('')
+    expect((container.querySelector('#web-search-searxng-base-url') as HTMLInputElement).value).toBe('https://search.example.test/searxng')
   })
 
   test('preserves saved secrets when saving without touching the secret fields', async () => {
@@ -145,9 +161,16 @@ describe('WebSearchConfigDialog', () => {
 
     expect(updateWebSearchConfig).toHaveBeenCalledTimes(1)
     const payload = updateWebSearchConfig.mock.calls[0][0] as Record<string, unknown>
-    expect(payload).toEqual({ default_engine: 'tavily', tavily_enabled: true, bocha_enabled: false })
+    expect(payload).toEqual({
+      default_engine: 'tavily',
+      tavily_enabled: true,
+      bocha_enabled: false,
+      searxng_enabled: false,
+      searxng_base_url: 'https://search.example.test/searxng',
+    })
     expect(payload).not.toHaveProperty('tavily_api_key')
     expect(payload).not.toHaveProperty('bocha_api_key')
+    expect(payload).not.toHaveProperty('searxng_auth_token')
     expect(toastSuccess).toHaveBeenCalledWith('tools.webSearch.saved')
   })
 
@@ -179,6 +202,61 @@ describe('WebSearchConfigDialog', () => {
     })
   })
 
+  test('enables SearXNG as default and saves a trimmed URL and bearer token', async () => {
+    const container = await renderDialog()
+
+    toggleProvider(container, 'searxng', true)
+    onInput(container, '#web-search-searxng-base-url', '  https://search.example.test/searxng/  ')
+    onInput(container, '#web-search-searxng-auth-token', '  bearer-token  ')
+    act(() => (container.querySelectorAll('button[data-select-value="searxng"]')[0] as HTMLButtonElement).click())
+    await act(async () => button(container, 'tools.webSearch.save').click())
+
+    expect(updateWebSearchConfig.mock.calls[0][0]).toMatchObject({
+      default_engine: 'searxng',
+      searxng_enabled: true,
+      searxng_base_url: 'https://search.example.test/searxng/',
+      searxng_auth_token: 'bearer-token',
+    })
+  })
+
+  test('requires a base URL before enabling SearXNG', async () => {
+    const container = await renderDialog()
+
+    toggleProvider(container, 'searxng', true)
+    onInput(container, '#web-search-searxng-base-url', '   ')
+    await act(async () => button(container, 'tools.webSearch.save').click())
+
+    expect(container.textContent).toContain('tools.webSearch.searxngBaseUrlRequired')
+    expect(updateWebSearchConfig).not.toHaveBeenCalled()
+  })
+
+  test('requires token replacement or explicit clear when the SearXNG URL changes', async () => {
+    const container = await renderDialog()
+
+    onInput(container, '#web-search-searxng-base-url', 'https://other.example.test/searxng')
+    await act(async () => button(container, 'tools.webSearch.save').click())
+    expect(container.textContent).toContain('tools.webSearch.searxngTokenConfirmationRequired')
+    expect(updateWebSearchConfig).not.toHaveBeenCalled()
+
+    // A trailing-slash-only difference is the same normalized URL.
+    onInput(container, '#web-search-searxng-base-url', 'https://search.example.test/searxng/')
+    await act(async () => button(container, 'tools.webSearch.save').click())
+    expect(container.textContent).not.toContain('tools.webSearch.searxngTokenConfirmationRequired')
+    expect(updateWebSearchConfig).toHaveBeenCalledWith(expect.objectContaining({
+      searxng_base_url: 'https://search.example.test/searxng/',
+    }))
+  })
+
+  test('clears a saved SearXNG bearer token explicitly', async () => {
+    const container = await renderDialog()
+
+    const clearButtons = [...container.querySelectorAll('button')].filter((item) => item.textContent?.includes('tools.webSearch.clearKey'))
+    act(() => clearButtons.at(-1)!.click())
+    await act(async () => button(container, 'tools.webSearch.save').click())
+
+    expect(updateWebSearchConfig.mock.calls[0][0]).toMatchObject({ searxng_auth_token: '' })
+  })
+
   test('surfaces save errors without duplicating secrets', async () => {
     updateWebSearchConfig.mockRejectedValue(new Error('save failed'))
     const container = await renderDialog()
@@ -188,6 +266,36 @@ describe('WebSearchConfigDialog', () => {
 
     expect(container.textContent).toContain('save failed')
     expect(container.textContent).not.toContain('tvly-secret')
+  })
+
+  test('ignores a test response that resolves after the dialog is closed and reopened', async () => {
+    let resolveTest!: (result: WebSearchTestResponse) => void
+    testWebSearchConfig.mockImplementationOnce(() => {
+      const pending = Promise.withResolvers<WebSearchTestResponse>()
+      resolveTest = pending.resolve
+      return pending.promise
+    })
+    const container = await renderDialog()
+    const root = roots[roots.length - 1]
+
+    onInput(container, 'input[aria-label="tools.webSearch.testQuery"]', 'slow query')
+    await act(async () => button(container, 'tools.webSearch.runTest').click())
+
+    await act(async () => {
+      root.render(<WebSearchConfigDialog open={false} onOpenChange={() => {}} />)
+      await Promise.resolve()
+    })
+    await act(async () => {
+      root.render(<WebSearchConfigDialog open onOpenChange={() => {}} />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      resolveTest({ success: true, results: [{ title: 'Stale result', url: 'https://stale.test' }] })
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).not.toContain('Stale result')
   })
 
   test('runs the saved-config test and renders provider errors and result links', async () => {
@@ -213,5 +321,12 @@ describe('WebSearchConfigDialog', () => {
     const link = container.querySelector('a[href="https://example.test/docs"]')
     expect(link).not.toBeNull()
     expect(link?.getAttribute('rel')).toBe('noopener noreferrer')
+
+    toggleProvider(container, 'searxng', true)
+    const searxngOptions = container.querySelectorAll('button[data-select-value="searxng"]')
+    act(() => (searxngOptions[searxngOptions.length - 1] as HTMLButtonElement).click())
+    testWebSearchConfig.mockResolvedValueOnce({ success: true, search_engine: 'searxng', results: [] })
+    await act(async () => button(container, 'tools.webSearch.runTest').click())
+    expect(testWebSearchConfig).toHaveBeenLastCalledWith({ query: 'clouisle', engine: 'searxng' })
   })
 })

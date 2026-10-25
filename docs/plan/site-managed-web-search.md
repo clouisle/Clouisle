@@ -51,3 +51,7 @@ Success criteria: one administrator configuration surface; explicit default and 
 - Stage 1 verified: 263 focused backend tests and 53 frontend tests passed; TypeScript, targeted ESLint, Ruff and backend catalog/legacy sync checks passed.
 - Real ORM smoke: SQLite configuration save/read/rotation/default selection/clear and public web_search with HTTP transport fixtures passed. PostgreSQL temporary-table migration preserved global account, encrypted/archive private credentials without promotion, sanitized Agent config and repeated idempotently; transaction rolled back.
 - No application services or browser sessions started. Live authenticated commercial-provider calls not exercised.
+- Stage 2 verification initially found new-test fixture defects (async declaration, repeated transport patching and translated UI label matching); fixed fixtures rather than changing runtime to satisfy assertions.
+- Stage 2 full regression: backend 9687 passed / 4 skipped; frontend 2998 passed. TypeScript, targeted ESLint, Ruff, frontend i18n lint and backend catalog/legacy-sync checks passed.
+- SearXNG actual ORM smoke passed: site save -> existing SSRF allowlist -> subpath-preserving form POST -> normalized cited result through deterministic HTTP transport. Removing the allowlist blocks the same saved private endpoint before any second request.
+- No live SearXNG instance was provided, so live upstream availability/relevance was not verified. Configure an operator-owned instance and enable JSON before use; no random public fallback exists.

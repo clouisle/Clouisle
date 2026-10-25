@@ -37,12 +37,23 @@ export type ToolsMessages = {
       defaultEngineDisabled: string
       tavily: string
       bocha: string
+      searxng: string
       providerEnabled: string
       providerEnabledHint: string
       tavilyApiKey: string
       bochaApiKey: string
       tavilyKeyPlaceholder: string
       bochaKeyPlaceholder: string
+      searxngBaseUrl: string
+      searxngBaseUrlPlaceholder: string
+      searxngBaseUrlHint: string
+      searxngAuthToken: string
+      searxngAuthTokenPlaceholder: string
+      searxngTokenOptional: string
+      searxngTokenHttpsHint: string
+      searxngUrlChangeHint: string
+      searxngBaseUrlRequired: string
+      searxngTokenConfirmationRequired: string
       keyConfigured: string
       keyMissing: string
       clearKey: string
@@ -58,6 +69,7 @@ export type ToolsMessages = {
       engineAuto: string
       engineTavily: string
       engineBocha: string
+      engineSearxng: string
       runTest: string
       testing: string
       testSucceeded: string

@@ -247,8 +247,8 @@ GET /api/v1/tools/builtin
       "icon": "🔍",
       "parameters": [],
       "is_enabled": true,
-      "requires_config": true,
-      "config_fields": ["TAVILY_API_KEY"],
+      "requires_config": false,
+      "config_fields": [],
       "custom_type": null,
       "is_owned": true,
       "visibility": "private"
@@ -942,9 +942,9 @@ With `team_id`, team admin rights are required for create/update/delete and team
 
 ## Site-managed Web Search
 
-`GET /api/v1/admin/tools/web-search/config` requires `admin:capability:read`. It returns the default engine, provider enable flags, and `*_api_key_configured` booleans, never the raw keys.
+`GET /api/v1/admin/tools/web-search/config` requires `admin:capability:read`. It returns `default_engine`, provider enable flags, `searxng_base_url`, and configured-secret booleans (`tavily_api_key_configured`, `bocha_api_key_configured`, `searxng_auth_token_configured`), never raw secrets.
 
-`PUT /api/v1/admin/tools/web-search/config` requires `admin:capability:update`. Set `default_engine` to `tavily` or `bocha`, `tavily_enabled`/`bocha_enabled` as booleans, and optional `tavily_api_key`/`bocha_api_key`. Omitted or null secrets preserve the saved value; empty strings clear it; nonempty strings replace it. Configuration is global and takes no `team_id`.
+`PUT /api/v1/admin/tools/web-search/config` requires `admin:capability:update`. Set `default_engine` to `tavily`, `bocha` or `searxng`, provider enable flags (`tavily_enabled`, `bocha_enabled`, `searxng_enabled`), and `searxng_base_url`. Optional secrets are `tavily_api_key`, `bocha_api_key` and `searxng_auth_token`. Omitted or null secrets preserve the saved value; empty strings clear it; nonempty strings replace it. Configuration is global and takes no `team_id`. SearXNG Base URL preserves subpaths, rejects query/fragment/userinfo and a `/search` suffix, and is checked against SSRF policy; bearer authentication requires HTTPS. Enable JSON format on the SearXNG instance. No request redirects are followed.
 
 `POST /api/v1/admin/tools/web-search/test` requires `admin:capability:execute` and accepts `{"query":"Shanghai weather", "engine":"auto"}`. It tests saved site settings and returns normalized search results. `auto` uses the explicit site default; disabled/unconfigured providers fail without fallback.
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { AlertCircle, CheckCircle2, Loader2, Play } from 'lucide-react'
@@ -32,9 +32,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-// Stage 1 exposes Tavily and Bocha. SearXNG is added separately.
-const DEFAULT_ENGINES: WebSearchDefaultEngine[] = ['tavily', 'bocha']
-const TEST_ENGINES: WebSearchEngine[] = ['auto', 'tavily', 'bocha']
+const DEFAULT_ENGINES: WebSearchDefaultEngine[] = ['tavily', 'bocha', 'searxng']
+const TEST_ENGINES: WebSearchEngine[] = ['auto', 'tavily', 'bocha', 'searxng']
 
 type WebSearchConfigApi = Pick<
   typeof adminToolsApi,
@@ -55,12 +54,7 @@ interface SecretFieldProps {
   value: string
   configured: boolean
   clearRequested: boolean
-  statusConfiguredText: string
-  statusMissingText: string
-  clearText: string
-  undoClearText: string
-  willClearText: string
-  newKeyHint: string
+  missingText?: string
   onChange: (value: string) => void
   onClearRequestedChange: (clear: boolean) => void
 }
@@ -72,15 +66,11 @@ function SecretField({
   value,
   configured,
   clearRequested,
-  statusConfiguredText,
-  statusMissingText,
-  clearText,
-  undoClearText,
-  willClearText,
-  newKeyHint,
+  missingText,
   onChange,
   onClearRequestedChange,
 }: SecretFieldProps) {
+  const t = useTranslations('tools.webSearch')
   const hasNewValue = value.trim().length > 0
 
   return (
@@ -88,27 +78,15 @@ function SecretField({
       <div className="flex items-center justify-between gap-2">
         <Label htmlFor={id} className="text-xs font-medium">{label}</Label>
         {configured && !hasNewValue && (
-          clearRequested ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-xs"
-              onClick={() => onClearRequestedChange(false)}
-            >
-              {undoClearText}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-xs text-destructive hover:text-destructive"
-              onClick={() => onClearRequestedChange(true)}
-            >
-              {clearText}
-            </Button>
-          )
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className={`h-6 px-2 text-xs${clearRequested ? '' : ' text-destructive hover:text-destructive'}`}
+            onClick={() => onClearRequestedChange(!clearRequested)}
+          >
+            {clearRequested ? t('undoClear') : t('clearKey')}
+          </Button>
         )}
       </div>
       <Input
@@ -125,13 +103,36 @@ function SecretField({
       />
       <p className="text-[11px] text-muted-foreground">
         {hasNewValue
-          ? newKeyHint
+          ? t('newKeyHint')
           : clearRequested
-            ? willClearText
+            ? t('willClear')
             : configured
-              ? statusConfiguredText
-              : statusMissingText}
+              ? t('keyConfigured')
+              : (missingText ?? t('keyMissing'))}
       </p>
+    </div>
+  )
+}
+
+interface ProviderToggleProps {
+  label: string
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+}
+
+function ProviderToggle({ label, checked, onCheckedChange }: ProviderToggleProps) {
+  const t = useTranslations('tools.webSearch')
+  return (
+    <div className="flex items-center justify-between rounded-md border p-3">
+      <div className="space-y-0.5">
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-xs text-muted-foreground">{t('providerEnabledHint')}</p>
+      </div>
+      <Switch
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        aria-label={`${label} ${t('providerEnabled')}`}
+      />
     </div>
   )
 }
@@ -151,10 +152,14 @@ export function WebSearchConfigDialog({
   const [defaultEngine, setDefaultEngine] = useState<WebSearchDefaultEngine>('tavily')
   const [tavilyEnabled, setTavilyEnabled] = useState(false)
   const [bochaEnabled, setBochaEnabled] = useState(false)
+  const [searxngEnabled, setSearxngEnabled] = useState(false)
+  const [searxngBaseUrl, setSearxngBaseUrl] = useState('')
   const [tavilyApiKey, setTavilyApiKey] = useState('')
   const [bochaApiKey, setBochaApiKey] = useState('')
+  const [searxngAuthToken, setSearxngAuthToken] = useState('')
   const [clearTavilyApiKey, setClearTavilyApiKey] = useState(false)
   const [clearBochaApiKey, setClearBochaApiKey] = useState(false)
+  const [clearSearxngAuthToken, setClearSearxngAuthToken] = useState(false)
 
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -164,25 +169,33 @@ export function WebSearchConfigDialog({
   const [isTesting, setIsTesting] = useState(false)
   const [testError, setTestError] = useState<string | null>(null)
   const [testResult, setTestResult] = useState<WebSearchTestResponse | null>(null)
+  const requestGeneration = useRef(0)
 
   const applyConfig = (next: WebSearchConfig) => {
     setConfig(next)
     setDefaultEngine(next.default_engine)
     setTavilyEnabled(next.tavily_enabled)
     setBochaEnabled(next.bocha_enabled)
+    setSearxngEnabled(next.searxng_enabled)
+    setSearxngBaseUrl(next.searxng_base_url)
   }
 
   useEffect(() => {
     if (!open) return
 
     let active = true
+    const generation = ++requestGeneration.current
     setIsLoading(true)
+    setIsSaving(false)
+    setIsTesting(false)
     setLoadError(null)
     setSaveError(null)
     setTavilyApiKey('')
     setBochaApiKey('')
+    setSearxngAuthToken('')
     setClearTavilyApiKey(false)
     setClearBochaApiKey(false)
+    setClearSearxngAuthToken(false)
     setTestQuery('')
     setTestEngine('auto')
     setTestError(null)
@@ -190,14 +203,14 @@ export function WebSearchConfigDialog({
 
     api.getWebSearchConfig()
       .then((next) => {
-        if (active) applyConfig(next)
+        if (active && generation === requestGeneration.current) applyConfig(next)
       })
       .catch((error: unknown) => {
-        if (!active) return
+        if (!active || generation !== requestGeneration.current) return
         setLoadError(error instanceof Error && error.message ? error.message : t('loadFailed'))
       })
       .finally(() => {
-        if (active) setIsLoading(false)
+        if (active && generation === requestGeneration.current) setIsLoading(false)
       })
 
     return () => {
@@ -210,15 +223,32 @@ export function WebSearchConfigDialog({
   const isEngineEnabled = (engine: WebSearchDefaultEngine): boolean => {
     if (engine === 'tavily') return tavilyEnabled
     if (engine === 'bocha') return bochaEnabled
-    return false
+    return searxngEnabled
   }
 
   const handleSave = async () => {
     setSaveError(null)
 
-    const anyProviderEnabled = tavilyEnabled || bochaEnabled
+    const anyProviderEnabled = tavilyEnabled || bochaEnabled || searxngEnabled
     if (anyProviderEnabled && !isEngineEnabled(defaultEngine)) {
       setSaveError(t('defaultEngineDisabled'))
+      return
+    }
+    if (searxngEnabled && !searxngBaseUrl.trim()) {
+      setSaveError(t('searxngBaseUrlRequired'))
+      return
+    }
+
+    const searxngUrlChanged =
+      searxngBaseUrl.trim().replace(/\/+$/, '')
+      !== (config?.searxng_base_url ?? '').trim().replace(/\/+$/, '')
+    if (
+      searxngUrlChanged
+      && config?.searxng_auth_token_configured
+      && !searxngAuthToken.trim()
+      && !clearSearxngAuthToken
+    ) {
+      setSaveError(t('searxngTokenConfirmationRequired'))
       return
     }
 
@@ -226,27 +256,36 @@ export function WebSearchConfigDialog({
       default_engine: defaultEngine,
       tavily_enabled: tavilyEnabled,
       bocha_enabled: bochaEnabled,
+      searxng_enabled: searxngEnabled,
+      searxng_base_url: searxngBaseUrl.trim(),
     }
 
     if (tavilyApiKey.trim()) payload.tavily_api_key = tavilyApiKey.trim()
     else if (clearTavilyApiKey) payload.tavily_api_key = ''
     if (bochaApiKey.trim()) payload.bocha_api_key = bochaApiKey.trim()
     else if (clearBochaApiKey) payload.bocha_api_key = ''
+    if (searxngAuthToken.trim()) payload.searxng_auth_token = searxngAuthToken.trim()
+    else if (clearSearxngAuthToken) payload.searxng_auth_token = ''
 
     setIsSaving(true)
+    const generation = requestGeneration.current
     try {
       const updated = await api.updateWebSearchConfig(payload)
+      if (generation !== requestGeneration.current) return
       applyConfig(updated)
       setTavilyApiKey('')
       setBochaApiKey('')
+      setSearxngAuthToken('')
       setClearTavilyApiKey(false)
       setClearBochaApiKey(false)
+      setClearSearxngAuthToken(false)
       toast.success(t('saved'))
       onSaved?.()
     } catch (error: unknown) {
+      if (generation !== requestGeneration.current) return
       setSaveError(error instanceof Error && error.message ? error.message : t('saveFailed'))
     } finally {
-      setIsSaving(false)
+      if (generation === requestGeneration.current) setIsSaving(false)
     }
   }
 
@@ -260,23 +299,33 @@ export function WebSearchConfigDialog({
     setIsTesting(true)
     setTestError(null)
     setTestResult(null)
+    const generation = requestGeneration.current
     try {
-      setTestResult(await api.testWebSearchConfig({ query, engine: testEngine }))
+      const result = await api.testWebSearchConfig({ query, engine: testEngine })
+      if (generation !== requestGeneration.current) return
+      setTestResult(result)
     } catch (error: unknown) {
+      if (generation !== requestGeneration.current) return
       setTestError(error instanceof Error && error.message ? error.message : t('testFailed'))
     } finally {
-      setIsTesting(false)
+      if (generation === requestGeneration.current) setIsTesting(false)
     }
   }
 
   const engineLabel = (engine: WebSearchEngine): string => {
     if (engine === 'auto') return t('engineAuto')
     if (engine === 'tavily') return t('engineTavily')
-    return t('engineBocha')
+    if (engine === 'bocha') return t('engineBocha')
+    return t('engineSearxng')
+  }
+
+  const handleOpenChange = (next: boolean) => {
+    if (!next) requestGeneration.current += 1
+    onOpenChange(next)
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t('title')}</DialogTitle>
@@ -327,17 +376,11 @@ export function WebSearchConfigDialog({
             </div>
 
             <div className="space-y-3">
-              <div className="flex items-center justify-between rounded-md border p-3">
-                <div className="space-y-0.5">
-                  <p className="text-sm font-medium">{t('tavily')}</p>
-                  <p className="text-xs text-muted-foreground">{t('providerEnabledHint')}</p>
-                </div>
-                <Switch
-                  checked={tavilyEnabled}
-                  onCheckedChange={setTavilyEnabled}
-                  aria-label={`${t('tavily')} ${t('providerEnabled')}`}
-                />
-              </div>
+              <ProviderToggle
+                label={t('tavily')}
+                checked={tavilyEnabled}
+                onCheckedChange={setTavilyEnabled}
+              />
               <SecretField
                 id="web-search-tavily-api-key"
                 label={t('tavilyApiKey')}
@@ -345,27 +388,15 @@ export function WebSearchConfigDialog({
                 value={tavilyApiKey}
                 configured={Boolean(config?.tavily_api_key_configured)}
                 clearRequested={clearTavilyApiKey}
-                statusConfiguredText={t('keyConfigured')}
-                statusMissingText={t('keyMissing')}
-                clearText={t('clearKey')}
-                undoClearText={t('undoClear')}
-                willClearText={t('willClear')}
-                newKeyHint={t('newKeyHint')}
                 onChange={setTavilyApiKey}
                 onClearRequestedChange={setClearTavilyApiKey}
               />
 
-              <div className="flex items-center justify-between rounded-md border p-3">
-                <div className="space-y-0.5">
-                  <p className="text-sm font-medium">{t('bocha')}</p>
-                  <p className="text-xs text-muted-foreground">{t('providerEnabledHint')}</p>
-                </div>
-                <Switch
-                  checked={bochaEnabled}
-                  onCheckedChange={setBochaEnabled}
-                  aria-label={`${t('bocha')} ${t('providerEnabled')}`}
-                />
-              </div>
+              <ProviderToggle
+                label={t('bocha')}
+                checked={bochaEnabled}
+                onCheckedChange={setBochaEnabled}
+              />
               <SecretField
                 id="web-search-bocha-api-key"
                 label={t('bochaApiKey')}
@@ -373,15 +404,45 @@ export function WebSearchConfigDialog({
                 value={bochaApiKey}
                 configured={Boolean(config?.bocha_api_key_configured)}
                 clearRequested={clearBochaApiKey}
-                statusConfiguredText={t('keyConfigured')}
-                statusMissingText={t('keyMissing')}
-                clearText={t('clearKey')}
-                undoClearText={t('undoClear')}
-                willClearText={t('willClear')}
-                newKeyHint={t('newKeyHint')}
                 onChange={setBochaApiKey}
                 onClearRequestedChange={setClearBochaApiKey}
               />
+
+              <ProviderToggle
+                label={t('searxng')}
+                checked={searxngEnabled}
+                onCheckedChange={setSearxngEnabled}
+              />
+              <div className="space-y-1.5">
+                <Label htmlFor="web-search-searxng-base-url" className="text-xs font-medium">
+                  {t('searxngBaseUrl')}
+                </Label>
+                <Input
+                  id="web-search-searxng-base-url"
+                  type="text"
+                  inputMode="url"
+                  value={searxngBaseUrl}
+                  placeholder={t('searxngBaseUrlPlaceholder')}
+                  onChange={(event) => setSearxngBaseUrl(event.target.value)}
+                  aria-invalid={searxngEnabled && !searxngBaseUrl.trim()}
+                />
+                <p className="text-[11px] text-muted-foreground">{t('searxngBaseUrlHint')}</p>
+              </div>
+              <SecretField
+                id="web-search-searxng-auth-token"
+                label={t('searxngAuthToken')}
+                placeholder={t('searxngAuthTokenPlaceholder')}
+                value={searxngAuthToken}
+                configured={Boolean(config?.searxng_auth_token_configured)}
+                clearRequested={clearSearxngAuthToken}
+                missingText={t('searxngTokenOptional')}
+                onChange={setSearxngAuthToken}
+                onClearRequestedChange={setClearSearxngAuthToken}
+              />
+              <p className="text-[11px] text-muted-foreground">{t('searxngTokenHttpsHint')}</p>
+              {config?.searxng_auth_token_configured && (
+                <p className="text-[11px] text-muted-foreground">{t('searxngUrlChangeHint')}</p>
+              )}
             </div>
 
             {saveError && (
@@ -480,7 +541,7 @@ export function WebSearchConfigDialog({
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>
             {t('cancel')}
           </Button>
           <Button onClick={handleSave} disabled={isLoading || isSaving || !!loadError}>

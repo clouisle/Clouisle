@@ -679,7 +679,7 @@ kubectl -n clouisle top pods
 | `QDRANT_URL` | `http://localhost:6333` | Qdrant 地址。部署配置中会覆盖为 `http://qdrant:6333`。 |
 | `QDRANT_COLLECTION_PREFIX` | `kb_dim` | Qdrant collection 前缀 |
 | `QDRANT_DISTANCE` | `Cosine` | 向量距离度量 |
-| `TAVILY_API_KEY` | *(empty)* | Tavily 网页搜索 API Key（用于 Agent 网页搜索能力） |
+| `TAVILY_API_KEY` | *(empty)* | 首次迁移时在缺少全局 Key 的情况下导入站点搜索配置；后续通过管理端维护 |
 | `SANDBOX_RUNTIME_ENABLED` | `true` | 将可执行任务路由到沙箱运行时。 |
 | `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `true` | 启用 Bubblewrap 挂载命名空间；通用应用默认值为 `true`。 |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | Sandbox Worker 部署中为 `/usr/bin/bwrap` | Bubblewrap 可执行文件路径；通用应用默认值为 `bwrap`。 |

@@ -89,13 +89,31 @@ Site administrators manage search in **Capabilities → Tools → Web Search →
 
 **Update Configuration:**
 1. Open Web Search configuration in the administrator dashboard.
-2. Enable Tavily or Bocha and enter its API key.
+2. Enable Tavily/Bocha and enter its API key, or enable the administrator-configured SearXNG instance.
 3. Choose the site default and save changes.
 4. Test the saved configuration with a representative query and inspect relevance, not merely nonempty results.
 
-> **Note:** Web search requires API credentials. There are no per-tool limits (calls per day/agent/minute) or timeout settings for built-in tools.
+> **Note:** Tavily/Bocha require API credentials. SearXNG requires a configured instance, not a random public fallback. There are no per-tool limits (calls per day/agent/minute) or timeout settings for built-in tools.
 
 On upgrade, existing global search keys remain global and are encrypted. Legacy Agent/team keys are archived encrypted, not activated site-wide. Administrators must configure the intended shared account; the configuration response signals archived credentials without exposing them. `TAVILY_API_KEY` is imported only on the first migration when no global key exists, not read on each request.
+
+#### SearXNG instance
+
+In the same site dialog, enter the instance root **Base URL**, for example `https://search.example.com` or `https://example.com/searxng/`. The server appends `/search`, preserving the reverse-proxy prefix. Do not include `/search`, query parameters, fragments or embedded username/password. An optional gateway bearer token is stored encrypted and requires HTTPS; no token is needed for an unauthenticated instance.
+
+Enable JSON output in the instance's `settings.yml`:
+
+```yaml
+search:
+  formats:
+    - html
+    - json
+```
+
+The instance must be reachable from API and task-worker processes that execute searches. Private IPs/internal hostnames must be explicitly approved through the existing SSRF allowed-target settings; cloud metadata targets remain blocked. Use a resolvable internal FQDN or explicitly allowlist the private IP; a bare Docker service name cannot be added as a hostname rule by the existing allowlist validator. Search requests recheck SSRF policy and do not follow redirects.
+
+Save first, then test with `上海天气 今天`, a multiword technical query and a `site:` query. Inspect result relevance as well as connectivity. A 403 may mean JSON output is disabled or the gateway rejected access. SearXNG engine availability/relevance depends on the instance's upstream engines; Clouisle does not promise that every query/operator is supported.
+
 
 ## Custom Tools
 

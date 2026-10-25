@@ -230,6 +230,8 @@ describe('ToolSelector', () => {
     const engineSelect = find(tree, (node) => node.type === 'select')
     const bochaOption = find(tree, (node) => node.type === 'select-item' && node.props.value === 'bocha')
     expect(text(bochaOption)).toBe('config.engineBocha')
+    const searxngOption = find(tree, (node) => node.type === 'select-item' && node.props.value === 'searxng')
+    expect(text(searxngOption)).toBe('config.engineSearxng')
     ;(engineSelect.props.onValueChange as (value: string) => void)('bocha')
     tree = renderSearchItem()
 

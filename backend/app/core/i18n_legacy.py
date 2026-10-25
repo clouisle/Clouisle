@@ -3322,6 +3322,42 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Search API error: {status_code}",
         "zh": "搜索 API 错误：{status_code}",
     },
+    "web_search_searxng_base_url_invalid": {
+        "en": "Enter the SearXNG instance root URL without /search, credentials, query parameters or a fragment",
+        "zh": "请填写 SearXNG 实例根地址，不包含 /search、账号密码、查询参数或片段",
+    },
+    "web_search_searxng_base_url_required": {
+        "en": "Configure a SearXNG instance Base URL before enabling it",
+        "zh": "请先配置 SearXNG 实例 Base URL，再启用服务",
+    },
+    "web_search_searxng_https_required": {
+        "en": "SearXNG bearer authentication requires an HTTPS Base URL",
+        "zh": "SearXNG 使用 Bearer 认证时，Base URL 必须为 HTTPS",
+    },
+    "web_search_searxng_token_confirmation_required": {
+        "en": "Changing the SearXNG instance requires replacing or clearing its saved bearer token",
+        "zh": "修改 SearXNG 实例地址时，必须明确替换或清除已保存的 Bearer Token",
+    },
+    "web_search_searxng_timeout": {
+        "en": "The configured SearXNG instance timed out",
+        "zh": "已配置的 SearXNG 实例请求超时",
+    },
+    "web_search_searxng_redirect": {
+        "en": "The SearXNG instance returned a redirect; configure its final Base URL",
+        "zh": "SearXNG 实例返回了重定向，请配置最终 Base URL",
+    },
+    "web_search_searxng_forbidden": {
+        "en": "SearXNG denied access; check gateway authentication and enable JSON output in the instance",
+        "zh": "SearXNG 拒绝访问，请检查网关认证并在实例中启用 JSON 输出",
+    },
+    "web_search_searxng_invalid_response": {
+        "en": "The SearXNG instance did not return a valid JSON search response",
+        "zh": "SearXNG 实例未返回有效的 JSON 搜索响应",
+    },
+    "web_search_searxng_empty_results": {
+        "en": "The SearXNG instance returned no usable search results",
+        "zh": "SearXNG 实例未返回可用搜索结果",
+    },
     "web_search_not_configured": {
         "en": "Site web search is not configured; contact the site administrator",
         "zh": "站点尚未配置网页搜索，请联系站点管理员",
@@ -3349,10 +3385,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "web_search_site_managed": {
         "en": "Web search is managed through the dedicated site administrator configuration",
         "zh": "网页搜索由站点管理员在专用配置入口集中管理",
-    },
-    "web_search_api_key_not_configured": {
-        "en": "Web search requires a Tavily or Bocha API key; configure search credentials before using this tool",
-        "zh": "网页搜索需要 Tavily 或博查 API Key；请先配置搜索凭证",
     },
     "web_search_unsupported_engine": {
         "en": "Unsupported search engine: {search_engine}",

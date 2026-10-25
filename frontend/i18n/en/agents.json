@@ -277,6 +277,7 @@
           "engineAuto": "Inherit site default",
           "engineBocha": "Bocha AI (Optimized for Chinese)",
           "engineTavily": "Tavily Search (High Accuracy AI Search)",
+          "engineSearxng": "SearXNG (Self-hosted)",
           "cancel": "Cancel",
           "save": "Save"
         },

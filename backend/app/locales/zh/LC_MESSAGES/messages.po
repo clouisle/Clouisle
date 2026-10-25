@@ -2757,6 +2757,33 @@ msgstr "解析错误"
 msgid "verification_code_invalid"
 msgstr "验证码无效"
 
+msgid "web_search_searxng_base_url_invalid"
+msgstr "请填写 SearXNG 实例根地址，不包含 /search、账号密码、查询参数或片段"
+
+msgid "web_search_searxng_base_url_required"
+msgstr "请先配置 SearXNG 实例 Base URL，再启用服务"
+
+msgid "web_search_searxng_https_required"
+msgstr "SearXNG 使用 Bearer 认证时，Base URL 必须为 HTTPS"
+
+msgid "web_search_searxng_token_confirmation_required"
+msgstr "修改 SearXNG 实例地址时，必须明确替换或清除已保存的 Bearer Token"
+
+msgid "web_search_searxng_timeout"
+msgstr "已配置的 SearXNG 实例请求超时"
+
+msgid "web_search_searxng_redirect"
+msgstr "SearXNG 实例返回了重定向，请配置最终 Base URL"
+
+msgid "web_search_searxng_forbidden"
+msgstr "SearXNG 拒绝访问，请检查网关认证并在实例中启用 JSON 输出"
+
+msgid "web_search_searxng_invalid_response"
+msgstr "SearXNG 实例未返回有效的 JSON 搜索响应"
+
+msgid "web_search_searxng_empty_results"
+msgstr "SearXNG 实例未返回可用搜索结果"
+
 msgid "web_search_not_configured"
 msgstr "站点尚未配置网页搜索，请联系站点管理员"
 
@@ -2780,9 +2807,6 @@ msgstr "网页搜索由站点管理员在专用配置入口集中管理"
 
 msgid "web_search_unsupported_engine"
 msgstr "不支持的搜索引擎：{search_engine}"
-
-msgid "web_search_api_key_not_configured"
-msgstr "网页搜索需要 Tavily 或博查 API Key；请先配置搜索凭证"
 
 msgid "web_search_api_error"
 msgstr "搜索 API 错误：{status_code}"

@@ -64,7 +64,7 @@ async def migrate_site_web_search() -> None:
                 if tool.get("type") == "builtin" and tool.get("name") == "web_search":
                     config = tool.get("config") or {}
                     engine = config.get("engine", "auto")
-                    if engine not in {"auto", "tavily", "bocha"}:
+                    if engine not in {"auto", "tavily", "bocha", "searxng"}:
                         engine = "auto"
                     next_tool = {**tool, "config": {"engine": engine}}
                     if config != next_tool["config"]:

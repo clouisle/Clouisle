@@ -668,7 +668,7 @@ kubectl -n clouisle top pods
 | `QDRANT_URL` | `http://localhost:6333` | Qdrant URL. Overridden to `http://qdrant:6333` in deployment configs. |
 | `QDRANT_COLLECTION_PREFIX` | `kb_dim` | Qdrant collection name prefix |
 | `QDRANT_DISTANCE` | `Cosine` | Vector distance metric |
-| `TAVILY_API_KEY` | *(empty)* | Tavily web search API key (for agent web search capability) |
+| `TAVILY_API_KEY` | *(empty)* | Legacy one-time import into site-managed search when no global key exists; later changes use the admin UI |
 | `SANDBOX_RUNTIME_ENABLED` | `true` | Route executable tasks through the sandbox runtime. |
 | `SANDBOX_FILESYSTEM_ISOLATION_ENABLED` | `true` | Enable the Bubblewrap mount namespace; the generic application default is `true`. |
 | `SANDBOX_FILESYSTEM_ISOLATION_BINARY` | `/usr/bin/bwrap` in sandbox-worker deployments | Bubblewrap executable path. Generic application default is `bwrap`. |

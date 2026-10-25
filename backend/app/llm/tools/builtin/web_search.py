@@ -9,6 +9,7 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 import trafilatura
@@ -16,10 +17,15 @@ import trafilatura
 from app.core.i18n import t
 from app.schemas.response import BusinessError
 from app.services.citations import stable_citation_id, with_web_citation_ids
-from app.services.web_search_config import get_web_search_runtime
+from app.services.web_search_config import (
+    build_searxng_search_url,
+    get_web_search_runtime,
+)
 from ..registry import tool_registry, ToolParameter, ToolConcurrency
 
 logger = logging.getLogger(__name__)
+
+SEARXNG_TIMEOUT_SECONDS = 15
 
 
 async def web_search(
@@ -61,6 +67,8 @@ async def web_search(
         result = await _tavily_search(query, num_results, provider_config)
     elif engine == "bocha":
         result = await _bocha_search(query, num_results, provider_config)
+    elif engine == "searxng":
+        result = await _searxng_search(query, num_results, provider_config)
     else:
         # get_web_search_runtime only resolves configured providers.
         return {
@@ -206,6 +214,143 @@ async def _bocha_search(
             "success": False,
             "results": [],
         }
+
+
+async def _searxng_search(
+    query: str, num_results: int, credentials: dict[str, str] | None = None
+) -> dict:
+    """使用站点配置的 SearXNG 实例搜索（需要实例启用 JSON 输出）。"""
+    config = credentials or {}
+    base_url = str(config.get("SEARXNG_BASE_URL") or "").strip()
+    if not base_url:
+        logger.warning("SearXNG base URL is missing from the site configuration")
+        return {
+            "query": query,
+            "error": t("web_search_engine_not_configured", engine="searxng"),
+            "success": False,
+            "results": [],
+        }
+
+    headers = {"Accept": "application/json"}
+    token = config.get("SEARXNG_AUTH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=SEARXNG_TIMEOUT_SECONDS, follow_redirects=False
+        ) as client:
+            response = await client.post(
+                build_searxng_search_url(base_url),
+                data={"q": query, "format": "json"},
+                headers=headers,
+            )
+    except httpx.TimeoutException:
+        logger.error("SearXNG search timed out")
+        return {
+            "query": query,
+            "error": t("web_search_searxng_timeout"),
+            "success": False,
+            "results": [],
+        }
+    except Exception as exc:
+        # Never log provider payloads: upstream errors can echo configuration.
+        logger.error("SearXNG search error: %s", type(exc).__name__)
+        return {
+            "query": query,
+            "error": t("tool_execution_failed"),
+            "success": False,
+            "results": [],
+        }
+
+    if 300 <= response.status_code < 400:
+        logger.error(
+            "SearXNG search refused a redirect (status=%s)", response.status_code
+        )
+        return {
+            "query": query,
+            "error": t("web_search_searxng_redirect"),
+            "success": False,
+            "results": [],
+        }
+    if response.status_code == 403:
+        logger.error("SearXNG search is forbidden (status=403)")
+        return {
+            "query": query,
+            "error": t("web_search_searxng_forbidden"),
+            "success": False,
+            "results": [],
+        }
+    if response.status_code >= 400:
+        logger.error("SearXNG search HTTP error: %s", response.status_code)
+        return {
+            "query": query,
+            "error": t("web_search_api_error", status_code=response.status_code),
+            "success": False,
+            "results": [],
+        }
+
+    try:
+        data = response.json()
+    except ValueError:
+        logger.error("SearXNG search returned invalid JSON")
+        return {
+            "query": query,
+            "error": t("web_search_searxng_invalid_response"),
+            "success": False,
+            "results": [],
+        }
+
+    raw_results = data.get("results") if isinstance(data, dict) else None
+    if not isinstance(raw_results, list):
+        logger.error("SearXNG search response is missing a results list")
+        return {
+            "query": query,
+            "error": t("web_search_searxng_invalid_response"),
+            "success": False,
+            "results": [],
+        }
+
+    results = []
+    for item in raw_results:
+        if not isinstance(item, dict):
+            continue
+        url_value = item.get("url")
+        if not isinstance(url_value, str):
+            continue
+        url = url_value.strip()
+        try:
+            parsed = urlparse(url)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                continue
+        except ValueError:
+            continue
+        title = item.get("title")
+        content = item.get("content")
+        results.append(
+            {
+                "title": title.strip() if isinstance(title, str) else "",
+                "url": url,
+                "content": content.strip() if isinstance(content, str) else "",
+            }
+        )
+        if len(results) >= num_results:
+            break
+
+    if not results:
+        logger.warning("SearXNG search returned no usable results")
+        return {
+            "query": query,
+            "error": t("web_search_searxng_empty_results"),
+            "success": False,
+            "results": [],
+        }
+
+    return {
+        "query": query,
+        "results": with_web_citation_ids(results),
+        "success": True,
+    }
 
 
 def _extract_readable_content(html: str, url: str) -> tuple[str, str | None]:

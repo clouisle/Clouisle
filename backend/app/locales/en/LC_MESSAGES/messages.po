@@ -2757,6 +2757,33 @@ msgstr "Parser error"
 msgid "verification_code_invalid"
 msgstr "Invalid verification code"
 
+msgid "web_search_searxng_base_url_invalid"
+msgstr "Enter the SearXNG instance root URL without /search, credentials, query parameters or a fragment"
+
+msgid "web_search_searxng_base_url_required"
+msgstr "Configure a SearXNG instance Base URL before enabling it"
+
+msgid "web_search_searxng_https_required"
+msgstr "SearXNG bearer authentication requires an HTTPS Base URL"
+
+msgid "web_search_searxng_token_confirmation_required"
+msgstr "Changing the SearXNG instance requires replacing or clearing its saved bearer token"
+
+msgid "web_search_searxng_timeout"
+msgstr "The configured SearXNG instance timed out"
+
+msgid "web_search_searxng_redirect"
+msgstr "The SearXNG instance returned a redirect; configure its final Base URL"
+
+msgid "web_search_searxng_forbidden"
+msgstr "SearXNG denied access; check gateway authentication and enable JSON output in the instance"
+
+msgid "web_search_searxng_invalid_response"
+msgstr "The SearXNG instance did not return a valid JSON search response"
+
+msgid "web_search_searxng_empty_results"
+msgstr "The SearXNG instance returned no usable search results"
+
 msgid "web_search_not_configured"
 msgstr "Site web search is not configured; contact the site administrator"
 
@@ -2780,9 +2807,6 @@ msgstr "Web search is managed through the dedicated site administrator configura
 
 msgid "web_search_unsupported_engine"
 msgstr "Unsupported search engine: {search_engine}"
-
-msgid "web_search_api_key_not_configured"
-msgstr "Web search requires a Tavily or Bocha API key; configure search credentials before using this tool"
 
 msgid "web_search_api_error"
 msgstr "Search API error: {status_code}"

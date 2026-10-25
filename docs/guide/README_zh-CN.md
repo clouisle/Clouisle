@@ -367,7 +367,7 @@ curl -fsSL https://raw.githubusercontent.com/clouisle/Clouisle/main/deploy/insta
 | `API_BASE_URL` | 后端内部服务 URL，不用于对外展示 |
 | `PUBLIC_API_URL` | 浏览器可访问的后端公开 URL（可选） |
 | `NEXT_PUBLIC_API_URL` | 前端构建或运行时使用的 API URL（可选） |
-| `TAVILY_API_KEY` | 网页搜索 API 密钥（可选） |
+| `TAVILY_API_KEY` | 旧配置首次迁移导入站点搜索；后续通过管理端配置 |
 | `SANDBOX_RUNTIME_ENABLED` | 启用沙箱代码执行 |
 
 ### 站点设置

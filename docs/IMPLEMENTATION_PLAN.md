@@ -3,7 +3,7 @@
 ## Active
 - **site-managed-web-search** — In progress. See `docs/plan/site-managed-web-search.md`.
   - [x] 1. Centralize Tavily/Bocha site configuration and migrate credentials
-  - [ ] 2. Add configured SearXNG with safe Base URL handling
+  - [x] 2. Add configured SearXNG with safe Base URL handling
   - [ ] 3. Integrated verification and operator documentation
 
 - **keyed-web-search-only** — Completed. See `docs/plan/keyed-web-search-only.md`.

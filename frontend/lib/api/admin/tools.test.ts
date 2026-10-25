@@ -121,6 +121,8 @@ describe('adminToolsApi', () => {
       default_engine: 'bocha' as const,
       tavily_enabled: true,
       bocha_enabled: true,
+      searxng_enabled: false,
+      searxng_base_url: '',
       tavily_api_key: '',
     }
 
