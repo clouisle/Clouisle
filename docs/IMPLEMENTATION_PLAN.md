@@ -1,6 +1,11 @@
 # Implementation Plan
 
 ## Active
+- **enabled-search-engine-selection** — Completed. See `docs/plan/enabled-search-engine-selection.md`.
+  - [x] 1. Safe enabled-engine availability API
+  - [x] 2. Agent and workflow search-engine selectors
+  - [x] 3. Verification and documentation
+
 - **site-managed-web-search** — Completed. See `docs/plan/site-managed-web-search.md`.
   - [x] 1. Centralize Tavily/Bocha site configuration and migrate credentials
   - [x] 2. Add configured SearXNG with safe Base URL handling
