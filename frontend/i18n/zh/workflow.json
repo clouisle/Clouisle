@@ -1125,6 +1125,7 @@
       "noMatchingTools": "未找到匹配的工具",
       "noAvailableTools": "暂无可用工具",
       "mcpTool": "MCP 工具",
+      "searchEngine": "搜索引擎",
       "connectingMcpServer": "正在连接 MCP 服务器...",
       "selectMcpTool": "选择 MCP 工具 ({count} 个可用)",
       "searchMcpTools": "搜索 MCP 工具...",

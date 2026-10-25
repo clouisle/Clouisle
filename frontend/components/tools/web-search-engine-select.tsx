@@ -10,9 +10,10 @@ interface WebSearchEngineSelectProps {
   onValueChange: (value: string) => void
   className?: string
   triggerId?: string
+  ariaLabel?: string
 }
 
-export function WebSearchEngineSelect({ value, onValueChange, className, triggerId }: WebSearchEngineSelectProps) {
+export function WebSearchEngineSelect({ value, onValueChange, className, triggerId, ariaLabel }: WebSearchEngineSelectProps) {
   const t = useTranslations('agents.orchestration.tools.config')
   const [engines, setEngines] = useState<WebSearchDefaultEngine[]>([])
 
@@ -35,7 +36,7 @@ export function WebSearchEngineSelect({ value, onValueChange, className, trigger
 
   return (
     <Select value={value} onValueChange={(next) => { if (next) onValueChange(next) }}>
-      <SelectTrigger id={triggerId} className={className}>
+      <SelectTrigger id={triggerId} aria-label={ariaLabel} className={className}>
         <SelectValue>{labels[value] || value}</SelectValue>
       </SelectTrigger>
       <SelectContent>

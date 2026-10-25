@@ -207,3 +207,48 @@ async def test_cutover_prefers_bocha_default_and_rejects_duplicate_global_rows(
     with pytest.raises(RuntimeError, match="Multiple global web search"):
         await subject.migrate_site_web_search()
     assert duplicate.params_for("INSERT INTO tool_configs") == []
+
+
+@pytest.mark.asyncio
+async def test_cutover_tolerates_malformed_legacy_agent_rows(monkeypatch):
+    conn = _install(
+        monkeypatch,
+        FakeConn(
+            config_rows=[],
+            agents=[
+                {
+                    "id": uuid4(),
+                    "tools_config": "null",
+                    "tools_credentials": "null",
+                },
+                {
+                    "id": uuid4(),
+                    "tools_config": json.dumps(
+                        [
+                            "not-a-tool",
+                            {"type": "builtin", "name": "web_search", "config": "bad"},
+                            {
+                                "type": "builtin",
+                                "name": "web_search",
+                                "config": {"engine": ["deepseek"]},
+                            },
+                        ]
+                    ),
+                    "tools_credentials": json.dumps(["not", "a", "dict"]),
+                },
+            ],
+        ),
+    )
+
+    await subject.migrate_site_web_search()
+
+    insert = json.loads(conn.params_for("INSERT INTO tool_configs")[0][1])
+    assert insert["_site_config_version"] == "1"
+    updates = conn.params_for("UPDATE agents")
+    assert len(updates) == 1
+    assert json.loads(updates[0][0]) == [
+        "not-a-tool",
+        {"type": "builtin", "name": "web_search", "config": {"engine": "auto"}},
+        {"type": "builtin", "name": "web_search", "config": {"engine": "auto"}},
+    ]
+    assert json.loads(updates[0][1]) == {}

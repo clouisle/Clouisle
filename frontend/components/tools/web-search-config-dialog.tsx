@@ -378,7 +378,10 @@ export function WebSearchConfigDialog({
                     <SelectItem
                       key={engine}
                       value={engine}
-                      disabled={(tavilyEnabled || bochaEnabled) && !isEngineEnabled(engine)}
+                      disabled={
+                        (tavilyEnabled || bochaEnabled || searxngEnabled || deepseekEnabled)
+                        && !isEngineEnabled(engine)
+                      }
                     >
                       {engineLabel(engine)}
                     </SelectItem>

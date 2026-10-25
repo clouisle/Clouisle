@@ -258,7 +258,8 @@ class ToolConfig(BaseModel):
                 raise ValueError(
                     "Web search credentials and endpoint are managed by the site administrator"
                 )
-            if config.get("engine", "auto") not in {
+            engine = config.get("engine", "auto")
+            if not isinstance(engine, str) or engine not in {
                 "auto",
                 "tavily",
                 "bocha",
@@ -266,7 +267,7 @@ class ToolConfig(BaseModel):
                 "deepseek",
             }:
                 raise ValueError("Unsupported search engine")
-            self.config = {"engine": config.get("engine", "auto")}
+            self.config = {"engine": engine}
         return self
 
 

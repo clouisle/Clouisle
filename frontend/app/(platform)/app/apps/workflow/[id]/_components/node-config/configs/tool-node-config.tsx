@@ -144,7 +144,7 @@ export function ToolNodeConfig({
     ...config,
     parameterMappings: [...(config.parameterMappings || [])],
   }
-  // 引擎路由是站点配置，不是模型填写参数，因此补充/规范为固定选项且不区分变量与常量。
+  // 引擎路由是站点配置，不是模型填写参数。仅在缺失时补充默认项，不改写已保存的选择。
   if (safeConfig.toolType === 'builtin' && safeConfig.toolName === 'web_search') {
     const engineIndex = safeConfig.parameterMappings.findIndex(mapping => mapping.name === 'search_engine')
     if (engineIndex === -1) {
@@ -155,14 +155,10 @@ export function ToolNodeConfig({
         source: 'constant',
         constantValue: 'auto',
       })
-    } else {
-      const engine = safeConfig.parameterMappings[engineIndex]
+    } else if (!safeConfig.parameterMappings[engineIndex].constantValue) {
       safeConfig.parameterMappings[engineIndex] = {
-        ...engine,
-        source: 'constant',
-        constantValue: engine.constantValue || 'auto',
-        variableRef: undefined,
-        variableRefNodeLabel: undefined,
+        ...safeConfig.parameterMappings[engineIndex],
+        constantValue: 'auto',
       }
     }
   }
@@ -799,8 +795,14 @@ export function ToolNodeConfig({
                 {isEngineMapping ? (
                   <WebSearchEngineSelect
                     value={mapping.constantValue || 'auto'}
-                    onValueChange={(value) => handleUpdateMapping(mapping.name, { constantValue: value })}
+                    onValueChange={(value) => handleUpdateMapping(mapping.name, {
+                      source: 'constant',
+                      constantValue: value,
+                      variableRef: undefined,
+                      variableRefNodeLabel: undefined,
+                    })}
                     className="text-xs"
+                    ariaLabel={t('configTool.searchEngine')}
                   />
                 ) : (
                   <>

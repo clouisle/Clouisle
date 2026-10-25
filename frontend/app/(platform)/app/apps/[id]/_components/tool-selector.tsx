@@ -511,6 +511,7 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
                     value={tempEngine}
                     onValueChange={setTempEngine}
                     className="w-full text-xs"
+                    ariaLabel={t('config.engine')}
                   />
                 )}
                 <p className="text-[11px] text-muted-foreground">{t('config.engineHint')}</p>

@@ -129,11 +129,35 @@ test('keeps a saved engine that is no longer enabled visible without rewriting i
   expect(onConfigChange).not.toHaveBeenCalled()
 })
 
-test('engine routing has no variable or constant toggle', async () => {
-  await renderTool([queryMapping, { ...engineMapping, source: 'variable', variableRef: '{{start.searchEngine}}', variableRefNodeLabel: 'Start' }])
+test('engine routing has no variable or constant toggle and preserves saved variable routing', async () => {
+  const variableEngine = { ...engineMapping, source: 'variable' as const, variableRef: '{{start.searchEngine}}', variableRefNodeLabel: 'Start' }
+  const onConfigChange = await renderTool([queryMapping, variableEngine])
 
   expect(document.querySelector('[role="combobox"]')?.textContent).toContain('Site default')
+  expect(onConfigChange).not.toHaveBeenCalled()
   const sourceToggles = Array.from(document.querySelectorAll('button')).filter((button) =>
     button.textContent === 'configCommon.constant' || button.textContent === 'configCommon.variable')
   expect(sourceToggles.map((button) => button.textContent)).toEqual(['configCommon.variable', 'configCommon.constant'])
+
+  // Editing an unrelated parameter persists the whole safeConfig array; the
+  // saved variable routing must survive that write.
+  const constantToggle = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'configCommon.constant')!
+  await act(async () => { constantToggle.click() })
+
+  const saved = onConfigChange.mock.calls.at(-1)?.[0] as ToolNodeConfigData | undefined
+  expect(saved?.parameterMappings.find((mapping) => mapping.name === 'search_engine')).toMatchObject({
+    source: 'variable',
+    variableRef: '{{start.searchEngine}}',
+  })
+
+  await act(async () => {
+    const options = await openEngineMenu()
+    options.find((option) => option.textContent === 'Tavily')!.click()
+  })
+  const chosen = onConfigChange.mock.calls.at(-1)?.[0] as ToolNodeConfigData
+  expect(chosen.parameterMappings.find((mapping) => mapping.name === 'search_engine')).toMatchObject({
+    source: 'constant',
+    constantValue: 'tavily',
+  })
+  expect(chosen.parameterMappings.find((mapping) => mapping.name === 'search_engine')?.variableRef).toBeUndefined()
 })

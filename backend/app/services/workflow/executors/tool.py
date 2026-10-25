@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 def _convert_tool_input(value: WorkflowValue, parameter_type: str) -> WorkflowValue:
     """Convert text mappings without truncating or changing native typed values."""
     expected = {
+        "string": (str,),
         "integer": (int,),
         "number": (int, float),
         "boolean": (bool,),
@@ -46,7 +47,7 @@ def _convert_tool_input(value: WorkflowValue, parameter_type: str) -> WorkflowVa
                 value = int(value)
             elif parameter_type == "number":
                 value = float(value)
-            else:
+            elif parameter_type in {"boolean", "array", "object"}:
                 value = json.loads(value)
         if type(value) not in expected:
             raise ValueError

@@ -73,3 +73,9 @@ def test_imported_agent_keeps_provider_without_importing_credentials():
         {"type": "builtin", "name": "web_search", "config": {"engine": "bocha"}}
     ]
     assert result["tools_credentials"] == {}
+
+
+@pytest.mark.parametrize("engine", [[], {}, 1, None])
+def test_search_tool_rejects_non_string_engine_values(engine):
+    with pytest.raises(ValidationError, match="Unsupported search engine"):
+        ToolConfig(type="builtin", name="web_search", config={"engine": engine})

@@ -135,6 +135,7 @@ async def test_invalid_workflow_tool_integer_fails_before_execution(value):
         ([1, 2], "array", [1, 2]),
         ({"x": False}, "object", {"x": False}),
         ("003", "string", "003"),
+        ("", "string", ""),
         ("10", "", "10"),
     ],
 )
@@ -158,6 +159,9 @@ def test_tool_input_conversion_preserves_declared_types(
         ("[]", "object"),
         ("{invalid}", "object"),
         ("null", "object"),
+        (5, "string"),
+        (["a"], "string"),
+        ({"a": 1}, "string"),
     ],
 )
 def test_tool_input_conversion_rejects_invalid_declared_values(value, parameter_type):

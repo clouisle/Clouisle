@@ -10,6 +10,7 @@ from app.integrations.credentials import decrypt_secret, encrypt_secret
 
 logger = logging.getLogger(__name__)
 SECRET_PREFIX = "enc:v1:"
+SEARCH_ENGINES = frozenset({"auto", "tavily", "bocha", "searxng", "deepseek"})
 SEARCH_KEYS = {
     "TAVILY_API_KEY",
     "BOCHA_API_KEY",
@@ -58,7 +59,11 @@ async def migrate_site_web_search() -> None:
         )
         for agent in agents:
             tools = _json_value(agent["tools_config"])
+            tools = tools if isinstance(tools, list) else []
             old_credentials = _json_value(agent["tools_credentials"])
+            old_credentials = (
+                old_credentials if isinstance(old_credentials, dict) else {}
+            )
             next_credentials = {
                 key: value
                 for key, value in old_credentials.items()
@@ -66,10 +71,15 @@ async def migrate_site_web_search() -> None:
             }
             next_tools = []
             for tool in tools:
-                if tool.get("type") == "builtin" and tool.get("name") == "web_search":
-                    config = tool.get("config") or {}
+                if (
+                    isinstance(tool, dict)
+                    and tool.get("type") == "builtin"
+                    and tool.get("name") == "web_search"
+                ):
+                    config = tool.get("config")
+                    config = config if isinstance(config, dict) else {}
                     engine = config.get("engine", "auto")
-                    if engine not in {"auto", "tavily", "bocha", "searxng", "deepseek"}:
+                    if not isinstance(engine, str) or engine not in SEARCH_ENGINES:
                         engine = "auto"
                     next_tool = {**tool, "config": {"engine": engine}}
                     if config != next_tool["config"]:
