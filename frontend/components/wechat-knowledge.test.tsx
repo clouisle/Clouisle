@@ -58,9 +58,11 @@ mock.module('@/components/ui/button', () => ({
   Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,
 }))
 let numericCodeOnChange: ((event: { target: { value: string } }) => void) | undefined
+let userNameOnChange: ((event: { target: { value: string } }) => void) | undefined
 mock.module('@/components/ui/input', () => ({
   Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => {
     if (props.inputMode === 'numeric') numericCodeOnChange = props.onChange as typeof numericCodeOnChange
+    if (props.id?.endsWith('-user_name')) userNameOnChange = props.onChange as typeof userNameOnChange
     return <input {...props} />
   },
 }))
@@ -136,8 +138,8 @@ const state: {
 const purposeMock = mock(() => Promise.resolve(binding()))
 const stopRunMock = mock(() => Promise.resolve({}))
 const loginMock = mock(() => Promise.resolve({ id: 'login-1', status: 'wait', qrcode_content: 'qr-content', expires_at: '2099-01-01T00:00:00Z' }))
-const pollMock = mock((_id: string, _code?: string) => Promise.resolve({ id: 'login-1', status: 'need_verifycode', qrcode_content: 'qr-content', expires_at: '2099-01-01T00:00:00Z' }))
-const disconnectMock = mock((_id: string) => Promise.resolve({ id: 'binding-1' }))
+const pollMock = mock<(id: string, code?: string) => ReturnType<typeof loginMock>>(() => Promise.resolve({ id: 'login-1', status: 'need_verifycode', qrcode_content: 'qr-content', expires_at: '2099-01-01T00:00:00Z' }))
+const disconnectMock = mock<(id: string) => Promise<{ id: string }>>(() => Promise.resolve({ id: 'binding-1' }))
 
 mock.module('@/lib/api/wechat-knowledge', () => ({
   WECHAT_ACTIVE_RUN_STATUSES: ['queued', 'running', 'stopping', 'completing', 'waiting'],
@@ -279,6 +281,32 @@ describe('additional purpose form behavior', () => {
     await click(container, 'save')
     expect(purposeMock).not.toHaveBeenCalled()
     expect(container.textContent).toContain('variableTooLong')
+  })
+
+  test('preserves an edited Agent draft across same-agent polling and resets it on identity changes', async () => {
+    const savedBinding = binding({ purpose: 'agent', agent_config: {
+      agent_id: 'agent-1', agent_name: 'Support Agent', variables: { user_name: 'Saved', priority: '2', notes: '' },
+      stt_model_id: 'stt-1', conversation_id: null, run_id: null, run_status: null,
+    } })
+    state.agents = [agentOption, { ...agentOption, id: 'agent-2', name: 'Second Agent', variables: [{ name: 'other', type: 'text', label: 'Other', required: false }] }]
+    const { container } = await render({ bindings: [savedBinding] })
+    await click(container, 'change')
+    await flushInputValue(container, 'Saved')
+    expect(userNameOnChange).toBeDefined()
+    await React.act(async () => { userNameOnChange!({ target: { value: 'Draft' } }) })
+    await flushInputValue(container, 'Draft')
+
+    // Simulate a binding poll returning new binding/agent object references for the same IDs.
+    state.bindings = [{ ...savedBinding, last_received_at: '2026-10-19T00:00:00Z', agent_config: { ...savedBinding.agent_config!, variables: { user_name: 'New saved value', priority: '4', notes: '' }, stt_model_id: null } }]
+    const refresh = buttonByLabel(container, 'refresh')!
+    await React.act(async () => { refresh.click(); await settle(20) })
+    expect([...container.querySelectorAll<HTMLInputElement>('input')].find(input => input.value === 'Draft')).toBeTruthy()
+    expect(container.querySelector('[data-select-value="stt-1"]')).toBeTruthy()
+
+    const choices = [...container.querySelectorAll('button[data-value]')]
+    await React.act(async () => { choices.find(button => button.getAttribute('data-value') === 'agent-2')!.click() })
+    await flush(container, 'Other')
+    expect(container.querySelector<HTMLInputElement>('input')?.value).not.toBe('Draft')
   })
 
   test('shows target and model load errors without preventing editor recovery', async () => {

@@ -188,6 +188,64 @@ afterEach(() => {
   renderers.length = 0
 })
 
+test('a new filter generation remains appendable while an older first-page request is pending', async () => {
+  const staleFirst = Promise.withResolvers<{ items: DocumentRow[]; total: number }>()
+  const currentFirst = Promise.withResolvers<{ items: DocumentRow[]; total: number }>()
+  const currentSecond = Promise.withResolvers<{ items: DocumentRow[]; total: number }>()
+  getDocuments.mockImplementationOnce(() => staleFirst.promise)
+
+  let renderer!: ReactTestRenderer
+  await act(async () => {
+    renderer = create(<DocumentsTable knowledgeBaseId="kb-1" refreshTrigger={0} onRefresh={() => {}} />)
+  })
+  renderers.push(renderer)
+  const filter = renderer.root.findByType('input')
+  getDocuments.mockImplementationOnce(() => currentFirst.promise)
+  getDocuments.mockImplementationOnce(() => currentSecond.promise)
+  await act(async () => { filter.props.onChange({ target: { value: 'current' } }) })
+  await new Promise(resolve => setTimeout(resolve, 350))
+  await act(async () => {})
+  expect(getDocuments).toHaveBeenLastCalledWith('kb-1', { page: 1, pageSize: 10, search: 'current' })
+
+  await act(async () => { currentFirst.resolve({ items: [makeDocument('current-1', 'Current page one')], total: 30 }) })
+  await act(async () => {})
+  FakeIntersectionObserver.instances.at(-1)!.trigger(true)
+  await act(async () => {})
+  expect(getDocuments).toHaveBeenLastCalledWith('kb-1', { page: 2, pageSize: 10, search: 'current' })
+
+  await act(async () => { staleFirst.resolve({ items: [makeDocument('stale', 'Stale page')], total: 30 }) })
+  await act(async () => {})
+  expect(text(renderer.root)).not.toContain('Stale page')
+  expect(text(renderer.root)).toContain('Current page one')
+
+  const observer = FakeIntersectionObserver.instances.at(-1)!
+  observer.trigger(true)
+  await act(async () => {})
+  expect(getDocuments).toHaveBeenCalledTimes(3)
+  await act(async () => { currentSecond.resolve({ items: [makeDocument('current-2', 'Current page two')], total: 30 }) })
+  await act(async () => {})
+  expect(text(renderer.root)).toContain('Current page two')
+})
+
+test('retries a failed append on the same page', async () => {
+  getDocuments.mockImplementation(async (_id, params) => params.page === 1
+    ? { items: [makeDocument('first', 'First page')], total: 30 }
+    : { items: [makeDocument('second', 'Second page')], total: 30 })
+  let renderer!: ReactTestRenderer
+  await act(async () => { renderer = create(<DocumentsTable knowledgeBaseId="kb-1" refreshTrigger={0} onRefresh={() => {}} />) })
+  renderers.push(renderer)
+  await act(async () => {})
+  getDocuments.mockRejectedValueOnce(new Error('append failed'))
+  FakeIntersectionObserver.instances.at(-1)!.trigger(true)
+  await act(async () => {})
+  expect(text(renderer.root)).toContain('loadFailed')
+  const retry = renderer.root.findAllByType('button').find(button => button.children.join('') === 'retry')!
+  await act(async () => { retry.props.onClick() })
+  await act(async () => {})
+  expect(getDocuments.mock.calls.map(([, params]) => params.page)).toEqual([1, 2, 2])
+  expect(text(renderer.root)).toContain('Second page')
+})
+
 test('requests and appends the next page when the observed sentinel intersects', async () => {
   let renderer!: ReactTestRenderer
   await act(async () => {

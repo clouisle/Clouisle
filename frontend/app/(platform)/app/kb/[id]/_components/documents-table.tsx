@@ -156,7 +156,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
   // 重新加载第一页：筛选变化、刷新触发或首次进入
   const loadFirstPage = React.useCallback(async () => {
     const seq = ++requestSeqRef.current
-    pendingCountRef.current += 1
+    pendingCountRef.current = 1
     setIsLoading(true)
     setIsLoadingMore(false)
     setIsRefreshing(false)
@@ -177,8 +177,10 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
       // 错误已由 API 客户端处理
       if (seq === requestSeqRef.current) setFailedOperation('first')
     } finally {
-      pendingCountRef.current -= 1
-      if (seq === requestSeqRef.current) setIsLoading(false)
+      if (seq === requestSeqRef.current) {
+        pendingCountRef.current = 0
+        setIsLoading(false)
+      }
     }
   }, [knowledgeBaseId, buildPageParams])
 
@@ -211,8 +213,10 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
       // 错误已由 API 客户端处理；失败不推进页码，避免跳过数据
       if (seq === requestSeqRef.current) setFailedOperation('more')
     } finally {
-      pendingCountRef.current -= 1
-      if (seq === requestSeqRef.current) setIsLoadingMore(false)
+      if (seq === requestSeqRef.current) {
+        pendingCountRef.current = Math.max(pendingCountRef.current - 1, 0)
+        setIsLoadingMore(false)
+      }
     }
   }, [documents, knowledgeBaseId, buildPageParams])
 
@@ -229,7 +233,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
     if (!force && pendingCountRef.current > 0) return
 
     const seq = force ? ++requestSeqRef.current : requestSeqRef.current
-    pendingCountRef.current += 1
+    pendingCountRef.current = force ? 1 : pendingCountRef.current + 1
     if (force) {
       setIsLoading(false)
       setIsLoadingMore(false)
@@ -266,8 +270,10 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh, rea
       // 错误已由 API 客户端处理
       if (seq === requestSeqRef.current) setFailedOperation('refresh')
     } finally {
-      pendingCountRef.current -= 1
-      if (seq === requestSeqRef.current) setIsRefreshing(false)
+      if (seq === requestSeqRef.current) {
+        pendingCountRef.current = Math.max(pendingCountRef.current - 1, 0)
+        setIsRefreshing(false)
+      }
     }
   }, [knowledgeBaseId, buildPageParams, loadFirstPage])
 

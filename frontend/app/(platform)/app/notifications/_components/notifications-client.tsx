@@ -154,7 +154,7 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
   // 重新加载第一页：筛选/搜索变化或首次进入
   const loadFirstPage = React.useCallback(async () => {
     const seq = ++requestSeqRef.current
-    pendingCountRef.current += 1
+    pendingCountRef.current = 1
     setIsLoading(true)
     setIsLoadingMore(false)
     setIsRefreshing(false)
@@ -175,8 +175,10 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
       console.error('Failed to fetch notifications:', error)
       if (seq === requestSeqRef.current) setFailedOperation('first')
     } finally {
-      pendingCountRef.current -= 1
-      if (seq === requestSeqRef.current) setIsLoading(false)
+      if (seq === requestSeqRef.current) {
+        pendingCountRef.current = 0
+        setIsLoading(false)
+      }
     }
   }, [buildListParams])
 
@@ -209,8 +211,10 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
       console.error('Failed to fetch notifications:', error)
       if (seq === requestSeqRef.current) setFailedOperation('more')
     } finally {
-      pendingCountRef.current -= 1
-      if (seq === requestSeqRef.current) setIsLoadingMore(false)
+      if (seq === requestSeqRef.current) {
+        pendingCountRef.current = Math.max(pendingCountRef.current - 1, 0)
+        setIsLoadingMore(false)
+      }
     }
   }, [items, buildListParams])
 
@@ -226,7 +230,7 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
     if (!force && pendingCountRef.current > 0) return
 
     const seq = force ? ++requestSeqRef.current : requestSeqRef.current
-    pendingCountRef.current += 1
+    pendingCountRef.current = force ? 1 : pendingCountRef.current + 1
     if (force) {
       setIsLoading(false)
       setIsLoadingMore(false)
@@ -263,8 +267,10 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
       console.error('Failed to fetch notifications:', error)
       if (seq === requestSeqRef.current) setFailedOperation('refresh')
     } finally {
-      pendingCountRef.current -= 1
-      if (seq === requestSeqRef.current) setIsRefreshing(false)
+      if (seq === requestSeqRef.current) {
+        pendingCountRef.current = Math.max(pendingCountRef.current - 1, 0)
+        setIsRefreshing(false)
+      }
     }
   }, [buildListParams, loadFirstPage])
 

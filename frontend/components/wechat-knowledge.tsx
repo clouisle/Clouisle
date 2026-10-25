@@ -126,6 +126,8 @@ function PurposeForm({ binding, features, busy, onCancel, onSaved, run }: { bind
   const [modelsLoading, setModelsLoading] = React.useState(false)
   const [agentModelsLoading, setAgentModelsLoading] = React.useState(false)
   const [error, setError] = React.useState('')
+  const initializedAgentIdRef = React.useRef<string | null>(null)
+  const savedAgentConfigRef = React.useRef(binding.agent_config)
   const uid = React.useId()
   const fail = React.useCallback((err: unknown) => setError(err instanceof ApiError ? err.message : t('failed')), [t])
   const selectedAgent = agents.find(item => item.id === agentId) ?? null
@@ -166,11 +168,13 @@ function PurposeForm({ binding, features, busy, onCancel, onSaved, run }: { bind
   }, [purpose, agentId, agentEnabled, fail])
 
   React.useEffect(() => {
-    if (!selectedAgent) return
-    setVariables(initialVariables(selectedAgent, binding.agent_config?.agent_id === selectedAgent.id ? binding.agent_config.variables : {}))
+    if (!selectedAgent || initializedAgentIdRef.current === selectedAgent.id) return
+    initializedAgentIdRef.current = selectedAgent.id
+    const savedAgentConfig = savedAgentConfigRef.current
+    setVariables(initialVariables(selectedAgent, savedAgentConfig?.agent_id === selectedAgent.id ? savedAgentConfig.variables : {}))
     setVariableErrors({})
-    setAgentStt(binding.agent_config?.agent_id === selectedAgent.id ? binding.agent_config.stt_model_id ?? 'none' : 'none')
-  }, [selectedAgent, binding.agent_config])
+    setAgentStt(savedAgentConfig?.agent_id === selectedAgent.id ? savedAgentConfig.stt_model_id ?? 'none' : 'none')
+  }, [selectedAgent])
 
   const changeVariable = (name: string, value: VariableValue) => {
     setVariables(current => ({ ...current, [name]: value }))
