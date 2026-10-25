@@ -177,7 +177,7 @@ export function MediaGenerationNodeConfig({
                     modelId={selectedModel.model.model_id}
                     size={12}
                     showIcon={false}
-                    className="shrink-0 text-xs text-muted-foreground"
+                    className="max-w-24 text-xs text-muted-foreground"
                   />
                 )}
               </span>

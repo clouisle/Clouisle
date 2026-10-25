@@ -70,27 +70,28 @@ const DEFAULT_PROVIDER_TINT = PROVIDER_TINTS.gateway
  */
 const MODEL_ID_ICON_RULES: Array<{ slug: string; pattern: RegExp }> = [
   { slug: 'baai', pattern: /^(baai[\/_-]|bge[\/_-])/i },
-  { slug: 'longcat', pattern: /^longcat/i },
+  { slug: 'longcat', pattern: /^longcat(?:\d|$|[\/_.:-])/i },
   {
     slug: 'openai',
-    pattern: /^(gpt[\/_-]|chatgpt|o[134](?:$|[\/_-])|dall-e|whisper|text-embedding-3|sora)/i,
+    pattern:
+      /^(gpt[\/_-]|chatgpt(?:\d|$|[\/_.:-])|o[134](?:$|[\/_-])|dall-e|whisper(?:\d|$|[\/_.:-])|text-embedding-3|sora(?:\d|$|[\/_.:-]))/i,
   },
-  { slug: 'google', pattern: /^(gemini|gemma|palm|imagen|text-embedding-004)/i },
-  { slug: 'anthropic', pattern: /^claude/i },
-  { slug: 'deepseek', pattern: /^deepseek/i },
-  { slug: 'qwen', pattern: /^(qwen|qwq)/i },
-  { slug: 'zhipu', pattern: /^(glm|chatglm|cogview|cogvideo)/i },
-  { slug: 'moonshot', pattern: /^(moonshot|kimi)/i },
-  { slug: 'minimax', pattern: /^(minimax|abab)/i },
-  { slug: 'baichuan', pattern: /^baichuan/i },
-  { slug: 'xai', pattern: /^grok/i },
-  { slug: 'volcengine', pattern: /^(doubao|seedream|seedance|skylark)/i },
+  { slug: 'google', pattern: /^(gemini|gemma|palm(?:\d|$|[\/_.:-])|imagen(?:\d|$|[\/_.:-])|text-embedding-004)/i },
+  { slug: 'anthropic', pattern: /^claude(?:\d|$|[\/_.:-])/i },
+  { slug: 'deepseek', pattern: /^deepseek(?:\d|$|[\/_.:-])/i },
+  { slug: 'qwen', pattern: /^qwen(?:\d|$|[\/_.:-])/i },
+  { slug: 'zhipu', pattern: /^(glm(?:\d|$|[\/_.:-])|chatglm|cogview|cogvideo)/i },
+  { slug: 'moonshot', pattern: /^(moonshot|kimi)(?:\d|$|[\/_.:-])/i },
+  { slug: 'minimax', pattern: /^minimax(?:\d|$|[\/_.:-])/i },
+  { slug: 'baichuan', pattern: /^baichuan(?:\d|$|[\/_.:-])/i },
+  { slug: 'xai', pattern: /^grok(?:\d|$|[\/_.:-])/i },
+  { slug: 'volcengine', pattern: /^(doubao|seedream|seedance|skylark)(?:\d|$|[\/_.:-])/i },
   { slug: 'stability', pattern: /^(stable-diffusion|sdxl|sd3)/i },
   { slug: 'midjourney', pattern: /^(midjourney|mj-)/i },
   { slug: 'runway', pattern: /^(runway|gen-3)/i },
-  { slug: 'pika', pattern: /^pika/i },
-  { slug: 'luma', pattern: /^(luma|dream-machine)/i },
-  { slug: 'kling', pattern: /^kling/i },
+  { slug: 'pika', pattern: /^pika(?:\d|$|[\/_.:-])/i },
+  { slug: 'luma', pattern: /^(luma|dream-machine)(?:\d|$|[\/_.:-])/i },
+  { slug: 'kling', pattern: /^kling(?:\d|$|[\/_.:-])/i },
 ]
 
 export function resolveProviderIconSlug(provider: string | null | undefined): string | null {

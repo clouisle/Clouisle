@@ -142,6 +142,7 @@ export function KnowledgeBaseDialog({
   }, [rerankModelId, teamRerankModels, knowledgeBase])
 
   const selectedRerankModel = React.useMemo(() => {
+    if (!rerankModelId) return null
     const tm = teamRerankModels.find(m => m.model_id === rerankModelId)
     return tm?.model ?? knowledgeBase?.rerank_model ?? null
   }, [rerankModelId, teamRerankModels, knowledgeBase])

@@ -23,7 +23,7 @@ test('renders a vendored mark for every provider code', () => {
     expect(svg).toBeDefined()
     expect(svg.props.width).toBe(20)
     expect(svg.props.height).toBe(20)
-    expect(svg.props['aria-hidden']).toBe('true')
+    expect(svg.props['aria-hidden']).toBe(true)
     act(() => renderer.unmount())
   }
 })
@@ -63,7 +63,7 @@ test('falls back to a tinted monogram for unknown providers', () => {
   expect(renderer.root.findAllByType('svg')).toHaveLength(0)
   const tile = renderer.root.findAllByType('span')[0]
   expect(tile.children).toEqual(['A'])
-  expect(tile.props['aria-hidden']).toBe('true')
+  expect(tile.props['aria-hidden']).toBe(true)
   expect(tile.props.style).toEqual({ width: 24, height: 24, fontSize: 13 })
   act(() => renderer.unmount())
 })
@@ -71,6 +71,28 @@ test('falls back to a tinted monogram for unknown providers', () => {
 test('uses the provider code for the monogram when no label is given', () => {
   const renderer = renderIcon(<ProviderIcon provider="zhipu-proxy" size={16} />)
   expect(renderer.root.findAllByType('span')[0].children).toEqual(['Z'])
+  act(() => renderer.unmount())
+})
+
+test('supports a nondecorative monogram with an accessible name', () => {
+  const renderer = renderIcon(
+    <ProviderIcon provider="acme" label="Acme Gateway" decorative={false} aria-label="Acme Gateway" />,
+  )
+  const tile = renderer.root.findAllByType('span')[0]
+  expect(tile.props.role).toBe('img')
+  expect(tile.props['aria-label']).toBe('Acme Gateway')
+  expect(tile.props['aria-hidden']).toBeUndefined()
+  act(() => renderer.unmount())
+})
+
+test('supports a nondecorative brand mark with an accessible name', () => {
+  const renderer = renderIcon(
+    <ProviderIcon provider="openai" decorative={false} aria-label="OpenAI" />,
+  )
+  const svg = renderer.root.findAllByType('svg')[0]
+  expect(svg.props.role).toBe('img')
+  expect(svg.props['aria-label']).toBe('OpenAI')
+  expect(svg.props['aria-hidden']).toBeUndefined()
   act(() => renderer.unmount())
 })
 

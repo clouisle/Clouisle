@@ -16,6 +16,11 @@ export interface ProviderIconProps extends Omit<SVGProps<SVGSVGElement>, 'size'>
   modelId?: string | null
   size?: number
   className?: string
+  /**
+   * Decorative icons are hidden from assistive tech. Set false for icon-only
+   * usage so the icon exposes an accessible name.
+   */
+  decorative?: boolean
 }
 
 export function ProviderIcon({
@@ -24,15 +29,27 @@ export function ProviderIcon({
   modelId,
   size = 16,
   className,
+  decorative = true,
+  'aria-label': ariaLabel,
+  'aria-describedby': ariaDescribedBy,
   ...props
 }: ProviderIconProps) {
   const slug = resolveModelIconSlug(provider, modelId)
   const Mark = slug ? PROVIDER_MARKS[slug] : undefined
 
+  const accessibility = decorative
+    ? { 'aria-hidden': true as const }
+    : {
+        role: 'img' as const,
+        'aria-hidden': undefined,
+        'aria-label': ariaLabel ?? label ?? provider,
+        'aria-describedby': ariaDescribedBy,
+      }
+
   if (Mark) {
     return (
       <Mark
-        aria-hidden="true"
+        {...accessibility}
         data-icon={slug}
         size={size}
         className={cn('shrink-0', className)}
@@ -43,7 +60,7 @@ export function ProviderIcon({
 
   return (
     <span
-      aria-hidden="true"
+      {...accessibility}
       data-icon="monogram"
       className={cn(
         'inline-flex shrink-0 items-center justify-center rounded font-semibold leading-none',
