@@ -16,7 +16,7 @@ const listTools = mock(async () => ({ status: 'completed', operation: 'list:tool
 mock.module('@/lib/api', () => ({ toolsApi: { test: mock(), getWebSearchEngines: mock(async () => ['tavily']) } }))
 mock.module('@/lib/api/tool-mcp', () => ({ toolMcpApi: { listTools } }))
 mock.module('@/components/tools/connection-picker', () => ({
-  EMPTY_CONNECTION_BINDING: { connection_mode: null, connection_id: null, grant_id: null },
+  EMPTY_CONNECTION_BINDING: { connection_mode: null, connection_id: null },
   ToolConnectionPicker: () => <div data-connection-picker />,
 }))
 mock.module('@/components/tools/web-search-engine-select', () => ({

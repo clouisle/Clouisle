@@ -481,6 +481,13 @@ async def create_agent(
         [t.model_dump() for t in agent_in.tools_config],
         agent_in.team_id,
     )
+    from app.services.tool_connections import ToolConnectionService
+
+    await ToolConnectionService.assert_tools_config_bindings_allowed(
+        actor=current_user,
+        team_id=agent_in.team_id,
+        tools_config=[t.model_dump() for t in agent_in.tools_config],
+    )
 
     # Create agent
     agent = await Agent.create(
@@ -679,6 +686,13 @@ async def update_agent(
         tools_config = [t.model_dump() for t in agent_in.tools_config]
         await SkillService.validate_agent_skill_configs(
             agent, tools_config, agent.team_id
+        )
+        from app.services.tool_connections import ToolConnectionService
+
+        await ToolConnectionService.assert_tools_config_bindings_allowed(
+            actor=current_user,
+            team_id=agent.team_id,
+            tools_config=tools_config,
         )
         agent.tools_config = tools_config
         updated_fields.append("tools_config")
@@ -951,6 +965,14 @@ async def duplicate_agent(
     """Duplicate an agent."""
     agent = await check_agent_access(agent_id, current_user)
     await check_team_permission(agent.team.id, current_user, "agent:create")
+
+    from app.services.tool_connections import ToolConnectionService
+
+    await ToolConnectionService.assert_tools_config_bindings_allowed(
+        actor=current_user,
+        team_id=agent.team_id,
+        tools_config=agent.tools_config,
+    )
 
     # Create a copy
     new_agent = await Agent.create(

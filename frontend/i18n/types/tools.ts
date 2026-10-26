@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-26T19:29:58.575Z
+// GENERATED — 2026-10-26T20:58:14.271Z
 // Source: i18n/en/tools.json
 export type ToolsMessages = {
   tools: {
@@ -407,11 +407,6 @@ export type ToolsMessages = {
         revoked: string
         reauth_required: string
       }
-      grant: string
-      grantPlaceholder: string
-      grantHint: string
-      grantHintGeneric: string
-      grantRequiredForBackground: string
       manageTitle: string
       manageHint: string
       loading: string
@@ -430,15 +425,6 @@ export type ToolsMessages = {
       oauthReconnect: string
       oauthFailed: string
       revoke: string
-      showGrants: string
-      hideGrants: string
-      grantsEmpty: string
-      grantRevoked: string
-      revokeGrant: string
-      grantEntrypointId: string
-      grantOperationsPlaceholder: string
-      grantOperationsHint: string
-      addGrant: string
       createTitle: string
       namePlaceholder: string
       accountLabelPlaceholder: string
@@ -449,18 +435,6 @@ export type ToolsMessages = {
       createFailed: string
       updateFailed: string
       revokeFailed: string
-      loadGrantsFailed: string
-      grantFieldsRequired: string
-      grantCreateFailed: string
-      grantRevokeFailed: string
-      entrypoint: {
-        agent: string
-        workflow: string
-        api_key: string
-        schedule: string
-        channel: string
-        embed: string
-      }
       oauthSuccess: string
       oauthErrors: {
         oauth_provider_error: string

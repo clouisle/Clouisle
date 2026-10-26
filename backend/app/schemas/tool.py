@@ -461,7 +461,6 @@ class ToolExecuteRequest(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict, description="参数")
     connection_mode: Literal["personal", "team"] | None = None
     connection_id: UUID | None = None
-    grant_id: UUID | None = None
     execution_id: UUID | None = None
 
 

@@ -104,8 +104,6 @@ export interface ToolExecution {
   connection_version: number | null
   connection_scope: string | null
   connection_account_label: string | null
-  grant_id: string | null
-  grant_version: number | null
   parameters_preview: Record<string, unknown>
   parameters_digest: string
   policy_hash: string

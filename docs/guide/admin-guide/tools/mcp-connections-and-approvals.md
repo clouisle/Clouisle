@@ -2,7 +2,7 @@
 
 This guide is for team administrators and operators who configure saved MCP
 servers and review the identities and approvals used to call them. It covers
-connections, delegation, OAuth, approvals, resources, prompts and live resource
+connections, OAuth, approvals, resources, prompts and live resource
 subscriptions. For request/response fields, see the [Tools API](../../api-reference/endpoints/tools.md#saved-mcp-server-protocol).
 
 ## Saved servers, not client credentials
@@ -53,9 +53,9 @@ only when the caller did not pin one and the entrypoint is interactive.
 4. Rotate or remove secrets with `config_set` / `config_remove`; send
    `expected_secret_version` to avoid overwriting a concurrent change.
 
-Revoking a connection is terminal and also revokes its grants. To use a
-different external account, create a new connection; do not expect an old
-approval to transfer to it — approvals are bound to the connection version.
+Revoking a connection is terminal. To use a different external account, create
+a new connection; do not expect an old approval to transfer to it — approvals
+are bound to the connection version.
 
 ## MCP OAuth
 
@@ -78,21 +78,27 @@ policy and HTTPS is required. An `invalid_grant` response marks the connection
 `reauth_required`; the operator must run the flow again. Compliant providers
 should work, but specific third-party interoperability is not claimed.
 
-## Delegating a personal connection
+## Connection bindings and shared execution
 
-Background or non-interactive entrypoints (agent runs, workflows, API keys,
-schedules, channels, embeds) cannot prompt a user. The personal connection's
-owner may grant one entrypoint explicit use:
+Selecting a connection in an Agent tool or a workflow tool node is the
+authorization to use that external identity. No separate delegation step exists.
 
-- Entrypoint types: `agent`, `workflow`, `api_key`, `schedule`, `channel`,
-  `embed`.
-- `allowed_operations` lists exact operation keys such as `tool:query_orders`,
-  `read:resource`, `prompt:summarize`, `list:tools`, or `*`.
-- Grants can expire and are revoked with the connection or individually.
+- Personal connections can only be selected by their owner; administrators
+  cannot bind another user's personal account.
+- Binding is validated when the Agent or workflow is created, updated,
+  duplicated, restored from a version or imported from a package. Imported
+  definitions drop environment-specific connection ids so they are chosen again.
+- Once saved, the binding belongs to the definition. Any user authorized to run
+  that Agent or workflow (including a shared workflow, schedule, API key, channel
+  or embed) executes it with the saved connection identity.
+- Execution re-checks that the connection still exists, is active, belongs to
+  the consuming team and matches the tool. A revoked or unusable connection
+  fails closed; it never falls back to another account.
+- Callers cannot obtain credentials: connection secrets remain write-only for
+  management and are never returned by run events or API responses.
 
-Administrators cannot delegate another user's personal account, and a team or
-site connection cannot consume a personal grant. Changing the entrypoint owner
-or the connection identity requires a new grant and approval.
+Changing the identity requires selecting another connection and, for existing
+approvals, a new approval bound to the new connection version.
 
 ## Using server capabilities
 
@@ -183,8 +189,7 @@ total.
 |----------------|---------|
 | `403 tool_access_denied` | No access to the consuming team, or a private tool cannot be shared |
 | `403 tool_connection_required` | Tool needs an identity; no usable/default connection was resolved |
-| `409 tool_connection_inactive` | Connection or grant is revoked/inactive |
-| `409 tool_connection_grant_required` | A non-interactive entrypoint lacks a delegation grant |
+| `409 tool_connection_inactive` | Connection is revoked or requires re-authentication |
 | `409 mcp_capability_unavailable` | Server did not advertise the requested capability |
 | `504 mcp_request_timeout` | Protocol budget expired |
 | `413 mcp_content_too_large` | Resource/prompt/result exceeded byte budgets |

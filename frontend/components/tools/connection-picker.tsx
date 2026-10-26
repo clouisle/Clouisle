@@ -16,12 +16,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import type { Tool, ToolConnectionField, ToolIdentityPolicy } from '@/lib/api/tools'
 import {
   toolConnectionsApi,
-  type ConnectionEntrypointType,
-  type ConnectionGrant,
   type ConnectionOAuthStatus,
   type ToolConnection,
   type ToolConnectionScope,
@@ -30,24 +27,20 @@ import {
 export interface ToolConnectionBinding {
   connection_mode: 'personal' | 'team' | null
   connection_id: string | null
-  grant_id: string | null
 }
 
 export const EMPTY_CONNECTION_BINDING: ToolConnectionBinding = {
   connection_mode: null,
   connection_id: null,
-  grant_id: null,
 }
 
 export function getToolConnectionBinding(config?: {
   connection_mode?: ToolConnectionBinding['connection_mode']
   connection_id?: string | null
-  grant_id?: string | null
 }): ToolConnectionBinding {
   return {
     connection_mode: config?.connection_mode ?? null,
     connection_id: config?.connection_id ?? null,
-    grant_id: config?.grant_id ?? null,
   }
 }
 
@@ -67,23 +60,12 @@ export function connectionLabel(connection: ToolConnection): string {
   return connection.account_label || connection.name
 }
 
-const ENTRYPOINT_TYPES: ConnectionEntrypointType[] = [
-  'agent',
-  'workflow',
-  'api_key',
-  'schedule',
-  'channel',
-  'embed',
-]
-
 interface ToolConnectionPickerProps {
   tool: Pick<Tool, 'id' | 'name' | 'display_name' | 'identity_policy' | 'connection_fields'> | null
   builtinToolKey?: string
   teamId?: string
   value: ToolConnectionBinding
   onChange: (value: ToolConnectionBinding) => void
-  entrypointType?: ConnectionEntrypointType
-  entrypointId?: string
   disabled?: boolean
 }
 
@@ -93,14 +75,11 @@ export function ToolConnectionPicker({
   teamId,
   value,
   onChange,
-  entrypointType,
-  entrypointId,
   disabled = false,
 }: ToolConnectionPickerProps) {
   const t = useTranslations('tools.connections')
   const identity = tool?.identity_policy ?? 'none'
   const [connections, setConnections] = React.useState<ToolConnection[]>([])
-  const [grants, setGrants] = React.useState<ConnectionGrant[]>([])
   const [isLoading, setIsLoading] = React.useState(false)
   const [loadError, setLoadError] = React.useState(false)
   const [reloadKey, setReloadKey] = React.useState(0)
@@ -145,31 +124,11 @@ export function ToolConnectionPicker({
     }
   }, [tool?.id, builtinToolKey, teamId, identity, reloadKey])
 
-  React.useEffect(() => {
-    let cancelled = false
-    const loadGrants = async () => {
-      if (!value.connection_id || mode !== 'personal') {
-        setGrants([])
-        return
-      }
-      try {
-        const result = await toolConnectionsApi.listGrants(value.connection_id)
-        if (!cancelled) setGrants(result.filter((grant) => !grant.revoked_at))
-      } catch {
-        if (!cancelled) setGrants([])
-      }
-    }
-    loadGrants()
-    return () => {
-      cancelled = true
-    }
-  }, [value.connection_id, mode, reloadKey])
-
   const selectedConnection = connections.find((connection) => connection.id === value.connection_id)
   const connectionMissing = !!mode && !value.connection_id
 
   const setMode = (nextMode: 'personal' | 'team') => {
-    onChange({ connection_mode: nextMode, connection_id: null, grant_id: null })
+    onChange({ connection_mode: nextMode, connection_id: null })
   }
 
   if (identity === 'none') {
@@ -244,7 +203,7 @@ export function ToolConnectionPicker({
         <Select
           value={value.connection_id ?? ''}
           onValueChange={(connectionId) => {
-            onChange({ connection_mode: mode, connection_id: connectionId, grant_id: null })
+            onChange({ connection_mode: mode, connection_id: connectionId })
           }}
           disabled={disabled || isLoading || visibleConnections.length === 0}
         >
@@ -274,51 +233,12 @@ export function ToolConnectionPicker({
         <p className="text-xs text-amber-600 dark:text-amber-400">{t('selectionRequired')}</p>
       )}
 
-      {mode === 'personal' && value.connection_id && (
-        <div className="space-y-1">
-          <Label className="text-xs">{t('grant')}</Label>
-          <Select
-            value={value.grant_id ?? ''}
-            onValueChange={(grantId) => onChange({ ...value, grant_id: grantId })}
-            disabled={disabled || grants.length === 0}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue>
-                {grants.find((grant) => grant.id === value.grant_id)?.entrypoint_type
-                  ? t(`entrypoint.${grants.find((grant) => grant.id === value.grant_id)?.entrypoint_type}`)
-                  : t('grantPlaceholder')}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent side="bottom" alignItemWithTrigger={false}>
-              {grants.map((grant) => (
-                <SelectItem key={grant.id} value={grant.id}>
-                  {t(`entrypoint.${grant.entrypoint_type}`)} · {grant.entrypoint_id}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">
-            {entrypointType && entrypointId
-              ? t('grantHint', {
-                  entrypoint: t(`entrypoint.${entrypointType}`),
-                  id: entrypointId,
-                })
-              : t('grantHintGeneric')}
-          </p>
-          {grants.length === 0 && (
-            <p className="text-xs text-muted-foreground">{t('grantRequiredForBackground')}</p>
-          )}
-        </div>
-      )}
-
       {manageOpen && !disabled && (
         <ToolConnectionManager
           tool={tool}
           builtinToolKey={builtinToolKey}
           teamId={teamId}
           identity={identity}
-          entrypointType={entrypointType}
-          entrypointId={entrypointId}
           onChanged={handleManagerChanged}
         />
       )}
@@ -331,8 +251,6 @@ interface ToolConnectionManagerProps {
   builtinToolKey?: string
   teamId?: string
   identity: ToolIdentityPolicy
-  entrypointType?: ConnectionEntrypointType
-  entrypointId?: string
   onChanged: () => void
 }
 
@@ -341,8 +259,6 @@ export function ToolConnectionManager({
   builtinToolKey,
   teamId,
   identity,
-  entrypointType,
-  entrypointId,
   onChanged,
 }: ToolConnectionManagerProps) {
   const t = useTranslations('tools.connections')
@@ -356,13 +272,6 @@ export function ToolConnectionManager({
     identity === 'team_only' ? 'team' : 'user'
   )
   const [secretValues, setSecretValues] = React.useState<Record<string, string>>({})
-  const [expandedGrants, setExpandedGrants] = React.useState<Record<string, boolean>>({})
-  const [grants, setGrants] = React.useState<Record<string, ConnectionGrant[]>>({})
-  const [grantType, setGrantType] = React.useState<ConnectionEntrypointType>(
-    entrypointType ?? 'agent'
-  )
-  const [grantEntrypointId, setGrantEntrypointId] = React.useState(entrypointId ?? '')
-  const [grantOperations, setGrantOperations] = React.useState('')
   const [oauthStatus, setOauthStatus] = React.useState<Record<string, ConnectionOAuthStatus>>({})
   const [oauthStarting, setOauthStarting] = React.useState<string | null>(null)
   const [clientSecretFor, setClientSecretFor] = React.useState<string | null>(null)
@@ -504,54 +413,6 @@ export function ToolConnectionManager({
       setActionError(t('oauthFailed'))
     } finally {
       setOauthStarting(null)
-    }
-  }
-
-  const toggleGrants = async (connection: ToolConnection) => {
-    const nextOpen = !expandedGrants[connection.id]
-    setExpandedGrants((current) => ({ ...current, [connection.id]: nextOpen }))
-    if (!nextOpen) return
-    try {
-      const result = await toolConnectionsApi.listGrants(connection.id)
-      setGrants((current) => ({ ...current, [connection.id]: result }))
-    } catch {
-      setActionError(t('loadGrantsFailed'))
-    }
-  }
-
-  const handleCreateGrant = async (connection: ToolConnection) => {
-    const operations = grantOperations
-      .split(/[\n,]+/)
-      .map((operation) => operation.trim())
-      .filter(Boolean)
-    if (!grantEntrypointId.trim() || operations.length === 0) {
-      setActionError(t('grantFieldsRequired'))
-      return
-    }
-    try {
-      await toolConnectionsApi.createGrant(connection.id, {
-        entrypoint_type: grantType,
-        entrypoint_id: grantEntrypointId.trim(),
-        team_id: teamId ?? null,
-        allowed_operations: operations,
-      })
-      setGrantOperations('')
-      const result = await toolConnectionsApi.listGrants(connection.id)
-      setGrants((current) => ({ ...current, [connection.id]: result }))
-      onChanged()
-    } catch {
-      setActionError(t('grantCreateFailed'))
-    }
-  }
-
-  const handleRevokeGrant = async (connection: ToolConnection, grant: ConnectionGrant) => {
-    try {
-      await toolConnectionsApi.revokeGrant(connection.id, grant.id)
-      const result = await toolConnectionsApi.listGrants(connection.id)
-      setGrants((current) => ({ ...current, [connection.id]: result }))
-      onChanged()
-    } catch {
-      setActionError(t('grantRevokeFailed'))
     }
   }
 
@@ -717,86 +578,6 @@ export function ToolConnectionManager({
                       {t('oauthCancelSecret')}
                     </Button>
                   </div>
-                </div>
-              )}
-
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 px-1.5 text-[10px]"
-                onClick={() => toggleGrants(connection)}
-              >
-                {expandedGrants[connection.id] ? t('hideGrants') : t('showGrants')}
-                <ChevronDown
-                  className={`ml-1 h-3 w-3 transition-transform ${expandedGrants[connection.id] ? 'rotate-180' : ''}`}
-                />
-              </Button>
-
-              {expandedGrants[connection.id] && (
-                <div className="space-y-2 border-t pt-2">
-                  {(grants[connection.id] ?? []).length === 0 ? (
-                    <p className="text-[11px] text-muted-foreground">{t('grantsEmpty')}</p>
-                  ) : (
-                    (grants[connection.id] ?? []).map((grant) => (
-                      <div key={grant.id} className="flex items-center gap-2 text-[11px]">
-                        <span className="flex-1 min-w-0 truncate">
-                          {t(`entrypoint.${grant.entrypoint_type}`)} · {grant.entrypoint_id}
-                          {grant.revoked_at ? ` · ${t('grantRevoked')}` : ''}
-                        </span>
-                        {!grant.revoked_at && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-5 text-destructive"
-                            title={t('revokeGrant')}
-                            onClick={() => handleRevokeGrant(connection, grant)}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        )}
-                      </div>
-                    ))
-                  )}
-
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <Select value={grantType} onValueChange={(value) => setGrantType(value as ConnectionEntrypointType)}>
-                      <SelectTrigger className="h-7 text-xs">
-                        <SelectValue>{t(`entrypoint.${grantType}`)}</SelectValue>
-                      </SelectTrigger>
-                      <SelectContent side="bottom" alignItemWithTrigger={false}>
-                        {ENTRYPOINT_TYPES.map((type) => (
-                          <SelectItem key={type} value={type}>
-                            {t(`entrypoint.${type}`)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      value={grantEntrypointId}
-                      placeholder={t('grantEntrypointId')}
-                      className="h-7 text-xs"
-                      onChange={(event) => setGrantEntrypointId(event.target.value)}
-                    />
-                  </div>
-                  <Textarea
-                    value={grantOperations}
-                    placeholder={t('grantOperationsPlaceholder')}
-                    className="min-h-14 text-xs font-mono"
-                    onChange={(event) => setGrantOperations(event.target.value)}
-                  />
-                  <p className="text-[10px] text-muted-foreground">{t('grantOperationsHint')}</p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-6 text-[10px]"
-                    onClick={() => handleCreateGrant(connection)}
-                  >
-                    <Plus className="h-3 w-3 mr-1" />
-                    {t('addGrant')}
-                  </Button>
                 </div>
               )}
             </div>

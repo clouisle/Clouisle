@@ -62,8 +62,6 @@ from .tool import (
 )
 from .tool_config import ToolConfig
 from .tool_connection import (
-    ConnectionEntrypointType,
-    ConnectionGrant,
     ToolConnection,
     ToolConnectionScope,
     ToolConnectionStatus,
@@ -237,8 +235,6 @@ __all__ = [
     "ToolConnection",
     "ToolConnectionScope",
     "ToolConnectionStatus",
-    "ConnectionGrant",
-    "ConnectionEntrypointType",
     "ToolExecution",
     "ToolApprovalRequest",
     "ToolApprovalDecision",

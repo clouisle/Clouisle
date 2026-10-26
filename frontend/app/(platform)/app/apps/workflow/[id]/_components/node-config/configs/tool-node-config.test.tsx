@@ -47,7 +47,7 @@ mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(
 mock.module('@/components/tools/web-search-engine-select', () => ({ WebSearchEngineSelect }))
 mock.module('@/components/tools/connection-picker', () => ({
   ToolConnectionPicker: component,
-  getToolConnectionBinding: () => ({ connection_mode: null, connection_id: null, grant_id: null }),
+  getToolConnectionBinding: () => ({ connection_mode: null, connection_id: null }),
 }))
 mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam }) }))
 mock.module('@/lib/api', () => ({

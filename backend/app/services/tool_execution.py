@@ -16,7 +16,6 @@ from app.models.tool_approval import (
 from app.models.tool_connection import ToolConnectionScope
 from app.models.user import User
 from app.schemas.response import BusinessError
-from app.schemas.tool_connection import ConnectionEntrypoint
 from app.services import tool_approvals
 from app.services.tool_connections import (
     ConnectionBinding,
@@ -36,7 +35,6 @@ class ToolCallContext:
     tool_call_id: str | None = None
     connection_mode: str | None = None
     connection_id: UUID | None = None
-    grant_id: UUID | None = None
     interactive: bool = False
     execution_id: UUID | None = None
     require_approval: bool = False
@@ -98,32 +96,18 @@ async def resolve_tool_connection(
             code=400, msg_key="tool_connection_required", status_code=400
         )
     fields = {field["name"] for field in tool.connection_fields}
-    entrypoint = None
-    if not context.interactive:
-        if not context.entrypoint_id:
-            raise BusinessError(
-                code=403, msg_key="tool_connection_grant_required", status_code=403
-            )
-        entrypoint_type = {
-            "agent_run": "agent",
-            "nested_agent": "agent",
-            "chat": "agent",
-            "subworkflow": "workflow",
-            "workflow": "workflow",
-            "api_key": "api_key",
-            "channel": "channel",
-            "embed": "embed",
-            "schedule": "schedule",
-        }.get(context.entrypoint.value)
-        if entrypoint_type is None:
-            raise BusinessError(
-                code=403, msg_key="tool_connection_grant_required", status_code=403
-            )
-        entrypoint = ConnectionEntrypoint(
-            entrypoint_type=entrypoint_type,
-            entrypoint_id=context.entrypoint_id,
-            team_id=context.team_id,
-        )
+    binding_trusted = context.entrypoint in {
+        ExecutionEntrypoint.WORKFLOW,
+        ExecutionEntrypoint.SUBWORKFLOW,
+        ExecutionEntrypoint.SCHEDULE,
+        ExecutionEntrypoint.API_KEY,
+        ExecutionEntrypoint.CHANNEL,
+        ExecutionEntrypoint.EMBED,
+        ExecutionEntrypoint.AGENT_RUN,
+    } or (
+        context.entrypoint == ExecutionEntrypoint.CHAT
+        and context.entrypoint_id is not None
+    )
     kwargs = dict(
         actor=context.actor,
         team_id=context.team_id,
@@ -134,8 +118,7 @@ async def resolve_tool_connection(
         connection_id=context.connection_id,
         scope=scope,
         operation=operation,
-        entrypoint=entrypoint,
-        grant_id=context.grant_id,
+        binding_trusted=binding_trusted,
         use_default=context.connection_id is None and context.interactive,
         allowed_scopes=scopes,
     )
@@ -213,7 +196,6 @@ async def execute_stored_tool(
         context = replace(
             context,
             connection_id=execution.connection_id,
-            grant_id=execution.grant_id,
             connection_mode="personal"
             if execution.connection_scope == "user"
             else "team"

@@ -650,7 +650,6 @@ export function AgentOrchestrationForm({
           toolsConfig={toolsConfig}
           availableTools={availableTools}
           onChange={setToolsConfig}
-          entrypointId={agent.id}
           readOnly={!canUpdate}
         />
       </ConfigCard>

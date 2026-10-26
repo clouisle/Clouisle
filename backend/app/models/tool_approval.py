@@ -126,8 +126,6 @@ class ToolExecution(models.Model):
     connection_account_label = fields.CharField(
         max_length=150, null=True, description="Non-secret account label"
     )
-    grant_id = fields.UUIDField(null=True)
-    grant_version = fields.IntField(null=True)
 
     # Immutable request snapshot. Ciphertext only; digests bind approvals.
     parameters_cipher = fields.TextField(
@@ -235,8 +233,6 @@ class ToolExecution(models.Model):
                     self.connection_version,
                     self.connection_scope,
                     self.connection_owner_user_id,
-                    self.grant_id,
-                    self.grant_version,
                     self.connection_account_label,
                 )
             ):
@@ -256,12 +252,6 @@ class ToolExecution(models.Model):
                 raise ValueError("tool_execution_effective_identity_unexpected")
             if self.connection_scope != "user" and self.connection_owner_user_id:
                 raise ValueError("tool_execution_connection_owner_unexpected")
-            if self.grant_id is None and self.grant_version is not None:
-                raise ValueError("tool_execution_grant_inconsistent")
-            if self.grant_id is not None and (
-                self.grant_version is None or self.grant_version < 1
-            ):
-                raise ValueError("tool_execution_grant_version_invalid")
 
         if self.status == ToolExecutionStatus.CANCELLED:
             if self.cancel_reason is None:

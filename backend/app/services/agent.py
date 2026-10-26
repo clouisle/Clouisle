@@ -940,7 +940,6 @@ class AgentService:
         binding: dict[str, Any] = {
             "connection_mode": None,
             "connection_id": None,
-            "grant_id": None,
         }
         if getattr(agent, "tools_config", None):
             for tc in agent.tools_config:
@@ -984,7 +983,6 @@ class AgentService:
 
         try:
             bound_connection_id = parse_optional_uuid(binding["connection_id"])
-            bound_grant_id = parse_optional_uuid(binding["grant_id"])
         except BusinessError as exc:
             return {
                 "error": t(exc.msg_key or "tool_connection_invalid", **exc.kwargs),
@@ -1013,7 +1011,6 @@ class AgentService:
             tool_call_id=runtime.tool_call_id if runtime else None,
             connection_mode=binding["connection_mode"],
             connection_id=bound_connection_id,
-            grant_id=bound_grant_id,
             interactive=runtime.interactive if runtime else False,
             require_approval=get_agent_tool_require_approval(agent, tool_name),
         )

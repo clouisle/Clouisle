@@ -690,6 +690,13 @@ async def update_workflow(
                 status_code=400,
                 users=", ".join(invalid_approvers[:5]),
             )
+        from app.services.tool_connections import ToolConnectionService
+
+        await ToolConnectionService.assert_definition_bindings_allowed(
+            actor=current_user,
+            team_id=workflow.team_id,
+            definition=workflow_in.definition,
+        )
         workflow.definition = workflow_in.definition
         workflow.version += 1  # Increment version on definition change
     if workflow_in.variables is not None:
@@ -862,6 +869,14 @@ async def duplicate_workflow(
         workflow_id, current_user, require_write=True
     )
     await check_team_permission(workflow.team_id, current_user, "workflow:create")
+
+    from app.services.tool_connections import ToolConnectionService
+
+    await ToolConnectionService.assert_definition_bindings_allowed(
+        actor=current_user,
+        team_id=workflow.team_id,
+        definition=workflow.definition,
+    )
 
     # Create a copy
     new_workflow = await Workflow.create(
@@ -2252,6 +2267,13 @@ async def restore_workflow_version(
     )
 
     # Restore the workflow to the specified version
+    from app.services.tool_connections import ToolConnectionService
+
+    await ToolConnectionService.assert_definition_bindings_allowed(
+        actor=current_user,
+        team_id=workflow.team_id,
+        definition=workflow_version.definition,
+    )
     workflow.definition = workflow_version.definition
     workflow.variables = workflow_version.variables
     workflow.trigger_type = workflow_version.trigger_type

@@ -264,7 +264,6 @@ export interface ToolExecuteRequest {
   arguments: Record<string, unknown>
   connection_mode?: 'personal' | 'team'
   connection_id?: string
-  grant_id?: string
   execution_id?: string
 }
 

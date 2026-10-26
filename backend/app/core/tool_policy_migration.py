@@ -41,31 +41,23 @@ _TOOL_CONNECTION_CONSTRAINTS: tuple[tuple[str, str, str], ...] = (
         "(is_default AND default_slot IS NOT NULL) OR "
         "(NOT is_default AND default_slot IS NULL)",
     ),
-    (
-        "ck_connection_grants_entrypoint",
-        "connection_grants",
-        "length(btrim(entrypoint_id)) > 0",
-    ),
-    (
-        "ck_connection_grants_operations",
-        "connection_grants",
-        "jsonb_typeof(allowed_operations::jsonb) = 'array' "
-        "AND jsonb_array_length(allowed_operations::jsonb) > 0",
-    ),
 )
 
 
 async def apply_tool_connection_constraints() -> None:
-    """Enforce connection scope/owner/team invariants in PostgreSQL.
-
-    Must run AFTER ``Tortoise.generate_schemas()`` because it alters the new
-    ``tool_connections`` / ``connection_grants`` tables. Existing installations
-    and rolling upgrades converge on the same constraints; SQLite tests rely on
-    ``model.validate_invariants()`` instead.
-    """
+    """Enforce connection scope/owner/team invariants in PostgreSQL."""
     connection = Tortoise.get_connection("default")
     if connection.capabilities.dialect != "postgres":
         return
+
+    await execute_startup_migration_query(
+        connection,
+        """
+        DROP TABLE IF EXISTS connection_grants CASCADE;
+        ALTER TABLE IF EXISTS tool_executions DROP COLUMN IF EXISTS grant_id;
+        ALTER TABLE IF EXISTS tool_executions DROP COLUMN IF EXISTS grant_version;
+        """,
+    )
 
     for constraint, table, predicate in _TOOL_CONNECTION_CONSTRAINTS:
         await execute_startup_migration_query(

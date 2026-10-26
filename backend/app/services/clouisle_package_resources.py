@@ -577,7 +577,9 @@ class AgentPackageAdapter(ResourcePackageAdapter):
             "hide_reasoning": agent.hide_reasoning,
             "enable_citations": getattr(agent, "enable_citations", False),
             "hide_artifact_list": getattr(agent, "hide_artifact_list", False),
-            "tools_config": _copy_json(agent.tools_config) or [],
+            "tools_config": _strip_connection_bindings(
+                _copy_json(agent.tools_config) or []
+            ),
             "enable_attachments": agent.enable_attachments,
             "attachment_config": _copy_json(agent.attachment_config) or {},
             "enable_user_input_request": getattr(
@@ -706,7 +708,7 @@ class WorkflowPackageAdapter(ResourcePackageAdapter):
         if check_permission:
             self.ensure_export_permission(user)
         workflow = await check_workflow_access(resource_id, user)
-        definition = _copy_json(workflow.definition) or {}
+        definition = _strip_connection_bindings(_copy_json(workflow.definition) or {})
         dependencies = await _workflow_dependencies(definition, workflow.team_id)
         payload = {
             "name": workflow.name,
@@ -1041,8 +1043,33 @@ def _normalized_connection_fields(value: Any) -> list[dict[str, Any]]:
     return fields
 
 
+def _strip_connection_bindings(value: Any) -> Any:
+    """Remove environment-specific connection bindings from imported definitions.
+
+    A packaged Agent or workflow must not inherit another installation's
+    personal connection id; bindings are chosen again in the target team.
+    """
+    if isinstance(value, dict):
+        return {
+            key: _strip_connection_bindings(item)
+            for key, item in value.items()
+            if key
+            not in {
+                "connection_id",
+                "connectionId",
+                "connection_mode",
+                "connectionMode",
+            }
+        }
+    if isinstance(value, list):
+        return [_strip_connection_bindings(item) for item in value]
+    return value
+
+
 def _agent_fields(payload: dict[str, Any], mapping: dict[str, UUID]) -> dict[str, Any]:
-    tools_config = copy.deepcopy(payload.get("tools_config") or [])
+    tools_config = _strip_connection_bindings(
+        copy.deepcopy(payload.get("tools_config") or [])
+    )
     for config in tools_config:
         if config.get("type") == "builtin" and config.get("name") == "web_search":
             engine = (config.get("config") or {}).get("engine", "auto")
@@ -1120,8 +1147,8 @@ async def _replace_agent_kbs(
 def _workflow_fields(
     payload: dict[str, Any], mapping: dict[str, UUID]
 ) -> dict[str, Any]:
-    definition = _rewrite_references(
-        copy.deepcopy(payload.get("definition") or {}), mapping
+    definition = _strip_connection_bindings(
+        _rewrite_references(copy.deepcopy(payload.get("definition") or {}), mapping)
     )
     trigger_type = payload.get("trigger_type") or TriggerType.MANUAL.value
     if trigger_type == TriggerType.WEBHOOK.value:

@@ -477,8 +477,6 @@ class ToolExecutionOut(BaseModel):
     connection_version: int | None = None
     connection_scope: str | None = None
     connection_account_label: str | None = None
-    grant_id: UUID | None = None
-    grant_version: int | None = None
 
     parameters_preview: dict[str, Any] = Field(default_factory=dict)
     parameters_digest: str

@@ -2,13 +2,6 @@ import { api } from './client'
 
 export type ToolConnectionScope = 'user' | 'team' | 'site'
 export type ToolConnectionStatus = 'active' | 'revoked' | 'reauth_required'
-export type ConnectionEntrypointType =
-  | 'agent'
-  | 'workflow'
-  | 'api_key'
-  | 'schedule'
-  | 'channel'
-  | 'embed'
 
 export interface ToolConnection {
   id: string
@@ -43,30 +36,6 @@ export interface ToolConnectionUpdateInput {
   config_remove?: string[]
   is_default?: boolean
   expected_secret_version?: number
-}
-
-export interface ConnectionGrant {
-  id: string
-  connection_id: string
-  granted_by_id: string
-  entrypoint_type: ConnectionEntrypointType
-  entrypoint_id: string
-  team_id: string | null
-  allowed_operations: string[]
-  expires_at: string | null
-  revoked_at: string | null
-  revoked_by_id: string | null
-  version: number
-  created_at: string
-  updated_at: string
-}
-
-export interface ConnectionGrantCreateInput {
-  entrypoint_type: ConnectionEntrypointType
-  entrypoint_id: string
-  team_id?: string | null
-  allowed_operations: string[]
-  expires_at?: string | null
 }
 
 export interface ConnectionOAuthStartInput {
@@ -164,28 +133,6 @@ export const toolConnectionsApi = {
   revoke: async (connectionId: string, reason?: string): Promise<ToolConnection> =>
     api.delete<ToolConnection>(
       appendQuery(`/tool-connections/${connectionId}`, [['reason', reason]])
-    ),
-
-  listGrants: async (connectionId: string, includeRevoked = false): Promise<ConnectionGrant[]> =>
-    api.get<ConnectionGrant[]>(
-      appendQuery(`/tool-connections/${connectionId}/grants`, [
-        ['include_revoked', includeRevoked],
-      ])
-    ),
-
-  createGrant: async (
-    connectionId: string,
-    data: ConnectionGrantCreateInput
-  ): Promise<ConnectionGrant> =>
-    api.post<ConnectionGrant>(`/tool-connections/${connectionId}/grants`, data),
-
-  revokeGrant: async (
-    connectionId: string,
-    grantId: string,
-    reason?: string
-  ): Promise<ConnectionGrant> =>
-    api.delete<ConnectionGrant>(
-      appendQuery(`/tool-connections/${connectionId}/grants/${grantId}`, [['reason', reason]])
     ),
 
   startOAuth: async (

@@ -122,7 +122,6 @@ def _tool_test_context(
         entrypoint=entrypoint,
         connection_mode=request.connection_mode,
         connection_id=request.connection_id,
-        grant_id=request.grant_id,
         execution_id=request.execution_id,
         interactive=True,
     )

@@ -95,9 +95,6 @@ def _team_binding(*, version: int = 1, **overrides):
         "effective_user_id": None,
         "secret_version": version,
         "status": "active",
-        "grant_id": None,
-        "grant_version": None,
-        "allowed_operations": ("*",),
         "is_active": True,
     }
     values.update(overrides)

@@ -297,12 +297,14 @@ Example Response:
 ## MCP Connections and Approvals
 
 Saved MCP tools execute with an encrypted personal, team or site connection.
-The connection owner selects the identity, may delegate a personal connection to
-a background entrypoint, and can authorize OAuth when the server requires it.
-Operations and metadata can require approval depending on site, team,
-entrypoint and tool policy. See [MCP Connections and Approvals](mcp-connections-and-approvals.md)
-for identity modes, delegation, OAuth, approval gates, resource/prompt use and
-live subscription limits.
+A personal connection can only be selected by its owner; selecting it when
+configuring an Agent or workflow authorizes that saved definition to reuse the
+identity when the definition is shared or run in the background. The owner can
+authorize OAuth when the server requires it. Operations and metadata can require
+approval depending on Agent confirmation and tool policy. See
+[MCP Connections and Approvals](mcp-connections-and-approvals.md) for identity
+modes, connection bindings, OAuth, approval gates, resource/prompt use and live
+subscription limits.
 
 ## Testing Tools
 

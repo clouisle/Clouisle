@@ -357,8 +357,6 @@ def get_code_message(code: int, lang: Optional[str] = None) -> str:
         ResponseCode.TOOL_CONNECTION_SECRET_UNREADABLE: (
             "tool_connection_secret_unreadable"
         ),
-        ResponseCode.TOOL_CONNECTION_GRANT_NOT_FOUND: "tool_connection_grant_not_found",
-        ResponseCode.TOOL_CONNECTION_GRANT_DENIED: "tool_connection_grant_denied",
         ResponseCode.TOOL_CONNECTION_REQUIRED: "tool_connection_required",
         ResponseCode.TOOL_CONNECTION_INACTIVE: "tool_connection_inactive",
         ResponseCode.TOOL_CONNECTION_INVALID: "tool_connection_invalid",

@@ -781,9 +781,6 @@ def _resolved(
         account_label=None,
         status=ToolConnectionStatus.ACTIVE,
         secret_version=connection.secret_version,
-        grant_id=None,
-        grant_version=None,
-        allowed_operations=(),
         secrets={},
     )
 

@@ -27,8 +27,6 @@ from app.models.tool import Tool, ToolShare, ToolVisibility
 from app.models.user import User
 from app.schemas.response import BusinessError, Response, ResponseCode, success
 from app.schemas.tool_connection import (
-    ConnectionGrantCreate,
-    ConnectionGrantOut,
     ToolConnectionCreate,
     ToolConnectionForToolCreate,
     ToolConnectionOut,
@@ -308,70 +306,6 @@ async def revoke_connection(
         actor=current_user, connection_id=connection_id, reason=reason
     )
     return success(data=connection, msg_key="success")
-
-
-@connection_router.get(
-    "/{connection_id}/grants",
-    response_model=Response[list[ConnectionGrantOut]],
-)
-async def list_connection_grants(
-    connection_id: UUID,
-    include_revoked: bool = False,
-    current_user: User = Depends(deps.get_current_active_user),
-) -> Any:
-    grants = await ToolConnectionService.list_grants(
-        actor=current_user,
-        connection_id=connection_id,
-        include_revoked=include_revoked,
-    )
-    return success(data=grants, msg_key="success")
-
-
-@connection_router.post(
-    "/{connection_id}/grants",
-    response_model=Response[ConnectionGrantOut],
-)
-async def create_connection_grant(
-    connection_id: UUID,
-    payload: ConnectionGrantCreate,
-    current_user: User = Depends(deps.get_current_active_user),
-) -> Any:
-    """Grant one entrypoint explicit use of a connection.
-
-    Personal connections may only be granted by their owner; administrators
-    cannot authorize another user's personal identity.
-    """
-    grant = await ToolConnectionService.create_grant(
-        actor=current_user, connection_id=connection_id, payload=payload
-    )
-    return success(data=grant, msg_key="success")
-
-
-@connection_router.delete(
-    "/{connection_id}/grants/{grant_id}",
-    response_model=Response[ConnectionGrantOut],
-)
-async def revoke_connection_grant(
-    connection_id: UUID,
-    grant_id: UUID,
-    reason: str | None = Query(default=None, max_length=500),
-    current_user: User = Depends(deps.get_current_active_user),
-) -> Any:
-    from app.models.tool_connection import ConnectionGrant
-
-    belongs = await ConnectionGrant.filter(
-        id=grant_id, connection_id=connection_id
-    ).exists()
-    if not belongs:
-        raise BusinessError(
-            code=ResponseCode.TOOL_CONNECTION_GRANT_NOT_FOUND,
-            msg_key="tool_connection_grant_not_found",
-            status_code=404,
-        )
-    grant = await ToolConnectionService.revoke_grant(
-        actor=current_user, grant_id=grant_id, reason=reason
-    )
-    return success(data=grant, msg_key="success")
 
 
 __all__ = ["connection_router", "router"]

@@ -858,7 +858,6 @@ async def execute_tool_call(
         binding: dict[str, Any] = {
             "connection_mode": None,
             "connection_id": None,
-            "grant_id": None,
         }
         if agent and getattr(agent, "tools_config", None):
             for tc in agent.tools_config:
@@ -893,7 +892,6 @@ async def execute_tool_call(
 
         try:
             bound_connection_id = parse_optional_uuid(binding["connection_id"])
-            bound_grant_id = parse_optional_uuid(binding["grant_id"])
         except BusinessError as e:
             return json.dumps(
                 {"error": t(e.msg_key or "tool_connection_invalid")},
@@ -924,7 +922,6 @@ async def execute_tool_call(
             tool_call_id=runtime.tool_call_id if runtime else None,
             connection_mode=binding["connection_mode"],
             connection_id=bound_connection_id,
-            grant_id=bound_grant_id,
             interactive=runtime.interactive if runtime else True,
             require_approval=require_approval,
         )

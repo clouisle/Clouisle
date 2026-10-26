@@ -366,9 +366,10 @@ def test_builtin_execution_uses_connection_and_approval_boundary(run_orm, monkey
                 ),
             )
         assert int(exc.value.code) in {
-            int(ResponseCode.TOOL_CONNECTION_GRANT_DENIED),
             int(ResponseCode.TOOL_CONNECTION_REQUIRED),
+            int(ResponseCode.TOOL_CONNECTION_ACCESS_DENIED),
             403,
+            409,
         }
 
     try:

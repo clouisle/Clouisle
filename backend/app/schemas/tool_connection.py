@@ -15,7 +15,6 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.tool_connection import (
-    ConnectionEntrypointType,
     ToolConnectionScope,
     ToolConnectionStatus,
 )
@@ -55,42 +54,6 @@ def _validate_secret_mapping(config: dict[str, str]) -> dict[str, str]:
             raise ValueError("credential_value_too_long")
         cleaned[name] = raw_value
     return cleaned
-
-
-def _validate_operations(operations: list[str]) -> list[str]:
-    if not operations:
-        raise ValueError("grant_operations_required")
-    if len(operations) > MAX_OPERATIONS:
-        raise ValueError("grant_operations_too_many")
-    cleaned: list[str] = []
-    for operation in operations:
-        normalized = (operation or "").strip()
-        if not _OPERATION_PATTERN.fullmatch(normalized):
-            raise ValueError("grant_operation_invalid")
-        cleaned.append(normalized)
-    if len(set(cleaned)) != len(cleaned):
-        raise ValueError("grant_operations_duplicate")
-    return cleaned
-
-
-class ConnectionEntrypoint(BaseModel):
-    """Stable reference to a non-interactive entrypoint."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    entrypoint_type: ConnectionEntrypointType
-    entrypoint_id: str = Field(min_length=1, max_length=100)
-    team_id: UUID | None = Field(
-        default=None, description="Team the entrypoint runs in"
-    )
-
-    @field_validator("entrypoint_id")
-    @classmethod
-    def _strip_entrypoint_id(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("entrypoint_id_required")
-        return normalized
 
 
 class ToolConnectionDraft(BaseModel):
@@ -263,76 +226,7 @@ class ToolConnectionOut(BaseModel):
     updated_at: datetime
 
 
-class ConnectionGrantCreate(BaseModel):
-    """Owner authorization for a non-interactive entrypoint."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    entrypoint_type: ConnectionEntrypointType
-    entrypoint_id: str = Field(min_length=1, max_length=100)
-    team_id: UUID | None = Field(
-        default=None, description="None only for site-wide grants"
-    )
-    allowed_operations: list[str] = Field(default_factory=list)
-    expires_at: datetime | None = None
-
-    @field_validator("entrypoint_id")
-    @classmethod
-    def _strip_entrypoint_id(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("entrypoint_id_required")
-        return normalized
-
-    @field_validator("allowed_operations")
-    @classmethod
-    def _validate_operations(cls, value: list[str]) -> list[str]:
-        return _validate_operations(value)
-
-
-class ConnectionGrantOut(BaseModel):
-    """Secret-safe grant metadata."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    connection_id: UUID
-    granted_by_id: UUID
-    entrypoint_type: ConnectionEntrypointType
-    entrypoint_id: str
-    team_id: UUID | None
-    allowed_operations: list[str] = Field(default_factory=list)
-    expires_at: datetime | None
-    revoked_at: datetime | None
-    revoked_by_id: UUID | None
-    version: int
-    created_at: datetime
-    updated_at: datetime
-
-
-class ConnectionResolveRequest(BaseModel):
-    """Explicit binding supplied by an execution entrypoint.
-
-    The resolver still re-checks membership, ownership, grants and connection
-    state; nothing here is trusted as an authorization claim.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    connection_id: UUID | None = None
-    scope: ToolConnectionScope | None = None
-    operation: str | None = Field(default=None, max_length=200)
-    entrypoint: ConnectionEntrypoint | None = None
-    grant_id: UUID | None = None
-    use_default: bool = False
-    expected_secret_version: int | None = Field(default=None, ge=1)
-
-
 __all__ = [
-    "ConnectionEntrypoint",
-    "ConnectionGrantCreate",
-    "ConnectionGrantOut",
-    "ConnectionResolveRequest",
     "ToolConnectionCreate",
     "ToolConnectionDraft",
     "ToolConnectionForToolCreate",

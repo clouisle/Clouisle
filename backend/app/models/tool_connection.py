@@ -13,7 +13,6 @@ values — is safe to expose to clients.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
@@ -37,19 +36,8 @@ class ToolConnectionStatus(str, Enum):
     """Lifecycle state of a connection."""
 
     ACTIVE = "active"  # Usable
-    REVOKED = "revoked"  # Permanently unusable; grants are revoked with it
+    REVOKED = "revoked"  # Permanently unusable
     REAUTH_REQUIRED = "reauth_required"  # Stored secrets no longer usable
-
-
-class ConnectionEntrypointType(str, Enum):
-    """Non-interactive entrypoint that may be delegated a connection."""
-
-    AGENT = "agent"
-    WORKFLOW = "workflow"
-    API_KEY = "api_key"
-    SCHEDULE = "schedule"  # Cron-triggered workflow; entrypoint_id is the workflow id
-    CHANNEL = "channel"
-    EMBED = "embed"  # Public embed surface; entrypoint_id is the agent id
 
 
 class ToolConnection(models.Model):
@@ -207,125 +195,7 @@ class ToolConnection(models.Model):
             raise ValueError("tool_connection_default_slot_without_flag")
 
 
-class ConnectionGrant(models.Model):
-    """Explicit owner authorization for a non-interactive entrypoint.
-
-    A grant is bound to one entrypoint, one team (or site-wide), and a concrete
-    operation allow-list. Revocation and expiry are evaluated on every resolve;
-    copying an entrypoint never copies its grants.
-    """
-
-    id = fields.UUIDField(primary_key=True, default=uuid4)
-
-    connection: fields.ForeignKeyRelation["ToolConnection"] = fields.ForeignKeyField(
-        "models.ToolConnection",
-        related_name="grants",
-        on_delete=fields.CASCADE,
-        description="Delegated connection",
-    )
-    connection_id: UUID  # type: ignore[assignment]
-
-    granted_by: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
-        "models.User",
-        related_name="tool_connection_grants_granted",
-        on_delete=fields.CASCADE,
-        description="Must be the personal connection owner for scope=user",
-    )
-    granted_by_id: UUID  # type: ignore[assignment]
-
-    entrypoint_type = fields.CharEnumField(
-        ConnectionEntrypointType, description="Entrypoint category"
-    )
-    entrypoint_id = fields.CharField(
-        max_length=100, description="Stable identifier of the entrypoint"
-    )
-    team: fields.ForeignKeyRelation["Team"] | None = fields.ForeignKeyField(
-        "models.Team",
-        related_name="tool_connection_grants",
-        on_delete=fields.CASCADE,
-        null=True,
-        description="Team the entrypoint runs in (NULL = site-wide)",
-    )
-    team_id: UUID | None  # type: ignore[assignment]
-
-    allowed_operations: list[str] = fields.JSONField(
-        default=list,
-        description='Explicit operation allow-list; "*" means every operation',
-    )  # type: ignore[assignment]
-
-    expires_at = fields.DatetimeField(null=True)
-    revoked_at = fields.DatetimeField(null=True)
-    revoked_by: fields.ForeignKeyRelation["User"] | None = fields.ForeignKeyField(
-        "models.User",
-        related_name="tool_connection_grants_revoked",
-        on_delete=fields.SET_NULL,
-        null=True,
-    )
-    revoked_by_id: UUID | None  # type: ignore[assignment]
-    version = fields.IntField(
-        default=1, description="Monotonic version for approval binding"
-    )
-
-    created_at = fields.DatetimeField(auto_now_add=True)
-    updated_at = fields.DatetimeField(auto_now=True)
-
-    class Meta:
-        table = "connection_grants"
-        ordering = ["-created_at"]
-        indexes = [
-            ("connection", "entrypoint_type", "entrypoint_id"),
-            ("team", "entrypoint_type", "entrypoint_id"),
-        ]
-
-    def __str__(self) -> str:
-        return (
-            f"grant {self.id} {self.entrypoint_type}:{self.entrypoint_id} "
-            f"-> connection {self.connection_id}"
-        )
-
-    def is_active(self, now: datetime | None = None) -> bool:
-        if self.revoked_at is not None:
-            return False
-        if self.expires_at is None:
-            return True
-        reference = now or datetime.now(timezone.utc)
-        expires_at = self.expires_at
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        return expires_at > reference
-
-    def allows_operation(self, operation: str | None) -> bool:
-        """Fail closed when the caller cannot name the operation."""
-        if not operation:
-            return False
-        operations = set(self.allowed_operations or [])
-        return "*" in operations or operation in operations
-
-    def validate_invariants(self) -> None:
-        if not self.entrypoint_id or not self.entrypoint_id.strip():
-            raise ValueError("tool_connection_grant_entrypoint_required")
-        operations = [op.strip() for op in (self.allowed_operations or [])]
-        if not operations or any(not op for op in operations):
-            raise ValueError("tool_connection_grant_operations_required")
-        if len(set(operations)) != len(operations):
-            raise ValueError("tool_connection_grant_operations_duplicate")
-        if len(operations) > 200:
-            raise ValueError("tool_connection_grant_operations_too_many")
-        if any(len(op) > 200 for op in operations):
-            raise ValueError("tool_connection_grant_operations_too_long")
-        if self.expires_at is not None:
-            expires_at = self.expires_at
-            if expires_at.tzinfo is None:
-                expires_at = expires_at.replace(tzinfo=timezone.utc)
-            if expires_at <= datetime.now(timezone.utc):
-                raise ValueError("tool_connection_grant_expired")
-        if self.revoked_at is not None and self.revoked_by_id is None:
-            raise ValueError("tool_connection_grant_revoker_required")
-
-
 __all__: list[str] = [
-    "ConnectionEntrypointType",
-    "ConnectionGrant",
     "ToolConnection",
     "ToolConnectionScope",
     "ToolConnectionStatus",

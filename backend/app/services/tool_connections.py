@@ -1,4 +1,4 @@
-"""Tool connection storage, delegation grants and fail-closed resolution.
+"""Tool connection storage and fail-closed resolution.
 
 This module owns the *identity + secrets* layer. It deliberately knows nothing
 about HTTP/MCP execution, approval policy or tool visibility: callers must
@@ -9,18 +9,20 @@ Security properties enforced here:
 * Personal connections always have an owner and are isolated per team.
 * Team/site connections can never pretend to be a personal identity.
 * Every write is authorized against the connection scope; administrators can
-  never authorize (grant) another user's personal account.
+  never manage another user's personal account.
+* Explicit bindings are validated against the configuring actor before an
+  Agent or workflow definition is saved.
 * Secrets are Fernet-encrypted and only exposed through the internal
   :class:`ResolvedConnection` returned by :meth:`ToolConnectionService.resolve_connection`.
-* Resolution re-validates membership, owner membership, grant state, expiry,
-  operation allow-list and connection version on every call.
+* Resolution re-validates membership, owner membership, connection status and
+  version on every call.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -37,8 +39,6 @@ from app.core.tool_secrets import (
 )
 from app.models.tool import Tool
 from app.models.tool_connection import (
-    ConnectionEntrypointType,
-    ConnectionGrant,
     ToolConnection,
     ToolConnectionScope,
     ToolConnectionStatus,
@@ -46,9 +46,6 @@ from app.models.tool_connection import (
 from app.models.user import Team, TeamMember, User
 from app.schemas.response import BusinessError, ResponseCode
 from app.schemas.tool_connection import (
-    ConnectionEntrypoint,
-    ConnectionGrantCreate,
-    ConnectionGrantOut,
     ToolConnectionCreate,
     ToolConnectionOut,
     ToolConnectionUpdate,
@@ -81,9 +78,6 @@ class ResolvedConnection:
     account_label: str | None
     status: ToolConnectionStatus
     secret_version: int
-    grant_id: UUID | None
-    grant_version: int | None
-    allowed_operations: tuple[str, ...]
     secrets: Mapping[str, str] = field(repr=False)
 
 
@@ -99,9 +93,6 @@ class ConnectionBinding:
     secret_version: int
     status: ToolConnectionStatus
     is_active: bool
-    grant_id: UUID | None
-    grant_version: int | None
-    allowed_operations: tuple[str, ...]
 
 
 def _utcnow() -> datetime:
@@ -405,10 +396,6 @@ class ToolConnectionService:
     def _to_out(connection: ToolConnection) -> ToolConnectionOut:
         return ToolConnectionOut.model_validate(connection)
 
-    @staticmethod
-    def _grant_to_out(grant: ConnectionGrant) -> ConnectionGrantOut:
-        return ConnectionGrantOut.model_validate(grant)
-
     # ------------------------------------------------------------------
     # Connection CRUD
     # ------------------------------------------------------------------
@@ -648,15 +635,11 @@ class ToolConnectionService:
         await cls._authorize_manage(connection, user, allow_superuser_override=True)
 
         if connection.status != ToolConnectionStatus.REVOKED:
-            now = _utcnow()
             async with in_transaction():
                 connection.status = ToolConnectionStatus.REVOKED
                 connection.is_default = False
                 connection.default_slot = None
                 await connection.save()
-                await ConnectionGrant.filter(
-                    connection_id=connection.id, revoked_at__isnull=True
-                ).update(revoked_at=now, revoked_by_id=user.id)
             if reason:
                 logger.info(
                     "Tool connection %s revoked by %s: %s",
@@ -708,161 +691,6 @@ class ToolConnectionService:
         connection = await cls._load_connection(connection_id)
         await cls._authorize_read(connection, user, team_id=team_id)
         return cls._to_out(connection)
-
-    # ------------------------------------------------------------------
-    # Grants
-    # ------------------------------------------------------------------
-
-    @classmethod
-    async def create_grant(
-        cls,
-        *,
-        actor: User | UUID | str,
-        connection_id: UUID,
-        payload: ConnectionGrantCreate,
-    ) -> ConnectionGrantOut:
-        user = await cls._resolve_actor(actor)
-        connection = await cls._load_connection(connection_id)
-        await cls._authorize_manage(connection, user)
-
-        if connection.status != ToolConnectionStatus.ACTIVE:
-            _fail(
-                ResponseCode.TOOL_CONNECTION_INACTIVE,
-                "tool_connection_inactive",
-                status_code=409,
-            )
-
-        team_id = payload.team_id
-        if connection.scope == ToolConnectionScope.USER:
-            # Personal accounts are team-isolated: a grant may only be created
-            # for the team that owns the connection.
-            if team_id is None:
-                team_id = connection.team_id
-            elif team_id != connection.team_id:
-                _fail(
-                    ResponseCode.TOOL_CONNECTION_GRANT_DENIED,
-                    "tool_connection_grant_denied",
-                    status_code=403,
-                )
-            await cls._ensure_owner_in_team(connection)
-        elif connection.scope == ToolConnectionScope.TEAM:
-            if team_id is None:
-                team_id = connection.team_id
-            elif team_id != connection.team_id:
-                _fail(
-                    ResponseCode.TOOL_CONNECTION_GRANT_DENIED,
-                    "tool_connection_grant_denied",
-                    status_code=403,
-                )
-        else:  # SITE
-            if team_id is not None:
-                await cls._require_membership(team_id, user)
-            else:
-                cls._require_superuser(user)
-
-        if not await cls._entrypoint_exists(
-            payload.entrypoint_type, payload.entrypoint_id, team_id
-        ):
-            _fail(
-                ResponseCode.TOOL_CONNECTION_INVALID,
-                "tool_connection_entrypoint_not_found",
-                status_code=404,
-            )
-
-        operations = list(payload.allowed_operations)
-        latest_grant = (
-            await ConnectionGrant.filter(
-                connection_id=connection.id,
-                entrypoint_type=payload.entrypoint_type,
-                entrypoint_id=payload.entrypoint_id,
-                team_id=team_id,
-            )
-            .order_by("-version")
-            .first()
-        )
-        version = latest_grant.version if latest_grant else 0
-
-        grant = ConnectionGrant(
-            id=uuid4(),
-            connection_id=connection.id,
-            granted_by_id=user.id,
-            entrypoint_type=payload.entrypoint_type,
-            entrypoint_id=payload.entrypoint_id,
-            team_id=team_id,
-            allowed_operations=operations,
-            expires_at=payload.expires_at,
-            version=version + 1,
-        )
-        try:
-            grant.validate_invariants()
-        except ValueError as exc:
-            logger.warning("Rejected connection grant for %s: %s", user.id, exc)
-            _fail(
-                ResponseCode.TOOL_CONNECTION_INVALID,
-                "tool_connection_invalid",
-                status_code=400,
-            )
-
-        now = _utcnow()
-        async with in_transaction():
-            # Re-granting replaces the active grant for the same entrypoint;
-            # the version keeps approvals bound to the new authorization.
-            await ConnectionGrant.filter(
-                connection_id=connection.id,
-                entrypoint_type=payload.entrypoint_type,
-                entrypoint_id=payload.entrypoint_id,
-                team_id=team_id,
-                revoked_at__isnull=True,
-            ).update(revoked_at=now, revoked_by_id=user.id)
-            await grant.save()
-        return cls._grant_to_out(grant)
-
-    @classmethod
-    async def list_grants(
-        cls,
-        *,
-        actor: User | UUID | str,
-        connection_id: UUID,
-        include_revoked: bool = False,
-    ) -> list[ConnectionGrantOut]:
-        user = await cls._resolve_actor(actor)
-        connection = await cls._load_connection(connection_id)
-        await cls._authorize_manage(connection, user, allow_superuser_override=True)
-        query = ConnectionGrant.filter(connection_id=connection.id)
-        if not include_revoked:
-            query = query.filter(revoked_at__isnull=True)
-        return [cls._grant_to_out(item) for item in await query]
-
-    @classmethod
-    async def revoke_grant(
-        cls,
-        *,
-        actor: User | UUID | str,
-        grant_id: UUID,
-        reason: str | None = None,
-    ) -> ConnectionGrantOut:
-        user = await cls._resolve_actor(actor)
-        grant = await ConnectionGrant.filter(id=grant_id).first()
-        if not grant:
-            _fail(
-                ResponseCode.TOOL_CONNECTION_GRANT_NOT_FOUND,
-                "tool_connection_grant_not_found",
-                status_code=404,
-            )
-        connection = await cls._load_connection(grant.connection_id)
-        await cls._authorize_manage(connection, user, allow_superuser_override=True)
-        if grant.revoked_at is None:
-            grant.revoked_at = _utcnow()
-            grant.revoked_by_id = user.id
-            await grant.save()
-            if reason:
-                logger.info(
-                    "Tool connection grant %s revoked by %s: %s",
-                    grant.id,
-                    user.id,
-                    reason,
-                )
-        return cls._grant_to_out(grant)
 
     # ------------------------------------------------------------------
     # Default selection
@@ -955,8 +783,7 @@ class ToolConnectionService:
         builtin_tool_key: str | None = None,
         scope: ToolConnectionScope | None = None,
         operation: str | None = None,
-        entrypoint: ConnectionEntrypoint | None = None,
-        grant_id: UUID | None = None,
+        binding_trusted: bool = False,
         use_default: bool = False,
         expected_secret_version: int | None = None,
         allowed_scopes: Collection[ToolConnectionScope] | None = None,
@@ -1036,13 +863,11 @@ class ToolConnectionService:
                 status_code=409,
             )
 
-        grant = await cls._authorize_connection_use(
+        await cls._authorize_connection_use(
             connection=connection,
             user=user,
             team_id=team_id,
-            operation=operation,
-            entrypoint=entrypoint,
-            grant_id=grant_id,
+            binding_trusted=binding_trusted,
         )
 
         secrets = cls._decrypt_config(connection)
@@ -1076,11 +901,6 @@ class ToolConnectionService:
             account_label=connection.account_label,
             status=connection.status,
             secret_version=connection.secret_version,
-            grant_id=grant.id if grant else None,
-            grant_version=grant.version if grant else None,
-            allowed_operations=(
-                tuple(grant.allowed_operations or []) if grant else ("*",)
-            ),
             secrets=secrets,
         )
 
@@ -1095,8 +915,7 @@ class ToolConnectionService:
         builtin_tool_key: str | None = None,
         scope: ToolConnectionScope | None = None,
         operation: str | None = None,
-        entrypoint: ConnectionEntrypoint | None = None,
-        grant_id: UUID | None = None,
+        binding_trusted: bool = False,
         use_default: bool = False,
         expected_secret_version: int | None = None,
         allowed_scopes: Collection[ToolConnectionScope] | None = None,
@@ -1112,8 +931,7 @@ class ToolConnectionService:
             builtin_tool_key=builtin_tool_key,
             scope=scope,
             operation=operation,
-            entrypoint=entrypoint,
-            grant_id=grant_id,
+            binding_trusted=binding_trusted,
             use_default=use_default,
             expected_secret_version=expected_secret_version,
             allowed_scopes=allowed_scopes,
@@ -1129,9 +947,6 @@ class ToolConnectionService:
             secret_version=resolved.secret_version,
             status=resolved.status,
             is_active=resolved.status == ToolConnectionStatus.ACTIVE,
-            grant_id=resolved.grant_id,
-            grant_version=resolved.grant_version,
-            allowed_operations=resolved.allowed_operations,
         )
 
     # ------------------------------------------------------------------
@@ -1210,244 +1025,126 @@ class ToolConnectionService:
         connection: ToolConnection,
         user: User,
         team_id: UUID,
-        operation: str | None,
-        entrypoint: ConnectionEntrypoint | None,
-        grant_id: UUID | None,
-    ) -> ConnectionGrant | None:
-        """Validate identity delegation; returns the grant when required."""
-        if entrypoint is not None:
-            if entrypoint.team_id is not None and entrypoint.team_id != team_id:
-                _fail(
-                    ResponseCode.TOOL_CONNECTION_GRANT_DENIED,
-                    "tool_connection_grant_denied",
-                    status_code=403,
-                )
-            # Entrypoints can be deleted or disabled after the grant was
-            # issued; revalidate on every resolution, not only on grant.
-            if not await cls._entrypoint_exists(
-                entrypoint.entrypoint_type,
-                entrypoint.entrypoint_id,
-                team_id,
-            ):
-                _fail(
-                    ResponseCode.TOOL_CONNECTION_INVALID,
-                    "tool_connection_entrypoint_not_found",
-                    status_code=404,
-                )
-
+        binding_trusted: bool = False,
+    ) -> None:
+        """Validate identity resolution."""
         if connection.scope != ToolConnectionScope.USER:
-            # Team/site connections only require team membership and an
-            # explicit binding; grants are personal-delegation only.
-            if grant_id is not None:
-                grant = await cls._load_valid_grant(
-                    grant_id=grant_id,
-                    connection=connection,
-                    team_id=team_id,
-                    operation=operation,
-                    entrypoint=entrypoint,
-                    require_owner_grant=False,
-                )
-                cls._assert_grant_team_binding(connection, grant, team_id)
-            return None
+            return
 
         is_owner = connection.owner_user_id == user.id
         if is_owner:
-            if grant_id is not None:
-                grant = await cls._load_valid_grant(
-                    grant_id=grant_id,
-                    connection=connection,
-                    team_id=team_id,
-                    operation=operation,
-                    entrypoint=entrypoint,
-                    require_owner_grant=True,
-                )
-                cls._assert_grant_team_binding(connection, grant, team_id)
-            return None
+            return
 
-        # Background/interactive delegation of someone else's personal account.
-        if grant_id is None:
+        if not binding_trusted:
             _fail(
-                ResponseCode.TOOL_CONNECTION_GRANT_DENIED,
-                "tool_connection_grant_required",
-                status_code=403,
-            )
-        if entrypoint is None:
-            _fail(
-                ResponseCode.TOOL_CONNECTION_GRANT_DENIED,
-                "tool_connection_grant_required",
+                ResponseCode.TOOL_CONNECTION_ACCESS_DENIED,
+                "tool_connection_access_denied",
                 status_code=403,
             )
         await cls._ensure_owner_in_team(connection)
-        grant = await cls._load_valid_grant(
-            grant_id=grant_id,
-            connection=connection,
-            team_id=team_id,
-            operation=operation,
-            entrypoint=entrypoint,
-            require_owner_grant=True,
-        )
-        cls._assert_grant_team_binding(connection, grant, team_id)
-        return grant
 
-    @staticmethod
-    def _assert_grant_team_binding(
-        connection: ToolConnection, grant: ConnectionGrant, team_id: UUID
-    ) -> None:
-        """Personal/team grants must match the connection's team exactly.
-
-        Only site-wide grants may carry a NULL team; they are usable in any
-        team the entrypoint actually runs in.
-        """
-        if connection.scope == ToolConnectionScope.SITE:
-            if grant.team_id is not None and grant.team_id != team_id:
+    @classmethod
+    async def assert_binding_allowed(
+        cls,
+        *,
+        actor: User | UUID | str,
+        team_id: UUID,
+        connection_id: UUID,
+        tool_id: UUID | None = None,
+        builtin_tool_key: str | None = None,
+    ) -> ToolConnection:
+        """Check that a user configuring an Agent or Workflow has authority to bind the connection."""
+        user = await cls._resolve_actor(actor)
+        await cls._require_membership(team_id, user)
+        connection = await cls._load_connection(connection_id)
+        cls._assert_team_binding(connection, team_id)
+        cls._assert_service_binding(connection, tool_id, builtin_tool_key)
+        if connection.status != ToolConnectionStatus.ACTIVE:
+            _fail(
+                ResponseCode.TOOL_CONNECTION_INACTIVE,
+                "tool_connection_inactive",
+                status_code=409,
+            )
+        if connection.scope == ToolConnectionScope.USER:
+            if connection.owner_user_id != user.id:
                 _fail(
-                    ResponseCode.TOOL_CONNECTION_GRANT_DENIED,
-                    "tool_connection_grant_denied",
+                    ResponseCode.TOOL_CONNECTION_ACCESS_DENIED,
+                    "tool_connection_access_denied",
                     status_code=403,
                 )
-            return
-        if grant.team_id != team_id:
-            _fail(
-                ResponseCode.TOOL_CONNECTION_GRANT_DENIED,
-                "tool_connection_grant_denied",
-                status_code=403,
+        return connection
+
+    @classmethod
+    async def assert_tools_config_bindings_allowed(
+        cls,
+        *,
+        actor: User | UUID | str,
+        team_id: UUID,
+        tools_config: Sequence[Any] | None,
+    ) -> None:
+        """Validate every explicitly bound connection in an Agent tool config."""
+        for config in tools_config or []:
+            if not isinstance(config, dict) or not config.get("connection_id"):
+                continue
+            tool_id = config.get("server_id") or config.get("tool_id")
+            try:
+                connection_id = UUID(str(config["connection_id"]))
+                parsed_tool_id = UUID(str(tool_id)) if tool_id else None
+            except (ValueError, TypeError):
+                _fail(
+                    ResponseCode.TOOL_CONNECTION_INVALID,
+                    "tool_connection_invalid",
+                    status_code=400,
+                )
+            await cls.assert_binding_allowed(
+                actor=actor,
+                team_id=team_id,
+                connection_id=connection_id,
+                tool_id=parsed_tool_id,
+                builtin_tool_key=(
+                    config.get("name") if config.get("type") == "builtin" else None
+                ),
             )
 
     @classmethod
-    async def _load_valid_grant(
+    async def assert_definition_bindings_allowed(
         cls,
         *,
-        grant_id: UUID,
-        connection: ToolConnection,
+        actor: User | UUID | str,
         team_id: UUID,
-        operation: str | None,
-        entrypoint: ConnectionEntrypoint | None,
-        require_owner_grant: bool,
-    ) -> ConnectionGrant:
-        grant = await ConnectionGrant.filter(
-            id=grant_id, connection_id=connection.id
-        ).first()
-        if not grant:
-            _fail(
-                ResponseCode.TOOL_CONNECTION_GRANT_NOT_FOUND,
-                "tool_connection_grant_not_found",
-                status_code=404,
-            )
-        if not grant.is_active():
-            _fail(
-                ResponseCode.TOOL_CONNECTION_GRANT_DENIED,
-                "tool_connection_grant_expired",
-                status_code=403,
-            )
-        if grant.team_id is not None and grant.team_id != team_id:
-            _fail(
-                ResponseCode.TOOL_CONNECTION_GRANT_DENIED,
-                "tool_connection_grant_denied",
-                status_code=403,
-            )
-        if require_owner_grant and grant.granted_by_id != connection.owner_user_id:
-            _fail(
-                ResponseCode.TOOL_CONNECTION_GRANT_DENIED,
-                "tool_connection_grant_denied",
-                status_code=403,
-            )
-        if entrypoint is not None:
-            if (
-                grant.entrypoint_type != entrypoint.entrypoint_type
-                or grant.entrypoint_id != entrypoint.entrypoint_id
-            ):
+        definition: Mapping[str, Any] | None,
+    ) -> None:
+        """Validate every explicitly bound connection in a workflow definition."""
+        for node in (definition or {}).get("nodes") or []:
+            if not isinstance(node, dict) or node.get("type") != "tool":
+                continue
+            config = (node.get("data") or {}).get("config") or {}
+            if not isinstance(config, dict):
+                continue
+            connection_id = config.get("connectionId") or config.get("connection_id")
+            if not connection_id:
+                continue
+            tool_id = config.get("toolId") or config.get("tool_id")
+            try:
+                parsed_connection_id = UUID(str(connection_id))
+                parsed_tool_id = UUID(str(tool_id)) if tool_id else None
+            except (ValueError, TypeError):
                 _fail(
-                    ResponseCode.TOOL_CONNECTION_GRANT_DENIED,
-                    "tool_connection_grant_denied",
-                    status_code=403,
+                    ResponseCode.TOOL_CONNECTION_INVALID,
+                    "tool_connection_invalid",
+                    status_code=400,
                 )
-        if not grant.allows_operation(operation):
-            _fail(
-                ResponseCode.TOOL_CONNECTION_GRANT_DENIED,
-                "tool_connection_grant_denied",
-                status_code=403,
+            await cls.assert_binding_allowed(
+                actor=actor,
+                team_id=team_id,
+                connection_id=parsed_connection_id,
+                tool_id=parsed_tool_id,
+                builtin_tool_key=(
+                    config.get("toolName") or config.get("tool_name")
+                    if config.get("toolType") == "builtin"
+                    else None
+                ),
             )
-        return grant
-
-    @staticmethod
-    async def _entrypoint_exists(
-        entrypoint_type: ConnectionEntrypointType,
-        entrypoint_id: str,
-        team_id: UUID | None,
-    ) -> bool:
-        """Verify the entrypoint exists and belongs to the grant team.
-
-        Lazy imports keep the storage layer independent of execution modules.
-        Unknown/invalid ids fail closed.
-        """
-        try:
-            parsed_id = UUID(str(entrypoint_id))
-        except (ValueError, TypeError, AttributeError):
-            return False
-
-        if entrypoint_type == ConnectionEntrypointType.AGENT:
-            from app.models.agent import Agent
-
-            query = Agent.filter(id=parsed_id)
-            if team_id is not None:
-                query = query.filter(team_id=team_id)
-            return await query.exists()
-
-        if entrypoint_type == ConnectionEntrypointType.WORKFLOW:
-            from app.models.workflow import Workflow
-
-            query = Workflow.filter(id=parsed_id)
-            if team_id is not None:
-                query = query.filter(team_id=team_id)
-            return await query.exists()
-
-        if entrypoint_type == ConnectionEntrypointType.API_KEY:
-            from app.models.api_key import APIKey
-
-            api_key = await APIKey.filter(id=parsed_id, is_active=True).first()
-            if not api_key:
-                return False
-            if api_key.expires_at is not None:
-                expires_at = api_key.expires_at
-                if expires_at.tzinfo is None:
-                    expires_at = expires_at.replace(tzinfo=timezone.utc)
-                if expires_at <= _utcnow():
-                    return False
-            if team_id is None:
-                return True
-            return await TeamMember.filter(
-                team_id=team_id, user_id=api_key.user_id
-            ).exists()
-
-        if entrypoint_type == ConnectionEntrypointType.SCHEDULE:
-            from app.models.workflow import TriggerType, Workflow
-
-            query = Workflow.filter(id=parsed_id)
-            if team_id is not None:
-                query = query.filter(team_id=team_id)
-            return await query.filter(trigger_type=TriggerType.CRON).exists()
-
-        if entrypoint_type == ConnectionEntrypointType.CHANNEL:
-            from app.models.integration import Integration
-
-            from app.models.wechat_knowledge import WeChatKnowledgeBinding
-
-            return (
-                await Integration.filter(id=parsed_id).exists()
-                or await WeChatKnowledgeBinding.filter(
-                    id=parsed_id, status="connected"
-                ).exists()
-            )
-
-        if entrypoint_type == ConnectionEntrypointType.EMBED:
-            from app.models.agent import Agent
-
-            query = Agent.filter(id=parsed_id)
-            if team_id is not None:
-                query = query.filter(team_id=team_id)
-            return await query.exists()
-
-        return False
 
 
 __all__ = [

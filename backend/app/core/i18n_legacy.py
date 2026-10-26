@@ -3310,26 +3310,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Another default connection was selected concurrently; refresh and try again",
         "zh": "另一个默认连接被同时选中，请刷新后重试",
     },
-    "tool_connection_entrypoint_not_found": {
-        "en": "The entrypoint does not exist in this team",
-        "zh": "该入口在此团队中不存在",
-    },
-    "tool_connection_grant_denied": {
-        "en": "The connection grant does not cover this entrypoint or operation",
-        "zh": "连接授权不覆盖该入口或操作",
-    },
-    "tool_connection_grant_expired": {
-        "en": "The connection grant has expired or been revoked",
-        "zh": "连接授权已过期或已撤销",
-    },
-    "tool_connection_grant_not_found": {
-        "en": "Connection grant not found",
-        "zh": "未找到连接授权",
-    },
-    "tool_connection_grant_required": {
-        "en": "The connection owner must explicitly grant this entrypoint access",
-        "zh": "连接所有者必须显式授权该入口",
-    },
     "tool_connection_inactive": {
         "en": "This connection is revoked or requires re-authentication",
         "zh": "该连接已撤销或需要重新认证",

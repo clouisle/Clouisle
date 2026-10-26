@@ -28,7 +28,7 @@ mock.module('@/lib/api', () => ({ toolsApi }))
 mock.module('@/lib/api/tools', () => ({}))
 mock.module('@/lib/api/tool-mcp', () => ({ toolMcpApi: { listTools: mock() } }))
 mock.module('@/components/tools/connection-picker', () => ({
-  EMPTY_CONNECTION_BINDING: { connection_mode: null, connection_id: null, grant_id: null },
+  EMPTY_CONNECTION_BINDING: { connection_mode: null, connection_id: null },
   ToolConnectionPicker: () => null,
 }))
 

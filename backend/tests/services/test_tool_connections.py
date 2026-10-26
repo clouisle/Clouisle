@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -17,16 +16,12 @@ from tortoise.context import TortoiseContext
 
 from app.models.api_key import APIKey
 from app.models.tool_connection import (
-    ConnectionEntrypointType,
-    ConnectionGrant,
     ToolConnection,
     ToolConnectionScope,
 )
 from app.models.user import Team, TeamMember, User
 from app.schemas.response import BusinessError, ResponseCode
 from app.schemas.tool_connection import (
-    ConnectionEntrypoint,
-    ConnectionGrantCreate,
     ToolConnectionCreate,
     ToolConnectionUpdate,
 )
@@ -163,13 +158,19 @@ def test_personal_connection_is_owner_team_scoped_and_encrypted(run_orm):
         assert resolved.effective_user_id == alice.id
         assert resolved.owner_user_id == alice.id
         assert resolved.secret_version == 1
-        assert resolved.allowed_operations == ("*",)
-        assert resolved.grant_id is None
 
-        with _expect_error(ResponseCode.TOOL_CONNECTION_GRANT_DENIED):
+        with _expect_error(ResponseCode.TOOL_CONNECTION_ACCESS_DENIED):
             await ToolConnectionService.resolve_connection(
-                team_id=team.id, actor=bob, connection_id=created.id
+                team_id=team.id,
+                actor=bob,
+                connection_id=created.id,
+                binding_trusted=False,
             )
+        # When the connection was bound in trusted definition, bob can execute:
+        trusted = await ToolConnectionService.resolve_connection(
+            team_id=team.id, actor=bob, connection_id=created.id, binding_trusted=True
+        )
+        assert trusted.connection_id == created.id
 
         with _expect_error(ResponseCode.TOOL_CONNECTION_NOT_FOUND):
             await ToolConnectionService.resolve_connection(
@@ -210,7 +211,7 @@ def test_personal_connection_is_owner_team_scoped_and_encrypted(run_orm):
     run_orm(scenario)
 
 
-def test_grant_required_operation_binding_and_revocation(run_orm):
+def test_personal_binding_and_revocation(run_orm):
     async def scenario():
         alice = await _make_user("alice")
         bob = await _make_user("bob")
@@ -224,151 +225,77 @@ def test_grant_required_operation_binding_and_revocation(run_orm):
             actor=alice,
             payload=_personal_payload(team.id, {"api_key": "delegated-secret"}),
         )
-        api_key = await _make_api_key(alice)
-        entrypoint = ConnectionEntrypoint(
-            entrypoint_type=ConnectionEntrypointType.API_KEY,
-            entrypoint_id=str(api_key.id),
-            team_id=team.id,
-        )
 
-        grant = await ToolConnectionService.create_grant(
-            actor=alice,
-            connection_id=connection.id,
-            payload=ConnectionGrantCreate(
-                entrypoint_type=ConnectionEntrypointType.API_KEY,
-                entrypoint_id=str(api_key.id),
+        # Untrusted client request of someone else's personal connection fails:
+        with _expect_error(ResponseCode.TOOL_CONNECTION_ACCESS_DENIED):
+            await ToolConnectionService.resolve_connection(
                 team_id=team.id,
-                allowed_operations=["search"],
-            ),
-        )
-        assert grant.version == 1
-        assert grant.granted_by_id == alice.id
-
-        delegated = await ToolConnectionService.resolve_connection(
+                actor=bob,
+                connection_id=connection.id,
+                binding_trusted=False,
+            )
+        # Server-bound trusted execution succeeds for team member:
+        trusted = await ToolConnectionService.resolve_connection(
             team_id=team.id,
             actor=bob,
             connection_id=connection.id,
-            operation="search",
-            entrypoint=entrypoint,
-            grant_id=grant.id,
+            binding_trusted=True,
         )
-        assert delegated.secrets == {"api_key": "delegated-secret"}
-        assert delegated.grant_id == grant.id
-        assert delegated.grant_version == 1
-        assert delegated.allowed_operations == ("search",)
+        assert trusted.secrets == {"api_key": "delegated-secret"}
 
-        # Operation not covered by the grant.
-        with _expect_error(ResponseCode.TOOL_CONNECTION_GRANT_DENIED):
-            await ToolConnectionService.resolve_connection(
-                team_id=team.id,
-                actor=bob,
-                connection_id=connection.id,
-                operation="delete",
-                entrypoint=entrypoint,
-                grant_id=grant.id,
-            )
-
-        # Administrators cannot authorize someone else's personal account.
+        # Assert binding allowed checks:
+        allowed = await ToolConnectionService.assert_binding_allowed(
+            actor=alice,
+            team_id=team.id,
+            connection_id=connection.id,
+            builtin_tool_key="web_search",
+        )
+        assert allowed.id == connection.id
+        # Bob cannot bind Alice's personal connection:
         with _expect_error(ResponseCode.TOOL_CONNECTION_ACCESS_DENIED):
-            await ToolConnectionService.create_grant(
+            await ToolConnectionService.assert_binding_allowed(
                 actor=bob,
+                team_id=team.id,
                 connection_id=connection.id,
-                payload=ConnectionGrantCreate(
-                    entrypoint_type=ConnectionEntrypointType.API_KEY,
-                    entrypoint_id=str(api_key.id),
-                    team_id=team.id,
-                    allowed_operations=["search"],
-                ),
+                builtin_tool_key="web_search",
             )
-
-        # Grant cannot leak into another team.
-        with _expect_error(ResponseCode.TOOL_CONNECTION_GRANT_DENIED):
-            await ToolConnectionService.create_grant(
-                actor=alice,
-                connection_id=connection.id,
-                payload=ConnectionGrantCreate(
-                    entrypoint_type=ConnectionEntrypointType.API_KEY,
-                    entrypoint_id=str(api_key.id),
-                    team_id=other_team.id,
-                    allowed_operations=["search"],
-                ),
-            )
-
-        # Fabricated entrypoint ids are rejected before the grant is stored.
         with _expect_error(ResponseCode.TOOL_CONNECTION_INVALID):
-            await ToolConnectionService.create_grant(
+            await ToolConnectionService.assert_tools_config_bindings_allowed(
                 actor=alice,
-                connection_id=connection.id,
-                payload=ConnectionGrantCreate(
-                    entrypoint_type=ConnectionEntrypointType.API_KEY,
-                    entrypoint_id=str(uuid4()),
-                    team_id=team.id,
-                    allowed_operations=["search"],
-                ),
-            )
-
-        revoked = await ToolConnectionService.revoke_grant(
-            actor=alice, grant_id=grant.id
-        )
-        assert revoked.revoked_at is not None
-        with _expect_error(ResponseCode.TOOL_CONNECTION_GRANT_DENIED):
-            await ToolConnectionService.resolve_connection(
                 team_id=team.id,
+                tools_config=[
+                    {"type": "builtin", "name": "web_search", "connection_id": "bad"}
+                ],
+            )
+        with _expect_error(ResponseCode.TOOL_CONNECTION_ACCESS_DENIED):
+            await ToolConnectionService.assert_definition_bindings_allowed(
                 actor=bob,
-                connection_id=connection.id,
-                operation="search",
-                entrypoint=entrypoint,
-                grant_id=grant.id,
+                team_id=team.id,
+                definition={
+                    "nodes": [
+                        {
+                            "type": "tool",
+                            "data": {
+                                "config": {
+                                    "connectionId": str(connection.id),
+                                    "toolType": "builtin",
+                                    "toolName": "web_search",
+                                }
+                            },
+                        }
+                    ]
+                },
             )
-
-        # Expired grants fail closed.
-        expiring = await ToolConnectionService.create_grant(
-            actor=alice,
-            connection_id=connection.id,
-            payload=ConnectionGrantCreate(
-                entrypoint_type=ConnectionEntrypointType.API_KEY,
-                entrypoint_id=str(api_key.id),
-                team_id=team.id,
-                allowed_operations=["search"],
-            ),
-        )
-        await ConnectionGrant.filter(id=expiring.id).update(
-            expires_at=datetime.now(timezone.utc) - timedelta(minutes=1)
-        )
-        with _expect_error(ResponseCode.TOOL_CONNECTION_GRANT_DENIED):
-            await ToolConnectionService.resolve_connection(
-                team_id=team.id,
-                actor=bob,
-                connection_id=connection.id,
-                operation="search",
-                entrypoint=entrypoint,
-                grant_id=expiring.id,
-            )
-
-        # Revoking the connection invalidates outstanding grants + resolution.
-        latest = await ToolConnectionService.create_grant(
-            actor=alice,
-            connection_id=connection.id,
-            payload=ConnectionGrantCreate(
-                entrypoint_type=ConnectionEntrypointType.API_KEY,
-                entrypoint_id=str(api_key.id),
-                team_id=team.id,
-                allowed_operations=["search"],
-            ),
-        )
+        # Revoking the connection invalidates resolution.
         await ToolConnectionService.revoke_connection(
             actor=alice, connection_id=connection.id
         )
-        grant_row = await ConnectionGrant.get(id=latest.id)
-        assert grant_row.revoked_at is not None
         with _expect_error(ResponseCode.TOOL_CONNECTION_INACTIVE):
             await ToolConnectionService.resolve_connection(
                 team_id=team.id,
                 actor=bob,
                 connection_id=connection.id,
-                operation="search",
-                entrypoint=entrypoint,
-                grant_id=latest.id,
+                binding_trusted=True,
             )
 
     run_orm(scenario)
@@ -601,37 +528,6 @@ def test_scope_owner_team_invariants_reject_ambiguous_rows(run_orm):
                 team_id=team.id,
                 builtin_tool_key="web_search",
                 is_default=True,
-            ).validate_invariants()
-
-        with pytest.raises(ValueError):
-            ConnectionGrant(
-                id=uuid4(),
-                connection_id=uuid4(),
-                granted_by_id=user.id,
-                entrypoint_type=ConnectionEntrypointType.API_KEY,
-                entrypoint_id="",
-                allowed_operations=["search"],
-            ).validate_invariants()
-
-        with pytest.raises(ValueError):
-            ConnectionGrant(
-                id=uuid4(),
-                connection_id=uuid4(),
-                granted_by_id=user.id,
-                entrypoint_type=ConnectionEntrypointType.API_KEY,
-                entrypoint_id="entry",
-                allowed_operations=[],
-            ).validate_invariants()
-
-        with pytest.raises(ValueError):
-            ConnectionGrant(
-                id=uuid4(),
-                connection_id=uuid4(),
-                granted_by_id=user.id,
-                entrypoint_type=ConnectionEntrypointType.API_KEY,
-                entrypoint_id="entry",
-                allowed_operations=["search"],
-                expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
             ).validate_invariants()
 
     run_orm(scenario)

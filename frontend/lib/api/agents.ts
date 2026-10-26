@@ -74,7 +74,6 @@ export interface ToolConfig {
   config?: Record<string, unknown> | null
   connection_mode?: 'personal' | 'team' | null
   connection_id?: string | null
-  grant_id?: string | null
   require_approval?: boolean
 }
 

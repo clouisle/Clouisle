@@ -46,7 +46,6 @@ export interface ToolNodeConfig {
   // 外部账号连接绑定（身份模式由工具定义决定）
   connection_mode?: 'personal' | 'team' | null
   connection_id?: string | null
-  grant_id?: string | null
   parameterMappings: Array<{
     name: string
     type: string

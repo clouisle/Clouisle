@@ -192,10 +192,7 @@ class ToolNodeExecutor(NodeExecutor):
         connection_id, connection_id_valid = _optional_uuid(
             _first_configured(config, "connectionId", "connection_id")
         )
-        grant_id, grant_id_valid = _optional_uuid(
-            _first_configured(config, "grantId", "grant_id")
-        )
-        if not connection_id_valid or not grant_id_valid:
+        if not connection_id_valid:
             return ExecutionResult(error="tool_connection_invalid")
 
         # MCP operations are keyed by the original server-side tool name; a
@@ -296,7 +293,6 @@ class ToolNodeExecutor(NodeExecutor):
                     str(connection_mode) if connection_mode is not None else None
                 ),
                 connection_id=connection_id,
-                grant_id=grant_id,
                 interactive=False,
                 require_approval=False,
             )

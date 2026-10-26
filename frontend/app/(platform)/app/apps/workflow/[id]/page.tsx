@@ -1843,7 +1843,6 @@ export function WorkflowEditorContent({
             }}
             onUpdate={handleNodeUpdate}
             readOnly={!canUpdateWorkflow}
-            workflowId={workflowId}
             lastRunTrace={selectedNode ? (nodeTraces.get(selectedNode.id) ?? null) : null}
           />
 

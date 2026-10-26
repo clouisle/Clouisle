@@ -47,7 +47,6 @@ export interface ToolNodeConfig {
   // 外部账号连接绑定
   connection_mode?: 'personal' | 'team' | null
   connection_id?: string | null
-  grant_id?: string | null
   // 参数映射
   parameterMappings: ParameterMapping[]
   // 输出变量
@@ -106,7 +105,6 @@ function getTypeLabels(t: (key: string) => string): Record<WorkflowToolType, str
 
 interface ToolNodeConfigProps {
   config: ToolNodeConfig
-  workflowId?: string
   variables: AvailableVariable[]
   variableSearch: string
   openVariablePopover: string | null
@@ -118,7 +116,6 @@ interface ToolNodeConfigProps {
 
 export function ToolNodeConfig({
   config,
-  workflowId,
   variables,
   variableSearch,
   openVariablePopover,
@@ -786,18 +783,14 @@ export function ToolNodeConfig({
           value={getToolConnectionBinding({
             connection_mode: safeConfig.connection_mode ?? null,
             connection_id: safeConfig.connection_id ?? null,
-            grant_id: safeConfig.grant_id ?? null,
           })}
           onChange={(binding) =>
             onConfigChange({
               ...safeConfig,
               connection_mode: binding.connection_mode,
               connection_id: binding.connection_id,
-              grant_id: binding.grant_id,
             })
           }
-          entrypointType="workflow"
-          entrypointId={workflowId}
           disabled={readOnly}
         />
       )}

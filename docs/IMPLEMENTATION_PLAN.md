@@ -2,6 +2,11 @@
 
 ## Active
 
+- **remove-tool-connection-delegation** — Completed. See `docs/plan/remove-tool-connection-delegation.md`.
+  - [x] 1. Backend grant removal and persisted-binding execution authorization
+  - [x] 2. Frontend delegation cutover and localized hints
+  - [x] 3. Data migration, verification and documentation alignment
+
 - **mcp-chat-approval-display** — Completed. See `docs/plan/mcp-chat-approval-display.md`.
   - [x] 1. Restore explicit MCP child approvals in Agent chat
   - [x] 2. Stabilize streamed MCP thought presentation

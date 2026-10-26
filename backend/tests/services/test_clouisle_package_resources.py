@@ -302,3 +302,37 @@ async def test_rename_advances_to_first_available_name(monkeypatch):
     )
 
     assert name == "weather_import_2"
+
+
+def test_packaged_definitions_drop_environment_specific_connection_bindings():
+    from app.services.clouisle_package_resources import _strip_connection_bindings
+
+    stripped = _strip_connection_bindings(
+        {
+            "tools_config": [
+                {
+                    "type": "mcp",
+                    "server_id": "tool-1",
+                    "connection_id": "connection-1",
+                    "connection_mode": "personal",
+                }
+            ],
+            "nodes": [
+                {
+                    "type": "tool",
+                    "data": {
+                        "config": {
+                            "connectionId": "connection-2",
+                            "connectionMode": "team",
+                            "toolId": "tool-2",
+                        }
+                    },
+                }
+            ],
+        }
+    )
+
+    assert stripped == {
+        "tools_config": [{"type": "mcp", "server_id": "tool-1"}],
+        "nodes": [{"type": "tool", "data": {"config": {"toolId": "tool-2"}}}],
+    }

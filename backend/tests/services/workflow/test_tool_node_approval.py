@@ -450,14 +450,12 @@ async def test_api_key_origin_binds_the_key_and_node_config_cannot_override_it()
         await _node_execution(run)
         tool = await _tool(team, _allow_policy())
         connection_id = uuid4()
-        grant_id = uuid4()
         node = _node(tool)
         node["data"]["toolConfig"].update(
             {
                 "toolType": "custom",
                 "connectionMode": "personal",
                 "connectionId": str(connection_id),
-                "grantId": str(grant_id),
             }
         )
 
@@ -473,7 +471,6 @@ async def test_api_key_origin_binds_the_key_and_node_config_cannot_override_it()
         assert context.interactive is False
         assert context.connection_mode == "personal"
         assert context.connection_id == connection_id
-        assert context.grant_id == grant_id
 
 
 @pytest.mark.asyncio

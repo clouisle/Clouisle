@@ -251,7 +251,6 @@ class ToolConfig(BaseModel):
     config: dict[str, Any] | None = Field(None, description="Tool-specific config")
     connection_mode: str | None = Field(None, pattern="^(personal|team)$")
     connection_id: UUID | None = None
-    grant_id: UUID | None = None
     require_approval: bool = Field(
         default=False,
         description="Require user confirmation before execution in chat",

@@ -379,12 +379,11 @@ interface ToolDisplayItemProps {
   config: ToolConfig
   onUpdateConfig?: (newConfig: Record<string, unknown>) => void
   onUpdateBinding?: (binding: ToolConnectionBinding) => void
-  entrypointId?: string
   onToggleApproval?: (requireApproval: boolean) => void
   onDelete: () => void
   readOnly?: boolean
 }
-function ToolDisplayItem({ tool, config, onUpdateConfig, onUpdateBinding, onToggleApproval, entrypointId, onDelete, readOnly = false }: ToolDisplayItemProps) {
+function ToolDisplayItem({ tool, config, onUpdateConfig, onUpdateBinding, onToggleApproval, onDelete, readOnly = false }: ToolDisplayItemProps) {
   const t = useTranslations('agents.orchestration.tools')
   const tConnection = useTranslations('tools.connections')
   const { currentTeam } = useTeam()
@@ -582,8 +581,6 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onUpdateBinding, onTogg
                 teamId={currentTeam?.id}
                 value={tool ? getToolConnectionBinding(config) : EMPTY_CONNECTION_BINDING}
                 onChange={(binding) => onUpdateBinding?.(binding)}
-                entrypointType="agent"
-                entrypointId={entrypointId}
                 disabled={readOnly}
               />
             </div>
@@ -638,7 +635,6 @@ interface ToolSelectorProps {
   toolsConfig: ToolConfig[]
   availableTools: Tool[]
   onChange: (toolsConfig: ToolConfig[]) => void
-  entrypointId?: string
   readOnly?: boolean
 }
 
@@ -646,7 +642,6 @@ export function ToolSelector({
   toolsConfig,
   availableTools,
   onChange,
-  entrypointId,
   readOnly = false,
 }: ToolSelectorProps) {
   const t = useTranslations('agents.orchestration.tools')
@@ -725,7 +720,6 @@ export function ToolSelector({
           config={config}
           onUpdateConfig={(cfg) => handleUpdateToolConfig(index, cfg)}
           onUpdateBinding={(binding) => handleUpdateToolBinding(index, binding)}
-          entrypointId={entrypointId}
           onDelete={() => handleDeleteTool(config)}
           onToggleApproval={(req) => handleToggleApproval(index, req)}
           readOnly={readOnly}

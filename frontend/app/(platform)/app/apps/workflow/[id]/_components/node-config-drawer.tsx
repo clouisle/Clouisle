@@ -78,11 +78,10 @@ interface NodeConfigDrawerProps {
   onClose: () => void
   onUpdate: (nodeId: string, data: Record<string, unknown>) => void
   readOnly?: boolean
-  workflowId?: string
   lastRunTrace?: NodeTrace | null
 }
 
-export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUpdate, readOnly = false, workflowId, lastRunTrace }: NodeConfigDrawerProps) {
+export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUpdate, readOnly = false, lastRunTrace }: NodeConfigDrawerProps) {
   const t = useTranslations('workflow')
   const [label, setLabel] = React.useState('')
   const [description, setDescription] = React.useState('')
@@ -1336,7 +1335,6 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         return (
           <ToolNodeConfig
             config={toolConfig}
-            workflowId={workflowId}
             variables={getAvailableVariables()}
             variableSearch={variableSearch}
             openVariablePopover={openVariablePopover}

@@ -213,7 +213,6 @@ def extract_builtin_binding(entry: dict) -> dict[str, str | None]:
     return {
         "connection_mode": pick("connection_mode", "connectionMode"),
         "connection_id": pick("connection_id", "connectionId"),
-        "grant_id": pick("grant_id", "grantId"),
     }
 
 

@@ -21,8 +21,10 @@ from app.services.tool_execution import (
 
 
 async def grant_team_read(user):
-    permission = await Permission.create(id=uuid4(), scope="team", code="team:read")
-    role = await Role.create(id=uuid4(), name="Tool user")
+    permission = await Permission.filter(code="team:read").first()
+    if permission is None:
+        permission = await Permission.create(id=uuid4(), scope="team", code="team:read")
+    role = await Role.create(id=uuid4(), name=f"Tool user {uuid4().hex[:6]}")
     await role.permissions.add(permission)
     await user.roles.add(role)
 
@@ -313,5 +315,86 @@ async def test_agent_confirmation_cannot_be_relaxed_by_mcp_child_allow(
         ):
             result = await execute_stored_tool(tool, "tool:delete", {}, context, invoke)
             assert result == {"result": "read"}
+    finally:
+        await Tortoise.close_connections()
+
+
+@pytest.mark.asyncio
+async def test_shared_workflow_uses_bound_owner_connection_but_direct_ids_do_not():
+    await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
+    try:
+        await Tortoise.generate_schemas()
+        owner = await User.create(
+            username="owner", email="owner@test.invalid", hashed_password="x"
+        )
+        member = await User.create(
+            username="member", email="member@test.invalid", hashed_password="x"
+        )
+        await grant_team_read(owner)
+        await grant_team_read(member)
+        team = await Team.create(name="Shared workflow")
+        await TeamMember.create(team=team, user=owner, role="owner")
+        await TeamMember.create(team=team, user=member, role="member")
+        tool = await Tool.create(
+            name="tasks",
+            display_name="Tasks",
+            description="",
+            team=team,
+            created_by=owner,
+            type="mcp",
+            visibility="team",
+            identity_policy="personal_only",
+            connection_fields=[{"name": "token", "required": True, "secret": True}],
+            approval_policy={"default_decision": "allow"},
+        )
+        connection = await ToolConnectionService.create_connection(
+            actor=owner,
+            payload=ToolConnectionCreate(
+                team_id=team.id,
+                tool_id=tool.id,
+                scope="user",
+                name="Owner account",
+                config={"token": "owner-secret"},
+            ),
+        )
+        calls = []
+
+        async def invoke(parameters, resolved):
+            calls.append(resolved.secrets["token"])
+            return {"ok": True}
+
+        # An untrusted direct selection of the owner's personal connection fails.
+        with pytest.raises(BusinessError):
+            await execute_stored_tool(
+                tool,
+                "tool:read",
+                {},
+                ToolCallContext(
+                    actor=member,
+                    team_id=team.id,
+                    entrypoint=ExecutionEntrypoint.TOOL_TEST,
+                    interactive=True,
+                    connection_id=connection.id,
+                ),
+                invoke,
+            )
+        assert calls == []
+
+        # A persisted workflow binding authorizes the member to execute it.
+        assert await execute_stored_tool(
+            tool,
+            "tool:read",
+            {},
+            ToolCallContext(
+                actor=member,
+                team_id=team.id,
+                entrypoint=ExecutionEntrypoint.WORKFLOW,
+                entrypoint_id="workflow-1",
+                interactive=False,
+                connection_id=connection.id,
+            ),
+            invoke,
+        ) == {"ok": True}
+        assert calls == ["owner-secret"]
     finally:
         await Tortoise.close_connections()

@@ -15,7 +15,7 @@ The Tools API allows you to:
 - **Tool configuration**: Store tool credentials globally or per team
 - **Share tools**: Share a tool across teams and manage its shares
 - **Saved MCP servers**: Negotiate capabilities and use tools, resources, resource templates, prompts, completion and live resource subscriptions through a stored MCP definition
-- **External identity**: Manage encrypted personal/team/site connections, delegation grants and MCP OAuth
+- **External identity**: Manage encrypted personal/team/site connections and MCP OAuth
 - **Approvals**: Inspect executions, decide approval gates, preview effective policies and answer server-initiated interactions
 
 **Base URL**: `/api/v1/tools`
@@ -1250,7 +1250,7 @@ discovery, workflows and background entrypoints do not request confirmation.
 
 ### Operation Namespaces
 
-Approval policies and connection grants address operations by exact key:
+Approval policies address operations by exact key:
 
 | Operation | Key |
 |-----------|-----|
@@ -1515,9 +1515,6 @@ values are write-only.
 | `GET` | `/api/v1/tool-connections/{connection_id}` | Read one (`team_id` required for a site connection) |
 | `PATCH` | `/api/v1/tool-connections/{connection_id}` | Partial update |
 | `DELETE` | `/api/v1/tool-connections/{connection_id}?reason=` | Revoke (terminal, no hard delete) |
-| `GET` | `/api/v1/tool-connections/{connection_id}/grants` | List delegation grants |
-| `POST` | `/api/v1/tool-connections/{connection_id}/grants` | Grant an entrypoint |
-| `DELETE` | `/api/v1/tool-connections/{connection_id}/grants/{grant_id}?reason=` | Revoke a grant |
 
 Creation body (`ToolConnectionForToolCreate` omits `tool_id`):
 
@@ -1555,24 +1552,13 @@ Update body (partial; secret semantics are explicit):
 delete; the two collections cannot overlap. `expected_secret_version` is an
 optimistic concurrency guard (`409` on mismatch).
 
-Grants delegate a personal connection to a non-interactive entrypoint:
-
-```json
-{
-  "entrypoint_type": "workflow",
-  "entrypoint_id": "…",
-  "team_id": "…",
-  "allowed_operations": ["tool:query_orders"],
-  "expires_at": "2026-11-01T00:00:00Z"
-}
-```
-
-`entrypoint_type` is one of `agent`, `workflow`, `api_key`, `schedule`,
-`channel`, `embed`. `allowed_operations` uses the exact operation keys from the
-namespace table (or `*`), and an expired or revoked grant fails resolution.
-Only the personal connection's owner can grant it; administrators cannot
-delegate another user's identity, and team/site connections cannot consume a
-personal grant.
+A saved Agent tool binding or workflow tool-node binding is the authorization to
+use a connection. Selecting a personal connection requires ownership; the
+binding is validated when the definition is created, updated, duplicated,
+restored or imported. Authorized shared executions reuse the saved identity,
+while execution still rejects revoked connections, team mismatches and direct
+client-supplied ids for someone else's personal connection. Credentials are
+never returned.
 
 ## MCP OAuth
 

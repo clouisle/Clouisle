@@ -166,9 +166,6 @@ class _BindingFacts:
     effective_user_id: UUID | None
     secret_version: int
     status: str
-    grant_id: UUID | None
-    grant_version: int | None
-    allowed_operations: tuple[str, ...]
     is_active: bool
 
 
@@ -687,7 +684,6 @@ def _normalize_binding(
     effective_user_id = _coerce_uuid(
         _binding_value(binding, "effective_user_id"), "effective_user_id"
     )
-    grant_id = _coerce_uuid(_binding_value(binding, "grant_id"), "grant_id")
     scope = str(_enum_value(_binding_value(binding, "scope")) or "").strip()
     if scope not in {"user", "team", "site"}:
         raise _BindingSnapshotError("connection_scope_invalid")
@@ -700,23 +696,6 @@ def _normalize_binding(
         raise _BindingSnapshotError("connection_version_invalid") from exc
     if secret_version < 1:
         raise _BindingSnapshotError("connection_version_invalid")
-    raw_grant_version = _binding_value(binding, "grant_version")
-    grant_version: int | None = None
-    if raw_grant_version is not None:
-        try:
-            grant_version = int(raw_grant_version)
-        except (TypeError, ValueError) as exc:
-            raise _BindingSnapshotError("connection_grant_version_invalid") from exc
-        if grant_version < 1:
-            raise _BindingSnapshotError("connection_grant_version_invalid")
-    allowed_raw = _binding_value(binding, "allowed_operations", ()) or ()
-    if isinstance(allowed_raw, str):
-        allowed_raw = [allowed_raw]
-    allowed_operations = tuple(
-        dict.fromkeys(str(operation).strip() for operation in allowed_raw)
-    )
-    if any(not operation for operation in allowed_operations):
-        raise _BindingSnapshotError("connection_operations_invalid")
     is_active_raw = _binding_value(binding, "is_active", None)
     is_active = bool(is_active_raw) if is_active_raw is not None else status == "active"
     if not is_active or status != "active":
@@ -729,8 +708,6 @@ def _normalize_binding(
     else:
         if owner_user_id is not None or effective_user_id is not None:
             raise _BindingSnapshotError("connection_owner_unexpected")
-    if grant_id is not None and grant_version is None:
-        raise _BindingSnapshotError("connection_grant_version_invalid")
     return _BindingFacts(
         connection_id=connection_id,
         team_id=team_id,
@@ -739,15 +716,8 @@ def _normalize_binding(
         effective_user_id=effective_user_id,
         secret_version=secret_version,
         status=status,
-        grant_id=grant_id,
-        grant_version=grant_version,
-        allowed_operations=allowed_operations,
         is_active=is_active,
     )
-
-
-def _operation_allowed(facts: _BindingFacts, operation: str) -> bool:
-    return "*" in facts.allowed_operations or operation in facts.allowed_operations
 
 
 def _validate_new_binding(
@@ -766,31 +736,9 @@ def _validate_new_binding(
             msg_key="tool_execution_access_denied",
             status_code=403,
         )
-    if not _operation_allowed(facts, operation):
-        raise _error(
-            ResponseCode.TOOL_CONNECTION_GRANT_DENIED,
-            "The connection is not authorized for this operation",
-            msg_key="tool_connection_grant_denied",
-            status_code=403,
-        )
     if facts.scope == "user":
         assert facts.owner_user_id is not None
-        if actor_user_id != facts.owner_user_id:
-            if interactive or facts.grant_id is None:
-                raise _error(
-                    ResponseCode.TOOL_EXECUTION_ACCESS_DENIED,
-                    "A personal connection can only be used by its owner or a delegated entrypoint",
-                    msg_key="tool_execution_access_denied",
-                    status_code=403,
-                )
         return facts.effective_user_id
-    if facts.grant_id is not None:
-        raise _error(
-            ResponseCode.TOOL_CONNECTION_GRANT_DENIED,
-            "Team and site connections cannot use a personal delegation grant",
-            msg_key="tool_connection_grant_denied",
-            status_code=403,
-        )
     return None
 
 
@@ -810,14 +758,8 @@ def _binding_matches_execution(
         return "connection_owner_changed"
     if execution.effective_user_id != facts.effective_user_id:
         return "effective_user_changed"
-    if execution.grant_id != facts.grant_id:
-        return "grant_changed"
-    if execution.grant_version != facts.grant_version:
-        return "grant_version_changed"
     if not facts.is_active:
         return "connection_inactive"
-    if not _operation_allowed(facts, execution.operation):
-        return "operation_not_allowed"
     return None
 
 
@@ -868,8 +810,6 @@ def compute_binding_hash(
     connection_version: int | None,
     connection_scope: str | None,
     connection_owner_user_id: UUID | None,
-    grant_id: UUID | None,
-    grant_version: int | None,
     parameters_digest: str,
     policy_hash: str,
     expires_at: datetime | None,
@@ -893,8 +833,6 @@ def compute_binding_hash(
         "connection_owner_user_id": str(connection_owner_user_id)
         if connection_owner_user_id
         else None,
-        "grant_id": str(grant_id) if grant_id else None,
-        "grant_version": grant_version,
         "parameters_digest": parameters_digest,
         "policy_hash": policy_hash,
         "expires_at": _iso(expires_at),
@@ -920,8 +858,6 @@ def binding_hash_for_execution(execution: ToolExecution) -> str:
         connection_version=execution.connection_version,
         connection_scope=execution.connection_scope,
         connection_owner_user_id=execution.connection_owner_user_id,
-        grant_id=execution.grant_id,
-        grant_version=execution.grant_version,
         parameters_digest=execution.parameters_digest,
         policy_hash=execution.policy_hash,
         expires_at=execution.expires_at,
@@ -1215,8 +1151,6 @@ async def create_execution(
         connection_version = facts.secret_version
         connection_scope = facts.scope
         connection_owner_user_id = facts.owner_user_id
-        grant_id = facts.grant_id
-        grant_version = facts.grant_version
         if (
             effective_user_id is not None
             and resolved_effective_user_id != effective_user_id
@@ -1240,8 +1174,6 @@ async def create_execution(
         connection_version = None
         connection_scope = None
         connection_owner_user_id = None
-        grant_id = None
-        grant_version = None
 
     default_ttl = (
         DEFAULT_APPROVAL_TTL
@@ -1266,8 +1198,6 @@ async def create_execution(
         connection_version=connection_version,
         connection_scope=connection_scope,
         connection_owner_user_id=connection_owner_user_id,
-        grant_id=grant_id,
-        grant_version=grant_version,
         parameters_digest=snapshot.digest,
         policy_hash=evaluation.policy_hash,
         expires_at=deadline,
@@ -1338,8 +1268,6 @@ async def create_execution(
         connection_scope=connection_scope,
         connection_owner_user_id=connection_owner_user_id,
         connection_account_label=connection_account_label,
-        grant_id=grant_id,
-        grant_version=grant_version,
         parameters_cipher=snapshot.ciphertext,
         parameters_digest=snapshot.digest,
         parameters_preview=snapshot.preview,

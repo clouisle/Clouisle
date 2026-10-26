@@ -67,7 +67,6 @@ const listForTool = mock(async () => [connection])
 const list = mock(async () => [connection])
 const createForTool = mock(async () => connection)
 const create = mock(async () => connection)
-const listGrants = mock(async () => [])
 const getOAuthStatus = mock(async () => ({
   connection_id: 'c1',
   provider_kind: 'mcp' as const,
@@ -97,14 +96,11 @@ mock.module('@/lib/api/tool-connections', () => ({
     list,
     createForTool,
     create,
-    listGrants,
     getOAuthStatus,
     startOAuth,
     disconnectOAuth,
     update,
     revoke,
-    createGrant: mock(async () => ({})),
-    revokeGrant: mock(async () => ({})),
     get: mock(async () => connection),
   },
 }))
@@ -164,8 +160,6 @@ async function renderPicker(overrides: {
         teamId="team-1"
         value={getToolConnectionBinding(null)}
         onChange={onChange}
-        entrypointType="agent"
-        entrypointId="agent-1"
       />
     )
   })
@@ -188,7 +182,6 @@ describe('ToolConnectionPicker', () => {
     expect(onChange).toHaveBeenCalledWith({
       connection_mode: 'personal',
       connection_id: 'c1',
-      grant_id: null,
     })
   })
 
