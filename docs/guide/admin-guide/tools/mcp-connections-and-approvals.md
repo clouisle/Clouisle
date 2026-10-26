@@ -110,28 +110,31 @@ Saved MCP servers expose:
 - **Subscriptions**: stream resource-change notifications for one URI.
 
 Listing results are bounded, report `truncated`/`truncation_reason`, and expose a
-resumable `next_cursor` except when a page was cut mid-page. Metadata defaults
-to allowed even for tools whose operation default is deny; an explicit
-`list:<kind>` override is honored, and site/team/entrypoint policy layers still
-apply. Page size and cursor are part of the approval binding: after approving a
-listing you cannot change page scope.
+resumable `next_cursor` except when a page was cut mid-page. Listing and other
+direct capability-browser operations do not request tool-execution approval.
+Authorization and connection identity checks still apply.
 
 ## Approvals
 
-Policy is composed from site, team and entrypoint layers plus the tool's own
-policy. `deny` wins, approval requirements union, and lower layers never relax a
-higher layer. Gates can target:
+Tool-execution approval applies only to interactive Agent chat, never to tool
+discovery, direct testing, workflows (including workflow Agent nodes), or
+background entrypoints.
 
-- the caller (interactive entrypoints only; the caller must be a team member),
-- specific users,
-- team roles (self-approval only when explicitly allowed).
+Enable **Require Confirmation** on the Agent's MCP server binding to confirm
+every child call. To require approval for selected children, configure an exact
+operation override such as `tool:delete_task` on the saved MCP definition. An
+explicit child policy is evaluated during chat even when the Agent-wide switch
+is off; an `allow` override cannot relax an enabled Agent confirmation switch.
+An empty saved policy does not implicitly require approval.
 
-When an operation requires approval, the API returns a durable pending
-reference instead of a result. Approve or reject in the approval inbox, then
-repeat the same request with `execution_id`. Changing parameters, identity,
-page scope, connection version or tool definition invalidates the request.
-Decisions are idempotent and never edit bound parameters. Rejection, expiry,
-revocation and stopped runs are terminal and never become approvals.
+Chat pauses before invoking the external tool and shows the approval card above
+the composer. Approve to resume the original call once, or reject to cancel it.
+Parameters, identity, connection version and tool definition are bound to the
+approval. Rejection, expiry, revocation and stopped runs never become approvals.
+
+MCP call names, inputs and results remain inside the expandable thought trace.
+The active header does not cycle through MCP identifiers, and partial streamed
+MCP names are not published as tool calls.
 
 **Uncertain outcomes are not retried.** If an external side effect may have
 happened but the outcome is unknown (crash, lost connection), the execution is
@@ -147,9 +150,8 @@ outer call.
 ## Resource subscriptions
 
 Open `GET /tools/{tool_id}/mcp/resources/subscribe?team_id=…&uri=…` with
-`Accept: text/event-stream`. Approval happens first: before approval the route
-returns the normal JSON pending envelope, and replaying with `execution_id`
-opens the stream.
+`Accept: text/event-stream`. Authorization and connection checks precede opening
+the stream; this direct capability-browser operation does not request execution approval.
 
 - Events: `subscription_opened`, `resource_updated`, `subscription_closed`.
 - Close reasons: `client_disconnected`, `ttl_expired`, `connection_lost`,

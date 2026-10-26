@@ -11,6 +11,7 @@
 
 ### 变更
 
+- 修复交互式 Agent 对话中 MCP 子工具审批规则被忽略的问题；获取列表、调试和工作流仍不触发审批。MCP 调用详情收纳在思考过程内，不再用流式片段工具名反复替换思考栏标题。
 - 工具域密钥（工具连接、审批执行参数、OAuth client secret/PKCE、交互响应）改为带版本的封套加密（`enc:tool:v1:<key_id>:…`），密钥环由 `TOOL_SECRET_KEYS` 与 `TOOL_SECRET_PRIMARY_KEY_ID` 配置。旧单密钥密文继续可解密，可用 `python -m app.core.tool_secret_rotation`（支持 dry-run、逐行 CAS）轮换。参见[环境变量](deployment/environment-variables.md#tool_secret_keys)。
 - 登录身份源、邮件、Webhook 与飞书手动通讯录同步统一为 Integration，通过 `/site-settings/integrations` 管理，能力静态声明，login/settings 权限分域。
 - 管理 API 改为 `/api/v1/admin/integrations`，公开登录发现改为 `/api/v1/sso/integrations`；保留登录/回调地址、UUID 和身份绑定。凭据加密存储，管理响应不返回凭据。

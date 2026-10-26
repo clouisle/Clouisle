@@ -356,8 +356,9 @@ async def test_behavioral_smoke_cooperative_stop_partial(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_stream_emits_tool_call_before_tool_execution(monkeypatch):
-    """A streamed call is visible with complete inputs before its result."""
+@pytest.mark.parametrize("tool_name", ["write", "mcp_tasks_create_task"])
+async def test_stream_emits_tool_call_before_tool_execution(monkeypatch, tool_name):
+    """Only complete tool identities are visible before their execution."""
     from app.services import agent_round
 
     monkeypatch.setattr(
@@ -373,6 +374,15 @@ async def test_stream_emits_tool_call_before_tool_execution(monkeypatch):
         nonlocal provider_calls
         provider_calls += 1
         if provider_calls == 1:
+            if tool_name.startswith("mcp_"):
+                for fragment in ("m", "mc", "mcp_", "mcp_tasks_", "mcp_tasks_create_"):
+                    yield ChatStreamChunk(
+                        id="response-1",
+                        model="m",
+                        delta=ChatStreamDelta(
+                            tool_call_starts=[_tool(fragment, call_id)]
+                        ),
+                    )
             yield ChatStreamChunk(
                 id="response-1",
                 model="m",
@@ -380,7 +390,7 @@ async def test_stream_emits_tool_call_before_tool_execution(monkeypatch):
                     tool_call_starts=[
                         ToolCall(
                             id=call_id,
-                            function=FunctionCall(name="write", arguments="{}"),
+                            function=FunctionCall(name=tool_name, arguments="{}"),
                         )
                     ]
                 ),
@@ -393,7 +403,7 @@ async def test_stream_emits_tool_call_before_tool_execution(monkeypatch):
                         ToolCall(
                             id=call_id,
                             function=FunctionCall(
-                                name="write",
+                                name=tool_name,
                                 arguments='{"path":"notes.txt","content":"hello"}',
                             ),
                         )
@@ -426,10 +436,11 @@ async def test_stream_emits_tool_call_before_tool_execution(monkeypatch):
         events.append((name, event_payload))
         return f"event: {name}\n"
 
-    async def tool_runner(tool_name, arguments, **_kwargs):
-        assert tool_name == "write"
+    async def tool_runner(name, arguments, **_kwargs):
+        assert name == tool_name
         assert arguments == {"path": "notes.txt", "content": "hello"}
         assert events[0][0] == "tool_call"
+        assert events[0][1]["tool_name"] == tool_name
         assert events[0][1]["arguments"] == {}
         assert events[1][0] == "tool_call"
         assert events[1][1]["arguments"] == arguments
@@ -460,7 +471,8 @@ async def test_stream_emits_tool_call_before_tool_execution(monkeypatch):
         team_chat_stream=provider_stream,
         build_turn=build_turn,
         execute_tool_call=tool_runner,
-        tool_display_names={"write": "Write"},
+        tools=[{"type": "function", "function": {"name": tool_name}}],
+        tool_display_names={tool_name: "Write"},
         formatter=formatter,
     )
 

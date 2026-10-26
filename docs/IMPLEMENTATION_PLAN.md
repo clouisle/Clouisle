@@ -1,6 +1,12 @@
 # Implementation Plan
 
 ## Active
+
+- **mcp-chat-approval-display** — Completed. See `docs/plan/mcp-chat-approval-display.md`.
+  - [x] 1. Restore explicit MCP child approvals in Agent chat
+  - [x] 2. Stabilize streamed MCP thought presentation
+  - [x] 3. Verify dispatch, resume and presentation regressions
+
 - **in-chat-tool-approvals** — Completed. See `docs/plan/in-chat-tool-approvals.md`.
   - [x] 1. Backend direct execution decision endpoint and notification deep-linking
   - [x] 2. Inline Approve/Reject actions in PendingToolApprovalCard and auto-resume

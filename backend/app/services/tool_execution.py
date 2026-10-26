@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 from uuid import UUID, uuid4
 
-from app.models.tool import Tool
+from app.models.tool import Tool, ToolType
 from app.models.tool_approval import (
     ExecutionEntrypoint,
     ExecutionRunKind,
@@ -221,11 +221,11 @@ async def execute_stored_tool(
             else None,
         )
     resolved, binding = await resolve_tool_connection(tool, context, operation)
-    is_agent_call = context.entrypoint in {
-        ExecutionEntrypoint.CHAT,
-        ExecutionEntrypoint.AGENT_RUN,
-    }
-    needs_approval = is_agent_call and context.interactive and context.require_approval
+    is_agent_call = (
+        context.entrypoint in {ExecutionEntrypoint.CHAT, ExecutionEntrypoint.AGENT_RUN}
+        and context.run_kind != ExecutionRunKind.WORKFLOW
+        and context.interactive
+    )
     from app.schemas.tool_approval import (
         ApprovalDecision,
         ApprovalGate,
@@ -235,14 +235,34 @@ async def execute_stored_tool(
         ToolApprovalPolicy,
     )
 
-    if needs_approval:
-        effective_policy = ToolApprovalPolicy(
-            default_decision=ApprovalDecision.REQUIRE_APPROVAL,
-            gates=(ApprovalGate(kind=ApprovalGateKind.CALLER),),
-        )
-    else:
-        effective_policy = ToolApprovalPolicy(default_decision=ApprovalDecision.ALLOW)
+    effective_policy = ToolApprovalPolicy(default_decision=ApprovalDecision.ALLOW)
     layers: list[PolicyLayer] = []
+    if is_agent_call:
+        # MCP child policies are explicit configuration, not a discovery gate.
+        if tool.type == ToolType.MCP and tool.approval_policy:
+            try:
+                effective_policy = tool_approvals.normalize_tool_approval_policy(
+                    tool.approval_policy
+                )
+            except tool_approvals.PolicyConfigurationError as exc:
+                from app.schemas.response import ResponseCode
+
+                raise BusinessError(
+                    code=ResponseCode.TOOL_APPROVAL_POLICY_CONFIGURATION_REQUIRED,
+                    msg_key="tool_approval_policy_configuration_required",
+                    status_code=409,
+                ) from exc
+        if context.require_approval:
+            layers.append(
+                PolicyLayer(
+                    source=PolicySource.ENTRYPOINT,
+                    label="agent_confirmation",
+                    policy=ToolApprovalPolicy(
+                        default_decision=ApprovalDecision.REQUIRE_APPROVAL,
+                        gates=(ApprovalGate(kind=ApprovalGateKind.CALLER),),
+                    ),
+                )
+            )
     if execution is None:
         execution = await tool_approvals.create_execution(
             tool=tool,
@@ -286,6 +306,7 @@ async def execute_stored_tool(
 
     evaluation = tool_approvals.evaluate_policy(
         [
+            *layers,
             PolicyLayer(
                 source=PolicySource.TOOL,
                 label="tool",

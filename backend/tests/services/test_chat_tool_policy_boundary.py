@@ -28,7 +28,6 @@ from app.models.tool_approval import (
     ToolExecutionStatus,
 )
 from app.models.user import Permission, Role, Team, TeamMember, User
-from app.services.builtin_tools import supported_internal_tool_keys
 from app.services.skill import SkillService
 from app.services.tool_approvals import decide_approval
 from app.services.tool_context import RuntimeToolIdentity, tool_identity_scope
@@ -116,6 +115,9 @@ async def test_materialize_asset_pending_has_no_side_effect_and_resume_runs_once
 ):
     user, team = await _make_team_user()
     agent, conversation = await _make_conversation(user, team)
+    agent.tools_config = [
+        {"type": "builtin", "name": "materialize_asset", "require_approval": True}
+    ]
     await _asset(user, team, "0001", conversation)
     submit = AsyncMock(return_value=SimpleNamespace(success=True, error=None))
     from app.services.sandbox.gateway import sandbox_gateway
@@ -123,12 +125,7 @@ async def test_materialize_asset_pending_has_no_side_effect_and_resume_runs_once
     original_submit = sandbox_gateway.submit_and_wait
     sandbox_gateway.submit_and_wait = submit
     try:
-        identity = _identity(
-            conversation,
-            "call-materialize",
-            run_kind="workflow",
-            entrypoint="workflow",
-        )
+        identity = _identity(conversation, "call-materialize")
         with tool_identity_scope(identity):
             pending = await chat_tools.execute_tool_call(
                 "materialize_asset",
@@ -143,10 +140,9 @@ async def test_materialize_asset_pending_has_no_side_effect_and_resume_runs_once
         assert submit.await_count == 0
         execution = await ToolExecution.get(id=UUID(pending.arguments["execution_id"]))
         assert execution.status == ToolExecutionStatus.AWAITING_APPROVAL
-        assert execution.run_kind.value == "workflow"
+        assert execution.run_kind.value == "agent"
         definition = await Tool.get(id=execution.tool_id)
         assert definition.name == "materialize_asset"
-        assert definition.approval_policy == {}
 
         gate = await ToolApprovalRequest.get(execution_id=execution.id)
         await _approve(gate.id, user)
@@ -183,6 +179,9 @@ async def test_memory_mutation_pending_has_no_side_effect_and_resume_runs_once(
 ):
     user, team = await _make_team_user()
     agent, conversation = await _make_conversation(user, team)
+    agent.tools_config = [
+        {"type": "builtin", "name": "create_memory_entity", "require_approval": True}
+    ]
     handler = AsyncMock(return_value={"id": "entity-1", "name": "Python"})
     from app.services.memory import MemoryService
 
@@ -227,7 +226,7 @@ async def test_memory_mutation_pending_has_no_side_effect_and_resume_runs_once(
 
 
 @pytest.mark.asyncio
-async def test_noninteractive_identity_fails_closed_without_side_effect(database):
+async def test_noninteractive_identity_executes_without_approval(database):
     user, team = await _make_team_user()
     agent, conversation = await _make_conversation(user, team)
     handler = AsyncMock(return_value={"id": "entity-1"})
@@ -252,11 +251,11 @@ async def test_noninteractive_identity_fails_closed_without_side_effect(database
                     conversation_id=conversation.id,
                 )
             )
-        assert result["error"]
-        assert handler.await_count == 0
-        assert await ToolExecution.all().count() == 0
+        assert result == {"id": "entity-1"}
+        assert handler.await_count == 1
+        assert await ToolApprovalRequest.all().count() == 0
 
-        # A direct call with no trusted identity is also non-interactive.
+        # Missing trusted identity must not invent a confirmation requirement.
         direct = json.loads(
             await chat_tools.execute_tool_call(
                 "create_memory_entity",
@@ -266,9 +265,9 @@ async def test_noninteractive_identity_fails_closed_without_side_effect(database
                 conversation_id=conversation.id,
             )
         )
-        assert direct["error"]
-        assert handler.await_count == 0
-        assert await ToolExecution.all().count() == 0
+        assert direct == {"id": "entity-1"}
+        assert handler.await_count == 2
+        assert await ToolApprovalRequest.all().count() == 0
     finally:
         MemoryService.handle_create_entity = original
 
@@ -298,9 +297,12 @@ async def test_read_only_internal_tool_executes_without_approval(database):
 
 
 @pytest.mark.asyncio
-async def test_workflow_agent_pending_approval_is_cancelled_not_returned(database):
+async def test_workflow_agent_executes_without_approval(database):
     user, team = await _make_team_user()
     agent, conversation = await _make_conversation(user, team)
+    agent.tools_config = [
+        {"type": "builtin", "name": "create_memory_entity", "require_approval": True}
+    ]
     handler = AsyncMock(return_value={"id": "entity-1"})
     from app.services.memory import MemoryService
 
@@ -324,12 +326,11 @@ async def test_workflow_agent_pending_approval_is_cancelled_not_returned(databas
                     conversation_id=conversation.id,
                 )
             )
-        assert result["success"] is False
-        assert result["tool_name"] == "create_memory_entity"
-        assert result["error"]
-        assert handler.await_count == 0
+        assert result == {"id": "entity-1"}
+        assert handler.await_count == 1
+        assert await ToolApprovalRequest.all().count() == 0
         execution = await ToolExecution.get()
-        assert execution.status == ToolExecutionStatus.CANCELLED
+        assert execution.status == ToolExecutionStatus.SUCCEEDED
     finally:
         MemoryService.handle_create_entity = original
 
@@ -352,7 +353,12 @@ async def test_skill_definition_binds_real_version_and_rejects_stale_approval(
     )
     tool_name = SkillService.build_tool_name(skill)
     agent.tools_config = [
-        {"type": "skill", "skill_id": str(skill.id), "config": {"nested": 1}}
+        {
+            "type": "skill",
+            "skill_id": str(skill.id),
+            "config": {"nested": 1},
+            "require_approval": True,
+        }
     ]
     await agent.save()
 
@@ -373,8 +379,6 @@ async def test_skill_definition_binds_real_version_and_rejects_stale_approval(
         skill, {"mode": "fast", "nested": 1}
     )
     assert definition.definition_version == expected
-    assert definition.approval_policy == {}
-    assert expected >= 1
 
     gate = await ToolApprovalRequest.get(execution_id=execution.id)
     await _approve(gate.id, user)
@@ -398,25 +402,6 @@ async def test_skill_definition_binds_real_version_and_rejects_stale_approval(
     assert execution.status == ToolExecutionStatus.CANCELLED
 
 
-def test_supported_internal_keys_cover_early_operations_without_ask_user():
-    keys = set(supported_internal_tool_keys())
-    assert {
-        "list_assets",
-        "inspect_asset",
-        "read_asset",
-        "search_asset",
-        "materialize_asset",
-        "view_asset",
-        "knowledge_search",
-        "create_memory_entity",
-        "create_memory_relation",
-        "update_memory_entity",
-        "search_memory",
-        "get_memory_subgraph",
-    } <= keys
-    assert "ask_user" not in keys
-
-
 def test_skill_definition_version_tracks_real_content_and_config():
     skill = SimpleNamespace(
         id=uuid4(),
@@ -435,37 +420,3 @@ def test_skill_definition_version_tracks_real_content_and_config():
     assert first != chat_tools._skill_definition_version(skill, {"nested": 2})
     skill.version = "1.1.0"
     assert first != chat_tools._skill_definition_version(skill, {"nested": 1})
-
-
-@pytest.mark.asyncio
-async def test_wrapper_preserves_asset_view_result_identity(monkeypatch):
-    view = chat_tools.AssetViewResult(
-        display_result={"kind": "asset.view", "version": 1},
-        llm_result="content-marker",
-    )
-    monkeypatch.setattr(
-        chat_tools, "_policy_tool_context", AsyncMock(return_value=SimpleNamespace())
-    )
-    monkeypatch.setattr(
-        chat_tools,
-        "_resolve_policy_invoke",
-        AsyncMock(return_value=(SimpleNamespace(), AsyncMock())),
-    )
-    monkeypatch.setattr(
-        "app.services.tool_execution.execute_stored_tool",
-        AsyncMock(return_value=view),
-    )
-
-    returned = await chat_tools._execute_policy_managed_tool(
-        "view_asset",
-        {"ref": "abcd"},
-        agent=SimpleNamespace(team_id=uuid4()),
-        user=SimpleNamespace(id=uuid4()),
-        conversation_id=None,
-        workflow_run_id=None,
-        session_id=None,
-    )
-
-    assert returned is view
-    assert returned.display_result == {"kind": "asset.view", "version": 1}
-    assert returned.llm_result == "content-marker"

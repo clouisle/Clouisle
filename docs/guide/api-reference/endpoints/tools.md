@@ -1238,32 +1238,15 @@ request**, not the external result:
 }
 ```
 
-When approval is required (`status: "pending_approval"`), `result` is `null` and
-the durable reference is returned in both places:
+These direct capability-browser routes do not trigger execution approval, even
+when the MCP definition has an operation approval rule. They still authorize
+the actor and consuming team and resolve the selected connection.
 
-```json
-{
-  "code": 0,
-  "msg": "success",
-  "data": {
-    "status": "pending_approval",
-    "operation": "tool:query_orders",
-    "execution_id": "3f1c…",
-    "result": null,
-    "pending_approval": {
-      "execution_id": "3f1c…",
-      "tool_name": "Orders MCP",
-      "status": "awaiting_approval"
-    }
-  }
-}
-```
-
-Approve or reject the execution through the [approval APIs](#tool-approvals-and-executions), then repeat the **same
-request** with `execution_id`. The boundary re-verifies actor, team, tool,
-operation, parameters digest and entrypoint. A completed execution is rejected
-with `409` instead of being invoked twice; MCP results are not persisted yet.
-Changing parameters, identity or page scope invalidates the pending request.
+MCP operation approval rules apply when the Agent invokes the child tool during
+interactive chat. Chat exposes the pending execution through its run interaction
+and shows an inline approval card. After approval, the durable worker resumes
+the original operation once with its bound parameters and identity. Tool testing,
+discovery, workflows and background entrypoints do not request confirmation.
 
 ### Operation Namespaces
 
@@ -1280,9 +1263,9 @@ Approval policies and connection grants address operations by exact key:
 | Discovery | `list:capabilities`, `list:tools`, `list:resources`, `list:resource-templates`, `list:prompts` |
 
 Tool, resource and prompt keys are namespaced so identical server names never
-collide. A caller-confirmation gate is only available for interactive
-entrypoints (chat, tool test and these routes); background entrypoints fail
-closed rather than assuming consent.
+collide. For chat child-tool policies use `tool:<server tool name>`, not the
+model-facing `mcp_<server>_<tool>` alias. An Agent's **Require Confirmation**
+switch cannot be relaxed by a child's `allow` override.
 
 ### Capabilities
 
@@ -1471,10 +1454,9 @@ GET /api/v1/tools/{tool_id}/mcp/resources/subscribe?team_id={team_id}&uri=file:/
 Accept: text/event-stream
 ```
 
-Authorization, connection resolution and approval run first under operation
-`subscribe:resource`. Before approval the response is the normal JSON pending
-envelope, **not** SSE; replay with `execution_id` after approval opens the
-stream. Requires `tool:execute`.
+Authorization and connection resolution run first under operation
+`subscribe:resource`. This direct capability-browser route does not request
+execution approval. Requires `tool:execute`.
 
 Events:
 

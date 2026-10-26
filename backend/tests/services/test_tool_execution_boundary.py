@@ -155,3 +155,163 @@ async def test_shared_tool_uses_consuming_team_authorization():
         assert calls == [4]
     finally:
         await Tortoise.close_connections()
+
+
+@pytest.mark.asyncio
+async def test_chat_mcp_child_policy_pauses_before_call_and_resumes_once(monkeypatch):
+    import json
+    from types import SimpleNamespace
+
+    from app.api.v1.endpoints.chat_tools import execute_tool_call
+    from app.llm.tools.interaction import ToolInteractionRequest
+    from app.models.tool_approval import ToolExecution
+    from app.services.tool import ToolExecutor
+    from app.services.tool_context import RuntimeToolIdentity, tool_identity_scope
+
+    await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
+    try:
+        await Tortoise.generate_schemas()
+        user = await User.create(
+            username="mcp_chat", email="mcp_chat@test.invalid", hashed_password="x"
+        )
+        await grant_team_read(user)
+        team = await Team.create(name="MCP chat")
+        await TeamMember.create(team=team, user=user, role="owner")
+        tool = await Tool.create(
+            name="personal_tasks",
+            display_name="Tasks",
+            description="",
+            team=team,
+            created_by=user,
+            type="mcp",
+            mcp_config={"transport": "http", "url": "https://example.invalid/mcp"},
+            approval_policy={
+                "default_decision": "allow",
+                "operation_overrides": {
+                    "tool:delete_task": {"default_decision": "require_approval"}
+                },
+            },
+        )
+        agent = SimpleNamespace(
+            id=uuid4(),
+            team_id=team.id,
+            tools_config=[{"type": "mcp", "server_id": str(tool.id)}],
+        )
+        calls = []
+
+        async def call_mcp(config, operation, parameters, **kwargs):
+            calls.append((operation, parameters))
+            return SimpleNamespace(to_dict=lambda: {"success": True, "result": "ok"})
+
+        monkeypatch.setattr("app.services.tool.execute_mcp_tool", call_mcp)
+        with tool_identity_scope(
+            RuntimeToolIdentity(entrypoint="chat", interactive=True)
+        ):
+            pending = await execute_tool_call(
+                "mcp_personal_tasks_delete_task", {"id": 7}, agent=agent, user=user
+            )
+            assert isinstance(pending, ToolInteractionRequest)
+            assert pending.arguments["interaction_kind"] == "tool_approval"
+            assert calls == []
+            execution_id = pending.arguments["execution_id"]
+            execution = await ToolExecution.get(id=execution_id)
+            assert execution.operation == "tool:delete_task"
+            gate = await ToolApprovalRequest.get(execution_id=execution_id)
+            await decide_approval(
+                gate.id, user, decision="approve", idempotency_key=uuid4().hex
+            )
+            context = ToolCallContext(
+                actor=user,
+                team_id=team.id,
+                entrypoint=ExecutionEntrypoint.CHAT,
+                interactive=True,
+                execution_id=execution.id,
+            )
+            result = await ToolExecutor().execute(
+                tool, {"id": 7}, context=context, operation="delete_task"
+            )
+            assert result == {"success": True, "result": "ok"}
+            with pytest.raises(BusinessError):
+                await ToolExecutor().execute(
+                    tool, {"id": 7}, context=context, operation="delete_task"
+                )
+            allowed = await execute_tool_call(
+                "mcp_personal_tasks_list_tasks", {}, agent=agent, user=user
+            )
+            assert json.loads(allowed)["success"] is True
+        assert calls == [("delete_task", {"id": 7}), ("list_tasks", {})]
+    finally:
+        await Tortoise.close_connections()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "entrypoint,run_kind,interactive,require_approval,expected_wait",
+    [
+        ("chat", None, True, True, True),
+        ("agent_run", None, True, True, True),
+        ("chat", "workflow", True, True, False),
+        ("workflow", None, False, True, False),
+        ("tool_test", None, True, True, False),
+        ("admin_test", None, True, True, False),
+        ("api_key", None, False, True, False),
+        ("chat", None, False, True, False),
+        ("chat", None, True, False, False),
+    ],
+)
+async def test_agent_confirmation_cannot_be_relaxed_by_mcp_child_allow(
+    entrypoint, run_kind, interactive, require_approval, expected_wait
+):
+    from app.models.tool_approval import ExecutionRunKind
+
+    await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
+    try:
+        await Tortoise.generate_schemas()
+        user = await User.create(
+            username="origins", email="origins@test.invalid", hashed_password="x"
+        )
+        await grant_team_read(user)
+        team = await Team.create(name="Origins")
+        await TeamMember.create(team=team, user=user, role="owner")
+        tool = await Tool.create(
+            name="tasks",
+            display_name="Tasks",
+            description="",
+            team=team,
+            created_by=user,
+            type="mcp",
+            approval_policy={
+                "default_decision": "require_approval",
+                "operation_overrides": {"tool:read": {"default_decision": "allow"}},
+            },
+        )
+        context = ToolCallContext(
+            actor=user,
+            team_id=team.id,
+            entrypoint=ExecutionEntrypoint(entrypoint),
+            entrypoint_id="origin",
+            run_kind=ExecutionRunKind(run_kind) if run_kind else None,
+            run_id=uuid4() if run_kind else None,
+            interactive=interactive,
+            require_approval=require_approval,
+        )
+        calls = []
+
+        async def invoke(parameters, connection):
+            calls.append(parameters)
+            return {"result": "read"}
+
+        result = await execute_stored_tool(tool, "tool:read", {}, context, invoke)
+        if expected_wait:
+            assert isinstance(result, PendingToolApproval)
+            assert calls == []
+        else:
+            assert result == {"result": "read"}
+            assert calls == [{}]
+        if not expected_wait and not (
+            entrypoint == "chat" and interactive and not run_kind
+        ):
+            result = await execute_stored_tool(tool, "tool:delete", {}, context, invoke)
+            assert result == {"result": "read"}
+    finally:
+        await Tortoise.close_connections()

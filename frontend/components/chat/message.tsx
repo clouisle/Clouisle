@@ -148,6 +148,18 @@ function isAskUserInteractionPart(part: MessagePart) {
   return (isToolCallPart(part) || isToolResultPart(part)) && part.toolName === 'ask_user'
 }
 
+const MCP_TOOL_NAME_PREFIX = 'mcp_'
+
+/**
+ * MCP invocations can arrive either as a dedicated part type or as a regular
+ * tool call whose name is prefixed with `mcp_`. Their names belong in the
+ * expanded thought steps, never in the aggregated header title.
+ */
+function isMcpInvocationPart(part: MessagePart): part is McpToolCallPart | ToolCallPart {
+  return isMcpToolCallPart(part)
+    || (isToolCallPart(part) && part.toolName.trim().toLowerCase().startsWith(MCP_TOOL_NAME_PREFIX))
+}
+
 type ParsedCodeFence = {
   language: string
   code: string
@@ -1123,6 +1135,18 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
     const activeToolActions = React.useMemo(() => {
       return getActiveToolActions(message.parts || [])
     }, [message.parts])
+    const hasActiveMcpCall = React.useMemo(() => (
+      (message.parts || []).some(part => (
+        isMcpInvocationPart(part) && (part.state === 'pending' || part.state === 'running')
+      ))
+    ), [message.parts])
+    // MCP names stay in the expanded steps; the header only reflects non-MCP
+    // actions so streaming never swaps a raw MCP identifier into the title.
+    const activeHeaderToolActions = React.useMemo(() => (
+      hasActiveMcpCall
+        ? getActiveToolActions((message.parts || []).filter(part => !isMcpInvocationPart(part)))
+        : activeToolActions
+    ), [activeToolActions, hasActiveMcpCall, message.parts])
     const hasActiveThoughtActivity = (
       taskParts.some(part => part.state === 'running')
       || reasoningParts.some(part => part.state === 'streaming')
@@ -1153,8 +1177,8 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
 
     const chainOfThoughtTitle = React.useMemo(() => {
       if (hasActiveThoughtActivity) {
-        if (activeToolActions.length === 1) {
-          const action = activeToolActions[0]
+        if (activeHeaderToolActions.length === 1) {
+          const action = activeHeaderToolActions[0]
           switch (action.category) {
             case 'reading_file': return tReasoning('actionReadingFile')
             case 'editing_file': return tReasoning('actionEditingFile')
@@ -1173,8 +1197,11 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
             default: return tReasoning('actionCallingTool', { tool: action.displayName })
           }
         }
-        if (activeToolActions.length > 1) {
-          return tReasoning('actionCallingToolsParallel', { count: activeToolActions.length })
+        if (activeHeaderToolActions.length > 1) {
+          return tReasoning('actionCallingToolsParallel', { count: activeHeaderToolActions.length })
+        }
+        if (hasActiveMcpCall) {
+          return tReasoning('thinkingDefault')
         }
         return hasReasoning || !hasToolActivity ? tReasoning('thinkingDefault') : tTask('executingTools')
       }
@@ -1189,7 +1216,7 @@ const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
         return tTask('toolsExecuted', { count: toolActivityCount })
       }
       return tReasoning('thought')
-    }, [activeToolActions, hasActiveThoughtActivity, hasReasoning, hasTextContent, hasToolActivity, isStreaming, tReasoning, tTask, toolActivityCount, totalReasoningDuration])
+    }, [activeHeaderToolActions, hasActiveMcpCall, hasActiveThoughtActivity, hasReasoning, hasTextContent, hasToolActivity, isStreaming, tReasoning, tTask, toolActivityCount, totalReasoningDuration])
     // Convert task state to step status
     const getStepStatus = React.useCallback((state: TaskPart['state']) => {
       switch (state) {

@@ -280,6 +280,17 @@ class AgentLoop:
 
     def __init__(self, context: AgentLoopContext) -> None:
         self.context = context
+        self._mcp_tool_names = {
+            name
+            for tool in context.tools or []
+            if (
+                name := (
+                    tool.get("function", {}).get("name", "")
+                    if isinstance(tool, dict)
+                    else tool.function.name
+                )
+            ).startswith("mcp_")
+        }
         self.result = AgentLoopResult()
         self._round_index = context.first_round_index
         self._consecutive_pause_turns = 0
@@ -1166,6 +1177,18 @@ class AgentLoop:
                             call_id = getattr(tool_call, "id", None)
                             if not call_id:
                                 continue
+                            tool_name = getattr(tool_call.function, "name", None) or ""
+                            if tool_name not in self._mcp_tool_names and (
+                                tool_name.startswith("mcp_")
+                                or (
+                                    tool_name
+                                    and any(
+                                        name.startswith(tool_name)
+                                        for name in self._mcp_tool_names
+                                    )
+                                )
+                            ):
+                                continue
                             previous_call = streamed_tool_calls.get(call_id)
                             if previous_call is not None and not _tool_call_changed(
                                 previous_call, tool_call
@@ -1173,7 +1196,6 @@ class AgentLoop:
                                 continue
                             streamed_tool_calls[call_id] = tool_call
                             started_tool_call_ids.add(call_id)
-                            tool_name = getattr(tool_call.function, "name", None) or ""
                             call_sse = self._build_tool_call_sse(tool_call)
                             if call_sse and tool_name != "ask_user":
                                 event = self._emit(TOOL_CALL, {"sse": call_sse})
