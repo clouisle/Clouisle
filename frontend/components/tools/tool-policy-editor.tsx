@@ -774,11 +774,12 @@ export function ToolPolicyEditor({
                       {discoveredTools.has(operation) ? (
                         <>
                           <code className="text-xs text-muted-foreground break-all">{operation}</code>
-                          <details className="group text-xs text-muted-foreground">
-                            <summary className="cursor-pointer">
-                              <span className="line-clamp-2 group-open:line-clamp-none whitespace-pre-wrap break-words">{discoveredTools.get(operation)?.description || t('operations.noDescription')}</span>
-                            </summary>
-                          </details>
+                          <p
+                            className="text-xs text-muted-foreground line-clamp-2 whitespace-pre-wrap break-words"
+                            title={discoveredTools.get(operation)?.description || t('operations.noDescription')}
+                          >
+                            {discoveredTools.get(operation)?.description || t('operations.noDescription')}
+                          </p>
                         </>
                       ) : operationTools && toolsLoaded ? (
                         <p className="text-xs text-muted-foreground">{t('operations.notDiscovered')}</p>
