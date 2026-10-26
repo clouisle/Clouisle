@@ -39,3 +39,9 @@
 - Direct execution smoke: 12 language/RAG/capability combinations verified context availability, stale-config filtering, template brace formatting, runtime variable resolution and conditional user-question instructions.
 - In-process ASGI smoke: HTTP 422 for missing required input; bilingual POST generation emitted ordered start/content/complete SSE events with matching lengths; absent default model emitted an error without completion. An explicit offline adapter replaced the provider for this probe; no real model output quality was evaluated.
 - No application service or browser was started. Visual behavior and live model generation quality were not verified. Existing saved prompts remain unchanged.
+
+### Memory semantics follow-up
+- Scope: refine only the existing bilingual generator templates and API documentation; no memory runtime changes.
+- Confirmed `get_agent_tools` keeps `search_memory`/`get_memory_subgraph` with `auto_extract=false`, while filtering all memory writes. The earlier generic capability sentence did not explain that boundary.
+- Generate task-specific retrieval/storage conditions, distinguish history/KB/user memory, and avoid fabricated relationships, sensitive/transient writes or automatic-persistence promises. Do not duplicate runtime schemas or turn memory configuration keys into invented tool arguments.
+- Validation completed: generator and chat-tool suites passed (47 tests, `--no-cov`); Ruff lint and format checks passed. Direct execution of actual `get_agent_tools` confirmed no memory tools when disabled, two read tools with `auto_extract=false`, and all five tools with `true` or the omitted default. Both language templates formatted successfully for every case. No database writes, real provider calls, browser sessions or services were used; live generated-output quality remains unverified.

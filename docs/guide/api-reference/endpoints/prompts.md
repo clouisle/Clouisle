@@ -68,6 +68,8 @@ The Agent orchestration editor supplies current editor values, including unsaved
 
 Generation produces the business role, task workflow and output requirements, not a copy of the platform's runtime manuals. Runtime tool schemas and capability-dependent instructions remain authoritative. `{{query}}` refers to the current user message; `{{fileContent}}` is not supported for attachment injection. Citation instructions require both the citation preference and actual sources. These changes affect newly generated prompts only; existing saved system prompts are not rewritten.
 
+Memory-specific generation follows the chat runtime: `enable_memory=false` exposes no memory tools. When enabled, `search_memory` and `get_memory_subgraph` can retrieve long-term user information. `memory_config.auto_extract=false` keeps those reads but removes entity/relation write tools; `true` (the runtime default when omitted) permits the available write tools, not guaranteed automatic saving on every turn. Generated business instructions should define relevant retrieval/storage conditions, not invent memories, relationships, tool arguments or persistence guarantees. Current conversation history, long-term memory and knowledge bases are distinct sources.
+
 ### Response (`200 OK`, `text/event-stream`)
 
 Streams the generated prompt as SSE events: `start` (`{"model": "..."}`), `content_delta` (`{"delta": "..."}`), `complete` (`{"total_length": n}`), and `error` (`{"code": ..., "msg": "..."}`).
