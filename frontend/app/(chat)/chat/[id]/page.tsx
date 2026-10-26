@@ -56,6 +56,10 @@ import {
   type ChatPreviewPayload,
 } from '@/components/chat'
 import { getStoredRunSnapshot, removeRunSnapshot, useChat, type ChatImageContent } from '@/hooks/use-chat'
+import { isRunOpenForInteractions } from '@/lib/chat/pending-approval'
+import { consumeMcpDraft } from '@/lib/chat/mcp-draft'
+import { PendingToolApprovalCard } from '@/components/tool-interactions'
+import { RunInteractionPanel } from '@/components/chat/run-interaction-panel'
 import { defaultChatAdapter, type ChatPageAdapter } from '@/lib/chat/chat-adapter'
 import { mergeConversationItems } from '@/lib/chat/conversation-list'
 import {Alert, AlertDescription, AlertTitle} from "@/components/ui/alert";
@@ -164,6 +168,7 @@ export default function PublicChatPage({
 
   const [resolvedParams, setResolvedParams] = React.useState<{ id: string } | null>(null)
   const [input, setInput] = React.useState('')
+  const mcpDraftConsumed = React.useRef(false)
   const [activePreview, setActivePreview] = React.useState<ChatPreviewPayload | null>(null)
   // Pauses heavy preview rendering (HTML iframes) while the user drags the
   // resize handle, so continuous relayouts can't stall the page.
@@ -208,6 +213,15 @@ export default function PublicChatPage({
       params.then(setResolvedParams)
     }
   }, [params, embedMode, embedAgentId])
+
+  // One-use MCP resource/prompt handoff from the capabilities browser. The
+  // draft key is actor/team/agent scoped and expires in the storage helper.
+  React.useEffect(() => {
+    if (mcpDraftConsumed.current || !resolvedParams || searchParams.get('draft') !== '1') return
+    mcpDraftConsumed.current = true
+    const draft = consumeMcpDraft(resolvedParams.id, searchParams.get('team') || '')
+    if (draft) setInput((current) => (current.trim() ? current : draft))
+  }, [resolvedParams, searchParams])
 
   // Check login status first (skipped in embed mode)
   React.useEffect(() => {
@@ -264,8 +278,10 @@ export default function PublicChatPage({
     isLoading: chatLoading,
     isStreaming,
     conversationId,
+    runId,
     runStatus,
     pendingAskUserToolCallId,
+    pendingToolApproval,
     pendingRunInputs,
     sendMessage,
     submitAskUser,
@@ -273,6 +289,7 @@ export default function PublicChatPage({
     editMessage,
     switchVersion,
     stop,
+    reconnect,
     reset: resetChat,
     setMessages,
     setConversationId,
@@ -942,7 +959,20 @@ export default function PublicChatPage({
 
   const inputArea = (
     <>
-      {hasPendingAskUser ? pendingAskUserPanel : (pendingInstructionsPanel || variablePanel)}
+      {pendingToolApproval ? (
+        <PendingToolApprovalCard
+          executionId={pendingToolApproval.executionId}
+          toolName={pendingToolApproval.toolName}
+          onRefreshRun={reconnect}
+          className="mb-2"
+        />
+      ) : hasPendingAskUser ? pendingAskUserPanel : (pendingInstructionsPanel || variablePanel)}
+      <RunInteractionPanel
+        runId={runId}
+        enabled={isRunOpenForInteractions(runStatus)}
+        onRefreshRun={reconnect}
+        className="mb-2"
+      />
       {composer}
     </>
   )

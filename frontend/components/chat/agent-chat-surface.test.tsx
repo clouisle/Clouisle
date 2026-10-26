@@ -9,6 +9,8 @@ const chatContainerProps: Array<Record<string, unknown>> = []
 const chatInputProps: Array<Record<string, unknown>> = []
 const pendingAskUserProps: Array<Record<string, unknown>> = []
 const variableFormProps: Array<Record<string, unknown>> = []
+const pendingApprovalProps: Array<Record<string, unknown>> = []
+const interactionPanelProps: Array<Record<string, unknown>> = []
 
 mock.module('next-intl', () => ({
   useTranslations: () => (key: string) => key,
@@ -20,6 +22,12 @@ mock.module('lucide-react', () => ({
   ChevronDown: () => <span data-icon="down" />,
   ChevronUp: () => <span data-icon="up" />,
   Sparkles: () => <span data-icon="sparkles" />,
+  Loader2: () => <span data-icon="loader" />,
+  RefreshCw: () => <span data-icon="refresh" />,
+  ShieldCheck: () => <span data-icon="shield" />,
+  AlertTriangle: () => <span data-icon="warning" />,
+  ExternalLink: () => <span data-icon="external" />,
+  ServerCog: () => <span data-icon="server" />,
 }))
 mock.module('@/lib/utils', () => ({
   cn: (...values: unknown[]) => values.filter(Boolean).join(' '),
@@ -53,6 +61,18 @@ mock.module('./variable-form', () => ({
     return <div data-variable-form />
   },
 }))
+mock.module('@/components/tool-interactions', () => ({
+  PendingToolApprovalCard: (props: Record<string, unknown>) => {
+    pendingApprovalProps.push(props)
+    return <aside data-pending-approval />
+  },
+}))
+mock.module('./run-interaction-panel', () => ({
+  RunInteractionPanel: (props: Record<string, unknown>) => {
+    interactionPanelProps.push(props)
+    return <aside data-run-interactions />
+  },
+}))
 
 mock.module('./code-preview-canvas', () => ({
   CodePreviewCanvas: ({ preview, onClose }: { preview: ChatPreviewPayload; onClose: () => void }) => (
@@ -74,6 +94,8 @@ function renderSurface(overrides: Record<string, unknown> = {}) {
   chatInputProps.length = 0
   pendingAskUserProps.length = 0
   variableFormProps.length = 0
+  pendingApprovalProps.length = 0
+  interactionPanelProps.length = 0
   return renderToStaticMarkup(
     <AgentChatSurface
       messages={messages}
@@ -123,6 +145,31 @@ describe('AgentChatSurface', () => {
     })
     expect(variableFormProps).toHaveLength(0)
   })
+  test('shows the approval pause instead of an ask_user answer and disables the composer', () => {
+    const onRefreshRun = mock(() => undefined)
+    renderSurface({
+      pendingToolApproval: { executionId: 'execution-1', toolCallId: 'call-1', toolName: 'mcp_delete' },
+      pendingAskUserToolCallId: 'call-1',
+      runId: 'run-1',
+      runInteractionsEnabled: true,
+      onRefreshRun,
+    })
+
+    expect(pendingApprovalProps[0]).toMatchObject({
+      executionId: 'execution-1',
+      toolName: 'mcp_delete',
+      onRefreshRun,
+    })
+    expect(pendingAskUserProps).toHaveLength(0)
+    expect(variableFormProps).toHaveLength(0)
+    expect(chatInputProps[0].disabled).toBe(true)
+    expect(interactionPanelProps[0]).toMatchObject({
+      runId: 'run-1',
+      enabled: true,
+      onRefreshRun,
+    })
+  })
+
   test('opens and closes a requested code preview', async () => {
     const onOpenCodePreview = mock(() => {})
     const preview: ChatPreviewPayload = { id: 'preview-1', kind: 'html', language: 'html', code: '<h1>Preview</h1>' }

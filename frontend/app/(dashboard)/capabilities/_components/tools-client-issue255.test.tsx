@@ -23,9 +23,6 @@ const api = {
   toggle: mock(async () => undefined),
   duplicate: mock(async () => undefined),
   delete: mock(async () => undefined),
-  getConfig: mock(async () => ({})),
-  updateConfig: mock(async () => undefined),
-  createConfig: mock(async () => undefined),
 }
 const teamsApi = { getTeams: mock(async () => ({ items: teams })) }
 const packagesApi = { export: mock(async () => ({ blob: new Blob(['x']), filename: 'tool.zip' })) }
@@ -121,8 +118,8 @@ mock.module('@/app/(platform)/app/capabilities/_components/mcp-tool-dialog', () 
 mock.module('./delete-tool-dialog', () => ({ DeleteToolDialog: dialogMock('delete') }))
 mock.module('./tool-share-dialog', () => ({ ToolShareDialog: dialogMock('share') }))
 mock.module('@/components/packages/import-package-dialog', () => ({ ImportPackageDialog: dialogMock('import') }))
-mock.module('@/app/(platform)/app/capabilities/_components/tool-config-dialog', () => ({
-  ToolConfigDialog: ({ open, onSave }: { open: boolean; onSave: (v: Record<string, string>) => Promise<void> }) => <div data-dialog="config" data-open={String(open)}><button onClick={() => void onSave({ token: 'secret' }).catch(() => undefined)}>config-save</button></div>,
+mock.module('@/components/tools/tool-connection-dialog', () => ({
+  ToolConnectionDialog: ({ open, teamId }: { open: boolean; teamId?: string }) => <div data-dialog="connection" data-open={String(open)} data-team={teamId ?? ''} />,
 }))
 mock.module('@/components/tools/web-search-config-dialog', () => ({
   WebSearchConfigDialog: ({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) => <div data-dialog="web-search" data-open={String(open)}><button onClick={() => onOpenChange(false)}>web-search-close</button></div>,
@@ -299,21 +296,12 @@ describe('ToolsClient issue #255 coverage', () => {
     expect(consoleError).toHaveBeenCalledWith('Failed to load tool detail:', expect.any(Error))
   })
 
-  it('configures builtins with update/create paths and handles non-404 and save failures', async () => {
+  it('opens the connection manager for builtins instead of plaintext config', async () => {
     const container = await render()
     await click(container, 'common.edit')
-    await click(container, 'config-save')
-    expect(api.updateConfig).toHaveBeenCalledWith('clock', { token: 'secret' }, 'team-1')
-
-    await click(container, 'common.edit')
-    api.getConfig.mockImplementationOnce(async () => { throw { response: { status: 404 } } })
-    await click(container, 'config-save')
-    expect(api.createConfig).toHaveBeenCalledWith('clock', { token: 'secret' }, 'team-1')
-
-    await click(container, 'common.edit')
-    api.getConfig.mockImplementationOnce(async () => { throw new Error('server') })
-    await click(container, 'config-save')
-    expect(consoleError).toHaveBeenCalledWith('Failed to save config:', expect.any(Error))
+    const dialog = container.querySelector('[data-dialog="connection"]')
+    expect(dialog?.getAttribute('data-open')).toBe('true')
+    expect(dialog?.getAttribute('data-team')).toBe('team-1')
   })
 
   it('runs action callbacks, dialogs, toggles, duplicate, export and their API failure branches', async () => {

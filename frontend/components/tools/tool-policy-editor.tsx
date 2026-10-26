@@ -1,0 +1,733 @@
+'use client'
+
+import { useMemo, useState } from 'react'
+import { useTranslations } from 'next-intl'
+import { Plus, Trash2 } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
+import { FieldError } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import {
+  ToolApprovalGate,
+  ToolApprovalPolicy,
+  ToolConnectionField,
+  ToolDetail,
+  ToolIdentityPolicy,
+} from '@/lib/api/tools'
+
+export const TOOL_IDENTITY_POLICIES: ToolIdentityPolicy[] = [
+  'none',
+  'team_only',
+  'personal_only',
+  'selectable',
+]
+
+export const TOOL_APPROVAL_DECISIONS: ToolApprovalPolicy['default_decision'][] = [
+  'allow',
+  'deny',
+  'require_approval',
+]
+
+export const TEAM_APPROVAL_ROLES = ['owner', 'admin', 'member', 'viewer'] as const
+
+const CONNECTION_FIELD_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function createCallerGate(): ToolApprovalGate {
+  return {
+    kind: 'caller',
+    user_ids: [],
+    roles: [],
+    allow_self_approval: false,
+  }
+}
+
+export function createDefaultApprovalPolicy(): ToolApprovalPolicy {
+  return {
+    default_decision: 'require_approval',
+    gates: [createCallerGate()],
+    operation_overrides: {},
+  }
+}
+
+export function getToolIdentityPolicy(tool?: ToolDetail | null): ToolIdentityPolicy {
+  return tool?.identity_policy ?? 'none'
+}
+
+export function getToolConnectionFields(tool?: ToolDetail | null): ToolConnectionField[] {
+  return (tool?.connection_fields ?? []).map((field) => ({
+    name: field.name,
+    label: field.label,
+    required: field.required ?? true,
+    secret: field.secret ?? true,
+  }))
+}
+
+export function getToolApprovalPolicy(tool?: ToolDetail | null): ToolApprovalPolicy {
+  const policy = tool?.approval_policy
+  if (!policy) return createDefaultApprovalPolicy()
+  return {
+    default_decision: policy.default_decision ?? 'require_approval',
+    gates: (policy.gates ?? []).map((gate) => ({
+      kind: gate.kind,
+      user_ids: [...(gate.user_ids ?? [])],
+      roles: [...(gate.roles ?? [])],
+      allow_self_approval: gate.allow_self_approval ?? false,
+    })),
+    operation_overrides: { ...(policy.operation_overrides ?? {}) },
+  }
+}
+
+function splitUserIds(value: string): string[] {
+  const ids = value
+    .split(/[\s,]+/)
+    .map((id) => id.trim())
+    .filter(Boolean)
+  return [...new Set(ids)]
+}
+
+export function normalizeConnectionFields(fields: ToolConnectionField[]): ToolConnectionField[] {
+  const normalized: ToolConnectionField[] = []
+  const seen = new Set<string>()
+  for (const field of fields) {
+    const name = field.name.trim()
+    const label = field.label.trim()
+    if (!name && !label) continue
+    if (!CONNECTION_FIELD_NAME_PATTERN.test(name) || !label || seen.has(name)) continue
+    seen.add(name)
+    normalized.push({
+      name,
+      label,
+      required: field.required,
+      secret: field.secret,
+    })
+  }
+  return normalized
+}
+
+/**
+ * Produce a policy the backend accepts.
+ *
+ * ``allow``/``deny`` never carry gates. ``require_approval`` always keeps at
+ * least one usable gate; gates with no valid audience fall back to caller
+ * confirmation instead of silently granting approval.
+ */
+export function normalizeToolApprovalPolicy(policy: ToolApprovalPolicy): ToolApprovalPolicy {
+  const decision = TOOL_APPROVAL_DECISIONS.includes(policy.default_decision)
+    ? policy.default_decision
+    : 'require_approval'
+
+  const gates: ToolApprovalGate[] =
+    decision !== 'require_approval'
+      ? []
+      : policy.gates
+          .map((gate): ToolApprovalGate | null => {
+            if (gate.kind === 'user') {
+              const userIds = [...new Set(gate.user_ids.map((id) => id.trim()).filter((id) => UUID_PATTERN.test(id)))]
+              if (userIds.length === 0) return null
+              return { kind: 'user', user_ids: userIds, roles: [], allow_self_approval: false }
+            }
+            if (gate.kind === 'team_role') {
+              const roles = [
+                ...new Set(
+                  gate.roles
+                    .map((role) => role.trim().toLowerCase())
+                    .filter((role): role is (typeof TEAM_APPROVAL_ROLES)[number] =>
+                      (TEAM_APPROVAL_ROLES as readonly string[]).includes(role)
+                    )
+                ),
+              ]
+              if (roles.length === 0) return null
+              return {
+                kind: 'team_role',
+                user_ids: [],
+                roles,
+                allow_self_approval: gate.allow_self_approval,
+              }
+            }
+            return createCallerGate()
+          })
+          .filter((gate): gate is ToolApprovalGate => gate !== null)
+
+  const operationOverrides: Record<string, ToolApprovalPolicy> = {}
+  for (const [rawName, override] of Object.entries(policy.operation_overrides ?? {})) {
+    const operation = rawName.trim()
+    if (!operation || operation === '*') continue
+    operationOverrides[operation] = normalizeToolApprovalPolicy(override)
+  }
+
+  return {
+    default_decision: decision,
+    gates: decision === 'require_approval' && gates.length === 0 ? [createCallerGate()] : gates,
+    operation_overrides: operationOverrides,
+  }
+}
+
+interface ToolPolicyEditorProps {
+  identityPolicy: ToolIdentityPolicy
+  onIdentityPolicyChange: (policy: ToolIdentityPolicy) => void
+  connectionFields: ToolConnectionField[]
+  onConnectionFieldsChange: (fields: ToolConnectionField[]) => void
+  approvalPolicy: ToolApprovalPolicy
+  onApprovalPolicyChange: (policy: ToolApprovalPolicy) => void
+  /**
+   * Exact internal operation names shown as per-operation override rows.
+   * Only MCP tools pass this; other tools keep the configured overrides.
+   */
+  operationNames?: string[]
+  showIdentityAndConnections?: boolean
+}
+
+interface ToolApprovalPolicyEditorProps {
+  approvalPolicy: ToolApprovalPolicy
+  onApprovalPolicyChange: (policy: ToolApprovalPolicy) => void
+  operationNames?: string[]
+}
+
+/** Approval-only surface for policy administration pages. */
+export function ToolApprovalPolicyEditor({
+  approvalPolicy,
+  onApprovalPolicyChange,
+  operationNames,
+}: ToolApprovalPolicyEditorProps) {
+  return (
+    <ToolPolicyEditor
+      identityPolicy="none"
+      onIdentityPolicyChange={() => {}}
+      connectionFields={[]}
+      onConnectionFieldsChange={() => {}}
+      approvalPolicy={approvalPolicy}
+      onApprovalPolicyChange={onApprovalPolicyChange}
+      operationNames={operationNames}
+      showIdentityAndConnections={false}
+    />
+  )
+}
+
+export function ToolPolicyEditor({
+  identityPolicy,
+  onIdentityPolicyChange,
+  connectionFields,
+  onConnectionFieldsChange,
+  approvalPolicy,
+  onApprovalPolicyChange,
+  operationNames,
+  showIdentityAndConnections = true,
+}: ToolPolicyEditorProps) {
+  const t = useTranslations('tools.policy')
+  const [newOperation, setNewOperation] = useState('')
+  const [operationError, setOperationError] = useState<string | null>(null)
+
+  const decisionLabel = (decision: ToolApprovalPolicy['default_decision']) => {
+    if (decision === 'allow') return t('approval.allow')
+    if (decision === 'deny') return t('approval.deny')
+    return t('approval.requireApproval')
+  }
+
+  const gateKindLabel = (kind: ToolApprovalGate['kind']) => {
+    if (kind === 'caller') return t('approval.caller')
+    if (kind === 'user') return t('approval.user')
+    return t('approval.teamRole')
+  }
+
+  const roleLabel = (role: string) => {
+    if (role === 'owner') return t('approval.roleOptions.owner')
+    if (role === 'admin') return t('approval.roleOptions.admin')
+    if (role === 'member') return t('approval.roleOptions.member')
+    return t('approval.roleOptions.viewer')
+  }
+
+  const connectionFieldError = (field: ToolConnectionField): string | null => {
+    const name = field.name.trim()
+    if (!name) return field.label.trim() ? t('connectionFields.nameRequired') : null
+    if (!CONNECTION_FIELD_NAME_PATTERN.test(name)) return t('connectionFields.invalidName')
+    if (!field.label.trim()) return t('connectionFields.labelRequired')
+    return null
+  }
+
+  const overrideNames = useMemo(() => {
+    const names = new Set<string>()
+    for (const name of operationNames ?? []) {
+      if (name.trim()) names.add(name)
+    }
+    for (const name of Object.keys(approvalPolicy.operation_overrides ?? {})) {
+      names.add(name)
+    }
+    return [...names].sort((a, b) => a.localeCompare(b))
+  }, [operationNames, approvalPolicy.operation_overrides])
+
+  const updateField = (index: number, updates: Partial<ToolConnectionField>) => {
+    onConnectionFieldsChange(
+      connectionFields.map((field, current) => (current === index ? { ...field, ...updates } : field))
+    )
+  }
+
+  const updateGate = (index: number, gate: ToolApprovalGate) => {
+    onApprovalPolicyChange({
+      ...approvalPolicy,
+      gates: approvalPolicy.gates.map((current, currentIndex) =>
+        currentIndex === index ? gate : current
+      ),
+    })
+  }
+
+  const setDecision = (decision: ToolApprovalPolicy['default_decision']) => {
+    onApprovalPolicyChange({
+      ...approvalPolicy,
+      default_decision: decision,
+      gates:
+        decision === 'require_approval' && approvalPolicy.gates.length === 0
+          ? [createCallerGate()]
+          : approvalPolicy.gates,
+    })
+  }
+
+  const setOperationDecision = (
+    operation: string,
+    decision: ToolApprovalPolicy['default_decision'] | 'inherit'
+  ) => {
+    const nextOverrides = { ...(approvalPolicy.operation_overrides ?? {}) }
+    if (decision === 'inherit') {
+      delete nextOverrides[operation]
+    } else {
+      nextOverrides[operation] = {
+        default_decision: decision,
+        gates: decision === 'require_approval' ? [createCallerGate()] : [],
+        operation_overrides: {},
+      }
+    }
+    onApprovalPolicyChange({ ...approvalPolicy, operation_overrides: nextOverrides })
+  }
+
+  const addOperation = () => {
+    const operation = newOperation.trim()
+    if (!operation || operation === '*' || /\s/.test(operation)) {
+      setOperationError(t('operations.invalidOperation'))
+      return
+    }
+    if (approvalPolicy.operation_overrides?.[operation]) {
+      setOperationError(t('operations.duplicate'))
+      return
+    }
+    setOperationError(null)
+    setOperationDecision(operation, 'require_approval')
+    setNewOperation('')
+  }
+
+  const duplicateFieldNames = useMemo(() => {
+    const seen = new Set<string>()
+    const duplicates = new Set<string>()
+    for (const field of connectionFields) {
+      const name = field.name.trim()
+      if (!name) continue
+      if (seen.has(name)) duplicates.add(name)
+      seen.add(name)
+    }
+    return duplicates
+  }, [connectionFields])
+
+  return (
+    <div className="space-y-5 border rounded-lg p-4">
+      <div className="space-y-1">
+        <h4 className="font-medium">{t('title')}</h4>
+        <p className="text-xs text-muted-foreground">{t('description')}</p>
+      </div>
+
+      {showIdentityAndConnections && (
+        <>
+      {/* Identity mode */}
+      <div className="space-y-2">
+        <Label htmlFor="tool-identity-policy">{t('identity.label')}</Label>
+        <Select
+          value={identityPolicy}
+          onValueChange={(value) => onIdentityPolicyChange(value as ToolIdentityPolicy)}
+        >
+          <SelectTrigger id="tool-identity-policy">
+            <SelectValue>{t(`identity.options.${identityPolicy}`)}</SelectValue>
+          </SelectTrigger>
+          <SelectContent side="bottom" alignItemWithTrigger={false}>
+            {TOOL_IDENTITY_POLICIES.map((policy) => (
+              <SelectItem key={policy} value={policy}>
+                {t(`identity.options.${policy}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">{t(`identity.hints.${identityPolicy}`)}</p>
+      </div>
+
+      {/* Connection fields */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <Label>{t('connectionFields.title')}</Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              onConnectionFieldsChange([
+                ...connectionFields,
+                { name: '', label: '', required: true, secret: true },
+              ])
+            }
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            {t('connectionFields.add')}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">{t('connectionFields.hint')}</p>
+        {connectionFields.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-2">{t('connectionFields.empty')}</p>
+        ) : (
+          <div className="space-y-2">
+            {connectionFields.map((field, index) => {
+              const trimmedName = field.name.trim()
+              const nameInvalid = !!trimmedName && !CONNECTION_FIELD_NAME_PATTERN.test(trimmedName)
+              const duplicate = !!trimmedName && duplicateFieldNames.has(trimmedName)
+              return (
+                <div key={index} className="rounded-md border p-2 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label htmlFor={`connection-field-name-${index}`} className="text-xs">
+                        {t('connectionFields.name')}
+                      </Label>
+                      <Input
+                        id={`connection-field-name-${index}`}
+                        value={field.name}
+                        placeholder={t('connectionFields.namePlaceholder')}
+                        className="font-mono"
+                        onChange={(event) => updateField(index, { name: event.target.value })}
+                        aria-invalid={nameInvalid || duplicate || !!connectionFieldError(field)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor={`connection-field-label-${index}`} className="text-xs">
+                        {t('connectionFields.label')}
+                      </Label>
+                      <Input
+                        id={`connection-field-label-${index}`}
+                        value={field.label}
+                        placeholder={t('connectionFields.labelPlaceholder')}
+                        onChange={(event) => updateField(index, { label: event.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-1.5 text-xs">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-primary"
+                          checked={field.required}
+                          onChange={(event) => updateField(index, { required: event.target.checked })}
+                        />
+                        {t('connectionFields.required')}
+                      </label>
+                      <label className="flex items-center gap-1.5 text-xs">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-primary"
+                          checked={field.secret}
+                          onChange={(event) => updateField(index, { secret: event.target.checked })}
+                        />
+                        {t('connectionFields.secret')}
+                      </label>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={t('connectionFields.remove')}
+                      onClick={() =>
+                        onConnectionFieldsChange(connectionFields.filter((_, current) => current !== index))
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {nameInvalid && <FieldError>{t('connectionFields.invalidName')}</FieldError>}
+                  {!nameInvalid && duplicate && <FieldError>{t('connectionFields.duplicate')}</FieldError>}
+                  {!nameInvalid && !duplicate && field.name.trim() && !field.label.trim() && (
+                    <FieldError>{t('connectionFields.labelRequired')}</FieldError>
+                  )}
+                  {!nameInvalid && !duplicate && !field.name.trim() && field.label.trim() && (
+                    <FieldError>{t('connectionFields.nameRequired')}</FieldError>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+        </>
+      )}
+
+      {/* Approval policy */}
+      <div className="space-y-3 border-t pt-4">
+        <div className="space-y-1">
+          <Label htmlFor="tool-approval-default">{t('approval.defaultDecision')}</Label>
+          <Select
+            value={approvalPolicy.default_decision}
+            onValueChange={(value) =>
+              setDecision(value as ToolApprovalPolicy['default_decision'])
+            }
+          >
+            <SelectTrigger id="tool-approval-default">
+              <SelectValue>
+                {decisionLabel(approvalPolicy.default_decision)}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent side="bottom" alignItemWithTrigger={false}>
+              {TOOL_APPROVAL_DECISIONS.map((decision) => (
+                <SelectItem key={decision} value={decision}>
+                  {decisionLabel(decision)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">{t('approval.hint')}</p>
+        </div>
+
+        {approvalPolicy.default_decision === 'require_approval' && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <Label>{t('approval.gates')}</Label>
+                <p className="text-xs text-muted-foreground">{t('approval.gatesHint')}</p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  onApprovalPolicyChange({
+                    ...approvalPolicy,
+                    gates: [...approvalPolicy.gates, createCallerGate()],
+                  })
+                }
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                {t('approval.addGate')}
+              </Button>
+            </div>
+
+            {approvalPolicy.gates.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-2">{t('approval.noGates')}</p>
+            ) : (
+              approvalPolicy.gates.map((gate, index) => (
+                <div key={index} className="rounded-md border p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 space-y-1">
+                      <Label htmlFor={`approval-gate-kind-${index}`} className="text-xs">
+                        {t('approval.gateKind')}
+                      </Label>
+                      <Select
+                        value={gate.kind}
+                        onValueChange={(value) => {
+                          const kind = value as ToolApprovalGate['kind']
+                          updateGate(
+                            index,
+                            kind === 'caller'
+                              ? createCallerGate()
+                              : {
+                                  kind,
+                                  user_ids: [],
+                                  roles: [],
+                                  allow_self_approval: false,
+                                }
+                          )
+                        }}
+                      >
+                        <SelectTrigger id={`approval-gate-kind-${index}`}>
+                          <SelectValue>{gateKindLabel(gate.kind)}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent side="bottom" alignItemWithTrigger={false}>
+                          <SelectItem value="caller">{t('approval.caller')}</SelectItem>
+                          <SelectItem value="user">{t('approval.user')}</SelectItem>
+                          <SelectItem value="team_role">{t('approval.teamRole')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={t('approval.removeGate')}
+                      onClick={() =>
+                        onApprovalPolicyChange({
+                          ...approvalPolicy,
+                          gates: approvalPolicy.gates.filter((_, current) => current !== index),
+                        })
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  {gate.kind === 'caller' && (
+                    <p className="text-xs text-muted-foreground">{t('approval.callerHint')}</p>
+                  )}
+
+                  {gate.kind === 'user' && (
+                    <div className="space-y-1">
+                      <Label htmlFor={`approval-gate-users-${index}`} className="text-xs">
+                        {t('approval.userIds')}
+                      </Label>
+                      <Input
+                        id={`approval-gate-users-${index}`}
+                        value={gate.user_ids.join(', ')}
+                        placeholder={t('approval.userIdsPlaceholder')}
+                        className="font-mono"
+                        onChange={(event) =>
+                          updateGate(index, {
+                            ...gate,
+                            user_ids: splitUserIds(event.target.value),
+                          })
+                        }
+                        aria-invalid={gate.user_ids.length === 0}
+                      />
+                      <p className="text-xs text-muted-foreground">{t('approval.userIdsHint')}</p>
+                      {gate.user_ids.length === 0 && (
+                        <FieldError>{t('approval.userIdsRequired')}</FieldError>
+                      )}
+                    </div>
+                  )}
+
+                  {gate.kind === 'team_role' && (
+                    <div className="space-y-2">
+                      <Label className="text-xs">{t('approval.roles')}</Label>
+                      <div className="flex flex-wrap gap-x-4 gap-y-2">
+                        {TEAM_APPROVAL_ROLES.map((role) => {
+                          const checked = gate.roles.includes(role)
+                          return (
+                            <label key={role} className="flex items-center gap-1.5 text-xs">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 accent-primary"
+                                checked={checked}
+                                onChange={(event) =>
+                                  updateGate(index, {
+                                    ...gate,
+                                    roles: event.target.checked
+                                      ? [...gate.roles, role]
+                                      : gate.roles.filter((current) => current !== role),
+                                  })
+                                }
+                              />
+                              {roleLabel(role)}
+                            </label>
+                          )
+                        })}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          id={`approval-gate-self-${index}`}
+                          checked={gate.allow_self_approval}
+                          onCheckedChange={(checked) =>
+                            updateGate(index, { ...gate, allow_self_approval: checked })
+                          }
+                        />
+                        <Label htmlFor={`approval-gate-self-${index}`} className="text-xs">
+                          {t('approval.allowSelfApproval')}
+                        </Label>
+                      </div>
+                      {!gate.allow_self_approval && (
+                        <p className="text-xs text-muted-foreground">
+                          {t('approval.selfApprovalUnavailable')}
+                        </p>
+                      )}
+                      {gate.roles.length === 0 && (
+                        <FieldError>{t('approval.rolesRequired')}</FieldError>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {operationNames !== undefined && (
+          <div className="space-y-2 border-t pt-4">
+            <div>
+              <Label>{t('operations.title')}</Label>
+              <p className="text-xs text-muted-foreground">{t('operations.hint')}</p>
+            </div>
+
+            {overrideNames.length === 0 ? (
+              <p className="text-xs text-muted-foreground">{t('operations.empty')}</p>
+            ) : (
+              <div className="space-y-2">
+                {overrideNames.map((operation) => (
+                  <div key={operation} className="flex items-center gap-2">
+                    <span className="flex-1 min-w-0 truncate font-mono text-xs">{operation}</span>
+                    <Select
+                      value={approvalPolicy.operation_overrides?.[operation]?.default_decision ?? 'inherit'}
+                      onValueChange={(value) =>
+                        setOperationDecision(
+                          operation,
+                          value as ToolApprovalPolicy['default_decision'] | 'inherit'
+                        )
+                      }
+                    >
+                      <SelectTrigger className="w-[190px]">
+                        <SelectValue>
+                          {approvalPolicy.operation_overrides?.[operation]
+                            ? decisionLabel(approvalPolicy.operation_overrides[operation].default_decision)
+                            : t('operations.inherit')}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent side="bottom" alignItemWithTrigger={false}>
+                        <SelectItem value="inherit">{t('operations.inherit')}</SelectItem>
+                        {TOOL_APPROVAL_DECISIONS.map((decision) => (
+                          <SelectItem key={decision} value={decision}>
+                            {decisionLabel(decision)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <Input
+                value={newOperation}
+                placeholder={t('operations.operationPlaceholder')}
+                className="font-mono"
+                onChange={(event) => {
+                  setNewOperation(event.target.value)
+                  setOperationError(null)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    addOperation()
+                  }
+                }}
+                aria-invalid={!!operationError}
+              />
+              <Button type="button" variant="outline" size="sm" onClick={addOperation}>
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                {t('operations.addOperation')}
+              </Button>
+            </div>
+            {operationError && <FieldError>{operationError}</FieldError>}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+

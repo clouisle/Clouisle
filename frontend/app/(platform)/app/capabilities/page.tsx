@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, Database, ChevronDown, PackageOpen, Upload, Info, Settings } from 'lucide-react'
+import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, Database, ChevronDown, PackageOpen, Upload, Info, Settings, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
@@ -37,10 +37,11 @@ import { useTeam } from '@/contexts/team-context'
 import { useRequireTeam } from '@/hooks/use-require-team'
 import { SkillsPanel, ToolList, ToolTestPanel } from './_components'
 import { WebSearchConfigDialog } from '@/components/tools/web-search-config-dialog'
-import { ToolConfigDialog } from './_components/tool-config-dialog'
+import { ToolConnectionDialog } from '@/components/tools/tool-connection-dialog'
 import { HttpToolDialog } from './_components/http-tool-dialog'
 import { DatabaseToolDialog } from './_components/database-tool-dialog'
 import { McpToolDialog } from './_components/mcp-tool-dialog'
+import { McpToolBrowser } from '@/components/tools/mcp-tool-browser'
 import { ToolShareDialog } from './_components/tool-share-dialog'
 import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
 import { useCanPerform } from '@/components/permission-guard'
@@ -50,6 +51,7 @@ type CapabilityTab = 'tools' | 'skills'
 
 export default function CapabilitiesPage() {
   const t = useTranslations('platform')
+  const tApprovals = useTranslations('approvals')
   const tCommon = useTranslations('common')
   const packagesT = useTranslations('packages')
   const { currentTeam } = useTeam()
@@ -89,6 +91,7 @@ export default function CapabilitiesPage() {
   const [editingDatabaseTool, setEditingDatabaseTool] = useState<ToolDetail | null>(null)
   const [mcpDialogOpen, setMcpDialogOpen] = useState(false)
   const [editingMcpTool, setEditingMcpTool] = useState<ToolDetail | null>(null)
+  const [browsingMcpTool, setBrowsingMcpTool] = useState<Tool | null>(null)
 
   // Delete state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -177,8 +180,8 @@ export default function CapabilitiesPage() {
   // 编辑工具
   const handleEditTool = async (tool: Tool) => {
     if (!tool.id) {
-      // 内置工具 - 打开配置弹窗
-      if (tool.requires_config) {
+      // 内置工具 - 打开连接管理弹窗
+      if (tool.requires_config || (tool.identity_policy && tool.identity_policy !== 'none')) {
         handleConfigureTool(tool)
       }
       return
@@ -311,39 +314,6 @@ export default function CapabilitiesPage() {
     }
   }
 
-  // 保存内置工具配置
-  const handleSaveConfig = async (config: Record<string, string>) => {
-    if (!currentTeam?.id || !configuringTool) return
-
-    try {
-      // 先尝试获取现有配置
-      let configExists = false
-      try {
-        await toolsApi.getConfig(configuringTool.name, currentTeam.id)
-        configExists = true
-      } catch (error: unknown) {
-        // 404 表示配置不存在，需要创建
-        const apiError = error as { response?: { status?: number } }
-        if (apiError?.response?.status !== 404) {
-          throw error
-        }
-      }
-
-      // 根据配置是否存在选择创建或更新
-      if (configExists) {
-        await toolsApi.updateConfig(configuringTool.name, config, currentTeam.id)
-      } else {
-        await toolsApi.createConfig(configuringTool.name, config, currentTeam.id)
-      }
-
-      toast.success(t('tools.configSaved'))
-      setConfigDialogOpen(false)
-    } catch (error) {
-      console.error('Failed to save config:', error)
-      throw error
-    }
-  }
-
   // 删除工具
   const handleDeleteClick = (tool: Tool) => {
     if (!tool.id) {
@@ -387,9 +357,20 @@ export default function CapabilitiesPage() {
 
   return (
     <div className="py-6 px-8 h-full overflow-y-auto">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">{t('tools.title')}</h1>
-        <p className="text-muted-foreground mt-1">{t('tools.description')}</p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">{t('tools.title')}</h1>
+          <p className="text-muted-foreground mt-1">{t('tools.description')}</p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => router.push('/app/capabilities/approvals')}
+          title={tApprovals('inboxLinkHint')}
+          data-testid="capabilities-approvals-link"
+        >
+          <ShieldCheck className="mr-2 h-4 w-4" />
+          {tApprovals('inboxLink')}
+        </Button>
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4" data-testid="capabilities-tabs">
@@ -557,6 +538,7 @@ export default function CapabilitiesPage() {
               onEdit={handleEditTool}
               onDelete={handleDeleteClick}
               onConfigure={handleConfigureTool}
+              onBrowseMcp={canPerform('tool:execute') ? setBrowsingMcpTool : undefined}
               onShare={handleShareTool}
               canConfigure={canConfigureTool}
               canEdit={canEditTool}
@@ -598,12 +580,13 @@ export default function CapabilitiesPage() {
         teamId={currentTeam?.id}
       />
 
-      {/* 内置工具配置弹窗 */}
-      <ToolConfigDialog
+      {/* 内置工具连接管理弹窗 */}
+      <ToolConnectionDialog
         tool={configuringTool}
+        teamId={currentTeam?.id}
         open={configDialogOpen}
         onOpenChange={setConfigDialogOpen}
-        onSave={handleSaveConfig}
+        onChanged={loadTools}
       />
 
       {/* HTTP 工具弹窗 */}
@@ -626,6 +609,12 @@ export default function CapabilitiesPage() {
         open={mcpDialogOpen}
         onOpenChange={setMcpDialogOpen}
         onSave={handleSaveMcpTool}
+      />
+      <McpToolBrowser
+        tool={browsingMcpTool}
+        teamId={currentTeam?.id}
+        open={!!browsingMcpTool}
+        onOpenChange={(open) => { if (!open) setBrowsingMcpTool(null) }}
       />
 
       {/* 工具共享对话框 */}

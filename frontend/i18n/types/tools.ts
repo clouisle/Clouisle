@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-25T16:46:30.984Z
+// GENERATED — 2026-10-26T14:38:33.121Z
 // Source: i18n/en/tools.json
 export type ToolsMessages = {
   tools: {
@@ -247,6 +247,7 @@ export type ToolsMessages = {
       sseUrlPlaceholder: string
       headerNamePlaceholder: string
       httpUrlPlaceholder: string
+      toolsPendingApproval: string
     }
     databaseDialog: {
       connectionFailed: string
@@ -356,6 +357,265 @@ export type ToolsMessages = {
     success: {
       created: string
       updated: string
+    }
+    mcpCapabilities: {
+      title: string
+      hint: string
+      sampling: string
+      samplingHint: string
+      elicitation: string
+      elicitationHint: string
+      callbackTimeout: string
+      maxSamplingRequests: string
+      maxElicitationRequests: string
+      samplingMaxTokens: string
+      roots: string
+      rootsHint: string
+      addRoot: string
+      noRoots: string
+      rootUriPlaceholder: string
+      rootNamePlaceholder: string
+      removeRoot: string
+      rootsAllowlist: string
+      rootsAllowlistHint: string
+      elicitationHosts: string
+      elicitationHostsHint: string
+      invalidRootUri: string
+      invalidElicitationHost: string
+      rootsRequireAllowlist: string
+      rootOutsideAllowlist: string
+    }
+    connections: {
+      title: string
+      identityNone: string
+      refresh: string
+      manage: string
+      hideManage: string
+      modePersonal: string
+      modeTeam: string
+      modePlaceholder: string
+      modePersonalHint: string
+      modeTeamHint: string
+      modeSelectHint: string
+      selectConnection: string
+      noConnectionsForMode: string
+      loadFailed: string
+      selectionRequired: string
+      defaultBadge: string
+      status: {
+        active: string
+        revoked: string
+        reauth_required: string
+      }
+      grant: string
+      grantPlaceholder: string
+      grantHint: string
+      grantHintGeneric: string
+      grantRequiredForBackground: string
+      manageTitle: string
+      manageHint: string
+      loading: string
+      empty: string
+      scopeOptions: {
+        user: string
+        team: string
+        site: string
+      }
+      noSecrets: string
+      setDefault: string
+      oauthAuthorized: string
+      oauthNotConnected: string
+      oauthNeedsReauth: string
+      oauthConnect: string
+      oauthReconnect: string
+      oauthFailed: string
+      revoke: string
+      showGrants: string
+      hideGrants: string
+      grantsEmpty: string
+      grantRevoked: string
+      revokeGrant: string
+      grantEntrypointId: string
+      grantOperationsPlaceholder: string
+      grantOperationsHint: string
+      addGrant: string
+      createTitle: string
+      namePlaceholder: string
+      accountLabelPlaceholder: string
+      secretFieldsHint: string
+      create: string
+      nameRequired: string
+      secretRequired: string
+      createFailed: string
+      updateFailed: string
+      revokeFailed: string
+      loadGrantsFailed: string
+      grantFieldsRequired: string
+      grantCreateFailed: string
+      grantRevokeFailed: string
+      entrypoint: {
+        agent: string
+        workflow: string
+        api_key: string
+        schedule: string
+        channel: string
+        embed: string
+      }
+      oauthSuccess: string
+      oauthErrors: {
+        oauth_provider_error: string
+        oauth_exchange_failed: string
+        oauth_state_invalid: string
+        oauth_expired: string
+        oauth_reauth_required: string
+        oauth_configuration_invalid: string
+        oauth_discovery_failed: string
+        oauth_scope_escalation: string
+        oauth_version_conflict: string
+        oauth_callback_failed: string
+      }
+      oauthClientSecret: string
+      oauthClientSecretPlaceholder: string
+      oauthClientSecretHint: string
+      oauthSaveSecret: string
+      oauthCancelSecret: string
+      oauthDisconnect: string
+      oauthDisconnectFailed: string
+    }
+    policy: {
+      title: string
+      description: string
+      identity: {
+        label: string
+        options: {
+          none: string
+          team_only: string
+          personal_only: string
+          selectable: string
+        }
+        hints: {
+          none: string
+          team_only: string
+          personal_only: string
+          selectable: string
+        }
+      }
+      connectionFields: {
+        title: string
+        hint: string
+        empty: string
+        add: string
+        name: string
+        namePlaceholder: string
+        label: string
+        labelPlaceholder: string
+        required: string
+        secret: string
+        remove: string
+        duplicate: string
+        invalidName: string
+        labelRequired: string
+        nameRequired: string
+      }
+      approval: {
+        defaultDecision: string
+        hint: string
+        allow: string
+        deny: string
+        requireApproval: string
+        gates: string
+        gatesHint: string
+        addGate: string
+        removeGate: string
+        gateKind: string
+        caller: string
+        user: string
+        teamRole: string
+        callerHint: string
+        userIds: string
+        userIdsPlaceholder: string
+        userIdsHint: string
+        userIdsRequired: string
+        roles: string
+        allowSelfApproval: string
+        selfApprovalUnavailable: string
+        rolesRequired: string
+        noGates: string
+        roleOptions: {
+          owner: string
+          admin: string
+          member: string
+          viewer: string
+        }
+      }
+      operations: {
+        title: string
+        hint: string
+        empty: string
+        inherit: string
+        addOperation: string
+        operationPlaceholder: string
+        invalidOperation: string
+        duplicate: string
+      }
+    }
+    mcpBrowser: {
+      title: string
+      description: string
+      serverInfo: string
+      serverUnknown: string
+      refresh: string
+      loadFailed: string
+      loading: string
+      loadMore: string
+      previewLoading: string
+      apply: string
+      pendingApproval: string
+      binaryResource: string
+      unknownMime: string
+      close: string
+      applyTitle: string
+      applyHint: string
+      targetAgent: string
+      selectAgent: string
+      noAgents: string
+      cancel: string
+      openChat: string
+      draftTooLarge: string
+      draftUnavailable: string
+      tabs: {
+        resources: string
+        templates: string
+        prompts: string
+      }
+      resources: {
+        empty: string
+      }
+      templates: {
+        empty: string
+        expand: string
+        uri: string
+        read: string
+      }
+      prompts: {
+        empty: string
+        use: string
+        get: string
+      }
+      retryApproval: string
+      monitor: {
+        start: string
+        stop: string
+        connecting: string
+        open: string
+        noAccount: string
+        updates: string
+        closed: string
+        reconnect: string
+        pending: string
+        retry: string
+        failed: string
+      }
     }
   }
 }

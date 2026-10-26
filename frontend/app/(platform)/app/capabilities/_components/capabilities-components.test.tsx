@@ -26,6 +26,11 @@ mock.module('next/image', () => ({
 mock.module('sonner', () => ({ toast: { success: mock(), error: mock() } }))
 mock.module('@/lib/api', () => ({ toolsApi }))
 mock.module('@/lib/api/tools', () => ({}))
+mock.module('@/lib/api/tool-mcp', () => ({ toolMcpApi: { listTools: mock() } }))
+mock.module('@/components/tools/connection-picker', () => ({
+  EMPTY_CONNECTION_BINDING: { connection_mode: null, connection_id: null, grant_id: null },
+  ToolConnectionPicker: () => null,
+}))
 
 const passthrough = (tag: keyof React.JSX.IntrinsicElements = 'div') => {
   const Component = ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) =>
@@ -82,10 +87,9 @@ mock.module('lucide-react', () => ({
 
 import { HttpToolDialog } from './http-tool-dialog'
 import { McpToolDialog } from './mcp-tool-dialog'
-import { ApiError } from '@/lib/api/client'
-import { ToolConfigDialog } from './tool-config-dialog'
 import { ToolShareDialog } from './tool-share-dialog'
 import { ToolTestPanel } from './tool-test-panel'
+import { ApiError } from '@/lib/api/client'
 
 const baseTool = {
   id: 'tool-1',
@@ -140,69 +144,6 @@ afterEach(() => {
 })
 
 describe('platform capability component smoke coverage', () => {
-  test('renders config dialog fields from tool config metadata', () => {
-    const html = renderToString(
-      <ToolConfigDialog
-        tool={baseTool as never}
-        open
-        onOpenChange={() => undefined}
-        onSave={async () => undefined}
-        savedConfig={{ TAVILY_API_KEY: 'saved-key' }}
-      />
-    )
-
-    expect(html).toContain('configDialog.title:Web Search')
-    expect(html).toContain('TAVILY_API_KEY')
-    expect(html).not.toContain('tvly-xxxxxxxxxx')
-  })
-
-  test('does not render raw web search credential fields in the generic dialog', () => {
-    const html = renderToString(
-      <ToolConfigDialog
-        tool={{ ...baseTool, name: 'web_search', config_fields: ['TAVILY_API_KEY'] } as never}
-        open
-        onOpenChange={() => undefined}
-        onSave={async () => undefined}
-      />
-    )
-
-    expect(html).not.toContain('TAVILY_API_KEY')
-    expect(html).not.toContain('BOCHA_API_KEY')
-  })
-
-  test('validates, reveals, saves, and reports config dialog API errors', async () => {
-    const onSave = mock(async () => undefined)
-    let renderer: ReactTestRenderer
-    await act(async () => {
-      renderer = create(
-        <ToolConfigDialog
-          tool={baseTool as never}
-          open
-          onOpenChange={() => undefined}
-          onSave={onSave}
-        savedConfig={{ TAVILY_API_KEY: 'saved-key' }}
-      />
-    )
-    await act(async () => {})
-  })
-  renderers.push(renderer!)
-    const saveButton = renderer!.root.findAllByType('button').find((b) => b.children.includes('save'))!
-    await act(async () => saveButton.props.onClick())
-    expect(onSave).toHaveBeenCalledWith({ TAVILY_API_KEY: 'saved-key' })
-    const input = renderer!.root.findByProps({ id: 'TAVILY_API_KEY' })
-    act(() => input.props.onChange({ target: { value: '' } }))
-    await act(async () => saveButton.props.onClick())
-
-    act(() => renderer!.root.findAllByType('button').find((button) => button.props.type === 'button')!.props.onClick())
-    expect(renderer!.root.findByProps({ id: 'TAVILY_API_KEY' }).props.type).toBe('text')
-
-    act(() => renderer!.root.findByProps({ id: 'TAVILY_API_KEY' }).props.onChange({ target: { value: 'new-key' } }))
-    onSave.mockRejectedValueOnce(new ApiError(1001, 'invalid', { errors: { TAVILY_API_KEY: 'bad key' } }))
-    await act(async () => saveButton.props.onClick())
-    expect(renderer!.root.findByProps({ id: 'TAVILY_API_KEY' }).props['aria-invalid']).toBe(true)
-    expect(renderer!.root.findAllByType('p').map((node) => node.children.join('')).join(' ')).toContain('bad key')
-  })
-
   test('renders HTTP tool dialog in edit mode', () => {
     const html = renderToString(
       <HttpToolDialog

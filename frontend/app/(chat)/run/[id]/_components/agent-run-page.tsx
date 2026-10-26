@@ -64,7 +64,7 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
     router.replace(`/run/${id}?${nextSearchParams.toString()}`)
   }, [id, router, searchParams])
 
-  const { messages, isStreaming, isLoading: runLoading, sendMessage, stop, conversationId, runId, runStatus, pendingAskUserToolCallId, submitAskUser, reconnect, regenerate, editMessage, switchVersion } = useRun({
+  const { messages, isStreaming, isLoading: runLoading, sendMessage, stop, conversationId, runId, runStatus, pendingAskUserToolCallId, pendingToolApproval, submitAskUser, reconnect, regenerate, editMessage, switchVersion } = useRun({
     id,
     type: 'agent',
     conversationId: searchParams.get('conversation') || undefined,
@@ -196,6 +196,10 @@ export function AgentRunPage({ id }: AgentRunPageProps) {
           inputDisabled={runStatus === 'waiting'}
           pendingAskUserToolCallId={pendingAskUserToolCallId}
           onSubmitAskUser={submitAskUser}
+          pendingToolApproval={pendingToolApproval}
+          runId={runId}
+          runInteractionsEnabled={runActive}
+          onRefreshRun={() => reconnect?.()}
           variables={variables}
           variableValues={variableValues}
           onVariableAssetIdsChange={(name, ids) => setVariableAssetIds((previous) => {

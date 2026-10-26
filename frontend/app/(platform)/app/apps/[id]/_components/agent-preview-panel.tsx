@@ -14,6 +14,7 @@ import {
   type ChatInputFile,
 } from '@/components/chat'
 import { useChat, type ChatError, getErrorMsgKey } from '@/hooks/use-chat'
+import { isRunOpenForInteractions } from '@/lib/chat/pending-approval'
 
 interface AgentPreviewPanelProps {
   agent: Agent
@@ -67,8 +68,10 @@ export function AgentPreviewPanel({ agent, onClose }: AgentPreviewPanelProps) {
     isLoading,
     isStreaming,
     conversationId,
+    runId,
     runStatus,
     pendingAskUserToolCallId,
+    pendingToolApproval,
     sendMessage,
     submitAskUser,
     regenerate,
@@ -76,6 +79,7 @@ export function AgentPreviewPanel({ agent, onClose }: AgentPreviewPanelProps) {
     switchVersion,
     stop,
     reset,
+    reconnect,
   } = useChat({
     agentId: agent.id,
     variables: variableValues,
@@ -235,6 +239,10 @@ export function AgentPreviewPanel({ agent, onClose }: AgentPreviewPanelProps) {
         isUploading={isUploading}
         pendingAskUserToolCallId={pendingAskUserToolCallId}
         onSubmitAskUser={submitAskUser}
+        pendingToolApproval={pendingToolApproval}
+        runId={runId}
+        runInteractionsEnabled={isRunOpenForInteractions(runStatus)}
+        onRefreshRun={reconnect}
         variables={agent.variables || []}
         variableValues={variableValues}
         onVariableAssetIdsChange={(name, ids) => setVariableAssetIds((previous) => {

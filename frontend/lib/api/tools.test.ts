@@ -112,27 +112,14 @@ describe('toolsApi', () => {
     ])
   })
 
-  it('shapes MCP and configuration payloads with optional team params', async () => {
+  it('shapes MCP discovery payloads', async () => {
     const mcpConfig = { transport: 'http' as const, url: 'https://mcp.test' }
-    const credentials = { token: 'secret' }
 
     await toolsApi.listMcpTools(mcpConfig)
-    await toolsApi.listConfigs('team-1')
-    await toolsApi.getConfig('lookup')
-    await toolsApi.createConfig('lookup', credentials, 'team-1')
-    await toolsApi.updateConfig('lookup', credentials)
-    await toolsApi.deleteConfig('lookup', 'team-1')
 
     expect(post.mock.calls).toEqual([
       ['/tools/mcp/list-tools', { mcp_config: mcpConfig }],
-      ['/tools/config', { tool_name: 'lookup', credentials }, { params: { team_id: 'team-1' } }],
     ])
-    expect(get.mock.calls).toEqual([
-      ['/tools/config', { params: { team_id: 'team-1' } }],
-      ['/tools/config/lookup', { params: {} }],
-    ])
-    expect(put).toHaveBeenCalledWith('/tools/config/lookup', { credentials }, { params: {} })
-    expect(del).toHaveBeenCalledWith('/tools/config/lookup', { params: { team_id: 'team-1' } })
   })
 
   it('maps share, list, and unshare operations', async () => {

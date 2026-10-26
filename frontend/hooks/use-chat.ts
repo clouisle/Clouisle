@@ -45,6 +45,11 @@ import type {
   MediaResultPart,
 } from '@/components/chat'
 import { getErrorMessage as getApiErrorMessage } from '@/lib/api/client'
+import {
+  getPendingAskUserToolCallId as derivePendingAskUserToolCallId,
+  getPendingToolApproval,
+  type PendingToolApproval,
+} from '@/lib/chat/pending-approval'
 import { extractToolCitationSources, parseToolResultOutput, shouldDisplayMediaResultInBody } from '@/lib/utils/tool-result'
 
 export type ChatStatus = 'idle' | 'loading' | 'streaming' | 'error'
@@ -149,6 +154,8 @@ export interface UseChatReturn {
   runStatus: AgentRunStatus | null
   /** Tool call id of the ask_user interaction the server is waiting on. */
   pendingAskUserToolCallId: string | null
+  /** Durable tool execution the server is waiting to have approved. */
+  pendingToolApproval: PendingToolApproval | null
   /** Currently queued inputs (e.g. user instructions) waiting to be accepted by the run */
   pendingRunInputs: Array<{ content: string; requestId: string }>
   sendMessage: (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[], variableAssetIds?: string[], workflowAssetRefs?: WorkflowAssetRef[]) => Promise<void>
@@ -211,6 +218,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   const [runId, setRunId] = useState<string | null>(null)
   const [runStatus, setRunStatus] = useState<AgentRunStatus | null>(null)
   const [pendingAskUserToolCallId, setPendingAskUserToolCallIdState] = useState<string | null>(null)
+  const [pendingToolApproval, setPendingToolApproval] = useState<PendingToolApproval | null>(null)
 
   const messagesRef = useRef(messages)
   messagesRef.current = messages
@@ -717,16 +725,32 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         const pendingId = typeof data.pending_tool_call_id === 'string'
           ? data.pending_tool_call_id
           : null
-        if (pendingId) {
-          setPendingAskUserToolCallId(pendingId)
+        const pendingInput = data.pending_tool_input
+          && typeof data.pending_tool_input === 'object'
+          && !Array.isArray(data.pending_tool_input)
+          ? Object.fromEntries(Object.entries(data.pending_tool_input))
+          : null
+        const pendingState = {
+          status: 'waiting',
+          pending_tool_call_id: pendingId,
+          pending_tool_name: typeof data.pending_tool_name === 'string' ? data.pending_tool_name : null,
+          pending_tool_input: pendingInput,
+        }
+        // Approval-bound pauses reuse pending_tool_* but are not answerable.
+        const approval = getPendingToolApproval(pendingState)
+        setPendingToolApproval(approval)
+        const askUserId = approval ? null : derivePendingAskUserToolCallId(pendingState)
+        setPendingAskUserToolCallId(askUserId)
+        if (askUserId) {
           const targetSession = session ?? activeSessionRef.current
-          if (targetSession && markSegmentAskUserPending(targetSession.state, pendingId)) {
+          if (targetSession && markSegmentAskUserPending(targetSession.state, askUserId)) {
             syncStreamingState(targetSession)
             renderSession(targetSession, true)
           }
         }
       } else {
         setPendingAskUserToolCallId(null)
+        setPendingToolApproval(null)
       }
       storeRunSnapshot()
       return
@@ -861,6 +885,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         if (activeSessionRef.current === terminalSession) activeSessionRef.current = null
       }
       setPendingAskUserToolCallId(null)
+      setPendingToolApproval(null)
       setCurrentStatus('idle')
       if (!envelope || envelope.run_id === runIdRef.current) {
         runIdRef.current = null
@@ -1042,6 +1067,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         runIdRef.current = null
         setRunId(null)
         setPendingAskUserToolCallId(null)
+        setPendingToolApproval(null)
         setCurrentStatus('idle')
         return
       }
@@ -1058,10 +1084,13 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           syncStreamingState(session)
           renderSession(session, true)
         }
-        setPendingAskUserToolCallId(current.pending_tool_call_id ?? null)
+        const approval = getPendingToolApproval(current)
+        setPendingToolApproval(approval)
+        setPendingAskUserToolCallId(approval ? null : derivePendingAskUserToolCallId(current))
         setCurrentStatus('idle')
       } else {
         setPendingAskUserToolCallId(null)
+        setPendingToolApproval(null)
         setCurrentStatus('streaming')
       }
       if (isCurrentReconnect()) startSubscription(stored.runId)
@@ -1071,6 +1100,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       // current conversation showing a permanent spinner after a failed read.
       setCurrentRunStatus(null)
       setPendingAskUserToolCallId(null)
+      setPendingToolApproval(null)
       setCurrentStatus('idle')
     }
   }, [
@@ -1274,6 +1304,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     setRunId(null)
     setCurrentRunStatus(null)
     setPendingAskUserToolCallId(null)
+    setPendingToolApproval(null)
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -1405,6 +1436,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           clearStoredRunSnapshot(stopConversationId)
           sessionsByRunRef.current.delete(activeRunId)
           setPendingAskUserToolCallId(null)
+          setPendingToolApproval(null)
           setCurrentStatus('idle')
           if (runIdRef.current === activeRunId) {
             runIdRef.current = null
@@ -1456,6 +1488,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     setRunId(null)
     setCurrentRunStatus(null)
     setPendingAskUserToolCallId(null)
+    setPendingToolApproval(null)
     resetStreamingState()
     setMessages(initialMessages)
     setConversationId(null)
@@ -1600,6 +1633,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         setCurrentRunStatus(result.status)
       }
       setPendingAskUserToolCallId(null)
+      setPendingToolApproval(null)
       // Reconnect so the resumed worker's events (tool result, next turn)
       // reach this subscriber; buffered events replay by sequence.
       startSubscription(activeRunId)
@@ -1621,6 +1655,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     runId,
     runStatus,
     pendingAskUserToolCallId,
+    pendingToolApproval,
     pendingRunInputs: pendingInputsState,
     sendMessage,
     submitAskUser,

@@ -35,9 +35,6 @@ const adminToolsApiMock = {
   toggle: mock(async () => ({})),
   duplicate: mock(async () => ({})),
   delete: mock(async () => ({})),
-  getConfig: mock(async () => ({})),
-  createConfig: mock(async () => ({})),
-  updateConfig: mock(async () => ({})),
 }
 const adminSkillsApiMock = {
   list: mock(async () => ({ items: [], total: 0, page: 1, pageSize: 10 })),
@@ -110,7 +107,7 @@ mock.module('@/components/permission-guard', () => ({
   PermissionGuard: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useCanPerform: () => ({ canPerform: () => true }),
 }))
-mock.module('@/lib/constants', () => ({ SKILL_ZIP_MAX_UPLOAD_SIZE_BYTES: 1024 }))
+mock.module('@/lib/constants', () => ({ SKILL_ZIP_MAX_UPLOAD_SIZE_BYTES: 1024, API_BASE_URL: 'http://localhost:8000/api/v1' }))
 mock.module('@/lib/api', () => {
   class ApiError extends Error {}
   return { ApiError, isPresetToolCategory: (category: string) => ['api', 'code', 'search'].includes(category) }
@@ -189,7 +186,7 @@ mock.module('@/app/(platform)/app/capabilities/_components/http-tool-dialog', ()
 mock.module('@/app/(platform)/app/capabilities/_components/mcp-tool-dialog', () => ({ McpToolDialog: ({ open, onSave }: { open: boolean; onSave: (data: unknown) => Promise<void> }) => open ? <button onClick={() => onSave({ name: 'mcp' })}>mock-mcp-save</button> : null }))
 mock.module('./delete-tool-dialog', () => ({ DeleteToolDialog: ({ open }: { open: boolean }) => open ? <div>delete-dialog</div> : null }))
 mock.module('@/app/(platform)/app/capabilities/_components/tool-test-panel', () => ({ ToolTestPanel: ({ tool }: { tool: { name: string } | null }) => tool ? <div>test:{tool.name}</div> : null }))
-mock.module('@/app/(platform)/app/capabilities/_components/tool-config-dialog', () => ({ ToolConfigDialog: ({ open, onSave }: { open: boolean; onSave: (config: Record<string, string>) => Promise<void> }) => open ? <button onClick={() => onSave({ api_key: 'secret' })}>config-dialog</button> : null }))
+mock.module('@/components/tools/tool-connection-dialog', () => ({ ToolConnectionDialog: ({ open, teamId }: { open: boolean; teamId?: string }) => open ? <div>connection-dialog:{teamId}</div> : null }))
 mock.module('@/components/tools/web-search-config-dialog', () => ({ WebSearchConfigDialog: ({ open, onOpenChange }: { open: boolean; onOpenChange: (value: boolean) => void }) => open ? <button onClick={() => onOpenChange(false)}>web-search-dialog</button> : null }))
 mock.module('@/components/packages/import-package-dialog', () => ({ ImportPackageDialog: ({ open }: { open: boolean }) => open ? <div>import-package</div> : null }))
 mock.module('@/lib/validation', () => ({
@@ -377,8 +374,6 @@ describe('dashboard capability clients', () => {
     const duplicate = spyOn(adminToolsApiMock, 'duplicate').mockResolvedValue({})
     const toggle = spyOn(adminToolsApiMock, 'toggle').mockResolvedValue({})
     const exportTool = spyOn(adminPackagesApiMock, 'export').mockResolvedValue({ blob: new Blob(['tool']), filename: 'tool.zip' })
-    const createConfig = spyOn(adminToolsApiMock, 'createConfig').mockResolvedValue({})
-    spyOn(adminToolsApiMock, 'getConfig').mockRejectedValue({ response: { status: 404 } })
     const container = await render(<ToolsClient />)
 
     click(button(container, 'common.edit'))
@@ -401,8 +396,7 @@ describe('dashboard capability clients', () => {
     click(editButtons.at(-1) as HTMLButtonElement)
     await act(async () => await Promise.resolve())
     expect(container.textContent).toContain('web-search-dialog')
-    expect(container.textContent).not.toContain('config-dialog')
-    expect(createConfig).not.toHaveBeenCalled()
+    expect(container.textContent).not.toContain('connection-dialog')
   })
 
   test('AdminSkillsPanel loads skills and installs selected git preview entries', async () => {

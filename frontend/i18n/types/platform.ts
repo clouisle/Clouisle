@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-25T16:46:30.981Z
+// GENERATED — 2026-10-26T14:38:33.120Z
 // Source: i18n/en/platform.json
 export type PlatformMessages = {
   platform: {
@@ -259,6 +259,9 @@ export type PlatformMessages = {
       visibilityTeam: string
       confirmDelete: string
       deleteToolConfirm: string
+      mcpBrowser: {
+        open: string
+      }
       filters: {
         all: string
         builtin: string
@@ -317,6 +320,12 @@ export type PlatformMessages = {
       configDialog: {
         title: string
         description: string
+      }
+      connectionDialog: {
+        description: string
+        notRequired: string
+        teamRequired: string
+        definitionUnavailable: string
       }
       httpDialog: {
         createTitle: string
@@ -420,10 +429,17 @@ export type PlatformMessages = {
         sseUrlPlaceholder: string
         headerNamePlaceholder: string
         httpUrlPlaceholder: string
+        toolsPendingApproval: string
       }
       testPanel: {
         arrayPlaceholder: string
         objectPlaceholder: string
+        pendingApproval: string
+        executionId: string
+        resume: string
+        openApprovals: string
+        resumeFailed: string
+        loadFailed: string
       }
       codeEditor: {
         newTitle: string

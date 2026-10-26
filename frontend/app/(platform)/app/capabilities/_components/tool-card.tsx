@@ -43,6 +43,7 @@ interface ToolCardProps {
   onEdit?: (tool: Tool) => void
   onDelete?: (tool: Tool) => void
   onConfigure?: (tool: Tool) => void
+  onBrowseMcp?: (tool: Tool) => void
   onShare?: (tool: Tool) => void
   canConfigure?: boolean
   canEdit?: boolean
@@ -109,6 +110,7 @@ export function ToolCard({
   onEdit,
   onDelete,
   onConfigure,
+  onBrowseMcp,
   onShare,
   canConfigure = false,
   canEdit = false,
@@ -251,6 +253,23 @@ export function ToolCard({
             >
               <Play className="h-3.5 w-3.5" />
             </Button>
+
+            {tool.type === 'mcp' && (
+              <Tooltip>
+                <TooltipTrigger
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onBrowseMcp?.(tool)
+                  }}
+                  render={
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" aria-label={t('mcpBrowser.open')}>
+                      <Globe className="h-3.5 w-3.5" />
+                    </Button>
+                  }
+                />
+                <TooltipContent>{t('mcpBrowser.open')}</TooltipContent>
+              </Tooltip>
+            )}
 
             {showConfig && (
               <Tooltip>

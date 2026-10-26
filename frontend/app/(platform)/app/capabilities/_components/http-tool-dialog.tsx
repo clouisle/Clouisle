@@ -28,7 +28,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ToolCreateInput, ToolUpdateInput, ToolDetail, HttpConfig, ToolCategory, ToolParameter, FormField, ToolVisibility } from '@/lib/api/tools'
+import { ToolCreateInput, ToolUpdateInput, ToolDetail, HttpConfig, ToolCategory, ToolParameter, FormField, ToolVisibility, ToolApprovalPolicy, ToolConnectionField, ToolIdentityPolicy } from '@/lib/api/tools'
+import {
+  ToolPolicyEditor,
+  getToolApprovalPolicy,
+  getToolConnectionFields,
+  getToolIdentityPolicy,
+  normalizeConnectionFields,
+  normalizeToolApprovalPolicy,
+} from '@/components/tools/tool-policy-editor'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { FieldError } from '@/components/ui/field'
 import {
@@ -287,6 +295,11 @@ export function HttpToolDialog({
   const [category, setCategory] = useState<ToolCategory>('api')
   const [visibility, setVisibility] = useState<ToolVisibility>('private')
   const [isEnabled, setIsEnabled] = useState(true)
+  const [identityPolicy, setIdentityPolicy] = useState<ToolIdentityPolicy>('none')
+  const [connectionFields, setConnectionFields] = useState<ToolConnectionField[]>([])
+  const [approvalPolicy, setApprovalPolicy] = useState<ToolApprovalPolicy>(() =>
+    getToolApprovalPolicy(null)
+  )
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   // HTTP 配置
@@ -320,6 +333,9 @@ export function HttpToolDialog({
         setCategory(tool.category || 'api')
         setVisibility(tool.visibility || 'private')
         setIsEnabled(tool.is_enabled)
+        setIdentityPolicy(getToolIdentityPolicy(tool))
+        setConnectionFields(getToolConnectionFields(tool))
+        setApprovalPolicy(getToolApprovalPolicy(tool))
         setFieldErrors({})
         setParameters(tool.parameters || [])
 
@@ -350,6 +366,9 @@ export function HttpToolDialog({
         setCategory('api')
         setVisibility('private')
         setIsEnabled(true)
+        setIdentityPolicy('none')
+        setConnectionFields([])
+        setApprovalPolicy(getToolApprovalPolicy(null))
         setMethod('GET')
         setUrl('')
         setHeaders([{ key: '', value: '' }])
@@ -409,6 +428,9 @@ export function HttpToolDialog({
         custom_type: 'http',
         http_config: httpConfig,
         parameters: parameters.filter(p => p.name.trim()),
+        identity_policy: identityPolicy,
+        connection_fields: normalizeConnectionFields(connectionFields),
+        approval_policy: normalizeToolApprovalPolicy(approvalPolicy),
       }
 
       await onSave(data)
@@ -601,6 +623,15 @@ export function HttpToolDialog({
               />
             </div>
           </div>
+
+          <ToolPolicyEditor
+            identityPolicy={identityPolicy}
+            onIdentityPolicyChange={setIdentityPolicy}
+            connectionFields={connectionFields}
+            onConnectionFieldsChange={setConnectionFields}
+            approvalPolicy={approvalPolicy}
+            onApprovalPolicyChange={setApprovalPolicy}
+          />
 
           {/* HTTP 配置 */}
           <div className="space-y-4 border rounded-lg p-4">

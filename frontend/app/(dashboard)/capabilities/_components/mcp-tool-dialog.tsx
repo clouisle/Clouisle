@@ -37,8 +37,34 @@ import {
   McpConfig, 
   McpTransportType,
   McpToolInfo,
+  ToolApprovalPolicy,
+  ToolConnectionField,
+  ToolIdentityPolicy,
 } from '@/lib/api/tools'
+import {
+  ToolPolicyEditor,
+  getToolApprovalPolicy,
+  getToolConnectionFields,
+  getToolIdentityPolicy,
+  normalizeConnectionFields,
+  normalizeToolApprovalPolicy,
+} from '@/components/tools/tool-policy-editor'
 import { adminToolsApi } from '@/lib/api/admin'
+import { toolMcpApi } from '@/lib/api/tool-mcp'
+import {
+  EMPTY_CONNECTION_BINDING,
+  ToolConnectionPicker,
+  type ToolConnectionBinding,
+} from '@/components/tools/connection-picker'
+import {
+  DEFAULT_MCP_CAPABILITIES,
+  McpCapabilitiesEditor,
+  getMcpCapabilities,
+  mcpCapabilitiesConfig,
+  hasMcpCapabilityErrors,
+  validateMcpCapabilities,
+  type McpCapabilitySettings,
+} from '@/components/tools/mcp-capabilities-editor'
 
 interface McpToolDialogProps {
   tool?: ToolDetail | null
@@ -76,6 +102,7 @@ export function McpToolDialog({
 }: McpToolDialogProps) {
   const t = useTranslations('tools')
   const tCommon = useTranslations('common')
+  const tMcpCaps = useTranslations('tools.mcpCapabilities')
 
   const isEditing = !!tool
 
@@ -84,6 +111,11 @@ export function McpToolDialog({
   const [displayName, setDisplayName] = useState('')
   const [icon, setIcon] = useState('')
   const [isEnabled, setIsEnabled] = useState(true)
+  const [identityPolicy, setIdentityPolicy] = useState<ToolIdentityPolicy>('none')
+  const [connectionFields, setConnectionFields] = useState<ToolConnectionField[]>([])
+  const [approvalPolicy, setApprovalPolicy] = useState<ToolApprovalPolicy>(() =>
+    getToolApprovalPolicy(null)
+  )
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   // 传输类型
@@ -97,6 +129,10 @@ export function McpToolDialog({
   // SSE/HTTP 配置
   const [url, setUrl] = useState('')
   const [headers, setHeaders] = useState<Header[]>([{ key: '', value: '' }])
+  const [mcpCapabilities, setMcpCapabilities] = useState<McpCapabilitySettings>(
+    DEFAULT_MCP_CAPABILITIES
+  )
+  const [discoveryConnection, setDiscoveryConnection] = useState<ToolConnectionBinding>(EMPTY_CONNECTION_BINDING)
 
   // MCP 工具列表
   const [mcpTools, setMcpTools] = useState<McpToolInfo[]>([])
@@ -120,9 +156,14 @@ export function McpToolDialog({
         setDisplayName(tool.display_name)
         setIcon(tool.icon || '')
         setIsEnabled(tool.is_enabled)
+        setIdentityPolicy(getToolIdentityPolicy(tool))
+        setConnectionFields(getToolConnectionFields(tool))
+        setApprovalPolicy(getToolApprovalPolicy(tool))
         setFieldErrors({})
 
         if (tool.mcp_config) {
+          setMcpCapabilities(getMcpCapabilities(tool.mcp_config))
+        setDiscoveryConnection(EMPTY_CONNECTION_BINDING)
           const transport = tool.mcp_config.transport || 'stdio'
           setTransportType(transport)
           
@@ -156,6 +197,9 @@ export function McpToolDialog({
         setDisplayName('')
         setIcon('')
         setIsEnabled(true)
+        setIdentityPolicy('none')
+        setConnectionFields([])
+        setApprovalPolicy(getToolApprovalPolicy(null))
         setFieldErrors({})
         setTransportType('stdio')
         setCommand('')
@@ -163,6 +207,8 @@ export function McpToolDialog({
         setEnvVars([{ key: '', value: '' }])
         setUrl('')
         setHeaders([{ key: '', value: '' }])
+        setMcpCapabilities(DEFAULT_MCP_CAPABILITIES)
+        setDiscoveryConnection(EMPTY_CONNECTION_BINDING)
         resetToolsState()
       }
     }
@@ -217,14 +263,35 @@ export function McpToolDialog({
     setFieldErrors({})
     setIsLoadingTools(true)
     try {
-      const response = await adminToolsApi.listMcpTools(config)
-      setMcpTools(response.tools)
+      let tools: McpToolInfo[]
+      if (isEditing && tool?.id && tool.team_id) {
+        const outcome = await toolMcpApi.listTools(tool.id, {
+          teamId: tool.team_id,
+          connection_mode: discoveryConnection.connection_mode ?? undefined,
+          connection_id: discoveryConnection.connection_id ?? undefined,
+        })
+        if (outcome.status === 'pending_approval') {
+          toast.info(t('mcpDialog.toolsPendingApproval'))
+          setMcpTools([])
+          setToolsLoaded(false)
+          return
+        }
+        tools = (outcome.result?.items ?? []).map((item) => ({
+          name: item.name,
+          description: item.description ?? undefined,
+          parameters: item.parameters,
+        }))
+      } else {
+        const response = await adminToolsApi.listMcpTools(config)
+        tools = response.tools
+      }
+      setMcpTools(tools)
       setToolsLoaded(true)
-      
-      if (response.tools.length === 0) {
+
+      if (tools.length === 0) {
         toast.info(t('mcpDialog.noToolsFound'))
       } else {
-        toast.success(t('mcpDialog.toolsLoaded', { count: response.tools.length }))
+        toast.success(t('mcpDialog.toolsLoaded', { count: tools.length }))
       }
     } catch (error) {
       console.error('Failed to fetch MCP tools:', error)
@@ -240,6 +307,21 @@ export function McpToolDialog({
   }
 
   const handleSave = async () => {
+    const capabilityErrors = validateMcpCapabilities(mcpCapabilities, {
+      invalidRoot: tMcpCaps('invalidRootUri'),
+      invalidHost: tMcpCaps('invalidElicitationHost'),
+      missingAllowlist: tMcpCaps('rootsRequireAllowlist'),
+      rootNotAllowed: tMcpCaps('rootOutsideAllowlist'),
+    })
+    if (hasMcpCapabilityErrors(capabilityErrors)) {
+      toast.error(
+        capabilityErrors.allowlist
+          ?? Object.values(capabilityErrors.roots)[0]
+          ?? tMcpCaps('invalidElicitationHost')
+      )
+      return
+    }
+
     const nextErrors: Record<string, string> = {}
     if (!name.trim()) nextErrors.name = t('error.nameRequired')
     if (!displayName.trim()) nextErrors.displayName = t('form.displayNameRequired')
@@ -254,7 +336,7 @@ export function McpToolDialog({
     setFieldErrors({})
     setIsLoading(true)
     try {
-      const mcpConfig = buildMcpConfig()
+      const mcpConfig = { ...buildMcpConfig(), ...mcpCapabilitiesConfig(mcpCapabilities) }
 
       // 生成工具描述
       let toolsDescription = ''
@@ -270,6 +352,9 @@ export function McpToolDialog({
         is_enabled: isEnabled,
         type: 'mcp',
         mcp_config: mcpConfig,
+        identity_policy: identityPolicy,
+        connection_fields: normalizeConnectionFields(connectionFields),
+        approval_policy: normalizeToolApprovalPolicy(approvalPolicy),
       }
 
       await onSave(data)
@@ -659,6 +744,15 @@ export function McpToolDialog({
               </TabsContent>
             </Tabs>
 
+            {isEditing && tool?.id && tool.team_id && (tool.identity_policy ?? 'none') !== 'none' && (
+              <ToolConnectionPicker
+                tool={tool}
+                teamId={tool.team_id}
+                value={discoveryConnection}
+                onChange={setDiscoveryConnection}
+              />
+            )}
+
             {/* 获取工具列表按钮 */}
             <div className="pt-2">
               <Button 
@@ -676,6 +770,8 @@ export function McpToolDialog({
               </Button>
             </div>
           </div>
+
+          <McpCapabilitiesEditor value={mcpCapabilities} onChange={setMcpCapabilities} />
 
           {/* 工具列表 */}
           {toolsLoaded && (
@@ -714,6 +810,16 @@ export function McpToolDialog({
               )}
             </div>
           )}
+
+          <ToolPolicyEditor
+            identityPolicy={identityPolicy}
+            onIdentityPolicyChange={setIdentityPolicy}
+            connectionFields={connectionFields}
+            onConnectionFieldsChange={setConnectionFields}
+            approvalPolicy={approvalPolicy}
+            onApprovalPolicyChange={setApprovalPolicy}
+            operationNames={mcpTools.map((item) => `tool:${item.name}`)}
+          />
         </div>
 
         <DialogFooter>

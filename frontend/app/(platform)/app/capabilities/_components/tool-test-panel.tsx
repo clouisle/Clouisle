@@ -2,8 +2,15 @@
 
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { useTranslations } from 'next-intl'
-import { Tool, ToolParameter, toolsApi, ToolExecuteResponse, McpToolInfo, SandboxArtifactConfig } from '@/lib/api'
+import { Tool, ToolParameter, toolsApi, ToolExecuteRequest, ToolExecuteResponse, McpToolInfo, SandboxArtifactConfig } from '@/lib/api'
+import { toolMcpApi } from '@/lib/api/tool-mcp'
+import {
+  EMPTY_CONNECTION_BINDING,
+  ToolConnectionPicker,
+  type ToolConnectionBinding,
+} from '@/components/tools/connection-picker'
 import { normalizeValidationErrors, clearValidationError, getValidationSummaryEntries,
   formatValidationSummaryMessage
 } from '@/lib/validation'
@@ -33,7 +40,6 @@ import { Play, Loader2, CheckCircle, XCircle, Clock, Copy, Check, RefreshCw, Dat
 import { WebSearchEngineSelect } from '@/components/tools/web-search-engine-select'
 
 interface ToolTestApi {
-  listMcpTools: typeof toolsApi.listMcpTools
   test: typeof toolsApi.test
 }
 
@@ -59,6 +65,10 @@ function formatResultPayload(result: ToolExecuteResponse): unknown {
   }
 }
 
+type PendingTestAction =
+  | { kind: 'test'; executionId: string; request: ToolExecuteRequest }
+  | { kind: 'mcp'; executionId: string; params: { teamId: string; maxItems: number } }
+
 export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi }: ToolTestPanelProps) {
   const t = useTranslations('platform.tools')
   const [args, setArgs] = useState<Record<string, string>>({})
@@ -66,7 +76,16 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [result, setResult] = useState<ToolExecuteResponse | null>(null)
   const [copied, setCopied] = useState(false)
+  const [binding, setBinding] = useState<ToolConnectionBinding>(EMPTY_CONNECTION_BINDING)
+  const [pending, setPending] = useState<PendingTestAction | null>(null)
   const effectiveTeamId = teamId
+  const identity = tool?.identity_policy ?? 'none'
+  const connectionPayload = identity === 'none'
+    ? {}
+    : {
+        connection_mode: binding.connection_mode ?? undefined,
+        connection_id: binding.connection_id ?? undefined,
+      }
 
   // MCP 相关状态
   const [mcpTools, setMcpTools] = useState<McpToolInfo[]>([])
@@ -75,19 +94,46 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
   const [searchEngine, setSearchEngine] = useState('auto')
   const isWebSearch = tool?.type === 'builtin' && tool.name === 'web_search'
 
-  // 加载 MCP 工具列表
+  // 加载 MCP 工具列表（使用已保存的工具定义与连接，绝不发送客户端 mcp_config）
   const loadMcpTools = async () => {
-    if (!tool || tool.type !== 'mcp' || !tool.mcp_config) return
+    if (!tool || tool.type !== 'mcp' || !tool.id || !effectiveTeamId) return
 
     setLoadingMcpTools(true)
     try {
-      const response = await api.listMcpTools(tool.mcp_config)
-      setMcpTools(response.tools)
-      if (response.tools.length > 0) {
-        setSelectedMcpTool(response.tools[0].name)
+      const outcome = await toolMcpApi.listTools(tool.id, {
+        teamId: effectiveTeamId,
+        ...connectionPayload,
+      })
+      if (outcome.status === 'pending_approval' && outcome.execution_id) {
+        setMcpTools([])
+        setSelectedMcpTool('')
+        setPending({
+          kind: 'mcp',
+          executionId: outcome.execution_id,
+          params: { teamId: effectiveTeamId, maxItems: 200 },
+        })
+        setResult({
+          name: tool.name,
+          success: false,
+          pending_approval: true,
+          execution_id: outcome.execution_id,
+        })
+        return
+      }
+      const discovered = outcome.result?.items ?? []
+      setMcpTools(
+        discovered.map((item) => ({
+          name: item.name,
+          description: item.description ?? undefined,
+          parameters: item.parameters,
+        }))
+      )
+      if (discovered.length > 0) {
+        setSelectedMcpTool(discovered[0].name)
       }
     } catch (error) {
       console.error('Failed to load MCP tools:', error)
+      toast.error(t('testPanel.loadFailed'))
     } finally {
       setLoadingMcpTools(false)
     }
@@ -99,7 +145,7 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
       loadMcpTools()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, tool])
+  }, [open, tool, binding.connection_mode, binding.connection_id])
 
   // 获取当前选中的 MCP 工具参数
   const currentMcpToolParams = mcpTools.find(t => t.name === selectedMcpTool)?.parameters
@@ -113,13 +159,15 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
       setMcpTools([])
       setSelectedMcpTool('')
       setSearchEngine('auto')
+      setBinding(EMPTY_CONNECTION_BINDING)
+      setPending(null)
     }
     onOpenChange(isOpen)
   }
 
   // 执行测试
   const handleTest = async () => {
-    if (!tool) return
+    if (!tool || pending) return
 
     setLoading(true)
     setFieldErrors({})
@@ -173,11 +221,21 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
         }
       }
 
-      const response = await api.test({
+      const request: ToolExecuteRequest = {
         name: tool.name,
         arguments: typedArgs,
-      }, effectiveTeamId)
+        ...connectionPayload,
+      }
+      const response = await api.test(request, effectiveTeamId)
       setResult(response)
+      if (response.pending_approval && response.execution_id) {
+        // Freeze the exact request; resume must not accept new params.
+        setPending({
+          kind: 'test',
+          executionId: response.execution_id,
+          request: { ...request, arguments: { ...typedArgs } },
+        })
+      }
     } catch (error) {
       const errors = normalizeValidationErrors(error)
       if (Object.keys(errors).length > 0) {
@@ -185,6 +243,54 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
       } else {
         console.error('Tool test error:', error)
       }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleResume = async () => {
+    if (!pending || !tool) return
+
+    setLoading(true)
+    try {
+      if (pending.kind === 'test') {
+        const response = await api.test(
+          { ...pending.request, execution_id: pending.executionId },
+          effectiveTeamId
+        )
+        setResult(response)
+        setPending(
+          response.pending_approval && response.execution_id
+            ? { ...pending, executionId: response.execution_id }
+            : null
+        )
+      } else if (tool.id && effectiveTeamId) {
+        const outcome = await toolMcpApi.listTools(tool.id, {
+          ...pending.params,
+          execution_id: pending.executionId,
+        })
+        if (outcome.status === 'pending_approval' && outcome.execution_id) {
+          setPending({ ...pending, executionId: outcome.execution_id })
+        } else {
+          setPending(null)
+          const discovered = outcome.result?.items ?? []
+          setMcpTools(
+            discovered.map((item) => ({
+              name: item.name,
+              description: item.description ?? undefined,
+              parameters: item.parameters,
+            }))
+          )
+          if (discovered.length > 0) {
+            setSelectedMcpTool(discovered[0].name)
+          }
+        }
+      }
+    } catch (error) {
+      // A completed/cancelled execution replays as 409 and never re-runs.
+      setPending(null)
+      console.error('Tool approval resume failed:', error)
+      toast.error(t('testPanel.resumeFailed'))
     } finally {
       setLoading(false)
     }
@@ -347,10 +453,41 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
             </div>
           )}
 
+          {identity !== 'none' && effectiveTeamId && (
+            <ToolConnectionPicker
+              tool={tool}
+              builtinToolKey={tool.id ? undefined : tool.name}
+              teamId={effectiveTeamId}
+              value={binding}
+              onChange={setBinding}
+              disabled={loading}
+            />
+          )}
+
+          {pending && (
+            <div className="space-y-2 rounded-md border p-3">
+              <p className="text-sm">{t('testPanel.pendingApproval')}</p>
+              <p className="text-xs text-muted-foreground">
+                {t('testPanel.executionId', { id: pending.executionId })}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" onClick={handleResume} disabled={loading}>
+                  {t('testPanel.resume')}
+                </Button>
+                <Link
+                  href="/app/capabilities/approvals"
+                  className="inline-flex h-8 items-center rounded-md border px-3 text-sm"
+                >
+                  {t('testPanel.openApprovals')}
+                </Link>
+              </div>
+            </div>
+          )}
+
           {/* 执行按钮 */}
           <Button 
             onClick={handleTest} 
-            disabled={loading || (tool.type === 'mcp' && !selectedMcpTool)} 
+            disabled={loading || !!pending || (tool.type === 'mcp' && !selectedMcpTool)} 
             className="w-full"
           >
             {loading ? (

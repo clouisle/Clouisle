@@ -18,6 +18,7 @@ export {
 } from './ask-user-form';
 export { VariableForm, useVariableForm } from './variable-form';
 export { PauseRequestActions, type PauseRequestActionsProps } from './pause-request-actions';
+export { RunInteractionPanel, type RunInteractionPanelProps } from './run-interaction-panel';
 export { ImageLightbox, VideoLightbox, useLightbox } from './image-lightbox';
 export { ExecutionTimeline } from './execution-timeline';
 export { NodeCard } from './node-card';

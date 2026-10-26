@@ -6,7 +6,6 @@ import type {
   McpConfig,
   McpToolsListResponse,
   Tool,
-  ToolConfig,
   ToolCreateInput,
   ToolDetail,
   ToolExecuteRequest,
@@ -78,11 +77,6 @@ export const adminToolsApi = {
   listMcpTools: async (mcpConfig: McpConfig): Promise<McpToolsListResponse> =>
     api.post<McpToolsListResponse>('/admin/tools/mcp/list-tools', { mcp_config: mcpConfig }),
 
-  listConfigs: async (teamId?: string): Promise<ToolConfig[]> => {
-    const params = teamId ? { team_id: teamId } : {}
-    return api.get<ToolConfig[]>('/admin/tools/config', { params })
-  },
-
   getWebSearchConfig: async (): Promise<WebSearchConfig> =>
     api.get<WebSearchConfig>('/admin/tools/web-search/config'),
 
@@ -91,34 +85,6 @@ export const adminToolsApi = {
 
   testWebSearchConfig: async (request: WebSearchTestRequest): Promise<WebSearchTestResponse> =>
     api.post<WebSearchTestResponse>('/admin/tools/web-search/test', request, { timeout: 120000 }),
-
-  getConfig: async (toolName: string, teamId?: string): Promise<ToolConfig> => {
-    const params = teamId ? { team_id: teamId } : {}
-    return api.get<ToolConfig>(`/admin/tools/config/${toolName}`, { params })
-  },
-
-  createConfig: async (
-    toolName: string,
-    credentials: Record<string, string>,
-    teamId?: string
-  ): Promise<ToolConfig> => {
-    const params = teamId ? { team_id: teamId } : {}
-    return api.post<ToolConfig>('/admin/tools/config', { tool_name: toolName, credentials }, { params })
-  },
-
-  updateConfig: async (
-    toolName: string,
-    credentials: Record<string, string>,
-    teamId?: string
-  ): Promise<ToolConfig> => {
-    const params = teamId ? { team_id: teamId } : {}
-    return api.put<ToolConfig>(`/admin/tools/config/${toolName}`, { credentials }, { params })
-  },
-
-  deleteConfig: async (toolName: string, teamId?: string): Promise<void> => {
-    const params = teamId ? { team_id: teamId } : {}
-    await api.delete(`/admin/tools/config/${toolName}`, { params })
-  },
 
   shareTool: async (toolId: string, data: ToolShareInput): Promise<ToolShare> =>
     api.post<ToolShare>(`/admin/tools/${toolId}/share`, data),

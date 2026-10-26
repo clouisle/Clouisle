@@ -72,6 +72,9 @@ export interface ToolConfig {
   server_id?: string | null  // for mcp tools
   skill_id?: string | null  // for skills
   config?: Record<string, unknown> | null
+  connection_mode?: 'personal' | 'team' | null
+  connection_id?: string | null
+  grant_id?: string | null
 }
 
 export type VariableType = 'text' | 'paragraph' | 'select' | 'number' | 'checkbox' | 'array' | 'object' | 'file' | 'image' | 'files' | 'images'

@@ -89,31 +89,14 @@ describe('adminToolsApi', () => {
     ])
   })
 
-  it('shapes MCP and configuration requests with optional team params', async () => {
+  it('shapes MCP discovery requests', async () => {
     const mcpConfig = { transport: 'sse' as const, url: 'https://mcp.test' }
-    const credentials = { api_key: 'secret' }
 
     await adminToolsApi.listMcpTools(mcpConfig)
-    await adminToolsApi.listConfigs()
-    await adminToolsApi.getConfig('lookup', 'team-1')
-    await adminToolsApi.createConfig('lookup', credentials)
-    await adminToolsApi.updateConfig('lookup', credentials, 'team-1')
-    await adminToolsApi.deleteConfig('lookup')
 
     expect(post.mock.calls).toEqual([
       ['/admin/tools/mcp/list-tools', { mcp_config: mcpConfig }],
-      ['/admin/tools/config', { tool_name: 'lookup', credentials }, { params: {} }],
     ])
-    expect(get.mock.calls).toEqual([
-      ['/admin/tools/config', { params: {} }],
-      ['/admin/tools/config/lookup', { params: { team_id: 'team-1' } }],
-    ])
-    expect(put).toHaveBeenCalledWith(
-      '/admin/tools/config/lookup',
-      { credentials },
-      { params: { team_id: 'team-1' } }
-    )
-    expect(del).toHaveBeenCalledWith('/admin/tools/config/lookup', { params: {} })
   })
 
   it('maps site web search config and test routes without team scope', async () => {

@@ -257,6 +257,9 @@
       "visibilityTeam": "团队",
       "confirmDelete": "删除工具",
       "deleteToolConfirm": "确定要删除 \"{name}\" 吗？此操作无法撤销。",
+      "mcpBrowser": {
+        "open": "浏览资源与提示词"
+      },
       "filters": {
         "all": "全部",
         "builtin": "内置",
@@ -315,6 +318,12 @@
       "configDialog": {
         "title": "配置 {name}",
         "description": "配置工具所需的 API 密钥和凭证"
+      },
+      "connectionDialog": {
+        "description": "管理该工具的加密身份与默认连接。保存后密钥不会再次显示。",
+        "notRequired": "该工具无需保存身份。",
+        "teamRequired": "请先选择团队，再管理工具连接。",
+        "definitionUnavailable": "该工具的定义策略尚不可用。请刷新页面；如果仍然如此，需要为该团队生成内置工具定义。"
       },
       "httpDialog": {
         "createTitle": "创建 HTTP 工具",
@@ -417,11 +426,18 @@
         "headerValuePlaceholder": "值",
         "sseUrlPlaceholder": "http://localhost:3000/sse",
         "headerNamePlaceholder": "请求头名称",
-        "httpUrlPlaceholder": "http://localhost:3000/mcp"
+        "httpUrlPlaceholder": "http://localhost:3000/mcp",
+        "toolsPendingApproval": "列出 MCP 工具需要审批，请审批后重试。"
       },
       "testPanel": {
         "arrayPlaceholder": "[\"item1\", \"item2\"]",
-        "objectPlaceholder": "'{\"key\": \"value\"}'"
+        "objectPlaceholder": "'{\"key\": \"value\"}'",
+        "pendingApproval": "该调用正在等待审批，不会自动重新执行。",
+        "executionId": "执行 ID：{id}",
+        "resume": "审批后继续",
+        "openApprovals": "打开审批中心",
+        "resumeFailed": "无法恢复工具调用。已完成或已拒绝的请求不会重新执行。",
+        "loadFailed": "无法通过已保存的连接获取 MCP 工具列表。"
       },
       "codeEditor": {
         "newTitle": "新建代码工具",

@@ -16,6 +16,11 @@ import { WebSearchEngineSelect } from '@/components/tools/web-search-engine-sele
 import { cn } from '@/lib/utils'
 import { useTeam } from '@/contexts/team-context'
 import { toolsApi, isPresetToolCategory, type Tool, type ToolCategory, type PresetToolCategory, type McpToolInfo } from '@/lib/api'
+import { toolMcpApi } from '@/lib/api/tool-mcp'
+import {
+  ToolConnectionPicker,
+  getToolConnectionBinding,
+} from '@/components/tools/connection-picker'
 import { isValidVariableName } from '../utils'
 import { extractVariableDisplayName } from '../types'
 import type { AvailableVariable } from '../types'
@@ -39,6 +44,10 @@ export interface ToolNodeConfig {
   // MCP 特有：服务器中的具体工具
   mcpToolName?: string         // MCP 服务器中的工具名称
   mcpToolDescription?: string  // MCP 工具描述
+  // 外部账号连接绑定
+  connection_mode?: 'personal' | 'team' | null
+  connection_id?: string | null
+  grant_id?: string | null
   // 参数映射
   parameterMappings: ParameterMapping[]
   // 输出变量
@@ -97,22 +106,26 @@ function getTypeLabels(t: (key: string) => string): Record<WorkflowToolType, str
 
 interface ToolNodeConfigProps {
   config: ToolNodeConfig
+  workflowId?: string
   variables: AvailableVariable[]
   variableSearch: string
   openVariablePopover: string | null
   onConfigChange: (config: ToolNodeConfig) => void
   onVariableSearchChange: (search: string) => void
   onOpenVariablePopoverChange: (id: string | null) => void
+  readOnly?: boolean
 }
 
 export function ToolNodeConfig({
   config,
+  workflowId,
   variables,
   variableSearch,
   openVariablePopover,
   onConfigChange,
   onVariableSearchChange,
   onOpenVariablePopoverChange,
+  readOnly = false,
 }: ToolNodeConfigProps) {
   const t = useTranslations('workflow')
   const { currentTeam } = useTeam()
@@ -238,15 +251,21 @@ export function ToolNodeConfig({
   React.useEffect(() => {
     const loadMcpTools = async () => {
       // 只有选择了 MCP 类型且有 mcp_config 时才加载
-      if (safeConfig.toolType !== 'mcp' || !selectedTool?.mcp_config) {
+      if (safeConfig.toolType !== 'mcp' || !selectedTool?.id || !currentTeam?.id) {
         setMcpTools([])
         return
       }
       
       setIsLoadingMcpTools(true)
       try {
-        const response = await toolsApi.listMcpTools(selectedTool.mcp_config)
-        setMcpTools(response.tools)
+        const outcome = await toolMcpApi.listTools(selectedTool.id, { teamId: currentTeam.id })
+        setMcpTools(outcome.status === 'completed'
+          ? (outcome.result?.items ?? []).map((item) => ({
+              name: item.name,
+              description: item.description ?? undefined,
+              parameters: item.parameters,
+            }))
+          : [])
       } catch {
         setMcpTools([])
       } finally {
@@ -254,7 +273,7 @@ export function ToolNodeConfig({
       }
     }
     loadMcpTools()
-  }, [safeConfig.toolType, safeConfig.toolId, selectedTool?.mcp_config])
+  }, [safeConfig.toolType, safeConfig.toolId, selectedTool?.id, currentTeam?.id])
 
   // 过滤 MCP 工具
   const filteredMcpTools = React.useMemo(() => {
@@ -757,6 +776,30 @@ export function ToolNodeConfig({
             </Popover>
           )}
         </div>
+      )}
+
+      {selectedTool && (selectedTool.identity_policy ?? 'none') !== 'none' && (
+        <ToolConnectionPicker
+          tool={selectedTool}
+          builtinToolKey={selectedTool.type === 'builtin' ? selectedTool.name : undefined}
+          teamId={currentTeam?.id}
+          value={getToolConnectionBinding({
+            connection_mode: safeConfig.connection_mode ?? null,
+            connection_id: safeConfig.connection_id ?? null,
+            grant_id: safeConfig.grant_id ?? null,
+          })}
+          onChange={(binding) =>
+            onConfigChange({
+              ...safeConfig,
+              connection_mode: binding.connection_mode,
+              connection_id: binding.connection_id,
+              grant_id: binding.grant_id,
+            })
+          }
+          entrypointType="workflow"
+          entrypointId={workflowId}
+          disabled={readOnly}
+        />
       )}
 
       {/* 参数配置 - MCP 类型需要选择具体工具后才显示 */}

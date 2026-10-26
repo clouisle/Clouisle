@@ -6,9 +6,6 @@ const getById = mock()
 const createTool = mock()
 const updateTool = mock()
 const deleteTool = mock()
-const getConfig = mock()
-const createConfig = mock()
-const updateConfig = mock()
 const getMyTeams = mock(() => Promise.resolve([]))
 const replace = mock()
 const push = mock()
@@ -77,9 +74,6 @@ mock.module('@/lib/api', () => ({
     create: createTool,
     update: updateTool,
     delete: deleteTool,
-    getConfig,
-    createConfig,
-    updateConfig,
   },
   teamsApi: { getMyTeams },
   isPresetToolCategory: () => false,
@@ -106,20 +100,21 @@ mock.module('@/components/ui/dropdown-menu', () => ({
 mock.module('lucide-react', () => ({
   Wrench: element('svg'), Plus: element('svg'), RefreshCw: element('svg'), Loader2: element('svg'),
   Globe: element('svg'), Code: element('svg'), Plug: element('svg'), Database: element('svg'), ChevronDown: element('svg'),
-  PackageOpen: element('svg'), Upload: element('svg'), Search: element('svg'), Info: element('svg'), Settings: element('svg'),
+  PackageOpen: element('svg'), Upload: element('svg'), Search: element('svg'), Info: element('svg'), Settings: element('svg'), ShieldCheck: element('svg'),
 }))
 mock.module('./_components/tool-card', () => ({ ToolCard: ({ tool, ...props }: { tool: { display_name: string } } & Record<string, unknown>) => ({ type: 'article', props: { ...props, children: tool.display_name } }) }))
 
 const { ToolList } = await import('./_components/tool-list')
 const component = (tag: string) => (props: Record<string, unknown>) => ({ type: tag, props })
 mock.module('./_components', () => ({ SkillsPanel: component('skills-panel'), ToolList, ToolTestPanel: component('test-panel') }))
-mock.module('./_components/tool-config-dialog', () => ({ ToolConfigDialog: component('config-dialog') }))
+mock.module('@/components/tools/tool-connection-dialog', () => ({ ToolConnectionDialog: component('connection-dialog') }))
 mock.module('./_components/http-tool-dialog', () => ({ HttpToolDialog: component('http-dialog') }))
 mock.module('./_components/mcp-tool-dialog', () => ({ McpToolDialog: component('mcp-dialog') }))
 mock.module('./_components/database-tool-dialog', () => ({ DatabaseToolDialog: component('database-dialog') }))
 mock.module('./_components/tool-share-dialog', () => ({ ToolShareDialog: component('share-dialog') }))
 mock.module('@/components/packages/import-package-dialog', () => ({ ImportPackageDialog: component('import-dialog') }))
 mock.module('@/components/tools/web-search-config-dialog', () => ({ WebSearchConfigDialog: component('web-search-dialog') }))
+mock.module('@/components/tools/mcp-tool-browser', () => ({ McpToolBrowser: component('mcp-browser') }))
 
 const { default: CapabilitiesPage } = await import('./page')
 
@@ -174,9 +169,6 @@ beforeEach(() => {
   createTool.mockReset()
   updateTool.mockReset()
   deleteTool.mockReset()
-  getConfig.mockReset()
-  createConfig.mockReset()
-  updateConfig.mockReset()
   getMyTeams.mockReset()
   getMyTeams.mockResolvedValue([])
   replace.mockReset()
@@ -273,12 +265,9 @@ describe('CapabilitiesPage', () => {
     expect(deleteTool).toHaveBeenCalledWith('custom-1')
   })
 
-  test('creates tools and handles builtin config and guarded actions', async () => {
+  test('creates tools and opens the builtin connection manager for guarded actions', async () => {
     const configurable = { ...builtin, requires_config: true, config_fields: ['API_KEY'] }
     list.mockResolvedValue({ builtin: [configurable], custom: [], mcp: [] })
-    getConfig.mockRejectedValueOnce({ response: { status: 404 } }).mockResolvedValueOnce({})
-    createConfig.mockResolvedValue({})
-    updateConfig.mockResolvedValue({})
     createTool.mockResolvedValue({})
     searchParams = new URLSearchParams('action=create')
 
@@ -292,11 +281,9 @@ describe('CapabilitiesPage', () => {
     const clock = find(render(), (node) => node.type === 'article' && node.props.children === 'Clock')
     await (clock.props.onEdit as (tool: typeof configurable) => Promise<void>)(configurable)
     tree = render()
-    await (find(tree, (node) => node.type === 'config-dialog').props.onSave as (data: Record<string, string>) => Promise<void>)({ API_KEY: 'saved' })
-    expect(createConfig).toHaveBeenCalledWith('clock', { API_KEY: 'saved' }, 'team-1')
-
-    await (find(render(), (node) => node.type === 'config-dialog').props.onSave as (data: Record<string, string>) => Promise<void>)({ API_KEY: 'updated' })
-    expect(updateConfig).toHaveBeenCalledWith('clock', { API_KEY: 'updated' }, 'team-1')
+    const connectionDialog = find(render(), (node) => node.type === 'connection-dialog')
+    expect(connectionDialog.props.teamId).toBe('team-1')
+    expect(connectionDialog.props.tool.name).toBe('clock')
 
     ;(clock.props.onDelete as (tool: typeof configurable) => void)(configurable)
     ;(clock.props.onShare as (tool: typeof configurable) => void)(configurable)

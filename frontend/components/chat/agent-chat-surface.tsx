@@ -10,7 +10,10 @@ import type { ChatInputFile, AttachmentConfig } from './chat-input'
 import { ChatContainer } from './chat-container'
 import { ChatInput } from './chat-input'
 import { PendingAskUserForm, type PendingAskUserFormProps } from './ask-user-form'
+import { RunInteractionPanel } from './run-interaction-panel'
 import { VariableForm } from './variable-form'
+import { PendingToolApprovalCard } from '@/components/tool-interactions'
+import type { PendingToolApproval } from '@/lib/chat/pending-approval'
 import type { ChatMessage, ChatPreviewPayload, MessagePart } from './types'
 import type { RunVariableDefinition } from '@/lib/utils/extract-variables'
 type PreviewCanvasProps = {
@@ -135,6 +138,14 @@ export interface AgentChatSurfaceProps {
   pendingAskUserToolCallId?: string | null
   onSubmitAskUser?: PendingAskUserFormProps['onSubmit']
 
+  /** Durable tool call waiting for an approval decision (never ask_user). */
+  pendingToolApproval?: PendingToolApproval | null
+  /** Durable run id used to load in-run MCP interactions. */
+  runId?: string | null
+  runInteractionsEnabled?: boolean
+  /** Re-read the run after an approval/interaction changes its state. */
+  onRefreshRun?: () => void | Promise<void>
+
   variables?: RunVariableDefinition[]
   variableValues?: Record<string, unknown>
   onVariablesChange?: (values: Record<string, unknown>) => void
@@ -224,6 +235,10 @@ export function AgentChatSurface({
   isUploading = false,
   pendingAskUserToolCallId,
   onSubmitAskUser,
+  pendingToolApproval,
+  runId,
+  runInteractionsEnabled,
+  onRefreshRun,
   variables = [],
   variableValues = {},
   onVariablesChange,
@@ -320,7 +335,14 @@ export function AgentChatSurface({
       />
 
       <div className="relative shrink-0 pb-4">
-        {hasPendingAskUser ? (
+        {pendingToolApproval ? (
+          <PendingToolApprovalCard
+            executionId={pendingToolApproval.executionId}
+            toolName={pendingToolApproval.toolName}
+            onRefreshRun={onRefreshRun}
+            className="mb-2"
+          />
+        ) : hasPendingAskUser ? (
           <PendingAskUserForm
             messages={messages}
             pendingToolCallId={pendingAskUserToolCallId}
@@ -330,13 +352,19 @@ export function AgentChatSurface({
         ) : (
           variablePanel
         )}
+        <RunInteractionPanel
+          runId={runId}
+          enabled={runInteractionsEnabled ?? Boolean(runId)}
+          onRefreshRun={onRefreshRun}
+          className="mb-2"
+        />
         <ChatInput
           value={inputValue}
           onChange={onInputChange}
           onSubmit={onSubmit}
           onStop={onStop}
           placeholder={placeholder}
-          disabled={inputDisabled}
+          disabled={inputDisabled || Boolean(pendingToolApproval)}
           isLoading={isLoading}
           isStreaming={isStreaming}
           allowAttachments={allowAttachments}

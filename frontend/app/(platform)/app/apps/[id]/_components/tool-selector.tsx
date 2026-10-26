@@ -25,6 +25,12 @@ import { useTeam } from '@/contexts/team-context'
 import { cn } from '@/lib/utils'
 import { Label } from '@/components/ui/label'
 import { WebSearchEngineSelect } from '@/components/tools/web-search-engine-select'
+import {
+  EMPTY_CONNECTION_BINDING,
+  ToolConnectionPicker,
+  getToolConnectionBinding,
+  type ToolConnectionBinding,
+} from '@/components/tools/connection-picker'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
@@ -371,20 +377,34 @@ interface ToolDisplayItemProps {
   tool: Tool | null
   config: ToolConfig
   onUpdateConfig?: (newConfig: Record<string, unknown>) => void
+  onUpdateBinding?: (binding: ToolConnectionBinding) => void
+  entrypointId?: string
   onDelete: () => void
   readOnly?: boolean
 }
 
-function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = false }: ToolDisplayItemProps) {
+function ToolDisplayItem({ tool, config, onUpdateConfig, onUpdateBinding, entrypointId, onDelete, readOnly = false }: ToolDisplayItemProps) {
   const t = useTranslations('agents.orchestration.tools')
+  const tConnection = useTranslations('tools.connections')
+  const { currentTeam } = useTeam()
   const [isDeleteHover, setIsDeleteHover] = React.useState(false)
   const [configOpen, setConfigOpen] = React.useState(false)
+  const [connectionOpen, setConnectionOpen] = React.useState(false)
   const isMissing = !tool
 
   // 获取显示名称
   const displayName = tool?.display_name || config.name || config.tool_id || config.server_id || t('unknownTool')
   const isWebSearch = config.type === 'builtin' && config.name === 'web_search'
   const searchEngine = typeof config.config?.engine === 'string' ? config.config.engine : 'auto'
+  const needsConnection = !!tool && (tool.identity_policy ?? 'none') !== 'none'
+  const builtinToolKey = tool?.type === 'builtin' ? tool.name : undefined
+  const connectionMode = config.connection_mode ?? null
+  const connectionModeLabel =
+    connectionMode === 'personal'
+      ? tConnection('modePersonal')
+      : connectionMode === 'team'
+        ? tConnection('modeTeam')
+        : null
 
   const [tempEngine, setTempEngine] = React.useState<string>(searchEngine)
 
@@ -450,6 +470,11 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
                 {engineLabels[searchEngine] || searchEngine}
               </Badge>
             )}
+            {connectionModeLabel && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground">
+                {connectionModeLabel}
+              </Badge>
+            )}
           </div>
           {isMissing && (
             <p className="text-xs text-destructive/80">{t('toolNotFound')}</p>
@@ -458,6 +483,20 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
 
         {/* 操作 */}
         <div className="flex items-center gap-1 shrink-0">
+          {needsConnection && !readOnly && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 cursor-pointer text-muted-foreground hover:text-foreground"
+              title={tConnection('title')}
+              onClick={(e) => {
+                e.stopPropagation()
+                setConnectionOpen(true)
+              }}
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
           {isWebSearch && !readOnly && (
             <Button
               variant="ghost"
@@ -493,6 +532,36 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onDelete, readOnly = fa
           )}
         </div>
       </div>
+
+      {needsConnection && (
+        <Dialog open={connectionOpen} onOpenChange={setConnectionOpen}>
+          <DialogContent className="sm:max-w-[460px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Settings2 className="h-4 w-4 text-orange-500" />
+                {tConnection('title')}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="py-3">
+              <ToolConnectionPicker
+                tool={tool}
+                builtinToolKey={builtinToolKey}
+                teamId={currentTeam?.id}
+                value={tool ? getToolConnectionBinding(config) : EMPTY_CONNECTION_BINDING}
+                onChange={(binding) => onUpdateBinding?.(binding)}
+                entrypointType="agent"
+                entrypointId={entrypointId}
+                disabled={readOnly}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setConnectionOpen(false)}>
+                {t('config.cancel')}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {isWebSearch && (
         <Dialog open={configOpen} onOpenChange={setConfigOpen}>
@@ -536,6 +605,7 @@ interface ToolSelectorProps {
   toolsConfig: ToolConfig[]
   availableTools: Tool[]
   onChange: (toolsConfig: ToolConfig[]) => void
+  entrypointId?: string
   readOnly?: boolean
 }
 
@@ -543,6 +613,7 @@ export function ToolSelector({
   toolsConfig,
   availableTools,
   onChange,
+  entrypointId,
   readOnly = false,
 }: ToolSelectorProps) {
   const t = useTranslations('agents.orchestration.tools')
@@ -584,6 +655,11 @@ export function ToolSelector({
     next[index] = { ...next[index], config: newConfig }
     onChange(next)
   }
+  const handleUpdateToolBinding = (index: number, binding: ToolConnectionBinding) => {
+    const next = [...toolsConfig]
+    next[index] = { ...next[index], ...binding }
+    onChange(next)
+  }
 
   if (selectedTools.length === 0) {
     return (
@@ -610,6 +686,8 @@ export function ToolSelector({
           tool={tool}
           config={config}
           onUpdateConfig={(cfg) => handleUpdateToolConfig(index, cfg)}
+          onUpdateBinding={(binding) => handleUpdateToolBinding(index, binding)}
+          entrypointId={entrypointId}
           onDelete={() => handleDeleteTool(config)}
           readOnly={readOnly}
         />

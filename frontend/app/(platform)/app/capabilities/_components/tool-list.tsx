@@ -15,6 +15,7 @@ interface ToolListProps {
   onEdit?: (tool: Tool) => void
   onDelete?: (tool: Tool) => void
   onConfigure?: (tool: Tool) => void
+  onBrowseMcp?: (tool: Tool) => void
   onShare?: (tool: Tool) => void
   canConfigure?: (tool: Tool) => boolean
   canEdit?: (tool: Tool) => boolean
@@ -31,6 +32,7 @@ export function ToolList({
   onEdit,
   onDelete,
   onConfigure,
+  onBrowseMcp,
   onShare,
   canConfigure,
   canEdit,
@@ -142,6 +144,7 @@ export function ToolList({
                     onEdit={onEdit}
                     onDelete={onDelete}
                     onConfigure={onConfigure}
+                    onBrowseMcp={onBrowseMcp}
                     onShare={onShare}
                     canConfigure={canConfigure?.(tool) ?? false}
                     canEdit={canEdit?.(tool) ?? false}

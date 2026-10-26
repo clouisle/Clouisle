@@ -12,7 +12,18 @@ import {
   ToolParameter,
   toolsApi,
   ToolVisibility,
+  ToolApprovalPolicy,
+  ToolConnectionField,
+  ToolIdentityPolicy,
 } from '@/lib/api/tools'
+import {
+  ToolPolicyEditor,
+  getToolApprovalPolicy,
+  getToolConnectionFields,
+  getToolIdentityPolicy,
+  normalizeConnectionFields,
+  normalizeToolApprovalPolicy,
+} from '@/components/tools/tool-policy-editor'
 import { Team } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { ImageUpload } from '@/components/ui/image-upload'
@@ -199,6 +210,11 @@ export function DatabaseToolDialog({
   const [category, setCategory] = useState<ToolCategory>('data')
   const [visibility, setVisibility] = useState<ToolVisibility>('private')
   const [isEnabled, setIsEnabled] = useState(true)
+  const [identityPolicy, setIdentityPolicy] = useState<ToolIdentityPolicy>('none')
+  const [connectionFields, setConnectionFields] = useState<ToolConnectionField[]>([])
+  const [approvalPolicy, setApprovalPolicy] = useState<ToolApprovalPolicy>(() =>
+    getToolApprovalPolicy(null)
+  )
 
   // 数据库配置
   const [dbType, setDbType] = useState<DatabaseType>('postgresql')
@@ -229,6 +245,9 @@ export function DatabaseToolDialog({
       setCategory((tool.category as ToolCategory) || 'data')
       setVisibility((tool.visibility as ToolVisibility) || 'private')
       setIsEnabled(tool.is_enabled ?? true)
+      setIdentityPolicy(getToolIdentityPolicy(tool))
+      setConnectionFields(getToolConnectionFields(tool))
+      setApprovalPolicy(getToolApprovalPolicy(tool))
 
       const cfg = (tool.database_config || {}) as Partial<DatabaseConfig>
       const curType = (cfg.db_type as DatabaseType) || 'postgresql'
@@ -251,6 +270,9 @@ export function DatabaseToolDialog({
       setCategory('data')
       setVisibility('private')
       setIsEnabled(true)
+      setIdentityPolicy('none')
+      setConnectionFields([])
+      setApprovalPolicy(getToolApprovalPolicy(null))
       setDbType('postgresql')
       setConnectionMode('params')
       setHost('127.0.0.1')
@@ -365,6 +387,9 @@ export function DatabaseToolDialog({
         is_enabled: isEnabled,
         database_config: dbConfig,
         parameters: params,
+        identity_policy: identityPolicy,
+        connection_fields: normalizeConnectionFields(connectionFields),
+        approval_policy: normalizeToolApprovalPolicy(approvalPolicy),
       }
 
       await onSave(payload)
@@ -717,6 +742,15 @@ export function DatabaseToolDialog({
               )}
             </div>
           </div>
+
+          <ToolPolicyEditor
+            identityPolicy={identityPolicy}
+            onIdentityPolicyChange={setIdentityPolicy}
+            connectionFields={connectionFields}
+            onConnectionFieldsChange={setConnectionFields}
+            approvalPolicy={approvalPolicy}
+            onApprovalPolicyChange={setApprovalPolicy}
+          />
 
           <DialogFooter className="pt-2">
             <Button

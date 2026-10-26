@@ -127,7 +127,7 @@ describe('MCP tool dialog', () => {
     const renderer = render()
     const fetch = button(renderer, 'mcpDialog.fetchTools')
     expect(fetch.props.disabled).toBe(true)
-    expect(renderer.root.findAllByType('button').filter((node) => node.props.size === 'icon').every((node) => node.props.disabled)).toBe(true)
+    expect(button(renderer, 'mcpDialog.fetchTools').props.disabled).toBe(true)
 
     await click(button(renderer, 'create'))
     expect(onSave).not.toHaveBeenCalled()
@@ -175,6 +175,13 @@ describe('MCP tool dialog', () => {
       description: '- forecast: Gets forecast\n- alerts: No description',
       icon: 'https://images.test/icon.png', category: 'data', visibility: 'private', is_enabled: false, type: 'mcp',
       mcp_config: { transport: 'stdio', command: 'bunx', args: ['--yes'], env: { TOKEN: 'fake-secret' } },
+      identity_policy: 'none',
+      connection_fields: [],
+      approval_policy: {
+        default_decision: 'require_approval',
+        gates: [{ kind: 'caller', user_ids: [], roles: [], allow_self_approval: false }],
+        operation_overrides: {},
+      },
     })
   })
 

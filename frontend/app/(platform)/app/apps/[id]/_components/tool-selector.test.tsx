@@ -26,6 +26,15 @@ mock.module('@/contexts/team-context', () => ({ useTeam: () => ({ currentTeam: n
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.flat().filter(Boolean).join(' ') }))
 
 const element = (tag: string) => ({ children, ...props }: { children?: ReactNode }) => ({ type: tag, props: { ...props, children } })
+mock.module('@/components/tools/connection-picker', () => ({
+  ToolConnectionPicker: () => null,
+  EMPTY_CONNECTION_BINDING: { connection_mode: null, connection_id: null, grant_id: null },
+  getToolConnectionBinding: (config?: { connection_mode?: 'personal' | 'team' | null; connection_id?: string | null; grant_id?: string | null }) => ({
+    connection_mode: config?.connection_mode ?? null,
+    connection_id: config?.connection_id ?? null,
+    grant_id: config?.grant_id ?? null,
+  }),
+}))
 mock.module('@/components/tools/web-search-engine-select', () => ({
   WebSearchEngineSelect: element('select'),
 }))

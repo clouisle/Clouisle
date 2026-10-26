@@ -257,6 +257,9 @@
       "visibilityTeam": "Team",
       "confirmDelete": "Delete Tool",
       "deleteToolConfirm": "Are you sure you want to delete \"{name}\"? This action cannot be undone.",
+      "mcpBrowser": {
+        "open": "Browse resources & prompts"
+      },
       "filters": {
         "all": "All",
         "builtin": "Built-in",
@@ -315,6 +318,12 @@
       "configDialog": {
         "title": "Configure {name}",
         "description": "Set up API keys and credentials for this tool"
+      },
+      "connectionDialog": {
+        "description": "Manage encrypted identities and defaults for this tool. Secrets are never shown again after saving.",
+        "notRequired": "This tool does not need a stored identity.",
+        "teamRequired": "Select a team before managing tool connections.",
+        "definitionUnavailable": "This tool's definition policy is not available yet. Refresh the page; if it persists, the built-in definition needs to be materialized for this team."
       },
       "httpDialog": {
         "createTitle": "Create HTTP Tool",
@@ -417,11 +426,18 @@
         "headerValuePlaceholder": "value",
         "sseUrlPlaceholder": "http://localhost:3000/sse",
         "headerNamePlaceholder": "Header-Name",
-        "httpUrlPlaceholder": "http://localhost:3000/mcp"
+        "httpUrlPlaceholder": "http://localhost:3000/mcp",
+        "toolsPendingApproval": "Listing MCP tools requires approval. Approve it, then fetch again."
       },
       "testPanel": {
         "arrayPlaceholder": "[\"item1\", \"item2\"]",
-        "objectPlaceholder": "'{\"key\": \"value\"}'"
+        "objectPlaceholder": "'{\"key\": \"value\"}'",
+        "pendingApproval": "This call is waiting for approval. It will not run again automatically.",
+        "executionId": "Execution {id}",
+        "resume": "Resume after approval",
+        "openApprovals": "Open approvals",
+        "resumeFailed": "The tool call could not be resumed. A completed or rejected request is never re-run.",
+        "loadFailed": "Could not list MCP tools for this saved connection."
       },
       "codeEditor": {
         "newTitle": "New Code Tool",
