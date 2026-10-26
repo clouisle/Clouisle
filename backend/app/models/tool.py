@@ -95,7 +95,9 @@ class Tool(models.Model):
     )
 
     # Tool type
-    type = fields.CharEnumField(ToolType, description="Tool type (custom or mcp)")
+    type = fields.CharEnumField(
+        ToolType, max_length=20, description="Tool type (custom, mcp, or builtin)"
+    )
 
     # Custom tool configuration (type=custom)
     custom_type = fields.CharEnumField(

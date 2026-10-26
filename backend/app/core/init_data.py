@@ -2476,6 +2476,44 @@ async def init_tool_database_config():
     logger.info("Tool database_config migration complete")
 
 
+async def init_tool_type_field():
+    """Widen tools.type column to support 'builtin' and future tool types."""
+    logger.info("Initializing tool type field...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'tools' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("Tools table does not exist yet, skipping type migration")
+        return
+
+    # ToolType originally held only "custom" (6 chars) and "mcp" (3 chars), so
+    # Tortoise sized the column to VARCHAR(6). Adding "builtin" (7 chars)
+    # requires widening the column to at least VARCHAR(20) on existing databases.
+    _, col_info = await conn.execute_query("""
+        SELECT character_maximum_length
+        FROM information_schema.columns
+        WHERE table_name = 'tools'
+          AND column_name = 'type'
+          AND table_schema = 'public'
+    """)
+    if col_info and col_info[0]["character_maximum_length"] < 20:
+        await execute_startup_migration_query(
+            conn,
+            """
+            ALTER TABLE tools
+            ALTER COLUMN type TYPE VARCHAR(20)
+            """,
+        )
+        logger.info("Widened tools.type to VARCHAR(20)")
+
+    logger.info("Tool type migration complete")
+
+
 async def init_agent_memory_fields():
     """
     Add enable_memory and memory_config fields to agents table.

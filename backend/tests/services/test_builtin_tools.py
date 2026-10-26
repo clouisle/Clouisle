@@ -382,3 +382,38 @@ def test_builtin_execution_uses_connection_and_approval_boundary(run_orm, monkey
         run_orm(scenario)
     finally:
         tool_registry.unregister("fake_boundary_tool")
+
+
+def test_builtin_definition_self_heals_on_narrow_type_operational_error(
+    run_orm, monkeypatch
+):
+    from tortoise.exceptions import OperationalError
+
+    async def scenario():
+        _user, team = await _fixtures()
+        init_called = False
+
+        async def fake_init():
+            nonlocal init_called
+            init_called = True
+
+        monkeypatch.setattr("app.core.init_data.init_tool_type_field", fake_init)
+
+        original_save = Tool.save
+        first_call = True
+
+        async def flaky_save(self, *args, **kwargs):
+            nonlocal first_call
+            if first_call and getattr(self, "type", None) == ToolType.BUILTIN:
+                first_call = False
+                raise OperationalError("value too long for type character varying(6)")
+            return await original_save(self, *args, **kwargs)
+
+        monkeypatch.setattr(Tool, "save", flaky_save)
+
+        definition = await get_builtin_definition(team.id, "get_current_time")
+        assert definition.type == ToolType.BUILTIN
+        assert init_called is True
+        assert await Tool.filter(team_id=team.id, name="get_current_time").exists()
+
+    run_orm(scenario)

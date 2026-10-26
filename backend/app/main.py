@@ -134,6 +134,7 @@ async def lifespan(app: FastAPI):
         init_kb_visibility_fields,
         init_tool_visibility_fields,
         init_tool_database_config,
+        init_tool_type_field,
         init_skills_table,
         init_clouisle_import_sessions_table,
         init_postgres_lexical_search,
@@ -162,6 +163,10 @@ async def lifespan(app: FastAPI):
         await init_tool_database_config()
     except Exception as e:
         logger.warning(f"Tool database_config migration failed: {e}")
+    try:
+        await init_tool_type_field()
+    except Exception as e:
+        logger.warning(f"Tool type migration failed: {e}")
 
     try:
         await fix_cascade_delete_policies()

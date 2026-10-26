@@ -18,7 +18,7 @@ from collections.abc import Mapping
 from typing import Any
 from uuid import UUID, uuid4
 
-from tortoise.exceptions import IntegrityError
+from tortoise.exceptions import IntegrityError, OperationalError
 
 from app.llm.tools import tool_registry
 from app.llm.tools.registry import ToolConcurrency, ToolInfo
@@ -395,7 +395,16 @@ async def get_builtin_definition(
         created_by_id=None,
     )
     try:
-        await definition.save()
+        try:
+            await definition.save()
+        except OperationalError as exc:
+            if "value too long for type character varying" in str(exc):
+                from app.core.init_data import init_tool_type_field
+
+                await init_tool_type_field()
+                await definition.save()
+            else:
+                raise
     except IntegrityError:
         # Concurrent lazy creation: adopt the winner only if it is builtin.
         existing = await Tool.filter(team_id=team_id, name=name).first()
