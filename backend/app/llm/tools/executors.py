@@ -31,7 +31,7 @@ __all__ = ["socket"]
 
 def _validate_external_http_url(
     value: str,
-    allowlist: list[str] | None = None,
+    allowlist: list[str] | tuple[str, ...] | None = (),
 ) -> _ValidatedExternalUrl:
     return validate_external_http_url(
         value,

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from urllib.parse import urlsplit
+from collections.abc import Iterable
+from urllib.parse import SplitResult, urlsplit
 
 DEFAULT_SANDBOX_NETWORK_ALLOWLIST = [
     "pypi.org",
@@ -14,6 +15,7 @@ DEFAULT_SANDBOX_NETWORK_ALLOWLIST = [
 ]
 SANDBOX_NETWORK_ALLOWLIST_MAX_ENTRIES = 200
 SANDBOX_NETWORK_ALLOWLIST_SETTING = "sandbox_network_allowlist"
+SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING = "sandbox_network_allowlist_enabled"
 _DOMAIN_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
 
@@ -77,9 +79,19 @@ def normalize_sandbox_network_allowlist(value: object) -> list[str]:
     return normalized
 
 
+def resolve_package_source_allowlist(
+    allowed_hosts: Iterable[str] | None,
+    network_unrestricted: bool,
+) -> tuple[str, ...] | None:
+    """Map the sandbox network mode to the package-source allowlist."""
+    if network_unrestricted:
+        return None
+    return tuple(allowed_hosts) if allowed_hosts is not None else ()
+
+
 def normalize_sandbox_package_source(
     value: str,
-    allowlist: list[str] | tuple[str, ...],
+    allowlist: list[str] | tuple[str, ...] | None,
 ) -> str:
     if not isinstance(value, str) or not value.strip():
         raise SandboxNetworkPolicyError("Package source URL is invalid")
@@ -91,6 +103,9 @@ def normalize_sandbox_package_source(
         raise SandboxNetworkPolicyError(
             "Package source URL is invalid", host=parsed.hostname
         ) from exc
+
+    if allowlist is None:
+        return _normalize_unrestricted_package_source(parsed, port)
 
     if (
         parsed.scheme.lower() != "https"
@@ -117,6 +132,33 @@ def normalize_sandbox_package_source(
     return f"https://{host}{path}"
 
 
+def _normalize_unrestricted_package_source(
+    parsed: SplitResult,
+    port: int | None,
+) -> str:
+    """Validate a package source when sandbox egress restrictions are disabled."""
+    scheme = parsed.scheme.lower()
+    host = (parsed.hostname or "").lower()
+    if (
+        scheme not in {"http", "https"}
+        or not host
+        or any(ord(character) < 0x21 for character in host)
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or port == 0
+    ):
+        raise SandboxNetworkPolicyError(
+            "Package source URL must be HTTP(S) without credentials or a query",
+            host=parsed.hostname,
+        )
+
+    netloc_host = f"[{host}]" if ":" in host else host
+    port_suffix = "" if port is None else f":{port}"
+    return f"{scheme}://{netloc_host}{port_suffix}{parsed.path.rstrip('/')}"
+
+
 def sandbox_network_host_is_allowed(
     host: str, allowlist: list[str] | tuple[str, ...]
 ) -> bool:
@@ -128,15 +170,27 @@ def sandbox_network_host_is_allowed(
     return normalized in allowed
 
 
-async def get_sandbox_network_allowlist() -> list[str]:
-    """Load the current sandbox egress policy from security site settings."""
+async def get_sandbox_network_allowlist() -> list[str] | None:
+    """Load the sandbox egress policy.
+
+    ``None`` disables restrictions (only for a literal ``False`` switch);
+    ``[]`` denies every destination, including on read failures.
+    """
     from app.models.site_setting import SiteSetting
 
     try:
-        value = await SiteSetting.get_value(
-            SANDBOX_NETWORK_ALLOWLIST_SETTING,
-            list(DEFAULT_SANDBOX_NETWORK_ALLOWLIST),
+        values = await SiteSetting.get_values(
+            {
+                SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING: True,
+                SANDBOX_NETWORK_ALLOWLIST_SETTING: list(
+                    DEFAULT_SANDBOX_NETWORK_ALLOWLIST
+                ),
+            }
         )
-        return normalize_sandbox_network_allowlist(value)
+        if values[SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING] is False:
+            return None
+        return normalize_sandbox_network_allowlist(
+            values[SANDBOX_NETWORK_ALLOWLIST_SETTING]
+        )
     except Exception:
         return []

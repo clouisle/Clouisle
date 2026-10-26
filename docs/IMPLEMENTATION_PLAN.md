@@ -1,6 +1,12 @@
 # Implementation Plan
 
 ## Active
+- **network-allowlist-switches** — Completed. See `docs/plan/network-allowlist-switches.md`.
+  - [x] 1. Site settings, model endpoints and SSRF
+  - [x] 2. Sandbox policy and isolation
+  - [x] 3. Admin UI and localization
+  - [x] 4. Integrated verification and operator documentation
+
 - **agent-prompt-runtime-conflicts** — Completed. See `docs/plan/agent-prompt-runtime-conflicts.md`.
   - [x] 1. Correct runtime capability guidance
   - [x] 2. Separate generated business rules from platform protocols

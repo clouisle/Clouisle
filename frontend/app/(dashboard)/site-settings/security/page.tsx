@@ -69,6 +69,9 @@ export default function SiteSettingsSecurityPage() {
   password_min_age_days: 0,
     force_password_change_first_login: false,
     require_totp: false,
+    model_endpoint_allowlist_enabled: true,
+    ssrf_protection_enabled: true,
+    sandbox_network_allowlist_enabled: true,
     model_endpoint_allowlist: [],
     ssrf_allowed_targets: [],
     sandbox_network_allowlist: [],
@@ -142,6 +145,9 @@ export default function SiteSettingsSecurityPage() {
         password_min_age_days: data.password_min_age_days ?? 0,
         force_password_change_first_login: data.force_password_change_first_login ?? false,
         require_totp: data.require_totp ?? false,
+        model_endpoint_allowlist_enabled: data.model_endpoint_allowlist_enabled !== false,
+        ssrf_protection_enabled: data.ssrf_protection_enabled !== false,
+        sandbox_network_allowlist_enabled: data.sandbox_network_allowlist_enabled !== false,
         model_endpoint_allowlist: data.model_endpoint_allowlist,
         ssrf_allowed_targets: data.ssrf_allowed_targets ?? [],
         sandbox_network_allowlist: data.sandbox_network_allowlist,
@@ -621,7 +627,24 @@ export default function SiteSettingsSecurityPage() {
           <CardTitle>{t('modelEndpointAllowlist')}</CardTitle>
           <CardDescription>{t('modelEndpointAllowlistDescription')}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2">
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="modelEndpointAllowlistEnabled">{t('modelEndpointAllowlistEnabled')}</Label>
+              <p className="text-sm text-muted-foreground">{t('modelEndpointAllowlistEnabledDescription')}</p>
+            </div>
+            <Switch
+              id="modelEndpointAllowlistEnabled"
+              checked={settings.model_endpoint_allowlist_enabled}
+              onCheckedChange={(checked) => updateSetting('model_endpoint_allowlist_enabled', checked)}
+              disabled={!canUpdate}
+            />
+          </div>
+          {!settings.model_endpoint_allowlist_enabled && (
+            <p className="text-sm text-destructive" role="note">
+              {t('modelEndpointAllowlistDisabledWarning')}
+            </p>
+          )}
           <Label htmlFor="modelEndpointAllowlist">{t('modelEndpointAllowlistOrigins')}</Label>
           <Textarea
             id="modelEndpointAllowlist"
@@ -632,7 +655,7 @@ export default function SiteSettingsSecurityPage() {
             )}
             placeholder={t('modelEndpointAllowlistPlaceholder')}
             rows={8}
-            disabled={!canUpdate}
+            disabled={!canUpdate || !settings.model_endpoint_allowlist_enabled}
             aria-invalid={!!fieldErrors.model_endpoint_allowlist}
           />
           <p className="text-sm text-muted-foreground">
@@ -646,7 +669,24 @@ export default function SiteSettingsSecurityPage() {
           <CardTitle>{t('sandboxNetworkAllowlist')}</CardTitle>
           <CardDescription>{t('sandboxNetworkAllowlistDescription')}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2">
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="sandboxNetworkAllowlistEnabled">{t('sandboxNetworkAllowlistEnabled')}</Label>
+              <p className="text-sm text-muted-foreground">{t('sandboxNetworkAllowlistEnabledDescription')}</p>
+            </div>
+            <Switch
+              id="sandboxNetworkAllowlistEnabled"
+              checked={settings.sandbox_network_allowlist_enabled}
+              onCheckedChange={(checked) => updateSetting('sandbox_network_allowlist_enabled', checked)}
+              disabled={!canUpdate}
+            />
+          </div>
+          {!settings.sandbox_network_allowlist_enabled && (
+            <p className="text-sm text-destructive" role="note">
+              {t('sandboxNetworkAllowlistDisabledWarning')}
+            </p>
+          )}
           <Label htmlFor="sandboxNetworkAllowlist">{t('sandboxNetworkAllowlistEntries')}</Label>
           <Textarea
             id="sandboxNetworkAllowlist"
@@ -657,7 +697,7 @@ export default function SiteSettingsSecurityPage() {
             )}
             placeholder={t('sandboxNetworkAllowlistPlaceholder')}
             rows={6}
-            disabled={!canUpdate}
+            disabled={!canUpdate || !settings.sandbox_network_allowlist_enabled}
             aria-invalid={!!fieldErrors.sandbox_network_allowlist}
           />
           <p className="text-sm text-muted-foreground">
@@ -671,7 +711,24 @@ export default function SiteSettingsSecurityPage() {
           <CardTitle>{t('ssrfAllowedTargets')}</CardTitle>
           <CardDescription>{t('ssrfAllowedTargetsDescription')}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2">
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="ssrfProtectionEnabled">{t('ssrfProtectionEnabled')}</Label>
+              <p className="text-sm text-muted-foreground">{t('ssrfProtectionEnabledDescription')}</p>
+            </div>
+            <Switch
+              id="ssrfProtectionEnabled"
+              checked={settings.ssrf_protection_enabled}
+              onCheckedChange={(checked) => updateSetting('ssrf_protection_enabled', checked)}
+              disabled={!canUpdate}
+            />
+          </div>
+          {!settings.ssrf_protection_enabled && (
+            <p className="text-sm text-destructive" role="note">
+              {t('ssrfProtectionDisabledWarning')}
+            </p>
+          )}
           <Label htmlFor="ssrfAllowedTargets">{t('ssrfAllowedTargetsEntries')}</Label>
           <Textarea
             id="ssrfAllowedTargets"
@@ -682,7 +739,7 @@ export default function SiteSettingsSecurityPage() {
             )}
             placeholder={t('ssrfAllowedTargetsPlaceholder')}
             rows={6}
-            disabled={!canUpdate}
+            disabled={!canUpdate || !settings.ssrf_protection_enabled}
             aria-invalid={!!fieldErrors.ssrf_allowed_targets}
           />
           <p className="text-sm text-muted-foreground">

@@ -15,6 +15,22 @@ from app.schemas.site_setting import (
 )
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "key",
+    [
+        "model_endpoint_allowlist_enabled",
+        "ssrf_protection_enabled",
+        "sandbox_network_allowlist_enabled",
+    ],
+)
+@pytest.mark.parametrize("value", ["false", "true", 0, 1, None, [], {}])
+async def test_network_restriction_switch_rejects_non_boolean(key, value):
+    with pytest.raises(BusinessError) as error:
+        await _validate_setting_value(key, value)
+    assert error.value.code == ResponseCode.VALIDATION_ERROR
+
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [

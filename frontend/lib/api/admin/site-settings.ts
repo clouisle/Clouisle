@@ -173,6 +173,10 @@ export const siteSettingsApi = {
       password_min_age_days: (settings.password_min_age_days as number) ?? 0,
       force_password_change_first_login: (settings.force_password_change_first_login as boolean) ?? false,
       require_totp: (settings.require_totp as boolean) ?? false,
+      // Only an explicit false disables a restriction; missing or invalid values stay restricted.
+      model_endpoint_allowlist_enabled: settings.model_endpoint_allowlist_enabled !== false,
+      ssrf_protection_enabled: settings.ssrf_protection_enabled !== false,
+      sandbox_network_allowlist_enabled: settings.sandbox_network_allowlist_enabled !== false,
       model_endpoint_allowlist: modelEndpointAllowlist as string[],
       ssrf_allowed_targets: safeSsrfAllowedTargets,
       sandbox_network_allowlist: sandboxNetworkAllowlist as string[],

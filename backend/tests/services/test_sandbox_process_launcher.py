@@ -270,6 +270,76 @@ async def test_allowlisted_launch_uses_network_namespace_and_bridge(
         assert args[-4:] == ["--", "python3", "-c", "print('ok')"]
 
 
+@pytest.mark.asyncio
+async def test_unrestricted_launch_drops_network_namespace_but_keeps_limits(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "jobs" / "job-1"
+    (workspace / "tmp").mkdir(parents=True)
+
+    def create_streams() -> Mock:
+        stdout = asyncio.StreamReader()
+        stdout.feed_data(b"ok")
+        stdout.feed_eof()
+        stderr = asyncio.StreamReader()
+        stderr.feed_eof()
+        process = Mock(returncode=0, stdout=stdout, stderr=stderr)
+        process.wait = AsyncMock(return_value=0)
+        return process
+
+    create_process = AsyncMock(side_effect=[create_streams(), create_streams()])
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create_process)
+    monkeypatch.setattr(
+        "app.services.sandbox.process_launcher.shutil.which",
+        lambda name: "/usr/bin/bwrap" if name == "bwrap" else "/usr/bin/prlimit",
+    )
+    launcher = SandboxProcessLauncher(filesystem_isolation_enabled=True)
+
+    result = await launcher.launch(
+        ["python3", "-c", "print('ok')"],
+        cwd=str(workspace),
+        env={"PATH": "/usr/bin"},
+        workspace_root=str(workspace),
+        network_unrestricted=True,
+    )
+    args = list(create_process.await_args_list[0].args)
+
+    assert result.stdout == "ok"
+    assert args[0] == "/usr/bin/bwrap"
+    assert "--unshare-net" not in args
+    assert "--unshare-user" in args
+    assert "--unshare-pid" in args
+    assert "/run/clouisle-sandbox-egress" not in args
+    assert not any("network_bridge" in str(arg) for arg in args)
+    workspace_index = args.index(str(workspace.resolve()))
+    assert args[workspace_index - 1] == "--bind"
+    assert args[workspace_index + 1] == "/workspace"
+    assert args[args.index("--chdir") + 1] == "/workspace"
+    prlimit_index = args.index("/usr/bin/prlimit")
+    assert args[prlimit_index + 1 : prlimit_index + 5] == [
+        f"--as={settings.SANDBOX_TASK_MEMORY_MB * 1024 * 1024}:"
+        f"{settings.SANDBOX_TASK_MEMORY_MB * 1024 * 1024}",
+        f"--cpu={min(settings.SANDBOX_TASK_MAX_CPU_SECONDS, 30)}:"
+        f"{min(settings.SANDBOX_TASK_MAX_CPU_SECONDS, 30)}",
+        f"--fsize={settings.SANDBOX_TASK_MAX_FILE_SIZE_MB * 1024 * 1024}:"
+        f"{settings.SANDBOX_TASK_MAX_FILE_SIZE_MB * 1024 * 1024}",
+        f"--nofile={settings.SANDBOX_TASK_MAX_OPEN_FILES}:"
+        f"{settings.SANDBOX_TASK_MAX_OPEN_FILES}",
+    ]
+    assert args[prlimit_index + 5] == "--"
+    assert args[-3:] == ["python3", "-c", "print('ok')"]
+
+    await launcher.launch(
+        ["python3"],
+        cwd=str(workspace),
+        workspace_root=str(workspace),
+    )
+    restricted_args = list(create_process.await_args_list[1].args)
+    assert "--unshare-net" in restricted_args
+    assert "/run/clouisle-sandbox-egress" not in restricted_args
+
+
 @pytest.mark.skipif(sys.platform != "linux", reason="Linux capability semantics")
 def test_proxy_bridge_drops_capabilities_before_payload() -> None:
     child_code = (

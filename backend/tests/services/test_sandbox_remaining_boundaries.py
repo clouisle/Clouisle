@@ -23,6 +23,18 @@ async def test_launcher_rejects_network_proxy_without_filesystem_isolation():
 
 
 @pytest.mark.asyncio
+async def test_launcher_rejects_unrestricted_network_with_egress_proxy():
+    launcher = SandboxProcessLauncher(filesystem_isolation_enabled=True)
+
+    with pytest.raises(SandboxIsolationError, match="unrestricted at once"):
+        await launcher.launch(
+            [sys.executable, "-c", "pass"],
+            network_proxy=Mock(),
+            network_unrestricted=True,
+        )
+
+
+@pytest.mark.asyncio
 async def test_launcher_without_deadline_collects_complete_output():
     launcher = SandboxProcessLauncher(filesystem_isolation_enabled=False)
 
@@ -75,6 +87,7 @@ def test_launcher_maps_cwd_outside_workspace_to_isolation_error(tmp_path, monkey
             workspace_root=str(workspace),
             cache_root=None,
             network_proxy=None,
+            network_unrestricted=False,
             timeout_seconds=1,
         )
 

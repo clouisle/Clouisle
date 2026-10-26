@@ -1,8 +1,23 @@
 from typing import Any, Optional, TypedDict
 
 from tortoise import fields, models
-from app.core.model_endpoint_policy import DEFAULT_MODEL_ENDPOINT_ALLOWLIST
-from app.core.sandbox_network_policy import DEFAULT_SANDBOX_NETWORK_ALLOWLIST
+from app.core.model_endpoint_policy import (
+    DEFAULT_MODEL_ENDPOINT_ALLOWLIST,
+    MODEL_ENDPOINT_ALLOWLIST_ENABLED_SETTING,
+)
+from app.core.network_security import SSRF_PROTECTION_ENABLED_SETTING
+from app.core.sandbox_network_policy import (
+    DEFAULT_SANDBOX_NETWORK_ALLOWLIST,
+    SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING,
+)
+
+RESTRICTION_SWITCH_KEYS = frozenset(
+    {
+        MODEL_ENDPOINT_ALLOWLIST_ENABLED_SETTING,
+        SSRF_PROTECTION_ENABLED_SETTING,
+        SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING,
+    }
+)
 
 
 class SiteSetting(models.Model):
@@ -37,7 +52,31 @@ class SiteSetting(models.Model):
         setting = await cls.filter(key=key).first()
         if not setting:
             return default
-        return cls._convert_value(setting.value, setting.value_type)
+        return cls._convert_setting_value(key, setting.value, setting.value_type)
+
+    @classmethod
+    async def get_values(cls, defaults: dict[str, Any]) -> dict[str, Any]:
+        """Get several settings in one query, preserving per-key defaults."""
+        rows = {s.key: s for s in await cls.filter(key__in=list(defaults))}
+        return {
+            key: (
+                cls._convert_setting_value(key, row.value, row.value_type)
+                if (row := rows.get(key))
+                else default
+            )
+            for key, default in defaults.items()
+        }
+
+    @classmethod
+    def _convert_setting_value(
+        cls, key: str, value: Optional[str], value_type: str
+    ) -> Any:
+        """Convert a stored value; corrupt restriction switches stay fail-closed."""
+        if key in RESTRICTION_SWITCH_KEYS and (
+            value_type != "bool" or value not in {"true", "false"}
+        ):
+            return True
+        return cls._convert_value(value, value_type)
 
     @classmethod
     async def set_value(
@@ -101,7 +140,10 @@ class SiteSetting(models.Model):
             query = query.filter(is_public=True)
 
         settings = await query
-        return {s.key: cls._convert_value(s.value, s.value_type) for s in settings}
+        return {
+            s.key: cls._convert_setting_value(s.key, s.value, s.value_type)
+            for s in settings
+        }
 
     @staticmethod
     def _convert_value(value: Optional[str], value_type: str) -> Any:
@@ -525,6 +567,27 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "desc": "Default team role for new users",
     },
     # Security
+    MODEL_ENDPOINT_ALLOWLIST_ENABLED_SETTING: {
+        "value": True,
+        "type": "bool",
+        "category": "security",
+        "public": False,
+        "desc": "Enforce the model endpoint allowlist",
+    },
+    SSRF_PROTECTION_ENABLED_SETTING: {
+        "value": True,
+        "type": "bool",
+        "category": "security",
+        "public": False,
+        "desc": "Enforce outbound SSRF protection with configured exemptions",
+    },
+    SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING: {
+        "value": True,
+        "type": "bool",
+        "category": "security",
+        "public": False,
+        "desc": "Enforce sandbox egress restrictions",
+    },
     "model_endpoint_allowlist": {
         "value": DEFAULT_MODEL_ENDPOINT_ALLOWLIST,
         "type": "json",

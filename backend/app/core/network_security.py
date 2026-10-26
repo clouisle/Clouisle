@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from app.schemas.response import BusinessError
 
 SSRF_ALLOWED_TARGETS_SETTING = "ssrf_allowed_targets"
+SSRF_PROTECTION_ENABLED_SETTING = "ssrf_protection_enabled"
 SSRF_ALLOWED_TARGETS_MAX_ENTRIES = 200
 
 _BLOCKED_HOSTS = {"localhost", "local", "metadata.google.internal"}
@@ -98,6 +99,11 @@ def normalize_ssrf_allowlist_entry(value: str) -> str:
     if "*" in pattern or ":" in pattern:
         raise BusinessError(msg_key="ssrf_allowlist_entry_invalid")
 
+    # The documented loopback exemption uses this literal hostname; other
+    # single-label hostnames stay rejected as ambiguous.
+    if pattern == "localhost":
+        return pattern
+
     # Hostname must contain at least one dot or be a recognized internal hostname
     if "." not in pattern or pattern.startswith(".") or pattern.endswith("."):
         raise BusinessError(msg_key="ssrf_allowlist_entry_invalid")
@@ -153,16 +159,20 @@ def is_target_allowlisted(
     return False
 
 
-async def get_ssrf_allowed_targets() -> list[str]:
-    """Retrieve the administrator-approved SSRF exemption targets from SiteSetting."""
+async def get_ssrf_allowed_targets() -> list[str] | None:
+    """Load SSRF exemptions; None explicitly disables destination restrictions."""
     try:
         from app.models.site_setting import SiteSetting
 
-        value = await SiteSetting.get_value(
-            SSRF_ALLOWED_TARGETS_SETTING,
-            [],
+        values = await SiteSetting.get_values(
+            {
+                SSRF_PROTECTION_ENABLED_SETTING: True,
+                SSRF_ALLOWED_TARGETS_SETTING: [],
+            }
         )
-        return normalize_ssrf_allowlist(value)
+        if values[SSRF_PROTECTION_ENABLED_SETTING] is False:
+            return None
+        return normalize_ssrf_allowlist(values[SSRF_ALLOWED_TARGETS_SETTING])
     except Exception:
         return []
 
@@ -170,7 +180,7 @@ async def get_ssrf_allowed_targets() -> list[str]:
 def validate_external_http_url(
     value: str,
     getaddrinfo=None,
-    allowlist: Iterable[str] | None = None,
+    allowlist: Iterable[str] | None = (),
 ) -> _ValidatedExternalUrl:
     """Validate an external HTTP/HTTPS URL against blocked hosts, private IPs, and metadata targets."""
     if getaddrinfo is None:
@@ -179,6 +189,12 @@ def validate_external_http_url(
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise BusinessError(msg_key="http_tool_url_invalid")
     host = parsed.hostname.lower().rstrip(".")
+    if allowlist is None:
+        try:
+            parsed.port
+        except ValueError as exc:
+            raise BusinessError(msg_key="http_tool_url_invalid") from exc
+        return _ValidatedExternalUrl(value)
     if host in _BLOCKED_HOSTS and not (
         allowlist and is_target_allowlisted(host, [], allowlist)
     ):
@@ -258,7 +274,7 @@ def validate_external_host(
     error_key: str = "database_host_not_allowed",
     invalid_key: str = "database_host_invalid",
     unresolvable_key: str = "database_host_cannot_be_resolved",
-    allowlist: Iterable[str] | None = None,
+    allowlist: Iterable[str] | None = (),
 ) -> str:
     """Validate a hostname or IP against blocked hosts, private IPs, and metadata targets."""
     if getaddrinfo is None:
@@ -268,6 +284,8 @@ def validate_external_host(
         raise BusinessError(msg_key=invalid_key)
     if port is not None and not (1 <= port <= 65535):
         raise BusinessError(msg_key=invalid_key)
+    if allowlist is None:
+        return clean_host
     if clean_host in _BLOCKED_HOSTS and not (
         allowlist and is_target_allowlisted(clean_host, [], allowlist)
     ):
@@ -299,7 +317,7 @@ def validate_external_host(
 def validate_database_config(
     db_config: dict,
     getaddrinfo=None,
-    allowlist: Iterable[str] | None = None,
+    allowlist: Iterable[str] | None = (),
 ) -> None:
     targets: list[tuple[str, int | None]] = []
     raw_host = db_config.get("host")

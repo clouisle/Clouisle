@@ -68,6 +68,43 @@ async def test_get_value_returns_default_or_converted_setting(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    "key",
+    [
+        "model_endpoint_allowlist_enabled",
+        "ssrf_protection_enabled",
+        "sandbox_network_allowlist_enabled",
+    ],
+)
+@pytest.mark.parametrize(
+    ("value", "value_type"),
+    [
+        ("invalid", "bool"),
+        ("0", "bool"),
+        (None, "bool"),
+        ("false", "string"),
+    ],
+)
+async def test_corrupt_network_switch_storage_cannot_disable_restrictions(
+    monkeypatch, key, value, value_type
+):
+    first = AsyncMock(
+        return_value=type(
+            "Setting",
+            (),
+            {
+                "value": value,
+                "value_type": value_type,
+            },
+        )()
+    )
+    monkeypatch.setattr(
+        SiteSetting, "filter", lambda **kwargs: type("Query", (), {"first": first})()
+    )
+    assert await SiteSetting.get_value(key, True) is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     ("value", "value_type", "stored"),
     [
         (True, "bool", "true"),
@@ -165,6 +202,97 @@ async def test_get_all_by_category_filters_and_converts(
         "enabled": True,
     }
     assert query.filters == expected_filters
+
+
+@pytest.mark.asyncio
+async def test_get_all_by_category_keeps_corrupt_switches_fail_closed(monkeypatch):
+    settings = [
+        type(
+            "Setting",
+            (),
+            {"key": "ssrf_protection_enabled", "value": "0", "value_type": "bool"},
+        )(),
+        type(
+            "Setting",
+            (),
+            {
+                "key": "sandbox_network_allowlist_enabled",
+                "value": "false",
+                "value_type": "bool",
+            },
+        )(),
+        type(
+            "Setting",
+            (),
+            {"key": "enabled", "value": "no", "value_type": "bool"},
+        )(),
+    ]
+    query = QueryDouble(settings)
+    monkeypatch.setattr(SiteSetting, "all", lambda: query)
+
+    assert await SiteSetting.get_all_by_category() == {
+        "ssrf_protection_enabled": True,
+        "sandbox_network_allowlist_enabled": False,
+        "enabled": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_values_reads_batch_with_defaults_and_fail_closed_switches(
+    monkeypatch,
+):
+    rows = [
+        type(
+            "Setting",
+            (),
+            {"key": "ssrf_protection_enabled", "value": "0", "value_type": "bool"},
+        )(),
+        type(
+            "Setting",
+            (),
+            {
+                "key": "sandbox_network_allowlist",
+                "value": '["pypi.org"]',
+                "value_type": "json",
+            },
+        )(),
+    ]
+
+    class Query:
+        def __await__(self):
+            async def result():
+                return rows
+
+            return result().__await__()
+
+    filters = []
+
+    def fake_filter(**kwargs):
+        filters.append(kwargs)
+        return Query()
+
+    monkeypatch.setattr(SiteSetting, "filter", fake_filter)
+
+    assert await SiteSetting.get_values(
+        {
+            "ssrf_protection_enabled": True,
+            "sandbox_network_allowlist": [],
+            "missing": "fallback",
+        }
+    ) == {
+        "ssrf_protection_enabled": True,
+        "sandbox_network_allowlist": ["pypi.org"],
+        "missing": "fallback",
+    }
+    assert filters == [
+        {
+            "key__in": [
+                "ssrf_protection_enabled",
+                "sandbox_network_allowlist",
+                "missing",
+            ]
+        }
+    ]
 
 
 @pytest.mark.asyncio

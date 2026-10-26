@@ -15,6 +15,7 @@ from app.models import (
     KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB,
 )
 from app.models.notification import AutoNotificationType
+from app.models.site_setting import RESTRICTION_SWITCH_KEYS
 from app.schemas.site_setting import (
     SiteSettingResponse,
     SiteSettingUpdate,
@@ -104,6 +105,11 @@ async def _validate_setting_value(key: str, value: object) -> None:
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="validation_error",
         )
+
+    if key in RESTRICTION_SWITCH_KEYS:
+        if not isinstance(value, bool):
+            raise_validation_error()
+        return
 
     if key in {"icp_record_url", "terms_url", "privacy_url"}:
         if value in (None, ""):
@@ -428,7 +434,9 @@ async def get_setting(
     return success(
         data=SiteSettingResponse(
             key=setting.key,
-            value=SiteSetting._convert_value(setting.value, setting.value_type),
+            value=SiteSetting._convert_setting_value(
+                setting.key, setting.value, setting.value_type
+            ),
             value_type=setting.value_type,
             category=setting.category,
             description=setting.description,

@@ -475,16 +475,25 @@ export type SiteSettingsMessages = {
     singleSessionDescription: string
     modelEndpointAllowlist: string
     modelEndpointAllowlistDescription: string
+    modelEndpointAllowlistEnabled: string
+    modelEndpointAllowlistEnabledDescription: string
+    modelEndpointAllowlistDisabledWarning: string
     modelEndpointAllowlistOrigins: string
     modelEndpointAllowlistPlaceholder: string
     modelEndpointAllowlistHint: string
     sandboxNetworkAllowlist: string
     sandboxNetworkAllowlistDescription: string
+    sandboxNetworkAllowlistEnabled: string
+    sandboxNetworkAllowlistEnabledDescription: string
+    sandboxNetworkAllowlistDisabledWarning: string
     sandboxNetworkAllowlistEntries: string
     sandboxNetworkAllowlistPlaceholder: string
     sandboxNetworkAllowlistHint: string
     ssrfAllowedTargets: string
     ssrfAllowedTargetsDescription: string
+    ssrfProtectionEnabled: string
+    ssrfProtectionEnabledDescription: string
+    ssrfProtectionDisabledWarning: string
     ssrfAllowedTargetsEntries: string
     ssrfAllowedTargetsPlaceholder: string
     ssrfAllowedTargetsHint: string

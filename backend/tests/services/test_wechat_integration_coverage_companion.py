@@ -7,6 +7,7 @@ disabled explicitly, so every assertion is about this client's own decisions.
 import base64
 import json
 import logging
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -32,7 +33,9 @@ def _no_ssrf_lookup(monkeypatch):
     # these tests exercise.
     calls: list[str] = []
     monkeypatch.setattr(
-        wechat, "validate_external_http_url", lambda url: calls.append(url)
+        wechat,
+        "ensure_external_http_url_allowed",
+        AsyncMock(side_effect=lambda url: calls.append(url)),
     )
     return calls
 

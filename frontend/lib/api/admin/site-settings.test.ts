@@ -106,9 +106,31 @@ describe('siteSettingsApi requests', () => {
       expect(security).toHaveProperty('model_endpoint_allowlist', [])
       expect(security).toHaveProperty('ssrf_allowed_targets', ['10.0.0.0/16'])
       expect(security).toHaveProperty('sandbox_network_allowlist', ['pypi.org'])
+      expect(security).toHaveProperty('model_endpoint_allowlist_enabled', true)
+      expect(security).toHaveProperty('ssrf_protection_enabled', true)
+      expect(security).toHaveProperty('sandbox_network_allowlist_enabled', true)
       expect(get.mock.calls.map(([route]) => route)).toEqual([
         '/admin/site-settings?category=security',
       ])
+    } finally {
+      get.mockRestore()
+    }
+  })
+
+  it('treats only an explicit boolean false as a disabled restriction', async () => {
+    const get = spyOn(api, 'get').mockResolvedValue(response({
+      model_endpoint_allowlist: [],
+      sandbox_network_allowlist: [],
+      model_endpoint_allowlist_enabled: false,
+      ssrf_protection_enabled: 'false',
+      sandbox_network_allowlist_enabled: 0,
+    }))
+
+    try {
+      const security = await siteSettingsApi.getSecurity()
+      expect(security.model_endpoint_allowlist_enabled).toBe(false)
+      expect(security.ssrf_protection_enabled).toBe(true)
+      expect(security.sandbox_network_allowlist_enabled).toBe(true)
     } finally {
       get.mockRestore()
     }

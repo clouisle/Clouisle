@@ -633,7 +633,11 @@ async def test_upload_media_encrypts_and_posts_without_bearer(monkeypatch):
         captured["body"] = await request.aread()
         return httpx.Response(200, headers={"X-Encrypted-Param": "download-param"})
 
-    monkeypatch.setattr(transport, "validate_external_http_url", lambda value: value)
+    monkeypatch.setattr(
+        transport,
+        "ensure_external_http_url_allowed",
+        AsyncMock(side_effect=lambda value: value),
+    )
     plaintext = b"generated image bytes \xe4\xb8\xad\xe6\x96\x87"
     ciphertext, aeskey_hex, raw_md5 = _encrypt_media(plaintext)
     async with transport.WeChatClient() as client:
@@ -676,7 +680,11 @@ async def test_send_media_item_shape_matches_protocol(monkeypatch):
         payloads.append(await request.aread())
         return httpx.Response(200, text='{"ret":0}')
 
-    monkeypatch.setattr(transport, "validate_external_http_url", lambda value: value)
+    monkeypatch.setattr(
+        transport,
+        "ensure_external_http_url_allowed",
+        AsyncMock(side_effect=lambda value: value),
+    )
     item = {
         "type": 2,
         "image_item": {
@@ -706,7 +714,11 @@ async def test_send_text_uses_stable_client_id(monkeypatch):
         bodies.append(await request.aread())
         return httpx.Response(200, text='{"ret":0}')
 
-    monkeypatch.setattr(transport, "validate_external_http_url", lambda value: value)
+    monkeypatch.setattr(
+        transport,
+        "ensure_external_http_url_allowed",
+        AsyncMock(side_effect=lambda value: value),
+    )
     async with transport.WeChatClient("https://ilinkai.weixin.qq.com", "tok") as client:
         await client.http.aclose()
         client.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))

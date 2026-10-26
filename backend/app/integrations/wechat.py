@@ -15,7 +15,7 @@ import httpx
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-from app.core.network_security import validate_external_http_url
+from app.core.network_security import ensure_external_http_url_allowed
 
 API_BASE = "https://ilinkai.weixin.qq.com"
 CDN_BASE = "https://novac2c.cdn.weixin.qq.com/c2c"
@@ -120,7 +120,7 @@ class WeChatClient:
                 body = {**body, "base_info": BASE_INFO}
         try:
             url = f"{self.base_url}/{endpoint}"
-            await asyncio.to_thread(validate_external_http_url, url)
+            await ensure_external_http_url_allowed(url)
             async with self.http.stream(
                 "POST" if body is not None else "GET", url, json=body, headers=headers
             ) as response:
@@ -247,7 +247,7 @@ class WeChatClient:
         """POST ciphertext to the reserved CDN slot; return the download param."""
         try:
             official_url(url, media=True)
-            await asyncio.to_thread(validate_external_http_url, url)
+            await ensure_external_http_url_allowed(url)
             async with self.http.stream(
                 "POST",
                 url,
@@ -315,7 +315,7 @@ class WeChatClient:
         try:
             for _ in range(4):
                 official_url(url, media=True)
-                await asyncio.to_thread(validate_external_http_url, url)
+                await ensure_external_http_url_allowed(url)
                 async with self.http.stream("GET", url, headers={}) as response:
                     if response.is_redirect:
                         url = urljoin(url, response.headers.get("location", ""))

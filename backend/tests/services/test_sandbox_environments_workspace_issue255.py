@@ -6,7 +6,10 @@ from unittest.mock import call, patch
 import pytest
 
 from app.core.config import settings
-from app.core.sandbox_network_policy import DEFAULT_SANDBOX_NETWORK_ALLOWLIST
+from app.core.sandbox_network_policy import (
+    DEFAULT_SANDBOX_NETWORK_ALLOWLIST,
+    SandboxNetworkPolicyError,
+)
 from app.services.sandbox.node_env import NodeEnvironmentManager
 from app.services.sandbox.process_launcher import ProcessLaunchResult
 from app.services.sandbox.python_env import PythonEnvironmentManager
@@ -183,6 +186,85 @@ async def test_node_environment_cleans_failed_build(tmp_path: Path):
             network_proxy=FakeNetworkProxy(),
         )
     assert not building_root.exists()
+
+
+@pytest.mark.anyio
+async def test_unrestricted_python_environment_accepts_unlisted_http_index(
+    tmp_path: Path,
+):
+    manager = PythonEnvironmentManager(tmp_path)
+    manager.python_version = lambda: "3.13"
+    manager.python_binary = lambda: "/usr/bin/python3"
+    launcher = FakeProcessLauncher()
+
+    with patch("app.services.sandbox.python_env.subprocess.run"):
+        env_dir, cache_hit = await manager.ensure_environment(
+            packages=["requests"],
+            runtime_profile="standard",
+            process_launcher=launcher,
+            network_proxy=None,
+            package_index_url="http://localhost:8080/simple/",
+            network_unrestricted=True,
+        )
+
+    assert cache_hit is False
+    assert env_dir is not None
+    assert launcher.calls[0][0][4:6] == [
+        "--index-url",
+        "http://localhost:8080/simple",
+    ]
+    assert launcher.calls[0][1]["network_proxy"] is None
+    assert launcher.calls[0][1]["network_unrestricted"] is True
+
+
+@pytest.mark.anyio
+async def test_restricted_python_environment_rejects_unlisted_http_index(
+    tmp_path: Path,
+):
+    manager = PythonEnvironmentManager(tmp_path)
+    manager.python_version = lambda: "3.13"
+    manager.python_binary = lambda: "/usr/bin/python3"
+    launcher = FakeProcessLauncher()
+
+    with pytest.raises(SandboxNetworkPolicyError):
+        await manager.ensure_environment(
+            packages=["requests"],
+            runtime_profile="standard",
+            process_launcher=launcher,
+            network_proxy=FakeNetworkProxy(),
+            package_index_url="https://attacker.example/simple",
+        )
+
+    assert launcher.calls == []
+
+
+@pytest.mark.anyio
+async def test_unrestricted_node_environment_accepts_unlisted_ip_registry(
+    tmp_path: Path,
+):
+    manager = NodeEnvironmentManager(tmp_path)
+    manager._node_version_cache = "v22"
+    launcher = FakeProcessLauncher()
+
+    (env_dir, cache_hit) = await manager.ensure_environment(
+        packages=["pkg"],
+        runtime_profile="standard",
+        process_launcher=launcher,
+        network_proxy=None,
+        registry_url="https://10.0.0.5:8443/npm/",
+        network_unrestricted=True,
+    )
+
+    assert cache_hit is False
+    assert env_dir is not None
+    assert launcher.calls[0][0][1:] == [
+        "install",
+        "--ignore-scripts",
+        "--registry",
+        "https://10.0.0.5:8443/npm",
+    ]
+    assert launcher.calls[0][1]["network_proxy"] is None
+    assert launcher.calls[0][1]["network_unrestricted"] is True
 
 
 def test_workspace_rejects_escape_and_symlink_and_counts_regular_files(tmp_path: Path):

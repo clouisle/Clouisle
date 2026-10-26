@@ -357,6 +357,7 @@ def test_launcher_empty_network_diagnostics_and_isolation_failures(
             env=None,
             cache_root=None,
             network_proxy=None,
+            network_unrestricted=False,
             timeout_seconds=None,
         )
 
@@ -371,5 +372,6 @@ def test_launcher_empty_network_diagnostics_and_isolation_failures(
             env=None,
             cache_root=None,
             network_proxy=None,
+            network_unrestricted=False,
             timeout_seconds=None,
         )

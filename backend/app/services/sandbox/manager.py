@@ -359,9 +359,20 @@ class SandboxManager:
         workspace: SandboxWorkspace,
         metadata: SandboxExecutionMetadata,
     ) -> LegacyExecutionResult:
+        # Snapshot once per job so package installs and the payload share the
+        # same policy; ``None`` means the administrator disabled restrictions.
+        allowed_hosts = await get_sandbox_network_allowlist()
+        if allowed_hosts is None:
+            return await self._run_job_with_proxy(
+                job,
+                workspace,
+                metadata,
+                None,
+                network_unrestricted=True,
+            )
         async with SandboxEgressProxy(
             job_id=job.job_id,
-            allowed_hosts=await get_sandbox_network_allowlist(),
+            allowed_hosts=allowed_hosts,
         ) as network_proxy:
             return await self._run_job_with_proxy(
                 job,
@@ -375,7 +386,8 @@ class SandboxManager:
         job: SandboxJob,
         workspace: SandboxWorkspace,
         metadata: SandboxExecutionMetadata,
-        network_proxy: SandboxEgressProxy,
+        network_proxy: SandboxEgressProxy | None,
+        network_unrestricted: bool = False,
     ) -> LegacyExecutionResult:
         try:
             env = await self._build_command_env(
@@ -383,6 +395,7 @@ class SandboxManager:
                 workspace,
                 metadata,
                 network_proxy,
+                network_unrestricted,
             )
         except SandboxNetworkPolicyError as exc:
             return LegacyExecutionResult(
@@ -424,6 +437,7 @@ class SandboxManager:
                 workspace_root=str(workspace.root),
                 cache_root=str(self.workspace_manager.cache_root),
                 network_proxy=network_proxy,
+                network_unrestricted=network_unrestricted,
                 log_dir=str(workspace.logs_dir),
                 log_stem=f"exec-{job.job_id}",
             )
@@ -447,6 +461,7 @@ class SandboxManager:
                 workspace_root=str(workspace.root),
                 cache_root=str(self.workspace_manager.cache_root),
                 network_proxy=network_proxy,
+                network_unrestricted=network_unrestricted,
                 log_dir=str(workspace.logs_dir),
                 log_stem=f"exec-{job.job_id}",
             )
@@ -857,7 +872,8 @@ async function __execute__() {{
         job: SandboxJob,
         workspace: SandboxWorkspace,
         metadata: SandboxExecutionMetadata,
-        network_proxy: SandboxEgressProxy,
+        network_proxy: SandboxEgressProxy | None,
+        network_unrestricted: bool = False,
     ) -> dict[str, str]:
         env = {
             "HOME": str(workspace.root),
@@ -892,6 +908,7 @@ async function __execute__() {{
                         process_launcher=self.process_launcher,
                         network_proxy=network_proxy,
                         package_index_url=job.python_package_index_url,
+                        network_unrestricted=network_unrestricted,
                     )
                     metadata.cache_hit_python = cache_hit
                     if python_env_dir is not None:
@@ -909,6 +926,7 @@ async function __execute__() {{
                         process_launcher=self.process_launcher,
                         network_proxy=network_proxy,
                         registry_url=job.node_package_registry_url,
+                        network_unrestricted=network_unrestricted,
                     )
                     metadata.cache_hit_node = cache_hit
                     if node_env_dir is not None:
