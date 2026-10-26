@@ -46,6 +46,9 @@ const settings = {
   password_min_age_days: 0,
   force_password_change_first_login: false,
   require_totp: false,
+  model_endpoint_allowlist_enabled: true,
+  ssrf_protection_enabled: true,
+  sandbox_network_allowlist_enabled: true,
   model_endpoint_allowlist: ['https://api.openai.com'],
   ssrf_allowed_targets: ['10.0.0.0/16'],
   sandbox_network_allowlist: ['pypi.org', 'files.pythonhosted.org'],
@@ -258,6 +261,9 @@ describe('SiteSettingsSecurityPage', () => {
       password_expiration_enabled: true,
       password_expiration_days: 120,
       require_totp: true,
+      model_endpoint_allowlist_enabled: false,
+      ssrf_protection_enabled: false,
+      sandbox_network_allowlist_enabled: false,
       model_endpoint_allowlist: [
         'https://api.example.com/v1',
         'http://ollama:11434',
@@ -277,6 +283,63 @@ describe('SiteSettingsSecurityPage', () => {
     expect(renderer.root.findByProps({ id: 'sandboxNetworkAllowlist' }).props.value).toBe(
       'registry.npmjs.org\nfiles.pythonhosted.org'
     )
+  })
+
+  test('loads explicitly disabled restrictions with their stored lists and saves restored switches', async () => {
+    Object.assign(settings, {
+      model_endpoint_allowlist_enabled: false,
+      ssrf_protection_enabled: false,
+      sandbox_network_allowlist_enabled: false,
+    })
+    const renderer = await render()
+
+    const modelSwitch = renderer.root.findByProps({ id: 'modelEndpointAllowlistEnabled' })
+    expect(modelSwitch.props.checked).toBe(false)
+    expect(renderer.root.findByProps({ id: 'sandboxNetworkAllowlistEnabled' }).props.checked).toBe(false)
+    expect(renderer.root.findByProps({ id: 'ssrfProtectionEnabled' }).props.checked).toBe(false)
+
+    expect(renderer.root.findByProps({ id: 'modelEndpointAllowlist' }).props.disabled).toBe(true)
+    expect(renderer.root.findByProps({ id: 'sandboxNetworkAllowlist' }).props.disabled).toBe(true)
+    expect(renderer.root.findByProps({ id: 'ssrfAllowedTargets' }).props.disabled).toBe(true)
+    expect(renderer.root.findByProps({ id: 'modelEndpointAllowlist' }).props.value).toBe('https://api.openai.com')
+    expect(renderer.root.findByProps({ id: 'sandboxNetworkAllowlist' }).props.value).toBe('pypi.org\nfiles.pythonhosted.org')
+    expect(renderer.root.findByProps({ id: 'ssrfAllowedTargets' }).props.value).toBe('10.0.0.0/16')
+
+    expect(renderer.root.findAllByProps({ role: 'note' }).map((node) => node.children.join(' '))).toEqual([
+      'modelEndpointAllowlistDisabledWarning',
+      'sandboxNetworkAllowlistDisabledWarning',
+      'ssrfProtectionDisabledWarning',
+    ])
+
+    act(() => modelSwitch.props.onCheckedChange(true))
+    expect(renderer.root.findByProps({ id: 'modelEndpointAllowlistEnabled' }).props.checked).toBe(true)
+    expect(renderer.root.findByProps({ id: 'modelEndpointAllowlist' }).props.disabled).toBe(false)
+    expect(renderer.root.findByProps({ id: 'sandboxNetworkAllowlist' }).props.disabled).toBe(true)
+
+    await act(async () => saveButton(renderer).props.onClick())
+    expect(updateSecurity).toHaveBeenCalledWith(expect.objectContaining({
+      model_endpoint_allowlist_enabled: true,
+      ssrf_protection_enabled: false,
+      sandbox_network_allowlist_enabled: false,
+      model_endpoint_allowlist: ['https://api.openai.com'],
+      ssrf_allowed_targets: ['10.0.0.0/16'],
+      sandbox_network_allowlist: ['pypi.org', 'files.pythonhosted.org'],
+    }))
+  })
+
+  test('keeps switches restricted when the loaded security payload omits them', async () => {
+    const data = { ...settings } as Record<string, unknown>
+    delete data.model_endpoint_allowlist_enabled
+    delete data.ssrf_protection_enabled
+    delete data.sandbox_network_allowlist_enabled
+    getSecurity.mockImplementationOnce(() => Promise.resolve(data as unknown as typeof settings))
+    const renderer = await render()
+
+    expect(renderer.root.findByProps({ id: 'modelEndpointAllowlistEnabled' }).props.checked).toBe(true)
+    expect(renderer.root.findByProps({ id: 'sandboxNetworkAllowlistEnabled' }).props.checked).toBe(true)
+    expect(renderer.root.findByProps({ id: 'ssrfProtectionEnabled' }).props.checked).toBe(true)
+    expect(renderer.root.findByProps({ id: 'modelEndpointAllowlist' }).props.disabled).toBe(false)
+    expect(renderer.root.findAllByProps({ role: 'note' })).toHaveLength(0)
   })
 
   test('blocks every invalid numeric boundary, clears errors on edits, and retries successfully', async () => {
@@ -355,6 +418,9 @@ describe('SiteSettingsSecurityPage', () => {
     const renderer = await render()
 
     expect(renderer.root.findAllByType('input').every((node) => node.props.disabled)).toBe(true)
+    expect(renderer.root.findByProps({ id: 'modelEndpointAllowlistEnabled' }).props.disabled).toBe(true)
+    expect(renderer.root.findByProps({ id: 'sandboxNetworkAllowlistEnabled' }).props.disabled).toBe(true)
+    expect(renderer.root.findByProps({ id: 'ssrfProtectionEnabled' }).props.disabled).toBe(true)
     expect(selects(renderer).every((node) => node.props.disabled)).toBe(true)
     expect(saveButton(renderer)).toBeUndefined()
   })

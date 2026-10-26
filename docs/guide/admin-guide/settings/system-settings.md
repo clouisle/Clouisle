@@ -146,6 +146,8 @@ Admin TOTP statistics and per-user status/disable endpoints are available under 
 
 ### Model Endpoint Allowlist
 
+The **Restrict Model Endpoints to the Allowlist** switch (`model_endpoint_allowlist_enabled`) defaults to on. Turn it off and save to allow any structurally valid HTTP(S) endpoint, without Origin membership checks. Saved Origins are retained and enforced again when the switch is re-enabled and saved.
+
 Before saving or testing a model with a new API endpoint:
 
 1. Navigate to **Settings** → **Security**.
@@ -159,6 +161,8 @@ Matching is exact. URL paths are ignored, but the scheme, hostname, and port mus
 
 ### Sandbox Egress Allowlist
 
+The **Restrict Sandbox Egress to the Allowlist** switch (`sandbox_network_allowlist_enabled`) defaults to on. Turning it off and saving allows new jobs to use the worker's network directly, including arbitrary destinations, protocols and ports. Filesystem isolation and resource limits remain enabled; host/container network policies still apply. The saved allowlist is retained. Switch changes apply to the next sandbox job, not jobs already running.
+
 The sandbox egress proxy restricts isolated sandbox jobs to approved exact DNS hostnames. This policy is separate from the outbound SSRF exception list used by HTTP tools and URL imports.
 
 1. Navigate to **Settings** → **Security**.
@@ -169,6 +173,8 @@ The sandbox egress proxy restricts isolated sandbox jobs to approved exact DNS h
 Wildcards and IP addresses are rejected. An empty list blocks all external hosts through the sandbox proxy. Custom package-index URLs must use HTTPS and their hostname must be listed. Each sandbox job reads the current saved policy, so changes apply to the next job without restarting workers.
 
 ### Outbound Network Allowlist (SSRF Exemption)
+
+The **Enforce Outbound Network Protection (SSRF)** switch (`ssrf_protection_enabled`) defaults to on. Turning it off and saving disables destination restrictions for consumers of this policy, including private networks, loopback and cloud metadata addresses. HTTP(S) URL and database host/port syntax validation remains active. This can expose internal services and cloud credentials; prefer narrow exemptions with protection enabled. Saved exemptions are retained for re-enabling protection. Changes apply to subsequent policy checks without restarting services.
 
 Clouisle protects against Server-Side Request Forgery (SSRF) across custom HTTP tools, workflow HTTP request nodes, knowledge base URL imports, and database tool connection tests. By default, requests to loopback addresses (`127.0.0.1`, `localhost`), link-local/cloud metadata services (`169.254.169.254`), and private networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) are blocked.
 
@@ -183,14 +189,14 @@ If your deployment requires calling internal APIs, microservices, or intranet da
    - **Wildcard domain**: `*.corp.internal`, `*.internal.net`
 4. Click **Save Changes**.
 
-#### Hard Invariants (Permanently Blocked Targets)
+#### Targets That Cannot Be Added as Exemptions
 
-For platform and cloud host integrity, the following targets **cannot be allowlisted** and will be rejected both during configuration save and at runtime:
+With SSRF protection enabled, the following critical targets cannot be exempted. Disabling SSRF protection bypasses runtime destination checks entirely; the exemption editor still rejects unsafe or malformed rules:
 
 - **Cloud metadata services**: `169.254.169.254`, `169.254.0.0/16`, `fe80::/10`, `metadata.google.internal` (prevents exfiltration of host IAM/cloud instance credentials).
 - **Unspecified & multicast addresses**: `0.0.0.0`, `::`, `224.0.0.0/4` (prevents bypassing loopback checks).
-- **Universal wildcards**: `*`, `0.0.0.0/0`, `::/0` (prevents globally disabling security boundaries).
-- **Loopback address**: `127.0.0.1` / `localhost` is rejected from the allowlist to prevent local privilege escalation. When connecting to services on the same host (e.g. in containerized setups), use the host LAN IP or `host.docker.internal` instead.
+- **Universal wildcards**: `*`, `0.0.0.0/0`, `::/0`. Use the explicit protection switch instead of wildcard rules.
+- **Loopback addresses**: These are blocked by default but can be explicitly exempted, for example `127.0.0.1` or `localhost`. In containers, loopback refers to the calling container; use the host LAN IP or `host.docker.internal` to reach host services.
 
 #### Transparent Proxy / TUN Mode Support
 

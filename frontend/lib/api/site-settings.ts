@@ -149,6 +149,9 @@ export interface SecuritySettings {
   force_password_change_first_login: boolean
   // TOTP
   require_totp: boolean
+  model_endpoint_allowlist_enabled: boolean
+  ssrf_protection_enabled: boolean
+  sandbox_network_allowlist_enabled: boolean
   model_endpoint_allowlist: string[]
   ssrf_allowed_targets: string[]
   sandbox_network_allowlist: string[]

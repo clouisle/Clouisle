@@ -24,6 +24,7 @@ Use this checklist before exposing a Clouisle deployment to users. Items describ
 - [ ] Set exact CORS origins; do not use `*` in production.
 - [ ] Configure the proxy for streaming: HTTP/1.1, `proxy_buffering off`, and read/send timeouts compatible with the supplied 1800-second example.
 - [ ] Restrict Kubernetes access to namespace `clouisle` with RBAC, NetworkPolicies, and an appropriate Ingress policy.
+- [ ] Keep **Restrict Model Endpoints to the Allowlist**, **Restrict Sandbox Egress to the Allowlist**, and **Enforce Outbound Network Protection (SSRF)** enabled in Security settings (all default to on). Disabling them removes the corresponding application-level destination restrictions; SSRF disablement also opens cloud metadata and loopback access. Saved lists are retained for restoring restrictions; sandbox changes apply to new jobs. Host/cluster network controls still apply.
 
 ## Data Protection and Recovery
 

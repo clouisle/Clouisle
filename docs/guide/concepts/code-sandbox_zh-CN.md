@@ -107,7 +107,7 @@ Agent 可以通过函数调用触发代码工具。LLM 根据任务需要决定�
 | `SANDBOX_SESSION_TTL_HOURS` | `24` | 相同 | 会话过期清理时间 |
 | `SANDBOX_RESULT_TTL_SECONDS` | `86400` | 相同 | 结果保留时间 |
 
-沙箱出网策略在[设置 → 安全 → 沙箱出网白名单](../admin-guide/settings/system-settings.md#sandbox-egress-allowlist)中配置，不再通过环境变量设置。初始默认值允许 `pypi.org`、`files.pythonhosted.org`、`pypi.python.org` 和 `registry.npmjs.org`。每个任务都会读取当前已保存的精确主机名策略；空列表会阻止外部主机，自定义包索引必须使用 HTTPS。
+沙箱出网策略在[设置 → 安全 → 沙箱出网白名单](../admin-guide/settings/system-settings.md#sandbox-egress-allowlist)中配置。`sandbox_network_allowlist_enabled` 默认开启限制，初始允许 `pypi.org`、`files.pythonhosted.org`、`pypi.python.org` 和 `registry.npmjs.org`。限制开启时按精确主机名匹配，空列表阻止外部主机，自定义包索引必须使用 HTTPS。关闭开关后，新任务直接使用 Worker 网络，放开出网目标、协议和端口，保留文件系统隔离及资源限制；原白名单保留，重新开启后恢复限制。宿主机/集群的网络策略仍然生效。
 
 AgentRun 每轮结束时，系统会先在会话所属的 Sandbox Worker 上保存检查点，再将运行标记为完成、等待用户回答或停止。空闲工作区会在达到阈值后被释放，并在下次任务到来时恢复。工作区、检查点、身份、锁和缓存目录应一起保存在同一份 Worker 本地磁盘上，不会跨节点复制。TTL 到期后，Worker 能处理清理任务时会永久删除会话数据；若节点不可访问，其他节点无法远程删除其本地文件。
 - Bash 工具结果包含有界的首尾预览。超过沙箱日志容量时会明确终止执行，并标记预览／日志为部分内容；日志仅在所属沙箱会话期间可从 `/workspace/...` 路径通过 `read` 工具读取，保留 hashline/snapshot 锚点。会话 TTL 清理后日志将删除；它们不是持久化 Asset，也不能跨会话读取。
@@ -122,7 +122,7 @@ AgentRun 每轮结束时，系统会先在会话所属的 Sandbox Worker 上保�
 - 任务命名空间内只有当前工作空间及其临时目录可写。
 - 依赖缓存及必要运行时目录只读挂载。
 - 子进程只接收过滤后的环境变量，而不是 Worker 的完整进程环境。
-- 启用文件系统隔离时，每个沙箱进程都运行在新的网络命名空间中，只能通过该任务的出网代理访问外部主机。持久化的**沙箱出网白名单**按 DNS 主机名精确匹配；被拦截的主机名会写入执行诊断信息。
+- 默认开启**沙箱出网白名单**时，每个进程运行在新的网络命名空间中，只能通过任务出网代理访问精确匹配的 DNS 主机名；被拦截的主机会写入执行诊断信息。关闭出网限制后不再使用网络命名空间和代理，但仍保留文件系统隔离及资源限制。
 - 会话过期后自动清理工作目录。
 
 ## 宿主内核要求

@@ -117,7 +117,7 @@ search:
     - json
 ```
 
-The instance must be reachable from API and task-worker processes that execute searches. Private IPs/internal hostnames must be explicitly approved through the existing SSRF allowed-target settings; cloud metadata targets remain blocked. Use a resolvable internal FQDN or explicitly allowlist the private IP; a bare Docker service name cannot be added as a hostname rule by the existing allowlist validator. Search requests recheck SSRF policy and do not follow redirects.
+The instance must be reachable from API and task-worker processes that execute searches. With SSRF protection enabled (the default), private IPs/internal hostnames must be explicitly approved through the SSRF allowed-target settings; cloud metadata targets remain blocked. Use a resolvable internal FQDN or explicitly allowlist the private IP; a bare Docker service name cannot be added as a hostname rule by the existing allowlist validator. Disabling **Enable SSRF protection** in Security settings removes destination restrictions, including cloud metadata blocking; this is unsafe for untrusted users. Search requests recheck the current policy and do not follow redirects.
 
 SearXNG uses a 30-second HTTPX timeout for connection/read/write/pool operations, not a strict total-duration deadline. Requests are not retried and do not fall back to another provider.
 
