@@ -1,6 +1,10 @@
 # Implementation Plan
 
 ## Active
+- **agent-prompt-generation-alignment** — Completed. See `docs/plan/agent-prompt-generation-alignment.md`.
+  - [x] 1. Align editor context and bilingual generation instructions
+  - [x] 2. Verify compatibility and document the generation contract
+
 - **deepseek-search-provider** — Completed. See `docs/plan/deepseek-search-provider.md`.
   - [x] 1. Site configuration, encrypted key and runtime dispatch
   - [x] 2. Admin dialog, enabled-engine selectors and localization

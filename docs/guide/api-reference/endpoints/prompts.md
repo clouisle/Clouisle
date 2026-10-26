@@ -58,11 +58,15 @@ Content-Type: application/json
 | `style.include_cot` | boolean | No | Whether to include Chain-of-Thought thinking guidelines |
 | `style.include_constraints` | boolean | No | Whether to include explicit safety and boundary constraints |
 | `context` | object | No | Bound agent context; see the subfields below |
-| `context.tools` | array | No | Configured tools (`[{"name": ..., "description": ...}]`) |
-| `context.knowledge_bases` | array | No | Knowledge base metadata (`[{"name": ..., "description": ...}]`) |
-| `context.rag_mode` | string | No | RAG retrieval mode |
-| `context.variables` | array | No | Defined variables |
-| `context.capabilities` | object | No | Enabled runtime capabilities |
+| `context.tools` | array | No | Configured tool metadata: `type`, `name`, optional `display_name`, `description`, IDs and `config`. Names identify tools; display labels do not replace them. MCP/skill entries do not enumerate their internal tools. |
+| `context.knowledge_bases` | array | No | Linked knowledge base `name`, `description` and retrieval `config` |
+| `context.rag_mode` | string | No | `off`: no linked-KB retrieval; `auto`: platform-injected retrieval; `agentic`: on-demand `knowledge_search` when knowledge bases are linked |
+| `context.variables` | array | No | Defined variables and their type, required/default values, descriptions and limits; generated prompts may reference their `{{name}}` placeholders |
+| `context.capabilities` | object | No | `enable_attachments`, `enable_user_input_request` (`ask_user`), `enable_citations`, `enable_memory`, `enable_image_generation`, `enable_video_generation`, plus `attachment_config`, `memory_config`, `image_generation_config`, `video_generation_config` |
+
+The Agent orchestration editor supplies current editor values, including unsaved capability changes. Explicitly disabled capabilities are identified as disabled; their stale configuration is omitted from the generation context. Omitted capability flags mean unknown, not enabled. Context guides generation only: it does not grant runtime access or enable any tool.
+
+Generation produces the business role, task workflow and output requirements, not a copy of the platform's runtime manuals. Runtime tool schemas and capability-dependent instructions remain authoritative. `{{query}}` refers to the current user message; `{{fileContent}}` is not supported for attachment injection. Citation instructions require both the citation preference and actual sources. These changes affect newly generated prompts only; existing saved system prompts are not rewritten.
 
 ### Response (`200 OK`, `text/event-stream`)
 

@@ -26,6 +26,8 @@ export interface PromptGenerateKnowledgeBaseContext {
 export interface PromptGenerateCapabilitiesContext {
   enable_attachments?: boolean
   attachment_config?: AttachmentConfig | null
+  enable_user_input_request?: boolean
+  enable_citations?: boolean
   enable_memory?: boolean
   memory_config?: MemoryConfig | null
   enable_image_generation?: boolean

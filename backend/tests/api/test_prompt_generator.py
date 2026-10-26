@@ -109,6 +109,52 @@ def test_context_and_style_helpers_cover_empty_and_populated_boundaries():
     )
 
 
+@pytest.mark.parametrize("language", ["zh", "en"])
+def test_disabled_capability_configs_do_not_override_current_switches(language):
+    context = prompt_generator.PromptGenerateContext(
+        capabilities={
+            "enable_memory": False,
+            "memory_config": {"auto_extract": True},
+            "enable_attachments": False,
+            "attachment_config": {"max_files": 8},
+            "enable_image_generation": False,
+            "image_generation_config": {"max_images": 4},
+            "enable_video_generation": False,
+            "video_generation_config": {"max_duration": 10},
+            "enable_user_input_request": True,
+        },
+    )
+
+    rendered = prompt_generator.build_context_string(context, language)
+
+    assert "ask_user" in rendered
+    for config_key in (
+        "memory_config",
+        "attachment_config",
+        "image_generation_config",
+        "video_generation_config",
+    ):
+        assert config_key not in rendered
+
+
+def test_tool_callable_name_is_preserved_alongside_display_label():
+    rendered = prompt_generator.build_context_string(
+        prompt_generator.PromptGenerateContext(
+            tools=[
+                {
+                    "type": "builtin",
+                    "name": "web_search",
+                    "display_name": "联网搜索",
+                }
+            ],
+        ),
+        "zh",
+    )
+
+    assert "web_search" in rendered
+    assert "联网搜索" in rendered
+
+
 @pytest.mark.asyncio
 async def test_generate_prompt_streams_content_and_audits(monkeypatch, audit_log):
     model = SimpleNamespace(name="default-chat")
