@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api import deps
+from app.llm.errors import InsufficientQuotaError
 from app.models.user import User
 from app.models.model import Model
 from app.schemas.response import (
@@ -23,6 +24,18 @@ from app.services.audit_log import AuditLogService
 router = APIRouter()
 logger = logging.getLogger(__name__)
 GENERIC_STREAM_ERROR_KEY = "unknown_error"
+
+
+def _stream_error_payload(error: Exception) -> dict:
+    if (
+        isinstance(error, InsufficientQuotaError)
+        or getattr(error, "status_code", None) == 402
+    ):
+        return {
+            "code": ResponseCode.MODEL_QUOTA_EXCEEDED,
+            "msg": t("model_quota_exceeded"),
+        }
+    return {"code": ResponseCode.UNKNOWN_ERROR, "msg": t(GENERIC_STREAM_ERROR_KEY)}
 
 
 # ============ Request/Response Models ============
@@ -450,7 +463,7 @@ async def generate_prompt(
 
         except Exception as e:
             logger.exception(f"Error generating prompt: {e}")
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps(_stream_error_payload(e))}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -542,7 +555,7 @@ async def optimize_prompt(
 
         except Exception as e:
             logger.exception(f"Error optimizing prompt: {e}")
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps(_stream_error_payload(e))}\n\n"
 
     return StreamingResponse(
         event_generator(),

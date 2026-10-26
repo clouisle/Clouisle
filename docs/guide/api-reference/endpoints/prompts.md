@@ -72,6 +72,8 @@ Memory-specific generation follows the chat runtime: `enable_memory=false` expos
 
 ### Response (`200 OK`, `text/event-stream`)
 
+Generation uses the enabled **global default chat model**, not the model selected for the Agent. Optimization uses the same selection. If that provider returns HTTP `402` or an insufficient-quota error, the SSE error has business code `6103` (`MODEL_QUOTA_EXCEEDED`) and a localized quota-exhaustion message, which the generation dialog displays. This does not replenish quota: check the provider account/API key for the global default model, fund or raise its quota, or explicitly configure another default chat model. No automatic retry or model fallback is performed by these endpoints. Other unexpected provider failures retain a generic safe message; raw provider payloads are not exposed to the client.
+
 Streams the generated prompt as SSE events: `start` (`{"model": "..."}`), `content_delta` (`{"delta": "..."}`), `complete` (`{"total_length": n}`), and `error` (`{"code": ..., "msg": "..."}`).
 
 ---

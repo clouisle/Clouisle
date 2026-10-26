@@ -2,10 +2,13 @@ import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
+import openai
 import pytest
 
 from app.api.v1.endpoints import prompt_generator
 from app.schemas.response import ResponseCode
+from app.llm.errors import InsufficientQuotaError
 
 
 async def collect_events(response):
@@ -302,3 +305,52 @@ async def test_optimize_prompt_normalizes_provider_error(monkeypatch, audit_log)
     assert "event: start" in events
     assert f'"code": {ResponseCode.UNKNOWN_ERROR}' in events
     assert "secret" not in events
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("endpoint", ["generate", "optimize"])
+@pytest.mark.parametrize("typed", [False, True])
+async def test_provider_quota_errors_are_safe_and_terminal(
+    monkeypatch, audit_log, endpoint, typed
+):
+    mock_default_model(monkeypatch, SimpleNamespace(name="default"))
+    body = {
+        "error": {
+            "message": "Call failed: Insufficient token quota. secret-provider-data",
+            "type": "rate_limit_error",
+            "code": "too_many_requests",
+        }
+    }
+    error = (
+        InsufficientQuotaError(message="secret-provider-data")
+        if typed
+        else openai.APIStatusError(
+            "Call failed: Insufficient token quota.",
+            response=httpx.Response(
+                402, request=httpx.Request("POST", "https://example.test")
+            ),
+            body=body,
+        )
+    )
+    monkeypatch.setattr(
+        "app.llm.adapters.chat.factory.create_chat_model",
+        MagicMock(return_value=FakeChatModel(error=error)),
+    )
+    if endpoint == "generate":
+        response = await prompt_generator.generate_prompt(
+            MagicMock(),
+            prompt_generator.PromptGenerateRequest(description="Help"),
+            MagicMock(),
+        )
+    else:
+        response = await prompt_generator.optimize_prompt(
+            MagicMock(), "Old prompt", "Improve", MagicMock()
+        )
+
+    events = await collect_events(response)
+    payload = json.loads(events.split("event: error\ndata: ", 1)[1])
+
+    assert payload["code"] == ResponseCode.MODEL_QUOTA_EXCEEDED
+    assert payload["msg"] == prompt_generator.t("model_quota_exceeded")
+    assert "secret-provider-data" not in events
+    assert "event: complete" not in events

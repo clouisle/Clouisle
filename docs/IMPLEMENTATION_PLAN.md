@@ -1,6 +1,10 @@
 # Implementation Plan
 
 ## Active
+- **prompt-generator-quota-errors** — Completed. See `docs/plan/prompt-generator-quota-errors.md`.
+  - [x] 1. Preserve safe provider-quota error semantics
+  - [x] 2. Verify dialog reporting and document recovery
+
 - **agent-prompt-generation-alignment** — Completed. See `docs/plan/agent-prompt-generation-alignment.md`.
   - [x] 1. Align editor context and bilingual generation instructions
   - [x] 2. Verify compatibility and document the generation contract
