@@ -4,6 +4,14 @@ from tortoise import fields, models
 from app.core.model_endpoint_policy import DEFAULT_MODEL_ENDPOINT_ALLOWLIST
 from app.core.sandbox_network_policy import DEFAULT_SANDBOX_NETWORK_ALLOWLIST
 
+_RESTRICTION_SWITCH_KEYS = frozenset(
+    {
+        "model_endpoint_allowlist_enabled",
+        "ssrf_protection_enabled",
+        "sandbox_network_allowlist_enabled",
+    }
+)
+
 
 class SiteSetting(models.Model):
     """站点设置模型 - 键值对存储"""
@@ -37,13 +45,18 @@ class SiteSetting(models.Model):
         setting = await cls.filter(key=key).first()
         if not setting:
             return default
-        if key in {
-            "model_endpoint_allowlist_enabled",
-            "ssrf_protection_enabled",
-            "sandbox_network_allowlist_enabled",
-        } and (setting.value_type != "bool" or setting.value not in {"true", "false"}):
-            return default
-        return cls._convert_value(setting.value, setting.value_type)
+        return cls._convert_setting_value(key, setting.value, setting.value_type)
+
+    @classmethod
+    def _convert_setting_value(
+        cls, key: str, value: Optional[str], value_type: str
+    ) -> Any:
+        """Convert a stored value; corrupt restriction switches stay fail-closed."""
+        if key in _RESTRICTION_SWITCH_KEYS and (
+            value_type != "bool" or value not in {"true", "false"}
+        ):
+            return True
+        return cls._convert_value(value, value_type)
 
     @classmethod
     async def set_value(
@@ -107,7 +120,10 @@ class SiteSetting(models.Model):
             query = query.filter(is_public=True)
 
         settings = await query
-        return {s.key: cls._convert_value(s.value, s.value_type) for s in settings}
+        return {
+            s.key: cls._convert_setting_value(s.key, s.value, s.value_type)
+            for s in settings
+        }
 
     @staticmethod
     def _convert_value(value: Optional[str], value_type: str) -> Any:

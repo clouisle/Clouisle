@@ -205,6 +205,39 @@ async def test_get_all_by_category_filters_and_converts(
 
 
 @pytest.mark.asyncio
+async def test_get_all_by_category_keeps_corrupt_switches_fail_closed(monkeypatch):
+    settings = [
+        type(
+            "Setting",
+            (),
+            {"key": "ssrf_protection_enabled", "value": "0", "value_type": "bool"},
+        )(),
+        type(
+            "Setting",
+            (),
+            {
+                "key": "sandbox_network_allowlist_enabled",
+                "value": "false",
+                "value_type": "bool",
+            },
+        )(),
+        type(
+            "Setting",
+            (),
+            {"key": "enabled", "value": "no", "value_type": "bool"},
+        )(),
+    ]
+    query = QueryDouble(settings)
+    monkeypatch.setattr(SiteSetting, "all", lambda: query)
+
+    assert await SiteSetting.get_all_by_category() == {
+        "ssrf_protection_enabled": True,
+        "sandbox_network_allowlist_enabled": False,
+        "enabled": False,
+    }
+
+
+@pytest.mark.asyncio
 async def test_init_default_settings_creates_only_missing_settings(monkeypatch):
     defaults = {
         "existing": {

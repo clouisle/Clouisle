@@ -198,6 +198,8 @@ def test_is_fake_ip():
 
 def test_normalize_ssrf_allowlist_entry():
     assert normalize_ssrf_allowlist_entry("192.168.1.100") == "192.168.1.100"
+    assert normalize_ssrf_allowlist_entry("127.0.0.1") == "127.0.0.1"
+    assert normalize_ssrf_allowlist_entry("localhost") == "localhost"
     assert normalize_ssrf_allowlist_entry("10.0.0.0/16") == "10.0.0.0/16"
     assert normalize_ssrf_allowlist_entry("*.corp.internal") == "*.corp.internal"
     assert normalize_ssrf_allowlist_entry("oa.company.local") == "oa.company.local"

@@ -98,6 +98,11 @@ def normalize_ssrf_allowlist_entry(value: str) -> str:
     if "*" in pattern or ":" in pattern:
         raise BusinessError(msg_key="ssrf_allowlist_entry_invalid")
 
+    # The documented loopback exemption uses this literal hostname; other
+    # single-label hostnames stay rejected as ambiguous.
+    if pattern == "localhost":
+        return pattern
+
     # Hostname must contain at least one dot or be a recognized internal hostname
     if "." not in pattern or pattern.startswith(".") or pattern.endswith("."):
         raise BusinessError(msg_key="ssrf_allowlist_entry_invalid")

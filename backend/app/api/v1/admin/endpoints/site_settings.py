@@ -437,7 +437,9 @@ async def get_setting(
     return success(
         data=SiteSettingResponse(
             key=setting.key,
-            value=SiteSetting._convert_value(setting.value, setting.value_type),
+            value=SiteSetting._convert_setting_value(
+                setting.key, setting.value, setting.value_type
+            ),
             value_type=setting.value_type,
             category=setting.category,
             description=setting.description,

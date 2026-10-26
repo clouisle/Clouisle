@@ -119,7 +119,7 @@ Continuation cursors are opaque. Cursor encoding was compressed to reduce model 
 | `SANDBOX_SESSION_TTL_HOURS` | `24` | Same | Session lifetime before cleanup |
 | `SANDBOX_RESULT_TTL_SECONDS` | `86400` | Same | Result retention period |
 
-Sandbox egress is configured in [Settings → Security → Sandbox Egress Allowlist](../admin-guide/settings/system-settings.md#sandbox-egress-allowlist), not by an environment variable. The initial defaults permit `pypi.org`, `files.pythonhosted.org`, `pypi.python.org`, and `registry.npmjs.org`. The saved exact-host policy is read for every job; an empty list blocks external hosts, and custom package indexes must use HTTPS.
+Sandbox egress is configured in [Settings → Security → Sandbox Egress Allowlist](../admin-guide/settings/system-settings.md#sandbox-egress-allowlist). `sandbox_network_allowlist_enabled` defaults to on. While enabled, the saved exact-host policy is matched per job and the initial defaults permit `pypi.org`, `files.pythonhosted.org`, `pypi.python.org`, and `registry.npmjs.org`; an empty list blocks external hosts, and custom package indexes must use HTTPS. When the switch is off, new jobs use the worker's network directly with arbitrary destinations, protocols, and ports, while filesystem isolation and resource limits remain; the saved allowlist is retained and restrictions resume when the switch is re-enabled. Host and container network policies still apply.
 
 AgentRun round boundaries are checkpointed on the session's owning sandbox worker before the run becomes completed, waiting for a user answer, or stopped. Idle runtime directories are evicted after checkpointing and restored on the next task. Persist workspace, checkpoint, identity, lock and cache paths on the same worker-local disk. TTL cleanup permanently deletes session data when a worker can process the cleanup task; an unreachable node's local files cannot be deleted remotely.
 - Bash tool results include a bounded head/tail preview. If output exceeds the sandbox capture limit, execution stops explicitly and the partial preview is labeled; the retained log is available only during its owning sandbox session. Read it by `/workspace/...` path with the sandbox `read` tool, which preserves hashline/snapshot anchors. Session TTL cleanup deletes logs; they are not durable Assets and cannot be read from another session.
@@ -134,7 +134,7 @@ The caller fails closed: when `SANDBOX_RUNTIME_ENABLED` is false, code execution
 - Only the current workspace and its temporary directory are writable inside the task namespace.
 - The dependency cache and required runtime directories are read-only.
 - The child receives a filtered environment rather than the worker's full process environment.
-- With filesystem isolation enabled, each sandbox process uses a fresh network namespace and reaches external hosts only through its per-job egress proxy. The persisted **Sandbox Egress Allowlist** matches exact DNS hostnames; blocked hosts are included in execution diagnostics.
+- With the **Sandbox Egress Allowlist** enabled (the default), each sandbox process runs in a fresh network namespace and reaches only exact-match DNS hostnames through its per-job egress proxy; blocked hosts are included in execution diagnostics. When egress restrictions are disabled, no network namespace or proxy is used, while filesystem isolation and resource limits remain.
 - Session workspaces are cleaned after TTL expiry.
 
 ## Host Kernel Requirements
