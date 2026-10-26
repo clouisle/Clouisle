@@ -11,6 +11,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- MCP tool and approval-rule lists now scroll internally above a responsive height limit (400px or 45vh), keeping headings and manual rule controls outside the scroll region.
 - MCP listings and tool calls now attach OAuth credentials from the selected authorized connection even when provider discovery used an absent or empty `mcp_config.oauth`. Existing connection authorization, token refresh and version checks still apply.
 - OAuth tool connections accept provider-declared token lifetimes longer than seven days; nonpositive and datetime-overflowing lifetimes remain rejected. This prevents valid long-lived tokens from being reported as unusable.
 - MCP editors now combine discovered tool names, descriptions and approval selectors into one list. Saved rules missing from the current discovery result remain editable under Other operation rules; refreshing discovery never deletes them.

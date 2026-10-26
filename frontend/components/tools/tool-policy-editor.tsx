@@ -763,7 +763,7 @@ export function ToolPolicyEditor({
             {discoveredTools.size + otherOperations.length === 0 ? (
               <p className="text-xs text-muted-foreground">{t('operations.empty')}</p>
             ) : (
-              <div className="space-y-2">
+              <div className="max-h-[min(400px,45vh)] overflow-y-auto overscroll-contain space-y-2 pr-2">
                 {[...discoveredTools.keys(), ...otherOperations].map((operation, index) => (
                   <div key={operation}>
                     {operationTools && index === discoveredTools.size && otherOperations.length > 0 && (
