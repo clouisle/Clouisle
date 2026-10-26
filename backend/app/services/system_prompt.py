@@ -50,12 +50,9 @@ LANGUAGE_INSTRUCTIONS = {
 MEMORY_SYSTEM_INSTRUCTION = """
 ## Memory System
 
-You have access to these memory tools:
+Available memory tools are defined by the supplied runtime schemas. Follow those schemas for arguments and permissions.
 - `search_memory(query, time_window_days, entity_type)`: Search the user's long-term memory for relevant entities. Results include each entity's `id`, name, type, description, properties, and update date.
 - `get_memory_subgraph(entity_ids, max_depth, direction, relation_types)`: Read entities and relationships connected to IDs returned by `search_memory`; exact entity names are accepted when an ID is unavailable.
-- `create_memory_entity(name, entity_type, description)`: Save new information
-- `update_memory_entity(entity_name, description)`: Update existing information
-- `create_memory_relation(source, target, relation_type)`: Connect related information
 
 ### Retrieval Workflow
 
@@ -66,15 +63,10 @@ You have access to these memory tools:
    - Then call `get_memory_subgraph()` with those IDs, or exact names if the IDs are unavailable.
    - Use only relationships returned by the graph tool. Never invent a relationship that was not returned.
 4. For general questions unrelated to the user's long-term information, do not call memory tools.
-5. Before any `create_memory_entity()` call, call `search_memory()` first to avoid duplicate entities.
-6. If a similar entity exists, use `update_memory_entity()`; otherwise create a new entity.
-7. Never say you do not have access to memory tools.
 
 ### Temporal Grounding Rules
 
-1. When storing time-sensitive information, convert relative time expressions such as "yesterday", "last week", "last month", "next year", or "recently" into concrete dates or year/month values based on the Current Time.
-2. Never store ambiguous relative time expressions in entity descriptions or properties.
-3. When search results contain conflicting or evolving facts, inspect their `updated_at` timestamps.
+When search results contain conflicting or evolving facts, inspect their `updated_at` timestamps.
 
 ### Examples
 
@@ -86,6 +78,15 @@ User: "What technologies does my project use?"
 - Call `search_memory(query="my project")`.
 - Call `get_memory_subgraph(entity_ids=[project_id], max_depth=1)`.
 - Answer from the returned `uses` relationships.
+"""
+
+MEMORY_WRITE_INSTRUCTION = """
+### Memory Writes
+
+The runtime also provides `create_memory_entity`, `update_memory_entity`, and `create_memory_relation`. Follow the business prompt's restrictions on what may be saved; availability alone is not a reason to store information.
+- Search before creating to avoid duplicates. Update an existing match instead of creating another entity; establish relationships only between existing entities using supported facts.
+- For time-sensitive information, convert relative time expressions into concrete dates using the Current Time. Do not store ambiguous dates.
+- Follow the supplied schemas for all arguments. Only successful tool results establish persistence; report unavailable tools or failures honestly.
 """
 
 ASK_USER_SYSTEM_INSTRUCTION = """
@@ -102,7 +103,7 @@ You can call `ask_user` when an answer, decision, confirmation, or clarification
 SANDBOX_SYSTEM_INSTRUCTION = """
 ## Sandbox Environment Guidance
 
-You have access to sandbox tools: `bash`, `read`, `edit`, `write`, and `artifact`. Use them with an accurate mental model of the environment instead of guessing how the sandbox works.
+The guidance below applies only to sandbox tools actually supplied in this invocation. Treat their runtime schemas as authoritative; a configured sandbox tool does not imply that `bash`, `read`, `edit`, `write`, or `artifact` is also available. Apply each tool-specific instruction only when that tool is present.
 
 ### Environment Reality
 
@@ -329,6 +330,16 @@ def _append_constant(constant: str) -> Callable[[str, Agent, str | None], str]:
     return transform
 
 
+def _append_memory(base: str, agent: Agent, _locale: str | None) -> str:
+    base = append_prompt_section(base, MEMORY_SYSTEM_INSTRUCTION)
+    if (getattr(agent, "memory_config", None) or {}).get("auto_extract", True):
+        return append_prompt_section(base, MEMORY_WRITE_INSTRUCTION)
+    return append_prompt_section(
+        base,
+        "Memory is read-only for this invocation. Do not create or update memory entities or relationships.",
+    )
+
+
 # Order matters: Markdown -> Citations -> Temporal -> Memory -> Sandbox -> User input -> Language.
 # Citation guidance precedes capability workflows and remains provider-neutral.
 SECTIONS: tuple[PromptSection, ...] = (
@@ -352,7 +363,7 @@ SECTIONS: tuple[PromptSection, ...] = (
     PromptSection(
         name="memory",
         applies=_memory_applies,
-        transform=_append_constant(MEMORY_SYSTEM_INSTRUCTION),
+        transform=_append_memory,
     ),
     PromptSection(
         name="sandbox",

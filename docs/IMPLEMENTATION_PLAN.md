@@ -1,6 +1,11 @@
 # Implementation Plan
 
 ## Active
+- **agent-prompt-runtime-conflicts** — Completed. See `docs/plan/agent-prompt-runtime-conflicts.md`.
+  - [x] 1. Correct runtime capability guidance
+  - [x] 2. Separate generated business rules from platform protocols
+  - [x] 3. Verify prompt composition and tool boundaries
+
 - **prompt-generator-quota-errors** — Completed. See `docs/plan/prompt-generator-quota-errors.md`.
   - [x] 1. Preserve safe provider-quota error semantics
   - [x] 2. Verify dialog reporting and document recovery
