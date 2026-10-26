@@ -60,8 +60,8 @@ Modern enterprises face a common challenge: **data fragmentation, low reusabilit
 
 - **Multi-Agent & Collaborative Runtime**: Build and orchestrate production-ready AI agent teams — workflows compose published agents through `agent` and `sub_workflow` nodes — with reasoning, sandboxed tool execution, human-in-the-loop interaction, and durable execution
 - **Visual Workflow Orchestration**: Graph-based workflow builder with 19 node types, nested sub-workflows, human approval steps, and execution profiling
-- **Intelligent Knowledge & Evaluation**: Hybrid search (vector + lexical) with reranking, multi-format parsing, and automated retrieval evaluation labs
-- **Enterprise-Grade Security & Governance**: Multi-tenancy, granular RBAC, SSO (OIDC/SAML/CAS), TOTP 2FA, field-level audit diffs, and centralized observability
+- **Intelligent Knowledge & Evaluation**: Hybrid search (vector + lexical) with reranking, multi-format parsing, and a retrieval lab for A/B comparison with per-stage diagnostics
+- **Enterprise-Grade Security & Governance**: Multi-tenancy, granular RBAC, SSO (OIDC/OAuth2/SAML2/CAS, plus optional Feishu sign-in), TOTP 2FA, field-level audit diffs, and centralized observability
 - **Production Portability**: Standardized `.clouisle` packages for safe multi-environment migration, 23 LLM providers, and sandboxed execution isolated in Bubblewrap user and mount namespaces
 
 > Think of Clouisle as a **living intelligence layer** that evolves with your business.
@@ -79,27 +79,27 @@ Modern enterprises face a common challenge: **data fragmentation, low reusabilit
 - **Streaming & Thinking**: Real-time streaming responses with reasoning/thinking content support
 - **Conversation Management**: Multi-turn conversations with version branching, manual stop, token usage tracking, and long-term memory (an entity/relation graph with semantic search)
 - **Media Generation**: Text-to-image and text-to-video generation within conversations (audio generation is available at the model/adapter level)
-- **Tool System & Skills**: Built-in tools, custom HTTP API tools, reusable Skill packages, and MCP protocol integration
-- **Context Compression**: Automatic context summarization for long-running sessions — before each model call the request is estimated and, above 90% of the context limit, a single generated summary replaces the old history
-- **Visibility Control**: Private, team, or public access levels with RBAC enforcement
+- **Tool System & Skills**: Built-in tools, custom HTTP/code/database tools, reusable Skill packages, and MCP protocol integration
+- **Context Compression**: Automatic context summarization for long-running sessions — before each model call the request is estimated and, above 90% of the limit, a generated summary replaces older history while a recent verbatim tail is retained
+- **Visibility Control**: Private or team visibility with RBAC enforcement (`public` remains a reserved enum value and is not selectable)
 
 ### Visual Workflow Builder
 
 - **No-Code Interface**: Drag-and-drop workflow creation with real-time node configuration
 - **19 Node Types**: LLM, Media Generation, Decision, Agent, Condition, Question Classifier, Code Execution (Python/JavaScript), Knowledge Retriever, File to URL, Tool, Sub-workflow, Iteration, Loop, Pause/Approval, Template, Variable Assignment, Variable Aggregation, Parameter Extractor, and Answer
 - **Human-in-the-Loop Approval**: Pause nodes with configurable multi-strategy approval, form variables, and deep-link resumes
-- **Execution Triggers**: Manual, scheduled (Cron), webhook, or API — flexible for any use case
+- **Execution Triggers**: Manual, webhook, or API. A Cron trigger can be stored on a workflow, but scheduled execution requires registering the scheduler task in the deployment — it does not run by default
 - **Versioning**: Draft/publish lifecycle with version history and rollback
 - **Real-Time Monitoring**: Streaming execution with live node-level status updates and trace timeline
 - **Debug Mode**: Step-by-step testing with variable inspection before deployment
 - **Sub-Workflows**: Nest and reuse workflows as sub-workflow nodes
-- **Profiling & Metrics**: Execution profiling with per-node latency, cost, and token tracking
+- **Profiling & Metrics**: Execution profiling with per-node status, latency, and token usage
 
 ### Knowledge Base System
 
 - **Multi-Format Support**: PDF, DOCX, XLSX, Markdown, and more via MarkItDown
 - **Hybrid Search**: Vector similarity (Qdrant) + BM25 lexical search (pg_search) with Reciprocal Rank Fusion
-- **Retrieval Evaluation Lab**: Built-in retrieval hit testing and recall evaluation to benchmark chunking and search strategies
+- **Retrieval Lab**: Run a production retrieval query, compare two configurations side by side (A/B), and inspect recall, rerank, fusion and final ranking with per-stage diagnostics
 - **Configurable Chunking**: Customizable chunk size, overlap, and separator with preview and failed-chunk retry
 - **Reranking**: Optional reranking pipeline to improve retrieval accuracy
 - **Embedding Management**: Configurable embedding models and vector dimensions
@@ -108,52 +108,23 @@ Modern enterprises face a common challenge: **data fragmentation, low reusabilit
 - **Search Modes**: Vector-only, full-text only, or hybrid with configurable weight tuning
 ### LLM Provider Support
 
-Supports 23 providers out of the box, plus any OpenAI-compatible endpoint.
+Every provider is configured from the admin console: you supply the API key, optional base URL, model ID, and capability markers. The platform registers 23 provider codes; which models are usable depends on what you configure and what the provider currently offers.
 
-> Representative model names below are illustrative and change as provider catalogs evolve.
+Supported capabilities by provider code:
 
-**Chat & Completion**
-
-| Provider | Representative Models |
+| Capability | Provider codes |
 |---|---|
-| OpenAI | GPT-5.6 Sol, GPT-5.6 Terra, GPT-5.6 Luna |
-| Anthropic | Claude Opus 5, Fable 5, Mythos 5, Sonnet 5 |
-| Google | Gemini 3.6 Flash, Gemini 3.5 Flash-Lite, Gemini 3.1 Pro |
-| xAI | Grok 4.5, Grok 4.6 (upcoming), Grok 4.7 (upcoming) |
-| Azure OpenAI | GPT-5.6 Sol, GPT-5.6 Luna, GPT-5.4 series |
-| DeepSeek | DeepSeek-V4, DeepSeek-V4-Flash |
-| Moonshot | Kimi K3 (2.8T params, open-source) |
-| Zhipu | GLM-5.2, GLM-4.7 |
-| Qwen | Qwen3.8-Max, Qwen3.7-Flash |
-| Baichuan | Baichuan-M4 |
-| MiniMax | MiniMax-M3 (1M context, multimodal) |
-| Volcengine | Doubao 2.1 Pro / Turbo |
-| SiliconFlow | GLM-5.2, MiniMax-M3, Nex-N2-Pro, and other open models |
-| Ollama | Local models via Ollama |
-| Custom | Any OpenAI-compatible endpoint |
+| Chat / completion | `openai`, `anthropic`, `google`, `xai`, `azure_openai`, `deepseek`, `moonshot`, `zhipu`, `qwen`, `baichuan`, `minimax`, `volcengine`, `siliconflow`, `ollama`, `custom` |
+| Embedding | `openai`, `openai_responses`, `azure_openai`, `google`, `deepseek`, `moonshot`, `zhipu`, `qwen`, `baichuan`, `minimax`, `volcengine`, `siliconflow`, `xai`, `ollama`, `custom` |
+| Reranking | Chat providers through an LLM reranker, plus native OpenAI-compatible rerank APIs (including SiliconFlow) |
+| Text-to-image | `openai`, `openai_responses`, `azure_openai`, `google`, `runway`, `luma`, `stability`, `volcengine`, `siliconflow`, `minimax`, `custom` |
+| Text-to-video | `runway`, `luma`, `kling`, `pika`, `siliconflow`, `volcengine`, `minimax`, `qwen` |
+| TTS | `openai`, `azure_openai`, `volcengine`, `minimax` |
+| STT | `openai`, `azure_openai` |
+| Audio generation | `volcengine` |
+| Typed decisions | `typesafe` (`choice`, ordered `score`, or `noul` with probabilities and confidence) |
 
-**Image, Video & Audio**
-
-| Provider | Latest Models | Modality |
-|---|---|---|
-| OpenAI | GPT image-2, GPT image-1.5 | Text-to-Image |
-| OpenAI Responses | GPT image-2, GPT image-1.5 | Text-to-Image |
-| Stability AI | Stable Diffusion 3.5 Large, Stable Audio 3.0 | Image, Audio |
-| Midjourney | V8.2, V8.1 | Text-to-Image (via proxy) |
-| Google | Imagen 4, Imagen 3 | Text-to-Image |
-| Runway | Gen-4.5, Aleph 2.0 | Text-to-Video |
-| Pika | Pika 2.5, PikaStream 1.0 | Text-to-Video |
-| Luma | Ray3.2, Uni-1.1 | Image, Video |
-| Kling | Kling 3.0, Kling IMAGE 3.0 Omni | Image, Video (native 4K) |
-| MiniMax | H3, M3 | Image, Video, TTS, Audio |
-| Volcengine | Seedance 2.5, Doubao 2.1 Pro | Image, Video, TTS, Audio |
-| SiliconFlow | FLUX 1.1 Pro, Wan2.2, CosyVoice2, Fish-Speech | Image, Video, Audio |
-
-**Decision**
-
-| Provider | Model IDs | Output |
-|---|---|---|
-| TypeSafe AI | `jev-1.13.0`, `jev-latest` | Typed decisions: choice, ordered score, or yes/no probability |
+`custom` accepts any OpenAI-compatible endpoint for chat, embedding, and image generation. `midjourney` exists as a provider code for UI compatibility but has no built-in adapter; use a `custom` endpoint if you front it with your own proxy.
 
 ### Model Management
 
@@ -169,20 +140,21 @@ Supports 23 providers out of the box, plus any OpenAI-compatible endpoint.
 
 - **Multi-Tenancy**: Team-based resource isolation with granular model authorization and quota tracking
 - **RBAC**: Role-based permission system with custom roles and permission presets
-- **SSO**: OIDC, OAuth2, SAML 2.0, and CAS single sign-on support
+- **SSO**: OIDC, OAuth2, SAML 2.0, and CAS single sign-on, plus optional Feishu web sign-in on the Feishu integration
 - **Two-Factor Authentication**: TOTP-based 2FA for enhanced account security
 - **Audit Logging**: Comprehensive action tracking with before/after field-level diff snapshots and user attribution
 - **Admin Observability**: Comprehensive dashboards tracking token consumption, latency, error rates, and system health
 - **Clouisle Packages**: Standardized `.clouisle` packages for safe, secret-free export/import and cross-environment asset migration (Agents, Workflows, Tools, and KBs)
-- **Notification System**: In-app notifications, email, and generic Webhook delivery
-- **API Key Management**: Scoped API keys with expiration, usage tracking, and team access control
-- **Site Settings**: Configurable site-wide settings with localization support (en/zh)
+- **Notification System**: In-app notifications plus external delivery over email, generic Webhook, or Feishu
+- **Messaging Integrations**: Optional Feishu and WeChat iLink channels for private Agent chat and knowledge collection, with per-user identity binding and an operator-facing delivery log
+- **API Key Management**: Scoped API keys with expiration, usage tracking, and Agent/workflow bindings
+- **Site Settings**: Configurable site-wide settings with localization support (en/zh), including integrations, storage, and background memory extraction
 - **Password Policies**: Configurable expiration, history, and complexity requirements
 
 ### Tool System
 
 - **Built-in Tools**: Time/date, datetime formatting, calculator, unit conversion, site-managed web search (Tavily/Bocha/DeepSeek or configured SearXNG), webpage fetch, RSS reader, file parsing (MarkItDown), image/video generation, artifacts, and sandboxed bash/read/write/edit
-- **Custom Tools**: Configurable HTTP API tools with authentication (API key, Bearer, Basic) and variable mapping
+- **Custom Tools**: HTTP API tools with authentication (API key, Bearer, Basic) and variable mapping, sandboxed code tools, and read-only database tools for PostgreSQL, MySQL, Redis, and MongoDB
 - **MCP Integration**: Model Context Protocol for standardized tool capabilities and resource access
 - **Sandboxed Execution**: Secure, isolated Python/JavaScript execution with resource limits — a dedicated worker runs tasks inside Bubblewrap user and mount namespaces; workers need `CAP_SYS_ADMIN`, `CAP_SETFCAP`, `CAP_NET_ADMIN`, and an unconfined seccomp profile.
 - **Tool Registry**: Centralized tool management with credential injection and lifecycle hooks
@@ -257,11 +229,11 @@ The community-maintained template provisions PostgreSQL, Redis, Qdrant, and pers
 - ORM: Tortoise ORM with AsyncPG
 - Task Queue: Celery + Redis
 - Vector DB: Qdrant
-- LLM Framework: LangChain + LangGraph
+- LLM Framework: LangChain (LangGraph is a declared dependency but is not used at runtime)
 
 **Frontend**
 - Framework: Next.js 16 (App Router)
-- Runtime: Bun
+- Production runtime: Node.js 22 (Next.js standalone); Bun is used for dependency management and builds
 - UI: shadcn/ui + Tailwind CSS
 - Language: TypeScript
 
@@ -291,12 +263,13 @@ Key configuration options (see `.env.example` for full list):
 
 Configure via the admin dashboard:
 
-- **General**: Site name, description, branding
-- **Security**: Password policies, session timeout, login limits
+- **General**: Site name, description, branding, theme colors
+- **Security**: Password policies, session timeout, login limits, network allowlists and their independent switches
 - **Registration**: Enable/disable, require approval, email verification
-- **Email**: SMTP configuration for notifications
-- **SSO**: Configure identity providers
-- **Notifications**: Auto-notification rules and channels
+- **Integrations**: SSO identity providers, email, Webhook, Feishu, and WeChat iLink
+- **Notifications**: Auto-notification rules and external channels (email, Webhook, Feishu)
+- **Storage**: Local uploads or S3-compatible object storage
+- **Memory**: Background memory extraction model, cooldown, and pending-turn threshold
 
 ---
 
@@ -325,7 +298,7 @@ Configure via the admin dashboard:
 
 - [x] Multi-provider LLM support (23 providers)
 - [x] Visual workflow builder with human-in-the-loop approval
-- [x] Hybrid RAG knowledge base with evaluation lab
+- [x] Hybrid RAG knowledge base with a retrieval lab (A/B comparison and stage diagnostics)
 - [x] Enterprise SSO (OIDC, SAML, CAS, OAuth2)
 - [x] Multi-channel notifications
 - [x] Field-level audit logging & diff snapshots
