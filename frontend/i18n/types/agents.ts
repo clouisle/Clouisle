@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-26T14:38:33.114Z
+// GENERATED — 2026-10-26T17:28:11.263Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {
@@ -261,6 +261,9 @@ export type AgentsMessages = {
         empty: string
         unknownTool: string
         toolNotFound: string
+        requireApproval: string
+        requireApprovalActive: string
+        requireApprovalTooltip: string
         builtinTools: {
           calculate: string
           unit_convert: string

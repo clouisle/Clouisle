@@ -1,6 +1,12 @@
 # Implementation Plan
 
 ## Active
+- **explicit-agent-tool-approvals** — Completed. See `docs/plan/explicit-agent-tool-approvals.md`.
+  - [x] 1. Agent ToolConfig require_approval schema and execution boundary bypass for workflows
+  - [x] 2. Eliminate heuristic concurrency/read-only approval deduction on builtin tools
+  - [x] 3. Frontend Agent orchestration per-tool confirmation switch and localization
+  - [x] 4. Automated verification and regression test alignment
+
 - **tool-connections-approvals-mcp** — Completed. See `docs/plan/tool-connections-approvals-mcp.md`.
   - [x] 0. Connection identity, unified approval and MCP protocol design
   - [x] 1. Connection models, encrypted secrets and migration

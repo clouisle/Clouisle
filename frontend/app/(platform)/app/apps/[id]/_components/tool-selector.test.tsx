@@ -79,6 +79,7 @@ mock.module('lucide-react', () => ({
   ChartColumn: element('svg'),
   Database: element('svg'),
   Settings2: element('svg'),
+  ShieldAlert: element('svg'),
 }))
 
 const { AddToolButton, ToolSelector } = await import('./tool-selector')
@@ -306,5 +307,23 @@ describe('ToolSelector', () => {
     expect(switches).toHaveLength(0)
     const deleteButtons = findAll(tree, (node) => node.type === 'button')
     expect(deleteButtons).toHaveLength(0)
+  })
+
+  test('toggles require_approval when confirmation button is clicked', () => {
+    const config: ToolConfig = { type: 'builtin', name: 'clock', require_approval: false }
+    const onChange = mock()
+    stateIndex = 0
+    const tree = ToolSelector({
+      toolsConfig: [config],
+      availableTools: [builtin],
+      onChange,
+    })
+    const buttons = findAll(tree, (node) => node.type === 'button')
+    expect(buttons.length).toBeGreaterThan(0)
+    const confirmButton = buttons.find((btn) => typeof btn.props.title === 'string' && btn.props.title.includes('requireApproval'))
+    if (confirmButton && typeof confirmButton.props.onClick === 'function') {
+      ;(confirmButton.props.onClick as (e: unknown) => void)({ stopPropagation: () => {} })
+      expect(onChange).toHaveBeenCalledWith([{ ...config, require_approval: true }])
+    }
   })
 })

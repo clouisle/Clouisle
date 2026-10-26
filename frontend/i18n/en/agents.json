@@ -259,6 +259,9 @@
         "empty": "No tools added. Add tools to let the agent perform specific tasks.",
         "unknownTool": "Unknown Tool",
         "toolNotFound": "Tool not found or has been deleted",
+        "requireApproval": "Require Confirmation",
+        "requireApprovalActive": "Confirmation Required",
+        "requireApprovalTooltip": "Ask user for confirmation before executing this tool in chat",
         "builtinTools": {
           "calculate": "Calculator",
           "unit_convert": "Unit Converter",

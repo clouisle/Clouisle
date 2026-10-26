@@ -259,6 +259,9 @@
         "empty": "暂未添加工具。添加工具后，Agent 可以调用它们完成特定任务。",
         "unknownTool": "未知工具",
         "toolNotFound": "工具不存在或已被删除",
+        "requireApproval": "调用前确认",
+        "requireApprovalActive": "需确认",
+        "requireApprovalTooltip": "Agent 在对话中调用此工具前需用户确认",
         "builtinTools": {
           "calculate": "计算器",
           "unit_convert": "单位转换",

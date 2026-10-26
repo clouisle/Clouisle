@@ -19,6 +19,7 @@ import {
   ChartColumn,
   Database,
   Settings2,
+  ShieldAlert,
 } from 'lucide-react'
 import { isPresetToolCategory, type PresetToolCategory, type Skill, type Tool, type ToolConfig, type ToolParameter, type ToolType, toolsApi, skillsApi } from '@/lib/api'
 import { useTeam } from '@/contexts/team-context'
@@ -379,11 +380,11 @@ interface ToolDisplayItemProps {
   onUpdateConfig?: (newConfig: Record<string, unknown>) => void
   onUpdateBinding?: (binding: ToolConnectionBinding) => void
   entrypointId?: string
+  onToggleApproval?: (requireApproval: boolean) => void
   onDelete: () => void
   readOnly?: boolean
 }
-
-function ToolDisplayItem({ tool, config, onUpdateConfig, onUpdateBinding, entrypointId, onDelete, readOnly = false }: ToolDisplayItemProps) {
+function ToolDisplayItem({ tool, config, onUpdateConfig, onUpdateBinding, onToggleApproval, entrypointId, onDelete, readOnly = false }: ToolDisplayItemProps) {
   const t = useTranslations('agents.orchestration.tools')
   const tConnection = useTranslations('tools.connections')
   const { currentTeam } = useTeam()
@@ -405,6 +406,7 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onUpdateBinding, entryp
       : connectionMode === 'team'
         ? tConnection('modeTeam')
         : null
+  const requireApproval = Boolean(config.require_approval)
 
   const [tempEngine, setTempEngine] = React.useState<string>(searchEngine)
 
@@ -475,6 +477,11 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onUpdateBinding, entryp
                 {connectionModeLabel}
               </Badge>
             )}
+            {requireApproval && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal text-amber-600 dark:text-amber-400 border-amber-500/30 bg-amber-500/10">
+                {t('requireApprovalActive')}
+              </Badge>
+            )}
           </div>
           {isMissing && (
             <p className="text-xs text-destructive/80">{t('toolNotFound')}</p>
@@ -483,6 +490,32 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onUpdateBinding, entryp
 
         {/* 操作 */}
         <div className="flex items-center gap-1 shrink-0">
+          {!readOnly && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'h-6 w-6 cursor-pointer transition-colors',
+                      requireApproval
+                        ? 'text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300'
+                        : 'text-muted-foreground/60 hover:text-foreground'
+                    )}
+                    title={requireApproval ? t('requireApprovalActive') : t('requireApproval')}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onToggleApproval?.(!requireApproval)
+                    }}
+                  >
+                    <ShieldAlert className="h-3.5 w-3.5" />
+                  </Button>
+                }
+              />
+              <TooltipContent>{t('requireApprovalTooltip')}</TooltipContent>
+            </Tooltip>
+          )}
           {needsConnection && !readOnly && (
             <Button
               variant="ghost"
@@ -660,6 +693,11 @@ export function ToolSelector({
     next[index] = { ...next[index], ...binding }
     onChange(next)
   }
+  const handleToggleApproval = (index: number, requireApproval: boolean) => {
+    const next = [...toolsConfig]
+    next[index] = { ...next[index], require_approval: requireApproval }
+    onChange(next)
+  }
 
   if (selectedTools.length === 0) {
     return (
@@ -689,6 +727,7 @@ export function ToolSelector({
           onUpdateBinding={(binding) => handleUpdateToolBinding(index, binding)}
           entrypointId={entrypointId}
           onDelete={() => handleDeleteTool(config)}
+          onToggleApproval={(req) => handleToggleApproval(index, req)}
           readOnly={readOnly}
         />
       ))}
