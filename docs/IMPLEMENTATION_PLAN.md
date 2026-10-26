@@ -290,3 +290,12 @@
   - [x] 3. Platform catalog, team page, and knowledge base surfaces
   - [x] 4. Agent and workflow model pickers
   - [x] 5. Tests, coverage, lint, and regression verification
+
+- **docs-code-alignment-audit** — Completed. Verification of `docs/` against `98d3e88e`.
+  - [x] Internal link integrity (854 links, 0 broken after fix)
+  - [x] API route/verb coverage vs generated OpenAPI schema (377 documented calls, 0 unmatched)
+  - [x] Environment variables vs `config.py` and deploy manifests (all 84 settings documented)
+  - [x] Permission codes vs `core/permissions.py` (0 unknown codes)
+  - [x] Settings defaults vs `DEFAULT_SETTINGS`; agent/model/workflow defaults spot-checked
+  - [x] Stale-feature sweep (keyless search, legacy delivery tables, removed channels)
+  - [x] Fixed sorting guide, notification analysis payload, and one broken design-doc link

@@ -5,7 +5,7 @@
 - **框架**: FastAPI (Python 3.13)
 - **ORM**: Tortoise ORM + AsyncPG
 - **向量数据库**: Qdrant
-- **LLM 框架**: LangChain + LangGraph
+- **LLM 框架**: LangChain（LangGraph 为声明的依赖，运行时未使用）
 - **任务队列**: Celery + Redis
 - **文档处理**: MarkItDown
 

@@ -136,20 +136,18 @@
 {
   "title": "string",
   "content": "string",
-  "type": "info",
-  "scope": "GLOBAL",
+  "type": "team.member_added",
+  "scope": "global",
   "team_id": "uuid (TEAM 范围时必填)",
-  "user_ids": ["uuid"] (USER 范围时必填),
-  "channels": ["EMAIL", "DINGTALK"],
-  "scheduled_at": "2024-01-01T00:00:00Z (可选)"
+  "user_ids": ["uuid"],
+  "notify_channels": ["email", "feishu"]
 }
 ```
 
-**通知类型**:
-- `info`: 信息
-- `warning`: 警告
-- `error`: 错误
-- `success`: 成功
+**通知级别**（`level`）:
+- `low`
+- `medium`（默认）
+- `high`
 
 ---
 

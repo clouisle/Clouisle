@@ -24,24 +24,25 @@ Common fixed orderings used by list endpoints:
 
 These are implementation details and may change; do not rely on the exact order other than the documented intent (e.g. "newest first").
 
-## Admin Observability Sorting (the exception)
+## Sorting Exceptions
 
-The admin observability endpoint **does** support sorting:
+One list endpoint accepts `sort_by`; everywhere else the parameter is ignored.
+
+### Agent conversations
 
 ```
-GET /api/v1/admin/observability/agents
+GET /api/v1/agents/{agent_id}/conversations?sort_by=updated_at
 ```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `sort_by` | string | `requests` | Field to sort by |
-| `sort_order` | string | `desc` | `asc` or `desc` |
+| `sort_by` | string | `updated_at` | One of `created_at`, `updated_at`, `message_count`; any other value falls back to `updated_at` |
 
-**Example:**
-```bash
-curl -X GET "https://your-domain.com/api/v1/admin/observability/agents?sort_by=requests&sort_order=desc" \
-  -H "Authorization: Bearer YOUR_TOKEN"
-```
+Results are always newest-first for the chosen field; there is no ascending option.
+
+### Admin dashboard rankings
+
+`/api/v1/admin/dashboard/stats/agents/top` and `/workflows/summary` return pre-ranked lists. They do not accept `sort_by`; if you need another order, sort the returned rows client-side.
 
 ## Client-Side Sorting
 
@@ -84,11 +85,11 @@ const agentsByDate = [...agents].sort((a, b) =>
 
 **✅ Do:**
 - Sort fetched pages client-side when you need a custom order
-- Use the admin observability `sort_by`/`sort_order` parameters where supported
+- Use `sort_by` only on `/agents/{agent_id}/conversations`, the one list endpoint that accepts it
 - Assume only the documented ordering intent (e.g. "newest first")
 
 **❌ Don't:**
-- Send `sort_by` / `order` to regular list endpoints — they are ignored
+- Send `sort_by` / `sort_order` to other list endpoints — they are ignored
 - Rely on the exact order of items without an explicit order guarantee
 - Sort large datasets client-side without paginating first
 
