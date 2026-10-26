@@ -99,7 +99,7 @@ Modern enterprises face a common challenge: **data fragmentation, low reusabilit
 
 - **Multi-Format Support**: PDF, DOCX, XLSX, Markdown, and more via MarkItDown
 - **Hybrid Search**: Vector similarity (Qdrant) + BM25 lexical search (pg_search) with Reciprocal Rank Fusion
-- **Retrieval Lab**: Run a production retrieval query, compare up to 10 configurations side by side (A/B), and inspect recall, rerank, fusion and final ranking with per-stage diagnostics
+- **Retrieval Lab**: Run a production retrieval query, compare two configurations side by side (A/B), and inspect recall, rerank, fusion and final ranking with per-stage diagnostics
 - **Configurable Chunking**: Customizable chunk size, overlap, and separator with preview and failed-chunk retry
 - **Reranking**: Optional reranking pipeline to improve retrieval accuracy
 - **Embedding Management**: Configurable embedding models and vector dimensions

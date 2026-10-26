@@ -17,8 +17,11 @@
 
 ## 投递渠道
 
+| 渠道 | 说明 |
+|------|------|
 | `EMAIL` | 邮件 |
 | `WEBHOOK` | Webhook |
+| `FEISHU` | 飞书 |
 
 ## 用户接口
 
@@ -137,9 +140,8 @@
   "title": "string",
   "content": "string",
   "type": "team.member_added",
-  "scope": "global",
-  "team_id": "uuid (TEAM 范围时必填)",
-  "user_ids": ["uuid"],
+  "scope": "user",
+  "user_ids": ["uuid", "uuid"],
   "notify_channels": ["email", "feishu"]
 }
 ```

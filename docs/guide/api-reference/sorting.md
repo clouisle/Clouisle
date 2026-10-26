@@ -6,7 +6,7 @@ This guide explains how ordering works in the Clouisle API.
 
 Regular list endpoints do **not** support client-side sorting. There are no `sort_by` / `order` query parameters on the platform list endpoints (agents, conversations, knowledge bases, workflows, users, ...) — such parameters are silently ignored.
 
-Each list endpoint returns items in a fixed server-side order (usually newest first). To control ordering you must fetch the data and sort client-side, or use the one endpoint that does support sorting (admin observability, see below).
+Each list endpoint returns items in a fixed server-side order (usually newest first). To control ordering you must fetch the data and sort client-side, except for agent conversations (`GET /agents/{agent_id}/conversations`), the only list endpoint that accepts `sort_by`. Admin dashboard rankings do not accept it.
 
 ## Fixed Server-Side Ordering
 
@@ -38,7 +38,7 @@ GET /api/v1/agents/{agent_id}/conversations?sort_by=updated_at
 |-----------|------|---------|-------------|
 | `sort_by` | string | `updated_at` | One of `created_at`, `updated_at`, `message_count`; any other value falls back to `updated_at` |
 
-Results are always newest-first for the chosen field; there is no ascending option.
+Results are always returned in descending order for the chosen field: timestamp fields are newest-first, and `message_count` returns the highest counts first. There is no ascending option.
 
 ### Admin dashboard rankings
 

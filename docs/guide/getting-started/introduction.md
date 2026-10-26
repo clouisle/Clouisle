@@ -14,7 +14,7 @@ Clouisle lets organizations build, orchestrate, and deploy production-ready AI a
 - **Knowledge Base System**: Store and retrieve documents with hybrid vector + full-text search and reranking
 - **Sandboxed Execution**: Run agent and workflow code in isolated sandbox sessions with CPU/memory/disk limits
 - **Enterprise Security**: Multi-tenancy, RBAC, SSO (OIDC/OAuth2/SAML2/CAS, plus optional Feishu sign-in), TOTP 2FA, and field-level audit logging
-- **Multi-LLM Support**: 23 provider codes, including a generic OpenAI-compatible endpoint
+- **Multi-LLM Support**: 23 provider codes; the `custom` provider connects any OpenAI-compatible endpoint
 
 ## Why Choose Clouisle?
 
