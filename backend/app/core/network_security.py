@@ -153,10 +153,13 @@ def is_target_allowlisted(
     return False
 
 
-async def get_ssrf_allowed_targets() -> list[str]:
-    """Retrieve the administrator-approved SSRF exemption targets from SiteSetting."""
+async def get_ssrf_allowed_targets() -> list[str] | None:
+    """Load SSRF exemptions; None explicitly disables destination restrictions."""
     try:
         from app.models.site_setting import SiteSetting
+
+        if await SiteSetting.get_value("ssrf_protection_enabled", True) is False:
+            return None
 
         value = await SiteSetting.get_value(
             SSRF_ALLOWED_TARGETS_SETTING,
@@ -170,7 +173,7 @@ async def get_ssrf_allowed_targets() -> list[str]:
 def validate_external_http_url(
     value: str,
     getaddrinfo=None,
-    allowlist: Iterable[str] | None = None,
+    allowlist: Iterable[str] | None = (),
 ) -> _ValidatedExternalUrl:
     """Validate an external HTTP/HTTPS URL against blocked hosts, private IPs, and metadata targets."""
     if getaddrinfo is None:
@@ -179,6 +182,12 @@ def validate_external_http_url(
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise BusinessError(msg_key="http_tool_url_invalid")
     host = parsed.hostname.lower().rstrip(".")
+    if allowlist is None:
+        try:
+            parsed.port
+        except ValueError as exc:
+            raise BusinessError(msg_key="http_tool_url_invalid") from exc
+        return _ValidatedExternalUrl(value)
     if host in _BLOCKED_HOSTS and not (
         allowlist and is_target_allowlisted(host, [], allowlist)
     ):
@@ -258,7 +267,7 @@ def validate_external_host(
     error_key: str = "database_host_not_allowed",
     invalid_key: str = "database_host_invalid",
     unresolvable_key: str = "database_host_cannot_be_resolved",
-    allowlist: Iterable[str] | None = None,
+    allowlist: Iterable[str] | None = (),
 ) -> str:
     """Validate a hostname or IP against blocked hosts, private IPs, and metadata targets."""
     if getaddrinfo is None:
@@ -268,6 +277,8 @@ def validate_external_host(
         raise BusinessError(msg_key=invalid_key)
     if port is not None and not (1 <= port <= 65535):
         raise BusinessError(msg_key=invalid_key)
+    if allowlist is None:
+        return clean_host
     if clean_host in _BLOCKED_HOSTS and not (
         allowlist and is_target_allowlisted(clean_host, [], allowlist)
     ):
@@ -299,7 +310,7 @@ def validate_external_host(
 def validate_database_config(
     db_config: dict,
     getaddrinfo=None,
-    allowlist: Iterable[str] | None = None,
+    allowlist: Iterable[str] | None = (),
 ) -> None:
     targets: list[tuple[str, int | None]] = []
     raw_host = db_config.get("host")

@@ -48,17 +48,25 @@ class PythonEnvironmentManager:
         packages: list[str],
         runtime_profile: str,
         process_launcher: SandboxProcessLauncher,
-        network_proxy: SandboxEgressProxy,
+        network_proxy: SandboxEgressProxy | None,
         package_index_url: str | None = None,
+        network_unrestricted: bool = False,
     ) -> tuple[Path | None, bool]:
         if not packages:
             return None, False
 
         normalized_package_index_url = normalize_package_source_url(package_index_url)
         if normalized_package_index_url is not None:
+            # Unrestricted egress skips host membership but keeps URL syntax rules.
+            if network_unrestricted:
+                package_source_allowlist: list[str] | tuple[str, ...] | None = None
+            elif network_proxy is not None:
+                package_source_allowlist = tuple(network_proxy.allowed_hosts)
+            else:
+                package_source_allowlist = ()
             normalized_package_index_url = normalize_sandbox_package_source(
                 normalized_package_index_url,
-                tuple(network_proxy.allowed_hosts),
+                package_source_allowlist,
             )
         env_key = self.build_env_key(
             self.python_version(),
@@ -109,6 +117,7 @@ class PythonEnvironmentManager:
                     timeout_seconds=settings.SANDBOX_PACKAGE_INSTALL_TIMEOUT_SECONDS,
                     workspace_root=str(env_root),
                     network_proxy=network_proxy,
+                    network_unrestricted=network_unrestricted,
                 )
                 if result.exit_code != 0:
                     raise subprocess.CalledProcessError(

@@ -105,6 +105,15 @@ async def _validate_setting_value(key: str, value: object) -> None:
             msg_key="validation_error",
         )
 
+    if key in {
+        "model_endpoint_allowlist_enabled",
+        "ssrf_protection_enabled",
+        "sandbox_network_allowlist_enabled",
+    }:
+        if not isinstance(value, bool):
+            raise_validation_error()
+        return
+
     if key in {"icp_record_url", "terms_url", "privacy_url"}:
         if value in (None, ""):
             return

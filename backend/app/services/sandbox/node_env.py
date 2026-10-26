@@ -48,17 +48,25 @@ class NodeEnvironmentManager:
         packages: list[str],
         runtime_profile: str,
         process_launcher: SandboxProcessLauncher,
-        network_proxy: SandboxEgressProxy,
+        network_proxy: SandboxEgressProxy | None,
         registry_url: str | None = None,
+        network_unrestricted: bool = False,
     ) -> tuple[Path | None, bool]:
         if not packages:
             return None, False
 
         normalized_registry_url = normalize_package_source_url(registry_url)
         if normalized_registry_url is not None:
+            # Unrestricted egress skips host membership but keeps URL syntax rules.
+            if network_unrestricted:
+                package_source_allowlist: list[str] | tuple[str, ...] | None = None
+            elif network_proxy is not None:
+                package_source_allowlist = tuple(network_proxy.allowed_hosts)
+            else:
+                package_source_allowlist = ()
             normalized_registry_url = normalize_sandbox_package_source(
                 normalized_registry_url,
-                tuple(network_proxy.allowed_hosts),
+                package_source_allowlist,
             )
         node_version = self._node_version()
         env_key = self.build_env_key(
@@ -125,6 +133,7 @@ class NodeEnvironmentManager:
                     timeout_seconds=settings.SANDBOX_PACKAGE_INSTALL_TIMEOUT_SECONDS,
                     workspace_root=str(building_root),
                     network_proxy=network_proxy,
+                    network_unrestricted=network_unrestricted,
                 )
                 if result.exit_code != 0:
                     raise subprocess.CalledProcessError(

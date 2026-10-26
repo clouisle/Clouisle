@@ -1,10 +1,11 @@
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import pytest
 
 from app.core.sandbox_network_policy import (
     DEFAULT_SANDBOX_NETWORK_ALLOWLIST,
+    SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING,
     SANDBOX_NETWORK_ALLOWLIST_SETTING,
     SandboxNetworkPolicyError,
     get_sandbox_network_allowlist,
@@ -14,6 +15,20 @@ from app.core.sandbox_network_policy import (
 )
 from app.models.site_setting import SiteSetting
 from app.services.sandbox.egress_proxy import SandboxEgressProxy
+
+
+def _patch_site_settings(monkeypatch, *, enabled, allowlist):
+    """Fake SiteSetting.get_value with the given switch value and allowlist."""
+
+    async def read_value(key: str, default: object) -> object:
+        if key == SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING:
+            return enabled
+        assert key == SANDBOX_NETWORK_ALLOWLIST_SETTING
+        return allowlist
+
+    get_value = AsyncMock(side_effect=read_value)
+    monkeypatch.setattr(SiteSetting, "get_value", get_value)
+    return get_value
 
 
 def test_network_allowlist_normalizes_exact_dns_hosts_and_rejects_invalid_entries():
@@ -44,16 +59,25 @@ def test_network_allowlist_normalizes_exact_dns_hosts_and_rejects_invalid_entrie
 async def test_sandbox_allowlist_is_reloaded_from_site_settings_for_each_job(
     monkeypatch,
 ):
-    get_value = AsyncMock(side_effect=[[" PyPI.org. "], ["registry.npmjs.org"]])
+    pending = [[" PyPI.org. "], ["registry.npmjs.org"]]
+
+    async def read_value(key: str, default: object) -> object:
+        if key == SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING:
+            return True
+        assert key == SANDBOX_NETWORK_ALLOWLIST_SETTING
+        return pending.pop(0)
+
+    get_value = AsyncMock(side_effect=read_value)
     monkeypatch.setattr(SiteSetting, "get_value", get_value)
 
     assert await get_sandbox_network_allowlist() == ["pypi.org"]
     assert await get_sandbox_network_allowlist() == ["registry.npmjs.org"]
-    assert get_value.await_count == 2
-    assert all(
-        call.args[0] == SANDBOX_NETWORK_ALLOWLIST_SETTING
-        for call in get_value.await_args_list
-    )
+    assert [call.args[0] for call in get_value.await_args_list] == [
+        SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING,
+        SANDBOX_NETWORK_ALLOWLIST_SETTING,
+        SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING,
+        SANDBOX_NETWORK_ALLOWLIST_SETTING,
+    ]
 
 
 def test_package_source_requires_https_and_an_allowlisted_host():
@@ -157,17 +181,86 @@ async def test_proxy_connects_allowlisted_host_only_via_configured_upstream(
 @pytest.mark.asyncio
 async def test_missing_site_setting_uses_seeded_default(monkeypatch):
     async def read_default(key: str, default: object) -> object:
-        assert key == SANDBOX_NETWORK_ALLOWLIST_SETTING
+        assert key in {
+            SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING,
+            SANDBOX_NETWORK_ALLOWLIST_SETTING,
+        }
         return default
 
     get_value = AsyncMock(side_effect=read_default)
     monkeypatch.setattr(SiteSetting, "get_value", get_value)
 
     assert await get_sandbox_network_allowlist() == DEFAULT_SANDBOX_NETWORK_ALLOWLIST
-    get_value.assert_awaited_once_with(
-        SANDBOX_NETWORK_ALLOWLIST_SETTING,
-        DEFAULT_SANDBOX_NETWORK_ALLOWLIST,
-    )
+    assert get_value.await_args_list == [
+        call(SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING, True),
+        call(
+            SANDBOX_NETWORK_ALLOWLIST_SETTING,
+            DEFAULT_SANDBOX_NETWORK_ALLOWLIST,
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_disabled_switch_is_unrestricted_and_reenabling_restores_restrictions(
+    monkeypatch,
+):
+    state = {"enabled": False, "allowlist": ["pypi.org"]}
+
+    async def read_value(key: str, default: object) -> object:
+        if key == SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING:
+            return state["enabled"]
+        assert key == SANDBOX_NETWORK_ALLOWLIST_SETTING
+        return state["allowlist"]
+
+    get_value = AsyncMock(side_effect=read_value)
+    monkeypatch.setattr(SiteSetting, "get_value", get_value)
+
+    assert await get_sandbox_network_allowlist() is None
+    # A disabled restriction does not even read (or discard) the allowlist.
+    assert get_value.await_args_list == [
+        call(SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING, True)
+    ]
+
+    state["enabled"] = True
+    assert await get_sandbox_network_allowlist() == ["pypi.org"]
+
+    state["enabled"] = False
+    assert await get_sandbox_network_allowlist() is None
+    state["enabled"] = True
+    assert await get_sandbox_network_allowlist() == ["pypi.org"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enabled", [None, "false", "False", 0, 1, "true", {}, []])
+async def test_non_literal_false_switch_values_keep_restrictions(
+    monkeypatch, enabled: object
+):
+    _patch_site_settings(monkeypatch, enabled=enabled, allowlist=["pypi.org"])
+
+    assert await get_sandbox_network_allowlist() == ["pypi.org"]
+
+
+@pytest.mark.asyncio
+async def test_allowlist_read_failure_blocks_all_egress_while_enabled(monkeypatch):
+    async def read_value(key: str, default: object) -> object:
+        if key == SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING:
+            return True
+        raise RuntimeError("database unavailable")
+
+    get_value = AsyncMock(side_effect=read_value)
+    monkeypatch.setattr(SiteSetting, "get_value", get_value)
+
+    assert await get_sandbox_network_allowlist() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "allowlist", [None, "pypi.org", ["*.example.com"], ["pypi.org", None]]
+)
+async def test_malformed_allowlist_fails_closed(monkeypatch, allowlist: object):
+    _patch_site_settings(monkeypatch, enabled=True, allowlist=allowlist)
+
+    assert await get_sandbox_network_allowlist() == []
 
 
 @pytest.mark.asyncio
@@ -250,6 +343,37 @@ async def test_proxy_returns_bad_gateway_when_allowed_upstream_is_unreachable(
 def test_package_sources_reject_ambiguous_or_secret_bearing_urls(value):
     with pytest.raises(SandboxNetworkPolicyError):
         normalize_sandbox_package_source(value, DEFAULT_SANDBOX_NETWORK_ALLOWLIST)
+
+
+def test_unrestricted_package_sources_accept_http_and_custom_hosts_and_ports():
+    assert (
+        normalize_sandbox_package_source("https://unlisted.example/simple/", None)
+        == "https://unlisted.example/simple"
+    )
+    assert (
+        normalize_sandbox_package_source("http://localhost:8080/simple/", None)
+        == "http://localhost:8080/simple"
+    )
+    assert (
+        normalize_sandbox_package_source("https://10.0.0.5:8443/simple", None)
+        == "https://10.0.0.5:8443/simple"
+    )
+    assert (
+        normalize_sandbox_package_source("https://[::1]:8443/simple", None)
+        == "https://[::1]:8443/simple"
+    )
+
+    for url in (
+        "ftp://unlisted.example/simple",
+        "https://user:pass@unlisted.example/simple",
+        "https://unlisted.example/simple?token=secret",
+        "https://unlisted.example/simple#fragment",
+        "https://unlisted.example:invalid/simple",
+        "https://unlisted.example:0/simple",
+        "",
+    ):
+        with pytest.raises(SandboxNetworkPolicyError):
+            normalize_sandbox_package_source(url, None)
 
 
 @pytest.mark.parametrize(

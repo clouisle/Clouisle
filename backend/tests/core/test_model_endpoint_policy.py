@@ -173,18 +173,20 @@ async def test_ensure_model_endpoint_allowed_reads_current_site_setting(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("stored_value", [None, "invalid"])
 async def test_ensure_model_endpoint_allowed_handles_missing_and_invalid_storage(
     monkeypatch: pytest.MonkeyPatch,
+    stored_value,
 ) -> None:
-    get_value = AsyncMock(side_effect=[None, "invalid"])
+    async def get_value(key, default=None):
+        return stored_value if key == "model_endpoint_allowlist" else default
+
     monkeypatch.setattr(SiteSetting, "get_value", get_value)
 
     assert await ensure_model_endpoint_allowed(None) is None
-    for _stored_value in (None, "invalid"):
-        with pytest.raises(ModelEndpointPolicyError) as error:
-            await ensure_model_endpoint_allowed("https://api.example.com")
-        assert error.value.msg_key == "model_endpoint_not_allowlisted"
-    assert get_value.await_count == 2
+    with pytest.raises(ModelEndpointPolicyError) as error:
+        await ensure_model_endpoint_allowed("https://api.example.com")
+    assert error.value.msg_key == "model_endpoint_not_allowlisted"
 
 
 @pytest.mark.asyncio
@@ -221,3 +223,30 @@ async def test_model_manager_translates_endpoint_rejection(
     assert error.value.msg_key == "model_endpoint_not_allowlisted"
     assert error.value.kwargs == {"origin": endpoint}
     check.assert_awaited_once_with(endpoint)
+
+
+@pytest.mark.asyncio
+async def test_model_endpoint_switch_restores_restrictions(monkeypatch):
+    values = {"model_endpoint_allowlist": []}
+
+    async def get_value(key, default=None):
+        return values.get(key, default)
+
+    monkeypatch.setattr(SiteSetting, "get_value", get_value)
+    endpoint = "http://10.0.0.9:8080/v1"
+    for enabled in (True, None, "false", 0):
+        values["model_endpoint_allowlist_enabled"] = enabled
+        with pytest.raises(ModelEndpointPolicyError) as error:
+            await ensure_model_endpoint_allowed(endpoint)
+        assert error.value.msg_key == "model_endpoint_not_allowlisted"
+
+    values["model_endpoint_allowlist_enabled"] = False
+    assert await ensure_model_endpoint_allowed(endpoint) == "http://10.0.0.9:8080"
+    with pytest.raises(ModelEndpointPolicyError) as error:
+        await ensure_model_endpoint_allowed("file:///etc/passwd")
+    assert error.value.msg_key == "model_endpoint_base_url_invalid"
+
+    values["model_endpoint_allowlist_enabled"] = True
+    with pytest.raises(ModelEndpointPolicyError) as error:
+        await ensure_model_endpoint_allowed(endpoint)
+    assert error.value.msg_key == "model_endpoint_not_allowlisted"

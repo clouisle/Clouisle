@@ -68,6 +68,43 @@ async def test_get_value_returns_default_or_converted_setting(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    "key",
+    [
+        "model_endpoint_allowlist_enabled",
+        "ssrf_protection_enabled",
+        "sandbox_network_allowlist_enabled",
+    ],
+)
+@pytest.mark.parametrize(
+    ("value", "value_type"),
+    [
+        ("invalid", "bool"),
+        ("0", "bool"),
+        (None, "bool"),
+        ("false", "string"),
+    ],
+)
+async def test_corrupt_network_switch_storage_cannot_disable_restrictions(
+    monkeypatch, key, value, value_type
+):
+    first = AsyncMock(
+        return_value=type(
+            "Setting",
+            (),
+            {
+                "value": value,
+                "value_type": value_type,
+            },
+        )()
+    )
+    monkeypatch.setattr(
+        SiteSetting, "filter", lambda **kwargs: type("Query", (), {"first": first})()
+    )
+    assert await SiteSetting.get_value(key, True) is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     ("value", "value_type", "stored"),
     [
         (True, "bool", "true"),

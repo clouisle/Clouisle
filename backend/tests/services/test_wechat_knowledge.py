@@ -477,7 +477,11 @@ def test_credentials_never_target_nonofficial_endpoint(url):
 async def test_real_media_decryption_and_size_boundary(monkeypatch):
     import app.integrations.wechat as transport
 
-    monkeypatch.setattr(transport, "validate_external_http_url", lambda value: value)
+    monkeypatch.setattr(
+        transport,
+        "ensure_external_http_url_allowed",
+        AsyncMock(side_effect=lambda value: value),
+    )
     key = b"0123456789abcdef"
     plaintext = b"The original file bytes"
     padder = padding.PKCS7(128).padder()
@@ -561,7 +565,11 @@ async def test_disconnected_actor_cannot_process_snapshot(collection_db):
 async def test_media_redirect_cannot_escape_official_cdn(monkeypatch):
     import app.integrations.wechat as transport
 
-    monkeypatch.setattr(transport, "validate_external_http_url", lambda value: value)
+    monkeypatch.setattr(
+        transport,
+        "ensure_external_http_url_allowed",
+        AsyncMock(side_effect=lambda value: value),
+    )
     calls = []
 
     async def handler(request):

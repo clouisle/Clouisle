@@ -119,12 +119,17 @@ class SandboxProcessLauncher:
         workspace_root: str | None = None,
         cache_root: str | None = None,
         network_proxy: SandboxEgressProxy | None = None,
+        network_unrestricted: bool = False,
         log_dir: str | None = None,
         log_stem: str | None = None,
     ) -> ProcessLaunchResult:
         if network_proxy is not None and not self.filesystem_isolation_enabled:
             raise SandboxIsolationError(
                 "Allowlisted sandbox egress requires filesystem isolation"
+            )
+        if network_proxy is not None and network_unrestricted:
+            raise SandboxIsolationError(
+                "Sandbox egress cannot be allowlisted and unrestricted at once"
             )
         stdout_log_path, stderr_log_path = self._execution_log_paths(log_dir, log_stem)
         launch_command = command
@@ -138,6 +143,7 @@ class SandboxProcessLauncher:
                 workspace_root=workspace_root,
                 cache_root=cache_root,
                 network_proxy=network_proxy,
+                network_unrestricted=network_unrestricted,
                 timeout_seconds=timeout_seconds,
             )
 
@@ -323,6 +329,7 @@ class SandboxProcessLauncher:
         workspace_root: str | None,
         cache_root: str | None,
         network_proxy: SandboxEgressProxy | None,
+        network_unrestricted: bool,
         timeout_seconds: float | None,
     ) -> tuple[list[str], None, dict[str, str] | None]:
         if not workspace_root:
@@ -360,11 +367,18 @@ class SandboxProcessLauncher:
             "--unshare-pid",
             "--unshare-ipc",
             "--unshare-uts",
-            "--unshare-net",
-            "--die-with-parent",
-            "--hostname",
-            "clouisle-sandbox",
         ]
+        if not network_unrestricted:
+            # Unrestricted jobs share the host network namespace instead of
+            # routing every connection through the allowlisting Unix proxy.
+            isolated_command.append("--unshare-net")
+        isolated_command.extend(
+            [
+                "--die-with-parent",
+                "--hostname",
+                "clouisle-sandbox",
+            ]
+        )
         for source in self.RUNTIME_READONLY_ROOTS:
             if Path(source).exists():
                 isolated_command.extend(["--ro-bind", source, source])
@@ -441,6 +455,7 @@ class SandboxProcessLauncher:
         ]
         isolated_command.extend(["--chdir", logical_cwd])
         if network_proxy is None:
+            # Capability dropping does not restrict outbound TCP/UDP.
             isolated_command.extend(["--cap-drop", "ALL"])
         isolated_command.extend(["--", *mapped_command])
         return isolated_command, None, mapped_env

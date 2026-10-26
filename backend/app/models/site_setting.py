@@ -37,6 +37,12 @@ class SiteSetting(models.Model):
         setting = await cls.filter(key=key).first()
         if not setting:
             return default
+        if key in {
+            "model_endpoint_allowlist_enabled",
+            "ssrf_protection_enabled",
+            "sandbox_network_allowlist_enabled",
+        } and (setting.value_type != "bool" or setting.value not in {"true", "false"}):
+            return default
         return cls._convert_value(setting.value, setting.value_type)
 
     @classmethod
@@ -525,6 +531,27 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "desc": "Default team role for new users",
     },
     # Security
+    "model_endpoint_allowlist_enabled": {
+        "value": True,
+        "type": "bool",
+        "category": "security",
+        "public": False,
+        "desc": "Enforce the model endpoint allowlist",
+    },
+    "ssrf_protection_enabled": {
+        "value": True,
+        "type": "bool",
+        "category": "security",
+        "public": False,
+        "desc": "Enforce outbound SSRF protection with configured exemptions",
+    },
+    "sandbox_network_allowlist_enabled": {
+        "value": True,
+        "type": "bool",
+        "category": "security",
+        "public": False,
+        "desc": "Enforce sandbox egress restrictions",
+    },
     "model_endpoint_allowlist": {
         "value": DEFAULT_MODEL_ENDPOINT_ALLOWLIST,
         "type": "json",

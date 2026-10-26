@@ -119,8 +119,11 @@ def model_endpoint_origin_is_allowed(
     )
 
 
-async def get_model_endpoint_allowlist() -> list[str]:
+async def get_model_endpoint_allowlist() -> list[str] | None:
     from app.models.site_setting import SiteSetting
+
+    if await SiteSetting.get_value("model_endpoint_allowlist_enabled", True) is False:
+        return None
 
     value = await SiteSetting.get_value(
         MODEL_ENDPOINT_ALLOWLIST_SETTING,
@@ -136,4 +139,6 @@ async def ensure_model_endpoint_allowed(base_url: str | None) -> str | None:
     if base_url is None or not base_url.strip():
         return None
     allowlist = await get_model_endpoint_allowlist()
+    if allowlist is None:
+        return normalize_model_endpoint_origin(base_url)
     return model_endpoint_origin_is_allowed(base_url, allowlist)

@@ -385,3 +385,60 @@ def test_database_url_skips_empty_authority_entries():
         {"url": "mongodb://,db.example.test,,/db"},
         getaddrinfo=lambda *_args, **_kwargs: public_sock,
     )
+
+
+@pytest.mark.asyncio
+async def test_ssrf_switch_controls_http_and_database_destinations(monkeypatch):
+    from app.core.network_security import (
+        ensure_external_http_url_allowed,
+        get_ssrf_allowed_targets,
+    )
+    from app.models.site_setting import SiteSetting
+
+    values = {}
+
+    async def get_value(key, default=None):
+        return values.get(key, default)
+
+    monkeypatch.setattr(SiteSetting, "get_value", get_value)
+    url = "http://metadata.google.internal/latest/meta-data"
+    for enabled in (True, None, "false", 0):
+        values["ssrf_protection_enabled"] = enabled
+        with pytest.raises(BusinessError) as error:
+            await ensure_external_http_url_allowed(url)
+        assert error.value.msg_key == "http_tool_url_host_not_allowed"
+
+    values["ssrf_protection_enabled"] = False
+    assert await ensure_external_http_url_allowed(url) == url
+    policy = await get_ssrf_allowed_targets()
+    assert policy is None
+    assert validate_external_host("localhost", 5432, allowlist=policy) == "localhost"
+    validate_database_config(
+        {"host": "169.254.169.254", "port": 5432}, allowlist=policy
+    )
+    for invalid_url in ("file:///etc/passwd", "http://localhost:invalid"):
+        with pytest.raises(BusinessError) as error:
+            await ensure_external_http_url_allowed(invalid_url)
+        assert error.value.msg_key == "http_tool_url_invalid"
+    with pytest.raises(BusinessError) as error:
+        validate_database_config({"host": "localhost", "port": 65536}, allowlist=policy)
+    assert error.value.msg_key == "database_host_invalid"
+
+    values["ssrf_protection_enabled"] = True
+    with pytest.raises(BusinessError) as error:
+        await ensure_external_http_url_allowed(url)
+    assert error.value.msg_key == "http_tool_url_host_not_allowed"
+
+
+@pytest.mark.asyncio
+async def test_ssrf_switch_read_failure_keeps_protection(monkeypatch):
+    from unittest.mock import AsyncMock
+    from app.core.network_security import ensure_external_http_url_allowed
+    from app.models.site_setting import SiteSetting
+
+    monkeypatch.setattr(
+        SiteSetting, "get_value", AsyncMock(side_effect=RuntimeError("offline"))
+    )
+    with pytest.raises(BusinessError) as error:
+        await ensure_external_http_url_allowed("http://localhost")
+    assert error.value.msg_key == "http_tool_url_host_not_allowed"
