@@ -9,7 +9,10 @@ const getExecution = mock(async () => ({
   connection_account_label: 'work@example.com',
   parameters_preview: { event_id: 'evt-1', token: '***REDACTED***' },
 }))
-
+const decideExecution = mock(async () => ({ decision: { id: 'd-1' }, execution_status: 'ready' }))
+mock.module('sonner', () => ({
+  toast: { success: mock(), error: mock() },
+}))
 mock.module('next-intl', () => ({
   useTranslations: () => (key: string) => key,
 }))
@@ -38,7 +41,7 @@ mock.module('@/components/ui/button', () => ({
   },
 }))
 mock.module('@/lib/api', () => ({
-  toolExecutionsApi: { get: getExecution },
+  toolExecutionsApi: { get: getExecution, decide: decideExecution },
 }))
 
 const { PendingToolApprovalCard } = await import('./pending-tool-approval-card')
@@ -60,7 +63,7 @@ async function flush() {
 }
 
 describe('PendingToolApprovalCard', () => {
-  test('reads secret-safe execution metadata and links to the approvals inbox', async () => {
+  test('reads secret-safe execution metadata and approves inline', async () => {
     const onRefreshRun = mock(async () => undefined)
     let renderer!: ReactTestRenderer
     act(() => {
@@ -80,12 +83,15 @@ describe('PendingToolApprovalCard', () => {
     expect(text).toContain('delete_event')
     expect(text).toContain('work@example.com')
     expect(text).toContain('***REDACTED***')
-    const link = renderer.root.findAllByType('a')[0]
-    expect(link.props.href).toBe('/app/capabilities/approvals?execution=execution-1')
 
-    const refresh = renderer.root.findAllByType('button')[0]
-    act(() => refresh?.props.onClick())
-    await flush()
+    const approveBtn = renderer.root.findAll((node) => node.props['data-testid'] === 'approval-card-approve-btn')[0]
+    expect(approveBtn).toBeDefined()
+    await act(async () => {
+      approveBtn.props.onClick()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(decideExecution).toHaveBeenCalledWith('execution-1', expect.objectContaining({ decision: 'approve' }))
     expect(onRefreshRun).toHaveBeenCalled()
   })
 

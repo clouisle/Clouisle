@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
-import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { Tool, ToolParameter, toolsApi, ToolExecuteRequest, ToolExecuteResponse, McpToolInfo, SandboxArtifactConfig } from '@/lib/api'
 import { toolMcpApi } from '@/lib/api/tool-mcp'
@@ -474,12 +473,6 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
                 <Button size="sm" onClick={handleResume} disabled={loading}>
                   {t('testPanel.resume')}
                 </Button>
-                <Link
-                  href="/app/capabilities/approvals"
-                  className="inline-flex h-8 items-center rounded-md border px-3 text-sm"
-                >
-                  {t('testPanel.openApprovals')}
-                </Link>
               </div>
             </div>
           )}

@@ -1,8 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import Link from 'next/link'
 import { useTranslations } from 'next-intl'
+import { toast } from 'sonner'
 import { Loader2, RefreshCw, ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -52,6 +52,7 @@ export function PendingToolApprovalCard({
   const [execution, setExecution] = React.useState<ToolExecution | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [refreshing, setRefreshing] = React.useState(false)
+  const [submitting, setSubmitting] = React.useState<'approve' | 'reject' | false>(false)
   const disposedRef = React.useRef(false)
   const resumedRef = React.useRef(false)
 
@@ -111,6 +112,31 @@ export function PendingToolApprovalCard({
       // The execution state above is still server-authoritative.
     }
   }
+  const handleDecision = async (decision: 'approve' | 'reject') => {
+    setSubmitting(decision)
+    try {
+      await toolExecutionsApi.decide(executionId, {
+        decision,
+        idempotency_key: crypto.randomUUID(),
+      })
+      toast.success(
+        tApproval(decision === 'approve' ? 'approvedToast' : 'rejectedToast')
+      )
+      await load(false)
+      await onRefreshRun?.()
+    } catch (err) {
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : tApproval('decisionFailed')
+      )
+    } finally {
+      if (!disposedRef.current) {
+        setSubmitting(false)
+      }
+    }
+  }
+
 
   const status = execution?.status
   const parameters = execution?.parameters_preview ?? {}
@@ -172,24 +198,66 @@ export function PendingToolApprovalCard({
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void handleRefresh()}
-            disabled={refreshing}
-          >
-            <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
-            {refreshing ? tChat('refreshing') : tChat('refreshStatus')}
-          </Button>
-          <Button
-            size="sm"
-            nativeButton={false}
-            render={<Link href={`/app/capabilities/approvals?execution=${encodeURIComponent(executionId)}`} />}
-          >
-            {tChat('openInbox')}
-          </Button>
-        </div>
+        {execution?.status === 'awaiting_approval' ? (
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Button
+              size="sm"
+              variant="default"
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={() => void handleDecision('approve')}
+              disabled={submitting !== false || refreshing}
+              data-testid="approval-card-approve-btn"
+            >
+              {submitting === 'approve' ? (
+                <>
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  {tApproval('submitting')}
+                </>
+              ) : (
+                tApproval('approve')
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-destructive hover:bg-destructive/10"
+              onClick={() => void handleDecision('reject')}
+              disabled={submitting !== false || refreshing}
+              data-testid="approval-card-reject-btn"
+            >
+              {submitting === 'reject' ? (
+                <>
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  {tApproval('submitting')}
+                </>
+              ) : (
+                tApproval('reject')
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing || submitting !== false}
+              title={tChat('refreshStatus')}
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
+              <span className="sr-only">{tChat('refreshStatus')}</span>
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void handleRefresh()}
+              disabled={refreshing}
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
+              {refreshing ? tChat('refreshing') : tChat('refreshStatus')}
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

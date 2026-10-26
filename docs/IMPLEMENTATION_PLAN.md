@@ -1,6 +1,12 @@
 # Implementation Plan
 
 ## Active
+- **in-chat-tool-approvals** — Completed. See `docs/plan/in-chat-tool-approvals.md`.
+  - [x] 1. Backend direct execution decision endpoint and notification deep-linking
+  - [x] 2. Inline Approve/Reject actions in PendingToolApprovalCard and auto-resume
+  - [x] 3. Remove standalone approvals center page and obsolete navigation links
+  - [x] 4. Automated verification and test suite alignment
+
 - **explicit-agent-tool-approvals** — Completed. See `docs/plan/explicit-agent-tool-approvals.md`.
   - [x] 1. Agent ToolConfig require_approval schema and execution boundary bypass for workflows
   - [x] 2. Eliminate heuristic concurrency/read-only approval deduction on builtin tools

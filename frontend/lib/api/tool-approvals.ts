@@ -224,4 +224,14 @@ export const toolExecutionsApi = {
     api.get<ToolExecution>(`/tool-executions/${executionId}`, {
       silent: config?.silent,
     }),
+
+  /** Directly record an approve/reject decision for an execution in chat. */
+  decide: async (
+    executionId: string,
+    input: ToolApprovalDecisionInput
+  ): Promise<ToolApprovalDecisionResult> =>
+    api.post<ToolApprovalDecisionResult>(
+      `/tool-executions/${executionId}/decision`,
+      input
+    ),
 }

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, Database, ChevronDown, PackageOpen, Upload, Info, Settings, ShieldCheck } from 'lucide-react'
+import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, Database, ChevronDown, PackageOpen, Upload, Info, Settings } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
@@ -51,7 +51,6 @@ type CapabilityTab = 'tools' | 'skills'
 
 export default function CapabilitiesPage() {
   const t = useTranslations('platform')
-  const tApprovals = useTranslations('approvals')
   const tCommon = useTranslations('common')
   const packagesT = useTranslations('packages')
   const { currentTeam } = useTeam()
@@ -362,15 +361,6 @@ export default function CapabilitiesPage() {
           <h1 className="text-3xl font-bold tracking-tight">{t('tools.title')}</h1>
           <p className="text-muted-foreground mt-1">{t('tools.description')}</p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => router.push('/app/capabilities/approvals')}
-          title={tApprovals('inboxLinkHint')}
-          data-testid="capabilities-approvals-link"
-        >
-          <ShieldCheck className="mr-2 h-4 w-4" />
-          {tApprovals('inboxLink')}
-        </Button>
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4" data-testid="capabilities-tabs">
