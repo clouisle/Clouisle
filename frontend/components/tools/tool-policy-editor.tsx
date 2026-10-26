@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Combobox,
   ComboboxChip,
@@ -774,12 +775,17 @@ export function ToolPolicyEditor({
                       {discoveredTools.has(operation) ? (
                         <>
                           <code className="text-xs text-muted-foreground break-all">{operation}</code>
-                          <p
-                            className="text-xs text-muted-foreground line-clamp-2 whitespace-pre-wrap break-words"
-                            title={discoveredTools.get(operation)?.description || t('operations.noDescription')}
-                          >
-                            {discoveredTools.get(operation)?.description || t('operations.noDescription')}
-                          </p>
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={<p tabIndex={0} />}
+                              className="text-xs text-muted-foreground line-clamp-2 whitespace-pre-wrap break-words cursor-help"
+                            >
+                              {discoveredTools.get(operation)?.description || t('operations.noDescription')}
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-sm max-h-72 overflow-y-auto whitespace-pre-wrap break-words">
+                              {discoveredTools.get(operation)?.description || t('operations.noDescription')}
+                            </TooltipContent>
+                          </Tooltip>
                         </>
                       ) : operationTools && toolsLoaded ? (
                         <p className="text-xs text-muted-foreground">{t('operations.notDiscovered')}</p>

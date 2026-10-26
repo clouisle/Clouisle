@@ -200,9 +200,9 @@ describe('ToolPolicyEditor', () => {
       renderer = create(<Harness operationTools={[{ name: 'search', description: 'Search project records' }]} toolsLoaded initialApprovalPolicy={policy} />)
     })
     expect(document.querySelector('details')).toBeNull()
-    const description = document.querySelector('p[title]')!
+    const description = document.querySelector('p[data-slot="tooltip-trigger"]') as HTMLElement
     expect(description.textContent).toBe('Search project records')
-    expect(description.getAttribute('title')).toBe('Search project records')
+    expect(description.hasAttribute('title')).toBe(false)
     const rows = selects().filter(item => Array.from(item.options).some(option => option.value === 'inherit'))
     await change(rows[0], 'require_approval')
     expect(latest?.approvalPolicy.operation_overrides['tool:search'].default_decision).toBe('require_approval')
