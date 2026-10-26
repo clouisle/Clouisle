@@ -17,7 +17,10 @@ from .cache import (
     build_cache_key,
     normalize_package_source_url,
 )
-from app.core.sandbox_network_policy import normalize_sandbox_package_source
+from app.core.sandbox_network_policy import (
+    normalize_sandbox_package_source,
+    resolve_package_source_allowlist,
+)
 
 
 class PythonEnvironmentManager:
@@ -58,15 +61,12 @@ class PythonEnvironmentManager:
         normalized_package_index_url = normalize_package_source_url(package_index_url)
         if normalized_package_index_url is not None:
             # Unrestricted egress skips host membership but keeps URL syntax rules.
-            if network_unrestricted:
-                package_source_allowlist: list[str] | tuple[str, ...] | None = None
-            elif network_proxy is not None:
-                package_source_allowlist = tuple(network_proxy.allowed_hosts)
-            else:
-                package_source_allowlist = ()
             normalized_package_index_url = normalize_sandbox_package_source(
                 normalized_package_index_url,
-                package_source_allowlist,
+                resolve_package_source_allowlist(
+                    network_proxy.allowed_hosts if network_proxy is not None else None,
+                    network_unrestricted,
+                ),
             )
         env_key = self.build_env_key(
             self.python_version(),

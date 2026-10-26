@@ -238,6 +238,64 @@ async def test_get_all_by_category_keeps_corrupt_switches_fail_closed(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_get_values_reads_batch_with_defaults_and_fail_closed_switches(
+    monkeypatch,
+):
+    rows = [
+        type(
+            "Setting",
+            (),
+            {"key": "ssrf_protection_enabled", "value": "0", "value_type": "bool"},
+        )(),
+        type(
+            "Setting",
+            (),
+            {
+                "key": "sandbox_network_allowlist",
+                "value": '["pypi.org"]',
+                "value_type": "json",
+            },
+        )(),
+    ]
+
+    class Query:
+        def __await__(self):
+            async def result():
+                return rows
+
+            return result().__await__()
+
+    filters = []
+
+    def fake_filter(**kwargs):
+        filters.append(kwargs)
+        return Query()
+
+    monkeypatch.setattr(SiteSetting, "filter", fake_filter)
+
+    assert await SiteSetting.get_values(
+        {
+            "ssrf_protection_enabled": True,
+            "sandbox_network_allowlist": [],
+            "missing": "fallback",
+        }
+    ) == {
+        "ssrf_protection_enabled": True,
+        "sandbox_network_allowlist": ["pypi.org"],
+        "missing": "fallback",
+    }
+    assert filters == [
+        {
+            "key__in": [
+                "ssrf_protection_enabled",
+                "sandbox_network_allowlist",
+                "missing",
+            ]
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_init_default_settings_creates_only_missing_settings(monkeypatch):
     defaults = {
         "existing": {

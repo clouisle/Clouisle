@@ -151,17 +151,22 @@ def test_effective_model_endpoint_matches_runtime_adapter_defaults() -> None:
 async def test_ensure_model_endpoint_allowed_reads_current_site_setting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    first = AsyncMock(
-        return_value=SimpleNamespace(
+    rows = [
+        SimpleNamespace(
+            key="model_endpoint_allowlist",
             value='["https://api.example.com"]',
             value_type="json",
         )
-    )
-    monkeypatch.setattr(
-        SiteSetting,
-        "filter",
-        lambda **_kwargs: SimpleNamespace(first=first),
-    )
+    ]
+
+    class Query:
+        def __await__(self):
+            async def result():
+                return rows
+
+            return result().__await__()
+
+    monkeypatch.setattr(SiteSetting, "filter", lambda **_kwargs: Query())
 
     assert (
         await ensure_model_endpoint_allowed("https://api.example.com/v1")
@@ -178,10 +183,10 @@ async def test_ensure_model_endpoint_allowed_handles_missing_and_invalid_storage
     monkeypatch: pytest.MonkeyPatch,
     stored_value,
 ) -> None:
-    async def get_value(key, default=None):
-        return stored_value if key == "model_endpoint_allowlist" else default
+    async def get_values(defaults: dict[str, object]) -> dict[str, object]:
+        return {**defaults, "model_endpoint_allowlist": stored_value}
 
-    monkeypatch.setattr(SiteSetting, "get_value", get_value)
+    monkeypatch.setattr(SiteSetting, "get_values", get_values)
 
     assert await ensure_model_endpoint_allowed(None) is None
     with pytest.raises(ModelEndpointPolicyError) as error:
@@ -229,10 +234,10 @@ async def test_model_manager_translates_endpoint_rejection(
 async def test_model_endpoint_switch_restores_restrictions(monkeypatch):
     values = {"model_endpoint_allowlist": []}
 
-    async def get_value(key, default=None):
-        return values.get(key, default)
+    async def get_values(defaults: dict[str, object]) -> dict[str, object]:
+        return {key: values.get(key, default) for key, default in defaults.items()}
 
-    monkeypatch.setattr(SiteSetting, "get_value", get_value)
+    monkeypatch.setattr(SiteSetting, "get_values", get_values)
     endpoint = "http://10.0.0.9:8080/v1"
     for enabled in (True, None, "false", 0):
         values["model_endpoint_allowlist_enabled"] = enabled

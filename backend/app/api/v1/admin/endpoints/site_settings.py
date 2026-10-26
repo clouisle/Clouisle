@@ -15,6 +15,7 @@ from app.models import (
     KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB,
 )
 from app.models.notification import AutoNotificationType
+from app.models.site_setting import RESTRICTION_SWITCH_KEYS
 from app.schemas.site_setting import (
     SiteSettingResponse,
     SiteSettingUpdate,
@@ -105,11 +106,7 @@ async def _validate_setting_value(key: str, value: object) -> None:
             msg_key="validation_error",
         )
 
-    if key in {
-        "model_endpoint_allowlist_enabled",
-        "ssrf_protection_enabled",
-        "sandbox_network_allowlist_enabled",
-    }:
+    if key in RESTRICTION_SWITCH_KEYS:
         if not isinstance(value, bool):
             raise_validation_error()
         return

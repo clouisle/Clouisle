@@ -8,7 +8,10 @@ import shutil
 import subprocess
 from pathlib import Path
 from app.core.config import settings
-from app.core.sandbox_network_policy import normalize_sandbox_package_source
+from app.core.sandbox_network_policy import (
+    normalize_sandbox_package_source,
+    resolve_package_source_allowlist,
+)
 from app.services.sandbox.egress_proxy import SandboxEgressProxy
 from app.services.sandbox.process_launcher import SandboxProcessLauncher
 
@@ -58,15 +61,12 @@ class NodeEnvironmentManager:
         normalized_registry_url = normalize_package_source_url(registry_url)
         if normalized_registry_url is not None:
             # Unrestricted egress skips host membership but keeps URL syntax rules.
-            if network_unrestricted:
-                package_source_allowlist: list[str] | tuple[str, ...] | None = None
-            elif network_proxy is not None:
-                package_source_allowlist = tuple(network_proxy.allowed_hosts)
-            else:
-                package_source_allowlist = ()
             normalized_registry_url = normalize_sandbox_package_source(
                 normalized_registry_url,
-                package_source_allowlist,
+                resolve_package_source_allowlist(
+                    network_proxy.allowed_hosts if network_proxy is not None else None,
+                    network_unrestricted,
+                ),
             )
         node_version = self._node_version()
         env_key = self.build_env_key(

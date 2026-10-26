@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+from collections.abc import Iterable
 from urllib.parse import SplitResult, urlsplit
 
 DEFAULT_SANDBOX_NETWORK_ALLOWLIST = [
@@ -76,6 +77,16 @@ def normalize_sandbox_network_allowlist(value: object) -> list[str]:
             seen.add(host)
             normalized.append(host)
     return normalized
+
+
+def resolve_package_source_allowlist(
+    allowed_hosts: Iterable[str] | None,
+    network_unrestricted: bool,
+) -> tuple[str, ...] | None:
+    """Map the sandbox network mode to the package-source allowlist."""
+    if network_unrestricted:
+        return None
+    return tuple(allowed_hosts) if allowed_hosts is not None else ()
 
 
 def normalize_sandbox_package_source(
@@ -168,15 +179,18 @@ async def get_sandbox_network_allowlist() -> list[str] | None:
     from app.models.site_setting import SiteSetting
 
     try:
-        enabled = await SiteSetting.get_value(
-            SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING, True
+        values = await SiteSetting.get_values(
+            {
+                SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING: True,
+                SANDBOX_NETWORK_ALLOWLIST_SETTING: list(
+                    DEFAULT_SANDBOX_NETWORK_ALLOWLIST
+                ),
+            }
         )
-        if enabled is False:
+        if values[SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING] is False:
             return None
-        value = await SiteSetting.get_value(
-            SANDBOX_NETWORK_ALLOWLIST_SETTING,
-            list(DEFAULT_SANDBOX_NETWORK_ALLOWLIST),
+        return normalize_sandbox_network_allowlist(
+            values[SANDBOX_NETWORK_ALLOWLIST_SETTING]
         )
-        return normalize_sandbox_network_allowlist(value)
     except Exception:
         return []

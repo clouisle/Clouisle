@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from urllib.parse import urlsplit
 
 MODEL_ENDPOINT_ALLOWLIST_SETTING = "model_endpoint_allowlist"
+MODEL_ENDPOINT_ALLOWLIST_ENABLED_SETTING = "model_endpoint_allowlist_enabled"
 MODEL_ENDPOINT_ALLOWLIST_MAX_ENTRIES = 200
 
 DEFAULT_MODEL_ENDPOINT_ALLOWLIST = [
@@ -122,15 +123,18 @@ def model_endpoint_origin_is_allowed(
 async def get_model_endpoint_allowlist() -> list[str] | None:
     from app.models.site_setting import SiteSetting
 
-    if await SiteSetting.get_value("model_endpoint_allowlist_enabled", True) is False:
-        return None
-
-    value = await SiteSetting.get_value(
-        MODEL_ENDPOINT_ALLOWLIST_SETTING,
-        DEFAULT_MODEL_ENDPOINT_ALLOWLIST,
+    values = await SiteSetting.get_values(
+        {
+            MODEL_ENDPOINT_ALLOWLIST_ENABLED_SETTING: True,
+            MODEL_ENDPOINT_ALLOWLIST_SETTING: DEFAULT_MODEL_ENDPOINT_ALLOWLIST,
+        }
     )
+    if values[MODEL_ENDPOINT_ALLOWLIST_ENABLED_SETTING] is False:
+        return None
     try:
-        return normalize_model_endpoint_allowlist(value)
+        return normalize_model_endpoint_allowlist(
+            values[MODEL_ENDPOINT_ALLOWLIST_SETTING]
+        )
     except ModelEndpointPolicyError:
         return []
 

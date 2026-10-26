@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from app.schemas.response import BusinessError
 
 SSRF_ALLOWED_TARGETS_SETTING = "ssrf_allowed_targets"
+SSRF_PROTECTION_ENABLED_SETTING = "ssrf_protection_enabled"
 SSRF_ALLOWED_TARGETS_MAX_ENTRIES = 200
 
 _BLOCKED_HOSTS = {"localhost", "local", "metadata.google.internal"}
@@ -163,14 +164,15 @@ async def get_ssrf_allowed_targets() -> list[str] | None:
     try:
         from app.models.site_setting import SiteSetting
 
-        if await SiteSetting.get_value("ssrf_protection_enabled", True) is False:
-            return None
-
-        value = await SiteSetting.get_value(
-            SSRF_ALLOWED_TARGETS_SETTING,
-            [],
+        values = await SiteSetting.get_values(
+            {
+                SSRF_PROTECTION_ENABLED_SETTING: True,
+                SSRF_ALLOWED_TARGETS_SETTING: [],
+            }
         )
-        return normalize_ssrf_allowlist(value)
+        if values[SSRF_PROTECTION_ENABLED_SETTING] is False:
+            return None
+        return normalize_ssrf_allowlist(values[SSRF_ALLOWED_TARGETS_SETTING])
     except Exception:
         return []
 

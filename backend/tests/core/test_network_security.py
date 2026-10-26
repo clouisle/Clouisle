@@ -399,10 +399,10 @@ async def test_ssrf_switch_controls_http_and_database_destinations(monkeypatch):
 
     values = {}
 
-    async def get_value(key, default=None):
-        return values.get(key, default)
+    async def get_values(defaults: dict[str, object]) -> dict[str, object]:
+        return {key: values.get(key, default) for key, default in defaults.items()}
 
-    monkeypatch.setattr(SiteSetting, "get_value", get_value)
+    monkeypatch.setattr(SiteSetting, "get_values", get_values)
     url = "http://metadata.google.internal/latest/meta-data"
     for enabled in (True, None, "false", 0):
         values["ssrf_protection_enabled"] = enabled
@@ -439,7 +439,7 @@ async def test_ssrf_switch_read_failure_keeps_protection(monkeypatch):
     from app.models.site_setting import SiteSetting
 
     monkeypatch.setattr(
-        SiteSetting, "get_value", AsyncMock(side_effect=RuntimeError("offline"))
+        SiteSetting, "get_values", AsyncMock(side_effect=RuntimeError("offline"))
     )
     with pytest.raises(BusinessError) as error:
         await ensure_external_http_url_allowed("http://localhost")

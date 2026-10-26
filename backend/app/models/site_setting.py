@@ -1,14 +1,21 @@
 from typing import Any, Optional, TypedDict
 
 from tortoise import fields, models
-from app.core.model_endpoint_policy import DEFAULT_MODEL_ENDPOINT_ALLOWLIST
-from app.core.sandbox_network_policy import DEFAULT_SANDBOX_NETWORK_ALLOWLIST
+from app.core.model_endpoint_policy import (
+    DEFAULT_MODEL_ENDPOINT_ALLOWLIST,
+    MODEL_ENDPOINT_ALLOWLIST_ENABLED_SETTING,
+)
+from app.core.network_security import SSRF_PROTECTION_ENABLED_SETTING
+from app.core.sandbox_network_policy import (
+    DEFAULT_SANDBOX_NETWORK_ALLOWLIST,
+    SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING,
+)
 
-_RESTRICTION_SWITCH_KEYS = frozenset(
+RESTRICTION_SWITCH_KEYS = frozenset(
     {
-        "model_endpoint_allowlist_enabled",
-        "ssrf_protection_enabled",
-        "sandbox_network_allowlist_enabled",
+        MODEL_ENDPOINT_ALLOWLIST_ENABLED_SETTING,
+        SSRF_PROTECTION_ENABLED_SETTING,
+        SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING,
     }
 )
 
@@ -48,11 +55,24 @@ class SiteSetting(models.Model):
         return cls._convert_setting_value(key, setting.value, setting.value_type)
 
     @classmethod
+    async def get_values(cls, defaults: dict[str, Any]) -> dict[str, Any]:
+        """Get several settings in one query, preserving per-key defaults."""
+        rows = {s.key: s for s in await cls.filter(key__in=list(defaults))}
+        return {
+            key: (
+                cls._convert_setting_value(key, row.value, row.value_type)
+                if (row := rows.get(key))
+                else default
+            )
+            for key, default in defaults.items()
+        }
+
+    @classmethod
     def _convert_setting_value(
         cls, key: str, value: Optional[str], value_type: str
     ) -> Any:
         """Convert a stored value; corrupt restriction switches stay fail-closed."""
-        if key in _RESTRICTION_SWITCH_KEYS and (
+        if key in RESTRICTION_SWITCH_KEYS and (
             value_type != "bool" or value not in {"true", "false"}
         ):
             return True
@@ -547,21 +567,21 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "desc": "Default team role for new users",
     },
     # Security
-    "model_endpoint_allowlist_enabled": {
+    MODEL_ENDPOINT_ALLOWLIST_ENABLED_SETTING: {
         "value": True,
         "type": "bool",
         "category": "security",
         "public": False,
         "desc": "Enforce the model endpoint allowlist",
     },
-    "ssrf_protection_enabled": {
+    SSRF_PROTECTION_ENABLED_SETTING: {
         "value": True,
         "type": "bool",
         "category": "security",
         "public": False,
         "desc": "Enforce outbound SSRF protection with configured exemptions",
     },
-    "sandbox_network_allowlist_enabled": {
+    SANDBOX_NETWORK_ALLOWLIST_ENABLED_SETTING: {
         "value": True,
         "type": "bool",
         "category": "security",
