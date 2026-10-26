@@ -1,6 +1,15 @@
 # Implementation Plan
 
 ## Active
+- **tool-connections-approvals-mcp** — Design ready for review; implementation not started. See [design](plan/tool-connections-approvals-mcp.md).
+  - [x] 0. Connection identity, unified approval and MCP protocol design
+  - [ ] 1. Connection models, encrypted secrets and migration
+  - [ ] 2. Shared identity resolution and execution entrypoint cutover
+  - [ ] 3. Unified approvals and durable execution recovery
+  - [ ] 4. MCP protocol, OAuth and managed sessions
+  - [ ] 5. Bidirectional interactions and unified UI
+  - [ ] 6. End-to-end verification and operator documentation
+
 - **network-allowlist-switches** — Completed. See `docs/plan/network-allowlist-switches.md`.
   - [x] 1. Site settings, model endpoints and SSRF
   - [x] 2. Sandbox policy and isolation
