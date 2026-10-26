@@ -66,8 +66,9 @@ async def test_approval_pins_original_personal_account_and_rejects_parameter_cha
         context = ToolCallContext(
             actor=user,
             team_id=team.id,
-            entrypoint=ExecutionEntrypoint.TOOL_TEST,
+            entrypoint=ExecutionEntrypoint.CHAT,
             interactive=True,
+            require_approval=True,
         )
         calls = []
 

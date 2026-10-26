@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
+import type { ToolApprovalPolicy } from '@/lib/api/tools'
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
 mock.module('@/components/ui/button', () => ({
   Button: ({ children, ...props }: React.ComponentProps<'button'>) => <button {...props}>{children}</button>,
@@ -47,7 +48,7 @@ let renderer: ReactTestRenderer | undefined
 let latest: {
   identityPolicy: string
   connectionFields: Array<{ name: string; label: string; required: boolean; secret: boolean }>
-  approvalPolicy: ReturnType<typeof getToolApprovalPolicy>
+  approvalPolicy: ToolApprovalPolicy
 } | null = null
 
 afterEach(() => {
@@ -56,10 +57,16 @@ afterEach(() => {
   latest = null
 })
 
-function Harness({ operationNames }: { operationNames?: string[] }) {
+function Harness({
+  operationNames,
+  initialApprovalPolicy,
+}: {
+  operationNames?: string[]
+  initialApprovalPolicy?: ToolApprovalPolicy
+}) {
   const [identityPolicy, setIdentityPolicy] = React.useState<'none' | 'team_only' | 'personal_only' | 'selectable'>('none')
   const [connectionFields, setConnectionFields] = React.useState<Array<{ name: string; label: string; required: boolean; secret: boolean }>>([])
-  const [approvalPolicy, setApprovalPolicy] = React.useState(getToolApprovalPolicy(null))
+  const [approvalPolicy, setApprovalPolicy] = React.useState(initialApprovalPolicy ?? getToolApprovalPolicy(null))
   React.useEffect(() => {
     latest = { identityPolicy, connectionFields, approvalPolicy }
   }, [identityPolicy, connectionFields, approvalPolicy])
@@ -76,9 +83,17 @@ function Harness({ operationNames }: { operationNames?: string[] }) {
   )
 }
 
-async function render(operationNames?: string[]) {
+async function render(
+  operationNames?: string[],
+  initialApprovalPolicy?: ToolApprovalPolicy
+) {
   await act(async () => {
-    renderer = create(<Harness operationNames={operationNames} />)
+    renderer = create(
+      <Harness
+        operationNames={operationNames}
+        initialApprovalPolicy={initialApprovalPolicy}
+      />
+    )
   })
 }
 
@@ -120,7 +135,11 @@ describe('ToolPolicyEditor', () => {
   })
 
   test('keeps approval gates while switching decisions and normalizes non-approval decisions', async () => {
-    await render()
+    await render(undefined, {
+      default_decision: 'require_approval',
+      gates: [{ kind: 'caller', user_ids: [], roles: [], allow_self_approval: false }],
+      operation_overrides: {},
+    })
     expect(latest?.approvalPolicy.default_decision).toBe('require_approval')
     expect(latest?.approvalPolicy.gates).toEqual([
       { kind: 'caller', user_ids: [], roles: [], allow_self_approval: false },

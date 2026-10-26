@@ -221,18 +221,11 @@ async def execute_stored_tool(
             else None,
         )
     resolved, binding = await resolve_tool_connection(tool, context, operation)
-    is_workflow = (
-        context.entrypoint == ExecutionEntrypoint.WORKFLOW
-        or context.run_kind == ExecutionRunKind.WORKFLOW
-    )
-    tool_requires_approval = (getattr(tool, "approval_policy", None) or {}).get(
-        "default_decision"
-    ) == "require_approval"
-    needs_approval = (
-        not is_workflow
-        and context.interactive
-        and (context.require_approval or tool_requires_approval)
-    )
+    is_agent_call = context.entrypoint in {
+        ExecutionEntrypoint.CHAT,
+        ExecutionEntrypoint.AGENT_RUN,
+    }
+    needs_approval = is_agent_call and context.interactive and context.require_approval
     from app.schemas.tool_approval import (
         ApprovalDecision,
         ApprovalGate,

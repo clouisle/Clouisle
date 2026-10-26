@@ -49,13 +49,10 @@ from app.models.tool import (
     ToolType,
     ToolVisibility,
 )
-from app.models.tool_approval import ToolApprovalRequest
 from app.models.tool_connection import ToolConnectionScope
 from app.models.user import Team, TeamMember, User
 from app.schemas.response import BusinessError, error
-from app.schemas.tool_approval import ApprovalVote
 from app.schemas.tool_connection import ToolConnectionCreate
-from app.services import tool_approvals
 from app.services.tool_connections import ToolConnectionService
 from app.services.tool_oauth import ToolOAuthService
 
@@ -266,9 +263,8 @@ async def test_metadata_listing_forwards_cursor_and_item_bounds(mcp_app, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_pending_approval_resumes_once_then_rejects_completed(
-    mcp_app, monkeypatch
-):
+async def test_direct_mcp_tool_call_executes_without_approval(mcp_app, monkeypatch):
+    """Direct tool calls outside agent conversation never trigger approval."""
     team = await _team("approval", mcp_app.actor)
     tool = await _tool(team, approval_policy=_caller_policy())
     execute_mock = AsyncMock(
@@ -277,93 +273,18 @@ async def test_pending_approval_resumes_once_then_rejects_completed(
     monkeypatch.setattr(tool_mcp, "execute_mcp_tool", execute_mock)
     body = {"name": "ticket.close", "arguments": {"id": 7}}
 
-    pending = await mcp_app.client.post(
+    response = await mcp_app.client.post(
         f"/tools/{tool.id}/mcp/tools/call",
         params={"team_id": str(team.id)},
         json=body,
     )
 
-    assert pending.status_code == 200
-    pending_data = pending.json()["data"]
-    assert pending_data["status"] == "pending_approval"
-    assert pending_data["operation"] == "tool:ticket.close"
-    execution_id = pending_data["execution_id"]
-    assert pending_data["pending_approval"]["execution_id"] == execution_id
-    execute_mock.assert_not_awaited()
-
-    request = await ToolApprovalRequest.filter(execution_id=execution_id).first()
-    assert request is not None
-    await tool_approvals.decide_approval(
-        request.id,
-        mcp_app.actor,
-        decision=ApprovalVote.APPROVE,
-        idempotency_key=f"approve-{uuid4().hex}",
-    )
-
-    resumed = await mcp_app.client.post(
-        f"/tools/{tool.id}/mcp/tools/call",
-        params={"team_id": str(team.id)},
-        json={**body, "execution_id": execution_id},
-    )
-
-    assert resumed.status_code == 200
-    assert resumed.json()["data"]["status"] == "completed"
-    assert resumed.json()["data"]["result"]["result"] == {"ok": True}
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "completed"
+    assert data["operation"] == "tool:ticket.close"
+    assert data["result"]["result"] == {"ok": True}
     execute_mock.assert_awaited_once()
-    call_args = execute_mock.await_args
-    assert call_args.args[0]["headers"]["X-Static"] == "static"
-    assert call_args.args[1] == "ticket.close"
-    assert call_args.args[2] == {"id": 7}
-
-    replay = await mcp_app.client.post(
-        f"/tools/{tool.id}/mcp/tools/call",
-        params={"team_id": str(team.id)},
-        json={**body, "execution_id": execution_id},
-    )
-    assert replay.status_code == 409
-    assert replay.json()["code"] == 409
-    execute_mock.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_changed_parameters_cannot_resume_an_approved_execution(
-    mcp_app, monkeypatch
-):
-    team = await _team("digest", mcp_app.actor)
-    tool = await _tool(team, approval_policy=_caller_policy())
-    execute_mock = AsyncMock(
-        return_value=McpToolResult(success=True, result={"ok": True})
-    )
-    monkeypatch.setattr(tool_mcp, "execute_mcp_tool", execute_mock)
-    body = {"name": "ticket.close", "arguments": {"id": 7}}
-
-    pending = await mcp_app.client.post(
-        f"/tools/{tool.id}/mcp/tools/call",
-        params={"team_id": str(team.id)},
-        json=body,
-    )
-    execution_id = pending.json()["data"]["execution_id"]
-    request = await ToolApprovalRequest.filter(execution_id=execution_id).first()
-    await tool_approvals.decide_approval(
-        request.id,
-        mcp_app.actor,
-        decision=ApprovalVote.APPROVE,
-        idempotency_key=f"approve-{uuid4().hex}",
-    )
-
-    changed = await mcp_app.client.post(
-        f"/tools/{tool.id}/mcp/tools/call",
-        params={"team_id": str(team.id)},
-        json={
-            "name": "ticket.close",
-            "arguments": {"id": 8},
-            "execution_id": execution_id,
-        },
-    )
-
-    assert changed.status_code == 403
-    assert changed.json()["code"] == 403
-    execute_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -505,88 +426,9 @@ async def test_oauth_requires_a_resolved_connection(mcp_app, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_metadata_default_allow_explicit_policy_and_malformed(
-    mcp_app, monkeypatch
-):
+async def test_metadata_listing_never_requires_approval(mcp_app, monkeypatch):
+    """Listing tools and resources is discovery metadata and never requires approval."""
     team = await _team("metadata-policy", mcp_app.actor)
-    enumerate_mock = AsyncMock(return_value=McpEnumeration(items=[]))
-    monkeypatch.setattr(tool_mcp, "enumerate_mcp_tools", enumerate_mock)
-
-    default_deny = await _tool(team, approval_policy={"default_decision": "deny"})
-    allowed = await mcp_app.client.get(
-        f"/tools/{default_deny.id}/mcp/tools", params={"team_id": str(team.id)}
-    )
-    assert allowed.status_code == 200
-    assert allowed.json()["data"]["status"] == "completed"
-    assert enumerate_mock.await_count == 1
-
-    explicit_allow = await _tool(
-        team,
-        approval_policy={
-            "default_decision": "deny",
-            "operation_overrides": {"list:tools": {"default_decision": "allow"}},
-        },
-    )
-    allowed_override = await mcp_app.client.get(
-        f"/tools/{explicit_allow.id}/mcp/tools",
-        params={"team_id": str(team.id)},
-    )
-    assert allowed_override.status_code == 200
-    assert enumerate_mock.await_count == 2
-
-    explicit_deny = await _tool(
-        team,
-        approval_policy={
-            "default_decision": "allow",
-            "operation_overrides": {"list:tools": {"default_decision": "deny"}},
-        },
-    )
-    denied = await mcp_app.client.get(
-        f"/tools/{explicit_deny.id}/mcp/tools", params={"team_id": str(team.id)}
-    )
-    assert denied.status_code == 409
-    assert denied.json()["code"] == 409
-    assert enumerate_mock.await_count == 2
-
-    malformed = await _tool(
-        team,
-        approval_policy={
-            "default_decision": "deny",
-            "gates": [{"kind": "caller"}],
-        },
-    )
-    malformed_response = await mcp_app.client.get(
-        f"/tools/{malformed.id}/mcp/tools", params={"team_id": str(team.id)}
-    )
-    assert malformed_response.status_code == 409
-    assert malformed_response.json()["code"] == 6510
-    assert enumerate_mock.await_count == 2
-
-    disabled = await _tool(team)
-    await Tool.filter(id=disabled.id).update(is_enabled=False)
-    disabled_response = await mcp_app.client.get(
-        f"/tools/{disabled.id}/mcp/tools", params={"team_id": str(team.id)}
-    )
-    assert disabled_response.status_code == 403
-    assert enumerate_mock.await_count == 2
-
-
-@pytest.mark.asyncio
-async def test_metadata_require_approval_binds_page_scope_and_replays(
-    mcp_app, monkeypatch
-):
-    team = await _team("metadata-approval", mcp_app.actor)
-    tool = await _tool(
-        team,
-        approval_policy={
-            "operation_overrides": {
-                "list:tools": {
-                    "default_decision": "require_approval",
-                    "gates": [{"kind": "caller"}],
-                }
-            }
-        },
-    )
     enumerate_mock = AsyncMock(
         return_value=McpEnumeration(
             items=[McpToolInfo(name="search", description=None, parameters={})],
@@ -594,53 +436,13 @@ async def test_metadata_require_approval_binds_page_scope_and_replays(
         )
     )
     monkeypatch.setattr(tool_mcp, "enumerate_mcp_tools", enumerate_mock)
-    params = {
-        "team_id": str(team.id),
-        "max_items": "5",
-        "cursor": "page-2",
-    }
-
-    pending = await mcp_app.client.get(f"/tools/{tool.id}/mcp/tools", params=params)
-    assert pending.status_code == 200
-    pending_data = pending.json()["data"]
-    assert pending_data["status"] == "pending_approval"
-    assert pending_data["operation"] == "list:tools"
-    execution_id = pending_data["execution_id"]
-    assert pending_data["pending_approval"]["execution_id"] == execution_id
-    enumerate_mock.assert_not_awaited()
-
-    request = await ToolApprovalRequest.filter(execution_id=execution_id).first()
-    await tool_approvals.decide_approval(
-        request.id,
-        mcp_app.actor,
-        decision=ApprovalVote.APPROVE,
-        idempotency_key=f"approve-{uuid4().hex}",
+    tool = await _tool(team, approval_policy={"default_decision": "require_approval"})
+    response = await mcp_app.client.get(
+        f"/tools/{tool.id}/mcp/tools", params={"team_id": str(team.id)}
     )
-
-    changed_scope = await mcp_app.client.get(
-        f"/tools/{tool.id}/mcp/tools",
-        params={**params, "max_items": "10", "execution_id": execution_id},
-    )
-    assert changed_scope.status_code == 403
-    assert enumerate_mock.await_count == 0
-
-    resumed = await mcp_app.client.get(
-        f"/tools/{tool.id}/mcp/tools",
-        params={**params, "execution_id": execution_id},
-    )
-    assert resumed.status_code == 200
-    resumed_data = resumed.json()["data"]
-    assert resumed_data["status"] == "completed"
-    assert resumed_data["result"]["items"][0]["name"] == "search"
-    assert enumerate_mock.await_count == 1
-    assert enumerate_mock.await_args.kwargs["limits"].max_items == 5
-    assert enumerate_mock.await_args.kwargs["start_cursor"] == "page-2"
-
-    replay = await mcp_app.client.get(
-        f"/tools/{tool.id}/mcp/tools",
-        params={**params, "execution_id": execution_id},
-    )
-    assert replay.status_code == 409
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "completed"
+    assert len(response.json()["data"]["result"]["items"]) == 1
     assert enumerate_mock.await_count == 1
 
 

@@ -66,8 +66,8 @@ function createCallerGate(): ToolApprovalGate {
 
 export function createDefaultApprovalPolicy(): ToolApprovalPolicy {
   return {
-    default_decision: 'require_approval',
-    gates: [createCallerGate()],
+    default_decision: 'allow',
+    gates: [],
     operation_overrides: {},
   }
 }
@@ -89,7 +89,7 @@ export function getToolApprovalPolicy(tool?: ToolDetail | null): ToolApprovalPol
   const policy = tool?.approval_policy
   if (!policy) return createDefaultApprovalPolicy()
   return {
-    default_decision: policy.default_decision ?? 'require_approval',
+    default_decision: policy.default_decision ?? 'allow',
     gates: (policy.gates ?? []).map((gate) => ({
       kind: gate.kind,
       user_ids: [...(gate.user_ids ?? [])],
@@ -443,10 +443,10 @@ export function ToolPolicyEditor({
           value={identityPolicy}
           onValueChange={(value) => onIdentityPolicyChange(value as ToolIdentityPolicy)}
         >
-          <SelectTrigger id="tool-identity-policy">
+          <SelectTrigger id="tool-identity-policy" className="w-full">
             <SelectValue>{t(`identity.options.${identityPolicy}`)}</SelectValue>
           </SelectTrigger>
-          <SelectContent side="bottom" alignItemWithTrigger={false}>
+          <SelectContent side="bottom" alignItemWithTrigger={false} className="w-[--anchor-width] min-w-[320px]">
             {TOOL_IDENTITY_POLICIES.map((policy) => (
               <SelectItem key={policy} value={policy}>
                 {t(`identity.options.${policy}`)}
@@ -574,12 +574,12 @@ export function ToolPolicyEditor({
               setDecision(value as ToolApprovalPolicy['default_decision'])
             }
           >
-            <SelectTrigger id="tool-approval-default">
+            <SelectTrigger id="tool-approval-default" className="w-full">
               <SelectValue>
                 {decisionLabel(approvalPolicy.default_decision)}
               </SelectValue>
             </SelectTrigger>
-            <SelectContent side="bottom" alignItemWithTrigger={false}>
+            <SelectContent side="bottom" alignItemWithTrigger={false} className="w-[--anchor-width] min-w-[240px]">
               {TOOL_APPROVAL_DECISIONS.map((decision) => (
                 <SelectItem key={decision} value={decision}>
                   {decisionLabel(decision)}
@@ -640,10 +640,10 @@ export function ToolPolicyEditor({
                           )
                         }}
                       >
-                        <SelectTrigger id={`approval-gate-kind-${index}`}>
+                        <SelectTrigger id={`approval-gate-kind-${index}`} className="w-full">
                           <SelectValue>{gateKindLabel(gate.kind)}</SelectValue>
                         </SelectTrigger>
-                        <SelectContent side="bottom" alignItemWithTrigger={false}>
+                        <SelectContent side="bottom" alignItemWithTrigger={false} className="w-[--anchor-width] min-w-[200px]">
                           <SelectItem value="caller">{t('approval.caller')}</SelectItem>
                           <SelectItem value="user">{t('approval.user')}</SelectItem>
                           <SelectItem value="team_role">{t('approval.teamRole')}</SelectItem>
