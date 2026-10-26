@@ -91,7 +91,6 @@ CALLBACK_PATH = "/api/v1/tool-oauth/callback"
 STATE_TTL = timedelta(minutes=10)
 EXPIRY_SKEW_SECONDS = 60
 DEFAULT_TOKEN_LIFETIME_SECONDS = 3600
-MAX_TOKEN_LIFETIME_SECONDS = 7 * 24 * 3600
 MAX_HTTP_RESPONSE_BYTES = 256 * 1024
 MAX_TOKEN_RESPONSE_BYTES = 64 * 1024
 MAX_ACCESS_TOKEN_LENGTH = 16 * 1024
@@ -326,8 +325,12 @@ def _parse_expires_in(value: Any) -> int:
         seconds = int(value)
     except (TypeError, ValueError):
         raise _OAuthEndpointError("invalid_expires_in") from None
-    if seconds <= 0 or seconds > MAX_TOKEN_LIFETIME_SECONDS:
+    if seconds <= 0:
         raise _OAuthEndpointError("invalid_expires_in")
+    try:
+        _utcnow() + timedelta(seconds=seconds)
+    except (OverflowError, ValueError):
+        raise _OAuthEndpointError("invalid_expires_in") from None
     return seconds
 
 

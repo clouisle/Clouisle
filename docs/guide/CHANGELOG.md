@@ -11,6 +11,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- OAuth tool connections accept provider-declared token lifetimes longer than seven days; nonpositive and datetime-overflowing lifetimes remain rejected. This prevents valid long-lived tokens from being reported as unusable.
 - MCP editors now combine discovered tool names, descriptions and approval selectors into one list. Saved rules missing from the current discovery result remain editable under Other operation rules; refreshing discovery never deletes them.
 - MCP tool descriptions retain a two-line preview with full text in the shared shadcn tooltip on hover or keyboard focus, without a disclosure control.
 - The in-chat MCP server-request panel now stays hidden during empty background polls, rather than appearing on every loading cycle. Actual pending requests remain actionable.

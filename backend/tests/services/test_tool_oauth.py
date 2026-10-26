@@ -749,6 +749,19 @@ async def test_token_response_rejects_invalid_values():
     assert unsupported.value.error == "unsupported_token_type"
 
 
+@pytest.mark.parametrize("seconds", [604801, 15552000, 31536000])
+async def test_token_response_accepts_long_lived_provider_tokens(seconds):
+    tokens = oauth.ToolOAuthService._parse_token_response(
+        {
+            "access_token": "provider-token",
+            "token_type": "bearer",
+            "expires_in": seconds,
+        }
+    )
+    assert tokens.expires_in == seconds
+    assert tokens.access_token == "provider-token"
+
+
 # ---------------------------------------------------------------------------
 # Refresh and binding rules
 # ---------------------------------------------------------------------------
