@@ -296,7 +296,12 @@ async def test_existing_run_parks_on_pause_and_pins_definition() -> None:
 
     assert result == str(run.id)
     assert run.status == RunStatus.WAITING
-    assert run.context_snapshot == {"workflow_definition": workflow.definition}
+    assert run.context_snapshot["workflow_definition"] == workflow.definition
+    # A legacy row without a stamped origin executes as the workflow surface.
+    assert run.context_snapshot["execution_origin"] == {
+        "entrypoint": "workflow",
+        "entrypoint_id": str(workflow_id),
+    }
     assert run.save.await_count == 2
     context.set_ttl.assert_awaited_once_with()
     orchestrator._complete_run.assert_not_awaited()
@@ -341,7 +346,11 @@ async def test_direct_run_parks_on_pause_and_pins_definition() -> None:
 
     assert result == str(run.id)
     assert run.status == RunStatus.WAITING
-    assert run.context_snapshot == {"workflow_definition": workflow.definition}
+    assert run.context_snapshot["workflow_definition"] == workflow.definition
+    assert run.context_snapshot["execution_origin"] == {
+        "entrypoint": "workflow",
+        "entrypoint_id": str(workflow_id),
+    }
     context.set_ttl.assert_awaited_once_with()
 
 

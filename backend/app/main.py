@@ -81,6 +81,9 @@ async def lifespan(app: FastAPI):
     # Authentication configuration must be migrated before ORM schema generation.
     # Fail startup on a failed cutover rather than serving split configuration.
     await migrate_integration_schema()
+    from app.core.tool_policy_migration import migrate_tool_policy_schema
+
+    await migrate_tool_policy_schema()
 
     # Run migrations BEFORE generating schemas
     from app.core.init_data import (
@@ -370,6 +373,27 @@ async def lifespan(app: FastAPI):
     await migrate_sso_link_sessions()
     # Generate schemas
     await Tortoise.generate_schemas()
+    try:
+        from app.core.tool_policy_migration import (
+            apply_tool_connection_constraints,
+        )
+
+        await apply_tool_connection_constraints()
+    except Exception as e:
+        logger.warning(f"Tool connection constraint migration failed: {e}")
+
+    # Fail startup rather than dropping plaintext credentials that cannot be
+    # migrated safely. Migrated non-web_search ToolConfig rows are deleted with
+    # their connection; a global (teamless) row fails closed and must be
+    # assigned to an explicit team with the migration CLI.
+    from app.core.tool_secret_migration import migrate_legacy_tool_secrets
+
+    legacy_connection_mapping = await migrate_legacy_tool_secrets()
+    if legacy_connection_mapping:
+        logger.info(
+            "Legacy tool credentials are now encrypted connections: %s",
+            legacy_connection_mapping,
+        )
     from app.core.wechat_migration import migrate_wechat_knowledge_schema
 
     await migrate_wechat_knowledge_schema()

@@ -13,6 +13,7 @@ from ..sandbox_files import register_sandbox_file_tools
 from .media import register_media_tools
 from .ask_user import register_ask_user_tool
 from .rss import register_rss_tools
+from .file_download import register_file_download_tool
 
 
 def register_all_builtin_tools() -> None:
@@ -26,6 +27,7 @@ def register_all_builtin_tools() -> None:
     register_sandbox_file_tools()
     register_ask_user_tool()
     register_rss_tools()
+    register_file_download_tool()
 
 
 __all__ = [
@@ -39,4 +41,5 @@ __all__ = [
     "register_sandbox_file_tools",
     "register_ask_user_tool",
     "register_rss_tools",
+    "register_file_download_tool",
 ]

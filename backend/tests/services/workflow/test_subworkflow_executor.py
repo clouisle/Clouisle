@@ -7,6 +7,7 @@ import pytest
 
 from app.models.workflow import Workflow, WorkflowRun
 from app.services.workflow.errors import MaxDepthExceededError
+from app.services.workflow.execution_origin import workflow_origin
 from app.services.workflow.executors import subworkflow
 from app.services.workflow.executors.subworkflow import (
     MAX_DEPTH,
@@ -36,6 +37,8 @@ def parent_run(**overrides):
         "root_run_id": None,
         "depth": 1,
         "triggered_by_id": uuid4(),
+        "workflow_id": uuid4(),
+        "context_snapshot": {},
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -113,6 +116,7 @@ async def test_maps_inputs_runs_child_and_wraps_outputs(dependencies):
         user_id=parent.triggered_by_id,
         team_id=None,
         stream=False,
+        origin=workflow_origin(parent.workflow_id),
     )
     WorkflowRun.filter.assert_called_once_with(id=sub_run_id)
     assert child.parent_run_id == parent.id

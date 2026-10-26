@@ -6,8 +6,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.core.i18n import t
 from app.llm.types import FunctionCall, MessageRole, ToolCall, ToolDefinition
 from app.models.agent import RAGMode
+from app.schemas.response import BusinessError
 
 # ToolCall is currently evaluated from a TYPE_CHECKING-only import in agent.py.
 builtins.ToolCall = ToolCall
@@ -81,44 +83,38 @@ async def test_chat_executes_tool_then_aggregates_final_response_usage():
 
 @pytest.mark.anyio
 async def test_execute_tool_forwards_workflow_scope_to_builtin_tool():
-    agent = SimpleNamespace(id="agent-1", team_id=None)
+    agent = SimpleNamespace(id="agent-1", team_id="team-1", tools_config=[])
+    user = SimpleNamespace(id="user-1")
     tool_call = ToolCall(
         id="call-1",
         function=FunctionCall(name="generate_image", arguments="{}"),
     )
     service = AgentService()
-    global_query = SimpleNamespace(first=AsyncMock(return_value=None))
+    execute = AsyncMock(return_value={"ok": True})
 
     with (
-        patch(
-            "app.llm.tools.tool_registry.get_tool",
-            return_value=SimpleNamespace(handler=object()),
-        ),
-        patch(
-            "app.models.tool_config.ToolConfig.filter",
-            return_value=global_query,
-        ),
-        patch(
-            "app.llm.tools.tool_registry.execute",
-            new=AsyncMock(return_value={"ok": True}),
-        ) as execute,
+        patch("app.services.tool.ToolExecutor.execute_builtin_tool", new=execute),
+        patch("app.models.user.User.get_or_none", new=AsyncMock(return_value=user)),
     ):
         result = await service._execute_tool(
             agent,
             tool_call,
+            user_id="user-1",
             workflow_run_id="workflow-run-1",
         )
 
     assert result == {"ok": True}
-    execute.assert_awaited_once_with(
-        name="generate_image",
-        arguments={},
-        credentials={},
-        agent=agent,
-        user=None,
-        team_id=None,
-        workflow_run_id="workflow-run-1",
-    )
+    kwargs = execute.await_args.kwargs
+    assert kwargs["tool_name"] == "generate_image"
+    assert kwargs["arguments"] == {}
+    assert kwargs["team_id"] == "team-1"
+    assert kwargs["workflow_run_id"] == "workflow-run-1"
+    assert kwargs["agent"] is agent
+    assert kwargs["user"] is user
+    # No trusted runtime identity: attribution falls back to the AgentRun
+    # entrypoint and stays non-interactive (fail closed for caller approvals).
+    assert kwargs["context"].entrypoint.value == "agent_run"
+    assert kwargs["context"].interactive is False
 
 
 @pytest.mark.anyio
@@ -354,7 +350,7 @@ async def test_build_messages_adds_context_history_and_rag_before_current_messag
 @pytest.mark.anyio
 async def test_execute_tool_rejects_invalid_arguments_and_unknown_tools():
     service = AgentService()
-    agent = SimpleNamespace(id="agent-1", team_id=None)
+    agent = SimpleNamespace(id="agent-1", team_id="team-1", tools_config=[])
     invalid = ToolCall(
         id="call-invalid",
         function=FunctionCall(name="search", arguments="not-json"),
@@ -365,91 +361,90 @@ async def test_execute_tool_rejects_invalid_arguments_and_unknown_tools():
     )
 
     invalid_result = await service._execute_tool(agent, invalid)
-    with patch("app.llm.tools.tool_registry.get_tool", return_value=None):
-        missing_result = await service._execute_tool(agent, missing)
-
     assert invalid_result == {"error": "Invalid tool arguments"}
-    assert missing_result == {
-        "error": "Tool not found",
+
+    # Unauthorized context fails closed before any boundary lookup.
+    assert await service._execute_tool(agent, missing) == {
+        "error": t("user_context_required"),
         "tool_name": "missing",
         "success": False,
     }
 
+    user = SimpleNamespace(id="user-1")
+    with (
+        patch("app.models.user.User.get_or_none", new=AsyncMock(return_value=user)),
+        patch(
+            "app.services.tool.ToolExecutor.execute_builtin_tool",
+            new=AsyncMock(
+                side_effect=BusinessError(
+                    code=404, msg_key="tool_not_found", status_code=404
+                )
+            ),
+        ),
+    ):
+        missing_result = await service._execute_tool(agent, missing, user_id="user-1")
+    assert missing_result["success"] is False
+    assert missing_result["tool_name"] == "missing"
+    assert missing_result["error"]
+
 
 @pytest.mark.anyio
-async def test_execute_tool_uses_team_credentials_and_reports_execution_errors():
+async def test_execute_tool_reports_builtin_boundary_errors():
     service = AgentService()
-    agent = SimpleNamespace(id="agent-1", team_id="team-1")
+    agent = SimpleNamespace(id="agent-1", team_id="team-1", tools_config=[])
+    user = SimpleNamespace(id="user-1")
     tool_call = ToolCall(
         id="call-search",
         function=FunctionCall(name="search", arguments='{"query": "docs"}'),
     )
-    config_query = SimpleNamespace(
-        first=AsyncMock(
-            return_value=SimpleNamespace(credentials={"TEST_API_KEY": "mock-key"})
-        )
-    )
+    execute = AsyncMock(side_effect=[{"results": ["match"]}, RuntimeError("failed")])
 
     with (
-        patch("app.llm.tools.tool_registry.get_tool", return_value=object()),
-        patch("app.models.tool_config.ToolConfig.filter", return_value=config_query),
-        patch(
-            "app.llm.tools.tool_registry.execute",
-            new=AsyncMock(side_effect=[{"results": ["match"]}, RuntimeError("failed")]),
-        ) as execute,
+        patch("app.services.tool.ToolExecutor.execute_builtin_tool", new=execute),
+        patch("app.models.user.User.get_or_none", new=AsyncMock(return_value=user)),
     ):
-        success = await service._execute_tool(agent, tool_call)
-        failure = await service._execute_tool(agent, tool_call)
+        success = await service._execute_tool(agent, tool_call, user_id="user-1")
+        failure = await service._execute_tool(agent, tool_call, user_id="user-1")
 
     assert success == {"results": ["match"]}
-    assert failure == {"error": "failed", "success": False}
-    assert execute.await_args_list[0].kwargs == {
-        "name": "search",
-        "arguments": {"query": "docs"},
-        "credentials": {"TEST_API_KEY": "mock-key"},
-        "agent": agent,
-        "user": None,
-        "team_id": "team-1",
-    }
+    assert failure["success"] is False
+    assert failure["error"]
+    kwargs = execute.await_args_list[0].kwargs
+    assert kwargs["tool_name"] == "search"
+    assert kwargs["arguments"] == {"query": "docs"}
+    assert kwargs["team_id"] == "team-1"
+    assert kwargs["agent"] is agent
+    assert kwargs["user"] is user
 
 
 @pytest.mark.anyio
-async def test_execute_skill_tool_returns_results_and_safe_errors():
+async def test_execute_skill_tool_delegates_to_shared_dispatcher():
     service = AgentService()
-    agent = SimpleNamespace(id="agent-1", team_id="team-1")
+    agent = SimpleNamespace(id="agent-1", team_id="team-1", tools_config=[])
+    user = SimpleNamespace(id="user-1")
     tool_call = ToolCall(
         id="call-skill",
         function=FunctionCall(name="skill_summarize", arguments='{"text": "docs"}'),
     )
-    skill = SimpleNamespace(id="skill-1")
-    config = SimpleNamespace()
+    delegated = AsyncMock(return_value={"summary": "done"})
 
     with (
-        patch(
-            "app.services.skill.SkillService.resolve_agent_skill_tool",
-            new=AsyncMock(side_effect=[(skill, config), RuntimeError("unavailable")]),
-        ),
-        patch(
-            "app.services.skill_executor.SkillExecutor.execute",
-            new=AsyncMock(
-                return_value=SimpleNamespace(
-                    to_chat_payload=lambda: {"summary": "done"},
-                    to_dict=lambda: {"summary": "done"},
-                )
-            ),
-        ) as execute,
+        patch("app.api.v1.endpoints.chat_tools.execute_tool_call", delegated),
+        patch("app.models.user.User.get_or_none", new=AsyncMock(return_value=user)),
     ):
-        success = await service._execute_tool(agent, tool_call)
-        failure = await service._execute_tool(agent, tool_call)
+        success = await service._execute_tool(
+            agent,
+            tool_call,
+            user_id="user-1",
+            workflow_run_id="workflow-run-1",
+        )
 
     assert success == {"summary": "done"}
-    assert failure == {"error": "unavailable"}
-    execute.assert_awaited_once_with(
-        skill=skill,
-        arguments={"text": "docs"},
-        config=config,
-        tenant_id="team-1",
-    )
+    assert delegated.await_args.args == ("skill_summarize", {"text": "docs"})
+    kwargs = delegated.await_args.kwargs
+    assert kwargs["agent"] is agent
+    assert kwargs["user"] is user
+    assert kwargs["workflow_run_id"] == "workflow-run-1"
 
 
 @pytest.mark.anyio
@@ -689,34 +684,38 @@ async def test_agent_tools_skip_missing_skill_and_add_video_tool():
 
 
 @pytest.mark.anyio
-async def test_execute_tool_falls_back_to_empty_global_credentials():
+async def test_execute_tool_requires_user_and_team_for_builtins():
     service = AgentService()
-    agent = SimpleNamespace(id="agent-1", team_id=None)
     tool_call = ToolCall(
         id="call-search",
         function=FunctionCall(name="search", arguments="{}"),
     )
-    config_query = SimpleNamespace(first=AsyncMock(return_value=None))
+    execute = AsyncMock()
 
+    no_user_agent = SimpleNamespace(id="agent-1", team_id="team-1", tools_config=[])
+    user = SimpleNamespace(id="user-1")
     with (
-        patch("app.llm.tools.tool_registry.get_tool", return_value=object()),
-        patch("app.models.tool_config.ToolConfig.filter", return_value=config_query),
-        patch(
-            "app.llm.tools.tool_registry.execute",
-            new=AsyncMock(return_value={"ok": True}),
-        ) as execute,
+        patch("app.services.tool.ToolExecutor.execute_builtin_tool", new=execute),
+        patch("app.models.user.User.get_or_none", new=AsyncMock(return_value=user)),
     ):
-        result = await service._execute_tool(agent, tool_call)
+        missing_user = await service._execute_tool(no_user_agent, tool_call)
+        missing_team = await service._execute_tool(
+            SimpleNamespace(id="agent-2", team_id=None, tools_config=[]),
+            tool_call,
+            user_id="user-1",
+        )
 
-    assert result == {"ok": True}
-    execute.assert_awaited_once_with(
-        name="search",
-        arguments={},
-        credentials={},
-        agent=agent,
-        user=None,
-        team_id=None,
-    )
+    assert missing_user == {
+        "error": t("user_context_required"),
+        "tool_name": "search",
+        "success": False,
+    }
+    assert missing_team == {
+        "error": t("user_context_required"),
+        "tool_name": "search",
+        "success": False,
+    }
+    execute.assert_not_awaited()
 
 
 def test_extract_artifacts_handles_nested_and_non_mapping_values():

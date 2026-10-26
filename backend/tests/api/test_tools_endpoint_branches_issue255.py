@@ -54,43 +54,44 @@ async def test_mcp_discovery_maps_results_and_wraps_failures(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_saved_mcp_execution_handles_config_success_and_safe_failure(monkeypatch):
+async def test_saved_mcp_execution_copies_arguments_and_shapes_results(monkeypatch):
     team_id = uuid4()
-    current_user = SimpleNamespace(locale="en")
+    current_user = SimpleNamespace(id=uuid4(), locale="en")
     custom_tool = SimpleNamespace(
+        id=uuid4(),
+        name="remote",
+        team_id=team_id,
         type=DBToolType.MCP,
+        custom_type=None,
         mcp_config={},
     )
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: None)
-    monkeypatch.setattr(tools, "check_team_access", AsyncMock())
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(custom_tool))
+    execute = AsyncMock(
+        return_value={"success": True, "result": {"value": 1}, "error": None}
+    )
+    monkeypatch.setattr(tools, "ToolExecutor", lambda: SimpleNamespace(execute=execute))
 
     missing = await tools.test_tool(
         ToolExecuteRequest(name="remote", arguments={}), team_id, current_user
     )
     assert missing["data"].success is False
     assert missing["data"].error
+    execute.assert_not_awaited()
 
     custom_tool.mcp_config = {"transport": "http", "url": "https://mcp.example.test"}
-    execute = AsyncMock(
-        return_value=SimpleNamespace(success=True, result={"value": 1}, error=None)
-    )
-    monkeypatch.setattr(tools, "execute_mcp_tool", execute)
     arguments = {"__tool_name__": "lookup", "id": 7}
     succeeded = await tools.test_tool(
         ToolExecuteRequest(name="remote", arguments=arguments), team_id, current_user
     )
     assert succeeded["data"].result == {"value": 1}
-    execute.assert_awaited_once_with(
-        mcp_config=custom_tool.mcp_config,
-        tool_name="lookup",
-        arguments={"id": 7},
-        timeout=60.0,
-    )
+    tool_arg, args_arg = execute.await_args.args
+    assert tool_arg is custom_tool
+    assert args_arg == {"id": 7}
+    assert execute.await_args.kwargs["operation"] == "lookup"
+    assert arguments == {"__tool_name__": "lookup", "id": 7}
 
-    monkeypatch.setattr(
-        tools, "execute_mcp_tool", AsyncMock(side_effect=RuntimeError("token leaked"))
-    )
+    execute.side_effect = RuntimeError("token leaked")
     monkeypatch.setattr(
         tools,
         "resolve_user_visible_error",

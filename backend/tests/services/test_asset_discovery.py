@@ -16,10 +16,18 @@ from app.models.asset import (
     AssetSource,
     MessageAsset,
 )
-from app.models.user import Team, User
+from app.models.user import Permission, Role, Team, TeamMember, User
 from app.schemas.response import BusinessError
 from app.services.asset_access import list_authorized_assets
 from app.api.v1.endpoints.chat_tools import execute_tool_call
+
+
+async def _grant_team_read(user, team):
+    permission = await Permission.create(id=uuid4(), scope="team", code="team:read")
+    role = await Role.create(id=uuid4(), name=f"Asset user {uuid4().hex[:8]}")
+    await role.permissions.add(permission)
+    await user.roles.add(role)
+    await TeamMember.create(team=team, user=user, role="owner")
 
 
 @pytest_asyncio.fixture
@@ -83,6 +91,7 @@ async def add_asset(
 @pytest.mark.asyncio
 async def test_discovers_older_assets_with_stable_pages_and_filename_search(scope):
     user, team, agent, conversation = scope
+    await _grant_team_read(user, team)
     for index in range(25):
         await add_asset(scope, f"{index:04x}", f"Screenshot-{index:02}.png")
     args = dict(
@@ -102,15 +111,27 @@ async def test_discovers_older_assets_with_stable_pages_and_filename_search(scop
     refs = [item["ref"] for page in (first, second, third) for item in page["items"]]
     assert refs == [f"{index:04x}" for index in range(25)]
     assert third["has_more"] is False and third["next_cursor"] is None
-    result = json.loads(
-        await execute_tool_call(
-            "list_assets",
-            {"query": "SCREENSHOT-24", "kind": "image"},
-            agent=agent,
-            user=user,
-            conversation_id=conversation.id,
-        )
+
+    from app.services.tool_context import RuntimeToolIdentity, tool_identity_scope
+
+    # Trusted read-only internal tools execute without an approval gate.
+    identity = RuntimeToolIdentity(
+        run_id=uuid4(),
+        tool_call_id="call-list",
+        entrypoint="chat",
+        entrypoint_id=str(conversation.id),
+        interactive=True,
     )
+    with tool_identity_scope(identity):
+        result = json.loads(
+            await execute_tool_call(
+                "list_assets",
+                {"query": "SCREENSHOT-24", "kind": "image"},
+                agent=agent,
+                user=user,
+                conversation_id=conversation.id,
+            )
+        )
     assert [item["ref"] for item in result["items"]] == ["0018"]
     assert "url" not in result["items"][0] and "base64" not in result["items"][0]
 

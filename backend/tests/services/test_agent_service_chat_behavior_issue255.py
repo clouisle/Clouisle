@@ -9,6 +9,7 @@ import pytest
 
 from app.llm.types import MessageRole, ToolDefinition
 from app.llm.types.chat import ToolCall
+from app.core.i18n import t
 from app.models.agent import RAGMode
 from app.schemas.response import BusinessError
 
@@ -257,16 +258,10 @@ async def test_get_agent_tools_skips_missing_servers_and_allows_shared_mcp_serve
 
 
 @pytest.mark.anyio
-async def test_execute_tool_dispatches_configured_mcp_tool_with_arguments():
+async def test_execute_tool_delegates_stored_mcp_tool_with_authorized_user():
     service = AgentService()
     agent = _agent(tools_config=[{"type": "mcp", "server_id": "server-1"}])
-    server = SimpleNamespace(
-        id="server-1",
-        team_id=agent.team_id,
-        name="browser_server",
-        mcp_config={"transport": "stdio", "command": "npx"},
-    )
-    query = SimpleNamespace(first=AsyncMock(return_value=server))
+    user = SimpleNamespace(id=uuid4())
     tool_call = ToolCall(
         id="call-mcp",
         function={
@@ -274,22 +269,19 @@ async def test_execute_tool_dispatches_configured_mcp_tool_with_arguments():
             "arguments": '{"ref":"button-1"}',
         },
     )
-    mcp_result = SimpleNamespace(success=True, result="clicked", error=None)
-
+    delegated = AsyncMock(return_value={"success": True, "result": "clicked"})
     with (
-        patch("app.services.agent.Tool.filter", return_value=query),
-        patch(
-            "app.llm.tools.mcp_client.execute_mcp_tool",
-            new=AsyncMock(return_value=mcp_result),
-        ) as execute,
+        patch("app.services.agent_tool_execution.execute_agent_stored_tool", delegated),
+        patch("app.models.user.User.get_or_none", new=AsyncMock(return_value=user)),
     ):
-        result = await service._execute_tool(agent, tool_call)
+        result = await service._execute_tool(agent, tool_call, user_id=str(user.id))
 
-    assert result == {"success": True, "result": "clicked", "error": None}
-    execute.assert_awaited_once_with(
-        mcp_config=server.mcp_config,
-        tool_name="click",
-        arguments={"ref": "button-1"},
+    assert result == {"success": True, "result": "clicked"}
+    assert delegated.await_args.args == (
+        agent,
+        "mcp_browser_server_click",
+        {"ref": "button-1"},
+        user,
     )
 
 
@@ -306,25 +298,36 @@ async def test_execute_tool_handles_invalid_and_unknown_calls():
     unknown = SimpleNamespace(
         function=SimpleNamespace(name="missing", arguments={}), id="call-2"
     )
-    with patch("app.llm.tools.tool_registry.get_tool", return_value=None):
-        result = await service._execute_tool(agent, unknown)
-    assert result == {
-        "error": "Tool not found",
+    # Fail closed before any boundary call when no trusted actor exists.
+    assert (await service._execute_tool(agent, unknown)) == {
+        "error": t("user_context_required"),
         "tool_name": "missing",
         "success": False,
     }
 
+    user = SimpleNamespace(id=uuid4())
+    with (
+        patch("app.models.user.User.get_or_none", new=AsyncMock(return_value=user)),
+        patch(
+            "app.services.tool.ToolExecutor.execute_builtin_tool",
+            new=AsyncMock(
+                side_effect=BusinessError(
+                    code=404, msg_key="tool_not_found", status_code=404
+                )
+            ),
+        ),
+    ):
+        result = await service._execute_tool(agent, unknown, user_id=str(user.id))
+    assert result["success"] is False
+    assert result["tool_name"] == "missing"
+    assert result["error"]
+
 
 @pytest.mark.anyio
-async def test_execute_tool_allows_shared_cross_team_mcp_server():
+async def test_execute_tool_delegates_shared_cross_team_mcp_tool():
     service = AgentService()
     agent = _agent(tools_config=[{"type": "mcp", "server_id": "shared"}])
-    server = SimpleNamespace(
-        id="shared",
-        team_id=uuid4(),
-        name="shared_server",
-        mcp_config={"transport": "http", "url": "https://mcp.example"},
-    )
+    user = SimpleNamespace(id=uuid4())
     tool_call = ToolCall(
         id="call-shared",
         function={
@@ -332,30 +335,26 @@ async def test_execute_tool_allows_shared_cross_team_mcp_server():
             "arguments": '{"q":"docs"}',
         },
     )
+    delegated = AsyncMock(return_value={"success": True, "result": "ok"})
     with (
-        patch(
-            "app.services.agent.Tool.filter",
-            return_value=SimpleNamespace(first=AsyncMock(return_value=server)),
-        ),
-        patch(
-            "app.models.tool.ToolShare.filter",
-            return_value=SimpleNamespace(exists=AsyncMock(return_value=True)),
-        ),
-        patch(
-            "app.llm.tools.mcp_client.execute_mcp_tool",
-            new=AsyncMock(
-                return_value=SimpleNamespace(success=True, result="ok", error=None)
-            ),
-        ) as execute,
+        patch("app.services.agent_tool_execution.execute_agent_stored_tool", delegated),
+        patch("app.models.user.User.get_or_none", new=AsyncMock(return_value=user)),
     ):
-        result = await service._execute_tool(agent, tool_call)
+        result = await service._execute_tool(agent, tool_call, user_id=str(user.id))
 
-    assert result == {"success": True, "result": "ok", "error": None}
-    execute.assert_awaited_once_with(
-        mcp_config=server.mcp_config,
-        tool_name="lookup",
-        arguments={"q": "docs"},
+    assert result == {"success": True, "result": "ok"}
+    assert delegated.await_args.args == (
+        agent,
+        "mcp_shared_server_lookup",
+        {"q": "docs"},
+        user,
     )
+
+    from app.schemas.response import BusinessError
+
+    with pytest.raises(BusinessError) as missing:
+        await service._execute_tool(agent, tool_call)
+    assert missing.value.msg_key == "user_context_required"
 
 
 @pytest.mark.anyio

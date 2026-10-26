@@ -249,6 +249,9 @@ class ToolConfig(BaseModel):
     server_id: str | None = Field(None, description="MCP server ID")
     skill_id: str | None = Field(None, description="Skill ID")
     config: dict[str, Any] | None = Field(None, description="Tool-specific config")
+    connection_mode: str | None = Field(None, pattern="^(personal|team)$")
+    connection_id: UUID | None = None
+    grant_id: UUID | None = None
 
     @model_validator(mode="after")
     def restrict_web_search_config(self):

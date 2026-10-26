@@ -49,6 +49,8 @@ def execute_workflow_task(
     from app.services.workflow import WorkflowOrchestrator
 
     async def run():
+        from app.services.workflow.execution_origin import schedule_origin
+
         orchestrator = WorkflowOrchestrator()
         result_run_id = await orchestrator.run(
             workflow_id=UUID(workflow_id),
@@ -56,6 +58,9 @@ def execute_workflow_task(
             user_id=UUID(user_id),
             team_id=UUID(team_id) if team_id else None,
             stream=True,
+            # This task is the cron entry: executed unattended, so its grants
+            # must bind to the schedule surface rather than the workflow one.
+            origin=schedule_origin(workflow_id),
         )
         return {"run_id": result_run_id, "status": "completed"}
 

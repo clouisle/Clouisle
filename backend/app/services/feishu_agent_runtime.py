@@ -872,6 +872,8 @@ async def _submit_receipt(
         )
         if "agent_chat" not in active_features(integration):
             raise channel_error("feishu_agent_channel_disabled", 403)
+        from app.models.tool_approval import ExecutionEntrypoint
+
         submission = await submit_chat_run(
             session.agent_id,
             prepared,
@@ -879,6 +881,8 @@ async def _submit_receipt(
             mode=AgentRunMode.SEND,
             conversation_id=locked.conversation_id,
             defer_dispatch=True,
+            tool_entrypoint=ExecutionEntrypoint.CHANNEL,
+            tool_entrypoint_id=str(receipt.integration_id),
         )
         claimed = (
             await FeishuAgentReceipt.filter(id=receipt.id, status="pending")

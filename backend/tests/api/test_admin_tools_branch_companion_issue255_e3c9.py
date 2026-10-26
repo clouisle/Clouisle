@@ -33,6 +33,10 @@ async def test_update_tool_with_no_fields_only_saves_existing_values():
         name="weather",
         team_id=uuid4(),
         created_by=None,
+        identity_policy="none",
+        connection_fields=[],
+        approval_policy={},
+        definition_version=1,
         save=AsyncMock(),
     )
     detail = SimpleNamespace(name=tool.name)

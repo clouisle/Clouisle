@@ -41,24 +41,6 @@ def normalize_code_config(code_config: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def compile_legacy_code_job(
-    *,
-    language: str,
-    code: str,
-    params: dict[str, Any] | None = None,
-    timeout: float = 30.0,
-    source: SandboxJobSource = SandboxJobSource.LEGACY_SNIPPET,
-) -> SandboxJob:
-    return SandboxJob(
-        source=source,
-        language=language,
-        code=code,
-        command=[language],
-        limits=SandboxLimits(timeout_seconds=timeout),
-        metadata={"params": params or {}},
-    )
-
-
 def compile_code_config_job(
     *,
     code_config: dict[str, Any],

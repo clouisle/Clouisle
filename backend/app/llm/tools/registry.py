@@ -46,6 +46,9 @@ NON_SELECTABLE_BUILTIN_TOOLS: set[str] = {
     "ask_user",
     "generate_image",
     "generate_video",
+    # Compatibility name from the retired inline chat branch: it stays callable
+    # through the approval boundary but is never advertised as a product tool.
+    "file_download",
 }
 
 

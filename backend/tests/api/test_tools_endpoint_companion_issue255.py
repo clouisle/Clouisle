@@ -8,7 +8,6 @@ from app.api.v1.endpoints import tools
 from app.models.tool import ToolVisibility as DBToolVisibility
 from app.schemas.response import BusinessError
 from app.schemas.tool import (
-    CodeExecuteRequest,
     McpConfigSchema,
     McpToolsListRequest,
     ToolExecuteRequest,
@@ -106,6 +105,10 @@ def db_tool(
         "icon": None,
         "parameters": [],
         "is_enabled": enabled,
+        "identity_policy": "none",
+        "connection_fields": [],
+        "approval_policy": {},
+        "definition_version": 1,
         "credentials": {},
         "custom_type": custom_type,
         "http_config": config if custom_type == tools.DBCustomToolType.HTTP else {},
@@ -147,6 +150,7 @@ async def test_list_tools_filters_builtins_custom_mcp_and_rejects_unowned_team(
         "get_sandbox_tool_infos",
         lambda names: [tool_info(name) for name in names],
     )
+    monkeypatch.setattr(tools, "get_builtin_tools_for_team", AsyncMock(return_value=[]))
     monkeypatch.setattr(tools.Tool, "filter", ToolFilter(custom=[custom], mcp=[mcp]))
     monkeypatch.setattr(tools.ToolShare, "filter", lambda **_kwargs: Chain([]))
 
@@ -207,7 +211,7 @@ async def test_get_by_name_uses_sandbox_fallback_custom_lookup_and_not_found(
 
 
 @pytest.mark.anyio
-async def test_execute_mcp_handles_name_override_empty_config_and_exception(
+async def test_test_tool_mcp_routes_through_executor_with_copied_arguments(
     monkeypatch, user, team
 ):
     empty = db_tool("empty_mcp", team.id, type_=tools.DBToolType.MCP, config={})
@@ -218,33 +222,39 @@ async def test_execute_mcp_handles_name_override_empty_config_and_exception(
         config={"transport": "http", "url": "https://mcp.test"},
     )
     execute = AsyncMock(
-        return_value=SimpleNamespace(success=True, result={"ok": True}, error=None)
+        return_value={"success": True, "result": {"ok": True}, "error": None}
     )
 
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: None)
-    monkeypatch.setattr(tools, "check_tool_access", AsyncMock())
+    monkeypatch.setattr(tools, "ToolExecutor", lambda: SimpleNamespace(execute=execute))
     monkeypatch.setattr(
         tools.Tool,
         "filter",
         ToolFilter(by_name={"empty_mcp": empty, "remote_mcp": configured}),
     )
-    monkeypatch.setattr(tools, "execute_mcp_tool", execute)
 
     missing_config = await tools.test_tool(
         ToolExecuteRequest(name="empty_mcp"), team_id=team.id, current_user=user
     )
     assert data(missing_config).success is False
     assert "empty_mcp" in data(missing_config).error
+    execute.assert_not_awaited()
 
-    args = {"__tool_name__": "actual_remote", "value": 3}
-    ok = await tools.test_tool(
-        ToolExecuteRequest(name="remote_mcp", arguments=args),
-        team_id=team.id,
-        current_user=user,
-    )
+    arguments = {"__tool_name__": "actual_remote", "value": 3}
+    request = ToolExecuteRequest(name="remote_mcp", arguments=arguments)
+    ok = await tools.test_tool(request, team_id=team.id, current_user=user)
     assert data(ok).success is True
-    assert execute.await_args.kwargs["arguments"] == {"value": 3}
-    assert execute.await_args.kwargs["tool_name"] == "actual_remote"
+    assert data(ok).result == {"ok": True}
+    tool_arg, args_arg = execute.await_args.args
+    assert tool_arg is configured
+    assert args_arg == {"value": 3}
+    call_kwargs = execute.await_args.kwargs
+    assert call_kwargs["operation"] == "actual_remote"
+    assert call_kwargs["context"].entrypoint is tools.ExecutionEntrypoint.TOOL_TEST
+    assert call_kwargs["context"].team_id == team.id
+    assert call_kwargs["context"].interactive is True
+    # The request payload itself is never mutated.
+    assert request.arguments == arguments
 
     execute.side_effect = RuntimeError("provider exploded")
     failed = await tools.test_tool(
@@ -255,7 +265,7 @@ async def test_execute_mcp_handles_name_override_empty_config_and_exception(
 
 
 @pytest.mark.anyio
-async def test_execute_saved_code_returns_logs_artifacts_duration_and_direct_language_branch(
+async def test_test_tool_code_preserves_runtime_shape_and_reports_pending_approval(
     monkeypatch, user, team
 ):
     code_tool = db_tool(
@@ -271,20 +281,20 @@ async def test_execute_saved_code_returns_logs_artifacts_duration_and_direct_lan
         "size": 4,
         "content_type": "text/plain",
     }
-    runtime = SimpleNamespace(
-        success=True,
-        result={"done": True},
-        error=None,
-        stdout="ran\n",
-        artifacts=[artifact],
-        metadata=SimpleNamespace(duration_ms=17),
+    execute = AsyncMock(
+        return_value={
+            "success": True,
+            "result": {"done": True},
+            "error": None,
+            "stdout": "ran\n",
+            "stderr": "",
+            "artifacts": [artifact],
+        }
     )
-    submit = AsyncMock(return_value=runtime)
 
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: None)
-    monkeypatch.setattr(tools, "check_tool_access", AsyncMock())
+    monkeypatch.setattr(tools, "ToolExecutor", lambda: SimpleNamespace(execute=execute))
     monkeypatch.setattr(tools.Tool, "filter", ToolFilter(by_name={"codey": code_tool}))
-    monkeypatch.setattr(tools.sandbox_gateway, "submit_and_wait", submit)
 
     saved = await tools.test_tool(
         ToolExecuteRequest(name="codey", arguments={"a": 1}),
@@ -292,15 +302,31 @@ async def test_execute_saved_code_returns_logs_artifacts_duration_and_direct_lan
         current_user=user,
     )
     assert data(saved).success is True
+    assert data(saved).result == {"done": True}
     assert data(saved).logs == "ran\n"
-    assert data(saved).duration_ms == 17
     assert data(saved).artifacts[0].filename == "out.txt"
+    assert data(saved).duration_ms is not None
 
-    unsupported = await tools.execute_code_directly(
-        CodeExecuteRequest(language="ruby", code="puts 1"), current_user=user
+    execution_id = uuid4()
+    execute.return_value = tools.PendingToolApproval(execution_id, "codey")
+    resumed = await tools.test_tool(
+        ToolExecuteRequest(name="codey", arguments={"a": 1}, execution_id=execution_id),
+        team_id=team.id,
+        current_user=user,
     )
-    assert data(unsupported).success is False
-    assert "ruby" in data(unsupported).error
+    assert data(resumed).success is False
+    assert data(resumed).pending_approval is True
+    assert data(resumed).execution_id == execution_id
+    assert execute.await_args.kwargs["context"].execution_id == execution_id
+
+    execute.side_effect = BusinessError(
+        code=403, msg_key="tool_execution_access_denied", status_code=403
+    )
+    with pytest.raises(BusinessError) as exc:
+        await tools.test_tool(
+            ToolExecuteRequest(name="codey"), team_id=team.id, current_user=user
+        )
+    assert exc.value.msg_key == "tool_execution_access_denied"
 
 
 @pytest.mark.anyio

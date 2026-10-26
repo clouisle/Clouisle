@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import time
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -23,7 +24,6 @@ from app.core.sandbox_network_policy import (
 )
 from app.schemas.response import BusinessError, ResponseCode
 from app.core.i18n import t
-from app.llm.tools.sandbox import ExecutionResult as LegacyExecutionResult
 from app.services.error_messages import resolve_user_visible_error
 from app.services import upload_gateway
 
@@ -81,6 +81,31 @@ BLOCKED_ENV = frozenset(
 )
 
 BWRAP_USER_NS_ERROR_MARKER = "No permissions to create new namespace"
+
+
+@dataclass
+class SandboxExecutionOutcome:
+    """Raw outcome of one sandbox process, before it is snapshotted.
+
+    Internal to the manager: callers only ever receive :class:`SandboxResult`
+    (status, metadata, artifacts). Kept as a plain dataclass because it is
+    built and consumed synchronously inside one execution call.
+    """
+
+    success: bool
+    result: Any = None
+    error: str | None = None
+    stdout: str = ""
+    stderr: str = ""
+    stdout_log: str | None = None
+    stderr_log: str | None = None
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
+    stdout_lines: int | None = None
+    stderr_lines: int | None = None
+    stdout_log_partial: bool = False
+    stderr_log_partial: bool = False
+    timed_out: bool = False
 
 
 def translate_sandbox_error(message: str | None) -> str | None:
@@ -292,7 +317,7 @@ class SandboxManager:
                 if keyword is not None and partial is not None:
                     transfer[f"{keyword}_log"] = partial
                     transfer[f"{keyword}_log_partial"] = True
-                result = LegacyExecutionResult(
+                result = SandboxExecutionOutcome(
                     success=False,
                     error=str(exc),
                     stderr=str(exc),
@@ -358,7 +383,7 @@ class SandboxManager:
         job: SandboxJob,
         workspace: SandboxWorkspace,
         metadata: SandboxExecutionMetadata,
-    ) -> LegacyExecutionResult:
+    ) -> SandboxExecutionOutcome:
         # Snapshot once per job so package installs and the payload share the
         # same policy; ``None`` means the administrator disabled restrictions.
         allowed_hosts = await get_sandbox_network_allowlist()
@@ -388,7 +413,7 @@ class SandboxManager:
         metadata: SandboxExecutionMetadata,
         network_proxy: SandboxEgressProxy | None,
         network_unrestricted: bool = False,
-    ) -> LegacyExecutionResult:
+    ) -> SandboxExecutionOutcome:
         try:
             env = await self._build_command_env(
                 job,
@@ -398,13 +423,13 @@ class SandboxManager:
                 network_unrestricted,
             )
         except SandboxNetworkPolicyError as exc:
-            return LegacyExecutionResult(
+            return SandboxExecutionOutcome(
                 success=False,
                 error=str(exc),
                 stderr=str(exc),
             )
         except subprocess.CalledProcessError as exc:
-            return LegacyExecutionResult(
+            return SandboxExecutionOutcome(
                 success=False,
                 error=t("tool_execution_failed"),
                 stdout=exc.output or "",
@@ -476,7 +501,7 @@ class SandboxManager:
                     "sandbox_process_exit_code",
                     exit_code=process_result.exit_code,
                 )
-            return LegacyExecutionResult(
+            return SandboxExecutionOutcome(
                 success=success,
                 result=result_value,
                 error=error,
@@ -486,7 +511,7 @@ class SandboxManager:
             )
 
         metadata.mark_execute_completed(datetime.now(UTC))
-        return LegacyExecutionResult(
+        return SandboxExecutionOutcome(
             success=False,
             error=t("sandbox_missing_executable_payload"),
         )
@@ -817,7 +842,7 @@ async function __execute__() {{
         process_result,
         script_path: Path,
         workspace: SandboxWorkspace | None = None,
-    ) -> LegacyExecutionResult:
+    ) -> SandboxExecutionOutcome:
         del script_path
         stdout = process_result.stdout
         stderr = process_result.stderr
@@ -826,7 +851,7 @@ async function __execute__() {{
             end = stdout.index("__END__")
             payload = json.loads(stdout[start:end])
             logs = payload.get("logs", [])
-            return LegacyExecutionResult(
+            return SandboxExecutionOutcome(
                 success=bool(payload.get("success", False)),
                 result=payload.get("result"),
                 error=None
@@ -841,7 +866,7 @@ async function __execute__() {{
             )
 
         if process_result.timed_out:
-            return LegacyExecutionResult(
+            return SandboxExecutionOutcome(
                 success=False,
                 error=t("request_timeout"),
                 stdout=stdout,
@@ -849,7 +874,7 @@ async function __execute__() {{
                 **self._transfer_execution_logs(process_result, workspace),
             )
 
-        return LegacyExecutionResult(
+        return SandboxExecutionOutcome(
             success=process_result.exit_code == 0,
             result=stdout.strip() or None,
             error=None

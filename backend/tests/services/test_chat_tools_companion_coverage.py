@@ -13,7 +13,6 @@ from app.api.v1.endpoints.chat_tools import (
     execute_tool_call,
 )
 from app.models.agent_run import AgentRunInputKind, AgentRunInputStatus, AgentRunStatus
-from app.models.tool import CustomToolType, ToolType
 from app.services.agent_run_store import (
     validate_user_answers,
     consume_next_input,
@@ -28,43 +27,9 @@ from app.llm.tools.builtin.web_search import (
 
 
 # ==================== chat_tools Database branch ====================
-@pytest.mark.anyio
-async def test_execute_tool_call_database_custom_type():
-    tool = SimpleNamespace(
-        id=uuid4(),
-        name="my_db_tool",
-        type=ToolType.CUSTOM,
-        custom_type=CustomToolType.DATABASE,
-        database_config={"db_type": "postgresql", "host": "127.0.0.1"},
-    )
-    agent = SimpleNamespace(id=uuid4(), team_id=uuid4(), tools_config=[])
-
-    with patch("app.models.tool.Tool.filter") as tool_filter:
-        query = MagicMock()
-        query.first = AsyncMock(return_value=tool)
-        tool_filter.return_value = query
-
-        with patch(
-            "app.llm.tools.builtin.db_executor.execute_database_tool",
-            new=AsyncMock(return_value={"tables": ["users"], "success": True}),
-        ):
-            res_str = await execute_tool_call(
-                "custom_my_db_tool", {"action": "schema"}, agent=agent
-            )
-            data = json.loads(res_str)
-            assert data["success"] is True
-            assert data["tables"] == ["users"]
-
-        # Error branch in custom database execution
-        with patch(
-            "app.llm.tools.builtin.db_executor.execute_database_tool",
-            side_effect=RuntimeError("connection dropped"),
-        ):
-            err_str = await execute_tool_call(
-                "custom_my_db_tool", {"action": "schema"}, agent=agent
-            )
-            err_data = json.loads(err_str)
-            assert "error" in err_data
+async def _run_invoke(definition, operation, arguments, context, invoke, **_kwargs):
+    """Skip persistence but keep the real operation wiring."""
+    return await invoke(arguments, None)
 
 
 @pytest.mark.anyio
@@ -78,29 +43,51 @@ async def test_chat_tools_ask_user_and_memory_branches():
         assert res == {"asked": True}
         exec_mock.assert_awaited_once_with("ask_user", {"questions": []})
 
-    # 2. workflow_run_id branch
+    # 2. workflow_run_id reaches the stored builtin boundary
+    user = SimpleNamespace(id=uuid4())
+    agent = SimpleNamespace(id=uuid4(), team_id=uuid4(), tools_config=[])
     with (
         patch(
             "app.llm.tools.tool_registry.get_tool",
             return_value=SimpleNamespace(handler=lambda: None),
         ),
         patch(
-            "app.llm.tools.tool_registry.execute",
+            "app.llm.tools.tool_registry.get_sandbox_tool_class",
+            return_value=None,
+        ),
+        patch(
+            "app.services.tool.ToolExecutor.execute_builtin_tool",
             new=AsyncMock(return_value={"done": True}),
-        ) as exec_mock,
+        ) as execute,
+        patch("app.models.user.User.get_or_none", new=AsyncMock(return_value=user)),
     ):
         await execute_tool_call(
             "time",
             {},
+            agent=agent,
+            user=user,
             workflow_run_id="wf-123",
         )
-        assert exec_mock.call_args.kwargs["workflow_run_id"] == "wf-123"
+    assert execute.await_args.kwargs["workflow_run_id"] == "wf-123"
 
     # 3. memory subgraph with non-list entity_ids and relation_types
-    with patch(
-        "app.services.memory.MemoryService.handle_get_memory_subgraph",
-        new=AsyncMock(return_value={"nodes": []}),
-    ) as mem_mock:
+    user = SimpleNamespace(id=uuid4())
+    agent = SimpleNamespace(id=uuid4(), team_id=uuid4())
+    with (
+        patch(
+            "app.services.memory.MemoryService.handle_get_memory_subgraph",
+            new=AsyncMock(return_value={"nodes": []}),
+        ) as mem_mock,
+        patch(
+            "app.services.tool_execution.execute_stored_tool",
+            new=_run_invoke,
+        ),
+        patch(
+            "app.services.builtin_tools.get_builtin_definition",
+            new=AsyncMock(return_value=SimpleNamespace(id=uuid4(), name="definition")),
+        ),
+        patch("app.models.user.User.get_or_none", new=AsyncMock(return_value=user)),
+    ):
         res = await execute_tool_call(
             "get_memory_subgraph",
             {
@@ -109,7 +96,8 @@ async def test_chat_tools_ask_user_and_memory_branches():
                 "relation_types": "not_list",
                 "max_depth": "99",
             },
-            user=SimpleNamespace(id=uuid4()),
+            user=user,
+            agent=agent,
         )
         data = json.loads(res)
         assert data["nodes"] == []

@@ -390,12 +390,10 @@ async def test_execute_builtin_tool_passes_resolved_user():
     execute = AsyncMock(return_value={"datetime": "now"})
 
     with (
-        patch("app.llm.tools.tool_registry.get_tool", return_value=object()),
         patch(
-            "app.models.tool_config.ToolConfig.filter",
-            return_value=SimpleNamespace(first=AsyncMock(return_value=None)),
+            "app.services.tool.ToolExecutor.execute_builtin_tool",
+            new=execute,
         ),
-        patch("app.llm.tools.tool_registry.execute", new=execute),
         patch("app.models.user.User.get_or_none", AsyncMock(return_value=user)),
     ):
         result = await service._execute_tool(
@@ -406,6 +404,8 @@ async def test_execute_builtin_tool_passes_resolved_user():
 
     assert result == {"datetime": "now"}
     assert execute.await_args.kwargs["user"] is user
+    assert execute.await_args.kwargs["team_id"] == team_id
+    assert execute.await_args.kwargs["tool_name"] == "get_current_time"
 
 
 @pytest.mark.anyio

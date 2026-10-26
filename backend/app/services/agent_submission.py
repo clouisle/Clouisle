@@ -91,6 +91,41 @@ async def dispatch_run(payload: dict[str, Any], run: AgentRun) -> None:
     await _publish(run, payload)
 
 
+def resolve_tool_origin(
+    api_key: Any,
+    tool_entrypoint: Any = None,
+    tool_entrypoint_id: str | None = None,
+):
+    """Server-derived only: API key id, explicit embed/channel, or chat."""
+    from app.models.tool_approval import ExecutionEntrypoint
+    from app.schemas.response import BusinessError, ResponseCode
+    from app.schemas.tool_approval import NON_INTERACTIVE_ENTRYPOINTS
+
+    if tool_entrypoint is None:
+        if api_key is not None:
+            return ExecutionEntrypoint.API_KEY, str(api_key.id)
+        return ExecutionEntrypoint.CHAT, None
+    try:
+        entrypoint = (
+            tool_entrypoint
+            if isinstance(tool_entrypoint, ExecutionEntrypoint)
+            else ExecutionEntrypoint(str(tool_entrypoint))
+        )
+    except ValueError as exc:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="tool_entrypoint_invalid",
+            status_code=400,
+        ) from exc
+    if entrypoint in NON_INTERACTIVE_ENTRYPOINTS and not tool_entrypoint_id:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="tool_entrypoint_invalid",
+            status_code=400,
+        )
+    return entrypoint, tool_entrypoint_id
+
+
 async def submit_chat_run(
     agent_id: UUID,
     chat_in: Any,
@@ -99,6 +134,8 @@ async def submit_chat_run(
     mode: Any = None,
     conversation_id: UUID | None = None,
     defer_dispatch: bool = False,
+    tool_entrypoint: Any = None,
+    tool_entrypoint_id: str | None = None,
 ) -> RunSubmission:
     """Create the durable input row and enqueue one worker-owned run.
 
@@ -134,6 +171,9 @@ async def submit_chat_run(
     from app.services.message_branching import get_visible_conversation_messages
 
     current_user, api_key = _split_run_auth(auth_result)
+    entrypoint, entrypoint_id = resolve_tool_origin(
+        api_key, tool_entrypoint, tool_entrypoint_id
+    )
     if not current_user.is_active:
         raise BusinessError(
             code=ResponseCode.INACTIVE_USER,
@@ -284,6 +324,8 @@ async def submit_chat_run(
         branch_parent_id=user_branch_parent_id,
         locale=effective_locale,
         rag_contexts=rag_contexts,
+        tool_entrypoint=entrypoint.value,
+        tool_entrypoint_id=entrypoint_id,
     )
     run.worker_payload = payload
     await run.save(update_fields=["worker_payload"])

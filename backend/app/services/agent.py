@@ -36,6 +36,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _coerce_run_kind(value: Any):
+    """Persisted durable run kinds only; unknown legacy values are AgentRuns."""
+    from app.models.tool_approval import ExecutionRunKind
+
+    try:
+        return ExecutionRunKind(str(value))
+    except (TypeError, ValueError):
+        return ExecutionRunKind.AGENT
+
+
 class AgentService:
     """
     Service for executing agent chat interactions.
@@ -814,6 +824,26 @@ class AgentService:
             return None
         return ToolDefinition.model_validate(tool_defs[0])
 
+    @staticmethod
+    def _delegated_tool_identity(tool_call: ToolCall) -> Any:
+        """Per-call identity for a delegated call inside a workflow Agent node.
+
+        Callers such as the workflow Agent node install a node-scoped identity;
+        composing the model tool-call id here keeps one stable execution per
+        tool call instead of reusing a single node-level id for different tools.
+        """
+        from dataclasses import replace
+
+        from app.services.tool_context import current_tool_identity
+
+        runtime = current_tool_identity()
+        if runtime is None or not runtime.tool_call_prefix:
+            return None
+        call_id = getattr(tool_call, "id", None)
+        if not call_id:
+            return None
+        return replace(runtime, tool_call_id=f"{runtime.tool_call_prefix}:{call_id}")
+
     async def _execute_tool(
         self,
         agent: Agent,
@@ -822,9 +852,36 @@ class AgentService:
         workflow_run_id: Any = None,
         user_id: str | None = None,
     ) -> Any:
+        """Execute a tool call with the caller's trusted runtime identity."""
+        from app.services.tool_context import tool_identity_scope
+
+        identity = self._delegated_tool_identity(tool_call)
+        if identity is None:
+            return await self._dispatch_tool_call(
+                agent,
+                tool_call,
+                conversation_id=conversation_id,
+                workflow_run_id=workflow_run_id,
+                user_id=user_id,
+            )
+        with tool_identity_scope(identity):
+            return await self._dispatch_tool_call(
+                agent,
+                tool_call,
+                conversation_id=conversation_id,
+                workflow_run_id=workflow_run_id,
+                user_id=user_id,
+            )
+
+    async def _dispatch_tool_call(
+        self,
+        agent: Agent,
+        tool_call: ToolCall,
+        conversation_id: Any = None,
+        workflow_run_id: Any = None,
+        user_id: str | None = None,
+    ) -> Any:
         """Execute a tool call and return the result."""
-        from app.llm.tools import tool_registry
-        from app.models.tool_config import ToolConfig
         import json
 
         tool_name = tool_call.function.name
@@ -856,81 +913,35 @@ class AgentService:
                 asset_kwargs["user"] = user
             return await execute_tool_call(tool_name, arguments, **asset_kwargs)
 
-        if tool_name.startswith("mcp_"):
-            from app.llm.tools.mcp_client import execute_mcp_tool
+        if tool_name.startswith(("mcp_", "custom_")):
+            from app.models.user import User
+            from app.services.agent_tool_execution import execute_agent_stored_tool
 
-            for tool_cfg in agent.tools_config or []:
-                if not isinstance(tool_cfg, dict) or tool_cfg.get("type") != "mcp":
-                    continue
-                tool_id = tool_cfg.get("server_id") or tool_cfg.get("tool_id")
-                if not tool_id:
-                    continue
-                mcp_server = await Tool.filter(id=tool_id, is_enabled=True).first()
-                if not mcp_server or not mcp_server.mcp_config:
-                    continue
-                # Enforce team boundary: must belong to agent's team or be shared with it
-                server_team_id = getattr(mcp_server, "team_id", None)
-                if agent.team_id and server_team_id != agent.team_id:
-                    from app.models.tool import ToolShare
-
-                    has_share = await ToolShare.filter(
-                        tool_id=mcp_server.id,
-                        shared_with_team_id=agent.team_id,
-                    ).exists()
-                    if not has_share:
-                        continue
-                prefix = f"mcp_{mcp_server.name}_"
-                if not tool_name.startswith(prefix):
-                    continue
-                result = await execute_mcp_tool(
-                    mcp_config=mcp_server.mcp_config,
-                    tool_name=tool_name[len(prefix) :],
-                    arguments=arguments,
-                )
-                return {
-                    "success": result.success,
-                    "result": result.result,
-                    "error": result.error,
-                }
-
-            return {
-                "error": t("tool_not_found"),
-                "tool_name": tool_name,
-                "success": False,
-            }
+            user = await User.get_or_none(id=user_id) if user_id else None
+            return await execute_agent_stored_tool(agent, tool_name, arguments, user)
 
         if tool_name.startswith("skill_"):
-            from app.services.skill import SkillService
-            from app.services.skill_executor import SkillExecutor
+            from app.api.v1.endpoints.chat_tools import execute_tool_call
+            from app.models.user import User
 
-            try:
-                skill, skill_config = await SkillService.resolve_agent_skill_tool(
-                    agent,
-                    tool_name,
-                )
-                result = await SkillExecutor.execute(
-                    skill=skill,
-                    arguments=arguments,
-                    config=skill_config,
-                    tenant_id=str(agent.team_id) if agent.team_id else None,
-                )
-                return result.to_chat_payload()
-            except Exception as e:
-                logger.exception("Skill execution error: %s", e)
-                return {"error": resolve_user_visible_error(str(e))}
+            user = await User.get_or_none(id=user_id) if user_id else None
+            return await execute_tool_call(
+                tool_name,
+                arguments,
+                agent=agent,
+                user=user,
+                conversation_id=conversation_id,
+                workflow_run_id=workflow_run_id,
+            )
 
-        # Get credentials for builtin tools
-        if not tool_registry.get_tool(tool_name):
-            return {
-                "error": t("tool_not_found"),
-                "tool_name": tool_name,
-                "success": False,
-            }
-        credentials = {}
-        team_id = agent.team_id
-
-        # 检查当前 Agent 是否针对此工具单独配置了 config (如 engine, api_key)
+        # Builtins execute as stable team definitions through the unified
+        # connection/approval boundary; there is no ToolConfig fallback here.
         agent_tool_config: dict[str, Any] = {}
+        binding: dict[str, Any] = {
+            "connection_mode": None,
+            "connection_id": None,
+            "grant_id": None,
+        }
         if getattr(agent, "tools_config", None):
             for tc in agent.tools_config:
                 if (
@@ -939,67 +950,122 @@ class AgentService:
                     and tc.get("name") == tool_name
                 ):
                     agent_tool_config = tc.get("config") or {}
+                    from app.services.builtin_tools import (
+                        extract_builtin_binding,
+                    )
+
+                    binding = extract_builtin_binding(tc)
                     break
 
-        # 2. 搜索引擎由 agent 编排配置严格决定，不交由模型决定
+        # Search engine remains driven by agent orchestration, never by the model.
         if tool_name == "web_search":
             arguments["search_engine"] = agent_tool_config.get("engine") or "auto"
-        logger.info(
-            f"[TOOL EXEC] Executing tool '{tool_name}' for agent {agent.id}, team_id: {team_id}"
+
+        from app.models.tool_approval import ExecutionEntrypoint
+        from app.models.user import User
+        from app.services.tool import ToolExecutor
+        from app.services.tool_context import (
+            coerce_execution_entrypoint,
+            current_tool_identity,
         )
-        logger.info(f"[TOOL EXEC] Arguments: {arguments}")
+        from app.services.tool_execution import PendingToolApproval, ToolCallContext
 
-        # Try to get team-specific config first
-        if team_id and tool_name != "web_search":
-            tool_config = await ToolConfig.filter(
-                tool_name=tool_name, team_id=team_id
-            ).first()
-            if tool_config and tool_config.credentials:
-                for k, v in tool_config.credentials.items():
-                    if k not in credentials and v:
-                        credentials[k] = v
+        user = await User.get_or_none(id=user_id) if user_id else None
+        if user is None or agent.team_id is None:
+            return {
+                "error": t("user_context_required"),
+                "tool_name": tool_name,
+                "success": False,
+            }
 
-        # If no team config, try global config
-        if not credentials and tool_name != "web_search":
-            global_config = await ToolConfig.filter(
-                tool_name=tool_name, team_id=None
-            ).first()
-            if global_config and global_config.credentials:
-                for k, v in global_config.credentials.items():
-                    if k not in credentials and v:
-                        credentials[k] = v
+        runtime = current_tool_identity()
+        from app.services.builtin_tools import parse_optional_uuid
 
-        scope_context: dict[str, Any] = {}
-        if conversation_id is not None:
-            scope_context["conversation_id"] = conversation_id
-        if workflow_run_id is not None:
-            scope_context["workflow_run_id"] = workflow_run_id
-        extra_kwargs: dict[str, Any] = {}
-        if agent_tool_config:
-            extra_kwargs["agent_tool_config"] = agent_tool_config
-
-        # Execute the tool
         try:
-            from app.models.user import User
+            bound_connection_id = parse_optional_uuid(binding["connection_id"])
+            bound_grant_id = parse_optional_uuid(binding["grant_id"])
+        except BusinessError as exc:
+            return {
+                "error": t(exc.msg_key or "tool_connection_invalid", **exc.kwargs),
+                "tool_name": tool_name,
+                "success": False,
+            }
+        context = ToolCallContext(
+            actor=user,
+            team_id=agent.team_id,
+            entrypoint=(
+                coerce_execution_entrypoint(runtime.entrypoint)
+                if runtime
+                else ExecutionEntrypoint.AGENT_RUN
+            ),
+            entrypoint_id=(
+                runtime.entrypoint_id
+                if runtime and runtime.entrypoint_id
+                else str(agent.id)
+            ),
+            run_kind=(
+                _coerce_run_kind(runtime.run_kind)
+                if runtime and runtime.run_id
+                else None
+            ),
+            run_id=runtime.run_id if runtime else None,
+            tool_call_id=runtime.tool_call_id if runtime else None,
+            connection_mode=binding["connection_mode"],
+            connection_id=bound_connection_id,
+            grant_id=bound_grant_id,
+            interactive=runtime.interactive if runtime else False,
+        )
 
-            user = await User.get_or_none(id=user_id) if user_id else None
-            result = await tool_registry.execute(
-                name=tool_name,
+        try:
+            result = await ToolExecutor().execute_builtin_tool(
+                tool_name=tool_name,
                 arguments=arguments,
-                credentials=credentials,
+                team_id=agent.team_id,
+                context=context,
+                conversation_id=conversation_id,
+                workflow_run_id=workflow_run_id,
+                agent_tool_config=agent_tool_config,
                 agent=agent,
                 user=user,
-                team_id=str(agent.team_id) if agent.team_id else None,
-                **extra_kwargs,
-                **scope_context,
             )
-            return result
+        except BusinessError as exc:
+            return {
+                "error": t(exc.msg_key or "tool_execution_failed", **exc.kwargs),
+                "tool_name": tool_name,
+                "success": False,
+            }
         except Exception as e:
             logger.exception(f"Tool execution error: {e}")
             return {
                 "error": resolve_user_visible_error(str(e)),
                 "success": False,
             }
+
+        if isinstance(result, PendingToolApproval):
+            # AgentService.chat/chat_stream have no durable pause: returning an
+            # interaction object here would be stringified into a fake tool
+            # result (silent success). Fail closed with an explicit error and
+            # drop the unexecuted request so nothing can be approved later.
+            from app.schemas.tool_approval import ToolExecutionCancelReason
+            from app.services import tool_approvals
+
+            try:
+                await tool_approvals.cancel_execution(
+                    result.execution_id,
+                    reason=ToolExecutionCancelReason.CANCELLED,
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to cancel un-resumable tool approval %s",
+                    result.execution_id,
+                    exc_info=True,
+                )
+            return {
+                "error": t("tool_approval_unavailable"),
+                "tool_name": tool_name,
+                "success": False,
+            }
+        return result
 
     async def _retrieve_rag_context(
         self,

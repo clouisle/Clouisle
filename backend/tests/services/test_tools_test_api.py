@@ -6,6 +6,7 @@ import pytest
 
 from app.api.v1.endpoints.tools import test_tool as execute_test_tool
 from app.models.tool import CustomToolType, ToolType
+from app.models.tool_approval import ExecutionEntrypoint
 from app.schemas.tool import (
     CodeConfigSchema,
     ToolCreateInput,
@@ -13,11 +14,7 @@ from app.schemas.tool import (
     ToolUpdateInput,
 )
 from app.services.sandbox.compiler import normalize_code_config
-from app.services.sandbox.models import (
-    SandboxArtifact,
-    SandboxExecutionMetadata,
-    SandboxJobSource,
-)
+from app.services.sandbox.models import SandboxArtifact
 
 
 class DummyUser:
@@ -64,30 +61,30 @@ class DummyFilterResult:
 
 
 @pytest.mark.anyio
-async def test_test_tool_routes_saved_code_tools_through_sandbox_gateway():
+async def test_test_tool_routes_saved_tools_through_unified_executor():
     request = ToolExecuteRequest(name="python_runner", arguments={"x": 1})
     custom_tool = DummyTool()
-    compiled_job = SimpleNamespace(limits=SimpleNamespace(timeout_seconds=45.0))
-    runtime_result = SimpleNamespace(
-        success=True,
-        result={"ok": True},
-        error=None,
-        stdout="done",
-        artifacts=[
-            SandboxArtifact(
-                path="/workspace/output/result.json",
-                optional=False,
-                description="result file",
-                file_type="file",
-                size=12,
-                checksum="abc123",
-                content_type="application/json",
-                storage_path="sandbox/job/result.json",
-                url="/api/v1/files/sandbox/job/result.json",
-                filename="result.json",
-            )
-        ],
-        metadata=SandboxExecutionMetadata(duration_ms=777, total_ms=777),
+    artifact = SandboxArtifact(
+        path="/workspace/output/result.json",
+        optional=False,
+        description="result file",
+        file_type="file",
+        size=12,
+        checksum="abc123",
+        content_type="application/json",
+        storage_path="sandbox/job/result.json",
+        url="/api/v1/files/sandbox/job/result.json",
+        filename="result.json",
+    )
+    execute = AsyncMock(
+        return_value={
+            "success": True,
+            "result": {"ok": True},
+            "error": None,
+            "stdout": "done",
+            "stderr": "",
+            "artifacts": [artifact.model_dump(mode="json")],
+        }
     )
 
     with (
@@ -96,21 +93,13 @@ async def test_test_tool_routes_saved_code_tools_through_sandbox_gateway():
             return_value=None,
         ),
         patch(
-            "app.api.v1.endpoints.tools.check_team_access",
-            new=AsyncMock(return_value=object()),
-        ),
-        patch(
             "app.api.v1.endpoints.tools.Tool.filter",
             return_value=DummyFilterResult(custom_tool),
         ),
         patch(
-            "app.api.v1.endpoints.tools.compile_code_config_job",
-            return_value=compiled_job,
-        ) as mock_compile,
-        patch(
-            "app.api.v1.endpoints.tools.sandbox_gateway.submit_and_wait",
-            new=AsyncMock(return_value=runtime_result),
-        ) as mock_submit,
+            "app.api.v1.endpoints.tools.ToolExecutor",
+            return_value=SimpleNamespace(execute=execute),
+        ),
     ):
         response = await execute_test_tool(
             request,
@@ -118,17 +107,18 @@ async def test_test_tool_routes_saved_code_tools_through_sandbox_gateway():
             current_user=DummyUser(),
         )
 
-    mock_compile.assert_called_once_with(
-        code_config=custom_tool.code_config,
-        params={"x": 1},
-        timeout=45.0,
-        source=SandboxJobSource.TOOL,
-    )
-    mock_submit.assert_awaited_once_with(compiled_job, timeout_seconds=50.0)
+    tool_arg, args_arg = execute.await_args.args
+    assert tool_arg is custom_tool
+    assert args_arg == {"x": 1}
+    assert execute.await_args.kwargs["operation"] == "python_runner"
+    context = execute.await_args.kwargs["context"]
+    assert context.entrypoint is ExecutionEntrypoint.TOOL_TEST
+    assert context.team_id == custom_tool.team_id
+    assert context.interactive is True
     assert response["data"].success is True
     assert response["data"].result == {"ok": True}
     assert response["data"].logs == "done"
-    assert response["data"].duration_ms == 777
+    assert response["data"].duration_ms is not None
     assert len(response["data"].artifacts) == 1
     assert response["data"].artifacts[0].path == "/workspace/output/result.json"
     assert response["data"].artifacts[0].description == "result file"
@@ -196,7 +186,7 @@ def test_tool_names_accept_identifiers_and_reject_invalid_values():
 
 
 @pytest.mark.asyncio
-async def test_tool_test_executes_database_custom_tool():
+async def test_tool_test_shapes_database_custom_tool_result():
     tool = DummyTool()
     tool.name = "company_db"
     tool.custom_type = CustomToolType.DATABASE
@@ -212,27 +202,27 @@ async def test_tool_test_executes_database_custom_tool():
         arguments={"action": "query", "sql": "SELECT 1"},
     )
     user = DummyUser()
+    execute = AsyncMock(return_value={"success": True, "rows": [{"count": 10}]})
 
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch(
-            "app.api.v1.endpoints.tools.check_team_access", AsyncMock(return_value=None)
-        ),
         patch(
             "app.api.v1.endpoints.tools.Tool.filter",
             return_value=DummyFilterResult(tool),
         ),
         patch(
-            "app.llm.tools.builtin.db_executor.execute_database_tool",
-            new=AsyncMock(return_value={"success": True, "rows": [{"count": 10}]}),
-        ) as mock_db_exec,
+            "app.api.v1.endpoints.tools.ToolExecutor",
+            return_value=SimpleNamespace(execute=execute),
+        ),
     ):
         resp = await execute_test_tool(req, tool.team_id, user)
-        assert resp["data"].success is True
-        assert resp["data"].result == {"success": True, "rows": [{"count": 10}]}
-        assert resp["data"].error is None
-        mock_db_exec.assert_awaited_once_with(
-            tool=tool,
-            arguments={"action": "query", "sql": "SELECT 1"},
-            timeout=12.0,
-        )
+
+    assert resp["data"].success is True
+    assert resp["data"].result == {"success": True, "rows": [{"count": 10}]}
+    assert resp["data"].error is None
+    tool_arg, args_arg = execute.await_args.args
+    assert tool_arg is tool
+    assert args_arg == {"action": "query", "sql": "SELECT 1"}
+    assert execute.await_args.kwargs["context"].entrypoint is (
+        ExecutionEntrypoint.TOOL_TEST
+    )

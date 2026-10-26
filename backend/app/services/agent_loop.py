@@ -45,6 +45,11 @@ from app.api.v1.endpoints.chat_sse import (
 )
 from app.api.v1.endpoints.chat_tools import AssetViewResult, execute_tool_call
 from app.llm.tools.interaction import ToolInteractionRequest
+from app.services.tool_context import (
+    RuntimeToolIdentity,
+    entrypoint_is_interactive,
+    tool_identity_scope,
+)
 from app.utils.tool_output import (
     KNOWN_OUTPUT_TOOLS,
     ToolExecutionResult,
@@ -125,6 +130,10 @@ class AgentLoopContext:
     user_locale: str | None = None
     max_iterations: int | None = None
     iteration_offset: int = 0
+    # Trusted entrypoint origin persisted by the run submitter. Missing origin
+    # on legacy runs is treated as non-interactive by the tool identity.
+    tool_entrypoint: str | None = None
+    tool_entrypoint_id: str | None = None
     # Durable AgentRun callback used by model-callable interaction tools.
     pause_for_user: Callable[..., Any] | None = None
     # how one model turn is produced
@@ -432,6 +441,17 @@ class AgentLoop:
         tool_result: Any = None
         try:
             with (
+                tool_identity_scope(
+                    RuntimeToolIdentity(
+                        run_id=UUID(str(ctx.observability_run_id))
+                        if ctx.observability_run_id
+                        else None,
+                        tool_call_id=str(tc.id),
+                        entrypoint=ctx.tool_entrypoint or "agent_run",
+                        entrypoint_id=ctx.tool_entrypoint_id or str(ctx.agent.id),
+                        interactive=entrypoint_is_interactive(ctx.tool_entrypoint),
+                    )
+                ),
                 capture_workspace_resets() as reset_notices,
                 sandbox_execution_scope(
                     deadline_at=self._deadline_at, stop_requested=ctx.stop_requested

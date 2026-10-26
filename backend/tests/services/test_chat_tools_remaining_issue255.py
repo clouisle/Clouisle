@@ -1,33 +1,32 @@
+"""Remaining chat tool routing tests against the current authorized dispatcher."""
+
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 import pytest
 
 from app.api.v1.endpoints.chat_tools import (
     _get_item_value,
     build_file_content_for_context,
-    execute_code_tool,
-    execute_http_tool,
     execute_tool_call,
 )
 from app.core.i18n import t
-from app.models.tool import CustomToolType
+from app.llm.tools.interaction import ToolInteractionRequest
+from app.schemas.response import BusinessError
 
 
 def _agent(**overrides):
     values = {
-        "id": "agent-1",
-        "team_id": "team-1",
+        "id": uuid4(),
+        "team_id": uuid4(),
         "enable_attachments": True,
         "attachment_config": {},
+        "tools_config": [],
     }
     values.update(overrides)
     return SimpleNamespace(**values)
-
-
-def _query(result):
-    return SimpleNamespace(first=AsyncMock(return_value=result))
 
 
 @pytest.mark.anyio
@@ -79,166 +78,58 @@ def test_file_and_tool_display_helpers():
 
 
 @pytest.mark.anyio
-async def test_mcp_routes_invalid_missing_success_and_error():
-    assert json.loads(await execute_tool_call("mcp_invalid", {}))["error"] == t(
-        "invalid_mcp_tool_name"
-    )
+async def test_stored_mcp_and_custom_require_authorized_context():
+    for name in ("mcp_server_action", "custom_fetch"):
+        missing = json.loads(await execute_tool_call(name, {}))
+        assert missing["error"] == t("user_context_required")
 
-    with patch("app.models.tool.Tool.filter", return_value=_query(None)):
-        missing = json.loads(await execute_tool_call("mcp_server_action", {}))
-    assert missing["error"] == t("mcp_tool_missing_configuration", tool_name="server")
-
-    server = SimpleNamespace(mcp_config={"url": "https://mcp.example"})
-    result = SimpleNamespace(success=True, result={"ok": True}, error=None)
-    with (
-        patch("app.models.tool.Tool.filter", return_value=_query(server)),
-        patch(
-            "app.llm.tools.mcp_client.execute_mcp_tool",
-            new=AsyncMock(return_value=result),
-        ) as execute,
+    agent = _agent()
+    user = SimpleNamespace(id=uuid4())
+    delegated = AsyncMock(return_value={"result": {"ok": True}})
+    with patch(
+        "app.services.agent_tool_execution.execute_agent_stored_tool", delegated
     ):
         payload = json.loads(
             await execute_tool_call(
-                "mcp_server_action", {"x": 1}, tool_timeouts={"mcp": 9}
+                "mcp_server_action", {"x": 1}, agent=agent, user=user
             )
         )
-    assert payload == {"success": True, "result": {"ok": True}, "error": None}
-    execute.assert_awaited_once_with(
-        mcp_config=server.mcp_config,
-        tool_name="action",
-        arguments={"x": 1},
-        timeout=9,
+    assert payload == {"result": {"ok": True}}
+    assert delegated.await_args.args == (
+        agent,
+        "mcp_server_action",
+        {"x": 1},
+        user,
     )
 
-    with (
-        patch("app.models.tool.Tool.filter", return_value=_query(server)),
-        patch(
-            "app.llm.tools.mcp_client.execute_mcp_tool",
-            new=AsyncMock(side_effect=RuntimeError("network secret")),
-        ),
-        patch(
-            "app.services.error_messages.exception_to_user_message",
-            return_value="MCP unavailable",
-        ),
+    delegated.side_effect = BusinessError(
+        code=403, msg_key="tool_access_denied", status_code=403
+    )
+    with patch(
+        "app.services.agent_tool_execution.execute_agent_stored_tool", delegated
     ):
-        failed = json.loads(await execute_tool_call("mcp_server_action", {}))
-    assert failed == {"error": "MCP unavailable"}
+        denied = json.loads(
+            await execute_tool_call("custom_fetch", {}, agent=agent, user=user)
+        )
+    assert denied["error"] == t("tool_access_denied")
+
+    interaction = ToolInteractionRequest(
+        tool_name="mcp_server_action",
+        arguments={"interaction_kind": "tool_approval", "execution_id": str(uuid4())},
+    )
+    delegated.side_effect = None
+    delegated.return_value = interaction
+    with patch(
+        "app.services.agent_tool_execution.execute_agent_stored_tool", delegated
+    ):
+        result = await execute_tool_call(
+            "mcp_server_action", {}, agent=agent, user=user
+        )
+    assert result is interaction
 
 
 @pytest.mark.anyio
-async def test_custom_http_routes_success_error_missing_and_unsupported():
-    with patch("app.models.tool.Tool.filter", return_value=_query(None)):
-        missing = json.loads(await execute_tool_call("custom_missing", {}))
-    assert missing["error"] == t("custom_tool_not_found")
-
-    http_tool = SimpleNamespace(
-        custom_type=CustomToolType.HTTP,
-        http_config={"url": "https://example.com"},
-        credentials={"token": "x"},
-    )
-    with (
-        patch("app.models.tool.Tool.filter", return_value=_query(http_tool)),
-        patch(
-            "app.llm.tools.executors.execute_http_tool",
-            new=AsyncMock(return_value={"success": True, "result": {"ok": True}}),
-        ) as execute,
-        patch(
-            "app.llm.tools.executors.format_http_result_for_llm",
-            return_value="formatted",
-        ),
-    ):
-        payload = json.loads(
-            await execute_tool_call(
-                "custom_fetch", {"q": "x"}, tool_timeouts={"http": 7}
-            )
-        )
-    assert payload["llm_result"] == "formatted"
-    execute.assert_awaited_once_with(
-        http_config=http_tool.http_config,
-        arguments={"q": "x"},
-        credentials=http_tool.credentials,
-        timeout=7,
-    )
-
-    with (
-        patch("app.models.tool.Tool.filter", return_value=_query(http_tool)),
-        patch(
-            "app.llm.tools.executors.execute_http_tool",
-            new=AsyncMock(side_effect=RuntimeError("network secret")),
-        ),
-        patch(
-            "app.services.error_messages.exception_to_user_message",
-            return_value="HTTP unavailable",
-        ),
-    ):
-        assert json.loads(await execute_tool_call("custom_fetch", {})) == {
-            "error": "HTTP unavailable"
-        }
-
-    unsupported = SimpleNamespace(custom_type="other")
-    with patch("app.models.tool.Tool.filter", return_value=_query(unsupported)):
-        payload = json.loads(await execute_tool_call("custom_other", {}))
-    assert payload["error"] == t("unsupported_tool_type")
-
-
-@pytest.mark.anyio
-async def test_download_builtin_and_unknown_route_errors():
-    with (
-        patch(
-            "app.llm.tools.executors.execute_http_tool",
-            new=AsyncMock(return_value={"success": True, "result": "body"}),
-        ) as execute,
-        patch(
-            "app.llm.tools.executors.format_http_result_for_llm",
-            return_value="downloaded",
-        ),
-    ):
-        payload = json.loads(
-            await execute_tool_call(
-                "file_download",
-                {"url": "https://example.com/file"},
-                tool_timeouts={"download": 8},
-            )
-        )
-    assert payload["llm_result"] == "downloaded"
-    execute.assert_awaited_once_with(
-        http_config={"url": "https://example.com/file", "method": "GET"},
-        arguments={},
-        timeout=8,
-    )
-
-    with (
-        patch(
-            "app.llm.tools.executors.execute_http_tool",
-            new=AsyncMock(side_effect=RuntimeError("download secret")),
-        ),
-        patch(
-            "app.services.error_messages.exception_to_user_message",
-            return_value="Download unavailable",
-        ),
-    ):
-        assert json.loads(await execute_tool_call("file_download", {})) == {
-            "error": "Download unavailable"
-        }
-
-    handler = AsyncMock()
-    tool_info = SimpleNamespace(handler=handler)
-    with (
-        patch("app.llm.tools.tool_registry.get_tool", return_value=tool_info),
-        patch("app.llm.tools.tool_registry.get_sandbox_tool_class", return_value=None),
-        patch(
-            "app.llm.tools.tool_registry.execute",
-            new=AsyncMock(side_effect=RuntimeError("tool secret")),
-        ),
-        patch(
-            "app.services.error_messages.exception_to_user_message",
-            return_value="Tool unavailable",
-        ),
-    ):
-        assert json.loads(await execute_tool_call("builtin", {})) == {
-            "error": "Tool unavailable"
-        }
-
+async def test_builtin_boundary_errors_and_unknown_tool():
     with (
         patch("app.llm.tools.tool_registry.get_tool", return_value=None),
         patch("app.llm.tools.tool_registry.get_sandbox_tool_class", return_value=None),
@@ -246,70 +137,35 @@ async def test_download_builtin_and_unknown_route_errors():
         unknown = json.loads(await execute_tool_call("absent", {}))
     assert unknown["error"] == t("tool_not_found", tool_name="absent")
 
-
-@pytest.mark.anyio
-async def test_standalone_http_and_code_helpers():
-    tool = SimpleNamespace(
-        http_config={"url": "https://example.com"},
-        credentials={"key": "value"},
-        code_config={},
-    )
-    with (
-        patch(
-            "app.llm.tools.executors.execute_http_tool",
-            new=AsyncMock(return_value={"result": "ok"}),
-        ) as execute,
-        patch(
-            "app.llm.tools.executors.format_http_result_for_llm",
-            return_value="ok",
+    agent = _agent()
+    user = SimpleNamespace(id=uuid4())
+    tool_info = SimpleNamespace(handler=lambda credentials=None: None)
+    cases = [
+        (
+            BusinessError(code=403, msg_key="tool_access_denied", status_code=403),
+            "tool_access_denied",
+            t("tool_access_denied"),
         ),
-    ):
-        assert await execute_http_tool(tool, {"q": 1}, timeout=2) == "ok"
-    execute.assert_awaited_once_with(
-        http_config=tool.http_config,
-        arguments={"q": 1},
-        credentials=tool.credentials,
-        timeout=2,
-    )
-    assert json.loads(await execute_code_tool(tool, {}))["error"] == t(
-        "tool_code_not_defined"
-    )
-
-    tool.code_config = {"language": "python", "code": "return 1"}
-    with patch(
-        "app.llm.tools.sandbox.execute_code",
-        new=AsyncMock(
-            return_value=SimpleNamespace(
-                success=True, result=1, stdout="log", error=None
+        (RuntimeError("tool secret"), "Unavailable", "Unavailable"),
+    ]
+    for exc, fallback, expected in cases:
+        with (
+            patch("app.llm.tools.tool_registry.get_tool", return_value=tool_info),
+            patch(
+                "app.llm.tools.tool_registry.get_sandbox_tool_class",
+                return_value=None,
+            ),
+            patch(
+                "app.services.tool.ToolExecutor.execute_builtin_tool",
+                new=AsyncMock(side_effect=exc),
+            ),
+            patch("app.models.user.User.get_or_none", new=AsyncMock(return_value=user)),
+            patch(
+                "app.services.error_messages.exception_to_user_message",
+                return_value=fallback,
+            ),
+        ):
+            result = json.loads(
+                await execute_tool_call("builtin", {}, agent=agent, user=user)
             )
-        ),
-    ):
-        assert json.loads(await execute_code_tool(tool, {})) == {
-            "value": 1,
-            "__logs__": "log",
-        }
-
-    with patch(
-        "app.llm.tools.sandbox.execute_code",
-        new=AsyncMock(
-            return_value=SimpleNamespace(
-                success=False, result=None, stdout="trace", error=None
-            )
-        ),
-    ):
-        failed = json.loads(await execute_code_tool(tool, {}))
-    assert failed == {"error": t("code_execution_failed"), "logs": "trace"}
-
-    with (
-        patch(
-            "app.llm.tools.sandbox.execute_code",
-            new=AsyncMock(side_effect=RuntimeError("sandbox secret")),
-        ),
-        patch(
-            "app.services.error_messages.exception_to_user_message",
-            return_value="Code unavailable",
-        ),
-    ):
-        assert json.loads(await execute_code_tool(tool, {})) == {
-            "error": "Code unavailable"
-        }
+        assert result["error"] == expected

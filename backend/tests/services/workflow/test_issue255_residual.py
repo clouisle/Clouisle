@@ -25,7 +25,9 @@ from app.services.workflow.orchestrator import WorkflowOrchestrator
 async def test_webhook_rejects_restricted_api_key_without_workflow_access():
     workflow_id = uuid4()
     user = SimpleNamespace(id=uuid4())
-    api_key = SimpleNamespace(workflows=SimpleNamespace(all=AsyncMock(return_value=[])))
+    api_key = SimpleNamespace(
+        id=uuid4(), workflows=SimpleNamespace(all=AsyncMock(return_value=[]))
+    )
     workflow = SimpleNamespace(
         id=workflow_id,
         name="Flow",

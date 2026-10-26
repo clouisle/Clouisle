@@ -210,7 +210,9 @@ async def test_webhook_success_with_unrestricted_api_key_and_plain_header(monkey
         status=WorkflowStatus.PUBLISHED,
         trigger_type=TriggerType.WEBHOOK,
     )
-    api_key = SimpleNamespace(workflows=SimpleNamespace(all=AsyncMock(return_value=[])))
+    api_key = SimpleNamespace(
+        id=uuid4(), workflows=SimpleNamespace(all=AsyncMock(return_value=[]))
+    )
     monkeypatch.setattr(
         deps,
         "_authenticate_api_key",

@@ -107,6 +107,7 @@ def sweep_lost_agent_runs_task(max_age_seconds: int = 120) -> dict:
 
     async def _sweep() -> dict:
         from app.services.agent_run_store import mark_expired_runs_interrupted
+        from app.services.tool_interactions import expire_stale_interactions
 
         try:
             marked = await mark_expired_runs_interrupted(
@@ -117,6 +118,14 @@ def sweep_lost_agent_runs_task(max_age_seconds: int = 120) -> dict:
             raise
         if marked:
             logger.warning("Marked %s lost AgentRun(s) as interrupted", marked)
-        return {"marked": marked}
+        # A worker killed while awaiting an MCP sampling/elicitation callback
+        # cannot write its own terminal state. The row's hard deadline is the
+        # only truth; this sweep expires it without replaying anything.
+        try:
+            expired_interactions = await expire_stale_interactions()
+        except Exception:
+            logger.exception("Run interaction expiry sweep failed")
+            expired_interactions = 0
+        return {"marked": marked, "expired_interactions": expired_interactions}
 
     return _run_async(_sweep())

@@ -552,6 +552,8 @@ async def _submit_receipt(
             raise collection_error("wechat_agent_binding_disconnected", 403)
         agent = await authorized_agent(receipt.agent_id, user)
         await require_feature("wechat", "agent_chat")
+        from app.models.tool_approval import ExecutionEntrypoint
+
         submission = await submit_chat_run(
             agent.id,
             prepared,
@@ -559,6 +561,8 @@ async def _submit_receipt(
             mode=AgentRunMode.SEND,
             conversation_id=session.conversation_id,
             defer_dispatch=True,
+            tool_entrypoint=ExecutionEntrypoint.CHANNEL,
+            tool_entrypoint_id=str(binding.id),
         )
         claimed = (
             await WeChatAgentReceipt.filter(id=receipt.id, status="pending")

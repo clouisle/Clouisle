@@ -297,16 +297,40 @@ def test_agent_task_crash_does_not_overwrite_stopped_run(monkeypatch):
 
 def test_sweep_lost_agent_runs_task_reports_marked_count(monkeypatch):
     """The scheduled sweep is the only producer of INTERRUPTED."""
-    from app.services import agent_run_store
+    from app.services import agent_run_store, tool_interactions
     from app.tasks import agent as agent_task
 
     sweep = AsyncMock(return_value=3)
     monkeypatch.setattr(agent_run_store, "mark_expired_runs_interrupted", sweep)
+    expire = AsyncMock(return_value=1)
+    monkeypatch.setattr(tool_interactions, "expire_stale_interactions", expire)
 
     result = agent_task.sweep_lost_agent_runs_task.run(max_age_seconds=90)
 
-    assert result == {"marked": 3}
+    assert result == {"marked": 3, "expired_interactions": 1}
     sweep.assert_awaited_once_with(max_age_seconds=90)
+    expire.assert_awaited_once_with()
+
+
+def test_sweep_lost_agent_runs_task_survives_interaction_expiry_failure(monkeypatch):
+    """A broken interaction sweep must not lose the AgentRun crash repair."""
+    from app.services import agent_run_store, tool_interactions
+    from app.tasks import agent as agent_task
+
+    monkeypatch.setattr(
+        agent_run_store,
+        "mark_expired_runs_interrupted",
+        AsyncMock(return_value=2),
+    )
+    monkeypatch.setattr(
+        tool_interactions,
+        "expire_stale_interactions",
+        AsyncMock(side_effect=RuntimeError("database unavailable")),
+    )
+
+    result = agent_task.sweep_lost_agent_runs_task.run()
+
+    assert result == {"marked": 2, "expired_interactions": 0}
 
 
 def test_sweep_lost_agent_runs_task_reraises_so_beat_retries(monkeypatch):

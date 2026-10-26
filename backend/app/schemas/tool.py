@@ -5,13 +5,24 @@
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.response import PageData
 from app.services.sandbox.cache import normalize_package_source_url
+from app.schemas.tool_approval import ToolApprovalPolicy, default_tool_approval_policy
+from app.schemas.tool_oauth import HttpOAuth2Config, McpOAuthConfig
+
+
+class ToolConnectionField(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
+    label: str = Field(min_length=1, max_length=100)
+    required: bool = True
+    secret: bool = True
 
 
 class ToolType(str, Enum):
@@ -91,6 +102,7 @@ class HttpConfigSchema(BaseModel):
     method: HttpMethod = Field(default=HttpMethod.GET, description="HTTP 方法")
     url: str = Field(..., description="请求 URL，支持 {{variable}} 占位符")
     headers: dict[str, str] = Field(default_factory=dict, description="请求头")
+    oauth2: HttpOAuth2Config | None = None
     query_params: dict[str, str] = Field(default_factory=dict, description="查询参数")
     body_template: str | None = Field(default=None, description="请求体模板 (JSON)")
     content_type: str | None = Field(
@@ -211,6 +223,16 @@ class McpConfigSchema(BaseModel):
     # SSE/HTTP 模式
     url: str | None = Field(default=None, description="URL (sse/http 模式)")
     headers: dict[str, str] = Field(default_factory=dict, description="请求头")
+    oauth: McpOAuthConfig | None = None
+    roots: list[dict[str, str]] = Field(default_factory=list)
+    roots_allowlist: list[str] = Field(default_factory=list)
+    elicitation_url_hosts: list[str] = Field(default_factory=list)
+    enable_sampling: bool = False
+    enable_elicitation: bool = False
+    callback_timeout_seconds: int = Field(default=120, ge=10, le=900)
+    max_sampling_requests: int = Field(default=4, ge=0, le=20)
+    max_elicitation_requests: int = Field(default=4, ge=0, le=20)
+    sampling_max_tokens: int = Field(default=1024, ge=1, le=8192)
 
 
 # ============ Tool Output Schemas ============
@@ -234,6 +256,14 @@ class ToolOut(BaseModel):
         default=False, description="是否需要配置（如 API Key）"
     )
     config_fields: list[str] = Field(default_factory=list, description="需要配置的字段")
+    identity_policy: Literal["none", "team_only", "personal_only", "selectable"] = (
+        "none"
+    )
+    connection_fields: list[ToolConnectionField] = Field(default_factory=list)
+    approval_policy: ToolApprovalPolicy = Field(
+        default_factory=default_tool_approval_policy
+    )
+    definition_version: int = Field(default=1, ge=1)
 
     # 自定义工具额外字段
     custom_type: CustomToolType | None = Field(
@@ -343,6 +373,13 @@ class ToolCreateInput(BaseModel):
     )
     credentials: dict[str, str] = Field(default_factory=dict, description="凭证")
     is_enabled: bool = Field(default=True, description="是否启用")
+    identity_policy: Literal["none", "team_only", "personal_only", "selectable"] = (
+        "none"
+    )
+    connection_fields: list[ToolConnectionField] = Field(default_factory=list)
+    approval_policy: ToolApprovalPolicy = Field(
+        default_factory=default_tool_approval_policy
+    )
 
     @field_validator("name")
     @classmethod
@@ -370,6 +407,11 @@ class ToolUpdateInput(BaseModel):
     mcp_config: McpConfigSchema | None = None
     credentials: dict[str, str] | None = None
     is_enabled: bool | None = None
+    identity_policy: (
+        Literal["none", "team_only", "personal_only", "selectable"] | None
+    ) = None
+    connection_fields: list[ToolConnectionField] | None = None
+    approval_policy: ToolApprovalPolicy | None = None
 
     @field_validator("name")
     @classmethod
@@ -417,6 +459,10 @@ class ToolExecuteRequest(BaseModel):
 
     name: str = Field(..., description="工具名称")
     arguments: dict[str, Any] = Field(default_factory=dict, description="参数")
+    connection_mode: Literal["personal", "team"] | None = None
+    connection_id: UUID | None = None
+    grant_id: UUID | None = None
+    execution_id: UUID | None = None
 
 
 class ToolExecuteResponse(BaseModel):
@@ -431,6 +477,8 @@ class ToolExecuteResponse(BaseModel):
         default_factory=list, description="产物列表"
     )
     duration_ms: int | None = Field(default=None, description="执行耗时（毫秒）")
+    pending_approval: bool = False
+    execution_id: UUID | None = None
 
 
 class CodeExecuteRequest(BaseModel):

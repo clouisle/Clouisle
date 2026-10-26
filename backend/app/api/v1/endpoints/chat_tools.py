@@ -10,7 +10,6 @@ from app.services.citations import stable_citation_id, with_rag_citation_ids
 
 if TYPE_CHECKING:
     from app.models.agent import Agent
-    from app.models.tool import Tool
 
 logger = logging.getLogger(__name__)
 
@@ -345,6 +344,439 @@ async def _execute_asset_tool(
         return json.dumps({"error": t("tool_execution_failed")}, ensure_ascii=False)
 
 
+_CHAT_MEMORY_TOOL_NAMES = frozenset(
+    {
+        "create_memory_entity",
+        "create_memory_relation",
+        "update_memory_entity",
+        "search_memory",
+        "get_memory_subgraph",
+    }
+)
+
+
+def _skill_definition_version(skill: Any, config: dict[str, Any]) -> int:
+    """Bind the stable tool definition to the real Skill content and config.
+
+    A pending approval stores this version. Editing the Skill (version, package
+    content, schema or the Agent's config) changes the version, so resuming the
+    old approval is rejected instead of executing changed code.
+    """
+    import hashlib
+
+    payload = {
+        "id": str(getattr(skill, "id", "")),
+        "version": getattr(skill, "version", None),
+        "package_hash": getattr(skill, "package_hash", None),
+        "package_path": getattr(skill, "package_path", None),
+        "source_type": getattr(skill, "source_type", None),
+        "source_uri": getattr(skill, "source_uri", None),
+        "source_ref": getattr(skill, "source_ref", None),
+        "source_subdir": getattr(skill, "source_subdir", None),
+        "input_schema": getattr(skill, "input_schema", None),
+        "default_config": getattr(skill, "default_config", None),
+        "config": config,
+    }
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), default=str
+    ).encode("utf-8")
+    return max(1, int(hashlib.sha256(encoded).hexdigest()[:12], 16))
+
+
+def _is_policy_managed_tool(tool_name: str) -> bool:
+    from app.api.v1.endpoints.chat_helpers.asset_tools import ASSET_TOOL_NAMES
+
+    return (
+        tool_name.startswith("skill_")
+        or tool_name == "knowledge_search"
+        or tool_name in _CHAT_MEMORY_TOOL_NAMES
+        or tool_name in ASSET_TOOL_NAMES
+    )
+
+
+async def _policy_tool_context(
+    *,
+    agent: Any,
+    user: Any,
+    conversation_id: Any,
+    workflow_run_id: Any,
+) -> Any:
+    """Trusted call context for operations resolved before builtin dispatch.
+
+    Entrypoint and interactivity come only from the runtime identity. When no
+    identity was established the call is treated as non-interactive, so an
+    approval that needs the caller fails closed instead of silently executing.
+    """
+    from app.models.tool_approval import ExecutionEntrypoint
+    from app.models.user import User
+    from app.schemas.response import BusinessError
+    from app.services.tool_context import (
+        coerce_execution_entrypoint,
+        coerce_execution_run_kind,
+        current_tool_identity,
+    )
+    from app.services.tool_execution import ToolCallContext
+
+    team_id = getattr(agent, "team_id", None) if agent else None
+    if agent is None or team_id is None:
+        raise BusinessError(code=403, msg_key="agent_context_required", status_code=403)
+    actor = (
+        await User.get_or_none(id=getattr(user, "id", None))
+        if getattr(user, "id", None)
+        else None
+    )
+    if actor is None:
+        raise BusinessError(code=403, msg_key="user_context_required", status_code=403)
+
+    runtime = current_tool_identity()
+    if runtime is not None:
+        entrypoint = coerce_execution_entrypoint(
+            runtime.entrypoint, default=ExecutionEntrypoint.CHAT.value
+        )
+        entrypoint_id = runtime.entrypoint_id or (
+            str(workflow_run_id)
+            if workflow_run_id is not None
+            else str(conversation_id)
+            if conversation_id is not None
+            else str(agent.id)
+        )
+        interactive = runtime.interactive
+    else:
+        entrypoint = (
+            ExecutionEntrypoint.WORKFLOW
+            if workflow_run_id is not None
+            else ExecutionEntrypoint.CHAT
+        )
+        entrypoint_id = str(
+            workflow_run_id
+            if workflow_run_id is not None
+            else conversation_id
+            if conversation_id is not None
+            else agent.id
+        )
+        # No trusted origin: fail closed for caller-gated approvals.
+        interactive = False
+    return ToolCallContext(
+        actor=actor,
+        team_id=team_id,
+        entrypoint=entrypoint,
+        entrypoint_id=entrypoint_id,
+        run_kind=(
+            coerce_execution_run_kind(getattr(runtime, "run_kind", "agent"))
+            if runtime and runtime.run_id
+            else None
+        ),
+        run_id=runtime.run_id if runtime else None,
+        tool_call_id=runtime.tool_call_id if runtime else None,
+        interactive=interactive,
+    )
+
+
+async def _resolve_policy_invoke(
+    tool_name: str,
+    *,
+    agent: Any,
+    user: Any,
+    conversation_id: Any,
+    workflow_run_id: Any,
+    session_id: str | None,
+) -> tuple[Any, Any]:
+    """Resolve the stable definition and the real operation for a managed tool."""
+    from app.services.builtin_tools import get_builtin_definition
+
+    if tool_name.startswith("skill_"):
+        from app.services.skill import SkillService
+        from app.llm.tools import tool_registry
+
+        # Authorization stays ahead of approval: the Skill must belong to the
+        # Agent and its effective config is resolved before the execution row.
+        skill, skill_config = await SkillService.resolve_agent_skill_tool(
+            agent, tool_name
+        )
+        # The stable definition is keyed by the real skill tool name (which
+        # embeds the Skill id) and versioned by a fingerprint over the actual
+        # Skill content and config. There is no synthetic registry entry.
+        descriptor = {
+            "name": tool_name,
+            "description": (
+                skill.description or skill.display_name or skill.name or tool_name
+            ),
+            "parameters": [],
+            "definition_version": _skill_definition_version(skill, skill_config),
+        }
+        definition = await get_builtin_definition(
+            agent.team_id, tool_name, descriptor=descriptor
+        )
+        skill_tool = SkillService.to_tool_info(skill, config=skill_config)
+
+        async def invoke(parameters: dict, _resolved: Any) -> Any:
+            return await tool_registry.execute_tool_info(
+                skill_tool,
+                parameters,
+                agent=agent,
+                session_id=session_id,
+            )
+
+        return definition, invoke
+
+    definition = await get_builtin_definition(agent.team_id, tool_name)
+
+    async def invoke(parameters: dict, _resolved: Any) -> Any:
+        if tool_name == "knowledge_search":
+            return await _execute_knowledge_search(parameters, agent)
+        if tool_name in _CHAT_MEMORY_TOOL_NAMES:
+            return await _execute_memory_tool(tool_name, parameters, user)
+        return await _execute_asset_tool(
+            tool_name,
+            parameters,
+            agent=agent,
+            user=user,
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
+            session_id=session_id,
+        )
+
+    return definition, invoke
+
+
+async def _execute_policy_managed_tool(
+    tool_name: str,
+    arguments: dict,
+    *,
+    agent: Any,
+    user: Any,
+    conversation_id: Any,
+    workflow_run_id: Any,
+    session_id: str | None,
+) -> Any:
+    """One authorization/approval boundary for early chat tool operations.
+
+    Assets, knowledge search, user memory and Agent skills used to execute
+    inline before any approval gate. They now share the stored-tool boundary:
+    a stable per-team ``Tool`` row (the registry definition is reused when one
+    exists), identical team authorization, and one approval execution. The
+    operation itself runs only inside ``execute_stored_tool`` after the gate
+    opens; a pending execution returns ``ToolInteractionRequest`` unchanged.
+    """
+    from app.core.i18n import t
+    from app.llm.tools.interaction import ToolInteractionRequest
+    from app.schemas.response import BusinessError
+    from app.services.error_messages import exception_to_user_message
+    from app.services.tool_execution import PendingToolApproval, execute_stored_tool
+
+    if tool_name == "knowledge_search" and agent is None:
+        return json.dumps({"error": t("agent_context_required")})
+    if tool_name in _CHAT_MEMORY_TOOL_NAMES and user is None:
+        return json.dumps({"error": t("user_context_required")})
+    if tool_name.startswith("skill_") and agent is None:
+        return json.dumps(
+            {"error": t("agent_context_required_for_skill")}, ensure_ascii=False
+        )
+
+    fallback_key = (
+        "skill_execution_failed"
+        if tool_name.startswith("skill_")
+        else "tool_execution_failed"
+    )
+    try:
+        context = await _policy_tool_context(
+            agent=agent,
+            user=user,
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
+        )
+        definition, invoke = await _resolve_policy_invoke(
+            tool_name,
+            agent=agent,
+            user=user,
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
+            session_id=session_id,
+        )
+        result = await execute_stored_tool(
+            definition,
+            tool_name,
+            arguments,
+            context,
+            invoke,
+        )
+    except BusinessError as exc:
+        return json.dumps(
+            {"error": t(exc.msg_key or fallback_key, **exc.kwargs)},
+            ensure_ascii=False,
+        )
+    except Exception as exc:
+        logger.exception("Policy-managed tool failed: %s", exc)
+        return json.dumps(
+            {"error": exception_to_user_message(exc, fallback_key=fallback_key)},
+            ensure_ascii=False,
+        )
+    if isinstance(result, PendingToolApproval):
+        from app.services.tool_context import current_tool_identity
+
+        runtime = current_tool_identity()
+        if runtime is not None and runtime.tool_call_prefix:
+            # A workflow Agent node owns a blocking call with no durable pause:
+            # an interaction object would be stringified into a fake result.
+            # Cancel the unexecuted approval and fail closed explicitly.
+            from app.schemas.tool_approval import ToolExecutionCancelReason
+            from app.services import tool_approvals
+
+            try:
+                await tool_approvals.cancel_execution(
+                    result.execution_id,
+                    reason=ToolExecutionCancelReason.CANCELLED,
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to cancel un-resumable tool approval %s",
+                    result.execution_id,
+                    exc_info=True,
+                )
+            return json.dumps(
+                {
+                    "error": t("tool_approval_unavailable"),
+                    "tool_name": tool_name,
+                    "success": False,
+                },
+                ensure_ascii=False,
+            )
+        return ToolInteractionRequest(
+            tool_name=tool_name,
+            arguments={
+                "interaction_kind": "tool_approval",
+                "execution_id": str(result.execution_id),
+            },
+        )
+    return result
+
+
+async def _execute_knowledge_search(arguments: dict, agent: Any) -> str:
+    from app.core.i18n import t
+
+    try:
+        from app.models.agent import AgentKnowledgeBase
+        from app.services.retrieval import (
+            RetrievalRequest,
+            RetrievalTarget,
+            retrieve,
+            validated_search_mode,
+        )
+
+        query = arguments.get("query", "")
+        top_k = arguments.get("top_k", 5)
+        agent_kbs = await AgentKnowledgeBase.filter(agent_id=agent.id).prefetch_related(
+            "knowledge_base"
+        )
+        targets = tuple(
+            RetrievalTarget(
+                kb_id=link.knowledge_base.id,
+                kb_name=link.knowledge_base.name,
+                team_id=link.knowledge_base.team_id,
+                status=link.knowledge_base.status,
+                embedding_model_id=link.knowledge_base.embedding_model_id,
+                rerank_model_id=link.knowledge_base.rerank_model_id,
+                settings=link.knowledge_base.settings,
+                search_mode=validated_search_mode(link.search_mode),
+                score_threshold=link.score_threshold,
+            )
+            for link in agent_kbs
+        )
+        response = await retrieve(
+            RetrievalRequest(query=query, targets=targets, top_k=top_k)
+        )
+        return json.dumps(
+            {"contexts": with_rag_citation_ids(response.results)},
+            ensure_ascii=False,
+            default=str,
+        )
+    except Exception as e:
+        logger.exception("RAG search failed: %s", e)
+        return json.dumps({"error": t("rag_search_failed")})
+
+
+async def _execute_memory_tool(tool_name: str, arguments: dict, user: Any) -> str:
+    from app.services.error_messages import exception_to_user_message
+    from app.services.memory import MemoryService
+
+    try:
+        user_id = user.id
+        if tool_name == "create_memory_entity":
+            result = await MemoryService.handle_create_entity(
+                user_id=user_id,
+                name=arguments.get("name", ""),
+                entity_type=arguments.get("entity_type", "fact"),
+                description=arguments.get("description"),
+                properties=arguments.get("properties"),
+            )
+        elif tool_name == "create_memory_relation":
+            result = await MemoryService.handle_create_relation(
+                user_id=user_id,
+                source_entity_name=arguments.get("source_entity_name", ""),
+                target_entity_name=arguments.get("target_entity_name", ""),
+                relation_type=arguments.get("relation_type", "related_to"),
+                description=arguments.get("description"),
+            )
+        elif tool_name == "update_memory_entity":
+            result = await MemoryService.handle_update_entity(
+                user_id=user_id,
+                entity_name=arguments.get("entity_name", ""),
+                description=arguments.get("description"),
+                properties=arguments.get("properties"),
+            )
+        elif tool_name == "search_memory":
+            top_k_raw = arguments.get("top_k", 5)
+            try:
+                top_k_val = max(1, min(int(top_k_raw), 10))
+            except (ValueError, TypeError):
+                top_k_val = 5
+
+            time_window_raw = arguments.get("time_window_days")
+            try:
+                time_window_val = (
+                    int(time_window_raw) if time_window_raw is not None else None
+                )
+            except (ValueError, TypeError):
+                time_window_val = None
+
+            result = await MemoryService.handle_search_memory(
+                user_id=user_id,
+                query=arguments.get("query", ""),
+                top_k=top_k_val,
+                time_window_days=time_window_val,
+                entity_type=arguments.get("entity_type"),
+            )
+        else:
+            entity_ids = arguments.get("entity_ids", [])
+            if not isinstance(entity_ids, list):
+                entity_ids = []
+            relation_types = arguments.get("relation_types")
+            if not isinstance(relation_types, list):
+                relation_types = None
+            try:
+                max_depth = max(1, min(int(arguments.get("max_depth", 1)), 3))
+            except (ValueError, TypeError):
+                max_depth = 1
+            result = await MemoryService.handle_get_memory_subgraph(
+                user_id=user_id,
+                entity_ids=entity_ids,
+                max_depth=max_depth,
+                direction=arguments.get("direction", "both"),
+                relation_types=relation_types,
+            )
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as e:
+        logger.exception("Memory tool failed: %s", e)
+        return json.dumps(
+            {
+                "error": exception_to_user_message(
+                    e, fallback_key="memory_tool_execution_failed"
+                )
+            },
+            ensure_ascii=False,
+        )
+
+
 async def execute_tool_call(
     tool_name: str,
     arguments: dict,
@@ -358,23 +790,16 @@ async def execute_tool_call(
 ) -> Any:
     """Execute a tool and return the result payload."""
     from app.core.i18n import t
-    from app.models.tool import Tool, CustomToolType
     from app.llm.tools import tool_registry
 
     if tool_name == "ask_user":
+        # In-band interaction, not an external execution: no approval gate.
         return await tool_registry.execute(tool_name, arguments)
 
     from app.services.error_messages import exception_to_user_message
 
-    if tool_name in {
-        "list_assets",
-        "inspect_asset",
-        "read_asset",
-        "search_asset",
-        "materialize_asset",
-        "view_asset",
-    }:
-        return await _execute_asset_tool(
+    if _is_policy_managed_tool(tool_name):
+        return await _execute_policy_managed_tool(
             tool_name,
             arguments,
             agent=agent,
@@ -392,381 +817,136 @@ async def execute_tool_call(
             "download": 60,
         }
 
-    # Knowledge base search
-    if tool_name == "knowledge_search":
-        if not agent:
-            return json.dumps({"error": t("agent_context_required")})
-
-        try:
-            from app.models.agent import AgentKnowledgeBase
-            from app.services.retrieval import (
-                RetrievalRequest,
-                RetrievalTarget,
-                retrieve,
-                validated_search_mode,
-            )
-
-            query = arguments.get("query", "")
-            top_k = arguments.get("top_k", 5)
-            agent_kbs = await AgentKnowledgeBase.filter(
-                agent_id=agent.id
-            ).prefetch_related("knowledge_base")
-            targets = tuple(
-                RetrievalTarget(
-                    kb_id=link.knowledge_base.id,
-                    kb_name=link.knowledge_base.name,
-                    team_id=link.knowledge_base.team_id,
-                    status=link.knowledge_base.status,
-                    embedding_model_id=link.knowledge_base.embedding_model_id,
-                    rerank_model_id=link.knowledge_base.rerank_model_id,
-                    settings=link.knowledge_base.settings,
-                    search_mode=validated_search_mode(link.search_mode),
-                    score_threshold=link.score_threshold,
-                )
-                for link in agent_kbs
-            )
-            response = await retrieve(
-                RetrievalRequest(query=query, targets=targets, top_k=top_k)
-            )
-            return json.dumps(
-                {"contexts": with_rag_citation_ids(response.results)},
-                ensure_ascii=False,
-                default=str,
-            )
-        except Exception as e:
-            logger.exception("RAG search failed: %s", e)
-            return json.dumps({"error": t("rag_search_failed")})
-
-    # Memory tools
-    memory_tools = {
-        "create_memory_entity",
-        "create_memory_relation",
-        "update_memory_entity",
-        "search_memory",
-        "get_memory_subgraph",
-    }
-    if tool_name in memory_tools:
-        if not user:
-            return json.dumps({"error": t("user_context_required")})
-        from app.services.memory import MemoryService
-
-        try:
-            user_id = user.id
-            if tool_name == "create_memory_entity":
-                result = await MemoryService.handle_create_entity(
-                    user_id=user_id,
-                    name=arguments.get("name", ""),
-                    entity_type=arguments.get("entity_type", "fact"),
-                    description=arguments.get("description"),
-                    properties=arguments.get("properties"),
-                )
-            elif tool_name == "create_memory_relation":
-                result = await MemoryService.handle_create_relation(
-                    user_id=user_id,
-                    source_entity_name=arguments.get("source_entity_name", ""),
-                    target_entity_name=arguments.get("target_entity_name", ""),
-                    relation_type=arguments.get("relation_type", "related_to"),
-                    description=arguments.get("description"),
-                )
-            elif tool_name == "update_memory_entity":
-                result = await MemoryService.handle_update_entity(
-                    user_id=user_id,
-                    entity_name=arguments.get("entity_name", ""),
-                    description=arguments.get("description"),
-                    properties=arguments.get("properties"),
-                )
-            elif tool_name == "search_memory":
-                top_k_raw = arguments.get("top_k", 5)
-                try:
-                    top_k_val = max(1, min(int(top_k_raw), 10))
-                except (ValueError, TypeError):
-                    top_k_val = 5
-
-                time_window_raw = arguments.get("time_window_days")
-                try:
-                    time_window_val = (
-                        int(time_window_raw) if time_window_raw is not None else None
-                    )
-                except (ValueError, TypeError):
-                    time_window_val = None
-
-                result = await MemoryService.handle_search_memory(
-                    user_id=user_id,
-                    query=arguments.get("query", ""),
-                    top_k=top_k_val,
-                    time_window_days=time_window_val,
-                    entity_type=arguments.get("entity_type"),
-                )
-            else:
-                entity_ids = arguments.get("entity_ids", [])
-                if not isinstance(entity_ids, list):
-                    entity_ids = []
-                relation_types = arguments.get("relation_types")
-                if not isinstance(relation_types, list):
-                    relation_types = None
-                try:
-                    max_depth = max(1, min(int(arguments.get("max_depth", 1)), 3))
-                except (ValueError, TypeError):
-                    max_depth = 1
-                result = await MemoryService.handle_get_memory_subgraph(
-                    user_id=user_id,
-                    entity_ids=entity_ids,
-                    max_depth=max_depth,
-                    direction=arguments.get("direction", "both"),
-                    relation_types=relation_types,
-                )
-            return json.dumps(result, ensure_ascii=False)
-        except Exception as e:
-            logger.exception("Memory tool failed: %s", e)
-            return json.dumps(
-                {
-                    "error": exception_to_user_message(
-                        e, fallback_key="memory_tool_execution_failed"
-                    )
-                },
-                ensure_ascii=False,
-            )
-
-    # Skill tool (format: skill_<name>_<short_id>)
-    if tool_name.startswith("skill_"):
-        from app.services.skill import SkillService
+    if tool_name.startswith(("mcp_", "custom_")):
+        from app.services.agent_tool_execution import execute_agent_stored_tool
+        from app.llm.tools.interaction import ToolInteractionRequest
         from app.schemas.response import BusinessError
 
-        if not agent:
-            return json.dumps(
-                {"error": t("agent_context_required_for_skill")}, ensure_ascii=False
-            )
-
         try:
-            skill, skill_config = await SkillService.resolve_agent_skill_tool(
-                agent,
-                tool_name,
-            )
-            skill_tool = SkillService.to_tool_info(skill, config=skill_config)
-            return await tool_registry.execute_tool_info(
-                skill_tool,
-                arguments,
-                agent=agent,
-                session_id=session_id,
-            )
-        except BusinessError as e:
+            result = await execute_agent_stored_tool(agent, tool_name, arguments, user)
+        except BusinessError as exc:
             return json.dumps(
-                {"error": t(e.msg_key or "skill_execution_failed", **e.kwargs)},
+                {"error": t(exc.msg_key or "tool_execution_failed")},
                 ensure_ascii=False,
             )
-        except Exception as e:
-            logger.exception("Skill execution failed: %s", e)
-            return json.dumps(
-                {
-                    "error": exception_to_user_message(
-                        e, fallback_key="skill_execution_failed"
-                    )
-                },
-                ensure_ascii=False,
-            )
-
-    # MCP tool (format: mcp_<server_name>_<tool_name>)
-    if tool_name.startswith("mcp_"):
-        from app.llm.tools.mcp_client import execute_mcp_tool
-
-        parts = tool_name.split("_", 2)
-        if len(parts) >= 3:
-            server_name = parts[1]
-            actual_tool_name = parts[2]
-            try:
-                server_tool = await Tool.filter(
-                    name=server_name, type="mcp", is_enabled=True
-                ).first()
-                if not server_tool or not server_tool.mcp_config:
-                    return json.dumps(
-                        {
-                            "error": t(
-                                "mcp_tool_missing_configuration", tool_name=server_name
-                            )
-                        },
-                        ensure_ascii=False,
-                    )
-                mcp_result = await execute_mcp_tool(
-                    mcp_config=server_tool.mcp_config,
-                    tool_name=actual_tool_name,
-                    arguments=arguments,
-                    timeout=tool_timeouts.get("mcp", 60),
-                )
-                return json.dumps(
-                    {
-                        "success": mcp_result.success,
-                        "result": mcp_result.result,
-                        "error": mcp_result.error,
-                    },
-                    ensure_ascii=False,
-                )
-            except Exception as e:
-                logger.exception("MCP tool execution failed: %s", e)
-                return json.dumps(
-                    {
-                        "error": exception_to_user_message(
-                            e, fallback_key="mcp_tool_execution_failed"
-                        )
-                    },
-                    ensure_ascii=False,
-                )
-        return json.dumps({"error": t("invalid_mcp_tool_name")}, ensure_ascii=False)
-
-    # Custom tool (format: custom_<name>)
-    if tool_name.startswith("custom_"):
-        tool_name_without_prefix = tool_name[len("custom_") :]
-        tool = await Tool.filter(name=tool_name_without_prefix, is_enabled=True).first()
-        if not tool:
-            return json.dumps({"error": t("custom_tool_not_found")}, ensure_ascii=False)
-
-        tool_type = tool.custom_type
-
-        # HTTP tool
-        if tool_type == CustomToolType.HTTP:
-            try:
-                from app.llm.tools.executors import (
-                    execute_http_tool as _execute_http_tool,
-                    format_http_result_for_llm,
-                )
-
-                result = await _execute_http_tool(
-                    http_config=tool.http_config,
-                    arguments=arguments,
-                    credentials=tool.credentials,
-                    timeout=tool_timeouts.get("http", 30),
-                )
-                llm_result = format_http_result_for_llm(result)
-                return json.dumps(
-                    {"result": result, "llm_result": llm_result}, ensure_ascii=False
-                )
-            except Exception as e:
-                logger.exception("HTTP tool execution failed: %s", e)
-                return json.dumps(
-                    {
-                        "error": exception_to_user_message(
-                            e, fallback_key="tool_execution_failed"
-                        )
-                    },
-                    ensure_ascii=False,
-                )
-
-        # Code tool
-        if tool_type == CustomToolType.CODE:
-            try:
-                result = await _execute_code_tool(
-                    tool=tool,
-                    arguments=arguments,
-                    tool_timeouts=tool_timeouts,
-                    session_id=session_id,
-                    agent=agent,
-                )
-                return json.dumps(result, ensure_ascii=False)
-            except Exception as e:
-                logger.exception("Code tool execution failed: %s", e)
-                return json.dumps(
-                    {
-                        "error": exception_to_user_message(
-                            e, fallback_key="code_tool_execution_failed"
-                        )
-                    },
-                    ensure_ascii=False,
-                )
-        # Database tool
-        if tool_type == CustomToolType.DATABASE:
-            try:
-                from app.llm.tools.builtin.db_executor import execute_database_tool
-
-                result = await execute_database_tool(
-                    tool=tool,
-                    arguments=arguments,
-                    timeout=tool_timeouts.get("database", 15.0),
-                )
-                return json.dumps(result, ensure_ascii=False)
-            except Exception as e:
-                logger.exception("Database tool execution failed: %s", e)
-                return json.dumps(
-                    {
-                        "error": exception_to_user_message(
-                            e, fallback_key="tool_execution_failed"
-                        )
-                    },
-                    ensure_ascii=False,
-                )
-
-        return json.dumps({"error": t("unsupported_tool_type")}, ensure_ascii=False)
-    # File download tool
-    if tool_name == "file_download":
-        try:
-            from app.llm.tools.executors import (
-                execute_http_tool as _execute_http_tool,
-                format_http_result_for_llm,
-            )
-
-            result = await _execute_http_tool(
-                http_config={"url": arguments.get("url", ""), "method": "GET"},
-                arguments={},
-                timeout=tool_timeouts.get("download", 60),
-            )
-            llm_result = format_http_result_for_llm(result)
-            return json.dumps(
-                {"result": result, "llm_result": llm_result}, ensure_ascii=False
-            )
-        except Exception as e:
-            logger.exception("File download failed: %s", e)
-            return json.dumps(
-                {
-                    "error": exception_to_user_message(
-                        e, fallback_key="tool_execution_failed"
-                    )
-                },
-                ensure_ascii=False,
-            )
+        if isinstance(result, ToolInteractionRequest):
+            return result
+        return json.dumps(result, ensure_ascii=False, default=str)
 
     # Try to execute as a registered builtin or skill-attached sandbox tool
     tool_info = tool_registry.get_tool(tool_name)
     sandbox_tool_class = tool_registry.get_sandbox_tool_class(tool_name)
     if (tool_info and tool_info.handler) or sandbox_tool_class:
+        from app.llm.tools.interaction import ToolInteractionRequest
+        from app.models.tool_approval import ExecutionEntrypoint
+        from app.models.user import User
+        from app.schemas.response import BusinessError
+        from app.services.tool import ToolExecutor
+        from app.services.tool_context import (
+            coerce_execution_entrypoint,
+            coerce_execution_run_kind,
+            current_tool_identity,
+        )
+        from app.services.tool_execution import PendingToolApproval, ToolCallContext
+
+        agent_tool_config: dict[str, Any] = {}
+        binding: dict[str, Any] = {
+            "connection_mode": None,
+            "connection_id": None,
+            "grant_id": None,
+        }
+        if agent and getattr(agent, "tools_config", None):
+            for tc in agent.tools_config:
+                if (
+                    isinstance(tc, dict)
+                    and tc.get("type") == "builtin"
+                    and tc.get("name") == tool_name
+                ):
+                    agent_tool_config = tc.get("config") or {}
+                    from app.services.builtin_tools import (
+                        extract_builtin_binding,
+                    )
+
+                    binding = extract_builtin_binding(tc)
+                    break
+
+        # 搜索引擎由 agent 编排配置严格决定，不交由模型决定
+        if tool_name == "web_search":
+            arguments["search_engine"] = agent_tool_config.get("engine") or "auto"
+
+        team_id = getattr(agent, "team_id", None) if agent else None
+        actor = (
+            await User.get_or_none(id=getattr(user, "id", None))
+            if getattr(user, "id", None)
+            else None
+        )
+        if agent is None or team_id is None or actor is None:
+            return json.dumps({"error": t("user_context_required")}, ensure_ascii=False)
+
+        runtime = current_tool_identity()
+        from app.services.builtin_tools import parse_optional_uuid
+
         try:
-            credentials = None
-            # 检查当前 Agent 是否针对此工具单独配置了 config (如 engine, api_key)
-            agent_tool_config: dict[str, Any] = {}
-            if agent and getattr(agent, "tools_config", None):
-                for tc in agent.tools_config:
-                    if (
-                        isinstance(tc, dict)
-                        and tc.get("type") == "builtin"
-                        and tc.get("name") == tool_name
-                    ):
-                        agent_tool_config = tc.get("config") or {}
-                        break
+            bound_connection_id = parse_optional_uuid(binding["connection_id"])
+            bound_grant_id = parse_optional_uuid(binding["grant_id"])
+        except BusinessError as e:
+            return json.dumps(
+                {"error": t(e.msg_key or "tool_connection_invalid")},
+                ensure_ascii=False,
+            )
+        context = ToolCallContext(
+            actor=actor,
+            team_id=team_id,
+            entrypoint=(
+                coerce_execution_entrypoint(runtime.entrypoint, default="chat")
+                if runtime
+                else ExecutionEntrypoint.CHAT
+            ),
+            entrypoint_id=(
+                runtime.entrypoint_id
+                if runtime and runtime.entrypoint_id
+                else (str(conversation_id) if conversation_id else str(agent.id))
+            ),
+            run_kind=(
+                coerce_execution_run_kind(getattr(runtime, "run_kind", "agent"))
+                if runtime and runtime.run_id
+                else None
+            ),
+            run_id=runtime.run_id if runtime else None,
+            tool_call_id=runtime.tool_call_id if runtime else None,
+            connection_mode=binding["connection_mode"],
+            connection_id=bound_connection_id,
+            grant_id=bound_grant_id,
+            interactive=runtime.interactive if runtime else True,
+        )
 
-            if (
-                tool_info
-                and tool_info.handler
-                and _tool_accepts_credentials(tool_info.handler)
-            ):
-                credentials = await _get_builtin_tool_credentials(
-                    tool_name, agent, agent_tool_config
-                )
-
-            # 搜索引擎由 agent 编排配置严格决定，不交由模型决定
-            if tool_name == "web_search":
-                arguments["search_engine"] = agent_tool_config.get("engine") or "auto"
-
-            scope_context: dict[str, Any] = {}
-            if workflow_run_id is not None:
-                scope_context["workflow_run_id"] = workflow_run_id
-            return await tool_registry.execute(
-                tool_name,
-                arguments,
-                credentials=credentials,
+        try:
+            result = await ToolExecutor().execute_builtin_tool(
+                tool_name=tool_name,
+                arguments=arguments,
+                team_id=team_id,
+                context=context,
+                conversation_id=conversation_id,
+                workflow_run_id=workflow_run_id,
                 agent_tool_config=agent_tool_config,
-                session_id=session_id,
                 agent=agent,
                 user=user,
+                session_id=session_id,
                 current_images=current_images,
-                conversation_id=conversation_id,
-                **scope_context,
+            )
+            if isinstance(result, PendingToolApproval):
+                return ToolInteractionRequest(
+                    tool_name=tool_name,
+                    arguments={
+                        "interaction_kind": "tool_approval",
+                        "execution_id": str(result.execution_id),
+                    },
+                )
+            return result
+        except BusinessError as e:
+            return json.dumps(
+                {"error": t(e.msg_key or "tool_execution_failed", **e.kwargs)},
+                ensure_ascii=False,
             )
         except Exception as e:
             logger.exception("Builtin tool execution failed: %s", e)
@@ -783,193 +963,6 @@ async def execute_tool_call(
     return json.dumps(
         {"error": t("tool_not_found", tool_name=tool_name)}, ensure_ascii=False
     )
-
-
-def _tool_accepts_credentials(handler: Any) -> bool:
-    import inspect
-
-    return "credentials" in inspect.signature(handler).parameters
-
-
-async def _get_builtin_tool_credentials(
-    tool_name: str,
-    agent: "Agent | None",
-    agent_tool_config: dict[str, Any] | None = None,
-) -> dict[str, str]:
-    if tool_name == "web_search":
-        return {}
-
-    from app.models.tool_config import ToolConfig
-
-    credentials: dict[str, str] = {}
-    team_id = getattr(agent, "team_id", None) if agent else None
-
-    # Team settings override global credentials for other builtin tools.
-    if team_id:
-        tool_config = await ToolConfig.filter(
-            tool_name=tool_name, team_id=team_id
-        ).first()
-        if tool_config and tool_config.credentials:
-            for k, v in tool_config.credentials.items():
-                if k not in credentials and v:
-                    credentials[k] = v
-
-    # Merge missing global credentials.
-    global_config = await ToolConfig.filter(tool_name=tool_name, team_id=None).first()
-    if global_config and global_config.credentials:
-        for k, v in global_config.credentials.items():
-            if k not in credentials and v:
-                credentials[k] = v
-
-    return credentials
-
-
-async def _execute_code_tool(
-    tool: "Tool",
-    arguments: dict,
-    tool_timeouts: dict | None = None,
-    session_id: str | None = None,
-    agent: "Agent | None" = None,
-) -> dict[str, Any]:
-    """Execute a code tool."""
-    from app.llm.tools.sandbox import execute_code
-    from app.services.error_messages import exception_to_user_message
-
-    code_config = tool.code_config or {}
-    language = code_config.get("language", "python")
-    code = code_config.get("code", "")
-    timeout = tool_timeouts.get("code", 60) if tool_timeouts else 60
-
-    try:
-        result = await execute_code(
-            language=language,
-            code=code,
-            params=arguments,
-            timeout=timeout,
-            session_id=session_id,
-            agent_id=str(agent.id) if agent and getattr(agent, "id", None) else None,
-            team_id=str(agent.team_id)
-            if agent and getattr(agent, "team_id", None)
-            else None,
-        )
-        return {
-            "success": result.success,
-            "result": result.result,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "error": result.error,
-        }
-    except Exception as e:
-        logger.exception("Code tool execution failed: %s", e)
-        return {
-            "error": exception_to_user_message(
-                e, fallback_key="code_tool_execution_failed"
-            ),
-            "success": False,
-        }
-
-
-# ============ Additional Tool Functions ============
-
-
-async def execute_http_tool(
-    tool: "Tool",
-    arguments: dict,
-    timeout: float = 30.0,
-) -> str:
-    """
-    Execute an HTTP-based custom tool.
-
-    Args:
-        tool: The Tool model instance
-        arguments: Tool arguments passed from LLM
-        timeout: Execution timeout in seconds
-
-    Returns:
-        JSON string with execution result
-    """
-    from app.llm.tools.executors import (
-        execute_http_tool as shared_execute_http_tool,
-        format_http_result_for_llm,
-    )
-
-    result = await shared_execute_http_tool(
-        http_config=tool.http_config,
-        arguments=arguments,
-        credentials=tool.credentials,
-        timeout=timeout,
-    )
-    return format_http_result_for_llm(result)
-
-
-async def execute_code_tool(
-    tool: "Tool",
-    arguments: dict,
-    timeout: float = 60.0,
-) -> str:
-    """
-    Execute a code-based custom tool.
-
-    Args:
-        tool: The Tool model instance
-        arguments: Tool arguments passed from LLM
-        timeout: Execution timeout in seconds
-
-    Returns:
-        JSON string with execution result
-    """
-    from app.core.i18n import t
-    from app.llm.tools.sandbox import execute_code
-    from app.services.error_messages import exception_to_user_message
-
-    code_config = tool.code_config or {}
-    language = code_config.get("language", "python")
-    code = code_config.get("code", "")
-
-    if not code:
-        return json.dumps({"error": t("tool_code_not_defined")}, ensure_ascii=False)
-
-    try:
-        exec_result = await execute_code(
-            language=language,
-            code=code,
-            params=arguments,
-            timeout=timeout,
-        )
-
-        if exec_result.success:
-            result = exec_result.result
-            # Include stdout logs if present
-            if exec_result.stdout:
-                if isinstance(result, dict):
-                    result["__logs__"] = exec_result.stdout
-                else:
-                    result = {"value": result, "__logs__": exec_result.stdout}
-            return (
-                json.dumps(result, ensure_ascii=False)
-                if isinstance(result, (dict, list))
-                else str(result)
-            )
-        else:
-            return json.dumps(
-                {
-                    "error": exec_result.error or t("code_execution_failed"),
-                    "logs": exec_result.stdout or "",
-                },
-                ensure_ascii=False,
-            )
-
-    except Exception as e:
-        logger.exception("Code tool execution error: %s", e)
-        return json.dumps(
-            {
-                "error": exception_to_user_message(
-                    e,
-                    fallback_key="code_tool_execution_failed",
-                )
-            },
-            ensure_ascii=False,
-        )
 
 
 async def build_file_content_for_context(

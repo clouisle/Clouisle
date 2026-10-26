@@ -316,7 +316,7 @@ async def test_embed_durable_run_routes_validate_embed_access_and_delegate(monke
     post_input = AsyncMock(return_value=input_result)
     stop_result = {"data": {"status": "stopping"}}
     stop = AsyncMock(return_value=stop_result)
-    monkeypatch.setattr(chat, "start_chat_run", start)
+    monkeypatch.setattr(chat, "_start_chat_run", start)
     monkeypatch.setattr(chat, "stream_chat_run", stream)
     monkeypatch.setattr(chat, "get_run_status", status)
     monkeypatch.setattr(chat, "get_run_events", events)
@@ -333,7 +333,15 @@ async def test_embed_durable_run_routes_validate_embed_access_and_delegate(monke
         started["data"].stream_url
         == f"/embed/agents/{agent_id}/chat/runs/{run_id}/stream"
     )
-    start.assert_awaited_once_with(agent_id, chat_request, (user, api_key))
+    from app.models.tool_approval import ExecutionEntrypoint
+
+    start.assert_awaited_once_with(
+        agent_id,
+        chat_request,
+        (user, api_key),
+        tool_entrypoint=ExecutionEntrypoint.EMBED,
+        tool_entrypoint_id=str(agent_id),
+    )
 
     assert (
         await embed.embed_stream_chat_run(

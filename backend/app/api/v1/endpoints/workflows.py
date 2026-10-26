@@ -1056,6 +1056,21 @@ async def trigger_workflow_webhook(
     try:
         normalized_inputs = normalize_webhook_inputs(inputs)
 
+        # Provenance comes from the authenticated surface, never from the body:
+        # an API-key call must bind grants to this key, not to the workflow.
+        from app.services.workflow.execution_origin import (
+            ORIGIN_SNAPSHOT_KEY,
+            api_key_origin,
+            origin_snapshot,
+            workflow_origin,
+        )
+
+        origin = (
+            api_key_origin(api_key.id)
+            if api_key is not None
+            else workflow_origin(matched_workflow.id)
+        )
+
         # Create run record with authenticated user
         run = await WorkflowRun.create(
             workflow_id=matched_workflow.id,
@@ -1064,6 +1079,7 @@ async def trigger_workflow_webhook(
             is_debug=False,
             status=RunStatus.PENDING,
             inputs=normalized_inputs,
+            context_snapshot={ORIGIN_SNAPSHOT_KEY: origin_snapshot(origin)},
         )
         from app.services.observability_v2 import record_workflow_submission
 
@@ -1123,7 +1139,14 @@ async def run_workflow(
         )
 
     try:
-        # Create run record first
+        # Create run record first. Provenance is server-derived: this route is
+        # the workflow surface regardless of the workflow's configured trigger.
+        from app.services.workflow.execution_origin import (
+            ORIGIN_SNAPSHOT_KEY,
+            origin_snapshot,
+            workflow_origin,
+        )
+
         run = await WorkflowRun.create(
             workflow_id=workflow_id,
             trigger_type=workflow.trigger_type,
@@ -1131,6 +1154,9 @@ async def run_workflow(
             is_debug=False,
             status=RunStatus.PENDING,
             inputs=run_request.inputs,
+            context_snapshot={
+                ORIGIN_SNAPSHOT_KEY: origin_snapshot(workflow_origin(workflow_id))
+            },
         )
         from app.services.observability_v2 import record_workflow_submission
 
@@ -1193,7 +1219,13 @@ async def debug_workflow(
     )
 
     try:
-        # Create run record first
+        # Debug runs are still the workflow surface, not the configured trigger.
+        from app.services.workflow.execution_origin import (
+            ORIGIN_SNAPSHOT_KEY,
+            origin_snapshot,
+            workflow_origin,
+        )
+
         run = await WorkflowRun.create(
             workflow_id=workflow_id,
             trigger_type=workflow.trigger_type,
@@ -1201,6 +1233,9 @@ async def debug_workflow(
             is_debug=True,
             status=RunStatus.PENDING,
             inputs=run_request.inputs,
+            context_snapshot={
+                ORIGIN_SNAPSHOT_KEY: origin_snapshot(workflow_origin(workflow_id))
+            },
         )
         from app.services.observability_v2 import record_workflow_submission
 

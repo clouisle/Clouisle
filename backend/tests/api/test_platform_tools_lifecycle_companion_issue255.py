@@ -63,6 +63,10 @@ def db_tool(**overrides):
         "mcp_config": {},
         "credentials": {"token": "secret"},
         "is_enabled": True,
+        "identity_policy": "none",
+        "connection_fields": [],
+        "approval_policy": {},
+        "definition_version": 1,
         "created_by_id": uuid4(),
         "created_by": SimpleNamespace(username="creator"),
         "created_at": now,
@@ -242,37 +246,34 @@ async def test_custom_mcp_execution_covers_configuration_success_and_failure(
         mcp_config={},
         visibility=DBToolVisibility.TEAM,
     )
+    execute = AsyncMock(
+        return_value={"success": True, "result": {"ok": True}, "error": None}
+    )
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: None)
-    monkeypatch.setattr(tools, "check_tool_access", AsyncMock())
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(first=mcp_tool))
+    monkeypatch.setattr(tools, "ToolExecutor", lambda: SimpleNamespace(execute=execute))
 
     missing = data(
         await tools.test_tool(ToolExecuteRequest(name=mcp_tool.name), team_id, current)
     )
     assert missing.success is False
     assert missing.error
+    execute.assert_not_awaited()
 
     mcp_tool.mcp_config = {"transport": "sse", "url": "https://mcp.test"}
-    execute = AsyncMock(
-        return_value=SimpleNamespace(success=True, result={"ok": True}, error=None)
-    )
-    monkeypatch.setattr(tools, "execute_mcp_tool", execute)
     request = ToolExecuteRequest(
         name=mcp_tool.name,
         arguments={"__tool_name__": "remote_name", "value": 1},
     )
     succeeded = data(await tools.test_tool(request, team_id, current))
     assert succeeded.success is True
-    execute.assert_awaited_once_with(
-        mcp_config=mcp_tool.mcp_config,
-        tool_name="remote_name",
-        arguments={"value": 1},
-        timeout=60.0,
-    )
+    tool_arg, args_arg = execute.await_args.args
+    assert tool_arg is mcp_tool
+    assert args_arg == {"value": 1}
+    assert execute.await_args.kwargs["operation"] == "remote_name"
+    assert request.arguments == {"__tool_name__": "remote_name", "value": 1}
 
-    monkeypatch.setattr(
-        tools, "execute_mcp_tool", AsyncMock(side_effect=RuntimeError("secret detail"))
-    )
+    execute.side_effect = RuntimeError("secret detail")
     monkeypatch.setattr(
         tools,
         "resolve_user_visible_error",
@@ -296,30 +297,31 @@ async def test_custom_code_missing_and_unsupported_types_do_not_execute(monkeypa
         code_config={},
         visibility=DBToolVisibility.TEAM,
     )
+    execute = AsyncMock()
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: None)
-    monkeypatch.setattr(tools, "check_tool_access", AsyncMock())
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(first=custom))
-    submit = AsyncMock()
-    monkeypatch.setattr(tools.sandbox_gateway, "submit_and_wait", submit)
+    monkeypatch.setattr(tools, "ToolExecutor", lambda: SimpleNamespace(execute=execute))
 
     missing_code = data(
         await tools.test_tool(ToolExecuteRequest(name=custom.name), team_id, current)
     )
     assert missing_code.success is False
-    submit.assert_not_awaited()
+    execute.assert_not_awaited()
 
+    custom.code_config = {"language": "python", "code": "return 1"}
     custom.custom_type = None
+    execute.side_effect = ValueError("unsupported custom tool type")
     unsupported = data(
         await tools.test_tool(ToolExecuteRequest(name=custom.name), team_id, current)
     )
     assert unsupported.success is False
     assert unsupported.error
-    submit.assert_not_awaited()
 
+    execute.side_effect = None
     custom.custom_type = CustomToolType.DATABASE
     custom.database_config = {}
     missing_database = data(
         await tools.test_tool(ToolExecuteRequest(name=custom.name), team_id, current)
     )
     assert missing_database.success is False
-    submit.assert_not_awaited()
+    assert execute.await_count == 1

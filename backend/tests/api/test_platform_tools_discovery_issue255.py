@@ -62,6 +62,10 @@ def db_tool(**overrides):
         "mcp_config": {},
         "credentials": {},
         "is_enabled": True,
+        "identity_policy": "none",
+        "connection_fields": [],
+        "approval_policy": {},
+        "definition_version": 1,
         "created_by_id": uuid4(),
         "created_by": SimpleNamespace(username="creator"),
     }

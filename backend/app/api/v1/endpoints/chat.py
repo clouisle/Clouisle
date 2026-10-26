@@ -1432,17 +1432,24 @@ async def chat(
 
 
 @router.post("/{agent_id}/chat/stream")
-async def chat_stream(
+async def _chat_stream_impl(
     agent_id: UUID,
     chat_in: ChatRequest,
-    request: Request,
-    auth_result: tuple[User, "APIKey | None"] = Depends(
-        deps.get_current_user_or_api_key
-    ),
+    auth_result: Any,
+    *,
+    tool_entrypoint: Any = None,
+    tool_entrypoint_id: str | None = None,
 ) -> StreamingResponse:
-    """Queue a durable run and subscribe to its replayable SSE events."""
-    del request
-    started = await start_chat_run(agent_id, chat_in, auth_result)
+    if tool_entrypoint is None and tool_entrypoint_id is None:
+        started = await start_chat_run(agent_id, chat_in, auth_result)
+    else:
+        started = await _start_chat_run(
+            agent_id,
+            chat_in,
+            auth_result,
+            tool_entrypoint=tool_entrypoint,
+            tool_entrypoint_id=tool_entrypoint_id,
+        )
     start_data = RunStartOut.model_validate(started["data"])
     from app.services.agent_run_stream import sse_events
 
@@ -1455,6 +1462,20 @@ async def chat_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/{agent_id}/chat/stream")
+async def chat_stream(
+    agent_id: UUID,
+    chat_in: ChatRequest,
+    request: Request,
+    auth_result: tuple[User, "APIKey | None"] = Depends(
+        deps.get_current_user_or_api_key
+    ),
+) -> StreamingResponse:
+    """Queue a durable run and subscribe to its replayable SSE events."""
+    del request
+    return await _chat_stream_impl(agent_id, chat_in, auth_result)
 
 
 # ============ Message Version Endpoints ============
@@ -1891,6 +1912,7 @@ async def _enqueue_existing_message_run(
         first_round_index=first_round_index,
         message_start=message_start,
         rag_contexts=rag_contexts,
+        tool_entrypoint="chat",
     )
     run.worker_payload = payload
     await run.save(update_fields=["worker_payload"])
@@ -1925,6 +1947,28 @@ async def _enqueue_existing_message_run(
     )
 
 
+async def _start_chat_run(
+    agent_id: UUID,
+    chat_in: ChatRequest,
+    auth_result: Any,
+    *,
+    tool_entrypoint: Any = None,
+    tool_entrypoint_id: str | None = None,
+) -> Any:
+    from app.models.agent_run import AgentRunMode
+    from app.services.agent_submission import start_out, submit_chat_run
+
+    submission = await submit_chat_run(
+        agent_id,
+        chat_in,
+        auth_result,
+        mode=AgentRunMode.SEND,
+        tool_entrypoint=tool_entrypoint,
+        tool_entrypoint_id=tool_entrypoint_id,
+    )
+    return start_out(submission)
+
+
 @router.post(
     "/{agent_id}/chat/runs",
     response_model=Response[RunStartOut],
@@ -1938,16 +1982,7 @@ async def start_chat_run(
     ),
 ) -> Any:
     """Persist a chat request and enqueue its durable AgentRun worker."""
-    from app.models.agent_run import AgentRunMode
-    from app.services.agent_submission import start_out, submit_chat_run
-
-    submission = await submit_chat_run(
-        agent_id,
-        chat_in,
-        auth_result,
-        mode=AgentRunMode.SEND,
-    )
-    return start_out(submission)
+    return await _start_chat_run(agent_id, chat_in, auth_result)
 
 
 @router.get(

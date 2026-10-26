@@ -242,17 +242,26 @@ async def test_tool_execution_missing_code_and_unsupported_type(monkeypatch):
     monkeypatch.setattr(tools.tool_registry, "get_tool", Mock(return_value=None))
 
     custom = SimpleNamespace(
+        name="custom",
+        team_id=uuid4(),
         type=SimpleNamespace(value="custom"),
         custom_type=CustomToolType.CODE,
         code_config={},
     )
-    monkeypatch.setattr(tools.Tool, "filter", Mock(return_value=Query(custom)))
-    result = await tools.test_tool(request)
+    monkeypatch.setattr(tools.Tool, "filter", Mock(return_value=Query([custom])))
+    result = await tools.test_tool(request, team_id=custom.team_id)
     assert result["data"].success is False
 
     custom.custom_type = None
-    result = await tools.test_tool(ToolExecuteRequest(name="custom", arguments={}))
+    execute = AsyncMock(side_effect=ValueError("unsupported custom tool type"))
+    monkeypatch.setattr(
+        tools, "ToolExecutor", Mock(return_value=SimpleNamespace(execute=execute))
+    )
+    result = await tools.test_tool(
+        ToolExecuteRequest(name="custom", arguments={}), team_id=custom.team_id
+    )
     assert result["data"].success is False
+    assert result["data"].error
 
 
 @pytest.mark.parametrize(

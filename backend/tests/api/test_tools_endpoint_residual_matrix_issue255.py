@@ -121,6 +121,10 @@ async def test_update_tool_missing_duplicate_and_full_lifecycle(monkeypatch):
         created_by_id=uuid4(),
         created_by=SimpleNamespace(username="ada"),
         visibility=DBToolVisibility.TEAM,
+        identity_policy="none",
+        connection_fields=[],
+        approval_policy={},
+        definition_version=1,
         save=AsyncMock(),
     )
     monkeypatch.setattr(
@@ -161,7 +165,6 @@ async def test_update_tool_missing_duplicate_and_full_lifecycle(monkeypatch):
         custom_type="http",
         parameters=[],
         http_config={"method": "GET", "url": "https://example.test"},
-        credentials={"token": "secret"},
         is_enabled=False,
     )
     response = await tools.update_tool(tool_id, update, request, user)
@@ -193,6 +196,10 @@ async def test_duplicate_tool_advances_name_and_creates_disabled_copy(monkeypatc
         code_config={},
         mcp_config={},
         credentials={},
+        identity_policy="none",
+        connection_fields=[],
+        approval_policy={},
+        definition_version=1,
     )
     duplicate = SimpleNamespace(id=uuid4(), name="runner_copy_2")
     filters = [

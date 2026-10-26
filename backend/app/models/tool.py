@@ -19,6 +19,7 @@ class ToolType(str, Enum):
 
     CUSTOM = "custom"  # Custom tool (HTTP API or Code)
     MCP = "mcp"  # MCP Server
+    BUILTIN = "builtin"  # Registry-defined builtin, materialized per team
 
 
 class CustomToolType(str, Enum):
@@ -155,6 +156,11 @@ class Tool(models.Model):
     # Credentials/secrets (stored encrypted in production)
     # {"api_key": "sk-xxx", "secret": "xxx"}
     credentials: dict = fields.JSONField(default=dict, description="Tool credentials")  # type: ignore[assignment]
+
+    identity_policy = fields.CharField(max_length=20, default="none")
+    connection_fields: list = fields.JSONField(default=list)  # type: ignore[assignment]
+    approval_policy: dict = fields.JSONField(default=dict)  # type: ignore[assignment]
+    definition_version = fields.IntField(default=1)
 
     # Status
     is_enabled = fields.BooleanField(

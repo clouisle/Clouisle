@@ -171,6 +171,8 @@ async def test_mcp_list_tools_success_and_failure_are_mocked():
 @pytest.mark.anyio
 async def test_test_tool_mcp_branches_do_not_hit_real_mcp():
     mcp_tool = SimpleNamespace(
+        id=uuid4(),
+        name="stored_mcp",
         type=DBToolType.MCP,
         custom_type=None,
         visibility=DBToolVisibility.TEAM,
@@ -179,54 +181,59 @@ async def test_test_tool_mcp_branches_do_not_hit_real_mcp():
         mcp_config={"transport": "http", "url": "https://mcp.test"},
     )
     _ToolModel.tool = mcp_tool
-    result = SimpleNamespace(success=True, result={"ok": True}, error=None)
+    execute = AsyncMock(
+        return_value={"success": True, "result": {"ok": True}, "error": None}
+    )
     request = ToolExecuteRequest(
         name="stored_mcp", arguments={"__tool_name__": "remote_lookup", "q": "x"}
     )
 
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_tool_access", new=AsyncMock()),
         patch("app.api.v1.endpoints.tools.Tool", _ToolModel),
         patch(
-            "app.api.v1.endpoints.tools.execute_mcp_tool",
-            new=AsyncMock(return_value=result),
-        ) as execute,
+            "app.api.v1.endpoints.tools.ToolExecutor",
+            return_value=SimpleNamespace(execute=execute),
+        ),
     ):
-        response = await tools.test_tool(request, team_id=uuid4(), current_user=_user())
+        response = await tools.test_tool(
+            request, team_id=mcp_tool.team_id, current_user=_user()
+        )
 
-    execute.assert_awaited_once_with(
-        mcp_config=mcp_tool.mcp_config,
-        tool_name="remote_lookup",
-        arguments={"q": "x"},
-        timeout=60.0,
-    )
+    tool_arg, args_arg = execute.await_args.args
+    assert tool_arg is mcp_tool
+    assert args_arg == {"q": "x"}
+    assert execute.await_args.kwargs["operation"] == "remote_lookup"
     assert response["data"].success is True
-    assert request.arguments == {"q": "x"}
+    assert request.arguments == {"__tool_name__": "remote_lookup", "q": "x"}
 
     mcp_tool.mcp_config = {}
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_tool_access", new=AsyncMock()),
         patch("app.api.v1.endpoints.tools.Tool", _ToolModel),
+        patch(
+            "app.api.v1.endpoints.tools.ToolExecutor",
+            return_value=SimpleNamespace(execute=execute),
+        ),
     ):
         missing_config = await tools.test_tool(
             ToolExecuteRequest(name="stored_mcp", arguments={}),
-            team_id=uuid4(),
+            team_id=mcp_tool.team_id,
             current_user=_user(),
         )
 
     assert missing_config["data"].success is False
     assert "stored_mcp" in missing_config["data"].error
+    execute.assert_awaited_once()
 
     mcp_tool.mcp_config = {"transport": "http"}
+    execute.side_effect = RuntimeError("boom")
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_tool_access", new=AsyncMock()),
         patch("app.api.v1.endpoints.tools.Tool", _ToolModel),
         patch(
-            "app.api.v1.endpoints.tools.execute_mcp_tool",
-            new=AsyncMock(side_effect=RuntimeError("boom")),
+            "app.api.v1.endpoints.tools.ToolExecutor",
+            return_value=SimpleNamespace(execute=execute),
         ),
         patch(
             "app.api.v1.endpoints.tools.resolve_user_visible_error",
@@ -235,7 +242,7 @@ async def test_test_tool_mcp_branches_do_not_hit_real_mcp():
     ):
         failed = await tools.test_tool(
             ToolExecuteRequest(name="stored_mcp", arguments={}),
-            team_id=uuid4(),
+            team_id=mcp_tool.team_id,
             current_user=_user(),
         )
 
@@ -252,6 +259,8 @@ async def test_code_execution_validation_and_saved_code_missing_code():
     assert "ruby" in unsupported["data"].error
 
     _ToolModel.tool = SimpleNamespace(
+        id=uuid4(),
+        name="empty_code",
         type=DBToolType.CUSTOM,
         custom_type=DBCustomToolType.CODE,
         visibility=DBToolVisibility.TEAM,
@@ -261,14 +270,16 @@ async def test_code_execution_validation_and_saved_code_missing_code():
     )
     with (
         patch("app.api.v1.endpoints.tools.tool_registry.get_tool", return_value=None),
-        patch("app.api.v1.endpoints.tools.check_tool_access", new=AsyncMock()),
         patch("app.api.v1.endpoints.tools.Tool", _ToolModel),
     ):
-        await tools.test_tool(
+        missing = await tools.test_tool(
             ToolExecuteRequest(name="empty_code", arguments={}),
-            team_id=uuid4(),
+            team_id=_ToolModel.tool.team_id,
             current_user=_user(),
         )
+
+    assert missing["data"].success is False
+    assert missing["data"].error
 
 
 @pytest.mark.anyio

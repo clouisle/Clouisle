@@ -225,15 +225,15 @@ async def embed_chat_stream(
     await _get_embed_agent(agent_id, api_key, request)
 
     # Delegate to the original chat_stream endpoint (it handles conversation creation)
-    from app.api.v1.endpoints.chat import (
-        chat_stream as _original_chat_stream,
-    )
+    from app.api.v1.endpoints.chat import _chat_stream_impl
+    from app.models.tool_approval import ExecutionEntrypoint
 
-    return await _original_chat_stream(
-        agent_id=agent_id,
-        chat_in=chat_in,
-        request=request,
-        auth_result=(user, api_key),
+    return await _chat_stream_impl(
+        agent_id,
+        chat_in,
+        (user, api_key),
+        tool_entrypoint=ExecutionEntrypoint.EMBED,
+        tool_entrypoint_id=str(agent_id),
     )
 
 
@@ -252,9 +252,16 @@ async def embed_start_chat_run(
     user, api_key = auth_result
     await _get_embed_agent(agent_id, api_key, request)
 
-    from app.api.v1.endpoints.chat import start_chat_run
+    from app.api.v1.endpoints.chat import _start_chat_run
+    from app.models.tool_approval import ExecutionEntrypoint
 
-    started = await start_chat_run(agent_id, chat_in, (user, api_key))
+    started = await _start_chat_run(
+        agent_id,
+        chat_in,
+        (user, api_key),
+        tool_entrypoint=ExecutionEntrypoint.EMBED,
+        tool_entrypoint_id=str(agent_id),
+    )
     run = RunStartOut.model_validate(started["data"])
     return success(
         data=run.model_copy(
@@ -519,6 +526,14 @@ async def embed_run_workflow(
     body = await request.json()
     inputs = body.get("inputs", {})
 
+    # The embed surface is its own entrypoint: grants bind to the embedded
+    # resource, not to the API key owner or the workflow's configured trigger.
+    from app.services.workflow.execution_origin import (
+        ORIGIN_SNAPSHOT_KEY,
+        embed_origin,
+        origin_snapshot,
+    )
+
     run = await WorkflowRun.create(
         workflow_id=workflow_id,
         trigger_type=workflow.trigger_type,
@@ -526,6 +541,9 @@ async def embed_run_workflow(
         is_debug=False,
         status=RunStatus.PENDING,
         inputs=inputs,
+        context_snapshot={
+            ORIGIN_SNAPSHOT_KEY: origin_snapshot(embed_origin(workflow_id))
+        },
     )
     from app.services.observability_v2 import record_workflow_submission
 

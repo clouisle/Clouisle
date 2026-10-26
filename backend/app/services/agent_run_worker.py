@@ -30,7 +30,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 from uuid import UUID, uuid4
@@ -94,6 +95,8 @@ def build_payload(
     first_round_index: int = 1,
     rag_contexts: list[dict[str, Any]] | None = None,
     message_start: dict[str, Any] | None = None,
+    tool_entrypoint: str | None = None,
+    tool_entrypoint_id: str | None = None,
 ) -> dict[str, Any]:
     """Serializable run payload: primitives + reloadable ids only."""
     return {
@@ -133,6 +136,8 @@ def build_payload(
         "message_start": message_start or {},
         "rag_contexts": rag_contexts,
         "first_round_index": first_round_index,
+        "tool_entrypoint": tool_entrypoint,
+        "tool_entrypoint_id": tool_entrypoint_id,
     }
 
 
@@ -483,6 +488,8 @@ async def _rebuild_context(
         round_id=UUID(payload["round_id"]),
         protected_round_id=UUID(payload["round_id"]),
         user_locale=effective_locale,
+        tool_entrypoint=payload.get("tool_entrypoint"),
+        tool_entrypoint_id=payload.get("tool_entrypoint_id"),
         max_iterations=None,
         iteration_offset=int(payload.get("iteration_offset", 0)),
         streaming=is_streaming,
@@ -583,6 +590,193 @@ async def _transition_active_run(
     return current, False
 
 
+def _marker_int(value: Any, field: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"{field} is invalid")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} is invalid") from exc
+
+
+def _marker_uuid(value: Any) -> UUID | None:
+    if value in (None, ""):
+        return None
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("approval resume round_id is invalid") from exc
+
+
+async def _execute_approved_pending_tool(
+    payload: dict[str, Any],
+    *,
+    run: AgentRun,
+    agent: Agent,
+    conversation: Conversation,
+) -> dict[str, Any] | None:
+    """Execute the original deferred tool call, then persist its tool result.
+
+    Approval is not a tool result: this runs the bound original operation with
+    the approved parameters (loaded by the execution boundary), persists the
+    real result for the same tool_call_id, and only then lets the model resume.
+    """
+    marker = payload.pop("resume_tool_approval", None)
+    if not isinstance(marker, dict):
+        return payload
+    tool_call_id = str(marker.get("tool_call_id") or "")
+    tool_name = str(marker.get("tool_name") or "")
+    tool_display_name = str(marker.get("tool_display_name") or tool_name)
+    if not tool_call_id or not tool_name:
+        raise RuntimeError("approval resume marker is invalid")
+    execution_id = UUID(str(marker["execution_id"]))
+    round_id = _marker_uuid(marker.get("round_id")) or run.active_round_id
+    round_index = _marker_int(marker.get("round_index"), "round_index")
+    iteration_index = _marker_int(marker.get("iteration_index"), "iteration_index")
+
+    started_at = time.time()
+    started_clock = time.monotonic()
+    trajectory_arguments: dict[str, Any] = {}
+    metric_status = "completed"
+    metric_error_category: str | None = None
+    is_error = False
+    try:
+        from app.api.v1.endpoints.chat_tools import execute_tool_call
+        from app.llm.tools.interaction import ToolInteractionRequest
+        from app.models.tool_approval import ToolExecutionStatus
+        from app.models.user import User
+        from app.services import tool_approvals
+        from app.services.tool_context import (
+            RuntimeToolIdentity,
+            entrypoint_is_interactive,
+            tool_identity_scope,
+        )
+        from app.utils.tool_output import get_tool_execution_payloads
+
+        execution = await tool_approvals.get_execution(execution_id)
+        trajectory_arguments = dict(execution.parameters_preview or {})
+        if (
+            execution.run_id != run.id
+            or getattr(execution.run_kind, "value", execution.run_kind) != "agent"
+            or execution.tool_call_id != tool_call_id
+            or execution.status != ToolExecutionStatus.READY
+        ):
+            raise RuntimeError("approved tool execution is no longer ready")
+
+        entrypoint = getattr(execution.entrypoint, "value", "agent_run")
+        entrypoint_id = execution.entrypoint_id or str(agent.id)
+        actor = await User.get_or_none(id=conversation.user_id)
+        if actor is None:
+            raise RuntimeError("run user is missing")
+        with tool_identity_scope(
+            RuntimeToolIdentity(
+                run_id=run.id,
+                run_kind=getattr(execution.run_kind, "value", "agent"),
+                tool_call_id=tool_call_id,
+                entrypoint=entrypoint,
+                entrypoint_id=entrypoint_id,
+                # Reuse the origin stored on the execution; never re-derive
+                # interactivity from the resume route.
+                interactive=entrypoint_is_interactive(entrypoint),
+            )
+        ):
+            # Route through the same dispatcher AgentLoop uses so builtin,
+            # asset, stored custom/MCP and skill tools share one execution
+            # semantics. Stored/builtin boundaries find the existing execution
+            # by run/tool_call, claim it once and load the approved parameters;
+            # the approval itself is never reused as a tool result.
+            raw_result = await execute_tool_call(
+                tool_name,
+                {},
+                agent=agent,
+                user=actor,
+                conversation_id=conversation.id,
+            )
+        if isinstance(raw_result, ToolInteractionRequest):
+            raise RuntimeError("approved tool execution did not resume")
+        display_result, llm_result = get_tool_execution_payloads(raw_result, tool_name)
+    except Exception as exc:
+        logger.warning(
+            "Approved tool resume failed for run %s execution %s: %s",
+            run.id,
+            execution_id,
+            exc,
+            exc_info=True,
+        )
+        is_error = True
+        metric_status = "failed"
+        metric_error_category = type(exc).__name__[:32]
+        display_result = llm_result = json.dumps(
+            {"error": str(exc) or type(exc).__name__}, ensure_ascii=False
+        )
+
+    if not is_error:
+        try:
+            parsed_result = json.loads(display_result)
+        except (TypeError, ValueError):
+            parsed_result = None
+        if isinstance(parsed_result, dict) and parsed_result.get("error") is not None:
+            metric_status = "failed"
+            metric_error_category = "tool_error"
+
+    finished_clock = time.monotonic()
+    duration_ms = max(0, int((finished_clock - started_clock) * 1000))
+    finished_at = started_at + (finished_clock - started_clock)
+    dependency_metric = {
+        "span_id": str(uuid4()),
+        "kind": "retrieval" if tool_name == "knowledge_search" else "tool",
+        "name": tool_name[:100],
+        "tool_call_id": tool_call_id[:100],
+        "status": metric_status,
+        "started_at": datetime.fromtimestamp(started_at, timezone.utc).isoformat(),
+        "finished_at": datetime.fromtimestamp(finished_at, timezone.utc).isoformat(),
+        "duration_ms": duration_ms,
+        "error_category": metric_error_category,
+    }
+    try:
+        from app.models.observability_payload import ObservabilityTrajectoryEntry
+        from app.services.observability_trajectory import record_tool_call
+
+        parent = (
+            await ObservabilityTrajectoryEntry.filter(run_id=run.id, kind="model")
+            .order_by("-sequence")
+            .first()
+        )
+        await record_tool_call(
+            run_id=run.id,
+            conversation_id=conversation.id,
+            parent_id=parent.id if parent is not None else None,
+            tool_call_id=tool_call_id,
+            tool_name=tool_name,
+            arguments=trajectory_arguments,
+            status=metric_status,
+            started_at=started_at,
+            finished_at=finished_at,
+            duration_ms=duration_ms,
+            kind=dependency_metric["kind"],
+        )
+    except Exception:
+        logger.debug("Resumed tool trajectory dropped", exc_info=True)
+
+    updated = await agent_run_store.record_resumed_tool_result(
+        run.id,
+        tool_call_id=tool_call_id,
+        tool_name=tool_name,
+        tool_display_name=tool_display_name,
+        display_result=display_result,
+        llm_result=llm_result,
+        is_error=is_error,
+        round_id=round_id,
+        round_index=round_index,
+        iteration_index=iteration_index,
+    )
+    if updated is not None:
+        updated["resume_dependency_metrics"] = [dependency_metric]
+    return updated
+
+
 async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
     """Execute one run payload to terminal and persist the canonical round."""
     payload = dict(payload)
@@ -614,6 +808,22 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
         run.status == AgentRunStatus.STOPPING
         or await agent_run_store.has_pending_inputs(run.id, kind=AgentRunInputKind.STOP)
     ):
+        approval_marker = payload.get("resume_tool_approval")
+        if isinstance(approval_marker, dict):
+            from app.models.tool_approval import ToolExecutionCancelReason
+            from app.services import tool_approvals
+
+            try:
+                await tool_approvals.cancel_execution(
+                    UUID(str(approval_marker["execution_id"])),
+                    reason=ToolExecutionCancelReason.RUN_STOPPED,
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to cancel approved execution for stopped run %s",
+                    run.id,
+                    exc_info=True,
+                )
         stopped, transitioned = await _transition_active_run(
             run,
             AgentRunStatus.STOPPED,
@@ -690,6 +900,7 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
     event_queue: asyncio.Queue[tuple[str, dict[str, Any]] | None] = asyncio.Queue()
     publisher_task: asyncio.Task[None] | None = None
     canonical_message_id: UUID | None = None
+    deferred_resume_run: AgentRun | None = None
     sandbox_session_id: str | None = None
     sandbox_round_id: str | None = None
     checkpoint_attempted = False
@@ -737,12 +948,91 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
         # The queued claim above owns RUNNING before publication. Keep this
         # inside the protected lifecycle so stream errors still release locks.
         await stream.publish("run_start", {"status": "running", "run_id": str(run.id)})
+        approval_marker = payload.get("resume_tool_approval")
+        if isinstance(approval_marker, dict):
+            stop_requested = (
+                run.status == AgentRunStatus.STOPPING
+                or await agent_run_store.has_pending_inputs(
+                    run.id, kind=AgentRunInputKind.STOP
+                )
+            )
+            if stop_requested:
+                from app.models.tool_approval import ToolExecutionCancelReason
+                from app.services import tool_approvals
+
+                try:
+                    execution_id = UUID(str(approval_marker["execution_id"]))
+                    await tool_approvals.cancel_execution(
+                        execution_id,
+                        reason=ToolExecutionCancelReason.RUN_STOPPED,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to cancel approved execution for stopped run %s",
+                        run.id,
+                        exc_info=True,
+                    )
+                await agent_run_store.drop_pending_inputs(run.id)
+                stopped, transitioned = await _transition_active_run(
+                    run,
+                    AgentRunStatus.STOPPED,
+                    allowed_statuses=(
+                        AgentRunStatus.RUNNING,
+                        AgentRunStatus.STOPPING,
+                    ),
+                )
+                if stopped is None:
+                    raise LookupError("run not found")
+                if transitioned:
+                    await stream.publish(
+                        "run_end",
+                        {
+                            "status": "stopped",
+                            "message_id": str(
+                                stopped.canonical_message_id
+                                or run.canonical_message_id
+                                or ""
+                            ),
+                        },
+                    )
+                return {"status": stopped.status.value}
+
+            updated_payload = await _execute_approved_pending_tool(
+                payload,
+                run=run,
+                agent=agent,
+                conversation=conversation,
+            )
+            if updated_payload is None:
+                current = await agent_run_store.get_run(run.id)
+                if current is None:
+                    raise LookupError("run not found")
+                if current.status == AgentRunStatus.STOPPING:
+                    await agent_run_store.drop_pending_inputs(run.id)
+                    current, transitioned = await _transition_active_run(
+                        current,
+                        AgentRunStatus.STOPPED,
+                        allowed_statuses=(
+                            AgentRunStatus.RUNNING,
+                            AgentRunStatus.STOPPING,
+                        ),
+                    )
+                    if current is not None and transitioned:
+                        await stream.publish("run_end", {"status": "stopped"})
+                return {"status": current.status.value}
+            payload = updated_payload
+            resume_tool_result = payload.pop("resume_tool_result", None)
         loop_context, user_msg, loop = await _rebuild_context(
             payload,
             agent=agent,
             conversation=conversation,
             event_queue=event_queue,
         )
+        resumed_metrics = payload.pop("resume_dependency_metrics", None)
+        if isinstance(resumed_metrics, list):
+            loop.result.dependency_metrics.extend(
+                metric for metric in resumed_metrics if isinstance(metric, dict)
+            )
         sandbox_session_id = getattr(loop_context, "sandbox_session_id", None)
         if sandbox_session_id:
             sandbox_round_id = (
@@ -916,6 +1206,9 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             resume_payload["first_round_index"] = int(interaction["round_index"]) + 1
             resume_payload["created_message_count"] = loop_context.created_message_count
             resume_payload["iteration_offset"] = int(interaction["iteration_index"])
+            resume_payload["pending_tool_display_name"] = str(
+                interaction.get("display_name") or interaction["tool_name"]
+            )
             # Park only once the stable workspace has been checkpointed. The
             # pause hook runs before AgentLoop has returned to this boundary.
             pending_interaction = {
@@ -951,6 +1244,34 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             # tool_call -> run_status.
             await flush_queued_events()
             pending_tool_call_id = run.pending_tool_call_id
+            # Close the approval/park race: a decision may already have been
+            # recorded while this run was still RUNNING, so the decision
+            # scheduler saw no WAITING row. Re-check now that the pending call
+            # is durable and queue the correct resume before returning.
+            deferred_resume_run = (
+                await agent_run_store.queue_agent_run_resume_if_approval_terminal(
+                    run.id
+                )
+            )
+            current = await agent_run_store.get_run(run.id)
+            if deferred_resume_run is None and (
+                current is not None and current.status != AgentRunStatus.WAITING
+            ):
+                # The decision scheduler won the race and already queued the
+                # run. Do not emit a false WAITING status; the resumed worker
+                # publishes run_start.
+                return {
+                    "status": current.status.value,
+                    "tool_call_id": pending_tool_call_id,
+                }
+            if deferred_resume_run is not None:
+                # Dispatch after the per-conversation lock is released in the
+                # finally block; dispatching while this worker still owns the
+                # lock would make the resumed task fail as lock_busy.
+                return {
+                    "status": AgentRunStatus.QUEUED.value,
+                    "tool_call_id": pending_tool_call_id,
+                }
             await stream.publish(
                 "run_status",
                 {
@@ -1129,6 +1450,26 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
                     await publisher_task
             finally:
                 await agent_run_store.release_run_lock(run.id, conversation.id)
+                if deferred_resume_run is not None:
+                    try:
+                        payload = deferred_resume_run.worker_payload
+                        if not isinstance(payload, dict):
+                            raise RuntimeError("run resume payload is missing")
+                        from app.services.agent_submission import dispatch_run
+
+                        await dispatch_run(payload, deferred_resume_run)
+                    except Exception as exc:
+                        logger.exception(
+                            "Failed to dispatch post-park approval resume for run %s",
+                            run.id,
+                        )
+                        await agent_run_store.transition_run_if_status(
+                            deferred_resume_run,
+                            AgentRunStatus.QUEUED,
+                            AgentRunStatus.FAILED,
+                            error_code="enqueue_failed",
+                            error_message=str(exc),
+                        )
 
 
 async def _create_placeholder(

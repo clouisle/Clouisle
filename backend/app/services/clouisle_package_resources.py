@@ -50,6 +50,10 @@ from app.schemas.clouisle_package import (
 from app.schemas.response import BusinessError, ResponseCode
 from app.api.v1.endpoints.upload import save_generated_upload
 from app.services.document_processor import document_processor
+from app.services.tool_secret_contract import (
+    enforce_tool_secret_contract,
+    sanitize_tool_configs_for_export,
+)
 
 
 async def _check_permission(
@@ -388,6 +392,11 @@ class ToolPackageAdapter(ResourcePackageAdapter):
             )
         if check_scope:
             await check_team_access(tool.team_id, user)
+        http_config, mcp_config, database_config = sanitize_tool_configs_for_export(
+            http_config=tool.http_config,
+            mcp_config=tool.mcp_config,
+            database_config=getattr(tool, "database_config", None),
+        )
         payload = {
             "name": tool.name,
             "display_name": tool.display_name,
@@ -397,12 +406,15 @@ class ToolPackageAdapter(ResourcePackageAdapter):
             "type": _enum_value(tool.type),
             "custom_type": _enum_value(tool.custom_type),
             "parameters": _copy_json(tool.parameters) or [],
-            "http_config": _sanitize_dict(tool.http_config or {}),
+            "http_config": http_config,
             "code_config": _sanitize_dict(tool.code_config or {}),
-            "database_config": _sanitize_dict(
-                getattr(tool, "database_config", None) or {}
-            ),
-            "mcp_config": _sanitize_dict(tool.mcp_config or {}),
+            "database_config": database_config,
+            "mcp_config": mcp_config,
+            # Declarations are not secrets: exporting them keeps the imported
+            # definition usable while the values stay in team connections.
+            "connection_fields": _copy_json(getattr(tool, "connection_fields", None))
+            or [],
+            "identity_policy": getattr(tool, "identity_policy", "none") or "none",
             "is_enabled": tool.is_enabled,
         }
         return payload, [], tool.name
@@ -442,6 +454,13 @@ class ToolPackageAdapter(ResourcePackageAdapter):
         check_update_permission: bool = True,
     ) -> ClouisleImportInstallOut:
         fields = _tool_fields(resource_payload)
+        enforce_tool_secret_contract(
+            credentials=resource_payload.get("credentials"),
+            http_config=fields["http_config"],
+            mcp_config=fields["mcp_config"],
+            database_config=fields["database_config"],
+            connection_fields=fields["connection_fields"],
+        )
         async with in_transaction():
             if install_in.action == ClouisleConflictAction.UPDATE:
                 if check_update_permission:
@@ -457,6 +476,8 @@ class ToolPackageAdapter(ResourcePackageAdapter):
                     )
                 for key, value in fields.items():
                     setattr(existing, key, value)
+                # Packaged definitions never carry inline credentials.
+                existing.credentials = {}
                 await existing.save()
                 return ClouisleImportInstallOut(updated=existing.id)
 
@@ -992,7 +1013,32 @@ def _tool_fields(payload: dict[str, Any]) -> dict[str, Any]:
         "code_config": payload.get("code_config") or {},
         "database_config": payload.get("database_config") or {},
         "mcp_config": payload.get("mcp_config") or {},
+        "connection_fields": _normalized_connection_fields(
+            payload.get("connection_fields")
+        ),
+        "identity_policy": payload.get("identity_policy") or "none",
     }
+
+
+def _normalized_connection_fields(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    fields: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        fields.append(
+            {
+                "name": name,
+                "label": str(item.get("label") or name).strip() or name,
+                "required": bool(item.get("required", True)),
+                "secret": bool(item.get("secret", True)),
+            }
+        )
+    return fields
 
 
 def _agent_fields(payload: dict[str, Any], mapping: dict[str, UUID]) -> dict[str, Any]:

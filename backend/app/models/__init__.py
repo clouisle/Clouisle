@@ -61,6 +61,31 @@ from .tool import (
     ToolVisibility,
 )
 from .tool_config import ToolConfig
+from .tool_connection import (
+    ConnectionEntrypointType,
+    ConnectionGrant,
+    ToolConnection,
+    ToolConnectionScope,
+    ToolConnectionStatus,
+)
+from .tool_approval import (
+    ToolApprovalDecision,
+    ToolApprovalRequest,
+    ToolExecution,
+)
+from .tool_approval_policy import ToolApprovalPolicyDefinition
+from .tool_interaction import (
+    InteractionKind,
+    InteractionOutcome,
+    InteractionRequest,
+    InteractionStatus,
+)
+from .tool_oauth import (
+    ToolOAuthClientAuthMethod,
+    ToolOAuthFlow,
+    ToolOAuthProvider,
+    ToolOAuthProviderKind,
+)
 from .skill import (
     Skill,
     SkillCategory,
@@ -209,6 +234,23 @@ __all__ = [
     "ToolSharePermission",
     "ToolVisibility",
     "ToolConfig",
+    "ToolConnection",
+    "ToolConnectionScope",
+    "ToolConnectionStatus",
+    "ConnectionGrant",
+    "ConnectionEntrypointType",
+    "ToolExecution",
+    "ToolApprovalRequest",
+    "ToolApprovalDecision",
+    "InteractionKind",
+    "InteractionOutcome",
+    "InteractionRequest",
+    "InteractionStatus",
+    "ToolOAuthProvider",
+    "ToolOAuthProviderKind",
+    "ToolOAuthClientAuthMethod",
+    "ToolOAuthFlow",
+    "ToolApprovalPolicyDefinition",
     "Skill",
     "SkillCategory",
     "SkillImportSession",
