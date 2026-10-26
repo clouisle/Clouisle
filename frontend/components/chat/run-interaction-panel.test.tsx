@@ -106,7 +106,7 @@ describe('RunInteractionPanel', () => {
     expect(onRefreshRun).toHaveBeenCalled()
   })
 
-  test('stays hidden without requests and shows a retryable error', async () => {
+  test('keeps empty polling invisible and preserves errors on actual requests', async () => {
     hookState = { interactions: [], isLoading: false, error: null, refresh, respond }
     let renderer!: ReactTestRenderer
     act(() => {
@@ -116,9 +116,27 @@ describe('RunInteractionPanel', () => {
     await flush()
     expect(renderer.toJSON()).toBeNull()
 
+    for (const isLoading of [true, false, true, false]) {
+      hookState = { interactions: [], isLoading, error: null, refresh, respond }
+      act(() => renderer.update(<RunInteractionPanel runId="run-1" enabled />))
+      expect(renderer.toJSON()).toBeNull()
+    }
+
     hookState = { interactions: [], isLoading: false, error: new Error('offline'), refresh, respond }
     act(() => renderer.update(<RunInteractionPanel runId="run-1" enabled />))
     await flush()
+    expect(renderer.toJSON()).toBeNull()
+
+    hookState = {
+      interactions: [{ id: 'interaction-1', status: 'pending' }],
+      isLoading: false,
+      error: new Error('offline'),
+      refresh,
+      respond,
+    }
+    act(() => renderer.update(<RunInteractionPanel runId="run-1" enabled />))
+    await flush()
+    expect(renderer.root.findAllByProps({ 'data-testid': 'card-interaction-1' })).toHaveLength(1)
     const text = JSON.stringify(renderer.toJSON())
     expect(text).toContain('interactionRefreshFailed')
     expect(text).toContain('retry')

@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { Loader2, RefreshCw, ServerCog } from 'lucide-react'
+import { RefreshCw, ServerCog } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { InteractionRequestCard } from '@/components/tool-interactions'
@@ -57,7 +57,7 @@ export function RunInteractionPanel({
     return result
   }
 
-  if (!runId || (!isLoading && !error && interactions.length === 0)) return null
+  if (!runId || interactions.length === 0) return null
 
   return (
     <div
@@ -92,12 +92,6 @@ export function RunInteractionPanel({
         </div>
       )}
 
-      {isLoading && interactions.length === 0 && (
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          {tInteraction('loading')}
-        </p>
-      )}
 
       {interactions.map((interaction) => (
         <InteractionRequestCard
