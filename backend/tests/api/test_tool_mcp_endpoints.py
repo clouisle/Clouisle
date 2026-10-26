@@ -622,3 +622,76 @@ async def test_missing_config_and_selectable_identity_fail_closed(mcp_app, monke
     assert no_mode.status_code == 400
     assert no_mode.json()["code"] == 400
     enumerate_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_discovered_oauth_connection_authenticates_listing_and_execution(
+    mcp_app, monkeypatch
+):
+    from app.services.tool import ToolExecutor
+    from app.services.tool_execution import ToolCallContext
+    from app.models.tool_approval import ExecutionEntrypoint
+
+    team = await _team("auto-oauth", mcp_app.actor)
+    tool = await _tool(
+        team,
+        identity_policy="personal_only",
+        mcp_config={
+            "transport": "http",
+            "url": "https://mcp.example/mcp",
+            "headers": {"Authorization": "stale"},
+        },
+    )
+    connection = await ToolConnectionService.create_connection(
+        actor=mcp_app.actor,
+        payload=ToolConnectionCreate(
+            team_id=team.id,
+            tool_id=tool.id,
+            scope="user",
+            name="OAuth",
+            config={
+                "oauth_provider_id": str(uuid4()),
+                "oauth_access_token": "private-token",
+            },
+        ),
+    )
+    header = AsyncMock(return_value="Bearer private-token")
+    monkeypatch.setattr(ToolOAuthService, "get_authorization_header", header)
+    listing = AsyncMock(return_value=McpEnumeration(items=[]))
+    monkeypatch.setattr(tool_mcp, "enumerate_mcp_tools", listing)
+    response = await mcp_app.client.get(
+        f"/tools/{tool.id}/mcp/tools",
+        params={
+            "team_id": str(team.id),
+            "connection_mode": "personal",
+            "connection_id": str(connection.id),
+        },
+    )
+    assert response.status_code == 200
+    assert (
+        listing.await_args.args[0]["headers"]["Authorization"] == "Bearer private-token"
+    )
+    assert "private-token" not in response.text
+    execution = AsyncMock(return_value=McpToolResult(success=True, result="ok"))
+    monkeypatch.setattr("app.services.tool.execute_mcp_tool", execution)
+    monkeypatch.setattr(
+        "app.services.mcp_interactions.run_with_mcp_callbacks", _passthrough_callbacks
+    )
+    await ToolExecutor().execute(
+        tool,
+        {},
+        operation="search",
+        context=ToolCallContext(
+            actor=mcp_app.actor,
+            team_id=team.id,
+            entrypoint=ExecutionEntrypoint.TOOL_TEST,
+            interactive=True,
+            connection_mode="personal",
+            connection_id=connection.id,
+        ),
+    )
+    assert (
+        execution.await_args.args[0]["headers"]["Authorization"]
+        == "Bearer private-token"
+    )
+    assert header.await_count == 2

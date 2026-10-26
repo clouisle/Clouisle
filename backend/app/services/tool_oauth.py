@@ -939,6 +939,16 @@ class ToolOAuthService:
     # Execution-facing token access
     # ------------------------------------------------------------------
 
+    @staticmethod
+    async def has_oauth_binding(resolved: ResolvedConnection | None) -> bool:
+        """Detect a discovered provider without exposing filtered token secrets."""
+        if resolved is None:
+            return False
+        connection = await ToolConnection.filter(
+            id=resolved.connection_id, tool_id=resolved.tool_id
+        ).first()
+        return bool(connection and CONNECTION_PROVIDER_ID in connection.secret_fields)
+
     @classmethod
     async def get_access_token(
         cls,

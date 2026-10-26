@@ -122,7 +122,12 @@ class ToolExecutor:
                     else (tool.http_config or {}).get("oauth2")
                 )
                 authorization = None
-                if oauth_config:
+                from app.services.tool_oauth import ToolOAuthService
+
+                if oauth_config or (
+                    tool_type == ToolType.MCP.value
+                    and await ToolOAuthService.has_oauth_binding(resolved)
+                ):
                     if resolved is None:
                         from app.schemas.response import BusinessError
 
@@ -131,7 +136,6 @@ class ToolExecutor:
                             msg_key="tool_connection_required",
                             status_code=403,
                         )
-                    from app.services.tool_oauth import ToolOAuthService
 
                     authorization = await ToolOAuthService.get_authorization_header(
                         resolved

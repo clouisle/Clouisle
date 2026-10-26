@@ -231,14 +231,15 @@ async def _build_mcp_config(
             str(name): _render_text_template(str(value), secrets)
             for name, value in raw.items()
         }
-    if config.get("oauth"):
+    from app.services.tool_oauth import ToolOAuthService
+
+    if config.get("oauth") or await ToolOAuthService.has_oauth_binding(resolved):
         if resolved is None:
             raise BusinessError(
                 code=403,
                 msg_key="tool_connection_required",
                 status_code=403,
             )
-        from app.services.tool_oauth import ToolOAuthService
 
         authorization = await ToolOAuthService.get_authorization_header(resolved)
         if authorization:
