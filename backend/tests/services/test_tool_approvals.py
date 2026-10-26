@@ -532,3 +532,43 @@ async def test_caller_gate_allows_actor_without_team_membership():
         assert (await service.get_execution(execution.id)).status == (
             ToolExecutionStatus.READY
         )
+
+
+@pytest.mark.asyncio
+async def test_submit_execution_decision_by_execution_id():
+    from app.api.v1.endpoints.tool_approvals import submit_execution_decision
+    from app.schemas.tool_approval import ToolApprovalDecisionIn
+
+    async with _database():
+        actor = await _user("exec-decide-actor")
+        team = await _team("exec-team", actor)
+        tool = await _tool(
+            team,
+            {
+                "default_decision": "require_approval",
+                "gates": [{"kind": "caller"}],
+            },
+        )
+        execution = await service.create_execution(
+            tool=tool,
+            operation="test_op",
+            parameters={},
+            actor=actor,
+            team_id=tool.team_id,
+            entrypoint=ExecutionEntrypoint.CHAT,
+            entrypoint_interactive=True,
+        )
+        assert execution.status == ToolExecutionStatus.AWAITING_APPROVAL
+
+        result = await submit_execution_decision(
+            execution_id=execution.id,
+            payload=ToolApprovalDecisionIn(
+                decision="approve",
+                idempotency_key="exec-approve-1",
+            ),
+            current_user=actor,
+        )
+        assert result["data"].execution_status == ToolExecutionStatus.READY
+        assert result["data"].remaining_approvals == 0
+        refreshed = await service.get_execution(execution.id)
+        assert refreshed.status == ToolExecutionStatus.READY

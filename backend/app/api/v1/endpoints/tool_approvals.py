@@ -18,7 +18,13 @@ from fastapi import APIRouter, Depends, Query
 from app.api import deps
 from app.models.tool_approval import ToolApprovalRequest
 from app.models.user import User
-from app.schemas.response import PageData, Response, success
+from app.schemas.response import (
+    BusinessError,
+    PageData,
+    Response,
+    ResponseCode,
+    success,
+)
 from app.schemas.tool_approval import (
     ApprovalRequestStatus,
     ExecutionRunKind,
@@ -169,6 +175,57 @@ async def get_my_execution(
 ):
     execution = await get_execution_for_viewer(execution_id, current_user)
     return success(data=ToolExecutionOut.model_validate(execution))
+
+
+@execution_router.post(
+    "/{execution_id}/decision",
+    response_model=Response[ToolApprovalDecisionResultOut],
+    summary="Approve or reject a tool execution directly by execution ID",
+)
+async def submit_execution_decision(
+    execution_id: UUID,
+    payload: ToolApprovalDecisionIn,
+    current_user: User = Depends(deps.get_current_user),
+):
+    """Directly decide the pending approval gate for an execution in chat."""
+    execution = await get_execution_for_viewer(execution_id, current_user)
+    request = await ToolApprovalRequest.filter(
+        execution_id=execution.id,
+        status=ApprovalRequestStatus.PENDING,
+    ).first()
+    if not request:
+        raise BusinessError(
+            code=ResponseCode.TOOL_APPROVAL_REQUEST_NOT_FOUND,
+            msg_key="tool_approval_request_not_found",
+            status_code=404,
+        )
+    decision = await decide_approval(
+        request.id,
+        current_user,
+        decision=payload.decision,
+        reason=payload.reason,
+        idempotency_key=payload.idempotency_key,
+    )
+    fresh_execution = await get_execution(decision.execution_id)
+    if fresh_execution.run_kind == ExecutionRunKind.AGENT:
+        try:
+            await agent_run_store.schedule_agent_run_approval_resume(fresh_execution)
+        except Exception:
+            logger.exception(
+                "Failed to schedule approval resume for execution %s",
+                fresh_execution.id,
+            )
+    remaining = await ToolApprovalRequest.filter(
+        execution_id=fresh_execution.id,
+        status=ApprovalRequestStatus.PENDING,
+    ).count()
+    return success(
+        data=ToolApprovalDecisionResultOut(
+            decision=ToolApprovalDecisionOut.model_validate(decision),
+            execution_status=fresh_execution.status,
+            remaining_approvals=remaining,
+        )
+    )
 
 
 __all__ = ["execution_router", "router"]
