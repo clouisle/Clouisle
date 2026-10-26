@@ -131,7 +131,8 @@ export function PromptGenerateDialog({
           content += event.data.delta
           setGeneratedPrompt(content)
         } else if (event.type === 'error') {
-          throw new Error(event.data.msg)
+          toast.error(event.data.msg || t('errors.generateFailed'))
+          return
         }
       }
     } catch (error) {

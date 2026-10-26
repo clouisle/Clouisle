@@ -1,6 +1,19 @@
 # Implementation Plan
 
 ## Active
+- **agent-prompt-runtime-conflicts** — Completed. See `docs/plan/agent-prompt-runtime-conflicts.md`.
+  - [x] 1. Correct runtime capability guidance
+  - [x] 2. Separate generated business rules from platform protocols
+  - [x] 3. Verify prompt composition and tool boundaries
+
+- **prompt-generator-quota-errors** — Completed. See `docs/plan/prompt-generator-quota-errors.md`.
+  - [x] 1. Preserve safe provider-quota error semantics
+  - [x] 2. Verify dialog reporting and document recovery
+
+- **agent-prompt-generation-alignment** — Completed. See `docs/plan/agent-prompt-generation-alignment.md`.
+  - [x] 1. Align editor context and bilingual generation instructions
+  - [x] 2. Verify compatibility and document the generation contract
+
 - **deepseek-search-provider** — Completed. See `docs/plan/deepseek-search-provider.md`.
   - [x] 1. Site configuration, encrypted key and runtime dispatch
   - [x] 2. Admin dialog, enabled-engine selectors and localization

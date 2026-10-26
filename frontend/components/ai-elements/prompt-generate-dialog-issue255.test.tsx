@@ -109,13 +109,28 @@ describe('prompt generate dialog Issue #255 callbacks', () => {
       yield { type: 'error', data: { msg: 'stream failed' } }
     })
     await act(async () => button(renderer, 'generate').props.onClick())
-    expect(toastError).toHaveBeenCalledWith('errors.generateFailed')
 
     parseStream.mockImplementation(async function* () { yield { type: 'content_delta', data: { delta: 'result' } } })
     await act(async () => button(renderer, 'generate').props.onClick())
     Object.defineProperty(globalThis.navigator, 'clipboard', { configurable: true, value: { writeText: mock(async () => { throw new Error('denied') }) } })
     await act(async () => button(renderer, 'copy').props.onClick())
     expect(toastError).toHaveBeenCalledWith('errors.copyFailed')
+  })
+
+  test('shows a safe quota error and restores controls without applying a prompt', async () => {
+    const onApply = mock(() => {})
+    const renderer = render({ onApply })
+    describePrompt(renderer, 'Generate a support prompt')
+    parseStream.mockImplementationOnce(async function* () {
+      yield { type: 'error', data: { code: 6103, msg: '模型配额已用尽' } }
+    })
+
+    await act(async () => button(renderer, 'generate').props.onClick())
+
+    expect(toastError).toHaveBeenCalledWith('模型配额已用尽')
+    expect(renderer.root.findByProps({ id: 'description' }).props.disabled).toBe(false)
+    expect(button(renderer, 'generate').props.disabled).toBe(false)
+    expect(onApply).not.toHaveBeenCalled()
   })
 
   test('restores generation controls after a stream error and allows a successful retry', async () => {
@@ -128,7 +143,6 @@ describe('prompt generate dialog Issue #255 callbacks', () => {
 
     await act(async () => button(renderer, 'generate').props.onClick())
 
-    expect(toastError).toHaveBeenCalledWith('errors.generateFailed')
     expect(renderer.root.findByProps({ id: 'description' }).props.disabled).toBe(false)
     expect(button(renderer, 'regenerate')).toBeDefined()
     expect(button(renderer, 'apply')).toBeDefined()

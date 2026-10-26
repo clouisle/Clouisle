@@ -58,13 +58,27 @@ Content-Type: application/json
 | `style.include_cot` | boolean | No | Whether to include Chain-of-Thought thinking guidelines |
 | `style.include_constraints` | boolean | No | Whether to include explicit safety and boundary constraints |
 | `context` | object | No | Bound agent context; see the subfields below |
-| `context.tools` | array | No | Configured tools (`[{"name": ..., "description": ...}]`) |
-| `context.knowledge_bases` | array | No | Knowledge base metadata (`[{"name": ..., "description": ...}]`) |
-| `context.rag_mode` | string | No | RAG retrieval mode |
-| `context.variables` | array | No | Defined variables |
-| `context.capabilities` | object | No | Enabled runtime capabilities |
+| `context.tools` | array | No | Configured tool metadata: `type`, `name`, optional `display_name`, `description`, IDs and `config`. Names identify tools; display labels do not replace them. MCP/skill entries do not enumerate their internal tools. |
+| `context.knowledge_bases` | array | No | Linked knowledge base `name`, `description` and retrieval `config` |
+| `context.rag_mode` | string | No | `off`: no linked-KB retrieval; `auto`: platform-injected retrieval; `agentic`: on-demand `knowledge_search` when knowledge bases are linked |
+| `context.variables` | array | No | Defined variables and their type, required/default values, descriptions and limits; generated prompts may reference their `{{name}}` placeholders |
+| `context.capabilities` | object | No | `enable_attachments`, `enable_user_input_request` (`ask_user`), `enable_citations`, `enable_memory`, `enable_image_generation`, `enable_video_generation`, plus `attachment_config`, `memory_config`, `image_generation_config`, `video_generation_config` |
+
+The Agent orchestration editor supplies current editor values, including unsaved capability changes. Explicitly disabled capabilities are identified as disabled; their stale configuration is omitted from the generation context. Omitted capability flags mean unknown, not enabled. Context guides generation only: it does not grant runtime access or enable any tool.
+
+Generation produces the business role, task workflow and output requirements, not a copy of the platform's runtime manuals. Runtime tool schemas and capability-dependent instructions remain authoritative. `{{query}}` refers to the current user message; `{{fileContent}}` is not supported for attachment injection. Citation instructions require both the citation preference and actual sources. These changes affect newly generated prompts only; existing saved system prompts are not rewritten.
+
+Memory-specific generation follows the chat runtime: `enable_memory=false` exposes no memory tools. When enabled, `search_memory` and `get_memory_subgraph` can retrieve long-term user information. `memory_config.auto_extract=false` keeps those reads but removes entity/relation write tools; `true` (the runtime default when omitted) permits the available write tools, not guaranteed automatic saving on every turn. Generated business instructions should define relevant retrieval/storage conditions, not invent memories, relationships, tool arguments or persistence guarantees. Current conversation history, long-term memory and knowledge bases are distinct sources.
+
+Generated instructions explicitly prioritize platform/system constraints and safety boundaries over user instructions, and user instructions over default style/efficiency. They require impact disclosure and specific confirmation before payments/transfers, deletion/overwriting, public publishing, permission changes, external disclosure of private data or bulk modifications. Writable memory is limited to explicitly expressed long-term preferences, project background or stable habits; temporary task details are excluded. Necessary clarification/confirmation follows the injected `ask_user` protocol when enabled, with efficient grouping and choices; conversational clarification is the fallback when disabled. Repeated style and factuality requirements are consolidated; a 15–20% reduction is a target for repetitive drafts, not a guaranteed output-length reduction or grounds to omit safety/business requirements.
+
+The generator distinguishes internal design constraints from emitted business instructions. Runtime owns response language, Markdown/math/image rendering, time, memory retrieval/deduplication/date normalization, sandbox operations, question mechanics and citation syntax. Do not duplicate these protocols in the saved business prompt or override them with fixed-language, prose-first question or alternate citation rules. The generation `language` field controls the generated text's language, not subsequent chat language. Business prompts retain domain-specific responsibilities, workflows, stable-memory subject matter and risk-confirmation conditions. Media confirmation metadata is not itself proof of an enforced runtime gate.
+
+Injected memory guidance matches chat tool exposure: read-only memory no longer advertises write tools; write guidance is added only when `auto_extract` permits writes. Sandbox guidance applies only to actually supplied tools and does not imply a full sandbox toolset. Existing saved prompts are not automatically deduplicated or rewritten.
 
 ### Response (`200 OK`, `text/event-stream`)
+
+Generation uses the enabled **global default chat model**, not the model selected for the Agent. Optimization uses the same selection. If that provider returns HTTP `402` or an insufficient-quota error, the SSE error has business code `6103` (`MODEL_QUOTA_EXCEEDED`) and a localized quota-exhaustion message, which the generation dialog displays. This does not replenish quota: check the provider account/API key for the global default model, fund or raise its quota, or explicitly configure another default chat model. No automatic retry or model fallback is performed by these endpoints. Other unexpected provider failures retain a generic safe message; raw provider payloads are not exposed to the client.
 
 Streams the generated prompt as SSE events: `start` (`{"model": "..."}`), `content_delta` (`{"delta": "..."}`), `complete` (`{"total_length": n}`), and `error` (`{"code": ..., "msg": "..."}`).
 

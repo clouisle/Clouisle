@@ -380,6 +380,8 @@ export function AgentOrchestrationForm({
     capabilities: {
       enable_attachments: enableAttachments,
       attachment_config: enableAttachments ? attachmentConfig : null,
+      enable_user_input_request: enableUserInputRequest,
+      enable_citations: agent.enable_citations,
       enable_memory: enableMemory,
       memory_config: enableMemory ? memoryConfig : null,
       enable_image_generation: enableImageGeneration,
@@ -387,7 +389,7 @@ export function AgentOrchestrationForm({
       enable_video_generation: enableVideoGeneration,
       video_generation_config: enableVideoGeneration ? videoGenerationConfig : null,
     },
-  }), [agent.name, agent.description, toolsConfig, availableTools, knowledgeBases, knowledgeBaseConfigs, variables, effectiveRagMode, enableAttachments, attachmentConfig, enableMemory, memoryConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig])
+  }), [agent.name, agent.description, agent.enable_citations, toolsConfig, availableTools, knowledgeBases, knowledgeBaseConfigs, variables, effectiveRagMode, enableAttachments, attachmentConfig, enableUserInputRequest, enableMemory, memoryConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig])
 
   return (
     <div className="space-y-3">

@@ -155,20 +155,31 @@ def test_temporal_instruction_uses_day_granularity():
     assert re.match(r"^\d{4}-\d{2}-\d{2},?$", date_match.group(1))
 
 
-def test_memory_prompt_contains_temporal_grounding_rules():
-    prompt = build_system_prompt(
-        _agent(enable_memory=True),
-        user_message="hi",
-        user_locale="en",
-        invocation_mode=CHAT_MODE,
-    )
-    assert "### Temporal Grounding Rules" in prompt
-    assert "search_memory(query, time_window_days, entity_type)" in prompt
-    assert (
-        "get_memory_subgraph(entity_ids, max_depth, direction, relation_types)"
-        in prompt
-    )
-    assert "convert relative time expressions" in prompt
+@pytest.mark.anyio
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize(
+    "config", [{"auto_extract": False}, {"auto_extract": True}, {}]
+)
+async def test_memory_prompt_write_guidance_matches_available_tools(enabled, config):
+    from app.api.v1.endpoints.chat import get_agent_tools
+    from app.models.agent import RAGMode
+
+    agent = _agent(enable_memory=enabled, rag_mode=RAGMode.OFF)
+    agent.memory_config = config
+    agent.enable_image_generation = False
+    agent.enable_video_generation = False
+    tools = {tool["function"]["name"] for tool in await get_agent_tools(agent)}
+    reads = {"search_memory", "get_memory_subgraph"}
+    writes = {"create_memory_entity", "update_memory_entity", "create_memory_relation"}
+    expected = reads | writes if enabled and config.get("auto_extract", True) else reads
+    if not enabled:
+        expected = set()
+    assert tools & (reads | writes) == expected
+
+    prompt = build_system_prompt(agent, invocation_mode=CHAT_MODE)
+    assert {name for name in reads | writes if name in prompt} == expected
+    workflow_prompt = build_system_prompt(agent, invocation_mode=WORKFLOW_MODE)
+    assert all(name not in workflow_prompt for name in reads | writes)
 
 
 def test_chat_mode_injects_ask_user_guidance_when_enabled():

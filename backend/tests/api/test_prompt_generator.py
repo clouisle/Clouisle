@@ -2,10 +2,13 @@ import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
+import openai
 import pytest
 
 from app.api.v1.endpoints import prompt_generator
 from app.schemas.response import ResponseCode
+from app.llm.errors import InsufficientQuotaError
 
 
 async def collect_events(response):
@@ -107,6 +110,52 @@ def test_context_and_style_helpers_cover_empty_and_populated_boundaries():
         )
         == "- Include Chain-of-Thought guidance for showing reasoning process"
     )
+
+
+@pytest.mark.parametrize("language", ["zh", "en"])
+def test_disabled_capability_configs_do_not_override_current_switches(language):
+    context = prompt_generator.PromptGenerateContext(
+        capabilities={
+            "enable_memory": False,
+            "memory_config": {"auto_extract": True},
+            "enable_attachments": False,
+            "attachment_config": {"max_files": 8},
+            "enable_image_generation": False,
+            "image_generation_config": {"max_images": 4},
+            "enable_video_generation": False,
+            "video_generation_config": {"max_duration": 10},
+            "enable_user_input_request": True,
+        },
+    )
+
+    rendered = prompt_generator.build_context_string(context, language)
+
+    assert "ask_user" in rendered
+    for config_key in (
+        "memory_config",
+        "attachment_config",
+        "image_generation_config",
+        "video_generation_config",
+    ):
+        assert config_key not in rendered
+
+
+def test_tool_callable_name_is_preserved_alongside_display_label():
+    rendered = prompt_generator.build_context_string(
+        prompt_generator.PromptGenerateContext(
+            tools=[
+                {
+                    "type": "builtin",
+                    "name": "web_search",
+                    "display_name": "联网搜索",
+                }
+            ],
+        ),
+        "zh",
+    )
+
+    assert "web_search" in rendered
+    assert "联网搜索" in rendered
 
 
 @pytest.mark.asyncio
@@ -256,3 +305,52 @@ async def test_optimize_prompt_normalizes_provider_error(monkeypatch, audit_log)
     assert "event: start" in events
     assert f'"code": {ResponseCode.UNKNOWN_ERROR}' in events
     assert "secret" not in events
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("endpoint", ["generate", "optimize"])
+@pytest.mark.parametrize("typed", [False, True])
+async def test_provider_quota_errors_are_safe_and_terminal(
+    monkeypatch, audit_log, endpoint, typed
+):
+    mock_default_model(monkeypatch, SimpleNamespace(name="default"))
+    body = {
+        "error": {
+            "message": "Call failed: Insufficient token quota. secret-provider-data",
+            "type": "rate_limit_error",
+            "code": "too_many_requests",
+        }
+    }
+    error = (
+        InsufficientQuotaError(message="secret-provider-data")
+        if typed
+        else openai.APIStatusError(
+            "Call failed: Insufficient token quota.",
+            response=httpx.Response(
+                402, request=httpx.Request("POST", "https://example.test")
+            ),
+            body=body,
+        )
+    )
+    monkeypatch.setattr(
+        "app.llm.adapters.chat.factory.create_chat_model",
+        MagicMock(return_value=FakeChatModel(error=error)),
+    )
+    if endpoint == "generate":
+        response = await prompt_generator.generate_prompt(
+            MagicMock(),
+            prompt_generator.PromptGenerateRequest(description="Help"),
+            MagicMock(),
+        )
+    else:
+        response = await prompt_generator.optimize_prompt(
+            MagicMock(), "Old prompt", "Improve", MagicMock()
+        )
+
+    events = await collect_events(response)
+    payload = json.loads(events.split("event: error\ndata: ", 1)[1])
+
+    assert payload["code"] == ResponseCode.MODEL_QUOTA_EXCEEDED
+    assert payload["msg"] == prompt_generator.t("model_quota_exceeded")
+    assert "secret-provider-data" not in events
+    assert "event: complete" not in events
