@@ -3,7 +3,7 @@
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Any, Iterator
 from uuid import UUID
 
 
@@ -92,3 +92,52 @@ def tool_identity_scope(identity: RuntimeToolIdentity) -> Iterator[None]:
         yield
     finally:
         _identity.reset(token)
+
+
+def get_agent_tool_require_approval(
+    agent: Any,
+    tool_name: str,
+    tool_id: UUID | str | None = None,
+) -> bool:
+    """Check if the user explicitly enabled confirmation for this tool in the agent."""
+    if not agent:
+        return False
+    tools_config = getattr(agent, "tools_config", None)
+    if not tools_config and isinstance(agent, dict):
+        tools_config = agent.get("tools_config")
+    if not tools_config or not isinstance(tools_config, list):
+        return False
+    target_id_str = str(tool_id) if tool_id else None
+    for tc in tools_config:
+        if not isinstance(tc, dict):
+            continue
+        if not tc.get("require_approval"):
+            continue
+        tc_type = tc.get("type")
+        # 1. Builtin
+        if tc_type == "builtin" and tc.get("name") == tool_name:
+            return True
+        # 2. Custom
+        if tc_type == "custom":
+            tc_id = str(tc.get("tool_id") or "")
+            if target_id_str and tc_id == target_id_str:
+                return True
+            tc_name = tc.get("name")
+            if tc_name and (tool_name == tc_name or tool_name == f"custom_{tc_name}"):
+                return True
+        # 3. MCP
+        if tc_type == "mcp":
+            tc_id = str(tc.get("server_id") or tc.get("tool_id") or "")
+            if target_id_str and tc_id == target_id_str:
+                return True
+            tc_name = tc.get("name")
+            if tc_name and tool_name.startswith(f"mcp_{tc_name}_"):
+                return True
+        # 4. Skill
+        if tc_type == "skill":
+            tc_id = str(tc.get("skill_id") or tc.get("tool_id") or "")
+            if target_id_str and tc_id == target_id_str:
+                return True
+            if tool_name.startswith("skill_"):
+                return True
+    return False

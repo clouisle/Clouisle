@@ -64,6 +64,7 @@ async def execute_agent_stored_tool(
             else None,
             grant_id=UUID(config["grant_id"]) if config.get("grant_id") else None,
             interactive=runtime.interactive if runtime else False,
+            require_approval=bool(config.get("require_approval", False)),
         )
         result = await ToolExecutor().execute(
             tool, arguments, context=context, operation=operation

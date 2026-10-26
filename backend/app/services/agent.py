@@ -967,6 +967,7 @@ class AgentService:
         from app.services.tool_context import (
             coerce_execution_entrypoint,
             current_tool_identity,
+            get_agent_tool_require_approval,
         )
         from app.services.tool_execution import PendingToolApproval, ToolCallContext
 
@@ -1014,6 +1015,7 @@ class AgentService:
             connection_id=bound_connection_id,
             grant_id=bound_grant_id,
             interactive=runtime.interactive if runtime else False,
+            require_approval=get_agent_tool_require_approval(agent, tool_name),
         )
 
         try:

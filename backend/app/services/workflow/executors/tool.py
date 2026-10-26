@@ -298,6 +298,7 @@ class ToolNodeExecutor(NodeExecutor):
                 connection_id=connection_id,
                 grant_id=grant_id,
                 interactive=False,
+                require_approval=False,
             )
 
             # A parked call only reaches this point again after an approval
@@ -339,17 +340,12 @@ class ToolNodeExecutor(NodeExecutor):
                     context=call_context,
                     operation=operation or tool.name,
                 )
-
             if isinstance(result, PendingToolApproval):
                 if node_data.get("parentId"):
-                    # Iteration/loop bodies cannot be re-entered from a parked
-                    # run, so parking would strand the approval. Cancel the
-                    # unexecuted request and fail loudly; never run it unapproved.
                     await _cancel_unexecuted(result.execution_id)
                     return _error_result(
                         "tool_approval_inside_container", output_var, start_time
                     )
-                # The run parks as WAITING; an approval decision resumes it.
                 return ExecutionResult(waiting=True)
 
             duration_ms = int((time.time() - start_time) * 1000)

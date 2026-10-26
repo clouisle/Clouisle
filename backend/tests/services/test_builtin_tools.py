@@ -75,11 +75,9 @@ def test_builtin_definition_is_stable_and_fail_closed(run_orm):
         assert first.approval_policy["default_decision"] == "allow"
         assert first.parameters
 
-        # Read-only evidence is explicit; side-effecting builtins keep the
-        # fail-closed require-approval default.
+        # Builtins default to allow; confirmation is determined explicitly by agent tool config.
         exclusive = await get_builtin_definition(team.id, "bash")
-        assert exclusive.approval_policy == {}
-
+        assert exclusive.approval_policy["default_decision"] == "allow"
         # A user-defined tool must never be shadowed by a builtin name.
         other_team = await Team.create(
             id=uuid4(), name="builtin-team-2", owner_id=_user.id
@@ -198,8 +196,7 @@ def test_internal_descriptors_and_skill_refresh_fail_closed(run_orm):
         assert internal.approval_policy["default_decision"] == "allow"
         assert internal.identity_policy == "none"
         mutation = await get_builtin_definition(team.id, "materialize_asset")
-        assert mutation.approval_policy == {}
-
+        assert mutation.approval_policy["default_decision"] == "allow"
         # A legacy empty synthetic row is upgraded; an admin policy is kept.
         await Tool.filter(id=internal.id).update(approval_policy={})
         refreshed_readonly = await get_builtin_definition(team.id, "list_assets")
@@ -218,10 +215,7 @@ def test_internal_descriptors_and_skill_refresh_fail_closed(run_orm):
         )
         assert skill.definition_version == 3
         assert skill.parameters == [{"name": "query", "type": "string"}]
-        # Descriptor approval is ignored: skills require approval; only the
-        # audited internal read-only set (and registry/sandbox SHARED) may allow.
-        assert skill.approval_policy == {}
-
+        assert skill.approval_policy["default_decision"] == "allow"
         refreshed = await get_builtin_definition(
             team.id,
             "skill_research_123",
@@ -314,8 +308,7 @@ def test_builtin_execution_uses_connection_and_approval_boundary(run_orm, monkey
     async def scenario():
         user, team = await _fixtures()
         definition = await get_builtin_definition(team.id, "fake_boundary_tool")
-        assert definition.approval_policy == {}
-
+        assert definition.approval_policy["default_decision"] == "allow"
         connection = await ToolConnectionService.create_connection(
             actor=user,
             payload=ToolConnectionCreate(
@@ -415,5 +408,111 @@ def test_builtin_definition_self_heals_on_narrow_type_operational_error(
         assert definition.type == ToolType.BUILTIN
         assert init_called is True
         assert await Tool.filter(team_id=team.id, name="get_current_time").exists()
+
+    run_orm(scenario)
+
+
+def test_agent_explicit_require_approval_triggers_in_chat_and_bypasses_in_workflow(
+    run_orm, monkeypatch
+):
+    from types import SimpleNamespace
+    from app.models.tool_approval import ExecutionRunKind
+    from app.services.tool_context import get_agent_tool_require_approval
+    from app.services.tool_execution import PendingToolApproval, ToolCallContext
+
+    async def scenario():
+        user, team = await _fixtures()
+        user.is_superuser = True
+        await user.save()
+        await get_builtin_definition(team.id, "get_current_time")
+
+        # 1. Agent without require_approval: runs directly in chat
+        agent_no_approval = SimpleNamespace(
+            id=uuid4(),
+            team_id=team.id,
+            tools_config=[
+                {
+                    "type": "builtin",
+                    "name": "get_current_time",
+                    "require_approval": False,
+                }
+            ],
+        )
+        assert (
+            get_agent_tool_require_approval(agent_no_approval, "get_current_time")
+            is False
+        )
+
+        context_chat_direct = ToolCallContext(
+            actor=user,
+            team_id=team.id,
+            entrypoint=ExecutionEntrypoint.CHAT,
+            interactive=True,
+            require_approval=False,
+        )
+        result_direct = await ToolExecutor().execute_builtin_tool(
+            tool_name="get_current_time",
+            arguments={},
+            team_id=team.id,
+            context=context_chat_direct,
+            agent=agent_no_approval,
+            user=user,
+        )
+        assert not isinstance(result_direct, PendingToolApproval)
+
+        # 2. Agent with require_approval: returns PendingToolApproval in chat
+        agent_with_approval = SimpleNamespace(
+            id=uuid4(),
+            team_id=team.id,
+            tools_config=[
+                {
+                    "type": "builtin",
+                    "name": "get_current_time",
+                    "require_approval": True,
+                }
+            ],
+        )
+        assert (
+            get_agent_tool_require_approval(agent_with_approval, "get_current_time")
+            is True
+        )
+
+        context_chat_approval = ToolCallContext(
+            actor=user,
+            team_id=team.id,
+            entrypoint=ExecutionEntrypoint.CHAT,
+            interactive=True,
+            require_approval=True,
+        )
+        result_approval = await ToolExecutor().execute_builtin_tool(
+            tool_name="get_current_time",
+            arguments={},
+            team_id=team.id,
+            context=context_chat_approval,
+            agent=agent_with_approval,
+            user=user,
+        )
+        assert isinstance(result_approval, PendingToolApproval)
+
+        # 3. Workflow: even if require_approval is set, workflow bypasses approval completely
+        context_workflow = ToolCallContext(
+            actor=user,
+            team_id=team.id,
+            entrypoint=ExecutionEntrypoint.WORKFLOW,
+            entrypoint_id="node-1",
+            run_kind=ExecutionRunKind.WORKFLOW,
+            run_id=uuid4(),
+            interactive=False,
+            require_approval=True,  # Even if set, workflow bypasses!
+        )
+        result_workflow = await ToolExecutor().execute_builtin_tool(
+            tool_name="get_current_time",
+            arguments={},
+            team_id=team.id,
+            context=context_workflow,
+            agent=agent_with_approval,
+            user=user,
+        )
+        assert not isinstance(result_workflow, PendingToolApproval)
 
     run_orm(scenario)

@@ -39,6 +39,7 @@ class ToolCallContext:
     grant_id: UUID | None = None
     interactive: bool = False
     execution_id: UUID | None = None
+    require_approval: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -220,10 +221,35 @@ async def execute_stored_tool(
             else None,
         )
     resolved, binding = await resolve_tool_connection(tool, context, operation)
-    from app.services.tool_approval_policies import load_effective_policy_layers
-    from app.schemas.tool_approval import PolicyLayer, PolicySource
+    is_workflow = (
+        context.entrypoint == ExecutionEntrypoint.WORKFLOW
+        or context.run_kind == ExecutionRunKind.WORKFLOW
+    )
+    tool_requires_approval = (getattr(tool, "approval_policy", None) or {}).get(
+        "default_decision"
+    ) == "require_approval"
+    needs_approval = (
+        not is_workflow
+        and context.interactive
+        and (context.require_approval or tool_requires_approval)
+    )
+    from app.schemas.tool_approval import (
+        ApprovalDecision,
+        ApprovalGate,
+        ApprovalGateKind,
+        PolicyLayer,
+        PolicySource,
+        ToolApprovalPolicy,
+    )
 
-    layers = await load_effective_policy_layers(context, tool)
+    if needs_approval:
+        effective_policy = ToolApprovalPolicy(
+            default_decision=ApprovalDecision.REQUIRE_APPROVAL,
+            gates=(ApprovalGate(kind=ApprovalGateKind.CALLER),),
+        )
+    else:
+        effective_policy = ToolApprovalPolicy(default_decision=ApprovalDecision.ALLOW)
+    layers: list[PolicyLayer] = []
     if execution is None:
         execution = await tool_approvals.create_execution(
             tool=tool,
@@ -238,7 +264,7 @@ async def execute_stored_tool(
             tool_call_id=context.tool_call_id,
             connection_binding=binding,
             connection_account_label=resolved.account_label if resolved else None,
-            policy=policy if policy is not None else tool.approval_policy,
+            policy=effective_policy,
             entrypoint_interactive=context.interactive,
             policy_layers=layers,
             sensitive_fields=[
@@ -265,16 +291,12 @@ async def execute_stored_tool(
                 code=409, msg_key="tool_approval_binding_changed", status_code=409
             )
 
-    fresh_layers = await load_effective_policy_layers(context, tool)
     evaluation = tool_approvals.evaluate_policy(
         [
-            *fresh_layers,
             PolicyLayer(
                 source=PolicySource.TOOL,
                 label="tool",
-                policy=tool_approvals.normalize_tool_approval_policy(
-                    policy if policy is not None else tool.approval_policy
-                ),
+                policy=effective_policy,
             ),
         ],
         operation,

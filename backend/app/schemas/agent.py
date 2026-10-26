@@ -252,6 +252,10 @@ class ToolConfig(BaseModel):
     connection_mode: str | None = Field(None, pattern="^(personal|team)$")
     connection_id: UUID | None = None
     grant_id: UUID | None = None
+    require_approval: bool = Field(
+        default=False,
+        description="Require user confirmation before execution in chat",
+    )
 
     @model_validator(mode="after")
     def restrict_web_search_config(self):

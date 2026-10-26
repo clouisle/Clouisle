@@ -579,12 +579,17 @@ async def _execute_policy_managed_tool(
         else "tool_execution_failed"
     )
     try:
+        from dataclasses import replace
+        from app.services.tool_context import get_agent_tool_require_approval
+
+        require_approval = get_agent_tool_require_approval(agent, tool_name)
         context = await _policy_tool_context(
             agent=agent,
             user=user,
             conversation_id=conversation_id,
             workflow_run_id=workflow_run_id,
         )
+        context = replace(context, require_approval=require_approval)
         definition, invoke = await _resolve_policy_invoke(
             tool_name,
             agent=agent,
@@ -894,6 +899,9 @@ async def execute_tool_call(
                 {"error": t(e.msg_key or "tool_connection_invalid")},
                 ensure_ascii=False,
             )
+        from app.services.tool_context import get_agent_tool_require_approval
+
+        require_approval = get_agent_tool_require_approval(agent, tool_name)
         context = ToolCallContext(
             actor=actor,
             team_id=team_id,
@@ -918,6 +926,7 @@ async def execute_tool_call(
             connection_id=bound_connection_id,
             grant_id=bound_grant_id,
             interactive=runtime.interactive if runtime else True,
+            require_approval=require_approval,
         )
 
         try:
