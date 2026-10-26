@@ -235,7 +235,7 @@ MCP stdio 模式需要以下运行时环境：
 
 ### 实现位置
 
-- `backend/app/llm/tools/sandbox.py`：代码工具入口，将 Python/JavaScript snippet 编译成 `SandboxJob`。
+- `backend/app/services/tool.py`（代码工具分支）：将 Tool 的 `code_config` 通过 `compile_code_config_job` 编译成 `SandboxJob` 并提交 gateway。
 - `backend/app/services/sandbox/gateway.py`：结果轮询、session 绑定及 Celery 队列路由。
 - `backend/app/tasks/sandbox.py`：worker 侧任务检查与状态持久化。
 - `backend/app/services/sandbox/manager.py`：工作区、依赖环境、进程执行和结果收集。
@@ -243,7 +243,7 @@ MCP stdio 模式需要以下运行时环境：
 
 ### 任务路由与执行流程
 
-1. `execute_code()` 检查 `SANDBOX_RUNTIME_ENABLED`，编译 snippet 并调用 `SandboxGateway`；运行时关闭或任务失败时直接返回失败，不在调用进程执行代码。
+1. 工具代码分支编译 `SandboxJob` 后调用 `SandboxGateway`；运行时关闭或任务失败时直接返回失败，不在调用进程执行代码。
 2. Gateway 先写入 queued result，再派发 Celery 任务。无 session 的任务使用共享 `sandbox` 队列；session 任务先等待一个已就绪 worker 并确认其物理工作区已创建，然后路由到 `sandbox.worker.<sha256(worker_id)>`。
 3. Redis binding 记录 session 的 worker、process instance、node、storage、workspace 和 generation。后续 session 任务都投递到该 worker 的专属队列，并携带 binding。
 4. Worker 在执行前校验当前身份、Redis lease 和 binding。过期 generation 或错误 worker 上的消息以 obsolete 失败结束，不转发，也不自动重放。

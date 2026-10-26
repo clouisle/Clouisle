@@ -294,6 +294,16 @@ Example Response:
 
 > **Note:** Not implemented / Roadmap. There is no "integration" tool type (Salesforce, HubSpot, Slack apps, GitHub, Jira, etc.). Tool types are limited to `builtin`, `custom` (HTTP, Code, or Database), and `mcp` (MCP server tools). External services are integrated either as HTTP custom tools, MCP servers, or through the Email and generic Webhook notification settings in Site Settings.
 
+## MCP Connections and Approvals
+
+Saved MCP tools execute with an encrypted personal, team or site connection.
+The connection owner selects the identity, may delegate a personal connection to
+a background entrypoint, and can authorize OAuth when the server requires it.
+Operations and metadata can require approval depending on site, team,
+entrypoint and tool policy. See [MCP Connections and Approvals](mcp-connections-and-approvals.md)
+for identity modes, delegation, OAuth, approval gates, resource/prompt use and
+live subscription limits.
+
 ## Testing Tools
 
 ### Test Tool

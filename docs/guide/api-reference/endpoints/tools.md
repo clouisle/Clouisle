@@ -14,6 +14,9 @@ The Tools API allows you to:
 - **Toggle & duplicate tools**: Enable/disable or copy a tool
 - **Tool configuration**: Store tool credentials globally or per team
 - **Share tools**: Share a tool across teams and manage its shares
+- **Saved MCP servers**: Negotiate capabilities and use tools, resources, resource templates, prompts, completion and live resource subscriptions through a stored MCP definition
+- **External identity**: Manage encrypted personal/team/site connections, delegation grants and MCP OAuth
+- **Approvals**: Inspect executions, decide approval gates, preview effective policies and answer server-initiated interactions
 
 **Base URL**: `/api/v1/tools`
 
@@ -851,94 +854,45 @@ curl -X POST "https://your-domain.com/api/v1/tools/tool-789/duplicate" \
 
 The copy is created in the same team with visibility `private` and `is_enabled=false`. The name gets a `_copy` suffix (`_copy_1`, `_copy_2`, … when that name is already taken) and the display name gets a `(Copy)` suffix. Requires the `tool:create` permission and team admin rights.
 
-## Tool Configuration
+## Tool Identity and Credentials
 
-Store credentials for other tools globally (superuser only) or per team. `web_search` is excluded from these generic configuration APIs: search credentials are site-managed, write-only and encrypted. Use the dedicated administrator API below.
+The legacy plaintext tool configuration endpoints (`/tools/config`,
+`/tools/config/{tool_name}`, and their `/admin/tools/config` equivalents) have
+been removed. Tool credentials are no longer readable or writable through a
+generic configuration API.
 
-### List Tool Configurations
+Built-in and custom tools declare an identity policy (`none`, `team_only`,
+`personal_only`, `selectable`) plus secret connection fields on their tool
+definition. Users attach encrypted personal or team connections through the
+tool connection API, and execution resolves the chosen/default connection. The
+tool definition response exposes `identity_policy`, `connection_fields`,
+`approval_policy` and stable built-in definition identity; no response ever
+returns secret values.
 
-```
-GET /api/v1/tools/config?team_id={team_id}
-```
+Tools whose identity policy is `none` need no connection. A tool that requires
+an identity but has no usable connection fails execution explicitly
+(`tool_connection_required` or `tool_connection_inactive`) instead of falling
+back to a team or global plaintext credential.
 
-### Query Parameters
+Site-wide web search remains the one intentionally site-owned configuration and
+uses the dedicated administrator endpoints below.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `team_id` | string | No | Team UUID. Omit to list global configurations (superuser only) |
+### Upgrading Legacy Plaintext Configuration
 
-### Get Tool Configuration
+Startup migrates legacy `ToolConfig` rows into encrypted connections and then
+deletes each migrated non-web-search row. A legacy global row
+(`team_id = NULL`) has no team of its own, so startup fails closed instead of
+silently picking one. Assign it explicitly to the team that should own the
+credential before upgrading:
 
-```
-GET /api/v1/tools/config/{tool_name}?team_id={team_id}
-```
-
-### Create Tool Configuration
-
-```
-POST /api/v1/tools/config?team_id={team_id}
-```
-
-```json
-{
-  "tool_name": "external_lookup",
-  "credentials": {
-    "API_KEY": "secret-value"
-  }
-}
-```
-
-### Update Tool Configuration
-
-```
-PUT /api/v1/tools/config/{tool_name}?team_id={team_id}
+```bash
+python -m app.core.tool_secret_migration \
+  --tool-name <tool_name> --target-team <team-uuid>
 ```
 
-```json
-{
-  "credentials": {
-    "API_KEY": "replacement-value"
-  }
-}
-```
-
-### Delete Tool Configuration
-
-```
-DELETE /api/v1/tools/config/{tool_name}?team_id={team_id}
-```
-
-### Path & Query Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `tool_name` | string | Yes | Tool name (path parameter), excluding site-managed `web_search` |
-| `team_id` | string | No | Team UUID query parameter. Omit for the global configuration |
-
-With `team_id`, team admin rights are required for create/update/delete and team membership for read; without `team_id`, only superusers may read or write the global configuration. Reading a team configuration for a known builtin tool name creates an empty configuration automatically; an unknown name returns 404.
-
-### Response
-
-**Success (200 OK)** — for the list endpoint `data` is an array of the object below; for get/create/update it is the object itself:
-
-```json
-{
-  "code": 0,
-  "data": {
-    "id": "cfg-001",
-    "tool_name": "external_lookup",
-    "team_id": "team-123",
-    "credentials": {
-      "API_KEY": "secret-value"
-    },
-    "created_at": "2026-02-11T16:00:00Z",
-    "updated_at": "2026-02-11T16:00:00Z"
-  },
-  "msg": "Tool configuration created successfully"
-}
-```
-
-**Success (200 OK)** — delete returns `data: null` with `msg: "Tool configuration deleted successfully"`.
+The command rewrites the row into a team connection and removes the plaintext
+row in one transaction; it never prints secret values. Re-run startup after it
+succeeds.
 
 ## Site-managed Web Search
 
@@ -974,7 +928,7 @@ Existing global search credentials are encrypted during migration. Agent/team cr
 
 | Code | Message | Description |
 |------|---------|-------------|
-| `4000` | Not found | Tool, tool configuration, or tool share does not exist |
+| `4000` | Not found | Tool or tool share does not exist |
 | `4004` | Team not found | Target team for a share does not exist |
 | `3000` | Permission denied | Insufficient permissions, or private tool access denied |
 | `3002` | Not a team member | A requested `team_id` filter refers to a team the user cannot access |
@@ -982,7 +936,7 @@ Existing global search credentials are encrypted during migration. Agent/team cr
 | `1002` | Bad request | Private tool cannot be shared, share target is the owning team, or database connection failed |
 | `1003` | Internal error | MCP server connection failed |
 | `5001` | Already exists | A tool with the same name already exists in the team |
-| `5104` | Duplicate name | Tool is already shared with that team, or the tool configuration already exists |
+| `5104` | Duplicate name | Tool is already shared with that team |
 
 > **Note:** No per-endpoint rate limits are implemented. There is no rate-limit middleware on these endpoints. (Codes `6300`-`6306` are reserved for SSO errors and are not used by the Tools API.)
 
@@ -1162,6 +1116,13 @@ Only an admin/owner of the tool's owning team can share or unshare it, and only 
 
 ### Discover MCP Server Tools
 
+> **Scratch configuration only.** This route accepts a client-supplied
+> `mcp_config` so an unsaved server can be probed while editing a tool
+> definition. It is scheduled for removal from saved-tool configuration
+> dialogs. For a saved MCP tool, use the authenticated saved-server route
+> `GET /api/v1/tools/{tool_id}/mcp/tools` above, which resolves the stored
+> connection and never accepts credentials from the client.
+
 Query and dynamically discover tool definitions from a configured MCP server. Requires the `tool:read` permission.
 
 ```http
@@ -1235,8 +1196,565 @@ Response:
 
 A failed connection returns code `1002` (bad request) with the driver's error key as `msg`.
 
+## Saved MCP Server Protocol
+
+These routes operate a **stored** MCP tool definition. The server transport,
+URL, command, headers and environment are read from the saved tool; clients
+never send `mcp_config`, headers or credentials, and no response returns
+connection secrets or server configuration. The tool is always resolved by
+`tool_id`, then authorized for the **consuming** `team_id`: the owning team uses
+normal tool access, another team must hold an explicit tool share, and private
+tools are never shared.
+
+`team_id` is a required query parameter on every route. Identity selection is
+optional unless the tool is `selectable`:
+
+| Parameter | Location | Description |
+|-----------|----------|-------------|
+| `team_id` | query | Consuming team context |
+| `connection_mode` | query/body | `personal` or `team`; mandatory for `selectable`, must not contradict an explicit connection |
+| `connection_id` | query/body | Explicit stored connection, re-validated against the team and tool |
+| `execution_id` | query/body | Resume one previously returned pending execution |
+
+Permissions are `tool:read` for metadata and `tool:execute` for operations,
+subscriptions and `prompts/get`/`completion`.
+
+### Operation Envelope
+
+Metadata and operations share one envelope. `status` describes **this HTTP
+request**, not the external result:
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "status": "completed",
+    "operation": "list:tools",
+    "execution_id": null,
+    "result": {},
+    "pending_approval": null
+  }
+}
+```
+
+When approval is required (`status: "pending_approval"`), `result` is `null` and
+the durable reference is returned in both places:
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "status": "pending_approval",
+    "operation": "tool:query_orders",
+    "execution_id": "3f1c…",
+    "result": null,
+    "pending_approval": {
+      "execution_id": "3f1c…",
+      "tool_name": "Orders MCP",
+      "status": "awaiting_approval"
+    }
+  }
+}
+```
+
+Approve or reject the execution through the [approval APIs](#tool-approvals-and-executions), then repeat the **same
+request** with `execution_id`. The boundary re-verifies actor, team, tool,
+operation, parameters digest and entrypoint. A completed execution is rejected
+with `409` instead of being invoked twice; MCP results are not persisted yet.
+Changing parameters, identity or page scope invalidates the pending request.
+
+### Operation Namespaces
+
+Approval policies and connection grants address operations by exact key:
+
+| Operation | Key |
+|-----------|-----|
+| `tools/call` | `tool:<server tool name>` |
+| `resources/read` | `read:resource` |
+| Resource subscription | `subscribe:resource` |
+| `prompts/get` | `prompt:<prompt name>` |
+| Prompt completion | `complete:prompt` |
+| Resource-template completion | `complete:resource_template` |
+| Discovery | `list:capabilities`, `list:tools`, `list:resources`, `list:resource-templates`, `list:prompts` |
+
+Tool, resource and prompt keys are namespaced so identical server names never
+collide. A caller-confirmation gate is only available for interactive
+entrypoints (chat, tool test and these routes); background entrypoints fail
+closed rather than assuming consent.
+
+### Capabilities
+
+```http
+GET /api/v1/tools/{tool_id}/mcp/capabilities?team_id={team_id}
+```
+
+Returns `Response[McpOperationOut[McpCapabilitiesOut]]`. The result reports the
+negotiated protocol version and only the capabilities the server advertised:
+
+```json
+{
+  "protocol_version": "2026-07-28",
+  "server_name": "orders",
+  "server_version": "1.2.0",
+  "instructions": "…",
+  "tools": true,
+  "tools_list_changed": false,
+  "resources": true,
+  "resources_subscribe": false,
+  "resources_list_changed": false,
+  "resource_templates": true,
+  "prompts": true,
+  "prompts_list_changed": false,
+  "completions": true,
+  "logging": false,
+  "experimental": false
+}
+```
+
+Instructions are untrusted server text for display, never system policy. An
+operation the server did not advertise fails with `mcp_capability_unavailable`
+(`409`) instead of a fabricated success.
+
+### List Tools, Resources, Resource Templates and Prompts
+
+```http
+GET /api/v1/tools/{tool_id}/mcp/tools
+GET /api/v1/tools/{tool_id}/mcp/resources
+GET /api/v1/tools/{tool_id}/mcp/resource-templates
+GET /api/v1/tools/{tool_id}/mcp/prompts
+```
+
+Shared query parameters:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `max_items` | `200` | 1–500 maximum items for this request |
+| `cursor` | – | Opaque `next_cursor` from a truncated listing |
+| `execution_id` | – | Resume a pending metadata approval |
+
+Each returns `Response[McpOperationOut[McpEnumerationOut[…]]]`. The listing
+result is bounded and reports truncation explicitly:
+
+```json
+{
+  "items": [
+    {
+      "name": "query_orders",
+      "title": "Query orders",
+      "description": "Query the orders database",
+      "parameters": { "type": "object", "properties": {} },
+      "output_schema": null,
+      "annotations": { "readOnlyHint": true },
+      "meta": null
+    }
+  ],
+  "pages_fetched": 1,
+  "truncated": false,
+  "truncation_reason": null,
+  "next_cursor": null,
+  "total_items": 1
+}
+```
+
+`truncation_reason` is one of `max_items`, `max_pages`, `cursor_loop` or
+`deadline`. `next_cursor` is resumable with `cursor`; a page cut **mid-page**
+reports `next_cursor: null` because MCP has no offset to resume from. Pagination
+never silently returns a partial list.
+
+Item shapes:
+
+- Tools: `name`, `title`, `description`, `parameters` (input schema),
+  `output_schema`, `annotations`, `meta`.
+- Resources: `uri`, `name`, `title`, `description`, `mime_type`, `size`,
+  `annotations`, `meta`.
+- Resource templates: `uri_template`, `name`, `title`, `description`,
+  `mime_type`, `annotations`, `meta`.
+- Prompts: `name`, `title`, `description`, `arguments[]`
+  (`name`/`description`/`required`), `meta`.
+
+Resource templates are a separate listing; never assume `resources` enumerates
+every template-addressed URI.
+
+**Metadata policy.** Discovery defaults to `allow` even when the tool's
+operation default is `deny` or `require_approval`. An explicit
+`operation_overrides["list:<kind>"]` on the tool policy is honored in full
+(allow, deny or require approval); site, team and entrypoint layers still apply
+and can never be relaxed. A malformed stored policy is rejected with `409` and
+code `6510`, never silently ignored. `max_items` and `cursor` are bound into the
+approval parameters, so an approved page cannot be widened or swapped.
+
+### Call a Tool
+
+```http
+POST /api/v1/tools/{tool_id}/mcp/tools/call?team_id={team_id}
+Content-Type: application/json
+
+{
+  "name": "query_orders",
+  "arguments": { "status": "open" },
+  "connection_mode": "personal"
+}
+```
+
+The result is `McpToolResultOut`; `success`/`is_error` describe the external
+outcome, independently of the envelope's `completed` status:
+
+```json
+{
+  "success": true,
+  "result": { "rows": [] },
+  "error": null,
+  "is_error": false,
+  "content": [{ "type": "text", "text": "…" }],
+  "structured_content": { "rows": [] },
+  "input_required": null
+}
+```
+
+`content` preserves text, media, resource links and resources; `structured_content`
+and `input_required` are preserved rather than flattened. A result that exceeds
+the content budget returns a failure result, not a truncated payload.
+
+### Read a Resource
+
+```http
+POST /api/v1/tools/{tool_id}/mcp/resources/read?team_id={team_id}
+Content-Type: application/json
+
+{ "uri": "file:///reports/today.md" }
+```
+
+The URI is forwarded verbatim to the MCP server; the backend performs no local
+download or URI rewriting. Result: `McpResourceContentsOut[]` with `uri`,
+`mime_type`, `text` or `blob`, and `meta`. Treat contents as untrusted context.
+Content limits are 1,000,000 bytes per block and 4,000,000 bytes total by
+default; exceeding them fails explicitly.
+
+### Get a Prompt
+
+```http
+POST /api/v1/tools/{tool_id}/mcp/prompts/get?team_id={team_id}
+Content-Type: application/json
+
+{ "name": "summarize", "arguments": { "document": "…" } }
+```
+
+Result: `messages[]` (`role`, `content` block), `description`, `meta`. Prompt
+messages are untrusted server content: preview them and never treat them as
+system instructions automatically.
+
+### Complete an Argument
+
+```http
+POST /api/v1/tools/{tool_id}/mcp/completion?team_id={team_id}
+Content-Type: application/json
+
+{
+  "reference": { "kind": "prompt", "name": "summarize" },
+  "argument_name": "document",
+  "argument_value": "rep",
+  "context_arguments": { "tone": "brief" }
+}
+```
+
+`reference.kind` is `prompt` (requires `name`, forbids `uri`) or
+`resource_template` (requires `uri`, forbids `name`). Result: `values`, `total`,
+`has_more`. Completion uses the same identity, approval and content limits as
+other protocol operations.
+
+### Subscribe to Resource Updates (SSE)
+
+```http
+GET /api/v1/tools/{tool_id}/mcp/resources/subscribe?team_id={team_id}&uri=file:///reports/today.md
+Accept: text/event-stream
+```
+
+Authorization, connection resolution and approval run first under operation
+`subscribe:resource`. Before approval the response is the normal JSON pending
+envelope, **not** SSE; replay with `execution_id` after approval opens the
+stream. Requires `tool:execute`.
+
+Events:
+
+```
+event: subscription_opened
+data: {"subscription_id":"…","tool_id":"…","team_id":"…","uri":"…","connection_id":"…","connection_scope":"user","account_label":"…","expires_at":"…"}
+
+event: resource_updated
+data: {"subscription_id":"…","uri":"…","sequence":1,"received_at":"…"}
+
+event: subscription_closed
+data: {"subscription_id":"…","reason":"ttl_expired"}
+```
+
+Keep-alive comments (`: keep-alive`) are sent on the heartbeat interval. Close
+reasons are `client_disconnected`, `ttl_expired`, `connection_lost` and
+`capability_unavailable`. Restrictions:
+
+- The subscription is **request-scoped**: there is no background listener,
+  registry, daemon or durable subscription. Process death or disconnects end it;
+  reconnecting creates a new subscription.
+- Only explicitly configured identities may subscribe; each request is bound to
+  one URI and one connection.
+- At most 100 pending updates are queued; a slow client drops the oldest update
+  rather than blocking the protocol loop.
+- The stream lifetime is bounded by `MCP_SUBSCRIPTION_TTL_SECONDS` (default
+  `300`, range 10–3600).
+- Unsubscribe is read-side cleanup and never enters the approval/outcome
+  machinery. Missed updates are not replayed.
+
+## Tool Connections
+
+A tool definition declares an identity policy (`none`, `team_only`,
+`personal_only`, `selectable`) and secret field names. Users attach encrypted
+connections; execution resolves and re-validates one connection every time.
+Connection scopes are:
+
+| Scope | Owner | Use |
+|-------|-------|-----|
+| `user` | Personal user | The owner's external account |
+| `team` | Team | Shared team service account |
+| `site` | Site administrator | Global account, never overridable by tool editors |
+
+Every connection response is secret-safe: only `secret_fields` names,
+`account_label`, `secret_version` and lifecycle metadata are returned. Config
+values are write-only.
+
+### Endpoints
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `GET` | `/api/v1/tools/{tool_id}/connections?team_id=` | List visible connections for this tool (`include_site`, `include_revoked`) |
+| `POST` | `/api/v1/tools/{tool_id}/connections` | Create a connection for the path tool |
+| `GET` | `/api/v1/tool-connections?team_id=&tool_id=&builtin_tool_key=` | Generic listing (`include_site`, `include_revoked`) |
+| `POST` | `/api/v1/tool-connections` | Create by `tool_id` or `builtin_tool_key` |
+| `GET` | `/api/v1/tool-connections/{connection_id}` | Read one (`team_id` required for a site connection) |
+| `PATCH` | `/api/v1/tool-connections/{connection_id}` | Partial update |
+| `DELETE` | `/api/v1/tool-connections/{connection_id}?reason=` | Revoke (terminal, no hard delete) |
+| `GET` | `/api/v1/tool-connections/{connection_id}/grants` | List delegation grants |
+| `POST` | `/api/v1/tool-connections/{connection_id}/grants` | Grant an entrypoint |
+| `DELETE` | `/api/v1/tool-connections/{connection_id}/grants/{grant_id}?reason=` | Revoke a grant |
+
+Creation body (`ToolConnectionForToolCreate` omits `tool_id`):
+
+```json
+{
+  "team_id": "…",
+  "scope": "user",
+  "name": "Work account",
+  "account_label": "me@example.com",
+  "config": { "api_key": "…" },
+  "is_default": true
+}
+```
+
+`config` may only contain fields declared by the tool definition and is
+encrypted with the deployment key. `is_default` selects the default connection
+for one scope/service/owner. `ToolConnectionCreate` additionally accepts
+`tool_id` **or** `builtin_tool_key` (exactly one).
+
+Update body (partial; secret semantics are explicit):
+
+```json
+{
+  "name": "Renamed",
+  "account_label": "…",
+  "status": "active",
+  "config_set": { "api_key": "new" },
+  "config_remove": ["old_field"],
+  "is_default": true,
+  "expected_secret_version": 3
+}
+```
+
+`config_set: null` retains existing values; `config_remove` names fields to
+delete; the two collections cannot overlap. `expected_secret_version` is an
+optimistic concurrency guard (`409` on mismatch).
+
+Grants delegate a personal connection to a non-interactive entrypoint:
+
+```json
+{
+  "entrypoint_type": "workflow",
+  "entrypoint_id": "…",
+  "team_id": "…",
+  "allowed_operations": ["tool:query_orders"],
+  "expires_at": "2026-11-01T00:00:00Z"
+}
+```
+
+`entrypoint_type` is one of `agent`, `workflow`, `api_key`, `schedule`,
+`channel`, `embed`. `allowed_operations` uses the exact operation keys from the
+namespace table (or `*`), and an expired or revoked grant fails resolution.
+Only the personal connection's owner can grant it; administrators cannot
+delegate another user's identity, and team/site connections cannot consume a
+personal grant.
+
+## MCP OAuth
+
+MCP OAuth is configured on the saved tool under `mcp_config.oauth`
+(`McpOAuthConfig`): optional `authorization_server`, `resource`, `scopes`,
+`client_id`, `use_dcr`, `token_endpoint_auth_method`,
+`extra_authorization_params` and `extra_token_params`. Client secrets are
+write-only provider inputs, never part of the stored public configuration.
+When `oauth` is configured, execution requires a resolved connection and adds a
+fresh `Authorization: Bearer …` header; an existing case-insensitive
+`authorization` header is replaced.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/tool-connections/{connection_id}/oauth/start` | Start a PKCE authorization flow |
+| `GET` | `/api/v1/tool-connections/{connection_id}/oauth?team_id=` | Secret-free OAuth status |
+| `POST` | `/api/v1/tool-connections/{connection_id}/oauth/disconnect` | Clear local tokens; best-effort remote revoke |
+| `GET` | `/api/v1/tool-oauth/callback` | Provider/browser callback (not a client API) |
+
+Start body (optional; `{}` is valid):
+
+```json
+{
+  "redirect_path": "/app/capabilities",
+  "client_secret": "…"
+}
+```
+
+`redirect_path` must be an allowlisted relative frontend path.
+`client_secret` is write-only, requires tool write access and is stored
+encrypted; it is never returned. Response:
+
+```json
+{
+  "authorization_url": "https://auth.example/authorize?…",
+  "state": "…",
+  "expires_at": "2026-10-26T12:00:00Z",
+  "provider_kind": "mcp",
+  "connection_id": "…"
+}
+```
+
+Status response (`OAuthConnectionStatusOut`) reports `provider_kind`,
+`provider_configured`, `authorized`, `needs_reauth`, `status`, `account_label`,
+`scopes`, `expires_at` and `client_id`; never tokens. Disconnect response
+(`OAuthDisconnectOut`): `local_revoked`, `remote_revocation`,
+`needs_reauth`.
+
+The flow uses PKCE S256, one-time state bound to the logged-in user and
+connection, exact callback matching, minimal scopes and refresh rotation.
+Authorization-server discovery, redirect and token endpoints are subject to the
+central SSRF policy; HTTPS is required. `invalid_grant` marks the connection
+`reauth_required`. Missing provider support or an unreachable provider fails
+explicitly; it is never treated as authorized. OAuth interoperability is
+portable across compliant servers but is not a guarantee for any specific
+third-party provider.
+
+## Tool Approvals and Executions
+
+Approval policy is composed from mandatory site, team and entrypoint layers
+plus the tool's own policy. `deny` wins, approval requirements union, and a
+lower layer can never relax a higher mandatory layer. Each tool policy has a
+default decision (`allow`, `deny`, `require_approval`), gates and
+`operation_overrides` keyed by the exact operation namespace. A decision applies
+to one immutable execution: changing parameters, identity or definition
+invalidates it.
+
+Gates: `caller` (the initiating user, interactive entrypoints only), `user`
+(explicit user IDs) and `team_role` (roles; self-approval only when
+`allow_self_approval` is true). Caller gates additionally require the approver
+to be a member of the execution team; a superuser is not an implicit approver.
+
+### Approvals
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/tool-approvals?page=&page_size=` | Pending gates whose audience includes the caller |
+| `GET` | `/api/v1/tool-approvals/{request_id}` | One visible gate |
+| `POST` | `/api/v1/tool-approvals/{request_id}/decision` | Approve or reject; idempotent |
+
+Decision body:
+
+```json
+{
+  "decision": "approve",
+  "reason": "checked the order id",
+  "idempotency_key": "decision-2026-10-26-0001"
+}
+```
+
+`decision` is `approve` or `reject`; `idempotency_key` (1–128 chars) makes
+retries safe. The response includes the immutable decision, `execution_status`
+and `remaining_approvals`. The decision never edits the bound parameters.
+Rejection, expiry, revocation and stopped runs are terminal and cannot become
+approvals.
+
+`ToolApprovalRequestOut` returns `id`, `execution_id`, `stage_index`,
+`stage_key`, `gate_kind`, `approver_user_ids`, `approver_roles`,
+`allow_self_approval`, `masked_display`, `status`, `expires_at`,
+`resolved_at` and `created_at`. `masked_display` is already redacted.
+
+### Executions
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/tool-executions?status=&tool_id=&run_kind=&run_id=&page=&page_size=` | Executions initiated by the caller |
+| `GET` | `/api/v1/tool-executions/{execution_id}` | One visible execution |
+
+`ToolExecutionOut` exposes the tool/definition version, operation, team,
+entrypoint, run references, connection binding metadata,
+`parameters_preview` (redacted), `parameters_digest`, `policy_hash`, `status`,
+`cancel_reason`, `result_ref`, `error_code` and timestamps. Ciphertext, claim
+tokens and secrets never appear.
+
+Statuses: `awaiting_approval`, `ready`, `executing`, `succeeded`, `failed`,
+`outcome_unknown`, `cancelled`. Cancel reasons: `rejected`, `expired`,
+`revoked`, `cancelled`, `binding_changed`, `run_stopped`, `policy_denied`.
+
+**No automatic retry of uncertain outcomes.** Once an external side effect was
+sent, a crash or lost connection leaves `outcome_unknown`; the platform does not
+silently retry. Inspect the external system, then start a **new** execution.
+`failed` and `outcome_unknown` are not interchangeable, and approval decisions
+never imply the side effect happened.
+
+### Policy Layers
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/tool-approval-policies?team_id=&scope=&entrypoint_kind=&entrypoint_id=&tool_id=` | List layers (team view includes read-only site baseline) |
+| `GET` | `/api/v1/tool-approval-policies/effective?team_id=&tool_id=&operation=&entrypoint_kind=&entrypoint_id=&entrypoint_interactive=` | Server-composed effective decision |
+| `POST` | `/api/v1/tool-approval-policies` | Create a site/team/entrypoint layer |
+| `PUT` | `/api/v1/tool-approval-policies/{policy_id}` | Replace policy under optimistic `expected_version` |
+| `DELETE` | `/api/v1/tool-approval-policies/{policy_id}` | Delete a layer |
+
+Create body: `scope` (`site`, `team`, `entrypoint`) plus `team_id` for team,
+and `team_id`/`entrypoint_kind`/`entrypoint_id` for entrypoint; optional
+`tool_id`; `policy` is the full policy object. Site layers require site
+administration. The effective preview returns `decision`, `gates`, `sources`,
+`policy_hash`, `configuration_error`, `entrypoint_interactive` and layer
+summaries with editability; clients must not merge layers themselves. Missing
+approval audience/configuration yields `6510` rather than implicit consent.
+
+### Server-initiated Interactions
+
+MCP sampling and elicitation requests become durable rows; only the explicit
+audience can see or answer them.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/run-interactions?kind=&status=&run_id=&page=&page_size=` | Interactions visible to the caller |
+| `GET` | `/api/v1/run-interactions/{interaction_id}` | One visible interaction |
+| `POST` | `/api/v1/run-interactions/{interaction_id}/response` | Accept, decline or cancel |
+
+Response body: `action` (`accept`, `decline`, `cancel`), optional `content`
+(form elicitation accept only, schema-validated) and `idempotency_key`
+(8–100 chars). Sampling is never auto-answered; approval uses the existing
+model budget with no MCP connection and no tool access. Credential-like fields
+are refused. URL elicitation only accepts exact configured hosts. Expiry or
+session loss marks the interaction `connection_lost`; the outer MCP call is not
+replayed.
+
 ## Related Documentation
 
+- [MCP Connections and Approvals](../../admin-guide/tools/mcp-connections-and-approvals.md) - Operator overview of identities, OAuth, approvals and subscriptions
 - [Agent Configuration](../../user-guide/agents/agent-configuration.md) - Using tools with agents
 - [Tool Management](../../admin-guide/tools/tool-management.md) - Tool admin
 - [Authentication](../authentication.md) - Authentication methods
@@ -1244,4 +1762,4 @@ A failed connection returns code `1002` (bad request) with the driver's error ke
 
 ---
 
-**Last Updated**: 2026-09-26
+**Last Updated**: 2026-10-26

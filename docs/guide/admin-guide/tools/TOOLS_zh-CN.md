@@ -117,6 +117,8 @@
 
 通过 [Model Context Protocol](https://modelcontextprotocol.io/) 连接外部工具服务器。
 
+身份连接、OAuth、审批与实时资源订阅见 [MCP 连接与审批](mcp-connections-and-approvals_zh-CN.md)。
+
 **支持的传输协议：**
 
 | 协议 | 描述 | 使用场景 |

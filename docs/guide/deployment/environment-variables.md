@@ -213,6 +213,57 @@ openssl rand -base64 32
 ALGORITHM=HS256
 ```
 
+### TOOL_SECRET_KEYS
+
+**Description**: Envelope keyring for tool-domain secrets (tool connections, tool execution parameters, OAuth client secrets/PKCE verifiers, tool interaction responses). One or more `key_id:fernet_key` entries, comma separated. Ciphertext embeds the key id (`enc:tool:v1:<key_id>:<token>`), so old keys remain decryptable during rotation.
+
+**Required**: No at first boot; **yes for production** once rotation is used. When unset, the deployment derives a single fallback key from `SECRET_KEY` (key id `secret_key`) so upgrades keep working; that fallback is runtime-only, not a production keyring.
+
+**Example**:
+```bash
+TOOL_SECRET_KEYS=2026-10:zX7...base64url...,2026-01:Qm3...base64url...
+```
+
+**Generate a key**:
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+**Security**:
+- Fernet keys are urlsafe-base64 32-byte values; store them in the deployment secret manager, never in git.
+- Do not reuse `SECRET_KEY` as a tool key in production; inject dedicated keys.
+- Unprefixed legacy ciphertext (created before the keyring existed) is still decrypted through `SECRET_KEY` until rotated, then can be forgotten.
+
+### TOOL_SECRET_PRIMARY_KEY_ID
+
+**Description**: Key id used for every new tool-domain encryption. Must exist in `TOOL_SECRET_KEYS`.
+
+**Required**: When `TOOL_SECRET_KEYS` contains more than one key.
+
+**Example**:
+```bash
+TOOL_SECRET_PRIMARY_KEY_ID=2026-10
+```
+
+#### Rotating tool secret keys
+
+1. Add the new key to `TOOL_SECRET_KEYS` alongside the current one; deploy with the **old** primary id.
+2. Switch `TOOL_SECRET_PRIMARY_KEY_ID` to the new id and roll every API/worker process. New writes use the new key; old ciphertext still decrypts.
+3. Dry-run the rewrap:
+   ```bash
+   cd backend
+   python -m app.core.tool_secret_rotation --dry-run
+   ```
+   Review `source_key_ids` (which key ids still have rows), `failed` (undecryptable rows, row ids only), and `conflicts`.
+4. Run the real rotation (compare-and-swap per row; concurrent token/approval writes are reported as conflicts, not overwritten):
+   ```bash
+   python -m app.core.tool_secret_rotation
+   ```
+   Re-run until `failed=0` and `source_key_ids` only show the primary id (resolve conflicts by re-running). The command exits non-zero if any value cannot be decrypted.
+5. Verify backups/restore are valid, then remove the retired key from `TOOL_SECRET_KEYS`. Never remove a key while `source_key_ids` still lists it.
+
+The command never prints plaintext or key material; failures are reported by row UUID/key id only.
+
 ### ACCESS_TOKEN_EXPIRE_MINUTES
 
 **Description**: JWT access token lifetime in minutes — the config fallback used by `create_access_token` when no explicit expiry is passed. Actual session duration is controlled by the database `session_timeout_days` site setting (admin-configurable, default **30 days**), which login/SSO flows pass as an explicit expiry; this env only kicks in when no explicit expiry is provided.

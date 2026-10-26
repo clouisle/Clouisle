@@ -196,6 +196,8 @@ The following are the public-origin settings to change for production. Keep serv
 
 `API_BASE_URL` and `API_INTERNAL_BASE_URL` are internal service URLs (usually `http://api:8000` in Compose/Kubernetes), not public domains. `PUBLIC_API_URL` is for browser-visible absolute API/file URLs. `POSTGRES_SERVER`, `REDIS_HOST`, and `QDRANT_URL` are overridden in the supplied deployment files with internal service names.
 
+Tool-domain secrets (tool connections, approval parameters, OAuth client secrets/PKCE verifiers, interaction responses) use an envelope keyring: inject `TOOL_SECRET_KEYS` (`key_id:fernet_key,...`) and `TOOL_SECRET_PRIMARY_KEY_ID` from your secret manager. Without them the process derives a single fallback key from `SECRET_KEY` (upgrade-safe but not a production keyring). Rotation command: `cd backend && python -m app.core.tool_secret_rotation --dry-run`, then without `--dry-run`; see [environment variables](environment-variables.md#tool_secret_keys) for the full runbook.
+
 ### Sandbox Filesystem Isolation
 
 The sandbox-worker image installs Bubblewrap and enables per-task filesystem isolation by default:
@@ -827,6 +829,7 @@ The backend initializes/updates the schema at startup through Tortoise ORM (`ini
 ## Security Checklist
 
 - [ ] **Change all default passwords** — `SECRET_KEY`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `QDRANT_API_KEY`
+- [ ] **Inject a tool secret keyring** — set `TOOL_SECRET_KEYS` and `TOOL_SECRET_PRIMARY_KEY_ID` from your secret manager; the `SECRET_KEY` fallback is upgrade-only, not a production keyring. Rotate with `python -m app.core.tool_secret_rotation` (see [environment variables](environment-variables.md#tool_secret_keys))
 - [ ] **Enable HTTPS** — Use TLS termination at the external reverse proxy or K8s Ingress
 - [ ] **Restrict exposed ports** — In production, only expose port 3000 (or 443 via reverse proxy). Remove database/Redis/Qdrant port mappings.
 - [ ] **Set CORS origins** — `BACKEND_CORS_ORIGINS` should only contain your actual frontend domain, not `*`

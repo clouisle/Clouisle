@@ -117,6 +117,9 @@ Run a SQL query against a configured database connection (custom tool type `data
 
 Connect to external tool servers via [Model Context Protocol](https://modelcontextprotocol.io/).
 
+For identity connections, OAuth, approvals and live resource subscriptions, see
+[MCP Connections and Approvals](mcp-connections-and-approvals.md).
+
 **Supported Transports:**
 
 | Transport | Description | Use Case |
