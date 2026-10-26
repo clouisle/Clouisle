@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-26T18:01:57.900Z
+// GENERATED — 2026-10-26T18:11:40.446Z
 // Source: i18n/en/tools.json
 export type ToolsMessages = {
   tools: {
@@ -536,6 +536,8 @@ export type ToolsMessages = {
         userIdsPlaceholder: string
         userIdsHint: string
         userIdsRequired: string
+        noMatchingUsers: string
+        loadingMembers: string
         roles: string
         allowSelfApproval: string
         selfApprovalUnavailable: string

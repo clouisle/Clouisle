@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Plus, Trash2 } from 'lucide-react'
 
@@ -16,6 +16,19 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import {
+  Combobox,
+  ComboboxChip,
+  ComboboxChips,
+  ComboboxChipsInput,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxItem,
+  ComboboxList,
+  useComboboxAnchor,
+} from '@/components/ui/combobox'
+import { useTeam } from '@/contexts/team-context'
+import { teamsApi, type TeamMember } from '@/lib/api'
 import {
   ToolApprovalGate,
   ToolApprovalPolicy,
@@ -87,13 +100,92 @@ export function getToolApprovalPolicy(tool?: ToolDetail | null): ToolApprovalPol
   }
 }
 
-function splitUserIds(value: string): string[] {
-  const ids = value
-    .split(/[\s,]+/)
-    .map((id) => id.trim())
-    .filter(Boolean)
-  return [...new Set(ids)]
+function ApproverUserSelect({
+  userIds,
+  onChange,
+}: {
+  userIds: string[]
+  onChange: (ids: string[]) => void
+}) {
+  const { currentTeam } = useTeam()
+  const t = useTranslations('tools.policy')
+  const [members, setMembers] = useState<TeamMember[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const anchorRef = useComboboxAnchor()
+
+  useEffect(() => {
+    if (!currentTeam?.id) return
+    let active = true
+    setIsLoading(true)
+    teamsApi
+      .getTeam(currentTeam.id)
+      .then((team) => {
+        if (active) setMembers(team.members || [])
+      })
+      .catch(() => {
+        if (active) setMembers([])
+      })
+      .finally(() => {
+        if (active) setIsLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [currentTeam?.id])
+
+  const memberOptions = useMemo(
+    () =>
+      members.map((member) => ({
+        value: member.user_id,
+        label: member.username || member.email || member.user_id,
+        email: member.email,
+      })),
+    [members],
+  )
+
+  const selectedOptions = useMemo(() => {
+    const map = new Map(memberOptions.map((opt) => [opt.value, opt]))
+    return userIds.map((id) => map.get(id) ?? { value: id, label: id, email: undefined })
+  }, [memberOptions, userIds])
+
+  if (isLoading) {
+    return <p className="text-xs text-muted-foreground">{t('approval.loadingMembers')}</p>
+  }
+
+  return (
+    <Combobox
+      multiple
+      items={memberOptions}
+      value={selectedOptions}
+      onValueChange={(next) =>
+        onChange((next as typeof memberOptions).map((option) => option.value))
+      }
+    >
+      <ComboboxChips ref={anchorRef} className="w-full">
+        {selectedOptions.map((option) => (
+          <ComboboxChip key={option.value}>{option.label}</ComboboxChip>
+        ))}
+        <ComboboxChipsInput placeholder={t('approval.userIdsPlaceholder')} className="text-xs" />
+      </ComboboxChips>
+      <ComboboxContent anchor={anchorRef}>
+        <ComboboxEmpty>{t('approval.noMatchingUsers')}</ComboboxEmpty>
+        <ComboboxList>
+          {(option) => (
+            <ComboboxItem key={option.value} value={option} className="text-xs">
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate font-medium">{option.label}</span>
+                {option.email && option.email !== option.label && (
+                  <span className="truncate text-[10px] text-muted-foreground">{option.email}</span>
+                )}
+              </span>
+            </ComboboxItem>
+          )}
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
+  )
 }
+
 
 export function normalizeConnectionFields(fields: ToolConnectionField[]): ToolConnectionField[] {
   const normalized: ToolConnectionField[] = []
@@ -580,21 +672,17 @@ export function ToolPolicyEditor({
 
                   {gate.kind === 'user' && (
                     <div className="space-y-1">
-                      <Label htmlFor={`approval-gate-users-${index}`} className="text-xs">
+                      <Label className="text-xs">
                         {t('approval.userIds')}
                       </Label>
-                      <Input
-                        id={`approval-gate-users-${index}`}
-                        value={gate.user_ids.join(', ')}
-                        placeholder={t('approval.userIdsPlaceholder')}
-                        className="font-mono"
-                        onChange={(event) =>
+                      <ApproverUserSelect
+                        userIds={gate.user_ids}
+                        onChange={(ids) =>
                           updateGate(index, {
                             ...gate,
-                            user_ids: splitUserIds(event.target.value),
+                            user_ids: ids,
                           })
                         }
-                        aria-invalid={gate.user_ids.length === 0}
                       />
                       <p className="text-xs text-muted-foreground">{t('approval.userIdsHint')}</p>
                       {gate.user_ids.length === 0 && (
