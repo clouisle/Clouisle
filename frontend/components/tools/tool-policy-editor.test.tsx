@@ -60,9 +60,13 @@ afterEach(() => {
 function Harness({
   operationNames,
   initialApprovalPolicy,
+  operationTools,
+  toolsLoaded,
 }: {
   operationNames?: string[]
   initialApprovalPolicy?: ToolApprovalPolicy
+  operationTools?: Array<{ name: string; description?: string }>
+  toolsLoaded?: boolean
 }) {
   const [identityPolicy, setIdentityPolicy] = React.useState<'none' | 'team_only' | 'personal_only' | 'selectable'>('none')
   const [connectionFields, setConnectionFields] = React.useState<Array<{ name: string; label: string; required: boolean; secret: boolean }>>([])
@@ -79,6 +83,8 @@ function Harness({
       approvalPolicy={approvalPolicy}
       onApprovalPolicyChange={setApprovalPolicy}
       operationNames={operationNames}
+      operationTools={operationTools}
+      toolsLoaded={toolsLoaded}
     />
   )
 }
@@ -181,6 +187,30 @@ describe('ToolPolicyEditor', () => {
     )!
     await change(overrideSelect, 'inherit')
     expect(latest?.approvalPolicy.operation_overrides['tool:search_issues']).toBeUndefined()
+  })
+
+  test('combines descriptions with policies and retains rules after discovery changes', async () => {
+    const policy: ToolApprovalPolicy = {
+      default_decision: 'allow', gates: [],
+      operation_overrides: {
+        'tool:removed': { default_decision: 'deny', gates: [], operation_overrides: {} },
+      },
+    }
+    await act(async () => {
+      renderer = create(<Harness operationTools={[{ name: 'search', description: 'Search project records' }]} toolsLoaded initialApprovalPolicy={policy} />)
+    })
+    expect(document.querySelectorAll('details')).toHaveLength(1)
+    expect(document.querySelector('summary')?.textContent).toBe('Search project records')
+    const rows = selects().filter(item => Array.from(item.options).some(option => option.value === 'inherit'))
+    await change(rows[0], 'require_approval')
+    expect(latest?.approvalPolicy.operation_overrides['tool:search'].default_decision).toBe('require_approval')
+    expect(latest?.approvalPolicy.operation_overrides['tool:removed'].default_decision).toBe('deny')
+    await act(async () => renderer!.update(<Harness operationTools={[]} toolsLoaded initialApprovalPolicy={policy} />))
+    expect(document.body.textContent).toContain('operations.otherTitle')
+    expect(document.body.textContent).toContain('operations.notDiscovered')
+    expect(document.body.textContent).toContain('tool:search')
+    expect(document.body.textContent).toContain('tool:removed')
+    expect(latest?.approvalPolicy.operation_overrides['tool:search'].default_decision).toBe('require_approval')
   })
 
   test('normalizes invalid approvers and invalid connection fields', () => {

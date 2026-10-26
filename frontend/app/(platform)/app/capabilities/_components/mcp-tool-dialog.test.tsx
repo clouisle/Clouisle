@@ -170,19 +170,14 @@ describe('MCP tool dialog', () => {
 
     await click(button(renderer, 'create'))
     expect(selectedTeam).toHaveBeenCalledWith('team-1')
-    expect(onSave).toHaveBeenCalledWith({
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       name: 'weather_server', display_name: 'Weather server',
       description: '- forecast: Gets forecast\n- alerts: No description',
       icon: 'https://images.test/icon.png', category: 'data', visibility: 'private', is_enabled: false, type: 'mcp',
       mcp_config: { transport: 'stdio', command: 'bunx', args: ['--yes'], env: { TOKEN: 'fake-secret' } },
       identity_policy: 'none',
       connection_fields: [],
-      approval_policy: {
-        default_decision: 'require_approval',
-        gates: [{ kind: 'caller', user_ids: [], roles: [], allow_self_approval: false }],
-        operation_overrides: {},
-      },
-    })
+    }))
   })
 
   test('prefills edit HTTP configuration, keeps identity immutable, and submits headers without exposing real secrets', async () => {

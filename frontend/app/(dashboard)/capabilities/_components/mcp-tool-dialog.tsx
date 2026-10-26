@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
-import { Loader2, Plus, Trash2, Info, Terminal, Globe, RefreshCw, CheckCircle2 } from 'lucide-react'
+import { Loader2, Plus, Trash2, Info, Terminal, Globe, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -18,9 +18,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Badge } from '@/components/ui/badge'
-import { Card } from '@/components/ui/card'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { FieldError } from '@/components/ui/field'
 import {
   clearValidationError,
@@ -773,43 +770,6 @@ export function McpToolDialog({
 
           <McpCapabilitiesEditor value={mcpCapabilities} onChange={setMcpCapabilities} />
 
-          {/* 工具列表 */}
-          {toolsLoaded && (
-            <div className="space-y-3 border rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <h4 className="font-medium flex items-center gap-2">
-                  {t('mcpDialog.availableTools')}
-                  <Badge variant="secondary">{mcpTools.length}</Badge>
-                </h4>
-                {mcpTools.length > 0 && (
-                  <CheckCircle2 className="h-5 w-5 text-green-500" />
-                )}
-              </div>
-
-              {mcpTools.length > 0 ? (
-                <ScrollArea className="h-[200px] -m-1">
-                  <div className="space-y-2 p-1">
-                    {mcpTools.map((mcpTool, index) => (
-                      <Card key={index} className="p-3">
-                        <div className="flex items-start gap-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm truncate">{mcpTool.name}</div>
-                            <div className="text-xs text-muted-foreground line-clamp-2">
-                              {mcpTool.description || t('mcpDialog.noDescription')}
-                            </div>
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
-                  </div>
-                </ScrollArea>
-              ) : (
-                <div className="text-center text-muted-foreground py-4">
-                  {t('mcpDialog.noToolsAvailable')}
-                </div>
-              )}
-            </div>
-          )}
 
           <ToolPolicyEditor
             identityPolicy={identityPolicy}
@@ -818,7 +778,8 @@ export function McpToolDialog({
             onConnectionFieldsChange={setConnectionFields}
             approvalPolicy={approvalPolicy}
             onApprovalPolicyChange={setApprovalPolicy}
-            operationNames={mcpTools.map((item) => `tool:${item.name}`)}
+            operationTools={mcpTools}
+            toolsLoaded={toolsLoaded}
           />
         </div>
 

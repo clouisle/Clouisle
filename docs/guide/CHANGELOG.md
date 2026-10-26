@@ -11,6 +11,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- MCP editors now combine discovered tool names, expandable descriptions and approval selectors into one list. Saved rules missing from the current discovery result remain editable under Other operation rules; refreshing discovery never deletes them.
 - The in-chat MCP server-request panel now stays hidden during empty background polls, rather than appearing on every loading cycle. Actual pending requests remain actionable.
 - MCP child-operation approval rules now apply in interactive Agent chat without gating discovery, testing or workflows. MCP invocation details stay inside the thought trace, and partial streamed MCP names no longer replace the thought header.
 - Tool-domain secrets (tool connections, approval execution parameters, OAuth client secrets/PKCE verifiers, tool interaction responses) now use versioned envelope encryption (`enc:tool:v1:<key_id>:…`) with a configurable keyring (`TOOL_SECRET_KEYS` / `TOOL_SECRET_PRIMARY_KEY_ID`). Existing single-key ciphertext still decrypts; rotate with `python -m app.core.tool_secret_rotation` (compare-and-swap, dry-run supported). See [environment variables](deployment/environment-variables.md#tool_secret_keys).

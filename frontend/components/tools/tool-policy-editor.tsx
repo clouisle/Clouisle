@@ -276,6 +276,8 @@ interface ToolPolicyEditorProps {
    * Only MCP tools pass this; other tools keep the configured overrides.
    */
   operationNames?: string[]
+  operationTools?: Array<{ name: string; description?: string }>
+  toolsLoaded?: boolean
   showIdentityAndConnections?: boolean
 }
 
@@ -313,6 +315,8 @@ export function ToolPolicyEditor({
   approvalPolicy,
   onApprovalPolicyChange,
   operationNames,
+  operationTools,
+  toolsLoaded = false,
   showIdentityAndConnections = true,
 }: ToolPolicyEditorProps) {
   const t = useTranslations('tools.policy')
@@ -356,6 +360,9 @@ export function ToolPolicyEditor({
     }
     return [...names].sort((a, b) => a.localeCompare(b))
   }, [operationNames, approvalPolicy.operation_overrides])
+
+  const discoveredTools = new Map((operationTools ?? []).map(tool => [`tool:${tool.name}`, tool]))
+  const otherOperations = overrideNames.filter(name => !discoveredTools.has(name))
 
   const updateField = (index: number, updates: Partial<ToolConnectionField>) => {
     onConnectionFieldsChange(
@@ -406,7 +413,7 @@ export function ToolPolicyEditor({
       setOperationError(t('operations.invalidOperation'))
       return
     }
-    if (approvalPolicy.operation_overrides?.[operation]) {
+    if (discoveredTools.has(operation) || operationNames?.includes(operation) || approvalPolicy.operation_overrides?.[operation]) {
       setOperationError(t('operations.duplicate'))
       return
     }
@@ -745,20 +752,38 @@ export function ToolPolicyEditor({
           </div>
         )}
 
-        {operationNames !== undefined && (
+        {(operationNames !== undefined || operationTools !== undefined) && (
           <div className="space-y-2 border-t pt-4">
             <div>
-              <Label>{t('operations.title')}</Label>
+              <Label>{t(operationTools ? 'operations.toolsTitle' : 'operations.title')}{operationTools && ` (${operationTools.length})`}</Label>
               <p className="text-xs text-muted-foreground">{t('operations.hint')}</p>
             </div>
 
-            {overrideNames.length === 0 ? (
+            {discoveredTools.size + otherOperations.length === 0 ? (
               <p className="text-xs text-muted-foreground">{t('operations.empty')}</p>
             ) : (
               <div className="space-y-2">
-                {overrideNames.map((operation) => (
-                  <div key={operation} className="flex items-center gap-2">
-                    <span className="flex-1 min-w-0 truncate font-mono text-xs">{operation}</span>
+                {[...discoveredTools.keys(), ...otherOperations].map((operation, index) => (
+                  <div key={operation}>
+                    {operationTools && index === discoveredTools.size && otherOperations.length > 0 && (
+                      <p className="text-sm font-medium pt-3 pb-2">{t('operations.otherTitle')}</p>
+                    )}
+                    <div className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-start">
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <p className="text-sm font-medium break-all">{discoveredTools.get(operation)?.name ?? operation}</p>
+                      {discoveredTools.has(operation) ? (
+                        <>
+                          <code className="text-xs text-muted-foreground break-all">{operation}</code>
+                          <details className="group text-xs text-muted-foreground">
+                            <summary className="cursor-pointer">
+                              <span className="line-clamp-2 group-open:line-clamp-none whitespace-pre-wrap break-words">{discoveredTools.get(operation)?.description || t('operations.noDescription')}</span>
+                            </summary>
+                          </details>
+                        </>
+                      ) : operationTools && toolsLoaded ? (
+                        <p className="text-xs text-muted-foreground">{t('operations.notDiscovered')}</p>
+                      ) : null}
+                    </div>
                     <Select
                       value={approvalPolicy.operation_overrides?.[operation]?.default_decision ?? 'inherit'}
                       onValueChange={(value) =>
@@ -768,7 +793,7 @@ export function ToolPolicyEditor({
                         )
                       }
                     >
-                      <SelectTrigger className="w-[190px]">
+                      <SelectTrigger className="w-full sm:w-[190px] shrink-0">
                         <SelectValue>
                           {approvalPolicy.operation_overrides?.[operation]
                             ? decisionLabel(approvalPolicy.operation_overrides[operation].default_decision)
@@ -784,6 +809,7 @@ export function ToolPolicyEditor({
                         ))}
                       </SelectContent>
                     </Select>
+                    </div>
                   </div>
                 ))}
               </div>

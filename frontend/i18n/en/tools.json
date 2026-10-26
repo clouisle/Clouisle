@@ -550,6 +550,10 @@
       },
       "operations": {
         "title": "Per-operation overrides",
+        "toolsTitle": "Tools and approval rules",
+        "otherTitle": "Other operation rules",
+        "noDescription": "No description provided.",
+        "notDiscovered": "Not found in the current tool list. This saved rule is retained.",
         "hint": "Overrides match exact internal operation names (for MCP, the server-side tool name). Unlisted operations inherit the default decision.",
         "empty": "No operations discovered yet. Load MCP tools or add an exact operation name.",
         "inherit": "Inherit default",

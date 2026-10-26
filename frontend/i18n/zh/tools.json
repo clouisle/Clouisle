@@ -550,6 +550,10 @@
       },
       "operations": {
         "title": "逐操作覆盖",
+        "toolsTitle": "工具列表与审批规则",
+        "otherTitle": "其他操作规则",
+        "noDescription": "暂无简介。",
+        "notDiscovered": "未在当前工具列表中发现，已保留此规则。",
         "hint": "覆盖项按精确的内部操作名匹配（MCP 使用服务端原始工具名）。未列出的操作继承默认决策。",
         "empty": "尚未发现操作。请先加载 MCP 工具，或直接添加精确的操作名。",
         "inherit": "继承默认",
