@@ -76,7 +76,6 @@ mock.module('lucide-react', () => ({
   Code2: element('svg'),
   Link: element('svg'),
   ChartColumn: element('svg'),
-  Database: element('svg'),
   Settings2: element('svg'),
   ShieldAlert: element('svg'),
 }))
@@ -211,12 +210,12 @@ describe('ToolSelector', () => {
       requires_config: false,
       config_fields: [],
     }
-    const dbTool: Tool = {
-      name: 'orders_db',
-      display_name: 'Orders DB',
-      description: 'Database',
+    const customTool: Tool = {
+      name: 'orders_api',
+      display_name: 'Orders API',
+      description: 'Orders',
       type: 'custom',
-      custom_type: 'database',
+      custom_type: 'http',
       category: 'data',
       parameters: [],
       is_enabled: true,
@@ -232,7 +231,7 @@ describe('ToolSelector', () => {
       stateIndex = 0
       const parent = ToolSelector({
         toolsConfig: [webSearchConfig],
-        availableTools: [webSearchTool, dbTool],
+        availableTools: [webSearchTool, customTool],
         onChange,
       }) as unknown as Tree
       const item = (parent.props.children as Tree[])[0]
@@ -260,11 +259,11 @@ describe('ToolSelector', () => {
       ;(deleteBtn.props.onMouseLeave as () => void)()
       ;(deleteBtn.props.onClick as (e: { stopPropagation: () => void }) => void)({ stopPropagation: () => {} })
     }
-    // Also test database tool rendering in AddToolButton
+    // Also test custom tool rendering in AddToolButton
     stateIndex = 0
     state = []
-    const addTree = renderAdd({ availableTools: [dbTool] })
-    expect(text(addTree)).toContain('Orders DB')
+    const addTree = renderAdd({ availableTools: [customTool] })
+    expect(text(addTree)).toContain('Orders API')
   })
 
   test('renders image icon for custom tools with url icons', () => {

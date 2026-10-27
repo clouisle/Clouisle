@@ -192,6 +192,9 @@ msgstr "Package import session not found"
 msgid "clouisle_invalid_extension"
 msgstr "Only .clouisle files are supported"
 
+msgid "clouisle_builtin_tool_duplicate"
+msgstr "The package attaches the same builtin tool more than once"
+
 msgid "clouisle_invalid_resource_type"
 msgstr "Package resource type is invalid"
 
@@ -725,6 +728,30 @@ msgstr "Format DateTime"
 
 msgid "builtin_tool_format_datetime_description"
 msgstr "Format a datetime. Convert a timestamp to a formatted string."
+
+msgid "builtin_tool_mongodb_query"
+msgstr "MongoDB Query"
+
+msgid "builtin_tool_mongodb_query_description"
+msgstr "Inspect a MongoDB database read-only: list collections, infer document fields, find/count documents, or run a safe aggregation pipeline. The database is chosen by the connection."
+
+msgid "builtin_tool_mysql_query"
+msgstr "MySQL Query"
+
+msgid "builtin_tool_mysql_query_description"
+msgstr "Inspect a MySQL or MariaDB database read-only: describe tables and run single SELECT statements. The database is chosen by the connection."
+
+msgid "builtin_tool_postgresql_query"
+msgstr "PostgreSQL Query"
+
+msgid "builtin_tool_postgresql_query_description"
+msgstr "Inspect a PostgreSQL database read-only: describe tables and run single SELECT statements. The database is chosen by the connection."
+
+msgid "builtin_tool_redis_query"
+msgstr "Redis Query"
+
+msgid "builtin_tool_redis_query_description"
+msgstr "Inspect a Redis database read-only: scan key names, read one key, or run an allowlisted read command. The database is chosen by the connection."
 
 msgid "builtin_tool_format_datetime_param_timestamp_description"
 msgstr "Unix timestamp (seconds). If omitted, uses current time."
@@ -2650,8 +2677,8 @@ msgstr "MCP tool not found: {server_name}"
 msgid "mcp_tool_missing_configuration"
 msgstr "MCP tool has no configuration: {tool_name}"
 
-msgid "http_tool_url_templates_not_supported"
-msgstr "HTTP tool URL templates are not supported"
+msgid "http_tool_url_template_values_missing"
+msgstr "HTTP URL is missing values for template fields: {fields}"
 
 msgid "mcp_tool_execution_failed"
 msgstr "MCP tool execution failed"
@@ -2839,6 +2866,9 @@ msgid "http_tool_url_host_not_allowed"
 msgstr "HTTP URL host is not allowed"
 msgid "http_tool_url_host_cannot_be_resolved"
 msgstr "HTTP URL host cannot be resolved"
+
+msgid "database_engine_unsupported"
+msgstr "This database engine is not supported by the builtin database tools"
 
 msgid "database_connection_failed"
 msgstr "Database connection failed"

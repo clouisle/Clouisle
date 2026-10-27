@@ -599,6 +599,24 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "List of file URLs. Each URL points to a file to parse.",
         "zh": "文件 URL 列表。每个 URL 指向一个需要解析的文件。",
     },
+    "builtin_tool_mongodb_query": {"en": "MongoDB Query", "zh": "MongoDB 查询"},
+    "builtin_tool_mongodb_query_description": {
+        "en": "Inspect a MongoDB database read-only: list collections, infer document fields, find/count documents, or run a safe aggregation pipeline. The database is chosen by the connection.",
+        "zh": "以只读方式查看 MongoDB：列出集合、推断文档字段、find/count 文档或执行安全的聚合管道。数据库由连接决定。",
+    },
+    "builtin_tool_mysql_query": {"en": "MySQL Query", "zh": "MySQL 查询"},
+    "builtin_tool_mysql_query_description": {
+        "en": "Inspect a MySQL or MariaDB database read-only: describe tables and run single SELECT statements. The database is chosen by the connection.",
+        "zh": "以只读方式查看 MySQL/MariaDB：查看表结构并执行单条 SELECT 语句。数据库由连接决定。",
+    },
+    "builtin_tool_postgresql_query": {
+        "en": "PostgreSQL Query",
+        "zh": "PostgreSQL 查询",
+    },
+    "builtin_tool_postgresql_query_description": {
+        "en": "Inspect a PostgreSQL database read-only: describe tables and run single SELECT statements. The database is chosen by the connection.",
+        "zh": "以只读方式查看 PostgreSQL：查看表结构并执行单条 SELECT 语句。数据库由连接决定。",
+    },
     "builtin_tool_read": {"en": "Read File", "zh": "读取文件"},
     "builtin_tool_read_description": {
         "en": "Read a UTF-8 text file with LINE#ID anchors bound to a full-file snapshot. Ranges and literal search preserve original line numbers for safe edit recovery.",
@@ -623,6 +641,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "builtin_tool_read_param_start_line_description": {
         "en": "First line to inspect, using 1-based file line numbers. Defaults to 1.",
         "zh": "要检查的第一行，使用从 1 开始的文件行号。默认为 1。",
+    },
+    "builtin_tool_redis_query": {"en": "Redis Query", "zh": "Redis 查询"},
+    "builtin_tool_redis_query_description": {
+        "en": "Inspect a Redis database read-only: scan key names, read one key, or run an allowlisted read command. The database is chosen by the connection.",
+        "zh": "以只读方式查看 Redis：扫描键名、读取单个键或执行白名单内的只读命令。数据库由连接决定。",
     },
     "builtin_tool_rss_feed_reader": {"en": "RSS Feed Reader", "zh": "RSS 订阅解析"},
     "builtin_tool_rss_feed_reader_description": {
@@ -793,6 +816,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "{failed_count}/{total_chunks} chunks still failed: {error}",
         "zh": "重试后仍有 {failed_count}/{total_chunks} 个分块失败：{error}",
     },
+    "clouisle_builtin_tool_duplicate": {
+        "en": "The package attaches the same builtin tool more than once",
+        "zh": "该包重复引用了同一个内置工具",
+    },
     "clouisle_checksum_mismatch": {
         "en": "Package checksum verification failed",
         "zh": "包校验和验证失败",
@@ -933,6 +960,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "database_connection_failed": {
         "en": "Database connection failed",
         "zh": "数据库连接失败",
+    },
+    "database_engine_unsupported": {
+        "en": "This database engine is not supported by the builtin database tools",
+        "zh": "内置数据库工具不支持该数据库引擎",
     },
     "database_host_cannot_be_resolved": {
         "en": "Database host cannot be resolved",
@@ -1437,9 +1468,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "不允许访问该 HTTP URL 主机",
     },
     "http_tool_url_invalid": {"en": "Invalid HTTP URL", "zh": "HTTP URL 无效"},
-    "http_tool_url_templates_not_supported": {
-        "en": "HTTP tool URL templates are not supported",
-        "zh": "HTTP 工具不支持 URL 模板",
+    "http_tool_url_template_values_missing": {
+        "en": "HTTP URL is missing values for template fields: {fields}",
+        "zh": "HTTP URL 缺少模板字段的值：{fields}",
     },
     "image_generation_exceeds_agent_limit": {
         "en": "Image generation request exceeds the agent limit ({max_images})",

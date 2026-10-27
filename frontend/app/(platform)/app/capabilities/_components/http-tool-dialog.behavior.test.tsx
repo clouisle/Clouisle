@@ -190,4 +190,30 @@ describe('platform HttpToolDialog', () => {
     expect(alertText(renderer)).toContain('Unsupported content type')
     expect(alertText(renderer)).toContain('Bad parameter')
   })
+
+  test('suggests parameters and connection fields and inserts a reference', () => {
+    const { renderer } = render({
+      tool: {
+        id: 'tool-completion', name: 'lookup', display_name: 'Lookup', description: '', icon: '', category: 'api',
+        type: 'custom', custom_type: 'http', is_enabled: true,
+        parameters: [{ name: 'id', type: 'string', required: true, description: '' }],
+        connection_fields: [
+          { name: 'api_base', label: 'API base URL', required: true, secret: false },
+          { name: 'api_token', label: 'API token', required: true, secret: true },
+        ],
+        requires_config: true, config_fields: [],
+        http_config: { method: 'GET', url: '{{api_base}}/items/{{id}}', headers: {}, query_params: {} },
+      } as React.ComponentProps<typeof HttpToolDialog>['tool'],
+    })
+
+    const urlInput = input(renderer, { placeholder: 'platform.tools.httpDialog.urlPlaceholder' })
+    act(() => urlInput.props.onChange({ target: { value: '{{', selectionStart: 2 } }))
+
+    const options = renderer.root.findAllByProps({ role: 'option' })
+    expect(options.map((option) => text(option.props.children))).toEqual(['{{id}}', '{{api_base}}', '{{api_token}}'])
+
+    act(() => options[0]!.props.onMouseDown({ preventDefault: () => {} }))
+
+    expect(input(renderer, { placeholder: 'platform.tools.httpDialog.urlPlaceholder' }).props.value).toBe('{{id}}')
+  })
 })

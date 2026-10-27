@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Loader2, Plus, Trash2, ChevronDown } from 'lucide-react'
 import {
@@ -15,7 +15,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NumberInput } from '@/components/ui/number-input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import {
   Collapsible,
@@ -39,6 +38,7 @@ import {
   normalizeToolApprovalPolicy,
 } from '@/components/tools/tool-policy-editor'
 import { cn } from '@/lib/utils'
+import { VariableInput } from '@/components/tools/variable-input'
 import { FieldError } from '@/components/ui/field'
 import { ToolCategoryInput } from '@/app/(platform)/app/capabilities/_components/tool-category-input'
 import {
@@ -106,6 +106,15 @@ export function HttpToolDialog({
   const [queryParams, setQueryParams] = useState<KeyValuePair[]>([{ key: '', value: '' }])
   const [bodyTemplate, setBodyTemplate] = useState('')
   const [timeout, setTimeout] = useState<number | ''>(30)
+
+  // {{ 补全候选：已有工具参数 + 已声明的连接字段名称（不涉及字段值）
+  const completionVariables = useMemo(
+    () => [
+      ...(tool?.parameters ?? []).map((parameter) => parameter.name),
+      ...connectionFields.map((field) => field.name),
+    ],
+    [tool, connectionFields]
+  )
 
   // UI 状态
   const [isLoading, setIsLoading] = useState(false)
@@ -368,14 +377,17 @@ export function HttpToolDialog({
                   ))}
                 </SelectContent>
               </Select>
-              <Input
+              <VariableInput
                 placeholder={t('httpDialog.urlPlaceholder')}
                 value={url}
-                onChange={(e) => {
-                  setUrl(e.target.value)
+                onChange={(value) => {
+                  setUrl(value)
                   setFieldErrors((prev) => clearValidationError(prev, 'url'))
                 }}
+                variables={completionVariables}
                 className="flex-1"
+                suggestionTitle={t('httpDialog.variableCompletion')}
+                ariaInvalid={!!fieldErrors.url}
               />
             </div>
             <FieldError>{fieldErrors.url}</FieldError>
@@ -400,11 +412,13 @@ export function HttpToolDialog({
                       onChange={(e) => updateKeyValuePair(index, 'key', e.target.value, headers, setHeaders, 'headers')}
                       className="flex-1"
                     />
-                    <Input
+                    <VariableInput
                       placeholder="Value"
                       value={header.value}
-                      onChange={(e) => updateKeyValuePair(index, 'value', e.target.value, headers, setHeaders, 'headers')}
+                      onChange={(val) => updateKeyValuePair(index, 'value', val, headers, setHeaders, 'headers')}
+                      variables={completionVariables}
                       className="flex-1"
+                      suggestionTitle={t('httpDialog.variableCompletion')}
                     />
                     <Button
                       variant="ghost"
@@ -444,11 +458,13 @@ export function HttpToolDialog({
                       onChange={(e) => updateKeyValuePair(index, 'key', e.target.value, queryParams, setQueryParams, 'queryParams')}
                       className="flex-1"
                     />
-                    <Input
+                    <VariableInput
                       placeholder="Value"
                       value={param.value}
-                      onChange={(e) => updateKeyValuePair(index, 'value', e.target.value, queryParams, setQueryParams, 'queryParams')}
+                      onChange={(val) => updateKeyValuePair(index, 'value', val, queryParams, setQueryParams, 'queryParams')}
+                      variables={completionVariables}
                       className="flex-1"
+                      suggestionTitle={t('httpDialog.variableCompletion')}
                     />
                     <Button
                       variant="ghost"
@@ -481,15 +497,19 @@ export function HttpToolDialog({
                   </Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="pt-2">
-                  <Textarea
+                  <VariableInput
                     placeholder='{"key": "{{value}}"}'
                     value={bodyTemplate}
-                    onChange={(e) => {
-                      setBodyTemplate(e.target.value)
+                    onChange={(value) => {
+                      setBodyTemplate(value)
                       setFieldErrors((prev) => clearValidationError(prev, 'bodyTemplate'))
                     }}
+                    variables={completionVariables}
+                    multiline
                     rows={4}
                     className="font-mono text-sm"
+                    suggestionTitle={t('httpDialog.variableCompletion')}
+                    ariaInvalid={!!fieldErrors.bodyTemplate}
                   />
                   <FieldError>{fieldErrors.bodyTemplate}</FieldError>
                   <p className="text-xs text-muted-foreground mt-1">

@@ -24,7 +24,7 @@ from app.schemas.response import BusinessError
 
 logger = logging.getLogger(__name__)
 
-_UNRESOLVED_PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\}\}")
+_UNRESOLVED_PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
 
 __all__ = ["socket"]
 
@@ -60,6 +60,37 @@ def _render_text_template(template: str, variables: dict[str, Any]) -> str:
         pattern = re.compile(r"\{\{\s*" + re.escape(key) + r"\s*\}\}")
         result = pattern.sub(lambda _: replacement, result)
     return _strip_unresolved_placeholders(result)
+
+
+def _render_url_template(template: str, variables: dict[str, Any]) -> str:
+    """Render a URL template, requiring every placeholder to resolve.
+
+    Unlike headers/query/body templates, silently dropping an unresolved URL
+    placeholder would send the request to a different endpoint. A missing or
+    ``None`` value is therefore a hard error naming the offending fields.
+    """
+    unresolved: list[str] = []
+
+    def replace(match: re.Match[str]) -> str:
+        key = match.group(1)
+        value = variables.get(key)
+        if value is None:
+            unresolved.append(key)
+            return match.group(0)
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False)
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        return str(value)
+
+    rendered = _UNRESOLVED_PLACEHOLDER_PATTERN.sub(replace, template)
+    if unresolved:
+        unique = list(dict.fromkeys(unresolved))
+        raise BusinessError(
+            msg_key="http_tool_url_template_values_missing",
+            fields=", ".join(unique),
+        )
+    return rendered
 
 
 def _render_json_template(template: str, variables: dict[str, Any]) -> str:
@@ -294,14 +325,13 @@ async def execute_http_tool(
 
     raw_url = str(http_config.get("url", ""))
     try:
-        if _extract_placeholder_name(raw_url) or "{{" in raw_url or "}}" in raw_url:
-            raise BusinessError(msg_key="http_tool_url_templates_not_supported")
+        rendered_url = _render_url_template(raw_url, all_vars)
         allowlist = await get_ssrf_allowed_targets()
         try:
-            url = _validate_external_http_url(raw_url, allowlist=allowlist)
+            url = _validate_external_http_url(rendered_url, allowlist=allowlist)
         except TypeError:
             # Backward compatibility with unit test mocks that only accept (value)
-            url = _validate_external_http_url(raw_url)
+            url = _validate_external_http_url(rendered_url)
     except BusinessError as exc:
         return {"success": False, "error": t(exc.msg_key, **exc.kwargs)}
     except ValueError as exc:

@@ -268,11 +268,6 @@ async def create_tool(
         parameters=[parameter.model_dump() for parameter in tool_in.parameters],
         http_config=tool_in.http_config.model_dump() if tool_in.http_config else {},
         code_config=tool_in.code_config.model_dump() if tool_in.code_config else {},
-        database_config=(
-            getattr(tool_in, "database_config", None).model_dump()
-            if getattr(tool_in, "database_config", None)
-            else {}
-        ),
         mcp_config=tool_in.mcp_config.model_dump() if tool_in.mcp_config else {},
         credentials={},
         is_enabled=tool_in.is_enabled,
@@ -313,7 +308,6 @@ async def update_tool(
             tool_in.credentials,
             tool_in.http_config,
             tool_in.mcp_config,
-            getattr(tool_in, "database_config", None),
             tool_in.connection_fields,
         )
     ):
@@ -348,8 +342,6 @@ async def update_tool(
         tool.http_config = tool_in.http_config.model_dump()
     if tool_in.code_config is not None:
         tool.code_config = tool_in.code_config.model_dump()
-    if getattr(tool_in, "database_config", None) is not None:
-        tool.database_config = tool_in.database_config.model_dump()
     if tool_in.mcp_config is not None:
         tool.mcp_config = tool_in.mcp_config.model_dump()
     if tool_in.credentials is not None:
@@ -405,7 +397,6 @@ async def duplicate_tool(
         credentials=tool.credentials,
         http_config=tool.http_config,
         mcp_config=tool.mcp_config,
-        database_config=getattr(tool, "database_config", None),
         connection_fields=tool.connection_fields,
     )
     base_name = f"{tool.name}_copy"
@@ -428,7 +419,6 @@ async def duplicate_tool(
         parameters=tool.parameters,
         http_config=tool.http_config,
         code_config=tool.code_config,
-        database_config=getattr(tool, "database_config", None) or {},
         mcp_config=tool.mcp_config,
         credentials={},
         identity_policy=tool.identity_policy,

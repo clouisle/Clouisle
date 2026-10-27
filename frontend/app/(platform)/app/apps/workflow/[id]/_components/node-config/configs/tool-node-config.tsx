@@ -3,7 +3,7 @@
 import * as React from 'react'
 import Image from 'next/image'
 import { useTranslations } from 'next-intl'
-import { Trash2, Search, ChevronDown, Wrench, Check, AlertCircle, Loader2, Clock3, Calculator, Globe, FolderOpen, Code2, Link, ChartColumn, Database } from 'lucide-react'
+import { Trash2, Search, ChevronDown, Wrench, Check, AlertCircle, Loader2, Clock3, Calculator, Globe, FolderOpen, Code2, Link, ChartColumn } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -527,8 +527,6 @@ export function ToolNodeConfig({
                 ) : (
                   <span>{selectedTool.icon}</span>
                 )
-              ) : selectedTool.custom_type === 'database' ? (
-                <Database className="h-4 w-4" />
               ) : (
                 getCategoryConfig(selectedTool.category).icon || '⚙️'
               )}
@@ -636,8 +634,6 @@ export function ToolNodeConfig({
                                     ) : (
                                       <span>{tool.icon}</span>
                                     )
-                                  ) : tool.custom_type === 'database' ? (
-                                    <Database className="h-4 w-4" />
                                   ) : (
                                     getCategoryConfig(tool.category).icon
                                   )}

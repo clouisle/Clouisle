@@ -90,11 +90,17 @@ def _internal_approval_policy(name: str | None = None) -> dict:
     )
 
 
-async def _refresh_internal_approval(definition: Tool, name: str) -> Tool:
+async def _refresh_internal_approval(
+    definition: Tool, name: str, *, using_db=None
+) -> Tool:
     """Upgrade a legacy empty synthetic policy without touching admin choices."""
     policy = _internal_approval_policy(name)
     if policy and not definition.approval_policy:
-        await Tool.filter(id=definition.id).update(approval_policy=policy)
+        await (
+            Tool.filter(id=definition.id)
+            .using_db(using_db)
+            .update(approval_policy=policy)
+        )
         definition.approval_policy = policy
     return definition
 
@@ -109,7 +115,9 @@ def derive_builtin_identity(info: ToolInfo) -> tuple[str, list[dict]]:
     Credential-requiring builtins must never persist ``identity_policy=none``
     or the manager cannot configure a connection. Metadata may live on the
     ToolInfo (``requires_config``/``config_fields``) or in
-    ``BUILTIN_TOOLS_METADATA``; either source is honored.
+    ``BUILTIN_TOOLS_METADATA``; either source is honored. ``team_only`` stays
+    the default; a builtin that supports both personal and team identities
+    opts in explicitly with ``identity_policy: selectable``.
     """
     metadata = BUILTIN_TOOLS_METADATA.get(info.name, {})
     requires_config = bool(
@@ -119,7 +127,18 @@ def derive_builtin_identity(info: ToolInfo) -> tuple[str, list[dict]]:
     if not requires_config:
         return "none", []
 
-    raw_fields = getattr(info, "config_fields", None)
+    raw_policy = metadata.get("identity_policy") or "team_only"
+    identity_policy = (
+        raw_policy
+        if raw_policy in {"team_only", "personal_only", "selectable"}
+        else "team_only"
+    )
+
+    raw_fields = getattr(info, "connection_fields", None)
+    if raw_fields is None:
+        raw_fields = metadata.get("connection_fields")
+    if raw_fields is None:
+        raw_fields = getattr(info, "config_fields", None)
     if raw_fields is None:
         raw_fields = metadata.get("config_fields") or []
 
@@ -149,7 +168,7 @@ def derive_builtin_identity(info: ToolInfo) -> tuple[str, list[dict]]:
             continue
         seen.add(field["name"])
         fields.append(field)
-    return "team_only", fields
+    return identity_policy, fields
 
 
 def _merge_identity_fields(
@@ -167,7 +186,9 @@ def _merge_identity_fields(
     return merged, changed
 
 
-async def _refresh_registry_identity(definition: Tool, info: ToolInfo) -> Tool:
+async def _refresh_registry_identity(
+    definition: Tool, info: ToolInfo, *, using_db=None
+) -> Tool:
     """Upgrade legacy ``none`` identities when registry metadata requires config."""
     policy, fields = derive_builtin_identity(info)
     if policy == "none":
@@ -183,9 +204,13 @@ async def _refresh_registry_identity(definition: Tool, info: ToolInfo) -> Tool:
         definition.connection_fields = merged
         changed = True
     if changed:
-        await Tool.filter(id=definition.id).update(
-            identity_policy=definition.identity_policy,
-            connection_fields=definition.connection_fields,
+        await (
+            Tool.filter(id=definition.id)
+            .using_db(using_db)
+            .update(
+                identity_policy=definition.identity_policy,
+                connection_fields=definition.connection_fields,
+            )
         )
     return definition
 
@@ -285,17 +310,23 @@ def _coerce_descriptor(name: str, descriptor: Any) -> _Descriptor:
     return _Descriptor(description, list(parameters), definition_version)
 
 
-async def _refresh_definition(definition: Tool, descriptor: _Descriptor) -> Tool:
+async def _refresh_definition(
+    definition: Tool, descriptor: _Descriptor, *, using_db=None
+) -> Tool:
     changed = (
         definition.description != descriptor.description
         or list(definition.parameters or []) != descriptor.parameters
         or definition.definition_version != descriptor.definition_version
     )
     if changed:
-        await Tool.filter(id=definition.id).update(
-            description=descriptor.description,
-            parameters=descriptor.parameters,
-            definition_version=descriptor.definition_version,
+        await (
+            Tool.filter(id=definition.id)
+            .using_db(using_db)
+            .update(
+                description=descriptor.description,
+                parameters=descriptor.parameters,
+                definition_version=descriptor.definition_version,
+            )
         )
         definition.description = descriptor.description
         definition.parameters = descriptor.parameters
@@ -308,6 +339,7 @@ async def get_builtin_definition(
     name: str,
     *,
     descriptor: ToolInfo | Mapping | None = None,
+    using_db=None,
 ) -> Tool:
     """Return (and lazily materialize) a stable tool definition for a team.
 
@@ -316,7 +348,8 @@ async def get_builtin_definition(
     explicit descriptor. Descriptor-supplied policy is ignored; only the
     audited internal read-only set gets an explicit allow, everything else
     stays require-approval. Never executes the tool or falls back to another
-    team.
+    team. ``using_db`` lets a startup migration materialize inside its
+    transaction.
     """
     if team_id is None:
         raise BusinessError(
@@ -346,7 +379,7 @@ async def get_builtin_definition(
     else:
         resolved = None
 
-    existing = await Tool.filter(team_id=team_id, name=name).first()
+    existing = await Tool.filter(team_id=team_id, name=name).using_db(using_db).first()
     if existing is not None:
         tool_type = getattr(existing.type, "value", existing.type)
         if tool_type != ToolType.BUILTIN.value:
@@ -356,10 +389,10 @@ async def get_builtin_definition(
                 status_code=409,
             )
         if synthetic and resolved is not None:
-            existing = await _refresh_definition(existing, resolved)
-            return await _refresh_internal_approval(existing, name)
+            existing = await _refresh_definition(existing, resolved, using_db=using_db)
+            return await _refresh_internal_approval(existing, name, using_db=using_db)
         if not synthetic and info is not None:
-            return await _refresh_registry_identity(existing, info)
+            return await _refresh_registry_identity(existing, info, using_db=using_db)
         return existing
 
     if synthetic:
@@ -389,18 +422,20 @@ async def get_builtin_definition(
     )
     try:
         try:
-            await definition.save()
+            await definition.save(using_db=using_db)
         except OperationalError as exc:
             if "value too long for type character varying" in str(exc):
                 from app.core.init_data import init_tool_type_field
 
                 await init_tool_type_field()
-                await definition.save()
+                await definition.save(using_db=using_db)
             else:
                 raise
     except IntegrityError:
         # Concurrent lazy creation: adopt the winner only if it is builtin.
-        existing = await Tool.filter(team_id=team_id, name=name).first()
+        existing = (
+            await Tool.filter(team_id=team_id, name=name).using_db(using_db).first()
+        )
         if existing is None:
             raise
         tool_type = getattr(existing.type, "value", existing.type)
@@ -411,10 +446,10 @@ async def get_builtin_definition(
                 status_code=409,
             )
         if synthetic and resolved is not None:
-            existing = await _refresh_definition(existing, resolved)
-            return await _refresh_internal_approval(existing, name)
+            existing = await _refresh_definition(existing, resolved, using_db=using_db)
+            return await _refresh_internal_approval(existing, name, using_db=using_db)
         if not synthetic and info is not None:
-            return await _refresh_registry_identity(existing, info)
+            return await _refresh_registry_identity(existing, info, using_db=using_db)
         return existing
     return definition
 

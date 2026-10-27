@@ -369,29 +369,6 @@ export type PlatformMessages = {
         queryValuePlaceholder: string
         bodyTemplatePlaceholder: string
       }
-      databaseDialog: {
-        connectionFailed: string
-        connectionSettings: string
-        connectionSuccess: string
-        createTitle: string
-        databaseName: string
-        dbType: string
-        description: string
-        descriptionPlaceholder: string
-        editTitle: string
-        host: string
-        hostRequired: string
-        maxLimit: string
-        paramsMode: string
-        password: string
-        port: string
-        testConnection: string
-        timeout: string
-        url: string
-        urlMode: string
-        urlRequired: string
-        username: string
-      }
       mcpDialog: {
         createTitle: string
         editTitle: string
@@ -445,6 +422,7 @@ export type PlatformMessages = {
         newTitle: string
         subtitle: string
         run: string
+        connectionRunHint: string
         settings: string
         output: string
         basicInfo: string
@@ -529,8 +507,6 @@ export type PlatformMessages = {
         httpDesc: string
         code: string
         codeDesc: string
-        database: string
-        databaseDesc: string
         mcp: string
         mcpDesc: string
       }

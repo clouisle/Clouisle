@@ -3,8 +3,8 @@ MongoDB 数据库工具
 
 功能: 连接 MongoDB 数据库，支持 schema (查看集合与字段结构)、find (文档过滤查询)、aggregate (聚合统计)、count (文档计数)。
 
-实际执行入口为 db_executor.execute_database_tool（自定义 `database` 工具类型），凭证来自
-工具的业务编排配置 (tools_config.database_config)，不暴露给 LLM 工具参数。
+实际执行入口为 db_executor.execute_database_query（内置 `mongodb_query` 工具），
+数据库身份与凭证来自所选连接 (ToolConnection)，不暴露给 LLM 工具参数。
 """
 
 from typing import Any

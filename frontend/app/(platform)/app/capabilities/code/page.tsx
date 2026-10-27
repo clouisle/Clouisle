@@ -63,6 +63,7 @@ type CodeLanguage = (typeof CODE_LANGUAGES)[number]['value']
 const DEFAULT_CODE: Record<CodeLanguage, string> = {
   javascript: `// JavaScript Tool
 // Available: params (object with input parameters)
+// Optional: credentials (object with the selected connection's fields)
 // Return: result as string or object
 
 async function execute(params) {
@@ -79,6 +80,7 @@ return execute(params);
 `,
   python: `# Python Tool
 # Available: params (dict with input parameters)
+# Optional: credentials (dict with the selected connection's fields)
 # Return: result as string or dict
 
 def execute(params):
@@ -1186,6 +1188,11 @@ export default function CodeToolPage() {
                     <span className="text-xs text-muted-foreground">{t('codeEditor.noOutput')}</span>
                   )}
                 </div>
+                {identityPolicy !== 'none' && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {t('codeEditor.connectionRunHint')}
+                  </p>
+                )}
               </CollapsibleContent>
             </Collapsible>
 

@@ -1,9 +1,9 @@
 """Write-time contract for tool definitions: definitions declare fields, values live in connections.
 
 Tool definitions may declare credential *fields* in ``connection_fields`` and
-reference them from HTTP/MCP/database configuration as ``{{field}}``
-placeholders. Actual secret values belong to encrypted ``ToolConnection`` rows
-and must never be accepted by the tool create/update/duplicate/import paths.
+reference them from HTTP/MCP configuration as ``{{field}}`` placeholders.
+Actual secret values belong to encrypted ``ToolConnection`` rows and must
+never be accepted by the tool create/update/duplicate/import paths.
 
 This module is intentionally pure: it classifies payloads and enforces the rule
 without touching the database, so request validation can never invoke the
@@ -144,7 +144,6 @@ def find_tool_secret_violations(
     credentials: Mapping[str, Any] | None = None,
     http_config: Mapping[str, Any] | None = None,
     mcp_config: Mapping[str, Any] | None = None,
-    database_config: Mapping[str, Any] | None = None,
     connection_fields: Sequence[Mapping[str, Any]] | None = None,
 ) -> list[ToolSecretViolation]:
     """Return every inline secret / undeclared field in a tool write payload."""
@@ -225,19 +224,6 @@ def find_tool_secret_violations(
             ToolSecretViolation(path="mcp_config.url", rule="url_credentials")
         )
 
-    database = _mapping(database_config)
-    password = database.get("password")
-    if password and not is_template_value(password):
-        violations.append(
-            ToolSecretViolation(
-                path="database_config.password", rule="inline_secret", detail="password"
-            )
-        )
-    if _url_has_credentials(database.get("url")):
-        violations.append(
-            ToolSecretViolation(path="database_config.url", rule="url_credentials")
-        )
-
     # Every placeholder used in a credential slot must be declared so the
     # connection form can collect and validate it.
     placeholder_sites: Iterable[tuple[str, Any]] = (
@@ -259,8 +245,6 @@ def find_tool_secret_violations(
             for name, value in _mapping(mcp.get("env")).items()
         ),
         ("mcp_config.url", mcp.get("url")),
-        ("database_config.password", database.get("password")),
-        ("database_config.url", database.get("url")),
     )
     for path, value in placeholder_sites:
         for field_name in template_field_names(value):
@@ -306,7 +290,6 @@ def enforce_tool_secret_contract(
     credentials: Mapping[str, Any] | None = None,
     http_config: Mapping[str, Any] | None = None,
     mcp_config: Mapping[str, Any] | None = None,
-    database_config: Mapping[str, Any] | None = None,
     connection_fields: Sequence[Mapping[str, Any]] | None = None,
 ) -> None:
     """Raise ``tool_secret_inline_not_allowed`` for any contract violation."""
@@ -314,7 +297,6 @@ def enforce_tool_secret_contract(
         credentials=credentials,
         http_config=http_config,
         mcp_config=mcp_config,
-        database_config=database_config,
         connection_fields=connection_fields,
     )
     if not violations:
@@ -359,19 +341,15 @@ def sanitize_tool_configs_for_export(
     *,
     http_config: Mapping[str, Any] | None = None,
     mcp_config: Mapping[str, Any] | None = None,
-    database_config: Mapping[str, Any] | None = None,
-) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Return secret-free copies that still carry ``{{field}}`` references."""
     http = _sanitize_config_value(dict(http_config or {}))
     mcp = _sanitize_config_value(dict(mcp_config or {}))
-    database = _sanitize_config_value(dict(database_config or {}))
     if isinstance(http, dict) and _url_has_credentials(http.get("url")):
         http.pop("url", None)
     if isinstance(mcp, dict) and _url_has_credentials(mcp.get("url")):
         mcp.pop("url", None)
-    if isinstance(database, dict) and _url_has_credentials(database.get("url")):
-        database.pop("url", None)
-    return http, mcp, database
+    return http, mcp
 
 
 __all__ = [

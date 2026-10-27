@@ -68,7 +68,6 @@ from app.schemas.tool import (
     CodeExecuteResponse,
     HttpConfigSchema,
     CodeConfigSchema,
-    DatabaseConfigSchema,
     McpConfigSchema,
     McpToolInfoOut,
     McpToolsListRequest,
@@ -170,15 +169,6 @@ def _tool_test_response(
             artifacts=_serialize_runtime_artifacts(raw.get("artifacts") or []),
             duration_ms=duration_ms,
         )
-    if custom_type == DBCustomToolType.DATABASE.value:
-        success = bool(raw.get("success", True))
-        return ToolExecuteResponse(
-            name=name,
-            success=success,
-            result=raw,
-            error=raw.get("error") if not success else None,
-            duration_ms=duration_ms,
-        )
     return ToolExecuteResponse(
         name=name,
         success=bool(raw.get("success", False)),
@@ -217,14 +207,6 @@ async def _run_saved_tool_test(
                 name=request.name,
                 success=False,
                 error=t("tool_code_not_defined"),
-                duration_ms=_elapsed_ms(started_at),
-            )
-    elif custom_type == DBCustomToolType.DATABASE.value:
-        if not (getattr(tool, "database_config", None) or {}):
-            return ToolExecuteResponse(
-                name=request.name,
-                success=False,
-                error=t("tool_execution_failed"),
                 duration_ms=_elapsed_ms(started_at),
             )
     context = _tool_test_context(actor, tool.team_id, entrypoint, request)
@@ -320,7 +302,6 @@ def _enforce_tool_write_contract(
         credentials=getattr(tool_in, "credentials", None),
         http_config=_dump_config(getattr(tool_in, "http_config", None)),
         mcp_config=_dump_config(getattr(tool_in, "mcp_config", None)),
-        database_config=_dump_config(getattr(tool_in, "database_config", None)),
         connection_fields=[
             field.model_dump() if hasattr(field, "model_dump") else field
             for field in fields
@@ -441,6 +422,7 @@ async def get_builtin_tools_for_team(
             definition.approval_policy
         )
         tool_out.definition_version = definition.definition_version
+        tool_out.is_enabled = definition.is_enabled
     return tools
 
 
@@ -468,9 +450,6 @@ def db_tool_to_out(tool: Tool, creator_name: str | None = None) -> ToolOut:
         else None,
         http_config=HttpConfigSchema(**tool.http_config) if tool.http_config else None,
         code_config=CodeConfigSchema(**tool.code_config) if tool.code_config else None,
-        database_config=DatabaseConfigSchema(**getattr(tool, "database_config", None))
-        if getattr(tool, "database_config", None)
-        else None,
         mcp_config=McpConfigSchema(**tool.mcp_config) if tool.mcp_config else None,
         team_id=tool.team_id,
         created_by_id=getattr(tool, "created_by_id", None),
@@ -502,9 +481,6 @@ def db_tool_to_detail(tool: Tool, creator_name: str | None = None) -> ToolDetail
         else None,
         http_config=HttpConfigSchema(**tool.http_config) if tool.http_config else None,
         code_config=CodeConfigSchema(**tool.code_config) if tool.code_config else None,
-        database_config=DatabaseConfigSchema(**getattr(tool, "database_config", None))
-        if getattr(tool, "database_config", None)
-        else None,
         mcp_config=McpConfigSchema(**tool.mcp_config) if tool.mcp_config else None,
         team_id=tool.team_id,
         created_at=tool.created_at.isoformat() if tool.created_at else None,
@@ -947,24 +923,6 @@ async def get_mcp_tools(
         )
 
 
-@router.post("/database/test-connection", response_model=Response[dict])
-async def test_db_connection(
-    request: DatabaseConfigSchema,
-    current_user: User = Depends(deps.PermissionChecker("tool:create")),
-) -> Any:
-    """测试数据库连通性"""
-    from app.llm.tools.builtin.db_executor import test_database_connection
-
-    result = await test_database_connection(request.model_dump())
-    if not result.get("success"):
-        raise BusinessError(
-            code=ResponseCode.BAD_REQUEST,
-            msg_key=result.get("error", "database_connection_failed"),
-            status_code=400,
-        )
-    return success(data=result, msg_key="success")
-
-
 @router.post("", response_model=Response[ToolDetailOut])
 async def create_tool(
     team_id: UUID,
@@ -999,11 +957,6 @@ async def create_tool(
         parameters=[p.model_dump() for p in tool_in.parameters],
         http_config=tool_in.http_config.model_dump() if tool_in.http_config else {},
         code_config=tool_in.code_config.model_dump() if tool_in.code_config else {},
-        database_config=(
-            getattr(tool_in, "database_config", None).model_dump()
-            if getattr(tool_in, "database_config", None)
-            else {}
-        ),
         mcp_config=tool_in.mcp_config.model_dump() if tool_in.mcp_config else {},
         # Secret values are connection-owned; the contract above rejects any
         # non-empty credential map before this write.
@@ -1125,7 +1078,6 @@ async def update_tool(
             tool_in.credentials,
             tool_in.http_config,
             tool_in.mcp_config,
-            getattr(tool_in, "database_config", None),
             tool_in.connection_fields,
         )
     ):
@@ -1169,8 +1121,6 @@ async def update_tool(
         tool.http_config = tool_in.http_config.model_dump()
     if tool_in.code_config is not None:
         tool.code_config = tool_in.code_config.model_dump()
-    if getattr(tool_in, "database_config", None) is not None:
-        tool.database_config = tool_in.database_config.model_dump()
     if tool_in.mcp_config is not None:
         tool.mcp_config = tool_in.mcp_config.model_dump()
     if tool_in.credentials is not None:
@@ -1451,7 +1401,6 @@ async def duplicate_tool(
         credentials=tool.credentials,
         http_config=tool.http_config,
         mcp_config=tool.mcp_config,
-        database_config=getattr(tool, "database_config", None),
         connection_fields=tool.connection_fields,
     )
 
@@ -1475,7 +1424,6 @@ async def duplicate_tool(
         type=tool.type,
         custom_type=tool.custom_type,
         code_config=tool.code_config,
-        database_config=getattr(tool, "database_config", None) or {},
         mcp_config=tool.mcp_config,
         credentials={},
         identity_policy=tool.identity_policy,

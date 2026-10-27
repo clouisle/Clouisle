@@ -49,10 +49,7 @@
 | `artifact` | 保存 / 导出产物 | sandbox |
 | `ask_user` | 向用户追问（需 Agent 开启 `enable_user_input_request`） | interaction |
 
-数据库连接器（PostgreSQL / MySQL / MongoDB / Redis）位于同一包下
-（`backend/app/llm/tools/builtin/{postgresql,mysql_db,mongo_db,redis_db}.py`），
-但不走内置工具注册表，而是作为 `custom` 工具的 `database` 子类型由
-`db_executor.py` 执行。
+数据库查询通过 `postgresql_query`、`mysql_query`、`mongodb_query`、`redis_query` 四个内置工具注册。引擎实现位于 `backend/app/llm/tools/builtin/{postgresql,mysql_db,mongo_db,redis_db}.py`，由 `db_executor.py` 执行只读操作。地址、账号等配置来自所选个人/团队连接，不再提供 `custom_type=database` 创建入口。
 
 ### 自定义工具 (Custom)
 
@@ -82,7 +79,10 @@
 
 **变量替换：**
 - 使用 `{{variable}}` 语法在 URL、Headers、Query Params、Body 中插入变量
-- 变量来源：工具参数 (`arguments`) + 凭证 (`credentials`)
+- 变量来源：工具参数 (`arguments`) + 连接凭证 (`credentials`)
+- URL 模板在发送请求前渲染，任何未解析（缺失或 `null`）的占位符都会让调用失败，不会静默删除片段而把请求发往错误地址
+- 占位符按原值直接插入 URL（不做额外转义）；如果参数可能包含 `/`、`?`、`&`、空格等保留字符，请在参数值中自行进行 URL 编码。`query_params` 字段由 httpx 统一编码
+- 最终渲染后的 URL 统一交给 `validate_external_http_url` 做 SSRF 校验，DNS 解析与重定向防护保持生效
 
 #### 代码工具
 

@@ -1,15 +1,19 @@
 """
-数据库自定义工具执行器与连通性测试模块
+Database builtin execution.
+
+The engine configuration and credentials arrive as a plain mapping resolved
+from the selected ``ToolConnection``; nothing here reads a Tool row. Supported
+engines keep the previous read-only guarantees: PostgreSQL/MySQL run in
+read-only transactions after ``validate_readonly_sql``, Redis only exposes an
+allowlisted command set, and MongoDB rejects ``$out`` / ``$merge`` aggregation
+stages.
 """
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from typing import Any
-from app.core.network_security import (
-    get_ssrf_allowed_targets,
-    validate_database_config,
-)
-from app.schemas.response import BusinessError
+
 from .db_common import sanitize_value, validate_readonly_sql
 from .postgresql import _parse_pg_config, _pg_schema, _pg_query
 from .mysql_db import _parse_mysql_config, _mysql_schema, _mysql_query
@@ -23,174 +27,117 @@ from .mongo_db import (
 logger = logging.getLogger(__name__)
 
 
-async def test_database_connection(
-    db_config: dict[str, Any],
-    getaddrinfo=None,
+def _normalize_config(db_config: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Copy a connection mapping into driver-friendly Python values.
+
+    Connection fields are strings (encrypted JSON stores strings), while the
+    drivers expect integers/booleans. Unknown keys are ignored here; only the
+    engine parsers consume what they recognize.
+    """
+    config = dict(db_config or {})
+    for key in ("port", "db", "timeout", "max_limit"):
+        value = config.get(key)
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                config.pop(key, None)
+                continue
+            try:
+                config[key] = int(value)
+            except ValueError:
+                raise ValueError(f"database_{key}_invalid") from None
+    ssl = config.get("ssl")
+    if isinstance(ssl, str):
+        normalized = ssl.strip().lower()
+        if normalized in {"", "false", "0", "no", "off", "disable", "disabled"}:
+            config.pop("ssl", None)
+        elif normalized in {"true", "1", "yes", "on"}:
+            config["ssl"] = True
+        # Anything else ("require", "verify-full", a CA path, ...) is passed
+        # to the driver verbatim.
+    return config
+
+
+async def execute_database_query(
+    db_config: Mapping[str, Any] | None,
+    arguments: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    """测试数据库连通性"""
+    """Execute one read-only database action using a resolved configuration.
+
+    ``db_config`` must include ``db_type`` (injected by the builtin handler).
+    """
+    config = _normalize_config(db_config)
+    args = dict(arguments or {})
+    db_type = str(config.get("db_type") or "").strip().lower()
+    query_timeout = float(config.get("timeout") or 15.0)
+    max_limit = int(config.get("max_limit") or 100)
+
+    # Never let a driver default (127.0.0.1) stand in for a missing identity.
+    if not config.get("host") and not (config.get("url") or config.get("uri")):
+        return {"error": "database_host_invalid", "success": False}
+
+    # Re-validate the destination on every execution. The connection was
+    # written by a tool editor, but DNS can change after the write; the central
+    # SSRF policy stays authoritative for every outbound database connection.
+    from app.core.network_security import (
+        get_ssrf_allowed_targets,
+        validate_database_config,
+    )
+    from app.schemas.response import BusinessError
+
     try:
         allowlist = await get_ssrf_allowed_targets()
-        await asyncio.to_thread(
-            validate_database_config,
-            db_config,
-            getaddrinfo=getaddrinfo,
-            allowlist=allowlist,
-        )
+        await asyncio.to_thread(validate_database_config, config, allowlist=allowlist)
     except BusinessError as exc:
-        logger.warning(
-            "Database connection test blocked by SSRF check: %s", exc.msg_key
-        )
-        return {"success": False, "error": exc.msg_key}
+        return {"error": exc.msg_key or "database_host_not_allowed", "success": False}
 
-    db_type = str(db_config.get("db_type") or "").strip().lower()
-    timeout = float(db_config.get("timeout") or 5.0)
-
-    try:
-        if db_type in ("postgresql", "postgres", "pgsql"):
-            import asyncpg
-
-            pg_config = _parse_pg_config(db_config)
-            conn = await asyncio.wait_for(
-                asyncpg.connect(
-                    host=pg_config["host"],
-                    port=pg_config["port"],
-                    user=pg_config["user"],
-                    password=pg_config["password"],
-                    database=pg_config["database"],
-                    ssl=pg_config["ssl"],
-                    timeout=timeout,
-                ),
-                timeout=timeout,
-            )
-            try:
-                row = await conn.fetchrow("SELECT 1 AS ok")
-                return {
-                    "success": True,
-                    "message": "PostgreSQL connection successful",
-                    "ping": row["ok"],
-                }
-            finally:
-                await conn.close()
-
-        elif db_type in ("mysql", "mariadb"):
-            import asyncmy
-
-            mysql_config = _parse_mysql_config(db_config)
-            conn = await asyncio.wait_for(
-                asyncmy.connect(
-                    host=mysql_config["host"],
-                    port=mysql_config["port"],
-                    user=mysql_config["user"],
-                    password=mysql_config["password"],
-                    database=mysql_config["database"],
-                    connect_timeout=timeout,
-                ),
-                timeout=timeout,
-            )
-            try:
-                async with conn.cursor() as cursor:
-                    await cursor.execute("SELECT 1 AS ok")
-                    row = await cursor.fetchone()
-                    return {
-                        "success": True,
-                        "message": "MySQL connection successful",
-                        "ping": row[0],
-                    }
-            finally:
-                conn.close()
-
-        elif db_type == "redis":
-            client = _get_redis_client(db_config)
-            try:
-                ping_res = await asyncio.wait_for(client.ping(), timeout=timeout)
-                return {
-                    "success": True,
-                    "message": "Redis connection successful",
-                    "ping": ping_res,
-                }
-            finally:
-                await client.aclose()
-
-        elif db_type == "mongodb":
-            client, db = _get_mongo_client_and_db(db_config)
-            try:
-                res = await asyncio.wait_for(db.command("ping"), timeout=timeout)
-                return {
-                    "success": True,
-                    "message": "MongoDB connection successful",
-                    "ping": res,
-                }
-            finally:
-                client.close()
-
-        else:
-            return {"success": False, "error": f"unsupported_db_type: {db_type}"}
-
-    except Exception as e:
-        logger.warning("Database connection test failed (%s): %s", db_type, e)
-        return {"success": False, "error": str(e)}
-
-
-async def execute_database_tool(
-    tool: Any,
-    arguments: dict[str, Any],
-    timeout: float = 15.0,
-) -> dict[str, Any]:
-    """执行自定义数据库工具"""
-    db_config = tool.database_config or {}
-    db_type = str(db_config.get("db_type") or "").strip().lower()
-    query_timeout = float(db_config.get("timeout") or timeout)
-    max_limit = int(db_config.get("max_limit") or 100)
-
-    act = str(arguments.get("action") or "schema").strip().lower()
+    act = str(args.get("action") or "schema").strip().lower()
 
     if db_type in ("postgresql", "postgres", "pgsql"):
-        pg_config = _parse_pg_config(db_config)
+        pg_config = _parse_pg_config(config)
         if act == "schema":
-            tables = arguments.get("tables")
-            include_samples = bool(arguments.get("include_samples", False))
+            tables = args.get("tables")
+            include_samples = bool(args.get("include_samples", False))
             return await asyncio.wait_for(
                 _pg_schema(pg_config, tables, include_samples), timeout=query_timeout
             )
-        elif act == "query":
-            sql = arguments.get("sql") or ""
-            if not sql.strip():
+        if act == "query":
+            sql = args.get("sql") or ""
+            if not str(sql).strip():
                 return {"error": "sql_query_required", "success": False}
             validate_readonly_sql(sql, dialect="postgres")
-            limit = min(int(arguments.get("limit") or 50), max_limit)
+            limit = min(int(args.get("limit") or 50), max_limit)
             return await asyncio.wait_for(
                 _pg_query(pg_config, sql, limit), timeout=query_timeout
             )
-        else:
-            return {"error": f"unsupported_action: {act}", "success": False}
+        return {"error": f"unsupported_action: {act}", "success": False}
 
-    elif db_type in ("mysql", "mariadb"):
-        mysql_config = _parse_mysql_config(db_config)
+    if db_type in ("mysql", "mariadb"):
+        mysql_config = _parse_mysql_config(config)
         if act == "schema":
-            tables = arguments.get("tables")
-            include_samples = bool(arguments.get("include_samples", False))
+            tables = args.get("tables")
+            include_samples = bool(args.get("include_samples", False))
             return await asyncio.wait_for(
                 _mysql_schema(mysql_config, tables, include_samples),
                 timeout=query_timeout,
             )
-        elif act == "query":
-            sql = arguments.get("sql") or ""
-            if not sql.strip():
+        if act == "query":
+            sql = args.get("sql") or ""
+            if not str(sql).strip():
                 return {"error": "sql_query_required", "success": False}
             validate_readonly_sql(sql, dialect="mysql")
-            limit = min(int(arguments.get("limit") or 50), max_limit)
+            limit = min(int(args.get("limit") or 50), max_limit)
             return await asyncio.wait_for(
                 _mysql_query(mysql_config, sql, limit), timeout=query_timeout
             )
-        else:
-            return {"error": f"unsupported_action: {act}", "success": False}
+        return {"error": f"unsupported_action: {act}", "success": False}
 
-    elif db_type == "redis":
-        client = _get_redis_client(db_config)
+    if db_type == "redis":
+        client = _get_redis_client(config)
         try:
             if act == "scan":
-                pattern = arguments.get("pattern") or "*"
-                count = min(int(arguments.get("count") or 20), 100)
+                pattern = args.get("pattern") or "*"
+                count = min(int(args.get("count") or 20), 100)
                 max_iterations = 100
 
                 async def _do_scan():
@@ -220,8 +167,8 @@ async def execute_database_tool(
 
                 return await asyncio.wait_for(_do_scan(), timeout=query_timeout)
 
-            elif act == "get":
-                key = arguments.get("key")
+            if act == "get":
+                key = args.get("key")
                 if not key:
                     return {"error": "key_required", "success": False}
                 exists = await client.exists(key)
@@ -249,9 +196,9 @@ async def execute_database_tool(
                     "success": True,
                 }
 
-            elif act == "command":
-                cmd = (arguments.get("command") or "").strip().upper()
-                key = arguments.get("key")
+            if act == "command":
+                cmd = str(args.get("command") or "").strip().upper()
+                key = args.get("key")
                 if not cmd or not key:
                     return {"error": "command_and_key_required", "success": False}
                 if cmd in DANGEROUS_COMMANDS:
@@ -261,7 +208,7 @@ async def execute_database_tool(
                     }
                 if cmd not in READONLY_COMMANDS:
                     return {"error": f"command_not_permitted: {cmd}", "success": False}
-                cmd_args = [key] + (arguments.get("args") or [])
+                cmd_args = [key] + (args.get("args") or [])
                 res = await client.execute_command(cmd, *cmd_args)
                 return {
                     "command": cmd,
@@ -270,16 +217,15 @@ async def execute_database_tool(
                     "success": True,
                 }
 
-            else:
-                return {"error": f"unsupported_action: {act}", "success": False}
+            return {"error": f"unsupported_action: {act}", "success": False}
         finally:
             await client.aclose()
 
-    elif db_type == "mongodb":
-        client, db = _get_mongo_client_and_db(db_config)
+    if db_type == "mongodb":
+        client, db = _get_mongo_client_and_db(config)
         try:
             if act == "schema":
-                coll_name = arguments.get("collection")
+                coll_name = args.get("collection")
                 if not coll_name:
                     coll_names = await asyncio.wait_for(
                         db.list_collection_names(), timeout=query_timeout
@@ -294,7 +240,7 @@ async def execute_database_tool(
                         "success": True,
                     }
                 target_coll = db[coll_name]
-                sample_size = min(int(arguments.get("sample_size") or 3), 5)
+                sample_size = min(int(args.get("sample_size") or 3), 5)
                 cursor = target_coll.find().limit(sample_size)
                 samples = await asyncio.wait_for(
                     cursor.to_list(length=sample_size), timeout=query_timeout
@@ -308,16 +254,16 @@ async def execute_database_tool(
                     "success": True,
                 }
 
-            elif act == "find":
-                coll_name = arguments.get("collection")
+            if act == "find":
+                coll_name = args.get("collection")
                 if not coll_name:
                     return {"error": "collection_required", "success": False}
-                limit = min(int(arguments.get("limit") or 20), max_limit)
+                limit = min(int(args.get("limit") or 20), max_limit)
                 cursor = (
                     db[coll_name]
                     .find(
-                        arguments.get("filter") or {},
-                        projection=arguments.get("projection"),
+                        args.get("filter") or {},
+                        projection=args.get("projection"),
                     )
                     .limit(limit)
                 )
@@ -331,21 +277,21 @@ async def execute_database_tool(
                     "success": True,
                 }
 
-            elif act == "count":
-                coll_name = arguments.get("collection")
+            if act == "count":
+                coll_name = args.get("collection")
                 if not coll_name:
                     return {"error": "collection_required", "success": False}
                 cnt = await asyncio.wait_for(
-                    db[coll_name].count_documents(arguments.get("filter") or {}),
+                    db[coll_name].count_documents(args.get("filter") or {}),
                     timeout=query_timeout,
                 )
                 return {"collection": coll_name, "count": cnt, "success": True}
 
-            elif act == "aggregate":
-                coll_name = arguments.get("collection")
+            if act == "aggregate":
+                coll_name = args.get("collection")
                 if not coll_name:
                     return {"error": "collection_required", "success": False}
-                pipe = list(arguments.get("pipeline") or [])
+                pipe = list(args.get("pipeline") or [])
                 for stage in pipe:
                     for k in stage.keys():
                         if k in DISALLOWED_AGGREGATION_STAGES:
@@ -353,7 +299,7 @@ async def execute_database_tool(
                                 "error": f"aggregation_stage_not_permitted: {k}",
                                 "success": False,
                             }
-                limit = min(int(arguments.get("limit") or 20), max_limit)
+                limit = min(int(args.get("limit") or 20), max_limit)
                 if not any("$limit" in stage for stage in pipe):
                     pipe.append({"$limit": limit})
                 cursor = db[coll_name].aggregate(pipe)
@@ -367,10 +313,11 @@ async def execute_database_tool(
                     "success": True,
                 }
 
-            else:
-                return {"error": f"unsupported_action: {act}", "success": False}
+            return {"error": f"unsupported_action: {act}", "success": False}
         finally:
             client.close()
 
-    else:
-        return {"error": f"unsupported_database_type: {db_type}", "success": False}
+    return {"error": f"unsupported_database_type: {db_type}", "success": False}
+
+
+__all__ = ["execute_database_query"]

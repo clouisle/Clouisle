@@ -559,7 +559,7 @@ async def test_custom_execution_not_found_mcp_paths_and_ambiguity(monkeypatch, u
 
 
 @pytest.mark.asyncio
-async def test_http_code_and_database_results_are_shaped(monkeypatch, user):
+async def test_http_and_code_results_are_shaped(monkeypatch, user):
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: None)
     current = db_tool()
     monkeypatch.setattr(tools.Tool, "filter", lambda **_kwargs: Query(items=[current]))
@@ -612,26 +612,6 @@ async def test_http_code_and_database_results_are_shaped(monkeypatch, user):
         await tools.test_tool(ToolExecuteRequest(name=current.name), None, user)
     )
     assert unsupported.success is False
-
-    current.custom_type = DBCustomToolType.DATABASE
-    current.database_config = {"db_type": "postgresql", "host": "127.0.0.1"}
-    execute.side_effect = None
-    execute.return_value = {"success": True, "ping": 1}
-    db_test_resp = response_data(
-        await tools.test_tool(
-            ToolExecuteRequest(name=current.name, arguments={"action": "query"}),
-            None,
-            user,
-        )
-    )
-    assert db_test_resp.success is True
-    assert db_test_resp.result == {"success": True, "ping": 1}
-
-    current.database_config = {}
-    missing_database = response_data(
-        await tools.test_tool(ToolExecuteRequest(name=current.name), None, user)
-    )
-    assert missing_database.success is False
 
 
 @pytest.mark.asyncio

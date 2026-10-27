@@ -61,6 +61,28 @@ bwrap \
 
 Create reusable code utilities from **Dashboard → Capabilities → Code**. Saved tools can be called by agents and workflows.
 
+### Connection Credentials in Code Tools
+
+A code tool may be bound to a **personal** or **team** connection like HTTP and MCP tools (`identity_policy` `personal_only`, `team_only` or `selectable`). Values come from the connection the caller selects; they are never copied into the tool definition. Each execution exposes the connection fields declared in `connection_fields` as a `credentials` mapping alongside the unchanged `params`:
+
+```python
+# Python: credentials is a dict[str, str]; {} when no connection is bound
+api_key = credentials["api_key"]
+return {"query": params["query"], "authenticated": bool(api_key)}
+```
+
+```javascript
+// JavaScript: credentials is an object; {} when no connection is bound
+const apiKey = credentials.api_key;
+return { query: params.query, authenticated: Boolean(apiKey) };
+```
+
+The interface belongs to one execution only. A revoked, inactive, unreadable or unauthorized connection fails the call; the code never runs silently without the identity it was configured to use. `credentials` is not merged into the process environment, and the reserved `CLOUISLE_CREDENTIALS_FILE` pointer cannot be supplied by a tool definition. The editor's **Run** button executes a raw snippet preview and never uses a connection; save the tool and use **Test** in the capabilities list to exercise the selected connection.
+
+How the handoff works: the API/Agent process encrypts the selected fields with the tool-secret keyring and puts only the versioned ciphertext in the sandbox job payload (Celery messages never carry plaintext secrets). The Sandbox Worker decrypts it just before launch, writes a random mode-`0600` file in the sandbox workspace `tmp` directory, and the generated wrapper reads and immediately deletes that file before the user function starts. The wrapper also removes the pointer variable from its environment. This is credential *delivery*, not output sanitization: code can deliberately print or persist values it was given, so stdout/stderr, returned results and collected artifacts are not scrubbed.
+
+Operators must configure the same `TOOL_SECRET_KEYS` (and primary key id) on API/Agent workers and Sandbox Workers. Rotate by adding a new key id and retaining previous keys until queued sandbox jobs have drained; old ciphertexts already sitting in durable queue messages cannot be rewritten by a database rotation. The envelope is not a one-time token: duplicate delivery is rejected by the existing sandbox execution claim and terminal-state fencing, not by encryption semantics.
+
 ### Workflow Code Node
 
 Embed code directly in workflow graphs. The code node receives input variables and returns results to downstream nodes.

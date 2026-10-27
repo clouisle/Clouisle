@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, Database, ChevronDown, PackageOpen, Upload, Info, Settings } from 'lucide-react'
+import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, ChevronDown, PackageOpen, Upload, Info, Settings } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
@@ -39,7 +39,6 @@ import { SkillsPanel, ToolList, ToolTestPanel } from './_components'
 import { WebSearchConfigDialog } from '@/components/tools/web-search-config-dialog'
 import { ToolConnectionDialog } from '@/components/tools/tool-connection-dialog'
 import { HttpToolDialog } from './_components/http-tool-dialog'
-import { DatabaseToolDialog } from './_components/database-tool-dialog'
 import { McpToolDialog } from './_components/mcp-tool-dialog'
 import { McpToolBrowser } from '@/components/tools/mcp-tool-browser'
 import { ToolShareDialog } from './_components/tool-share-dialog'
@@ -86,8 +85,6 @@ export default function CapabilitiesPage() {
   // HTTP tool dialog
   const [httpDialogOpen, setHttpDialogOpen] = useState(false)
   const [editingHttpTool, setEditingHttpTool] = useState<ToolDetail | null>(null)
-  const [databaseDialogOpen, setDatabaseDialogOpen] = useState(false)
-  const [editingDatabaseTool, setEditingDatabaseTool] = useState<ToolDetail | null>(null)
   const [mcpDialogOpen, setMcpDialogOpen] = useState(false)
   const [editingMcpTool, setEditingMcpTool] = useState<ToolDetail | null>(null)
   const [browsingMcpTool, setBrowsingMcpTool] = useState<Tool | null>(null)
@@ -202,18 +199,12 @@ export default function CapabilitiesPage() {
         if (detail.custom_type === 'http') {
           setEditingHttpTool(detail)
           setHttpDialogOpen(true)
-        } else if (detail.custom_type === 'database') {
-          setEditingDatabaseTool(detail)
-          setDatabaseDialogOpen(true)
         } else if (detail.custom_type === 'code') {
           // 代码工具跳转到独立页面
           router.push(`/app/capabilities/code?id=${tool.id}`)
         } else {
           // 未知的自定义工具类型，尝试根据配置判断
-          if (detail.database_config && Object.keys(detail.database_config).length > 0) {
-            setEditingDatabaseTool(detail)
-            setDatabaseDialogOpen(true)
-          } else if (detail.http_config && Object.keys(detail.http_config).length > 0) {
+          if (detail.http_config && Object.keys(detail.http_config).length > 0) {
             setEditingHttpTool(detail)
             setHttpDialogOpen(true)
           } else if (detail.code_config && Object.keys(detail.code_config).length > 0) {
@@ -243,32 +234,6 @@ export default function CapabilitiesPage() {
   const handleCreateMcpTool = () => {
     setEditingMcpTool(null)
     setMcpDialogOpen(true)
-  }
-  // 创建 Database 工具
-  const handleCreateDatabaseTool = () => {
-    setEditingDatabaseTool(null)
-    setDatabaseDialogOpen(true)
-  }
-
-  // 保存 Database 工具
-  const handleSaveDatabaseTool = async (data: ToolCreateInput | ToolUpdateInput) => {
-    if (!currentTeam?.id) return
-
-    try {
-      if (editingDatabaseTool?.id) {
-        await toolsApi.update(editingDatabaseTool.id, data as ToolUpdateInput)
-        toast.success(t('tools.toolUpdated'))
-      } else {
-        await toolsApi.create(currentTeam.id, data as ToolCreateInput)
-        toast.success(t('tools.toolCreated'))
-      }
-      setDatabaseDialogOpen(false)
-      setEditingDatabaseTool(null)
-      loadTools()
-    } catch (error) {
-      console.error('Failed to save database tool:', error)
-      throw error
-    }
   }
 
   // 保存 HTTP 工具
@@ -429,15 +394,6 @@ export default function CapabilitiesPage() {
                         </span>
                       </div>
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={handleCreateDatabaseTool}>
-                      <Database className="mr-2 h-4 w-4" />
-                      <div className="flex flex-col">
-                        <span>{t('tools.createMenu.database')}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {t('tools.createMenu.databaseDesc')}
-                        </span>
-                      </div>
-                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={handleCreateMcpTool}>
                       <Plug className="mr-2 h-4 w-4" />
                       <div className="flex flex-col">
@@ -506,10 +462,6 @@ export default function CapabilitiesPage() {
                       <DropdownMenuItem onClick={handleCreateCodeTool}>
                         <Code className="mr-2 h-4 w-4" />
                         {t('tools.createMenu.code')}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={handleCreateDatabaseTool}>
-                        <Database className="mr-2 h-4 w-4" />
-                        {t('tools.createMenu.database')}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={handleCreateMcpTool}>
                         <Plug className="mr-2 h-4 w-4" />
@@ -587,13 +539,6 @@ export default function CapabilitiesPage() {
         onSave={handleSaveHttpTool}
       />
 
-      {/* Database 工具弹窗 */}
-      <DatabaseToolDialog
-        tool={editingDatabaseTool}
-        open={databaseDialogOpen}
-        onOpenChange={setDatabaseDialogOpen}
-        onSave={handleSaveDatabaseTool}
-      />
       <McpToolDialog
         tool={editingMcpTool}
         open={mcpDialogOpen}

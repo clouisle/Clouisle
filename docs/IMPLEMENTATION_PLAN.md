@@ -2,6 +2,12 @@
 
 ## Active
 
+- **tool-connections-completion** — Completed. See `docs/plan/tool-connections-completion.md`.
+  - [x] 1. HTTP URL templates and variable completion
+  - [x] 2. Secure code-tool connection credentials
+  - [x] 3. Builtin database cutover and saved-resource migration
+  - [x] 4. Integration verification and documentation
+
 - **remove-tool-connection-delegation** — Completed. See `docs/plan/remove-tool-connection-delegation.md`.
   - [x] 1. Backend grant removal and persisted-binding execution authorization
   - [x] 2. Frontend delegation cutover and localized hints

@@ -102,7 +102,6 @@ async def _database_tool(team: Team) -> Tool:
         display_name="DB service",
         description="",
         type=ToolType.CUSTOM,
-        custom_type=CustomToolType.DATABASE,
         database_config={
             "db_type": "postgresql",
             "host": "db.internal",

@@ -101,14 +101,156 @@ class TestHttpToolExecutors:
         assert captured["content"] is None
 
     @pytest.mark.anyio
-    async def test_rejects_url_templates(self):
-        result = await execute_http_tool(
-            http_config={"url": "https://{{host}}/reviews", "method": "GET"},
-            arguments={"host": "example.com"},
-        )
+    async def test_renders_url_template_and_validates_final_url(self):
+        captured: dict = {}
+        validated: list[str] = []
+
+        async def fake_request(**kwargs):
+            captured.update(kwargs)
+            return _FakeResponse()
+
+        def fake_validate(value: str, allowlist=()):
+            validated.append(value)
+            return value
+
+        with (
+            patch(
+                "app.llm.tools.executors._validate_external_http_url",
+                side_effect=fake_validate,
+            ),
+            patch("httpx.AsyncClient.request", side_effect=fake_request),
+        ):
+            result = await execute_http_tool(
+                http_config={
+                    "url": "https://example.com/customers/{{customer_id}}/reviews",
+                    "method": "GET",
+                },
+                arguments={"customer_id": "42"},
+            )
+
+        assert result["success"] is True
+        assert captured["url"] == "https://example.com/customers/42/reviews"
+        assert validated == ["https://example.com/customers/42/reviews"]
+
+    @pytest.mark.anyio
+    async def test_renders_full_url_from_template(self):
+        captured: dict = {}
+
+        async def fake_request(**kwargs):
+            captured.update(kwargs)
+            return _FakeResponse()
+
+        with (
+            patch(
+                "app.llm.tools.executors._validate_external_http_url",
+                side_effect=lambda value, allowlist=(): value,
+            ),
+            patch("httpx.AsyncClient.request", side_effect=fake_request),
+        ):
+            result = await execute_http_tool(
+                http_config={"url": "{{endpoint}}", "method": "GET"},
+                arguments={"endpoint": "https://example.com/v1/items"},
+            )
+
+        assert result["success"] is True
+        assert captured["url"] == "https://example.com/v1/items"
+
+    @pytest.mark.anyio
+    async def test_renders_connection_fields_into_url(self):
+        captured: dict = {}
+
+        async def fake_request(**kwargs):
+            captured.update(kwargs)
+            return _FakeResponse()
+
+        with (
+            patch(
+                "app.llm.tools.executors._validate_external_http_url",
+                side_effect=lambda value, allowlist=(): value,
+            ),
+            patch("httpx.AsyncClient.request", side_effect=fake_request),
+        ):
+            result = await execute_http_tool(
+                http_config={
+                    "url": "{{base_url}}/v1/items/{{item_id}}",
+                    "method": "GET",
+                },
+                arguments={"item_id": "7"},
+                credentials={"base_url": "https://api.example.com"},
+            )
+
+        assert result["success"] is True
+        assert captured["url"] == "https://api.example.com/v1/items/7"
+
+    @pytest.mark.anyio
+    async def test_missing_url_template_values_fail_without_request(self):
+        async def forbidden_request(**kwargs):
+            raise AssertionError("HTTP request must not be sent")
+
+        with (
+            patch(
+                "app.llm.tools.executors._validate_external_http_url",
+                side_effect=lambda value, allowlist=(): value,
+            ),
+            patch("httpx.AsyncClient.request", side_effect=forbidden_request),
+        ):
+            result = await execute_http_tool(
+                http_config={
+                    "url": "https://{{host}}/reviews/{{review_id}}",
+                    "method": "GET",
+                },
+                arguments={"review_id": "9"},
+            )
 
         assert result["success"] is False
-        assert result["error"] == t("http_tool_url_templates_not_supported")
+        assert result["error"] == t(
+            "http_tool_url_template_values_missing", fields="host"
+        )
+
+    @pytest.mark.anyio
+    async def test_none_url_template_value_fails_without_request(self):
+        async def forbidden_request(**kwargs):
+            raise AssertionError("HTTP request must not be sent")
+
+        with (
+            patch(
+                "app.llm.tools.executors._validate_external_http_url",
+                side_effect=lambda value, allowlist=(): value,
+            ),
+            patch("httpx.AsyncClient.request", side_effect=forbidden_request),
+        ):
+            result = await execute_http_tool(
+                http_config={"url": "https://example.com/{{segment}}", "method": "GET"},
+                arguments={"segment": None},
+            )
+
+        assert result["success"] is False
+        assert result["error"] == t(
+            "http_tool_url_template_values_missing", fields="segment"
+        )
+
+    @pytest.mark.anyio
+    async def test_rendered_private_target_is_blocked_by_ssrf_validation(self):
+        def fake_validate(value: str, allowlist=()):
+            raise ValueError("HTTP URL host is not allowed")
+
+        async def forbidden_request(**kwargs):
+            raise AssertionError("HTTP request must not be sent")
+
+        with (
+            patch(
+                "app.llm.tools.executors._validate_external_http_url",
+                side_effect=fake_validate,
+            ),
+            patch("httpx.AsyncClient.request", side_effect=forbidden_request),
+        ):
+            result = await execute_http_tool(
+                http_config={"url": "http://{{host}}/admin", "method": "GET"},
+                arguments={"host": "localhost:8000"},
+            )
+
+        assert result["success"] is False
+        assert result["error"] == "HTTP URL host is not allowed"
 
     @pytest.mark.anyio
     async def test_rejects_blocked_http_url_without_raising(self):

@@ -17,7 +17,6 @@ import {
   Code2,
   Link,
   ChartColumn,
-  Database,
   Settings2,
   ShieldAlert,
 } from 'lucide-react'
@@ -310,8 +309,6 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
                               ) : (
                                 <span>{tool.icon}</span>
                               )
-                            ) : tool.custom_type === 'database' ? (
-                              <Database className="h-5 w-5" />
                             ) : (
                               category.icon
                             )}
@@ -455,8 +452,6 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onUpdateBinding, onTogg
           ) : (
             <span className="text-sm shrink-0 leading-none">{tool.icon}</span>
           )
-        ) : tool?.custom_type === 'database' ? (
-          <Database className="h-4 w-4 text-teal-600 dark:text-teal-400 shrink-0" />
         ) : (
           <Wrench className="h-4 w-4 text-orange-500 shrink-0" />
         )}

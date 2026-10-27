@@ -38,7 +38,6 @@ class CustomToolType(str, Enum):
 
     HTTP = "http"  # HTTP API 调用
     CODE = "code"  # 代码执行
-    DATABASE = "database"  # 数据库工具
 
 
 class ToolCategory(str, Enum):
@@ -117,23 +116,6 @@ class HttpConfigSchema(BaseModel):
     response_path: str | None = Field(
         default=None, description="响应 JSON 路径，如 data.result"
     )
-
-
-class DatabaseConfigSchema(BaseModel):
-    """数据库工具配置"""
-
-    db_type: str = Field(..., description="数据库类型 (postgresql/mysql/redis/mongodb)")
-    host: str | None = Field(default=None, description="主机名或 IP")
-    port: int | None = Field(default=None, description="端口号")
-    database: str | None = Field(default=None, description="数据库名称")
-    username: str | None = Field(default=None, description="用户名")
-    password: str | None = Field(default=None, description="密码")
-    ssl: str | bool | None = Field(default=None, description="SSL 配置")
-    url: str | None = Field(default=None, description="Redis / MongoDB 连接 URL")
-    db: int | None = Field(default=None, description="Redis 逻辑库序号")
-    auth_source: str | None = Field(default=None, description="MongoDB 认证库")
-    timeout: int = Field(default=15, ge=1, le=120, description="查询超时时间（秒）")
-    max_limit: int = Field(default=100, ge=1, le=1000, description="最大返回记录数")
 
 
 class SandboxArtifactSchema(BaseModel):
@@ -271,9 +253,6 @@ class ToolOut(BaseModel):
     )
     http_config: HttpConfigSchema | None = Field(default=None, description="HTTP 配置")
     code_config: CodeConfigSchema | None = Field(default=None, description="代码配置")
-    database_config: DatabaseConfigSchema | None = Field(
-        default=None, description="数据库配置"
-    )
     mcp_config: McpConfigSchema | None = Field(
         default=None, description="MCP Server 配置"
     )
@@ -365,9 +344,6 @@ class ToolCreateInput(BaseModel):
     )
     http_config: HttpConfigSchema | None = Field(default=None, description="HTTP 配置")
     code_config: CodeConfigSchema | None = Field(default=None, description="代码配置")
-    database_config: DatabaseConfigSchema | None = Field(
-        default=None, description="数据库配置"
-    )
     mcp_config: McpConfigSchema | None = Field(
         default=None, description="MCP Server 配置"
     )
@@ -403,7 +379,6 @@ class ToolUpdateInput(BaseModel):
     parameters: list[ToolParameterSchema] | None = None
     http_config: HttpConfigSchema | None = None
     code_config: CodeConfigSchema | None = None
-    database_config: DatabaseConfigSchema | None = None
     mcp_config: McpConfigSchema | None = None
     credentials: dict[str, str] | None = None
     is_enabled: bool | None = None
@@ -570,6 +545,19 @@ class ToolShareListOut(BaseModel):
 
 # ============ 内置工具元数据 ============
 
+
+def _db_connection_field(name: str, label: str) -> dict[str, Any]:
+    """Declare one database connection field.
+
+    Every database parameter is stored in the encrypted connection, so the
+    generic connection manager must collect it as a masked value. None is
+    individually required: ``url`` and ``host``/``port`` are alternatives and
+    some engines allow unauthenticated access. Execution validates the merged
+    configuration and fails closed with a localized error.
+    """
+    return {"name": name, "label": label, "required": False, "secret": True}
+
+
 BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
     "get_current_time": {
         "display_name_key": "builtin_tool_get_current_time",
@@ -662,6 +650,121 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
         "category": ToolCategory.SANDBOX,
         "icon": None,
         "requires_config": False,
+    },
+    # Database querying. The database identity (engine parameters + credentials)
+    # lives in a personal or team ToolConnection; the tool definition only
+    # declares the fields, so one builtin serves any number of databases.
+    "postgresql_query": {
+        "display_name_key": "builtin_tool_postgresql_query",
+        "category": ToolCategory.DATA,
+        "icon": None,
+        "requires_config": True,
+        "identity_policy": "selectable",
+        "config_fields": [
+            "url",
+            "host",
+            "port",
+            "database",
+            "username",
+            "password",
+            "ssl",
+            "timeout",
+            "max_limit",
+        ],
+        "connection_fields": [
+            _db_connection_field("url", "Connection URL"),
+            _db_connection_field("host", "Host"),
+            _db_connection_field("port", "Port"),
+            _db_connection_field("database", "Database"),
+            _db_connection_field("username", "Username"),
+            _db_connection_field("password", "Password"),
+            _db_connection_field("ssl", "SSL"),
+            _db_connection_field("timeout", "Timeout (seconds)"),
+            _db_connection_field("max_limit", "Max rows"),
+        ],
+    },
+    "mysql_query": {
+        "display_name_key": "builtin_tool_mysql_query",
+        "category": ToolCategory.DATA,
+        "icon": None,
+        "requires_config": True,
+        "identity_policy": "selectable",
+        "config_fields": [
+            "url",
+            "host",
+            "port",
+            "database",
+            "username",
+            "password",
+            "timeout",
+            "max_limit",
+        ],
+        "connection_fields": [
+            _db_connection_field("url", "Connection URL"),
+            _db_connection_field("host", "Host"),
+            _db_connection_field("port", "Port"),
+            _db_connection_field("database", "Database"),
+            _db_connection_field("username", "Username"),
+            _db_connection_field("password", "Password"),
+            _db_connection_field("timeout", "Timeout (seconds)"),
+            _db_connection_field("max_limit", "Max rows"),
+        ],
+    },
+    "redis_query": {
+        "display_name_key": "builtin_tool_redis_query",
+        "category": ToolCategory.DATA,
+        "icon": None,
+        "requires_config": True,
+        "identity_policy": "selectable",
+        "config_fields": [
+            "url",
+            "host",
+            "port",
+            "db",
+            "username",
+            "password",
+            "timeout",
+            "max_limit",
+        ],
+        "connection_fields": [
+            _db_connection_field("url", "Connection URL"),
+            _db_connection_field("host", "Host"),
+            _db_connection_field("port", "Port"),
+            _db_connection_field("db", "Database index"),
+            _db_connection_field("username", "Username"),
+            _db_connection_field("password", "Password"),
+            _db_connection_field("timeout", "Timeout (seconds)"),
+            _db_connection_field("max_limit", "Max results"),
+        ],
+    },
+    "mongodb_query": {
+        "display_name_key": "builtin_tool_mongodb_query",
+        "category": ToolCategory.DATA,
+        "icon": None,
+        "requires_config": True,
+        "identity_policy": "selectable",
+        "config_fields": [
+            "url",
+            "host",
+            "port",
+            "database",
+            "username",
+            "password",
+            "auth_source",
+            "timeout",
+            "max_limit",
+        ],
+        "connection_fields": [
+            _db_connection_field("url", "Connection URL"),
+            _db_connection_field("host", "Host"),
+            _db_connection_field("port", "Port"),
+            _db_connection_field("database", "Database"),
+            _db_connection_field("username", "Username"),
+            _db_connection_field("password", "Password"),
+            _db_connection_field("auth_source", "Auth source"),
+            _db_connection_field("timeout", "Timeout (seconds)"),
+            _db_connection_field("max_limit", "Max documents"),
+        ],
     },
 }
 

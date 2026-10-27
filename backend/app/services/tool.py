@@ -17,6 +17,10 @@ from app.llm.tools.mcp_client import execute_mcp_tool
 from app.services.builtin_tools import get_builtin_definition
 from app.services.error_messages import resolve_user_visible_error
 from app.services.sandbox.compiler import compile_code_config_job
+from app.services.sandbox.credentials import (
+    CREDENTIALS_METADATA_KEY,
+    encrypt_sandbox_credentials,
+)
 from app.services.sandbox.gateway import sandbox_gateway
 from app.services.sandbox.models import SandboxJobSource
 from app.services.tool_execution import ToolCallContext, execute_stored_tool
@@ -151,13 +155,6 @@ class ToolExecutor:
                         authorization
                     )
 
-                if tool.custom_type == CustomToolType.DATABASE:
-                    execution_tool.database_config = {
-                        name: _render_text_template(value, execution_tool.credentials)
-                        if isinstance(value, str)
-                        else value
-                        for name, value in (tool.database_config or {}).items()
-                    }
                 if tool_type == ToolType.CUSTOM.value:
                     return await self._execute_custom_tool(execution_tool, parameters)
                 config = dict(tool.mcp_config or {})
@@ -292,12 +289,26 @@ class ToolExecutor:
             invoke,
         )
 
+    @staticmethod
+    def _attach_code_credentials(job: Any, credentials: dict[str, Any]) -> Any:
+        """Attach an encrypted credential envelope to a sandbox job.
+
+        Only the versioned ciphertext enters the durable Celery payload; the
+        selected connection values are decrypted by the Sandbox Worker for
+        this single execution.
+        """
+        metadata = dict(job.metadata or {})
+        metadata[CREDENTIALS_METADATA_KEY] = encrypt_sandbox_credentials(
+            credentials, job_id=job.job_id
+        )
+        return job.model_copy(update={"metadata": metadata})
+
     async def _execute_custom_tool(
         self,
         tool: Tool,
         arguments: dict[str, Any],
     ) -> Any:
-        """Execute a custom tool (HTTP, Code, or Database)."""
+        """Execute a custom tool (HTTP or Code)."""
         if tool.custom_type == CustomToolType.HTTP:
             if not tool.http_config:
                 raise ValueError(t("tool_execution_failed"))
@@ -319,6 +330,11 @@ class ToolExecutor:
                 ),
                 source=SandboxJobSource.TOOL,
             )
+            credentials = {
+                str(name): value for name, value in (tool.credentials or {}).items()
+            }
+            if credentials:
+                job = self._attach_code_credentials(job, credentials)
             result = await sandbox_gateway.submit_and_wait(
                 job,
                 timeout_seconds=job.limits.timeout_seconds + 5,
@@ -331,17 +347,6 @@ class ToolExecutor:
                 "stderr": result.stderr,
                 "artifacts": [artifact.model_dump() for artifact in result.artifacts],
             }
-        elif tool.custom_type == CustomToolType.DATABASE:
-            if not getattr(tool, "database_config", None):
-                raise ValueError(t("tool_execution_failed"))
-            from app.llm.tools.builtin.db_executor import execute_database_tool
-
-            timeout = float(tool.database_config.get("timeout") or 15.0)
-            return await execute_database_tool(
-                tool=tool,
-                arguments=arguments,
-                timeout=timeout,
-            )
         else:
             raise ValueError(
                 t("unsupported_custom_tool_type", tool_type=tool.custom_type)

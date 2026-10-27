@@ -57,22 +57,16 @@ def test_nonsecret_headers_and_env_are_preserved():
     assert _rules(**payload) == []
 
 
-def test_secret_mcp_env_and_database_password_are_rejected():
+def test_secret_mcp_env_requires_declared_connection_field():
     violations = _rules(
         mcp_config={"env": {"GITHUB_TOKEN": "ghp_live"}},
-        database_config={"db_type": "postgresql", "password": "hunter2"},
     )
     assert ("mcp_config.env.GITHUB_TOKEN", "inline_secret") in violations
-    assert ("database_config.password", "inline_secret") in violations
 
     assert (
         _rules(
             mcp_config={"env": {"GITHUB_TOKEN": "{{github_token}}"}},
-            database_config={
-                "db_type": "postgresql",
-                "password": "{{password}}",
-            },
-            connection_fields=[{"name": "github_token"}, {"name": "password"}],
+            connection_fields=[{"name": "github_token"}],
         )
         == []
     )
@@ -80,27 +74,11 @@ def test_secret_mcp_env_and_database_password_are_rejected():
 
 def test_credential_bearing_urls_are_rejected_but_plain_urls_pass():
     assert _rules(
-        database_config={"db_type": "postgresql", "url": "postgresql://u:p@db/x"}
-    ) == [("database_config.url", "url_credentials")]
-    assert _rules(
         http_config={"url": "https://api.example.test/data?api_key=sk-live"}
     ) == [("http_config.url", "url_credentials")]
     assert (
         _rules(
             http_config={"url": "https://api.example.test/data"},
-            database_config={"db_type": "postgresql", "url": "postgresql://db/x"},
-        )
-        == []
-    )
-
-    # A placeholder keeps the template in the definition; it must be declared.
-    assert (
-        _rules(
-            database_config={
-                "db_type": "postgresql",
-                "url": "postgresql://u:{{password}}@db/x",
-            },
-            connection_fields=[{"name": "password"}],
         )
         == []
     )
@@ -130,7 +108,7 @@ def test_enforce_raises_actionable_business_error():
 
 
 def test_export_sanitization_drops_literal_secrets_and_keeps_configuration():
-    http, mcp, database = sanitize_tool_configs_for_export(
+    http, mcp = sanitize_tool_configs_for_export(
         http_config={
             "url": "https://api.example.test",
             "headers": {
@@ -148,16 +126,9 @@ def test_export_sanitization_drops_literal_secrets_and_keeps_configuration():
             "env": {"LOG_LEVEL": "debug", "GITHUB_TOKEN": "ghp_live"},
             "headers": [{"Authorization": "Bearer sk-live"}],
         },
-        database_config={
-            "db_type": "postgresql",
-            "host": "db",
-            "password": "hunter2",
-            "url": "postgresql://u:p@db/x",
-        },
     )
 
     assert http["headers"] == {"X-Trace": "trace-1", "X-Api-Key": "{{api_key}}"}
     assert http["oauth2"]["token_endpoint"] == "https://auth.example.test/token"
     assert mcp["env"] == {"LOG_LEVEL": "debug"}
     assert mcp["headers"] == [{}]
-    assert database == {"db_type": "postgresql", "host": "db"}

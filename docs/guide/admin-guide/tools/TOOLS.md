@@ -72,7 +72,8 @@ Call external REST APIs with configurable requests.
 
 **Features:**
 - Support GET, POST, PUT, PATCH, DELETE methods
-- Variable substitution in query parameters, headers, and request body templates; URL strings must remain static
+- Variable substitution in the URL path or URL string, query parameters, headers, and request body templates; candidates are tool parameters and declared connection fields
+- URL templates are rendered before the request is sent and the final URL passes SSRF validation
 - Secure credential storage
 - Response path extraction
 
@@ -91,7 +92,7 @@ Call external REST APIs with configurable requests.
   "response_path": "data.translation"
 }
 ```
-> **Important:** HTTP tool URL templates are not supported. Do not put `{{variable}}` placeholders in the URL path or URL string; use query parameters, headers, or the request body instead.
+> **Important:** The URL field supports `{{variable}}` placeholders. They are rendered from tool parameters and declared connection fields before the request is sent, and the final rendered URL is validated against SSRF protections. Every placeholder must resolve to a value; a missing value fails the call instead of silently dropping the path or query segment. Values are inserted verbatim, so URL-encode path/query values that may contain reserved characters. The editor suggests available names after typing `{{`.
 
 ### Code Tools
 
@@ -101,17 +102,17 @@ Execute custom JavaScript or Python code in a secure sandbox.
 - JavaScript (Node.js) and Python support
 - Access to standard library modules
 - Parameter injection via `params` object
+- Selected personal/team connection fields via the per-execution `credentials` mapping
 - Console/print output capture
 - 30-second timeout protection
 
+The code editor's **Run** is a connectionless snippet preview. Save the tool and use **Test** in the capabilities list to select a connection and verify credential-dependent behavior. Code can intentionally return or print the credentials it receives; outputs are not automatically scrubbed.
+
 ### Database Tools
 
-Run a SQL query against a configured database connection (custom tool type `database`).
+Use the builtin `postgresql_query`, `mysql_query`, `redis_query`, or `mongodb_query` to inspect schemas and run read-only operations. Select a personal or team connection for each Agent attachment or workflow node; no custom database tool is created.
 
-**Features:**
-- PostgreSQL, MySQL, Redis, and MongoDB connections
-- Host/port/database plus credentials stored as the tool configuration
-- Query timeout and maximum returned row limit per tool
+Database addresses, accounts, query timeouts and row limits are encrypted connection fields, not model arguments or tool-definition settings. Internal targets must be allowed by the site's network policy.
 
 ### MCP Tools
 
@@ -303,7 +304,6 @@ return hash;
 3. Choose tool type:
    - **HTTP Tool**: Configure API endpoint and request format
    - **Code Tool**: Write JavaScript or Python code
-   - **Database Tool**: Configure a database connection and SQL query
    - **MCP Tool**: Configure MCP server connection
 4. Define parameters that the tool accepts
 5. Test the tool with sample inputs
@@ -314,7 +314,7 @@ return hash;
 | Field | Description |
 |-------|-------------|
 | Method | HTTP method (GET, POST, PUT, PATCH, DELETE) |
-| URL | Static endpoint URL (`{{variable}}` placeholders are rejected by the executor — pass variables via Query Params, Headers, or Body Template) |
+| URL | Endpoint URL; supports `{{variable}}` placeholders from tool parameters and connection fields, rendered before SSRF validation |
 | Headers | Request headers, supports `{{variable}}` substitution |
 | Query Params | URL query parameters |
 | Body Template | Request body for POST/PUT/PATCH |
@@ -331,15 +331,17 @@ return hash;
 
 ### Database Tool Configuration
 
+Choose the engine's builtin tool, then create/select its connection. The following fields belong to that connection; URL and host/port are alternative forms. Use the saved-tool Test action to verify connectivity with a read-only schema operation.
+
 | Field | Description |
 |-------|-------------|
-| Type | `postgresql`, `mysql`, `redis`, or `mongodb` |
+| Engine | Fixed by the selected builtin tool |
 | Host / Port | Server address (`url` instead for Redis/MongoDB) |
 | Database | Database name (`db` index for Redis, `auth_source` for MongoDB) |
 | Username / Password | Connection credentials |
 | SSL | TLS configuration |
-| Timeout | Query timeout in seconds (default 15, max 120) |
-| Max Limit | Maximum returned rows (default 100, max 1000) |
+| Timeout | Query timeout in seconds (default 15) |
+| Max Limit | Maximum returned rows (default 100) |
 
 ### MCP Tool Configuration
 

@@ -35,7 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Play, Loader2, CheckCircle, XCircle, Clock, Copy, Check, RefreshCw, Database } from 'lucide-react'
+import { Play, Loader2, CheckCircle, XCircle, Clock, Copy, Check, RefreshCw } from 'lucide-react'
 import { WebSearchEngineSelect } from '@/components/tools/web-search-engine-select'
 
 interface ToolTestApi {
@@ -333,8 +333,6 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
               </div>
             ) : tool.icon ? (
               <span className="text-xl">{tool.icon}</span>
-            ) : tool.custom_type === 'database' ? (
-              <Database className="h-5 w-5 shrink-0 text-muted-foreground" />
             ) : null}
             {tool.display_name}
           </SheetTitle>

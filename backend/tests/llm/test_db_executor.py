@@ -1,203 +1,140 @@
-"""
-Unit Tests for Custom Database Tool Execution & Connection Testing
-"""
+"""Builtin database execution: connection config, SSRF and dispatch."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
-from app.llm.tools.builtin.db_executor import (
-    test_database_connection as check_db_conn,
-    execute_database_tool,
+from app.llm.tools.builtin.db_executor import execute_database_query
+from app.llm.tools import tool_registry  # registration side effects
+from app.llm.tools.builtin.database import (
+    mongodb_query,
+    mysql_query,
+    postgresql_query,
+    redis_query,
 )
-from app.models.tool import Tool, CustomToolType
+
+
+@pytest.fixture(autouse=True)
+def _allow_database_hosts(monkeypatch):
+    from app.llm.tools.builtin.database import register_database_tools
+
+    register_database_tools()
+
+    async def _allowlist():
+        return []
+
+    monkeypatch.setattr(
+        "app.core.network_security.get_ssrf_allowed_targets", _allowlist
+    )
+    monkeypatch.setattr(
+        "app.core.network_security.validate_database_config", lambda *a, **k: None
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "engine"),
+    [
+        ("postgresql_query", "postgresql"),
+        ("mysql_query", "mysql"),
+        ("redis_query", "redis"),
+        ("mongodb_query", "mongodb"),
+    ],
+)
+def test_database_builtins_are_registered(name, engine):
+    info = tool_registry.get_tool(name)
+    assert info is not None
+    assert info.handler is not None
+    action = next(param for param in info.parameters if param.name == "action")
+    assert action.required is True
+    assert action.enum
 
 
 @pytest.mark.asyncio
-async def test_database_connection_pg_mocked():
-    mock_conn = MagicMock()
-    mock_conn.close = AsyncMock()
-    mock_conn.fetchrow = AsyncMock(return_value={"ok": 1})
+@pytest.mark.parametrize(
+    "handler", [postgresql_query, mysql_query, redis_query, mongodb_query]
+)
+async def test_handlers_inject_engine_from_tool_key(handler):
+    captured = {}
 
+    async def fake_execute(config, arguments):
+        captured.update(config)
+        return {"success": True, "action": arguments.get("action")}
+
+    with patch("app.llm.tools.builtin.database.execute_database_query", fake_execute):
+        result = await handler(
+            credentials={"host": "db.internal", "password": "s3cret"},
+            action="schema",
+        )
+    assert result["success"] is True
+    assert captured["host"] == "db.internal"
+    assert captured["password"] == "s3cret"
+    assert captured["db_type"] in {"postgresql", "mysql", "redis", "mongodb"}
+
+
+@pytest.mark.asyncio
+async def test_execute_database_query_blocks_disallowed_host():
     with (
-        patch("asyncpg.connect", new_callable=AsyncMock, return_value=mock_conn),
         patch(
-            "app.llm.tools.builtin.db_executor.validate_database_config",
-            return_value=None,
+            "app.core.network_security.get_ssrf_allowed_targets",
+            AsyncMock(return_value=[]),
+        ),
+        patch(
+            "app.core.network_security.validate_database_config",
+            side_effect=_business_error("database_host_not_allowed"),
         ),
     ):
-        res = await check_db_conn(
-            {
-                "db_type": "postgresql",
-                "host": "localhost",
-                "port": 5432,
-                "database": "test",
-                "username": "u",
-                "password": "p",
-            }
+        result = await execute_database_query(
+            {"db_type": "postgresql", "host": "127.0.0.1", "port": "5432"},
+            {"action": "schema"},
         )
-        assert res["success"] is True
-        assert res["ping"] == 1
+    assert result == {"error": "database_host_not_allowed", "success": False}
+
+
+def _business_error(msg_key: str):
+    from app.schemas.response import BusinessError
+
+    def _raise(*args, **kwargs):
+        raise BusinessError(code=400, msg_key=msg_key, status_code=400)
+
+    return _raise
 
 
 @pytest.mark.asyncio
-async def test_database_connection_mysql_mocked():
-    mock_conn = MagicMock()
-    mock_cursor = AsyncMock()
-    mock_cursor.__aenter__.return_value = mock_cursor
-    mock_cursor.__aexit__.return_value = None
-    mock_cursor.fetchone.return_value = [1]
-    mock_conn.cursor.return_value = mock_cursor
-
-    with (
-        patch("asyncmy.connect", new_callable=AsyncMock, return_value=mock_conn),
-        patch(
-            "app.llm.tools.builtin.db_executor.validate_database_config",
-            return_value=None,
-        ),
-    ):
-        res = await check_db_conn(
-            {
-                "db_type": "mysql",
-                "host": "localhost",
-                "port": 3306,
-                "database": "test",
-                "username": "u",
-                "password": "p",
-            }
-        )
-        assert res["success"] is True
-        assert res["ping"] == 1
-
-
-@pytest.mark.asyncio
-async def test_database_connection_redis_mocked():
-    mock_client = AsyncMock()
-    mock_client.ping.return_value = "PONG"
-
-    with (
-        patch("redis.asyncio.Redis", return_value=mock_client),
-        patch("redis.asyncio.from_url", return_value=mock_client),
-        patch(
-            "app.llm.tools.builtin.db_executor.validate_database_config",
-            return_value=None,
-        ),
-    ):
-        res = await check_db_conn(
-            {
-                "db_type": "redis",
-                "host": "localhost",
-                "port": 6379,
-            }
-        )
-        assert res["success"] is True
-        assert res["ping"] == "PONG"
-
-
-@pytest.mark.asyncio
-async def test_database_connection_mongo_mocked():
-    mock_client = MagicMock()
-    mock_db = MagicMock()
-    mock_db.command = AsyncMock(return_value={"ok": 1.0})
-    mock_client.__getitem__.return_value = mock_db
-
-    with (
-        patch("motor.motor_asyncio.AsyncIOMotorClient", return_value=mock_client),
-        patch(
-            "app.llm.tools.builtin.db_executor.validate_database_config",
-            return_value=None,
-        ),
-    ):
-        res = await check_db_conn(
-            {
-                "db_type": "mongodb",
-                "host": "localhost",
-                "port": 27017,
-                "database": "test",
-            }
-        )
-        assert res["success"] is True
-
-
-@pytest.mark.asyncio
-async def test_execute_database_tool_pg_mocked():
-    tool = MagicMock(spec=Tool)
-    tool.name = "company_pg_db"
-    tool.custom_type = CustomToolType.DATABASE
-    tool.database_config = {
+async def test_execute_database_query_normalizes_string_numbers():
+    config = {
         "db_type": "postgresql",
-        "host": "localhost",
-        "port": 5432,
+        "host": "db.internal",
+        "port": "5432",
+        "timeout": "9",
+        "max_limit": "25",
+        "ssl": "false",
+    }
+    with patch(
+        "app.llm.tools.builtin.db_executor._pg_schema", new_callable=AsyncMock
+    ) as mock_schema:
+        mock_schema.return_value = {"success": True}
+        await execute_database_query(config, {"action": "schema"})
+    pg_config = mock_schema.call_args.args[0]
+    assert pg_config["port"] == 5432
+    assert "ssl" not in pg_config or pg_config["ssl"] is None
+
+
+@pytest.mark.asyncio
+async def test_execute_database_query_rejects_unknown_engine():
+    result = await execute_database_query(
+        {"db_type": "cassandra", "host": "db.internal"}, {"action": "schema"}
+    )
+    assert result == {
+        "error": "unsupported_database_type: cassandra",
+        "success": False,
     }
 
-    with (
-        patch(
-            "app.llm.tools.builtin.db_executor._pg_schema", new_callable=AsyncMock
-        ) as mock_schema,
-        patch(
-            "app.llm.tools.builtin.db_executor._pg_query", new_callable=AsyncMock
-        ) as mock_query,
-    ):
-        mock_schema.return_value = {"tables": ["users"], "success": True}
-        mock_query.return_value = {"columns": ["id"], "rows": [[1]], "success": True}
-
-        # 1. Schema
-        res_schema = await execute_database_tool(
-            tool=tool,
-            arguments={"action": "schema"},
-        )
-        assert res_schema["success"] is True
-
-        # 2. Query
-        res_query = await execute_database_tool(
-            tool=tool,
-            arguments={"action": "query", "sql": "SELECT 1"},
-        )
-        assert res_query["success"] is True
-
-        # 3. Action = query with dangerous SQL
-        with pytest.raises(ValueError, match="disallowed_sql"):
-            await execute_database_tool(
-                tool=tool,
-                arguments={"action": "query", "sql": "DROP TABLE users"},
-            )
-
 
 @pytest.mark.asyncio
-async def test_database_connection_ssrf_rejection_without_mock():
-    # Verifies real SSRF validation is enforced when not bypassed
-    res = await check_db_conn(
-        {
-            "db_type": "postgresql",
-            "host": "localhost",
-            "port": 5432,
-        }
+async def test_execute_database_query_requires_host_or_url():
+    result = await execute_database_query(
+        {"db_type": "postgresql"}, {"action": "schema"}
     )
-    assert res["success"] is False
-    assert res["error"] == "database_host_not_allowed"
-
-    res_ip = await check_db_conn(
-        {
-            "db_type": "mysql",
-            "host": "127.0.0.1",
-            "port": 3306,
-        }
-    )
-    assert res_ip["success"] is False
-    assert res_ip["error"] == "database_host_not_allowed"
-
-    res_url = await check_db_conn(
-        {
-            "db_type": "redis",
-            "url": "redis://:secret@10.0.0.1:6379/0",
-        }
-    )
-    assert res_url["success"] is False
-    assert res_url["error"] == "database_host_not_allowed"
-
-    res_empty = await check_db_conn(
-        {
-            "db_type": "mongodb",
-        }
-    )
-    assert res_empty["success"] is False
-    assert res_empty["error"] == "database_host_invalid"
+    # validate_database_config is patched in this module, so the executor's
+    # own incomplete-config guard must still fail closed.
+    assert result == {"error": "database_host_invalid", "success": False}

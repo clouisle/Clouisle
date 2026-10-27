@@ -164,7 +164,6 @@ async def test_update_covers_remaining_fields_and_not_found(monkeypatch):
             ToolUpdateInput(
                 icon="cloud",
                 visibility="private",
-                database_config={"db_type": "postgresql", "host": "db"},
                 http_config={"url": "https://updated.test", "method": "POST"},
                 mcp_config={"transport": "sse", "url": "https://mcp.test"},
             ),
@@ -177,7 +176,6 @@ async def test_update_covers_remaining_fields_and_not_found(monkeypatch):
     assert result.http_config.url == "https://updated.test"
     assert result.mcp_config.url == "https://mcp.test"
     assert existing.visibility == DBToolVisibility.PRIVATE
-    assert existing.database_config["db_type"] == "postgresql"
     share_delete.assert_awaited_once()
     existing.save.assert_awaited_once()
 
@@ -316,12 +314,3 @@ async def test_custom_code_missing_and_unsupported_types_do_not_execute(monkeypa
     )
     assert unsupported.success is False
     assert unsupported.error
-
-    execute.side_effect = None
-    custom.custom_type = CustomToolType.DATABASE
-    custom.database_config = {}
-    missing_database = data(
-        await tools.test_tool(ToolExecuteRequest(name=custom.name), team_id, current)
-    )
-    assert missing_database.success is False
-    assert execute.await_count == 1

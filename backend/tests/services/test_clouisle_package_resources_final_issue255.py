@@ -78,6 +78,7 @@ async def test_base_asset_and_tool_export_skip_paths(monkeypatch):
         code_config={},
         mcp_config={},
         is_enabled=True,
+        approval_policy={"default_decision": "allow"},
         team_id=uuid4(),
     )
     monkeypatch.setattr(resources.Tool, "filter", lambda **_kwargs: Query(first=tool))

@@ -207,6 +207,7 @@ export type ToolsMessages = {
       paramName: string
       paramDescription: string
       required: string
+      variableCompletion: string
       toolNamePlaceholder: string
       urlPlaceholder: string
     }
@@ -249,33 +250,11 @@ export type ToolsMessages = {
       httpUrlPlaceholder: string
       toolsPendingApproval: string
     }
-    databaseDialog: {
-      connectionFailed: string
-      connectionSettings: string
-      connectionSuccess: string
-      createTitle: string
-      databaseName: string
-      dbType: string
-      description: string
-      descriptionPlaceholder: string
-      editTitle: string
-      host: string
-      hostRequired: string
-      maxLimit: string
-      paramsMode: string
-      password: string
-      port: string
-      testConnection: string
-      timeout: string
-      url: string
-      urlMode: string
-      urlRequired: string
-      username: string
-    }
     codeEditor: {
       newTitle: string
       subtitle: string
       run: string
+      connectionRunHint: string
       settings: string
       output: string
       basicInfo: string
@@ -335,8 +314,6 @@ export type ToolsMessages = {
       httpDesc: string
       code: string
       codeDesc: string
-      database: string
-      databaseDesc: string
       mcp: string
       mcpDesc: string
     }

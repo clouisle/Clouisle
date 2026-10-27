@@ -49,6 +49,28 @@ Sandbox Worker 只有在工作区和检查点目录通过可写磁盘探测后�
 
 在 **管理后台 → 功能 → 代码** 中创建可复用的代码工具。保存后的工具可被 Agent 和工作流调用。
 
+### 代码工具中的连接凭证
+
+与其他自定义工具一样，代码工具可绑定**个人**或**团队**连接（`identity_policy` 为 `personal_only`、`team_only` 或 `selectable`）。具体值来自调用方选择的连接，不会复制进工具定义。每次执行都会把 `connection_fields` 声明的连接字段以 `credentials` 映射提供给代码，原有的 `params` 保持不变：
+
+```python
+# Python：credentials 是 dict[str, str]；未绑定连接时为 {}
+api_key = credentials["api_key"]
+return {"query": params["query"], "authenticated": bool(api_key)}
+```
+
+```javascript
+// JavaScript：credentials 是对象；未绑定连接时为 {}
+const apiKey = credentials.api_key;
+return { query: params.query, authenticated: Boolean(apiKey) };
+```
+
+该接口只属于本次执行。连接被撤销、停用、无法解密或无权使用时，调用会失败，绝不会在缺少既定身份的情况下静默运行。`credentials` 不会合并进进程环境；保留的环境变量 `CLOUISLE_CREDENTIALS_FILE` 也不能由工具定义提供。编辑器中的**运行**按钮只执行原始代码预览，不会使用连接；请先保存工具，再到功能列表中通过**测试**使用所选连接运行。
+
+交接过程如下：API/Agent 进程用工具密钥环加密所选字段，沙箱任务载荷中只放版本化密文（Celery 消息不含明文凭证）；Sandbox Worker 在启动前才解密，在任务私有 `tmp` 目录写入随机命名的 `0600` 文件，生成的包装脚本在用户函数开始前读取并立即删除该文件，同时从环境中移除指针变量。这属于凭证**传递**，不是输出脱敏：代码可以主动打印或持久化它拿到的值，因此 stdout/stderr、返回结果和收集的产物不会被清洗。
+
+运维必须在 API/Agent Worker 与 Sandbox Worker 上配置相同的 `TOOL_SECRET_KEYS`（及主密钥 ID）。轮换时先增加新密钥并保留旧密钥，直到排队中的沙箱任务排空；已经位于持久化队列消息中的旧密文无法通过数据库密钥轮换重写。该信封不是一次性令牌：重复投递由现有沙箱执行认领和终态栅栏拒绝，而不是依赖加密语义。
+
 ### 工作流代码节点
 
 在工作流图中直接嵌入代码。代码节点接收输入变量并将结果返回给下游节点。

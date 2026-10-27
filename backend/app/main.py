@@ -378,6 +378,20 @@ async def lifespan(app: FastAPI):
     await migrate_sso_link_sessions()
     # Generate schemas
     await Tortoise.generate_schemas()
+
+    # One-way cutover of legacy custom database tools. It must run before any
+    # code loads a Tool row (the retired enum value is cleared inside), and
+    # before the legacy secret migration, which otherwise would only see the
+    # old database_config. A failure is fatal: losing a credential silently is
+    # worse than stopping the release.
+    from app.core.database_tool_migration import migrate_custom_database_tools
+
+    database_tool_migration = await migrate_custom_database_tools()
+    if database_tool_migration["tools"]:
+        logger.info(
+            "Legacy database tools migrated to builtin tools: %s",
+            database_tool_migration,
+        )
     try:
         from app.core.tool_policy_migration import (
             apply_tool_connection_constraints,

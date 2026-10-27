@@ -41,6 +41,7 @@ export type PackagesMessages = {
     selectTargetTeam: string
     messages: {
       clouisle_checksum_mismatch: string
+      clouisle_database_connection_required: string
       clouisle_dependency_forbidden: string
       clouisle_dependency_missing: string
       clouisle_kb_documents_not_updated: string

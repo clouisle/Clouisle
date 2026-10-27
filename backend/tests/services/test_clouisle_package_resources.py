@@ -60,6 +60,7 @@ def tool(**overrides):
         "code_config": {"nested": {"password": "secret", "safe": True}},
         "mcp_config": {"headers": [{"Authorization": "Bearer secret"}]},
         "is_enabled": True,
+        "approval_policy": {"default_decision": "allow"},
     }
     values.update(overrides)
     return SimpleNamespace(**values)

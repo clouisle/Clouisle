@@ -2429,7 +2429,11 @@ async def init_agent_hide_artifact_list_field():
 
 
 async def init_tool_database_config():
-    """Add database_config column and widen custom_type for the 'database' tool type."""
+    """Add the legacy database_config column.
+
+    Database tools are builtin tools now; the column is retained only as the
+    input of ``app.core.database_tool_migration`` (and for rollback safety).
+    """
     logger.info("Initializing tool database_config field...")
 
     conn = Tortoise.get_connection("default")
@@ -2452,26 +2456,6 @@ async def init_tool_database_config():
         ADD COLUMN IF NOT EXISTS database_config JSONB NOT NULL DEFAULT '{}'::jsonb
         """,
     )
-
-    # CustomToolType originally held only "http"/"code" (4 chars each), so
-    # Tortoise sized the column to VARCHAR(4).  Adding "database" (8 chars)
-    # requires widening the column on existing databases.
-    _, col_info = await conn.execute_query("""
-        SELECT character_maximum_length
-        FROM information_schema.columns
-        WHERE table_name = 'tools'
-          AND column_name = 'custom_type'
-          AND table_schema = 'public'
-    """)
-    if col_info and col_info[0]["character_maximum_length"] < 8:
-        await execute_startup_migration_query(
-            conn,
-            """
-            ALTER TABLE tools
-            ALTER COLUMN custom_type TYPE VARCHAR(8)
-            """,
-        )
-        logger.info("Widened tools.custom_type to VARCHAR(8)")
 
     logger.info("Tool database_config migration complete")
 

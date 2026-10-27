@@ -99,7 +99,6 @@ curl -X GET "https://your-domain.com/api/v1/tools?category=search" \
         "custom_type": null,
         "http_config": null,
         "code_config": null,
-        "database_config": null,
         "mcp_config": null,
         "team_id": null,
         "created_by_id": null,
@@ -225,6 +224,8 @@ GET /api/v1/tools/legacy?team_id={team_id}
 ## List Builtin Tools
 
 Get every builtin tool (including the sandbox tools `artifact`, `bash`, `edit`, `read`, `write`).
+
+The database builtins `postgresql_query`, `mysql_query`, `redis_query`, and `mongodb_query` are listed here with `requires_config: true` and their connection field declarations. They have no tool-level credentials: pass `team_id` to `GET /api/v1/tools/builtin` (or the team tool list) to obtain the persisted definition id, `identity_policy: "selectable"`, and `connection_fields`, then manage personal/team connections through `/api/v1/tool-connections` (`builtin_tool_key` instead of `tool_id`). There is no database connection-test endpoint; run `POST /api/v1/tools/test` with `{ "name": "postgresql_query", "arguments": { "action": "schema" }, "connection_id": "..." }` instead.
 
 ### Endpoint
 
@@ -577,7 +578,7 @@ POST /api/v1/tools?team_id={team_id}
   ],
   "http_config": {
     "method": "GET",
-    "url": "https://api.crm.example.com/customers/{customer_id}",
+    "url": "https://api.crm.example.com/customers/{{customer_id}}",
     "headers": {
       "X-API-Key": "crm_..."
     },
@@ -598,12 +599,11 @@ POST /api/v1/tools?team_id={team_id}
 | `icon` | string | No | Icon (emoji or URL, max 100 chars) |
 | `category` | string | No | Tool category (default: `other`) |
 | `type` | string | No | Tool type: `builtin`, `custom`, `mcp` (default: `custom`) |
-| `custom_type` | string | No | Custom tool type: `http`, `code`, `database`, `mcp` (only for `type=custom`) |
+| `custom_type` | string | No | Custom tool type: `http`, `code` (only for `type=custom`) |
 | `visibility` | string | No | Tool visibility: `private`, `team` (default: `private`) |
 | `parameters` | array | No | Parameter definitions (`name`, `type`, `description`, `required`, `enum`, `default`) |
 | `http_config` | object | No | HTTP config (`method`, `url`, `headers`, `query_params`, `body_template`, `content_type`, `form_fields`, `timeout`, `response_path`) |
 | `code_config` | object | No | Code config (`language`, `code`, `command`, `python_packages`, `js_packages`, `python_package_index_url`, `node_package_registry_url`, `artifacts`, `limits`) |
-| `database_config` | object | No | Database config (`db_type`, `host`, `port`, `database`, `username`, `password`, `ssl`, `url`, `db`, `auth_source`, `timeout`, `max_limit`) |
 | `mcp_config` | object | No | MCP Server config (`transport`, `command`, `args`, `env`, `url`, `headers`) |
 | `credentials` | object | No | Tool credentials |
 | `is_enabled` | boolean | No | Enabled status (default: true) |
@@ -630,7 +630,7 @@ curl -X POST "https://your-domain.com/api/v1/tools?team_id=team-123" \
     ],
     "http_config": {
       "method": "GET",
-      "url": "https://api.crm.example.com/customers/{customer_id}"
+      "url": "https://api.crm.example.com/customers/{{customer_id}}"
     }
   }'
 ```
@@ -804,11 +804,11 @@ curl -X POST "https://your-domain.com/api/v1/tools/tool-789/toggle" \
 }
 ```
 
-The tool creator or a team admin/owner can toggle a tool. Only custom and MCP tools (database-backed) can be toggled; builtin tools are always enabled.
+The tool creator or a team admin/owner can toggle custom and MCP tools. A builtin definition's enabled state is persisted per team; migration may leave a builtin disabled when a merged legacy definition was disabled.
 
 ## Duplicate Tool
 
-Copy a database-backed tool within its owning team.
+Copy a stored tool within its owning team.
 
 ### Endpoint
 
@@ -933,7 +933,7 @@ Existing global search credentials are encrypted during migration. Agent/team cr
 | `3000` | Permission denied | Insufficient permissions, or private tool access denied |
 | `3002` | Not a team member | A requested `team_id` filter refers to a team the user cannot access |
 | `1001` | Validation failed | Invalid request data |
-| `1002` | Bad request | Private tool cannot be shared, share target is the owning team, or database connection failed |
+| `1002` | Bad request | Private tool cannot be shared or share target is the owning team |
 | `1003` | Internal error | MCP server connection failed |
 | `5001` | Already exists | A tool with the same name already exists in the team |
 | `5104` | Duplicate name | Tool is already shared with that team |
@@ -1112,7 +1112,7 @@ Only an admin/owner of the tool's owning team can share or unshare it, and only 
 
 ---
 
-## MCP & Database Tool Diagnostics
+## MCP Tool Diagnostics
 
 ### Discover MCP Server Tools
 
@@ -1160,41 +1160,6 @@ Response:
 ```
 
 A connection failure returns code `1003` with `msg: "Failed to connect to MCP server"`.
-
-### Test Database Tool Connection
-
-Requires the `tool:create` permission.
-
-```http
-POST /api/v1/tools/database/test-connection HTTP/1.1
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "db_type": "postgresql",
-  "host": "db.example.com",
-  "port": 5432,
-  "database": "analytics",
-  "username": "readonly",
-  "password": "secret_password"
-}
-```
-
-Response:
-
-```json
-{
-  "code": 0,
-  "data": {
-    "success": true,
-    "message": "PostgreSQL connection successful",
-    "ping": 1
-  },
-  "msg": "success"
-}
-```
-
-A failed connection returns code `1002` (bad request) with the driver's error key as `msg`.
 
 ## Saved MCP Server Protocol
 
