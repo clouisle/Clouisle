@@ -479,22 +479,47 @@ export function UserToolConnections() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {visibleFields.map((field) => {
                         const fieldLabel = field.label_key ? tTools(field.label_key) : field.label || field.name
+                        const fieldValue = secretValues[field.name] ?? field.default ?? ''
                         return (
                           <div key={field.name} className="space-y-1">
                             <Label htmlFor={`field-${field.name}`} className="text-xs">
                               {fieldLabel} {field.required && <span className="text-destructive">*</span>}
                             </Label>
-                            <Input
-                              id={`field-${field.name}`}
-                              type={field.secret ? 'password' : field.input_type === 'number' ? 'number' : 'text'}
-                              placeholder={fieldLabel}
-                              onChange={(e) =>
-                                setSecretValues((prev) => ({
-                                  ...prev,
-                                  [field.name]: e.target.value,
-                                }))
-                              }
-                            />
+                            {field.input_type === 'select' ? (
+                              <Select
+                                value={fieldValue}
+                                onValueChange={(value) =>
+                                  setSecretValues((prev) => ({ ...prev, [field.name]: value ?? '' }))
+                                }
+                              >
+                                <SelectTrigger id={`field-${field.name}`} className="h-8 text-xs">
+                                  <SelectValue>
+                                    {field.name === 'ssl' ? tTools(`sslOptions.${fieldValue}`) : fieldValue}
+                                  </SelectValue>
+                                </SelectTrigger>
+                                <SelectContent side="bottom" alignItemWithTrigger={false}>
+                                  {(field.options ?? []).map((option) => (
+                                    <SelectItem key={option} value={option} className="text-xs">
+                                      {field.name === 'ssl' ? tTools(`sslOptions.${option}`) : option}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Input
+                                id={`field-${field.name}`}
+                                type={field.input_type ?? (field.secret ? 'password' : 'text')}
+                                value={fieldValue}
+                                placeholder={fieldLabel}
+                                className="h-8 text-xs font-mono"
+                                onChange={(e) =>
+                                  setSecretValues((prev) => ({
+                                    ...prev,
+                                    [field.name]: e.target.value,
+                                  }))
+                                }
+                              />
+                            )}
                           </div>
                         )
                       })}

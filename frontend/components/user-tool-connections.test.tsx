@@ -132,6 +132,7 @@ const mockToolsResponse = {
         { name: 'host', label: 'Host', required: true, secret: false },
         { name: 'port', label: 'Port', required: true, secret: false, default: '5432' },
         { name: 'password', label: 'Password', required: true, secret: true },
+        { name: 'ssl', label: 'SSL mode', required: false, secret: false, input_type: 'select', default: 'prefer', options: ['disable', 'prefer', 'require'] },
       ],
       is_enabled: true,
     },
@@ -428,6 +429,9 @@ describe('UserToolConnections', () => {
     await act(async () => {
       select.props.onChange({ target: { value: 'postgresql_query' } })
     })
+
+    // Declared select fields (SSL mode) render as selects, not free text.
+    expect(renderer.root.findAllByProps({ 'data-testid': 'tool-select' })).toHaveLength(2)
 
     const inputs = renderer.root.findAllByType('input')
     for (const [id, value] of [
