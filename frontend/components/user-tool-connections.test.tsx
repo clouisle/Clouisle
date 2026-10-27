@@ -65,9 +65,15 @@ mock.module('@/components/ui/select', () => ({
     children,
     value,
     onValueChange,
-  }: React.PropsWithChildren<{ value?: string; onValueChange: (value: string) => void }>) => (
+    items,
+  }: React.PropsWithChildren<{
+    value?: string
+    onValueChange: (value: string) => void
+    items?: Array<{ value: string; label: string }>
+  }>) => (
     <select
       data-testid="tool-select"
+      data-items={JSON.stringify(items ?? [])}
       value={value ?? ''}
       onChange={(e) => onValueChange(e.target.value)}
     >
@@ -388,6 +394,13 @@ describe('UserToolConnections', () => {
     const select = renderer.root.findByProps({ 'data-testid': 'tool-select' })
     await act(async () => {
       select.props.onChange({ target: { value: 'tool-mcp-1' } })
+    })
+
+    // The trigger label comes from this mapping; Base UI would otherwise echo
+    // the opaque tool id.
+    expect(JSON.parse(select.props['data-items'])).toContainEqual({
+      value: 'tool-mcp-1',
+      label: 'GitHub',
     })
 
     // Form should now show connection fields

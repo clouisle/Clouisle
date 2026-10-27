@@ -140,6 +140,17 @@ export function UserToolConnections() {
     return connectableTools.find((t) => t.id === selectedToolKey || t.name === selectedToolKey) || null
   }, [selectedToolKey, connectableTools])
 
+  // Base UI renders the raw value in the trigger unless the select knows the
+  // value-to-label mapping; never show an opaque tool id to the user.
+  const toolItems = React.useMemo(
+    () =>
+      connectableTools.map((tool) => ({
+        value: tool.id || tool.name,
+        label: tool.display_name || tool.name,
+      })),
+    [connectableTools]
+  )
+
   // Fields visible for current tool and inputMode
   const visibleFields = React.useMemo(() => {
     if (!selectedTool?.connection_fields) return []
@@ -359,7 +370,7 @@ export function UserToolConnections() {
             {/* Tool Selection */}
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">{t('selectTool')}</Label>
-              <Select value={selectedToolKey} onValueChange={handleSelectTool}>
+              <Select items={toolItems} value={selectedToolKey} onValueChange={handleSelectTool}>
                 <SelectTrigger className="h-9 text-xs">
                   <SelectValue placeholder={t('selectToolPlaceholder')} />
                 </SelectTrigger>
