@@ -67,6 +67,7 @@ from app.services.sandbox.compiler import compile_code_config_job
 from app.services.sandbox.gateway import sandbox_gateway
 from app.services.sandbox.models import SandboxJobSource
 from app.services.tool import ToolExecutor
+from app.services.tool_execution import require_caller_only_policy
 from app.services.tool_secret_contract import enforce_tool_secret_contract
 
 router = APIRouter()
@@ -399,6 +400,7 @@ async def duplicate_tool(
         mcp_config=tool.mcp_config,
         connection_fields=tool.connection_fields,
     )
+    require_caller_only_policy(tool.approval_policy)
     base_name = f"{tool.name}_copy"
     new_name = base_name
     counter = 1

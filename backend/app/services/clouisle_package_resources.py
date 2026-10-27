@@ -459,6 +459,11 @@ class ToolPackageAdapter(ResourcePackageAdapter):
                 legacy_key=legacy_key,
                 resource_payload=resource_payload,
             )
+        # A packaged legacy audience is never silently replaced by the
+        # caller-only default; the import fails until it is reconfigured.
+        from app.services.tool_execution import require_caller_only_policy
+
+        require_caller_only_policy(resource_payload.get("approval_policy"))
         fields = _tool_fields(resource_payload)
         enforce_tool_secret_contract(
             credentials=resource_payload.get("credentials"),
@@ -514,12 +519,16 @@ class ToolPackageAdapter(ResourcePackageAdapter):
         """
         from app.core.database_tool_migration import merge_approval_policies
         from app.services.builtin_tools import get_builtin_definition
+        from app.services.tool_execution import require_caller_only_policy
 
         existing = await Tool.filter(team_id=team.id, name=legacy_key).first()
         definition = await get_builtin_definition(team.id, legacy_key)
         merged_policy = merge_approval_policies(
             [definition.approval_policy, resource_payload.get("approval_policy")]
         )
+        # A package may carry a pre-cutover external audience; it is never
+        # imported (nor silently rewritten) — the existing definition stays.
+        require_caller_only_policy(merged_policy)
         merged_enabled = bool(definition.is_enabled) and bool(
             resource_payload.get("is_enabled", True)
         )

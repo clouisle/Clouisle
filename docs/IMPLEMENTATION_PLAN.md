@@ -2,6 +2,12 @@
 
 ## Active
 
+- **caller-only-tool-confirmation** — Completed. See `docs/plan/caller-only-tool-confirmation.md`.
+  - [x] 1. Define safe legacy-data cutover
+  - [x] 2. Restrict execution and API contracts to caller confirmation
+  - [x] 3. Remove external approver configuration and obsolete surfaces
+  - [x] 4. Verify migration, interactive and non-interactive behavior
+
 - **tool-runtime-coverage** — Completed. See `docs/plan/tool-runtime-coverage.md`.
   - [x] 1. Investigate and resolve pre-push failures
   - [x] 2. Cover tool runtime authorization, connections and approvals

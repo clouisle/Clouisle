@@ -121,9 +121,11 @@ they never automatically adopt a background actor's personal default.
 - Callers cannot obtain credentials: connection secrets remain write-only for
   management and are never returned by run events or API responses.
 
-Changing a fixed identity requires selecting another connection and a new
-approval. Once a call is awaiting approval, changing the user's default does
-not change the account or connection version bound to that execution.
+Changing a fixed identity requires selecting another connection. A pending
+caller confirmation stays bound to the account and connection version it was
+created with; a replacement connection cannot be substituted into it, and any
+later call needs its own confirmation. Changing the user's default does not
+change the account or connection version bound to that execution.
 
 ## Using server capabilities
 
@@ -147,21 +149,45 @@ Authorization and connection identity checks still apply.
 
 ## Approvals
 
-Tool-execution approval applies only to interactive Agent chat, never to tool
-discovery, direct testing, workflows (including workflow Agent nodes), or
-background entrypoints.
+Tool-execution approval is caller-only and applies only to interactive Agent
+chat, never to tool discovery, direct testing, workflows (including workflow
+Agent nodes), or background entrypoints.
 
 Enable **Require Confirmation** on the Agent's MCP server binding to confirm
 every child call. To require approval for selected children, configure an exact
-operation override such as `tool:delete_task` on the saved MCP definition. An
-explicit child policy is evaluated during chat even when the Agent-wide switch
-is off; an `allow` override cannot relax an enabled Agent confirmation switch.
-An empty saved policy does not implicitly require approval.
+caller operation override such as `tool:delete_task` on the saved MCP
+definition. An explicit child policy is evaluated during chat even when the
+Agent-wide switch is off; an `allow` override cannot relax an enabled Agent
+confirmation switch. An empty saved policy does not implicitly require
+approval. Policies can no longer name individual users or team roles as
+approvers.
 
 Chat pauses before invoking the external tool and shows the approval card above
-the composer. Approve to resume the original call once, or reject to cancel it.
+the composer to the user who initiated the call. That caller — and only that
+caller — can approve to resume the original call once or reject to cancel it.
 Parameters, identity, connection version and tool definition are bound to the
-approval. Rejection, expiry, revocation and stopped runs never become approvals.
+approval. Another team member, team administrator or superuser cannot decide,
+and rejection, expiry, revocation and stopped runs never become approvals.
+
+**Legacy approver configuration fails closed.** Existing policies containing
+`user` or `team_role` gates anywhere, including nested MCP operation overrides,
+are kept unchanged but never treated as caller confirmation or as allow.
+Execution fails with `6510 tool_approval_policy_external_audience_unsupported`
+before the external call. The policy editor blocks saving such a policy and offers a
+one-way **Replace with caller confirmation** action; administrators can also
+edit the policy manually and re-save it with a caller gate, or an explicit
+allow/deny decision without an external audience. Upgrading cancels every
+unstarted execution associated with a legacy external gate — `awaiting_approval`
+or `ready`, including work whose external gate was already approved — together
+with its pending gates, without resuming work. Executions already running or
+terminal are left untouched for operator audit. The startup cutover logs one
+warning with the counts of cancelled executions, cancelled pending gates, and
+tools or policy layers still carrying legacy gates; it is idempotent and
+repeats on every restart, so a legacy worker left running during a rolling
+upgrade cannot approve new work — its attempts fail closed at execution time. Cancelled executions stay terminal and rollback
+does not reactivate them. Completed execution history remains available for
+audit. Non-interactive entrypoints never prompt; if a stored legacy external
+gate reaches them, it still fails closed rather than being bypassed.
 
 MCP call names, inputs and results remain inside the expandable thought trace.
 The active header does not cycle through MCP identifiers, and partial streamed
@@ -220,8 +246,9 @@ total.
 | `504 mcp_request_timeout` | Protocol budget expired |
 | `413 mcp_content_too_large` | Resource/prompt/result exceeded byte budgets |
 | `409 tool_execution_not_ready` | Pending execution was denied, expired, or already completed |
-| `6504 tool_approval_not_authorized` | Caller is not in the gate's audience (caller gates require team membership) |
-| `409 6510` | Approval policy is malformed; an administrator must fix it |
+| `6504 tool_approval_not_authorized` | You are not the caller who initiated this execution, so you cannot decide its confirmation |
+| `422 6510` | Saving a policy with legacy `user`/`team_role` approvers is rejected; replace them with caller confirmation |
+| `409 6510` | Approval policy is malformed, or still uses legacy user/role approvers; an administrator must re-save it with caller confirmation |
 | `6434 tool_oauth_reauth_required` | OAuth tokens are no longer usable; run the authorization flow again |
 
 ## Related Documentation

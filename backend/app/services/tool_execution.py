@@ -15,7 +15,11 @@ from app.models.tool_approval import (
 )
 from app.models.tool_connection import ToolConnectionScope
 from app.models.user import User
-from app.schemas.response import BusinessError
+from app.schemas.response import BusinessError, ResponseCode
+from app.schemas.tool_approval import (
+    ExternalApprovalAudienceError,
+    assert_caller_only_approval_policy,
+)
 from app.services import tool_approvals
 from app.services.tool_connections import (
     ConnectionBinding,
@@ -44,6 +48,44 @@ class ToolCallContext:
 class PendingToolApproval:
     execution_id: UUID
     tool_name: str
+
+
+def require_caller_only_policy(policy: Any, *, status_code: int = 422) -> None:
+    """Fail closed on a legacy ``user``/``team_role`` policy body.
+
+    Used by explicit policy write paths (tool create/update/duplicate, policy
+    layers, package install) before anything is persisted and by the execution
+    boundary. Reading historical configuration and decisions stays untouched;
+    the error keeps the existing configuration-required code.
+    """
+    try:
+        assert_caller_only_approval_policy(policy)
+    except ExternalApprovalAudienceError as exc:
+        raise BusinessError(
+            code=ResponseCode.TOOL_APPROVAL_POLICY_CONFIGURATION_REQUIRED,
+            msg_key="tool_approval_policy_external_audience_unsupported",
+            status_code=status_code,
+        ) from exc
+
+
+def _reject_legacy_external_gates(
+    tool: Tool,
+    *,
+    policy: Any | None,
+    execution: Any | None = None,
+) -> None:
+    """Every entrypoint fails closed on a legacy external audience.
+
+    The caller-only contract never silently ignores a stored audience: a tool
+    whose policy (at any nesting depth), an explicit override, or the stored
+    execution snapshot names users or team roles cannot run.
+    """
+    for candidate in (
+        getattr(tool, "approval_policy", None),
+        policy,
+        getattr(execution, "policy_snapshot", None),
+    ):
+        require_caller_only_policy(candidate, status_code=409)
 
 
 async def authorize_tool_context(tool: Tool, context: ToolCallContext) -> None:
@@ -169,6 +211,10 @@ async def execute_stored_tool(
     await authorize_tool_context(tool, context)
     if not tool.is_enabled:
         raise BusinessError(code=403, msg_key="tool_access_denied", status_code=403)
+    # Every entrypoint (interactive or not) fails closed while any legacy
+    # user/team_role audience remains configured; it is never treated as a
+    # caller gate, ignored, or silently allowed.
+    _reject_legacy_external_gates(tool, policy=policy)
     execution = None
     if context.execution_id is not None:
         execution = await tool_approvals.get_execution(context.execution_id)
@@ -221,6 +267,9 @@ async def execute_stored_tool(
             if execution.connection_id
             else None,
         )
+    # A pending/ready execution created before the cutover also cannot resume
+    # with a snapshot that still names external approvers.
+    _reject_legacy_external_gates(tool, policy=policy, execution=execution)
     resolved, binding = await resolve_tool_connection(tool, context, operation)
     is_agent_call = (
         context.entrypoint in {ExecutionEntrypoint.CHAT, ExecutionEntrypoint.AGENT_RUN}
@@ -246,8 +295,6 @@ async def execute_stored_tool(
                     tool.approval_policy
                 )
             except tool_approvals.PolicyConfigurationError as exc:
-                from app.schemas.response import ResponseCode
-
                 raise BusinessError(
                     code=ResponseCode.TOOL_APPROVAL_POLICY_CONFIGURATION_REQUIRED,
                     msg_key="tool_approval_policy_configuration_required",

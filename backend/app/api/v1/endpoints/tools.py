@@ -31,7 +31,11 @@ from app.llm.tools.mcp_client import list_mcp_tools
 from app.services.error_messages import resolve_user_visible_error
 from app.services.audit_log import AuditLogService
 from app.services.tool import ToolExecutor
-from app.services.tool_execution import PendingToolApproval, ToolCallContext
+from app.services.tool_execution import (
+    PendingToolApproval,
+    ToolCallContext,
+    require_caller_only_policy,
+)
 from app.services.tool_secret_contract import enforce_tool_secret_contract
 from app.services.sandbox.compiler import compile_code_config_job
 from app.services.sandbox.gateway import sandbox_gateway
@@ -290,11 +294,14 @@ def _dump_config(value: Any) -> dict[str, Any]:
 def _enforce_tool_write_contract(
     tool_in: Any, *, existing_connection_fields: Any = None
 ) -> None:
-    """Reject inline secret values on every definition write path.
+    """Reject inline secret values and legacy approval audiences on writes.
 
     Credential *definitions* live in ``connection_fields``; values belong to a
     ToolConnection. Package import/duplicate call the pure helper directly.
+    An update that omits ``approval_policy`` leaves the stored body untouched;
+    only an explicitly supplied policy is validated here.
     """
+    require_caller_only_policy(getattr(tool_in, "approval_policy", None))
     fields = tool_in.connection_fields
     if fields is None:
         fields = existing_connection_fields or []
@@ -1396,13 +1403,15 @@ async def duplicate_tool(
 
     await check_team_access(tool.team_id, current_user, require_admin=True)
 
-    # A duplicate must reference connections, never copy plaintext secrets.
+    # A duplicate must reference connections, never copy plaintext secrets,
+    # and never replicate a legacy external approval audience.
     enforce_tool_secret_contract(
         credentials=tool.credentials,
         http_config=tool.http_config,
         mcp_config=tool.mcp_config,
         connection_fields=tool.connection_fields,
     )
+    require_caller_only_policy(tool.approval_policy)
 
     # 生成新名称
     base_name = f"{tool.name}_copy"

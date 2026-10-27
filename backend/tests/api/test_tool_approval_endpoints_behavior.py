@@ -25,17 +25,11 @@ from app.models.tool import CustomToolType, Tool, ToolType
 from app.models.user import Team, TeamMember, User
 from app.schemas.response import BusinessError, ResponseCode
 from app.schemas.tool_approval import (
-    ApprovalDecision,
-    ApprovalGate,
-    ApprovalGateKind,
     ApprovalRequestStatus,
     ApprovalVote,
     ExecutionEntrypoint,
     ExecutionRunKind,
-    PolicyLayer,
-    PolicySource,
     ToolApprovalDecisionIn,
-    ToolApprovalPolicy,
     ToolExecutionStatus,
 )
 from app.services import agent_run_store
@@ -216,43 +210,6 @@ async def test_submit_decision_reports_remaining_gates_and_dispatch_failures(
         assert (
             await service.get_execution(failure_execution.id)
         ).status == ToolExecutionStatus.READY
-
-        multi_layer = PolicyLayer(
-            source=PolicySource.TEAM,
-            policy=ToolApprovalPolicy(
-                default_decision=ApprovalDecision.REQUIRE_APPROVAL,
-                gates=(
-                    ApprovalGate(kind=ApprovalGateKind.CALLER),
-                    ApprovalGate(
-                        kind=ApprovalGateKind.USER,
-                        user_ids=(actor.id,),
-                    ),
-                ),
-            ),
-        )
-        multi_tool = await _tool(team, _allow_policy())
-        multi = await _execution(
-            actor,
-            team,
-            multi_tool,
-            policy_layers=(multi_layer,),
-        )
-        gates = await service.ToolApprovalRequest.filter(
-            execution_id=multi.id
-        ).order_by("stage_index")
-        first_result = await submit_approval_decision(
-            request_id=gates[0].id,
-            payload=ToolApprovalDecisionIn(
-                decision=ApprovalVote.APPROVE,
-                idempotency_key="api-multi-first",
-            ),
-            current_user=actor,
-        )
-        assert first_result["data"].remaining_approvals == 1
-        assert (
-            first_result["data"].execution_status
-            == ToolExecutionStatus.AWAITING_APPROVAL
-        )
 
 
 @pytest.mark.asyncio

@@ -20,8 +20,6 @@ from app.models.user import Team, TeamMember, User
 from app.schemas.response import BusinessError, ResponseCode
 from app.schemas.tool_approval import (
     ApprovalDecision,
-    ApprovalGate,
-    ApprovalGateKind,
     ApprovalRequestStatus,
     ApprovalVote,
     ExecutionEntrypoint,
@@ -367,15 +365,11 @@ async def test_approval_request_view_is_audience_only_and_expiry_aware():
 
 
 @pytest.mark.asyncio
-async def test_pending_inbox_filters_audience_expiry_status_and_paginates():
+async def test_pending_inbox_filters_expiry_status_and_paginates():
     async with _database():
         actor = await _user("inbox-actor")
-        admin = await _user("inbox-admin")
-        member = await _user("inbox-member")
         outsider = await _user("inbox-outsider")
         team = await _team("inbox-team", actor)
-        await _add_member(team, admin, "admin")
-        await _add_member(team, member, "member")
         tool = await _tool(team, _caller_policy())
 
         executions = [await _execution(actor, team, tool) for _ in range(3)]
@@ -411,30 +405,6 @@ async def test_pending_inbox_filters_audience_expiry_status_and_paginates():
 
         _, outsider_total = await service.list_pending_approvals_for_user(outsider)
         assert outsider_total == 0
-
-        role_layer = PolicyLayer(
-            source=PolicySource.TEAM,
-            policy=ToolApprovalPolicy(
-                default_decision=ApprovalDecision.REQUIRE_APPROVAL,
-                gates=(
-                    ApprovalGate(
-                        kind=ApprovalGateKind.TEAM_ROLE,
-                        roles=("admin",),
-                    ),
-                ),
-            ),
-        )
-        tool_with_role = await _tool(team, _allow_policy())
-        role_execution = await _execution(
-            actor,
-            team,
-            tool_with_role,
-            policy_layers=(role_layer,),
-        )
-        admin_inbox, admin_total = await service.list_pending_approvals_for_user(admin)
-        assert admin_total == 1
-        assert admin_inbox[0].execution_id == role_execution.id
-        assert await service.list_pending_approvals_for_user(member) == ([], 0)
 
 
 @pytest.mark.asyncio
@@ -565,7 +535,7 @@ async def test_decisions_reject_expiry_and_invalid_payloads():
 
 
 @pytest.mark.asyncio
-async def test_decisions_cover_binding_drift_rejection_and_multi_gate_ready():
+async def test_decisions_cover_binding_drift_and_rejection():
     async with _database():
         actor = await _user("decision-flow-actor")
         team = await _team("decision-flow-team", actor)
@@ -609,63 +579,6 @@ async def test_decisions_cover_binding_drift_rejection_and_multi_gate_ready():
         assert (
             await service.ToolApprovalRequest.get(id=rejected_request.id)
         ).status == ApprovalRequestStatus.REJECTED
-
-        multi_layer = PolicyLayer(
-            source=PolicySource.TEAM,
-            policy=ToolApprovalPolicy(
-                default_decision=ApprovalDecision.REQUIRE_APPROVAL,
-                gates=(
-                    ApprovalGate(kind=ApprovalGateKind.CALLER),
-                    ApprovalGate(
-                        kind=ApprovalGateKind.USER,
-                        user_ids=(actor.id,),
-                    ),
-                ),
-            ),
-        )
-        multi_tool = await _tool(team, _allow_policy())
-        multi = await _execution(
-            actor,
-            team,
-            multi_tool,
-            policy_layers=(multi_layer,),
-            now=now,
-        )
-        assert multi.status == ToolExecutionStatus.AWAITING_APPROVAL
-        gates = await service.ToolApprovalRequest.filter(
-            execution_id=multi.id
-        ).order_by("stage_index")
-        assert [gate.stage_key for gate in gates] == [
-            "caller",
-            f"user:{actor.id}",
-        ]
-        first = await service.decide_approval(
-            gates[0].id,
-            actor,
-            decision=ApprovalVote.APPROVE,
-            idempotency_key="multi-first",
-            now=now,
-        )
-        assert first.decision == ApprovalVote.APPROVE
-        still_waiting = await service.get_execution(multi.id)
-        assert still_waiting.status == ToolExecutionStatus.AWAITING_APPROVAL
-        assert (
-            await service.ToolApprovalRequest.filter(
-                execution_id=multi.id,
-                status=ApprovalRequestStatus.PENDING,
-            ).count()
-            == 1
-        )
-        await service.decide_approval(
-            gates[1].id,
-            actor,
-            decision=ApprovalVote.APPROVE,
-            idempotency_key="multi-second",
-            now=now,
-        )
-        assert (
-            await service.get_execution(multi.id)
-        ).status == ToolExecutionStatus.READY
 
 
 @pytest.mark.asyncio

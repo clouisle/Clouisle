@@ -18,6 +18,11 @@ export interface ToolConnectionField {
   input_mode?: 'url' | 'host' | null
 }
 export interface ToolApprovalGate {
+  /**
+   * Only `caller` is writable. `user` and `team_role` can still appear on
+   * legacy saved policies; they must be surfaced and reconfigured, never
+   * converted to `caller` or `allow`.
+   */
   kind: 'caller' | 'user' | 'team_role'
   user_ids: string[]
   roles: string[]

@@ -502,32 +502,17 @@ export type ToolsMessages = {
         allow: string
         deny: string
         requireApproval: string
-        gates: string
-        gatesHint: string
-        addGate: string
-        removeGate: string
-        gateKind: string
-        caller: string
-        user: string
-        teamRole: string
+        callerGate: string
         callerHint: string
-        userIds: string
-        userIdsPlaceholder: string
-        userIdsHint: string
-        userIdsRequired: string
-        noMatchingUsers: string
-        loadingMembers: string
-        roles: string
-        allowSelfApproval: string
-        selfApprovalUnavailable: string
-        rolesRequired: string
-        noGates: string
-        roleOptions: {
-          owner: string
-          admin: string
-          member: string
-          viewer: string
+        legacyTitle: string
+        legacyDescription: string
+        legacyDefaultScope: string
+        legacyKinds: {
+          user: string
+          team_role: string
         }
+        legacyReset: string
+        legacyResetHint: string
       }
       operations: {
         title: string

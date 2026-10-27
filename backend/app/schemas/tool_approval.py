@@ -18,10 +18,18 @@ Policy semantics
   with ``policy_configuration_required`` when no audience can decide.
 * Gate signatures are deduplicated deterministically. A duplicated audience
   keeps the stricter ``allow_self_approval=False``.
+
+Legacy ``user``/``team_role`` gate kinds are still parsed so persisted
+pre-cutover policies and approval history remain readable and auditable. They
+are never valid for a new policy body or execution: write paths and the
+execution boundary call :func:`assert_caller_only_approval_policy`, which fails
+closed instead of translating an external audience into caller confirmation
+or ``allow``.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from enum import Enum
 from typing import Any
@@ -292,6 +300,70 @@ class ToolApprovalPolicy(BaseModel):
                 raise ValueError("approval_policy_cycle")
             seen.add(id(override))
             policy = override
+
+
+#: Gate kinds retained only to read persisted pre-cutover rows. New policies
+#: may never carry them; see :func:`assert_caller_only_approval_policy`.
+EXTERNAL_APPROVAL_GATE_KINDS: frozenset[ApprovalGateKind] = frozenset(
+    {ApprovalGateKind.USER, ApprovalGateKind.TEAM_ROLE}
+)
+
+_EXTERNAL_GATE_VALUES = frozenset(kind.value for kind in EXTERNAL_APPROVAL_GATE_KINDS)
+_GATE_FIELD_NAMES = frozenset({"kind", "user_ids", "roles", "allow_self_approval"})
+
+
+class ExternalApprovalAudienceError(ValueError):
+    """A policy carries a legacy ``user``/``team_role`` audience.
+
+    Raised before a new policy body is persisted or an execution is created.
+    The error is deliberately not translated into caller confirmation or
+    ``allow``: only an administrator may reconfigure the policy.
+    """
+
+    code = "approval_gate_external_audience_unsupported"
+
+    def __init__(self, gate_kinds: tuple[ApprovalGateKind, ...]) -> None:
+        self.gate_kinds = gate_kinds
+        super().__init__(self.code)
+
+
+def external_approval_gate_kinds(value: Any) -> tuple[ApprovalGateKind, ...]:
+    """Return legacy external gate kinds anywhere in a policy/snapshot tree.
+
+    Accepts a typed policy, raw persisted policy JSON, or a stored
+    ``policy_snapshot`` (layers plus evaluation). The walk is structural so it
+    still detects an external audience in a body that no longer validates.
+    """
+    if value is None:
+        return ()
+    if isinstance(value, ToolApprovalPolicy):
+        value = value.model_dump(mode="json")
+    found: list[ApprovalGateKind] = []
+    stack: list[Any] = [value]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, Mapping):
+            kind = current.get("kind")
+            normalized_kind = kind.value if isinstance(kind, ApprovalGateKind) else kind
+            if (
+                isinstance(normalized_kind, str)
+                and set(current).issubset(_GATE_FIELD_NAMES)
+                and normalized_kind.strip().lower() in _EXTERNAL_GATE_VALUES
+            ):
+                gate_kind = ApprovalGateKind(normalized_kind.strip().lower())
+                if gate_kind not in found:
+                    found.append(gate_kind)
+            stack.extend(current.values())
+        elif isinstance(current, (list, tuple)):
+            stack.extend(current)
+    return tuple(found)
+
+
+def assert_caller_only_approval_policy(value: Any) -> None:
+    """Reject a policy/snapshot containing a legacy external audience."""
+    gate_kinds = external_approval_gate_kinds(value)
+    if gate_kinds:
+        raise ExternalApprovalAudienceError(gate_kinds)
 
 
 def gate_signature(gate: ApprovalGate) -> tuple[str, tuple[str, ...]]:

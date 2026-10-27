@@ -379,6 +379,27 @@ async def lifespan(app: FastAPI):
     # Generate schemas
     await Tortoise.generate_schemas()
 
+    # Retired designated-user/team-role approval gates can never become caller
+    # confirmation or an implicit allow. Preserve every policy and historical
+    # row, but cancel unstarted executions atomically so an old gate cannot
+    # approve work after the cutover. Fatal on failure: a partially migrated
+    # deployment could still let an external audience approve an execution.
+    from app.core.tool_approval_caller_migration import (
+        migrate_caller_only_tool_confirmation,
+    )
+
+    caller_only_migration = await migrate_caller_only_tool_confirmation()
+    if (
+        caller_only_migration["executions_cancelled"]
+        or caller_only_migration["tools_with_legacy_gates"]
+        or caller_only_migration["policy_layers_with_legacy_gates"]
+    ):
+        logger.warning(
+            "Caller-only tool confirmation cutover: %s; policies are preserved "
+            "and must be reconfigured to caller confirmation",
+            caller_only_migration,
+        )
+
     # One-way cutover of legacy custom database tools. It must run before any
     # code loads a Tool row (the retired enum value is cleared inside), and
     # before the legacy secret migration, which otherwise would only see the

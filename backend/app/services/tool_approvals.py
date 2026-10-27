@@ -63,6 +63,7 @@ from app.schemas.tool_approval import (
     ToolExecutionCancelReason,
     ToolExecutionStatus,
     default_tool_approval_policy,
+    external_approval_gate_kinds,
     gate_signature,
     gate_stage_key,
 )
@@ -448,17 +449,28 @@ def evaluate_policy(
 
     final_decision = max(decisions, key=lambda item: _POLICY_RANK[item])
     merged_gates = _merge_gates(gates)
-    if final_decision == ApprovalDecision.DENY:
+    # A legacy external audience anywhere in any layer (including unused
+    # operation overrides and malformed allow/deny bodies) is a configuration
+    # error, never a previewable approval or an implicit allow. This is the
+    # single runtime/preview decision source.
+    legacy_external = any(
+        external_approval_gate_kinds(layer.policy) for layer in ordered
+    )
+    if legacy_external:
+        final_decision = ApprovalDecision.DENY
         merged_gates = ()
-    elif final_decision == ApprovalDecision.REQUIRE_APPROVAL:
-        if not merged_gates:
-            configuration_errors.append("approval_audience_missing")
-        if not entrypoint_interactive and any(
-            gate.kind == ApprovalGateKind.CALLER for gate in merged_gates
-        ):
-            configuration_errors.append("approval_audience_unavailable")
-
-    configuration_error = configuration_errors[0] if configuration_errors else None
+        configuration_error = "approval_gate_external_audience_unsupported"
+    else:
+        if final_decision == ApprovalDecision.DENY:
+            merged_gates = ()
+        elif final_decision == ApprovalDecision.REQUIRE_APPROVAL:
+            if not merged_gates:
+                configuration_errors.append("approval_audience_missing")
+            if not entrypoint_interactive and any(
+                gate.kind == ApprovalGateKind.CALLER for gate in merged_gates
+            ):
+                configuration_errors.append("approval_audience_unavailable")
+        configuration_error = configuration_errors[0] if configuration_errors else None
     fingerprint = _evaluation_hash(
         operation=normalized_operation,
         entrypoint_interactive=entrypoint_interactive,
@@ -899,29 +911,6 @@ async def _require_team_membership(actor: User, team_id: UUID) -> None:
         )
 
 
-async def _active_team_user_ids(team_id: UUID, user_ids: Iterable[UUID]) -> list[UUID]:
-    """Only current active members of the execution team may be approvers."""
-    requested = list(dict.fromkeys(user_ids))
-    if not requested:
-        return []
-    rows = await TeamMember.filter(
-        team_id=team_id,
-        user_id__in=requested,
-        user__is_active=True,
-    ).values_list("user_id", flat=True)
-    active = {row[0] if isinstance(row, tuple) else row for row in rows}
-    return [user_id for user_id in requested if user_id in active]
-
-
-async def _role_holder_ids(team_id: UUID, roles: Sequence[str]) -> set[UUID]:
-    rows = await TeamMember.filter(
-        team_id=team_id,
-        role__in=list(roles),
-        user__is_active=True,
-    ).values_list("user_id", flat=True)
-    return {row[0] if isinstance(row, tuple) else row for row in rows}
-
-
 async def _plan_gates(
     evaluation: PolicyEvaluation,
     *,
@@ -954,36 +943,7 @@ async def _plan_gates(
                 )
             )
             continue
-        if gate.kind == ApprovalGateKind.USER:
-            active = await _active_team_user_ids(team_id, gate.user_ids)
-            if not active:
-                raise _policy_configuration_required("approval_user_audience_inactive")
-            frozen = tuple(sorted(str(user_id) for user_id in active))
-            plans.append(
-                _GatePlan(
-                    gate=gate,
-                    stage_index=len(plans),
-                    stage_key=stage_key,
-                    approver_user_ids=frozen,
-                    approver_roles=(),
-                )
-            )
-            continue
-        roles = tuple(gate.roles)
-        holders = await _role_holder_ids(team_id, roles)
-        if not gate.allow_self_approval:
-            holders.discard(actor.id)
-        if not holders:
-            raise _policy_configuration_required("approval_role_audience_empty")
-        plans.append(
-            _GatePlan(
-                gate=gate,
-                stage_index=len(plans),
-                stage_key=stage_key,
-                approver_user_ids=(),
-                approver_roles=tuple(sorted(roles)),
-            )
-        )
+        raise _policy_configuration_required("approval_external_audience_unsupported")
 
     if not plans:
         raise _policy_configuration_required("approval_audience_missing")
@@ -1417,18 +1377,7 @@ def _request_audience_matches(
         # The actor confirms their own access-authorized operation; execution
         # authorization is rechecked separately before any side effect.
         return str(execution.actor_user_id) == user_id
-    if request.gate_kind == ApprovalGateKind.USER:
-        if not is_team_member:
-            return False
-        return user_id in {str(item) for item in (request.approver_user_ids or [])}
-    if request.gate_kind == ApprovalGateKind.TEAM_ROLE:
-        if not is_team_member or team_role is None:
-            return False
-        if team_role not in {str(role) for role in (request.approver_roles or [])}:
-            return False
-        if not request.allow_self_approval and str(execution.actor_user_id) == user_id:
-            return False
-        return True
+    # Historical external audiences are never authorized after the cutover.
     return False
 
 
@@ -1512,15 +1461,7 @@ async def list_pending_approvals_for_user(
         )
         for row in memberships
     }
-    team_ids = list(role_map.keys())
-    audience_q = Q(
-        gate_kind=ApprovalGateKind.CALLER, execution__actor_user_id=user.id
-    ) | Q(gate_kind=ApprovalGateKind.USER)
-    if team_ids:
-        audience_q = audience_q | Q(
-            gate_kind=ApprovalGateKind.TEAM_ROLE,
-            execution__team_id__in=team_ids,
-        )
+    audience_q = Q(gate_kind=ApprovalGateKind.CALLER, execution__actor_user_id=user.id)
 
     requests = (
         await ToolApprovalRequest.filter(
@@ -2114,7 +2055,18 @@ async def claim_execution(
                 status_code=409,
                 data={"status": execution.status.value},
             )
-        if _is_expired(execution.expires_at, current):
+        legacy_gate_exists = await (
+            ToolApprovalRequest.filter(execution_id=execution.id)
+            .exclude(gate_kind=ApprovalGateKind.CALLER)
+            .using_db(conn)
+            .exists()
+        )
+        if legacy_gate_exists:
+            await _cancel_execution_locked(
+                execution, conn, ToolExecutionCancelReason.BINDING_CHANGED, current
+            )
+            outcome = "binding_changed"
+        elif _is_expired(execution.expires_at, current):
             await _expire_execution_locked(execution, conn, current)
             outcome = "expired"
         elif binding_hash_for_execution(execution) != execution.binding_hash:

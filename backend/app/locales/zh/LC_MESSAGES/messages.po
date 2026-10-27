@@ -3847,6 +3847,9 @@ msgstr "审批输入无效"
 msgid "tool_approval_policy_configuration_required"
 msgstr "该工具需要配置有效的审批人才能执行"
 
+msgid "tool_approval_policy_external_audience_unsupported"
+msgstr "该审批策略仍指定了用户或团队角色审批人，此方式已不再支持。请改为调用者确认后再运行此工具。"
+
 msgid "approval_policy_invalid"
 msgstr "审批策略无效"
 

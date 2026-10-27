@@ -16,7 +16,7 @@ The Tools API allows you to:
 - **Share tools**: Share a tool across teams and manage its shares
 - **Saved MCP servers**: Negotiate capabilities and use tools, resources, resource templates, prompts, completion and live resource subscriptions through a stored MCP definition
 - **External identity**: Manage encrypted personal/team/site connections and MCP OAuth
-- **Approvals**: Inspect executions, decide approval gates, preview effective policies and answer server-initiated interactions
+- **Approvals**: Inspect executions, decide caller-confirmation gates, preview effective policies and answer server-initiated interactions
 
 **Base URL**: `/api/v1/tools`
 
@@ -1219,9 +1219,11 @@ the actor and consuming team and resolve the selected connection.
 
 MCP operation approval rules apply when the Agent invokes the child tool during
 interactive chat. Chat exposes the pending execution through its run interaction
-and shows an inline approval card. After approval, the durable worker resumes
-the original operation once with its bound parameters and identity. Tool testing,
-discovery, workflows and background entrypoints do not request confirmation.
+and shows an inline approval card for the initiating caller. After approval, the
+durable worker resumes the original operation once with its bound parameters and
+identity. Tool testing, discovery, workflows and background entrypoints do not
+request confirmation, and a stored legacy external audience still fails closed
+there with `6510` instead of being bypassed.
 
 ### Operation Namespaces
 
@@ -1601,18 +1603,42 @@ default decision (`allow`, `deny`, `require_approval`), gates and
 to one immutable execution: changing parameters, identity or definition
 invalidates it.
 
-Gates: `caller` (the initiating user, interactive entrypoints only), `user`
-(explicit user IDs) and `team_role` (roles; self-approval only when
-`allow_self_approval` is true). Caller gates additionally require the approver
-to be a member of the execution team; a superuser is not an implicit approver.
+A gate is either `caller` or a legacy external gate. New and updated policies
+accept only `caller`: the user who initiated the execution confirms or rejects
+it in the active Agent conversation, must be a member of the execution team,
+and is the only permitted decision-maker. A superuser is not an implicit
+approver, and the former `user` (explicit user IDs) and `team_role` (roles,
+`allow_self_approval`) audiences can no longer be configured.
+
+Stored policies are never rewritten. A stored policy that contains `user` or
+`team_role` gates anywhere — including any nested MCP `operation_overrides`
+entry — fails closed with `6510` before the tool is invoked, regardless of the
+overall decision. It is never converted to `caller` or to `allow`; an
+administrator must edit and re-save the policy with a caller gate, or choose an
+explicit `allow`/`deny` decision without an external audience. Non-interactive
+entrypoints never gain confirmation implicitly: workflows, tool tests and
+discovery do not prompt, and API-key, embed, channel and scheduled calls cannot
+prompt either. Their existing no-confirmation contract is unchanged, but a
+stored legacy external gate still fails closed there instead of being bypassed.
+
+During the upgrade that introduces caller-only confirmation, unstarted
+executions associated with any legacy external gate — `awaiting_approval` and
+`ready`, including work whose external gate was already approved — are
+cancelled rather than resumed or approved. The execution and all of its
+pending gates become `cancelled` in one transaction, no resume is scheduled,
+and users must start a new run. Rows already `executing` or terminal are left
+untouched for operator audit. Historical executions, gates and decisions are
+preserved. Rollback does not reactivate a cancelled execution, and a legacy
+worker still running during a rolling upgrade can create new legacy gates;
+runtime validation fails those closed and the sweep runs again on restart.
 
 ### Approvals
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/v1/tool-approvals?page=&page_size=` | Pending gates whose audience includes the caller |
-| `GET` | `/api/v1/tool-approvals/{request_id}` | One visible gate |
-| `POST` | `/api/v1/tool-approvals/{request_id}/decision` | Approve or reject; idempotent |
+| `GET` | `/api/v1/tool-approvals?page=&page_size=` | Pending caller gates awaiting the execution actor |
+| `GET` | `/api/v1/tool-approvals/{request_id}` | One gate visible to the execution actor |
+| `POST` | `/api/v1/tool-approvals/{request_id}/decision` | Caller approves or rejects; idempotent |
 
 Decision body:
 
@@ -1625,15 +1651,20 @@ Decision body:
 ```
 
 `decision` is `approve` or `reject`; `idempotency_key` (1–128 chars) makes
-retries safe. The response includes the immutable decision, `execution_status`
-and `remaining_approvals`. The decision never edits the bound parameters.
+retries safe. Only the execution's caller may decide; another team member,
+team administrator or superuser receives `6504 tool_approval_not_authorized`,
+and the gate is not listed for them. The response includes the immutable
+decision, `execution_status` and `remaining_approvals`. The decision never
+edits the bound parameters.
 Rejection, expiry, revocation and stopped runs are terminal and cannot become
 approvals.
 
 `ToolApprovalRequestOut` returns `id`, `execution_id`, `stage_index`,
-`stage_key`, `gate_kind`, `approver_user_ids`, `approver_roles`,
-`allow_self_approval`, `masked_display`, `status`, `expires_at`,
-`resolved_at` and `created_at`. `masked_display` is already redacted.
+`stage_key`, `gate_kind`, `masked_display`, `status`, `expires_at`,
+`resolved_at` and `created_at`. New requests report `gate_kind: caller` with
+empty audience fields. Historical rows may still expose the frozen
+`approver_user_ids`, `approver_roles` and `allow_self_approval` values for
+audit; they are never actionable. `masked_display` is already redacted.
 
 ### Executions
 
@@ -1651,6 +1682,8 @@ tokens and secrets never appear.
 Statuses: `awaiting_approval`, `ready`, `executing`, `succeeded`, `failed`,
 `outcome_unknown`, `cancelled`. Cancel reasons: `rejected`, `expired`,
 `revoked`, `cancelled`, `binding_changed`, `run_stopped`, `policy_denied`.
+Executions cancelled by the caller-only upgrade use `cancelled` and stay
+terminal; they are not resumed on a later configuration change.
 
 **No automatic retry of uncertain outcomes.** Once an external side effect was
 sent, a crash or lost connection leaves `outcome_unknown`; the platform does not
@@ -1670,11 +1703,18 @@ never imply the side effect happened.
 
 Create body: `scope` (`site`, `team`, `entrypoint`) plus `team_id` for team,
 and `team_id`/`entrypoint_kind`/`entrypoint_id` for entrypoint; optional
-`tool_id`; `policy` is the full policy object. Site layers require site
-administration. The effective preview returns `decision`, `gates`, `sources`,
-`policy_hash`, `configuration_error`, `entrypoint_interactive` and layer
-summaries with editability; clients must not merge layers themselves. Missing
-approval audience/configuration yields `6510` rather than implicit consent.
+`tool_id`; `policy` is the full policy object. `policy` may contain only
+caller gates; `user`/`team_role` audiences are rejected with HTTP `422`,
+business code `6510` (`tool_approval_policy_external_audience_unsupported`),
+and a save never rewrites an existing policy to caller or allow. Site layers
+require site administration. The effective preview returns `decision`, `gates`,
+`sources`, `policy_hash`, `configuration_error`, `entrypoint_interactive` and
+layer summaries with editability; clients must not merge layers themselves.
+A stored legacy external audience is previewed as `decision: deny` with no
+gates and `configuration_error: approval_gate_external_audience_unsupported`,
+never as allow. Missing approval configuration, including a legacy external
+gate or an interactive caller gate at a non-interactive entrypoint, yields
+`6510` rather than implicit consent.
 
 ### Server-initiated Interactions
 
@@ -1705,4 +1745,4 @@ replayed.
 
 ---
 
-**Last Updated**: 2026-10-26
+**Last Updated**: 2026-10-27

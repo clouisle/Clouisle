@@ -2,7 +2,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
-import type { ToolApprovalPolicy } from '@/lib/api/tools'
+import type { ToolApprovalGate, ToolApprovalPolicy, ToolDetail } from '@/lib/api/tools'
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
 mock.module('@/components/ui/button', () => ({
   Button: ({ children, ...props }: React.ComponentProps<'button'>) => <button {...props}>{children}</button>,
@@ -16,16 +16,6 @@ mock.module('@/components/ui/label', () => ({
 mock.module('@/components/ui/field', () => ({
   FieldError: ({ children }: React.PropsWithChildren) => (children ? <span role="alert">{children}</span> : null),
 }))
-mock.module('@/components/ui/switch', () => ({
-  Switch: ({ checked, onCheckedChange, id }: { checked: boolean; onCheckedChange: (value: boolean) => void; id?: string }) => (
-    <input id={id} type="checkbox" checked={checked} onChange={(event) => onCheckedChange(event.target.checked)} />
-  ),
-}))
-mock.module('@/components/ui/checkbox', () => ({
-  Checkbox: ({ checked, onCheckedChange, id }: { checked?: boolean; onCheckedChange?: (value: boolean) => void; id?: string }) => (
-    <input id={id} type="checkbox" checked={checked} onChange={(event) => onCheckedChange?.(event.target.checked)} />
-  ),
-}))
 mock.module('@/components/ui/select', () => ({
   Select: ({ children, value, onValueChange, disabled }: React.PropsWithChildren<{ value?: string; onValueChange: (value: string) => void; disabled?: boolean }>) => (
     <select value={value ?? ''} disabled={disabled} onChange={(event) => onValueChange(event.target.value)}>{children}</select>
@@ -35,38 +25,38 @@ mock.module('@/components/ui/select', () => ({
   SelectTrigger: ({ children }: React.PropsWithChildren) => <>{children}</>,
   SelectValue: ({ children }: React.PropsWithChildren) => <>{children}</>,
 }))
-const APPROVER_ID = '11111111-1111-4111-8111-111111111111'
-mock.module('@/contexts/team-context', () => ({
-  useTeam: () => ({ teams: [], currentTeam: null, isLoading: false }),
-}))
-mock.module('@/components/ui/combobox', () => ({
-  Combobox: ({ children, onValueChange }: React.PropsWithChildren<{ onValueChange?: (value: unknown[]) => void }>) => (
-    <div>
-      <button type="button" onClick={() => onValueChange?.([{ value: APPROVER_ID, label: APPROVER_ID }])}>
-        approver.add
-      </button>
-      {children}
-    </div>
-  ),
-  ComboboxChips: ({ children }: React.PropsWithChildren) => <>{children}</>,
-  ComboboxChip: ({ children }: React.PropsWithChildren) => <span>{children}</span>,
-  ComboboxChipsInput: () => null,
-  ComboboxContent: ({ children }: React.PropsWithChildren) => <>{children}</>,
-  ComboboxEmpty: ({ children }: React.PropsWithChildren) => <>{children}</>,
-  ComboboxList: ({ children }: { children?: React.ReactNode | ((option: unknown) => React.ReactNode) }) => (
-    <>{typeof children === 'function' ? null : children}</>
-  ),
-  ComboboxItem: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
-  useComboboxAnchor: () => React.createRef(),
-}))
+
+const LEGACY_USER_ID = '11111111-1111-4111-8111-111111111111'
+
+const CALLER_GATE: ToolApprovalGate = {
+  kind: 'caller',
+  user_ids: [],
+  roles: [],
+  allow_self_approval: false,
+}
+
+const LEGACY_POLICY: ToolApprovalPolicy = {
+  default_decision: 'require_approval',
+  gates: [{ kind: 'team_role', user_ids: [], roles: ['admin'], allow_self_approval: true }],
+  operation_overrides: {
+    'tool:send': {
+      default_decision: 'require_approval',
+      gates: [{ kind: 'user', user_ids: [LEGACY_USER_ID], roles: [], allow_self_approval: false }],
+      operation_overrides: {},
+    },
+  },
+}
 
 // Dynamic import is required so module mocks above apply before the editor loads.
 const {
   ToolApprovalPolicyEditor,
   ToolPolicyEditor,
+  findLegacyApprovalAudiences,
   getToolApprovalPolicy,
+  hasLegacyApprovalAudiences,
   normalizeConnectionFields,
   normalizeToolApprovalPolicy,
+  resetLegacyApprovalAudiences,
 } = await import('./tool-policy-editor')
 
 let renderer: ReactTestRenderer | undefined
@@ -183,16 +173,14 @@ describe('ToolPolicyEditor', () => {
     expect(latest?.connectionFields[0].secret).toBe(false)
   })
 
-  test('keeps approval gates while switching decisions and normalizes non-approval decisions', async () => {
+  test('keeps caller confirmation while switching decisions and normalizes non-approval decisions', async () => {
     await render(undefined, {
       default_decision: 'require_approval',
-      gates: [{ kind: 'caller', user_ids: [], roles: [], allow_self_approval: false }],
+      gates: [CALLER_GATE],
       operation_overrides: {},
     })
     expect(latest?.approvalPolicy.default_decision).toBe('require_approval')
-    expect(latest?.approvalPolicy.gates).toEqual([
-      { kind: 'caller', user_ids: [], roles: [], allow_self_approval: false },
-    ])
+    expect(latest?.approvalPolicy.gates).toEqual([CALLER_GATE])
 
     const decisionSelect = selects().find((item) => item.value === 'require_approval')!
     await change(decisionSelect, 'allow')
@@ -206,7 +194,18 @@ describe('ToolPolicyEditor', () => {
     const allowSelect = selects().find((item) => item.value === 'allow')!
     await change(allowSelect, 'require_approval')
     expect(latest?.approvalPolicy.default_decision).toBe('require_approval')
-    expect(latest?.approvalPolicy.gates).toHaveLength(1)
+    expect(latest?.approvalPolicy.gates).toEqual([CALLER_GATE])
+  })
+
+  test('shows caller confirmation only, without audience controls', async () => {
+    await render(undefined, { default_decision: 'require_approval', gates: [], operation_overrides: {} })
+    expect(document.body.textContent).toContain('approval.callerGate')
+    expect(document.body.textContent).toContain('approval.callerHint')
+    expect(document.body.textContent).not.toContain('approval.legacyTitle')
+    expect(document.body.textContent).not.toContain('approval.addGate')
+    expect(document.querySelector('button[aria-label="approval.removeGate"]')).toBeNull()
+    expect(selects().some((item) => Array.from(item.options).some((option) => option.value === 'team_role'))).toBe(false)
+    expect(selects().some((item) => Array.from(item.options).some((option) => option.value === 'user'))).toBe(false)
   })
 
   test('stores exact MCP operation overrides and removes them when inherited', async () => {
@@ -219,7 +218,7 @@ describe('ToolPolicyEditor', () => {
     await change(operationSelect, 'require_approval')
     expect(latest?.approvalPolicy.operation_overrides['tool:search_issues']).toEqual({
       default_decision: 'require_approval',
-      gates: [{ kind: 'caller', user_ids: [], roles: [], allow_self_approval: false }],
+      gates: [CALLER_GATE],
       operation_overrides: {},
     })
 
@@ -258,28 +257,64 @@ describe('ToolPolicyEditor', () => {
     expect(latest?.approvalPolicy.operation_overrides['tool:search'].default_decision).toBe('require_approval')
   })
 
-  test('normalizes invalid approvers and invalid connection fields', () => {
-    const normalized = normalizeToolApprovalPolicy({
+  test('preserves legacy user and role gates instead of converting or dropping them', () => {
+    expect(findLegacyApprovalAudiences(LEGACY_POLICY)).toEqual([
+      { operation: '', kinds: ['team_role'] },
+      { operation: 'tool:send', kinds: ['user'] },
+    ])
+    expect(hasLegacyApprovalAudiences(LEGACY_POLICY)).toBe(true)
+    expect(normalizeToolApprovalPolicy(LEGACY_POLICY)).toEqual(LEGACY_POLICY)
+
+    const allowWithLegacyGate: ToolApprovalPolicy = {
+      default_decision: 'allow',
+      gates: [{ kind: 'user', user_ids: [LEGACY_USER_ID], roles: [], allow_self_approval: false }],
+      operation_overrides: {},
+    }
+    expect(normalizeToolApprovalPolicy(allowWithLegacyGate).gates).toEqual(allowWithLegacyGate.gates)
+
+    const loaded = getToolApprovalPolicy({ approval_policy: LEGACY_POLICY } as unknown as ToolDetail)
+    expect(loaded).toEqual(LEGACY_POLICY)
+    expect(hasLegacyApprovalAudiences(getToolApprovalPolicy(null))).toBe(false)
+  })
+
+  test('surfaces legacy approvers with an actionable remediation', async () => {
+    await render(undefined, LEGACY_POLICY)
+    expect(alerts()).toContain('approval.legacyTitle')
+    expect(document.body.textContent).toContain('approval.legacyDescription')
+    expect(document.body.textContent).toContain('approval.legacyDefaultScope')
+    expect(document.body.textContent).toContain('approval.legacyKinds.team_role')
+    expect(document.body.textContent).toContain('tool:send')
+    expect(document.body.textContent).toContain('approval.legacyKinds.user')
+    expect(document.body.textContent).not.toContain('approval.callerGate')
+    expect(latest?.approvalPolicy).toEqual(LEGACY_POLICY)
+
+    await act(async () => button('approval.legacyReset').click())
+    expect(latest?.approvalPolicy).toEqual({
       default_decision: 'require_approval',
-      gates: [
-        { kind: 'user', user_ids: ['not-a-uuid'], roles: [], allow_self_approval: false },
-        { kind: 'team_role', user_ids: [], roles: ['admin', 'unknown'], allow_self_approval: true },
-      ],
+      gates: [CALLER_GATE],
       operation_overrides: {
         'tool:send': {
-          default_decision: 'deny',
-          gates: [{ kind: 'caller', user_ids: [], roles: [], allow_self_approval: false }],
+          default_decision: 'require_approval',
+          gates: [CALLER_GATE],
           operation_overrides: {},
         },
       },
     })
-    expect(normalized.gates).toEqual([
-      { kind: 'team_role', user_ids: [], roles: ['admin'], allow_self_approval: true },
-    ])
-    expect(normalized.operation_overrides['tool:send']).toEqual({
-      default_decision: 'deny',
-      gates: [],
-      operation_overrides: {},
+    expect(alerts()).not.toContain('approval.legacyTitle')
+    expect(document.body.textContent).toContain('approval.callerGate')
+  })
+
+  test('resets unknown decisions and invalid connection fields', () => {
+    expect(resetLegacyApprovalAudiences(LEGACY_POLICY)).toEqual({
+      default_decision: 'require_approval',
+      gates: [CALLER_GATE],
+      operation_overrides: {
+        'tool:send': {
+          default_decision: 'require_approval',
+          gates: [CALLER_GATE],
+          operation_overrides: {},
+        },
+      },
     })
 
     expect(normalizeConnectionFields([
@@ -296,66 +331,9 @@ describe('ToolPolicyEditor', () => {
       operation_overrides: { '*': { default_decision: 'deny', gates: [], operation_overrides: {} } },
     })).toEqual({
       default_decision: 'require_approval',
-      gates: [{ kind: 'caller', user_ids: [], roles: [], allow_self_approval: false }],
+      gates: [CALLER_GATE],
       operation_overrides: {},
     })
-  })
-
-  test('scopes gates to team roles and removes audiences without errors', async () => {
-    await render(undefined, { default_decision: 'require_approval', gates: [], operation_overrides: {} })
-    expect(document.body.textContent).toContain('approval.noGates')
-
-    await act(async () => button('approval.addGate').click())
-    expect(latest?.approvalPolicy.gates).toEqual([
-      { kind: 'caller', user_ids: [], roles: [], allow_self_approval: false },
-    ])
-
-    const gateKind = selects().find((item) =>
-      Array.from(item.options).some((option) => option.value === 'team_role')
-    )!
-    await change(gateKind, 'team_role')
-    expect(latest?.approvalPolicy.gates).toEqual([
-      { kind: 'team_role', user_ids: [], roles: [], allow_self_approval: false },
-    ])
-    expect(alerts()).toContain('approval.rolesRequired')
-
-    const adminLabel = Array.from(document.querySelectorAll('label'))
-      .find((item) => item.textContent === 'approval.roleOptions.admin')!
-    await act(async () => (adminLabel.querySelector('input') as HTMLInputElement).click())
-    expect(latest?.approvalPolicy.gates[0].roles).toEqual(['admin'])
-    expect(alerts()).not.toContain('approval.rolesRequired')
-
-    const selfApproval = document.getElementById('approval-gate-self-0') as HTMLInputElement
-    await act(async () => selfApproval.click())
-    expect(latest?.approvalPolicy.gates[0].allow_self_approval).toBe(true)
-    expect(document.body.textContent).not.toContain('approval.selfApprovalUnavailable')
-
-    await act(async () => (document.querySelector('button[aria-label="approval.removeGate"]') as HTMLButtonElement).click())
-    expect(latest?.approvalPolicy.gates).toEqual([])
-    expect(document.body.textContent).toContain('approval.noGates')
-  })
-
-  test('requires approvers for user gates and resets audiences when the gate kind changes', async () => {
-    await render(undefined, {
-      default_decision: 'require_approval',
-      gates: [{ kind: 'user', user_ids: [], roles: [], allow_self_approval: false }],
-      operation_overrides: {},
-    })
-    expect(alerts()).toContain('approval.userIdsRequired')
-
-    await act(async () => button('approver.add').click())
-    expect(latest?.approvalPolicy.gates[0].user_ids).toEqual([APPROVER_ID])
-    expect(alerts()).not.toContain('approval.userIdsRequired')
-    expect(document.body.textContent).toContain(APPROVER_ID)
-
-    const gateKind = selects().find((item) =>
-      Array.from(item.options).some((option) => option.value === 'team_role')
-    )!
-    await change(gateKind, 'caller')
-    expect(latest?.approvalPolicy.gates).toEqual([
-      { kind: 'caller', user_ids: [], roles: [], allow_self_approval: false },
-    ])
-    expect(document.body.textContent).toContain('approval.callerHint')
   })
 
   test('rejects invalid or duplicate manual operations and adds on Enter', async () => {
@@ -386,7 +364,7 @@ describe('ToolPolicyEditor', () => {
     })
     expect(latest?.approvalPolicy.operation_overrides['tool:new']).toEqual({
       default_decision: 'require_approval',
-      gates: [{ kind: 'caller', user_ids: [], roles: [], allow_self_approval: false }],
+      gates: [CALLER_GATE],
       operation_overrides: {},
     })
     expect(operationInput().props.value).toBe('')
@@ -446,9 +424,7 @@ describe('ToolPolicyEditor', () => {
     const decision = selects().find((item) => item.value === 'allow')!
     await change(decision, 'require_approval')
     expect(latest?.approvalPolicy.default_decision).toBe('require_approval')
-    expect(latest?.approvalPolicy.gates).toEqual([
-      { kind: 'caller', user_ids: [], roles: [], allow_self_approval: false },
-    ])
-    expect(document.body.textContent).toContain('approval.gates')
+    expect(latest?.approvalPolicy.gates).toEqual([CALLER_GATE])
+    expect(document.body.textContent).toContain('approval.callerGate')
   })
 })

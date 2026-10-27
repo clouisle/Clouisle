@@ -45,10 +45,13 @@ from app.schemas.tool_approval import (
     ApprovalDecision,
     ApprovalGate,
     ExecutionEntrypoint,
+    ExternalApprovalAudienceError,
     PolicyEvaluation,
     PolicyLayer,
     PolicySource,
     ToolApprovalPolicy,
+    assert_caller_only_approval_policy,
+    external_approval_gate_kinds,
 )
 from app.schemas.tool_approval_policy import (
     ToolApprovalEntrypointKind,
@@ -86,6 +89,23 @@ _ENTRYPOINT_KIND_BY_SOURCE: dict[str, ToolApprovalEntrypointKind] = {
 
 def _policy_error(msg_key: str, *, status_code: int, code: int) -> BusinessError:
     return BusinessError(code=code, msg_key=msg_key, status_code=status_code)
+
+
+def _reject_external_audiences(policy: ToolApprovalPolicy) -> None:
+    """New policy bodies may only require caller confirmation.
+
+    Persisted legacy rows stay readable (and are returned unchanged) so an
+    administrator can see what to reconfigure; only an explicit write of an
+    external audience is refused.
+    """
+    try:
+        assert_caller_only_approval_policy(policy)
+    except ExternalApprovalAudienceError as exc:
+        raise _policy_error(
+            "tool_approval_policy_external_audience_unsupported",
+            status_code=422,
+            code=ResponseCode.TOOL_APPROVAL_POLICY_CONFIGURATION_REQUIRED,
+        ) from exc
 
 
 def _access_denied() -> BusinessError:
@@ -530,6 +550,10 @@ class PolicyDefinitionView:
 
 def _view(row: ToolApprovalPolicyDefinition, *, can_edit: bool) -> PolicyDefinitionView:
     policy, error = decode_policy(row)
+    if error is None and external_approval_gate_kinds(policy):
+        # Keep the stored body intact for reconfiguration, but never present
+        # a legacy external audience as a usable policy.
+        error = "approval_gate_external_audience_unsupported"
     return PolicyDefinitionView(
         row=row, policy=policy, configuration_error=error, can_edit=can_edit
     )
@@ -637,6 +661,7 @@ async def create_policy_definition(
             payload.tool_id, team_id=payload.team_id, scope=payload.scope
         )
 
+    _reject_external_audiences(payload.policy)
     scope_key = build_scope_key(
         payload.scope,
         team_id=payload.team_id,
@@ -676,6 +701,7 @@ async def update_policy_definition(
     await _authorize_row_write(actor, row)
     if payload.expected_version is not None and payload.expected_version != row.version:
         raise _version_conflict()
+    _reject_external_audiences(payload.policy)
     new_hash = policy_hash(payload.policy)
     updated = await ToolApprovalPolicyDefinition.filter(
         id=row.id, version=row.version

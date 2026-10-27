@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Plus, Trash2 } from 'lucide-react'
 
@@ -15,21 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  Combobox,
-  ComboboxChip,
-  ComboboxChips,
-  ComboboxChipsInput,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxItem,
-  ComboboxList,
-  useComboboxAnchor,
-} from '@/components/ui/combobox'
-import { useTeam } from '@/contexts/team-context'
-import { teamsApi, type TeamMember } from '@/lib/api'
 import {
   ToolApprovalGate,
   ToolApprovalPolicy,
@@ -51,10 +37,16 @@ export const TOOL_APPROVAL_DECISIONS: ToolApprovalPolicy['default_decision'][] =
   'require_approval',
 ]
 
-export const TEAM_APPROVAL_ROLES = ['owner', 'admin', 'member', 'viewer'] as const
+/**
+ * Gate kinds that predate caller-only confirmation. They remain in the read
+ * model so legacy saved policies can be surfaced, but the backend rejects any
+ * write that still contains them: they must never become an allow or a caller
+ * gate without an explicit administrator decision.
+ */
+export const LEGACY_APPROVAL_GATE_KINDS = ['user', 'team_role'] as const
+export type LegacyApprovalGateKind = (typeof LEGACY_APPROVAL_GATE_KINDS)[number]
 
 const CONNECTION_FIELD_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function createCallerGate(): ToolApprovalGate {
   return {
@@ -101,92 +93,65 @@ export function getToolApprovalPolicy(tool?: ToolDetail | null): ToolApprovalPol
   }
 }
 
-function ApproverUserSelect({
-  userIds,
-  onChange,
-}: {
-  userIds: string[]
-  onChange: (ids: string[]) => void
-}) {
-  const { currentTeam } = useTeam()
-  const t = useTranslations('tools.policy')
-  const [members, setMembers] = useState<TeamMember[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const anchorRef = useComboboxAnchor()
-
-  useEffect(() => {
-    if (!currentTeam?.id) return
-    let active = true
-    setIsLoading(true)
-    teamsApi
-      .getTeam(currentTeam.id)
-      .then((team) => {
-        if (active) setMembers(team.members || [])
-      })
-      .catch(() => {
-        if (active) setMembers([])
-      })
-      .finally(() => {
-        if (active) setIsLoading(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [currentTeam?.id])
-
-  const memberOptions = useMemo(
-    () =>
-      members.map((member) => ({
-        value: member.user_id,
-        label: member.username || member.email || member.user_id,
-        email: member.email,
-      })),
-    [members],
-  )
-
-  const selectedOptions = useMemo(() => {
-    const map = new Map(memberOptions.map((opt) => [opt.value, opt]))
-    return userIds.map((id) => map.get(id) ?? { value: id, label: id, email: undefined })
-  }, [memberOptions, userIds])
-
-  if (isLoading) {
-    return <p className="text-xs text-muted-foreground">{t('approval.loadingMembers')}</p>
-  }
-
-  return (
-    <Combobox
-      multiple
-      items={memberOptions}
-      value={selectedOptions}
-      onValueChange={(next) =>
-        onChange((next as typeof memberOptions).map((option) => option.value))
-      }
-    >
-      <ComboboxChips ref={anchorRef} className="w-full">
-        {selectedOptions.map((option) => (
-          <ComboboxChip key={option.value}>{option.label}</ComboboxChip>
-        ))}
-        <ComboboxChipsInput placeholder={t('approval.userIdsPlaceholder')} className="text-xs" />
-      </ComboboxChips>
-      <ComboboxContent anchor={anchorRef}>
-        <ComboboxEmpty>{t('approval.noMatchingUsers')}</ComboboxEmpty>
-        <ComboboxList>
-          {(option) => (
-            <ComboboxItem key={option.value} value={option} className="text-xs">
-              <span className="flex min-w-0 flex-col">
-                <span className="truncate font-medium">{option.label}</span>
-                {option.email && option.email !== option.label && (
-                  <span className="truncate text-[10px] text-muted-foreground">{option.email}</span>
-                )}
-              </span>
-            </ComboboxItem>
-          )}
-        </ComboboxList>
-      </ComboboxContent>
-    </Combobox>
-  )
+function isLegacyGateKind(kind: string): kind is LegacyApprovalGateKind {
+  return (LEGACY_APPROVAL_GATE_KINDS as readonly string[]).includes(kind)
 }
 
+export interface LegacyApprovalAudience {
+  /** Empty string for the tool-level policy, otherwise the exact operation name. */
+  operation: string
+  kinds: LegacyApprovalGateKind[]
+}
+
+/**
+ * Collect every saved ``user``/``team_role`` gate, including nested
+ * per-operation overrides. Returned paths are used only to explain the
+ * remediation an administrator must take; nothing is rewritten here.
+ */
+export function findLegacyApprovalAudiences(
+  policy: ToolApprovalPolicy,
+  operation = ''
+): LegacyApprovalAudience[] {
+  const audiences: LegacyApprovalAudience[] = []
+  const kinds = [
+    ...new Set(
+      (policy.gates ?? [])
+        .map((gate) => gate.kind)
+        .filter((kind): kind is LegacyApprovalGateKind => isLegacyGateKind(kind))
+    ),
+  ]
+  if (kinds.length > 0) audiences.push({ operation, kinds })
+  for (const [name, override] of Object.entries(policy.operation_overrides ?? {})) {
+    audiences.push(...findLegacyApprovalAudiences(override, name))
+  }
+  return audiences
+}
+
+export function hasLegacyApprovalAudiences(policy: ToolApprovalPolicy): boolean {
+  return findLegacyApprovalAudiences(policy).length > 0
+}
+
+/**
+ * Explicitly replace every unsupported audience with caller confirmation.
+ *
+ * Call this only from a deliberate administrator action. Legacy audiences are
+ * never translated automatically because that would silently change who can
+ * approve an operation.
+ */
+export function resetLegacyApprovalAudiences(policy: ToolApprovalPolicy): ToolApprovalPolicy {
+  const operationOverrides: Record<string, ToolApprovalPolicy> = {}
+  for (const [name, override] of Object.entries(policy.operation_overrides ?? {})) {
+    operationOverrides[name] = resetLegacyApprovalAudiences(override)
+  }
+  const decision = TOOL_APPROVAL_DECISIONS.includes(policy.default_decision)
+    ? policy.default_decision
+    : 'require_approval'
+  return {
+    default_decision: decision,
+    gates: decision === 'require_approval' ? [createCallerGate()] : [],
+    operation_overrides: operationOverrides,
+  }
+}
 
 export function normalizeConnectionFields(fields: ToolConnectionField[]): ToolConnectionField[] {
   const normalized: ToolConnectionField[] = []
@@ -207,49 +172,50 @@ export function normalizeConnectionFields(fields: ToolConnectionField[]): ToolCo
   return normalized
 }
 
+function normalizeApprovalGate(gate: ToolApprovalGate): ToolApprovalGate {
+  if (gate.kind === 'caller') return createCallerGate()
+  if (gate.kind === 'user') {
+    return {
+      kind: 'user',
+      user_ids: [...new Set((gate.user_ids ?? []).map((id) => id.trim()).filter(Boolean))],
+      roles: [],
+      allow_self_approval: gate.allow_self_approval ?? false,
+    }
+  }
+  if (gate.kind === 'team_role') {
+    return {
+      kind: 'team_role',
+      user_ids: [],
+      roles: [...new Set((gate.roles ?? []).map((role) => role.trim().toLowerCase()).filter(Boolean))],
+      allow_self_approval: gate.allow_self_approval ?? false,
+    }
+  }
+  // Unknown kinds are preserved rather than guessed at.
+  return { ...gate }
+}
+
 /**
  * Produce a policy the backend accepts.
  *
- * ``allow``/``deny`` never carry gates. ``require_approval`` always keeps at
- * least one usable gate; gates with no valid audience fall back to caller
- * confirmation instead of silently granting approval.
+ * ``allow``/``deny`` drop caller confirmation gates, and
+ * ``require_approval`` keeps exactly one caller gate. Legacy ``user`` and
+ * ``team_role`` gates are preserved verbatim, including inside operation
+ * overrides, so the backend rejects the write with an actionable configuration
+ * error. They are never translated into caller confirmation or dropped into a
+ * silent allow; remediation is an explicit administrator action.
  */
 export function normalizeToolApprovalPolicy(policy: ToolApprovalPolicy): ToolApprovalPolicy {
   const decision = TOOL_APPROVAL_DECISIONS.includes(policy.default_decision)
     ? policy.default_decision
     : 'require_approval'
 
-  const gates: ToolApprovalGate[] =
-    decision !== 'require_approval'
+  const normalizedGates = (policy.gates ?? []).map(normalizeApprovalGate)
+  const hasLegacyGates = normalizedGates.some((gate) => gate.kind !== 'caller')
+  const gates: ToolApprovalGate[] = hasLegacyGates
+    ? normalizedGates
+    : decision !== 'require_approval'
       ? []
-      : policy.gates
-          .map((gate): ToolApprovalGate | null => {
-            if (gate.kind === 'user') {
-              const userIds = [...new Set(gate.user_ids.map((id) => id.trim()).filter((id) => UUID_PATTERN.test(id)))]
-              if (userIds.length === 0) return null
-              return { kind: 'user', user_ids: userIds, roles: [], allow_self_approval: false }
-            }
-            if (gate.kind === 'team_role') {
-              const roles = [
-                ...new Set(
-                  gate.roles
-                    .map((role) => role.trim().toLowerCase())
-                    .filter((role): role is (typeof TEAM_APPROVAL_ROLES)[number] =>
-                      (TEAM_APPROVAL_ROLES as readonly string[]).includes(role)
-                    )
-                ),
-              ]
-              if (roles.length === 0) return null
-              return {
-                kind: 'team_role',
-                user_ids: [],
-                roles,
-                allow_self_approval: gate.allow_self_approval,
-              }
-            }
-            return createCallerGate()
-          })
-          .filter((gate): gate is ToolApprovalGate => gate !== null)
+      : [normalizedGates.find((gate) => gate.kind === 'caller') ?? createCallerGate()]
 
   const operationOverrides: Record<string, ToolApprovalPolicy> = {}
   for (const [rawName, override] of Object.entries(policy.operation_overrides ?? {})) {
@@ -260,7 +226,7 @@ export function normalizeToolApprovalPolicy(policy: ToolApprovalPolicy): ToolApp
 
   return {
     default_decision: decision,
-    gates: decision === 'require_approval' && gates.length === 0 ? [createCallerGate()] : gates,
+    gates,
     operation_overrides: operationOverrides,
   }
 }
@@ -330,19 +296,6 @@ export function ToolPolicyEditor({
     return t('approval.requireApproval')
   }
 
-  const gateKindLabel = (kind: ToolApprovalGate['kind']) => {
-    if (kind === 'caller') return t('approval.caller')
-    if (kind === 'user') return t('approval.user')
-    return t('approval.teamRole')
-  }
-
-  const roleLabel = (role: string) => {
-    if (role === 'owner') return t('approval.roleOptions.owner')
-    if (role === 'admin') return t('approval.roleOptions.admin')
-    if (role === 'member') return t('approval.roleOptions.member')
-    return t('approval.roleOptions.viewer')
-  }
-
   const connectionFieldError = (field: ToolConnectionField): string | null => {
     const name = field.name.trim()
     if (!name) return field.label.trim() ? t('connectionFields.nameRequired') : null
@@ -371,14 +324,10 @@ export function ToolPolicyEditor({
     )
   }
 
-  const updateGate = (index: number, gate: ToolApprovalGate) => {
-    onApprovalPolicyChange({
-      ...approvalPolicy,
-      gates: approvalPolicy.gates.map((current, currentIndex) =>
-        currentIndex === index ? gate : current
-      ),
-    })
-  }
+  const legacyAudiences = useMemo(
+    () => findLegacyApprovalAudiences(approvalPolicy),
+    [approvalPolicy]
+  )
 
   const setDecision = (decision: ToolApprovalPolicy['default_decision']) => {
     onApprovalPolicyChange({
@@ -598,158 +547,34 @@ export function ToolPolicyEditor({
           <p className="text-xs text-muted-foreground">{t('approval.hint')}</p>
         </div>
 
-        {approvalPolicy.default_decision === 'require_approval' && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <Label>{t('approval.gates')}</Label>
-                <p className="text-xs text-muted-foreground">{t('approval.gatesHint')}</p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  onApprovalPolicyChange({
-                    ...approvalPolicy,
-                    gates: [...approvalPolicy.gates, createCallerGate()],
-                  })
-                }
-              >
-                <Plus className="h-3.5 w-3.5 mr-1" />
-                {t('approval.addGate')}
-              </Button>
-            </div>
+        {legacyAudiences.length > 0 && (
+          <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
+            <FieldError>{t('approval.legacyTitle')}</FieldError>
+            <p className="text-xs text-muted-foreground">{t('approval.legacyDescription')}</p>
+            <ul className="space-y-1 text-xs text-muted-foreground">
+              {legacyAudiences.map((audience) => (
+                <li key={audience.operation || 'default'} className="break-all font-mono">
+                  {audience.operation || t('approval.legacyDefaultScope')}:{' '}
+                  {audience.kinds.map((kind) => t(`approval.legacyKinds.${kind}`)).join(', ')}
+                </li>
+              ))}
+            </ul>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onApprovalPolicyChange(resetLegacyApprovalAudiences(approvalPolicy))}
+            >
+              {t('approval.legacyReset')}
+            </Button>
+            <p className="text-xs text-muted-foreground">{t('approval.legacyResetHint')}</p>
+          </div>
+        )}
 
-            {approvalPolicy.gates.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-2">{t('approval.noGates')}</p>
-            ) : (
-              approvalPolicy.gates.map((gate, index) => (
-                <div key={index} className="rounded-md border p-3 space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 space-y-1">
-                      <Label htmlFor={`approval-gate-kind-${index}`} className="text-xs">
-                        {t('approval.gateKind')}
-                      </Label>
-                      <Select
-                        value={gate.kind}
-                        onValueChange={(value) => {
-                          const kind = value as ToolApprovalGate['kind']
-                          updateGate(
-                            index,
-                            kind === 'caller'
-                              ? createCallerGate()
-                              : {
-                                  kind,
-                                  user_ids: [],
-                                  roles: [],
-                                  allow_self_approval: false,
-                                }
-                          )
-                        }}
-                      >
-                        <SelectTrigger id={`approval-gate-kind-${index}`} className="w-full">
-                          <SelectValue>{gateKindLabel(gate.kind)}</SelectValue>
-                        </SelectTrigger>
-                        <SelectContent side="bottom" alignItemWithTrigger={false} className="w-[--anchor-width] min-w-[200px]">
-                          <SelectItem value="caller">{t('approval.caller')}</SelectItem>
-                          <SelectItem value="user">{t('approval.user')}</SelectItem>
-                          <SelectItem value="team_role">{t('approval.teamRole')}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t('approval.removeGate')}
-                      onClick={() =>
-                        onApprovalPolicyChange({
-                          ...approvalPolicy,
-                          gates: approvalPolicy.gates.filter((_, current) => current !== index),
-                        })
-                      }
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-
-                  {gate.kind === 'caller' && (
-                    <p className="text-xs text-muted-foreground">{t('approval.callerHint')}</p>
-                  )}
-
-                  {gate.kind === 'user' && (
-                    <div className="space-y-1">
-                      <Label className="text-xs">
-                        {t('approval.userIds')}
-                      </Label>
-                      <ApproverUserSelect
-                        userIds={gate.user_ids}
-                        onChange={(ids) =>
-                          updateGate(index, {
-                            ...gate,
-                            user_ids: ids,
-                          })
-                        }
-                      />
-                      <p className="text-xs text-muted-foreground">{t('approval.userIdsHint')}</p>
-                      {gate.user_ids.length === 0 && (
-                        <FieldError>{t('approval.userIdsRequired')}</FieldError>
-                      )}
-                    </div>
-                  )}
-
-                  {gate.kind === 'team_role' && (
-                    <div className="space-y-2">
-                      <Label className="text-xs">{t('approval.roles')}</Label>
-                      <div className="flex flex-wrap gap-x-4 gap-y-2">
-                        {TEAM_APPROVAL_ROLES.map((role) => {
-                          const checked = gate.roles.includes(role)
-                          return (
-                            <label key={role} className="flex items-center gap-1.5 text-xs">
-                              <input
-                                type="checkbox"
-                                className="h-4 w-4 accent-primary"
-                                checked={checked}
-                                onChange={(event) =>
-                                  updateGate(index, {
-                                    ...gate,
-                                    roles: event.target.checked
-                                      ? [...gate.roles, role]
-                                      : gate.roles.filter((current) => current !== role),
-                                  })
-                                }
-                              />
-                              {roleLabel(role)}
-                            </label>
-                          )
-                        })}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          id={`approval-gate-self-${index}`}
-                          checked={gate.allow_self_approval}
-                          onCheckedChange={(checked) =>
-                            updateGate(index, { ...gate, allow_self_approval: checked })
-                          }
-                        />
-                        <Label htmlFor={`approval-gate-self-${index}`} className="text-xs">
-                          {t('approval.allowSelfApproval')}
-                        </Label>
-                      </div>
-                      {!gate.allow_self_approval && (
-                        <p className="text-xs text-muted-foreground">
-                          {t('approval.selfApprovalUnavailable')}
-                        </p>
-                      )}
-                      {gate.roles.length === 0 && (
-                        <FieldError>{t('approval.rolesRequired')}</FieldError>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))
-            )}
+        {approvalPolicy.default_decision === 'require_approval' && legacyAudiences.length === 0 && (
+          <div className="space-y-1 rounded-md border p-3">
+            <Label>{t('approval.callerGate')}</Label>
+            <p className="text-xs text-muted-foreground">{t('approval.callerHint')}</p>
           </div>
         )}
 

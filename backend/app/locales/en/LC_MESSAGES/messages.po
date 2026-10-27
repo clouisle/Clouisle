@@ -3811,6 +3811,9 @@ msgstr "Invalid approval input"
 msgid "tool_approval_policy_configuration_required"
 msgstr "This tool needs an approval policy with a valid approver before it can run"
 
+msgid "tool_approval_policy_external_audience_unsupported"
+msgstr "This approval policy still names specific users or team roles, which are no longer supported. Edit it to use caller confirmation before this tool can run."
+
 msgid "approval_policy_invalid"
 msgstr "The approval policy is invalid"
 

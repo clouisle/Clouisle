@@ -435,9 +435,7 @@ def test_layer_precedence_tightens_but_never_relaxes(run_orm):
         await _grant(site_admin, site_manage)
         await _grant(owner, manage)
 
-        gate = ApprovalGate(
-            kind=ApprovalGateKind.TEAM_ROLE, roles=("admin",), allow_self_approval=False
-        )
+        gate = ApprovalGate(kind=ApprovalGateKind.CALLER)
         await create_policy_definition(
             site_admin,
             ToolApprovalPolicyCreateIn(

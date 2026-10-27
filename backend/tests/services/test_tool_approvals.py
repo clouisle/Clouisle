@@ -58,10 +58,6 @@ async def _team(name: str, owner: User) -> Team:
     return team
 
 
-async def _add_member(team: Team, user: User, role: str) -> None:
-    await TeamMember.create(id=uuid4(), team_id=team.id, user_id=user.id, role=role)
-
-
 async def _tool(team: Team, policy: dict) -> Tool:
     return await Tool.create(
         id=uuid4(),
@@ -146,65 +142,45 @@ async def test_caller_approval_moves_execution_to_ready_without_leaking_secrets(
 
 
 @pytest.mark.asyncio
-async def test_team_role_approval_excludes_actor_self_approval_and_requires_role():
+@pytest.mark.parametrize(
+    "gate",
+    [
+        ApprovalGate(kind=ApprovalGateKind.TEAM_ROLE, roles=("admin",)),
+        ApprovalGate(kind=ApprovalGateKind.USER, user_ids=(uuid4(),)),
+    ],
+    ids=["team_role", "user"],
+)
+async def test_legacy_external_audiences_are_rejected_before_execution(gate):
     async with _database():
-        actor = await _user("requester")
-        admin = await _user("admin")
-        team = await _team("role-team", actor)
-        await TeamMember.create(
-            id=uuid4(), team_id=team.id, user_id=admin.id, role="admin"
-        )
+        actor = await _user("external-actor")
+        team = await _team("external-team", actor)
         tool = await _tool(team, _allow_policy())
-
-        role_layer = PolicyLayer(
+        layer = PolicyLayer(
             source=PolicySource.TEAM,
             policy=ToolApprovalPolicy(
                 default_decision=ApprovalDecision.REQUIRE_APPROVAL,
-                gates=(
-                    ApprovalGate(
-                        kind=ApprovalGateKind.TEAM_ROLE,
-                        roles=("admin",),
-                    ),
-                ),
+                gates=(gate,),
             ),
         )
-        execution = await service.create_execution(
-            tool=tool,
-            operation="ticket.close",
-            parameters={"ticket_id": "T-1"},
-            actor=actor,
-            team_id=team.id,
-            entrypoint=ExecutionEntrypoint.CHAT,
-            policy_layers=(role_layer,),
-        )
-        assert execution.status == ToolExecutionStatus.AWAITING_APPROVAL
 
-        actor_inbox, actor_total = await service.list_pending_approvals_for_user(actor)
-        assert (actor_inbox, actor_total) == ([], 0)
-
-        admin_inbox, admin_total = await service.list_pending_approvals_for_user(admin)
-        assert admin_total == 1
-        request = admin_inbox[0]
-        assert request.stage_key == "team_role:admin"
-
-        with pytest.raises(BusinessError) as rejected:
-            await service.decide_approval(
-                request.id,
-                actor,
-                decision=ApprovalVote.APPROVE,
-                idempotency_key="self-approve",
+        with pytest.raises(BusinessError) as config_error:
+            await service.create_execution(
+                tool=tool,
+                operation="ticket.read",
+                parameters={"ticket_id": "T-1"},
+                actor=actor,
+                team_id=team.id,
+                entrypoint=ExecutionEntrypoint.CHAT,
+                policy_layers=(layer,),
             )
-        assert rejected.value.code == ResponseCode.TOOL_APPROVAL_NOT_AUTHORIZED
 
-        await service.decide_approval(
-            request.id,
-            admin,
-            decision=ApprovalVote.APPROVE,
-            idempotency_key="admin-approve",
+        assert (
+            config_error.value.code
+            == ResponseCode.TOOL_APPROVAL_POLICY_CONFIGURATION_REQUIRED
         )
-        assert (await service.get_execution(execution.id)).status == (
-            ToolExecutionStatus.READY
-        )
+        assert await service.ToolExecution.all().count() == 0
+        assert await service.ToolApprovalRequest.all().count() == 0
+        assert await service.ToolApprovalDecision.all().count() == 0
 
 
 @pytest.mark.asyncio
@@ -388,81 +364,6 @@ async def test_decisions_are_idempotent_and_reject_key_reuse_or_resolved_request
         assert (await service.get_execution(execution.id)).status == (
             ToolExecutionStatus.READY
         )
-
-
-@pytest.mark.asyncio
-async def test_user_gate_freezes_team_audience_and_rechecks_removed_members():
-    async with _database():
-        owner = await _user("user-gate-owner")
-        member = await _user("user-gate-member")
-        foreign = await _user("user-gate-foreign")
-        team = await _team("user-gate-team", owner)
-        await _add_member(team, member, "member")
-        tool = await _tool(team, _allow_policy())
-        gate = ApprovalGate(
-            kind=ApprovalGateKind.USER,
-            user_ids=(member.id, foreign.id),
-        )
-        layer = PolicyLayer(
-            source=PolicySource.TEAM,
-            policy=ToolApprovalPolicy(
-                default_decision=ApprovalDecision.REQUIRE_APPROVAL,
-                gates=(gate,),
-            ),
-        )
-        execution = await service.create_execution(
-            tool=tool,
-            operation="ticket.read",
-            parameters={"secret_business": "value"},
-            actor=owner,
-            team_id=team.id,
-            entrypoint=ExecutionEntrypoint.CHAT,
-            policy_layers=(layer,),
-        )
-        assert execution.status == ToolExecutionStatus.AWAITING_APPROVAL
-        request = await service.ToolApprovalRequest.filter(
-            execution_id=execution.id
-        ).first()
-        assert request is not None
-        assert request.approver_user_ids == [str(member.id)]
-
-        member_inbox, member_total = await service.list_pending_approvals_for_user(
-            member
-        )
-        assert member_total == 1
-        assert member_inbox[0].execution_id == execution.id
-        foreign_inbox, foreign_total = await service.list_pending_approvals_for_user(
-            foreign
-        )
-        assert (foreign_inbox, foreign_total) == ([], 0)
-        with pytest.raises(BusinessError) as foreign_decision:
-            await service.decide_approval(
-                request.id,
-                foreign,
-                decision=ApprovalVote.APPROVE,
-                idempotency_key="foreign-user",
-            )
-        assert foreign_decision.value.code == ResponseCode.TOOL_APPROVAL_NOT_AUTHORIZED
-
-        await TeamMember.filter(team_id=team.id, user_id=member.id).delete()
-        removed_inbox, removed_total = await service.list_pending_approvals_for_user(
-            member
-        )
-        assert (removed_inbox, removed_total) == ([], 0)
-        with pytest.raises(BusinessError) as removed_view:
-            await service.get_approval_request_for_viewer(request.id, member)
-        assert removed_view.value.code == ResponseCode.TOOL_APPROVAL_NOT_AUTHORIZED
-        with pytest.raises(BusinessError) as removed_decision:
-            await service.decide_approval(
-                request.id,
-                member,
-                decision=ApprovalVote.APPROVE,
-                idempotency_key="removed-user",
-            )
-        assert removed_decision.value.code == ResponseCode.TOOL_APPROVAL_NOT_AUTHORIZED
-        assert (
-            await service.get_execution(execution.id)
-        ).status == ToolExecutionStatus.AWAITING_APPROVAL
 
 
 @pytest.mark.asyncio

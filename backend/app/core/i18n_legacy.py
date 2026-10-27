@@ -3297,6 +3297,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "This tool needs an approval policy with a valid approver before it can run",
         "zh": "该工具需要配置有效的审批人才能执行",
     },
+    "tool_approval_policy_external_audience_unsupported": {
+        "en": "This approval policy still names specific users or team roles, which are no longer supported. Edit it to use caller confirmation before this tool can run.",
+        "zh": "该审批策略仍指定了用户或团队角色审批人，此方式已不再支持。请改为调用者确认后再运行此工具。",
+    },
     "tool_approval_policy_duplicate": {
         "en": "An approval policy already exists for this scope and tool",
         "zh": "该作用域和工具已存在审批策略",
