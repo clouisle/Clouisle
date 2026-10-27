@@ -363,7 +363,7 @@ export function UserToolConnections() {
                 <SelectTrigger className="h-9 text-xs">
                   <SelectValue placeholder={t('selectToolPlaceholder')} />
                 </SelectTrigger>
-                <SelectContent side="bottom" className="max-h-60">
+                <SelectContent side="bottom">
                   <SelectGroup>
                     <SelectLabel className="text-[11px] text-muted-foreground font-semibold">
                       {t('toolTypeBuiltin')}
