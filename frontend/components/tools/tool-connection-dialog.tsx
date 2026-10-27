@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl'
 
 import { ToolConnectionManager } from '@/components/tools/connection-picker'
+import { renderToolIcon } from '@/components/tools/tool-icons'
 import {
   Dialog,
   DialogContent,
@@ -47,7 +48,18 @@ export function ToolConnectionDialog({
       <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {tool.icon ? <span className="text-xl">{tool.icon}</span> : null}
+            {tool.icon ? (
+              <span className="text-xl">{tool.icon}</span>
+            ) : (
+              renderToolIcon({
+                name: tool.name,
+                type: tool.type,
+                custom_type: tool.custom_type,
+                category: tool.category,
+                size: 20,
+                className: 'shrink-0',
+              })
+            )}
             {t('configDialog.title', { name: tool.display_name })}
           </DialogTitle>
           <DialogDescription>

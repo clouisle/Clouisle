@@ -657,7 +657,7 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
     "postgresql_query": {
         "display_name_key": "builtin_tool_postgresql_query",
         "category": ToolCategory.DATA,
-        "icon": None,
+        "icon": "postgresql",
         "requires_config": True,
         "identity_policy": "selectable",
         "config_fields": [
@@ -686,7 +686,7 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
     "mysql_query": {
         "display_name_key": "builtin_tool_mysql_query",
         "category": ToolCategory.DATA,
-        "icon": None,
+        "icon": "mysql",
         "requires_config": True,
         "identity_policy": "selectable",
         "config_fields": [
@@ -713,7 +713,7 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
     "redis_query": {
         "display_name_key": "builtin_tool_redis_query",
         "category": ToolCategory.DATA,
-        "icon": None,
+        "icon": "redis",
         "requires_config": True,
         "identity_policy": "selectable",
         "config_fields": [
@@ -740,7 +740,7 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
     "mongodb_query": {
         "display_name_key": "builtin_tool_mongodb_query",
         "category": ToolCategory.DATA,
-        "icon": None,
+        "icon": "mongodb",
         "requires_config": True,
         "identity_policy": "selectable",
         "config_fields": [

@@ -4,6 +4,7 @@ import * as React from 'react'
 import Image from 'next/image'
 import { useTranslations } from 'next-intl'
 import { Trash2, Search, ChevronDown, Wrench, Check, AlertCircle, Loader2, Clock3, Calculator, Globe, FolderOpen, Code2, Link, ChartColumn } from 'lucide-react'
+import { renderToolIcon } from '@/components/tools/tool-icons'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -528,7 +529,13 @@ export function ToolNodeConfig({
                   <span>{selectedTool.icon}</span>
                 )
               ) : (
-                getCategoryConfig(selectedTool.category).icon || '⚙️'
+                renderToolIcon({
+                  name: selectedTool.name,
+                  type: selectedTool.type,
+                  custom_type: selectedTool.custom_type,
+                  category: selectedTool.category,
+                  size: 18,
+                })
               )}
             </div>
             <div className="flex-1 min-w-0">
@@ -635,7 +642,13 @@ export function ToolNodeConfig({
                                       <span>{tool.icon}</span>
                                     )
                                   ) : (
-                                    getCategoryConfig(tool.category).icon
+                                    renderToolIcon({
+                                      name: tool.name,
+                                      type: tool.type,
+                                      custom_type: tool.custom_type,
+                                      category: tool.category,
+                                      size: 16,
+                                    })
                                   )}
                                 </div>
                                 <div className="flex-1 min-w-0">

@@ -20,6 +20,7 @@ import {
   Settings2,
   ShieldAlert,
 } from 'lucide-react'
+import { renderToolIcon } from '@/components/tools/tool-icons'
 import { isPresetToolCategory, type PresetToolCategory, type Skill, type Tool, type ToolConfig, type ToolParameter, type ToolType, toolsApi, skillsApi } from '@/lib/api'
 import { useTeam } from '@/contexts/team-context'
 import { cn } from '@/lib/utils'
@@ -310,7 +311,13 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
                                 <span>{tool.icon}</span>
                               )
                             ) : (
-                              category.icon
+                              renderToolIcon({
+                                name: tool.name,
+                                type: tool.type,
+                                custom_type: tool.custom_type,
+                                category: tool.category,
+                                size: 20,
+                              })
                             )}
                           </div>
 
@@ -453,7 +460,18 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onUpdateBinding, onTogg
             <span className="text-sm shrink-0 leading-none">{tool.icon}</span>
           )
         ) : (
-          <Wrench className="h-4 w-4 text-orange-500 shrink-0" />
+          tool ? (
+            renderToolIcon({
+              name: tool.name,
+              type: tool.type,
+              custom_type: tool.custom_type,
+              category: tool.category,
+              size: 16,
+              className: 'shrink-0',
+            })
+          ) : (
+            <Wrench className="h-4 w-4 text-orange-500 shrink-0" />
+          )
         )}
         {/* 名称 */}
         <div className="flex-1 min-w-0">

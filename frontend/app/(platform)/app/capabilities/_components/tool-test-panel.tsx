@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/select'
 import { Play, Loader2, CheckCircle, XCircle, Clock, Copy, Check, RefreshCw } from 'lucide-react'
 import { WebSearchEngineSelect } from '@/components/tools/web-search-engine-select'
+import { renderToolIcon } from '@/components/tools/tool-icons'
 
 interface ToolTestApi {
   test: typeof toolsApi.test
@@ -333,7 +334,16 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
               </div>
             ) : tool.icon ? (
               <span className="text-xl">{tool.icon}</span>
-            ) : null}
+            ) : (
+              renderToolIcon({
+                name: tool.name,
+                type: tool.type,
+                custom_type: tool.custom_type,
+                category: tool.category,
+                size: 20,
+                className: 'shrink-0 text-muted-foreground',
+              })
+            )}
             {tool.display_name}
           </SheetTitle>
           <SheetDescription>{tool.description}</SheetDescription>

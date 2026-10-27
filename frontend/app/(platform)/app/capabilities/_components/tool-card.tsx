@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl'
 import { Tool, ToolType, isPresetToolCategory, type PresetToolCategory } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
+import { renderToolIcon } from '@/components/tools/tool-icons'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -137,8 +138,16 @@ export function ToolCard({
   }
 
   // 判断图标是否为 URL
-  const iconUrl = tool.icon?.startsWith('http') ? tool.icon : null
-  const displayIcon = tool.icon || category.icon
+  const iconUrl = tool.icon?.startsWith('http') || tool.icon?.startsWith('/') || tool.icon?.startsWith('data:') ? tool.icon : null
+  const displayIcon = renderToolIcon({
+    name: tool.name,
+    icon: tool.icon,
+    type: tool.type,
+    custom_type: tool.custom_type,
+    category: tool.category,
+    size: 18,
+    className: 'shrink-0',
+  })
 
   return (
     <Card
