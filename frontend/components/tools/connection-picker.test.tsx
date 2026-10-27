@@ -293,6 +293,9 @@ describe('ToolConnectionPicker', () => {
     await act(async () => button('connections.manage')!.click())
     await flush()
     expect(getOAuthStatus).toHaveBeenCalledWith('c1', 'team-1')
+    expect(document.body.textContent).toContain('work@example.com')
+    expect(document.body.textContent).toContain('connections.oauthAuthorized')
+    expect(document.body.textContent).not.toContain('api_key')
 
     const nameInput = renderer!.root.findByProps({ placeholder: 'connections.namePlaceholder' })
     const secretInput = renderer!.root.findByProps({ id: 'connection-secret-api_key' })

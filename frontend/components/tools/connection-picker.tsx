@@ -474,7 +474,7 @@ export function ToolConnectionManager({
         <div className="space-y-2">
           {connections.map((connection) => (
             <div key={connection.id} className="rounded border bg-background p-2 space-y-2">
-              <div className="flex items-start gap-2">
+              <div className="flex flex-wrap items-start gap-2">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-xs font-medium truncate">{connectionLabel(connection)}</span>
@@ -504,11 +504,8 @@ export function ToolConnectionManager({
                       </Badge>
                     )}
                   </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    {connection.name} · {connection.secret_fields.join(', ') || t('noSecrets')}
-                  </p>
                 </div>
-                <div className="flex items-center gap-0.5">
+                <div className="flex flex-wrap items-center gap-0.5">
                   {(oauthStatus[connection.id]?.provider_configured ||
                     oauthStatus[connection.id]?.needs_reauth ||
                     connection.status === 'reauth_required') && (

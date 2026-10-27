@@ -394,7 +394,6 @@
         "team": "Team",
         "site": "Site"
       },
-      "noSecrets": "No secret fields",
       "setDefault": "Set default",
       "oauthAuthorized": "Authorized",
       "oauthNotConnected": "Not authorized",

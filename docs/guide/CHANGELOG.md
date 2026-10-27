@@ -11,6 +11,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Simplified tool connection cards by removing internal credential-field names and allowing actions to wrap on narrow screens; account labels and management controls remain available.
 - macOS Celery prefork children use a verified `certifi` CA bundle when no explicit TLS CA file/directory is configured, avoiding the MCP HTTP client's Objective-C `SecPolicyCreateSSL` fork crash. Explicit CA overrides and Linux behavior are unchanged.
 - Agent tools and manual workflow tool nodes now default to automatic current-user connections for personal/selectable identities: explicit default first, otherwise the sole personal account. Multiple accounts require a default; missing or expired authorization prompts configuration/login without borrowing another account. Authors can still pin a connection, background entrypoints remain fixed-only, and MCP discovery now uses the invoking user's credentials as well as execution.
 - HTTP tools support URL placeholders with final-target SSRF validation and variable completion in request configuration. Code tools expose selected connection fields through the per-execution `credentials` mapping in Python and JavaScript; sandbox queue payloads carry encrypted credentials rather than plaintext. Database querying moves from custom-tool creation to builtin tools backed by personal/team connections, with existing definitions and bindings migrated.

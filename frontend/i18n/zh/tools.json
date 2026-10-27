@@ -394,7 +394,6 @@
         "team": "团队",
         "site": "站点"
       },
-      "noSecrets": "无秘密字段",
       "setDefault": "设为默认",
       "oauthAuthorized": "已授权",
       "oauthNotConnected": "未授权",

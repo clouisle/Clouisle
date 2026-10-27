@@ -396,7 +396,6 @@ export type ToolsMessages = {
         team: string
         site: string
       }
-      noSecrets: string
       setDefault: string
       oauthAuthorized: string
       oauthNotConnected: string
