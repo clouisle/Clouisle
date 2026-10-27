@@ -2547,6 +2547,24 @@ msgstr "Tool configuration updated successfully"
 msgid "tool_connection_access_denied"
 msgstr "You do not have permission to use this connection"
 
+msgid "agent_tool_access_denied"
+msgstr "You cannot access the Agent's tool ‘{tool_name}’. Ask its owner or team administrator for access."
+
+msgid "agent_tool_connection_required"
+msgstr "Tool ‘{tool_name}’ needs a connection. Open its connection settings, add your account or sign in, then try again."
+
+msgid "agent_tool_connection_inactive"
+msgstr "Tool ‘{tool_name}’ needs its connection reauthorized. Open its connection settings and sign in again."
+
+msgid "agent_tool_connection_default_required"
+msgstr "Tool ‘{tool_name}’ has multiple personal connections. Set a default in its connection settings and try again."
+
+msgid "agent_tool_connection_access_denied"
+msgstr "You cannot use the connection configured for tool ‘{tool_name}’. Ask the Agent owner to review its connection settings."
+
+msgid "tool_access_denied"
+msgstr "You do not have access to this tool. Ask its owner or team administrator for access."
+
 msgid "tool_connection_default_conflict"
 msgstr "Another default connection was selected concurrently; refresh and try again"
 

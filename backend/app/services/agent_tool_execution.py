@@ -1,6 +1,7 @@
 """Resolve model aliases against the Agent's configured stored tools."""
 
-from typing import Any
+from collections.abc import Awaitable
+from typing import Any, TypeVar
 from uuid import UUID
 
 from app.llm.tools.interaction import ToolInteractionRequest
@@ -20,6 +21,32 @@ from app.services.tool_execution import (
     authorize_tool_context,
     resolve_tool_connection,
 )
+
+_T = TypeVar("_T")
+_GUIDANCE_KEYS = {
+    "tool_access_denied": "agent_tool_access_denied",
+    "tool_connection_required": "agent_tool_connection_required",
+    "tool_connection_inactive": "agent_tool_connection_inactive",
+    "tool_oauth_reauth_required": "agent_tool_connection_inactive",
+    "tool_connection_default_required": "agent_tool_connection_default_required",
+    "tool_connection_access_denied": "agent_tool_connection_access_denied",
+}
+
+
+async def _with_tool_guidance(tool: Tool, operation: Awaitable[_T]) -> _T:
+    try:
+        return await operation
+    except BusinessError as exc:
+        key = _GUIDANCE_KEYS.get(exc.msg_key)
+        if key is None:
+            raise
+        raise BusinessError(
+            code=exc.code,
+            msg_key=key,
+            status_code=exc.status_code,
+            data=exc.data,
+            tool_name=(tool.display_name or tool.name)[:100],
+        ) from exc
 
 
 async def list_agent_mcp_tools(
@@ -50,9 +77,12 @@ async def list_agent_mcp_tools(
             else None,
             interactive=runtime.interactive if runtime else False,
         )
-        await authorize_tool_context(tool, context)
-        resolved, _binding = await resolve_tool_connection(tool, context, "list:tools")
-    return await list_mcp_tools(await build_mcp_config(tool, resolved))
+        await _with_tool_guidance(tool, authorize_tool_context(tool, context))
+        resolved, _binding = await _with_tool_guidance(
+            tool, resolve_tool_connection(tool, context, "list:tools")
+        )
+    mcp_config = await _with_tool_guidance(tool, build_mcp_config(tool, resolved))
+    return await list_mcp_tools(mcp_config)
 
 
 async def execute_agent_stored_tool(
@@ -103,8 +133,11 @@ async def execute_agent_stored_tool(
             interactive=runtime.interactive if runtime else False,
             require_approval=bool(config.get("require_approval", False)),
         )
-        result = await ToolExecutor().execute(
-            tool, arguments, context=context, operation=operation
+        result = await _with_tool_guidance(
+            tool,
+            ToolExecutor().execute(
+                tool, arguments, context=context, operation=operation
+            ),
         )
         if isinstance(result, PendingToolApproval):
             return ToolInteractionRequest(

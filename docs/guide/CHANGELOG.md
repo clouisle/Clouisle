@@ -11,6 +11,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Tool permission denial, missing connections, and inactive authorization now return localized guidance naming the specific Agent tool and prompting access or connection login.
 - MCP header and environment templates suggest declared connection field names when typing `{{`.
 - MCP HTTP and SSE header values are visible while editing, making connection templates readable; connection secrets remain masked.
 - Simplified tool connection cards by removing internal credential-field names and allowing actions to wrap on narrow screens; account labels and management controls remain available.

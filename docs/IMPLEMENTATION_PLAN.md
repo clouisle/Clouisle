@@ -2,6 +2,10 @@
 
 ## Active
 
+- **agent-tool-access-guidance** — Completed. See `docs/plan/agent-tool-access-guidance.md`.
+  - [x] 1. Contextualize tool permission and connection failures
+  - [x] 2. Verify chat error delivery and localization
+
 - **automatic-tool-connections** — Completed. See `docs/plan/automatic-tool-connections.md`.
   - [x] 1. Runtime current-user selection and identity-bound execution
   - [x] 2. Automatic/fixed authoring controls and localized guidance

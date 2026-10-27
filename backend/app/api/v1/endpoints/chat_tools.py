@@ -831,7 +831,7 @@ async def execute_tool_call(
             result = await execute_agent_stored_tool(agent, tool_name, arguments, user)
         except BusinessError as exc:
             return json.dumps(
-                {"error": t(exc.msg_key or "tool_execution_failed")},
+                {"error": t(exc.msg_key or "tool_execution_failed", **exc.kwargs)},
                 ensure_ascii=False,
             )
         if isinstance(result, ToolInteractionRequest):

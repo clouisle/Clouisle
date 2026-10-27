@@ -351,7 +351,23 @@ async def test_authenticated_mcp_discovery_uses_each_invoking_users_account(
         assert await discover(users[1]) == ["mcp_tasks_bob_tasks"]
         with pytest.raises(BusinessError) as exc:
             await discover(users[2])
-        assert exc.value.msg_key == "tool_connection_required"
+        assert exc.value.msg_key == "agent_tool_connection_required"
+        assert exc.value.kwargs == {"tool_name": "Tasks"}
+        tool.visibility = "private"
+        tool.created_by_id = users[0].id
+        await tool.save()
+        users[1].is_superuser = False
+        await users[1].save()
+        from app.models.user import Permission, Role
+
+        permission = await Permission.create(code="team:read", scope="team")
+        role = await Role.create(name="MCP reader")
+        await role.permissions.add(permission)
+        await users[1].roles.add(role)
+        with pytest.raises(BusinessError) as exc:
+            await discover(users[1])
+        assert exc.value.msg_key == "agent_tool_access_denied"
+        assert exc.value.kwargs == {"tool_name": "Tasks"}
         assert (await Tool.get(id=tool.id)).mcp_config["headers"] == {
             "Authorization": "Bearer {{token}}"
         }

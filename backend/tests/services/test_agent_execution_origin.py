@@ -144,6 +144,52 @@ async def _selectable_tool(team: Team) -> Tool:
     )
 
 
+@pytest.mark.asyncio
+async def test_chat_tool_reports_access_and_connection_guidance(database):
+    from app.api.v1.endpoints.chat_tools import execute_tool_call
+    from app.core.i18n import set_language
+    from app.services.tool_context import RuntimeToolIdentity, tool_identity_scope
+    from app.models.user import Permission, Role
+
+    owner = await _user("guidance_owner")
+    member = await _user("guidance_member")
+    team = await _team_with_owner(owner)
+    permission = await Permission.create(code="team:read", scope="team")
+    role = await Role.create(name="Guidance reader")
+    await role.permissions.add(permission)
+    await member.roles.add(role)
+    await TeamMember.create(team_id=team.id, user_id=member.id, role="member")
+    tool = await _selectable_tool(team)
+    tool.created_by_id = owner.id
+    tool.visibility = "private"
+    await tool.save()
+    agent = SimpleNamespace(
+        id=uuid4(),
+        team_id=team.id,
+        tools_config=[{"type": "custom", "tool_id": str(tool.id)}],
+    )
+    set_language("zh")
+    with tool_identity_scope(RuntimeToolIdentity(entrypoint="chat", interactive=True)):
+        denied = json.loads(
+            await execute_tool_call(f"custom_{tool.name}", {}, agent=agent, user=member)
+        )
+        assert "Automatic tool" in denied["error"] and "无权" in denied["error"]
+        tool.visibility = "team"
+        await tool.save()
+        missing = json.loads(
+            await execute_tool_call(f"custom_{tool.name}", {}, agent=agent, user=member)
+        )
+        assert "Automatic tool" in missing["error"] and "登录" in missing["error"]
+        connection = await _personal_connection(team, tool, member, "token")
+        connection.status = "reauth_required"
+        await connection.save()
+        inactive = json.loads(
+            await execute_tool_call(f"custom_{tool.name}", {}, agent=agent, user=member)
+        )
+        assert "Automatic tool" in inactive["error"] and "重新登录" in inactive["error"]
+    set_language("en")
+
+
 async def _personal_connection(
     team: Team, tool: Tool, owner: User, token: str, *, is_default: bool = False
 ) -> ToolConnection:

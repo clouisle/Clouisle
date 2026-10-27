@@ -49,6 +49,26 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "agent_not_found": {"en": "Agent not found", "zh": "智能体未找到"},
     "agent_not_published": {"en": "Agent is not published", "zh": "智能体未发布"},
     "agent_published": {"en": "Agent published successfully", "zh": "智能体发布成功"},
+    "agent_tool_access_denied": {
+        "en": "You cannot access the Agent's tool ‘{tool_name}’. Ask its owner or team administrator for access.",
+        "zh": "你无权使用 Agent 的工具“{tool_name}”。请联系工具所有者或团队管理员开通权限。",
+    },
+    "agent_tool_connection_access_denied": {
+        "en": "You cannot use the connection configured for tool ‘{tool_name}’. Ask the Agent owner to review its connection settings.",
+        "zh": "你无权使用工具“{tool_name}”配置的连接。请联系 Agent 所有者检查连接设置。",
+    },
+    "agent_tool_connection_default_required": {
+        "en": "Tool ‘{tool_name}’ has multiple personal connections. Set a default in its connection settings and try again.",
+        "zh": "工具“{tool_name}”有多个个人连接。请在该工具的连接设置中设定默认连接后重试。",
+    },
+    "agent_tool_connection_inactive": {
+        "en": "Tool ‘{tool_name}’ needs its connection reauthorized. Open its connection settings and sign in again.",
+        "zh": "工具“{tool_name}”的连接需要重新授权。请在该工具的连接设置中重新登录。",
+    },
+    "agent_tool_connection_required": {
+        "en": "Tool ‘{tool_name}’ needs a connection. Open its connection settings, add your account or sign in, then try again.",
+        "zh": "工具“{tool_name}”需要连接。请在该工具的连接设置中添加账号或登录后重试。",
+    },
     "agent_unpublished": {
         "en": "Agent unpublished successfully",
         "zh": "智能体已取消发布",
@@ -3225,6 +3245,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "token_expired": {"en": "Token expired", "zh": "令牌已过期"},
     "token_revoked": {"en": "Token has been revoked", "zh": "令牌已被撤销"},
     "too_many_files": {"en": "Too many files uploaded", "zh": "上传文件数量过多"},
+    "tool_access_denied": {
+        "en": "You do not have access to this tool. Ask its owner or team administrator for access.",
+        "zh": "你无权使用此工具。请联系工具所有者或团队管理员开通权限。",
+    },
     "tool_already_shared": {
         "en": "Tool is already shared with this team",
         "zh": "工具已经共享给该团队",

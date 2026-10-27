@@ -2499,6 +2499,24 @@ msgstr "工具配置更新成功"
 msgid "tool_connection_access_denied"
 msgstr "你没有使用该连接的权限"
 
+msgid "agent_tool_access_denied"
+msgstr "你无权使用 Agent 的工具“{tool_name}”。请联系工具所有者或团队管理员开通权限。"
+
+msgid "agent_tool_connection_required"
+msgstr "工具“{tool_name}”需要连接。请在该工具的连接设置中添加账号或登录后重试。"
+
+msgid "agent_tool_connection_inactive"
+msgstr "工具“{tool_name}”的连接需要重新授权。请在该工具的连接设置中重新登录。"
+
+msgid "agent_tool_connection_default_required"
+msgstr "工具“{tool_name}”有多个个人连接。请在该工具的连接设置中设定默认连接后重试。"
+
+msgid "agent_tool_connection_access_denied"
+msgstr "你无权使用工具“{tool_name}”配置的连接。请联系 Agent 所有者检查连接设置。"
+
+msgid "tool_access_denied"
+msgstr "你无权使用此工具。请联系工具所有者或团队管理员开通权限。"
+
 msgid "tool_connection_default_conflict"
 msgstr "另一个默认连接被同时选中，请刷新后重试"
 

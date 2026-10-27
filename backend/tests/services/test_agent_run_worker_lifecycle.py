@@ -1798,9 +1798,19 @@ async def test_run_agent_round_failure_publishes_when_failed_transition_wins(
     ]
 
 
+@pytest.mark.parametrize(
+    ("key", "fragment"),
+    [
+        ("agent_tool_access_denied", "无权"),
+        ("agent_tool_connection_required", "登录"),
+        ("agent_tool_connection_inactive", "重新登录"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_missing_connection_during_discovery_publishes_localized_guidance(
+async def test_tool_discovery_publishes_localized_guidance(
     monkeypatch,
+    key,
+    fragment,
 ):
     from app.core.i18n import t
     from app.schemas.response import BusinessError
@@ -1816,11 +1826,12 @@ async def test_missing_connection_during_discovery_publishes_localized_guidance(
         monkeypatch,
         result=_round_result(),
         transition=transition,
-        rebuild=BusinessError(msg_key="tool_connection_required", status_code=409),
+        rebuild=BusinessError(msg_key=key, status_code=409, tool_name="GitHub"),
     )
     payload = {**_round_payload(run), "locale": "zh"}
     output = await run_agent_round(payload)
-    expected = t("tool_connection_required", lang="zh")
+    expected = t(key, lang="zh", tool_name="GitHub")
+    assert "GitHub" in expected and fragment in expected
     assert output == {"status": AgentRunStatus.FAILED.value, "error": expected}
     assert run.error_message == expected
     assert ("error", {"code": "run_failed", "msg": expected}) in [
