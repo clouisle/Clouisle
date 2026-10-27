@@ -110,7 +110,8 @@ describe('platform HttpToolDialog', () => {
     act(() => button(renderer, 'upload').props.onClick())
     await act(async () => button(renderer, 'platform.tools.httpDialog.addParameter').props.onClick())
     changeInput(renderer, { placeholder: 'platform.tools.httpDialog.paramName' }, 'city')
-    act(() => renderer.root.findAllByType('input').find((item) => item.props.type === 'checkbox' && item.props.checked === false)!.props.onChange({ target: { checked: true } }))
+    const requiredLabel = Array.from(document.querySelectorAll('span')).find((node) => node.textContent === 'platform.tools.httpDialog.required')!
+    await act(async () => (requiredLabel.parentElement!.querySelector('input[type="checkbox"]') as HTMLInputElement).click())
     changeInput(renderer, { placeholder: 'platform.tools.httpDialog.paramDescription' }, 'City name')
     changeInput(renderer, { placeholder: 'platform.tools.httpDialog.keyPlaceholder' }, 'Authorization')
     changeInput(renderer, { placeholder: 'platform.tools.httpDialog.headerValuePlaceholder' }, 'Bearer {{city}}')
