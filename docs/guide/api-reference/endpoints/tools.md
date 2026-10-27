@@ -864,7 +864,7 @@ generic configuration API.
 Built-in and custom tools declare an identity policy (`none`, `team_only`,
 `personal_only`, `selectable`) plus secret connection fields on their tool
 definition. Users attach encrypted personal or team connections through the
-tool connection API, and execution resolves the chosen/default connection. The
+tool connection API, and execution resolves the chosen/default/sole connection. The
 tool definition response exposes `identity_policy`, `connection_fields`,
 `approval_policy` and stable built-in definition identity; no response ever
 returns secret values.
@@ -873,6 +873,16 @@ Tools whose identity policy is `none` need no connection. A tool that requires
 an identity but has no usable connection fails execution explicitly
 (`tool_connection_required` or `tool_connection_inactive`) instead of falling
 back to a team or global plaintext credential.
+
+Unbound personal/selectable tools automatically use the invoking user's
+connection in the consuming team: explicit default, otherwise the sole
+non-revoked personal connection. Multiple accounts without a default fail with
+`6403 tool_connection_default_required`; missing accounts prompt configuration
+or login, and inactive accounts prompt reconnection. Automatic selection is
+available to interactive callers and manual workflow origins, not API-key,
+embed, channel or scheduled origins. A saved `connection_id` explicitly pins
+the account for every authorized runner; existing bindings are not migrated.
+MCP discovery and execution both resolve credentials for the actual run user.
 
 Site-wide web search remains the one intentionally site-owned configuration and
 uses the dedicated administrator endpoints below.
@@ -1172,13 +1182,13 @@ normal tool access, another team must hold an explicit tool share, and private
 tools are never shared.
 
 `team_id` is a required query parameter on every route. Identity selection is
-optional unless the tool is `selectable`:
+optional: an omitted mode defaults to personal for `selectable` tools.
 
 | Parameter | Location | Description |
 |-----------|----------|-------------|
 | `team_id` | query | Consuming team context |
-| `connection_mode` | query/body | `personal` or `team`; mandatory for `selectable`, must not contradict an explicit connection |
-| `connection_id` | query/body | Explicit stored connection, re-validated against the team and tool |
+| `connection_mode` | query/body | `personal` or `team`; omitted means personal for `selectable`, must match an explicit connection and the tool policy |
+| `connection_id` | query/body | Fixed stored connection, re-validated against the team and tool; omitted personal ID resolves the caller's default or sole account |
 | `execution_id` | query/body | Resume one previously returned pending execution |
 
 Permissions are `tool:read` for metadata and `tool:execute` for operations,

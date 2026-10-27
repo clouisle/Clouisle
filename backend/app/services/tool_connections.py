@@ -706,7 +706,15 @@ class ToolConnectionService:
         tool_id: UUID | None = None,
         builtin_tool_key: str | None = None,
     ) -> ToolConnection:
-        """Return the caller's/team's explicit default for one scope.
+        """Return the connection a caller should use automatically for one scope.
+
+        An explicit default always wins. Personal scope additionally accepts a
+        sole non-revoked connection for the same owner, team and service, which
+        is what makes an unbound tool "use my account" without requiring the
+        author to know the caller's connection id. Multiple personal
+        connections without a default are ambiguous and fail closed; inactive
+        defaults or sole connections surface the existing inactive error
+        instead of silently choosing another identity.
 
         A materialized builtin may have connections created under either its
         stable ``tool_id`` or its ``builtin_tool_key``; both are tried within
@@ -759,8 +767,51 @@ class ToolConnectionService:
             connection = await ToolConnection.filter(
                 default_slot=slot, is_default=True
             ).first()
-            if connection and connection.status == ToolConnectionStatus.ACTIVE:
+            if connection is not None:
+                if connection.status != ToolConnectionStatus.ACTIVE:
+                    # An inactive default must ask for reconnection instead of
+                    # quietly switching to a different external identity.
+                    _fail(
+                        ResponseCode.TOOL_CONNECTION_INACTIVE,
+                        "tool_connection_inactive",
+                        status_code=409,
+                    )
                 return connection
+
+        if scope == ToolConnectionScope.USER:
+            if tool_id is not None and builtin_tool_key:
+                service_query = Q(tool_id=tool_id) | Q(
+                    builtin_tool_key=builtin_tool_key
+                )
+            elif tool_id is not None:
+                service_query = Q(tool_id=tool_id)
+            else:
+                service_query = Q(builtin_tool_key=builtin_tool_key)
+            candidates = (
+                await ToolConnection.filter(
+                    service_query,
+                    team_id=team_id,
+                    scope=ToolConnectionScope.USER,
+                    owner_user_id=user.id,
+                )
+                .exclude(status=ToolConnectionStatus.REVOKED)
+                .limit(2)
+            )
+            if len(candidates) > 1:
+                _fail(
+                    ResponseCode.TOOL_CONNECTION_DEFAULT_REQUIRED,
+                    "tool_connection_default_required",
+                    status_code=409,
+                )
+            if candidates:
+                sole = candidates[0]
+                if sole.status != ToolConnectionStatus.ACTIVE:
+                    _fail(
+                        ResponseCode.TOOL_CONNECTION_INACTIVE,
+                        "tool_connection_inactive",
+                        status_code=409,
+                    )
+                return sole
 
         _fail(
             ResponseCode.TOOL_CONNECTION_REQUIRED,
@@ -904,6 +955,24 @@ class ToolConnectionService:
             secrets=secrets,
         )
 
+    @staticmethod
+    def binding_from_resolved(resolved: ResolvedConnection) -> ConnectionBinding:
+        """Build the secret-free snapshot from an already resolved identity.
+
+        Callers that both execute and record an approval must reuse the exact
+        :class:`ResolvedConnection` instead of resolving a default twice.
+        """
+        return ConnectionBinding(
+            connection_id=resolved.connection_id,
+            team_id=resolved.team_id,
+            scope=resolved.scope,
+            owner_user_id=resolved.owner_user_id,
+            effective_user_id=resolved.effective_user_id,
+            secret_version=resolved.secret_version,
+            status=resolved.status,
+            is_active=resolved.status == ToolConnectionStatus.ACTIVE,
+        )
+
     @classmethod
     async def get_binding_snapshot(
         cls,
@@ -938,16 +1007,7 @@ class ToolConnectionService:
             allowed_secret_fields=allowed_secret_fields,
             required_secret_fields=required_secret_fields,
         )
-        return ConnectionBinding(
-            connection_id=resolved.connection_id,
-            team_id=resolved.team_id,
-            scope=resolved.scope,
-            owner_user_id=resolved.owner_user_id,
-            effective_user_id=resolved.effective_user_id,
-            secret_version=resolved.secret_version,
-            status=resolved.status,
-            is_active=resolved.status == ToolConnectionStatus.ACTIVE,
-        )
+        return cls.binding_from_resolved(resolved)
 
     # ------------------------------------------------------------------
     # Internals

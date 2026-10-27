@@ -14,7 +14,45 @@ from app.services.tool_context import (
     coerce_execution_run_kind,
     current_tool_identity,
 )
-from app.services.tool_execution import PendingToolApproval, ToolCallContext
+from app.services.tool_execution import (
+    PendingToolApproval,
+    ToolCallContext,
+    authorize_tool_context,
+    resolve_tool_connection,
+)
+
+
+async def list_agent_mcp_tools(
+    agent: Any, tool: Tool, config: dict[str, Any], user_id: UUID | str | None
+) -> list[Any]:
+    """Discover tools using the same user's connection as their later execution."""
+    from app.llm.tools.mcp_client import list_mcp_tools
+    from app.services.tool import build_mcp_config
+
+    resolved = None
+    if user_id is not None or getattr(tool, "identity_policy", "none") != "none":
+        actor = await User.get_or_none(id=user_id) if user_id else None
+        if actor is None:
+            raise BusinessError(
+                code=403, msg_key="user_context_required", status_code=403
+            )
+        runtime = current_tool_identity()
+        context = ToolCallContext(
+            actor=actor,
+            team_id=agent.team_id,
+            entrypoint=coerce_execution_entrypoint(runtime.entrypoint)
+            if runtime
+            else ExecutionEntrypoint.AGENT_RUN,
+            entrypoint_id=runtime.entrypoint_id if runtime else str(agent.id),
+            connection_mode=config.get("connection_mode"),
+            connection_id=UUID(config["connection_id"])
+            if config.get("connection_id")
+            else None,
+            interactive=runtime.interactive if runtime else False,
+        )
+        await authorize_tool_context(tool, context)
+        resolved, _binding = await resolve_tool_connection(tool, context, "list:tools")
+    return await list_mcp_tools(await build_mcp_config(tool, resolved))
 
 
 async def execute_agent_stored_tool(

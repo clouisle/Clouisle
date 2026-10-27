@@ -260,9 +260,11 @@ class ToolNodeExecutor(NodeExecutor):
                     # execute (and policy-key) the wrong operation.
                     return ExecutionResult(error="invalid_tool_arguments")
 
-            # A workflow is a non-interactive entrypoint: the identity, team and
-            # stable entrypoint reference are built here and never taken from
-            # node inputs, so a renamed alias cannot redirect the execution.
+            # A workflow is non-interactive for approval gates; a manual run
+            # may still auto-select the triggering user's personal connection.
+            # The identity, team and stable entrypoint reference are built here
+            # and never taken from node inputs, so a renamed alias cannot
+            # redirect the execution.
             actor = (
                 await User.get_or_none(id=run.triggered_by_id)
                 if run.triggered_by_id

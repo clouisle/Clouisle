@@ -401,13 +401,23 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onUpdateBinding, onTogg
   const isWebSearch = config.type === 'builtin' && config.name === 'web_search'
   const searchEngine = typeof config.config?.engine === 'string' ? config.config.engine : 'auto'
   const needsConnection = !!tool && (tool.identity_policy ?? 'none') !== 'none'
+  const identityPolicy = tool?.identity_policy ?? 'none'
   const builtinToolKey = tool?.type === 'builtin' ? tool.name : undefined
   const connectionMode = config.connection_mode ?? null
-  const connectionModeLabel =
-    connectionMode === 'personal'
-      ? tConnection('modePersonal')
-      : connectionMode === 'team'
-        ? tConnection('modeTeam')
+  // A personal/selectable tool with no pinned connection resolves the
+  // invoking user's account at runtime, so the summary must say so instead
+  // of implying the author's account is fixed.
+  const isAutomaticConnection =
+    needsConnection &&
+    identityPolicy !== 'team_only' &&
+    !config.connection_id &&
+    (connectionMode === null || connectionMode === 'personal')
+  const connectionModeLabel = isAutomaticConnection
+    ? tConnection('automaticBadge')
+    : connectionMode === 'team' || (!!config.connection_id && identityPolicy === 'team_only')
+      ? tConnection('modeTeam')
+      : connectionMode === 'personal' || !!config.connection_id
+        ? tConnection('modePersonal')
         : null
   const requireApproval = Boolean(config.require_approval)
 

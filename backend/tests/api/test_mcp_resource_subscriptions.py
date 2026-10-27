@@ -248,41 +248,6 @@ async def test_subscribe_stream_authorizes_then_emits_scoped_events(
 
 
 @pytest.mark.asyncio
-async def test_subscribe_returns_pending_approval_without_opening_session(
-    sub_app, monkeypatch
-):
-    team = await _team(sub_app.actor)
-    tool = await _tool(
-        team,
-        policy={
-            "default_decision": "require_approval",
-            "gates": [{"kind": "caller"}],
-        },
-    )
-    opened = False
-
-    @asynccontextmanager
-    async def fake_open(**kwargs):
-        nonlocal opened
-        opened = True
-        yield _FakeHandle()
-
-    monkeypatch.setattr(tool_mcp, "open_subscription", fake_open)
-
-    response = await sub_app.client.get(
-        f"/tools/{tool.id}/mcp/resources/subscribe",
-        params={"team_id": str(team.id), "uri": "file:///a"},
-    )
-    assert response.status_code == 200
-    data = response.json()["data"]
-    assert data["status"] == "pending_approval"
-    assert data["operation"] == "subscribe:resource"
-    assert opened is False
-    execution = await ToolExecution.get(id=data["execution_id"])
-    assert execution.status.value == "awaiting_approval"
-
-
-@pytest.mark.asyncio
 async def test_subscribe_without_server_capability_is_rejected(sub_app, monkeypatch):
     team = await _team(sub_app.actor)
     tool = await _tool(team, policy={"default_decision": "allow"})

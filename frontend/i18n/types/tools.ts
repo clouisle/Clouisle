@@ -371,6 +371,9 @@ export type ToolsMessages = {
       modePersonal: string
       modeTeam: string
       modePlaceholder: string
+      automatic: string
+      automaticBadge: string
+      modeAutomaticHint: string
       modePersonalHint: string
       modeTeamHint: string
       modeSelectHint: string

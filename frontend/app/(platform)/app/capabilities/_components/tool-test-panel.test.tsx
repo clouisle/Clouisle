@@ -406,30 +406,23 @@ describe('tool test panel', () => {
     })
   })
 
-  test('does not auto-discover MCP tools until a connection is selected when identity_policy is required', async () => {
-    const tool = {
+  test('allows testing with the current user automatic connection and preserves fixed selection', async () => {
+    const api = { test: mock(async () => ({ name: 'connected', success: true, result: { connected: true } })) }
+    const panel = render({
       ...baseTool,
-      name: 'mcp-secured',
-      type: 'mcp',
+      name: 'connected',
       identity_policy: 'selectable',
       parameters: [],
-    }
-    const panel = render(tool, { test: mock() })
-    await act(async () => {})
+    }, api)
+    await act(async () => runButton(panel).props.onClick())
+    expect(api.test).toHaveBeenLastCalledWith({ name: 'connected', arguments: {} }, 'team-1')
+    expect(JSON.stringify(panel.toJSON())).toContain('connected')
 
-    // Initial render with no connection selected: listTools should NOT have been called
-    expect(listTools).not.toHaveBeenCalled()
-    expect(JSON.stringify(panel.toJSON())).toContain('testPanel.selectConnectionBeforeLoad')
-
-    // Select a connection via the picker
     const pickerBtn = panel.root.findByProps({ 'data-connection-picker': true })
     await act(async () => pickerBtn.props.onClick())
-
-    // Now that connection is chosen, listTools should be called with connectionPayload
-    expect(listTools).toHaveBeenCalledWith('tool-1', {
-      teamId: 'team-1',
-      connection_mode: 'team',
-      connection_id: 'conn-1',
-    })
+    await act(async () => runButton(panel).props.onClick())
+    expect(api.test).toHaveBeenLastCalledWith({
+      name: 'connected', arguments: {}, connection_mode: 'team', connection_id: 'conn-1',
+    }, 'team-1')
   })
 })

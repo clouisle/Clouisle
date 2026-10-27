@@ -85,8 +85,14 @@ async def resolve_tool_connection(
             code=400, msg_key="tool_connection_invalid", status_code=400
         )
     mode = context.connection_mode
-    if mode is None and len(scopes) == 1:
-        scope = scopes[0]
+    if mode is None:
+        # A missing mode on a selectable tool means "use the invoking user's
+        # account"; team-only tools keep their single allowed scope.
+        scope = (
+            ToolConnectionScope.USER
+            if ToolConnectionScope.USER in scopes
+            else scopes[0]
+        )
     elif mode in {"personal", "team"}:
         scope = (
             ToolConnectionScope.USER if mode == "personal" else ToolConnectionScope.TEAM
@@ -96,6 +102,17 @@ async def resolve_tool_connection(
             code=400, msg_key="tool_connection_required", status_code=400
         )
     fields = {field["name"] for field in tool.connection_fields}
+    # Automatic identity selection is limited to an interactive caller or a
+    # trusted manual workflow origin (workflow surface with a stable entrypoint
+    # reference); API-key, embed, channel, schedule and nested origins still
+    # require a fixed connection. Manual workflows stay non-interactive for
+    # approval gates.
+    manual_workflow = context.entrypoint == ExecutionEntrypoint.WORKFLOW and bool(
+        context.entrypoint_id
+    )
+    auto_select = context.connection_id is None and (
+        context.interactive or manual_workflow
+    )
     binding_trusted = context.entrypoint in {
         ExecutionEntrypoint.WORKFLOW,
         ExecutionEntrypoint.SUBWORKFLOW,
@@ -119,7 +136,7 @@ async def resolve_tool_connection(
         scope=scope,
         operation=operation,
         binding_trusted=binding_trusted,
-        use_default=context.connection_id is None and context.interactive,
+        use_default=auto_select,
         allowed_scopes=scopes,
     )
     resolved = await ToolConnectionService.resolve_connection(
@@ -134,7 +151,9 @@ async def resolve_tool_connection(
         raise BusinessError(
             code=400, msg_key="tool_connection_required", status_code=400
         )
-    binding = await ToolConnectionService.get_binding_snapshot(**kwargs)
+    # Snapshot the identity that was actually resolved. Resolving again here
+    # could select a different default connection under a concurrent update.
+    binding = ToolConnectionService.binding_from_resolved(resolved)
     return resolved, binding
 
 

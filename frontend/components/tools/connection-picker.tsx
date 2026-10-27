@@ -34,6 +34,10 @@ export const EMPTY_CONNECTION_BINDING: ToolConnectionBinding = {
   connection_id: null,
 }
 
+// Sentinel for "use the invoking user's own connection at runtime". A stored
+// connection id is always a UUID, so it cannot collide with this option.
+const AUTOMATIC_CONNECTION_VALUE = '__automatic__'
+
 export function getToolConnectionBinding(config?: {
   connection_mode?: ToolConnectionBinding['connection_mode']
   connection_id?: string | null
@@ -92,7 +96,20 @@ export function ToolConnectionPicker({
 
   const fixedMode: 'personal' | 'team' | null =
     identity === 'personal_only' ? 'personal' : identity === 'team_only' ? 'team' : null
-  const mode = fixedMode ?? value.connection_mode
+  const autoAllowed = identity === 'personal_only' || identity === 'selectable'
+  const selectedConnection = connections.find((connection) => connection.id === value.connection_id)
+  const inferredMode: 'personal' | 'team' | null =
+    value.connection_id && selectedConnection
+      ? selectedConnection.scope === 'user'
+        ? 'personal'
+        : 'team'
+      : null
+  const mode: 'personal' | 'team' | null =
+    fixedMode ??
+    value.connection_mode ??
+    inferredMode ??
+    (autoAllowed && !value.connection_id ? 'personal' : null)
+  const isAutomatic = autoAllowed && mode === 'personal' && !value.connection_id
   const visibleConnections = React.useMemo(
     () => connections.filter((connection) => !mode || scopeAllowed(connection.scope, mode)),
     [connections, mode]
@@ -124,7 +141,6 @@ export function ToolConnectionPicker({
     }
   }, [tool?.id, builtinToolKey, teamId, identity, reloadKey])
 
-  const selectedConnection = connections.find((connection) => connection.id === value.connection_id)
   const connectionMissing = !!mode && !value.connection_id
 
   const setMode = (nextMode: 'personal' | 'team') => {
@@ -175,19 +191,21 @@ export function ToolConnectionPicker({
       </div>
       <p className="text-xs text-muted-foreground">
         {mode === 'personal'
-          ? t('modePersonalHint')
+          ? isAutomatic
+            ? t('modeAutomaticHint')
+            : t('modePersonalHint')
           : mode === 'team'
             ? t('modeTeamHint')
             : t('modeSelectHint')}
       </p>
 
       {identity === 'selectable' && (
-        <Select value={value.connection_mode ?? ''} onValueChange={(next) => setMode(next as 'personal' | 'team')} disabled={disabled}>
+        <Select value={mode ?? ''} onValueChange={(next) => setMode(next as 'personal' | 'team')} disabled={disabled}>
           <SelectTrigger className="w-full">
             <SelectValue>
-              {value.connection_mode === 'personal'
+              {mode === 'personal'
                 ? t('modePersonal')
-                : value.connection_mode === 'team'
+                : mode === 'team'
                   ? t('modeTeam')
                   : t('modePlaceholder')}
             </SelectValue>
@@ -201,18 +219,33 @@ export function ToolConnectionPicker({
 
       {mode && (
         <Select
-          value={value.connection_id ?? ''}
+          value={
+            isAutomatic
+              ? AUTOMATIC_CONNECTION_VALUE
+              : value.connection_id ?? ''
+          }
           onValueChange={(connectionId) => {
+            if (connectionId === AUTOMATIC_CONNECTION_VALUE) {
+              onChange({ connection_mode: 'personal', connection_id: null })
+              return
+            }
             onChange({ connection_mode: mode, connection_id: connectionId })
           }}
-          disabled={disabled || isLoading || visibleConnections.length === 0}
+          disabled={disabled || isLoading || (!(autoAllowed && mode === 'personal') && visibleConnections.length === 0)}
         >
           <SelectTrigger className="w-full">
             <SelectValue>
-              {selectedConnection ? connectionLabel(selectedConnection) : t('selectConnection')}
+              {isAutomatic
+                ? t('automatic')
+                : selectedConnection
+                  ? connectionLabel(selectedConnection)
+                  : t('selectConnection')}
             </SelectValue>
           </SelectTrigger>
           <SelectContent side="bottom" alignItemWithTrigger={false}>
+            {autoAllowed && mode === 'personal' && (
+              <SelectItem value={AUTOMATIC_CONNECTION_VALUE}>{t('automatic')}</SelectItem>
+            )}
             {visibleConnections.map((connection) => (
               <SelectItem key={connection.id} value={connection.id}>
                 {connectionLabel(connection)}
@@ -224,12 +257,12 @@ export function ToolConnectionPicker({
         </Select>
       )}
 
-      {mode && visibleConnections.length === 0 && !isLoading && (
+      {mode && visibleConnections.length === 0 && !isLoading && (loadError || !isAutomatic) && (
         <p className="text-xs text-muted-foreground">
           {loadError ? t('loadFailed') : t('noConnectionsForMode')}
         </p>
       )}
-      {connectionMissing && visibleConnections.length > 0 && (
+      {!isAutomatic && connectionMissing && visibleConnections.length > 0 && (
         <p className="text-xs text-amber-600 dark:text-amber-400">{t('selectionRequired')}</p>
       )}
 

@@ -3341,9 +3341,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Another default connection was selected concurrently; refresh and try again",
         "zh": "另一个默认连接被同时选中，请刷新后重试",
     },
+    "tool_connection_default_required": {
+        "en": "Multiple personal connections are available for this tool; set a default in Connection settings or select a connection explicitly",
+        "zh": "该工具存在多个个人连接，请在连接设置中设定默认连接或显式选择连接",
+    },
     "tool_connection_inactive": {
-        "en": "This connection is revoked or requires re-authentication",
-        "zh": "该连接已撤销或需要重新认证",
+        "en": "This connection is revoked or requires re-authentication; reconnect it in Connection settings",
+        "zh": "该连接已撤销或需要重新认证，请在连接设置中重新连接",
     },
     "tool_connection_invalid": {
         "en": "Invalid connection configuration",
@@ -3351,8 +3355,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "tool_connection_not_found": {"en": "Connection not found", "zh": "未找到连接"},
     "tool_connection_required": {
-        "en": "Select a connection before using this tool",
-        "zh": "使用该工具前请选择连接",
+        "en": "A connection is required: open Connection settings to add an account or sign in, then try again",
+        "zh": "需要连接：请在连接设置中添加账号或重新登录，然后重试",
     },
     "tool_connection_secret_unreadable": {
         "en": "Stored connection credentials cannot be read; re-authenticate the connection",

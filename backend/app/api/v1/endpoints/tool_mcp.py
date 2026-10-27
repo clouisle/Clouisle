@@ -35,7 +35,6 @@ import asyncio
 import json
 import logging
 from contextlib import AsyncExitStack
-from copy import deepcopy
 from typing import Any
 from uuid import UUID
 
@@ -71,7 +70,6 @@ from app.llm.tools.mcp_client import (
     probe_mcp_capabilities,
     read_mcp_resource,
 )
-from app.llm.tools.executors import _render_text_template
 from app.models.tool import Tool, ToolType
 from app.models.tool_approval import ExecutionEntrypoint
 from app.models.user import User
@@ -106,6 +104,7 @@ from app.services.mcp_subscriptions import (
     SubscriptionClosed,
     open_subscription,
 )
+from app.services.tool import build_mcp_config
 from app.services.tool_approvals import (
     PolicyConfigurationError,
     normalize_tool_approval_policy,
@@ -209,49 +208,6 @@ def _call_context(
         interactive=True,
         execution_id=execution_id,
     )
-
-
-async def _build_mcp_config(
-    tool: Tool, resolved: ResolvedConnection | None
-) -> dict[str, Any]:
-    """Copy stored config, render secrets and inject the OAuth header.
-
-    The copy is scoped to one call; the persisted row is never mutated and the
-    rendered values are never returned, logged or embedded in an approval
-    payload. Tokens are refreshed through the connection identity before every
-    operation, including metadata listings.
-    """
-    config = deepcopy(tool.mcp_config or {})
-    secrets = dict(resolved.secrets) if resolved is not None else {}
-    for key in ("headers", "env"):
-        raw = config.get(key)
-        if not isinstance(raw, dict):
-            continue
-        config[key] = {
-            str(name): _render_text_template(str(value), secrets)
-            for name, value in raw.items()
-        }
-    from app.services.tool_oauth import ToolOAuthService
-
-    if config.get("oauth") or await ToolOAuthService.has_oauth_binding(resolved):
-        if resolved is None:
-            raise BusinessError(
-                code=403,
-                msg_key="tool_connection_required",
-                status_code=403,
-            )
-
-        authorization = await ToolOAuthService.get_authorization_header(resolved)
-        if authorization:
-            headers = config.get("headers")
-            headers = headers if isinstance(headers, dict) else {}
-            config["headers"] = {
-                key: value
-                for key, value in headers.items()
-                if str(key).lower() != "authorization"
-            }
-            config["headers"]["Authorization"] = authorization
-    return config
 
 
 # ============ Error mapping ============
@@ -496,7 +452,7 @@ async def _list_metadata(
     async def invoke(
         approved: dict[str, Any], resolved: ResolvedConnection | None
     ) -> McpEnumerationOut[Any]:
-        config = await _build_mcp_config(tool, resolved)
+        config = await build_mcp_config(tool, resolved)
 
         async def call_mcp(callbacks: Any) -> McpEnumeration[Any]:
             return await enumerate_call(
@@ -556,7 +512,7 @@ async def get_mcp_capabilities(
     async def invoke(
         approved: dict[str, Any], resolved: ResolvedConnection | None
     ) -> McpCapabilitiesOut:
-        config = await _build_mcp_config(tool, resolved)
+        config = await build_mcp_config(tool, resolved)
 
         async def call_mcp(callbacks: Any) -> Any:
             return await probe_mcp_capabilities(
@@ -772,7 +728,7 @@ async def call_mcp_tool(
     async def invoke(
         approved: dict[str, Any], resolved: ResolvedConnection | None
     ) -> McpToolResultOut:
-        config = await _build_mcp_config(tool, resolved)
+        config = await build_mcp_config(tool, resolved)
         call_timeout = mcp_call_timeout_seconds(tool)
 
         async def call_mcp(callbacks: Any) -> Any:
@@ -846,7 +802,7 @@ async def read_mcp_resource_contents(
     async def invoke(
         approved: dict[str, Any], resolved: ResolvedConnection | None
     ) -> list[McpResourceContentsOut]:
-        config = await _build_mcp_config(tool, resolved)
+        config = await build_mcp_config(tool, resolved)
 
         async def call_mcp(callbacks: Any) -> Any:
             return await read_mcp_resource(
@@ -926,7 +882,7 @@ async def subscribe_mcp_resource(
     async def invoke(
         approved: dict[str, Any], resolved: ResolvedConnection | None
     ) -> Any:
-        config = await _build_mcp_config(tool, resolved)
+        config = await build_mcp_config(tool, resolved)
         scope = getattr(resolved.scope, "value", resolved.scope) if resolved else None
         return await stack.enter_async_context(
             open_subscription(
@@ -1023,7 +979,7 @@ async def get_mcp_prompt_result(
     async def invoke(
         approved: dict[str, Any], resolved: ResolvedConnection | None
     ) -> McpPromptResultOut:
-        config = await _build_mcp_config(tool, resolved)
+        config = await build_mcp_config(tool, resolved)
 
         async def call_mcp(callbacks: Any) -> Any:
             return await get_mcp_prompt(
@@ -1101,7 +1057,7 @@ async def complete_mcp_prompt_argument(
     async def invoke(
         approved: dict[str, Any], resolved: ResolvedConnection | None
     ) -> McpCompletionOut:
-        config = await _build_mcp_config(tool, resolved)
+        config = await build_mcp_config(tool, resolved)
         reference = McpCompletionReference(
             kind=approved["reference_kind"],
             name=approved.get("name"),

@@ -857,7 +857,9 @@ async def persist_partial_round_error(
     return True
 
 
-async def get_agent_tools(agent: Agent) -> list[dict]:
+async def get_agent_tools(
+    agent: Agent, user_id: UUID | str | None = None
+) -> list[dict]:
     """
     Get tools configured for the agent.
 
@@ -1054,13 +1056,15 @@ Examples of when to search:
             # Frontend uses server_id for MCP tools
             tool_id = config.get("server_id") or config.get("tool_id")
             if tool_id:
-                from app.llm.tools.mcp_client import list_mcp_tools
+                from app.services.agent_tool_execution import list_agent_mcp_tools
 
                 mcp_tool = await Tool.filter(id=tool_id, is_enabled=True).first()
                 if mcp_tool and mcp_tool.mcp_config:
                     try:
                         # Get tools from MCP server
-                        mcp_tools = await list_mcp_tools(mcp_tool.mcp_config)
+                        mcp_tools = await list_agent_mcp_tools(
+                            agent, mcp_tool, config, user_id
+                        )
                         for mt in mcp_tools:
                             # Convert MCP tool to OpenAI format
                             # Use mcp_<server_name>_<tool_name> for readability
@@ -1081,6 +1085,8 @@ Examples of when to search:
                                     },
                                 }
                             )
+                    except BusinessError:
+                        raise
                     except Exception as e:
                         logger.warning(
                             f"Failed to get MCP tools from {mcp_tool.name}: {e}"

@@ -482,6 +482,259 @@ def test_field_filtering_defaults_team_and_site_scope(run_orm):
     run_orm(scenario)
 
 
+def test_personal_default_and_sole_connection_selection_rules(run_orm):
+    async def scenario():
+        alice = await _make_user("alice")
+        team = await _make_team("team-one", alice)
+        await _join(team, alice, "owner")
+
+        sole = await ToolConnectionService.create_connection(
+            actor=alice,
+            payload=_personal_payload(team.id, {"api_key": "alice-sole"}),
+        )
+        # A sole personal connection is selected without an explicit default.
+        selected = await ToolConnectionService.get_default_connection(
+            actor=alice,
+            team_id=team.id,
+            scope=ToolConnectionScope.USER,
+            builtin_tool_key="web_search",
+        )
+        assert selected.id == sole.id
+        resolved = await ToolConnectionService.resolve_connection(
+            team_id=team.id,
+            actor=alice,
+            use_default=True,
+            scope=ToolConnectionScope.USER,
+            builtin_tool_key="web_search",
+            allowed_secret_fields={"api_key"},
+        )
+        assert resolved.connection_id == sole.id
+        assert resolved.secrets == {"api_key": "alice-sole"}
+
+        # Adding a second connection makes automatic selection ambiguous until
+        # one of them becomes the default.
+        second = await ToolConnectionService.create_connection(
+            actor=alice,
+            payload=_personal_payload(
+                team.id, {"api_key": "alice-second"}, name="Second"
+            ),
+        )
+        with pytest.raises(BusinessError) as ambiguous:
+            await ToolConnectionService.get_default_connection(
+                actor=alice,
+                team_id=team.id,
+                scope=ToolConnectionScope.USER,
+                builtin_tool_key="web_search",
+            )
+        assert int(ambiguous.value.code) == int(
+            ResponseCode.TOOL_CONNECTION_DEFAULT_REQUIRED
+        )
+        assert ambiguous.value.msg_key == "tool_connection_default_required"
+        with _expect_error(ResponseCode.TOOL_CONNECTION_DEFAULT_REQUIRED):
+            await ToolConnectionService.resolve_connection(
+                team_id=team.id,
+                actor=alice,
+                use_default=True,
+                scope=ToolConnectionScope.USER,
+                builtin_tool_key="web_search",
+            )
+
+        # An explicit connection still works while automatic selection is
+        # ambiguous.
+        chosen = await ToolConnectionService.resolve_connection(
+            team_id=team.id,
+            actor=alice,
+            connection_id=second.id,
+            allowed_secret_fields={"api_key"},
+        )
+        assert chosen.secrets == {"api_key": "alice-second"}
+
+        await ToolConnectionService.update_connection(
+            actor=alice,
+            connection_id=second.id,
+            payload=ToolConnectionUpdate(is_default=True),
+        )
+        selected = await ToolConnectionService.get_default_connection(
+            actor=alice,
+            team_id=team.id,
+            scope=ToolConnectionScope.USER,
+            builtin_tool_key="web_search",
+        )
+        assert selected.id == second.id
+
+        # An inactive default surfaces the inactive error instead of falling
+        # back to the other personal account.
+        await ToolConnectionService.update_connection(
+            actor=alice,
+            connection_id=second.id,
+            payload=ToolConnectionUpdate(status="reauth_required"),
+        )
+        with _expect_error(ResponseCode.TOOL_CONNECTION_INACTIVE):
+            await ToolConnectionService.get_default_connection(
+                actor=alice,
+                team_id=team.id,
+                scope=ToolConnectionScope.USER,
+                builtin_tool_key="web_search",
+            )
+        with _expect_error(ResponseCode.TOOL_CONNECTION_INACTIVE):
+            await ToolConnectionService.resolve_connection(
+                team_id=team.id,
+                actor=alice,
+                use_default=True,
+                scope=ToolConnectionScope.USER,
+                builtin_tool_key="web_search",
+            )
+
+    run_orm(scenario)
+
+
+def test_automatic_personal_selection_never_crosses_identity(run_orm):
+    async def scenario():
+        alice = await _make_user("alice")
+        bob = await _make_user("bob")
+        carol = await _make_user("carol")
+        dave = await _make_user("dave")
+        eve = await _make_user("eve")
+        team = await _make_team("team-one", alice)
+        other_team = await _make_team("team-two", alice)
+        await _join(team, alice, "owner")
+        for user in (bob, carol, dave, eve):
+            await _join(team, user, "member")
+        await _join(other_team, carol, "member")
+
+        alice_connection = await ToolConnectionService.create_connection(
+            actor=alice,
+            payload=_personal_payload(team.id, {"api_key": "alice"}),
+        )
+        await ToolConnectionService.create_connection(
+            actor=alice,
+            payload=ToolConnectionCreate(
+                team_id=team.id,
+                builtin_tool_key="web_search",
+                scope=ToolConnectionScope.TEAM,
+                name="Team account",
+                config={"api_key": "team"},
+                is_default=True,
+            ),
+        )
+
+        # Bob has no personal connection: neither another user's account nor
+        # the team account is an acceptable fallback.
+        with _expect_error(ResponseCode.TOOL_CONNECTION_REQUIRED):
+            await ToolConnectionService.resolve_connection(
+                team_id=team.id,
+                actor=bob,
+                use_default=True,
+                scope=ToolConnectionScope.USER,
+                builtin_tool_key="web_search",
+            )
+        with _expect_error(ResponseCode.TOOL_CONNECTION_REQUIRED):
+            await ToolConnectionService.get_default_connection(
+                actor=bob,
+                team_id=team.id,
+                scope=ToolConnectionScope.USER,
+                builtin_tool_key="web_search",
+            )
+
+        # A personal account in another team is never selected.
+        await ToolConnectionService.create_connection(
+            actor=carol,
+            payload=_personal_payload(
+                other_team.id, {"api_key": "carol-other"}, name="Carol other team"
+            ),
+        )
+        with _expect_error(ResponseCode.TOOL_CONNECTION_REQUIRED):
+            await ToolConnectionService.resolve_connection(
+                team_id=team.id,
+                actor=carol,
+                use_default=True,
+                scope=ToolConnectionScope.USER,
+                builtin_tool_key="web_search",
+            )
+        carol_connection = await ToolConnectionService.create_connection(
+            actor=carol,
+            payload=_personal_payload(team.id, {"api_key": "carol-team"}),
+        )
+        carol_resolved = await ToolConnectionService.resolve_connection(
+            team_id=team.id,
+            actor=carol,
+            use_default=True,
+            scope=ToolConnectionScope.USER,
+            builtin_tool_key="web_search",
+            allowed_secret_fields={"api_key"},
+        )
+        assert carol_resolved.connection_id == carol_connection.id
+        assert carol_resolved.secrets == {"api_key": "carol-team"}
+        alice_default = await ToolConnectionService.get_default_connection(
+            actor=alice,
+            team_id=team.id,
+            scope=ToolConnectionScope.USER,
+            builtin_tool_key="web_search",
+        )
+        assert alice_default.id == alice_connection.id
+        with _expect_error(ResponseCode.TOOL_CONNECTION_REQUIRED):
+            await ToolConnectionService.resolve_connection(
+                team_id=team.id,
+                actor=bob,
+                use_default=True,
+                scope=ToolConnectionScope.USER,
+                builtin_tool_key="web_search",
+            )
+
+        # A connection for another service is not selected.
+        await ToolConnectionService.create_connection(
+            actor=dave,
+            payload=ToolConnectionCreate(
+                team_id=team.id,
+                builtin_tool_key="calculator",
+                scope=ToolConnectionScope.USER,
+                name="Calculator",
+                config={"api_key": "dave-calculator"},
+            ),
+        )
+        with _expect_error(ResponseCode.TOOL_CONNECTION_REQUIRED):
+            await ToolConnectionService.get_default_connection(
+                actor=dave,
+                team_id=team.id,
+                scope=ToolConnectionScope.USER,
+                builtin_tool_key="web_search",
+            )
+
+        # Revoked connections are excluded from the sole fallback.
+        await ToolConnectionService.revoke_connection(
+            actor=carol, connection_id=carol_connection.id
+        )
+        with _expect_error(ResponseCode.TOOL_CONNECTION_REQUIRED):
+            await ToolConnectionService.get_default_connection(
+                actor=carol,
+                team_id=team.id,
+                scope=ToolConnectionScope.USER,
+                builtin_tool_key="web_search",
+            )
+
+        # A sole re-authentication-required connection reports the inactive
+        # error rather than being silently skipped.
+        eve_connection = await ToolConnectionService.create_connection(
+            actor=eve,
+            payload=_personal_payload(team.id, {"api_key": "eve"}),
+        )
+        await ToolConnectionService.update_connection(
+            actor=eve,
+            connection_id=eve_connection.id,
+            payload=ToolConnectionUpdate(status="reauth_required"),
+        )
+        with _expect_error(ResponseCode.TOOL_CONNECTION_INACTIVE):
+            await ToolConnectionService.resolve_connection(
+                team_id=team.id,
+                actor=eve,
+                use_default=True,
+                scope=ToolConnectionScope.USER,
+                builtin_tool_key="web_search",
+            )
+
+    run_orm(scenario)
+
+
 def test_scope_owner_team_invariants_reject_ambiguous_rows(run_orm):
     async def scenario():
         user = await _make_user("alice")

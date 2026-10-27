@@ -370,7 +370,22 @@ async def _rebuild_context(
         conversation_id=str(conversation.id),
     )
     chat_model = await resolve_agent_chat_model(agent)
-    tools_openai = await _load_tools(agent)
+    from app.services.tool_context import (
+        RuntimeToolIdentity,
+        entrypoint_is_interactive,
+        tool_identity_scope,
+    )
+
+    origin = payload.get("tool_entrypoint")
+    with tool_identity_scope(
+        RuntimeToolIdentity(
+            run_id=UUID(payload["run_id"]),
+            entrypoint=origin or "agent_run",
+            entrypoint_id=payload.get("tool_entrypoint_id"),
+            interactive=entrypoint_is_interactive(origin),
+        )
+    ):
+        tools_openai = await _load_tools(agent, user_id=conversation.user_id)
     from app.core.i18n import resolve_language, set_language
 
     effective_locale = await resolve_language(payload.get("locale"))
@@ -532,16 +547,16 @@ async def _visible_messages(conversation_id: UUID):
     return await get_visible_conversation_messages(conversation_id)
 
 
-async def _load_tools(agent: Agent):
+async def _load_tools(agent: Agent, user_id: UUID | str | None = None):
     from app.api.v1.endpoints.chat import get_agent_tools
 
-    return await get_agent_tools(agent)
+    return await get_agent_tools(agent, user_id=user_id)
 
 
 async def _load_tool_display_names(agent: Agent, locale: str = "en"):
     from app.api.v1.endpoints.chat import get_tool_display_names
 
-    return await get_tool_display_names(agent, locale)
+    return await get_tool_display_names(agent, locale, enumerate_mcp_tools=False)
 
 
 def _tools_definitions(tools_openai: list[dict] | None):
@@ -1415,6 +1430,14 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
             logger.exception("Failed to checkpoint sandbox for agent run %s", run.id)
         await flush_queued_events()
         logger.exception("Agent run %s failed", run.id)
+        from app.core.i18n import t
+        from app.schemas.response import BusinessError
+
+        error_message = (
+            t(exc.msg_key, lang=payload.get("locale"), **exc.kwargs)
+            if isinstance(exc, BusinessError) and exc.msg_key
+            else str(exc)
+        )
         failed, transitioned = await _transition_active_run(
             run,
             AgentRunStatus.FAILED,
@@ -1424,21 +1447,21 @@ async def run_agent_round(payload: dict[str, Any]) -> dict[str, Any]:
                 AgentRunStatus.COMPLETING,
             ),
             error_code=type(exc).__name__,
-            error_message=str(exc),
+            error_message=error_message,
         )
         if failed is None:
             raise LookupError("run not found") from exc
         if not transitioned:
-            return {"status": failed.status.value, "error": str(exc)}
+            return {"status": failed.status.value, "error": error_message}
         await stream.publish(
             "error",
-            {"code": "run_failed", "msg": str(exc)},
+            {"code": "run_failed", "msg": error_message},
         )
         await stream.publish(
             "run_end",
             {"status": "failed", "message_id": str(run.canonical_message_id or "")},
         )
-        return {"status": AgentRunStatus.FAILED.value, "error": str(exc)}
+        return {"status": AgentRunStatus.FAILED.value, "error": error_message}
     finally:
         lease_stop.set()
         try:

@@ -38,10 +38,14 @@ MAX_MCP_RESOURCE_URI_LENGTH = 8192
 class McpIdentityIn(BaseModel):
     """Identity selection for one MCP request.
 
-    ``connection_mode`` selects the scope of the stored connection and, for
-    ``selectable`` tools, is mandatory. ``connection_id`` pins an explicit
-    connection the caller can already use; it is validated against the team
-    and the tool on every request.
+    ``connection_mode`` selects the scope of the stored connection. Omitting it
+    on a ``personal_only`` or ``selectable`` tool means ``personal``: the
+    invoking user's account, never the author's. ``connection_id`` pins an
+    explicit connection the caller can already use; it is validated against the
+    team and the tool on every request. When no id is given, an interactive
+    request selects that user's explicit default, otherwise their sole
+    non-revoked personal connection; multiple connections without a default
+    fail closed with a "set a default" error.
     """
 
     model_config = ConfigDict(extra="forbid")

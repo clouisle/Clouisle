@@ -2,6 +2,11 @@
 
 ## Active
 
+- **automatic-tool-connections** — Completed. See `docs/plan/automatic-tool-connections.md`.
+  - [x] 1. Runtime current-user selection and identity-bound execution
+  - [x] 2. Automatic/fixed authoring controls and localized guidance
+  - [x] 3. Integration verification and documentation
+
 - **tool-connections-completion** — Completed. See `docs/plan/tool-connections-completion.md`.
   - [x] 1. HTTP URL templates and variable completion
   - [x] 2. Secure code-tool connection credentials

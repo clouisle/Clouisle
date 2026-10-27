@@ -2502,13 +2502,16 @@ msgstr "你没有使用该连接的权限"
 msgid "tool_connection_default_conflict"
 msgstr "另一个默认连接被同时选中，请刷新后重试"
 
+msgid "tool_connection_default_required"
+msgstr "该工具存在多个个人连接，请在连接设置中设定默认连接或显式选择连接"
+
 
 
 
 
 
 msgid "tool_connection_inactive"
-msgstr "该连接已撤销或需要重新认证"
+msgstr "该连接已撤销或需要重新认证，请在连接设置中重新连接"
 
 msgid "tool_connection_invalid"
 msgstr "连接配置无效"
@@ -2517,7 +2520,7 @@ msgid "tool_connection_not_found"
 msgstr "未找到连接"
 
 msgid "tool_connection_required"
-msgstr "使用该工具前请选择连接"
+msgstr "需要连接：请在连接设置中添加账号或重新登录，然后重试"
 
 msgid "tool_connection_secret_unreadable"
 msgstr "无法读取已保存的连接凭据，请重新认证该连接"

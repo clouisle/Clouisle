@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
 import { act, create as createRenderer, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
+import type { ToolConnectionBinding } from './connection-picker'
 
 if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register({ url: 'http://localhost' })
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
@@ -146,10 +147,18 @@ function button(text: string): HTMLButtonElement | undefined {
   return Array.from(document.querySelectorAll('button')).find((item) => item.textContent === text)
 }
 
+async function choose(select: HTMLSelectElement, value: string) {
+  await act(async () => {
+    select.value = value
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
 async function renderPicker(overrides: {
   tool?: typeof tool | null
   builtinToolKey?: string
-  onChange?: (value: ReturnType<typeof getToolConnectionBinding>) => void
+  value?: ToolConnectionBinding
+  onChange?: (value: ToolConnectionBinding) => void
 } = {}) {
   const onChange = overrides.onChange ?? mock()
   await act(async () => {
@@ -158,7 +167,7 @@ async function renderPicker(overrides: {
         tool={overrides.tool === undefined ? tool : overrides.tool}
         builtinToolKey={overrides.builtinToolKey}
         teamId="team-1"
-        value={getToolConnectionBinding(null)}
+        value={overrides.value ?? getToolConnectionBinding(null)}
         onChange={onChange}
       />
     )
@@ -183,6 +192,76 @@ describe('ToolConnectionPicker', () => {
       connection_mode: 'personal',
       connection_id: 'c1',
     })
+  })
+
+  test('defaults personal tools to automatic current-user selection without warnings', async () => {
+    await renderPicker()
+
+    const connectionSelect = selects().find((item) =>
+      Array.from(item.options).some((option) => option.value === '__automatic__')
+    )!
+    expect(connectionSelect.value).toBe('__automatic__')
+    expect(document.body.textContent).not.toContain('connections.selectionRequired')
+    expect(document.body.textContent).not.toContain('connections.noConnectionsForMode')
+  })
+
+  test('defaults selectable tools to automatic personal without forcing a scope', async () => {
+    await renderPicker({ tool: { ...tool, identity_policy: 'selectable' } })
+
+    const scopeSelect = selects().find((item) =>
+      Array.from(item.options).some((option) => option.value === 'team')
+    )!
+    expect(scopeSelect.value).toBe('personal')
+    const connectionSelect = selects().find((item) =>
+      Array.from(item.options).some((option) => option.value === '__automatic__')
+    )!
+    expect(connectionSelect.value).toBe('__automatic__')
+    expect(document.body.textContent).not.toContain('connections.selectionRequired')
+  })
+
+  test('keeps a fixed connection and clears it when automatic is selected', async () => {
+    const onChange = await renderPicker({
+      value: getToolConnectionBinding({ connection_mode: 'personal', connection_id: 'c1' }),
+    })
+
+    expect(document.body.textContent).toContain('work@example.com')
+    const connectionSelect = selects().find((item) =>
+      Array.from(item.options).some((option) => option.value === 'c1')
+    )!
+    expect(connectionSelect.value).toBe('c1')
+
+    await choose(connectionSelect, '__automatic__')
+    expect(onChange).toHaveBeenCalledWith({ connection_mode: 'personal', connection_id: null })
+  })
+
+  test('can switch a missing fixed personal account back to automatic', async () => {
+    listForTool.mockImplementationOnce(async () => [])
+    const onChange = await renderPicker({
+      value: getToolConnectionBinding({ connection_mode: 'personal', connection_id: 'removed' }),
+    })
+    const connectionSelect = selects().find((item) =>
+      Array.from(item.options).some((option) => option.value === '__automatic__')
+    )!
+    expect(connectionSelect.disabled).toBe(false)
+    await choose(connectionSelect, '__automatic__')
+    expect(onChange).toHaveBeenCalledWith({ connection_mode: 'personal', connection_id: null })
+  })
+
+  test('emits team bindings for selectable tools', async () => {
+    listForTool.mockImplementationOnce(async () => [
+      connection,
+      { ...connection, id: 'c2', scope: 'team', name: 'Team account', account_label: 'team@example.com', is_default: false },
+    ])
+    const onChange = await renderPicker({
+      tool: { ...tool, identity_policy: 'selectable' },
+      value: getToolConnectionBinding({ connection_mode: 'team', connection_id: null }),
+    })
+
+    const connectionSelect = selects().find((item) =>
+      Array.from(item.options).some((option) => option.value === 'c2')
+    )!
+    await choose(connectionSelect, 'c2')
+    expect(onChange).toHaveBeenCalledWith({ connection_mode: 'team', connection_id: 'c2' })
   })
 
   test('manages secret connections and starts OAuth from the manager', async () => {

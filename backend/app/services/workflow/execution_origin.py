@@ -10,9 +10,11 @@ never inferred from the configuration or from request input.
 The origin lives in ``WorkflowRun.context_snapshot`` so it is durable across the
 park/resume cycle and needs no schema migration. Resume keeps the snapshot, so a
 run cannot change its surface part-way through. Workflow runs are
-non-interactive entrypoints: a personal connection therefore needs an explicit
-binding plus a grant for the recorded entrypoint, even when the triggering user
-is the connection owner.
+non-interactive for approval gates: a caller-confirmation gate can never be
+satisfied here. A manual run (the ``workflow`` entrypoint) may still resolve the
+triggering user's default or sole personal connection automatically, while
+background origins (API key, embed, schedule, subworkflow) require an explicit
+connection binding.
 
 Only the backend stamps an origin. ``AgentRun`` origins are recorded by the
 agent runtime with the same shape (see ``agent_run_worker``).

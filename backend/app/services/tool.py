@@ -5,7 +5,7 @@ Provides unified tool execution with credentials support.
 """
 
 import logging
-from copy import copy
+from copy import copy, deepcopy
 from typing import Any
 from uuid import UUID
 
@@ -24,6 +24,41 @@ from app.services.sandbox.credentials import (
 from app.services.sandbox.gateway import sandbox_gateway
 from app.services.sandbox.models import SandboxJobSource
 from app.services.tool_execution import ToolCallContext, execute_stored_tool
+from app.services.tool_connections import ResolvedConnection
+
+
+async def build_mcp_config(
+    tool: Tool, resolved: ResolvedConnection | None
+) -> dict[str, Any]:
+    """Render one connection's MCP credentials without mutating the definition."""
+    from app.llm.tools.executors import _render_text_template
+    from app.schemas.response import BusinessError
+    from app.services.tool_oauth import ToolOAuthService
+
+    config = deepcopy(tool.mcp_config or {})
+    secrets = dict(resolved.secrets) if resolved is not None else {}
+    for key in ("headers", "env"):
+        raw = config.get(key)
+        if isinstance(raw, dict):
+            config[key] = {
+                str(name): _render_text_template(str(value), secrets)
+                for name, value in raw.items()
+            }
+    if config.get("oauth") or await ToolOAuthService.has_oauth_binding(resolved):
+        if resolved is None:
+            raise BusinessError(
+                code=403, msg_key="tool_connection_required", status_code=403
+            )
+        authorization = await ToolOAuthService.get_authorization_header(resolved)
+        if authorization:
+            config["headers"] = {
+                key: value
+                for key, value in (config.get("headers") or {}).items()
+                if str(key).lower() != "authorization"
+            }
+            config["headers"]["Authorization"] = authorization
+    return config
+
 
 logger = logging.getLogger(__name__)
 
@@ -118,20 +153,11 @@ class ToolExecutor:
             async def invoke(parameters, resolved):
                 execution_tool = copy(tool)
                 execution_tool.credentials = dict(resolved.secrets) if resolved else {}
-                from app.llm.tools.executors import _render_text_template
-
-                oauth_config = (
-                    (tool.mcp_config or {}).get("oauth")
-                    if tool_type == ToolType.MCP.value
-                    else (tool.http_config or {}).get("oauth2")
-                )
-                authorization = None
                 from app.services.tool_oauth import ToolOAuthService
 
-                if oauth_config or (
-                    tool_type == ToolType.MCP.value
-                    and await ToolOAuthService.has_oauth_binding(resolved)
-                ):
+                oauth_config = (tool.http_config or {}).get("oauth2")
+                authorization = None
+                if tool_type == ToolType.CUSTOM.value and oauth_config:
                     if resolved is None:
                         from app.schemas.response import BusinessError
 
@@ -157,20 +183,7 @@ class ToolExecutor:
 
                 if tool_type == ToolType.CUSTOM.value:
                     return await self._execute_custom_tool(execution_tool, parameters)
-                config = dict(tool.mcp_config or {})
-
-                for key in ("headers", "env"):
-                    config[key] = {
-                        name: _render_text_template(value, execution_tool.credentials)
-                        for name, value in config.get(key, {}).items()
-                    }
-                if authorization:
-                    config["headers"] = {
-                        key: value
-                        for key, value in config["headers"].items()
-                        if key.lower() != "authorization"
-                    }
-                    config["headers"]["Authorization"] = authorization
+                config = await build_mcp_config(tool, resolved)
                 from app.services.mcp_interactions import (
                     mcp_call_timeout_seconds,
                     run_with_mcp_callbacks,

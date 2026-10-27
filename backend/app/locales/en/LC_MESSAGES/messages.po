@@ -2550,13 +2550,16 @@ msgstr "You do not have permission to use this connection"
 msgid "tool_connection_default_conflict"
 msgstr "Another default connection was selected concurrently; refresh and try again"
 
+msgid "tool_connection_default_required"
+msgstr "Multiple personal connections are available for this tool; set a default in Connection settings or select a connection explicitly"
+
 
 
 
 
 
 msgid "tool_connection_inactive"
-msgstr "This connection is revoked or requires re-authentication"
+msgstr "This connection is revoked or requires re-authentication; reconnect it in Connection settings"
 
 msgid "tool_connection_invalid"
 msgstr "Invalid connection configuration"
@@ -2565,7 +2568,7 @@ msgid "tool_connection_not_found"
 msgstr "Connection not found"
 
 msgid "tool_connection_required"
-msgstr "Select a connection before using this tool"
+msgstr "A connection is required: open Connection settings to add an account or sign in, then try again"
 
 msgid "tool_connection_secret_unreadable"
 msgstr "Stored connection credentials cannot be read; re-authenticate the connection"

@@ -131,6 +131,19 @@ test('selects configured tools and builds parameter mappings', () => {
   expect(descendants(choice).some(node => node.type === AlertCircle)).toBe(true)
 })
 
+test('clears a previous connection binding when another tool is selected', () => {
+  const current = render(
+    { toolType: 'builtin', connection_mode: 'personal', connection_id: 'conn-1', parameterMappings: [], outputVariable: 'result' },
+    { 2: [builtin] },
+  )
+  click(find(current.tree, node => node.type === 'button' && text(node).includes('Web Search')))
+  expect(current.onConfigChange).toHaveBeenCalledWith(expect.objectContaining({
+    connection_mode: null,
+    connection_id: null,
+  }))
+})
+
+
 test('updates constants, variables, validation, output, and clearing', () => {
   const mappings = [{ name: 'query', type: 'string', required: true, description: 'Search terms', source: 'constant', constantValue: '' }]
   const config = { toolName: 'search', toolType: 'builtin', parameterMappings: mappings, outputVariable: 'bad output' }

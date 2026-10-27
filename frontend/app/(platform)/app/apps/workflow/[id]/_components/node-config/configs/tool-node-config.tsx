@@ -256,7 +256,11 @@ export function ToolNodeConfig({
       
       setIsLoadingMcpTools(true)
       try {
-        const outcome = await toolMcpApi.listTools(selectedTool.id, { teamId: currentTeam.id })
+        const outcome = await toolMcpApi.listTools(selectedTool.id, {
+          teamId: currentTeam.id,
+          ...(safeConfig.connection_mode ? { connection_mode: safeConfig.connection_mode } : {}),
+          ...(safeConfig.connection_id ? { connection_id: safeConfig.connection_id } : {}),
+        })
         setMcpTools(outcome.status === 'completed'
           ? (outcome.result?.items ?? []).map((item) => ({
               name: item.name,
@@ -271,7 +275,14 @@ export function ToolNodeConfig({
       }
     }
     loadMcpTools()
-  }, [safeConfig.toolType, safeConfig.toolId, selectedTool?.id, currentTeam?.id])
+  }, [
+    safeConfig.toolType,
+    safeConfig.toolId,
+    safeConfig.connection_mode,
+    safeConfig.connection_id,
+    selectedTool?.id,
+    currentTeam?.id,
+  ])
 
   // 过滤 MCP 工具
   const filteredMcpTools = React.useMemo(() => {
@@ -300,6 +311,9 @@ export function ToolNodeConfig({
         mcpToolName: undefined,
         mcpToolDescription: undefined,
         parameterMappings: [],
+        // 连接绑定属于上一个工具，切换工具后必须清空，避免串用账号。
+        connection_mode: null,
+        connection_id: null,
       })
       setToolSelectorOpen(false)
       setToolSearch('')
@@ -328,6 +342,9 @@ export function ToolNodeConfig({
         mcpToolName: undefined,
         mcpToolDescription: undefined,
         parameterMappings: mappings,
+        // 连接绑定属于上一个工具，切换工具后必须清空，避免串用账号。
+        connection_mode: null,
+        connection_id: null,
       })
       
       setToolSelectorOpen(false)

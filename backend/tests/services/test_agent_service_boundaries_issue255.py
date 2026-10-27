@@ -1,7 +1,7 @@
 import builtins
 from importlib import import_module
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -75,43 +75,6 @@ async def test_get_agent_tools_skips_missing_and_failed_definitions():
 
     assert tools == []
     get_skill.assert_awaited_once_with("skill-1", "team-1", enabled_only=True)
-
-
-@pytest.mark.anyio
-async def test_execute_tool_falls_back_from_team_to_global_credentials():
-    service = AgentService()
-    agent = _agent(team_id="team-1")
-    tool_call = SimpleNamespace(
-        id="call-1",
-        function=SimpleNamespace(name="search", arguments={"query": "docs"}),
-    )
-    queries = [
-        SimpleNamespace(first=AsyncMock(return_value=None)),
-        SimpleNamespace(
-            first=AsyncMock(
-                return_value=SimpleNamespace(credentials={"token": "global"})
-            )
-        ),
-    ]
-
-    with (
-        patch("app.llm.tools.tool_registry.get_tool", return_value=object()),
-        patch(
-            "app.models.tool_config.ToolConfig.filter", side_effect=queries
-        ) as filter_,
-        patch(
-            "app.llm.tools.tool_registry.execute",
-            new=AsyncMock(return_value={"ok": True}),
-        ) as execute,
-    ):
-        result = await service._execute_tool(agent, tool_call)
-
-    assert result == {"ok": True}
-    assert filter_.call_args_list == [
-        call(tool_name="search", team_id="team-1"),
-        call(tool_name="search", team_id=None),
-    ]
-    assert execute.await_args.kwargs["credentials"] == {"token": "global"}
 
 
 @pytest.mark.anyio

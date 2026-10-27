@@ -1799,6 +1799,36 @@ async def test_run_agent_round_failure_publishes_when_failed_transition_wins(
 
 
 @pytest.mark.asyncio
+async def test_missing_connection_during_discovery_publishes_localized_guidance(
+    monkeypatch,
+):
+    from app.core.i18n import t
+    from app.schemas.response import BusinessError
+
+    async def transition(run, _expected, status, **kwargs):
+        if status == AgentRunStatus.FAILED:
+            run.status = status
+            run.error_message = kwargs["error_message"]
+            return run
+        return None
+
+    run, stream, _ = _prepare_full_round(
+        monkeypatch,
+        result=_round_result(),
+        transition=transition,
+        rebuild=BusinessError(msg_key="tool_connection_required", status_code=409),
+    )
+    payload = {**_round_payload(run), "locale": "zh"}
+    output = await run_agent_round(payload)
+    expected = t("tool_connection_required", lang="zh")
+    assert output == {"status": AgentRunStatus.FAILED.value, "error": expected}
+    assert run.error_message == expected
+    assert ("error", {"code": "run_failed", "msg": expected}) in [
+        (call.args[0], call.args[1]) for call in stream.publish.await_args_list
+    ]
+
+
+@pytest.mark.asyncio
 async def test_run_agent_round_failure_raises_when_run_row_disappears(monkeypatch):
     async def _transition(_run, _expected, _status, **_kwargs):
         return None

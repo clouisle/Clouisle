@@ -93,7 +93,7 @@ class AgentService:
         )
         team_id = str(agent.team_id) if agent.team_id else None
         model_id = await self._resolve_model_id(agent)
-        tools = await self._get_agent_tools(agent)
+        tools = await self._get_agent_tools(agent, user_id=user_id)
         response_text = ""
         tool_calls: list[dict[str, Any]] = []
         dialogue: list[dict[str, Any]] = []
@@ -232,7 +232,7 @@ class AgentService:
         )
         team_id = str(agent.team_id) if agent.team_id else None
         model_id = await self._resolve_model_id(agent)
-        tools = await self._get_agent_tools(agent)
+        tools = await self._get_agent_tools(agent, user_id=user_id)
         dialogue: list[dict[str, Any]] = []
         artifacts: list[Any] = []
         for current_turn in range(1, max_turns + 1):
@@ -697,7 +697,9 @@ class AgentService:
             artifacts.extend(AgentService._extract_artifacts(nested))
         return artifacts
 
-    async def _get_agent_tools(self, agent: Agent) -> list[ToolDefinition]:
+    async def _get_agent_tools(
+        self, agent: Agent, user_id: str | None = None
+    ) -> list[ToolDefinition]:
         """Get tools configured for the agent."""
         tools = []
 
@@ -731,7 +733,7 @@ class AgentService:
                 if not tool_id:
                     continue
                 try:
-                    from app.llm.tools.mcp_client import list_mcp_tools
+                    from app.services.agent_tool_execution import list_agent_mcp_tools
                     from app.models.tool import ToolShare
 
                     mcp_server = await Tool.filter(id=tool_id, is_enabled=True).first()
@@ -746,7 +748,9 @@ class AgentService:
                         ).exists()
                         if not has_share:
                             continue
-                    for mcp_tool in await list_mcp_tools(mcp_server.mcp_config):
+                    for mcp_tool in await list_agent_mcp_tools(
+                        agent, mcp_server, tool_cfg, user_id
+                    ):
                         tools.append(
                             ToolDefinition(
                                 type="function",
@@ -763,6 +767,8 @@ class AgentService:
                                 ),
                             )
                         )
+                except BusinessError:
+                    raise
                 except Exception as e:
                     logger.warning(
                         "Failed to get MCP tools for agent from %s: %s", tool_id, e

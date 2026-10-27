@@ -94,7 +94,9 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
   const [searchEngine, setSearchEngine] = useState('auto')
   const isWebSearch = tool?.type === 'builtin' && tool.name === 'web_search'
 
-  const requiresConnectionSelection = identity !== 'none' && !binding.connection_id
+  const requiresConnectionSelection = !binding.connection_id && (
+    identity === 'team_only' || (identity === 'selectable' && binding.connection_mode === 'team')
+  )
 
   // 加载 MCP 工具列表（使用已保存的工具定义与连接，绝不发送客户端 mcp_config）
   const loadMcpTools = async () => {

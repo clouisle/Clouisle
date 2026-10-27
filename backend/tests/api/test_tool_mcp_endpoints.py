@@ -619,9 +619,28 @@ async def test_missing_config_and_selectable_identity_fail_closed(mcp_app, monke
     no_mode = await mcp_app.client.get(
         f"/tools/{selectable.id}/mcp/tools", params={"team_id": str(team.id)}
     )
-    assert no_mode.status_code == 400
-    assert no_mode.json()["code"] == 400
+    # Missing mode now means the invoking user's personal account. With no
+    # connection configured the request fails with actionable guidance before
+    # the server is contacted.
+    assert no_mode.status_code == 409
+    assert no_mode.json()["code"] == 6420
     enumerate_mock.assert_not_awaited()
+
+    await ToolConnectionService.create_connection(
+        actor=mcp_app.actor,
+        payload=ToolConnectionCreate(
+            team_id=team.id,
+            tool_id=selectable.id,
+            scope=ToolConnectionScope.USER,
+            name="Caller account",
+        ),
+    )
+    discovered = await mcp_app.client.get(
+        f"/tools/{selectable.id}/mcp/tools", params={"team_id": str(team.id)}
+    )
+    assert discovered.status_code == 200
+    assert discovered.json()["data"]["result"]["items"] == []
+    enumerate_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio

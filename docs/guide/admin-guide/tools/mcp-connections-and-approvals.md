@@ -28,7 +28,7 @@ Each tool declares an identity policy:
 | `none` | No external identity; no connection is required or accepted |
 | `team_only` | A team-scoped connection is used |
 | `personal_only` | The acting user's personal connection is used |
-| `selectable` | The caller must choose `personal` or `team` per request |
+| `selectable` | Defaults to the invoking user's personal account; authors may explicitly choose a fixed personal or team connection |
 
 Connections have one scope:
 
@@ -38,10 +38,17 @@ Connections have one scope:
 | `team` | Team | Shared account; team membership is required |
 | `site` | Site administrator | Global account; cannot be overridden by tool editors |
 
-A tool that needs an identity but has no usable connection fails explicitly
-(`tool_connection_required`, `tool_connection_inactive`) instead of falling back
-to a team or global plaintext credential. A connection marked as default is used
-only when the caller did not pin one and the entrypoint is interactive.
+A tool that needs an identity but has no connection fails explicitly with a
+configuration/login prompt. A selected account requiring authorization reports
+reconnection instead of falling back to another account.
+
+For an unbound personal/selectable tool, interactive calls and manual workflow
+runs resolve the invoking user's connection in the consuming team: the explicit
+default first, otherwise the sole non-revoked personal connection. Multiple
+connections without a default require setting a default or selecting a fixed
+connection. An inactive default or sole connection must be reconnected; no
+other user, team account or different team is tried. MCP tool discovery uses
+this same connection identity before the model can call the tools.
 
 ## Connecting an account
 
@@ -80,25 +87,34 @@ should work, but specific third-party interoperability is not claimed.
 
 ## Connection bindings and shared execution
 
-Selecting a connection in an Agent tool or a workflow tool node is the
-authorization to use that external identity. No separate delegation step exists.
+Agent tools and workflow tool nodes offer **Automatic (current user)** by
+default for personal/selectable tools. This stores no author account: each
+runner supplies their own connection. Authors need not configure an account
+merely to attach the tool. Users add or authorize their account in the tool's
+connection manager; multiple accounts need a default.
+
+Selecting a concrete connection explicitly pins that external identity and
+authorizes the saved definition to use it. No separate delegation step exists.
+API-key, embed, channel and scheduled entrypoints require a fixed connection;
+they never automatically adopt a background actor's personal default.
 
 - Personal connections can only be selected by their owner; administrators
   cannot bind another user's personal account.
 - Binding is validated when the Agent or workflow is created, updated,
   duplicated, restored from a version or imported from a package. Imported
   definitions drop environment-specific connection ids so they are chosen again.
-- Once saved, the binding belongs to the definition. Any user authorized to run
-  that Agent or workflow (including a shared workflow, schedule, API key, channel
-  or embed) executes it with the saved connection identity.
+- With a fixed connection, the binding belongs to the definition. Any user
+  authorized to run that Agent or workflow (including a shared workflow,
+  schedule, API key, channel or embed) uses the saved external identity.
 - Execution re-checks that the connection still exists, is active, belongs to
   the consuming team and matches the tool. A revoked or unusable connection
   fails closed; it never falls back to another account.
 - Callers cannot obtain credentials: connection secrets remain write-only for
   management and are never returned by run events or API responses.
 
-Changing the identity requires selecting another connection and, for existing
-approvals, a new approval bound to the new connection version.
+Changing a fixed identity requires selecting another connection and a new
+approval. Once a call is awaiting approval, changing the user's default does
+not change the account or connection version bound to that execution.
 
 ## Using server capabilities
 
@@ -188,8 +204,9 @@ total.
 | Symptom / code | Meaning |
 |----------------|---------|
 | `403 tool_access_denied` | No access to the consuming team, or a private tool cannot be shared |
-| `403 tool_connection_required` | Tool needs an identity; no usable/default connection was resolved |
-| `409 tool_connection_inactive` | Connection is revoked or requires re-authentication |
+| `409 tool_connection_required` | Configure an account or sign in through the connection manager; background origins need a fixed connection |
+| `409 tool_connection_default_required` (6403) | Multiple personal accounts without a default; set one or pin an account explicitly |
+| `409 tool_connection_inactive` | Connection is revoked or requires re-authentication; reconnect before retrying |
 | `409 mcp_capability_unavailable` | Server did not advertise the requested capability |
 | `504 mcp_request_timeout` | Protocol budget expired |
 | `413 mcp_content_too_large` | Resource/prompt/result exceeded byte budgets |
