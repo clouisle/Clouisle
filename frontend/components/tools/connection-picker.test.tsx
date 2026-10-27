@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import React from 'react'
 import { act, create as createRenderer, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
@@ -301,6 +301,7 @@ describe('ToolConnectionPicker', () => {
     }))
   })
   test('manages secret connections and starts OAuth from the manager', async () => {
+    const openSpy = spyOn(window, 'open').mockImplementation(() => null)
     await renderPicker()
     await act(async () => button('connections.manage')!.click())
     await flush()
@@ -335,6 +336,7 @@ describe('ToolConnectionPicker', () => {
     await act(async () => button('connections.oauthSaveSecret')!.click())
     await flush()
     expect(startOAuth).toHaveBeenCalledWith('c1', expect.objectContaining({ client_secret: 'rotated-secret' }))
+    expect(openSpy).toHaveBeenCalledTimes(2)
 
     await act(async () => button('connections.oauthDisconnect')!.click())
     await flush()
