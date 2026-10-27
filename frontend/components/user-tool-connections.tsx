@@ -596,6 +596,13 @@ export function UserToolConnections() {
               const toolName = matchedTool?.display_name || matchedTool?.name || connection.builtin_tool_key || connection.name
               const isDefault = connection.is_default
               const isPersonal = connection.scope === 'user'
+              // Team-wide connections are managed by team owners/admins; site
+              // connections by site administrators in the tool manager. Hide
+              // actions the caller cannot perform instead of failing later.
+              const canManageConnection =
+                connection.scope === 'user'
+                || (connection.scope === 'team'
+                  && (currentTeam.role === 'owner' || currentTeam.role === 'admin'))
               const status = connection.status
               const currentOauth = oauthStatus[connection.id]
 
@@ -683,6 +690,8 @@ export function UserToolConnections() {
 
                     {/* Actions */}
                     <div className="flex flex-wrap items-center gap-1 self-end sm:self-center shrink-0">
+                      {canManageConnection && (
+                        <>
                       {/* OAuth start / re-auth button */}
                       {(currentOauth?.provider_configured || status === 'reauth_required') && (
                         <Button
@@ -759,11 +768,13 @@ export function UserToolConnections() {
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
+                        </>
+                      )}
                     </div>
                   </div>
 
                   {/* Inline Client Secret form if opened */}
-                  {clientSecretFor === connection.id && (
+                  {canManageConnection && clientSecretFor === connection.id && (
                     <div className="space-y-1.5 rounded border border-dashed p-2.5 bg-muted/20">
                       <Label htmlFor={`client-secret-${connection.id}`} className="text-[11px] font-medium">
                         {tTools('oauthClientSecret')}

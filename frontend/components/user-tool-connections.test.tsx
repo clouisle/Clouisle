@@ -18,7 +18,7 @@ mock.module('next-intl', () => ({
   },
 }))
 
-let currentTeam: { id: string; name: string } | null = { id: 'team-1', name: 'Team One' }
+let currentTeam: { id: string; name: string; role: 'owner' | 'admin' | 'member' | 'viewer' } | null = { id: 'team-1', name: 'Team One', role: 'member' }
 
 mock.module('@/contexts/team-context', () => ({
   useTeam: () => ({ currentTeam }),
@@ -204,7 +204,7 @@ let renderers: ReactTestRenderer[] = []
 const { UserToolConnections } = await import('./user-tool-connections')
 
 beforeEach(() => {
-  currentTeam = { id: 'team-1', name: 'Team One' }
+  currentTeam = { id: 'team-1', name: 'Team One', role: 'member' }
   listConnectionsMock.mockClear()
   listConnectionsMock.mockImplementation(() => Promise.resolve(mockConnections))
   getOAuthStatusMock.mockClear()
@@ -273,6 +273,44 @@ describe('UserToolConnections', () => {
     expect(text).toContain('settings.connections.defaultBadge')
     // Shows reauth required badge
     expect(text).toContain('settings.connections.reauthRequired')
+  })
+
+  test('hides management actions on team connections for non-admin members', async () => {
+    const teamConnection = {
+      ...mockConnections[0],
+      id: 'conn-team',
+      tool_id: null,
+      builtin_tool_key: 'postgresql_query',
+      scope: 'team' as const,
+      name: 'Shared DB',
+      is_default: false,
+    }
+    listConnectionsMock.mockImplementation(() => Promise.resolve([teamConnection]))
+    const renderer = await render()
+
+    expect(renderer.root.findAllByType('button').some((b) => b.props.title === 'tools.connections.revoke')).toBe(false)
+    expect(
+      renderer.root.findAllByType('button').some((b) =>
+        buttonText(b).includes('settings.connections.setDefault')
+      )
+    ).toBe(false)
+  })
+
+  test('allows team owners and admins to manage team connections', async () => {
+    currentTeam = { id: 'team-1', name: 'Team One', role: 'admin' }
+    const teamConnection = {
+      ...mockConnections[0],
+      id: 'conn-team',
+      tool_id: null,
+      builtin_tool_key: 'postgresql_query',
+      scope: 'team' as const,
+      name: 'Shared DB',
+      is_default: false,
+    }
+    listConnectionsMock.mockImplementation(() => Promise.resolve([teamConnection]))
+    const renderer = await render()
+
+    expect(renderer.root.findAllByType('button').some((b) => b.props.title === 'tools.connections.revoke')).toBe(true)
   })
 
   test('supports setting a connection as default', async () => {

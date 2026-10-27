@@ -68,6 +68,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   const [loading, setLoading] = React.useState(true)
   const [user, setUser] = React.useState<UserType | null>(null)
+  // Connection management lists tool definitions, which requires `tool:read`.
+  // Hide the entry instead of exposing an action that always returns 403.
+  const canManageConnections = Boolean(
+    user?.is_superuser
+    || user?.roles?.some((role) =>
+      role.permissions?.some((permission) => permission.code === 'tool:read')
+    )
+  )
   const [passwordStatus, setPasswordStatus] = React.useState<PasswordStatus | null>(null)
   const [totpStatus, setTotpStatus] = React.useState<TOTPStatusResponse | null>(null)
 
@@ -576,10 +584,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 <Shield className="mr-1.5 h-4 w-4" />
                 {t('account')}
               </TabsTrigger>
-              <TabsTrigger value="connections" data-testid="settings-tab-connections">
-                <Link2 className="mr-1.5 h-4 w-4" />
-                {t('connections.tabTitle')}
-              </TabsTrigger>
+              {canManageConnections && (
+                <TabsTrigger value="connections" data-testid="settings-tab-connections">
+                  <Link2 className="mr-1.5 h-4 w-4" />
+                  {t('connections.tabTitle')}
+                </TabsTrigger>
+              )}
               <TabsTrigger value="wechat">
                 <LinkIcon className="mr-1.5 h-4 w-4" aria-hidden="true" />
                 {t('wechat.title')}
@@ -1110,9 +1120,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               )}
             </TabsContent>
             {/* Tool Connections Tab */}
-            <TabsContent value="connections" className="space-y-6">
-              <UserToolConnections />
-            </TabsContent>
+            {canManageConnections && (
+              <TabsContent value="connections" className="space-y-6">
+                <UserToolConnections />
+              </TabsContent>
+            )}
             <TabsContent value="wechat" className="space-y-6">
               <WeChatKnowledge active={open} />
             </TabsContent>

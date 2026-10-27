@@ -11,7 +11,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- The profile Settings dialog now has a Tool Connections tab for the active team. It lists every connection available to the user with its tool, account label, scope, default flag and status, and supports adding a connection from a tool picker, setting a default, re-authenticating an expired account and deleting one.
+- The profile Settings dialog now has a Tool Connections tab for the active team. It lists every connection available to the user with its tool, account label, scope, default flag and status, and supports adding a connection from a tool picker, setting a default, re-authenticating an expired account and deleting one. The tab and those actions are hidden when the caller cannot perform them: it requires `tool:read`, while team-wide connections are managed only by team owners/admins.
 
 ### Changed
 

@@ -216,6 +216,26 @@ afterEach(() => {
 })
 
 describe('SettingsDialog', () => {
+  test('only offers tool connections to users who may read tools', async () => {
+    await render()
+    expect(container.textContent).not.toContain('connections.tabTitle')
+
+    act(() => root.unmount())
+    container.remove()
+    user = {
+      ...user,
+      roles: [{
+        id: 'role-member',
+        name: 'Member',
+        description: null,
+        is_system_role: true,
+        permissions: [{ id: 'perm-tool-read', scope: 'tool', code: 'tool:read', description: null }],
+      }],
+    }
+    await render()
+    expect(container.textContent).toContain('connections.tabTitle')
+  })
+
   test('loads only when open and populates the profile tab', async () => {
     await render(false)
     expect(getCurrentUser).not.toHaveBeenCalled()
