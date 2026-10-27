@@ -497,6 +497,11 @@ export type ToolsMessages = {
         nameRequired: string
       }
       approval: {
+        switchLabel: string
+        switchHint: string
+        blockedTitle: string
+        blockedHint: string
+        replaceBlocked: string
         defaultDecision: string
         hint: string
         allow: string

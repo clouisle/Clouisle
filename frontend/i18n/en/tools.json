@@ -481,6 +481,11 @@
         "nameRequired": "A field key is required."
       },
       "approval": {
+        "switchLabel": "Require confirmation before calling",
+        "switchHint": "The caller confirms or rejects the operation in the conversation. Other access and security policies still apply.",
+        "blockedTitle": "This tool is blocked by a saved deny policy",
+        "blockedHint": "The existing policy remains in effect until you explicitly replace it.",
+        "replaceBlocked": "Replace with caller confirmation",
         "defaultDecision": "Default decision",
         "hint": "Deny always wins over allow. A required operation can only be confirmed by the person who triggers it in the current conversation.",
         "allow": "Allow without confirmation",

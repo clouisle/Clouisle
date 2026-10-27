@@ -16,12 +16,17 @@ mock.module('@/components/ui/label', () => ({
 mock.module('@/components/ui/field', () => ({
   FieldError: ({ children }: React.PropsWithChildren) => (children ? <span role="alert">{children}</span> : null),
 }))
+mock.module('@/components/ui/switch', () => ({
+  Switch: ({ checked, onCheckedChange, ...props }: { checked: boolean; onCheckedChange: (checked: boolean) => void; id: string }) => (
+    <button type="button" role="switch" aria-checked={checked} onClick={() => onCheckedChange(!checked)} {...props} />
+  ),
+}))
 mock.module('@/components/ui/select', () => ({
   Select: ({ children, value, onValueChange, disabled }: React.PropsWithChildren<{ value?: string; onValueChange: (value: string) => void; disabled?: boolean }>) => (
     <select value={value ?? ''} disabled={disabled} onChange={(event) => onValueChange(event.target.value)}>{children}</select>
   ),
   SelectContent: ({ children }: React.PropsWithChildren) => <>{children}</>,
-  SelectItem: ({ children, value }: React.PropsWithChildren<{ value: string }>) => <option value={value}>{children}</option>,
+  SelectItem: ({ children, value, disabled }: React.PropsWithChildren<{ value: string; disabled?: boolean }>) => <option value={value} disabled={disabled}>{children}</option>,
   SelectTrigger: ({ children }: React.PropsWithChildren) => <>{children}</>,
   SelectValue: ({ children }: React.PropsWithChildren) => <>{children}</>,
 }))
@@ -182,8 +187,7 @@ describe('ToolPolicyEditor', () => {
     expect(latest?.approvalPolicy.default_decision).toBe('require_approval')
     expect(latest?.approvalPolicy.gates).toEqual([CALLER_GATE])
 
-    const decisionSelect = selects().find((item) => item.value === 'require_approval')!
-    await change(decisionSelect, 'allow')
+    await act(async () => (document.getElementById('tool-approval-default') as HTMLButtonElement).click())
     expect(latest?.approvalPolicy.default_decision).toBe('allow')
     expect(latest?.approvalPolicy.gates).toHaveLength(1)
 
@@ -191,8 +195,17 @@ describe('ToolPolicyEditor', () => {
     expect(normalized.default_decision).toBe('allow')
     expect(normalized.gates).toEqual([])
 
-    const allowSelect = selects().find((item) => item.value === 'allow')!
-    await change(allowSelect, 'require_approval')
+    await act(async () => (document.getElementById('tool-approval-default') as HTMLButtonElement).click())
+    expect(latest?.approvalPolicy.default_decision).toBe('require_approval')
+    expect(latest?.approvalPolicy.gates).toEqual([CALLER_GATE])
+  })
+
+  test('preserves a saved deny policy until explicitly replaced', async () => {
+    await render(undefined, { default_decision: 'deny', gates: [], operation_overrides: {} })
+    expect(alerts()).toContain('approval.blockedTitle')
+    expect(document.getElementById('tool-approval-default')).toBeNull()
+    expect(latest?.approvalPolicy.default_decision).toBe('deny')
+    await act(async () => button('approval.replaceBlocked').click())
     expect(latest?.approvalPolicy.default_decision).toBe('require_approval')
     expect(latest?.approvalPolicy.gates).toEqual([CALLER_GATE])
   })
@@ -242,6 +255,9 @@ describe('ToolPolicyEditor', () => {
       renderer = create(<Harness operationTools={[{ name: 'search', description: 'Search project records' }]} toolsLoaded initialApprovalPolicy={policy} />)
     })
     expect(document.querySelector('details')).toBeNull()
+    const deniedRow = selects().find(item => item.value === 'deny')!
+    expect(deniedRow.querySelector('option[value="deny"]')?.disabled).toBe(true)
+    expect(latest?.approvalPolicy.operation_overrides['tool:removed'].default_decision).toBe('deny')
     const description = document.querySelector('p[data-slot="tooltip-trigger"]') as HTMLElement
     expect(description.textContent).toBe('Search project records')
     expect(description.hasAttribute('title')).toBe(false)
@@ -421,8 +437,7 @@ describe('ToolPolicyEditor', () => {
     expect(document.body.textContent).not.toContain('connectionFields.add')
     expect(document.body.textContent).toContain('operations.title')
 
-    const decision = selects().find((item) => item.value === 'allow')!
-    await change(decision, 'require_approval')
+    await act(async () => (document.getElementById('tool-approval-default') as HTMLButtonElement).click())
     expect(latest?.approvalPolicy.default_decision).toBe('require_approval')
     expect(latest?.approvalPolicy.gates).toEqual([CALLER_GATE])
     expect(document.body.textContent).toContain('approval.callerGate')

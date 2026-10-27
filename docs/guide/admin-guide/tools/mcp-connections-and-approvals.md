@@ -149,6 +149,8 @@ Authorization and connection identity checks still apply.
 
 ## Approvals
 
+The tool editor's **Require confirmation before calling** switch controls the default: on requires caller confirmation; off does not. Other authorization and security policies still apply. MCP operation rules can inherit the default or explicitly require or skip confirmation. Existing deny policies remain blocked and are not silently converted: the default deny can be explicitly replaced with caller confirmation, and an operation deny remains until its rule is explicitly changed.
+
 Tool-execution approval is caller-only and applies only to interactive Agent
 chat, never to tool discovery, direct testing, workflows (including workflow
 Agent nodes), or background entrypoints.

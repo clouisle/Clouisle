@@ -481,6 +481,11 @@
         "nameRequired": "字段键为必填项。"
       },
       "approval": {
+        "switchLabel": "调用前需要确认",
+        "switchHint": "调用者在会话中确认或拒绝操作；其他访问权限和安全策略仍然生效。",
+        "blockedTitle": "已保存的拒绝策略禁止调用此工具",
+        "blockedHint": "现有策略将持续生效，直到你主动替换。",
+        "replaceBlocked": "替换为调用者确认",
         "defaultDecision": "默认决策",
         "hint": "拒绝优先于允许。需要确认的操作只能由当前会话中触发该操作的人确认。",
         "allow": "无需确认直接允许",

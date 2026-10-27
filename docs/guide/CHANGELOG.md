@@ -21,6 +21,8 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Tool configuration now uses a caller-confirmation switch. Existing deny policies stay blocked until explicitly changed; MCP operation rules retain inheritance and existing deny overrides.
+
 - Tool execution approval is now caller-only. Interactive Agent chat pauses for the user who initiated the call, and only that caller can approve or reject it once; team members, team administrators and superusers cannot decide, and the former designated-user and team-role approver settings can no longer be created or saved. Stored legacy `user`/`team_role` policies, including nested MCP operation overrides, are preserved unchanged but fail closed with `6510` before the tool runs, never becoming caller confirmation or allow; administrators must re-save them. Unstarted executions associated with an external gate — awaiting confirmation or ready, including work whose external gate was already approved — are cancelled on upgrade with their pending gates and are never resumed; executing and terminal rows are left for audit. Workflows, tool tests, discovery, API keys, embeds, channels and schedules still never prompt, and stored legacy external approval configuration there fails closed. Rolling back the application does not reactivate cancelled executions; start a new run.
 - Tool permission denial, missing connections, and inactive authorization now return localized guidance naming the specific Agent tool and prompting access or connection login.
 - MCP header and environment templates suggest declared connection field names when typing `{{`.

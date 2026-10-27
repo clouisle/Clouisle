@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Switch } from '@/components/ui/switch'
 import {
   ToolApprovalGate,
   ToolApprovalPolicy,
@@ -523,29 +524,27 @@ export function ToolPolicyEditor({
 
       {/* Approval policy */}
       <div className="space-y-3 border-t pt-4">
-        <div className="space-y-1">
-          <Label htmlFor="tool-approval-default">{t('approval.defaultDecision')}</Label>
-          <Select
-            value={approvalPolicy.default_decision}
-            onValueChange={(value) =>
-              setDecision(value as ToolApprovalPolicy['default_decision'])
-            }
-          >
-            <SelectTrigger id="tool-approval-default" className="w-full">
-              <SelectValue>
-                {decisionLabel(approvalPolicy.default_decision)}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent side="bottom" alignItemWithTrigger={false} className="w-[--anchor-width] min-w-[240px]">
-              {TOOL_APPROVAL_DECISIONS.map((decision) => (
-                <SelectItem key={decision} value={decision}>
-                  {decisionLabel(decision)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">{t('approval.hint')}</p>
-        </div>
+        {approvalPolicy.default_decision === 'deny' ? (
+          <div className="space-y-2 rounded-md border border-destructive/40 p-3">
+            <FieldError>{t('approval.blockedTitle')}</FieldError>
+            <p className="text-xs text-muted-foreground">{t('approval.blockedHint')}</p>
+            <Button type="button" variant="outline" size="sm" onClick={() => setDecision('require_approval')}>
+              {t('approval.replaceBlocked')}
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="tool-approval-default">{t('approval.switchLabel')}</Label>
+              <p className="text-xs text-muted-foreground">{t('approval.switchHint')}</p>
+            </div>
+            <Switch
+              id="tool-approval-default"
+              checked={approvalPolicy.default_decision === 'require_approval'}
+              onCheckedChange={(checked) => setDecision(checked ? 'require_approval' : 'allow')}
+            />
+          </div>
+        )}
 
         {legacyAudiences.length > 0 && (
           <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
@@ -634,11 +633,11 @@ export function ToolPolicyEditor({
                       </SelectTrigger>
                       <SelectContent side="bottom" alignItemWithTrigger={false}>
                         <SelectItem value="inherit">{t('operations.inherit')}</SelectItem>
-                        {TOOL_APPROVAL_DECISIONS.map((decision) => (
-                          <SelectItem key={decision} value={decision}>
-                            {decisionLabel(decision)}
-                          </SelectItem>
-                        ))}
+                        {approvalPolicy.operation_overrides?.[operation]?.default_decision === 'deny' && (
+                          <SelectItem value="deny" disabled>{decisionLabel('deny')}</SelectItem>
+                        )}
+                        <SelectItem value="allow">{decisionLabel('allow')}</SelectItem>
+                        <SelectItem value="require_approval">{decisionLabel('require_approval')}</SelectItem>
                       </SelectContent>
                     </Select>
                     </div>
