@@ -94,9 +94,17 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
   const [searchEngine, setSearchEngine] = useState('auto')
   const isWebSearch = tool?.type === 'builtin' && tool.name === 'web_search'
 
+  const requiresConnectionSelection = identity !== 'none' && !binding.connection_id
+
   // 加载 MCP 工具列表（使用已保存的工具定义与连接，绝不发送客户端 mcp_config）
   const loadMcpTools = async () => {
     if (!tool || tool.type !== 'mcp' || !tool.id || !effectiveTeamId) return
+    if (requiresConnectionSelection) {
+      setMcpTools([])
+      setSelectedMcpTool('')
+      toast.error(t('testPanel.selectConnectionBeforeLoad'))
+      return
+    }
 
     setLoadingMcpTools(true)
     try {
@@ -139,13 +147,18 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
     }
   }
 
-  // 当打开面板且是 MCP 工具时，加载工具列表
+  // 当打开面板且是 MCP 工具时，如果不需要选择连接或已选择连接，才自动加载工具列表
   useEffect(() => {
     if (open && tool?.type === 'mcp') {
+      if (requiresConnectionSelection) {
+        setMcpTools([])
+        setSelectedMcpTool('')
+        return
+      }
       loadMcpTools()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, tool, binding.connection_mode, binding.connection_id])
+  }, [open, tool, binding.connection_mode, binding.connection_id, requiresConnectionSelection])
 
   // 获取当前选中的 MCP 工具参数
   const currentMcpToolParams = mcpTools.find(t => t.name === selectedMcpTool)?.parameters
@@ -357,6 +370,17 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
               ))}
             </div>
           )}
+          {identity !== 'none' && effectiveTeamId && (
+            <ToolConnectionPicker
+              tool={tool}
+              builtinToolKey={tool.id ? undefined : tool.name}
+              teamId={effectiveTeamId}
+              value={binding}
+              onChange={setBinding}
+              disabled={loading}
+            />
+          )}
+
           {/* MCP 工具选择 */}
           {tool.type === 'mcp' && (
             <div className="space-y-4">
@@ -403,6 +427,10 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
                     ))}
                   </SelectContent>
                 </Select>
+              ) : requiresConnectionSelection ? (
+                <p className="text-sm text-muted-foreground text-center py-2">
+                  {t('testPanel.selectConnectionBeforeLoad')}
+                </p>
               ) : (
                 <p className="text-sm text-muted-foreground text-center py-2">
                   {t('mcpDialog.noToolsAvailable')}
@@ -459,18 +487,6 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
               />
             </div>
           )}
-
-          {identity !== 'none' && effectiveTeamId && (
-            <ToolConnectionPicker
-              tool={tool}
-              builtinToolKey={tool.id ? undefined : tool.name}
-              teamId={effectiveTeamId}
-              value={binding}
-              onChange={setBinding}
-              disabled={loading}
-            />
-          )}
-
           {pending && (
             <div className="space-y-2 rounded-md border p-3">
               <p className="text-sm">{t('testPanel.pendingApproval')}</p>

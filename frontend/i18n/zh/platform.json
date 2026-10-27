@@ -414,7 +414,8 @@
         "resume": "审批后继续",
         "openApprovals": "打开审批中心",
         "resumeFailed": "无法恢复工具调用。已完成或已拒绝的请求不会重新执行。",
-        "loadFailed": "无法通过已保存的连接获取 MCP 工具列表。"
+        "loadFailed": "无法通过已保存的连接获取 MCP 工具列表。",
+        "selectConnectionBeforeLoad": "请先选择连接再获取 MCP 工具列表。"
       },
       "codeEditor": {
         "newTitle": "新建代码工具",

@@ -414,7 +414,8 @@
         "resume": "Resume after approval",
         "openApprovals": "Open approvals",
         "resumeFailed": "The tool call could not be resumed. A completed or rejected request is never re-run.",
-        "loadFailed": "Could not list MCP tools for this saved connection."
+        "loadFailed": "Could not list MCP tools for this saved connection.",
+        "selectConnectionBeforeLoad": "Select a connection to load the MCP tool list."
       },
       "codeEditor": {
         "newTitle": "New Code Tool",

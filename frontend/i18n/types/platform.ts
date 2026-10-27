@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-26T20:58:14.267Z
+// GENERATED — 2026-10-27T03:38:27.973Z
 // Source: i18n/en/platform.json
 export type PlatformMessages = {
   platform: {
@@ -417,6 +417,7 @@ export type PlatformMessages = {
         openApprovals: string
         resumeFailed: string
         loadFailed: string
+        selectConnectionBeforeLoad: string
       }
       codeEditor: {
         newTitle: string

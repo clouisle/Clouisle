@@ -17,7 +17,15 @@ mock.module('@/lib/api', () => ({ toolsApi: { test: mock(), getWebSearchEngines:
 mock.module('@/lib/api/tool-mcp', () => ({ toolMcpApi: { listTools } }))
 mock.module('@/components/tools/connection-picker', () => ({
   EMPTY_CONNECTION_BINDING: { connection_mode: null, connection_id: null },
-  ToolConnectionPicker: () => <div data-connection-picker />,
+  ToolConnectionPicker: ({ onChange }: { onChange?: (binding: { connection_mode: string; connection_id: string }) => void }) => (
+    <button
+      type="button"
+      data-connection-picker
+      onClick={() => onChange?.({ connection_mode: 'team', connection_id: 'conn-1' })}
+    >
+      select-connection
+    </button>
+  ),
 }))
 mock.module('@/components/tools/web-search-engine-select', () => ({
   WebSearchEngineSelect: ({ value, onValueChange }: { value: string; onValueChange: (value: string) => void }) => (
@@ -395,6 +403,33 @@ describe('tool test panel', () => {
 
     expect(listTools).toHaveBeenLastCalledWith('tool-1', {
       teamId: 'team-1', maxItems: 200, execution_id: 'exec-2',
+    })
+  })
+
+  test('does not auto-discover MCP tools until a connection is selected when identity_policy is required', async () => {
+    const tool = {
+      ...baseTool,
+      name: 'mcp-secured',
+      type: 'mcp',
+      identity_policy: 'selectable',
+      parameters: [],
+    }
+    const panel = render(tool, { test: mock() })
+    await act(async () => {})
+
+    // Initial render with no connection selected: listTools should NOT have been called
+    expect(listTools).not.toHaveBeenCalled()
+    expect(JSON.stringify(panel.toJSON())).toContain('testPanel.selectConnectionBeforeLoad')
+
+    // Select a connection via the picker
+    const pickerBtn = panel.root.findByProps({ 'data-connection-picker': true })
+    await act(async () => pickerBtn.props.onClick())
+
+    // Now that connection is chosen, listTools should be called with connectionPayload
+    expect(listTools).toHaveBeenCalledWith('tool-1', {
+      teamId: 'team-1',
+      connection_mode: 'team',
+      connection_id: 'conn-1',
     })
   })
 })
