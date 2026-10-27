@@ -14,7 +14,7 @@ mock.module('sonner', () => ({
   toast: { success: mock(), error: mock() },
 }))
 mock.module('next-intl', () => ({
-  useTranslations: () => (key: string) => key,
+  useTranslations: () => (key: string, values?: Record<string, string>) => values ? `${key}:${Object.values(values).join(',')}` : key,
 }))
 mock.module('next/link', () => ({
   default: ({ href, children }: React.PropsWithChildren<{ href: string }>) => <a href={href}>{children}</a>,
@@ -83,6 +83,12 @@ describe('PendingToolApprovalCard', () => {
     expect(text).toContain('delete_event')
     expect(text).toContain('work@example.com')
     expect(text).toContain('***REDACTED***')
+    expect(text.match(/delete_event/g)).toHaveLength(1)
+    expect(text.match(/executionStatuses.awaiting_approval/g)).toHaveLength(1)
+    expect(text).toContain('account:work@example.com')
+    expect(text).toContain('approvalDescription')
+    expect(text).not.toContain('statusLabel')
+    expect(renderer.root.findByType('details').props.open).not.toBe(true)
 
     const approveBtn = renderer.root.findAll((node) => node.props['data-testid'] === 'approval-card-approve-btn')[0]
     expect(approveBtn).toBeDefined()
@@ -93,6 +99,19 @@ describe('PendingToolApprovalCard', () => {
     })
     expect(decideExecution).toHaveBeenCalledWith('execution-1', expect.objectContaining({ decision: 'approve' }))
     expect(onRefreshRun).toHaveBeenCalled()
+  })
+
+  test('rejects the action without approving it', async () => {
+    decideExecution.mockClear()
+    let renderer!: ReactTestRenderer
+    act(() => { renderer = create(<PendingToolApprovalCard executionId="execution-1" />) })
+    renderers.push(renderer)
+    await flush()
+    await act(async () => {
+      renderer.root.findByProps({ 'data-testid': 'approval-card-reject-btn' }).props.onClick()
+      await Promise.resolve()
+    })
+    expect(decideExecution).toHaveBeenCalledWith('execution-1', expect.objectContaining({ decision: 'reject' }))
   })
 
   test('shows the server execution status without offering an answer form', async () => {

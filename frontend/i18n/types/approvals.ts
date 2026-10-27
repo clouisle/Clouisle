@@ -154,11 +154,13 @@ export type ApprovalsMessages = {
     chat: {
       approvalTitle: string
       approvalDescription: string
+      account: string
+      approve: string
+      reject: string
       openInbox: string
       refreshStatus: string
       refreshing: string
       refreshFailed: string
-      statusLabel: string
       parameters: string
       interactionTitle: string
       interactionDescription: string

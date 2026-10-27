@@ -171,6 +171,8 @@ Parameters, identity, connection version and tool definition are bound to the
 approval. Another team member, team administrator or superuser cannot decide,
 and rejection, expiry, revocation and stopped runs never become approvals.
 
+The confirmation card shows the action, its status and the account label when available. Expand **View action details** to inspect redacted parameters; choose **Allow** to continue or **Decline** to cancel the call.
+
 **Legacy approver configuration fails closed.** Existing policies containing
 `user` or `team_role` gates anywhere, including nested MCP operation overrides,
 are kept unchanged but never treated as caller confirmation or as allow.

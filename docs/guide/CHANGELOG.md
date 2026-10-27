@@ -21,6 +21,8 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Simplified the chat tool-confirmation card with plain-language choices, one status, and optional redacted action details.
+
 - Removed the site web-search notice and configuration shortcut from team capabilities; site administrators configure search in the dashboard.
 
 - Tool configuration now uses a caller-confirmation switch. Existing deny policies stay blocked until explicitly changed; MCP operation rules retain inheritance and existing deny overrides.

@@ -164,7 +164,9 @@ export function PendingToolApprovalCard({
           )}
         </div>
 
-        <p className="text-xs text-muted-foreground">{tChat('approvalDescription')}</p>
+        {(!execution || status === 'awaiting_approval') && (
+          <p className="text-xs text-muted-foreground">{tChat('approvalDescription')}</p>
+        )}
 
         {error && <p className="text-xs text-destructive">{error}</p>}
 
@@ -177,18 +179,11 @@ export function PendingToolApprovalCard({
 
         {execution && (
           <div className="space-y-2 text-xs">
-            <dl className="grid grid-cols-2 gap-x-3 gap-y-1">
-              <dt className="text-muted-foreground">{tApproval('operation')}</dt>
-              <dd className="break-all font-medium">{execution.operation}</dd>
-              {execution.connection_account_label && (
-                <>
-                  <dt className="text-muted-foreground">{tApproval('accountLabel')}</dt>
-                  <dd className="break-all">{execution.connection_account_label}</dd>
-                </>
-              )}
-              <dt className="text-muted-foreground">{tChat('statusLabel')}</dt>
-              <dd>{tApproval(`executionStatuses.${execution.status}`)}</dd>
-            </dl>
+            {execution.connection_account_label && (
+              <p className="break-all text-muted-foreground">
+                {tChat('account', { account: execution.connection_account_label })}
+              </p>
+            )}
             <details>
               <summary className="cursor-pointer text-muted-foreground">{tChat('parameters')}</summary>
               <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted/50 p-2 font-mono text-[11px]">
@@ -214,7 +209,7 @@ export function PendingToolApprovalCard({
                   {tApproval('submitting')}
                 </>
               ) : (
-                tApproval('approve')
+                tChat('approve')
               )}
             </Button>
             <Button
@@ -231,7 +226,7 @@ export function PendingToolApprovalCard({
                   {tApproval('submitting')}
                 </>
               ) : (
-                tApproval('reject')
+                tChat('reject')
               )}
             </Button>
             <Button
