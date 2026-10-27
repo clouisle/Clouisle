@@ -55,11 +55,31 @@ mock.module('@/components/ui/input', () => ({
 mock.module('@/components/ui/label', () => ({
   Label: ({ children, ...props }: React.ComponentProps<'label'>) => <label {...props}>{children}</label>,
 }))
-mock.module('@/components/ui/tabs', () => ({
-  Tabs: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
-  TabsList: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
-  TabsTrigger: ({ children }: React.PropsWithChildren) => <button>{children}</button>,
-}))
+mock.module('@/components/ui/tabs', () => {
+  const TabsContext = React.createContext<((value: string) => void) | undefined>(undefined)
+
+  function Tabs({
+    children,
+    onValueChange,
+  }: React.PropsWithChildren<{ onValueChange?: (value: string) => void }>) {
+    return <TabsContext.Provider value={onValueChange}>{children}</TabsContext.Provider>
+  }
+
+  function TabsTrigger({ children, value }: React.PropsWithChildren<{ value: string }>) {
+    const onValueChange = React.useContext(TabsContext)
+    return (
+      <button data-tab-value={value} onClick={() => onValueChange?.(value)}>
+        {children}
+      </button>
+    )
+  }
+
+  return {
+    Tabs,
+    TabsList: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+    TabsTrigger,
+  }
+})
 mock.module('@/components/ui/select', () => ({
   Select: ({
     children,
@@ -73,6 +93,7 @@ mock.module('@/components/ui/select', () => ({
   }>) => (
     <select
       data-testid="tool-select"
+      data-has-items={items === undefined ? 'false' : 'true'}
       data-items={JSON.stringify(items ?? [])}
       value={value ?? ''}
       onChange={(e) => onValueChange(e.target.value)}
@@ -135,10 +156,22 @@ const mockToolsResponse = {
       category: 'data',
       identity_policy: 'selectable' as const,
       connection_fields: [
-        { name: 'host', label: 'Host', required: true, secret: false },
-        { name: 'port', label: 'Port', required: true, secret: false, default: '5432' },
-        { name: 'password', label: 'Password', required: true, secret: true },
-        { name: 'ssl', label: 'SSL mode', required: false, secret: false, input_type: 'select', default: 'prefer', options: ['disable', 'prefer', 'require'] },
+        { name: 'host', label: 'Host', required: true, secret: false, input_mode: 'host' as const },
+        { name: 'port', label: 'Port', required: true, secret: false, default: '5432', input_mode: 'host' as const },
+        { name: 'password', label: 'Password', required: true, secret: true, input_mode: 'host' as const },
+        { name: 'ssl', label: 'SSL mode', required: false, secret: false, input_type: 'select' as const, default: 'prefer', options: ['disable', 'prefer', 'require'], input_mode: 'host' as const },
+        { name: 'url', label: 'Connection URL', required: true, secret: false, input_mode: 'url' as const },
+      ],
+      is_enabled: true,
+    },
+    {
+      name: 'slack',
+      display_name: 'Slack',
+      type: 'builtin' as const,
+      category: 'api',
+      identity_policy: 'selectable' as const,
+      connection_fields: [
+        { name: 'slack_token', label: 'Slack Token', required: true, secret: true },
       ],
       is_enabled: true,
     },
@@ -173,9 +206,16 @@ const mockToolsResponse = {
   ],
 }
 
+const defaultOAuthStatus = {
+  provider_configured: true,
+  needs_reauth: false,
+  scopes: [],
+  expires_at: null,
+  client_id: 'client-1',
+}
 const listConnectionsMock = mock(() => Promise.resolve(mockConnections))
-const getOAuthStatusMock = mock(() =>
-  Promise.resolve({ provider_configured: true, needs_reauth: false, scopes: [], expires_at: null, client_id: 'client-1' })
+const getOAuthStatusMock = mock((connectionId: string) =>
+  Promise.resolve({ ...defaultOAuthStatus, connection_id: connectionId })
 )
 const createForToolMock = mock(() => Promise.resolve({ id: 'conn-new' }))
 const createMock = mock(() => Promise.resolve({ id: 'conn-builtin-new' }))
@@ -214,6 +254,9 @@ beforeEach(() => {
   listConnectionsMock.mockClear()
   listConnectionsMock.mockImplementation(() => Promise.resolve(mockConnections))
   getOAuthStatusMock.mockClear()
+  getOAuthStatusMock.mockImplementation((connectionId: string) =>
+    Promise.resolve({ ...defaultOAuthStatus, connection_id: connectionId })
+  )
   createForToolMock.mockClear()
   createMock.mockClear()
   updateMock.mockClear()
@@ -252,6 +295,40 @@ function buttonText(node: { children?: unknown }): string {
       return ''
     })
     .join('')
+}
+
+function findButton(renderer: ReactTestRenderer, text: string) {
+  return renderer.root.findAllByType('button').find((button) => buttonText(button).includes(text))
+}
+
+async function openCreateForm(renderer: ReactTestRenderer) {
+  const addButton = findButton(renderer, 'settings.connections.add')
+  expect(addButton).toBeDefined()
+  await act(async () => {
+    addButton!.props.onClick()
+  })
+}
+
+async function selectTool(renderer: ReactTestRenderer, value: string) {
+  const select = renderer.root
+    .findAllByProps({ 'data-testid': 'tool-select' })
+    .find((node) => node.props['data-has-items'] === 'true')
+  expect(select).toBeDefined()
+  await act(async () => {
+    select!.props.onChange({ target: { value } })
+  })
+}
+
+async function changeInput(renderer: ReactTestRenderer, id: string, value: string) {
+  const input = renderer.root.findAllByType('input').find((item) => item.props.id === id)
+  expect(input).toBeDefined()
+  await act(async () => {
+    input!.props.onChange({ target: { value } })
+  })
+}
+
+function inputValue(renderer: ReactTestRenderer, id: string) {
+  return renderer.root.findAllByType('input').find((item) => item.props.id === id)?.props.value
 }
 
 describe('UserToolConnections', () => {
@@ -495,6 +572,14 @@ describe('UserToolConnections', () => {
       })
     }
 
+    const sslSelect = renderer.root
+      .findAllByProps({ 'data-testid': 'tool-select' })
+      .find((node) => node.props['data-has-items'] === 'false')
+    expect(sslSelect).toBeDefined()
+    await act(async () => {
+      sslSelect!.props.onChange({ target: { value: 'require' } })
+    })
+
     const createBtn = renderer.root.findAllByType('button').find((b) =>
       buttonText(b).includes('tools.connections.create')
     )
@@ -508,7 +593,7 @@ describe('UserToolConnections', () => {
         team_id: 'team-1',
         scope: 'user',
         name: 'PostgreSQL',
-        config: expect.objectContaining({ host: 'db.internal', password: 'secret', port: '5432' }),
+        config: expect.objectContaining({ host: 'db.internal', password: 'secret', port: '5432', ssl: 'require' }),
       })
     )
   })
@@ -576,6 +661,270 @@ describe('UserToolConnections', () => {
     const renderer = await render()
     expect(toastError).toHaveBeenCalledWith('tools.connections.loadFailed')
     expect(JSON.stringify(renderer.toJSON())).toContain('settings.connections.description')
+  })
+
+  test('requires a connection name before creating', async () => {
+    const renderer = await render()
+    await openCreateForm(renderer)
+    await selectTool(renderer, 'tool-mcp-1')
+    await changeInput(renderer, 'create-connection-name', '')
+
+    const createButton = findButton(renderer, 'tools.connections.create')
+    expect(createButton).toBeDefined()
+    await act(async () => {
+      createButton!.props.onClick()
+    })
+
+    expect(JSON.stringify(renderer.toJSON())).toContain('tools.connections.nameRequired')
+    expect(createForToolMock).not.toHaveBeenCalled()
+    expect(createMock).not.toHaveBeenCalled()
+  })
+
+  test('shows a create failure inline and keeps the form open', async () => {
+    const renderer = await render()
+    await openCreateForm(renderer)
+    await selectTool(renderer, 'tool-mcp-1')
+    await changeInput(renderer, 'field-github_token', 'ghp_token')
+    createForToolMock.mockImplementationOnce(() => Promise.reject(new Error('create failed')))
+
+    const createButton = findButton(renderer, 'tools.connections.create')
+    await act(async () => {
+      createButton!.props.onClick()
+    })
+
+    const text = JSON.stringify(renderer.toJSON())
+    expect(text).toContain('tools.connections.createFailed')
+    expect(text).toContain('settings.connections.createTitle')
+    expect(toastSuccess).not.toHaveBeenCalledWith('settings.connections.createdSuccess')
+    expect(toastError).not.toHaveBeenCalled()
+  })
+
+  test('reports a set-default failure', async () => {
+    updateMock.mockImplementationOnce(() => Promise.reject(new Error('update failed')))
+    const renderer = await render()
+    const setDefaultButton = findButton(renderer, 'settings.connections.setDefault')
+    expect(setDefaultButton).toBeDefined()
+
+    await act(async () => {
+      setDefaultButton!.props.onClick()
+    })
+
+    expect(updateMock).toHaveBeenCalledWith('conn-2', { is_default: true })
+    expect(toastError).toHaveBeenCalledWith('tools.connections.updateFailed')
+    expect(toastSuccess).not.toHaveBeenCalledWith('settings.connections.setDefaultSuccess')
+  })
+
+  test('reports a revoke failure', async () => {
+    revokeMock.mockImplementationOnce(() => Promise.reject(new Error('revoke failed')))
+    const renderer = await render()
+    const revokeButton = renderer.root.findAllByType('button').find(
+      (button) => button.props.title === 'tools.connections.revoke'
+    )
+    expect(revokeButton).toBeDefined()
+
+    await act(async () => {
+      revokeButton!.props.onClick()
+    })
+
+    expect(revokeMock).toHaveBeenCalledWith('conn-1')
+    expect(toastError).toHaveBeenCalledWith('tools.connections.revokeFailed')
+    expect(toastSuccess).not.toHaveBeenCalledWith('settings.connections.revokeSuccess')
+  })
+
+  test('reports an OAuth disconnect failure', async () => {
+    disconnectOAuthMock.mockImplementationOnce(() => Promise.reject(new Error('disconnect failed')))
+    const renderer = await render()
+    const disconnectButton = renderer.root.findAllByType('button').find(
+      (button) => buttonText(button).includes('tools.connections.oauthDisconnect')
+    )
+    expect(disconnectButton).toBeDefined()
+
+    await act(async () => {
+      disconnectButton!.props.onClick()
+    })
+
+    expect(disconnectOAuthMock).toHaveBeenCalledWith('conn-1')
+    expect(toastError).toHaveBeenCalledWith('tools.connections.oauthDisconnectFailed')
+    expect(toastSuccess).not.toHaveBeenCalledWith('tools.connections.oauthDisconnect')
+  })
+
+  test('reports an OAuth start failure without opening a window', async () => {
+    const openMock = mock(() => {})
+    const originalOpen = globalThis.window.open
+    globalThis.window.open = openMock as unknown as typeof window.open
+    startOAuthMock.mockImplementationOnce(() => Promise.reject(new Error('oauth unavailable')))
+
+    try {
+      const renderer = await render()
+      const reconnectButton = findButton(renderer, 'settings.connections.reconnect')
+      expect(reconnectButton).toBeDefined()
+
+      await act(async () => {
+        reconnectButton!.props.onClick()
+      })
+
+      expect(startOAuthMock).toHaveBeenCalledWith('conn-2', expect.anything())
+      expect(toastError).toHaveBeenCalledWith('tools.connections.oauthFailed')
+      expect(openMock).not.toHaveBeenCalled()
+      expect(findButton(renderer, 'settings.connections.reconnect')!.props.disabled).toBe(false)
+    } finally {
+      globalThis.window.open = originalOpen
+    }
+  })
+
+  test('isolates an OAuth status failure to the affected connection', async () => {
+    getOAuthStatusMock.mockImplementation((connectionId: string) =>
+      connectionId === 'conn-1'
+        ? Promise.reject(new Error('status unavailable'))
+        : Promise.resolve({ ...defaultOAuthStatus, connection_id: connectionId })
+    )
+    const renderer = await render()
+    const text = JSON.stringify(renderer.toJSON())
+
+    expect(text).toContain('GitHub')
+    expect(text).toContain('My GitHub Account')
+    expect(text).toContain('Local DB')
+    // conn-1's status is unknown, so only conn-2 can be re-authorized.
+    expect(renderer.root.findAllByType('button').filter((button) =>
+      buttonText(button).includes('settings.connections.reconnect')
+    )).toHaveLength(1)
+    // OAuth-only actions (disconnect, client secret) stay hidden for conn-1.
+    expect(renderer.root.findAllByType('button').filter((button) =>
+      buttonText(button).includes('tools.connections.oauthDisconnect')
+    )).toHaveLength(1)
+  })
+
+  test('resets name and credentials when the selected tool changes', async () => {
+    const renderer = await render()
+    await openCreateForm(renderer)
+    await selectTool(renderer, 'tool-mcp-1')
+    await changeInput(renderer, 'field-github_token', 'ghp_first')
+    await changeInput(renderer, 'create-connection-name', '')
+
+    const createButton = findButton(renderer, 'tools.connections.create')
+    await act(async () => {
+      createButton!.props.onClick()
+    })
+    expect(renderer.root.findAllByProps({ role: 'alert' })).toHaveLength(1)
+
+    await selectTool(renderer, 'postgresql_query')
+    expect(inputValue(renderer, 'create-connection-name')).toBe('PostgreSQL')
+    expect(renderer.root.findAllByProps({ role: 'alert' })).toHaveLength(0)
+
+    await selectTool(renderer, 'tool-mcp-1')
+    expect(inputValue(renderer, 'field-github_token')).toBe('')
+  })
+
+  test('filters connection fields by the selected input mode', async () => {
+    const renderer = await render()
+    await openCreateForm(renderer)
+    await selectTool(renderer, 'postgresql_query')
+
+    expect(inputValue(renderer, 'field-host')).toBe('')
+    expect(renderer.root.findAllByType('input').some((input) => input.props.id === 'field-url')).toBe(false)
+
+    const urlTab = renderer.root.findAllByType('button').find((button) => button.props['data-tab-value'] === 'url')
+    expect(urlTab).toBeDefined()
+    await act(async () => {
+      urlTab!.props.onClick()
+    })
+
+    expect(renderer.root.findAllByType('input').some((input) => input.props.id === 'field-host')).toBe(false)
+    expect(inputValue(renderer, 'field-url')).toBe('')
+
+    await changeInput(renderer, 'field-url', 'postgres://db.internal/app')
+    const createButton = findButton(renderer, 'tools.connections.create')
+    await act(async () => {
+      createButton!.props.onClick()
+    })
+
+    expect(createForToolMock).toHaveBeenCalledWith('tool-builtin-1', expect.objectContaining({
+      config: { url: 'postgres://db.internal/app' },
+    }))
+  })
+
+  test('creates a builtin connection without a definition id by tool key', async () => {
+    const renderer = await render()
+    await openCreateForm(renderer)
+    await selectTool(renderer, 'slack')
+    await changeInput(renderer, 'field-slack_token', 'xoxb-secret')
+
+    const createButton = findButton(renderer, 'tools.connections.create')
+    await act(async () => {
+      createButton!.props.onClick()
+    })
+
+    expect(createMock).toHaveBeenCalledWith({
+      team_id: 'team-1',
+      scope: 'user',
+      name: 'Slack',
+      account_label: null,
+      config: { slack_token: 'xoxb-secret' },
+      builtin_tool_key: 'slack',
+    })
+    expect(createForToolMock).not.toHaveBeenCalled()
+  })
+
+  test('does not offer management actions on site connections even for owners', async () => {
+    currentTeam = { id: 'team-1', name: 'Team One', role: 'owner' }
+    listConnectionsMock.mockImplementation(() => Promise.resolve([
+      {
+        ...mockConnections[0],
+        id: 'conn-site',
+        scope: 'site' as const,
+        name: 'Site Database',
+        is_default: false,
+      },
+    ]))
+    const renderer = await render()
+    const text = JSON.stringify(renderer.toJSON())
+
+    expect(text).toContain('Site Database')
+    const buttons = renderer.root.findAllByType('button')
+    expect(buttons.some((button) => button.props.title === 'tools.connections.revoke')).toBe(false)
+    expect(buttons.some((button) => buttonText(button).includes('settings.connections.setDefault'))).toBe(false)
+    expect(buttons.some((button) => buttonText(button).includes('tools.connections.oauthDisconnect'))).toBe(false)
+  })
+
+  test('falls back to the connection name when tool metadata is missing', async () => {
+    listConnectionsMock.mockImplementation(() => Promise.resolve([
+      {
+        ...mockConnections[0],
+        id: 'conn-legacy',
+        tool_id: null,
+        builtin_tool_key: null,
+        name: 'Legacy Account',
+        account_label: null,
+      },
+    ]))
+    const renderer = await render()
+    const text = JSON.stringify(renderer.toJSON())
+
+    expect(text).toContain('Legacy Account')
+    // The personal connection still exposes its management actions.
+    expect(renderer.root.findAllByType('button').some(
+      (button) => button.props.title === 'tools.connections.revoke'
+    )).toBe(true)
+  })
+
+  test('cancels the client secret form without starting OAuth', async () => {
+    const renderer = await render()
+    const secretToggle = findButton(renderer, 'tools.connections.oauthClientSecret')
+    expect(secretToggle).toBeDefined()
+    await act(async () => {
+      secretToggle!.props.onClick()
+    })
+    expect(inputValue(renderer, 'client-secret-conn-1')).toBe('')
+    await changeInput(renderer, 'client-secret-conn-1', 'client-secret')
+
+    const cancelButton = findButton(renderer, 'common.cancel')
+    expect(cancelButton).toBeDefined()
+    await act(async () => {
+      cancelButton!.props.onClick()
+    })
+
+    expect(inputValue(renderer, 'client-secret-conn-1')).toBeUndefined()
+    expect(startOAuthMock).not.toHaveBeenCalled()
   })
 })
 

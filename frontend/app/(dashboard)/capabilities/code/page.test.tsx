@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import React from 'react'
+import * as actualLucide from 'lucide-react'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
 const push = mock()
@@ -30,7 +31,10 @@ mock.module('next/navigation', () => ({
 }))
 mock.module('next-intl', () => ({ useTranslations: () => (key: string, values?: Record<string, unknown>) => values ? `${key}:${JSON.stringify(values)}` : key }))
 mock.module('sonner', () => ({ toast: { error: toastError, success: toastSuccess } }))
-mock.module('@/lib/api', () => ({ ApiError }))
+mock.module('@/lib/api', () => ({
+  ApiError,
+  teamsApi: { getTeam: () => Promise.resolve({ members: [] }) },
+}))
 mock.module('@/lib/api/admin', () => ({
   adminToolsApi: { getById, create: createTool, update: updateTool, executeCode },
   teamsApi: { getTeams },
@@ -40,6 +44,7 @@ mock.module('@/components/auth/permission-guard', () => ({ RoutePermissionGuard:
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 mock.module('@/lib/validation', () => ({ formatValidationSummaryMessage: (field: string, message: string) => `${field}: ${message}` }))
 mock.module('lucide-react', () => ({
+  ...actualLucide,
   ArrowLeft: () => null, Save: () => null, Play: () => null, Loader2: () => <span data-loader />,
   FileCode: () => null, ChevronDown: () => null, ChevronRight: () => null, X: () => null,
   Plus: () => null, Trash2: () => null,

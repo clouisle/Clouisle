@@ -1,4 +1,5 @@
 import React from 'react'
+import * as actualLucide from 'lucide-react'
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
 
@@ -56,13 +57,17 @@ mock.module('@/components/permission-guard', () => ({
 mock.module('@/lib/api/tools', () => ({
   toolsApi: { getById, create: createTool, update: updateTool, executeCode },
 }))
-mock.module('@/lib/api', () => ({ ApiError: TestApiError }))
+mock.module('@/lib/api', () => ({
+  ApiError: TestApiError,
+  teamsApi: { getTeam: () => Promise.resolve({ members: [] }) },
+}))
 mock.module('@/lib/validation', () => ({
   formatValidationSummaryMessage: (_field: string, message: string) => message,
 }))
 mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }))
 const Icon = () => null
 mock.module('lucide-react', () => ({
+  ...actualLucide,
   ArrowLeft: Icon,
   Save: Icon,
   Play: Icon,

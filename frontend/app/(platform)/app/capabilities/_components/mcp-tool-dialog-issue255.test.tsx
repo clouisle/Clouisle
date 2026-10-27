@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { Window } from 'happy-dom'
 import * as React from 'react'
+import * as actualLucide from 'lucide-react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
@@ -21,6 +22,7 @@ const toastSuccess = mock()
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
 mock.module('sonner', () => ({ toast: { info: toastInfo, success: toastSuccess } }))
 mock.module('lucide-react', () => ({
+  ...actualLucide,
   Loader2: () => <svg />,
   Plus: () => <svg />,
   Trash2: () => <svg />,

@@ -1,13 +1,42 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test'
 import React from 'react'
 import { act, create, type ReactTestRenderer } from '@/test-utils/rtl-renderer'
-import { toolsApi } from '@/lib/api'
+import { toolsApi, type Tool, type ToolConfig } from '@/lib/api'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
 
 if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register({ url: 'http://localhost' })
 
-const labels: Record<string, string> = { engineAuto: 'Site default', engineTavily: 'Tavily', engineBocha: 'Bocha', engineSearxng: 'SearXNG' }
+const engineLabels: Record<string, string> = { engineAuto: 'Site default', engineTavily: 'Tavily', engineBocha: 'Bocha', engineSearxng: 'SearXNG', engineDeepseek: 'DeepSeek' }
+// WebSearchEngineSelect translates bare engine keys, while ToolSelector
+// translates `config.*` keys, so both namespaces resolve to human copy.
+const labels: Record<string, string> = {
+  ...engineLabels,
+  'config.engineAuto': engineLabels.engineAuto,
+  'config.engineTavily': engineLabels.engineTavily,
+  'config.engineBocha': engineLabels.engineBocha,
+  'config.engineSearxng': engineLabels.engineSearxng,
+  'config.engineDeepseek': engineLabels.engineDeepseek,
+  'config.title': 'Web search',
+  'config.engine': 'Provider',
+  'config.settings': 'Settings',
+  'config.save': 'Save',
+  'config.cancel': 'Cancel',
+}
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => labels[key] || key }))
+// ToolSelector's ToolDisplayItem reads the active team to resolve tool
+// connections. The dropdown flow under test does not use connections, but
+// the hook still has to resolve, so supply a realistic team context.
+const teamContext = {
+  currentTeam: { id: 'team-1', name: 'Team', role: 'member' as const },
+  teams: [],
+  isLoading: false,
+  setCurrentTeam: () => {},
+  refreshTeams: async () => {},
+}
+mock.module('@/contexts/team-context', () => ({
+  useTeam: () => teamContext,
+  useOptionalTeam: () => teamContext,
+}))
 mock.module('@/components/ui/dialog', () => ({
   Dialog: ({ children, open }: React.PropsWithChildren<{ open: boolean }>) => open ? <div>{children}</div> : null,
   DialogContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
@@ -74,19 +103,54 @@ test('all disabled providers leave only the site default routing choice', async 
 })
 
 test('Agent orchestration saves the enabled provider chosen through the real dropdown', async () => {
+  // Imported dynamically (cannot be a static import) because the
+  // `mock.module` registrations above must be in place before the component
+  // graph, including the real Base UI Select, is loaded.
   const { ToolSelector } = await import('../../app/(platform)/app/apps/[id]/_components/tool-selector')
-  const onChange = mock()
-  await act(async () => {
-    renderer = create(<ToolSelector
-      toolsConfig={[{ type: 'builtin', name: 'web_search', config: { engine: 'auto' } }]}
-      availableTools={[{ name: 'web_search', display_name: 'Web search', description: 'Search', type: 'builtin', category: 'search', visibility: 'team', parameters: [], is_enabled: true, requires_config: false, config_fields: [] }]}
-      onChange={onChange}
-    />)
-  })
-  await act(async () => { document.querySelector<HTMLButtonElement>('button[title="config.settings"]')!.click() })
+  const onSave = mock()
+  const tool: Tool = {
+    name: 'web_search',
+    display_name: 'Web search',
+    description: 'Search',
+    type: 'builtin',
+    category: 'search',
+    visibility: 'team',
+    parameters: [],
+    is_enabled: true,
+    requires_config: false,
+    config_fields: [],
+  }
+  // Mirror the orchestration form: the updated tool config is fed back into
+  // the selector, so the saved provider must survive the round trip.
+  function ControlledSelector() {
+    const [toolsConfig, setToolsConfig] = React.useState<ToolConfig[]>([
+      { type: 'builtin', name: 'web_search', config: { engine: 'auto' } },
+    ])
+    return (
+      <ToolSelector
+        toolsConfig={toolsConfig}
+        availableTools={[tool]}
+        onChange={(next) => {
+          setToolsConfig(next)
+          onSave(next)
+        }}
+      />
+    )
+  }
+  await act(async () => { renderer = create(<ControlledSelector />) })
+  expect(document.body.textContent).toContain('Site default')
+
+  await act(async () => { document.querySelector<HTMLButtonElement>('button[title="Settings"]')!.click() })
+  // Let the provider availability request settle before opening the menu.
+  await act(async () => {})
   await openMenu()
   expect(Array.from(document.querySelectorAll('[role="option"]')).map((item) => item.textContent)).toEqual(['Site default', 'SearXNG'])
   await act(async () => { Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find((item) => item.textContent === 'SearXNG')!.click() })
-  await act(async () => { Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'config.save')!.click() })
-  expect(onChange).toHaveBeenCalledWith([{ type: 'builtin', name: 'web_search', config: { engine: 'searxng' } }])
+  expect(document.querySelector('[role="combobox"]')?.textContent).toContain('SearXNG')
+  expect(onSave).not.toHaveBeenCalled()
+
+  await act(async () => { Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Save')!.click() })
+  expect(onSave).toHaveBeenCalledWith([{ type: 'builtin', name: 'web_search', config: { engine: 'searxng' } }])
+  expect(document.querySelector('[role="combobox"]')).toBeNull()
+  expect(document.body.textContent).toContain('SearXNG')
 })

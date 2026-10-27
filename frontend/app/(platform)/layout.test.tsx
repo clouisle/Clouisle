@@ -5,6 +5,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 let pathname = "/app";
 
 mock.module("next/navigation", () => ({ usePathname: () => pathname }));
+mock.module("next-intl", () => ({
+  useTranslations: () => (key: string) => key,
+}));
 const boundary = ({ children }: React.PropsWithChildren) => <>{children}</>;
 mock.module("@/components/layout/platform-header", () => ({
   PlatformHeader: () => <div data-testid="platform-header" />,

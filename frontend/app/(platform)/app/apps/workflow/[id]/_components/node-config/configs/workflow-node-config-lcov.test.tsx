@@ -1,4 +1,6 @@
 import { expect, mock, test } from 'bun:test'
+import * as actualReact from 'react'
+import * as actualLucide from 'lucide-react'
 
 const jsx = (type: unknown, props: Record<string, unknown>) => ({ type, props })
 const component = function Component() {}
@@ -16,7 +18,7 @@ const resetState = () => {
 }
 
 mock.module('react', () => ({
-  default: {},
+  ...actualReact,
   useMemo: (factory: () => unknown) => factory(),
   useState: (initial: unknown) => [stateValues.length ? stateValues.shift() : initial, setState],
   useEffect: (effect: () => void) => effects.push(effect),
@@ -25,11 +27,15 @@ mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
 mock.module('next/image', () => ({ default: component }))
-mock.module('lucide-react', () => Object.fromEntries([
+const iconNames = [
   'AlertCircle', 'Bot', 'Calculator', 'ChartColumn', 'Check', 'ChevronDown', 'Clock3', 'Code2', 'Database',
   'ExternalLink', 'FolderOpen', 'Globe', 'History', 'Image', 'Info', 'Link', 'Loader2', 'Pencil', 'Plus',
   'Search', 'Settings2', 'Trash2', 'Workflow', 'Wrench',
-].map((name) => [name, component])))
+]
+mock.module('lucide-react', () => ({
+  ...actualLucide,
+  ...Object.fromEntries(iconNames.map((name) => [name, component])),
+}))
 for (const [path, names] of [
   ['@/components/ui/badge', ['Badge']],
   ['@/components/ui/button', ['Button']],

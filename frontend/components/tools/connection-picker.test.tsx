@@ -127,6 +127,8 @@ beforeEach(() => {
   getOAuthStatus.mockClear()
   startOAuth.mockClear()
   disconnectOAuth.mockClear()
+  update.mockClear()
+  revoke.mockClear()
 })
 
 afterEach(() => {
@@ -159,6 +161,7 @@ async function renderPicker(overrides: {
   builtinToolKey?: string
   value?: ToolConnectionBinding
   onChange?: (value: ToolConnectionBinding) => void
+  disabled?: boolean
 } = {}) {
   const onChange = overrides.onChange ?? mock()
   await act(async () => {
@@ -169,11 +172,20 @@ async function renderPicker(overrides: {
         teamId="team-1"
         value={overrides.value ?? getToolConnectionBinding(null)}
         onChange={onChange}
+        disabled={overrides.disabled}
       />
     )
   })
   await flush()
   return onChange
+}
+
+function optionValues(select: HTMLSelectElement): string[] {
+  return Array.from(select.options).map((option) => option.value)
+}
+
+function alertText(): string | null {
+  return document.querySelector('[role="alert"]')?.textContent ?? null
 }
 
 describe('ToolConnectionPicker', () => {
@@ -356,5 +368,288 @@ describe('ToolConnectionPicker', () => {
     expect(listForTool).not.toHaveBeenCalled()
     expect(selects()).toHaveLength(0)
     expect(document.body.textContent).toContain('connections.identityNone')
+  })
+
+  test('surfaces a connection load failure and recovers on refresh', async () => {
+    listForTool.mockImplementationOnce(async () => {
+      throw new Error('offline')
+    })
+    await renderPicker()
+    expect(document.body.textContent).toContain('connections.loadFailed')
+
+    const refresh = document.querySelector('button[title="connections.refresh"]') as HTMLButtonElement
+    expect(refresh.disabled).toBe(false)
+    await act(async () => refresh.click())
+    await flush()
+    await flush()
+
+    expect(listForTool).toHaveBeenCalledTimes(2)
+    expect(document.body.textContent).not.toContain('connections.loadFailed')
+    expect(optionValues(selects()[0])).toContain('c1')
+  })
+
+  test('labels default and non-active connections in the options', async () => {
+    listForTool.mockImplementationOnce(async () => [
+      { ...connection, id: 'c1', is_default: true, status: 'active' as const },
+      {
+        ...connection,
+        id: 'c2',
+        name: 'Legacy key',
+        account_label: null,
+        is_default: false,
+        status: 'reauth_required' as const,
+      },
+    ])
+    await renderPicker()
+
+    const options = Array.from(selects()[0].options)
+    expect(options.find((option) => option.value === 'c1')!.textContent)
+      .toBe('work@example.com · connections.defaultBadge')
+    expect(options.find((option) => option.value === 'c2')!.textContent)
+      .toBe('Legacy key · connections.status.reauth_required')
+  })
+
+  test('never offers team-scoped connections to a personal-only tool', async () => {
+    listForTool.mockImplementationOnce(async () => [
+      connection,
+      { ...connection, id: 'team-conn', scope: 'team' as const, account_label: null },
+    ])
+    await renderPicker()
+
+    expect(optionValues(selects()[0])).toEqual(['__automatic__', 'c1'])
+  })
+
+  test('disables team selection and explains the empty team pool', async () => {
+    listForTool.mockImplementationOnce(async () => [{ ...connection, scope: 'user' as const }])
+    await renderPicker({ tool: { ...tool, identity_policy: 'team_only' } })
+
+    expect(selects()).toHaveLength(1)
+    expect(optionValues(selects()[0])).toEqual([])
+    expect(selects()[0].disabled).toBe(true)
+    expect(document.body.textContent).toContain('connections.noConnectionsForMode')
+    expect(document.body.textContent).not.toContain('connections.loadFailed')
+  })
+
+  test('shows only team and site connections when a selectable tool binds to team', async () => {
+    listForTool.mockImplementationOnce(async () => [
+      connection,
+      { ...connection, id: 'c2', scope: 'team' as const, account_label: 'team@example.com' },
+      { ...connection, id: 'c3', scope: 'site' as const, account_label: 'site@example.com' },
+    ])
+    await renderPicker({
+      tool: { ...tool, identity_policy: 'selectable' },
+      value: getToolConnectionBinding({ connection_mode: 'team', connection_id: null }),
+    })
+
+    const connectionOptions = selects().find((item) => optionValues(item).includes('c2'))!
+    expect(optionValues(connectionOptions)).toEqual(['c2', 'c3'])
+    expect(connectionOptions.disabled).toBe(false)
+  })
+
+  test('switching a selectable tool to team scope clears the bound account', async () => {
+    const onChange = await renderPicker({
+      tool: { ...tool, identity_policy: 'selectable' },
+      value: getToolConnectionBinding({ connection_mode: 'personal', connection_id: 'c1' }),
+    })
+    const modeSelect = selects().find((item) => optionValues(item).includes('personal'))!
+    await choose(modeSelect, 'team')
+    expect(onChange).toHaveBeenCalledWith({ connection_mode: 'team', connection_id: null })
+  })
+
+  test('offers only user and team scopes when creating a connection', async () => {
+    await renderPicker({ tool: { ...tool, identity_policy: 'selectable' } })
+    await act(async () => button('connections.manage')!.click())
+    await flush()
+
+    const scopeSelect = selects().find((item) => optionValues(item).includes('user'))!
+    expect(optionValues(scopeSelect)).toEqual(['user', 'team'])
+    expect(scopeSelect.value).toBe('user')
+  })
+
+  test('does not offer a scope choice for personal-only tools', async () => {
+    await renderPicker()
+    await act(async () => button('connections.manage')!.click())
+    await flush()
+
+    expect(selects().some((item) => optionValues(item).includes('user'))).toBe(false)
+  })
+
+  test('creates a team-scoped connection from the selected scope and account label', async () => {
+    await renderPicker({ tool: { ...tool, identity_policy: 'selectable' } })
+    await act(async () => button('connections.manage')!.click())
+    await flush()
+
+    const scopeSelect = selects().find((item) => optionValues(item).includes('user'))!
+    await choose(scopeSelect, 'team')
+    await act(async () => renderer!.root.findByProps({ placeholder: 'connections.namePlaceholder' })
+      .props.onChange({ target: { value: 'Team key' } }))
+    await act(async () => renderer!.root.findByProps({ placeholder: 'connections.accountLabelPlaceholder' })
+      .props.onChange({ target: { value: 'ops@example.com' } }))
+    await act(async () => renderer!.root.findByProps({ id: 'connection-secret-api_key' })
+      .props.onChange({ target: { value: 'team-secret' } }))
+    await act(async () => button('connections.create')!.click())
+    await flush()
+
+    expect(createForTool).toHaveBeenCalledWith('tool-1', expect.objectContaining({
+      team_id: 'team-1',
+      scope: 'team',
+      name: 'Team key',
+      account_label: 'ops@example.com',
+      config: { api_key: 'team-secret' },
+    }))
+  })
+
+  test('rejects manager submissions without a name or required secret', async () => {
+    await renderPicker()
+    await act(async () => button('connections.manage')!.click())
+    await flush()
+
+    await act(async () => button('connections.create')!.click())
+    expect(alertText()).toBe('connections.nameRequired')
+    expect(createForTool).not.toHaveBeenCalled()
+
+    await act(async () => renderer!.root.findByProps({ placeholder: 'connections.namePlaceholder' })
+      .props.onChange({ target: { value: 'Personal' } }))
+    await act(async () => button('connections.create')!.click())
+    expect(alertText()).toBe('connections.secretRequired')
+    expect(createForTool).not.toHaveBeenCalled()
+  })
+
+  test('reports create failures and keeps the entered secret for retry', async () => {
+    createForTool.mockImplementationOnce(async () => {
+      throw new Error('rejected')
+    })
+    await renderPicker()
+    await act(async () => button('connections.manage')!.click())
+    await flush()
+    await act(async () => renderer!.root.findByProps({ placeholder: 'connections.namePlaceholder' })
+      .props.onChange({ target: { value: 'Personal' } }))
+    await act(async () => renderer!.root.findByProps({ id: 'connection-secret-api_key' })
+      .props.onChange({ target: { value: 'secret-value' } }))
+    await act(async () => button('connections.create')!.click())
+    await flush()
+
+    expect(alertText()).toBe('connections.createFailed')
+    expect(renderer!.root.findByProps({ id: 'connection-secret-api_key' }).props.value).toBe('secret-value')
+  })
+
+  test('reports set-default failures without dropping the connection list', async () => {
+    const twoConnections = async () => [
+      connection,
+      { ...connection, id: 'c2', account_label: 'second@example.com', is_default: false },
+    ]
+    listForTool.mockImplementationOnce(twoConnections)
+    await renderPicker()
+    listForTool.mockImplementationOnce(twoConnections)
+    await act(async () => button('connections.manage')!.click())
+    await flush()
+
+    update.mockImplementationOnce(async () => {
+      throw new Error('forbidden')
+    })
+    await act(async () => button('connections.setDefault')!.click())
+    await flush()
+
+    expect(update).toHaveBeenCalledWith('c2', { is_default: true })
+    expect(alertText()).toBe('connections.updateFailed')
+    expect(document.body.textContent).toContain('second@example.com')
+  })
+
+  test('reports revoke failures', async () => {
+    revoke.mockImplementationOnce(async () => {
+      throw new Error('forbidden')
+    })
+    await renderPicker()
+    await act(async () => button('connections.manage')!.click())
+    await flush()
+
+    const revokeButton = document.querySelector('button[title="connections.revoke"]') as HTMLButtonElement
+    await act(async () => revokeButton.click())
+    await flush()
+
+    expect(revoke).toHaveBeenCalledWith('c1')
+    expect(alertText()).toBe('connections.revokeFailed')
+  })
+
+  test('reports manager load failures instead of pretending the team has no connections', async () => {
+    listForTool.mockImplementationOnce(async () => [connection])
+    await renderPicker()
+    listForTool.mockImplementationOnce(async () => {
+      throw new Error('offline')
+    })
+    await act(async () => button('connections.manage')!.click())
+    await flush()
+    await flush()
+
+    expect(alertText()).toBe('connections.loadFailed')
+    expect(document.body.textContent).toContain('connections.empty')
+  })
+
+  test('surfaces OAuth failures without opening a window', async () => {
+    startOAuth.mockImplementationOnce(async () => {
+      throw new Error('denied')
+    })
+    const originalOpen = window.open
+    const openSpy = mock(() => null)
+    window.open = openSpy as unknown as typeof window.open
+    try {
+      await renderPicker()
+      await act(async () => button('connections.manage')!.click())
+      await flush()
+      await act(async () => button('connections.oauthConnect')!.click())
+      await flush()
+
+      expect(alertText()).toBe('connections.oauthFailed')
+      expect(openSpy).not.toHaveBeenCalled()
+    } finally {
+      window.open = originalOpen
+    }
+  })
+
+  test('prompts reauthorization and opens the authorization URL', async () => {
+    getOAuthStatus.mockImplementationOnce(async () => ({
+      connection_id: 'c1',
+      provider_kind: 'mcp' as const,
+      provider_configured: true,
+      authorized: false,
+      needs_reauth: true,
+      status: 'reauth_required' as const,
+      account_label: 'work@example.com',
+      scopes: [],
+      expires_at: null,
+      client_id: null,
+    }))
+    const originalOpen = window.open
+    const openSpy = mock(() => null)
+    window.open = openSpy as unknown as typeof window.open
+    try {
+      await renderPicker()
+      await act(async () => button('connections.manage')!.click())
+      await flush()
+
+      expect(document.body.textContent).toContain('connections.oauthNeedsReauth')
+      await act(async () => button('connections.oauthReconnect')!.click())
+      await flush()
+
+      expect(startOAuth).toHaveBeenCalledWith('c1', { redirect_path: '/' })
+      expect(openSpy).toHaveBeenCalledWith(
+        'https://auth.example.test/start',
+        '_blank',
+        'noopener,noreferrer'
+      )
+    } finally {
+      window.open = originalOpen
+    }
+  })
+
+  test('locks every control while the binding is disabled', async () => {
+    await renderPicker({ disabled: true })
+
+    const manage = button('connections.manage')!
+    expect(manage.disabled).toBe(true)
+    expect((document.querySelector('button[title="connections.refresh"]') as HTMLButtonElement).disabled).toBe(true)
+    expect(selects()[0].disabled).toBe(true)
+    await act(async () => manage.click())
+    expect(document.body.textContent).not.toContain('connections.manageTitle')
   })
 })

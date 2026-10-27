@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import * as actualReact from 'react'
+import * as actualLucide from 'lucide-react'
 import type { ReactNode } from 'react'
 
 type Tree = { type: unknown; props: Record<string, unknown> }
@@ -25,6 +27,7 @@ const normalizeValidationErrors = mock((error: unknown) => error)
 mock.module('react/jsx-runtime', () => ({ jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react/jsx-dev-runtime', () => ({ jsxDEV: jsx, Fragment: Symbol.for('react.fragment') }))
 mock.module('react', () => ({
+  ...actualReact,
   useState<T>(initial: T): [T, Setter<T>] {
     const index = stateIndex++
     states[index] ??= initial
@@ -35,9 +38,10 @@ mock.module('react', () => ({
   useEffect: (effect: () => void) => effects.push(effect),
   useRef: () => ({ current: null }),
   useCallback: <T,>(callback: T) => callback,
+  useMemo: <T,>(factory: () => T) => factory(),
 }))
 mock.module('next-intl', () => ({ useTranslations: () => (key: string) => key }))
-mock.module('lucide-react', () => ({ Loader2: element('loader'), Plus: element('plus'), Trash2: element('trash'), ChevronDown: element('chevron') }))
+mock.module('lucide-react', () => ({ ...actualLucide, Loader2: element('loader'), Plus: element('plus'), Trash2: element('trash'), ChevronDown: element('chevron') }))
 mock.module('@/components/ui/dialog', () => ({
   Dialog: element('dialog'), DialogContent: element('section'), DialogDescription: element('p'),
   DialogFooter: element('footer'), DialogHeader: element('header'), DialogTitle: element('h2'),
@@ -122,9 +126,9 @@ describe('HttpToolDialog Issue #255 callbacks', () => {
 
     tree = render({ ...baseProps, tool })
     expect(states[1]).toBe('Updated')
-    expect(states[8]).toBe('PATCH')
-    expect(states[13]).toBe(45)
-    expect((states[16] as unknown[])).toHaveLength(2)
+    expect(states[11]).toBe('PATCH')
+    expect(states[16]).toBe(45)
+    expect((states[19] as unknown[])).toHaveLength(2)
     expect(clearValidationError).toHaveBeenCalled()
   })
 
@@ -133,19 +137,19 @@ describe('HttpToolDialog Issue #255 callbacks', () => {
     effects[0]()
     tree = render()
     await (button(tree, 'create').props.onClick as () => Promise<void>)()
-    expect(states[7]).toEqual(expect.objectContaining({ name: 'error.nameRequired', displayName: 'form.displayNameRequired', url: 'form.urlRequired' }))
+    expect(states[10]).toEqual(expect.objectContaining({ name: 'error.nameRequired', displayName: 'form.displayNameRequired', url: 'form.urlRequired' }))
 
     states[0] = 'fetch_data'
     states[1] = 'Fetch Data'
     states[2] = 'description'
-    states[8] = 'POST'
-    states[9] = 'https://api.test'
-    states[10] = [{ key: 'Authorization', value: 'Bearer token' }, { key: '', value: 'ignored' }]
-    states[11] = [{ key: 'page', value: '1' }]
-    states[12] = '{"id":"{{id}}"}'
-    states[13] = 20
-    states[14] = 'application/json'
-    states[16] = [{ name: 'id', type: 'string', required: true, description: '' }, { name: '', type: 'string', required: false }]
+    states[11] = 'POST'
+    states[12] = 'https://api.test'
+    states[13] = [{ key: 'Authorization', value: 'Bearer token' }, { key: '', value: 'ignored' }]
+    states[14] = [{ key: 'page', value: '1' }]
+    states[15] = '{"id":"{{id}}"}'
+    states[16] = 20
+    states[17] = 'application/json'
+    states[19] = [{ name: 'id', type: 'string', required: true, description: '' }, { name: '', type: 'string', required: false }]
     tree = render()
     await (button(tree, 'create').props.onClick as () => Promise<void>)()
 
@@ -154,17 +158,17 @@ describe('HttpToolDialog Issue #255 callbacks', () => {
       parameters: [{ name: 'id', type: 'string', required: true, description: '' }],
       http_config: expect.objectContaining({ method: 'POST', headers: { Authorization: 'Bearer token' }, query_params: { page: '1' }, body_template: '{"id":"{{id}}"}', content_type: 'application/json' }),
     }))
-    expect(states[17]).toBe(false)
+    expect(states[20]).toBe(false)
   })
 
   test('maps save validation errors and rethrows unknown failures', async () => {
-    states = ['fetch_data', 'Fetch Data', '', '', 'api', 'private', true, {}, 'GET', 'https://api.test']
+    states = ['fetch_data', 'Fetch Data', '', '', 'api', 'private', true, 'none', [], { default_decision: 'allow', gates: [], operation_overrides: {} }, {}, 'GET', 'https://api.test']
     const validationFailure = new Error('validation')
     baseProps.onSave.mockRejectedValueOnce(validationFailure)
     mapValidationErrors.mockReturnValueOnce({ url: 'invalid url' })
     let tree = render()
     await (button(tree, 'create').props.onClick as () => Promise<void>)()
-    expect(states[7]).toEqual({ url: 'invalid url' })
+    expect(states[10]).toEqual({ url: 'invalid url' })
     expect(normalizeValidationErrors).toHaveBeenCalledWith(validationFailure)
 
     const unknownFailure = new Error('offline')
@@ -176,6 +180,8 @@ describe('HttpToolDialog Issue #255 callbacks', () => {
   test('exercises variable suggestions and optional form controls', async () => {
     states = [
       'upload_file', 'Upload file', 'description', '', 'api', 'private', true,
+      'none', [],
+      { default_decision: 'allow', gates: [], operation_overrides: {} },
       { headers: 'headers error', queryParams: 'params error', bodyTemplate: 'body error', formFields: 'form error', parameters: 'parameters error' },
       'POST', 'https://api.test/upload',
       [{ key: 'X-Trace', value: 'trace' }, { key: 'X-Other', value: 'other' }],
@@ -217,7 +223,7 @@ describe('HttpToolDialog Issue #255 callbacks', () => {
     ;(bodyValue.props.onChange as (value: string) => void)('{"caption":"{{caption}}"}')
 
     ;(findAll(tree, (node) => node.type === Select && node.props.value === 'application/json')[0].props.onValueChange as (value: string) => void)('multipart/form-data')
-    states[15] = [
+    states[18] = [
       { name: 'caption', type: 'text', value: '{{caption}}' },
       { name: 'attachment', type: 'file', value: '{{file}}' },
     ]
@@ -235,29 +241,29 @@ describe('HttpToolDialog Issue #255 callbacks', () => {
     for (const iconButton of iconButtons) {
       ;(iconButton.props.onClick as (() => void) | undefined)?.()
     }
-    expect((states[10] as unknown[])).toHaveLength(2)
-    expect((states[11] as unknown[])).toHaveLength(2)
-    expect((states[15] as unknown[])).toHaveLength(1)
-    expect((states[16] as unknown[])).toEqual([])
+    expect((states[13] as unknown[])).toHaveLength(2)
+    expect((states[14] as unknown[])).toHaveLength(2)
+    expect((states[18] as unknown[])).toHaveLength(1)
+    expect((states[19] as unknown[])).toEqual([])
 
     const variableNode = findAll(tree, (node) => typeof node.type === 'function' && node.type.name === 'VariableInput')[0]
     const renderVariable = variableNode.type as (props: Record<string, unknown>) => Tree
     const variableChange = mock(() => {})
-    states[22] = false
-    states[23] = []
-    states[24] = 0
-    states[25] = 0
-    stateIndex = 22
+    states[25] = false
+    states[26] = []
+    states[27] = 0
+    states[28] = 0
+    stateIndex = 25
     let variableTree = renderVariable({ value: '', onChange: variableChange, variables: ['id', 'name'] })
     const variableField = findAll(variableTree, (node) => node.type === Input)[0]
     ;(variableField.props.onChange as (event: { target: { value: string; selectionStart: number } }) => void)({ target: { value: '{{i', selectionStart: 3 } })
     ;(variableField.props.onBlur as () => void)()
 
-    states[22] = true
-    states[23] = ['id', 'name']
-    states[24] = 3
-    states[25] = 0
-    stateIndex = 22
+    states[25] = true
+    states[26] = ['id', 'name']
+    states[27] = 3
+    states[28] = 0
+    stateIndex = 25
     variableTree = renderVariable({ value: '{{i', onChange: variableChange, variables: ['id', 'name'] })
     const suggestionField = findAll(variableTree, (node) => node.type === Input)[0]
     for (const key of ['ArrowDown', 'ArrowUp', 'Enter', 'Escape']) {

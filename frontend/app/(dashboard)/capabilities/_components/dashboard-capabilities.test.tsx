@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, mock, spyOn, test } from 'bun:test'
 import { Window } from 'happy-dom'
 import React from 'react'
+import * as actualLucide from 'lucide-react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
@@ -61,6 +62,7 @@ mock.module('next/navigation', () => ({ useRouter: () => ({ push: routerPush }) 
 mock.module('sonner', () => ({ toast: { error: toastError, success: toastSuccess, info: toastInfo } }))
 const Icon = (props: React.SVGProps<SVGSVGElement>) => <svg {...props} />
 mock.module('lucide-react', () => ({
+  ...actualLucide,
   Plus: Icon,
   Search: Icon,
   MoreHorizontal: Icon,
@@ -110,7 +112,11 @@ mock.module('@/components/permission-guard', () => ({
 mock.module('@/lib/constants', () => ({ SKILL_ZIP_MAX_UPLOAD_SIZE_BYTES: 1024, API_BASE_URL: 'http://localhost:8000/api/v1' }))
 mock.module('@/lib/api', () => {
   class ApiError extends Error {}
-  return { ApiError, isPresetToolCategory: (category: string) => ['api', 'code', 'search'].includes(category) }
+  return {
+    ApiError,
+    isPresetToolCategory: (category: string) => ['api', 'code', 'search'].includes(category),
+    teamsApi: { getTeam: () => Promise.resolve({ members: [] }) },
+  }
 })
 
 const passthrough = (tag: keyof React.JSX.IntrinsicElements = 'div') => {
