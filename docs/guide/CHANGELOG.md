@@ -11,6 +11,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- MCP header and environment templates suggest declared connection field names when typing `{{`.
 - MCP HTTP and SSE header values are visible while editing, making connection templates readable; connection secrets remain masked.
 - Simplified tool connection cards by removing internal credential-field names and allowing actions to wrap on narrow screens; account labels and management controls remain available.
 - macOS Celery prefork children use a verified `certifi` CA bundle when no explicit TLS CA file/directory is configured, avoiding the MCP HTTP client's Objective-C `SecPolicyCreateSSL` fork crash. Explicit CA overrides and Linux behavior are unchanged.

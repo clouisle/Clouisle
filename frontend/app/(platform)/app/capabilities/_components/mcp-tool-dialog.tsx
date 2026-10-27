@@ -23,6 +23,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Input } from '@/components/ui/input'
+import { VariableInput } from '@/components/tools/variable-input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -678,12 +679,13 @@ export function McpToolDialog({
                           onChange={(e) => updateEnvVar(index, 'key', e.target.value)}
                           className="flex-1 font-mono"
                         />
-                        <Input
+                        <VariableInput
                           placeholder={t('mcpDialog.headerValuePlaceholder')}
                           value={envVar.value}
-                          onChange={(e) => updateEnvVar(index, 'value', e.target.value)}
-                          className="flex-1 font-mono"
+                          onChange={(value) => updateEnvVar(index, 'value', value)}
+                          variables={connectionFields.map((field) => field.name.trim())}
                           type="password"
+                          className="flex-1 font-mono"
                         />
                         <Button
                           variant="ghost"
@@ -738,10 +740,11 @@ export function McpToolDialog({
                           onChange={(e) => updateHeader(index, 'key', e.target.value)}
                           className="flex-1 font-mono"
                         />
-                        <Input
+                        <VariableInput
                           placeholder={t('mcpDialog.headerValuePlaceholder')}
                           value={header.value}
-                          onChange={(e) => updateHeader(index, 'value', e.target.value)}
+                          onChange={(value) => updateHeader(index, 'value', value)}
+                          variables={connectionFields.map((field) => field.name.trim())}
                           className="flex-1 font-mono"
                         />
                         <Button
@@ -797,10 +800,11 @@ export function McpToolDialog({
                           onChange={(e) => updateHeader(index, 'key', e.target.value)}
                           className="flex-1 font-mono"
                         />
-                        <Input
+                        <VariableInput
                           placeholder={t('mcpDialog.headerValuePlaceholder')}
                           value={header.value}
-                          onChange={(e) => updateHeader(index, 'value', e.target.value)}
+                          onChange={(value) => updateHeader(index, 'value', value)}
+                          variables={connectionFields.map((field) => field.name.trim())}
                           className="flex-1 font-mono"
                         />
                         <Button

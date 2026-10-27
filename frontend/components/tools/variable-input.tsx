@@ -23,6 +23,7 @@ export interface VariableInputProps {
   suggestionTitle?: string
   id?: string
   ariaInvalid?: boolean
+  type?: 'text' | 'password'
 }
 
 /**
@@ -42,6 +43,7 @@ export function VariableInput({
   suggestionTitle = '{{variable}}',
   id,
   ariaInvalid,
+  type = 'text',
 }: VariableInputProps) {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [filteredVars, setFilteredVars] = useState<string[]>([])
@@ -182,6 +184,7 @@ export function VariableInput({
       ) : (
         <Input
           ref={inputRef as RefObject<HTMLInputElement>}
+          type={type}
           className="w-full"
           {...commonProps}
         />

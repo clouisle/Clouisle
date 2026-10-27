@@ -123,6 +123,24 @@ function fillIdentity(renderer: ReactTestRenderer) {
 }
 
 describe('MCP tool dialog', () => {
+  test('completes connection fields in MCP headers and environment values', () => {
+    const renderer = render({ tool: {
+      id: 'tool-1', name: 'github', display_name: 'GitHub', type: 'mcp',
+      connection_fields: [{ name: 'github_token', label: 'Token', required: true, secret: true }],
+      mcp_config: { transport: 'http', url: 'https://mcp.test', headers: { Authorization: '' } },
+    } as React.ComponentProps<typeof McpToolDialog>['tool'] })
+
+    for (const tab of ['stdio', 'sse', 'http']) {
+      const container = renderer.root.findAll((node) => node.props?.['data-tab-content'] === tab)[0]
+      const field = container.findAll((node) => node.type === 'input' && node.props.placeholder === 'mcpDialog.headerValuePlaceholder')[0]
+      act(() => field.props.onChange({ target: { value: 'Bearer {{git', selectionStart: 12 } }))
+      const option = container.findByProps({ role: 'option' })
+      expect(option.props['aria-selected']).toBe(true)
+      act(() => option.props.onMouseDown({ preventDefault: () => {} }))
+      expect(container.findAll((node) => node.type === 'input' && node.props.placeholder === 'mcpDialog.headerValuePlaceholder')[0].props.value).toBe('Bearer {{github_token}}')
+    }
+  })
+
   test('validates create fields, clears corrected errors, and guards disabled actions', async () => {
     const renderer = render()
     const fetch = button(renderer, 'mcpDialog.fetchTools')

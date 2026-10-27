@@ -11,6 +11,7 @@
 
 ### 变更
 
+- MCP 请求头和环境变量模板输入 `{{` 时，可补全已声明的连接字段名。
 - MCP HTTP 和 SSE 请求头的值在编辑时可见，便于查看连接字段模板；连接凭据仍保持遮罩。
 - 精简工具连接卡片：移除内部凭据字段名称，操作按钮在窄屏下自动换行；账号标识和管理操作保留。
 - 修复 macOS Celery prefork 子进程调用 MCP 时，系统证书验证触发 Objective-C `SecPolicyCreateSSL` fork 崩溃：未显式指定 CA 文件或目录时使用 `certifi` CA 证书包，保留 TLS 验证；显式 CA 配置和 Linux 行为不变。

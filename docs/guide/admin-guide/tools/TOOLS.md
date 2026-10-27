@@ -121,6 +121,8 @@ Connect to external tool servers via [Model Context Protocol](https://modelconte
 For identity connections, OAuth, approvals and live resource subscriptions, see
 [MCP Connections and Approvals](mcp-connections-and-approvals.md).
 
+MCP HTTP/SSE header values and stdio environment values accept `{{field_name}}` references to declared connection fields. Type `{{` to select a field name; the editor never displays its stored value. URL, command and arguments do not support these references. Store actual credentials in a connection, not in the tool definition.
+
 **Supported Transports:**
 
 | Transport | Description | Use Case |
