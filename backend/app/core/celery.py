@@ -3,6 +3,8 @@ Celery application configuration for Clouisle backend.
 """
 
 import logging
+import os
+import sys
 
 from celery import Celery
 from celery.schedules import crontab
@@ -181,6 +183,16 @@ celery_app.conf.beat_schedule = {
 @worker_process_init.connect
 def init_tortoise(**kwargs):
     """Initialize Tortoise ORM for each worker process."""
+    # httpx2's macOS system trust verification invokes Objective-C after
+    # fork, which can abort the worker. Match httpx's verified certifi default
+    # unless an operator has explicitly selected a CA file or directory.
+    if sys.platform == "darwin" and not (
+        os.environ.get("SSL_CERT_FILE") or os.environ.get("SSL_CERT_DIR")
+    ):
+        import certifi
+
+        os.environ["SSL_CERT_FILE"] = certifi.where()
+
     import asyncio
     from tortoise import Tortoise
     from app.llm.tools.builtin import register_all_builtin_tools
