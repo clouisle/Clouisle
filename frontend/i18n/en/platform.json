@@ -230,8 +230,6 @@
       },
       "noSearchResults": "No tools found",
       "requiresConfig": "Requires configuration",
-      "webSearchManaged": "Web search is configured centrally by site administrators. Team-level search keys are no longer used.",
-      "webSearchConfigure": "Configure search",
       "parameters": "Parameters",
       "searchEngine": "Search engine",
       "noParameters": "No parameters required",

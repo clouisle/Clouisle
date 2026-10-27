@@ -232,8 +232,6 @@ export type PlatformMessages = {
       }
       noSearchResults: string
       requiresConfig: string
-      webSearchManaged: string
-      webSearchConfigure: string
       parameters: string
       searchEngine: string
       noParameters: string

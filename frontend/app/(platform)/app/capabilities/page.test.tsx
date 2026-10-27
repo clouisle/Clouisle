@@ -112,7 +112,6 @@ mock.module('./_components/http-tool-dialog', () => ({ HttpToolDialog: component
 mock.module('./_components/mcp-tool-dialog', () => ({ McpToolDialog: component('mcp-dialog') }))
 mock.module('./_components/tool-share-dialog', () => ({ ToolShareDialog: component('share-dialog') }))
 mock.module('@/components/packages/import-package-dialog', () => ({ ImportPackageDialog: component('import-dialog') }))
-mock.module('@/components/tools/web-search-config-dialog', () => ({ WebSearchConfigDialog: component('web-search-dialog') }))
 mock.module('@/components/tools/mcp-tool-browser', () => ({ McpToolBrowser: component('mcp-browser') }))
 
 const { default: CapabilitiesPage } = await import('./page')
@@ -290,26 +289,14 @@ describe('CapabilitiesPage', () => {
     expect(toastError).toHaveBeenCalledWith('tools.error.cannotShareBuiltin')
   })
 
-  test('opens site search configuration from the real capabilities entry when permitted', async () => {
+  test('does not expose site search configuration on the team capabilities page', async () => {
     const webSearch = { ...builtin, name: 'web_search', display_name: 'Web Search', category: 'search', requires_config: true }
     list.mockResolvedValue({ builtin: [webSearch], custom: [], mcp: [] })
     permissions = new Set(['tool:read', 'admin:capability:read'])
     render()
     await settle()
-
-    let tree = render()
-    expect(findAll(tree, (node) => node.type === 'web-search-dialog')).toHaveLength(0)
-    ;(find(tree, (node) => String(node.props.children).includes('tools.webSearchConfigure')).props.onClick as () => void)()
-    tree = render()
-    const dialog = find(tree, (node) => node.type === 'web-search-dialog')
-    expect(dialog.props.open).toBe(true)
-    const saved = dialog.props.onSaved as () => Promise<void>
-    await saved()
-    expect(list).toHaveBeenCalledTimes(2)
-
-    permissions = new Set(['tool:read'])
-    hooks = []
-    tree = render()
+    const tree = render()
+    expect(findAll(tree, (node) => node.props['data-testid'] === 'web-search-managed-notice')).toHaveLength(0)
     expect(findAll(tree, (node) => String(node.props.children).includes('tools.webSearchConfigure'))).toHaveLength(0)
     expect(findAll(tree, (node) => node.type === 'web-search-dialog')).toHaveLength(0)
   })
