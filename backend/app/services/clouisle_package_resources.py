@@ -1166,6 +1166,17 @@ def _normalized_connection_fields(value: Any) -> list[dict[str, Any]]:
                 "label": str(item.get("label") or name).strip() or name,
                 "required": bool(item.get("required", True)),
                 "secret": bool(item.get("secret", True)),
+                **{
+                    key: item[key]
+                    for key in (
+                        "label_key",
+                        "input_type",
+                        "default",
+                        "options",
+                        "input_mode",
+                    )
+                    if key in item
+                },
             }
         )
     return fields

@@ -49,8 +49,10 @@ def _normalize_config(db_config: Mapping[str, Any] | None) -> dict[str, Any]:
     ssl = config.get("ssl")
     if isinstance(ssl, str):
         normalized = ssl.strip().lower()
-        if normalized in {"", "false", "0", "no", "off", "disable", "disabled"}:
+        if normalized in {""}:
             config.pop("ssl", None)
+        elif normalized in {"false", "0", "no", "off", "disable", "disabled"}:
+            config["ssl"] = False
         elif normalized in {"true", "1", "yes", "on"}:
             config["ssl"] = True
         # Anything else ("require", "verify-full", a CA path, ...) is passed

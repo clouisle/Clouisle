@@ -533,7 +533,7 @@ export function ToolNodeConfig({
           // 已选择工具
           <div className="flex items-center gap-2 p-2.5 rounded-lg border bg-muted/30">
             <div className="shrink-0 w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-lg overflow-hidden relative">
-              {selectedTool.icon ? (
+              {selectedTool.icon && selectedTool.type !== 'builtin' ? (
                 selectedTool.icon.startsWith('http') || selectedTool.icon.startsWith('/') || selectedTool.icon.startsWith('data:') ? (
                   <Image
                     src={selectedTool.icon}
@@ -547,6 +547,7 @@ export function ToolNodeConfig({
                 )
               ) : (
                 renderToolIcon({
+                  icon: selectedTool.icon,
                   name: selectedTool.name,
                   type: selectedTool.type,
                   custom_type: selectedTool.custom_type,
@@ -646,7 +647,7 @@ export function ToolNodeConfig({
                                 onClick={() => handleSelectTool(tool)}
                               >
                                 <div className="shrink-0 w-7 h-7 rounded-md bg-muted flex items-center justify-center text-sm overflow-hidden relative">
-                                  {tool.icon ? (
+                                  {tool.icon && tool.type !== 'builtin' ? (
                                     tool.icon.startsWith('http') || tool.icon.startsWith('/') || tool.icon.startsWith('data:') ? (
                                       <Image
                                         src={tool.icon}
@@ -660,6 +661,7 @@ export function ToolNodeConfig({
                                     )
                                   ) : (
                                     renderToolIcon({
+                                      icon: tool.icon,
                                       name: tool.name,
                                       type: tool.type,
                                       custom_type: tool.custom_type,

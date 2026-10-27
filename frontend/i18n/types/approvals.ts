@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-26T20:58:14.260Z
+// GENERATED — 2026-10-27T04:04:22.620Z
 // Source: i18n/en/approvals.json
 export type ApprovalsMessages = {
   approvals: {

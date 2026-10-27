@@ -79,6 +79,9 @@ mock.module('lucide-react', () => ({
   Settings2: element('svg'),
   ShieldAlert: element('svg'),
 }))
+mock.module('@/components/tools/tool-icons', () => ({
+  renderToolIcon: ({ icon, name }: { icon?: string; name?: string }) => jsx('svg', { 'data-icon-key': icon || name }),
+}))
 
 const { AddToolButton, ToolSelector } = await import('./tool-selector')
 
@@ -290,6 +293,16 @@ describe('ToolSelector', () => {
     const images = findAll(tree, (node) => node.type === 'img')
     expect(images.length).toBeGreaterThan(0)
     expect(images[0].props.src).toBe('https://example.com/icon.png')
+  })
+
+  test('renders builtin database icon marks instead of icon identifiers', () => {
+    const database = tool({
+      name: 'postgresql_query', display_name: 'PostgreSQL', type: 'builtin', category: 'data', icon: 'postgresql',
+    })
+    stateIndex = 0
+    const tree = renderAdd({ availableTools: [database] })
+    expect(text(tree)).not.toContain('postgresql')
+    expect(findAll(tree, (node) => node.props['data-icon-key'] === 'postgresql')).toHaveLength(1)
   })
 
   test('hides delete switch and settings button when readOnly is true', () => {

@@ -11,6 +11,11 @@ export interface ToolConnectionField {
   label: string
   required: boolean
   secret: boolean
+  label_key?: string | null
+  input_type?: 'text' | 'password' | 'number' | 'select' | null
+  default?: string | null
+  options?: string[]
+  input_mode?: 'url' | 'host' | null
 }
 export interface ToolApprovalGate {
   kind: 'caller' | 'user' | 'team_role'

@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-26T20:58:14.263Z
+// GENERATED — 2026-10-27T04:04:22.629Z
 // Source: i18n/en/deliveryLog.json
 export type DeliveryLogMessages = {
   deliveryLog: {

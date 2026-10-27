@@ -763,7 +763,14 @@ class ToolOAuthService:
             if connection.tool_id
             else None
         )
-        kind = cls._provider_kind(tool) if tool is not None else None
+        kind = None
+        if tool is not None and (
+            tool.type == ToolType.MCP
+            or (
+                tool.type == ToolType.CUSTOM and tool.custom_type == CustomToolType.HTTP
+            )
+        ):
+            kind = cls._provider_kind(tool)
 
         access_token = config.get(CONNECTION_ACCESS_TOKEN)
         refresh_token = config.get(CONNECTION_REFRESH_TOKEN)
@@ -771,7 +778,7 @@ class ToolOAuthService:
         scope_values = config.get(CONNECTION_SCOPE, "").split()
         scopes = scope_values or list(provider.scopes if provider else [])
         expired = expires_at is not None and expires_at <= _utcnow()
-        needs_reauth = bool(
+        needs_reauth = kind is not None and bool(
             connection.status == ToolConnectionStatus.REAUTH_REQUIRED
             or not access_token
             or (expired and not refresh_token)

@@ -406,6 +406,18 @@
       "createTitle": "Add connection",
       "namePlaceholder": "Connection name",
       "accountLabelPlaceholder": "Account label (optional)",
+      "connectionMethod": "Connection method",
+      "inputModes": { "host": "Host and port", "url": "Connection URL" },
+      "fields": {
+        "url": "Connection URL", "host": "Host", "port": "Port", "database": "Database",
+        "username": "Username", "password": "Password", "ssl": "SSL mode",
+        "timeout": "Timeout (seconds)", "max_limit": "Maximum results", "db": "Database index",
+        "auth_source": "Authentication database"
+      },
+      "sslOptions": {
+        "disable": "Disabled", "allow": "Allow TLS", "prefer": "Prefer TLS",
+        "require": "Require TLS", "verify-ca": "Verify certificate authority", "verify-full": "Verify certificate and hostname"
+      },
       "secretFieldsHint": "Only the credential fields declared by this tool are accepted.",
       "create": "Create connection",
       "nameRequired": "Enter a connection name.",

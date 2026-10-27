@@ -406,6 +406,18 @@
       "createTitle": "添加连接",
       "namePlaceholder": "连接名称",
       "accountLabelPlaceholder": "账号标签（可选）",
+      "connectionMethod": "连接方式",
+      "inputModes": { "host": "主机和端口", "url": "连接 URL" },
+      "fields": {
+        "url": "连接 URL", "host": "主机", "port": "端口", "database": "数据库",
+        "username": "用户名", "password": "密码", "ssl": "SSL 模式",
+        "timeout": "超时（秒）", "max_limit": "最大结果数", "db": "数据库编号",
+        "auth_source": "认证数据库"
+      },
+      "sslOptions": {
+        "disable": "禁用", "allow": "允许 TLS", "prefer": "优先 TLS",
+        "require": "必须使用 TLS", "verify-ca": "验证证书颁发机构", "verify-full": "验证证书和主机名"
+      },
       "secretFieldsHint": "仅接受此工具声明的凭证字段。",
       "create": "创建连接",
       "nameRequired": "请输入连接名称。",

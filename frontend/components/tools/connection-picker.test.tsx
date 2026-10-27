@@ -264,6 +264,30 @@ describe('ToolConnectionPicker', () => {
     expect(onChange).toHaveBeenCalledWith({ connection_mode: 'team', connection_id: 'c2' })
   })
 
+  test('submits only the selected endpoint mode and includes visible defaults', async () => {
+    await act(async () => {
+      renderer = createRenderer(<ToolConnectionPicker tool={{ ...tool, connection_fields: [
+        { name: 'url', label: 'URL', required: false, secret: true, input_mode: 'url' },
+        { name: 'host', label: 'Host', required: false, secret: false, input_mode: 'host' },
+        { name: 'port', label: 'Port', required: false, secret: false, input_mode: 'host', input_type: 'number', default: '5432' },
+        { name: 'timeout', label: 'Timeout', required: false, secret: false, input_type: 'number', default: '15' },
+      ] }} teamId="team-1" value={getToolConnectionBinding(null)} onChange={mock()} />)
+    })
+    await flush()
+    await act(async () => button('connections.manage')!.click())
+    expect(document.getElementById('connection-secret-url')).toBeNull()
+    expect((document.getElementById('connection-secret-port') as HTMLInputElement).value).toBe('5432')
+    await act(async () => renderer!.root.findByProps({ placeholder: 'connections.namePlaceholder' }).props.onChange({ target: { value: 'Database' } }))
+    await act(async () => renderer!.root.findByProps({ id: 'connection-secret-host' }).props.onChange({ target: { value: 'db.internal' } }))
+    await act(async () => button('connections.inputModes.url')!.click())
+    expect(document.getElementById('connection-secret-host')).toBeNull()
+    await act(async () => renderer!.root.findByProps({ id: 'connection-secret-url' }).props.onChange({ target: { value: 'postgresql://db.example/app' } }))
+    await act(async () => button('connections.create')!.click())
+    await flush()
+    expect(createForTool).toHaveBeenCalledWith('tool-1', expect.objectContaining({
+      config: { url: 'postgresql://db.example/app', timeout: '15' },
+    }))
+  })
   test('manages secret connections and starts OAuth from the manager', async () => {
     await renderPicker()
     await act(async () => button('connections.manage')!.click())

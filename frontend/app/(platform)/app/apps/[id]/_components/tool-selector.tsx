@@ -298,7 +298,7 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
                         >
                           {/* 图标 */}
                           <div className="shrink-0 w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-xl overflow-hidden relative">
-                            {tool.icon ? (
+                            {tool.icon && tool.type !== 'builtin' ? (
                               tool.icon.startsWith('http') || tool.icon.startsWith('/') || tool.icon.startsWith('data:') ? (
                                 <Image
                                   src={tool.icon}
@@ -313,6 +313,7 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
                             ) : (
                               renderToolIcon({
                                 name: tool.name,
+                                icon: tool.icon,
                                 type: tool.type,
                                 custom_type: tool.custom_type,
                                 category: tool.category,
@@ -455,7 +456,7 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onUpdateBinding, onTogg
         {/* 图标 */}
         {isMissing ? (
           <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
-        ) : tool?.icon ? (
+        ) : tool?.icon && tool.type !== 'builtin' ? (
           tool.icon.startsWith('http') || tool.icon.startsWith('/') || tool.icon.startsWith('data:') ? (
             <div className="relative h-4 w-4 shrink-0 rounded overflow-hidden">
               <Image
@@ -473,6 +474,7 @@ function ToolDisplayItem({ tool, config, onUpdateConfig, onUpdateBinding, onTogg
           tool ? (
             renderToolIcon({
               name: tool.name,
+              icon: tool.icon,
               type: tool.type,
               custom_type: tool.custom_type,
               category: tool.category,

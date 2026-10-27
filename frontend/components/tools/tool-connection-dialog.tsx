@@ -48,11 +48,12 @@ export function ToolConnectionDialog({
       <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {tool.icon ? (
+            {tool.icon && tool.type !== 'builtin' ? (
               <span className="text-xl">{tool.icon}</span>
             ) : (
               renderToolIcon({
                 name: tool.name,
+                icon: tool.icon,
                 type: tool.type,
                 custom_type: tool.custom_type,
                 category: tool.category,

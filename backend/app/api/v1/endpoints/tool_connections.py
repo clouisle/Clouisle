@@ -104,10 +104,10 @@ async def _assert_builtin_tool(builtin_tool_key: str) -> None:
 def _secret_field_declarations(
     tool: Tool,
 ) -> tuple[set[str] | None, set[str] | None]:
-    """Map ``Tool.connection_fields`` to declared/required secret names.
+    """Map all encrypted connection fields to allowed/required names.
 
-    ``None`` means the definition declares no restriction; an empty set means
-    the definition explicitly allows/requires no secret fields.
+    ``secret`` controls input masking, not whether a field is accepted.
+    ``None`` means the definition declares no restriction.
     """
     declarations = getattr(tool, "connection_fields", None)
     if not declarations:
@@ -120,10 +120,9 @@ def _secret_field_declarations(
         name = item.get("name")
         if not isinstance(name, str) or not name:
             continue
-        if item.get("secret", True):
-            declared.add(name)
-            if item.get("required"):
-                required.add(name)
+        declared.add(name)
+        if item.get("required"):
+            required.add(name)
     return declared, required
 
 

@@ -347,11 +347,12 @@ export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi
                   unoptimized
                 />
               </div>
-            ) : tool.icon ? (
+            ) : tool.icon && tool.type !== 'builtin' ? (
               <span className="text-xl">{tool.icon}</span>
             ) : (
               renderToolIcon({
                 name: tool.name,
+                icon: tool.icon,
                 type: tool.type,
                 custom_type: tool.custom_type,
                 category: tool.category,

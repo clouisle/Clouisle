@@ -23,6 +23,11 @@ class ToolConnectionField(BaseModel):
     label: str = Field(min_length=1, max_length=100)
     required: bool = True
     secret: bool = True
+    label_key: str | None = None
+    input_type: Literal["text", "password", "number", "select"] | None = None
+    default: str | None = None
+    options: list[str] = Field(default_factory=list)
+    input_mode: Literal["url", "host"] | None = None
 
 
 class ToolType(str, Enum):
@@ -547,15 +552,35 @@ class ToolShareListOut(BaseModel):
 
 
 def _db_connection_field(name: str, label: str) -> dict[str, Any]:
-    """Declare one database connection field.
-
-    Every database parameter is stored in the encrypted connection, so the
-    generic connection manager must collect it as a masked value. None is
-    individually required: ``url`` and ``host``/``port`` are alternatives and
-    some engines allow unauthenticated access. Execution validates the merged
-    configuration and fails closed with a localized error.
-    """
-    return {"name": name, "label": label, "required": False, "secret": True}
+    """Describe encrypted connection values independently of input masking."""
+    field: dict[str, Any] = {
+        "name": name,
+        "label": label,
+        "label_key": f"fields.{name}",
+        "required": False,
+        "secret": name in {"url", "password"},
+        "input_type": "password" if name in {"url", "password"} else "text",
+    }
+    if name in {"port", "db", "timeout", "max_limit"}:
+        field["input_type"] = "number"
+    if name in {"db", "timeout", "max_limit"}:
+        field["default"] = {"db": "0", "timeout": "15", "max_limit": "100"}[name]
+    if name == "ssl":
+        field.update(
+            input_type="select",
+            default="prefer",
+            options=[
+                "disable",
+                "allow",
+                "prefer",
+                "require",
+                "verify-ca",
+                "verify-full",
+            ],
+        )
+    if name not in {"ssl", "timeout", "max_limit"}:
+        field["input_mode"] = "url" if name == "url" else "host"
+    return field
 
 
 BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
@@ -674,7 +699,7 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
         "connection_fields": [
             _db_connection_field("url", "Connection URL"),
             _db_connection_field("host", "Host"),
-            _db_connection_field("port", "Port"),
+            {**_db_connection_field("port", "Port"), "default": "5432"},
             _db_connection_field("database", "Database"),
             _db_connection_field("username", "Username"),
             _db_connection_field("password", "Password"),
@@ -702,7 +727,7 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
         "connection_fields": [
             _db_connection_field("url", "Connection URL"),
             _db_connection_field("host", "Host"),
-            _db_connection_field("port", "Port"),
+            {**_db_connection_field("port", "Port"), "default": "3306"},
             _db_connection_field("database", "Database"),
             _db_connection_field("username", "Username"),
             _db_connection_field("password", "Password"),
@@ -729,7 +754,7 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
         "connection_fields": [
             _db_connection_field("url", "Connection URL"),
             _db_connection_field("host", "Host"),
-            _db_connection_field("port", "Port"),
+            {**_db_connection_field("port", "Port"), "default": "6379"},
             _db_connection_field("db", "Database index"),
             _db_connection_field("username", "Username"),
             _db_connection_field("password", "Password"),
@@ -757,7 +782,7 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
         "connection_fields": [
             _db_connection_field("url", "Connection URL"),
             _db_connection_field("host", "Host"),
-            _db_connection_field("port", "Port"),
+            {**_db_connection_field("port", "Port"), "default": "27017"},
             _db_connection_field("database", "Database"),
             _db_connection_field("username", "Username"),
             _db_connection_field("password", "Password"),

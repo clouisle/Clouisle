@@ -6,6 +6,7 @@ import { Handle, Position } from '@xyflow/react'
 import { Wrench, AlertCircle, Clock3, Calculator, Search, Globe, FolderOpen, Code2, Link, ChartColumn } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
+import { renderToolIcon } from '@/components/tools/tool-icons'
 import { isPresetToolCategory, type PresetToolCategory, type ToolCategory, type ToolType } from '@/lib/api'
 
 type WorkflowToolType = Exclude<ToolType, 'skill'>
@@ -145,19 +146,22 @@ export function ToolNode({ selected, data }: ToolNodeProps) {
             'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white overflow-hidden relative',
             config.toolType === 'mcp' ? 'bg-violet-500' : 'bg-emerald-500'
           )}>
-            {hasTool && config.toolIcon ? (
+            {hasTool && config.toolIcon && config.toolType !== 'builtin' ? (
               config.toolIcon.startsWith('http') || config.toolIcon.startsWith('/') || config.toolIcon.startsWith('data:') ? (
-                <Image
-                  src={config.toolIcon}
-                  alt={data.label || 'Tool'}
-                  fill
-                  className="object-cover"
-                  unoptimized
-                />
+                <Image src={config.toolIcon} alt={data.label || 'Tool'} fill className="object-cover" unoptimized />
               ) : (
                 <span className="text-sm">{config.toolIcon}</span>
               )
-            ) : hasTool && config.toolCategory && isPresetToolCategory(config.toolCategory) ? (
+            ) : hasTool ? (
+              renderToolIcon({
+                name: config.toolName,
+                icon: config.toolIcon,
+                type: config.toolType,
+                category: config.toolCategory,
+                size: 16,
+                className: 'text-muted-foreground',
+              })
+            ) : config.toolCategory && isPresetToolCategory(config.toolCategory) ? (
               <span className="text-sm">{categoryIcons[config.toolCategory]}</span>
             ) : (
               <Wrench className="h-3.5 w-3.5" />

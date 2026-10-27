@@ -119,6 +119,52 @@ class _ErrorExpectation:
         return handled
 
 
+def test_agent_builtin_binding_accepts_materialized_definition_connection(run_orm):
+    async def scenario():
+        from app.services.builtin_tools import get_builtin_definition
+
+        alice = await _make_user("alice")
+        team = await _make_team("team-one", alice)
+        await _join(team, alice, "owner")
+        definition = await get_builtin_definition(team.id, "postgresql_query")
+        connection = await ToolConnectionService.create_connection(
+            actor=alice,
+            payload=ToolConnectionCreate(
+                team_id=team.id,
+                tool_id=definition.id,
+                scope=ToolConnectionScope.USER,
+                name="Database",
+                config={"host": "database.example.test"},
+            ),
+        )
+        await ToolConnectionService.assert_tools_config_bindings_allowed(
+            actor=alice,
+            team_id=team.id,
+            tools_config=[
+                {
+                    "type": "builtin",
+                    "name": "postgresql_query",
+                    "connection_mode": "personal",
+                    "connection_id": str(connection.id),
+                }
+            ],
+        )
+        with _expect_error(ResponseCode.TOOL_CONNECTION_NOT_FOUND):
+            await ToolConnectionService.assert_tools_config_bindings_allowed(
+                actor=alice,
+                team_id=team.id,
+                tools_config=[
+                    {
+                        "type": "builtin",
+                        "name": "mysql_query",
+                        "connection_id": str(connection.id),
+                    }
+                ],
+            )
+
+    run_orm(scenario)
+
+
 def test_personal_connection_is_owner_team_scoped_and_encrypted(run_orm):
     async def scenario():
         alice = await _make_user("alice")

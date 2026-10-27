@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { FieldError } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Select,
   SelectContent,
@@ -312,9 +313,12 @@ export function ToolConnectionManager({
 
   const availableScopes = scopesForIdentity(identity).filter((item) => item !== 'site')
   const hasService = !!tool?.id || !!builtinToolKey
-  const secretFields: ToolConnectionField[] = (tool?.connection_fields ?? []).filter(
-    (field) => field.secret
-  )
+  const secretFields: ToolConnectionField[] = tool?.connection_fields ?? []
+  const [inputMode, setInputMode] = React.useState<'url' | 'host'>('host')
+  const visibleFields = secretFields
+    .filter((field) => !field.input_mode || field.input_mode === inputMode)
+    .map((field) => ({ ...field, label: field.label_key ? t(field.label_key) : field.label,
+      value: secretValues[field.name] ?? field.default ?? '' }))
 
   const reload = React.useCallback(async () => {
     if (!hasService || !teamId) return
@@ -360,8 +364,8 @@ export function ToolConnectionManager({
       setActionError(t('nameRequired'))
       return
     }
-    const missing = secretFields.filter(
-      (field) => field.required && !(secretValues[field.name] ?? '').trim()
+    const missing = visibleFields.filter(
+      (field) => field.required && !field.value.trim()
     )
     if (missing.length > 0) {
       setActionError(t('secretRequired', { fields: missing.map((field) => field.label).join(', ') }))
@@ -376,7 +380,7 @@ export function ToolConnectionManager({
         name: name.trim(),
         account_label: accountLabel.trim() || null,
         config: Object.fromEntries(
-          Object.entries(secretValues).filter(([, value]) => value.trim())
+          visibleFields.map((field) => [field.name, field.value]).filter(([, value]) => value.trim())
         ),
       }
       if (tool?.id) {
@@ -651,21 +655,46 @@ export function ToolConnectionManager({
             </SelectContent>
           </Select>
         )}
-        {secretFields.map((field) => (
+        {secretFields.some((field) => field.input_mode) && (
+          <Tabs value={inputMode} onValueChange={(value) => setInputMode(value as 'host' | 'url')}>
+            <TabsList aria-label={t('connectionMethod')}>
+              {(['host', 'url'] as const).map((mode) => (
+                <TabsTrigger key={mode} value={mode}>
+                  {t(`inputModes.${mode}`)}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        )}
+        {visibleFields.map((field) => (
           <div key={field.name} className="space-y-1">
             <Label htmlFor={`connection-secret-${field.name}`} className="text-[11px]">
               {field.label}
               {field.required ? ' *' : ''}
             </Label>
-            <Input
-              id={`connection-secret-${field.name}`}
-              type="password"
-              className="h-7 text-xs"
-              value={secretValues[field.name] ?? ''}
-              onChange={(event) =>
-                setSecretValues((current) => ({ ...current, [field.name]: event.target.value }))
-              }
-            />
+            {field.input_type === 'select' ? (
+              <Select value={field.value} onValueChange={(value) =>
+                setSecretValues((current) => ({ ...current, [field.name]: value ?? '' }))}>
+                <SelectTrigger id={`connection-secret-${field.name}`} className="h-7 text-xs">
+                  <SelectValue>{field.name === 'ssl' ? t(`sslOptions.${field.value}`) : field.value}</SelectValue>
+                </SelectTrigger>
+                <SelectContent side="bottom" alignItemWithTrigger={false}>
+                  {(field.options ?? []).map((option) => (
+                    <SelectItem key={option} value={option}>{field.name === 'ssl' ? t(`sslOptions.${option}`) : option}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                id={`connection-secret-${field.name}`}
+                type={field.input_type ?? (field.secret ? 'password' : 'text')}
+                className="h-7 text-xs"
+                value={field.value}
+                onChange={(event) =>
+                  setSecretValues((current) => ({ ...current, [field.name]: event.target.value }))
+                }
+              />
+            )}
           </div>
         ))}
         <p className="text-[10px] text-muted-foreground">{t('secretFieldsHint')}</p>

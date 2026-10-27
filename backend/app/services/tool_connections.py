@@ -1118,6 +1118,11 @@ class ToolConnectionService:
         await cls._require_membership(team_id, user)
         connection = await cls._load_connection(connection_id)
         cls._assert_team_binding(connection, team_id)
+        if tool_id is None and builtin_tool_key and connection.tool_id is not None:
+            from app.services.builtin_tools import get_builtin_definition
+
+            definition = await get_builtin_definition(team_id, builtin_tool_key)
+            tool_id = definition.id
         cls._assert_service_binding(connection, tool_id, builtin_tool_key)
         if connection.status != ToolConnectionStatus.ACTIVE:
             _fail(

@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-26T20:58:14.271Z
+// GENERATED — 2026-10-27T04:04:22.670Z
 // Source: i18n/en/tools.json
 export type ToolsMessages = {
   tools: {
@@ -408,6 +408,32 @@ export type ToolsMessages = {
       createTitle: string
       namePlaceholder: string
       accountLabelPlaceholder: string
+      connectionMethod: string
+      inputModes: {
+        host: string
+        url: string
+      }
+      fields: {
+        url: string
+        host: string
+        port: string
+        database: string
+        username: string
+        password: string
+        ssl: string
+        timeout: string
+        max_limit: string
+        db: string
+        auth_source: string
+      }
+      sslOptions: {
+        disable: string
+        allow: string
+        prefer: string
+        require: string
+        "verify-ca": string
+        "verify-full": string
+      }
       secretFieldsHint: string
       create: string
       nameRequired: string

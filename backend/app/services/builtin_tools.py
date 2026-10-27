@@ -162,6 +162,9 @@ def derive_builtin_identity(info: ToolInfo) -> tuple[str, list[dict]]:
                 "required": bool(item.get("required", True)),
                 "secret": bool(item.get("secret", True)),
             }
+            for key in ("label_key", "input_type", "default", "options", "input_mode"):
+                if key in item:
+                    field[key] = item[key]
         else:
             continue
         if field["name"] in seen:
@@ -179,6 +182,12 @@ def _merge_identity_fields(
     changed = False
     for field in new_fields:
         if field["name"] in names:
+            for index, existing in enumerate(merged):
+                if existing.get("name") == field["name"] and field.get("label_key"):
+                    updated = {**existing, **field}
+                    if updated != existing:
+                        merged[index] = updated
+                        changed = True
             continue
         merged.append(field)
         names.add(field["name"])

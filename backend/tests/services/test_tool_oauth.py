@@ -1045,6 +1045,31 @@ async def test_status_is_secret_free(monkeypatch):
         assert "old-access" not in json.dumps(payload)
 
 
+async def test_builtin_connection_status_does_not_require_oauth():
+    async with _database():
+        admin = await _user("admin")
+        team = await _team(admin)
+        tool = await _http_tool(team, admin)
+        tool.type = ToolType.BUILTIN
+        tool.custom_type = None
+        await tool.save()
+        connection = await _connection(
+            team=team,
+            tool=tool,
+            user=admin,
+            scope=ToolConnectionScope.USER,
+            config={"host": "database.example.test", "password": "database-secret"},
+        )
+        status = await oauth.ToolOAuthService.get_status(
+            actor=admin, connection_id=connection.id
+        )
+        assert status.provider_kind is None
+        assert status.provider_configured is False
+        assert status.authorized is False
+        assert status.needs_reauth is False
+        assert "database-secret" not in status.model_dump_json()
+
+
 # ---------------------------------------------------------------------------
 # WWW-Authenticate discovery, revocation, cleanup
 # ---------------------------------------------------------------------------
