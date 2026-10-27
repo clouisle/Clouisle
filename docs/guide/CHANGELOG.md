@@ -11,6 +11,8 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Inactive accounts are rejected before API-key identity processing when submitting an Agent chat run.
+- A fixed personal tool connection whose owner has left the team now returns an access-denied error rather than an internal error.
 - Client-side fallback errors (permission denied, session expired, timeout, network, server and not-found) now come from the shared `errors` i18n catalogs instead of a second hardcoded map, and regional locales such as `zh-CN` or an app language without the locale cookie no longer fall back to English.
 
 ### Added

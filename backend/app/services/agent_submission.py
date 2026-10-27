@@ -171,15 +171,17 @@ async def submit_chat_run(
     from app.services.message_branching import get_visible_conversation_messages
 
     current_user, api_key = _split_run_auth(auth_result)
-    entrypoint, entrypoint_id = resolve_tool_origin(
-        api_key, tool_entrypoint, tool_entrypoint_id
-    )
+    # Reject an inactive account before touching API-key identity, so a stale
+    # or malformed credential can never mask the account-level rejection.
     if not current_user.is_active:
         raise BusinessError(
             code=ResponseCode.INACTIVE_USER,
             msg_key="inactive_user",
             status_code=401,
         )
+    entrypoint, entrypoint_id = resolve_tool_origin(
+        api_key, tool_entrypoint, tool_entrypoint_id
+    )
     from app.api import deps
 
     await deps.check_api_key_agent_access(api_key, agent_id)

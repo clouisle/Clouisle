@@ -246,3 +246,25 @@ async def test_chat_endpoints_reject_inactive_user_before_api_key_check(
     assert error.value.code == ResponseCode.INACTIVE_USER
     assert error.value.status_code == 401
     api_access.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_shared_submission_rejects_inactive_user_before_api_key_identity(
+    monkeypatch,
+):
+    """The WeChat runtime also submits runs directly, so the guard is shared."""
+    from app.services.agent_submission import submit_chat_run
+
+    api_access = AsyncMock()
+    monkeypatch.setattr(chat.deps, "check_api_key_agent_access", api_access)
+
+    with pytest.raises(chat.BusinessError) as error:
+        await submit_chat_run(
+            uuid4(),
+            ChatRequest(message="hello"),
+            (user(active=False), SimpleNamespace()),
+        )
+
+    assert error.value.code == ResponseCode.INACTIVE_USER
+    assert error.value.status_code == 401
+    api_access.assert_not_awaited()

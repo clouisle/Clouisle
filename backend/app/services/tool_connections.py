@@ -1064,8 +1064,8 @@ class ToolConnectionService:
     async def _ensure_owner_in_team(cls, connection: ToolConnection) -> None:
         if connection.team_id is None or connection.owner_user_id is None:
             _fail(
-                ResponseCode.TOOL_CONNECTION_GRANT_DENIED,
-                "tool_connection_grant_denied",
+                ResponseCode.TOOL_CONNECTION_ACCESS_DENIED,
+                "tool_connection_access_denied",
                 status_code=403,
             )
         is_member = await TeamMember.filter(
@@ -1073,8 +1073,8 @@ class ToolConnectionService:
         ).exists()
         if not is_member:
             _fail(
-                ResponseCode.TOOL_CONNECTION_GRANT_DENIED,
-                "tool_connection_grant_denied",
+                ResponseCode.TOOL_CONNECTION_ACCESS_DENIED,
+                "tool_connection_access_denied",
                 status_code=403,
             )
 
