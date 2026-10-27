@@ -308,7 +308,6 @@ export function ToolConnectionManager({
           )
         )
       )
-      onChanged()
     } catch {
       setActionError(t('loadFailed'))
     } finally {
@@ -316,7 +315,7 @@ export function ToolConnectionManager({
     }
     // Translator identity is stable in next-intl; excluding it prevents a
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasService, tool?.id, builtinToolKey, teamId, onChanged])
+  }, [hasService, tool?.id, builtinToolKey, teamId])
 
   React.useEffect(() => {
     reload()
@@ -356,6 +355,7 @@ export function ToolConnectionManager({
       setAccountLabel('')
       setSecretValues({})
       await reload()
+      onChanged()
     } catch {
       setActionError(t('createFailed'))
     } finally {
@@ -367,6 +367,7 @@ export function ToolConnectionManager({
     try {
       await toolConnectionsApi.update(connection.id, { is_default: true })
       await reload()
+      onChanged()
     } catch {
       setActionError(t('updateFailed'))
     }
@@ -376,6 +377,7 @@ export function ToolConnectionManager({
     try {
       await toolConnectionsApi.revoke(connection.id)
       await reload()
+      onChanged()
     } catch {
       setActionError(t('revokeFailed'))
     }
@@ -387,6 +389,7 @@ export function ToolConnectionManager({
     try {
       await toolConnectionsApi.disconnectOAuth(connection.id)
       await reload()
+      onChanged()
     } catch {
       setActionError(t('oauthDisconnectFailed'))
     } finally {
