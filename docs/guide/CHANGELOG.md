@@ -9,6 +9,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- The profile Settings dialog now has a Tool Connections tab for the active team. It lists every connection available to the user with its tool, account label, scope, default flag and status, and supports adding a connection from a tool picker, setting a default, re-authenticating an expired account and deleting one.
+
 ### Changed
 
 - Tool permission denial, missing connections, and inactive authorization now return localized guidance naming the specific Agent tool and prompting access or connection login.

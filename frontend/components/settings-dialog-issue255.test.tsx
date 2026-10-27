@@ -73,8 +73,10 @@ mock.module('sonner', () => ({ toast: { info: infoToast, success: successToast, 
 const Icon = () => null
 mock.module('lucide-react', () => ({
   AlertCircle: Icon, Clock: Icon, Copy: Icon, Download: Icon, KeyRound: Icon, Link: Icon,
-  Loader2: Icon, Mail: Icon, Shield: Icon, Unlink: Icon, User: Icon,
+  Loader2: Icon, Mail: Icon, Shield: Icon, Unlink: Icon, User: Icon, Link2: Icon,
+  Check: Icon, ExternalLink: Icon, Plus: Icon, RefreshCw: Icon, Star: Icon, Trash2: Icon, X: Icon,
 }))
+mock.module('./user-tool-connections', () => ({ UserToolConnections: () => <div data-testid="user-tool-connections" /> }))
 mock.module('@/contexts/site-settings-context', () => ({ useSiteSettings: () => ({ settings: siteSettings }) }))
 mock.module('@/lib/api', () => ({
   ApiError,

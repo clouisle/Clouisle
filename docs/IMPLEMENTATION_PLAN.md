@@ -2,6 +2,12 @@
 
 ## Active
 
+- **user-tool-connections-management** — Completed. See `docs/plan/user-tool-connections-management.md`.
+  - [x] 1. Design document & secondary task registration
+  - [x] 2. User tool connections component & quick creation
+  - [x] 3. SettingsDialog integration & i18n
+  - [x] 4. Component tests & regression verification
+
 - **agent-tool-access-guidance** — Completed. See `docs/plan/agent-tool-access-guidance.md`.
   - [x] 1. Contextualize tool permission and connection failures
   - [x] 2. Verify chat error delivery and localization

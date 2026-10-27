@@ -36,7 +36,9 @@ mock.module('lucide-react', () => ({
   User: component('User'), Shield: component('Shield'), Loader2: component('Loader2'), Link: component('Link'),
   Unlink: component('Unlink'), KeyRound: component('KeyRound'), Download: component('Download'),
   Copy: component('Copy'), Mail: component('Mail'), AlertCircle: component('AlertCircle'), Clock: component('Clock'),
+  Link2: component('Link2'),
 }))
+mock.module('./user-tool-connections', () => ({ UserToolConnections: () => null }))
 mock.module('@/lib/utils', () => ({ formatDateTime: String, formatDate: String, isValidEmail: () => true }))
 mock.module('@/lib/validation', () => ({
   clearValidationError: (errors: Record<string, string>) => errors,

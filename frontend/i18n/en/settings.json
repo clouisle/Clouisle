@@ -1,6 +1,32 @@
 {
   "settings": {
     "title": "Settings",
+    "connections": {
+      "title": "Tool Connections",
+      "tabTitle": "Tool Connections",
+      "description": "Centrally manage external account connections used by Agents and tools in the current team.",
+      "refresh": "Refresh",
+      "add": "Add Connection",
+      "createTitle": "New Tool Connection",
+      "selectTool": "Select Tool or Service",
+      "selectToolPlaceholder": "Choose a tool to connect…",
+      "emptyTitle": "No Tool Connections",
+      "emptyDescription": "Configure connections for external tools or databases (such as GitHub, PostgreSQL, etc.) so Agent runs can automatically use your account.",
+      "toolTypeBuiltin": "Built-in Services & Databases",
+      "toolTypeMcp": "MCP Tools",
+      "toolTypeCustom": "Custom Tools",
+      "scopePersonal": "Personal",
+      "scopeTeam": "Team",
+      "createdSuccess": "Connection created successfully.",
+      "revokeSuccess": "Connection deleted successfully.",
+      "setDefaultSuccess": "Set as default connection.",
+      "reauthRequired": "Re-authorization required",
+      "reconnect": "Re-authenticate",
+      "connect": "Authorize",
+      "setDefault": "Set Default",
+      "defaultBadge": "Default",
+      "noTeam": "No team selected. Please select a team to manage connections."
+    },
     "feishu": {
       "title": "Feishu",
       "description": "Reply to your private Feishu messages with an Agent.",

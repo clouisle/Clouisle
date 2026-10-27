@@ -52,6 +52,15 @@ this same connection identity before the model can call the tools.
 
 ## Connecting an account
 
+Users can prepare and review their own connections in the active team without
+editing a tool: open your avatar menu → Settings → **Tool Connections**. The tab
+lists every connection available to you in the active team with its tool, account
+label, scope, default flag and status, and offers add, set-default,
+re-authenticate and delete actions. Adding a connection starts from the tool, so
+only tools that accept an identity are offered; declared fields and OAuth are
+handled the same way as in a tool's connection manager. Switching teams in the app
+changes the list; the dialog does not have its own team switcher.
+
 1. Open the tool's connection manager and choose scope (`personal` or `team`;
    site scope is administrator-only).
 2. Fill only the fields the tool declares. Values are write-only and encrypted;
