@@ -22,7 +22,7 @@ Investigate failures against the current runtime contract. Cover tool connection
 
 Latest full backend run: 10,588 passed, 4 skipped; line coverage 96.76%, branch coverage 95.13%. Both independent 95% backend coverage gates pass.
 
-Frontend full run: 3,198 passed; function coverage 95.19%, line coverage 97.48%, and all 580 eligible source files appear in LCOV. The push hook remains the final delivery check.
+Frontend full run: 3,198 passed; function coverage 95.19%, line coverage 97.48%, and all 580 eligible source files appear in LCOV. The full pre-push hook passed and the branch was pushed.
 
 ### Stage 3: Full gates and delivery
 - **Files modified**: Applicable test fixes and documentation as needed.

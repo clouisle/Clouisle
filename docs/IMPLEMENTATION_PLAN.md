@@ -2,10 +2,10 @@
 
 ## Active
 
-- **tool-runtime-coverage** — In progress. See `docs/plan/tool-runtime-coverage.md`.
+- **tool-runtime-coverage** — Completed. See `docs/plan/tool-runtime-coverage.md`.
   - [x] 1. Investigate and resolve pre-push failures
   - [x] 2. Cover tool runtime authorization, connections and approvals
-  - [ ] 3. Run coverage gates and push
+  - [x] 3. Run coverage gates and push
 
 - **user-tool-connections-management** — Completed. See `docs/plan/user-tool-connections-management.md`.
   - [x] 1. Design document & secondary task registration
