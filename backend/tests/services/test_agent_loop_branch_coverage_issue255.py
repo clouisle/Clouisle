@@ -349,7 +349,7 @@ async def test_agent_loop_guards_heartbeat_inputs_and_plans():
         consume_inputs=consume_inputs,
         input_consumed=input_consumed,
         stop_requested=stop_false,
-        tools=[object()],
+        tools=[{"type": "function", "function": {"name": "demo_tool"}}],
         count_tool_definition_tokens=count_tools,
     )
     loop = AgentLoop(context)

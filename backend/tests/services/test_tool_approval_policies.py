@@ -119,16 +119,23 @@ async def _grant(user: User, permission: Permission) -> None:
     await user.fetch_related("roles__permissions")
 
 
-async def _tool(team: Team) -> Tool:
+async def _tool(
+    team: Team,
+    *,
+    tool_type: ToolType = ToolType.CUSTOM,
+    approval_policy: dict | None = None,
+) -> Tool:
+    if approval_policy is None:
+        approval_policy = {"default_decision": "allow"}
     return await Tool.create(
         id=uuid4(),
         team_id=team.id,
         name=f"tool_{uuid4().hex[:8]}",
         display_name="Policy tool",
         description="policy test",
-        type=ToolType.CUSTOM,
-        custom_type=CustomToolType.HTTP,
-        approval_policy={"default_decision": "allow"},
+        type=tool_type,
+        custom_type=CustomToolType.HTTP if tool_type == ToolType.CUSTOM else None,
+        approval_policy=approval_policy,
     )
 
 
@@ -737,27 +744,33 @@ async def _execution_actor(team: Team) -> User:
     return owner
 
 
-def test_approved_execution_rejected_when_team_policy_changes(run_orm):
+def test_changed_tool_policy_invalidates_approval_before_invocation(run_orm):
+    """An approved call is bound to the policy that produced it.
+
+    Approval only applies to interactive Agent chat, and for an MCP child the
+    tool's own explicit policy (including an operation override) is part of the
+    evaluation. Editing that policy after approval must cancel the execution
+    instead of running the previously approved side effect.
+    """
+
     async def scenario():
         owner = await _user("owner")
         team = await _team(owner)
         owner = await _execution_actor(team)
-        tool = await _tool(team)
+        tool = await _tool(
+            team,
+            tool_type=ToolType.MCP,
+            approval_policy={
+                "default_decision": "require_approval",
+                "gates": [{"kind": "caller"}],
+            },
+        )
         tool.created_by_id = owner.id
         await tool.save(update_fields=["created_by_id"])
-
-        team_view = await create_policy_definition(
-            owner,
-            ToolApprovalPolicyCreateIn(
-                scope=ToolApprovalPolicyScope.TEAM,
-                team_id=team.id,
-                policy=_approval_policy(ApprovalDecision.REQUIRE_APPROVAL),
-            ),
-        )
         context = ToolCallContext(
             actor=owner,
             team_id=team.id,
-            entrypoint=ExecutionEntrypoint.TOOL_TEST,
+            entrypoint=ExecutionEntrypoint.CHAT,
             interactive=True,
         )
         invoked: list[dict] = []
@@ -781,15 +794,10 @@ def test_approved_execution_rejected_when_team_policy_changes(run_orm):
             idempotency_key="approve-1",
         )
 
-        # The team tightens its policy after approval. The definition version
-        # changes, so the re-evaluated hash no longer matches the binding.
-        await update_policy_definition(
-            owner,
-            team_view.row.id,
-            ToolApprovalPolicyUpdateIn(
-                policy=_approval_policy(ApprovalDecision.DENY), expected_version=1
-            ),
-        )
+        # The policy tightens after approval. The re-evaluated hash no longer
+        # matches the binding, so the granted approval must not be reused.
+        tool.approval_policy = {"default_decision": "deny"}
+        await tool.save(update_fields=["approval_policy"])
         with pytest.raises(BusinessError) as changed:
             await execute_stored_tool(
                 tool,
@@ -807,36 +815,24 @@ def test_approved_execution_rejected_when_team_policy_changes(run_orm):
     run_orm(scenario)
 
 
-def test_generic_deny_not_relaxed_by_tool_specific_allow_at_boundary(run_orm):
+def test_deny_policy_cancels_before_any_invocation(run_orm):
+    """A deny decision is terminal at the boundary, not just a pending gate."""
+
     async def scenario():
         owner = await _user("owner")
         team = await _team(owner)
         owner = await _execution_actor(team)
-        tool = await _tool(team)
+        tool = await _tool(
+            team,
+            tool_type=ToolType.MCP,
+            approval_policy={"default_decision": "deny"},
+        )
         tool.created_by_id = owner.id
         await tool.save(update_fields=["created_by_id"])
-
-        await create_policy_definition(
-            owner,
-            ToolApprovalPolicyCreateIn(
-                scope=ToolApprovalPolicyScope.TEAM,
-                team_id=team.id,
-                policy=_approval_policy(ApprovalDecision.DENY),
-            ),
-        )
-        await create_policy_definition(
-            owner,
-            ToolApprovalPolicyCreateIn(
-                scope=ToolApprovalPolicyScope.TEAM,
-                team_id=team.id,
-                tool_id=tool.id,
-                policy=_approval_policy(ApprovalDecision.ALLOW),
-            ),
-        )
         context = ToolCallContext(
             actor=owner,
             team_id=team.id,
-            entrypoint=ExecutionEntrypoint.TOOL_TEST,
+            entrypoint=ExecutionEntrypoint.CHAT,
             interactive=True,
         )
         invoked: list[dict] = []
@@ -849,7 +845,7 @@ def test_generic_deny_not_relaxed_by_tool_specific_allow_at_boundary(run_orm):
             await execute_stored_tool(tool, "write", {"target": "x"}, context, invoke)
         assert denied.value.msg_key == "tool_execution_not_ready"
         assert invoked == []
-        execution = await ToolExecution.all().order_by("-created_at").first()
+        execution = await ToolExecution.filter(tool_id=tool.id).first()
         assert execution is not None
         assert execution.status.value == "cancelled"
         assert execution.cancel_reason == ToolExecutionCancelReason.POLICY_DENIED

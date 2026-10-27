@@ -1,9 +1,9 @@
 """`file_download` is an internal builtin that runs through the tool boundary.
 
 The retired inline chat branch called the HTTP transport directly. These tests
-pin the replacement: a stable materialized definition, the fail-closed caller
-approval default, the shared SSRF-validated transport, and no mutation of the
-model/approved arguments.
+pin the replacement: a stable materialized definition, explicit caller-gated
+approval when the Agent opts in, the shared SSRF-validated transport, and no
+mutation of the model/approved arguments.
 """
 
 from __future__ import annotations
@@ -26,7 +26,12 @@ from app.models.tool import ToolType
 from app.models.user import Team, TeamMember, User
 from app.schemas.tool_approval import (
     ApprovalDecision,
+    ApprovalGate,
+    ApprovalGateKind,
     ExecutionEntrypoint,
+    PolicyLayer,
+    PolicySource,
+    ToolApprovalPolicy,
     ToolExecutionStatus,
 )
 from app.services import tool_approvals
@@ -97,7 +102,13 @@ async def test_handler_uses_the_shared_ssrf_transport_without_mutating_arguments
 
 
 @pytest.mark.asyncio
-async def test_materialized_definition_requires_caller_approval():
+async def test_materialized_definition_requires_approval_only_from_explicit_policy():
+    """Approval is explicit: materialization never guesses it from concurrency.
+
+    The Agent's confirmation switch supplies a caller-gated layer, and only
+    then does the call pause before the HTTP transport runs.
+    """
+
     async with _database():
         user, team = await _actor()
 
@@ -106,21 +117,48 @@ async def test_materialized_definition_requires_caller_approval():
         assert definition.type == ToolType.BUILTIN
         assert definition.identity_policy == "none"
         assert definition.connection_fields == []
-        execution = await tool_approvals.create_execution(
+        assert definition.approval_policy["default_decision"] == "allow"
+
+        # Re-resolving is stable: one definition per team, never a duplicate.
+        again = await get_builtin_definition(team.id, "file_download")
+        assert again.id == definition.id
+
+        allowed = await tool_approvals.create_execution(
             tool=definition,
             operation="file_download",
             parameters={"url": "https://example.test/file.txt"},
             actor=user,
             team_id=team.id,
             entrypoint=ExecutionEntrypoint.CHAT,
+            entrypoint_interactive=True,
         )
-        assert execution.status == ToolExecutionStatus.AWAITING_APPROVAL
-        evaluation = execution.policy_snapshot["evaluation"]
-        assert evaluation["decision"] == ApprovalDecision.REQUIRE_APPROVAL.value
+        assert allowed.status == ToolExecutionStatus.READY
+        allowed_evaluation = allowed.policy_snapshot["evaluation"]
+        assert allowed_evaluation["decision"] == ApprovalDecision.ALLOW.value
 
-        # Re-resolving is stable: one definition per team, never a duplicate.
-        again = await get_builtin_definition(team.id, "file_download")
-        assert again.id == definition.id
+        gated = await tool_approvals.create_execution(
+            tool=definition,
+            operation="file_download",
+            parameters={"url": "https://example.test/file.txt"},
+            actor=user,
+            team_id=team.id,
+            entrypoint=ExecutionEntrypoint.CHAT,
+            entrypoint_interactive=True,
+            policy_layers=[
+                PolicyLayer(
+                    source=PolicySource.ENTRYPOINT,
+                    label="agent_confirmation",
+                    policy=ToolApprovalPolicy(
+                        default_decision=ApprovalDecision.REQUIRE_APPROVAL,
+                        gates=(ApprovalGate(kind=ApprovalGateKind.CALLER),),
+                    ),
+                )
+            ],
+        )
+        assert gated.status == ToolExecutionStatus.AWAITING_APPROVAL
+        evaluation = gated.policy_snapshot["evaluation"]
+        assert evaluation["decision"] == ApprovalDecision.REQUIRE_APPROVAL.value
+        assert [gate["kind"] for gate in evaluation["gates"]] == ["caller"]
 
 
 @pytest.mark.asyncio
@@ -157,3 +195,42 @@ async def test_chat_entry_routes_file_download_through_the_boundary():
     assert context.actor is actor
     assert context.team_id == agent.team_id
     assert context.entrypoint is ExecutionEntrypoint.CHAT
+
+
+async def _chat_context_for(*, require_approval: bool):
+    from types import SimpleNamespace
+
+    from app.api.v1.endpoints.chat_tools import execute_tool_call
+
+    register_file_download_tool()
+    actor = SimpleNamespace(id=uuid4())
+    agent = SimpleNamespace(
+        id=uuid4(),
+        team_id=uuid4(),
+        tools_config=[
+            {
+                "type": "builtin",
+                "name": "file_download",
+                "require_approval": require_approval,
+            }
+        ],
+    )
+    boundary = AsyncMock(return_value={"result": "body"})
+    with (
+        patch("app.models.user.User.get_or_none", new=AsyncMock(return_value=actor)),
+        patch("app.services.tool.ToolExecutor.execute_builtin_tool", new=boundary),
+    ):
+        await execute_tool_call(
+            "file_download",
+            {"url": "https://example.test/file.txt"},
+            agent=agent,
+            user=actor,
+        )
+    return boundary.await_args.kwargs["context"]
+
+
+@pytest.mark.asyncio
+async def test_chat_entry_propagates_agent_confirmation_switch():
+    """The Agent's explicit switch is what pauses file_download in chat."""
+    assert (await _chat_context_for(require_approval=True)).require_approval is True
+    assert (await _chat_context_for(require_approval=False)).require_approval is False
