@@ -743,7 +743,6 @@ export function McpToolDialog({
                           value={header.value}
                           onChange={(e) => updateHeader(index, 'value', e.target.value)}
                           className="flex-1 font-mono"
-                          type="password"
                         />
                         <Button
                           variant="ghost"
@@ -803,7 +802,6 @@ export function McpToolDialog({
                           value={header.value}
                           onChange={(e) => updateHeader(index, 'value', e.target.value)}
                           className="flex-1 font-mono"
-                          type="password"
                         />
                         <Button
                           variant="ghost"
