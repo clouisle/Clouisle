@@ -9,6 +9,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Client-side fallback errors (permission denied, session expired, timeout, network, server and not-found) now come from the shared `errors` i18n catalogs instead of a second hardcoded map, and regional locales such as `zh-CN` or an app language without the locale cookie no longer fall back to English.
+
 ### Added
 
 - The profile Settings dialog now has a Tool Connections tab for the active team. It lists every connection available to the user with its tool, account label, scope, default flag and status, and supports adding a connection from a tool picker, setting a default, re-authenticating an expired account and deleting one. The tab and those actions are hidden when the caller cannot perform them: it requires `tool:read`, while team-wide connections are managed only by team owners/admins.

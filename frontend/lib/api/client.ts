@@ -1,53 +1,42 @@
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios'
 import { toast } from 'sonner'
 import { API_BASE_URL } from '@/lib/constants'
+import enErrors from '@/i18n/en/errors.json'
+import zhErrors from '@/i18n/zh/errors.json'
 
-/** 获取当前语言 */
+/** 客户端兜底文案使用的 i18n 键 */
+export type ClientErrorKey =
+  | 'timeout'
+  | 'networkError'
+  | 'requestFailed'
+  | 'serverErrorDescription'
+  | 'resourceNotFound'
+  | 'permissionDenied'
+  | 'sessionExpired'
+
+/** 获取当前语言：语言 Cookie 优先，其次使用服务端渲染的 <html lang> */
 function getLocale(): string {
   if (typeof window === 'undefined') return 'en'
-  const locale = document.cookie
+  const cookieLocale = document.cookie
     .split('; ')
     .find(row => row.startsWith('locale='))
     ?.split('=')[1]
-  return locale || 'en'
+  if (cookieLocale) return cookieLocale
+  const documentLocale = typeof document !== 'undefined' ? document.documentElement?.lang : ''
+  return documentLocale || 'en'
 }
 
-/** 前端错误消息翻译 */
-const errorMessages: Record<string, Record<string, string>> = {
-  timeout: {
-    en: 'Request timeout, please try again later',
-    zh: '请求超时，请稍后重试',
-  },
-  network: {
-    en: 'Network error, please check your connection',
-    zh: '网络错误，请检查网络连接',
-  },
-  requestFailed: {
-    en: 'Request failed',
-    zh: '请求失败',
-  },
-  serverError: {
-    en: 'Something went wrong. Please try again later.',
-    zh: '出了点问题，请稍后重试。',
-  },
-  resourceNotFound: {
-    en: 'The requested resource could not be found',
-    zh: '请求的资源不存在或已被移除',
-  },
-  permissionDenied: {
-    en: 'You do not have permission to perform this action.',
-    zh: '当前没有该操作权限。',
-  },
-  sessionExpired: {
-    en: 'Session expired. Please login again.',
-    zh: '会话已过期，请重新登录。',
-  },
-}
-
-/** 获取错误消息 */
-export function getErrorMessage(key: string): string {
-  const locale = getLocale()
-  return errorMessages[key]?.[locale] || errorMessages[key]?.['en'] || key
+/**
+ * 获取错误消息。
+ *
+ * 兜底文案来自 errors.json（en/zh），与界面语言共用同一份词条，
+ * 不在此处维护第二套翻译。
+ */
+export function getErrorMessage(key: ClientErrorKey | string): string {
+  const locale = getLocale().toLowerCase()
+  const catalog = locale.startsWith('zh') ? zhErrors.errors : enErrors.errors
+  const messages = catalog as Record<string, string>
+  return messages[key] ?? (enErrors.errors as Record<string, string>)[key] ?? key
 }
 
 function isLikelyMessageKey(message: string): boolean {
@@ -83,7 +72,7 @@ function getStatusErrorMessage(status: number): string {
   if (isAuthErrorCode(status)) return getErrorMessage('sessionExpired')
   if (isPermissionErrorCode(status)) return getErrorMessage('permissionDenied')
   if (status === 404) return getErrorMessage('resourceNotFound')
-  if (status >= 500 && status < 600) return getErrorMessage('serverError')
+  if (status >= 500 && status < 600) return getErrorMessage('serverErrorDescription')
   return getErrorMessage('requestFailed')
 }
 
@@ -91,7 +80,7 @@ function resolveApiErrorMessage(code: number, message: unknown): string {
   if (isAuthErrorCode(code)) return getErrorMessage('sessionExpired')
   if (isPermissionErrorCode(code)) return getErrorMessage('permissionDenied')
   if (code === 404 || (code >= 4000 && code < 5000)) return getErrorMessage('resourceNotFound')
-  if (code >= 500 && code < 600) return getErrorMessage('serverError')
+  if (code >= 500 && code < 600) return getErrorMessage('serverErrorDescription')
 
   if (typeof message === 'string' && shouldUseBackendMessage(message)) {
     return message.trim()
@@ -277,7 +266,7 @@ axiosInstance.interceptors.response.use(
     if (!error.response) {
       const message = error.code === 'ECONNABORTED' 
         ? getErrorMessage('timeout')
-        : getErrorMessage('network')
+        : getErrorMessage('networkError')
       
       if (!config?.silent) {
         toast.error(message)

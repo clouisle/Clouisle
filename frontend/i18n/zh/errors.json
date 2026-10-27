@@ -23,6 +23,9 @@
     "modelNotConfigured": "未配置模型",
     "modelVisionNotSupported": "当前模型不支持视觉功能，请更换支持视觉的模型",
     "modelNotFound": "模型不存在或未配置，请检查模型设置",
-    "modelNotAuthorized": "当前团队未授权使用该模型"
+    "modelNotAuthorized": "当前团队未授权使用该模型",
+    "requestFailed": "请求失败",
+    "permissionDenied": "当前没有该操作权限。",
+    "sessionExpired": "会话已过期，请重新登录。"
   }
 }

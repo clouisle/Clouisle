@@ -2,7 +2,7 @@ import { api, ApiError, getErrorMessage } from './client'
 
 function getPublicStatusErrorMessage(status: number): string {
   if (status === 404) return getErrorMessage('resourceNotFound')
-  if (status >= 500 && status < 600) return getErrorMessage('serverError')
+  if (status >= 500 && status < 600) return getErrorMessage('serverErrorDescription')
   return getErrorMessage('requestFailed')
 }
 

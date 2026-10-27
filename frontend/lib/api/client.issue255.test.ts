@@ -61,8 +61,24 @@ describe('API client', () => {
     expect(new ApiError(500, 'no fields').getFieldErrorsRaw()).toEqual({})
 
     cookie = 'locale=zh'
-    expect(getErrorMessage('network')).toBe('网络错误，请检查网络连接')
+    expect(getErrorMessage('networkError')).toBe('网络连接失败')
     expect(getErrorMessage('unknown.key')).toBe('unknown.key')
+  })
+
+  test('resolves fallback messages from catalog for regional and html locales', () => {
+    cookie = 'locale=zh-CN'
+    expect(getErrorMessage('permissionDenied')).toBe('当前没有该操作权限。')
+
+    cookie = ''
+    Object.defineProperty(globalThis.document, 'documentElement', {
+      configurable: true,
+      value: { lang: 'zh' },
+    })
+    try {
+      expect(getErrorMessage('permissionDenied')).toBe('当前没有该操作权限。')
+    } finally {
+      Reflect.deleteProperty(globalThis.document, 'documentElement')
+    }
   })
 
   test('unwraps every request helper and applies auth and locale headers', async () => {
@@ -123,9 +139,9 @@ describe('API client', () => {
     }
     await expect(api.get('/timeout', { adapter: timeout })).rejects.toMatchObject({
       code: -1,
-      message: 'Request timeout, please try again later',
+      message: 'Request timed out',
     })
-    expect(toastError).toHaveBeenLastCalledWith('Request timeout, please try again later')
+    expect(toastError).toHaveBeenLastCalledWith('Request timed out')
 
     const notFound: AxiosAdapter = async (config) => {
       throw new AxiosError('fake 404', 'ERR_BAD_REQUEST', config, undefined, {
