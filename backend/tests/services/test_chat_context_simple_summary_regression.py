@@ -292,3 +292,52 @@ def test_compression_sse_reports_replaced_segment_tokens(monkeypatch):
     assert payload["summary_source_tokens"] == 89000
     assert payload["summary_result_tokens"] == 1200
     assert payload["summary_saved_tokens"] == 87800
+
+
+@pytest.mark.anyio
+async def test_summary_failure_keeps_user_requests_without_advancing_watermark(
+    monkeypatch,
+):
+    conversation = _conversation()
+    messages = [
+        Message(role=MessageRole.SYSTEM, content="system"),
+        Message(role=MessageRole.USER, content="old instruction"),
+        Message(role=MessageRole.ASSISTANT, content="old answer"),
+        Message(role=MessageRole.USER, content="current request"),
+    ]
+
+    async def build_messages(**_kwargs):
+        return messages, set(), []
+
+    async def fail_summary(**_kwargs):
+        raise BusinessError(msg_key="context_summarization_failed")
+
+    def estimate(items, *, model_id, provider):
+        del model_id, provider
+        return 8500 if any(item.content == "old answer" for item in items) else 100
+
+    monkeypatch.setattr(
+        chat_context, "_build_messages_with_file_content", build_messages
+    )
+    monkeypatch.setattr(chat_context, "_summarize_context", fail_summary)
+    monkeypatch.setattr(chat_context, "_estimate_message_tokens", estimate)
+    plan = await chat_context.build_context_plan(
+        agent=_agent(),
+        conversation=conversation,
+        user_message="current request",
+        model_id="model",
+        model_context_limit=10000,
+        model_max_output_tokens=1000,
+    )
+    prepared = await plan.finalize()
+
+    assert [
+        m.content
+        for m in prepared.messages
+        if m.content in {"old instruction", "current request"}
+    ] == ["old instruction", "current request"]
+    assert any(
+        "omitted" in m.content for m in prepared.messages if isinstance(m.content, str)
+    )
+    assert prepared.compression.stage == "fallback"
+    assert conversation.context_summary_watermark_id is None

@@ -107,7 +107,7 @@ class PreparedModelContext:
 
 @dataclass(slots=True)
 class CompressionMeta:
-    stage: Literal["none", "macro"]
+    stage: Literal["none", "macro", "micro", "fallback"]
     before_tokens: int
     after_tokens: int
     input_budget: int
@@ -124,6 +124,10 @@ class CompressionMeta:
     summary_source_tokens: int = 0
     summary_result_tokens: int = 0
     summary_saved_tokens: int = 0
+    system_tokens: int = 0
+    tool_definition_tokens: int = 0
+    current_turn_tokens: int = 0
+    context_limit_source: str = "configured"
 
 
 def _history_override_is_active_delta(
@@ -1708,17 +1712,50 @@ class ContextPlan:
         )
 
         if self.will_summarize:
-            summary_text = await _summarize_context(
-                agent=self.agent,
-                conversation=self.conversation,
-                messages_to_summarize=self.summarized,
-                model_id=self.model_id,
-                tokenizer_model_id=self.tokenizer_model_id,
-                provider=self.provider,
-                max_tokens=summary_max_tokens,
-                max_transcript_tokens=max_transcript_tokens,
-                previous_summary=self.previous_summary_text,
-            )
+            try:
+                summary_text = await _summarize_context(
+                    agent=self.agent,
+                    conversation=self.conversation,
+                    messages_to_summarize=self.summarized,
+                    model_id=self.model_id,
+                    tokenizer_model_id=self.tokenizer_model_id,
+                    provider=self.provider,
+                    max_tokens=summary_max_tokens,
+                    max_transcript_tokens=max_transcript_tokens,
+                    previous_summary=self.previous_summary_text,
+                )
+            except BusinessError as exc:
+                if getattr(exc, "msg_key", None) != "context_summarization_failed":
+                    raise
+                # Never advance the watermark for an unsuccessful summary. Keep
+                # the original user instructions and disclose omitted history.
+                notice = Message(
+                    role=MessageRole.USER,
+                    content="Earlier assistant and tool history was omitted because context summarization failed. Do not assume its contents.",
+                )
+                user_history = [
+                    message
+                    for message in self.summarized
+                    if message.role == MessageRole.USER
+                ]
+                previous = [
+                    message
+                    for message in self.messages[1 : self.tail_start_index]
+                    if _is_context_summary_message(message)
+                ]
+                messages = [
+                    self.messages[0],
+                    *previous,
+                    *user_history,
+                    notice,
+                    *preserved_suffix,
+                ]
+                protected_indexes = set(range(len(messages)))
+                compression.stage = "fallback"
+                compression.actions = list(
+                    dict.fromkeys([*(compression.actions or []), "summary_fallback"])
+                )
+                summary_text = None
             if summary_text:
                 summary_message = Message(
                     role=MessageRole.USER,
@@ -1936,6 +1973,12 @@ async def build_context_plan(
         messages[current_user_index:],
         model_id=tokenizer_model_id,
         provider=provider,
+    )
+    compression.system_tokens = system_tokens
+    compression.tool_definition_tokens = max(tool_definition_tokens, 0)
+    compression.current_turn_tokens = current_tokens
+    compression.context_limit_source = (
+        "configured" if model_context_limit else "default"
     )
     configured_summary_tokens = max(
         int(compression_config.get("summary_max_tokens", DEFAULT_SUMMARY_MAX_TOKENS)),
