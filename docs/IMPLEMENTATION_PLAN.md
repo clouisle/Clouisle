@@ -2,6 +2,13 @@
 
 ## Active
 
+- **tiered-context-management** — In progress. See `docs/plan/tiered-context-management.md`.
+  - [ ] 1. Budget diagnostics and resilient history compaction
+  - [ ] 2. Active-round compaction, recoverable results and durable safety
+  - [ ] 3. Authorized on-demand tool discovery
+  - [ ] 4. Configuration, UI, documentation and compatibility
+  - [ ] 5. Complete regression and browser verification
+
 - **team-tool-approval-management** — Completed. See `docs/plan/team-tool-approval-management.md`.
   - [x] 1. Add team-level view of individual tool approval settings
   - [x] 2. Audit approval decisions and tool approval configuration changes
