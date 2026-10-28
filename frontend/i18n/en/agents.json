@@ -509,7 +509,7 @@
         "decisionBody": "Request body:",
         "decisionResponse": "Response:",
         "decisionResponseDescription": "execution_status is the server-authoritative result: awaiting_approval while other gates remain, ready after the final approval, cancelled after rejection. remaining_approvals counts gates that are still pending. The decision never edits the bound call parameters and never performs the side effect; once every gate is approved, the durable worker resumes the original call.",
-        "previewNote": "To render the call, read GET /api/v1/tool-executions/{execution_id}. Its parameters_preview is the already-redacted display surface; do not infer redaction from live tool_call.arguments, which are only visible to the run owner.",
+        "previewNote": "To render the call, read GET /api/v1/tool-executions/'{execution_id}'. Its parameters_preview is the already-redacted display surface; do not infer redaction from live tool_call.arguments, which are only visible to the run owner.",
         "resumeNote": "After approval, reconnect to the run stream with after_sequence. The resumed worker emits a normal tool_result for the same tool_call_id and then continues the run. Rejection, expiry, revocation or a stopped run cancels the call permanently and can never become an approval.",
         "apiKeyTitle": "API-key calls never pause for approval",
         "apiKeyDescription": "API keys, embed widgets, legacy channels and scheduled runs are non-interactive entrypoints. They never wait for a decision: a tool whose effective policy requires approval fails closed, returns an error tool result, and produces no side effect. Use the interactive app or configure the tool to allow the call."

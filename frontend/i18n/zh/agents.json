@@ -509,7 +509,7 @@
         "decisionBody": "请求体：",
         "decisionResponse": "响应：",
         "decisionResponseDescription": "execution_status 是服务端权威结果：仍有其他关卡时为 awaiting_approval，最后一个关卡批准后为 ready，拒绝后为 cancelled。remaining_approvals 是仍未决定的关卡数。审批决定不会修改绑定的调用参数，也不会执行外部操作；所有关卡通过后，持久化 worker 会恢复并执行原始调用。",
-        "previewNote": "如需展示调用内容，请读取 GET /api/v1/tool-executions/{execution_id}。其中 parameters_preview 是已脱敏的展示数据；不要用实时 tool_call.arguments 推断脱敏结果，它只对运行所有者可见。",
+        "previewNote": "如需展示调用内容，请读取 GET /api/v1/tool-executions/'{execution_id}'。其中 parameters_preview 是已脱敏的展示数据；不要用实时 tool_call.arguments 推断脱敏结果，它只对运行所有者可见。", 
         "resumeNote": "批准后请使用 after_sequence 重新订阅运行流。恢复的 worker 会为同一 tool_call_id 发送正常的 tool_result，然后继续运行。拒绝、过期、撤销或运行停止会永久取消该调用，绝不会变成批准。",
         "apiKeyTitle": "API 密钥调用不会暂停等待审批",
         "apiKeyDescription": "API 密钥、嵌入组件、遗留渠道和定时任务属于非交互入口，永远不会等待审批决定：如果工具的有效策略要求审批，调用会失败关闭，返回错误工具结果且不产生任何外部副作用。请改用交互式应用，或将工具配置为允许该调用。"
