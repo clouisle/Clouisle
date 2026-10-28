@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -125,6 +126,20 @@ async def test_personal_default_is_not_used_by_background_origins(database):
             entrypoint_id=str(uuid4()),
             interactive=True,
         )
+        resolved, binding = await resolve_tool_connection(tool, context, "read")
+        assert resolved is not None and resolved.connection_id == connection.id
+        assert binding is not None and binding.connection_id == connection.id
+
+        other = await User.create(
+            id=uuid4(),
+            username=f"other_{uuid4().hex[:8]}",
+            email=f"{uuid4().hex}@origin.test",
+            hashed_password="x",
+        )
+        await TeamMember.create(
+            id=uuid4(), team_id=team.id, user_id=other.id, role="member"
+        )
+        context = replace(context, actor=other)
         with pytest.raises(BusinessError) as blocked:
             await resolve_tool_connection(tool, context, "read")
         assert int(blocked.value.code) == int(ResponseCode.TOOL_CONNECTION_REQUIRED)

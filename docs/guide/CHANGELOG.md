@@ -28,6 +28,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - Made the chat tool-confirmation panel background transparent.
 - Keep chat messages and the stop control in an active-run state while tool confirmation or an ask-user answer is pending; prevent editing, regeneration and version switching until the run ends.
 - Feishu and WeChat Agent chat support caller-only tool confirmations through `/approve <execution UUID>` and `/reject <execution UUID>`; `ask_user` remains a separate answer flow. Upgrade API and all Agent/channel workers together; finish or stop waiting IM approvals before rollback.
+- Authenticated Feishu and WeChat Agent chat now resolves the caller's personal tool connection automatically; team accounts still require an explicit binding.
 
 - Removed the site web-search notice and configuration shortcut from team capabilities; site administrators configure search in the dashboard.
 

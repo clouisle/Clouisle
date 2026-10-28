@@ -144,11 +144,8 @@ async def resolve_tool_connection(
             code=400, msg_key="tool_connection_required", status_code=400
         )
     fields = {field["name"] for field in tool.connection_fields}
-    # Automatic identity selection is limited to an interactive caller or a
-    # trusted manual workflow origin (workflow surface with a stable entrypoint
-    # reference); API-key, embed, channel, schedule and nested origins still
-    # require a fixed connection. Manual workflows stay non-interactive for
-    # approval gates.
+    # Authenticated IM runs may select only the caller's personal identity;
+    # legacy channels and background origins still need a fixed connection.
     manual_workflow = context.entrypoint == ExecutionEntrypoint.WORKFLOW and bool(
         context.entrypoint_id
     )
@@ -157,7 +154,8 @@ async def resolve_tool_connection(
         ExecutionEntrypoint.WECHAT_CHANNEL,
     }
     auto_select = context.connection_id is None and (
-        (context.interactive and not im_origin) or manual_workflow
+        (context.interactive and (not im_origin or scope == ToolConnectionScope.USER))
+        or manual_workflow
     )
     binding_trusted = context.entrypoint in {
         ExecutionEntrypoint.WORKFLOW,

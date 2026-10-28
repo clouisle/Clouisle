@@ -104,8 +104,10 @@ connection manager; multiple accounts need a default.
 
 Selecting a concrete connection explicitly pins that external identity and
 authorizes the saved definition to use it. No separate delegation step exists.
-API-key, embed, channel and scheduled entrypoints require a fixed connection;
-they never automatically adopt a background actor's personal default.
+Authenticated Feishu and WeChat Agent chats can automatically use the caller's
+personal connection in the Agent's team. API-key, embed, legacy channel and
+scheduled entrypoints require a fixed connection; IM team accounts also require
+an explicit binding. No channel adopts another user's personal connection.
 
 - Personal connections can only be selected by their owner; administrators
   cannot bind another user's personal account.
