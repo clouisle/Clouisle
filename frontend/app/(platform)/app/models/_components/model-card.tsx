@@ -88,8 +88,9 @@ export function ModelCard({ teamModel, onClick }: ModelCardProps) {
           </div>
         </div>
         
-        {/* 中部：供应商和类型标签 */}
-        <div className="flex items-center gap-1.5 mt-2">
+        {/* 中部：模态、供应商和类型 */}
+        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+          <ModelModalities capabilities={model.capabilities} />
           <Badge variant="outline" className="text-[10px] px-1.5 py-0">
             {model.provider_display_name || getProviderName(model.provider)}
           </Badge>
@@ -112,7 +113,6 @@ export function ModelCard({ teamModel, onClick }: ModelCardProps) {
             </Tooltip>
           )}
         </div>
-        <div className="mt-2"><ModelModalities capabilities={model.capabilities} /></div>
         
         {/* 底部：配额使用情况 */}
         <div className="flex items-center gap-3 text-xs text-muted-foreground border-t mt-2 pt-2">
