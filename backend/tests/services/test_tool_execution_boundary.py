@@ -1,17 +1,22 @@
 """Real persistence tests for identity-bound approval execution."""
 
 from dataclasses import replace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 from tortoise import Tortoise
 
 from app.models.tool import Tool, ToolShare
-from app.models.tool_approval import ExecutionEntrypoint, ToolApprovalRequest
+from app.models.tool_approval import (
+    ExecutionEntrypoint,
+    ToolApprovalRequest,
+    ToolExecution,
+)
 from app.models.user import Permission, Role, Team, TeamMember, User
 from app.schemas.response import BusinessError
 from app.schemas.tool_connection import ToolConnectionCreate
-from app.services.tool_approvals import decide_approval
+from app.services.tool_approvals import REDACTED, decide_approval
 from app.services.tool_connections import ToolConnectionService
 from app.services.tool_execution import (
     PendingToolApproval,
@@ -396,5 +401,166 @@ async def test_shared_workflow_uses_bound_owner_connection_but_direct_ids_do_not
             invoke,
         ) == {"ok": True}
         assert calls == ["owner-secret"]
+    finally:
+        await Tortoise.close_connections()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_type", ["builtin", "custom", "mcp"])
+async def test_approval_preview_keeps_business_arguments_and_redacts_secrets(
+    tool_type,
+):
+    """Every tool type previews the invoked arguments, not its configuration."""
+
+    await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
+    try:
+        await Tortoise.generate_schemas()
+        user = await User.create(
+            username=f"preview_{tool_type}",
+            email=f"preview_{tool_type}@test.invalid",
+            hashed_password="x",
+        )
+        await grant_team_read(user)
+        team = await Team.create(name=f"Preview {tool_type}")
+        await TeamMember.create(team=team, user=user, role="owner")
+        tool = await Tool.create(
+            name=f"preview_{tool_type}",
+            display_name="Preview",
+            description="",
+            team=team,
+            created_by=user,
+            type=tool_type,
+            identity_policy="none",
+            approval_policy={
+                "default_decision": "require_approval",
+                "gates": [{"kind": "caller"}],
+            },
+        )
+        parameters = {
+            "order_id": "A-100",
+            "customer": {"name": "Ada", "password": "s3cret"},
+            "token_count": 3,
+        }
+        calls = []
+
+        async def invoke(approved, _resolved):
+            calls.append(approved)
+            return {"ok": True}
+
+        pending = await execute_stored_tool(
+            tool,
+            "tool:read" if tool_type == "mcp" else "read",
+            parameters,
+            ToolCallContext(
+                actor=user,
+                team_id=team.id,
+                entrypoint=ExecutionEntrypoint.CHAT,
+                interactive=True,
+                require_approval=True,
+            ),
+            invoke,
+        )
+        assert isinstance(pending, PendingToolApproval)
+        assert calls == []
+
+        execution = await ToolExecution.get(id=pending.execution_id)
+        assert execution.parameters_preview == {
+            "order_id": "A-100",
+            "customer": {"name": "Ada", "password": REDACTED},
+            # Exact-name matching only: a business counter stays readable.
+            "token_count": 3,
+        }
+        assert "s3cret" not in str(execution.parameters_preview)
+        assert "s3cret" not in str(execution.parameters_cipher)
+    finally:
+        await Tortoise.close_connections()
+
+
+@pytest.mark.asyncio
+async def test_builtin_web_search_preview_excludes_orchestration_engine(monkeypatch):
+    """The Agent-selected engine is execution config, not a call argument."""
+
+    from app.services import tool as tool_service
+    from app.services.tool import ToolExecutor
+
+    await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
+    try:
+        await Tortoise.generate_schemas()
+        user = await User.create(
+            username="search_preview",
+            email="search_preview@test.invalid",
+            hashed_password="x",
+        )
+        await grant_team_read(user)
+        team = await Team.create(name="Search preview")
+        await TeamMember.create(team=team, user=user, role="owner")
+        definition = await Tool.create(
+            name="web_search",
+            display_name="Web Search",
+            description="",
+            team=team,
+            created_by=user,
+            type="builtin",
+            identity_policy="none",
+            approval_policy={
+                "default_decision": "require_approval",
+                "gates": [{"kind": "caller"}],
+            },
+        )
+        monkeypatch.setattr(
+            tool_service, "get_builtin_definition", AsyncMock(return_value=definition)
+        )
+        executed = []
+
+        async def fake_execute(name, arguments, credentials=None, **kwargs):
+            executed.append((name, arguments, credentials))
+            return {"ok": True}
+
+        monkeypatch.setattr(tool_service.tool_registry, "execute", fake_execute)
+        from app.models.tool_approval import ExecutionRunKind
+
+        context = ToolCallContext(
+            actor=user,
+            team_id=team.id,
+            entrypoint=ExecutionEntrypoint.CHAT,
+            run_kind=ExecutionRunKind.AGENT,
+            run_id=uuid4(),
+            tool_call_id="call-search",
+            interactive=True,
+            require_approval=True,
+        )
+
+        pending = await ToolExecutor().execute_builtin_tool(
+            "web_search",
+            {"query": "weather"},
+            team_id=team.id,
+            context=context,
+            agent_tool_config={"engine": "bocha"},
+        )
+        assert isinstance(pending, PendingToolApproval)
+        assert executed == []
+
+        execution = await ToolExecution.get(id=pending.execution_id)
+        assert execution.parameters_preview == {"query": "weather"}
+        gate = await ToolApprovalRequest.get(execution_id=execution.id)
+        await decide_approval(
+            gate.id, user, decision="approve", idempotency_key=uuid4().hex
+        )
+
+        result = await ToolExecutor().execute_builtin_tool(
+            "web_search",
+            {},
+            team_id=team.id,
+            context=context,
+            agent_tool_config={"engine": "bocha"},
+        )
+        assert result == {"ok": True}
+        # The handler still receives the orchestration engine; neither the
+        # approval preview nor the model arguments contain it.
+        assert executed == [
+            ("web_search", {"query": "weather", "search_engine": "bocha"}, {})
+        ]
+        refreshed = await ToolExecution.get(id=execution.id)
+        assert refreshed.parameters_preview == {"query": "weather"}
     finally:
         await Tortoise.close_connections()

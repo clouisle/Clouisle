@@ -199,7 +199,7 @@ before; additionally, run-scoped events carry an envelope with `run_id`,
 resume without duplicates (`after_sequence`).
 
 Additional run events: `run_start` (run identity/status), `run_status`
-(queued/running/stopping transitions), `input_accepted` (a queued
+(queued/running/stopping/waiting transitions), `input_accepted` (a queued
 steering/follow-up was committed), `run_end` (exactly one terminal event with
 `completed | stopped | failed | interrupted`).
 
@@ -238,6 +238,8 @@ POST /api/v1/agents/{agent_id}/chat/runs/{run_id}/answers
 | `skipped` | boolean | No | Explicitly skip every question (sends `{ "answers": {}, "skipped": true }`) |
 
 The run must be in `waiting` status and the `tool_call_id` must match the pending interaction. On success the run resumes from its paused state.
+
+`waiting` is also used for tool approval. For an approval pause, `pending_tool_name` remains the original tool name and `pending_tool_input` carries `interaction_kind: "tool_approval"` plus `execution_id`; the `tool_call` event's `arguments` still contain the original model-supplied arguments. Do not submit an approval pause to the answers endpoint — it returns `409 pending_interaction_mismatch`. Decide it with `POST /api/v1/tool-executions/{execution_id}/decision` or the approvals inbox (`POST /api/v1/tool-approvals/{request_id}/decision`). These decision endpoints require a signed-in user session; an API key cannot decide. API-key, embed, legacy-channel and scheduled runs are non-interactive and fail closed with `6510 tool_approval_policy_configuration_required` instead of waiting.
 
 **Start a run:**
 

@@ -498,6 +498,24 @@ export type AgentsMessages = {
         skipped: string
       }
       answerNote: string
+      approval: {
+        title: string
+        description: string
+        pauseTitle: string
+        pauseDescription: string
+        waitingPayload: string
+        decisionTitle: string
+        decisionDescription: string
+        executionEndpoint: string
+        inboxEndpoint: string
+        decisionBody: string
+        decisionResponse: string
+        decisionResponseDescription: string
+        previewNote: string
+        resumeNote: string
+        apiKeyTitle: string
+        apiKeyDescription: string
+      }
       messageEndExample: string
       codeExamples: string
       tabs: {

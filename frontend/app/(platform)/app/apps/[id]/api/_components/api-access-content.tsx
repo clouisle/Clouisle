@@ -219,6 +219,52 @@ while (true) {
     skipped: false,
   }, null, 2)
 
+  // Approval decision endpoints and samples
+  const approvalExecutionEndpoint = `${apiBaseUrl}/api/v1/tool-executions/{execution_id}/decision`
+  const approvalInboxEndpoint = `${apiBaseUrl}/api/v1/tool-approvals/{request_id}/decision`
+
+  const approvalToolCallEvent = `event: tool_call
+data: ${JSON.stringify({
+    tool_call_id: "call-123",
+    tool_name: "mcp_delete_task",
+    tool_display_name: "Delete task",
+    arguments: { task_id: "T-42" },
+  })}`
+
+  const approvalWaitingEvent = `event: run_status
+data: ${JSON.stringify({
+    status: "waiting",
+    pending_tool_call_id: "call-123",
+    pending_tool_name: "mcp_delete_task",
+    pending_tool_input: {
+      interaction_kind: "tool_approval",
+      execution_id: "9f1c2a7e-4b8d-4c61-9a30-2f5b8e1d7c44",
+    },
+  })}`
+
+  const sampleApprovalBody = JSON.stringify({
+    decision: "approve",
+    reason: "checked the order id",
+    idempotency_key: "decision-2026-10-28-0001",
+  }, null, 2)
+
+  const sampleApprovalResponse = JSON.stringify({
+    code: 0,
+    data: {
+      decision: {
+        id: "9c1f3a52-7d4e-4f18-b2a6-0e5c9d7b1f23",
+        request_id: "5a7d2e91-0c3b-4a68-8f14-6b9e2d7c4a10",
+        execution_id: "9f1c2a7e-4b8d-4c61-9a30-2f5b8e1d7c44",
+        decision: "approve",
+        decided_by_id: "0d9e4c61-2b7a-4f35-9c8d-1e6a3b5f7d20",
+        reason: "checked the order id",
+        created_at: "2026-10-28T12:00:00Z",
+      },
+      execution_status: "ready",
+      remaining_approvals: 0,
+    },
+    msg: "success",
+  }, null, 2)
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -387,6 +433,51 @@ while (true) {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </Section>
+
+          {/* Tool Approvals */}
+          <Section title={t('approval.title')}>
+            <p className="text-sm text-muted-foreground">{t('approval.description')}</p>
+
+            <div className="mt-4 space-y-5">
+              <div>
+                <h4 className="text-sm font-medium mb-2">{t('approval.pauseTitle')}</h4>
+                <p className="text-sm text-muted-foreground mb-2">{t('approval.pauseDescription')}</p>
+                <CodeBlock code={approvalToolCallEvent} language="text" />
+                <p className="text-sm text-muted-foreground mt-3 mb-2">{t('approval.waitingPayload')}</p>
+                <CodeBlock code={approvalWaitingEvent} language="text" />
+              </div>
+
+              <div>
+                <h4 className="text-sm font-medium mb-2">{t('approval.decisionTitle')}</h4>
+                <p className="text-sm text-muted-foreground">{t('approval.decisionDescription')}</p>
+
+                <p className="text-sm text-muted-foreground mt-3 mb-1">{t('approval.executionEndpoint')}</p>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">POST</Badge>
+                  <code className="text-sm bg-muted px-2 py-1 rounded break-all">{approvalExecutionEndpoint}</code>
+                </div>
+
+                <p className="text-sm text-muted-foreground mt-3 mb-1">{t('approval.inboxEndpoint')}</p>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">POST</Badge>
+                  <code className="text-sm bg-muted px-2 py-1 rounded break-all">{approvalInboxEndpoint}</code>
+                </div>
+
+                <p className="text-sm text-muted-foreground mt-4 mb-2">{t('approval.decisionBody')}</p>
+                <CodeBlock code={sampleApprovalBody} language="json" />
+                <p className="text-sm text-muted-foreground mt-4 mb-2">{t('approval.decisionResponse')}</p>
+                <CodeBlock code={sampleApprovalResponse} language="json" />
+                <p className="text-sm text-muted-foreground mt-3">{t('approval.decisionResponseDescription')}</p>
+                <p className="text-sm text-muted-foreground mt-3">{t('approval.previewNote')}</p>
+                <p className="text-sm text-muted-foreground mt-3">{t('approval.resumeNote')}</p>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-medium mb-2">{t('approval.apiKeyTitle')}</h4>
+                <p className="text-sm text-muted-foreground">{t('approval.apiKeyDescription')}</p>
+              </div>
             </div>
           </Section>
 

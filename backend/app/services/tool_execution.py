@@ -211,6 +211,7 @@ async def execute_stored_tool(
     invoke: Callable[[dict[str, Any], ResolvedConnection | None], Awaitable[Any]],
     *,
     policy: Any | None = None,
+    preview_parameters: dict[str, Any] | None = None,
 ) -> Any:
     await authorize_tool_context(tool, context)
     if not tool.is_enabled:
@@ -332,6 +333,7 @@ async def execute_stored_tool(
             tool=tool,
             operation=operation,
             parameters=arguments,
+            preview_parameters=preview_parameters,
             actor=context.actor,
             team_id=context.team_id,
             entrypoint=context.entrypoint,

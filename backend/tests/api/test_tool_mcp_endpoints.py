@@ -49,6 +49,7 @@ from app.models.tool import (
     ToolType,
     ToolVisibility,
 )
+from app.models.tool_approval import ToolExecution
 from app.models.tool_connection import ToolConnectionScope
 from app.models.user import Team, TeamMember, User
 from app.schemas.response import BusinessError, error
@@ -286,6 +287,12 @@ async def test_direct_mcp_tool_call_executes_without_approval(mcp_app, monkeypat
     assert data["result"]["result"] == {"ok": True}
     execute_mock.assert_awaited_once()
 
+    # The stored execution preview is the remote tool's business arguments,
+    # not the name/arguments dispatch envelope.
+    execution = await ToolExecution.filter(team_id=team.id).first()
+    assert execution is not None
+    assert execution.parameters_preview == {"id": 7}
+
 
 @pytest.mark.asyncio
 async def test_read_prompt_and_completion_use_distinct_operation_namespaces(
@@ -333,6 +340,11 @@ async def test_read_prompt_and_completion_use_distinct_operation_namespaces(
     assert prompt_response.status_code == 200
     assert prompt_response.json()["data"]["operation"] == "prompt:weather"
     assert prompt_mock.await_args.args[1] == "weather"
+    prompt_execution = await ToolExecution.filter(
+        team_id=team.id, operation="prompt:weather"
+    ).first()
+    assert prompt_execution is not None
+    assert prompt_execution.parameters_preview == {"city": "Paris"}
 
     completion_response = await mcp_app.client.post(
         f"/tools/{tool.id}/mcp/completion",

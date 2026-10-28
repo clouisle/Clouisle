@@ -877,10 +877,6 @@ async def execute_tool_call(
                     binding = extract_builtin_binding(tc)
                     break
 
-        # 搜索引擎由 agent 编排配置严格决定，不交由模型决定
-        if tool_name == "web_search":
-            arguments["search_engine"] = agent_tool_config.get("engine") or "auto"
-
         team_id = getattr(agent, "team_id", None) if agent else None
         actor = (
             await User.get_or_none(id=getattr(user, "id", None))

@@ -1651,10 +1651,12 @@ Decision body:
 ```
 
 `decision` is `approve` or `reject`; `idempotency_key` (1–128 chars) makes
-retries safe. Only the execution's caller may decide; another team member,
-team administrator or superuser receives `6504 tool_approval_not_authorized`,
-and the gate is not listed for them. The response includes the immutable
-decision, `execution_status` and `remaining_approvals`. The decision never
+retries safe. These endpoints require a signed-in user session (JWT); an API
+key cannot submit a decision. Only the execution's caller may decide; another
+team member, team administrator or superuser receives `6504
+tool_approval_not_authorized`, and the gate is not listed for them. The
+response includes the immutable decision, `execution_status` and
+`remaining_approvals`. The decision never
 edits the bound parameters.
 Rejection, expiry, revocation and stopped runs are terminal and cannot become
 approvals.
@@ -1672,12 +1674,36 @@ audit; they are never actionable. `masked_display` is already redacted.
 |--------|------|-------------|
 | `GET` | `/api/v1/tool-executions?status=&tool_id=&run_kind=&run_id=&page=&page_size=` | Executions initiated by the caller |
 | `GET` | `/api/v1/tool-executions/{execution_id}` | One visible execution |
+| `POST` | `/api/v1/tool-executions/{execution_id}/decision` | Decide the execution's pending gate; idempotent |
+
+The decision body is the same as the approvals inbox:
+`{"decision": "approve" | "reject", "reason": "...", "idempotency_key": "..."}`.
+It is a convenience for a waiting chat run and requires a user session; API
+keys cannot decide approvals. Approving moves the bound execution to `ready`
+when no further gates remain (otherwise it stays `awaiting_approval`) and the
+worker resumes the original call once every gate passes; it never executes the
+side effect inside the decision request. Rejecting cancels the call with
+`cancel_reason: rejected`.
 
 `ToolExecutionOut` exposes the tool/definition version, operation, team,
 entrypoint, run references, connection binding metadata,
 `parameters_preview` (redacted), `parameters_digest`, `policy_hash`, `status`,
 `cancel_reason`, `result_ref`, `error_code` and timestamps. Ciphertext, claim
 tokens and secrets never appear.
+
+`parameters_preview` is derived from the invoked call's business arguments —
+the exact argument object the caller (or model) supplied to the tool. It never
+contains execution plumbing such as the resolved connection, the MCP operation
+name or an orchestration-injected option (for example the Agent-selected
+`search_engine`). Secret values are replaced with `***REDACTED***`: declared
+connection secret fields and conservative credential names (`token`,
+`password`, `api_key`, `authorization`, `headers`, `env`, …) are masked at the
+exact key, including inside nested objects and arrays; other business values
+remain readable. A pause for approval therefore shows the same arguments in the
+tool call and the execution preview, while `interaction_kind` and
+`execution_id` remain separate run-state metadata and are never treated as tool
+arguments. Approving never edits these parameters; changing them requires a new
+execution.
 
 Statuses: `awaiting_approval`, `ready`, `executing`, `succeeded`, `failed`,
 `outcome_unknown`, `cancelled`. Cancel reasons: `rejected`, `expired`,

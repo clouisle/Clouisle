@@ -563,6 +563,120 @@ async def test_approval_pause_captures_only_matching_tool_description(
 
 
 @pytest.mark.asyncio
+async def test_approval_pause_persists_original_tool_arguments(monkeypatch):
+    """The paused call shows and stores the model's arguments, not the marker."""
+
+    from app.services import agent_round
+
+    persist_step = AsyncMock(return_value=2)
+    monkeypatch.setattr(agent_round, "persist_assistant_step", persist_step)
+    monkeypatch.setattr(agent_round, "persist_tool_result", AsyncMock(return_value=3))
+
+    original = {"order_id": "A-100", "customer": {"id": "c-9"}}
+    pause: dict = {}
+    events: list[tuple[str, dict]] = []
+
+    async def team_chat(**_kwargs):
+        return _resp(
+            tool_calls=[
+                ToolCall(
+                    id="call-cancel",
+                    function=FunctionCall(
+                        name="mcp_orders_cancel",
+                        arguments=json.dumps(original),
+                    ),
+                )
+            ]
+        )
+
+    async def build_turn(**_kwargs):
+        return ContextTurn(
+            prepared=SimpleNamespace(
+                messages=[LLMMessage(role=MessageRole.USER, content="cancel")]
+            )
+        )
+
+    async def tool_runner(tool_name, arguments, **_kwargs):
+        # Tools may normalize their input in place; the paused call must not
+        # inherit that mutation.
+        arguments["search_engine"] = "auto"
+        return ToolInteractionRequest(
+            tool_name=tool_name,
+            arguments={
+                "interaction_kind": "tool_approval",
+                "execution_id": "exec-cancel",
+            },
+        )
+
+    async def pause_for_user(**kwargs):
+        pause.update(kwargs)
+
+    def formatter(name: str, payload: dict) -> str:
+        raw = payload.get("sse")
+        if isinstance(raw, str):
+            data = next(
+                line[5:].strip()
+                for line in raw.splitlines()
+                if line.startswith("data:")
+            )
+            events.append((name, json.loads(data)))
+        else:
+            events.append((name, payload))
+        return name
+
+    context = AgentLoopContext(
+        agent=SimpleNamespace(id=uuid4(), team_id=uuid4()),
+        conversation=SimpleNamespace(id=uuid4()),
+        user=SimpleNamespace(id=uuid4()),
+        user_message="cancel",
+        model_id="m",
+        tokenizer_model_id=None,
+        model_provider="p",
+        model_context_limit=100_000,
+        model_max_output_tokens=1000,
+        model_used="m",
+        max_iterations=3,
+        streaming=False,
+        round_id=uuid4(),
+        tools=[
+            ToolDefinition(
+                function=FunctionDefinition(
+                    name="mcp_orders_cancel", description="Cancel an order"
+                )
+            )
+        ],
+        team_chat=team_chat,
+        build_turn=build_turn,
+        execute_tool_call=tool_runner,
+        pause_for_user=pause_for_user,
+        formatter=formatter,
+    )
+    loop = AgentLoop(context)
+    output = [chunk async for chunk in loop.run()]
+
+    # One complete-input event before execution, one after the pause; both
+    # carry the original call. The interaction marker is never the arguments.
+    assert output == ["tool_call", "tool_call"]
+    assert loop.result.waiting_for_user is True
+    # The durable marker still carries the execution reference.
+    assert pause["arguments"] == {
+        "interaction_kind": "tool_approval",
+        "execution_id": "exec-cancel",
+        "tool_description": "Cancel an order",
+    }
+    # Display/history/persistence keep exactly what the model supplied.
+    assert persist_step.await_args.kwargs["tool_calls"][0]["arguments"] == original
+    assert [name for name, _payload in events] == ["tool_call", "tool_call"]
+    for _name, payload in events:
+        assert payload == {
+            "tool_call_id": "call-cancel",
+            "tool_name": "mcp_orders_cancel",
+            "tool_display_name": "mcp_orders_cancel",
+            "arguments": original,
+        }
+
+
+@pytest.mark.asyncio
 async def test_agent_loop_pauses_after_persisting_ask_user_call(monkeypatch):
     """An ask_user call persists its assistant step and waits non-terminally."""
     from app.services import agent_round

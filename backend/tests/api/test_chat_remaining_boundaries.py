@@ -211,7 +211,9 @@ async def test_builtin_tool_config_selects_agent_credentials_and_web_engine(
 
     kwargs = executed.await_args.kwargs
     assert kwargs["agent_tool_config"] == {"engine": "bocha"}
-    assert kwargs["arguments"]["search_engine"] == "bocha"
+    # The engine is orchestration configuration, not a model argument: it is
+    # added to the dispatched parameters only, never to the call's arguments.
+    assert kwargs["arguments"] == {}
     assert "credentials" not in kwargs
 
 

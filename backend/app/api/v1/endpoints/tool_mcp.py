@@ -769,6 +769,7 @@ async def call_mcp_tool(
             parameters,
             context,
             invoke,
+            preview_parameters=payload.arguments,
         )
     except BusinessError:
         raise
@@ -1013,6 +1014,9 @@ async def get_mcp_prompt_result(
             parameters,
             context,
             invoke,
+            # The prompt name identifies the operation; only its arguments
+            # are the reviewer's business input.
+            preview_parameters=payload.arguments or {},
         )
     except BusinessError:
         raise

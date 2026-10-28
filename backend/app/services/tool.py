@@ -294,12 +294,23 @@ class ToolExecutor:
                     "success": False,
                 }
 
+        # The Agent's orchestration selects the search engine; the model never
+        # supplies it. It is a dispatched parameter, not a business argument:
+        # encrypt and bind it, but keep it out of the reviewer preview and the
+        # persisted tool call.
+        execution_arguments = dict(arguments)
+        if tool_name == "web_search" and agent_tool_config is not None:
+            execution_arguments["search_engine"] = (
+                agent_tool_config.get("engine") or "auto"
+            )
+
         return await execute_stored_tool(
             definition,
             operation or tool_name,
-            arguments,
+            execution_arguments,
             context,
             invoke,
+            preview_parameters=arguments,
         )
 
     @staticmethod

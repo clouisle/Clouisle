@@ -1,6 +1,11 @@
 # Implementation Plan
 
 ## Active
+- **agent-api-approval-parameters** — Completed. See `docs/plan/agent-api-approval-parameters.md`.
+  - [x] 1. Document Agent API approval interaction and authentication
+  - [x] 2. Correct the approval preview of tool call arguments
+  - [x] 3. Verify behavior, security and documentation
+
 
 - **pr480-review-fixes** — In progress. See `docs/plan/pr480-review-fixes.md`.
   - [x] 1. Fix chat stream route and policy-layer enforcement

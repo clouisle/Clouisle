@@ -156,6 +156,12 @@ The tool editor's **Require confirmation before calling** switch controls the de
 Tool-execution approval is caller-only and applies to interactive Agent chat,
 including authenticated Feishu and WeChat Agent conversations. Tool discovery,
 direct testing, workflows and other background entrypoints do not prompt.
+API-key, embed, legacy-channel and scheduled calls are non-interactive: when an
+effective policy requires caller confirmation, the call fails closed with
+`6510 tool_approval_policy_configuration_required` (reason
+`approval_audience_unavailable`) and performs no side effect instead of waiting
+for a decision. Approval decisions are accepted only from a signed-in user
+session; an API key cannot decide.
 
 Enable **Require Confirmation** on the Agent's MCP server binding to confirm
 every child call. To require approval for selected children, configure an exact

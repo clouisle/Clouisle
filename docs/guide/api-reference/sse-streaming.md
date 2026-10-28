@@ -117,7 +117,7 @@ data: <json_data>
 | `reasoning_delta` | Reasoning content delta |
 | `reasoning_end` | Reasoning ended with duration |
 | `content_delta` | Response content delta (text token) |
-| `tool_call` | Tool call with tool name and arguments |
+| `tool_call` | Tool call with tool name and the original model-supplied arguments |
 | `tool_result` | Tool execution result |
 | `media_result` | UI-only media result; inspect `success`, and fetch protected URLs with authentication; it is not LLM replay text |
 | `compression_start` | Context compression started |
@@ -195,11 +195,47 @@ event: run_end
 data: {"status": "completed", "message_id": "msg-456"}
 ```
 
-`run_status` reports run lifecycle transitions. Besides `running`, a run can
-enter `waiting` when the model calls the `ask_user` tool: the payload carries
-the pending `tool_call_id`, `pending_tool_name` and `pending_tool_input` so the
-client can render the question form. Submit answers through the run answer
-endpoint to resume.
+`run_status` reports run lifecycle transitions. A run enters `waiting` when the
+model calls `ask_user` or a tool call requires approval.
+
+For `ask_user`, `pending_tool_input` contains the questions; submit answers
+through the run answer endpoint to resume.
+
+For approval, `pending_tool_name` stays the original tool name and
+`pending_tool_input` is the interaction marker:
+
+```
+event: tool_call
+data: {"tool_call_id": "call-123", "tool_name": "mcp_delete_task", "tool_display_name": "Delete task", "arguments": {"task_id": "T-42"}}
+
+event: run_status
+data: {"status": "waiting", "pending_tool_call_id": "call-123", "pending_tool_name": "mcp_delete_task", "pending_tool_input": {"interaction_kind": "tool_approval", "execution_id": "9f1c2a7e-4b8d-4c61-9a30-2f5b8e1d7c44"}}
+```
+
+`tool_call.arguments` is always the original model-supplied arguments object,
+including on an approval pause. The approval is bound to that exact call.
+Only the caller who started the run can decide it, using a signed-in user
+session (JWT); an API key cannot submit a decision. Read the secret-safe call
+projection from `GET /api/v1/tool-executions/{execution_id}`, whose
+`parameters_preview` is already redacted:
+
+- `POST /api/v1/tool-executions/{execution_id}/decision` decides the pending
+  gate directly. Body: `decision` (`approve` or `reject`), optional `reason`
+  (max 2000 characters) and `idempotency_key`. The approvals inbox
+  equivalents are `GET /api/v1/tool-approvals` and
+  `POST /api/v1/tool-approvals/{request_id}/decision`.
+- The response returns the immutable decision, `execution_status` and
+  `remaining_approvals`. A decision never edits the bound parameters or
+  performs the side effect: after every gate is approved, the worker resumes
+  the original call and emits a normal `tool_result` for the same
+  `tool_call_id`.
+- Rejecting, expiry, revocation or a stopped run cancels the call and ends it
+  with a tool error; it never becomes an approval. Do not send approval pauses
+  to the answers endpoint — it returns `409 pending_interaction_mismatch`.
+
+API-key, embed, legacy-channel and scheduled entrypoints are non-interactive:
+they never wait for approval. A tool whose effective policy requires approval
+fails closed with an error `tool_result` and no side effect.
 
 `run_end` is exactly one terminal event per run (`completed | stopped |
 failed | interrupted`). Streams stop after a terminal event.

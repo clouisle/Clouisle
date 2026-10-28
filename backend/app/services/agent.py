@@ -962,10 +962,6 @@ class AgentService:
                     binding = extract_builtin_binding(tc)
                     break
 
-        # Search engine remains driven by agent orchestration, never by the model.
-        if tool_name == "web_search":
-            arguments["search_engine"] = agent_tool_config.get("engine") or "auto"
-
         from app.models.tool_approval import ExecutionEntrypoint
         from app.models.user import User
         from app.services.tool import ToolExecutor

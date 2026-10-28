@@ -208,6 +208,22 @@ def _safe_arguments(arguments: str | dict | None) -> dict[str, Any]:
         return {}
 
 
+def _tool_call_arguments(arguments: str | dict | None) -> dict[str, Any]:
+    """Return a detached copy of the model-supplied tool call arguments.
+
+    Pausing for approval must not replace the call's business arguments with
+    interaction metadata, and a tool runner may mutate the dict it receives.
+    Re-parsing the original payload keeps display, persistence and provider
+    history on exactly what the model asked for.
+    """
+    parsed = _safe_arguments(arguments)
+    try:
+        detached = json.loads(json.dumps(parsed))
+    except (TypeError, ValueError):
+        return dict(parsed)
+    return detached if isinstance(detached, dict) else {}
+
+
 def _include_workspace_reset_result(result: str, notices: list[dict[str, Any]]) -> str:
     """Append recovery control data without discarding the tool's own output."""
     try:
@@ -482,7 +498,10 @@ class AgentLoop:
             if isinstance(tool_result, ToolInteractionRequest):
                 if tool_result.tool_name != tool_name:
                     raise ValueError("tool interaction name mismatch")
-                if tool_result.arguments.get("interaction_kind") == "tool_approval":
+                is_approval = (
+                    tool_result.arguments.get("interaction_kind") == "tool_approval"
+                )
+                if is_approval:
                     for tool in ctx.tools or []:
                         function = (
                             tool.get("function", {})
@@ -511,11 +530,20 @@ class AgentLoop:
                             )
                         break
                 metric_status = "waiting"
+                # Approval is a pause of the model's call, not a different
+                # call. Keep the original business arguments in the visible
+                # and persisted tool call; ``execution_id`` and
+                # ``interaction_kind`` belong to the durable pause marker.
+                call_arguments = (
+                    _tool_call_arguments(tc.function.arguments)
+                    if is_approval
+                    else tool_result.arguments
+                )
                 call_sse = build_tool_call_sse_event(
                     tool_call_id=tc.id,
                     tool_name=tool_name,
                     tool_display_name=display_name,
-                    arguments=tool_result.arguments,
+                    arguments=call_arguments,
                 )
                 return (
                     call_sse,
@@ -524,7 +552,7 @@ class AgentLoop:
                     {
                         "id": tc.id,
                         "name": tool_name,
-                        "arguments": tool_result.arguments,
+                        "arguments": call_arguments,
                         "display_result": "",
                         "llm_result": "",
                         "display_name": display_name,
@@ -1710,7 +1738,7 @@ class AgentLoop:
                         tool_call_id=pause_record["id"],
                         tool_name=pause_record["name"],
                         tool_display_name=pause_record["display_name"],
-                        arguments=interaction.arguments,
+                        arguments=pause_record["arguments"],
                     )
                     event = self._emit(TOOL_CALL, {"sse": call_sse})
                     if event:

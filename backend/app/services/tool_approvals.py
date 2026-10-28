@@ -25,7 +25,7 @@ import hashlib
 import json
 import logging
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -1025,6 +1025,7 @@ async def create_execution(
     require_caller_confirmation: bool = False,
     expires_at: datetime | None = None,
     now: datetime | None = None,
+    preview_parameters: Mapping[str, Any] | None = None,
 ) -> ToolExecution:
     """Evaluate policy and persist one immutable execution request.
 
@@ -1036,6 +1037,12 @@ async def create_execution(
 
     A policy/audience configuration failure raises instead of persisting or
     allowing anything.
+
+    ``preview_parameters`` is an optional reviewer projection: when supplied,
+    the stored preview is derived from it rather than from ``parameters``.
+    Digest, ciphertext and dispatch always use ``parameters``. Callers use it
+    to keep execution-only options (for example an orchestration-selected
+    search engine) out of the approval display.
     """
     current = _as_utc(now) or _utcnow()
     if not getattr(actor, "is_active", True):
@@ -1104,6 +1111,18 @@ async def create_execution(
         raise _input_invalid("tool_definition_version must be >= 1")
 
     snapshot = build_parameter_snapshot(parameters, sensitive_keys=sensitive_fields)
+    if preview_parameters is not None:
+        # The digest and ciphertext always bind the executed parameters. The
+        # reviewer preview may instead project the caller's business argument
+        # object, excluding orchestration-injected options, under the same
+        # redaction policy.
+        snapshot = replace(
+            snapshot,
+            preview=redact_parameters(
+                preview_parameters, sensitive_keys=sensitive_fields
+            ),
+            redacted_paths=(),
+        )
     facts: _BindingFacts | None = None
     if connection_binding is not None:
         try:
