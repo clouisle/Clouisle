@@ -312,6 +312,55 @@ async def test_expiry_resumes_agent_run_with_tool_error(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_park_run_waiting_merges_checkpoint_with_real_database(monkeypatch):
+    async with _database(monkeypatch):
+        user = await _user()
+        _team, _agent, conversation = await _team_and_agent(user)
+        round_id = uuid4()
+        checkpoint = {"mode": "semantic", "summary_text": "keep me"}
+        run = await _waiting_run(
+            _agent,
+            conversation,
+            user,
+            status=AgentRunStatus.RUNNING,
+            round_id=round_id,
+            payload={
+                "history_override": [{"role": "user", "content": "fresh"}],
+                "active_round_checkpoint": checkpoint,
+            },
+        )
+        # The worker's in-memory instance predates the checkpoint and carries a
+        # stale copy in its resume payload.
+        run.worker_payload = {}
+        await agent_run_store.park_run_waiting(
+            run,
+            tool_call_id="call-1",
+            tool_name="custom_resume_tool",
+            tool_input={"interaction_kind": "tool_approval"},
+            round_id=round_id,
+            round_index=6,
+            iteration_index=3,
+            worker_payload={
+                "history_override": [{"role": "user", "content": "stale"}],
+                "resume": True,
+                "active_round_checkpoint": {
+                    "mode": "readback_only",
+                    "summary_text": None,
+                },
+            },
+        )
+        fresh = await AgentRun.get(id=run.id)
+        assert fresh.status == AgentRunStatus.WAITING
+        # The locked row value wins for the checkpoint; resume fields win for
+        # everything the caller actually supplies.
+        assert fresh.worker_payload["active_round_checkpoint"] == checkpoint
+        assert fresh.worker_payload["resume"] is True
+        assert fresh.worker_payload["history_override"] == [
+            {"role": "user", "content": "stale"}
+        ]
+
+
+@pytest.mark.asyncio
 async def test_post_park_recheck_closes_decision_before_waiting_race(monkeypatch):
     async with _database(monkeypatch):
         user = await _user()

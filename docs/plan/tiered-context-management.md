@@ -36,9 +36,9 @@ Keep persisted conversation/tool records authoritative. Build a model-only view 
 - **Validation**: Run backend and frontend full test suites, lint, type checks and i18n checks; run real application and browser UI scenarios; record actual results.
 
 ### Current verification and open items
-- Backend full suite: 10,853 passed, 4 skipped; line coverage 96.79%, branch coverage 95.14%. Frontend full suite: 3,264 passed; function coverage 95.45%, line coverage 97.72%. Results predate any subsequent edits.
+- Backend full suite: 10,910 passed, 4 skipped; line coverage 96.75%, branch coverage 95.02%. Frontend full suite: 3,264 passed; function coverage 95.45%, line coverage 97.72%. Results predate any subsequent edits.
 - Browser validation is blocked pending the user's human verification on the registration page.
-- Provider-side context overflow recovery with bounded, safe retry is not implemented. Active-round semantic checkpointing and a full durable end-to-end long-run verification remain outstanding; current compaction replaces completed tool results with readback references.
+- Provider overflow retries now reduce only provably unprotected assistant text or optional tool schemas, before any streamed chunk, with a bounded retry count. Active-round semantic checkpoints summarize complete tool groups, bind source hashes, retain original records and survive approval pauses. Real browser-driven long-run validation remains pending.
 
 ## Testing Strategy
 

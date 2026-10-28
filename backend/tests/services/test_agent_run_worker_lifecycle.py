@@ -487,6 +487,9 @@ class _LockedRunQuery:
     async def first(self):
         return self.run
 
+    async def update(self, **_kwargs):
+        return 1
+
 
 def _waiting_run():
     run = _run(
@@ -510,37 +513,115 @@ def _waiting_run():
 
 
 @pytest.mark.asyncio
-async def test_park_run_waiting_persists_and_rejects_when_not_running(
+async def test_park_run_waiting_merges_latest_worker_payload_under_lock(
     monkeypatch, fake_redis
 ):
-    run = _run(status=AgentRunStatus.RUNNING)
-    db_running = [True]
+    from contextlib import asynccontextmanager
 
-    async def _filter_update(**_kwargs):
-        return 1 if db_running[0] else 0
+    from app.services import context_checkpoint
+
+    park_round = uuid4()
+    entry = context_checkpoint.build_entry(
+        context_checkpoint.ToolResultSource(
+            tool_call_id="call-1",
+            tool_name="bash",
+            content='{"success": true}',
+            round_id=park_round,
+        )
+    )
+    checkpoint_payload = context_checkpoint.build_payload(
+        round_id=park_round,
+        entries=[entry],
+        summary_text="keep",
+        mode="semantic",
+        source_sha256="a" * 64,
+    )
+    run = _run(status=AgentRunStatus.RUNNING)
+    # The caller's instance predates a concurrently persisted checkpoint.
+    run.worker_payload = {"history_override": [{"role": "user", "content": "old"}]}
+    fresh = _run(status=AgentRunStatus.RUNNING)
+    fresh.worker_payload = {
+        "history_override": [{"role": "user", "content": "fresh"}],
+        "active_round_checkpoint": checkpoint_payload,
+    }
+
+    class _LockedQuery:
+        def using_db(self, _conn):
+            return self
+
+        def select_for_update(self):
+            return self
+
+        async def first(self):
+            return fresh
+
+    @asynccontextmanager
+    async def _transaction():
+        yield object()
 
     monkeypatch.setattr(
-        agent_run_store.AgentRun,
-        "filter",
-        lambda **_kwargs: SimpleNamespace(update=_filter_update),
+        agent_run_store,
+        "AgentRun",
+        SimpleNamespace(filter=lambda **_kwargs: _LockedQuery()),
     )
+    monkeypatch.setattr(agent_run_store, "in_transaction", _transaction)
 
     parked = await agent_run_store.park_run_waiting(
         run,
         tool_call_id="call-1",
         tool_name="ask_user",
         tool_input={"questions": []},
-        round_id=uuid4(),
+        round_id=park_round,
         round_index=4,
         iteration_index=2,
-        worker_payload={"resume": True},
+        worker_payload={
+            "resume": True,
+            # Stale copy carried inside the caller's pre-read payload.
+            "active_round_checkpoint": {"mode": "readback_only", "summary_text": None},
+        },
     )
     assert parked is run
     assert run.status == AgentRunStatus.WAITING
     assert run.pending_tool_call_id == "call-1"
+    # The stale whole-payload write must not erase the latest checkpoint, while
+    # the newly supplied resume fields win over the row's older values.
+    assert run.worker_payload["history_override"] == [
+        {"role": "user", "content": "fresh"}
+    ]
+    assert run.worker_payload["resume"] is True
+    assert run.worker_payload["active_round_checkpoint"] == checkpoint_payload
+    fresh.save.assert_awaited_once()
+    assert fresh.save.await_args.kwargs["update_fields"][-1] == "worker_payload"
 
-    # The DB row is no longer running -> park raises.
-    db_running[0] = False
+    async def _find_run(_conversation_id, _round_id):
+        return SimpleNamespace(
+            id=run.id,
+            worker_payload=run.worker_payload,
+            active_round_id=park_round,
+        )
+
+    monkeypatch.setattr(context_checkpoint, "_find_run", _find_run)
+    loaded = await context_checkpoint.load_round_checkpoint(
+        conversation_id=uuid4(), round_id=park_round
+    )
+    assert loaded is not None
+    assert loaded.mode == "semantic"
+    assert loaded.summary_text == "keep"
+    assert set(loaded.entries) == {"call-1"}
+
+
+@pytest.mark.asyncio
+async def test_park_run_waiting_rejects_when_not_running(monkeypatch, fake_redis):
+    run = _run(status=AgentRunStatus.RUNNING)
+
+    async def _filter_update(**_kwargs):
+        return 0
+
+    monkeypatch.setattr(
+        agent_run_store.AgentRun,
+        "filter",
+        lambda **_kwargs: SimpleNamespace(update=_filter_update),
+    )
     with pytest.raises(RuntimeError, match="no longer running"):
         await agent_run_store.park_run_waiting(
             run,
@@ -1060,6 +1141,7 @@ def _prepare_full_round(
 
     run = _run(status=AgentRunStatus.RUNNING)
     run.active_round_id = uuid4()
+    run.worker_payload = {}
     run.pending_tool_call_id = None
     run.pending_tool_name = None
     run.pending_tool_input = None
@@ -1175,11 +1257,14 @@ def _prepare_full_round(
         "sandbox_gateway",
         SimpleNamespace(begin_round=AsyncMock(), finish_round=AsyncMock()),
     )
+    # park_run_waiting merges the fresh row payload under a lock, so the mocked
+    # query must support the locked read as well as the plain update path.
     monkeypatch.setattr(
         worker.agent_run_store.AgentRun,
         "filter",
-        lambda **_kwargs: SimpleNamespace(update=AsyncMock(return_value=1)),
+        lambda **_kwargs: _LockedRunQuery(run),
     )
+    monkeypatch.setattr(worker.agent_run_store, "in_transaction", _Transaction())
     monkeypatch.setattr(
         worker.agent_run_store, "get_redis", _get_redis_fixture(FakeRedis())
     )

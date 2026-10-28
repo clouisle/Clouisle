@@ -839,3 +839,33 @@ async def test_loading_a_skill_evicts_old_tools_not_its_companions():
     assert state.loaded == result["loaded"]
     for name in result["loaded"]:
         assert state.is_visible(name) is True
+
+
+@pytest.mark.asyncio
+async def test_retry_reduction_sheds_loaded_tools_and_reports_removed_names():
+    persisted: list[list[str]] = []
+
+    async def _remember(names):
+        persisted.append(names)
+
+    state = await build_tool_discovery(_mcp_catalog(25), min_discoverable=5)
+    assert state is not None
+    state.on_loaded_change = _remember
+    loaded = [f"mcp_calendar_server_tool_{i}" for i in range(3)]
+    await state.execute(LOAD_TOOLS_TOOL, {"names": loaded})
+    persisted.clear()
+
+    removed = await state.reduce_for_retry()
+    assert removed == loaded
+    assert state.loaded == []
+    assert persisted == [[]]
+    visible = [tool["function"]["name"] for tool in state.tools_for_turn()]
+    assert not any(name.startswith("mcp_") for name in visible)
+    # Core and discovery tools survive a retry reduction.
+    assert "ask_user" in visible
+    assert DISCOVER_TOOLS_TOOL in visible
+    assert state.is_visible("ask_user") is True
+
+    # Nothing left to shed: no fake reduction and no extra persistence write.
+    assert await state.reduce_for_retry() == []
+    assert persisted == [[]]

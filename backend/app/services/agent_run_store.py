@@ -372,12 +372,70 @@ async def park_run_waiting(
         "first_token_ms": run.first_token_ms,
     }
     if worker_payload is not None:
-        updates["worker_payload"] = worker_payload
-    updated = await AgentRun.filter(id=run.id, status=AgentRunStatus.RUNNING).update(
-        **updates
-    )
-    if updated != 1:
-        raise RuntimeError("AgentRun is no longer running")
+        # The caller builds the resume payload from an instance read earlier.
+        # Writing it whole would drop keys persisted since then (notably the
+        # active-round checkpoint written concurrently by context preparation).
+        # Merge the fresh row value inside the same locked write instead.
+        async with in_transaction() as conn:
+            fresh = (
+                await AgentRun.filter(id=run.id, status=AgentRunStatus.RUNNING)
+                .using_db(conn)
+                .select_for_update()
+                .first()
+            )
+            if fresh is None:
+                raise RuntimeError("AgentRun is no longer running")
+            from app.services.context_checkpoint import CHECKPOINT_KEY
+
+            current = getattr(fresh, "worker_payload", None)
+            merged = dict(current) if isinstance(current, dict) else {}
+            # The caller's snapshot may already contain an older checkpoint.
+            # Context preparation writes that key directly to the row, so the
+            # locked row value is authoritative and must not be overwritten by
+            # a stale copy carried inside the resume payload.
+            merged.update(
+                {
+                    key: value
+                    for key, value in worker_payload.items()
+                    if key != CHECKPOINT_KEY
+                }
+            )
+            if isinstance(current, dict) and CHECKPOINT_KEY in current:
+                merged[CHECKPOINT_KEY] = current[CHECKPOINT_KEY]
+            fresh.worker_payload = merged
+            fresh.status = AgentRunStatus.WAITING
+            fresh.pending_tool_call_id = tool_call_id
+            fresh.pending_tool_name = tool_name
+            fresh.pending_tool_input = tool_input
+            fresh.pending_tool_round_id = round_id
+            fresh.pending_tool_round_index = round_index
+            fresh.pending_tool_iteration_index = iteration_index
+            fresh.updated_at = updated_at
+            fresh.message_started_at = run.message_started_at
+            fresh.first_token_ms = run.first_token_ms
+            await fresh.save(
+                using_db=conn,
+                update_fields=[
+                    "status",
+                    "pending_tool_call_id",
+                    "pending_tool_name",
+                    "pending_tool_input",
+                    "pending_tool_round_id",
+                    "pending_tool_round_index",
+                    "pending_tool_iteration_index",
+                    "updated_at",
+                    "message_started_at",
+                    "first_token_ms",
+                    "worker_payload",
+                ],
+            )
+        worker_payload = merged
+    else:
+        updated = await AgentRun.filter(
+            id=run.id, status=AgentRunStatus.RUNNING
+        ).update(**updates)
+        if updated != 1:
+            raise RuntimeError("AgentRun is no longer running")
 
     run.status = AgentRunStatus.WAITING
     run.pending_tool_call_id = tool_call_id

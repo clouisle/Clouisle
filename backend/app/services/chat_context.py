@@ -82,6 +82,11 @@ CONTEXT_SUMMARY_RETRY_DELAY_SECONDS = 2.0
 CONTEXT_SUMMARY_PREFIX = (
     "Earlier conversation summary (older history was replaced by this summary):"
 )
+# Active-round checkpoint summaries run inside a live tool loop: one bounded
+# attempt, and only when the whole covered transcript fits without truncation.
+ACTIVE_ROUND_SUMMARY_TIMEOUT_SECONDS = 45.0
+ACTIVE_ROUND_SUMMARY_MAX_TOKENS = 600
+ACTIVE_ROUND_SUMMARY_TRANSCRIPT_TOKENS = 8000
 DEFAULT_CONTEXT_COMPRESSION_CONFIG = {
     "enabled": True,
     "summary_max_tokens": DEFAULT_SUMMARY_MAX_TOKENS,
@@ -128,6 +133,8 @@ class CompressionMeta:
     tool_definition_tokens: int = 0
     current_turn_tokens: int = 0
     context_limit_source: str = "configured"
+    # Content-free diagnostics for the durable active-round checkpoint.
+    active_round_checkpoint: dict[str, Any] | None = None
 
 
 def _history_override_is_active_delta(
@@ -1439,6 +1446,9 @@ async def _summarize_context(
     max_tokens: int,
     max_transcript_tokens: int,
     previous_summary: str | None = None,
+    timeout_seconds: float = CONTEXT_SUMMARY_TIMEOUT_SECONDS,
+    max_attempts: int = CONTEXT_SUMMARY_MAX_ATTEMPTS,
+    retry_delay_seconds: float = CONTEXT_SUMMARY_RETRY_DELAY_SECONDS,
 ) -> str | None:
     transcript = _render_summary_transcript(messages_to_summarize)
     transcript, _ = truncate_text_to_tokens(
@@ -1458,7 +1468,7 @@ async def _summarize_context(
         )
     response = None
     last_error: Exception | None = None
-    for attempt in range(1, CONTEXT_SUMMARY_MAX_ATTEMPTS + 1):
+    for attempt in range(1, max(max_attempts, 1) + 1):
         try:
             from app.llm import model_manager
 
@@ -1480,7 +1490,7 @@ async def _summarize_context(
                         ),
                     ],
                 ),
-                timeout=CONTEXT_SUMMARY_TIMEOUT_SECONDS,
+                timeout=timeout_seconds,
             )
             if (response.content or "").strip():
                 break
@@ -1490,7 +1500,7 @@ async def _summarize_context(
                 "Context summarization attempt %d/%d returned empty content "
                 "for conversation %s",
                 attempt,
-                CONTEXT_SUMMARY_MAX_ATTEMPTS,
+                max(max_attempts, 1),
                 conversation.id,
             )
         except Exception as exc:
@@ -1500,19 +1510,19 @@ async def _summarize_context(
                 "Context summarization attempt %d/%d failed for conversation %s "
                 "(%s: %r)",
                 attempt,
-                CONTEXT_SUMMARY_MAX_ATTEMPTS,
+                max(max_attempts, 1),
                 conversation.id,
                 type(exc).__name__,
                 exc,
                 exc_info=True,
             )
-        if attempt < CONTEXT_SUMMARY_MAX_ATTEMPTS:
-            await asyncio.sleep(CONTEXT_SUMMARY_RETRY_DELAY_SECONDS)
+        if attempt < max(max_attempts, 1):
+            await asyncio.sleep(max(retry_delay_seconds, 0.0))
     if response is None:
         logger.error(
             "Context summarization failed after %d attempts for conversation %s "
             "(%s: %r)",
-            CONTEXT_SUMMARY_MAX_ATTEMPTS,
+            max(max_attempts, 1),
             conversation.id,
             type(last_error).__name__ if last_error else "unknown",
             last_error,
@@ -1586,7 +1596,76 @@ async def _persist_context_summary(
         )
 
 
-def _compact_completed_tool_results(
+def _complete_tool_groups(
+    messages: Sequence[Message],
+    meta: Sequence[dict[str, Any]],
+    *,
+    current_user_index: int,
+    active_round_id: UUID | str | None = None,
+) -> list[dict[str, Any]]:
+    """Collect provider-protocol-complete tool-call groups in scope.
+
+    A group is one assistant message plus the contiguous tool results that
+    answer *every* call id it declared.  Incomplete groups (pending approval /
+    paused ``ask_user`` / a call without its result) are never returned, and
+    groups containing a native ``view_asset`` result are excluded because their
+    multimodal parts cannot be restored by text readback.  ``ask_user`` groups
+    are excluded too: their tool result *is* the human's instruction and must
+    stay verbatim.
+
+    Scope: when the durable active round is known, every group in that round is
+    eligible — including completed groups that precede a steering message, so
+    the boundary is the round rather than the newest user message.  Without a
+    durable round the conservative user-message boundary is kept.
+    """
+    if len(meta) != len(messages):
+        return []
+    groups: list[dict[str, Any]] = []
+    for index, message in enumerate(messages):
+        if message.role != MessageRole.ASSISTANT or not message.tool_calls:
+            continue
+        round_id = meta[index].get("round_id")
+        if active_round_id is not None:
+            if round_id is None or str(round_id) != str(active_round_id):
+                continue
+        elif index < current_user_index:
+            continue
+        if any(
+            call.function is not None
+            and call.function.name in {"view_asset", "ask_user"}
+            for call in message.tool_calls
+        ):
+            continue
+        ids = [call.id for call in message.tool_calls if call.id]
+        if not ids:
+            continue
+        id_set = set(ids)
+        result_indexes: list[int] = []
+        for result_index in range(index + 1, len(messages)):
+            result = messages[result_index]
+            if result.role != MessageRole.TOOL:
+                break
+            if result.tool_call_id in id_set:
+                result_indexes.append(result_index)
+        if {messages[i].tool_call_id for i in result_indexes} != id_set:
+            continue
+        if any(str(meta[i].get("round_id")) != str(round_id) for i in result_indexes):
+            # Every result must belong to the assistant's round.  Results from
+            # another round (even a consistent one) cannot be referenced with
+            # this round's assistant call.
+            continue
+        groups.append(
+            {
+                "assistant_index": index,
+                "result_indexes": result_indexes,
+                "call_ids": ids,
+                "round_id": round_id,
+            }
+        )
+    return groups
+
+
+def _compact_tool_groups(
     messages: list[Message],
     meta: list[dict[str, Any]],
     *,
@@ -1596,35 +1675,34 @@ def _compact_completed_tool_results(
     current_user_index: int,
     model_id: str | None,
     provider: str | None,
-) -> tuple[list[Message], bool]:
-    """Replace old complete tool results in the model view, not persisted records."""
-    from app.services.tool_result_readback import tool_result_ref
+    replacements: dict[str, str] | None = None,
+    active_round_id: UUID | str | None = None,
+) -> tuple[list[Message], bool, list[int]]:
+    """Compact complete groups' result contents only; never protocol fields.
 
-    if len(meta) != len(messages):
-        return messages, False
-    groups: list[list[int]] = []
-    for index, message in enumerate(messages):
-        if (
-            index < current_user_index
-            or message.role != MessageRole.ASSISTANT
-            or not message.tool_calls
-        ):
-            continue
-        if any(call.function.name == "view_asset" for call in message.tool_calls):
-            continue
-        ids = {call.id for call in message.tool_calls}
-        results = []
-        for result_index in range(index + 1, len(messages)):
-            result = messages[result_index]
-            if result.role != MessageRole.TOOL:
-                break
-            if result.tool_call_id in ids:
-                results.append(result_index)
-        if {messages[i].tool_call_id for i in results} == ids:
-            groups.append(results)
+    ``replacements`` maps a tool call id to the model-facing condensed text.
+    Calls without a replacement fall back to the explicit omission marker when
+    readback is addressable, so a result is either visible (raw), replaced by
+    the caller's semantic checkpoint, or explicitly marked as omitted with a
+    ref.  Returns the covered result indexes so callers can persist exactly
+    what was applied.
+    """
+    from app.services.context_checkpoint import omission_marker, result_reference
+
+    groups = _complete_tool_groups(
+        messages,
+        meta,
+        current_user_index=current_user_index,
+        active_round_id=active_round_id,
+    )
+    if not groups:
+        return messages, False, []
     result = list(messages)
     changed = False
-    # Protect the latest two groups unless they alone exceed the hard budget.
+    covered: list[int] = []
+    markers = replacements or {}
+    # Protect the newest two complete groups unless they alone exceed the hard
+    # budget; pending/incomplete groups are not in ``groups`` at all.
     for group_index, group in enumerate(groups):
         if group_index >= len(groups) - 2 and (
             _estimate_message_tokens(result, model_id=model_id, provider=provider)
@@ -1632,21 +1710,24 @@ def _compact_completed_tool_results(
             <= hard_budget
         ):
             break
-        for index in group:
+        for index in group["result_indexes"]:
             message = result[index]
-            round_id = meta[index].get("round_id")
-            if not round_id or not message.tool_call_id:
+            if not isinstance(message.content, str) or not message.tool_call_id:
                 continue
-            ref = tool_result_ref(round_id, message.tool_call_id)
-            replacement = (
-                f"[Earlier tool result omitted from context. Use read_tool_result "
-                f"with ref={ref} to read it. Do not assume its contents.]"
-            )
-            if not isinstance(message.content, str) or len(message.content) <= len(
-                replacement
-            ):
+            replacement = markers.get(message.tool_call_id)
+            if replacement is None:
+                ref = result_reference(
+                    role=message.role,
+                    tool_call_id=message.tool_call_id,
+                    round_id=meta[index].get("round_id"),
+                    tool_name=message.name,
+                    content=message.content,
+                )
+                replacement = omission_marker(ref) if ref is not None else None
+            if not replacement or len(message.content) <= len(replacement):
                 continue
             result[index] = message.model_copy(update={"content": replacement})
+            covered.append(index)
             changed = True
         if (
             _estimate_message_tokens(result, model_id=model_id, provider=provider)
@@ -1654,7 +1735,526 @@ def _compact_completed_tool_results(
             <= budget
         ):
             break
-    return result, changed
+    return result, changed, covered
+
+
+@dataclass(slots=True)
+class _ActiveRoundCompaction:
+    """Result of checkpoint-aware active-round compaction."""
+
+    messages: list[Message]
+    changed: bool
+    diagnostics: dict[str, Any] | None = None
+    persistence: dict[str, Any] | None = None
+
+
+def _apply_result_markers(
+    messages: list[Message],
+    indexes: list[int],
+    markers: dict[str, str],
+) -> tuple[list[Message], list[int]]:
+    """Replace exactly the given result contents; protocol fields untouched."""
+    result = list(messages)
+    applied: list[int] = []
+    for index in indexes:
+        message = result[index]
+        replacement = markers.get(message.tool_call_id or "")
+        if not replacement or not isinstance(message.content, str):
+            continue
+        if len(message.content) <= len(replacement):
+            continue
+        result[index] = message.model_copy(update={"content": replacement})
+        applied.append(index)
+    return result, applied
+
+
+async def _compact_active_round(
+    messages: list[Message],
+    meta: list[dict[str, Any]],
+    *,
+    agent: Agent,
+    conversation: Conversation,
+    conversation_id: UUID | None,
+    current_user_index: int,
+    active_round_id: UUID | str | None,
+    budget: int,
+    hard_budget: int,
+    tool_definition_tokens: int,
+    model_id: str,
+    tokenizer_model_id: str | None,
+    provider: str | None,
+) -> _ActiveRoundCompaction:
+    """Condense completed active-round tool exchanges for the model view.
+
+    Coverage is decided by the existing budget loop over complete groups using
+    honest readback markers.  A real LLM summary is then generated for exactly
+    that coverage via ``_summarize_context``; if the whole covered transcript
+    does not fit the summarizer budget, summarization fails, or the semantic
+    view does not fit, the result is the readback-only view — never a partial
+    or prefix "summary".  Every covered result always has a readable ref.
+    """
+    from app.services import context_checkpoint as checkpoint
+
+    groups = _complete_tool_groups(
+        messages,
+        meta,
+        current_user_index=current_user_index,
+        active_round_id=active_round_id,
+    )
+    if not groups:
+        return _ActiveRoundCompaction(messages=messages, changed=False)
+    durable_scope = active_round_id is not None
+    round_id = str(active_round_id) if durable_scope else None
+    sources: dict[str, checkpoint.ToolResultSource] = {}
+    for group in groups:
+        if group.get("round_id") is None:
+            continue
+        for index in group["result_indexes"]:
+            message = messages[index]
+            if not isinstance(message.content, str) or not message.tool_call_id:
+                continue
+            sources.setdefault(
+                message.tool_call_id,
+                checkpoint.ToolResultSource(
+                    tool_call_id=message.tool_call_id,
+                    tool_name=message.name,
+                    content=message.content,
+                    round_id=group["round_id"],
+                ),
+            )
+    if not sources:
+        return _ActiveRoundCompaction(messages=messages, changed=False)
+
+    loaded = None
+    version_hashes: dict[str, str | None] | None = None
+    if durable_scope and conversation_id is not None and round_id is not None:
+        try:
+            loaded = await checkpoint.load_round_checkpoint(
+                conversation_id=conversation_id,
+                round_id=UUID(round_id),
+            )
+            if loaded is not None:
+                version_hashes = await checkpoint.active_branch_version_hashes(
+                    conversation_id=conversation_id,
+                    round_id=UUID(round_id),
+                    tool_call_ids=list(sources),
+                )
+        except Exception:
+            logger.debug(
+                "Active-round checkpoint load failed for conversation %s",
+                conversation_id,
+                exc_info=True,
+            )
+            loaded, version_hashes = None, None
+
+    entries: dict[str, dict[str, Any]] = {}
+    invalidated = 0
+    for call_id, source in sources.items():
+        existing = loaded.entries.get(call_id) if loaded is not None else None
+        if existing is not None and existing.get(
+            "content_sha256"
+        ) == checkpoint.content_version_hash(source.content):
+            entries[call_id] = existing
+            continue
+        if existing is not None:
+            invalidated += 1
+        fresh = checkpoint.build_entry(source)
+        if fresh is not None:
+            entries[call_id] = fresh
+    readback_markers = {
+        call_id: checkpoint.omission_marker(entry["ref"])
+        for call_id, entry in entries.items()
+    }
+    result, changed, covered_indexes = _compact_tool_groups(
+        messages,
+        meta,
+        budget=budget,
+        hard_budget=hard_budget,
+        tool_definition_tokens=tool_definition_tokens,
+        current_user_index=current_user_index,
+        model_id=tokenizer_model_id or model_id,
+        provider=provider,
+        replacements=readback_markers,
+        active_round_id=active_round_id,
+    )
+    if not changed or not covered_indexes:
+        return _ActiveRoundCompaction(messages=messages, changed=False)
+
+    covered_call_ids = list(
+        dict.fromkeys(
+            result[index].tool_call_id
+            for index in covered_indexes
+            if result[index].tool_call_id
+        )
+    )
+    coverage = [entries[call_id] for call_id in covered_call_ids if call_id in entries]
+    coverage_ids = [entry["tool_call_id"] for entry in coverage]
+    summary_text: str | None = None
+    summary_reused = False
+    summary_failed = False
+    reason: str | None = None
+    # The summarizer needs the complete exchange, not just result text: the
+    # current user goal, each covered assistant tool call (name and arguments),
+    # and the paired result with its recorded outcome and ref.  Only messages
+    # already present in this authorized model view are used.  The hash of this
+    # whole ordered source — not just tool results — binds summary reuse, so a
+    # changed goal/steering or changed call arguments invalidates it.
+    covered_set = set(coverage_ids)
+    synthetic: list[Message] = []
+    if coverage and 0 <= current_user_index < len(messages):
+        synthetic.append(
+            Message(
+                role=MessageRole.USER,
+                content=(
+                    "Current user goal/instructions:\n"
+                    f"{_stringify_content(messages[current_user_index].content)}"
+                ),
+            )
+        )
+    for group in groups:
+        assistant_index = group["assistant_index"]
+        assistant = messages[assistant_index]
+        call_ids = [
+            call.id
+            for call in assistant.tool_calls or ()
+            if call.id in covered_set and call.id in entries
+        ]
+        if not call_ids:
+            continue
+        synthetic.append(
+            Message(
+                role=MessageRole.ASSISTANT,
+                content=_stringify_content(assistant.content),
+                tool_calls=[
+                    call for call in assistant.tool_calls or () if call.id in call_ids
+                ],
+            )
+        )
+        for call_id in call_ids:
+            entry = entries[call_id]
+            synthetic.append(
+                Message(
+                    role=MessageRole.TOOL,
+                    name=(
+                        f"{entry.get('tool_name') or 'tool'} "
+                        f"call={entry['tool_call_id']} "
+                        f"outcome={entry['status']} ref={entry['ref']}"
+                    ),
+                    content=sources[call_id].content,
+                    tool_call_id=call_id,
+                )
+            )
+    transcript = _render_summary_transcript(synthetic) if synthetic else ""
+    source_sha256 = checkpoint.content_version_hash(transcript)
+    same_source = (
+        source_sha256 is not None
+        and loaded is not None
+        and loaded.source_sha256 == source_sha256
+        and loaded.covers(coverage_ids)
+        and all(
+            loaded.entries[call_id].get("content_sha256")
+            == entries[call_id].get("content_sha256")
+            for call_id in coverage_ids
+        )
+    )
+    if same_source and loaded.mode == "semantic" and loaded.summary_text:
+        summary_text = loaded.summary_text
+        summary_reused = True
+    elif coverage:
+        count_model = tokenizer_model_id or model_id
+        # The semantic marker must replace a result whose original content is
+        # long enough to host it.  Prefer any covered host (parallel calls may
+        # have a short first result and a long later one); if no result can
+        # even host the marker skeleton, do not call the summarizer at all.
+        marker_skeleton = checkpoint.semantic_marker("", coverage)
+        host_indexes = [
+            index
+            for index in covered_indexes
+            if result[index].tool_call_id in entries
+            and isinstance(messages[index].content, str)
+            and len(messages[index].content) > len(marker_skeleton)
+        ]
+        marker_tokens = _estimate_message_tokens(
+            [Message(role=MessageRole.USER, content=marker_skeleton)],
+            model_id=tokenizer_model_id,
+            provider=provider,
+        )
+        readback_tokens = _estimate_message_tokens(
+            result,
+            model_id=tokenizer_model_id,
+            provider=provider,
+        ) + max(tool_definition_tokens, 0)
+        if not host_indexes:
+            reason = "no_semantic_host"
+        elif (
+            readback_tokens + marker_tokens + ACTIVE_ROUND_SUMMARY_MAX_TOKENS
+            > hard_budget
+        ):
+            # Even the shortest possible summary cannot fit next to the
+            # mandatory markers.  Skip the LLM call and state the reason.
+            reason = "semantic_view_over_budget"
+        else:
+            transcript_tokens = count_tokens(
+                transcript, model_id=count_model, provider=provider
+            )
+            prompt_overhead = count_tokens(
+                SUMMARY_SYSTEM_INSTRUCTION
+                + "\nConversation transcript:\n\n\n\nWrite the summary now.",
+                model_id=count_model,
+                provider=provider,
+            )
+            # The pre-check covers the *entire* summarizer request: system
+            # prompt, prompt wrapper, transcript, and reserved output tokens.
+            transcript_budget = min(
+                ACTIVE_ROUND_SUMMARY_TRANSCRIPT_TOKENS,
+                max(
+                    hard_budget - prompt_overhead - ACTIVE_ROUND_SUMMARY_MAX_TOKENS,
+                    1,
+                ),
+            )
+            if transcript_tokens > transcript_budget:
+                # Never mark calls as covered when their content did not fit
+                # the summarizer input.  Use explicit readback markers.
+                reason = "summary_transcript_too_large"
+            else:
+                try:
+                    summary_text = await _summarize_context(
+                        agent=agent,
+                        conversation=conversation,
+                        messages_to_summarize=synthetic,
+                        model_id=model_id,
+                        tokenizer_model_id=tokenizer_model_id,
+                        provider=provider,
+                        max_tokens=ACTIVE_ROUND_SUMMARY_MAX_TOKENS,
+                        max_transcript_tokens=transcript_budget,
+                        timeout_seconds=ACTIVE_ROUND_SUMMARY_TIMEOUT_SECONDS,
+                        max_attempts=1,
+                    )
+                except Exception:
+                    # Any summarizer failure must degrade to explicit readback
+                    # markers rather than block the live tool loop.
+                    logger.warning(
+                        "Active-round summary failed for conversation %s",
+                        conversation_id,
+                        exc_info=True,
+                    )
+                    summary_text = None
+                    summary_failed = True
+                    reason = "summary_failed"
+                if not summary_text:
+                    summary_failed = True
+                    reason = reason or "summary_failed"
+
+    if summary_text and coverage:
+        marker = checkpoint.semantic_marker(summary_text, coverage)
+        # Any covered result long enough may host the marker; pick the longest
+        # so a short first parallel result cannot force a readback downgrade.
+        hosts = [
+            index
+            for index in covered_indexes
+            if result[index].tool_call_id in entries
+            and isinstance(messages[index].content, str)
+            and len(messages[index].content) > len(marker)
+        ]
+        if hosts:
+            host_index = max(hosts, key=lambda index: len(messages[index].content))
+            semantic_markers = dict(readback_markers)
+            semantic_markers[result[host_index].tool_call_id] = marker
+            semantic_messages, applied = _apply_result_markers(
+                messages, covered_indexes, semantic_markers
+            )
+            if host_index in applied and (
+                _estimate_message_tokens(
+                    semantic_messages,
+                    model_id=tokenizer_model_id,
+                    provider=provider,
+                )
+                + max(tool_definition_tokens, 0)
+                <= hard_budget
+            ):
+                result = semantic_messages
+                mode = "semantic"
+            else:
+                summary_text, mode = None, "readback_only"
+                reason = "semantic_view_over_budget"
+        else:
+            summary_text, mode = None, "readback_only"
+            reason = "no_semantic_host"
+    else:
+        mode = "readback_only"
+
+    diagnostics: dict[str, Any] = {
+        "round_id": round_id,
+        "mode": mode,
+        "covered_tool_calls": len(coverage),
+        "summary_reused": summary_reused,
+        "summary_failed": summary_failed,
+        "invalidated_entries": invalidated,
+    }
+    if reason:
+        diagnostics["reason"] = reason
+    if not durable_scope:
+        diagnostics["persisted"] = "not_persisted"
+        diagnostics["reason"] = "no_durable_run"
+    persistence = None
+    if coverage and durable_scope and round_id is not None:
+        persistence = {
+            "round_id": round_id,
+            "conversation_id": conversation_id,
+            "entries": coverage,
+            "summary_text": summary_text,
+            "mode": mode,
+            "source_sha256": source_sha256 if mode == "semantic" else None,
+            "summary_reused": summary_reused,
+            "summary_failed": summary_failed,
+            "loaded": loaded,
+            "version_hashes": version_hashes,
+        }
+    return _ActiveRoundCompaction(
+        messages=result,
+        changed=True,
+        diagnostics=diagnostics,
+        persistence=persistence,
+    )
+
+
+def _markers_present(
+    messages: Sequence[Message],
+    entries: list[dict[str, Any]],
+    *,
+    summary_text: str | None,
+    mode: str,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Entries whose markers are in the final view, plus semantic presence."""
+    from app.services.context_checkpoint import omission_marker, semantic_marker
+
+    view = {
+        message.tool_call_id: message.content
+        for message in messages
+        if message.role == MessageRole.TOOL
+    }
+    semantic = (
+        semantic_marker(summary_text, entries)
+        if mode == "semantic" and summary_text
+        else None
+    )
+    if semantic is not None and semantic in view.values():
+        return list(entries), True
+    applied = [
+        entry
+        for entry in entries
+        if view.get(entry["tool_call_id"]) == omission_marker(entry["ref"])
+    ]
+    return applied, False
+
+
+async def _persist_active_round_checkpoint(
+    persistence: dict[str, Any] | None,
+    *,
+    messages: Sequence[Message],
+    compression: CompressionMeta,
+) -> None:
+    """Persist the applied checkpoint after the model view fits.
+
+    Never raises into context preparation and never touches message rows or the
+    conversation summary watermark.  A semantic summary is written only when
+    its marker survived and every covered result still matches the current
+    active-branch version; otherwise the checkpoint is stored in honest
+    readback-only mode (or not at all).
+    """
+    if not persistence:
+        return
+    from app.services import context_checkpoint as checkpoint
+
+    diagnostics = compression.active_round_checkpoint
+    if diagnostics is None:
+        diagnostics = {}
+        compression.active_round_checkpoint = diagnostics
+    entries: list[dict[str, Any]] = list(persistence.get("entries") or [])
+    mode = persistence.get("mode") or "readback_only"
+    summary_text = persistence.get("summary_text")
+    applied, semantic_present = _markers_present(
+        messages, entries, summary_text=summary_text, mode=mode
+    )
+    diagnostics["covered_tool_calls"] = len(applied)
+    if mode == "semantic" and not semantic_present:
+        mode, summary_text = "readback_only", None
+        diagnostics["mode"] = mode
+    if not applied:
+        diagnostics["persisted"] = "not_applied"
+        return
+    version_hashes = persistence.get("version_hashes")
+    loaded = persistence.get("loaded")
+    if version_hashes is None:
+        diagnostics["persisted"] = "unverified"
+        diagnostics["reason"] = "active_branch_version_unknown"
+        compression.actions = list(
+            dict.fromkeys(
+                [*(compression.actions or []), "round_checkpoint_not_persisted"]
+            )
+        )
+        return
+    verified = [
+        entry
+        for entry in applied
+        if version_hashes.get(entry["tool_call_id"]) == entry.get("content_sha256")
+    ]
+    persist_mode, persist_summary = mode, summary_text
+    if mode == "semantic" and len(verified) != len(entries):
+        # The live view may keep its honestly generated summary, but it must not
+        # be persisted as semantic coverage that includes unverified versions.
+        persist_mode, persist_summary = "readback_only", None
+        diagnostics["persisted_mode"] = persist_mode
+        diagnostics.setdefault("reason", "semantic_coverage_unverified")
+    if not verified:
+        diagnostics["persisted"] = "not_persisted"
+        diagnostics.setdefault("reason", "active_branch_version_mismatch")
+        compression.actions = list(
+            dict.fromkeys(
+                [*(compression.actions or []), "round_checkpoint_version_mismatch"]
+            )
+        )
+        return
+    conversation_id = persistence.get("conversation_id")
+    if conversation_id is None:
+        diagnostics["persisted"] = "no_run"
+        return
+    try:
+        status = await checkpoint.save_round_checkpoint(
+            conversation_id=conversation_id,
+            round_id=UUID(str(persistence["round_id"])),
+            entries=verified,
+            summary_text=persist_summary,
+            mode=persist_mode,
+            source_sha256=(
+                persistence.get("source_sha256") if persist_mode == "semantic" else None
+            ),
+            previous=(loaded.persisted if loaded is not None else None),
+        )
+    except Exception:
+        logger.warning(
+            "Failed to persist active-round context checkpoint for conversation %s",
+            conversation_id,
+            exc_info=True,
+        )
+        status = "failed"
+    diagnostics["persisted"] = status
+    actions = [*(compression.actions or [])]
+    if mode == "semantic":
+        actions.append(
+            "round_checkpoint_reused"
+            if persistence.get("summary_reused")
+            else "round_checkpoint_summary"
+        )
+    else:
+        actions.append("round_checkpoint_readback_only")
+        if persistence.get("summary_failed"):
+            actions.append("round_checkpoint_summary_failed")
+    if status == "failed":
+        actions.append("round_checkpoint_persist_failed")
+    elif status not in {"updated", "unchanged"}:
+        actions.append("round_checkpoint_not_persisted")
+    compression.actions = list(dict.fromkeys(actions))
 
 
 @dataclass(slots=True)
@@ -1684,6 +2284,7 @@ class ContextPlan:
     current_user_message_id: UUID | None
     exclude_message_ids: Sequence[UUID] | None
     history_before_message_created_at: datetime | None
+    protected_round_id: UUID | str | None = None
 
     @property
     def _new_watermark_id(self) -> UUID | None:
@@ -1703,22 +2304,31 @@ class ContextPlan:
         protected_indexes = self.protected_indexes
         compression = self.compression
         token_budget = self.token_budget
+        checkpoint_persistence: dict[str, Any] | None = None
         if (
             self.compression_enabled
             and self.meta
             and self.compression.before_tokens > self.trigger_budget
         ):
-            messages, compacted = _compact_completed_tool_results(
+            compaction = await _compact_active_round(
                 self.messages,
                 self.meta,
+                agent=self.agent,
+                conversation=self.conversation,
+                conversation_id=getattr(self.conversation, "id", None),
+                current_user_index=self.current_user_index,
+                active_round_id=self.protected_round_id,
                 budget=self.trigger_budget,
                 hard_budget=token_budget.input_budget,
                 tool_definition_tokens=self.tool_definition_tokens,
-                current_user_index=self.current_user_index,
-                model_id=self.tokenizer_model_id,
+                model_id=self.model_id,
+                tokenizer_model_id=self.tokenizer_model_id,
                 provider=self.provider,
             )
-            if compacted:
+            messages = compaction.messages
+            compression.active_round_checkpoint = compaction.diagnostics
+            checkpoint_persistence = compaction.persistence
+            if compaction.changed:
                 compression.stage = "micro"
                 compression.actions = list(
                     dict.fromkeys(
@@ -1923,6 +2533,13 @@ class ContextPlan:
                     "reason": "context_summary_did_not_fit",
                     "context_limit": token_budget.context_limit,
                 },
+            )
+
+        if checkpoint_persistence is not None:
+            await _persist_active_round_checkpoint(
+                checkpoint_persistence,
+                messages=messages,
+                compression=compression,
             )
 
         return PreparedModelContext(
@@ -2133,6 +2750,27 @@ async def build_context_plan(
             tokenizer_model_id=tokenizer_model_id,
             provider=provider,
         )
+        # The live active round is never summarized into historical context:
+        # its complete exchanges are condensed by the active-round checkpoint
+        # instead, and covering them here could advance the summary watermark
+        # past results the run still needs verbatim.  This also protects a
+        # steering message: everything from the round's first entry onward
+        # stays in the retained suffix.
+        if protected_round_id is not None:
+            active_round_start_index = next(
+                (
+                    index
+                    for index, entry in enumerate(_meta)
+                    if entry.get("round_id") is not None
+                    and str(entry.get("round_id")) == str(protected_round_id)
+                ),
+                None,
+            )
+            if (
+                active_round_start_index is not None
+                and tail_start_index > active_round_start_index
+            ):
+                tail_start_index = active_round_start_index
         summarized = (
             [
                 message
@@ -2170,6 +2808,7 @@ async def build_context_plan(
         current_user_message_id=current_user_message_id,
         exclude_message_ids=exclude_message_ids,
         history_before_message_created_at=history_before_message_created_at,
+        protected_round_id=protected_round_id,
     )
 
 

@@ -252,6 +252,31 @@ class ToolDiscoveryState:
             self.loaded.remove(tool_name)
             self.loaded.append(tool_name)
 
+    async def reduce_for_retry(self) -> list[str]:
+        """Shed optional tool schemas for a context-overflow retry.
+
+        Only tools the model loaded on demand are removed; always-visible and
+        discovery tools remain declared. Returns the exact removed names so a
+        retry can report what changed. An empty list means no further schema
+        reduction is available here — callers must not claim a reduction or
+        retry on that basis.
+        """
+        removed = list(self.loaded)
+        if not removed:
+            return []
+        self.loaded.clear()
+        if self.on_loaded_change is not None:
+            try:
+                await self.on_loaded_change([])
+            except Exception:
+                # In-memory reduction still applies to the current attempt; a
+                # resumed run revalidates the persisted selection.
+                logger.warning(
+                    "Failed to persist discovered tool selection",
+                    exc_info=True,
+                )
+        return removed
+
     def undiscovered_error(self, tool_name: str) -> str:
         return json.dumps(
             {

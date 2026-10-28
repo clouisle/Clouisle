@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from app.llm.types import FunctionCall, Message, MessageRole, ToolCall
-from app.services.chat_context import _compact_completed_tool_results
+from app.services.chat_context import _compact_tool_groups
 
 
 def test_compaction_keeps_tool_protocol_and_raw_results():
@@ -28,7 +28,7 @@ def test_compaction_keeps_tool_protocol_and_raw_results():
         )
         meta.extend([{"round_id": round_id}, {"round_id": round_id}])
     original = messages[3].content
-    reduced, changed = _compact_completed_tool_results(
+    reduced, changed, _covered = _compact_tool_groups(
         messages,
         meta,
         budget=5000,
@@ -61,7 +61,7 @@ def test_incomplete_parallel_tool_group_is_never_compacted():
             content="large " * 2000,
         ),
     ]
-    reduced, changed = _compact_completed_tool_results(
+    reduced, changed, _covered = _compact_tool_groups(
         messages,
         [{}, {"round_id": round_id}, {"round_id": round_id}],
         budget=1,
@@ -88,7 +88,7 @@ def test_multimodal_view_is_preserved_under_pressure():
             content="asset " * 1000,
         ),
     ]
-    reduced, changed = _compact_completed_tool_results(
+    reduced, changed, _covered = _compact_tool_groups(
         messages,
         [{}, {"round_id": round_id}, {"round_id": round_id}],
         budget=1,
@@ -100,6 +100,43 @@ def test_multimodal_view_is_preserved_under_pressure():
     )
     assert not changed
     assert reduced[-1].content == messages[-1].content
+
+
+def test_result_from_another_round_is_never_grouped():
+    assistant_round = uuid4()
+    result_round = uuid4()
+    calls = [
+        ToolCall(id="a", function=FunctionCall(name="tool", arguments="{}")),
+        ToolCall(id="b", function=FunctionCall(name="tool", arguments="{}")),
+    ]
+    messages = [
+        Message(role=MessageRole.USER, content="request"),
+        Message(role=MessageRole.ASSISTANT, tool_calls=calls),
+        Message(role=MessageRole.TOOL, tool_call_id="a", content="large " * 2000),
+        Message(role=MessageRole.TOOL, tool_call_id="b", content="large " * 2000),
+    ]
+    # Both results claim the same round, but it is not the assistant's round.
+    meta = [
+        {},
+        {"round_id": assistant_round},
+        {"round_id": result_round},
+        {"round_id": result_round},
+    ]
+    reduced, changed, covered = _compact_tool_groups(
+        messages,
+        meta,
+        budget=1,
+        hard_budget=1,
+        tool_definition_tokens=0,
+        current_user_index=0,
+        model_id=None,
+        provider=None,
+    )
+    assert not changed
+    assert covered == []
+    assert [message.content for message in reduced] == [
+        message.content for message in messages
+    ]
 
 
 def test_hard_budget_allows_compacting_latest_complete_exchange():
@@ -115,7 +152,7 @@ def test_hard_budget_allows_compacting_latest_complete_exchange():
             content="large result " * 1000,
         ),
     ]
-    reduced, changed = _compact_completed_tool_results(
+    reduced, changed, _covered = _compact_tool_groups(
         messages,
         [{}, {"round_id": round_id}, {"round_id": round_id}],
         budget=500,

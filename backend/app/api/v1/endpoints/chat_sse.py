@@ -177,6 +177,9 @@ def build_compression_events(
         "context_limit_source": getattr(
             compression, "context_limit_source", "configured"
         ),
+        "active_round_checkpoint": getattr(
+            compression, "active_round_checkpoint", None
+        ),
         "note": "; ".join(note_parts),
     }
     end_event = (
