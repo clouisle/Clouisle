@@ -15,6 +15,7 @@ import {
 import { cn } from '@/lib/utils'
 import type { TeamModel } from '@/lib/api'
 import { ProviderIcon } from '@/components/model-provider'
+import { ModelModalities } from '@/components/model-modalities'
 import { getProviderTint } from '@/lib/model-provider'
 
 interface ModelCardProps {
@@ -56,7 +57,7 @@ export function ModelCard({ teamModel, onClick }: ModelCardProps) {
     <Card 
       size="sm"
       className={cn(
-        "group relative transition-all hover:shadow-md cursor-pointer py-0! h-36",
+        "group relative transition-all hover:shadow-md cursor-pointer py-0! min-h-36",
         !teamModel.is_enabled && "opacity-60"
       )}
       onClick={onClick}
@@ -111,6 +112,7 @@ export function ModelCard({ teamModel, onClick }: ModelCardProps) {
             </Tooltip>
           )}
         </div>
+        <div className="mt-2"><ModelModalities capabilities={model.capabilities} /></div>
         
         {/* 底部：配额使用情况 */}
         <div className="flex items-center gap-3 text-xs text-muted-foreground border-t mt-2 pt-2">

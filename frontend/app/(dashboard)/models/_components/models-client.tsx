@@ -69,6 +69,7 @@ import { ModelDialog } from './model-dialog'
 import { DeleteModelDialog } from './delete-model-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { ProviderLabel } from '@/components/model-provider'
+import { ModelModalities } from '@/components/model-modalities'
 import { useOptionalOnboarding } from '@/components/onboarding/onboarding-provider'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
 import { useDebounce } from '@/hooks/use-debounce'
@@ -454,6 +455,7 @@ export function ModelsClient() {
               <TableHead>{t('provider')}</TableHead>
               <TableHead>{t('modelType')}</TableHead>
               <TableHead>{t('modelId')}</TableHead>
+              <TableHead>{t('capabilities')}</TableHead>
               <TableHead>{t('status')}</TableHead>
               <TableHead>{t('apiKey')}</TableHead>
               <TableHead className="w-12"></TableHead>
@@ -462,13 +464,13 @@ export function ModelsClient() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center">
+                <TableCell colSpan={9} className="h-24 text-center">
                   {commonT('loading')}
                 </TableCell>
               </TableRow>
             ) : filteredModels.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                   {t('noModels')}
                 </TableCell>
               </TableRow>
@@ -506,6 +508,7 @@ export function ModelsClient() {
                   <TableCell className="font-mono text-sm text-muted-foreground">
                     {model.model_id}
                   </TableCell>
+                  <TableCell><ModelModalities capabilities={model.capabilities} /></TableCell>
                   <TableCell>{getStatusBadge(model)}</TableCell>
                   <TableCell>
                     {model.has_api_key ? (

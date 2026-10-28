@@ -10,6 +10,7 @@ mock.module("next-intl", () => ({
   },
 }));
 mock.module("lucide-react", () => ({
+  ArrowRight: () => null, AudioLines: () => null, File: () => null, Image: () => null, Type: () => null, Video: () => null,
   MessageSquare: () => null,
   Layers: () => null,
   ArrowUpDown: () => null,
