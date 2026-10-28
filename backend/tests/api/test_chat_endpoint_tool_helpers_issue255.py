@@ -154,6 +154,7 @@ async def test_agent_tools_assemble_memory_rag_builtin_and_custom(monkeypatch):
         "generate_image",
         "clock",
         "custom_lookup",
+        "read_tool_result",
     }
     assert by_name["custom_lookup"]["function"]["parameters"]["required"] == ["query"]
 
@@ -192,7 +193,7 @@ async def test_agent_tools_cover_skill_and_mcp_failures_without_network(
 
     assert [
         tool["function"]["name"] for tool in await chat.get_agent_tools(current_agent)
-    ] == ["ask_user"]
+    ] == ["ask_user", "read_tool_result"]
 
 
 @pytest.mark.anyio

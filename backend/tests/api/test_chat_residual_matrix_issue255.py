@@ -148,7 +148,8 @@ async def test_agent_tools_skip_unavailable_optional_sources(monkeypatch):
     )
 
     assert [tool["function"]["name"] for tool in await chat.get_agent_tools(agent)] == [
-        "ask_user"
+        "ask_user",
+        "read_tool_result",
     ]
 
 

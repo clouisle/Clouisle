@@ -1586,6 +1586,77 @@ async def _persist_context_summary(
         )
 
 
+def _compact_completed_tool_results(
+    messages: list[Message],
+    meta: list[dict[str, Any]],
+    *,
+    budget: int,
+    hard_budget: int,
+    tool_definition_tokens: int,
+    current_user_index: int,
+    model_id: str | None,
+    provider: str | None,
+) -> tuple[list[Message], bool]:
+    """Replace old complete tool results in the model view, not persisted records."""
+    from app.services.tool_result_readback import tool_result_ref
+
+    if len(meta) != len(messages):
+        return messages, False
+    groups: list[list[int]] = []
+    for index, message in enumerate(messages):
+        if (
+            index < current_user_index
+            or message.role != MessageRole.ASSISTANT
+            or not message.tool_calls
+        ):
+            continue
+        if any(call.function.name == "view_asset" for call in message.tool_calls):
+            continue
+        ids = {call.id for call in message.tool_calls}
+        results = []
+        for result_index in range(index + 1, len(messages)):
+            result = messages[result_index]
+            if result.role != MessageRole.TOOL:
+                break
+            if result.tool_call_id in ids:
+                results.append(result_index)
+        if {messages[i].tool_call_id for i in results} == ids:
+            groups.append(results)
+    result = list(messages)
+    changed = False
+    # Protect the latest two groups unless they alone exceed the hard budget.
+    for group_index, group in enumerate(groups):
+        if group_index >= len(groups) - 2 and (
+            _estimate_message_tokens(result, model_id=model_id, provider=provider)
+            + max(tool_definition_tokens, 0)
+            <= hard_budget
+        ):
+            break
+        for index in group:
+            message = result[index]
+            round_id = meta[index].get("round_id")
+            if not round_id or not message.tool_call_id:
+                continue
+            ref = tool_result_ref(round_id, message.tool_call_id)
+            replacement = (
+                f"[Earlier tool result omitted from context. Use read_tool_result "
+                f"with ref={ref} to read it. Do not assume its contents.]"
+            )
+            if not isinstance(message.content, str) or len(message.content) <= len(
+                replacement
+            ):
+                continue
+            result[index] = message.model_copy(update={"content": replacement})
+            changed = True
+        if (
+            _estimate_message_tokens(result, model_id=model_id, provider=provider)
+            + max(tool_definition_tokens, 0)
+            <= budget
+        ):
+            break
+    return result, changed
+
+
 @dataclass(slots=True)
 class ContextPlan:
     """Built context plus the single preflight summary decision."""
@@ -1632,13 +1703,35 @@ class ContextPlan:
         protected_indexes = self.protected_indexes
         compression = self.compression
         token_budget = self.token_budget
+        if (
+            self.compression_enabled
+            and self.meta
+            and self.compression.before_tokens > self.trigger_budget
+        ):
+            messages, compacted = _compact_completed_tool_results(
+                self.messages,
+                self.meta,
+                budget=self.trigger_budget,
+                hard_budget=token_budget.input_budget,
+                tool_definition_tokens=self.tool_definition_tokens,
+                current_user_index=self.current_user_index,
+                model_id=self.tokenizer_model_id,
+                provider=self.provider,
+            )
+            if compacted:
+                compression.stage = "micro"
+                compression.actions = list(
+                    dict.fromkeys(
+                        [*(compression.actions or []), "tool_result_compacted"]
+                    )
+                )
         preserved_suffix = (
-            self.messages[self.tail_start_index :]
+            messages[self.tail_start_index :]
             if self.tail_start_index > 0
-            else self.messages[self.current_user_index :]
+            else messages[self.current_user_index :]
         )
         protected_payload_tokens = _estimate_message_tokens(
-            [self.messages[0], *preserved_suffix],
+            [messages[0], *preserved_suffix],
             model_id=self.tokenizer_model_id,
             provider=self.provider,
         ) + max(self.tool_definition_tokens, 0)
@@ -1655,6 +1748,10 @@ class ContextPlan:
                     "retryable": False,
                     "reason": "protected_payload_over_budget",
                     "context_limit": token_budget.context_limit,
+                    "system_tokens": compression.system_tokens,
+                    "tool_definition_tokens": compression.tool_definition_tokens,
+                    "current_turn_tokens": compression.current_turn_tokens,
+                    "context_limit_source": compression.context_limit_source,
                 },
             )
         fixed_messages = [self.messages[0], *preserved_suffix]

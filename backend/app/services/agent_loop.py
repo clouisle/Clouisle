@@ -105,6 +105,12 @@ class AgentLoopContext:
     input_capabilities: Any = None
     model_config: Any = None
     tools: list[Any] | None = None
+    #: Optional authorized tool discovery state
+    #: (``app.services.tool_discovery.ToolDiscoveryState``). ``ctx.tools`` stays
+    #: the full authorized list; when discovery is active the loop sends
+    #: ``tool_discovery.tools_for_turn()`` instead, so a large catalog does not
+    #: occupy every provider request.
+    tool_discovery: Any = None
     resume_tool_calls: list[Any] | None = None
     tool_display_names: dict[str, str] = field(default_factory=dict)
     tool_timeouts: dict[str, Any] = field(default_factory=dict)
@@ -883,7 +889,11 @@ class AgentLoop:
         )
 
     async def _begin_model_trajectory(
-        self, messages_for_llm: list[dict[str, Any]], *, fallback: bool = False
+        self,
+        messages_for_llm: list[dict[str, Any]],
+        *,
+        fallback: bool = False,
+        tools: list[Any] | None = None,
     ) -> Any:
         """Snapshot the request at the boundary, before history can mutate."""
         ctx = self.context
@@ -906,7 +916,7 @@ class AgentLoop:
                     ctx.streaming and ctx.team_chat_stream is not None and not fallback
                 ),
                 messages=messages_for_llm,
-                tools=ctx.tools,
+                tools=tools if tools is not None else ctx.tools,
                 options=safe_model_options(ctx.model_config),
                 # Configured budgets, not verified effective provider values.
                 limits={
@@ -1090,13 +1100,20 @@ class AgentLoop:
                 return
 
             # ---- provider context -------------------------------------------
+            # Tool discovery may change the visible schemas after each turn
+            # (``load_tools``), so the list is resolved once per iteration.
+            turn_tools = (
+                ctx.tool_discovery.tools_for_turn()
+                if ctx.tool_discovery is not None
+                else ctx.tools
+            )
             messages_for_llm: list[dict[str, Any]] = []
             if not ctx.resume_tool_calls:
                 tool_definition_tokens = (
                     ctx.count_tool_definition_tokens(
-                        ctx.tools, ctx.tokenizer_model_id, ctx.model_provider
+                        turn_tools, ctx.tokenizer_model_id, ctx.model_provider
                     )
-                    if ctx.count_tool_definition_tokens and ctx.tools
+                    if ctx.count_tool_definition_tokens and turn_tools
                     else 0
                 )
                 kwargs = self._context_kwargs(tool_definition_tokens)
@@ -1141,7 +1158,9 @@ class AgentLoop:
             resuming_calls = bool(ctx.resume_tool_calls)
 
             model_state: dict[str, Any] = {
-                "handle": await self._begin_model_trajectory(messages_for_llm)
+                "handle": await self._begin_model_trajectory(
+                    messages_for_llm, tools=turn_tools
+                )
                 if not resuming_calls
                 else None,
                 "finalized": False,
@@ -1176,7 +1195,7 @@ class AgentLoop:
                     team_id=str(ctx.agent.team_id),
                     messages=messages_for_llm,
                     model_id=ctx.model_id,
-                    tools=ctx.tools,
+                    tools=turn_tools,
                 )
 
                 async def guarded_stream(iterator: Any) -> AsyncIterator[Any]:
@@ -1300,7 +1319,7 @@ class AgentLoop:
                     await finalize_model("empty")
                     model_state.update(
                         handle=await self._begin_model_trajectory(
-                            messages_for_llm, fallback=True
+                            messages_for_llm, fallback=True, tools=turn_tools
                         ),
                         finalized=False,
                         finish_reason=None,
@@ -1311,7 +1330,7 @@ class AgentLoop:
                             team_id=str(ctx.agent.team_id),
                             messages=messages_for_llm,
                             model_id=ctx.model_id,
-                            tools=ctx.tools,
+                            tools=turn_tools,
                         )
                     except asyncio.CancelledError:
                         await finalize_model("cancelled", "cancelled")
@@ -1356,7 +1375,7 @@ class AgentLoop:
                         team_id=str(ctx.agent.team_id),
                         messages=messages_for_llm,
                         model_id=ctx.model_id,
-                        tools=ctx.tools,
+                        tools=turn_tools,
                     )
                 except asyncio.CancelledError:
                     await finalize_model("cancelled", "cancelled")
@@ -1428,7 +1447,7 @@ class AgentLoop:
                     iteration_cache_creation_tokens,
                     iteration_total_input_tokens,
                 ) = ctx.calculate_usage(
-                    tools=ctx.tools,
+                    tools=turn_tools,
                     messages=messages_for_llm,
                     content=iteration_content,
                     reasoning_content=iteration_reasoning,

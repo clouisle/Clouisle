@@ -94,24 +94,26 @@ class AgentService:
         team_id = str(agent.team_id) if agent.team_id else None
         model_id = await self._resolve_model_id(agent)
         tools = await self._get_agent_tools(agent, user_id=user_id)
+        discovery = await self._build_tool_discovery(tools, agent, user_id)
         response_text = ""
         tool_calls: list[dict[str, Any]] = []
         dialogue: list[dict[str, Any]] = []
         artifacts: list[Any] = []
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         for current_turn in range(1, max_turns + 1):
+            turn_tools = discovery.tools_for_turn() if discovery is not None else tools
             if team_id:
                 response = await model_manager.team_chat(
                     team_id=team_id,
                     messages=cast(list[Any], messages),
-                    tools=tools or None,
+                    tools=cast(Any, turn_tools or None),
                     model_id=model_id,
                     user_id=user_id,
                 )
             else:
                 response = await model_manager.chat(
                     messages=cast(list[Any], messages),
-                    tools=tools or None,
+                    tools=cast(Any, turn_tools or None),
                     model_id=model_id,
                     user_id=user_id,
                 )
@@ -166,7 +168,9 @@ class AgentService:
                     tool_kwargs["workflow_run_id"] = workflow_run_id
                 if user_id is not None:
                     tool_kwargs["user_id"] = user_id
-                tool_result = await self._execute_tool(**tool_kwargs)
+                tool_result = await self._execute_tool(
+                    **tool_kwargs, tool_discovery=discovery
+                )
                 display_result, model_result = get_tool_execution_payloads(
                     tool_result, tool_call.function.name
                 )
@@ -233,6 +237,7 @@ class AgentService:
         team_id = str(agent.team_id) if agent.team_id else None
         model_id = await self._resolve_model_id(agent)
         tools = await self._get_agent_tools(agent, user_id=user_id)
+        discovery = await self._build_tool_discovery(tools, agent, user_id)
         dialogue: list[dict[str, Any]] = []
         artifacts: list[Any] = []
         for current_turn in range(1, max_turns + 1):
@@ -240,18 +245,19 @@ class AgentService:
             accumulated_reasoning = ""
             accumulated_tool_calls = []
             final_usage = None
+            turn_tools = discovery.tools_for_turn() if discovery is not None else tools
             stream = (
                 model_manager.team_chat_stream(
                     team_id=team_id,
                     messages=cast(list[Any], messages),
-                    tools=tools or None,
+                    tools=cast(Any, turn_tools or None),
                     model_id=model_id,
                     user_id=user_id,
                 )
                 if team_id
                 else model_manager.chat_stream(
                     messages=cast(list[Any], messages),
-                    tools=tools or None,
+                    tools=cast(Any, turn_tools or None),
                     model_id=model_id,
                     user_id=user_id,
                 )
@@ -305,7 +311,9 @@ class AgentService:
                         tool_kwargs["workflow_run_id"] = workflow_run_id
                     if user_id is not None:
                         tool_kwargs["user_id"] = user_id
-                    tool_result = await self._execute_tool(**tool_kwargs)
+                    tool_result = await self._execute_tool(
+                        **tool_kwargs, tool_discovery=discovery
+                    )
                     display_result, model_result = get_tool_execution_payloads(
                         tool_result, tool_call.function.name
                     )
@@ -697,6 +705,22 @@ class AgentService:
             artifacts.extend(AgentService._extract_artifacts(nested))
         return artifacts
 
+    async def _build_tool_discovery(
+        self,
+        tools: list[ToolDefinition] | None,
+        agent: Agent,
+        user_id: str | None,
+    ) -> Any:
+        """Tier a large authorized catalog behind discover/load tools."""
+        from app.services.tool_discovery import build_tool_discovery
+
+        return await build_tool_discovery(
+            tools,
+            factory=ToolDefinition.model_validate,
+            agent=agent,
+            user_id=user_id,
+        )
+
     async def _get_agent_tools(
         self, agent: Agent, user_id: str | None = None
     ) -> list[ToolDefinition]:
@@ -857,6 +881,8 @@ class AgentService:
         conversation_id: Any = None,
         workflow_run_id: Any = None,
         user_id: str | None = None,
+        *,
+        tool_discovery: Any = None,
     ) -> Any:
         """Execute a tool call with the caller's trusted runtime identity."""
         from app.services.tool_context import tool_identity_scope
@@ -869,6 +895,7 @@ class AgentService:
                 conversation_id=conversation_id,
                 workflow_run_id=workflow_run_id,
                 user_id=user_id,
+                tool_discovery=tool_discovery,
             )
         with tool_identity_scope(identity):
             return await self._dispatch_tool_call(
@@ -877,6 +904,7 @@ class AgentService:
                 conversation_id=conversation_id,
                 workflow_run_id=workflow_run_id,
                 user_id=user_id,
+                tool_discovery=tool_discovery,
             )
 
     async def _dispatch_tool_call(
@@ -886,6 +914,8 @@ class AgentService:
         conversation_id: Any = None,
         workflow_run_id: Any = None,
         user_id: str | None = None,
+        *,
+        tool_discovery: Any = None,
     ) -> Any:
         """Execute a tool call and return the result."""
         import json
@@ -903,6 +933,16 @@ class AgentService:
                 f"Failed to parse tool arguments: {tool_call.function.arguments}"
             )
             return {"error": t("invalid_tool_arguments")}
+
+        # Discovery tools are read-only catalog operations over the schemas
+        # this Agent already received; they never reach the execution boundary.
+        if tool_discovery is not None:
+            if tool_discovery.handles(tool_name):
+                return await tool_discovery.execute(tool_name, arguments)
+            if not tool_discovery.is_visible(tool_name):
+                return tool_discovery.undiscovered_error(tool_name)
+            tool_discovery.touch(tool_name)
+
         from app.api.v1.endpoints.chat_helpers.asset_tools import ASSET_TOOL_NAMES
 
         if tool_name in ASSET_TOOL_NAMES:

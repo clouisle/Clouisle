@@ -106,6 +106,7 @@ async def test_get_agent_tools_combines_memory_rag_media_builtin_and_custom_tool
         "generate_image",
         "generate_video",
         "custom_weather",
+        "read_tool_result",
     }
     assert "Handbook" in by_name["knowledge_search"]["function"]["description"]
     assert by_name["custom_weather"]["function"]["parameters"] == {
@@ -167,6 +168,7 @@ async def test_get_agent_tools_handles_skill_and_mcp_success_and_failures():
     assert [tool["function"]["name"] for tool in tools] == [
         "skill_research",
         "mcp_docs_lookup",
+        "read_tool_result",
     ]
     assert tools[1]["function"]["parameters"] == {
         "type": "object",

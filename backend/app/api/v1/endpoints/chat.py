@@ -1092,6 +1092,16 @@ Examples of when to search:
                             f"Failed to get MCP tools from {mcp_tool.name}: {e}"
                         )
 
+    # Context compaction replaces completed tool results with references.
+    # Expose the recovery tool whenever the model has any other tool, so a
+    # tool-less agent still gets exactly an empty tool list.
+    if openai_tools:
+        from app.services.tool_result_readback import (
+            build_read_tool_result_schema,
+        )
+
+        append_openai_tool(build_read_tool_result_schema())
+
     return openai_tools
 
 

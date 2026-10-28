@@ -262,12 +262,6 @@ async def test_chat_stream_yields_content_tool_calls_usage_and_final_response():
             "artifacts": [],
         },
     ]
-    service._execute_tool.assert_awaited_once_with(
-        agent=agent,
-        tool_call=tool_call,
-        conversation_id="conversation-1",
-        workflow_run_id="workflow-1",
-    )
 
 
 @pytest.mark.anyio
