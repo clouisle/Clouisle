@@ -380,7 +380,10 @@ def _skill_definition_version(skill: Any, config: dict[str, Any]) -> int:
     encoded = json.dumps(
         payload, sort_keys=True, separators=(",", ":"), default=str
     ).encode("utf-8")
-    return max(1, int(hashlib.sha256(encoded).hexdigest()[:12], 16))
+    # 28 bits keeps the fingerprint inside PostgreSQL INTEGER; the column is a
+    # plain IntField, so a wider slice would overflow and reject every skill
+    # call. Collisions only cause an unnecessary re-approval, never a bypass.
+    return max(1, int(hashlib.sha256(encoded).hexdigest()[:7], 16))
 
 
 def _is_policy_managed_tool(tool_name: str) -> bool:

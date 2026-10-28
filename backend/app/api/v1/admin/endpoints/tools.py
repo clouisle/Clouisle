@@ -83,10 +83,20 @@ async def _build_admin_tools(user: User, team_id: UUID | None = None) -> list[To
         if team_id is not None
         else get_builtin_tools(user.locale)
     )
+    # Builtin rows are already represented by the registry list above; skip
+    # them (and any duplicate id) instead of listing each builtin twice.
+    listed_ids = {tool.id for tool in tools if tool.id is not None}
     db_tools = (
         await Tool.all().prefetch_related("team", "created_by").order_by("-updated_at")
     )
     for db_tool in db_tools:
+        if db_tool.id in listed_ids:
+            continue
+        if getattr(db_tool, "type", None) in (
+            DBToolType.BUILTIN,
+            DBToolType.BUILTIN.value,
+        ):
+            continue
         creator_name = db_tool.created_by.username if db_tool.created_by else None
         tool_out = db_tool_to_out(db_tool, creator_name)
         tool_out.is_owned = True
@@ -247,6 +257,12 @@ async def create_tool(
 ) -> Any:
     await _get_team(team_id)
     _enforce_tool_write_contract(tool_in)
+    if tool_in.type == ToolType.BUILTIN:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="tool_builtin_not_creatable",
+            status_code=400,
+        )
     existing = await Tool.filter(team_id=team_id, name=tool_in.name).first()
     if existing:
         raise BusinessError(
@@ -310,6 +326,7 @@ async def update_tool(
             tool_in.http_config,
             tool_in.mcp_config,
             tool_in.connection_fields,
+            tool_in.approval_policy,
         )
     ):
         _enforce_tool_write_contract(

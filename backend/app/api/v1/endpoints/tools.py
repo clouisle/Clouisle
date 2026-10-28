@@ -940,6 +940,12 @@ async def create_tool(
     """创建自定义工具"""
     await check_team_permission(team_id, current_user, "tool:create")
     _enforce_tool_write_contract(tool_in)
+    if tool_in.type == ToolType.BUILTIN:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg_key="tool_builtin_not_creatable",
+            status_code=400,
+        )
     existing = await Tool.filter(team_id=team_id, name=tool_in.name).first()
     if existing:
         raise BusinessError(
@@ -1086,6 +1092,7 @@ async def update_tool(
             tool_in.http_config,
             tool_in.mcp_config,
             tool_in.connection_fields,
+            tool_in.approval_policy,
         )
     ):
         _enforce_tool_write_contract(
@@ -1236,6 +1243,9 @@ async def test_tool(
                 msg_key="team_id_required",
                 status_code=400,
             )
+        # Materializing a builtin definition writes team-scoped rows, so the
+        # caller must be authorized for that team before it happens.
+        await check_team_access(team_id, current_user)
         context = _tool_test_context(
             current_user, team_id, ExecutionEntrypoint.TOOL_TEST, request
         )

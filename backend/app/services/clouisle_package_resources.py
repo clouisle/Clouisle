@@ -488,6 +488,10 @@ class ToolPackageAdapter(ResourcePackageAdapter):
                     setattr(existing, key, value)
                 # Packaged definitions never carry inline credentials.
                 existing.credentials = {}
+                # A definition change must invalidate pending approvals.
+                existing.definition_version = (
+                    int(getattr(existing, "definition_version", 1) or 1) + 1
+                )
                 await existing.save()
                 return ClouisleImportInstallOut(updated=existing.id)
 
@@ -1156,6 +1160,7 @@ def _tool_fields(payload: dict[str, Any]) -> dict[str, Any]:
             payload.get("connection_fields")
         ),
         "identity_policy": payload.get("identity_policy") or "none",
+        "approval_policy": payload.get("approval_policy") or {},
     }
 
 

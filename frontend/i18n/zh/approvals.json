@@ -32,6 +32,8 @@
         "api_key": "API 密钥",
         "schedule": "定时任务",
         "channel": "消息渠道",
+        "feishu_channel": "飞书",
+        "wechat_channel": "微信",
         "embed": "嵌入式",
         "subworkflow": "子工作流",
         "nested_agent": "嵌套智能体",

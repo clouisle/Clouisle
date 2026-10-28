@@ -5,6 +5,8 @@ export type McpConnectionMode = 'personal' | 'team'
 export interface McpIdentityInput {
   connection_mode?: McpConnectionMode
   connection_id?: string
+  /** Resume one previously returned pending execution after approval. */
+  execution_id?: string
 }
 
 export interface McpCapabilities {

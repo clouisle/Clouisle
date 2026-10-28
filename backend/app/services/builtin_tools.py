@@ -5,11 +5,10 @@ stored tools, which requires a real ``Tool`` row (``ToolExecution.tool_id`` is
 mandatory). Definitions are materialized lazily and never reuse a custom/MCP
 tool name: a collision fails closed instead of shadowing user content.
 
-Approval defaults are conservative: registry/sandbox builtins get an explicit
-`allow` only when they opted into read-only concurrency
-(``ToolConcurrency.SHARED``); the audited read-only internal chat/agent tools
-get the same explicit allow. Everything else keeps the fail-closed default of
-requiring approval.
+Approval defaults to allow for materialized builtin definitions. Confirmation
+is opt-in and explicit: the Agent's ``require_approval`` switch, or a stored
+site/team/entrypoint policy layer, is applied by the execution boundary for
+every call.
 """
 
 from __future__ import annotations
@@ -47,22 +46,9 @@ _INTERNAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     "file_download": "Download a file",
 }
 
-#: Evidence-backed read-only internal tools. Audited: the asset/document
-#: readers, retrieval, and memory queries perform no business persist/network
-#: side effect (derived text is an in-scope cache of the already-authorized
-#: asset). Mutations and network fetches stay on the require-approval default.
-_INTERNAL_READ_ONLY_TOOL_KEYS: frozenset[str] = frozenset(
-    {
-        "list_assets",
-        "inspect_asset",
-        "read_asset",
-        "search_asset",
-        "view_asset",
-        "knowledge_search",
-        "search_memory",
-        "get_memory_subgraph",
-    }
-)
+#: Internal chat/agent tools default to allow; an Agent or a site/team/entrypoint
+#: policy opts into confirmation explicitly (``require_approval``), and that
+#: requirement is applied by the execution boundary, not inferred here.
 
 
 def supported_internal_tool_keys() -> tuple[str, ...]:
@@ -78,13 +64,13 @@ def ensure_builtin_registry() -> None:
         register_all_builtin_tools()
 
 
-def _approval_policy(info: Any = None) -> dict:
+def _approval_policy() -> dict:
     return ToolApprovalPolicy(default_decision=ApprovalDecision.ALLOW).model_dump(
         mode="json"
     )
 
 
-def _internal_approval_policy(name: str | None = None) -> dict:
+def _internal_approval_policy() -> dict:
     return ToolApprovalPolicy(default_decision=ApprovalDecision.ALLOW).model_dump(
         mode="json"
     )
@@ -94,7 +80,7 @@ async def _refresh_internal_approval(
     definition: Tool, name: str, *, using_db=None
 ) -> Tool:
     """Upgrade a legacy empty synthetic policy without touching admin choices."""
-    policy = _internal_approval_policy(name)
+    policy = _internal_approval_policy()
     if policy and not definition.approval_policy:
         await (
             Tool.filter(id=definition.id)
@@ -421,7 +407,7 @@ async def get_builtin_definition(
         type=ToolType.BUILTIN,
         parameters=resolved.parameters if resolved else _parameters(info),
         approval_policy=(
-            _internal_approval_policy(name) if synthetic else _approval_policy(info)
+            _internal_approval_policy() if synthetic else _approval_policy()
         ),
         identity_policy=identity_policy,
         connection_fields=connection_fields,

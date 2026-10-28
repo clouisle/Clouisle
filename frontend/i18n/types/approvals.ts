@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-27T04:04:22.620Z
+// GENERATED — 2026-10-28T08:03:25.031Z
 // Source: i18n/en/approvals.json
 export type ApprovalsMessages = {
   approvals: {
@@ -34,6 +34,8 @@ export type ApprovalsMessages = {
         api_key: string
         schedule: string
         channel: string
+        feishu_channel: string
+        wechat_channel: string
         embed: string
         subworkflow: string
         nested_agent: string

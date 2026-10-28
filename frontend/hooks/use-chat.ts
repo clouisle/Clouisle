@@ -472,9 +472,10 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   const reloadConversationMessages = useCallback(async (
     targetConversationId = conversationIdRef.current,
     isCurrent?: () => boolean,
+    prefetched?: { messages: ChatMessage[] },
   ) => {
     if (!targetConversationId) return
-    const { messages: convertedMessages } = await api.getConversation(targetConversationId)
+    const { messages: convertedMessages } = prefetched ?? await api.getConversation(targetConversationId)
     if (isCurrent && !isCurrent()) return
     const currentById = new Map(messagesRef.current.map((message) => [message.id, message]))
     const nextMessages = convertedMessages.map((message) => {
@@ -1029,9 +1030,11 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       try {
         const conversation = await api.getConversation(targetConversationId)
         if (reconnectGenerationRef.current !== generation || conversationIdRef.current !== targetConversationId) return
-        await reloadConversationMessages(targetConversationId, () => (
-          reconnectGenerationRef.current === generation && conversationIdRef.current === targetConversationId
-        ))
+        await reloadConversationMessages(
+          targetConversationId,
+          () => reconnectGenerationRef.current === generation && conversationIdRef.current === targetConversationId,
+          conversation,
+        )
         if (reconnectGenerationRef.current !== generation || conversationIdRef.current !== targetConversationId) return
         if (!conversation.activeRunId) return
         stored = { runId: conversation.activeRunId, lastSequence: 0 }
@@ -1137,6 +1140,12 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     void reconnectToRun()
   }, [reconnectToRun])
 
+  // Consumers pass inline callbacks, so ``reconnectToRun`` gets a new identity
+  // on every parent render. Effects below must not re-run (and re-fetch the
+  // whole conversation) for that reason, hence the ref.
+  const reconnectToRunRef = useRef(reconnectToRun)
+  reconnectToRunRef.current = reconnectToRun
+
   useEffect(() => {
     const previousConversationId = previousConversationRef.current
     if (previousConversationId !== conversationId) {
@@ -1159,8 +1168,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       }
       previousConversationRef.current = conversationId
     }
-    if (conversationId) void reconnectToRun(conversationId)
-  }, [conversationId, disconnectLocalSubscription, reconnectToRun, resetStreamingState, setCurrentRunStatus, setCurrentStatus, setPendingAskUserToolCallId])
+    if (conversationId) void reconnectToRunRef.current(conversationId)
+  }, [conversationId, disconnectLocalSubscription, resetStreamingState, setCurrentRunStatus, setCurrentStatus, setPendingAskUserToolCallId])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.addEventListener) return
@@ -1177,11 +1186,10 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       if (checking || cancelled || conversationIdRef.current !== conversationId || runIdRef.current || statusRef.current !== 'idle') return
       checking = true
       try {
-        await reloadConversationMessages(conversationId, () => (
-          !cancelled && conversationIdRef.current === conversationId && !runIdRef.current && statusRef.current === 'idle'
-        ))
-        if (!cancelled && conversationIdRef.current === conversationId && !runIdRef.current && statusRef.current === 'idle') {
-          await reconnectToRun(conversationId)
+        // reconnectToRun loads history and discovers the active run; a separate
+        // reload here would fetch the same conversation twice per tick.
+        if (conversationIdRef.current === conversationId && !runIdRef.current && statusRef.current === 'idle') {
+          await reconnectToRunRef.current(conversationId)
         }
       } catch {
         // Retry on the next interval; transient failures must not clear chat.
@@ -1191,7 +1199,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     }
     const timer = globalThis.setInterval(() => { void refresh() }, 3000)
     return () => { cancelled = true; globalThis.clearInterval(timer) }
-  }, [conversationId, reconnectToRun, reloadConversationMessages, runApi])
+  }, [conversationId, runApi])
 
   useEffect(() => () => {
     disconnectLocalSubscription()

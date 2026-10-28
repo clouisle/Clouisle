@@ -1437,7 +1437,6 @@ async def chat(
     return await _build_non_stream_run_response(run)
 
 
-@router.post("/{agent_id}/chat/stream")
 async def _chat_stream_impl(
     agent_id: UUID,
     chat_in: ChatRequest,

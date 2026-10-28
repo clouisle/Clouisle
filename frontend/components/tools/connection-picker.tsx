@@ -118,6 +118,10 @@ export function ToolConnectionPicker({
 
   React.useEffect(() => {
     let cancelled = false
+    // Never keep the previous tool's accounts visible or selectable while a
+    // new list loads (or when it fails); the server would reject a stale id.
+    setConnections([])
+    setLoadError(false)
     const load = async () => {
       if ((!tool?.id && !builtinToolKey) || !teamId || identity === 'none') {
         setConnections([])

@@ -37,7 +37,7 @@ callback_router = APIRouter()
 async def start_tool_oauth(
     connection_id: UUID,
     payload: OAuthStartRequest | None = Body(default=None),
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> dict:
     """Create a one-time PKCE flow for an existing connection.
 
@@ -61,7 +61,7 @@ async def start_tool_oauth(
 async def get_tool_oauth_status(
     connection_id: UUID,
     team_id: UUID | None = Query(default=None),
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> dict:
     """Return secret-free OAuth state for a connection."""
     status = await ToolOAuthService.get_status(
@@ -78,7 +78,7 @@ async def get_tool_oauth_status(
 )
 async def disconnect_tool_oauth(
     connection_id: UUID,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> dict:
     """Clear local tokens; attempt provider revocation best effort.
 

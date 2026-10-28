@@ -43,7 +43,9 @@ def _normalize_config(db_config: Mapping[str, Any] | None) -> dict[str, Any]:
                 config.pop(key, None)
                 continue
             try:
-                config[key] = int(value)
+                # Legacy migrations store numbers as strings ("15.0" for a float
+                # timeout); accept them instead of failing the whole tool.
+                config[key] = int(float(value))
             except ValueError:
                 raise ValueError(f"database_{key}_invalid") from None
     ssl = config.get("ssl")
@@ -68,7 +70,12 @@ async def execute_database_query(
 
     ``db_config`` must include ``db_type`` (injected by the builtin handler).
     """
-    config = _normalize_config(db_config)
+    try:
+        config = _normalize_config(db_config)
+    except ValueError as exc:
+        # Configuration problems are reported through the normal result shape;
+        # raising here would surface as an unhandled tool failure.
+        return {"error": str(exc), "success": False}
     args = dict(arguments or {})
     db_type = str(config.get("db_type") or "").strip().lower()
     query_timeout = float(config.get("timeout") or 15.0)

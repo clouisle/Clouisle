@@ -419,7 +419,7 @@ def get_code_message(code: int, lang: Optional[str] = None) -> str:
             "run_interaction_sampling_failed"
         ),
         ResponseCode.TOOL_INTERACTION_IDEMPOTENCY_CONFLICT: (
-            "run_interaction_invalid_response"
+            "run_interaction_idempotency_conflict"
         ),
     }
 

@@ -900,7 +900,21 @@ async def stop_waiting_run(run_id: UUID) -> AgentRun | None:
         )
     await _write_state_cache(run_id, AgentRunStatus.STOPPED)
     await _record_terminal_observability(run)
+    await _cancel_pending_tool_executions(run_id)
     return run
+
+
+async def _cancel_pending_tool_executions(run_id: UUID) -> None:
+    """Stop is terminal: an outstanding approval must not stay actionable."""
+    from app.models.tool_approval import ExecutionRunKind
+    from app.schemas.tool_approval import ToolExecutionCancelReason
+    from app.services import tool_approvals
+
+    await tool_approvals.cancel_pending_for_run(
+        run_kind=ExecutionRunKind.AGENT,
+        run_id=run_id,
+        reason=ToolExecutionCancelReason.RUN_STOPPED,
+    )
 
 
 async def stop_queued_run(run_id: UUID) -> AgentRun | None:
@@ -921,6 +935,7 @@ async def stop_queued_run(run_id: UUID) -> AgentRun | None:
         )
     await _write_state_cache(run_id, AgentRunStatus.STOPPED)
     await _record_terminal_observability(run)
+    await _cancel_pending_tool_executions(run_id)
     return run
 
 

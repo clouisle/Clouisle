@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import logging
 import math
@@ -64,12 +65,16 @@ POLL_INTERVAL_SECONDS = 0.25
 _SENSITIVE_FIELD = (
     "password",
     "passwd",
+    "passphrase",
+    "passcode",
+    "pwd",
     "secret",
     "token",
     "api_key",
     "apikey",
     "api-key",
     "private_key",
+    "ssh_key",
     "credential",
     "authorization",
     "bearer",
@@ -77,6 +82,10 @@ _SENSITIVE_FIELD = (
     "credit_card",
     "card_number",
     "cvv",
+    "otp",
+    "totp",
+    "mfa",
+    "one_time",
 )
 _ALLOWED_FORM_TYPES = {"string", "number", "integer", "boolean", "array"}
 _ALLOWED_ARRAY_ITEMS = {"string"}
@@ -633,7 +642,15 @@ def _resolve_response_content(
 
 
 def _response_digest(action: InteractionOutcome, content: Any) -> str:
-    return _sha256(_canonical_json({"action": action.value, "content": content}))
+    # Keyed so a database/backup reader cannot confirm low-entropy answers by
+    # recomputing the digest; still deterministic for idempotent replay.
+    from app.core.config import settings
+
+    return hmac.new(
+        settings.SECRET_KEY.encode("utf-8"),
+        _canonical_json({"action": action.value, "content": content}).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def _normalize_action(action: Any) -> InteractionOutcome:
@@ -876,13 +893,41 @@ async def list_interactions_for_user(
         filters["kind"] = kind
     if run_id is not None:
         filters["run_id"] = run_id
-    rows = (
-        await InteractionRequest.filter(**filters)
-        .order_by("-created_at")
-        .limit(MAX_LIST_SCAN)
-    )
     roles = await _role_map(user)
-    authorized = [row for row in rows if audience_matches(row, user, roles)]
+    # JSON audience containment is unavailable on every supported backend, so
+    # scan in bounded pages instead of one global snapshot: the previous 500-row
+    # window silently dropped a user's own rows once a status exceeded it.
+    need = max(page, 1) * page_size
+    scan_cap = MAX_LIST_SCAN * 10
+    authorized: list[InteractionRequest] = []
+    offset = 0
+    scanned = 0
+    exhausted = False
+    while scanned < scan_cap:
+        rows = (
+            await InteractionRequest.filter(**filters)
+            .order_by("-created_at")
+            .offset(offset)
+            .limit(MAX_LIST_SCAN)
+        )
+        if not rows:
+            exhausted = True
+            break
+        scanned += len(rows)
+        offset += len(rows)
+        authorized.extend(row for row in rows if audience_matches(row, user, roles))
+        if len(rows) < MAX_LIST_SCAN:
+            exhausted = True
+            break
+        if len(authorized) >= need:
+            # Enough rows to fill this page; stop scanning.
+            break
+    if not exhausted:
+        logger.warning(
+            "Interaction inbox scan stopped at %s rows for user %s; totals may be partial",
+            scanned,
+            user.id,
+        )
     total = len(authorized)
     start = (page - 1) * page_size
     return authorized[start : start + page_size], total

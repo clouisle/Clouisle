@@ -64,7 +64,7 @@ async def list_policy_layers(
     entrypoint_kind: ToolApprovalEntrypointKind | None = Query(default=None),
     entrypoint_id: UUID | None = Query(default=None),
     tool_id: UUID | None = Query(default=None),
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ):
     """Team listings include read-only site baseline rows.
 
@@ -94,7 +94,7 @@ async def get_effective_policy(
     entrypoint_kind: ToolApprovalEntrypointKind | None = Query(default=None),
     entrypoint_id: UUID | None = Query(default=None),
     entrypoint_interactive: bool = Query(default=True),
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ):
     """Server-composed policy preview; clients must never merge layers."""
     view = await policy_service.get_effective_policy(
@@ -148,7 +148,7 @@ async def get_effective_policy(
 )
 async def create_policy_layer(
     payload: ToolApprovalPolicyCreateIn,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ):
     view = await policy_service.create_policy_definition(current_user, payload)
     return success(data=_out(view))
@@ -162,7 +162,7 @@ async def create_policy_layer(
 async def update_policy_layer(
     policy_id: UUID,
     payload: ToolApprovalPolicyUpdateIn,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ):
     view = await policy_service.update_policy_definition(
         current_user, policy_id, payload
@@ -177,7 +177,7 @@ async def update_policy_layer(
 )
 async def delete_policy_layer(
     policy_id: UUID,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ):
     await policy_service.delete_policy_definition(current_user, policy_id)
     return success(data=None)

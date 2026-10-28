@@ -724,3 +724,26 @@ async def test_share_validation_failures_do_not_persist(monkeypatch, user):
         await tools.share_tool(existing.id, ToolShareInput(team_id=other_team), user)
     assert exc_info.value.msg_key == "private_tool_cannot_be_shared"
     create.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_admin_tool_list_never_duplicates_a_materialized_builtin(
+    monkeypatch, user
+):
+    """The registry entry and its materialized row must list once, not twice."""
+    builtin = db_tool(
+        name="get_current_time",
+        display_name="get_current_time",
+        type=DBToolType.BUILTIN,
+        custom_type=None,
+    )
+    registry_entry = tools.db_tool_to_out(builtin, None)
+    monkeypatch.setattr(
+        tools, "get_builtin_tools_for_team", AsyncMock(return_value=[registry_entry])
+    )
+    monkeypatch.setattr(tools.Tool, "all", lambda: Query(items=[builtin]))
+    monkeypatch.setattr(tools.ToolShare, "filter", lambda **_kwargs: Query(count=0))
+
+    listed = await tools._build_admin_tools(user, uuid4())
+
+    assert [item.id for item in listed] == [builtin.id]

@@ -167,6 +167,7 @@ async def test_builtin_execution_uses_unified_boundary(monkeypatch):
     monkeypatch.setattr(
         tools, "ToolExecutor", lambda: SimpleNamespace(execute_builtin_tool=execute)
     )
+    monkeypatch.setattr(tools, "check_team_access", AsyncMock())
     current = SimpleNamespace(id=uuid4(), locale="en")
 
     response = await tools.test_tool(

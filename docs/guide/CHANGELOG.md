@@ -11,6 +11,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Tool confirmations configured through site/team/entrypoint policies now apply to real executions instead of only appearing in the policy preview; an Agent's explicit confirmation can no longer be relaxed by a tool operation override.
+- Restored `POST /agents/{id}/chat/stream` (the helper was registered as a route ahead of the authenticated wrapper), so chat streaming and the in-chat approval card work again.
+- Tool-connection startup constraints and the retired grant cleanup now actually run on PostgreSQL; skill approval versions fit the stored integer column; private database-tool credentials migrate to a personal scope.
+- MCP tool calls no longer time out before their configured approval window, and approved resource/prompt previews can be replayed.
+- Connection update/revoke can no longer resurrect a revoked credential or roll back its secret version; stopping a waiting run cancels its pending approval, and approved sandbox tools resume in their conversation workspace.
+- Package import keeps the tool's approval policy and invalidates pending approvals on a definition change; MCP header values are masked again, and admin tool lists no longer show each builtin twice.
+
 - Inactive accounts are rejected before API-key identity processing when submitting an Agent chat run.
 - A fixed personal tool connection whose owner has left the team now returns an access-denied error rather than an internal error.
 - Client-side fallback errors (permission denied, session expired, timeout, network, server and not-found) now come from the shared `errors` i18n catalogs instead of a second hardcoded map, and regional locales such as `zh-CN` or an app language without the locale cookie no longer fall back to English.

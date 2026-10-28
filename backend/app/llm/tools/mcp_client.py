@@ -1560,7 +1560,11 @@ class McpClient:
                 read_stream,
                 write_stream,
                 read_timeout_seconds=max(
-                    min(self.timeouts.request, deadline.remaining()), 0.001
+                    min(
+                        max(self.timeouts.request, deadline.total),
+                        deadline.remaining(),
+                    ),
+                    0.001,
                 ),
                 sampling_callback=guard.sampling
                 if self.callbacks.sampling is not None
@@ -1706,8 +1710,14 @@ class McpClient:
     # -- capabilities -------------------------------------------------------
 
     def _request_budget(self, deadline: _Deadline) -> float:
-        """Remaining request time, capped by the configured request budget."""
-        return max(min(self.timeouts.request, deadline.remaining()), 0.001)
+        """Remaining request time, capped by the operation's own budget.
+
+        A caller-supplied ``timeout`` (for example the approval window of an
+        MCP tool call) must not be cut short by the default per-phase request
+        timeout; the narrower of the two would make human approval impossible.
+        """
+        cap = max(self.timeouts.request, deadline.total)
+        return max(min(cap, deadline.remaining()), 0.001)
 
     async def get_capabilities(
         self, *, timeout: float | None = None

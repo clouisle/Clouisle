@@ -332,6 +332,7 @@ async def test_builtin_execution_routes_through_unified_boundary(monkeypatch):
     team_id = uuid4()
     execute = AsyncMock(return_value={"ok": True})
     monkeypatch.setattr(tools.tool_registry, "get_tool", lambda _name: object())
+    monkeypatch.setattr(tools, "check_team_access", AsyncMock())
     monkeypatch.setattr(
         tools, "ToolExecutor", lambda: SimpleNamespace(execute_builtin_tool=execute)
     )

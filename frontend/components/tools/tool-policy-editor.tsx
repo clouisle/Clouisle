@@ -72,6 +72,7 @@ export function getToolIdentityPolicy(tool?: ToolDetail | null): ToolIdentityPol
 
 export function getToolConnectionFields(tool?: ToolDetail | null): ToolConnectionField[] {
   return (tool?.connection_fields ?? []).map((field) => ({
+    ...field,
     name: field.name,
     label: field.label,
     required: field.required ?? true,
@@ -164,6 +165,7 @@ export function normalizeConnectionFields(fields: ToolConnectionField[]): ToolCo
     if (!CONNECTION_FIELD_NAME_PATTERN.test(name) || !label || seen.has(name)) continue
     seen.add(name)
     normalized.push({
+      ...field,
       name,
       label,
       required: field.required,

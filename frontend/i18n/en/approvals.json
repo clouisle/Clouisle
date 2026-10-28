@@ -32,6 +32,8 @@
         "api_key": "API key",
         "schedule": "Schedule",
         "channel": "Channel",
+        "feishu_channel": "Feishu",
+        "wechat_channel": "WeChat",
         "embed": "Embed",
         "subworkflow": "Sub-workflow",
         "nested_agent": "Nested agent",

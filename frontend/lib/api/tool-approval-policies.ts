@@ -54,7 +54,8 @@ export interface ToolApprovalPolicyEffectiveParams {
   entrypoint_kind: ToolApprovalPolicyEntrypointKind
   entrypoint_id: string
   tool_id?: string
-  operation?: string
+  /** Server requires a non-empty operation (1-200 chars). */
+  operation: string
 }
 
 export interface ToolApprovalPolicyEffectiveLayer {

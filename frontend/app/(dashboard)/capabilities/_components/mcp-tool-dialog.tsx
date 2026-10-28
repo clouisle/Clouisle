@@ -663,6 +663,7 @@ export function McpToolDialog({
                           onChange={(value) => updateHeader(index, 'value', value)}
                           variables={connectionFields.map((field) => field.name.trim())}
                           className="flex-1 font-mono"
+                          type="password"
                         />
                         <Button
                           variant="ghost"
@@ -723,6 +724,7 @@ export function McpToolDialog({
                           onChange={(value) => updateHeader(index, 'value', value)}
                           variables={connectionFields.map((field) => field.name.trim())}
                           className="flex-1 font-mono"
+                          type="password"
                         />
                         <Button
                           variant="ghost"

@@ -677,12 +677,31 @@ async def _execute_approved_pending_tool(
         from app.models.tool_approval import ToolExecutionStatus
         from app.models.user import User
         from app.services import tool_approvals
+        from app.services.sandbox.gateway import sandbox_gateway
         from app.services.tool_context import (
             RuntimeToolIdentity,
             entrypoint_is_interactive,
             tool_identity_scope,
         )
         from app.utils.tool_output import get_tool_execution_payloads
+
+        # Session-scoped sandbox tools must resume in the same conversation
+        # workspace they were approved from; create_session is idempotent. A
+        # gateway failure must not turn an approved call into an error result.
+        sandbox_session_id: str | None = None
+        try:
+            sandbox_session_id = await sandbox_gateway.create_session(
+                agent_id=str(getattr(agent, "id", "")),
+                team_id=str(getattr(agent, "team_id", "")) or None,
+                user_id=str(conversation.user_id),
+                conversation_id=str(conversation.id),
+            )
+        except Exception:
+            logger.warning(
+                "Sandbox session unavailable for approved resume of run %s",
+                run.id,
+                exc_info=True,
+            )
 
         execution = await tool_approvals.get_execution(execution_id)
         trajectory_arguments = dict(execution.parameters_preview or {})
@@ -722,6 +741,7 @@ async def _execute_approved_pending_tool(
                 agent=agent,
                 user=actor,
                 conversation_id=conversation.id,
+                session_id=sandbox_session_id,
             )
         if isinstance(raw_result, ToolInteractionRequest):
             raise RuntimeError("approved tool execution did not resume")

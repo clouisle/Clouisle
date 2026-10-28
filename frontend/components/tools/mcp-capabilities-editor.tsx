@@ -197,10 +197,16 @@ export function McpCapabilitiesEditor({ value, onChange }: McpCapabilitiesEditor
           <Input
             id="mcp-callback-timeout"
             type="number"
-            min={1}
+            min={10}
+            max={900}
             value={String(value.callback_timeout_seconds)}
             onChange={(event) =>
-              patch({ callback_timeout_seconds: Math.max(1, Number(event.target.value) || 1) })
+              patch({
+                callback_timeout_seconds: Math.min(
+                  900,
+                  Math.max(10, Number(event.target.value) || 10)
+                ),
+              })
             }
           />
         </div>
@@ -212,9 +218,15 @@ export function McpCapabilitiesEditor({ value, onChange }: McpCapabilitiesEditor
             id="mcp-max-sampling"
             type="number"
             min={0}
+            max={20}
             value={String(value.max_sampling_requests)}
             onChange={(event) =>
-              patch({ max_sampling_requests: Math.max(0, Number(event.target.value) || 0) })
+              patch({
+                max_sampling_requests: Math.min(
+                  20,
+                  Math.max(0, Number(event.target.value) || 0)
+                ),
+              })
             }
           />
         </div>
@@ -226,9 +238,15 @@ export function McpCapabilitiesEditor({ value, onChange }: McpCapabilitiesEditor
             id="mcp-max-elicitation"
             type="number"
             min={0}
+            max={20}
             value={String(value.max_elicitation_requests)}
             onChange={(event) =>
-              patch({ max_elicitation_requests: Math.max(0, Number(event.target.value) || 0) })
+              patch({
+                max_elicitation_requests: Math.min(
+                  20,
+                  Math.max(0, Number(event.target.value) || 0)
+                ),
+              })
             }
           />
         </div>
@@ -242,9 +260,15 @@ export function McpCapabilitiesEditor({ value, onChange }: McpCapabilitiesEditor
           id="mcp-sampling-max-tokens"
           type="number"
           min={1}
+          max={8192}
           value={String(value.sampling_max_tokens)}
           onChange={(event) =>
-            patch({ sampling_max_tokens: Math.max(1, Number(event.target.value) || 1) })
+            patch({
+              sampling_max_tokens: Math.min(
+                8192,
+                Math.max(1, Number(event.target.value) || 1)
+              ),
+            })
           }
         />
       </div>

@@ -442,12 +442,26 @@ async def _create_connection(
     config: dict[str, str],
     tx=None,
 ) -> ToolConnection:
+    # A PRIVATE legacy tool was creator-only. Preserve that audience instead of
+    # widening its credentials to every team member through a TEAM connection.
+    # A private row without a creator (deleted user) has no one to own a personal
+    # connection; it stays team-scoped and is reported for operator review.
+    private = getattr(legacy, "visibility", None) == "private"
+    owner_user_id = legacy.created_by_id if private else None
+    if private and owner_user_id is None:
+        logger.warning(
+            "Private database tool %s (%s) has no creator; its migrated "
+            "connection is team-scoped",
+            legacy.name,
+            legacy.id,
+        )
+    personal = private and owner_user_id is not None
     connection = ToolConnection(
         team_id=legacy.team_id,
         tool_id=None,
         builtin_tool_key=canonical_key,
-        scope=ToolConnectionScope.TEAM,
-        owner_user_id=None,
+        scope=ToolConnectionScope.USER if personal else ToolConnectionScope.TEAM,
+        owner_user_id=owner_user_id,
         name=f"Migrated {legacy.name}"[:100],
         account_label=None,
         encrypted_config=encrypt_tool_secret(

@@ -1,10 +1,11 @@
-"""Approval-gated file download for the model tool surface.
+"""File download for the model tool surface.
 
 Chat previously served ``file_download`` from an inline branch that called the
 HTTP transport directly, so a model-named download bypassed tool policy and
 approvals. It is now a registry builtin: the call materializes a stable Tool
 definition and executes through the unified connection/approval boundary using
-the shared SSRF-validated HTTP executor.
+the shared SSRF-validated HTTP executor. The definition defaults to allow;
+confirmation is opt-in through the Agent switch or a stored policy layer.
 
 The tool stays non-selectable (see ``NON_SELECTABLE_BUILTIN_TOOLS``): it is not
 advertised in the catalog or through agent tool configuration, so it remains a
@@ -39,7 +40,8 @@ def register_file_download_tool() -> None:
         name="file_download",
         description=(
             "Download the content of an HTTP(S) URL and return it as text. "
-            "Every call requires tool approval."
+            "The call runs through the tool execution boundary; enable "
+            "'Require confirmation' on the Agent to gate it per call."
         ),
         parameters=[
             ToolParameter(

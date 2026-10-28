@@ -403,6 +403,7 @@ async def test_builtin_execute_routes_context_and_shaped_failure():
     execute = AsyncMock(return_value="ok")
     with (
         patch.object(tools.tool_registry, "get_tool", return_value=object()),
+        patch.object(tools, "check_team_access", AsyncMock()),
         patch.object(
             tools,
             "ToolExecutor",
@@ -419,6 +420,7 @@ async def test_builtin_execute_routes_context_and_shaped_failure():
     execute.return_value = {"success": False, "error": "safe"}
     with (
         patch.object(tools.tool_registry, "get_tool", return_value=object()),
+        patch.object(tools, "check_team_access", AsyncMock()),
         patch.object(
             tools,
             "ToolExecutor",

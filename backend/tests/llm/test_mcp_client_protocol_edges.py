@@ -163,3 +163,13 @@ async def test_tool_result_normalizes_malformed_and_unknown_protocol_blocks(
         {"type": "widget", "value": result.content[1].raw["value"]},
         "ok",
     ]
+
+
+@pytest.mark.asyncio
+async def test_request_budget_extends_to_an_explicit_operation_timeout():
+    """An approval-window timeout must not be cut by the default request cap."""
+    client = mcp.McpClient(
+        {}, timeouts=mcp.McpTimeouts(connect=1, request=30, enumeration=1)
+    )
+    deadline = mcp._Deadline(120, "tool")
+    assert client._request_budget(deadline) > 100

@@ -798,6 +798,9 @@ async def test_stop_waiting_run_clears_pending_interaction(monkeypatch, fake_red
         "filter",
         lambda **_kwargs: _LockedRunQuery(run),
     )
+    monkeypatch.setattr(
+        "app.services.tool_approvals.cancel_pending_for_run", AsyncMock()
+    )
 
     stopped = await agent_run_store.stop_waiting_run(run.id)
 

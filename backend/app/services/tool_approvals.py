@@ -408,6 +408,7 @@ def evaluate_policy(
     operation: str,
     *,
     entrypoint_interactive: bool,
+    require_caller_confirmation: bool = False,
 ) -> PolicyEvaluation:
     """Compose layers deterministically; deny wins and approvals union.
 
@@ -463,7 +464,15 @@ def evaluate_policy(
     else:
         if final_decision == ApprovalDecision.DENY:
             merged_gates = ()
-        elif final_decision == ApprovalDecision.REQUIRE_APPROVAL:
+        if require_caller_confirmation and final_decision != ApprovalDecision.DENY:
+            # An explicit Agent confirmation can never be relaxed by a tool or
+            # stored layer operation override: it applies to every operation.
+            final_decision = ApprovalDecision.REQUIRE_APPROVAL
+            merged_gates = _merge_gates(
+                (*merged_gates, ApprovalGate(kind=ApprovalGateKind.CALLER))
+            )
+            sources.append("agent_confirmation")
+        if final_decision == ApprovalDecision.REQUIRE_APPROVAL:
             if not merged_gates:
                 configuration_errors.append("approval_audience_missing")
             if not entrypoint_interactive and any(
@@ -1013,6 +1022,7 @@ async def create_execution(
     tool_definition_version: int | None = None,
     sensitive_fields: Iterable[str] = (),
     entrypoint_interactive: bool | None = None,
+    require_caller_confirmation: bool = False,
     expires_at: datetime | None = None,
     now: datetime | None = None,
 ) -> ToolExecution:
@@ -1080,6 +1090,7 @@ async def create_execution(
             layers,
             normalized_operation,
             entrypoint_interactive=interactive,
+            require_caller_confirmation=require_caller_confirmation,
         )
     except PolicyConfigurationError as exc:
         raise _policy_configuration_required(exc.code) from exc
@@ -1630,6 +1641,15 @@ async def decide_approval(
 
     existing = await ToolApprovalDecision.filter(idempotency_key=key).first()
     if existing is not None:
+        # A replay is only meaningful for the approver who made the decision;
+        # otherwise the key would disclose it to anyone who learns the value.
+        if existing.decided_by_id not in (None, approver.id):
+            raise _error(
+                ResponseCode.TOOL_APPROVAL_NOT_AUTHORIZED,
+                "You are not an approver for this request",
+                msg_key="tool_approval_not_authorized",
+                status_code=403,
+            )
         return _verify_replay(
             existing, request_id=request_id, request_hash=request_hash
         )

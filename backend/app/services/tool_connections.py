@@ -513,102 +513,119 @@ class ToolConnectionService:
         required_secret_fields: Collection[str] | None = None,
     ) -> ToolConnectionOut:
         user = await cls._resolve_actor(actor)
-        connection = await cls._load_connection(connection_id)
-        await cls._authorize_manage(connection, user)
-
-        if connection.status == ToolConnectionStatus.REVOKED:
-            _fail(
-                ResponseCode.TOOL_CONNECTION_INACTIVE,
-                "tool_connection_inactive",
-                status_code=409,
-            )
-        if (
-            payload.expected_secret_version is not None
-            and payload.expected_secret_version != connection.secret_version
-        ):
-            _fail(
-                ResponseCode.TOOL_CONNECTION_INVALID,
-                "tool_connection_version_conflict",
-                status_code=409,
-            )
-
-        fields_set = payload.model_fields_set
-        changed_secret_material = False
-
-        if payload.name is not None:
-            connection.name = payload.name
-        if "account_label" in fields_set:
-            normalized_label = payload.account_label
-            if normalized_label != connection.account_label:
-                connection.account_label = normalized_label
-                changed_secret_material = True
-
-        if payload.config_set is not None or payload.config_remove is not None:
-            current = cls._decrypt_config(connection)
-            updated = dict(current)
-            if payload.config_remove:
-                for name in payload.config_remove:
-                    updated.pop(name, None)
-            if payload.config_set:
-                updated.update(cls._validate_config_mapping(payload.config_set))
-            cls._validate_declared_fields(
-                updated, declared_secret_fields, required_secret_fields
-            )
-            if updated != current:
-                (
-                    connection.encrypted_config,
-                    connection.secret_fields,
-                ) = cls._encrypt_config(updated)
-                changed_secret_material = True
-
-        if payload.status is not None:
-            if payload.status == ToolConnectionStatus.REVOKED:
-                _fail(
-                    ResponseCode.TOOL_CONNECTION_INVALID,
-                    "tool_connection_invalid",
-                    status_code=400,
-                )
-            connection.status = payload.status
-
-        new_default_slot = connection.default_slot
-        if payload.is_default is not None:
-            if payload.is_default:
-                connection.is_default = True
-                new_default_slot = cls._default_slot(
-                    scope=connection.scope,
-                    team_id=connection.team_id,
-                    owner_user_id=connection.owner_user_id,
-                    service_key=cls._service_key(
-                        connection.tool_id, connection.builtin_tool_key
-                    ),
-                )
-            else:
-                connection.is_default = False
-                new_default_slot = None
-        connection.default_slot = new_default_slot
-
-        if changed_secret_material:
-            connection.secret_version += 1
-
         try:
-            connection.validate_invariants()
-        except ValueError as exc:
-            logger.warning("Rejected tool connection for %s: %s", user.id, exc)
-            _fail(
-                ResponseCode.TOOL_CONNECTION_INVALID,
-                "tool_connection_invalid",
-                status_code=400,
-            )
+            async with in_transaction() as db:
+                # Re-read under the row lock: a concurrent revoke or OAuth token
+                # refresh must not be overwritten by a stale whole-row save.
+                connection = (
+                    await ToolConnection.filter(id=connection_id)
+                    .using_db(db)
+                    .select_for_update()
+                    .first()
+                )
+                if connection is None:
+                    _fail(
+                        ResponseCode.TOOL_CONNECTION_NOT_FOUND,
+                        "tool_connection_not_found",
+                        status_code=404,
+                    )
+                await cls._authorize_manage(connection, user)
+                before = cls._mutable_snapshot(connection)
 
-        try:
-            async with in_transaction():
+                if connection.status == ToolConnectionStatus.REVOKED:
+                    _fail(
+                        ResponseCode.TOOL_CONNECTION_INACTIVE,
+                        "tool_connection_inactive",
+                        status_code=409,
+                    )
+                if (
+                    payload.expected_secret_version is not None
+                    and payload.expected_secret_version != connection.secret_version
+                ):
+                    _fail(
+                        ResponseCode.TOOL_CONNECTION_INVALID,
+                        "tool_connection_version_conflict",
+                        status_code=409,
+                    )
+
+                fields_set = payload.model_fields_set
+                changed_secret_material = False
+
+                if payload.name is not None:
+                    connection.name = payload.name
+                if "account_label" in fields_set:
+                    normalized_label = payload.account_label
+                    if normalized_label != connection.account_label:
+                        connection.account_label = normalized_label
+                        changed_secret_material = True
+
+                if payload.config_set is not None or payload.config_remove is not None:
+                    current = cls._decrypt_config(connection)
+                    updated = dict(current)
+                    if payload.config_remove:
+                        for name in payload.config_remove:
+                            updated.pop(name, None)
+                    if payload.config_set:
+                        updated.update(cls._validate_config_mapping(payload.config_set))
+                    cls._validate_declared_fields(
+                        updated, declared_secret_fields, required_secret_fields
+                    )
+                    if updated != current:
+                        (
+                            connection.encrypted_config,
+                            connection.secret_fields,
+                        ) = cls._encrypt_config(updated)
+                        changed_secret_material = True
+
+                if payload.status is not None:
+                    if payload.status == ToolConnectionStatus.REVOKED:
+                        _fail(
+                            ResponseCode.TOOL_CONNECTION_INVALID,
+                            "tool_connection_invalid",
+                            status_code=400,
+                        )
+                    connection.status = payload.status
+
+                new_default_slot = connection.default_slot
+                if payload.is_default is not None:
+                    if payload.is_default:
+                        connection.is_default = True
+                        new_default_slot = cls._default_slot(
+                            scope=connection.scope,
+                            team_id=connection.team_id,
+                            owner_user_id=connection.owner_user_id,
+                            service_key=cls._service_key(
+                                connection.tool_id, connection.builtin_tool_key
+                            ),
+                        )
+                    else:
+                        connection.is_default = False
+                        new_default_slot = None
+                connection.default_slot = new_default_slot
+
+                if changed_secret_material:
+                    connection.secret_version += 1
+
+                try:
+                    connection.validate_invariants()
+                except ValueError as exc:
+                    logger.warning("Rejected tool connection for %s: %s", user.id, exc)
+                    _fail(
+                        ResponseCode.TOOL_CONNECTION_INVALID,
+                        "tool_connection_invalid",
+                        status_code=400,
+                    )
+
                 if connection.is_default and connection.default_slot:
                     await (
                         ToolConnection.filter(default_slot=connection.default_slot)
                         .exclude(id=connection.id)
+                        .using_db(db)
                         .update(is_default=False, default_slot=None)
                     )
-                await connection.save()
+                update_fields = cls._changed_fields(before, connection)
+                if update_fields:
+                    await connection.save(using_db=db, update_fields=update_fields)
         except IntegrityError:
             _fail(
                 ResponseCode.TOOL_CONNECTION_INVALID,
@@ -616,6 +633,26 @@ class ToolConnectionService:
                 status_code=409,
             )
         return cls._to_out(connection)
+
+    @staticmethod
+    def _mutable_snapshot(connection: ToolConnection) -> dict[str, Any]:
+        return {
+            "name": connection.name,
+            "account_label": connection.account_label,
+            "encrypted_config": connection.encrypted_config,
+            "secret_fields": list(connection.secret_fields or []),
+            "secret_version": connection.secret_version,
+            "status": connection.status,
+            "is_default": connection.is_default,
+            "default_slot": connection.default_slot,
+        }
+
+    @classmethod
+    def _changed_fields(
+        cls, before: Mapping[str, Any], connection: ToolConnection
+    ) -> list[str]:
+        after = cls._mutable_snapshot(connection)
+        return [name for name, value in before.items() if after[name] != value]
 
     @classmethod
     async def revoke_connection(
@@ -631,22 +668,36 @@ class ToolConnectionService:
         grants them no ability to decrypt, use or re-authorize it.
         """
         user = await cls._resolve_actor(actor)
-        connection = await cls._load_connection(connection_id)
-        await cls._authorize_manage(connection, user, allow_superuser_override=True)
+        async with in_transaction() as db:
+            connection = (
+                await ToolConnection.filter(id=connection_id)
+                .using_db(db)
+                .select_for_update()
+                .first()
+            )
+            if connection is None:
+                _fail(
+                    ResponseCode.TOOL_CONNECTION_NOT_FOUND,
+                    "tool_connection_not_found",
+                    status_code=404,
+                )
+            await cls._authorize_manage(connection, user, allow_superuser_override=True)
 
-        if connection.status != ToolConnectionStatus.REVOKED:
-            async with in_transaction():
+            if connection.status != ToolConnectionStatus.REVOKED:
                 connection.status = ToolConnectionStatus.REVOKED
                 connection.is_default = False
                 connection.default_slot = None
-                await connection.save()
-            if reason:
-                logger.info(
-                    "Tool connection %s revoked by %s: %s",
-                    connection.id,
-                    user.id,
-                    reason,
+                await connection.save(
+                    using_db=db,
+                    update_fields=["status", "is_default", "default_slot"],
                 )
+                if reason:
+                    logger.info(
+                        "Tool connection %s revoked by %s: %s",
+                        connection.id,
+                        user.id,
+                        reason,
+                    )
         return cls._to_out(connection)
 
     @classmethod
@@ -1183,7 +1234,10 @@ class ToolConnectionService:
         for node in (definition or {}).get("nodes") or []:
             if not isinstance(node, dict) or node.get("type") != "tool":
                 continue
-            config = (node.get("data") or {}).get("config") or {}
+            data = node.get("data") or {}
+            # The editor persists tool nodes as ``data.toolConfig``; older or
+            # imported definitions may use ``data.config``.
+            config = data.get("toolConfig") or data.get("config") or {}
             if not isinstance(config, dict):
                 continue
             connection_id = config.get("connectionId") or config.get("connection_id")

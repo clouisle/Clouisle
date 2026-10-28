@@ -2657,6 +2657,12 @@ msgstr "知识库搜索"
 msgid "tool_name_exists"
 msgstr "该工具名称已存在"
 
+msgid "tool_builtin_not_creatable"
+msgstr "内置工具由平台提供，不能通过此接口创建"
+
+msgid "team_id_required"
+msgstr "请先选择团队后再执行该操作"
+
 msgid "tool_not_found"
 msgstr "工具未找到"
 
@@ -3957,6 +3963,9 @@ msgstr "模型无法完成采样请求"
 
 msgid "run_interaction_model_quota_exceeded"
 msgstr "该采样请求的模型额度已用尽"
+
+msgid "run_interaction_idempotency_conflict"
+msgstr "该交互响应与之前的提交冲突"
 
 msgid "channel_approval_prompt"
 msgstr "需要确认工具调用\n操作：{operation}\n作用：{description}\n账号：{account}\n参数（已脱敏）：{parameters}\n请回复完整命令 /approve {code} 允许，或 /reject {code} 拒绝。直接回复“同意”或“拒绝”等普通文字不能作出决定。"

@@ -45,6 +45,9 @@ export function useRunInteractions({
   const generationRef = React.useRef(0)
 
   const refresh = React.useCallback(async () => {
+    // Invalidate any in-flight request first: closing the run must also
+    // discard a response that is already on the wire.
+    const generation = ++generationRef.current
     // The interaction API is JWT-only. Anonymous public chat must never be
     // redirected to login just because a run is open.
     const hasAuthToken = typeof window !== 'undefined'
@@ -52,10 +55,10 @@ export function useRunInteractions({
     if (!runId || !enabled || !hasAuthToken) {
       setInteractions([])
       setError(null)
+      setIsLoading(false)
       return
     }
 
-    const generation = ++generationRef.current
     setIsLoading(true)
     try {
       const data = await runInteractionsApi.list(

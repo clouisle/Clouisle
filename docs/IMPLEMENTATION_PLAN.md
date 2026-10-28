@@ -2,6 +2,13 @@
 
 ## Active
 
+- **pr480-review-fixes** — In progress. See `docs/plan/pr480-review-fixes.md`.
+  - [x] 1. Fix chat stream route and policy-layer enforcement
+  - [x] 2. Fix migrations, connection writes, OAuth and MCP budgets
+  - [x] 3. Fix interaction, package import, resume and stop semantics
+  - [x] 4. Fix frontend masking, picker, bounds and reconnect races
+  - [ ] 5. Decide OAuth callback binding and non-interactive gate contract
+
 - **im-chat-run-discovery** — Completed. See `docs/plan/im-chat-run-discovery.md`.
   - [x] 1. Discover owner-scoped active runs
   - [x] 2. Recover chat state safely

@@ -2621,6 +2621,12 @@ msgstr "Knowledge Search"
 msgid "tool_name_exists"
 msgstr "Tool with this name already exists"
 
+msgid "tool_builtin_not_creatable"
+msgstr "Builtin tools are provided by the platform and cannot be created through this endpoint"
+
+msgid "team_id_required"
+msgstr "Select a team before running this operation"
+
 msgid "tool_not_found"
 msgstr "Tool not found"
 
@@ -3903,6 +3909,9 @@ msgstr "The MCP connection was lost; the request cannot be resumed"
 
 msgid "run_interaction_invalid_response"
 msgstr "The interaction response is invalid"
+
+msgid "run_interaction_idempotency_conflict"
+msgstr "This interaction response conflicts with a previous submission"
 
 msgid "run_interaction_schema_invalid"
 msgstr "The interaction response does not match the requested schema"

@@ -232,7 +232,14 @@ async def test_tool_install_update_saves_fields(monkeypatch):
 
     result = await ToolPackageAdapter().install(
         manifest=None,
-        resource_payload={"name": existing.name, "display_name": "New"},
+        resource_payload={
+            "name": existing.name,
+            "display_name": "New",
+            "approval_policy": {
+                "default_decision": "require_approval",
+                "gates": [{"kind": "caller"}],
+            },
+        },
         team=SimpleNamespace(id=existing.team_id),
         user=SimpleNamespace(is_superuser=True),
         install_in=ClouisleImportInstallRequest(action=ClouisleConflictAction.UPDATE),
@@ -240,6 +247,9 @@ async def test_tool_install_update_saves_fields(monkeypatch):
 
     assert result.updated == existing.id
     assert existing.display_name == "New"
+    # The definition changed, so pending approvals must be invalidated.
+    assert existing.definition_version == 2
+    assert existing.approval_policy["default_decision"] == "require_approval"
     existing.save.assert_awaited_once_with()
 
 

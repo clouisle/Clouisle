@@ -438,6 +438,45 @@ def _identity_from_claims(claims: Mapping[str, Any]) -> tuple[str | None, str | 
 class ToolOAuthService:
     """Authorization-code flow, token storage and locked refresh rotation."""
 
+    @staticmethod
+    async def _assert_tool_access_for_team(
+        tool: Tool, team_id: UUID | None, actor: User
+    ) -> None:
+        """Same-team uses the canonical guard; cross-team needs an explicit share.
+
+        The connection belongs to the consuming team, so a shared tool must be
+        authorizable from that team or its OAuth flow can never obtain tokens.
+        """
+        from app.api.team_access import check_team_access
+        from app.api.v1.endpoints.tools import check_tool_access
+        from app.models.tool import ToolShare, ToolVisibility
+
+        if team_id is None or tool.team_id == team_id:
+            await check_tool_access(tool, actor)
+            return
+        await check_team_access(team_id, actor)
+        visibility = getattr(tool, "visibility", ToolVisibility.PRIVATE)
+        value = (
+            visibility.value
+            if isinstance(visibility, ToolVisibility)
+            else str(visibility)
+        )
+        if value == ToolVisibility.PRIVATE.value:
+            _fail(
+                ResponseCode.PERMISSION_DENIED,
+                "tool_access_denied",
+                status_code=403,
+            )
+        shared = await ToolShare.filter(
+            tool_id=tool.id, shared_with_team_id=team_id
+        ).exists()
+        if not shared:
+            _fail(
+                ResponseCode.PERMISSION_DENIED,
+                "tool_access_denied",
+                status_code=403,
+            )
+
     # ------------------------------------------------------------------
     # Public start / status / callback
     # ------------------------------------------------------------------
@@ -457,10 +496,7 @@ class ToolOAuthService:
         required to change a provider client secret; a personal user can never
         overwrite the shared provider credential.
         """
-        from app.api.v1.endpoints.tools import (
-            check_tool_access,
-            check_tool_write_access,
-        )
+        from app.api.v1.endpoints.tools import check_tool_write_access
 
         await ToolConnectionService.assert_manage_access(
             actor=actor, connection_id=connection_id
@@ -499,20 +535,12 @@ class ToolOAuthService:
                 "tool_oauth_not_supported",
                 status_code=400,
             )
-        await check_tool_access(tool, actor)
+        await cls._assert_tool_access_for_team(tool, connection.team_id, actor)
 
         try:
             config = ToolConnectionService._decrypt_config(connection)
         except BusinessError:
             config = {}
-        if (
-            not config.get(CONNECTION_ACCESS_TOKEN)
-            and connection.status == ToolConnectionStatus.ACTIVE
-        ):
-            # A connection with no token is not usable yet; make that explicit
-            # while the flow is pending instead of leaving it "active".
-            connection.status = ToolConnectionStatus.REAUTH_REQUIRED
-            await connection.save(update_fields=["status", "updated_at"])
 
         if client_secret is not None:
             if not client_secret or len(client_secret) > MAX_CLIENT_SECRET_LENGTH:
@@ -531,6 +559,15 @@ class ToolOAuthService:
             redirect_uri=redirect_uri,
             client_secret=client_secret,
         )
+
+        if (
+            not config.get(CONNECTION_ACCESS_TOKEN)
+            and connection.status == ToolConnectionStatus.ACTIVE
+        ):
+            # Only after the tool is proven OAuth-capable: a rejected start must
+            # never disable an otherwise usable connection.
+            connection.status = ToolConnectionStatus.REAUTH_REQUIRED
+            await connection.save(update_fields=["status", "updated_at"])
 
         state = py_secrets.token_urlsafe(48)
         verifier, challenge = _pkce_pair()

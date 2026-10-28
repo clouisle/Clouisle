@@ -2680,6 +2680,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "This interaction request has expired",
         "zh": "该交互请求已过期",
     },
+    "run_interaction_idempotency_conflict": {
+        "en": "This interaction response conflicts with a previous submission",
+        "zh": "该交互响应与之前的提交冲突",
+    },
     "run_interaction_invalid_response": {
         "en": "The interaction response is invalid",
         "zh": "交互响应无效",
@@ -3184,6 +3188,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "team_created": {"en": "Team created successfully", "zh": "团队创建成功"},
     "team_deleted": {"en": "Team deleted successfully", "zh": "团队删除成功"},
+    "team_id_required": {
+        "en": "Select a team before running this operation",
+        "zh": "请先选择团队后再执行该操作",
+    },
     "team_left": {"en": "You have left the team", "zh": "您已离开团队"},
     "team_member_added": {
         "en": "Team member added successfully",
@@ -3360,6 +3368,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "tool_approval_unavailable": {
         "en": "This tool requires approval, which is not available in this execution context, so the call was not executed",
         "zh": "该工具需要审批，但当前执行上下文不支持审批，未执行该调用",
+    },
+    "tool_builtin_not_creatable": {
+        "en": "Builtin tools are provided by the platform and cannot be created through this endpoint",
+        "zh": "内置工具由平台提供，不能通过此接口创建",
     },
     "tool_code_not_defined": {
         "en": "No code defined for this tool",

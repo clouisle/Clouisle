@@ -111,7 +111,12 @@ export function McpToolBrowser({ tool, teamId, open, onOpenChange }: McpToolBrow
   const [capabilities, setCapabilities] = React.useState<McpCapabilities | null>(null)
   const [isLoading, setIsLoading] = React.useState(false)
   const [error, setError] = React.useState(false)
-  const [pending, setPending] = React.useState<{ kind: BrowseTab | 'capabilities'; cursor?: string; executionId: string } | null>(null)
+  const [pending, setPending] = React.useState<{
+    kind: BrowseTab | 'capabilities' | 'resource' | 'prompt'
+    cursor?: string
+    executionId: string
+    target?: string
+  } | null>(null)
   const [monitor, setMonitor] = React.useState<{
     uri: string
     status: 'connecting' | 'open' | 'closed' | 'pending' | 'error'
@@ -273,13 +278,22 @@ export function McpToolBrowser({ tool, teamId, open, onOpenChange }: McpToolBrow
     )
   }
 
-  const readResource = async (uri: string) => {
+  const readResource = async (uri: string, executionId?: string) => {
     if (!tool?.id || !teamId) return
     setPreviewLoading(true)
     setPreview(null)
     try {
-      const outcome = await toolMcpApi.readResource(tool.id, teamId, uri, identity)
-      setPreview(resourcePreview(uri, outcome))
+      const outcome = await toolMcpApi.readResource(tool.id, teamId, uri, {
+        ...identity,
+        ...(executionId ? { execution_id: executionId } : {}),
+      })
+      const next = resourcePreview(uri, outcome)
+      if (next.pendingExecutionId) {
+        setPending({ kind: 'resource', executionId: next.pendingExecutionId, target: uri })
+      } else {
+        setPending(null)
+      }
+      setPreview(next)
     } catch {
       setError(true)
     } finally {
@@ -287,13 +301,23 @@ export function McpToolBrowser({ tool, teamId, open, onOpenChange }: McpToolBrow
     }
   }
 
-  const getPrompt = async (prompt: McpPrompt) => {
+  const getPrompt = async (prompt: McpPrompt | string, executionId?: string) => {
     if (!tool?.id || !teamId) return
+    const name = typeof prompt === 'string' ? prompt : prompt.name
     setPreviewLoading(true)
     setPreview(null)
     try {
-      const outcome = await toolMcpApi.getPrompt(tool.id, teamId, prompt.name, promptArgs, identity)
-      setPreview(promptPreview(prompt.name, outcome))
+      const outcome = await toolMcpApi.getPrompt(tool.id, teamId, name, promptArgs, {
+        ...identity,
+        ...(executionId ? { execution_id: executionId } : {}),
+      })
+      const next = promptPreview(name, outcome)
+      if (next.pendingExecutionId) {
+        setPending({ kind: 'prompt', executionId: next.pendingExecutionId, target: name })
+      } else {
+        setPending(null)
+      }
+      setPreview(next)
     } catch {
       setError(true)
     } finally {
@@ -409,7 +433,13 @@ export function McpToolBrowser({ tool, teamId, open, onOpenChange }: McpToolBrow
                 className="h-6 text-xs"
                 onClick={() => {
                   if (pending.kind === 'capabilities') void loadCapabilities(pending.executionId)
-                  else void loadList(pending.kind, pending.cursor, pending.executionId)
+                  else if (pending.kind === 'resource' && pending.target) {
+                    void readResource(pending.target, pending.executionId)
+                  } else if (pending.kind === 'prompt' && pending.target) {
+                    void getPrompt(pending.target, pending.executionId)
+                  } else if (pending.kind !== 'resource' && pending.kind !== 'prompt') {
+                    void loadList(pending.kind, pending.cursor, pending.executionId)
+                  }
                 }}
               >
                 {t('retryApproval')}

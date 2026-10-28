@@ -69,13 +69,18 @@ async def apply_tool_connection_constraints() -> None:
     if connection.capabilities.dialect != "postgres":
         return
 
+    # One statement per call: the asyncpg client uses the prepared-statement
+    # path for DDL and rejects multi-command strings.
+    await execute_startup_migration_query(
+        connection, "DROP TABLE IF EXISTS connection_grants CASCADE"
+    )
     await execute_startup_migration_query(
         connection,
-        """
-        DROP TABLE IF EXISTS connection_grants CASCADE;
-        ALTER TABLE IF EXISTS tool_executions DROP COLUMN IF EXISTS grant_id;
-        ALTER TABLE IF EXISTS tool_executions DROP COLUMN IF EXISTS grant_version;
-        """,
+        "ALTER TABLE IF EXISTS tool_executions DROP COLUMN IF EXISTS grant_id",
+    )
+    await execute_startup_migration_query(
+        connection,
+        "ALTER TABLE IF EXISTS tool_executions DROP COLUMN IF EXISTS grant_version",
     )
 
     for constraint, table, predicate in _TOOL_CONNECTION_CONSTRAINTS:
