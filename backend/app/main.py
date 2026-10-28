@@ -428,12 +428,7 @@ async def lifespan(app: FastAPI):
     # assigned to an explicit team with the migration CLI.
     from app.core.tool_secret_migration import migrate_legacy_tool_secrets
 
-    legacy_connection_mapping = await migrate_legacy_tool_secrets()
-    if legacy_connection_mapping:
-        logger.info(
-            "Legacy tool credentials are now encrypted connections: %s",
-            legacy_connection_mapping,
-        )
+    await migrate_legacy_tool_secrets()
     from app.core.wechat_migration import migrate_wechat_knowledge_schema
 
     await migrate_wechat_knowledge_schema()

@@ -570,7 +570,6 @@ async def migrate_legacy_tool_secrets() -> dict[str, str]:
             "Migrated %s legacy tool credential sets into encrypted connections",
             migrated,
         )
-        logger.info("Legacy tool connection mapping: %s", mapping)
     if agent_updates or workflow_updates:
         logger.info(
             "Pinned migrated connections into %s Agent configs and %s workflow definitions",
