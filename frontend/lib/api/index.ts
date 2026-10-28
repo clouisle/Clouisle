@@ -200,20 +200,6 @@ export {
 } from './tool-approvals'
 
 export {
-  toolApprovalPoliciesApi,
-  type ToolApprovalPolicyScope,
-  type ToolApprovalPolicyEntrypointKind,
-  type ToolApprovalPolicyLayerSource,
-  type ToolApprovalPolicyRow,
-  type ToolApprovalPolicyListParams,
-  type ToolApprovalPolicyCreateInput,
-  type ToolApprovalPolicyUpdateInput,
-  type ToolApprovalPolicyEffectiveParams,
-  type ToolApprovalPolicyEffectiveLayer,
-  type ToolApprovalPolicyEffective,
-} from './tool-approval-policies'
-
-export {
   runInteractionsApi,
   getElicitationUrl,
   type RunInteractionKind,

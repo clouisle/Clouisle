@@ -16,13 +16,18 @@ The Tools API allows you to:
 - **Share tools**: Share a tool across teams and manage its shares
 - **Saved MCP servers**: Negotiate capabilities and use tools, resources, resource templates, prompts, completion and live resource subscriptions through a stored MCP definition
 - **External identity**: Manage encrypted personal/team/site connections and MCP OAuth
-- **Approvals**: Inspect executions, decide caller-confirmation gates, preview effective policies and answer server-initiated interactions
+- **Approvals**: Inspect executions, decide caller-confirmation gates and answer server-initiated interactions
 
 **Base URL**: `/api/v1/tools`
 
 ## Authentication
 
-All endpoints require an authenticated JWT user session. API-key authentication is not accepted by these management and execution routes.
+Tool management and direct execution routes require an authenticated JWT user
+session; API-key authentication is not accepted there. The approval and
+execution-status routes documented under [Tool Approvals and
+Executions](#tool-approvals-and-executions) are the exception: they additionally
+accept the Agent API key that initiated the run, scoped to that key's own
+executions.
 
 **Required permissions:**
 - `tool:read` - View tools
@@ -1217,13 +1222,15 @@ These direct capability-browser routes do not trigger execution approval, even
 when the MCP definition has an operation approval rule. They still authorize
 the actor and consuming team and resolve the selected connection.
 
-MCP operation approval rules apply when the Agent invokes the child tool during
-interactive chat. Chat exposes the pending execution through its run interaction
-and shows an inline approval card for the initiating caller. After approval, the
-durable worker resumes the original operation once with its bound parameters and
-identity. Tool testing, discovery, workflows and background entrypoints do not
-request confirmation, and a stored legacy external audience still fails closed
-there with `6510` instead of being bypassed.
+MCP operation approval rules apply when an Agent invokes the child tool, both
+in interactive chat and in an Agent run started with an API key. Chat exposes
+the pending execution through its run interaction and shows an inline approval
+card for the initiating caller; an API-key run pauses and the same key decides
+it. After approval, the durable worker resumes the original operation once with
+its bound parameters and identity. Tool testing, discovery and embed,
+legacy-channel and scheduled entrypoints do not request confirmation;
+workflows never create approval gates. A stored legacy external audience still
+fails closed where it is reached with `6510` instead of being bypassed.
 
 ### Operation Namespaces
 
@@ -1340,8 +1347,8 @@ every template-addressed URI.
 **Metadata policy.** Discovery defaults to `allow` even when the tool's
 operation default is `deny` or `require_approval`. An explicit
 `operation_overrides["list:<kind>"]` on the tool policy is honored in full
-(allow, deny or require approval); site, team and entrypoint layers still apply
-and can never be relaxed. A malformed stored policy is rejected with `409` and
+(allow, deny or require approval); no other policy layer is composed. A
+malformed stored policy is rejected with `409` and
 code `6510`, never silently ignored. `max_items` and `cursor` are bound into the
 approval parameters, so an approved page cannot be widened or swapped.
 
@@ -1595,49 +1602,84 @@ third-party provider.
 
 ## Tool Approvals and Executions
 
-Approval policy is composed from mandatory site, team and entrypoint layers
-plus the tool's own policy. `deny` wins, approval requirements union, and a
-lower layer can never relax a higher mandatory layer. Each tool policy has a
-default decision (`allow`, `deny`, `require_approval`), gates and
-`operation_overrides` keyed by the exact operation namespace. A decision applies
-to one immutable execution: changing parameters, identity or definition
-invalidates it.
+Approval is configured only on the tool definition. Evaluation reads that tool
+policy plus the Agent binding's explicit confirmation switch; no site, team,
+entrypoint or other policy layer is composed. Each tool policy has a default
+decision (`allow`, `deny`, `require_approval`), gates and
+`operation_overrides` keyed by the exact operation namespace. `deny` wins over
+`require_approval` and `allow`, and an exact operation override replaces the
+default for that operation. A decision applies to one immutable execution:
+changing parameters, identity or the tool definition invalidates it.
 
 A gate is either `caller` or a legacy external gate. New and updated policies
-accept only `caller`: the user who initiated the execution confirms or rejects
-it in the active Agent conversation, must be a member of the execution team,
-and is the only permitted decision-maker. A superuser is not an implicit
-approver, and the former `user` (explicit user IDs) and `team_role` (roles,
-`allow_self_approval`) audiences can no longer be configured.
+accept only `caller`: the principal that initiated the execution confirms or
+rejects it and is the only permitted decision-maker. Signed-in Agent chat uses
+the invoking user, who must still be a member of the execution team; an Agent
+run started with an API key uses that same API key.
+A different API key owned by the same user, another team member, a team
+administrator or a superuser is not an implicit approver, and the former `user`
+(explicit user IDs) and `team_role` (roles, `allow_self_approval`) audiences can
+no longer be configured.
+
+Workflow tool calls — direct, nested, sub-workflow or started through a
+workflow API key — never create an approval gate and never wait, even when the
+tool's policy requires confirmation or the Agent binding enables it. The call
+executes or fails under the tool's non-approval rules.
 
 Stored policies are never rewritten. A stored policy that contains `user` or
 `team_role` gates anywhere — including any nested MCP `operation_overrides`
 entry — fails closed with `6510` before the tool is invoked, regardless of the
 overall decision. It is never converted to `caller` or to `allow`; an
-administrator must edit and re-save the policy with a caller gate, or choose an
-explicit `allow`/`deny` decision without an external audience. Non-interactive
-entrypoints never gain confirmation implicitly: workflows, tool tests and
-discovery do not prompt, and API-key, embed, channel and scheduled calls cannot
-prompt either. Their existing no-confirmation contract is unchanged, but a
-stored legacy external gate still fails closed there instead of being bypassed.
+administrator must edit and re-save the tool policy with a caller gate, or
+choose an explicit `allow`/`deny` decision without an external audience.
+
+Entrypoints that cannot answer a caller gate never gain confirmation
+implicitly: tool tests and discovery do not prompt, and embed, legacy-channel
+and scheduled calls fail closed instead of waiting. An Agent run started with an
+API key can answer, because the key itself is the caller. Workflow tool calls
+never create an approval gate, so neither a workflow UI run nor a workflow API
+key ever waits for tool approval. A stored legacy external gate still fails
+closed wherever it is reached instead of being bypassed.
 
 During the upgrade that introduces caller-only confirmation, unstarted
 executions associated with any legacy external gate — `awaiting_approval` and
 `ready`, including work whose external gate was already approved — are
 cancelled rather than resumed or approved. The execution and all of its
-pending gates become `cancelled` in one transaction, no resume is scheduled,
-and users must start a new run. Rows already `executing` or terminal are left
+pending gates become `cancelled` in one transaction. The startup pass then
+wakes owning waiting runs — a waiting AgentRun is requeued with a terminal tool
+error and a waiting WorkflowRun's parked node fails — instead of leaving them
+parked. Users must start a new run. Rows already `executing` or terminal are left
 untouched for operator audit. Historical executions, gates and decisions are
 preserved. Rollback does not reactivate a cancelled execution, and a legacy
 worker still running during a rolling upgrade can create new legacy gates;
 runtime validation fails those closed and the sweep runs again on restart.
+Workflow calls bypass approval entirely, so a legacy external gate in a tool
+policy neither pauses nor fails a workflow call.
+
+Removing the policy layers is a separate cutover. Existing site, team and
+entrypoint policy rows are left in place for audit but are never read or
+enforced, and the `/api/v1/tool-approval-policies` routes — list, `effective`
+preview, create, update and delete — together with their management UI are
+removed. Any unstarted execution (`awaiting_approval` or `ready`) whose stored
+policy snapshot included a removed layer becomes `cancelled` with
+`cancel_reason: binding_changed` (business code `6507`) instead of running
+under the narrower tool-only policy, and startup logs the cancelled count.
+After the commit, owning waiting runs are woken: an AgentRun whose pending tool
+call matches a cancelled execution is queued with a terminal `binding_changed`
+tool error, and a waiting WorkflowRun is dispatched so its parked node fails
+with `6507` instead of hanging. This reconciliation runs on every startup, so a
+crash or broker outage between the commit and the dispatch is repaired later
+and repeated runs are no-ops. Executing and terminal rows are never touched.
+These executions stay terminal and cannot be approved later, including by the
+API key that started the run. The retired policy table itself is left in
+place but is no longer read or written, so rollback and audit remain possible.
 
 ### Approvals
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/v1/tool-approvals?page=&page_size=` | Pending caller gates awaiting the execution actor |
-| `GET` | `/api/v1/tool-approvals/{request_id}` | One gate visible to the execution actor |
+| `GET` | `/api/v1/tool-approvals?page=&page_size=` | Pending caller gates for the initiating user or API key |
+| `GET` | `/api/v1/tool-approvals/{request_id}` | One gate visible to that caller |
 | `POST` | `/api/v1/tool-approvals/{request_id}/decision` | Caller approves or rejects; idempotent |
 
 Decision body:
@@ -1651,15 +1693,33 @@ Decision body:
 ```
 
 `decision` is `approve` or `reject`; `idempotency_key` (1–128 chars) makes
-retries safe. These endpoints require a signed-in user session (JWT); an API
-key cannot submit a decision. Only the execution's caller may decide; another
-team member, team administrator or superuser receives `6504
-tool_approval_not_authorized`, and the gate is not listed for them. The
-response includes the immutable decision, `execution_status` and
-`remaining_approvals`. The decision never
-edits the bound parameters.
-Rejection, expiry, revocation and stopped runs are terminal and cannot become
-approvals.
+retries safe. These endpoints accept either a signed-in user session (JWT) or
+the API key that started the Agent run, using the normal
+`Authorization: Bearer clou_...` header. The JWT contract is unchanged.
+
+Only the execution's caller may decide. For a user session, that is the
+initiating user; for an API key it is the same key — never merely the same key
+owner. The execution records the key id, so the key must be active, still
+authorized for the Agent (a key with no Agent associations covers all Agents)
+and allowed to reach that execution. Another key, including one
+owned by the same user, cannot see the gate and receives `6504
+tool_approval_not_authorized` from a decision; reading it through
+`GET /api/v1/tool-executions[/{id}]` instead returns `403
+tool_execution_access_denied`, and an unknown or foreign execution id returns
+`404 tool_execution_not_found`. A revoked or expired key fails authentication
+with `401 invalid_api_key` / `api_key_expired`, and a key whose Agent binding no
+longer covers the run is likewise unauthorized (`6504`; the Agent run routes
+themselves return `403 api_key_no_agent_access`). Another team
+member, team administrator or superuser also cannot decide. With an API key,
+the inbox and execution list only include executions whose durable AgentRun was
+submitted by that same key; legacy AgentRuns created before run-level key
+binding (no recorded key id) are omitted from lists for safety. If you still
+hold such a pending execution id, you can read or decide it directly — detail
+and decision validate the recorded execution/run binding and reject a
+conflicting key. Workflow executions are never key-decidable. The response
+includes the immutable decision, `execution_status` and `remaining_approvals`.
+The decision never edits the bound parameters. Rejection, expiry, revocation
+and stopped runs are terminal and cannot become approvals.
 
 `ToolApprovalRequestOut` returns `id`, `execution_id`, `stage_index`,
 `stage_key`, `gate_kind`, `masked_display`, `status`, `expires_at`,
@@ -1678,12 +1738,19 @@ audit; they are never actionable. `masked_display` is already redacted.
 
 The decision body is the same as the approvals inbox:
 `{"decision": "approve" | "reject", "reason": "...", "idempotency_key": "..."}`.
-It is a convenience for a waiting chat run and requires a user session; API
-keys cannot decide approvals. Approving moves the bound execution to `ready`
-when no further gates remain (otherwise it stays `awaiting_approval`) and the
-worker resumes the original call once every gate passes; it never executes the
-side effect inside the decision request. Rejecting cancels the call with
-`cancel_reason: rejected`.
+It accepts a user session or the API key that initiated the Agent run, under
+the same caller binding as the approvals inbox. Approving moves the bound
+execution to `ready` when no further gates remain (otherwise it stays
+`awaiting_approval`) and the worker resumes the original call once every gate
+passes; it never executes the side effect inside the decision request. Rejecting
+cancels the call with `cancel_reason: rejected`.
+
+Replaying the same `idempotency_key` returns the stored decision. A different
+key for an already-decided gate returns `409 tool_approval_already_decided`; a
+reused key with different content returns `409
+tool_approval_idempotency_conflict`; an expired gate returns `409
+tool_approval_expired`; and a changed tool definition or bound parameters
+return `409 tool_approval_binding_changed`.
 
 `ToolExecutionOut` exposes the tool/definition version, operation, team,
 entrypoint, run references, connection binding metadata,
@@ -1717,31 +1784,6 @@ silently retry. Inspect the external system, then start a **new** execution.
 `failed` and `outcome_unknown` are not interchangeable, and approval decisions
 never imply the side effect happened.
 
-### Policy Layers
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/v1/tool-approval-policies?team_id=&scope=&entrypoint_kind=&entrypoint_id=&tool_id=` | List layers (team view includes read-only site baseline) |
-| `GET` | `/api/v1/tool-approval-policies/effective?team_id=&tool_id=&operation=&entrypoint_kind=&entrypoint_id=&entrypoint_interactive=` | Server-composed effective decision |
-| `POST` | `/api/v1/tool-approval-policies` | Create a site/team/entrypoint layer |
-| `PUT` | `/api/v1/tool-approval-policies/{policy_id}` | Replace policy under optimistic `expected_version` |
-| `DELETE` | `/api/v1/tool-approval-policies/{policy_id}` | Delete a layer |
-
-Create body: `scope` (`site`, `team`, `entrypoint`) plus `team_id` for team,
-and `team_id`/`entrypoint_kind`/`entrypoint_id` for entrypoint; optional
-`tool_id`; `policy` is the full policy object. `policy` may contain only
-caller gates; `user`/`team_role` audiences are rejected with HTTP `422`,
-business code `6510` (`tool_approval_policy_external_audience_unsupported`),
-and a save never rewrites an existing policy to caller or allow. Site layers
-require site administration. The effective preview returns `decision`, `gates`,
-`sources`, `policy_hash`, `configuration_error`, `entrypoint_interactive` and
-layer summaries with editability; clients must not merge layers themselves.
-A stored legacy external audience is previewed as `decision: deny` with no
-gates and `configuration_error: approval_gate_external_audience_unsupported`,
-never as allow. Missing approval configuration, including a legacy external
-gate or an interactive caller gate at a non-interactive entrypoint, yields
-`6510` rather than implicit consent.
-
 ### Server-initiated Interactions
 
 MCP sampling and elicitation requests become durable rows; only the explicit
@@ -1771,4 +1813,4 @@ replayed.
 
 ---
 
-**Last Updated**: 2026-10-27
+**Last Updated**: 2026-10-28

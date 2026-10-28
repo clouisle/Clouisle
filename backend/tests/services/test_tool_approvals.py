@@ -464,7 +464,7 @@ async def test_submit_execution_decision_by_execution_id():
                 decision="approve",
                 idempotency_key="exec-approve-1",
             ),
-            current_user=actor,
+            auth_result=actor,
         )
         assert result["data"].execution_status == ToolExecutionStatus.READY
         assert result["data"].remaining_approvals == 0

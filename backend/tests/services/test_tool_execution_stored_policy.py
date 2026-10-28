@@ -1,4 +1,11 @@
-"""Stored site/team/entrypoint layers must reach the real execution boundary."""
+"""Only the tool's own policy gates Agent calls; workflows never gate.
+
+The retired site/team/entrypoint layers are not read anymore. A workflow (any
+entrypoint, including API-key-origin and nested Agent calls) executes without
+creating approval requests, while an Agent call still honours the stored tool
+policy. A workflow execution parked by the retired layers is cancelled instead
+of being approved or silently executed.
+"""
 
 from uuid import uuid4
 
@@ -6,13 +13,20 @@ import pytest
 from tortoise import Tortoise
 
 from app.models.tool import Tool
-from app.models.tool_approval import ExecutionEntrypoint
-from app.models.tool_approval_policy import ToolApprovalPolicyDefinition
+from app.models.tool_approval import (
+    ExecutionEntrypoint,
+    ExecutionRunKind,
+    ToolApprovalRequest,
+    ToolExecution,
+    ToolExecutionStatus,
+)
 from app.models.user import Permission, Role, Team, TeamMember, User
-from app.schemas.response import BusinessError
-from app.schemas.tool_approval_policy import ToolApprovalPolicyScope
-from app.services.tool_approval_policies import build_scope_key
-from app.services.tool_approvals import normalize_tool_approval_policy, policy_hash
+from app.schemas.response import BusinessError, ResponseCode
+from app.schemas.tool_approval import (
+    ApprovalRequestStatus,
+    PolicySource,
+    ToolExecutionCancelReason,
+)
 from app.services.tool_execution import (
     PendingToolApproval,
     ToolCallContext,
@@ -29,7 +43,7 @@ async def _grant_team_read(user: User) -> None:
     await user.roles.add(role)
 
 
-async def _fixture():
+async def _fixture(*, approval_policy):
     user = await User.create(
         username=f"policy_{uuid4().hex[:8]}",
         email=f"{uuid4().hex}@policy.test",
@@ -45,33 +59,46 @@ async def _fixture():
         team=team,
         created_by=user,
         type="custom",
-        approval_policy={"default_decision": "allow"},
+        approval_policy=approval_policy,
     )
     return user, team, tool
 
 
-async def _store_team_layer(*, user, team, policy):
-    normalized = normalize_tool_approval_policy(policy)
-    await ToolApprovalPolicyDefinition.create(
-        id=uuid4(),
-        scope=ToolApprovalPolicyScope.TEAM,
-        scope_key=build_scope_key(scope=ToolApprovalPolicyScope.TEAM, team_id=team.id),
+def _context(
+    user,
+    team,
+    entrypoint,
+    *,
+    run_kind=None,
+    run_id=None,
+    tool_call_id=None,
+    interactive,
+    entrypoint_id=None,
+    require_approval=False,
+):
+    return ToolCallContext(
+        actor=user,
         team_id=team.id,
-        policy=normalized.model_dump(mode="json"),
-        policy_hash=policy_hash(normalized),
-        version=1,
-        created_by_id=user.id,
+        entrypoint=entrypoint,
+        entrypoint_id=entrypoint_id or str(uuid4()),
+        run_kind=run_kind,
+        run_id=run_id,
+        tool_call_id=tool_call_id,
+        interactive=interactive,
+        require_approval=require_approval,
     )
 
 
 @pytest.mark.asyncio
-async def test_team_deny_layer_blocks_execution():
+async def test_tool_policy_still_gates_non_interactive_agent_call():
     await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
     try:
         await Tortoise.generate_schemas()
-        user, team, tool = await _fixture()
-        await _store_team_layer(
-            user=user, team=team, policy={"default_decision": "deny"}
+        user, team, tool = await _fixture(
+            approval_policy={
+                "default_decision": "require_approval",
+                "gates": [{"kind": "caller"}],
+            }
         )
         calls = []
 
@@ -79,33 +106,41 @@ async def test_team_deny_layer_blocks_execution():
             calls.append(parameters)
             return {"ok": True}
 
-        context = ToolCallContext(
-            actor=user,
-            team_id=team.id,
-            entrypoint=ExecutionEntrypoint.CHAT,
-            entrypoint_id=str(uuid4()),
-            interactive=True,
+        with pytest.raises(BusinessError) as blocked:
+            await execute_stored_tool(
+                tool,
+                "read",
+                {},
+                _context(
+                    user,
+                    team,
+                    ExecutionEntrypoint.SCHEDULE,
+                    run_kind=ExecutionRunKind.AGENT,
+                    run_id=uuid4(),
+                    tool_call_id="scheduled:1",
+                    interactive=False,
+                ),
+                invoke,
+            )
+
+        assert blocked.value.code == (
+            ResponseCode.TOOL_APPROVAL_POLICY_CONFIGURATION_REQUIRED
         )
-        with pytest.raises(BusinessError):
-            await execute_stored_tool(tool, "read", {}, context, invoke)
         assert calls == []
     finally:
         await Tortoise.close_connections()
 
 
 @pytest.mark.asyncio
-async def test_team_require_approval_layer_pauses_even_for_tool_test():
+async def test_tool_policy_pauses_agent_call_for_caller():
     await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
     try:
         await Tortoise.generate_schemas()
-        user, team, tool = await _fixture()
-        await _store_team_layer(
-            user=user,
-            team=team,
-            policy={
+        user, team, tool = await _fixture(
+            approval_policy={
                 "default_decision": "require_approval",
                 "gates": [{"kind": "caller"}],
-            },
+            }
         )
         calls = []
 
@@ -113,15 +148,225 @@ async def test_team_require_approval_layer_pauses_even_for_tool_test():
             calls.append(parameters)
             return {"ok": True}
 
-        context = ToolCallContext(
-            actor=user,
-            team_id=team.id,
-            entrypoint=ExecutionEntrypoint.TOOL_TEST,
-            entrypoint_id=str(uuid4()),
-            interactive=True,
+        result = await execute_stored_tool(
+            tool,
+            "read",
+            {},
+            _context(user, team, ExecutionEntrypoint.CHAT, interactive=True),
+            invoke,
         )
-        result = await execute_stored_tool(tool, "read", {}, context, invoke)
+
         assert isinstance(result, PendingToolApproval)
         assert calls == []
+        assert await ToolApprovalRequest.filter(
+            execution_id=result.execution_id, status=ApprovalRequestStatus.PENDING
+        ).exists()
+    finally:
+        await Tortoise.close_connections()
+
+
+@pytest.mark.asyncio
+async def test_workflow_api_key_entrypoint_never_gates():
+    await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
+    try:
+        await Tortoise.generate_schemas()
+        user, team, tool = await _fixture(
+            approval_policy={
+                "default_decision": "require_approval",
+                "gates": [{"kind": "caller"}],
+            }
+        )
+        calls = []
+
+        async def invoke(parameters, connection):
+            calls.append(parameters)
+            return {"ok": True}
+
+        run_id = uuid4()
+        result = await execute_stored_tool(
+            tool,
+            "read",
+            {"x": 1},
+            _context(
+                user,
+                team,
+                ExecutionEntrypoint.API_KEY,
+                run_kind=ExecutionRunKind.WORKFLOW,
+                run_id=run_id,
+                tool_call_id="workflow-node:1",
+                interactive=False,
+                require_approval=True,
+            ),
+            invoke,
+        )
+
+        assert result == {"ok": True}
+        assert calls == [{"x": 1}]
+        assert await ToolApprovalRequest.all().count() == 0
+        execution = await ToolExecution.get(run_id=run_id)
+        assert execution.status == ToolExecutionStatus.SUCCEEDED
+        assert execution.policy_snapshot["evaluation"]["decision"] == "allow"
+    finally:
+        await Tortoise.close_connections()
+
+
+@pytest.mark.asyncio
+async def test_nested_agent_inside_workflow_never_gates():
+    await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
+    try:
+        await Tortoise.generate_schemas()
+        user, team, tool = await _fixture(
+            approval_policy={
+                "default_decision": "require_approval",
+                "gates": [{"kind": "caller"}],
+            }
+        )
+        calls = []
+
+        async def invoke(parameters, connection):
+            calls.append(parameters)
+            return {"ok": True}
+
+        result = await execute_stored_tool(
+            tool,
+            "read",
+            {},
+            _context(
+                user,
+                team,
+                ExecutionEntrypoint.NESTED_AGENT,
+                run_kind=ExecutionRunKind.WORKFLOW,
+                run_id=uuid4(),
+                tool_call_id="workflow-agent:1",
+                interactive=False,
+                require_approval=True,
+            ),
+            invoke,
+        )
+
+        assert result == {"ok": True}
+        assert len(calls) == 1
+        assert await ToolApprovalRequest.all().count() == 0
+    finally:
+        await Tortoise.close_connections()
+
+
+@pytest.mark.asyncio
+async def test_workflow_ignores_legacy_external_tool_audience():
+    """A deprecated audience must not park or reject a workflow call."""
+    await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
+    try:
+        await Tortoise.generate_schemas()
+        user, team, tool = await _fixture(
+            approval_policy={
+                "default_decision": "require_approval",
+                "gates": [{"kind": "team_role", "roles": ["owner"]}],
+            }
+        )
+        calls = []
+
+        async def invoke(parameters, connection):
+            calls.append(parameters)
+            return {"ok": True}
+
+        result = await execute_stored_tool(
+            tool,
+            "read",
+            {},
+            _context(
+                user,
+                team,
+                ExecutionEntrypoint.API_KEY,
+                run_kind=ExecutionRunKind.WORKFLOW,
+                run_id=uuid4(),
+                tool_call_id="workflow-node:legacy",
+                interactive=False,
+            ),
+            invoke,
+        )
+
+        assert result == {"ok": True}
+        assert len(calls) == 1
+        assert await ToolApprovalRequest.all().count() == 0
+    finally:
+        await Tortoise.close_connections()
+
+
+@pytest.mark.asyncio
+async def test_parked_workflow_execution_is_cancelled_not_resumed():
+    await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
+    try:
+        await Tortoise.generate_schemas()
+        user, team, tool = await _fixture(approval_policy={"default_decision": "allow"})
+        run_id = uuid4()
+        tool_call_id = "workflow-node:parked"
+        execution = await ToolExecution.create(
+            actor_user=user,
+            team=team,
+            tool=tool,
+            tool_definition_version=tool.definition_version,
+            operation="read",
+            entrypoint=ExecutionEntrypoint.API_KEY,
+            run_kind=ExecutionRunKind.WORKFLOW,
+            run_id=run_id,
+            tool_call_id=tool_call_id,
+            parameters_cipher="gAAAAA-ciphertext",
+            parameters_digest="a" * 64,
+            policy_snapshot={
+                "layers": [
+                    {
+                        "source": PolicySource.TEAM.value,
+                        "label": "team",
+                        "policy": {
+                            "default_decision": "require_approval",
+                            "gates": [{"kind": "caller"}],
+                        },
+                    }
+                ]
+            },
+            policy_hash="b" * 64,
+            binding_hash="c" * 64,
+            status=ToolExecutionStatus.AWAITING_APPROVAL,
+        )
+        request = await ToolApprovalRequest.create(
+            execution=execution,
+            stage_index=0,
+            stage_key="caller:0",
+            gate_kind="caller",
+            approver_user_ids=[],
+            approver_roles=[],
+            allow_self_approval=False,
+            status=ApprovalRequestStatus.PENDING,
+        )
+        calls = []
+
+        async def invoke(parameters, connection):
+            calls.append(parameters)
+            return {"ok": True}
+
+        with pytest.raises(BusinessError) as blocked:
+            await execute_stored_tool(
+                tool,
+                "read",
+                {},
+                _context(
+                    user,
+                    team,
+                    ExecutionEntrypoint.API_KEY,
+                    run_kind=ExecutionRunKind.WORKFLOW,
+                    run_id=run_id,
+                    tool_call_id=tool_call_id,
+                    interactive=False,
+                ),
+                invoke,
+            )
+
+        assert blocked.value.code == ResponseCode.TOOL_APPROVAL_BINDING_CHANGED
+        assert calls == []
+        await execution.refresh_from_db()
+        await request.refresh_from_db()
+        assert execution.status == ToolExecutionStatus.CANCELLED
+        assert execution.cancel_reason == ToolExecutionCancelReason.CANCELLED
+        assert request.status == ApprovalRequestStatus.CANCELLED
     finally:
         await Tortoise.close_connections()

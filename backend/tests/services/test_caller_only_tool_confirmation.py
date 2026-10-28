@@ -172,12 +172,10 @@ def _tool_context(
 @pytest.mark.parametrize(
     "entrypoint",
     [
-        ExecutionEntrypoint.WORKFLOW,
         ExecutionEntrypoint.API_KEY,
         ExecutionEntrypoint.SCHEDULE,
         ExecutionEntrypoint.CHANNEL,
         ExecutionEntrypoint.EMBED,
-        ExecutionEntrypoint.SUBWORKFLOW,
         ExecutionEntrypoint.NESTED_AGENT,
     ],
 )
@@ -219,6 +217,47 @@ async def test_every_noninteractive_entrypoint_fails_closed_on_legacy_policy(
         )
         assert calls == []
         assert await ToolExecution.filter(tool_id=tool.id).count() == 0
+    finally:
+        await Tortoise.close_connections()
+
+
+@pytest.mark.parametrize(
+    "entrypoint", [ExecutionEntrypoint.WORKFLOW, ExecutionEntrypoint.SUBWORKFLOW]
+)
+@pytest.mark.asyncio
+async def test_workflow_entrypoints_ignore_legacy_audience_and_never_gate(entrypoint):
+    await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
+    try:
+        await Tortoise.generate_schemas()
+        user, team = await _team_and_user(f"workflow_{entrypoint.value}")
+        tool = await Tool.create(
+            name="legacy_tool",
+            display_name="Legacy",
+            description="",
+            team=team,
+            created_by=user,
+            type="custom",
+            identity_policy="none",
+            approval_policy=_LEGACY_POLICY,
+        )
+        calls = []
+
+        async def invoke(parameters, connection):
+            calls.append(parameters)
+            return {"ok": True}
+
+        context = _tool_context(
+            user,
+            team,
+            entrypoint=entrypoint,
+            interactive=False,
+            entrypoint_id=str(uuid4()),
+        )
+        result = await execute_stored_tool(tool, "run", {"x": 1}, context, invoke)
+
+        assert result == {"ok": True}
+        assert calls == [{"x": 1}]
+        assert await ToolApprovalRequest.all().count() == 0
     finally:
         await Tortoise.close_connections()
 
@@ -317,7 +356,7 @@ async def test_agent_caller_switch_still_requires_caller_confirmation():
 
 
 @pytest.mark.asyncio
-async def test_noninteractive_agent_caller_policy_fails_closed():
+async def test_api_key_agent_caller_policy_parks_for_same_key():
     await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
     try:
         await Tortoise.generate_schemas()
@@ -348,13 +387,14 @@ async def test_noninteractive_agent_caller_policy_fails_closed():
             interactive=False,
             entrypoint_id=str(uuid4()),
         )
-        with pytest.raises(BusinessError) as fail_closed:
-            await execute_stored_tool(tool, "run", {"x": 1}, context, invoke)
-        assert fail_closed.value.msg_key == (
-            "tool_approval_policy_configuration_required"
-        )
-        assert fail_closed.value.data == {"reason": "approval_audience_unavailable"}
+        pending = await execute_stored_tool(tool, "run", {"x": 1}, context, invoke)
+
+        assert isinstance(pending, PendingToolApproval)
         assert calls == []
+        assert await ToolApprovalRequest.filter(
+            execution_id=pending.execution_id,
+            gate_kind=ApprovalGateKind.CALLER,
+        ).exists()
     finally:
         await Tortoise.close_connections()
 
@@ -410,40 +450,6 @@ def test_evaluate_policy_denies_legacy_audience_anywhere_in_layers():
     )
     assert caller_only.decision == ApprovalDecision.REQUIRE_APPROVAL
     assert caller_only.configuration_error is None
-
-
-@pytest.mark.asyncio
-async def test_effective_policy_preview_never_shows_legacy_audience_as_allowed():
-    await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["app.models"]})
-    try:
-        await Tortoise.generate_schemas()
-        user, team = await _team_and_user("legacy_preview")
-        tool = await Tool.create(
-            name="preview_tool",
-            display_name="Preview",
-            description="",
-            team=team,
-            created_by=user,
-            type="custom",
-            identity_policy="none",
-            approval_policy=_LEGACY_POLICY,
-        )
-        from app.services.tool_approval_policies import get_effective_policy
-
-        view = await get_effective_policy(
-            user,
-            team_id=team.id,
-            tool_id=tool.id,
-            operation="run",
-        )
-        assert view.evaluation.configuration_error == (
-            "approval_gate_external_audience_unsupported"
-        )
-        assert view.evaluation.decision == ApprovalDecision.DENY
-        assert view.evaluation.gates == ()
-        assert view.evaluation.is_allowed is False
-    finally:
-        await Tortoise.close_connections()
 
 
 @pytest.mark.asyncio

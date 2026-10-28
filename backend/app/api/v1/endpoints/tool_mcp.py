@@ -103,7 +103,6 @@ from app.services.mcp_subscriptions import (
     open_subscription,
 )
 from app.services.tool import build_mcp_config
-from app.services.tool_approval_policies import resolve_tool_layer_policy
 from app.services.tool_approvals import PolicyConfigurationError
 from app.services.tool_connections import ResolvedConnection
 from app.services.tool_execution import (
@@ -111,6 +110,7 @@ from app.services.tool_execution import (
     ToolCallContext,
     authorize_tool_context,
     execute_stored_tool,
+    resolve_tool_layer_policy,
 )
 
 router = APIRouter()

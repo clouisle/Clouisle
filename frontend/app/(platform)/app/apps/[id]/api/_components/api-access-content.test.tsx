@@ -83,30 +83,57 @@ describe('ApiAccessContent approvals', () => {
     expect(codes).not.toContain('"arguments":{"interaction_kind"')
   })
 
-  test('documents both decision endpoints and the decision contract', () => {
+  test('documents discovery, both decision endpoints and the decision contract', () => {
     process.env.NEXT_PUBLIC_API_URL = 'https://api.example.test'
     const renderer = render({ id: 'agent-1', name: 'Support', status: 'published', variables: [] })
     const rendered = output(renderer)
     const codes = codeText(renderer)
 
+    expect(rendered).toContain('https://api.example.test/api/v1/tool-approvals?page=1&page_size=20')
+    expect(rendered).toContain('https://api.example.test/api/v1/tool-executions?run_id={run_id}&status=awaiting_approval')
+    expect(rendered).toContain('https://api.example.test/api/v1/tool-executions/{execution_id}')
     expect(rendered).toContain('https://api.example.test/api/v1/tool-executions/{execution_id}/decision')
     expect(rendered).toContain('https://api.example.test/api/v1/tool-approvals/{request_id}/decision')
+    expect(rendered).toContain('https://api.example.test/api/v1/agents/agent-1/chat/runs/{run_id}/stream?after_sequence={sequence}')
+    expect(rendered).toContain('approval.viewResponse')
     expect(rendered).toContain('approval.decisionBody')
     expect(rendered).toContain('approval.decisionResponse')
+    expect(codes).toContain('"status": "awaiting_approval"')
+    expect(codes).toContain('"parameters_preview"')
     expect(codes).toContain('"decision": "approve"')
     expect(codes).toContain('"idempotency_key": "decision-2026-10-28-0001"')
     expect(codes).toContain('"execution_status": "ready"')
     expect(codes).toContain('"remaining_approvals": 0')
     expect(rendered).toContain('approval.previewNote')
-    expect(rendered).toContain('approval.resumeNote')
+    expect(rendered).toContain('approval.resumeDescription')
   })
 
-  test('warns that API-key calls fail closed instead of waiting for approval', () => {
+  test('lets an API key decide and resume its own Agent run', () => {
+    process.env.NEXT_PUBLIC_API_URL = 'https://api.example.test'
     const renderer = render({ id: 'agent-1', name: 'Support', status: 'published', variables: [] })
     const rendered = output(renderer)
+    const codes = codeText(renderer)
 
     expect(rendered).toContain('approval.apiKeyTitle')
     expect(rendered).toContain('approval.apiKeyDescription')
+    expect(rendered).toContain('approval.apiKeyWaitLabel')
+    expect(rendered).toContain('approval.apiKeyViewLabel')
+    expect(rendered).toContain('approval.apiKeyDecisionLabel')
+    expect(rendered).toContain('approval.apiKeyResumeLabel')
+    expect(rendered).toContain('approval.apiKeyScopeNote')
+    expect(codes).toContain('Bearer clou_your_key')
+    expect(codes).toContain('https://api.example.test/api/v1/agents/agent-1/chat/stream')
+    expect(codes).toContain('https://api.example.test/api/v1/tool-approvals?page=1&page_size=20')
+    expect(codes).toContain('https://api.example.test/api/v1/tool-executions/{execution_id}/decision')
+    expect(codes).toContain('https://api.example.test/api/v1/agents/agent-1/chat/runs/{run_id}/stream?after_sequence=17')
+  })
+
+  test('states that workflows never request tool approval', () => {
+    const renderer = render({ id: 'agent-1', name: 'Support', status: 'published', variables: [] })
+    const rendered = output(renderer)
+
+    expect(rendered).toContain('approval.workflowTitle')
+    expect(rendered).toContain('approval.workflowDescription')
   })
 
   test('keeps the ask_user answers endpoint distinct from approvals', () => {

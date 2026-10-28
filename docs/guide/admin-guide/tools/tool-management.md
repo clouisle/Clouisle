@@ -303,10 +303,13 @@ A personal connection can only be selected by its owner; selecting it when
 configuring an Agent or workflow authorizes that saved definition to reuse the
 identity when the definition is shared or run in the background. The owner can
 authorize OAuth when the server requires it. Operations and metadata can require
-approval depending on Agent confirmation and the tool's caller-only policy.
-Only the user who initiated an interactive Agent call can confirm or reject it;
-stored user/role approver policies fail closed until an administrator re-saves
-them as caller confirmation. See
+approval depending on the tool's own
+caller-only policy and the Agent binding's confirmation switch. Only the
+principal that initiated an Agent call can confirm or reject it —
+the signed-in user, or for an API-key Agent run the same API key. Workflow tool
+calls never create approval gates. Stored user/role approver policies in a tool
+definition fail closed until the tool editor re-saves them with caller
+confirmation. See
 [MCP Connections and Approvals](mcp-connections-and-approvals.md) for identity
 modes, connection bindings, OAuth, caller confirmation, resource/prompt use and live
 subscription limits.

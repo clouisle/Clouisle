@@ -127,6 +127,7 @@ async def create_run(
     team_id: str | None = None,
     source_message_id: UUID | None = None,
     celery_task_id: str | None = None,
+    api_key_id: UUID | None = None,
 ) -> AgentRun:
     run_id = uuid4()
     run = await AgentRun.create(
@@ -137,6 +138,7 @@ async def create_run(
         mode=mode,
         source_message_id=source_message_id,
         celery_task_id=celery_task_id,
+        api_key_id=api_key_id,
         status=AgentRunStatus.QUEUED,
         started_at=None,
         submitted_at=now_utc(),

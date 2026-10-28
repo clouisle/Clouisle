@@ -105,7 +105,7 @@ mock.module('@/components/ui/dropdown-menu', () => ({
 mock.module('lucide-react', () => ({
   Wrench: element('svg'), Plus: element('svg'), RefreshCw: element('svg'), Loader2: element('svg'),
   Globe: element('svg'), Code: element('svg'), Plug: element('svg'), ChevronDown: element('svg'),
-  PackageOpen: element('svg'), Upload: element('svg'), Search: element('svg'), Info: element('svg'), Settings: element('svg'), ShieldCheck: element('svg'),
+  PackageOpen: element('svg'), Upload: element('svg'), Search: element('svg'), Info: element('svg'), Settings: element('svg'),
 }))
 mock.module('./_components/tool-card', () => ({ ToolCard: ({ tool, ...props }: { tool: { display_name: string } } & Record<string, unknown>) => ({ type: 'article', props: { ...props, children: tool.display_name } }) }))
 
@@ -205,21 +205,6 @@ describe('CapabilitiesPage', () => {
 
     ;(find(tree, (node) => node.type === 'tabs' && node.props.value === 'all').props.onValueChange as (value: string) => void)('mcp')
     expect(findAll(render(), (node) => node.type === 'article')).toHaveLength(0)
-  })
-
-  test('exposes approval policy management to authorized tool editors', async () => {
-    permissions = new Set(['tool:read', 'tool:update', 'skill:read'])
-    hooks = []
-    let tree = render()
-    const link = find(tree, (node) => node.props['data-testid'] === 'capabilities-policies-link')
-    expect(link.props.children).toBeDefined()
-    ;(link.props.onClick as () => void)()
-    expect(push).toHaveBeenCalledWith('/app/capabilities/policies')
-
-    permissions = new Set(['tool:read', 'skill:read'])
-    hooks = []
-    tree = render()
-    expect(findAll(tree, (node) => node.props['data-testid'] === 'capabilities-policies-link')).toHaveLength(0)
   })
 
   test('honors read and execute permissions while routing tab changes', async () => {

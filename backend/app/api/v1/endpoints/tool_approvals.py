@@ -11,6 +11,7 @@ original deferred tool call afterwards.
 from __future__ import annotations
 
 import logging
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -50,6 +51,13 @@ router = APIRouter()
 execution_router = APIRouter()
 
 
+def _split_principal(auth_result: Any) -> tuple[User, Any | None]:
+    """Accept the dual-auth dependency tuple (JWT -> api_key is None)."""
+    if isinstance(auth_result, tuple) and len(auth_result) == 2:
+        return auth_result
+    return auth_result, None
+
+
 @router.get(
     "",
     response_model=Response[PageData[ToolApprovalRequestOut]],
@@ -58,11 +66,16 @@ execution_router = APIRouter()
 async def list_pending_approval_requests(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
-    current_user: User = Depends(deps.get_current_user),
+    auth_result: Any = Depends(deps.get_current_user_or_api_key),
 ):
-    """Only gates whose caller/user/team-role audience includes the caller."""
+    """Only gates whose caller/user/team-role audience includes the caller.
+
+    With an API key the inbox is narrowed to executions bound to that exact
+    credential.
+    """
+    current_user, api_key = _split_principal(auth_result)
     requests, total = await list_pending_approvals_for_user(
-        current_user, page=page, page_size=page_size
+        current_user, page=page, page_size=page_size, api_key=api_key
     )
     return success(
         data=PageData(
@@ -81,9 +94,12 @@ async def list_pending_approval_requests(
 )
 async def get_approval_request(
     request_id: UUID,
-    current_user: User = Depends(deps.get_current_user),
+    auth_result: Any = Depends(deps.get_current_user_or_api_key),
 ):
-    request = await get_approval_request_for_viewer(request_id, current_user)
+    current_user, api_key = _split_principal(auth_result)
+    request = await get_approval_request_for_viewer(
+        request_id, current_user, api_key=api_key
+    )
     return success(data=ToolApprovalRequestOut.model_validate(request))
 
 
@@ -95,15 +111,17 @@ async def get_approval_request(
 async def submit_approval_decision(
     request_id: UUID,
     payload: ToolApprovalDecisionIn,
-    current_user: User = Depends(deps.get_current_user),
+    auth_result: Any = Depends(deps.get_current_user_or_api_key),
 ):
     """Decision is idempotent and never edits the bound execution parameters."""
+    current_user, api_key = _split_principal(auth_result)
     decision = await decide_approval(
         request_id,
         current_user,
         decision=payload.decision,
         reason=payload.reason,
         idempotency_key=payload.idempotency_key,
+        api_key=api_key,
     )
     execution = await get_execution(decision.execution_id)
     if execution.run_kind == ExecutionRunKind.AGENT:
@@ -142,9 +160,10 @@ async def list_my_executions(
     tool_id: UUID | None = Query(default=None),
     run_kind: ExecutionRunKind | None = Query(default=None),
     run_id: UUID | None = Query(default=None),
-    current_user: User = Depends(deps.get_current_user),
+    auth_result: Any = Depends(deps.get_current_user_or_api_key),
 ):
     """Durable execution references for waiting UIs; secrets are never included."""
+    current_user, api_key = _split_principal(auth_result)
     executions, total = await list_executions_for_actor(
         current_user,
         page=page,
@@ -153,6 +172,7 @@ async def list_my_executions(
         tool_id=tool_id,
         run_kind=run_kind,
         run_id=run_id,
+        api_key=api_key,
     )
     return success(
         data=PageData(
@@ -171,9 +191,12 @@ async def list_my_executions(
 )
 async def get_my_execution(
     execution_id: UUID,
-    current_user: User = Depends(deps.get_current_user),
+    auth_result: Any = Depends(deps.get_current_user_or_api_key),
 ):
-    execution = await get_execution_for_viewer(execution_id, current_user)
+    current_user, api_key = _split_principal(auth_result)
+    execution = await get_execution_for_viewer(
+        execution_id, current_user, api_key=api_key
+    )
     return success(data=ToolExecutionOut.model_validate(execution))
 
 
@@ -185,10 +208,13 @@ async def get_my_execution(
 async def submit_execution_decision(
     execution_id: UUID,
     payload: ToolApprovalDecisionIn,
-    current_user: User = Depends(deps.get_current_user),
+    auth_result: Any = Depends(deps.get_current_user_or_api_key),
 ):
     """Directly decide the pending approval gate for an execution in chat."""
-    execution = await get_execution_for_viewer(execution_id, current_user)
+    current_user, api_key = _split_principal(auth_result)
+    execution = await get_execution_for_viewer(
+        execution_id, current_user, api_key=api_key
+    )
     request = await ToolApprovalRequest.filter(
         execution_id=execution.id,
         status=ApprovalRequestStatus.PENDING,
@@ -205,6 +231,7 @@ async def submit_execution_decision(
         decision=payload.decision,
         reason=payload.reason,
         idempotency_key=payload.idempotency_key,
+        api_key=api_key,
     )
     fresh_execution = await get_execution(decision.execution_id)
     if fresh_execution.run_kind == ExecutionRunKind.AGENT:

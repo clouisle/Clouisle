@@ -15,7 +15,7 @@ def _patch_policy_boundary(monkeypatch, user):
     Memory, knowledge and asset tools are executed through the stored-tool
     approval boundary. These cases exercise argument resolution, so the
     boundary runs the operation directly; the approval gate itself is
-    covered by tests/services/test_tool_approval_policies.py.
+    covered by tests/services/test_tool_execution_stored_policy.py.
     """
     from app.services import builtin_tools, tool_execution
 

@@ -117,7 +117,7 @@ async def test_approval_inbox_and_detail_endpoints_are_viewer_scoped():
         request = await _pending_request(execution.id)
 
         listing = await list_pending_approval_requests(
-            page=1, page_size=20, current_user=actor
+            page=1, page_size=20, auth_result=actor
         )
         page = listing["data"]
         assert page.total == 1
@@ -126,17 +126,17 @@ async def test_approval_inbox_and_detail_endpoints_are_viewer_scoped():
         assert [item.id for item in page.items] == [request.id]
         assert page.items[0].execution_id == execution.id
 
-        detail = await get_approval_request(request_id=request.id, current_user=actor)
+        detail = await get_approval_request(request_id=request.id, auth_result=actor)
         assert detail["data"].id == request.id
         assert detail["data"].stage_key == "caller"
 
         outsider_page = await list_pending_approval_requests(
-            page=1, page_size=20, current_user=outsider
+            page=1, page_size=20, auth_result=outsider
         )
         assert outsider_page["data"].total == 0
 
         with pytest.raises(BusinessError) as hidden:
-            await get_approval_request(request_id=request.id, current_user=outsider)
+            await get_approval_request(request_id=request.id, auth_result=outsider)
         assert hidden.value.code == ResponseCode.TOOL_APPROVAL_NOT_AUTHORIZED
 
 
@@ -173,7 +173,7 @@ async def test_submit_decision_reports_remaining_gates_and_dispatch_failures(
                 decision=ApprovalVote.APPROVE,
                 idempotency_key="api-agent-approve",
             ),
-            current_user=actor,
+            auth_result=actor,
         )
         assert result["data"].execution_status == ToolExecutionStatus.READY
         assert result["data"].remaining_approvals == 0
@@ -204,7 +204,7 @@ async def test_submit_decision_reports_remaining_gates_and_dispatch_failures(
                 decision=ApprovalVote.APPROVE,
                 idempotency_key="api-agent-dispatch-failure",
             ),
-            current_user=actor,
+            auth_result=actor,
         )
         assert failure_result["data"].execution_status == ToolExecutionStatus.READY
         assert (
@@ -241,7 +241,7 @@ async def test_execution_listing_and_detail_endpoints_are_actor_scoped():
             tool_id=None,
             run_kind=None,
             run_id=None,
-            current_user=actor,
+            auth_result=actor,
         )
         assert listing["data"].total == 2
         assert {item.id for item in listing["data"].items} == {mine.id, deferred.id}
@@ -253,7 +253,7 @@ async def test_execution_listing_and_detail_endpoints_are_actor_scoped():
             tool_id=tool.id,
             run_kind=ExecutionRunKind.AGENT,
             run_id=run_id,
-            current_user=actor,
+            auth_result=actor,
         )
         assert filtered["data"].total == 1
         assert filtered["data"].items[0].id == deferred.id
@@ -266,29 +266,29 @@ async def test_execution_listing_and_detail_endpoints_are_actor_scoped():
                 tool_id=None,
                 run_kind=ExecutionRunKind.AGENT,
                 run_id=None,
-                current_user=actor,
+                auth_result=actor,
             )
         assert bad_run.value.code == ResponseCode.TOOL_APPROVAL_INPUT_INVALID
 
-        detail = await get_my_execution(execution_id=mine.id, current_user=actor)
+        detail = await get_my_execution(execution_id=mine.id, auth_result=actor)
         assert detail["data"].id == mine.id
 
-        own = await get_my_execution(execution_id=theirs.id, current_user=teammate)
+        own = await get_my_execution(execution_id=theirs.id, auth_result=teammate)
         assert own["data"].id == theirs.id
 
-        admin_view = await get_my_execution(execution_id=theirs.id, current_user=admin)
+        admin_view = await get_my_execution(execution_id=theirs.id, auth_result=admin)
         assert admin_view["data"].id == theirs.id
 
-        actor_view = await get_my_execution(execution_id=theirs.id, current_user=actor)
+        actor_view = await get_my_execution(execution_id=theirs.id, auth_result=actor)
         assert actor_view["data"].id == theirs.id
 
         outsider = await _user("api-list-outsider")
         with pytest.raises(BusinessError) as denied:
-            await get_my_execution(execution_id=theirs.id, current_user=outsider)
+            await get_my_execution(execution_id=theirs.id, auth_result=outsider)
         assert denied.value.code == ResponseCode.TOOL_EXECUTION_ACCESS_DENIED
 
         with pytest.raises(BusinessError) as missing:
-            await get_my_execution(execution_id=uuid4(), current_user=actor)
+            await get_my_execution(execution_id=uuid4(), auth_result=actor)
         assert missing.value.code == ResponseCode.TOOL_EXECUTION_NOT_FOUND
 
 
@@ -309,7 +309,7 @@ async def test_execution_decision_endpoint_decides_pending_gate(
                 decision=ApprovalVote.APPROVE,
                 idempotency_key="api-exec-approve",
             ),
-            current_user=actor,
+            auth_result=actor,
         )
         assert result["data"].execution_status == ToolExecutionStatus.READY
         assert result["data"].remaining_approvals == 0
@@ -323,7 +323,7 @@ async def test_execution_decision_endpoint_decides_pending_gate(
                     decision=ApprovalVote.APPROVE,
                     idempotency_key="api-exec-approve-again",
                 ),
-                current_user=actor,
+                auth_result=actor,
             )
         assert no_pending.value.code == (ResponseCode.TOOL_APPROVAL_REQUEST_NOT_FOUND)
 
@@ -334,7 +334,7 @@ async def test_execution_decision_endpoint_decides_pending_gate(
                     decision=ApprovalVote.APPROVE,
                     idempotency_key="api-exec-outsider",
                 ),
-                current_user=outsider,
+                auth_result=outsider,
             )
         assert not_visible.value.code == ResponseCode.TOOL_EXECUTION_ACCESS_DENIED
 
@@ -347,7 +347,7 @@ async def test_execution_decision_endpoint_decides_pending_gate(
                     decision=ApprovalVote.APPROVE,
                     idempotency_key="api-exec-ready",
                 ),
-                current_user=actor,
+                auth_result=actor,
             )
         assert allow_no_gate.value.code == (
             ResponseCode.TOOL_APPROVAL_REQUEST_NOT_FOUND
@@ -373,7 +373,7 @@ async def test_execution_decision_endpoint_decides_pending_gate(
                 reason="not in this run",
                 idempotency_key="api-exec-reject",
             ),
-            current_user=actor,
+            auth_result=actor,
         )
         assert agent_result["data"].execution_status == (ToolExecutionStatus.CANCELLED)
         assert agent_result["data"].decision.decision == ApprovalVote.REJECT

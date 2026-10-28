@@ -28,7 +28,6 @@ from app.models.tool_approval import (
     ToolApprovalRequest,
     ToolExecution,
 )
-from app.models.tool_approval_policy import ToolApprovalPolicyDefinition
 from app.models.user import Team, User
 from app.schemas.tool_approval import (
     ApprovalGateKind,
@@ -38,7 +37,6 @@ from app.schemas.tool_approval import (
     ToolExecutionCancelReason,
     ToolExecutionStatus,
 )
-from app.schemas.tool_approval_policy import ToolApprovalPolicyScope
 
 
 def _digest(char: str) -> str:
@@ -125,10 +123,6 @@ async def _request(
         status=status,
         resolved_at=resolved_at,
     )
-
-
-def _scope_key(team_id) -> str:
-    return f"team:{team_id}"
 
 
 def test_cancels_awaiting_execution_and_every_pending_gate(run_orm):
@@ -314,7 +308,6 @@ def test_missing_tables_are_a_noop(run_orm):
             "executions_cancelled": 0,
             "requests_cancelled": 0,
             "tools_with_legacy_gates": 0,
-            "policy_layers_with_legacy_gates": 0,
         }
 
     run_orm(scenario, generate=False)
@@ -353,29 +346,13 @@ def test_scan_reports_nested_external_gates_without_rewriting_policies(run_orm):
                 "gates": [{"kind": "caller"}],
             },
         )
-        layer_policy = {
-            "default_decision": "require_approval",
-            "gates": [{"kind": "user", "user_ids": [str(actor.id)]}],
-        }
-        layer = await ToolApprovalPolicyDefinition.create(
-            scope=ToolApprovalPolicyScope.TEAM,
-            scope_key=_scope_key(team.id),
-            team_id=team.id,
-            policy=layer_policy,
-            policy_hash=_digest("d"),
-            version=1,
-        )
-
         summary = await migrate_caller_only_tool_confirmation()
 
         assert summary["tools_with_legacy_gates"] == 1
-        assert summary["policy_layers_with_legacy_gates"] == 1
         await tool.refresh_from_db()
         await caller_only.refresh_from_db()
-        await layer.refresh_from_db()
         assert tool.approval_policy == nested_policy
         assert caller_only.approval_policy["gates"] == [{"kind": "caller"}]
-        assert layer.policy == layer_policy
 
     run_orm(scenario)
 

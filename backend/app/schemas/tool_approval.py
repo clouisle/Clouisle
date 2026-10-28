@@ -13,9 +13,10 @@ Policy semantics
   operation name (for MCP, the raw server-side tool name — never a model-facing
   alias or a discovery-cache id).
 * A policy whose decision requires approval always has at least one gate:
-  constructing one without gates adds caller confirmation. Callers and
-  reviewers still need an interactive audience; the evaluator fails closed
-  with ``policy_configuration_required`` when no audience can decide.
+  constructing one without gates adds caller confirmation. A caller gate needs
+  a decidable audience: an interactive entrypoint, or the authenticated API key
+  that submitted a non-interactive ``api_key`` run. Otherwise the evaluator
+  fails closed with ``policy_configuration_required``.
 * Gate signatures are deduplicated deterministically. A duplicated audience
   keeps the stricter ``allow_self_approval=False``.
 

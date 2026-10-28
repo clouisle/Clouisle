@@ -40,7 +40,6 @@ from tortoise.transactions import in_transaction
 
 from app.models.tool import Tool
 from app.models.tool_approval import ToolApprovalRequest, ToolExecution
-from app.models.tool_approval_policy import ToolApprovalPolicyDefinition
 from app.schemas.tool_approval import (
     EXTERNAL_APPROVAL_GATE_KINDS,
     ApprovalRequestStatus,
@@ -63,7 +62,7 @@ UNSTARTED_EXECUTION_STATUSES: tuple[ToolExecutionStatus, ...] = (
 )
 
 _EXECUTION_TABLES = ("tool_executions", "tool_approval_requests")
-_POLICY_TABLES = ("tools", "tool_approval_policies")
+_TOOL_TABLES = ("tools",)
 _BATCH_SIZE = 200
 
 
@@ -90,7 +89,7 @@ def _row_value(row: Any, key: str, index: int = 0) -> Any:
         return None
 
 
-async def _existing_tables(connection: Any, names: Sequence[str]) -> frozenset[str]:
+async def existing_tables(connection: Any, names: Sequence[str]) -> frozenset[str]:
     """Return the requested table names that exist, without ORM reads.
 
     The migration normally runs right after ``generate_schemas()``, but it can
@@ -147,7 +146,7 @@ async def cancel_unstarted_legacy_approvals(
     """
     summary = {"executions_cancelled": 0, "requests_cancelled": 0}
     connection = Tortoise.get_connection("default")
-    tables = await _existing_tables(connection, _EXECUTION_TABLES)
+    tables = await existing_tables(connection, _EXECUTION_TABLES)
     if not set(_EXECUTION_TABLES).issubset(tables):
         logger.info(
             "Tool approval tables are not initialized; skipping caller-only "
@@ -246,22 +245,15 @@ async def cancel_unstarted_legacy_approvals(
 
 
 async def scan_legacy_external_policies() -> dict[str, int]:
-    """Count stored policies with external gates, without modifying them."""
-    summary = {"tools_with_legacy_gates": 0, "policy_layers_with_legacy_gates": 0}
+    """Count stored tool policies with external gates, without modifying them."""
+    summary = {"tools_with_legacy_gates": 0}
     connection = Tortoise.get_connection("default")
-    tables = await _existing_tables(connection, _POLICY_TABLES)
+    tables = await existing_tables(connection, _TOOL_TABLES)
 
     if "tools" in tables:
         async for raw in Tool.all().values_list("approval_policy", flat=True):
             if policy_has_external_gate(raw):
                 summary["tools_with_legacy_gates"] += 1
-
-    if "tool_approval_policies" in tables:
-        async for raw in ToolApprovalPolicyDefinition.all().values_list(
-            "policy", flat=True
-        ):
-            if policy_has_external_gate(raw):
-                summary["policy_layers_with_legacy_gates"] += 1
 
     return summary
 
@@ -284,6 +276,7 @@ __all__ = [
     "LEGACY_EXTERNAL_GATE_KINDS",
     "UNSTARTED_EXECUTION_STATUSES",
     "cancel_unstarted_legacy_approvals",
+    "existing_tables",
     "migrate_caller_only_tool_confirmation",
     "policy_has_external_gate",
     "scan_legacy_external_policies",

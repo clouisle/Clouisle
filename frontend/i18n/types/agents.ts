@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-27T04:04:22.618Z
+// GENERATED — 2026-10-28T12:09:56.988Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {
@@ -504,17 +504,33 @@ export type AgentsMessages = {
         pauseTitle: string
         pauseDescription: string
         waitingPayload: string
+        viewTitle: string
+        viewDescription: string
+        listEndpoint: string
+        streamEndpoint: string
+        readEndpoint: string
+        executionEndpoint: string
+        viewResponse: string
+        viewResponseDescription: string
         decisionTitle: string
         decisionDescription: string
-        executionEndpoint: string
         inboxEndpoint: string
         decisionBody: string
         decisionResponse: string
         decisionResponseDescription: string
         previewNote: string
-        resumeNote: string
+        resumeTitle: string
+        resumeDescription: string
+        statusEndpoint: string
         apiKeyTitle: string
         apiKeyDescription: string
+        apiKeyWaitLabel: string
+        apiKeyViewLabel: string
+        apiKeyDecisionLabel: string
+        apiKeyResumeLabel: string
+        workflowTitle: string
+        workflowDescription: string
+        apiKeyScopeNote: string
       }
       messageEndExample: string
       codeExamples: string

@@ -6,9 +6,8 @@ mandatory). Definitions are materialized lazily and never reuse a custom/MCP
 tool name: a collision fails closed instead of shadowing user content.
 
 Approval defaults to allow for materialized builtin definitions. Confirmation
-is opt-in and explicit: the Agent's ``require_approval`` switch, or a stored
-site/team/entrypoint policy layer, is applied by the execution boundary for
-every call.
+is opt-in and explicit: the Agent's ``require_approval`` switch or the tool's
+own stored policy is applied by the execution boundary for every call.
 """
 
 from __future__ import annotations
@@ -46,9 +45,9 @@ _INTERNAL_TOOL_DESCRIPTIONS: dict[str, str] = {
     "file_download": "Download a file",
 }
 
-#: Internal chat/agent tools default to allow; an Agent or a site/team/entrypoint
-#: policy opts into confirmation explicitly (``require_approval``), and that
-#: requirement is applied by the execution boundary, not inferred here.
+#: Internal chat/agent tools default to allow; an Agent's ``require_approval``
+#: switch or the tool's own stored policy opts into confirmation explicitly,
+#: and that requirement is applied by the execution boundary, not inferred here.
 
 
 def supported_internal_tool_keys() -> tuple[str, ...]:

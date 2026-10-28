@@ -1,14 +1,13 @@
 {
   "approvals": {
     "title": "审批与交互",
-    "description": "处理等待审批的工具执行，响应 MCP 服务端发起的请求，并管理强制审批策略。",
+    "description": "处理等待审批的工具执行，响应 MCP 服务端发起的请求。",
     "inboxLink": "审批",
     "inboxLinkHint": "查看待审批的工具执行与 MCP 请求",
     "backToCapabilities": "返回能力管理",
     "tabs": {
       "approvals": "工具审批",
-      "interactions": "MCP 交互",
-      "policies": "审批策略"
+      "interactions": "MCP 交互"
     },
     "approval": {
       "listTitle": "待审批的工具执行",
@@ -166,72 +165,6 @@
       "interactionDescription": "MCP 服务端正在等待你的响应。在此响应不代表批准外层工具执行。",
       "interactionRefresh": "重新检查",
       "interactionRefreshFailed": "刷新 MCP 请求失败。"
-    },
-    "policy": {
-      "title": "审批策略",
-      "description": "工具执行前会应用强制审批层级。最终策略由服务端合并站点、团队和入口层，你只能编辑自己拥有或管理的策略行。",
-      "managementLink": "审批策略",
-      "managementHint": "管理站点、团队和入口审批策略",
-      "accessDenied": "你没有权限管理审批策略。",
-      "listTitle": "已配置的策略",
-      "listDescription": "站点层的拒绝或审批要求不能被低层放宽。版本冲突会直接提示，不会覆盖他人的修改。",
-      "loading": "正在加载审批策略...",
-      "loadFailed": "加载审批策略失败。",
-      "retry": "重试",
-      "refresh": "刷新",
-      "scopes": {
-        "site": "站点",
-        "team": "团队",
-        "entrypoint": "入口"
-      },
-      "siteTitle": "站点策略",
-      "siteDescription": "应用于所有团队，仅站点管理员可编辑。",
-      "teamTitle": "团队策略",
-      "teamDescription": "应用于 {team}。拥有工具权限的团队所有者和管理员可以编辑。",
-      "entrypointTitle": "入口策略",
-      "entrypointDescription": "绑定到单个智能体、工作流或 API 密钥的附加限制。",
-      "addSite": "添加站点策略",
-      "addTeam": "添加团队策略",
-      "addEntrypoint": "添加入口策略",
-      "noSite": "尚未配置站点策略。",
-      "noTeam": "该团队尚未配置团队策略。",
-      "noEntrypoint": "尚未配置入口策略。",
-      "edit": "编辑",
-      "delete": "删除",
-      "version": "版本 {version}",
-      "anyTool": "所有工具",
-      "toolSpecific": "工具 {toolId}",
-      "entrypoint": "{kind} {id}",
-      "readOnly": "只读",
-      "notEditable": "你没有权限编辑该策略行。",
-      "editorTitleCreate": "创建审批策略",
-      "editorTitleEdit": "编辑审批策略",
-      "editorDescription": "服务端会校验权限并强制执行更高层策略。使用过期版本保存会被拒绝。",
-      "entrypointKind": "入口类型",
-      "entrypointKinds": {
-        "agent": "智能体",
-        "workflow": "工作流",
-        "api_key": "API 密钥"
-      },
-      "entrypointId": "入口 ID",
-      "entrypointIdPlaceholder": "智能体、工作流或 API 密钥 UUID",
-      "toolId": "工具 ID（可选）",
-      "toolIdPlaceholder": "留空表示应用于所有工具",
-      "save": "保存策略",
-      "saving": "保存中...",
-      "saved": "策略已保存",
-      "saveFailed": "保存策略失败。",
-      "deleteTitle": "删除审批策略？",
-      "deleteDescription": "删除该行会移除对应层级。策略哈希变化可能导致待审批请求失效。",
-      "confirmDelete": "删除策略",
-      "deleting": "删除中...",
-      "deleteFailed": "删除策略失败。",
-      "deleted": "策略已删除",
-      "cancel": "取消",
-      "versionConflict": "编辑期间策略已被修改，请重新加载后再试。",
-      "scopeRequired": "请先选择团队。",
-      "entrypointIdRequired": "请输入入口 ID。",
-      "serverEnforced": "由服务端强制执行：本页面不会自行合并策略层级。"
     }
   }
 }

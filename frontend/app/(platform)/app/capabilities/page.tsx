@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, ChevronDown, PackageOpen, Upload, ShieldCheck } from 'lucide-react'
+import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, ChevronDown, PackageOpen, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
@@ -50,7 +50,6 @@ type CapabilityTab = 'tools' | 'skills'
 
 export default function CapabilitiesPage() {
   const t = useTranslations('platform')
-  const tApprovals = useTranslations('approvals')
   const tCommon = useTranslations('common')
   const packagesT = useTranslations('packages')
   const { currentTeam } = useTeam()
@@ -60,7 +59,6 @@ export default function CapabilitiesPage() {
   const { canPerform } = useCanPerform()
   const canReadTools = canPerform('tool:read')
   const canReadSkills = canPerform('skill:read')
-  const canManageApprovalPolicies = canPerform(['tool:update', 'admin:settings:update'])
   const isTeamAdmin = Boolean(user?.is_superuser || currentTeam?.role === 'owner' || currentTeam?.role === 'admin')
   const canCreateTool = canPerform('tool:create')
   const canEditTool = (tool: Tool) =>
@@ -368,17 +366,6 @@ export default function CapabilitiesPage() {
           <h1 className="text-3xl font-bold tracking-tight">{t('tools.title')}</h1>
           <p className="text-muted-foreground mt-1">{t('tools.description')}</p>
         </div>
-        {canManageApprovalPolicies && (
-          <Button
-            variant="outline"
-            onClick={() => router.push('/app/capabilities/policies')}
-            title={tApprovals('policy.managementHint')}
-            data-testid="capabilities-policies-link"
-          >
-            <ShieldCheck className="mr-2 h-4 w-4" />
-            {tApprovals('policy.managementLink')}
-          </Button>
-        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4" data-testid="capabilities-tabs">

@@ -2002,7 +2002,7 @@ async def stream_chat_run(
     """Replay and follow one durable run until its terminal event."""
     current_user, api_key = _split_run_auth(auth_result)
     await deps.check_api_key_agent_access(api_key, agent_id)
-    await _load_owned_run(agent_id, run_id, current_user)
+    await _load_owned_run(agent_id, run_id, current_user, api_key=api_key)
     from app.services.agent_run_stream import sse_events
 
     return StreamingResponse(
@@ -2028,7 +2028,7 @@ async def get_run_status(
     """Get durable run status; owner-scoped."""
     current_user, api_key = _split_run_auth(auth_result)
     await deps.check_api_key_agent_access(api_key, agent_id)
-    run = await _load_owned_run(agent_id, run_id, current_user)
+    run = await _load_owned_run(agent_id, run_id, current_user, api_key=api_key)
     return success(data=_run_to_out(run))
 
 
@@ -2045,7 +2045,7 @@ async def get_run_events(
     """Replay buffered run events after ``after_sequence`` (authorized scope)."""
     current_user, api_key = _split_run_auth(auth_result)
     await deps.check_api_key_agent_access(api_key, agent_id)
-    await _load_owned_run(agent_id, run_id, current_user)
+    await _load_owned_run(agent_id, run_id, current_user, api_key=api_key)
     from app.services.agent_run_stream import AgentRunStream
 
     stream = AgentRunStream(run_id)
@@ -2067,7 +2067,7 @@ async def post_run_input(
     """Queue steering / follow-up / stop for a running agent."""
     current_user, api_key = _split_run_auth(auth_result)
     await deps.check_api_key_agent_access(api_key, agent_id)
-    run = await _load_owned_run(agent_id, run_id, current_user)
+    run = await _load_owned_run(agent_id, run_id, current_user, api_key=api_key)
     from app.models.agent_run import AgentRunInputKind
 
     kind = {
@@ -2100,7 +2100,7 @@ async def post_run_answer(
     """Validate and submit one answer set for a waiting ask_user call."""
     current_user, api_key = _split_run_auth(auth_result)
     await deps.check_api_key_agent_access(api_key, agent_id)
-    run = await _load_owned_run(agent_id, run_id, current_user)
+    run = await _load_owned_run(agent_id, run_id, current_user, api_key=api_key)
     from app.models.agent_run import AgentRunStatus
     from app.services.agent_run_store import submit_user_answers
 
@@ -2225,7 +2225,7 @@ async def stop_run(
     """Cooperatively stop a run, including a non-terminal waiting run."""
     current_user, api_key = _split_run_auth(auth_result)
     await deps.check_api_key_agent_access(api_key, agent_id)
-    run = await _load_owned_run(agent_id, run_id, current_user)
+    run = await _load_owned_run(agent_id, run_id, current_user, api_key=api_key)
     from app.models.agent_run import (
         AgentRunInputKind,
         AgentRunStatus,
@@ -2303,17 +2303,56 @@ def _split_run_auth(auth_result: Any) -> tuple[User, "APIKey | None"]:
     return auth_result, None
 
 
+def _api_key_may_read_run(run: Any, api_key: Any) -> bool:
+    """Key-scoped run read, never just the key owner.
+
+    The explicit run column wins; pre-column rows are resolved from the worker
+    payload written by the same submitter. A run with no API-key evidence at
+    all (JWT session or pre-feature row) keeps the previous owner-scoped
+    contract.
+    """
+    key_id = getattr(api_key, "id", None)
+    if key_id is None or not getattr(api_key, "is_active", True):
+        return False
+    stored = getattr(run, "api_key_id", None)
+    if stored is not None:
+        return str(stored) == str(key_id)
+    payload = run.worker_payload if isinstance(run.worker_payload, dict) else {}
+    payload_key_id = payload.get("api_key_id")
+    if payload_key_id:
+        return str(payload_key_id) == str(key_id)
+    if payload.get("tool_entrypoint") == "api_key":
+        entrypoint_id = payload.get("tool_entrypoint_id")
+        return bool(entrypoint_id) and str(entrypoint_id) == str(key_id)
+    return True
+
+
 async def _load_owned_run(
     agent_id: UUID,
     run_id: UUID,
     current_user: User,
+    *,
+    api_key: Any = None,
 ) -> _AgentRunModel:
-    """Owner/agent scoped run lookup used by all run endpoints."""
+    """Owner/agent scoped run lookup used by all run endpoints.
+
+    An API-key request is additionally bound to the credential that submitted
+    the run: another key of the same owner cannot read it, replay its events or
+    drive its inputs. Runs persisted before API-key binding existed keep the
+    previous owner-scoped behaviour.
+    """
     from app.models.agent_run import AgentRun
     from app.models.agent import Conversation as _Conv
 
     run = await AgentRun.get_or_none(id=run_id, agent_id=agent_id)
     if not run:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="run_not_found",
+            status_code=404,
+        )
+    if api_key is not None and not _api_key_may_read_run(run, api_key):
+        # Do not disclose whether another credential's run exists.
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,
             msg_key="run_not_found",

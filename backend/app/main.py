@@ -85,6 +85,13 @@ async def lifespan(app: FastAPI):
 
     await migrate_tool_policy_schema()
 
+    # API-key identity columns must exist before any ORM read of AgentRun or
+    # ToolExecution. Existing databases are altered in place; the columns stay
+    # nullable so an old pod can keep writing during a rolling deploy.
+    from app.core.api_key_approval_migration import migrate_api_key_approval_schema
+
+    await migrate_api_key_approval_schema()
+
     # Run migrations BEFORE generating schemas
     from app.core.init_data import (
         init_agent_tools_credentials,
@@ -392,12 +399,27 @@ async def lifespan(app: FastAPI):
     if (
         caller_only_migration["executions_cancelled"]
         or caller_only_migration["tools_with_legacy_gates"]
-        or caller_only_migration["policy_layers_with_legacy_gates"]
     ):
         logger.warning(
             "Caller-only tool confirmation cutover: %s; policies are preserved "
             "and must be reconfigured to caller confirmation",
             caller_only_migration,
+        )
+
+    # Removing the site/team/entrypoint layers must not silently relax an
+    # unstarted execution that froze one of them: the cutover cancels those
+    # rows with binding_changed instead of executing them under tool-only
+    # rules. Duplicate runs are no-ops.
+    from app.core.tool_approval_policy_cutover import (
+        migrate_removed_approval_policy_layers,
+    )
+
+    policy_layer_cutover = await migrate_removed_approval_policy_layers()
+    if policy_layer_cutover["executions_cancelled"]:
+        logger.warning(
+            "Removed approval policy layer cutover cancelled %s unstarted "
+            "execution(s) bound to retired layers",
+            policy_layer_cutover["executions_cancelled"],
         )
 
     # One-way cutover of legacy custom database tools. It must run before any

@@ -88,6 +88,13 @@ class AgentRun(models.Model):
 
     # Entry mode and origin
     mode = fields.CharEnumField(AgentRunMode, description="Entry mode")
+    api_key_id = fields.UUIDField(
+        null=True,
+        description=(
+            "API key credential that submitted the run; tool approvals for this "
+            "run are bound to it (never merely to the key owner)"
+        ),
+    )
     celery_task_id = fields.CharField(
         max_length=100, null=True, description="Celery task id"
     )

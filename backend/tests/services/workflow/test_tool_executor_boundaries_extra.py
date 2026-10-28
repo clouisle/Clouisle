@@ -182,7 +182,7 @@ def test_agent_node_without_workflow_identity_fails_closed():
     asyncio.run(scenario())
 
 
-def test_container_approval_is_still_failed_when_cancellation_breaks():
+def test_pending_approval_is_failed_even_when_cancellation_breaks():
     async def scenario():
         workflow = SimpleNamespace(team_id="team-1")
         run = MagicMock(
@@ -236,7 +236,7 @@ def test_container_approval_is_still_failed_when_cancellation_breaks():
                 run,
             )
 
-        assert result.error == "tool_approval_inside_container"
+        assert result.error == "tool_approval_cancelled"
         cancel.assert_awaited_once()
 
     asyncio.run(scenario())

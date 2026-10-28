@@ -69,6 +69,17 @@ from app.services.sandbox.gateway import sandbox_gateway
 logger = logging.getLogger(__name__)
 
 
+def _payload_api_key_id(payload: dict[str, Any]) -> UUID | None:
+    """Lenient api-key id from a worker payload (legacy payloads lack it)."""
+    value = payload.get("api_key_id")
+    if not value:
+        return None
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
 def build_payload(
     *,
     agent_id: UUID,
@@ -99,6 +110,7 @@ def build_payload(
     message_start: dict[str, Any] | None = None,
     tool_entrypoint: str | None = None,
     tool_entrypoint_id: str | None = None,
+    api_key_id: UUID | None = None,
 ) -> dict[str, Any]:
     """Serializable run payload: primitives + reloadable ids only."""
     return {
@@ -140,6 +152,7 @@ def build_payload(
         "first_round_index": first_round_index,
         "tool_entrypoint": tool_entrypoint,
         "tool_entrypoint_id": tool_entrypoint_id,
+        "api_key_id": str(api_key_id) if api_key_id else None,
     }
 
 
@@ -384,6 +397,7 @@ async def _rebuild_context(
             run_id=UUID(payload["run_id"]),
             entrypoint=origin or "agent_run",
             entrypoint_id=payload.get("tool_entrypoint_id"),
+            api_key_id=_payload_api_key_id(payload),
             interactive=entrypoint_is_interactive(origin),
         )
     ):
@@ -519,6 +533,7 @@ async def _rebuild_context(
         user_locale=effective_locale,
         tool_entrypoint=payload.get("tool_entrypoint"),
         tool_entrypoint_id=payload.get("tool_entrypoint_id"),
+        tool_api_key_id=_payload_api_key_id(payload),
         max_iterations=None,
         iteration_offset=int(payload.get("iteration_offset", 0)),
         streaming=is_streaming,
@@ -725,6 +740,7 @@ async def _execute_approved_pending_tool(
                 tool_call_id=tool_call_id,
                 entrypoint=entrypoint,
                 entrypoint_id=entrypoint_id,
+                api_key_id=tool_approvals.stored_api_key_id(execution),
                 # Reuse the origin stored on the execution; never re-derive
                 # interactivity from the resume route.
                 interactive=entrypoint_is_interactive(entrypoint),

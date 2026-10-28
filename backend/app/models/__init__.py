@@ -71,7 +71,6 @@ from .tool_approval import (
     ToolApprovalRequest,
     ToolExecution,
 )
-from .tool_approval_policy import ToolApprovalPolicyDefinition
 from .tool_interaction import (
     InteractionKind,
     InteractionOutcome,
@@ -246,7 +245,6 @@ __all__ = [
     "ToolOAuthProviderKind",
     "ToolOAuthClientAuthMethod",
     "ToolOAuthFlow",
-    "ToolApprovalPolicyDefinition",
     "Skill",
     "SkillCategory",
     "SkillImportSession",

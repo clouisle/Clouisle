@@ -135,6 +135,8 @@ class AgentLoopContext:
     # on legacy runs is treated as non-interactive by the tool identity.
     tool_entrypoint: str | None = None
     tool_entrypoint_id: str | None = None
+    # Authenticated API key that submitted the run (api_key entrypoint only).
+    tool_api_key_id: UUID | None = None
     # Durable AgentRun callback used by model-callable interaction tools.
     pause_for_user: Callable[..., Any] | None = None
     # how one model turn is produced
@@ -477,6 +479,7 @@ class AgentLoop:
                         tool_call_id=str(tc.id),
                         entrypoint=ctx.tool_entrypoint or "agent_run",
                         entrypoint_id=ctx.tool_entrypoint_id or str(ctx.agent.id),
+                        api_key_id=ctx.tool_api_key_id,
                         interactive=entrypoint_is_interactive(ctx.tool_entrypoint),
                     )
                 ),

@@ -339,12 +339,12 @@ class ToolNodeExecutor(NodeExecutor):
                     operation=operation or tool.name,
                 )
             if isinstance(result, PendingToolApproval):
-                if node_data.get("parentId"):
-                    await _cancel_unexecuted(result.execution_id)
-                    return _error_result(
-                        "tool_approval_inside_container", output_var, start_time
-                    )
-                return ExecutionResult(waiting=True)
+                # Workflows never wait for tool approval. This defensive branch
+                # covers a boundary/configuration regression: drop the
+                # unexecuted request and fail the node instead of turning the
+                # workflow into an approval surface.
+                await _cancel_unexecuted(result.execution_id)
+                return _error_result("tool_approval_cancelled", output_var, start_time)
 
             duration_ms = int((time.time() - start_time) * 1000)
 

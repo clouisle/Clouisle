@@ -3333,41 +3333,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "You are not an approver for this request",
         "zh": "您不是此请求的审批人",
     },
-    "tool_approval_policy_access_denied": {
-        "en": "You do not have permission to manage this approval policy",
-        "zh": "您没有权限管理此审批策略",
-    },
     "tool_approval_policy_configuration_required": {
         "en": "This tool needs an approval policy with a valid approver before it can run",
         "zh": "该工具需要配置有效的审批人才能执行",
     },
-    "tool_approval_policy_duplicate": {
-        "en": "An approval policy already exists for this scope and tool",
-        "zh": "该作用域和工具已存在审批策略",
-    },
-    "tool_approval_policy_entrypoint_invalid": {
-        "en": "The entrypoint does not belong to this team",
-        "zh": "该入口不属于此团队",
-    },
     "tool_approval_policy_external_audience_unsupported": {
         "en": "This approval policy still names specific users or team roles, which are no longer supported. Edit it to use caller confirmation before this tool can run.",
         "zh": "该审批策略仍指定了用户或团队角色审批人，此方式已不再支持。请改为调用者确认后再运行此工具。",
-    },
-    "tool_approval_policy_not_found": {
-        "en": "Approval policy not found",
-        "zh": "未找到审批策略",
-    },
-    "tool_approval_policy_scope_invalid": {
-        "en": "The approval policy scope does not match the provided fields",
-        "zh": "审批策略作用域与提供的字段不匹配",
-    },
-    "tool_approval_policy_tool_invalid": {
-        "en": "The tool is not available in this team",
-        "zh": "该工具在此团队中不可用",
-    },
-    "tool_approval_policy_version_conflict": {
-        "en": "The approval policy changed; reload it and try again",
-        "zh": "审批策略已变更，请重新加载后再试",
     },
     "tool_approval_rejected": {
         "en": "The tool approval was rejected, so the call was not executed",

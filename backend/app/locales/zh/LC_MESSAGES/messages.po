@@ -3868,27 +3868,6 @@ msgstr "该审批策略仍指定了用户或团队角色审批人，此方式已
 msgid "approval_policy_invalid"
 msgstr "审批策略无效"
 
-msgid "tool_approval_policy_not_found"
-msgstr "未找到审批策略"
-
-msgid "tool_approval_policy_access_denied"
-msgstr "您没有权限管理此审批策略"
-
-msgid "tool_approval_policy_scope_invalid"
-msgstr "审批策略作用域与提供的字段不匹配"
-
-msgid "tool_approval_policy_entrypoint_invalid"
-msgstr "该入口不属于此团队"
-
-msgid "tool_approval_policy_tool_invalid"
-msgstr "该工具在此团队中不可用"
-
-msgid "tool_approval_policy_duplicate"
-msgstr "该作用域和工具已存在审批策略"
-
-msgid "tool_approval_policy_version_conflict"
-msgstr "审批策略已变更，请重新加载后再试"
-
 msgid "tool_oauth_not_supported"
 msgstr "此服务器不支持 OAuth"
 

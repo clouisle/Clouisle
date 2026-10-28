@@ -1,9 +1,10 @@
-"""Workflow tool node approval parking/resume on real SQLite.
+"""Workflow tool nodes never park; legacy pending requests fail safely.
 
-The tool node must never block on an approval and must never run a rejected or
-expired request. These tests pin the workflow half of that contract: the parked
-node reuses one stable call id, a terminal decision fails the node without a
-side effect, and only a waiting workflow run is resumed.
+New workflow tool calls bypass approval entirely. These tests pin the remaining
+safety contract for requests created before that cutover: a terminal decision
+fails the node without a side effect, a pending result is cancelled instead of
+parking, the node reuses one stable call id, and only a waiting workflow run is
+resumed.
 """
 
 from __future__ import annotations
@@ -200,7 +201,7 @@ async def _deferred_execution(
 
 
 @pytest.mark.asyncio
-async def test_park_reuses_one_stable_call_id_across_resume():
+async def test_retry_reuses_one_stable_call_id():
     async with _database():
         user, team = await _actor()
         workflow = await _workflow(team)
@@ -209,13 +210,12 @@ async def test_park_reuses_one_stable_call_id_across_resume():
         tool = await _tool(team, _caller_policy())
         node = _node(tool, mcp_tool_name="search_code")
 
-        pending = PendingToolApproval(execution_id=uuid4(), tool_name=tool.name)
-        boundary = AsyncMock(return_value=pending)
+        boundary = AsyncMock(return_value={"ok": True})
         with patch("app.services.tool.ToolExecutor.execute", new=boundary):
             first = await ToolNodeExecutor().execute(node, _context(), run)
             first_context = boundary.await_args.kwargs["context"]
 
-            # The orchestrator reuses the same WAITING NodeExecution on resume.
+            # The orchestrator reuses the same NodeExecution on a retry.
             node_execution.status = NodeStatus.WAITING
             await node_execution.save()
             node_execution.status = NodeStatus.RUNNING
@@ -223,8 +223,8 @@ async def test_park_reuses_one_stable_call_id_across_resume():
             second = await ToolNodeExecutor().execute(node, _context(), run)
             second_context = boundary.await_args.kwargs["context"]
 
-        assert first.waiting is True
-        assert second.waiting is True
+        assert first.waiting is False
+        assert second.waiting is False
         expected_token = tool_approval_resume.tool_call_token(node_execution.id)
         assert first_context.tool_call_id == expected_token
         assert second_context.tool_call_id == expected_token
@@ -538,7 +538,7 @@ async def test_mcp_tool_without_internal_operation_fails_closed():
 
 
 @pytest.mark.asyncio
-async def test_pending_approval_inside_a_container_cancels_and_fails():
+async def test_pending_approval_never_parks_a_workflow_node():
     async with _database():
         user, team = await _actor()
         workflow = await _workflow(team)
@@ -548,7 +548,7 @@ async def test_pending_approval_inside_a_container_cancels_and_fails():
         execution, _ = await _deferred_execution(
             tool=tool, user=user, team=team, workflow=workflow, run=run
         )
-        # Confirm the fixture starts awaiting, then let the boundary report it.
+        # Confirm the fixture is still unstarted, then let the boundary report it.
         assert execution.status in {
             ToolExecutionStatus.READY,
             ToolExecutionStatus.AWAITING_APPROVAL,
@@ -561,7 +561,7 @@ async def test_pending_approval_inside_a_container_cancels_and_fails():
             result = await ToolNodeExecutor().execute(node, _context(), run)
 
         assert result.waiting is False
-        assert result.error == "tool_approval_inside_container"
+        assert result.error == "tool_approval_cancelled"
         stored = await ToolExecution.get(id=execution.id)
         assert stored.status == ToolExecutionStatus.CANCELLED
         assert stored.cancel_reason == ToolExecutionCancelReason.CANCELLED

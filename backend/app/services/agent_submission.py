@@ -306,6 +306,7 @@ async def submit_chat_run(
         resource_name=agent.name,
         team_id=str(agent.team_id) if agent.team_id else None,
         source_message_id=user_msg.id,
+        api_key_id=getattr(api_key, "id", None),
     )
     run.active_round_id = round_id
     await run.save(update_fields=["active_round_id"])
@@ -335,6 +336,7 @@ async def submit_chat_run(
         rag_contexts=rag_contexts,
         tool_entrypoint=entrypoint.value,
         tool_entrypoint_id=entrypoint_id,
+        api_key_id=getattr(api_key, "id", None),
     )
     run.worker_payload = payload
     await run.save(update_fields=["worker_payload"])

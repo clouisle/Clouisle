@@ -1,14 +1,13 @@
 {
   "approvals": {
     "title": "Approvals & interactions",
-    "description": "Review tool executions paused for approval, respond to requests initiated by MCP servers, and manage mandatory approval policies.",
+    "description": "Review tool executions paused for approval and respond to requests initiated by MCP servers.",
     "inboxLink": "Approvals",
     "inboxLinkHint": "Review pending tool approvals and MCP requests",
     "backToCapabilities": "Back to capabilities",
     "tabs": {
       "approvals": "Tool approvals",
-      "interactions": "MCP interactions",
-      "policies": "Policies"
+      "interactions": "MCP interactions"
     },
     "approval": {
       "listTitle": "Pending tool approvals",
@@ -166,72 +165,6 @@
       "interactionDescription": "The MCP server is waiting for your response. Responding here never approves the enclosing tool execution.",
       "interactionRefresh": "Check again",
       "interactionRefreshFailed": "Could not refresh MCP requests."
-    },
-    "policy": {
-      "title": "Approval policies",
-      "description": "Mandatory approval layers apply before a tool executes. The server composes site, team and entry point layers; you can edit only rows you own or administer.",
-      "managementLink": "Approval policies",
-      "managementHint": "Manage site, team and entry point approval layers",
-      "accessDenied": "You do not have permission to manage approval policies.",
-      "listTitle": "Configured policies",
-      "listDescription": "A site denial or approval requirement cannot be relaxed by a lower layer. Version conflicts are reported instead of overwriting another edit.",
-      "loading": "Loading approval policies...",
-      "loadFailed": "Could not load approval policies.",
-      "retry": "Try again",
-      "refresh": "Refresh",
-      "scopes": {
-        "site": "Site",
-        "team": "Team",
-        "entrypoint": "Entry point"
-      },
-      "siteTitle": "Site policy",
-      "siteDescription": "Applies to every team and can only be edited by a site administrator.",
-      "teamTitle": "Team policy",
-      "teamDescription": "Applies to {team}. Team owners and admins with tool permission can edit it.",
-      "entrypointTitle": "Entry point policies",
-      "entrypointDescription": "Additional restrictions bound to one Agent, Workflow or API key.",
-      "addSite": "Add site policy",
-      "addTeam": "Add team policy",
-      "addEntrypoint": "Add entry point policy",
-      "noSite": "No site policy configured.",
-      "noTeam": "No team policy configured for this team.",
-      "noEntrypoint": "No entry point policies configured.",
-      "edit": "Edit",
-      "delete": "Delete",
-      "version": "Version {version}",
-      "anyTool": "All tools",
-      "toolSpecific": "Tool {toolId}",
-      "entrypoint": "{kind} {id}",
-      "readOnly": "View only",
-      "notEditable": "You do not have permission to edit this policy row.",
-      "editorTitleCreate": "Create approval policy",
-      "editorTitleEdit": "Edit approval policy",
-      "editorDescription": "The server enforces authorization and mandatory higher layers. Saving with an outdated version is rejected.",
-      "entrypointKind": "Entry point kind",
-      "entrypointKinds": {
-        "agent": "Agent",
-        "workflow": "Workflow",
-        "api_key": "API key"
-      },
-      "entrypointId": "Entry point ID",
-      "entrypointIdPlaceholder": "Agent, workflow or API key UUID",
-      "toolId": "Tool ID (optional)",
-      "toolIdPlaceholder": "Leave empty to apply to every tool",
-      "save": "Save policy",
-      "saving": "Saving...",
-      "saved": "Policy saved",
-      "saveFailed": "Could not save the policy.",
-      "deleteTitle": "Delete approval policy?",
-      "deleteDescription": "Deleting this row removes the layer. Pending approvals may be invalidated when the policy hash changes.",
-      "confirmDelete": "Delete policy",
-      "deleting": "Deleting...",
-      "deleteFailed": "Could not delete the policy.",
-      "deleted": "Policy deleted",
-      "cancel": "Cancel",
-      "versionConflict": "The policy changed while you were editing. Reload and try again.",
-      "scopeRequired": "Choose a team first.",
-      "entrypointIdRequired": "Enter the entry point ID.",
-      "serverEnforced": "Server-enforced: this page never merges policy layers."
     }
   }
 }

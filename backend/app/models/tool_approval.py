@@ -108,6 +108,11 @@ class ToolExecution(models.Model):
     entrypoint_id = fields.CharField(
         max_length=200, null=True, description="Stable entrypoint identifier"
     )
+    # The authenticated API key credential that initiated the owning run, when
+    # the call came from an API-key Agent run. Decisions are bound to this key
+    # id; NULL means a user session (JWT) or a pre-binding legacy row, whose
+    # api_key entrypoint_id carries the key id instead.
+    api_key_id = fields.UUIDField(null=True, description="Initiating API key id")
     run_kind = fields.CharEnumField(
         ExecutionRunKind, null=True, description="Durable run kind"
     )
@@ -189,6 +194,7 @@ class ToolExecution(models.Model):
             ("tool", "operation", "created_at"),
             ("status", "expires_at"),
             ("run_kind", "run_id"),
+            ("api_key_id", "created_at"),
         ]
 
     def __str__(self) -> str:
@@ -254,6 +260,12 @@ class ToolExecution(models.Model):
                 raise ValueError("tool_execution_effective_identity_unexpected")
             if self.connection_scope != "user" and self.connection_owner_user_id:
                 raise ValueError("tool_execution_connection_owner_unexpected")
+
+        if self.api_key_id is not None and (
+            getattr(self.entrypoint, "value", self.entrypoint)
+            != ExecutionEntrypoint.API_KEY.value
+        ):
+            raise ValueError("tool_execution_api_key_entrypoint_mismatch")
 
         if self.status == ToolExecutionStatus.CANCELLED:
             if self.cancel_reason is None:

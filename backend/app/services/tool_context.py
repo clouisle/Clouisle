@@ -13,6 +13,9 @@ class RuntimeToolIdentity:
     tool_call_id: str | None = None
     entrypoint: str = "chat"
     entrypoint_id: str | None = None
+    #: Authenticated API key that owns an ``api_key`` entrypoint run. Read by
+    #: the approval boundary so every execution is bound to that credential.
+    api_key_id: UUID | None = None
     interactive: bool = False
     #: Durable run kind owning ``run_id`` (``agent``/``workflow``). Workflow
     #: delegated calls must not be attributed to a non-existent AgentRun.

@@ -31,7 +31,6 @@ from app.api.v1.endpoints import (
     feishu_agent,
     feishu_agent_settings,
     tool_approvals,
-    tool_approval_policies,
     run_interactions,
 )
 from app.api.v1 import workflow_versions
@@ -64,11 +63,6 @@ api_router.include_router(
     tool_approvals.execution_router,
     prefix="/tool-executions",
     tags=["tool-executions"],
-)
-api_router.include_router(
-    tool_approval_policies.router,
-    prefix="/tool-approval-policies",
-    tags=["tool-approval-policies"],
 )
 api_router.include_router(
     tool_connections.router, prefix="/tools", tags=["tool-connections"]

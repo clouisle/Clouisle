@@ -32,7 +32,7 @@ from uuid import UUID
 
 from pydantic import ValidationError
 from tortoise.exceptions import IntegrityError
-from tortoise.expressions import Q
+from tortoise.expressions import Q, Subquery
 from tortoise.transactions import in_transaction
 
 from app.core.tool_secrets import (
@@ -409,6 +409,7 @@ def evaluate_policy(
     *,
     entrypoint_interactive: bool,
     require_caller_confirmation: bool = False,
+    caller_self_approvable: bool = False,
 ) -> PolicyEvaluation:
     """Compose layers deterministically; deny wins and approvals union.
 
@@ -417,6 +418,10 @@ def evaluate_policy(
     wins (deny > require_approval > allow) and every approval gate from a
     requiring layer is kept, so a lower layer can tighten but never relax a
     higher mandatory layer.
+
+    ``caller_self_approvable`` marks a non-interactive origin whose caller can
+    still decide its own caller gates (an API-key Agent run). It never makes
+    such a run interactive and never adds external audiences.
     """
     normalized_operation = operation.strip()
     if not normalized_operation or len(normalized_operation) > 200:
@@ -475,8 +480,10 @@ def evaluate_policy(
         if final_decision == ApprovalDecision.REQUIRE_APPROVAL:
             if not merged_gates:
                 configuration_errors.append("approval_audience_missing")
-            if not entrypoint_interactive and any(
-                gate.kind == ApprovalGateKind.CALLER for gate in merged_gates
+            if (
+                not entrypoint_interactive
+                and not caller_self_approvable
+                and any(gate.kind == ApprovalGateKind.CALLER for gate in merged_gates)
             ):
                 configuration_errors.append("approval_audience_unavailable")
         configuration_error = configuration_errors[0] if configuration_errors else None
@@ -926,6 +933,7 @@ async def _plan_gates(
     actor: User,
     team_id: UUID,
     interactive: bool,
+    caller_self_approvable: bool = False,
 ) -> list[_GatePlan]:
     if evaluation.configuration_error:
         raise _policy_configuration_required(evaluation.configuration_error)
@@ -940,7 +948,7 @@ async def _plan_gates(
             continue
         used_keys.add(stage_key)
         if gate.kind == ApprovalGateKind.CALLER:
-            if not interactive:
+            if not interactive and not caller_self_approvable:
                 raise _policy_configuration_required("approval_audience_unavailable")
             plans.append(
                 _GatePlan(
@@ -1000,6 +1008,35 @@ def _display_payload(
         "policy_sources": list(sources),
         "note": "Approval binds this exact operation and parameter digest; editing parameters requires a new execution.",
     }
+
+
+def _execution_api_key_id(
+    entrypoint: ExecutionEntrypoint, entrypoint_id: str | None
+) -> UUID | None:
+    """The authenticating API key of an ``api_key`` entrypoint execution.
+
+    The identity comes from the trusted runtime scope set by the run submitter,
+    never from request data. ``entrypoint_id`` is the server-derived key id and
+    covers payloads created before the explicit field existed.
+    """
+    if getattr(entrypoint, "value", entrypoint) != ExecutionEntrypoint.API_KEY.value:
+        return None
+    from app.services.tool_context import current_tool_identity
+
+    identity = current_tool_identity()
+    candidate: Any = None
+    if identity is not None:
+        identity_entrypoint = getattr(identity, "entrypoint", None)
+        if identity_entrypoint in (None, ExecutionEntrypoint.API_KEY.value):
+            candidate = getattr(identity, "api_key_id", None)
+    if candidate is None and entrypoint_id:
+        candidate = entrypoint_id
+    if candidate is None:
+        return None
+    try:
+        return UUID(str(candidate))
+    except (TypeError, ValueError):
+        return None
 
 
 async def create_execution(
@@ -1092,12 +1129,20 @@ async def create_execution(
         ),
     )
     layers = [*policy_layers, tool_layer]
+    # An API-key Agent run is non-interactive, but the authenticated key can
+    # still decide the caller gate it triggered. This never widens the gates.
+    execution_api_key_id = _execution_api_key_id(entrypoint, entrypoint_id)
+    # A non-interactive caller gate may wait for approval only when the call is
+    # bound to an authenticated key identity. An ``api_key`` entrypoint whose
+    # id resolves to nothing has no audience and must fail closed as before.
+    caller_self_approvable = execution_api_key_id is not None
     try:
         evaluation = evaluate_policy(
             layers,
             normalized_operation,
             entrypoint_interactive=interactive,
             require_caller_confirmation=require_caller_confirmation,
+            caller_self_approvable=caller_self_approvable,
         )
     except PolicyConfigurationError as exc:
         raise _policy_configuration_required(exc.code) from exc
@@ -1226,6 +1271,7 @@ async def create_execution(
         actor=actor,
         team_id=team_id,
         interactive=interactive,
+        caller_self_approvable=caller_self_approvable,
     )
 
     if evaluation.decision == ApprovalDecision.REQUIRE_APPROVAL:
@@ -1250,6 +1296,7 @@ async def create_execution(
         operation=normalized_operation,
         entrypoint=entrypoint,
         entrypoint_id=entrypoint_id,
+        api_key_id=execution_api_key_id,
         run_kind=run_kind,
         run_id=run_id,
         tool_call_id=tool_call_id,
@@ -1339,14 +1386,24 @@ async def list_executions_for_actor(
     tool_id: UUID | None = None,
     run_kind: ExecutionRunKind | None = None,
     run_id: UUID | None = None,
+    api_key: Any | None = None,
 ) -> tuple[list[ToolExecution], int]:
-    """Durable executions initiated by ``user`` (secret-safe projections)."""
+    """Durable executions initiated by ``user`` (secret-safe projections).
+
+    With ``api_key`` the listing is narrowed to that exact credential (never
+    merely its owner) and to the key's current Agent scope.
+    """
     if page < 1:
         page = 1
     page_size = max(1, min(page_size, 100))
     if (run_kind is None) != (run_id is None):
         raise _input_invalid("run_kind and run_id must be provided together")
     query = ToolExecution.filter(actor_user_id=user.id)
+    if api_key is not None:
+        scope = await _api_key_execution_scope(api_key)
+        if scope is None:
+            return [], 0
+        query = query.filter(scope)
     if status is not None:
         query = query.filter(status=status)
     if tool_id is not None:
@@ -1366,23 +1423,187 @@ def _is_team_admin(member: TeamMember | None) -> bool:
     return member is not None and member.role in {"owner", "admin"}
 
 
-async def can_view_execution(execution: ToolExecution, user: User) -> bool:
+def stored_api_key_id(execution: ToolExecution) -> UUID | None:
+    """Credential that owns an execution, explicit or legacy entrypoint id."""
+    stored = getattr(execution, "api_key_id", None)
+    if stored is not None:
+        try:
+            return UUID(str(stored))
+        except (TypeError, ValueError):
+            return None
+    if (
+        _enum_value(execution.entrypoint) != ExecutionEntrypoint.API_KEY.value
+        or not execution.entrypoint_id
+    ):
+        return None
+    try:
+        return UUID(str(execution.entrypoint_id))
+    except (TypeError, ValueError):
+        return None
+
+
+async def _api_key_agent_ids(api_key: Any) -> list[UUID]:
+    """Agent scope of one key; empty means every Agent (legacy keys)."""
+    agents = await api_key.agents.all()
+    return [agent.id for agent in agents]
+
+
+async def _api_key_is_live(api_key: Any) -> bool:
+    """Authoritative credential check against the stored key row.
+
+    The in-memory flag is only a fast path: a key revoked or expired between
+    authentication and a later operation must neither decide nor be listed.
+    """
+    key_id = getattr(api_key, "id", None)
+    if key_id is None or not getattr(api_key, "is_active", True):
+        return False
+    from app.core.timezone import now_utc
+    from app.models.api_key import APIKey
+
+    return await (
+        APIKey.filter(id=key_id, is_active=True)
+        .filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now_utc()))
+        .exists()
+    )
+
+
+async def _api_key_bound_run_ids(api_key: Any) -> Subquery | None:
+    """Runs this credential may see, as an ``IN`` subquery (never materialized).
+
+    Mirrors the detail constraints: the run must exist, belong to the key owner,
+    be bound to the same key and stay inside the key's current Agent scope.
+
+    Legacy AgentRuns persisted before API-key binding existed (NULL key id) are
+    deliberately excluded, even when their worker payload names this key: the
+    payload cannot be checked portably in SQL across databases, so a key-scoped
+    list fails closed instead of risking mismatched metadata. Detail and
+    decision by explicit id still validate the legacy payload evidence.
+    """
+    if not await _api_key_is_live(api_key):
+        return None
+    from app.models.agent_run import AgentRun
+
+    key_id = getattr(api_key, "id", None)
+    run_q = Q(user_id=getattr(api_key, "user_id", None), api_key_id=key_id)
+    agent_ids = await _api_key_agent_ids(api_key)
+    if agent_ids:
+        run_q &= Q(agent_id__in=agent_ids)
+    return Subquery(AgentRun.filter(run_q).values("id"))
+
+
+async def execution_owned_by_api_key(execution: ToolExecution, api_key: Any) -> bool:
+    """Whether this exact active key credential, not just its owner, owns it.
+
+    Binding requires the stored key id, the key owner as actor, an Agent run
+    and the key's current Agent scope. A second key owned by the same user is
+    rejected, and narrowing the key's Agent scope revokes future decisions.
+    """
+    key_id = getattr(api_key, "id", None)
+    if key_id is None or not await _api_key_is_live(api_key):
+        return False
+    stored = stored_api_key_id(execution)
+    if stored is None or str(stored) != str(key_id):
+        return False
+    if str(execution.actor_user_id) != str(getattr(api_key, "user_id", None)):
+        return False
+    if (
+        _enum_value(execution.run_kind) != ExecutionRunKind.AGENT.value
+        or execution.run_id is None
+    ):
+        return False
+    from app.models.agent_run import AgentRun
+
+    run = await AgentRun.filter(id=execution.run_id).first()
+    if run is None:
+        return False
+    if str(getattr(run, "user_id", "")) != str(getattr(api_key, "user_id", "")):
+        return False
+    # The owning run must agree with the execution binding. Pre-column runs
+    # carry the same identity in their worker payload; a run with no evidence
+    # at all is a legacy row and keeps the execution binding alone.
+    run_key_id = getattr(run, "api_key_id", None)
+    if run_key_id is None:
+        payload = run.worker_payload if isinstance(run.worker_payload, dict) else {}
+        run_key_id = payload.get("api_key_id")
+        if not run_key_id and payload.get("tool_entrypoint") == "api_key":
+            run_key_id = payload.get("tool_entrypoint_id")
+    if run_key_id is not None and str(run_key_id) != str(key_id):
+        return False
+    agent_ids = await _api_key_agent_ids(api_key)
+    return not agent_ids or run.agent_id in agent_ids
+
+
+async def _api_key_execution_scope(api_key: Any) -> Q | None:
+    """Execution query scope for one key; ``None`` means no row may match.
+
+    The run restriction is an ``IN`` subquery so pagination/counts stay exact
+    without materializing run ids, and so a corrupt or legacy execution whose
+    run is missing, owned by someone else or bound to another key is invisible.
+    """
+    key_id = getattr(api_key, "id", None)
+    if key_id is None:
+        return None
+    runs = await _api_key_bound_run_ids(api_key)
+    if runs is None:
+        return None
+    binding = Q(api_key_id=key_id) | Q(
+        api_key_id__isnull=True,
+        entrypoint=ExecutionEntrypoint.API_KEY,
+        entrypoint_id=str(key_id),
+    )
+    return binding & Q(
+        run_kind=ExecutionRunKind.AGENT,
+        run_id__isnull=False,
+        run_id__in=runs,
+    )
+
+
+async def _api_key_request_scope(api_key: Any) -> Q | None:
+    """Approval-request query scope mirroring the execution binding."""
+    key_id = getattr(api_key, "id", None)
+    if key_id is None:
+        return None
+    runs = await _api_key_bound_run_ids(api_key)
+    if runs is None:
+        return None
+    binding = Q(execution__api_key_id=key_id) | Q(
+        execution__api_key_id__isnull=True,
+        execution__entrypoint=ExecutionEntrypoint.API_KEY,
+        execution__entrypoint_id=str(key_id),
+    )
+    return binding & Q(
+        execution__run_kind=ExecutionRunKind.AGENT,
+        execution__run_id__isnull=False,
+        execution__run_id__in=runs,
+    )
+
+
+async def can_view_execution(
+    execution: ToolExecution, user: User, *, api_key: Any | None = None
+) -> bool:
     """Execution initiator/effective principal, or a current team owner/admin.
 
     Approving is stricter: an approver sees the masked approval display via
     the approval endpoints, not this execution projection.
+
+    With an API key the credential is the only audience: the key must own the
+    execution and still be allowed the Agent owning its run.
     """
     if not getattr(user, "is_active", True):
         return False
+    if api_key is not None:
+        return await execution_owned_by_api_key(execution, api_key)
     if user.id in {execution.actor_user_id, execution.effective_user_id}:
         return True
     member = await TeamMember.filter(team_id=execution.team_id, user_id=user.id).first()
     return _is_team_admin(member)
 
 
-async def get_execution_for_viewer(execution_id: UUID, user: User) -> ToolExecution:
+async def get_execution_for_viewer(
+    execution_id: UUID, user: User, *, api_key: Any | None = None
+) -> ToolExecution:
     execution = await get_execution(execution_id)
-    if not await can_view_execution(execution, user):
+    if not await can_view_execution(execution, user, api_key=api_key):
         raise _error(
             ResponseCode.TOOL_EXECUTION_ACCESS_DENIED,
             "You do not have permission to view this tool execution",
@@ -1417,8 +1638,12 @@ async def can_view_approval_request(
     user: User,
     *,
     now: datetime | None = None,
+    api_key: Any | None = None,
 ) -> bool:
-    """Whether ``user`` is in this gate's audience (never a superuser bypass)."""
+    """Whether ``user`` is in this gate's audience (never a superuser bypass).
+
+    An API key sees only gates of executions bound to that credential.
+    """
     current = _as_utc(now) or _utcnow()
     if _is_expired(execution.expires_at, current) and execution.status not in {
         ToolExecutionStatus.SUCCEEDED,
@@ -1427,6 +1652,16 @@ async def can_view_approval_request(
         ToolExecutionStatus.CANCELLED,
     }:
         return False
+    if api_key is not None:
+        if not await execution_owned_by_api_key(execution, api_key):
+            return False
+        return _request_audience_matches(
+            request,
+            execution,
+            user,
+            team_role=None,
+            is_team_member=False,
+        )
     member = await TeamMember.filter(team_id=execution.team_id, user_id=user.id).first()
     if member is None:
         return False
@@ -1444,6 +1679,7 @@ async def get_approval_request_for_viewer(
     user: User,
     *,
     now: datetime | None = None,
+    api_key: Any | None = None,
 ) -> ToolApprovalRequest:
     request = (
         await ToolApprovalRequest.filter(id=request_id)
@@ -1455,7 +1691,9 @@ async def get_approval_request_for_viewer(
     execution = request.execution
     if execution is None:
         raise _not_found()
-    if not await can_view_approval_request(request, execution, user, now=now):
+    if not await can_view_approval_request(
+        request, execution, user, now=now, api_key=api_key
+    ):
         raise _error(
             ResponseCode.TOOL_APPROVAL_NOT_AUTHORIZED,
             "You are not an approver for this request",
@@ -1471,11 +1709,15 @@ async def list_pending_approvals_for_user(
     page: int = 1,
     page_size: int = 20,
     now: datetime | None = None,
+    api_key: Any | None = None,
 ) -> tuple[list[ToolApprovalRequest], int]:
     """Pending gates whose frozen/current audience includes ``user``.
 
     The scan is bounded; an inbox that exceeds ``MAX_INBOX_SCAN`` pending rows
     is a deployment issue, not a reason to return someone else's request.
+
+    With ``api_key`` the inbox contains only gates of executions owned by that
+    exact credential and still inside its Agent scope.
     """
     current = _as_utc(now) or _utcnow()
     if page < 1:
@@ -1492,6 +1734,11 @@ async def list_pending_approvals_for_user(
         for row in memberships
     }
     audience_q = Q(gate_kind=ApprovalGateKind.CALLER, execution__actor_user_id=user.id)
+    if api_key is not None:
+        request_scope = await _api_key_request_scope(api_key)
+        if request_scope is None:
+            return [], 0
+        audience_q &= request_scope
 
     requests = (
         await ToolApprovalRequest.filter(
@@ -1530,7 +1777,18 @@ async def _assert_can_decide(
     request: ToolApprovalRequest,
     execution: ToolExecution,
     approver: User,
+    *,
+    api_key: Any | None = None,
 ) -> None:
+    if api_key is not None and not await execution_owned_by_api_key(execution, api_key):
+        # A key is a credential, not a role: another key of the same owner and
+        # a key that lost its Agent scope are both rejected.
+        raise _error(
+            ResponseCode.TOOL_APPROVAL_NOT_AUTHORIZED,
+            "You are not an approver for this request",
+            msg_key="tool_approval_not_authorized",
+            status_code=403,
+        )
     member = await TeamMember.filter(
         team_id=execution.team_id, user_id=approver.id
     ).first()
@@ -1641,11 +1899,16 @@ async def decide_approval(
     idempotency_key: str,
     reason: str | None = None,
     now: datetime | None = None,
+    api_key: Any | None = None,
 ) -> ToolApprovalDecision:
     """Record one decision atomically. One approval per gate; reject wins.
 
     This never executes the tool. The last required approval moves the
     execution to ``ready``; the durable worker claims it separately.
+
+    ``api_key`` is the credential used for authentication, if any. A decision
+    made with a key is valid only for an execution bound to that exact key,
+    its owner and its current Agent scope.
     """
     current = _as_utc(now) or _utcnow()
     try:
@@ -1669,6 +1932,19 @@ async def decide_approval(
                 msg_key="tool_approval_not_authorized",
                 status_code=403,
             )
+        if api_key is not None:
+            replay_execution = await ToolExecution.filter(
+                id=existing.execution_id
+            ).first()
+            if replay_execution is None or not await execution_owned_by_api_key(
+                replay_execution, api_key
+            ):
+                raise _error(
+                    ResponseCode.TOOL_APPROVAL_NOT_AUTHORIZED,
+                    "You are not an approver for this request",
+                    msg_key="tool_approval_not_authorized",
+                    status_code=403,
+                )
         return _verify_replay(
             existing, request_id=request_id, request_hash=request_hash
         )
@@ -1690,6 +1966,16 @@ async def decide_approval(
             )
             if execution is None:
                 raise _not_found(execution=True)
+            if api_key is not None and not await execution_owned_by_api_key(
+                execution, api_key
+            ):
+                # Fail before disclosing expiry/resolution state.
+                raise _error(
+                    ResponseCode.TOOL_APPROVAL_NOT_AUTHORIZED,
+                    "You are not an approver for this request",
+                    msg_key="tool_approval_not_authorized",
+                    status_code=403,
+                )
             request = (
                 await ToolApprovalRequest.filter(id=request_id)
                 .using_db(conn)
@@ -1735,7 +2021,9 @@ async def decide_approval(
                     )
                     outcome = "binding_changed"
                 else:
-                    await _assert_can_decide(request, execution, approver)
+                    await _assert_can_decide(
+                        request, execution, approver, api_key=api_key
+                    )
                     request.status = (
                         ApprovalRequestStatus.APPROVED
                         if decision == ApprovalVote.APPROVE
@@ -2524,6 +2812,7 @@ __all__ = [
     "create_execution",
     "decide_approval",
     "evaluate_policy",
+    "execution_owned_by_api_key",
     "expire_due_executions",
     "expire_execution",
     "find_execution_by_tool_call",
@@ -2541,5 +2830,6 @@ __all__ = [
     "normalize_tool_approval_policy",
     "policy_hash",
     "redact_parameters",
+    "stored_api_key_id",
     "validate_binding_snapshot",
 ]

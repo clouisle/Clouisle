@@ -3832,27 +3832,6 @@ msgstr "This approval policy still names specific users or team roles, which are
 msgid "approval_policy_invalid"
 msgstr "The approval policy is invalid"
 
-msgid "tool_approval_policy_not_found"
-msgstr "Approval policy not found"
-
-msgid "tool_approval_policy_access_denied"
-msgstr "You do not have permission to manage this approval policy"
-
-msgid "tool_approval_policy_scope_invalid"
-msgstr "The approval policy scope does not match the provided fields"
-
-msgid "tool_approval_policy_entrypoint_invalid"
-msgstr "The entrypoint does not belong to this team"
-
-msgid "tool_approval_policy_tool_invalid"
-msgstr "The tool is not available in this team"
-
-msgid "tool_approval_policy_duplicate"
-msgstr "An approval policy already exists for this scope and tool"
-
-msgid "tool_approval_policy_version_conflict"
-msgstr "The approval policy changed; reload it and try again"
-
 msgid "tool_oauth_not_supported"
 msgstr "This server does not support OAuth"
 

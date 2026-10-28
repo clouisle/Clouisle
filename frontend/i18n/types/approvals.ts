@@ -1,4 +1,4 @@
-// GENERATED — 2026-10-28T08:03:25.031Z
+// GENERATED — 2026-10-28T12:09:56.989Z
 // Source: i18n/en/approvals.json
 export type ApprovalsMessages = {
   approvals: {
@@ -10,7 +10,6 @@ export type ApprovalsMessages = {
     tabs: {
       approvals: string
       interactions: string
-      policies: string
     }
     approval: {
       listTitle: string
@@ -168,72 +167,6 @@ export type ApprovalsMessages = {
       interactionDescription: string
       interactionRefresh: string
       interactionRefreshFailed: string
-    }
-    policy: {
-      title: string
-      description: string
-      managementLink: string
-      managementHint: string
-      accessDenied: string
-      listTitle: string
-      listDescription: string
-      loading: string
-      loadFailed: string
-      retry: string
-      refresh: string
-      scopes: {
-        site: string
-        team: string
-        entrypoint: string
-      }
-      siteTitle: string
-      siteDescription: string
-      teamTitle: string
-      teamDescription: string
-      entrypointTitle: string
-      entrypointDescription: string
-      addSite: string
-      addTeam: string
-      addEntrypoint: string
-      noSite: string
-      noTeam: string
-      noEntrypoint: string
-      edit: string
-      delete: string
-      version: string
-      anyTool: string
-      toolSpecific: string
-      entrypoint: string
-      readOnly: string
-      notEditable: string
-      editorTitleCreate: string
-      editorTitleEdit: string
-      editorDescription: string
-      entrypointKind: string
-      entrypointKinds: {
-        agent: string
-        workflow: string
-        api_key: string
-      }
-      entrypointId: string
-      entrypointIdPlaceholder: string
-      toolId: string
-      toolIdPlaceholder: string
-      save: string
-      saving: string
-      saved: string
-      saveFailed: string
-      deleteTitle: string
-      deleteDescription: string
-      confirmDelete: string
-      deleting: string
-      deleteFailed: string
-      deleted: string
-      cancel: string
-      versionConflict: string
-      scopeRequired: string
-      entrypointIdRequired: string
-      serverEnforced: string
     }
   }
 }

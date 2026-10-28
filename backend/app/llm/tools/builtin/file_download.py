@@ -5,7 +5,7 @@ HTTP transport directly, so a model-named download bypassed tool policy and
 approvals. It is now a registry builtin: the call materializes a stable Tool
 definition and executes through the unified connection/approval boundary using
 the shared SSRF-validated HTTP executor. The definition defaults to allow;
-confirmation is opt-in through the Agent switch or a stored policy layer.
+confirmation is opt-in through the Agent switch or the tool's stored policy.
 
 The tool stays non-selectable (see ``NON_SELECTABLE_BUILTIN_TOOLS``): it is not
 advertised in the catalog or through agent tool configuration, so it remains a

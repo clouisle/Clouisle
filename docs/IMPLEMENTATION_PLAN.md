@@ -1,6 +1,12 @@
 # Implementation Plan
 
 ## Active
+- **tool-only-api-key-approval** — Completed. See `docs/plan/tool-only-api-key-approval.md`.
+  - [x] 1. Remove site, team and entrypoint policy layers
+  - [x] 2. Support API-key-bound Agent approval and resume
+  - [x] 3. Exclude workflows from tool approval
+  - [x] 4. Update API page, guides and security regression verification
+
 
 - **pr480-browser-qa-fixes** — Completed. See `docs/plan/pr480-browser-qa-fixes.md`.
   - [x] 1. Fix API approval translation

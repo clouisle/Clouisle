@@ -222,6 +222,11 @@ while (true) {
   // Approval decision endpoints and samples
   const approvalExecutionEndpoint = `${apiBaseUrl}/api/v1/tool-executions/{execution_id}/decision`
   const approvalInboxEndpoint = `${apiBaseUrl}/api/v1/tool-approvals/{request_id}/decision`
+  const approvalExecutionReadEndpoint = `${apiBaseUrl}/api/v1/tool-executions/{execution_id}`
+  const approvalPendingListEndpoint = `${apiBaseUrl}/api/v1/tool-approvals?page=1&page_size=20`
+  const approvalExecutionListEndpoint = `${apiBaseUrl}/api/v1/tool-executions?run_id={run_id}&status=awaiting_approval`
+  const approvalStreamEndpoint = `${apiBaseUrl}/api/v1/agents/${agent.id}/chat/runs/{run_id}/stream?after_sequence={sequence}`
+  const approvalRunStatusEndpoint = `${apiBaseUrl}/api/v1/agents/${agent.id}/chat/runs/{run_id}`
 
   const approvalToolCallEvent = `event: tool_call
 data: ${JSON.stringify({
@@ -265,6 +270,50 @@ data: ${JSON.stringify({
     },
     msg: "success",
   }, null, 2)
+
+  const sampleApprovalExecution = JSON.stringify({
+    code: 0,
+    data: {
+      id: "9f1c2a7e-4b8d-4c61-9a30-2f5b8e1d7c44",
+      tool_id: "0a6b1f2c-3d4e-4f50-8a91-2b3c4d5e6f70",
+      operation: "mcp_delete_task",
+      actor_user_id: "0d9e4c61-2b7a-4f35-9c8d-1e6a3b5f7d20",
+      entrypoint: "api_key",
+      entrypoint_id: "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
+      run_kind: "agent",
+      run_id: "6f5e4d3c-2b1a-4c9d-8e7f-6a5b4c3d2e1f",
+      tool_call_id: "call-123",
+      parameters_preview: { task_id: "T-42" },
+      parameters_digest: "sha256:…",
+      policy_hash: "sha256:…",
+      status: "awaiting_approval",
+      cancel_reason: null,
+    },
+    msg: "success",
+  }, null, 2)
+
+  const apiKeyWaitSample = `curl -N -X POST "${apiBaseUrl}/api/v1/agents/${agent.id}/chat/stream" \\
+  -H "Authorization: Bearer clou_your_key" \\
+  -H "Content-Type: application/json" \\
+  -d '{"message":"Delete task T-42"}'
+
+# tool_call ...
+# run_status: {"status":"waiting","pending_tool_call_id":"call-123",
+#   "pending_tool_input":{"interaction_kind":"tool_approval","execution_id":"…"}}`
+
+  const apiKeyViewSample = `curl "${apiBaseUrl}/api/v1/tool-approvals?page=1&page_size=20" \\
+  -H "Authorization: Bearer clou_your_key"
+
+curl "${apiBaseUrl}/api/v1/tool-executions/{execution_id}" \\
+  -H "Authorization: Bearer clou_your_key"`
+
+  const apiKeyDecisionSample = `curl -X POST "${apiBaseUrl}/api/v1/tool-executions/{execution_id}/decision" \\
+  -H "Authorization: Bearer clou_your_key" \\
+  -H "Content-Type: application/json" \\
+  -d '{"decision":"approve","reason":"checked the order id","idempotency_key":"decision-2026-10-28-0001"}'`
+
+  const apiKeyResumeSample = `curl -N "${apiBaseUrl}/api/v1/agents/${agent.id}/chat/runs/{run_id}/stream?after_sequence=17" \\
+  -H "Authorization: Bearer clou_your_key"`
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -450,6 +499,39 @@ data: ${JSON.stringify({
               </div>
 
               <div>
+                <h4 className="text-sm font-medium mb-2">{t('approval.viewTitle')}</h4>
+                <p className="text-sm text-muted-foreground">{t('approval.viewDescription')}</p>
+
+                <p className="text-sm text-muted-foreground mt-3 mb-1">{t('approval.listEndpoint')}</p>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">GET</Badge>
+                    <code className="text-sm bg-muted px-2 py-1 rounded break-all">{approvalPendingListEndpoint}</code>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">GET</Badge>
+                    <code className="text-sm bg-muted px-2 py-1 rounded break-all">{approvalExecutionListEndpoint}</code>
+                  </div>
+                </div>
+
+                <p className="text-sm text-muted-foreground mt-3 mb-1">{t('approval.streamEndpoint')}</p>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">GET</Badge>
+                  <code className="text-sm bg-muted px-2 py-1 rounded break-all">{approvalStreamEndpoint}</code>
+                </div>
+
+                <p className="text-sm text-muted-foreground mt-3 mb-1">{t('approval.readEndpoint')}</p>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">GET</Badge>
+                  <code className="text-sm bg-muted px-2 py-1 rounded break-all">{approvalExecutionReadEndpoint}</code>
+                </div>
+
+                <p className="text-sm text-muted-foreground mt-4 mb-2">{t('approval.viewResponse')}</p>
+                <CodeBlock code={sampleApprovalExecution} language="json" />
+                <p className="text-sm text-muted-foreground mt-3">{t('approval.viewResponseDescription')}</p>
+              </div>
+
+              <div>
                 <h4 className="text-sm font-medium mb-2">{t('approval.decisionTitle')}</h4>
                 <p className="text-sm text-muted-foreground">{t('approval.decisionDescription')}</p>
 
@@ -471,12 +553,37 @@ data: ${JSON.stringify({
                 <CodeBlock code={sampleApprovalResponse} language="json" />
                 <p className="text-sm text-muted-foreground mt-3">{t('approval.decisionResponseDescription')}</p>
                 <p className="text-sm text-muted-foreground mt-3">{t('approval.previewNote')}</p>
-                <p className="text-sm text-muted-foreground mt-3">{t('approval.resumeNote')}</p>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-medium mb-2">{t('approval.resumeTitle')}</h4>
+                <p className="text-sm text-muted-foreground">{t('approval.resumeDescription')}</p>
+
+                <p className="text-sm text-muted-foreground mt-3 mb-1">{t('approval.statusEndpoint')}</p>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">GET</Badge>
+                  <code className="text-sm bg-muted px-2 py-1 rounded break-all">{approvalRunStatusEndpoint}</code>
+                </div>
               </div>
 
               <div>
                 <h4 className="text-sm font-medium mb-2">{t('approval.apiKeyTitle')}</h4>
                 <p className="text-sm text-muted-foreground">{t('approval.apiKeyDescription')}</p>
+
+                <p className="text-sm text-muted-foreground mt-3 mb-2">{t('approval.apiKeyWaitLabel')}</p>
+                <CodeBlock code={apiKeyWaitSample} language="bash" />
+                <p className="text-sm text-muted-foreground mt-3 mb-2">{t('approval.apiKeyViewLabel')}</p>
+                <CodeBlock code={apiKeyViewSample} language="bash" />
+                <p className="text-sm text-muted-foreground mt-3 mb-2">{t('approval.apiKeyDecisionLabel')}</p>
+                <CodeBlock code={apiKeyDecisionSample} language="bash" />
+                <p className="text-sm text-muted-foreground mt-3 mb-2">{t('approval.apiKeyResumeLabel')}</p>
+                <CodeBlock code={apiKeyResumeSample} language="bash" />
+                <p className="text-sm text-muted-foreground mt-3">{t('approval.apiKeyScopeNote')}</p>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-medium mb-2">{t('approval.workflowTitle')}</h4>
+                <p className="text-sm text-muted-foreground">{t('approval.workflowDescription')}</p>
               </div>
             </div>
           </Section>

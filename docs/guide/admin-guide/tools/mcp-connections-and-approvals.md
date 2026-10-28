@@ -151,33 +151,72 @@ Authorization and connection identity checks still apply.
 
 ## Approvals
 
-The tool editor's **Require confirmation before calling** switch controls the default: on requires caller confirmation; off does not. Other authorization and security policies still apply. MCP operation rules can inherit the default or explicitly require or skip confirmation. Existing deny policies remain blocked and are not silently converted: the default deny can be explicitly replaced with caller confirmation, and an operation deny remains until its rule is explicitly changed.
+Approval is configured only on the tool definition. The tool editor's
+**Require confirmation before calling** switch controls the default: on
+requires caller confirmation; off does not. Other authorization and security
+checks still apply. MCP operation rules can inherit the default or explicitly
+require or skip confirmation. Existing deny policies remain blocked and are not
+silently converted: the default deny can be explicitly replaced with caller
+confirmation, and an operation deny remains until its rule is explicitly
+changed. Site, team and entrypoint approval policies are no longer evaluated or
+editable; only the tool's stored policy and the Agent binding switch below
+participate.
 
-Tool-execution approval is caller-only and applies to interactive Agent chat,
-including authenticated Feishu and WeChat Agent conversations. Tool discovery,
-direct testing, workflows and other background entrypoints do not prompt.
-API-key, embed, legacy-channel and scheduled calls are non-interactive: when an
-effective policy requires caller confirmation, the call fails closed with
-`6510 tool_approval_policy_configuration_required` (reason
-`approval_audience_unavailable`) and performs no side effect instead of waiting
-for a decision. Approval decisions are accepted only from a signed-in user
-session; an API key cannot decide.
+Tool-execution approval is caller-only. An interactive Agent conversation
+pauses for the user who initiated the call, including authenticated Feishu and
+WeChat Agent conversations. An Agent run started with an API key pauses for
+that same key, which may read and decide its own pending execution through the
+API. Tool discovery and direct testing do not prompt.
+
+| Origin | Tool approval |
+|--------|---------------|
+| Signed-in Agent chat (web, Feishu, WeChat) | Pauses for the initiating user |
+| Agent API key (`clou_...`) | Pauses for the same key; only that key may decide |
+| Embed, legacy channel, scheduled run | Never waits; a required approval fails closed with `6510` |
+| Workflow (UI run, workflow API key, nested call) | No approval gate is created or waited on |
 
 Enable **Require Confirmation** on the Agent's MCP server binding to confirm
 every child call. To require approval for selected children, configure an exact
 caller operation override such as `tool:delete_task` on the saved MCP
-definition. An explicit child policy is evaluated during chat even when the
-Agent-wide switch is off; an `allow` override cannot relax an enabled Agent
+definition. An explicit child policy is evaluated during Agent runs even when
+the Agent-wide switch is off; an `allow` override cannot relax an enabled Agent
 confirmation switch. An empty saved policy does not implicitly require
-approval. Policies can no longer name individual users or team roles as
-approvers.
+approval. Policies cannot name individual users or team roles as approvers.
 
 Chat pauses before invoking the external tool and shows the approval card above
 the composer to the user who initiated the call. That caller — and only that
 caller — can approve to resume the original call once or reject to cancel it.
 Parameters, identity, connection version and tool definition are bound to the
-approval. Another team member, team administrator or superuser cannot decide,
-and rejection, expiry, revocation and stopped runs never become approvals.
+approval. Another team member, team administrator, superuser, or a different
+API key owned by the same user cannot decide, and rejection, expiry, revocation
+and stopped runs never become approvals.
+
+An API-key Agent client keeps using the same key for the whole run. When the
+run enters `waiting`, it can list gates at `GET /api/v1/tool-approvals` or read
+`GET /api/v1/tool-executions/{execution_id}` and submit
+`POST /api/v1/tool-executions/{execution_id}/decision` (or the inbox decision
+route) with that key. The key must still be active, remain authorized for the
+Agent (a key with no Agent associations covers all Agents) and be allowed to
+reach the execution; an unrelated key, including one owned by
+the same user, receives `6504 tool_approval_not_authorized` and cannot see the
+gate. Reconnection with `after_sequence` then delivers the resumed
+`tool_result` for the same tool call.
+
+An API key's inbox and execution list only include executions whose durable
+AgentRun was submitted by that same key. Legacy AgentRuns created before
+run-level key binding (no recorded key id) are omitted from lists for safety.
+If you still hold such a pending execution id, you can read or decide it
+directly: detail and decision validate the recorded legacy binding and reject a
+conflicting key.
+
+Embed widgets, legacy channels and scheduled entrypoints remain
+non-interactive: when the tool policy or Agent binding requires confirmation,
+the call fails closed with `6510 tool_approval_policy_configuration_required`
+(reason `approval_audience_unavailable`) and performs no side effect instead of
+waiting for a decision. Workflows behave differently: their tool calls never
+create an approval gate at all, whether the run is started from the UI, through
+a workflow API key or by a nested/sub-workflow, so a confirmation-required tool
+does not park a workflow run.
 
 The confirmation card shows the action, its status and the account label when available. Expand **View action details** to inspect redacted parameters; choose **Allow** to continue or **Decline** to cancel the call.
 
@@ -185,25 +224,44 @@ In Feishu and WeChat, the caller receives a redacted confirmation message. Reply
 
 When one model turn requests several tools, each call that requires confirmation is presented separately. After an approval or rejection, the run continues with the remaining calls in their original order; rejecting one call does not approve or cancel the others. Calls that do not require confirmation execute according to their own policy.
 
-**Legacy approver configuration fails closed.** Existing policies containing
+**Legacy approver configuration fails closed.** A stored tool policy containing
 `user` or `team_role` gates anywhere, including nested MCP operation overrides,
-are kept unchanged but never treated as caller confirmation or as allow.
+is kept unchanged but never treated as caller confirmation or as allow.
 Execution fails with `6510 tool_approval_policy_external_audience_unsupported`
-before the external call. The policy editor blocks saving such a policy and offers a
-one-way **Replace with caller confirmation** action; administrators can also
-edit the policy manually and re-save it with a caller gate, or an explicit
-allow/deny decision without an external audience. Upgrading cancels every
-unstarted execution associated with a legacy external gate — `awaiting_approval`
-or `ready`, including work whose external gate was already approved — together
-with its pending gates, without resuming work. Executions already running or
-terminal are left untouched for operator audit. The startup cutover logs one
-warning with the counts of cancelled executions, cancelled pending gates, and
-tools or policy layers still carrying legacy gates; it is idempotent and
+before the external call. The tool editor blocks saving such a policy and
+offers a one-way **Replace with caller confirmation** action; an administrator
+can also edit the policy manually and re-save it with a caller gate, or an
+explicit allow/deny decision without an external audience. Upgrading cancels
+every unstarted execution associated with a legacy external gate —
+`awaiting_approval` or `ready`, including work whose external gate was already
+approved — together with its pending gates. The same startup pass then wakes
+owning waiting runs: a waiting AgentRun is requeued with a terminal tool error
+and a waiting WorkflowRun's parked node fails, rather than remaining parked.
+Users must start a new run. Executions already running or terminal are left
+untouched for operator audit. The startup
+cutover logs one warning with the counts of cancelled executions, cancelled
+pending gates, and tools still carrying legacy gates; it is idempotent and
 repeats on every restart, so a legacy worker left running during a rolling
-upgrade cannot approve new work — its attempts fail closed at execution time. Cancelled executions stay terminal and rollback
-does not reactivate them. Completed execution history remains available for
-audit. Non-interactive entrypoints never prompt; if a stored legacy external
-gate reaches them, it still fails closed rather than being bypassed.
+upgrade cannot approve new work — its attempts fail closed at execution time.
+Cancelled executions stay terminal and rollback does not reactivate them.
+Completed execution history remains available for audit. Embed, legacy-channel
+and scheduled entrypoints never prompt; if a stored legacy external gate reaches
+them, it still fails closed rather than being bypassed.
+
+Removing the site, team and entrypoint policy layers is a separate cutover.
+Stored layer rows remain for audit but are never read, and their management
+routes and UI are gone. Any unstarted execution (`awaiting_approval` or `ready`)
+whose stored policy snapshot included a removed layer is cancelled with
+`cancel_reason: binding_changed` instead of running under the narrower
+tool-only policy; the startup log records the cancelled count, and those
+executions can never be approved afterwards. After the cancellation commit the
+cutover wakes owning runs: a waiting AgentRun whose pending call matches a
+cancelled execution is queued with a terminal `binding_changed` tool error, and
+a waiting WorkflowRun is dispatched so its parked node fails with `6507
+tool_approval_binding_changed` instead of hanging. The wake-up reconciles
+waiting runs on every startup, so a crash or broker outage between the commit
+and dispatch is repaired later and reruns are no-ops. The retired policy table
+is left in place but is no longer read or written.
 
 MCP call names, inputs and results remain inside the expandable thought trace.
 The active header does not cycle through MCP identifiers, and partial streamed
@@ -262,9 +320,11 @@ total.
 | `504 mcp_request_timeout` | Protocol budget expired |
 | `413 mcp_content_too_large` | Resource/prompt/result exceeded byte budgets |
 | `409 tool_execution_not_ready` | Pending execution was denied, expired, or already completed |
-| `6504 tool_approval_not_authorized` | You are not the caller who initiated this execution, so you cannot decide its confirmation |
-| `422 6510` | Saving a policy with legacy `user`/`team_role` approvers is rejected; replace them with caller confirmation |
-| `409 6510` | Approval policy is malformed, or still uses legacy user/role approvers; an administrator must re-save it with caller confirmation |
+| `401 invalid_api_key` / `401 api_key_expired` | The API key that started the run was revoked or expired; it can no longer decide pending approvals |
+| `6504 tool_approval_not_authorized` | Neither the initiating user nor the API key that started this execution, so you cannot decide its confirmation |
+| `422 6510` | Saving a tool policy with legacy `user`/`team_role` approvers is rejected; replace them with caller confirmation |
+| `409 6510` | Tool approval policy is malformed, or still uses legacy user/role approvers; an administrator must re-save it with caller confirmation |
+| `409 6510` and reason `approval_audience_unavailable` | A non-interactive embed, legacy-channel or scheduled call requires confirmation and cannot wait; start it interactively or change the tool policy |
 | `6434 tool_oauth_reauth_required` | OAuth tokens are no longer usable; run the authorization flow again |
 
 ## Related Documentation
